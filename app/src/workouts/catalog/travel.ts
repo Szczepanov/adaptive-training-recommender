@@ -3,6 +3,34 @@ import { repsStep, timeStep } from './helpers.ts';
 
 export const TRAVEL_WORKOUTS: WorkoutDefinition[] = [
   {
+    id: 'cross_training_bodyweight_circuit_01', version: 1, status: 'active',
+    name: 'Equipment-Free Aerobic Circuit',
+    description: 'Continuous bodyweight cardio circuit (rotating high knees, bodyweight squats, push-ups and hip hinges) held at an easy-to-moderate RPE. Genuinely zero equipment and indoor-safe; use when travel or unfamiliar surroundings remove bike, treadmill, and safe outdoor running access (issue #677).',
+    modality: 'cross_training', category: 'easy_endurance', objectives: ['aerobic_base', 'travel_maintenance'],
+    duration: { defaultMin: 25, minimumMin: 20, maximumMin: 30 },
+    loadProfile: { cardiovascular: 2, muscular: 2, mechanical: 1, eccentric: 1, coordination: 2, recoveryHours: 16 },
+    eligibility: { maximumSoreness: 7, forbiddenPainFlags: ['knee_swelling', 'worsening_achilles_pain'] },
+    equipment: [], contraindicationTags: ['knee_swelling', 'worsening_achilles_pain'], engineTemplateIds: ['end_easy_05'],
+    blocks: [
+      { id: 'warmup', name: 'Easy start', role: 'warmup', steps: [ timeStep('circuit_warmup', 'bodyweight_cardio_circuit', 'Easy warm-up rotation', 300, { target: { type: 'rpe', min: 1, max: 2 } }) ]},
+      { id: 'main', name: 'Aerobic circuit', role: 'main', steps: [ timeStep('circuit_main', 'bodyweight_cardio_circuit', 'Continuous circuit rotation', 1200, { target: { type: 'rpe', min: 2, max: 4 }, notes: ['Rotate through high knees, bodyweight squats, push-ups and hip hinges', 'Keep breathing continuous rather than resting fully between movements'] }) ]},
+      { id: 'cooldown', name: 'Easy finish', role: 'cooldown', steps: [ timeStep('circuit_cooldown', 'bodyweight_cardio_circuit', 'Easy cool-down rotation', 300, { target: { type: 'rpe', min: 1, max: 2 } }) ]},
+    ],
+    variants: [
+      { id: 'full', targetDurationMin: 25, loadMultiplier: 1, rationale: 'Normal equipment-free aerobic circuit dose.', stepOverrides: [] },
+      { id: 'reduced', targetDurationMin: 18, loadMultiplier: 0.7, rationale: 'Shorten the main rotation while keeping effort conversational.', stepOverrides: [{ stepId: 'circuit_main', durationSeconds: 720 }, { stepId: 'circuit_cooldown', durationSeconds: 240 }] },
+      { id: 'return_to_training', targetDurationMin: 15, loadMultiplier: 0.5, rationale: 'Keep the session short, easy and symptom-free.', stepOverrides: [{ stepId: 'circuit_main', durationSeconds: 480, target: { type: 'rpe', min: 1, max: 3 } }, { stepId: 'circuit_cooldown', durationSeconds: 180 }] },
+    ],
+    parameters: [
+      { id: 'circuit_duration', label: 'Main circuit duration', unit: 'minutes', defaultValue: 20, minimum: 10, maximum: 25, step: 5, appliesToStepIds: ['circuit_main'], bindings: [{ stepId: 'circuit_main', property: 'duration.seconds' }], description: 'Adjust around travel fatigue, time on feet and available time.' },
+      { id: 'circuit_rpe', label: 'Circuit RPE', unit: 'rpe', defaultValue: 3, minimum: 2, maximum: 4, step: 0.5, appliesToStepIds: ['circuit_main'], bindings: [{ stepId: 'circuit_main', property: 'target.rpe.max' }], description: 'Effort control without needing a bike, treadmill or machine.' },
+    ],
+    regressions: ['recovery_mobility_tissue_01'], progressions: ['running_easy_continuous_01'], substitutions: [],
+    garmin: { exportable: false },
+    tags: ['travel', 'equipment_free', 'bodyweight', 'cardio_circuit', 'indoor'],
+    sourceNotes: ['Closes the travel-overlay aerobic-stimulus gap identified in issue #677: every prior Easy/Moderate/Hard Endurance candidate required bike/treadmill/pool equipment or an outdoor environment.'],
+  },
+  {
     id: 'travel_aerobic_maintenance_01', version: 1, status: 'active',
     name: 'Travel Aerobic Maintenance',
     description: 'Generic hotel-machine aerobic session using RPE and breathing rather than machine-specific watts.',

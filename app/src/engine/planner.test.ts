@@ -958,10 +958,17 @@ describe('Phase 6.2b -- fixed activities as projected exposures', () => {
         const withoutActivity = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seedWithExistingLoad, { days: 3 });
         const withActivity = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, tomorrowRec, seedWithExistingLoad, { days: 3, fixedActivities: [bookedMatch] });
 
-        const dayWithout = withoutActivity.days.find(d => d.date === '2026-08-09')!;
-        const dayWith = withActivity.days.find(d => d.date === '2026-08-09')!;
-        // The pre-existing baseline (~0.54) already exceeds the reserved cost (0.5), which
-        // is exactly the case max() gets wrong -- max(0.54, 0.5) would report ~no increase.
+        // 2026-08-09 itself now saturates to the fatigue ceiling (1) in both runs regardless
+        // of the booked match -- issue #677's new equipment-free `end_easy_05` candidate
+        // widened the Day-1 (2026-08-08) candidate pool, which shifts the weekly-role
+        // reservation search's placement and cascades into a different multi-day trajectory
+        // (a catalog change legitimately does this; see POLICY_VERSION). 2026-08-10 is where
+        // the pre-existing baseline still has real headroom below the ceiling, so that is
+        // where the additive-vs-max() distinction remains observable.
+        const dayWithout = withoutActivity.days.find(d => d.date === '2026-08-10')!;
+        const dayWith = withActivity.days.find(d => d.date === '2026-08-10')!;
+        // The pre-existing baseline already exceeds the reserved cost, which is exactly the
+        // case max() gets wrong -- max(dayWithout, reservedCost) would report ~no increase.
         expect(dayWithout.diagnostics!.peakFatigue).toBeGreaterThan(0.5);
         expect(dayWith.diagnostics!.peakFatigue).toBeGreaterThan(dayWithout.diagnostics!.peakFatigue);
         expect(dayWith.diagnostics!.peakFatigue).toBeLessThanOrEqual(1);

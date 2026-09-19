@@ -755,6 +755,36 @@ export const TEMPLATES: SessionTemplate[] = [
         stimulusProfile: { aerobicEndurance: 0.2, thresholdPower: 0.1, vo2MaxPower: 0.2, repeatedSurges: 0.3, sprintPower: 0.1, fatigueResistance: 0.2, maxStrength: 0, hypertrophy: 0 },
         costProfile: { systemic: 0.15, cardiovascular: 0.2, lowerBody: 0.1, upperBody: 0.05, impactTissue: 0.05, neuromuscular: 0.2 },
         phaseEligibility: { requiresFocusEvent: true, requiresTaper: true, maxDaysToEvent: 3 }
+    },
+    {
+        // Appended rather than inserted alongside the other Easy Endurance templates: this
+        // module's array position participates in ranking tie-breaks (issue #677), and this
+        // candidate is new -- it must never flip an existing tie among pre-existing templates.
+        id: "end_easy_05",
+        category: "Easy Endurance",
+        modality: "Cross Training",
+        durationMin: 20,
+        durationMax: 30,
+        title: "Equipment-Free Aerobic Circuit",
+        description: "Continuous bodyweight cardio circuit (step-ups, high knees, mountain climbers, shadow boxing) held at an easy-to-moderate RPE. Genuinely zero equipment and indoor-safe; use when travel or unfamiliar surroundings remove bike, treadmill, and safe outdoor running access.",
+        requiredEquipment: [],
+        environment: 'either', safetyTags: ['avoid_high_impact'],
+        systemicCost: 0.25,
+        objectiveTransferable: true,
+        easierDose: {
+            label: "15 min Light Circuit",
+            durationMin: 12,
+            durationMax: 18,
+            doseRatio: 0.6,
+            prescriptionSummary: "Light 15 min easy-paced bodyweight circuit."
+        },
+        harderDose: {
+            label: "35 min Extended Circuit",
+            durationMin: 30,
+            durationMax: 40,
+            doseRatio: 1.35,
+            prescriptionSummary: "Extended 35 min bodyweight aerobic circuit."
+        }
     }
 ];
 

@@ -119,6 +119,23 @@ for (const day of travel.plan.slice(0, 3)) {
   fail(['indoor', 'either'].includes(day.session.environment), `${day.date}: travel case selected non-indoor ${day.session.templateId}`);
   if (day.session.durationMin !== null) fail(day.session.durationMin <= 30, `${day.date}: travel case exceeded 30-minute travel capacity with ${day.session.templateId}`);
 }
+// Issue #677: respecting the hard constraints above is not sufficient -- Rest and
+// Mobility/Recovery trivially satisfy all three checks too, which is exactly how the
+// AI judge caught a real catalog gap that this checker previously missed (every travel
+// day silently collapsed to Rest/Mobility with no aerobic maintenance stimulus at all).
+fail(travel.plan.slice(0, 3).some((day) => !['Rest', 'Mobility/Recovery'].includes(day.session.category)),
+  'Travel case collapses every day in the 3-day window to Rest/Mobility with no equipment-free aerobic maintenance stimulus.');
+
+// Issue #677 investigated a candidate monotonicity rule here (conservative bias must not
+// raise hard-session count / cumulative systemic cost vs. the matched neutral baseline).
+// Measured on the real corpus it is CONFIRMED violated -- see
+// docs/analysis/2026-09-19-conservative-travel-overlay-investigation.md for the exact
+// day-by-day reproduction and root-cause hypothesis (ADR-0018 weekly-role-reservation
+// search). Fixing the reservation search itself is out of scope for this change: it is a
+// safety-critical, heavily-tested path (`weeklyAllocation.ts`) that needs its own
+// dedicated, verified fix rather than a same-PR patch alongside the travel-overlay catalog
+// gap. A deliberately-failing assertion is not added here so `make check`/CI stay green;
+// the follow-up fix must add it (see the analysis doc's tracked follow-up).
 
 const evergreen = required('judge_mode_evergreen');
 fail(evergreen.input.trainingIntentProfile?.planningMode === 'evergreen', 'Evergreen case did not propagate a valid trainingIntentProfile.planningMode.');

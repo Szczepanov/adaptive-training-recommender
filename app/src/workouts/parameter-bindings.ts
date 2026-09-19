@@ -116,6 +116,13 @@ export const WORKOUT_PARAMETER_BINDINGS: WorkoutParameterBindingSet[] = [
     ]
   },
   {
+    workoutId: 'cross_training_bodyweight_circuit_01',
+    bindings: [
+      stepField('circuit_duration', ['circuit_main'], 'duration.seconds', { transform: 'minutes_to_seconds' }),
+      stepField('circuit_rpe', ['circuit_main'], 'target.rpe', { range: { minOffset: -1, maxOffset: 1 } })
+    ]
+  },
+  {
     workoutId: 'travel_aerobic_maintenance_01',
     bindings: [
       stepField('aerobic_duration', ['travel_aerobic_main'], 'duration.seconds', { transform: 'minutes_to_seconds' }),
