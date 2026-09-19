@@ -579,6 +579,18 @@ export function buildPersonaFamilies() {
       trainingIntentProfile: healthIntent,
       userPreferences: healthPreferences,
     }),
+    makeScenario({
+      id: 'persona_health_fatloss_fresh_subjective_adverse_wearable',
+      label: 'Health/fat-loss persona — fresh check-in with adverse wearable signals',
+      persona: healthPersona,
+      readiness: {
+        subjective: subjective({ readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 3, motivation: 8 }),
+        objective: adverseGarmin,
+      },
+      context: healthContext,
+      trainingIntentProfile: healthIntent,
+      userPreferences: healthPreferences,
+    }),
   ];
 
   const formerEliteCases = [
@@ -641,6 +653,43 @@ export function buildPersonaFamilies() {
     }),
   ];
 
+  const balancedAlreadyTrainedReadiness = {
+    subjective: subjective({
+      readiness: 8,
+      fatigue: 2,
+      soreness: 2,
+      motivation: 9,
+      alreadyTrainedToday: true,
+      preferredModalityToday: 'Strength',
+    }),
+    objective: neutralGarmin,
+  };
+  const balancedFollowupReadiness = {
+    subjective: subjective({
+      readiness: 8,
+      fatigue: 2,
+      soreness: 2,
+      motivation: 9,
+      alreadyTrainedToday: false,
+      preferredModalityToday: 'Strength',
+    }),
+    objective: neutralGarmin,
+  };
+  const balancedAlreadyTrainedCase = makeScenario({
+    id: 'persona_balanced_performance_already_trained_today',
+    label: 'Balanced-performance persona — already trained today despite good readiness',
+    persona: balancedPersona,
+    readiness: balancedAlreadyTrainedReadiness,
+    context: balancedContext,
+    trainingIntentProfile: balancedIntent,
+    userPreferences: balancedPreferences,
+  });
+  balancedAlreadyTrainedCase.scenario.readinessForWeek = (week) =>
+    clone(week === 0 ? balancedAlreadyTrainedReadiness : balancedFollowupReadiness);
+  balancedAlreadyTrainedCase.scenario.readinessForDate = (_date, week) =>
+    clone(week === 0 ? balancedAlreadyTrainedReadiness : balancedFollowupReadiness);
+  balancedCases.push(balancedAlreadyTrainedCase);
+
   const walkingCases = [
     makeScenario({
       id: 'persona_walking_baseline',
@@ -689,6 +738,26 @@ export function buildPersonaFamilies() {
     trainingRecordLike: { type: 'Running aerobic endurance', duration_min: 60, training_effect: 2, intensity_tag: 'easy' },
   }));
 
+  const establishedRecentHardHistory = [
+    ...establishedHistoryExposures,
+    {
+      occurrenceKey: 'persona-established-hard-0',
+      date: '2026-08-28',
+      costProfile: { systemic: 0.65, cardiovascular: 0.75, lowerBody: 0.45, upperBody: 0, impactTissue: 0.2, neuromuscular: 0.25 },
+      modality: 'Running',
+      category: 'Hard Endurance',
+      trainingRecordLike: { type: 'Running interval session', duration_min: 50, training_effect: 4, intensity_tag: 'hard' },
+    },
+    {
+      occurrenceKey: 'persona-established-hard-1',
+      date: '2026-08-30',
+      costProfile: { systemic: 0.65, cardiovascular: 0.75, lowerBody: 0.45, upperBody: 0, impactTissue: 0.2, neuromuscular: 0.25 },
+      modality: 'Running',
+      category: 'Hard Endurance',
+      trainingRecordLike: { type: 'Running interval session', duration_min: 50, training_effect: 4, intensity_tag: 'hard' },
+    },
+  ];
+
   const establishedHistoryCases = [
     makeScenario({
       id: 'persona_established_history_baseline',
@@ -719,6 +788,19 @@ export function buildPersonaFamilies() {
       trainingIntentProfile: establishedHistoryIntent,
       userPreferences: establishedHistoryPreferences,
       initialHistory: establishedHistoryExposures,
+    }),
+    makeScenario({
+      id: 'persona_established_history_recent_hard_load',
+      label: 'Established-history endurance persona — good readiness after two recent hard sessions',
+      persona: establishedHistoryPersona,
+      readiness: {
+        subjective: subjective({ readiness: 8, fatigue: 2, soreness: 2, stress: 3, motivation: 8, preferredModalityToday: 'Running' }),
+        objective: { ...neutralGarmin, last_3_days_hard_sessions_count: 2 },
+      },
+      context: establishedHistoryContext,
+      trainingIntentProfile: establishedHistoryIntent,
+      userPreferences: establishedHistoryPreferences,
+      initialHistory: establishedRecentHardHistory,
     }),
   ];
 
@@ -882,8 +964,8 @@ export function buildPersonaFamilies() {
     },
     {
       familyId: 'persona_health_fat_loss',
-      changedAxis: 'current recovery/time state for a health-and-fat-loss evergreen athlete with Garmin data',
-      comparisonInstruction: 'Compare sustainable health-oriented programming across normal recovery, adverse recovery, and a short time window. There is no race and no reason to peak.',
+      changedAxis: 'current recovery/time state and subjective-vs-wearable disagreement for a health-and-fat-loss evergreen athlete with Garmin data',
+      comparisonInstruction: 'Compare sustainable health-oriented programming across normal recovery, concordant adverse recovery, a short time window, and a fresh subjective check-in paired with clearly adverse wearable signals. Missing, concordant, and conflicting recovery evidence are different states; there is no race and no reason to peak.',
       cases: healthCases,
     },
     {
@@ -894,8 +976,8 @@ export function buildPersonaFamilies() {
     },
     {
       familyId: 'persona_balanced_performance',
-      changedAxis: 'current recovery and today-specific modality preference for an evergreen balanced-performance generalist',
-      comparisonInstruction: 'Compare the same balanced-performance athlete across normal recovery, adverse recovery, and a strength preference today. The planner should preserve both aerobic and strength requirements over the week without inventing event-specific preparation.',
+      changedAxis: 'current recovery, today-specific modality preference, and already-trained state for an evergreen balanced-performance generalist',
+      comparisonInstruction: 'Compare the same balanced-performance athlete across normal recovery, adverse recovery, a strength preference today, and a good-readiness day where the athlete has already trained. Already-trained is a current-day execution fact, not chronic fatigue: avoid prescribing a duplicate substantive session today while preserving both aerobic and strength requirements over the longer horizon.',
       cases: balancedCases,
     },
     {
@@ -912,8 +994,8 @@ export function buildPersonaFamilies() {
     },
     {
       familyId: 'persona_established_history',
-      changedAxis: 'current recovery and motivation state for an endurance athlete with a genuinely established, current 28-day training base',
-      comparisonInstruction: 'This is the direct contrast to persona_former_elite_return: authority here is current, recent, consistently logged training rather than historical achievement. Compare the same established athlete across good recovery (which may reasonably unlock one purposeful higher-intensity session per week), adverse recovery (which should still reduce load), and low motivation alone with good objective signals (which should not remove an otherwise-earned higher-intensity opportunity).',
+      changedAxis: 'current recovery, motivation, and recent hard-session density for an endurance athlete with a genuinely established current training base',
+      comparisonInstruction: 'This is the direct contrast to persona_former_elite_return: authority here is current, recent, consistently logged training rather than historical achievement. Compare good recovery, adverse recovery, low motivation alone, and otherwise-good readiness after two planner-visible hard sessions in the previous three days. Good biometrics should not erase recent hard-load context or justify gratuitous intensity stacking.',
       cases: establishedHistoryCases,
     },
     {
@@ -974,15 +1056,32 @@ export function assertPersonaFixtureIntegrity(families) {
     if (!flareGuards.has(guardrail)) failures.push(`Strength flare case must activate ${guardrail}.`);
   }
 
-  const health = allCases.find((item) => item.scenario.id === 'persona_health_fatloss_baseline');
+  const healthCases = allCases.filter((item) => item.persona.personaId === 'health_fat_loss_garmin');
+  if (healthCases.length !== 4) failures.push(`Health/fat-loss persona must have exactly 4 cases, found ${healthCases.length}.`);
+  const health = healthCases.find((item) => item.scenario.id === 'persona_health_fatloss_baseline');
   if (!health?.scenario.trainingIntentProfile.priorities.includes('health')) failures.push('Health/fat-loss persona must carry health priority.');
+  const healthConflict = healthCases.find((item) => item.scenario.id === 'persona_health_fatloss_fresh_subjective_adverse_wearable');
+  const healthConflictReadiness = healthConflict?.scenario.readinessForWeek(0);
+  if (!(healthConflictReadiness?.subjective.readiness >= 8) || !(healthConflictReadiness?.subjective.fatigue <= 2)) {
+    failures.push('Health recovery-conflict case must keep the subjective check-in clearly favorable.');
+  }
+  if (!(healthConflictReadiness?.objective.hrv_delta <= -10) || !(healthConflictReadiness?.objective.rhr_delta >= 5) || !(healthConflictReadiness?.objective.body_battery_wake <= 35)) {
+    failures.push('Health recovery-conflict case must keep the wearable signals clearly adverse.');
+  }
   const formerElite = allCases.find((item) => item.scenario.id === 'persona_former_elite_sparse_history_baseline');
   if ((formerElite?.scenario.initialHistory ?? []).length !== 0) failures.push('Former-elite sparse-history case must not invent current training history from historical status.');
 
   const balanced = allCases.filter((item) => item.persona.personaId === 'balanced_performance_generalist');
-  if (balanced.length !== 3) failures.push(`Balanced-performance persona must have exactly 3 cases, found ${balanced.length}.`);
+  if (balanced.length !== 4) failures.push(`Balanced-performance persona must have exactly 4 cases, found ${balanced.length}.`);
   if (balanced.some((item) => !item.scenario.trainingIntentProfile.priorities.includes('balanced_performance'))) {
     failures.push('Balanced-performance persona cases must carry balanced_performance priority.');
+  }
+  const alreadyTrained = balanced.find((item) => item.scenario.id === 'persona_balanced_performance_already_trained_today');
+  if (!alreadyTrained?.scenario.readinessForWeek(0).subjective.alreadyTrainedToday) {
+    failures.push('Balanced already-trained case must set alreadyTrainedToday=true for the first simulated week.');
+  }
+  if (alreadyTrained?.scenario.readinessForWeek(1).subjective.alreadyTrainedToday) {
+    failures.push('Balanced already-trained case must clear alreadyTrainedToday after the first simulated week.');
   }
 
   const stacked = allCases.filter((item) => item.persona.personaId === 'health_stacked_injury_equipment_constraints');
@@ -1014,7 +1113,7 @@ export function assertPersonaFixtureIntegrity(families) {
   }
 
   const establishedHistory = allCases.filter((item) => item.persona.personaId === 'established_endurance_runner');
-  if (establishedHistory.length !== 3) failures.push(`Established-history persona must have exactly 3 cases, found ${establishedHistory.length}.`);
+  if (establishedHistory.length !== 4) failures.push(`Established-history persona must have exactly 4 cases, found ${establishedHistory.length}.`);
   for (const definition of establishedHistory) {
     const history = definition.scenario.initialHistory ?? [];
     if (history.length < 12) failures.push(`${definition.scenario.id}: established-history persona must seed at least 12 exposures, found ${history.length}.`);
@@ -1026,6 +1125,16 @@ export function assertPersonaFixtureIntegrity(families) {
     if (!definition.scenario.trainingIntentProfile.priorities.includes('endurance')) {
       failures.push(`${definition.scenario.id}: established-history persona must carry endurance priority.`);
     }
+  }
+
+  const recentHardLoad = establishedHistory.find((item) => item.scenario.id === 'persona_established_history_recent_hard_load');
+  const recentHardReadiness = recentHardLoad?.scenario.readinessForWeek(0);
+  const recentHardExposures = (recentHardLoad?.scenario.initialHistory ?? []).filter((item) => item.category === 'Hard Endurance');
+  if (recentHardReadiness?.objective.last_3_days_hard_sessions_count !== 2) {
+    failures.push('Established recent-hard-load case must report two hard sessions in the previous three days.');
+  }
+  if (recentHardExposures.length !== 2 || recentHardExposures.some((item) => item.date < '2026-08-28')) {
+    failures.push('Established recent-hard-load case must include exactly two planner-visible recent hard exposures.');
   }
 
   const triathlonExpectations = [
