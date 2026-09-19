@@ -148,9 +148,16 @@ export function directCoverageExerciseIds(
 }
 
 /**
- * Whether `workout` provides direct/specific coverage for the exact subject a performance goal
- * declares, per `WorkoutStep.exerciseId` across every block. Pure and read-only: never mutates
- * `workout`, never consults target value, current capability or dose.
+ * Whether the canonical authored `workout` definition is a direct/specific coverage candidate
+ * for the exact subject a performance goal declares, per `WorkoutStep.exerciseId` across every
+ * block. Pure and read-only: never mutates `workout`, never consults target value, current
+ * capability or dose.
+ *
+ * This is deliberately a catalog/allocation-candidate classifier, not proof that a later
+ * prescription variant actually delivered the step. `WorkoutVariant.stepOverrides` can omit a
+ * covered exercise (for example a return-to-training variant). PG7 must verify the resolved
+ * prescription/variant before marking target coverage fulfilled, or surface the appropriate
+ * shortfall instead of treating this canonical-definition match as delivered work.
  */
 export function workoutProvidesDirectCoverage(
     workout: WorkoutDefinition,
