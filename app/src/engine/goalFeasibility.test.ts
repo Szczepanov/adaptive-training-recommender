@@ -70,14 +70,15 @@ describe('assessGoalFeasibility', () => {
         expect(result.requiredChange.absolute).toBe(50);
     });
 
-    it('matches the plan\'s worked example: 100kg -> 200kg in 6 weeks at max 1 session/week is Unlikely with bounded confidence', () => {
+    it('matches the plan\'s worked example: 100kg -> 200kg in 6 weeks at max 1 session/week is Unlikely/High confidence', () => {
         const progress = progressWithBaseline(100, 'coach');
         const result = assessGoalFeasibility(benchTarget(200), progress, {
             targetDate: '2026-10-31', today: '2026-09-19', capacity: { weeklyMaxSessions: 1 },
         });
         expect(result.plausibility).toBe('unlikely');
-        expect(result.confidence.level).toBe('moderate');
-        expect(result.confidence.reasons).toContain('target_specific_frequency_unknown');
+        expect(result.confidence.level).toBe('high');
+        expect(result.confidence.reasons).not.toContain('target_specific_frequency_unknown');
+        expect(result.factors.some(factor => factor.code === 'target_specific_frequency_unknown')).toBe(true);
         expect(result.requiredChange).toMatchObject({ absolute: 100, relativePct: 100 });
         expect(result.capacity.maxRelevantExposuresBeforeTarget).not.toBeNull();
         expect(result.evidenceRefs).toContain('goalFeasibility.strength.requiredChangeBands');
