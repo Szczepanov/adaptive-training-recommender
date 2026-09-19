@@ -87,8 +87,8 @@ occurrences." Every `RequiredRoleOccurrence` is weighted identically — there i
 authority-tier dimension in the search itself.** Equal-cardinality branches do not replace
 the incumbent; determinism comes from the stable search traversal: occurrences start in
 deadline/key/ordinal/id order, the most constrained remaining occurrence is chosen next,
-and candidate assignments are ordered by date then template id. Naively appending performance-target occurrences into the same
-`occurrences` array the search consumes would let it trade a broad-adaptation slot for a
+and candidate assignments are ordered by date then template id. Naively appending
+performance-target occurrences into the same `occurrences` array the search consumes would let it trade a broad-adaptation slot for a
 performance-target slot (or vice versa) purely by count, violating the plan's required
 order (broad adaptation must outrank performance-target coverage). This is a genuine gap,
 not a wiring detail, and needs a decision before implementation:
