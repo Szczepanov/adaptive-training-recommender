@@ -81,7 +81,7 @@ A user can type deadlift / 220 / kg, 10m sprint / 1.75 / seconds, or peak power 
 
 UserGoal currently has no speed or power domain either. Its domain set is endurance, strength, mobility, weight_loss, general_fitness and other. That makes the generic target UI even more misleading for the requested capability.
 
-A real performance-target feature needs typed family/metric semantics and canonical subject identity rather than title parsing.
+A production performance-target feature requires typed family/metric semantics and canonical subject identity rather than title parsing.
 
 ---
 
@@ -194,7 +194,7 @@ Therefore:
 
 1. Extend app/src/observations/registry.ts with reviewed target metrics; do not invent a second metric-definition type.
 2. Extend app/src/observations/performanceTestingCatalog.ts for new test-bound speed/power goals.
-3. Extend ComparisonDimension only when a real new protocol requires another series-defining dimension.
+3. Extend ComparisonDimension only when a new protocol genuinely requires another series-defining dimension.
 4. Add only a thin **goal-target policy** that says which registered metrics are target-eligible, which product family they belong to, and what subject kind they accept.
 
 Conceptually:
