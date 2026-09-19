@@ -526,7 +526,7 @@ function needsMultisportModalityCoverage(
     summary?: HistoryFeatureSummary,
 ): boolean {
     if (focusEvent?.category !== 'triathlon') return false;
-    if (template.modality !== 'Cycling' && template.modality !== 'Running') return false;
+    if (!['Swimming', 'Cycling', 'Running'].includes(template.modality)) return false;
 
     if (summary) {
         return !summary.recentModalitiesInRolling6d.has(template.modality);
@@ -986,7 +986,11 @@ export function rankCandidates(
                 (categoryLower.includes('cycling') && templateModLower.includes('cycling')) ||
                 (categoryLower.includes('running') && templateModLower.includes('running')) ||
                 (categoryLower.includes('strength') && templateModLower.includes('strength')) ||
-                (categoryLower === 'triathlon' && (templateModLower.includes('cycling') || templateModLower.includes('running')));
+                (categoryLower === 'triathlon' && (
+                    templateModLower.includes('swimming')
+                    || templateModLower.includes('cycling')
+                    || templateModLower.includes('running')
+                ));
             const eventPriorityApplies = !categoryLower.includes('strength') || satisfiesUnresolvedObjective || fulfilsNominatedAnchor;
             if (matchesEvent && eventPriorityApplies) {
                 benefit *= focusEvent.priority === 'A' ? 1.40 : 1.25;
@@ -1204,7 +1208,9 @@ export function rankCandidates(
             getBenefitTier(c) === topBenefitTier &&
             c.template.category === topCandidate.template.category &&
             (c.template.modality === topCandidate.template.modality ||
-             (focusEvent?.category === 'triathlon' && ['Cycling', 'Running'].includes(c.template.modality) && ['Cycling', 'Running'].includes(topCandidate.template.modality))) &&
+             (focusEvent?.category === 'triathlon'
+                && ['Swimming', 'Cycling', 'Running'].includes(c.template.modality)
+                && ['Swimming', 'Cycling', 'Running'].includes(topCandidate.template.modality))) &&
             Math.abs(topCandidate.utilityScore - c.utilityScore) <= VARIETY_TIE_BREAK_GAP
         );
 
