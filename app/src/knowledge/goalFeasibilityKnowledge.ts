@@ -90,11 +90,11 @@ export const GOAL_FEASIBILITY_SOURCES: readonly KnowledgeSource[] = [
 export const GOAL_FEASIBILITY_CLAIMS: readonly KnowledgeClaim[] = [
     {
         id: GOAL_FEASIBILITY_CLAIM_IDS.strengthRequiredChangeBands,
-        statement: 'Product goal-feasibility policy v1 (strength family only): required pace is expressed as |relative % change required| / weeks remaining. At an adequate reference frequency of 2+ relevant sessions/week, pace <=2.0%/week is labelled plausible and <=3.5%/week is labelled stretch; above that, unlikely. Available weekly capacity below 2 sessions/week tightens (lowers) both ceilings proportionally, down to a floor of 20% of the adequate-frequency ceiling, reflecting that lower training frequency is associated with smaller strength gains. No equivalent band exists for speed or power; those families report insufficient_evidence rather than reusing this one.',
+        statement: 'Product goal-feasibility policy v2 (strength family only): required pace is expressed as |relative % change required| / weeks remaining. At an adequate reference frequency of 2+ relevant sessions/week, pace <=1.3%/week is labelled plausible and <=2.0%/week is labelled stretch; above that, unlikely. The plausible ceiling linearizes to ~7.8% over six weeks, approximately the upper end of the cited resistance-trained-men result (~4.7-7.7% over six weeks); the wider stretch ceiling is deliberately permissive and is not directly validated by that study. Available weekly capacity below 2 sessions/week tightens (lowers) both ceilings proportionally, down to a floor of 20% of the adequate-frequency ceiling. Total weekly capacity is only an upper bound: until target-specific planned/performed frequency is available, confidence is reduced. No equivalent band exists for speed or power; those families report insufficient_evidence rather than reusing this one.',
         claimType: 'heuristic', maturity: 'supported', status: 'active', evidenceCertainty: 'low', recommendationStrength: 'conditional', safetyImpact: 'low',
         applicability: { contexts: ['goal_feasibility', 'performance_goal_advisory'], sports: ['strength'], populations: ['app_users'], outcomes: ['goal_plausibility_classification'], horizon: 'chronic' },
         evidence: [
-            { sourceId: CORATELLA_2016_ECCENTRIC_TRAINED_MEN, directness: 'partially_direct', note: 'Six-week 4.7-7.7% 1RM/body-mass gains anchor the conservative plausible/stretch ceilings; this policy sets both ceilings below that observed range.' },
+            { sourceId: CORATELLA_2016_ECCENTRIC_TRAINED_MEN, directness: 'partially_direct', note: 'Six-week 4.7-7.7% 1RM/body-mass gains anchor the plausible ceiling: 1.3%/week linearizes to ~7.8% over six weeks. The 2.0%/week stretch ceiling deliberately extends beyond that observed range and is not directly validated by this study.' },
             { sourceId: ANDROULAKIS_KORAKAKIS_2020_MIN_DOSE, directness: 'indirect', note: 'Absolute low-dose benchmark; supports treating low weekly frequency as feasibility-limiting rather than irrelevant.' },
             { sourceId: ACSM_2026_POSITION_STAND, directness: 'indirect', note: 'Anchors 2 sessions/week as the adequate-frequency reference point.' },
             { sourceId: PELLAND_2026_DOSE_RESPONSE, directness: 'indirect', note: 'Supports frequency as a graded (diminishing-returns) factor rather than a binary cutoff.' },
@@ -104,9 +104,10 @@ export const GOAL_FEASIBILITY_CLAIMS: readonly KnowledgeClaim[] = [
         limitations: [
             'This is a conservative product calibration, not a validated predictive model of individual strength gain.',
             'Evidence anchors are concentrated in resistance-trained men over a 6-week horizon; applicability to untrained athletes, longer horizons, or other lifts is not established.',
-            'The frequency adjustment is a linear product heuristic, not a fitted dose-response curve.',
+            'The frequency adjustment and the 2.0%/week stretch ceiling are product heuristics, not fitted dose-response curves or validated individual prediction thresholds.',
+            'Total weekly commitment is only an upper bound; target-specific planned/performed frequency is unavailable before PG5-PG7 and therefore reduces confidence.',
             'No exact success probability is derived from this policy; only the plausible/stretch/unlikely band per PG4.5.1.',
         ],
-        reviewedOn: '2026-09-19', version: 1,
+        reviewedOn: '2026-09-19', version: 2,
     },
 ];
