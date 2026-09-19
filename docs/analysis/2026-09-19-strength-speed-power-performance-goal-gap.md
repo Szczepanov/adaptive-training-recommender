@@ -296,8 +296,8 @@ Useful research anchors reviewed for this design:
 1. Grgic J et al. Test-retest reliability of the one-repetition maximum strength assessment. Sports Med Open. 2020. https://pubmed.ncbi.nlm.nih.gov/32681399/
 2. Reliability of 20 m sprint split times using infrared timing gates. 2025. https://pubmed.ncbi.nlm.nih.gov/40218589/
 3. Methods to assess maximal sprinting speed: systematic review. 2024. https://pubmed.ncbi.nlm.nih.gov/38252665/
-4. Countermovement-jump height calculation methods: systematic review. 2024. https://pubmed.ncbi.nlm.nih.gov/38339247/
-5. Validity/reliability of load-velocity relationships for maximal-strength prediction: systematic review. 2022. https://pubmed.ncbi.nlm.nih.gov/35482030/
+4. Countermovement-jump height calculation methods: systematic review. 2024. https://pubmed.ncbi.nlm.nih.gov/39425876/
+5. Validity/reliability of load-velocity relationships for maximal-strength prediction: systematic review. 2022. https://pubmed.ncbi.nlm.nih.gov/36301878/
 
 These sources do not dictate the training policy. They support the narrower architecture rule that target/evidence identity must include the metric and the protocol needed to interpret it.
 
