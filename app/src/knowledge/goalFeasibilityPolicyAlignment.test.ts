@@ -33,12 +33,16 @@ describe('goal-feasibility strength band policy alignment (ADR-0041, PG4.5.5)', 
         expect(claim.applicability.sports).toEqual(['strength']);
     });
 
-    it('classifies <=2.0%/week at adequate (2+/week) frequency as plausible, matching the registered ceiling', () => {
+    it('keeps ~1.3%/week as the plausible ceiling at adequate (2+/week) capacity', () => {
         const progress = progressAt(100);
-        const result = assessGoalFeasibility(benchTarget(102), progress, {
-            targetDate: '2026-10-24', today: '2026-09-19', capacity: { weeklyMaxSessions: 2 },
-        }); // ~2% required change over ~5 weeks -> ~0.4%/week
-        expect(result.plausibility).toBe('plausible');
+        const plausible = assessGoalFeasibility(benchTarget(107.5), progress, {
+            targetDate: '2026-10-31', today: '2026-09-19', capacity: { weeklyMaxSessions: 2 },
+        }); // 7.5% over 6 weeks -> 1.25%/week
+        const stretch = assessGoalFeasibility(benchTarget(110), progress, {
+            targetDate: '2026-10-31', today: '2026-09-19', capacity: { weeklyMaxSessions: 2 },
+        }); // 10% over 6 weeks -> 1.67%/week
+        expect(plausible.plausibility).toBe('plausible');
+        expect(stretch.plausibility).toBe('stretch');
     });
 
     it('classifies a pace above the stretch ceiling as unlikely, matching the registered band', () => {
@@ -53,12 +57,12 @@ describe('goal-feasibility strength band policy alignment (ADR-0041, PG4.5.5)', 
         const progress = progressAt(100);
         const lowFrequency = assessGoalFeasibility(benchTarget(108), progress, {
             targetDate: '2026-10-17', today: '2026-09-19', capacity: { weeklyMaxSessions: 1 },
-        }); // 8% over ~4 weeks -> 2%/week, which is 'plausible' at 2/week but should tighten at 1/week
+        }); // 8% over 4 weeks -> 2%/week, at the stretch ceiling for 2/week and above it at 1/week
         const adequateFrequency = assessGoalFeasibility(benchTarget(108), progress, {
             targetDate: '2026-10-17', today: '2026-09-19', capacity: { weeklyMaxSessions: 2 },
         });
-        expect(adequateFrequency.plausibility).toBe('plausible');
-        expect(lowFrequency.plausibility).not.toBe('plausible');
+        expect(adequateFrequency.plausibility).toBe('stretch');
+        expect(lowFrequency.plausibility).toBe('unlikely');
     });
 
     it('reports insufficient_evidence for speed/power families and cites no strength-only evidence', () => {
