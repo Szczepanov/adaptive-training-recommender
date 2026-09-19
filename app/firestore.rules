@@ -29,6 +29,34 @@ service cloud.firestore {
           && request.resource.data.taper.startDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'));
     }
 
+    // ADR-0041: rules can only validate bounded structure and exact keys -- they cannot
+    // prove membership in the application's metric/exercise/performance-test registries.
+    // Semantic validation (validatePerformanceTargetForDomain) is enforced by
+    // goalService.ts at both write and read boundaries; validateGoal itself deliberately
+    // remains structural-only to preserve the observations/engine isolation boundary.
+    // Rules are therefore a structural backstop, not the registry authority.
+    function hasValidGoalPerformanceTarget() {
+      return !('performanceTarget' in request.resource.data)
+        || request.resource.data.performanceTarget == null
+        || (request.resource.data.performanceTarget is map
+          && request.resource.data.performanceTarget.keys().hasOnly(['kind', 'metricId', 'subjectRef', 'targetValue'])
+          && request.resource.data.performanceTarget.kind == 'performance_metric'
+          && request.resource.data.performanceTarget.metricId is string
+          && request.resource.data.performanceTarget.metricId.size() > 0
+          && request.resource.data.performanceTarget.targetValue is number
+          && request.resource.data.performanceTarget.subjectRef is map
+          && (
+            (request.resource.data.performanceTarget.subjectRef.keys().hasOnly(['kind', 'exerciseId'])
+              && request.resource.data.performanceTarget.subjectRef.kind == 'exercise'
+              && request.resource.data.performanceTarget.subjectRef.exerciseId is string
+              && request.resource.data.performanceTarget.subjectRef.exerciseId.size() > 0)
+            || (request.resource.data.performanceTarget.subjectRef.keys().hasOnly(['kind', 'performanceTestId'])
+              && request.resource.data.performanceTarget.subjectRef.kind == 'performance_test'
+              && request.resource.data.performanceTarget.subjectRef.performanceTestId is string
+              && request.resource.data.performanceTarget.subjectRef.performanceTestId.size() > 0)
+          ));
+    }
+
     function hasValidAdherence(adherence) {
       return adherence is map
         && adherence.keys().hasOnly(['respondedAt', 'followed', 'actualModality', 'actualDurationMin', 'skipped', 'notes'])
@@ -399,8 +427,8 @@ service cloud.firestore {
 
     match /users/{userId}/goals/{goalId} {
       allow read: if isOwner(userId);
-      allow create: if hasOwnedUserId(userId) && hasValidGoalTaper();
-      allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt && hasValidGoalTaper();
+      allow create: if hasOwnedUserId(userId) && hasValidGoalTaper() && hasValidGoalPerformanceTarget();
+      allow update: if keepsOwnership(userId) && request.resource.data.createdAt == resource.data.createdAt && hasValidGoalTaper() && hasValidGoalPerformanceTarget();
       allow delete: if isOwner(userId);
     }
 

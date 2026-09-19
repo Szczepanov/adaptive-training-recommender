@@ -13,7 +13,8 @@ export type KnowledgeResearchPriority = 'p0' | 'p1' | 'p2' | 'p3' | 'none';
 export type KnowledgeCoverageDomain =
     | 'evergreen_dose' | 'readiness_recovery' | 'fatigue_load' | 'injury_safety'
     | 'session_spacing' | 'optimizer_scoring' | 'periodization_taper' | 'event_demand'
-    | 'stimulus_credit' | 'data_trust' | 'planning_capacity' | 'workout_catalog';
+    | 'stimulus_credit' | 'data_trust' | 'planning_capacity' | 'workout_catalog'
+    | 'goal_feasibility';
 
 export interface EngineKnowledgeCoverageItem {
     /** Stable audit identity. Do not encode file names or line numbers into the id. */
@@ -453,6 +454,13 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         currentRule: 'Configured shared sources enter recovery/baselines/passport learning only when exactly one projection matches the immutable bundle and resolves to effective USER with the requested eligibility; missing/stale/ambiguous projections are excluded.',
         classification: 'safety_invariant', coverage: 'not_applicable', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
         codeRefs: ['engine/identityEligibility.ts:selectEligibleHealthObservationBundles'], knowledgeRefs: [], coverageRationale: 'This is provenance/identity fail-closed behavior protecting physiological inputs, not a sports-science claim. Shadow classifier thresholds that may create projections require separate activation evidence before becoming authority.',
+    },
+    {
+        id: 'goal_feasibility.strength_required_change_bands', domain: 'goal_feasibility', title: 'Strength performance-goal feasibility bands (ADR-0041, PG4.5)',
+        currentRule: 'A strength typed performance target\'s required-change-per-week is compared against a conservative plausible/stretch/unlikely band, frequency-adjusted by available weekly capacity down to a 20% floor. Speed and power families report insufficient_evidence rather than reusing this band.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
+        codeRefs: ['engine/goalFeasibility.ts:assessGoalFeasibility', 'engine/goalFeasibility.ts:strengthPlausibility'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.strengthRequiredChangeBands],
+        coverageRationale: 'Advisory-only (never prescription authority, per ADR-0041); the numeric bands are a conservative product calibration against short-horizon 1RM dose-response/reliability evidence. Speed/power bands remain a research priority because no reviewed rate-of-change evidence was found for those families.',
     },
 ];
 

@@ -64,6 +64,7 @@ import { validateEventTiming, BODY_REGIONS, TISSUE_LEVELS } from './models';
 import { deriveGoalCategory } from './periodization';
 import { EVENT_PRESETS } from './eventPresets';
 import { getLocalDateString } from '../utils/localDate';
+import type { GoalPerformanceTarget } from './performanceTargetPolicy';
 import type { SessionReferenceBinding, SessionSourceRef } from '../sessions/models';
 
 // --- Validation Result Types ---
@@ -572,7 +573,7 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
     }
 
     // Domain validation
-    const validDomains: GoalDomain[] = ['endurance', 'strength', 'mobility', 'weight_loss', 'general_fitness', 'other'];
+    const validDomains: GoalDomain[] = ['endurance', 'strength', 'speed', 'power', 'mobility', 'weight_loss', 'general_fitness', 'other'];
     if (!raw.domain || !validDomains.includes(raw.domain)) {
         errors.push({
             field: 'domain',
@@ -704,6 +705,48 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
         }
     }
 
+    // Typed performance target (ADR-0041). This is a STRUCTURAL check only -- shape,
+    // kind and exact keys. Registry/subject membership and domain/family consistency are
+    // semantic checks that deliberately live in engine/performanceTargetPolicy.ts's
+    // validatePerformanceTargetForDomain instead, enforced by goalService.ts's
+    // read/write boundary: validationCore.ts is reachable from production
+    // selection/ranking modules via the engine/validation.ts barrel, and pulling the
+    // observations metric/performance-test registries in here would violate the OV1.4
+    // evidence-isolation boundary (observations/architecture.test.ts). A present-but-
+    // structurally-invalid performanceTarget still fails the whole goal closed here; it
+    // never silently falls back to the legacy free-text triple.
+    let validatedPerformanceTarget: GoalPerformanceTarget | null = null;
+    if (raw.performanceTarget !== undefined && raw.performanceTarget !== null) {
+        const rawTarget = raw.performanceTarget;
+        const rawSubject = rawTarget && typeof rawTarget === 'object' ? rawTarget.subjectRef : undefined;
+        const isExerciseSubject = !!rawSubject && typeof rawSubject === 'object' && rawSubject.kind === 'exercise'
+            && typeof rawSubject.exerciseId === 'string' && rawSubject.exerciseId.trim() !== ''
+            && Object.keys(rawSubject).every(key => key === 'kind' || key === 'exerciseId');
+        const isTestSubject = !!rawSubject && typeof rawSubject === 'object' && rawSubject.kind === 'performance_test'
+            && typeof rawSubject.performanceTestId === 'string' && rawSubject.performanceTestId.trim() !== ''
+            && Object.keys(rawSubject).every(key => key === 'kind' || key === 'performanceTestId');
+
+        const structurallyValid = !!rawTarget && typeof rawTarget === 'object'
+            && rawTarget.kind === 'performance_metric'
+            && typeof rawTarget.metricId === 'string' && rawTarget.metricId.trim() !== ''
+            && typeof rawTarget.targetValue === 'number' && Number.isFinite(rawTarget.targetValue)
+            && (isExerciseSubject || isTestSubject)
+            && Object.keys(rawTarget).every(key => ['kind', 'metricId', 'subjectRef', 'targetValue'].includes(key));
+
+        if (!structurallyValid) {
+            errors.push({ field: 'performanceTarget', message: 'Performance target is malformed' });
+        } else {
+            validatedPerformanceTarget = {
+                kind: 'performance_metric',
+                metricId: rawTarget.metricId,
+                subjectRef: isExerciseSubject
+                    ? { kind: 'exercise', exerciseId: rawSubject.exerciseId }
+                    : { kind: 'performance_test', performanceTestId: rawSubject.performanceTestId },
+                targetValue: rawTarget.targetValue,
+            };
+        }
+    }
+
     if (errors.length > 0) {
         return { isValid: false, errors };
     }
@@ -718,9 +761,12 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
         description: normalizeEmptyToNull(raw.description),
         priority: raw.priority,
         status: raw.status,
-        targetMetric: normalizeEmptyToNull(raw.targetMetric),
-        targetValue: normalizeEmptyToNull(raw.targetValue),
-        targetUnit: normalizeEmptyToNull(raw.targetUnit),
+        performanceTarget: validatedPerformanceTarget,
+        // A valid typed target wins and legacy fields are cleared on write (ADR-0041) --
+        // never leave two competing target representations persisted for one goal.
+        targetMetric: validatedPerformanceTarget ? null : normalizeEmptyToNull(raw.targetMetric),
+        targetValue: validatedPerformanceTarget ? null : normalizeEmptyToNull(raw.targetValue),
+        targetUnit: validatedPerformanceTarget ? null : normalizeEmptyToNull(raw.targetUnit),
         targetDate: rawTargetDate,
         targetOutcome: normalizeEmptyToNull(raw.targetOutcome),
         ...(rawEventCategory ? { eventCategory: rawEventCategory as UserEvent['category'] } : {}),

@@ -7,7 +7,93 @@ import { getLocalDateString } from '../utils/localDate';
 
 type UserGoalWithId = UserGoal & { id: string };
 import { validateGoal } from '../engine/validation';
+import { validatePerformanceTargetForDomain } from '../engine/performanceTargetPolicy';
 import { getErrorCode, getErrorMessage } from '../utils/errors';
+
+/**
+ * ADR-0041: registry/subject-membership and domain/family consistency checks for a typed
+ * performanceTarget are deliberately NOT part of validateGoal (see validationCore.ts's
+ * comment) -- they live here, at the goal-service read/write boundary, so the
+ * observations metric/performance-test registries never become reachable from
+ * validationCore.ts's callers (some of which are production selection/ranking modules;
+ * see observations/architecture.test.ts's OV1.4 boundary). A goal with an unresolvable
+ * or domain-mismatched performanceTarget must neither be persisted nor escape a read as
+ * authoritative goal data.
+ */
+function assertSemanticallyValidPerformanceTarget(goal: UserGoal): void {
+    if (!goal.performanceTarget) return;
+    const result = validatePerformanceTargetForDomain(goal.performanceTarget, goal.domain);
+    if (!result.isValid) {
+        throw new Error(`Performance target is invalid: ${result.message}`);
+    }
+}
+
+function validateGoalForRead(raw: unknown, userId: string): { goal: UserGoal | null; error: string | null } {
+    // validateGoal's own construction only guards against a MISSING createdAt (raw.createdAt
+    // || new Date().toISOString()) -- a truthy but non-string value (a Firestore Timestamp
+    // object, a number, ...) passes straight through untouched and would otherwise survive
+    // into the returned goal, where listGoals's localeCompare-based sort would throw on it
+    // for every goal in the list, not just this one. Reject it here instead, before
+    // normalization, so a single corrupted document is skipped by the per-document read
+    // boundary rather than taking the whole list down.
+    const rawTimestamps = raw as Partial<UserGoal>;
+    if (rawTimestamps.createdAt !== undefined && typeof rawTimestamps.createdAt !== 'string') {
+        return { goal: null, error: 'createdAt must be a string when present' };
+    }
+    if (rawTimestamps.updatedAt !== undefined && typeof rawTimestamps.updatedAt !== 'string') {
+        return { goal: null, error: 'updatedAt must be a string when present' };
+    }
+
+    const validation = validateGoal(raw);
+    if (!validation.isValid || !validation.data) {
+        return { goal: null, error: validation.errors.map(issue => `${issue.field}: ${issue.message}`).join('; ') || 'schema validation failed' };
+    }
+    if (validation.data.userId !== userId) {
+        return { goal: null, error: 'goal ownership does not match the requested user' };
+    }
+    try {
+        assertSemanticallyValidPerformanceTarget(validation.data);
+    } catch (error: unknown) {
+        return { goal: null, error: getErrorMessage(error) || 'performance target semantic validation failed' };
+    }
+
+    // validateGoal is also the write normalizer and intentionally stamps updatedAt with
+    // "now". Reads must not rewrite provenance in memory, so preserve persisted timestamps
+    // while keeping its normalized/precedence-safe field shape.
+    const persisted = raw as Partial<UserGoal>;
+    return {
+        goal: {
+            ...validation.data,
+            ...(typeof persisted.createdAt === 'string' ? { createdAt: persisted.createdAt } : {}),
+            ...(typeof persisted.updatedAt === 'string' ? { updatedAt: persisted.updatedAt } : {}),
+        },
+        error: null,
+    };
+}
+
+function parseGoalForRead(raw: unknown, userId: string, documentPath: string): UserGoal {
+    const parsed = validateGoalForRead(raw, userId);
+    if (!parsed.goal) {
+        throw new Error(`Invalid goal data at ${documentPath}: ${parsed.error ?? 'unknown validation failure'}`);
+    }
+    return parsed.goal;
+}
+
+/**
+ * Same fail-closed semantics as parseGoalForRead, but scoped to ONE document: a single
+ * invalid/unresolvable goal (e.g. a performanceTarget referencing a since-removed
+ * exercise) must not take an entire multi-goal list down with it. Used by listGoals/
+ * getActiveGoals, which return every one of a user's goals in one call; getGoal/
+ * updateGoal intentionally keep throwing since those are already scoped to one document.
+ */
+function tryParseGoalForRead(raw: unknown, userId: string, documentPath: string): UserGoal | null {
+    try {
+        return parseGoalForRead(raw, userId, documentPath);
+    } catch (error) {
+        console.error(`Skipping invalid goal document at ${documentPath}:`, error);
+        return null;
+    }
+}
 
 /** category is never trusted as read directly from Firestore for a DATED goal -- it's
  *  recomputed here on every read, relative to *today*, so it can never drift as the
@@ -82,10 +168,16 @@ export class GoalService {
             );
 
             const querySnapshot = await getDocs(q);
-            const goals = querySnapshot.docs.map(doc => withResolvedCategory({
-                ...doc.data(),
-                id: doc.id
-            } as UserGoal & { id: string }));
+            const goals = querySnapshot.docs
+                .map(goalDocument => {
+                    const goal = tryParseGoalForRead(
+                        goalDocument.data(),
+                        userId,
+                        `users/${userId}/${this.collectionPath}/${goalDocument.id}`,
+                    );
+                    return goal ? { ...withResolvedCategory(goal), id: goalDocument.id } : null;
+                })
+                .filter((goal): goal is UserGoalWithId => goal !== null);
 
             return goals.sort((a, b) => {
                 const categoryCompare = a.category.localeCompare(b.category);
@@ -110,12 +202,12 @@ export class GoalService {
             const issues: DataIssue[] = [];
             const revisions: string[] = [];
             for (const goalDocument of querySnapshot.docs) {
-                const validation = validateGoal(goalDocument.data());
-                if (!validation.isValid || !validation.data || validation.data.userId !== userId) {
+                const validation = validateGoalForRead(goalDocument.data(), userId);
+                if (!validation.goal) {
                     issues.push({ code: 'schema-validation-failed', documentPath: `users/${userId}/${this.collectionPath}/${goalDocument.id}` });
                     continue;
                 }
-                goals.push({ ...withResolvedCategory(validation.data), id: goalDocument.id });
+                goals.push({ ...withResolvedCategory(validation.goal), id: goalDocument.id });
                 if (typeof goalDocument.data().updatedAt === 'string') revisions.push(`${goalDocument.id}:${goalDocument.data().updatedAt}`);
             }
             if (issues.length > 0) return { status: 'INVALID', issues };
@@ -134,10 +226,16 @@ export class GoalService {
             );
 
             const querySnapshot = await getDocs(q);
-            const goals = querySnapshot.docs.map(doc => withResolvedCategory({
-                ...doc.data(),
-                id: doc.id
-            } as UserGoal & { id: string }));
+            const goals = querySnapshot.docs
+                .map(goalDocument => {
+                    const goal = tryParseGoalForRead(
+                        goalDocument.data(),
+                        userId,
+                        `users/${userId}/${this.collectionPath}/${goalDocument.id}`,
+                    );
+                    return goal ? { ...withResolvedCategory(goal), id: goalDocument.id } : null;
+                })
+                .filter((goal): goal is UserGoalWithId => goal !== null);
 
             return goals.sort((a, b) => {
                 const categoryCompare = a.category.localeCompare(b.category);
@@ -186,10 +284,14 @@ export class GoalService {
             const docSnap = await getDoc(docRef);
 
             if (docSnap.exists()) {
-                return withResolvedCategory({
-                    ...docSnap.data(),
-                    id: docSnap.id
-                } as UserGoalWithId);
+                return {
+                    ...withResolvedCategory(parseGoalForRead(
+                        docSnap.data(),
+                        userId,
+                        `users/${userId}/${this.collectionPath}/${docSnap.id}`,
+                    )),
+                    id: docSnap.id,
+                };
             }
             return null;
         } catch (error) {
@@ -217,6 +319,7 @@ export class GoalService {
             }
 
             const validatedGoal = validation.data!;
+            assertSemanticallyValidPerformanceTarget(validatedGoal);
 
             // Create new document. `category` is intentionally left out of what's
             // persisted for a dated goal (see stripDerivedCategoryForWrite) -- the
@@ -262,6 +365,7 @@ export class GoalService {
             }
 
             const validatedGoal = validation.data!;
+            assertSemanticallyValidPerformanceTarget(validatedGoal);
 
             // Merge writes must remove fields that are no longer valid rather than leave
             // a former event able to reappear after a reload or future date edit.

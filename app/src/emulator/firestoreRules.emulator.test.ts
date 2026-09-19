@@ -336,6 +336,42 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, `${goalPath}-bad`), { ...validGoal(), taper: { startDate: 123 } }));
     });
 
+    it('allows a well-formed typed performanceTarget (ADR-0041) and rejects malformed shapes', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, `${goalPath}-perf-exercise`), {
+            ...validGoal(),
+            performanceTarget: {
+                kind: 'performance_metric',
+                metricId: 'strength_1rm_kg',
+                subjectRef: { kind: 'exercise', exerciseId: 'conventional_deadlift' },
+                targetValue: 220,
+            },
+        }));
+        await assertSucceeds(setDoc(doc(ownerDb, `${goalPath}-perf-test`), {
+            ...validGoal(),
+            performanceTarget: {
+                kind: 'performance_metric',
+                metricId: 'sprint_elapsed_time_s',
+                subjectRef: { kind: 'performance_test', performanceTestId: 'sprint_10m_standing-r1' },
+                targetValue: 1.75,
+            },
+        }));
+        await assertSucceeds(setDoc(doc(ownerDb, `${goalPath}-perf-null`), { ...validGoal(), performanceTarget: null }));
+
+        await assertFails(setDoc(doc(ownerDb, `${goalPath}-perf-bad-kind`), {
+            ...validGoal(), performanceTarget: { kind: 'wrong_kind', metricId: 'strength_1rm_kg', subjectRef: { kind: 'exercise', exerciseId: 'x' }, targetValue: 1 },
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${goalPath}-perf-bad-value`), {
+            ...validGoal(), performanceTarget: { kind: 'performance_metric', metricId: 'strength_1rm_kg', subjectRef: { kind: 'exercise', exerciseId: 'x' }, targetValue: '220' },
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${goalPath}-perf-extra-key`), {
+            ...validGoal(), performanceTarget: { kind: 'performance_metric', metricId: 'strength_1rm_kg', subjectRef: { kind: 'exercise', exerciseId: 'x' }, targetValue: 1, extra: 'nope' },
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${goalPath}-perf-bad-subject`), {
+            ...validGoal(), performanceTarget: { kind: 'performance_metric', metricId: 'strength_1rm_kg', subjectRef: { kind: 'exercise', exerciseId: 'x', extra: 'nope' }, targetValue: 1 },
+        }));
+    });
+
     it('rejects a recommendation whose user or date disagrees with its path', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, recommendationPath), { ...validRecommendation(), date: '2026-08-08' }));

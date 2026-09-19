@@ -1,6 +1,14 @@
 import type { UserPreferences } from '../../engine/models';
 import { SettingsDisclosure } from '../SettingsDisclosure';
+import { PERFORMANCE_TARGET_POLICIES } from '../../engine/performanceTargetPolicy';
+import { EXERCISES_BY_ID } from '../../workouts/exercises';
 import './PerformanceSections.css';
+
+/** ADR-0041/PG4.1: canonical eligible-exercise picker rather than a hardcoded three-lift
+ *  list, so any registered strength-1RM performance-goal exercise (e.g. conventional_deadlift)
+ *  can show/set current e1RM without a component edit. */
+const STRENGTH_1RM_EXERCISE_IDS: readonly string[] =
+    PERFORMANCE_TARGET_POLICIES.find(policy => policy.metricId === 'strength_1rm_kg')?.eligibleExerciseIds ?? [];
 
 interface PerformanceSectionsProps {
   preferences: UserPreferences;
@@ -207,11 +215,8 @@ export function PerformanceSections({
         </div>
         <p className="preference-desc">Estimated 1RM (kg) is optional. It provides a starting load only; the prescribed RIR always takes precedence.</p>
         <div className="units-grid">
-          {[
-            ['front_squat', 'Front squat'],
-            ['romanian_deadlift', 'Romanian deadlift'],
-            ['bench_press', 'Bench press']
-          ].map(([exerciseId, label]) => {
+          {STRENGTH_1RM_EXERCISE_IDS.map((exerciseId) => {
+            const label = EXERCISES_BY_ID.get(exerciseId)?.name ?? exerciseId;
             const e1rmVal = preferences.performanceProfile?.strength?.estimated1RmKg?.[exerciseId] ?? preferences.performanceProfile?.estimated1RmKg?.[exerciseId] ?? null;
             const bwRatio = e1rmVal && weightKg && weightKg > 0 ? (e1rmVal / weightKg).toFixed(2) : null;
             return (

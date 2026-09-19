@@ -1,7 +1,11 @@
 import {
+    collection,
     doc,
     getDoc,
+    getDocs,
+    query,
     runTransaction,
+    where,
     type Firestore,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
@@ -149,6 +153,38 @@ export class MetricObservationService {
             throw new Error(`Observation ${observationKey} head/revision identity mismatch`);
         }
         return revision;
+    }
+
+    /**
+     * PG4/ADR-0041: resolves the current immutable revision for every observation head of
+     * one metric. The head collection is queried by metric first, so the Goals screen can
+     * load only metrics referenced by typed test targets instead of scanning unrelated
+     * observations. Any malformed head/revision fails closed rather than being silently
+     * treated as "no evidence".
+     */
+    async listCurrentRevisionsForMetric(userId: string, metricId: string): Promise<MetricObservationRevision[]> {
+        if (!metricId.trim()) throw new Error('metricId is required');
+        const headsSnapshot = await getDocs(query(
+            collection(this.db, 'users', userId, 'metric_observations'),
+            where('metricId', '==', metricId),
+        ));
+
+        const revisions = await Promise.all(headsSnapshot.docs.map(async headSnapshot => {
+            const head = headSnapshot.data() as MetricObservationHead;
+            assertValidMetricObservationHead(head);
+            if (head.observationKey !== headSnapshot.id || head.metricId !== metricId) {
+                throw new Error(`Observation head query/path mismatch for ${headSnapshot.id}`);
+            }
+            const revision = await this.getRevision(userId, head.observationKey, head.headRevision);
+            if (!revision) {
+                throw new Error(`Observation ${head.observationKey} head points to missing revision ${head.headRevision}`);
+            }
+            if (revision.metricId !== head.metricId || revision.assessmentAttemptId !== head.assessmentAttemptId) {
+                throw new Error(`Observation ${head.observationKey} head/revision identity mismatch`);
+            }
+            return revision;
+        }));
+        return revisions.sort((a, b) => a.observedAt.localeCompare(b.observedAt));
     }
 }
 

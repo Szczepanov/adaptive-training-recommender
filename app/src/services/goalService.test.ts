@@ -156,4 +156,166 @@ describe('GoalService persistence shape', () => {
         const payload = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
         expect(payload.timing).toBe(firestore.deleteMarker);
     });
+
+    describe('performanceTarget semantic read gate', () => {
+        const invalidPersistedGoal = {
+            ...eventGoal,
+            domain: 'strength' as const,
+            performanceTarget: {
+                kind: 'performance_metric' as const,
+                metricId: 'unknown_strength_metric',
+                subjectRef: { kind: 'exercise' as const, exerciseId: 'conventional_deadlift' },
+                targetValue: 220,
+            },
+        };
+
+        it('rejects a semantically invalid persisted target from getGoal', async () => {
+            firestore.getDoc.mockResolvedValue({
+                exists: () => true,
+                data: () => invalidPersistedGoal,
+                id: eventGoal.id,
+            });
+            await expect(new GoalService().getGoal('u1', eventGoal.id)).rejects.toThrow(/Invalid goal data.*Performance target is invalid/);
+        });
+
+        it('skips a semantically invalid persisted goal in listGoals/getActiveGoals rather than failing the whole list', async () => {
+            firestore.getDocs.mockResolvedValue({
+                docs: [{ id: eventGoal.id, data: () => invalidPersistedGoal }],
+            });
+            const service = new GoalService();
+            await expect(service.listGoals('u1')).resolves.toEqual([]);
+            await expect(service.getActiveGoals('u1')).resolves.toEqual([]);
+        });
+
+        it('keeps every other valid goal when only one of several is invalid (listGoals/getActiveGoals blast radius)', async () => {
+            const validGoalA = { ...eventGoal, id: 'goal-a', targetDate: null, category: 'long-term' as const, eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined };
+            const validGoalB = { ...eventGoal, id: 'goal-b', targetDate: null, category: 'short-term' as const, eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined };
+            firestore.getDocs.mockResolvedValue({
+                docs: [
+                    { id: validGoalA.id, data: () => validGoalA },
+                    { id: eventGoal.id, data: () => invalidPersistedGoal },
+                    { id: validGoalB.id, data: () => validGoalB },
+                ],
+            });
+            const service = new GoalService();
+
+            const listed = await service.listGoals('u1');
+            expect(listed.map(g => g.id).sort()).toEqual(['goal-a', 'goal-b']);
+
+            const active = await service.getActiveGoals('u1');
+            expect(active.map(g => g.id).sort()).toEqual(['goal-a', 'goal-b']);
+        });
+
+        it('surfaces semantically invalid persisted targets as INVALID in the stateful read API', async () => {
+            firestore.getDocs.mockResolvedValue({
+                docs: [{ id: eventGoal.id, data: () => invalidPersistedGoal }],
+            });
+            const result = await new GoalService().getActiveGoalsState('u1');
+            expect(result.status).toBe('INVALID');
+        });
+    });
+
+    // ADR-0041: registry/domain semantic checks for a typed performanceTarget live at this
+    // write boundary (not in validateGoal -- see validationCore.ts's comment on the OV1.4
+    // evidence-isolation boundary), so a goal with an unresolvable or domain-mismatched
+    // target must never reach Firestore.
+    describe('performanceTarget semantic gate', () => {
+        it('persists a structurally and semantically valid typed performance target', async () => {
+            const service = new GoalService();
+            await service.createGoal('u1', {
+                ...eventGoal, domain: 'strength', targetDate: null, category: 'long-term',
+                eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined,
+                performanceTarget: {
+                    kind: 'performance_metric',
+                    metricId: 'strength_1rm_kg',
+                    subjectRef: { kind: 'exercise', exerciseId: 'conventional_deadlift' },
+                    targetValue: 220,
+                },
+            });
+
+            const payload = firestore.addDoc.mock.calls[0][1] as Record<string, unknown>;
+            expect(payload.performanceTarget).toEqual({
+                kind: 'performance_metric',
+                metricId: 'strength_1rm_kg',
+                subjectRef: { kind: 'exercise', exerciseId: 'conventional_deadlift' },
+                targetValue: 220,
+            });
+        });
+
+        it('rejects creating a goal whose performanceTarget references an unknown exercise', async () => {
+            const service = new GoalService();
+            await expect(service.createGoal('u1', {
+                ...eventGoal, domain: 'strength', targetDate: null, category: 'long-term',
+                eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined,
+                performanceTarget: {
+                    kind: 'performance_metric',
+                    metricId: 'strength_1rm_kg',
+                    subjectRef: { kind: 'exercise', exerciseId: 'not_a_real_lift' },
+                    targetValue: 220,
+                },
+            })).rejects.toThrow(/Performance target is invalid/);
+            expect(firestore.addDoc).not.toHaveBeenCalled();
+        });
+
+        it('rejects creating a goal whose domain does not match the typed target family', async () => {
+            const service = new GoalService();
+            await expect(service.createGoal('u1', {
+                ...eventGoal, domain: 'endurance', targetDate: null, category: 'long-term',
+                eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined,
+                performanceTarget: {
+                    kind: 'performance_metric',
+                    metricId: 'strength_1rm_kg',
+                    subjectRef: { kind: 'exercise', exerciseId: 'conventional_deadlift' },
+                    targetValue: 220,
+                },
+            })).rejects.toThrow(/Domain must be strength/);
+        });
+
+        it('rejects updating a goal to reference an unknown performance test', async () => {
+            const service = new GoalService();
+            firestore.getDoc.mockResolvedValue({
+                exists: () => true,
+                data: () => ({ ...eventGoal, domain: 'speed', eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined }),
+                id: eventGoal.id,
+            });
+
+            await expect(service.updateGoal('u1', eventGoal.id, {
+                performanceTarget: {
+                    kind: 'performance_metric',
+                    metricId: 'sprint_elapsed_time_s',
+                    subjectRef: { kind: 'performance_test', performanceTestId: 'unknown-test' },
+                    targetValue: 1.75,
+                },
+            })).rejects.toThrow(/Performance target is invalid/);
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
+    });
+
+    // A truthy but non-string createdAt/updatedAt (a Firestore Timestamp object, a stray
+    // number, ...) must be rejected at the per-document read boundary rather than surviving
+    // into listGoals's localeCompare-based sort, which would throw for the whole list.
+    describe('corrupted timestamp read gate', () => {
+        it('skips a goal with a non-string createdAt rather than crashing listGoals for every goal', async () => {
+            const validGoalA = { ...eventGoal, id: 'goal-a', targetDate: null, category: 'long-term' as const, eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined };
+            const corruptedGoal = { ...eventGoal, id: 'goal-corrupt', targetDate: null, category: 'long-term' as const, eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined, createdAt: { seconds: 1, nanoseconds: 0 } };
+            firestore.getDocs.mockResolvedValue({
+                docs: [
+                    { id: validGoalA.id, data: () => validGoalA },
+                    { id: corruptedGoal.id, data: () => corruptedGoal },
+                ],
+            });
+
+            const listed = await new GoalService().listGoals('u1');
+            expect(listed.map(g => g.id)).toEqual(['goal-a']);
+        });
+
+        it('rejects a non-string updatedAt from getGoal', async () => {
+            firestore.getDoc.mockResolvedValue({
+                exists: () => true,
+                data: () => ({ ...eventGoal, updatedAt: 12345 }),
+                id: eventGoal.id,
+            });
+            await expect(new GoalService().getGoal('u1', eventGoal.id)).rejects.toThrow(/Invalid goal data/);
+        });
+    });
 });
