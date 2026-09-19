@@ -299,7 +299,198 @@ These sources do not dictate the training policy. They support the narrower arch
 
 ---
 
-## 9. Legacy targets must stay non-authoritative
+## 9. Goal feasibility is a separate advisory product capability
+
+A typed target answers **what** the athlete wants to achieve. It does not answer whether that outcome is realistic by the selected date under the athlete's current training capacity.
+
+That gap matters. A system that accepts:
+
+~~~text
+bench press current 1RM: 100 kg
+target: 200 kg
+target date: 6 weeks away
+available/relevant training frequency: 1 session/week
+~~~
+
+without any warning is technically storing the goal correctly but is not giving the athlete useful decision support.
+
+The product should therefore add a **goal-feasibility assessment** that is:
+
+- advisory, not a hard blocker;
+- family-specific;
+- evidence- and data-quality-aware;
+- explicit about uncertainty;
+- reproducible/versioned;
+- independent from prescription authority.
+
+The athlete may keep an aggressive goal after seeing the warning. The system must not silently rewrite the target, target date or training dose.
+
+### 9.1 Plausibility and confidence are different outputs
+
+Do not collapse "how realistic is this?" and "how sure are we?" into one score.
+
+Recommended plausibility vocabulary:
+
+~~~text
+already_achieved
+plausible
+stretch
+unlikely
+insufficient_evidence
+~~~
+
+Recommended confidence vocabulary:
+
+~~~text
+low
+moderate
+high
+~~~
+
+Examples:
+
+- **Unlikely / high confidence** — recent protocol-valid 1RM, stable target-specific history, known schedule, and the required change is far outside applicable evidence/personal history.
+- **Unlikely / low confidence** — the target looks extreme, but the only baseline is an old manual estimate and training history is sparse.
+- **Insufficient evidence** — no comparable baseline, no usable target date, or no applicable family-specific evidence.
+
+Do not report an exact probability such as "3.7% chance" unless a future model is prospectively calibrated against representative outcomes. An enum/band plus transparent factors is more honest than pseudo-precision.
+
+### 9.2 Feasibility needs more than current value and target value
+
+At minimum the assessment should use, where available:
+
+1. **Comparable current baseline**
+   - measured/tested versus estimated;
+   - observation date/recency;
+   - protocol/comparison-series identity;
+   - validity/reliability metadata.
+2. **Goal horizon**
+   - targetDate;
+   - days/weeks remaining.
+3. **Required change**
+   - absolute change;
+   - relative percentage change;
+   - a clearly labelled **linearized equivalent per week** for explanation only.
+4. **Training capacity**
+   - TrainingIntentProfile.weeklyCommitment;
+   - ResolvedTrainingCapacity usable windows/minutes;
+   - fixed/external commitments that consume capacity.
+5. **Target-specific exposure**
+   - recent direct exercise/test-relevant training frequency;
+   - projected target-specific coverage once PG5-PG7 are available;
+   - adherence to similar planned work.
+6. **Target-specific training history**
+   - recent comparable strength/sprint/power observations;
+   - direct subject exposure history;
+   - personal rate of change when enough valid observations exist.
+7. **Population evidence applicability**
+   - training status/experience relevant to the target;
+   - protocol/exercise/test match;
+   - intervention duration and dose match;
+   - limitations of the evidence population.
+
+The existing generic trainingAgeProxy is useful context but is **not sufficient by itself** to label someone a trained bench presser, sprinter or cyclist. It is inferred from recent total exposure, not target-specific history. Feasibility should prefer canonical performed-training facts and comparable outcome history for the specific target.
+
+### 9.3 Use current scheduling ownership rather than inventing another frequency field
+
+The repository already owns total training capacity through:
+
+- TrainingIntentProfile.weeklyCommitment min/target/max sessions;
+- ResolvedTrainingCapacity;
+- schedule windows;
+- fixed/external activities.
+
+If maxSessions is 1, then the system has a defensible upper bound of at most one planned target-specific exposure per week.
+
+If maxSessions is 5, the system must **not** assume five bench/sprint/power exposures. Target-specific frequency remains unknown until direct coverage is projected or observed.
+
+A future explicit per-goal frequency preference may be useful, but this plan should not add one merely to make feasibility math convenient.
+
+### 9.4 Evidence hierarchy for plausibility
+
+Use the strongest applicable evidence first:
+
+1. the athlete's own comparable longitudinal response, if enough data exist;
+2. family-/test-specific population evidence matched to training status and dose;
+3. broader population evidence with explicit applicability downgrade;
+4. otherwise, insufficient_evidence.
+
+No universal "% improvement per week" constant should be shared across strength, speed and power.
+
+Any evidence-backed bands or thresholds used by production must live in the Sports Knowledge Registry or another reviewed/versioned evidence policy surface, with population, metric, duration and dose limitations attached.
+
+### 9.5 Bench-press example
+
+For a recent, valid 100 kg bench-press 1RM with a 200 kg target 42 days away and at most one relevant exposure per week:
+
+~~~text
+required absolute change:       +100 kg
+required relative change:       +100%
+time remaining:                 6 weeks
+linearized equivalent change:   +16.7 kg/week   (descriptive only)
+maximum planned exposures:      6
+~~~
+
+This should not be interpreted as "add 16.7 kg every week." It is a compact description of how large the outcome gap is relative to the horizon.
+
+The literature is enough to flag this example strongly without claiming physiological impossibility:
+
+- the 2026 ACSM position stand synthesized 137 systematic reviews and reports that voluntary strength is enhanced by heavier loading, 2-3 sets and at least 2 sessions/week;
+- a frequency meta-analysis found higher frequency associated with larger strength effects overall, while the difference disappeared in volume-equated subgroups, so frequency is informative but must not be treated as the only causal variable;
+- a systematic review of minimum effective dose in resistance-trained men found that low-dose training can still improve 1RM and reported a pooled bench-press increase of 8.25 kg across included low-dose studies; this is a benchmark, not a six-week prediction;
+- a six-week study in resistance-trained men reported bench-press 1RM/body-mass increases of roughly 4.7-7.7% across training groups;
+- a systematic review of 1RM test-retest reliability reported a median coefficient of variation of 4.2%, so a +100% target gap is far larger than ordinary measurement noise.
+
+Useful research anchors:
+
+1. Currier BS et al. ACSM Position Stand: Resistance Training Prescription for Muscle Function, Hypertrophy, and Physical Performance in Healthy Adults. 2026. https://pubmed.ncbi.nlm.nih.gov/41843416/
+2. Grgic J et al. Effect of Resistance Training Frequency on Gains in Muscular Strength: a systematic review and meta-analysis. 2018. https://pubmed.ncbi.nlm.nih.gov/29470825/
+3. Androulakis-Korakakis P et al. Minimum Effective Training Dose Required to Increase 1RM Strength in Resistance-Trained Men. 2020. https://pubmed.ncbi.nlm.nih.gov/31797219/
+4. Coratella G et al. Eccentric resistance training increases and retains maximal strength, muscle endurance, and hypertrophy in trained men. 2017. https://pubmed.ncbi.nlm.nih.gov/27801598/
+5. Grgic J et al. Test-retest reliability of the one-repetition maximum strength assessment. 2020. https://pubmed.ncbi.nlm.nih.gov/32681399/
+
+For that specific example, with a recent tested baseline and known one-session/week capacity, the product should be capable of showing:
+
+~~~text
+Goal feasibility: Unlikely
+Confidence: High
+
+Why:
+- +100 kg / +100% required in 6 weeks
+- at most 6 relevant planned exposures before the target date
+- current evidence favors more frequent strength exposure for maximizing strength
+- required change is far outside the athlete's observed history and applicable published benchmarks
+
+This is advisory. You can keep the goal, change the date, change the target, or review training availability.
+~~~
+
+If the 100 kg baseline were a stale self-estimate with no recent training history, the same target might still be labelled unlikely but with **low confidence**, and the first recommended action would be to establish a valid baseline rather than pretending the estimate is precise.
+
+### 9.6 Family-specific models, not one universal formula
+
+Strength feasibility may use 1RM/e1RM evidence, exercise-specific history and relevant weekly exposure.
+
+Speed feasibility must use the exact registered test/protocol, because a 0.10 s improvement at 10 m has a different interpretation from a 0.10 s improvement over another distance/start convention.
+
+Power feasibility must use the exact metric/protocol and device-comparison semantics already owned by the observations system.
+
+The common framework owns the assessment shape and confidence logic. Each metric family owns the evidence model used to produce a plausibility band.
+
+### 9.7 Feasibility must not become hidden prescription authority
+
+A warning that a goal is unlikely does not authorize:
+
+- extra heavy sessions;
+- unsafe weekly frequency;
+- accelerated load jumps;
+- removal of recovery work;
+- overriding schedule/injury/readiness constraints.
+
+Feasibility may suggest **options** ("extend target date", "review target value", "review available training frequency", "collect a better baseline"), but the normal planner remains the only owner of training dose.
+
+---
+
+## 10. Legacy targets must stay non-authoritative
 
 Existing goals with arbitrary targetMetric / targetValue / targetUnit must continue to read and render.
 
@@ -321,7 +512,7 @@ A later conversion flow may offer a user-confirmed mapping when the destination 
 
 ---
 
-## 10. Findings summary
+## 11. Findings summary
 
 | ID | Finding | Consequence |
 |---|---|---|
@@ -338,10 +529,14 @@ A later conversion flow may offer a user-confirmed mapping when the destination 
 | PG-F11 | Direct test identity and weekly training coverage are different concepts | Do not force maximal testing as weekly goal coverage |
 | PG-F12 | Target value is an outcome, never current capacity or dose | Safety/readiness/autoregulation remain prescription authority |
 | PG-F13 | The prior docs-only CI failure was trailing whitespace in the two original Markdown files | The revised files are normalized before push |
+| PG-F14 | A typed target can still be wildly unrealistic for its horizon/capacity | Add advisory goal-feasibility assessment before treating date/value as a useful planning objective |
+| PG-F15 | Plausibility and certainty are different concepts | Report plausibility band and confidence separately, with the inputs/evidence behind both |
+| PG-F16 | Existing weekly commitment/schedule models total capacity, not guaranteed target-specific frequency | Use capacity as an upper bound and direct/planned coverage for target-specific exposure |
+| PG-F17 | Generic trainingAgeProxy is not target-specific | Prefer exercise/test-specific performed-training and comparable outcome history for evidence applicability |
 
 ---
 
-## 11. Architectural conclusion
+## 12. Architectural conclusion
 
 The deadlift example should remain an acceptance case, not the architecture.
 
@@ -350,6 +545,10 @@ The scalable capability is:
 ~~~text
 ATHLETE OUTCOME
 registered metric + canonical exercise/test + target value
+        |
+        v
+FEASIBILITY ADVISORY
+current baseline + horizon + capacity + target-specific history + evidence
         |
         v
 PLANNING PROJECTION
