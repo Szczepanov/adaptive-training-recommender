@@ -41,7 +41,19 @@ function validateGoalForRead(raw: unknown, userId: string): { goal: UserGoal | n
     } catch (error: unknown) {
         return { goal: null, error: getErrorMessage(error) || 'performance target semantic validation failed' };
     }
-    return { goal: validation.data, error: null };
+
+    // validateGoal is also the write normalizer and intentionally stamps updatedAt with
+    // "now". Reads must not rewrite provenance in memory, so preserve persisted timestamps
+    // while keeping its normalized/precedence-safe field shape.
+    const persisted = raw as Partial<UserGoal>;
+    return {
+        goal: {
+            ...validation.data,
+            ...(typeof persisted.createdAt === 'string' ? { createdAt: persisted.createdAt } : {}),
+            ...(typeof persisted.updatedAt === 'string' ? { updatedAt: persisted.updatedAt } : {}),
+        },
+        error: null,
+    };
 }
 
 function parseGoalForRead(raw: unknown, userId: string, documentPath: string): UserGoal {
