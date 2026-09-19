@@ -40,21 +40,23 @@ function resolveStrengthCurrentValue(
 
 /**
  * Picks the most recent valid observation for the declared metric and performance-test
- * protocol identity. Matching on protocol id (rather than the full comparisonSeriesKey)
- * is a deliberate first-slice simplification: it is enough to keep a standing-10m result
- * from ever satisfying a flying-10m goal (different protocol ids), while a fully
- * series-locked multi-observation trend is deferred to PG8's formal outcome evaluation.
+ * protocol identity. Matching on protocol id + revision (rather than the full
+ * comparisonSeriesKey) keeps results from a superseded protocol revision from satisfying
+ * a target bound to a different locked test definition. Full comparison-series trend
+ * analysis remains deferred to PG8's formal outcome evaluation.
  */
 function resolveTestCurrentObservation(
     metricId: string,
     performanceTestId: string,
     observations: readonly MetricObservationRevision[],
 ): MetricObservationRevision | null {
-    const protocolId = getPerformanceTestDefinition(performanceTestId).protocol.id;
+    const protocol = getPerformanceTestDefinition(performanceTestId).protocol;
     const candidates = observations
         .filter(observation => observation.validity === 'valid')
         .filter(observation => observation.metricId === metricId)
-        .filter(observation => observation.protocolRef.id === protocolId)
+        .filter(observation =>
+            observation.protocolRef.id === protocol.id
+            && observation.protocolRef.revision === protocol.revision)
         .slice()
         .sort((a, b) => a.observedAt.localeCompare(b.observedAt));
     return candidates.at(-1) ?? null;
