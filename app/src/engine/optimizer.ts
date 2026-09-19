@@ -51,7 +51,7 @@ const MODERATE_OR_HARDER_ENDURANCE_CATEGORIES: SessionTemplate['category'][] = [
     'Moderate Endurance', 'Hard Endurance',
 ];
 
-/** Issue #679: within the full taper window (`resolveEventTaper`, every event category),
+/** Issue #679: within the full taper window for supported endurance event categories,
  * strength stays available only as a brief primer touch, matching the knowledge registry's
  * `policy.taper.pre_event_restrictions_v1` "reduced nonessential strength" intent and
  * `TAPER_STRENGTH_TARGET_STIMULUS`'s light race-week-primer calibration in periodization.ts
@@ -595,6 +595,11 @@ export function evaluateRecoveryConstraints(
             const isStrengthModality = template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category);
             if (isStrengthModality) {
                 reasons.push('PRE_EVENT_STRENGTH_RESTRICTION');
+            }
+            // Preserve short race-specific sharpening, but keep generic tempo/hard endurance
+            // out of D-3 as well. D-1/D-2 are already covered by the hard-session gate below.
+            if (daysToRace === 3 && MODERATE_OR_HARDER_ENDURANCE_CATEGORIES.includes(template.category)) {
+                reasons.push('PRE_EVENT_TAPER_RESTRICTION');
             }
         }
         if (daysToRace >= 1 && daysToRace <= 2) {
