@@ -91,6 +91,13 @@ describe('resolveGoalProgress', () => {
         expect(result).toMatchObject({ currentValue: null, reasonCode: 'no_comparable_observation' });
     });
 
+    it('ignores an observation from a different revision of the same protocol', () => {
+        const result = resolveGoalProgress(speedTarget(), {
+            comparableObservations: [observation({ protocolRef: { id: 'sprint-10m-standing', revision: 2 } })],
+        });
+        expect(result).toMatchObject({ currentValue: null, reasonCode: 'no_comparable_observation' });
+    });
+
     it('ignores invalid/questionable observations', () => {
         const result = resolveGoalProgress(speedTarget(), {
             comparableObservations: [observation({ validity: 'questionable' })],
