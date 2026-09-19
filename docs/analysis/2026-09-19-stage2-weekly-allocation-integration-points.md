@@ -26,9 +26,10 @@ to re-derive them from scratch, and so an architecture decision that clearly nee
 builds `UserContext`. As of PG5.1 it also calls
 `mapGoalsToPerformanceGoalDemands(goals)` (from `app/src/engine/performanceGoalDemand.ts`)
 and attaches the result as `UserContext.performanceGoalDemands`. **Nothing reads that
-field yet** — `performanceGoalDemand.architecture.test.ts` enforces this structurally
-against `rules.ts`, `optimizer.ts`, `evergreenStrategy.ts`, `evergreenPlanning.ts`,
-`weeklyDosePacking.ts`, `weeklyAllocation.ts`, `planner.ts` and `sequenceSearch.ts`.
+field yet** — `performanceGoalDemand.architecture.test.ts` enforces this more broadly than
+a fixed engine-file allowlist: it recursively scans production `.ts`/`.tsx` modules under
+`app/src` and permits the field only in `engine/models.ts` (the contract declaration) and
+`engine/adapters.ts` (the projection write). Any other production reference fails the guard.
 
 `performanceGoalDemand.ts` already exports `comparePerformanceGoalDemands`, a
 deterministic comparator (priority desc → earlier `targetDate` first → dated before
@@ -101,26 +102,34 @@ not a wiring detail, and needs a decision before implementation:
 **Recommendation: resolve this with its own ADR amendment (or a new ADR referencing
 ADR-0018) before writing PG7's implementation**, not as an implementation-time judgment
 call. Whichever option is chosen, `weeklyAllocation.ts` must be added to
-`scripts/check-policy-drift.mjs`'s `decisionAffectingFiles` (it is a real, active gap
+`app/scripts/check-policy-drift.mjs`'s `decisionAffectingFiles` (it is a real, active gap
 today — see §6) as part of that same PR.
 
-## 4. Optimizer scoring is the wrong layer for identity-based credit
+## 4. Continuous stimulus-benefit scoring is the wrong layer for exercise identity
 
-`app/src/engine/optimizer.ts`'s `calculateStimulusBenefit`/`rankCandidates` score
-candidates purely on continuous `SessionTemplate.stimulusProfile` axes against
-`WeeklyObjective.targetStimulus`, with weights pinned as reviewed product policy in
+`app/src/engine/optimizer.ts`'s `calculateStimulusBenefit` scores candidates on continuous
+`SessionTemplate.stimulusProfile` axes against `WeeklyObjective.targetStimulus`, with
+weights pinned as reviewed product policy in
 `app/src/knowledge/optimizerScoringKnowledge.ts` (`stimulusBenefitWeightsPolicy`,
-asserted by `optimizerScoringPolicyAlignment.test.ts`). **There is no per-exercise
-identity concept anywhere in this function.** Exact-identity filtering already lives
-entirely in the allocation/reservation layer (§3), narrowing the ranking candidate set
-*before* scoring runs.
+asserted by `optimizerScoringPolicyAlignment.test.ts`). **That specific scoring function
+has no per-exercise identity concept.**
 
-**Conclusion:** "this candidate provides direct conventional-deadlift practice" belongs
-in the allocation/reservation layer, not in `calculateStimulusBenefit`. Touching optimizer
-scoring for this would conflate two independently-versioned concerns (continuous utility
-calibration vs. discrete exact-identity credit) and would incorrectly trip
-`stimulusBenefitWeightsPolicy`'s alignment test for a change that isn't a utility
-recalibration.
+Do not generalize that observation to `rankCandidates` as a whole. The live ranking path
+already carries **exact authored-coverage identity** through
+`coverageNeedTierForTemplate` → `coverageKeysForTemplate` → authored workout identity,
+and `rankCandidates` sorts `coverageNeedTier` before recovery preference, benefit tier
+and utility. Separately, when ADR-0018 has nominated a reservation for the date,
+`planner.ts` intersects the candidate set with that occurrence's
+`eligibleTemplateIds` before ranking. Exact authored identity therefore participates at
+two existing layers: reservation eligibility and lexicographic coverage ordering.
+
+**Conclusion:** "this candidate provides direct conventional-deadlift practice" must not
+be implemented as another `calculateStimulusBenefit` weight. PG7 should extend/reuse the
+existing discrete coverage/reservation machinery (including the current coverage-tier
+ordering where ranking fallback/support logic needs it), with the ADR in §3 deciding how
+performance-target occurrences coexist with stronger broad-adaptation reservations.
+Changing `stimulusBenefitWeightsPolicy` is appropriate only if the continuous utility
+calibration itself changes, not merely because a new exact-identity coverage rule exists.
 
 ## 5. Exercise/session coverage classification is new code, and has a schema question
 
@@ -150,15 +159,17 @@ pipeline entirely.
 ## 6. `POLICY_VERSION` / `check-policy-drift.mjs`
 
 `POLICY_VERSION` lives in `app/src/engine/policy.ts`, with an append-only
-`HISTORICAL_POLICY_VERSIONS` array (one entry per shipped decision-affecting PR/ADR, not
-per commit) as the changelog. Bump format: `YYYY-MM-<slug>-vN`.
+`HISTORICAL_POLICY_VERSIONS` array retaining prior policy identities. The current naming
+convention is `YYYY-MM-<slug>-vN`.
 
-`scripts/check-policy-drift.mjs` maintains an explicit `decisionAffectingFiles` allowlist.
-It currently includes `rules.ts`, `optimizer.ts`, `planner.ts`, `adapters.ts`,
+`app/scripts/check-policy-drift.mjs` maintains an explicit `decisionAffectingFiles`
+allowlist plus a blanket guard for `app/src/workouts/catalog/`. Relevant entries for this
+work already include `rules.ts`, `optimizer.ts`, `planner.ts`, `adapters.ts`,
 `evergreenStrategy.ts`, `weeklyDosePacking.ts`, `coverage.ts`, `evergreenPlanning.ts`,
 `planSchedule.ts`, `templates.ts`, `workouts/models.ts`, `workouts/prescription.ts`,
-`workouts/event-plan.ts`, `sessions/catalogSessionAdapter.ts`, and everything under
-`app/src/workouts/catalog/`.
+`workouts/event-plan.ts` and `sessions/catalogSessionAdapter.ts`; the allowlist also
+contains other decision-affecting engine surfaces unrelated to PG5-PG7. This is therefore
+a relevant subset, not an exhaustive transcription of the file.
 
 **Confirmed gap, still open after PG5.1:** `app/src/engine/weeklyAllocation.ts` — the
 file PG7 must actually change — is **not** on this list. Today that's masked because
@@ -171,13 +182,13 @@ speculatively before then.
 
 `make simulate` = `npm run simulate:scenarios` + `npm run simulate:diff`.
 
-- `simulate:scenarios` → `scripts/simulate-scenarios.mjs`, SSR-loads
+- `simulate:scenarios` → `app/scripts/simulate-scenarios.mjs`, SSR-loads
   `src/engine/simulation/analyze.ts`'s `runAllScenarios`, writes
   `artifacts/simulation-reports/latest/report.json` with per-scenario aggregate
   distributions: rest/recovery-day %, event-anchor hit-rate, objective-credit-by-template
   breakdown, and **ADR-0018 role-allocation status counts** (`reserved`/`fulfilled`/
   `missed`/`unresolved_search_budget`, straight from `WeeklyRoleAllocationReport`).
-- `simulate:diff` → `scripts/simulate-diff.mjs` re-runs scenarios and prints a semantic
+- `simulate:diff` → `app/scripts/simulate-diff.mjs` re-runs scenarios and prints a semantic
   diff against the committed `docs/analysis/simulation-baseline.json` — the artifact a
   human reads to judge "did this change alter live recommendations, and is that
   intended."
@@ -186,8 +197,8 @@ speculatively before then.
   only then intentionally re-baseline. **This is the actual human sign-off gate** for any
   change that alters persisted recommendation distributions.
 
-**Caveat confirmed during PG5.1:** the committed simulation scenarios/fixtures do not
-appear to include any goal with a typed `performanceTarget`. `simulate:diff` showing zero
+**Caveat confirmed against `app/src/engine/simulation/scenarios.ts`:** the committed
+simulation scenarios do not include a typed `performanceTarget`. `simulate:diff` showing zero
 change is therefore a weak signal for "this is inert" — it may just mean "never
 exercised." **PG5.3/PG7 should add at least one scenario fixture with a typed
 performance goal** before relying on `simulate:diff` as meaningful evidence of impact
