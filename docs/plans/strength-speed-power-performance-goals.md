@@ -1,8 +1,8 @@
 # Strength, speed and power performance goals — implementation plan
 
 **Capability prefix:** PG
-**Status:** Draft — revised for cross-family scope
-**Blocked by:** PG0 architecture decision before recommendation-affecting work; any new prescription defaults must use reviewed Sports Knowledge Registry claims rather than uncited constants.
+**Status:** Draft
+**Blocked by:** plan approval to start PG0; PG1–PG9 then follow their item-level dependencies. Recommendation-affecting PG5–PG7 additionally require the accepted PG0 architecture decision, reviewed Sports Knowledge Registry claims for any new prescription defaults, and policy verification.
 **Unlocks:** athlete-owned measurable strength, speed and power goals; target-specific planning coverage; protocol-aware progress; later formal target evaluation.
 **Source analysis:** ../analysis/2026-09-19-strength-speed-power-performance-goal-gap.md
 
@@ -200,6 +200,20 @@ Do not store:
 
 The existing observation MetricDefinition remains authoritative for unit and direction.
 
+### Typed-versus-legacy precedence
+
+For strength/speed/power goals, `performanceTarget` is the only representation that may become target-authoritative.
+
+Use one compatibility rule at every read/write boundary:
+
+1. New or edited typed-target writes persist `performanceTarget` and explicitly clear/delete `targetMetric`, `targetValue` and `targetUnit` for that goal.
+2. If a stored document contains a **valid** `performanceTarget` plus conflicting legacy fields, the typed target wins for display, progress, feasibility and any later planning projection; legacy fields are ignored.
+3. If the `performanceTarget` field is present but malformed/unknown, fail closed as invalid typed goal data. Do **not** fall back to the legacy triple, because that would let stale/free-text data regain authority.
+4. If `performanceTarget` is absent, legacy fields remain readable for backward-compatible UI only and create no typed performance demand until the athlete explicitly converts/saves a typed target.
+5. Legacy behavior for goal families that have not migrated to `performanceTarget` is outside this capability and must not be broken accidentally.
+
+The create/update service should centralize this normalization (including Firestore `deleteField()` on legacy keys when converting an existing goal) so components, adapters and evaluators do not invent their own precedence rules.
+
 ### Reuse existing metric/protocol/test authorities
 
 Do **not** add a second PerformanceMetricDefinition or PerformanceTestDefinition type.
@@ -239,7 +253,7 @@ Suggested first targets, with exact ids finalized in PG0/PG1 to match repository
 | cycling 5 s peak power | PerformanceTestDefinition | MetricDefinition |
 | CMJ height later | PerformanceTestDefinition | MetricDefinition |
 
-For a performance_test subject, semantic validation must resolve getPerformanceTestDefinition(performanceTestId) and verify that test.protocol.metricIds contains metricId.
+For a performance_test subject, semantic validation must resolve `getPerformanceTestDefinition(performanceTestId)` and verify that `test.protocol.metricIds` contains `metricId`. The current catalog getter throws on an unknown id, so the semantic-validation boundary must catch lookup failures and return the normal invalid-data result; an unknown persisted id must never escape as an unhandled exception. Apply the same fail-closed translation to other registry getters that throw for unknown ids.
 
 ### Goal domain
 
@@ -453,6 +467,8 @@ Provide pure helpers that can answer:
 
 Do not import recommendation policy into these helpers.
 
+Lookup helpers such as `getMetricDefinition()` and `getPerformanceTestDefinition()` currently throw for unknown ids. The semantic validator owns that exception boundary: catch those lookup errors and translate them into typed validation failures with stable reason codes. Programming errors unrelated to an unknown/invalid persisted identifier should not be swallowed generically.
+
 ### Tests
 
 Cover:
@@ -527,6 +543,8 @@ Update domain validation for speed and power.
 
 Unknown or malformed typed targets fail closed as non-authoritative invalid goal data. Do not silently fall back to legacy strings.
 
+All readers use the precedence rule above: valid typed target > ignored legacy conflict; present-but-invalid typed target > invalid result with no fallback; legacy-only document > backward-compatible display with zero typed recommendation authority. All typed-target writes clear legacy target fields rather than leaving two competing values in Firestore.
+
 ### Tests
 
 Add/update:
@@ -536,7 +554,10 @@ Add/update:
 - Firestore emulator tests;
 - old-goal fixtures;
 - new speed/power domain tests;
-- unknown metric/subject tests.
+- unknown metric/subject tests, including unknown `performanceTestId` returning validation data rather than throwing;
+- conflicting typed + legacy representations where the valid typed target wins;
+- malformed typed + apparently valid legacy representation still fails closed with no fallback;
+- typed-target create/update clears legacy target fields.
 
 **Done when:** each initial family round-trips as typed data and no malformed target can gain planning authority.
 
@@ -705,12 +726,35 @@ Return both a level and reason codes suitable for an expandable "Why this confid
 
 ### PG4.5.3 Required-change calculations
 
-Calculate for explanation:
+Make the sign convention explicit and derive it from `MetricDefinition.direction`, never from metric labels.
 
-- absolute change;
-- relative % change;
-- days/weeks remaining;
-- linearizedEquivalentPerWeek.
+For target-eligible metrics:
+
+~~~ts
+const improvementSign =
+  metric.direction === 'higher_is_better' ? 1 :
+  metric.direction === 'lower_is_better' ? -1 :
+  null; // context_only is not target-eligible
+
+absolute = improvementSign * (targetValue - currentValue);
+// positive: improvement still required
+// zero: exactly at target
+// negative: current result is already beyond the target
+
+relativePct =
+  currentValue === 0
+    ? null
+    : (absolute / Math.abs(currentValue)) * 100;
+
+linearizedEquivalentPerWeek =
+  weeksRemaining != null && weeksRemaining > 0
+    ? absolute / weeksRemaining
+    : null;
+~~~
+
+Thus a 1.86 s -> 1.75 s sprint target produces `absolute = +0.11 s`, while a 100 kg -> 120 kg strength target produces `absolute = +20 kg`. A result already beyond the target yields a non-positive required-change value and is eligible for `already_achieved` classification. When the current value is zero, relative percentage is undefined rather than fabricated.
+
+Also calculate days/weeks remaining independently from the metric direction.
 
 The weekly equivalent is **descriptive only** and should be labelled as such in code and UI. It must never be imported by prescription/progression logic.
 
@@ -731,6 +775,7 @@ Strength, speed and power need separate policies.
 For the strength first slice, research anchors include:
 
 - ACSM 2026 overview/position stand: strength was enhanced by heavier loading, 2-3 sets and at least 2 sessions/week (PMID 41843416);
+- Pelland et al. 2026 dose-response meta-regression: strength gains increased with weekly set volume and with training frequency, both with diminishing returns; this supports treating frequency/volume as graded evidence rather than a deterministic cutoff (PMID 41343037);
 - Grgic et al. 2018 frequency meta-analysis: higher frequency associated with greater strength gains overall, but not when volume was equated (PMID 29470825);
 - Androulakis-Korakakis et al. minimum-dose review in trained men: low-dose training can still improve 1RM, pooled bench gain 8.25 kg across included studies (PMID 31797219);
 - Coratella et al. trained men: six weeks of bench-press training produced approximately 4.7-7.7% increases in 1RM/body-mass ratio across training groups (PMID 27801598);
@@ -788,6 +833,8 @@ Cover:
 
 - already-achieved higher-is-better target;
 - already-achieved lower-is-better target;
+- higher-is-better and lower-is-better required-change formulas use the same positive-improvement convention;
+- zero current baseline -> relativePct is null, not infinity/NaN;
 - no target date -> insufficient horizon evidence, no fabricated rate;
 - no comparable baseline -> insufficient_evidence;
 - recent tested 100 kg bench -> 200 kg in 6 weeks + max one session/week -> unlikely/high confidence under the reviewed first-slice policy;
@@ -953,9 +1000,16 @@ The exact placement in existing role-reservation machinery must be verified agai
 
 Support multiple active targets only with deterministic capacity semantics.
 
-Use UserGoal.priority after PG0 defines ties. If two targets compete for one safe slot, the same input must always yield the same chosen coverage and an explicit shortfall for the other.
+Use one total order for demands that remain tied after stronger authorities have been applied:
 
-Array/document iteration order is never authority.
+1. higher `UserGoal.priority` first (the existing contract is 1-5, with 5 highest);
+2. if priority ties, earlier non-null `targetDate` first;
+3. dated targets sort before open-ended/null-date targets at the same priority;
+4. if still tied, ascending stable `goalId` lexical order.
+
+PG0 should ratify this tie policy. PG5's projection, PG7 allocation/reservation, explainability and all deterministic tests must use the same comparator rather than reimplementing it ad hoc. Target magnitude, document creation order, Firestore query order and array iteration order are never tie-break authority.
+
+If two targets compete for one safe slot, the winner follows that order and every losing target gets an explicit capacity/conflict shortfall; equal-priority input must therefore replay identically.
 
 ### Explainability
 
