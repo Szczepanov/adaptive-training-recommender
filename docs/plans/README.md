@@ -61,6 +61,8 @@ The latest full-plan audit is [`2026-09-17-plan-status-reconciliation.md`](../an
 It reconciles the remaining evidence/activation gates, recent merged delivery work, and the
 historical companion documents that are not independent status boards.
 
+The [strength, speed and power performance-goals plan](./strength-speed-power-performance-goals.md) is **Draft**, sourced from the [2026-09-19 performance-goal gap analysis](../analysis/2026-09-19-strength-speed-power-performance-goal-gap.md). It defines one typed metric + canonical subject/test contract for measurable strength, speed and power outcomes, with target values kept separate from current capability and training dose. It also defines an advisory goal-feasibility layer that reports plausibility, confidence, required change, capacity/history factors and evidence provenance without rewriting the athlete's goal or becoming prescription authority. It has **no recommendation authority yet**; an ADR and policy verification are required before typed performance targets can affect weekly allocation or session selection.
+
 The [cycling-primary hybrid evaluation plan](./cycling-primary-hybrid-evaluation.md) has
 delivered opt-in deterministic persona scenarios (H1), outdoor easy-cycling equipment
 specificity plus an anchor-date coverage-ordering fix (H2/H2b), an H3 investigation that
@@ -213,6 +215,7 @@ all-`Ready` table became unusable.
 | 7B | [Training intent, capacity & planning modes](./phase-7-training-intent-and-planning-modes.md) | **Implemented** | none | none | evidence-derived Evergreen dose packed into real capacity, while preserving structured and demand-derived event planning — not an original review finding |
 | 8 | [Externally-planned mode](./phase-8-externally-planned-mode.md) | **Implemented** | — | — | imports an externally-authored plan and narrows the engine to per-session adjudication plus weekly critique — not an original review finding |
 | RP | [ADR-0038 recovery placement](./adr-0038-recovery-placement.md) | **Draft** | none until ADR-0038 is accepted; RP2 is implemented | ADR-0038 acceptance or explicit implementation authorization; RP0/RP1/RP3/RP4/RP5A/RP5B remain | explicit plan-independent recovery identity, rolling seven-date invariant, deadline diagnostics, and evidence-gated activation |
+| PG | [Strength, speed and power performance goals](./strength-speed-power-performance-goals.md) | **Draft** | none; PG0 starts after plan approval | plan approval for PG0; PG1-PG9 then follow the plan's item-level dependencies, with recommendation authority additionally gated by PG0/policy review | typed measurable strength/speed/power targets, protocol-aware progress, advisory feasibility, and later target-specific planning without using target values as dose |
 | 9.0 | [Shadow mode & decision journal](./phase-9-0-shadow-mode-and-decision-journal.md) | **In progress** | 9.0.7 (run the block; 9.0.1-9.0.6 done; the historical 2026-08-22 target passed without a recorded completed block) | — | runs the app against the athlete's existing AI loop for one block and records the disagreements — the first evidence in this repository from a real athlete rather than a synthetic corpus |
 | 9 | [Subjective baselines in readiness mode](./phase-9-subjective-baselines.md) | **In progress** | only 9.8 remains (9.1–9.7 done — 9.8 needs Phase 9.0's prospective evidence) | — | self-normalises subjective scores as a tighten-only drift term, measured behind a default-off selector before any ship decision — not an original review finding |
 | AJ 5–6 | [AI judge calibration controls & reference audit](./ai-judge-phase-5-6-calibration-and-reference-audit.md) | **Implemented** | — | — | evaluates the offline LLM judge against frozen controls and compares compatible reference runs without changing production policy or the committed planner baseline |
@@ -237,8 +240,8 @@ all-`Ready` table became unusable.
 | SAW | [Server-authoritative anthropometry writes](./anthropometry-server-authoritative-writes.md) | **Implemented** | — | — | implementation landed in #572 and the 2026-09-17 production release verified CI, backend/index/rules/Hosting deployment, and the Hosting → anthropometry rewrite smoke check; owner reads remain direct and recommendation authority remains zero |
 
 
-Rows G, HRF, S, M, CT, WU, UX, OV, HA, SV, MS, PI, ES, TO, SEP, SKR, BC, SAW, and RP are **not phases**. They are capability/surface plans whose work items are
-prefixed `G*`, `HRF*`, `S*`, `M*`, `CT*`, `WU*`, `UX*`, `OV*`, `HA*`, `SV*`, `MS*`, `PI*`, `ES*`, `TO*`, `SEP-*`, `SKR*`, `BC*`, `SAW*`, and `RP*` precisely so they cannot be mistaken for the `Phase 0`–`9`
+Rows G, HRF, S, M, CT, WU, UX, OV, HA, SV, MS, PI, ES, TO, SEP, SKR, BC, SAW, RP, and PG are **not phases**. They are capability/surface plans whose work items are
+prefixed `G*`, `HRF*`, `S*`, `M*`, `CT*`, `WU*`, `UX*`, `OV*`, `HA*`, `SV*`, `MS*`, `PI*`, `ES*`, `TO*`, `SEP-*`, `SKR*`, `BC*`, `SAW*`, `RP*`, and `PG*` precisely so they cannot be mistaken for the `Phase 0`–`9`
 sequence; the `#` column carries that prefix rather than a phase number. For capability plans, an item
 with satisfied dependencies but an unmet usage trigger is **not** listed as startable. A transferred
 historical item (former M7) is likewise not listed under its old plan; only the canonical owner tracks it.
