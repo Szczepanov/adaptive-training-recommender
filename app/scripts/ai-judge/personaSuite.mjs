@@ -118,6 +118,11 @@ function buildActiveTriathlonFamily(catalogFamilies) {
       normalizeCase(shortTimeSource, {
         id: 'persona_triathlon_established_olympic_short_time',
         label: 'Established triathlon persona — Olympic distance, 45-minute weekday cap',
+        // Issue #679: the case's defining perturbation IS the 45-minute weekday cap, so it
+        // must keep the source case's own capped context rather than normalizeCase's
+        // default `baseContext` (the baseline's uncapped 75-minute weekday profile), which
+        // silently discarded the cap the case is named and judged for.
+        context: shortTimeSource.scenario.context,
       }),
       normalizeCase(taperSource, {
         id: 'persona_triathlon_established_olympic_taper',

@@ -50,6 +50,51 @@ const ZERO_CANONICAL_STIMULUS = {
 };
 
 describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () => {
+    it('treats swim, bike, and run symmetrically as triathlon event modalities', () => {
+        const base: SessionTemplate = {
+            id: 'tri_modality_base',
+            category: 'Easy Endurance',
+            modality: 'Cycling',
+            durationMin: 30,
+            durationMax: 30,
+            title: 'Triathlon modality exposure',
+            description: 'Synthetic equal-dose modality fixture.',
+            requiredEquipment: [],
+            environment: 'either',
+            safetyTags: [],
+            systemicCost: 0.3,
+            objectiveTransferable: true,
+            stimulusProfile: { ...ZERO_CANONICAL_STIMULUS, aerobicEndurance: 0.6 },
+            costProfile: { systemic: 0.3, cardiovascular: 0.3, lowerBody: 0.2, upperBody: 0.1, impactTissue: 0.1, neuromuscular: 0.1 },
+        };
+        const candidates: SessionTemplate[] = [
+            { ...base, id: 'tri_swim', modality: 'Swimming' },
+            { ...base, id: 'tri_bike', modality: 'Cycling' },
+            { ...base, id: 'tri_run', modality: 'Running' },
+        ];
+        const focusEvent = {
+            id: 'tri-a',
+            title: 'Olympic Triathlon',
+            date: '2026-03-20',
+            priority: 'A' as const,
+            category: 'triathlon' as const,
+            lifecycle: 'scheduled' as const,
+            demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.7, vo2MaxPower: 0.4, repeatedSurges: 0.2, sprintPower: 0.1, fatigueResistance: 0.7, neuromuscular: 0.2 },
+        };
+
+        const result = rankCandidates(
+            candidates, [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
+            { date: '2026-03-05', focusEvent, recentHistory: [] },
+        );
+
+        const benefitById = new Map(result.accepted.map(candidate => [candidate.template.id, candidate.benefitScore]));
+        expect(benefitById.get('tri_swim')).toBeCloseTo(benefitById.get('tri_bike')!, 8);
+        expect(benefitById.get('tri_swim')).toBeCloseTo(benefitById.get('tri_run')!, 8);
+        for (const candidate of result.accepted) {
+            expect(candidate.rationale).toContain('Event-modality coverage:');
+        }
+    });
+
     it('allows three cycling sessions across 7 days with >= 48h spacing without repetition penalty', () => {
         const thresholdRide = ENRICHED_TEMPLATES.find(t => t.category === 'Hard Endurance' && t.modality === 'Cycling')!;
         const history: RecentHistoryEntry[] = [
