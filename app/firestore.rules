@@ -31,8 +31,10 @@ service cloud.firestore {
 
     // ADR-0041: rules can only validate bounded structure and exact keys -- they cannot
     // prove membership in the application's metric/exercise/performance-test registries.
-    // Semantic validation (validatePerformanceTarget) is enforced client-side by
-    // validateGoal before a write is ever attempted; this is a structural backstop only.
+    // Semantic validation (validatePerformanceTargetForDomain) is enforced by
+    // goalService.ts at both write and read boundaries; validateGoal itself deliberately
+    // remains structural-only to preserve the observations/engine isolation boundary.
+    // Rules are therefore a structural backstop, not the registry authority.
     function hasValidGoalPerformanceTarget() {
       return !('performanceTarget' in request.resource.data)
         || request.resource.data.performanceTarget == null
