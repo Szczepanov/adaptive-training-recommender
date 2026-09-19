@@ -954,6 +954,53 @@ Add typed diagnostic reasons for unmet performance-goal coverage, including:
 
 Do not hide a specific miss behind generic strength/high-intensity credit.
 
+### Recommended next-session sequencing (2026-09-19)
+
+Full structural detail for everything below is in
+[the Stage 2 weekly-allocation integration-points analysis](../analysis/2026-09-19-stage2-weekly-allocation-integration-points.md),
+produced while scoping PG5.1's PR so the next session doesn't have to re-derive it.
+Recommended order, each as its own PR with its own review pass:
+
+1. **PG5.2 first, on its own.** Define the planning-rule registry/coverage classifier.
+   This requires resolving a schema question the analysis found: the evergreen dose-
+   packing pipeline (`weeklyDosePacking.ts`) resolves coverage through
+   `workouts/models.ts`'s `WorkoutStep.exerciseId`, not the `sessions/models.ts` schema
+   targeted by the nearby per-exercise helpers in `authoredSessionProfiles.ts` — so
+   PG5.2's classifier is new code against the first schema, not a reuse of the second.
+   This PR can ship with no behavior change (a classifier nothing calls yet), the same
+   way PG5.1 did.
+2. **PG6 next**, auditing the real catalog against PG5.2's table. The known gap
+   (none of the current `app/src/workouts/catalog/*.ts` definitions contains
+   `conventional_deadlift`; the inspected barbell strength sessions use
+   `romanian_deadlift`) gets it a legitimate direct-coverage session here, with any
+   new prescription default reviewed
+   against the Sports Knowledge Registry first (no new sets/reps/%1RM/rest default may
+   be invented ad hoc).
+3. **PG5.3 only after PG6 lands real coverage for a given target.** Making direct
+   target coverage mandatory before that coverage exists would make a previously
+   satisfiable `strength_muscle` requirement newly unsatisfiable for zero benefit — a
+   regression PG5.1's scoping deliberately avoided. `AdaptationDoseRequirement` has no
+   exercise-identity field today; this needs new optional identity-aware surface on that
+   type, not a second same-adaptation requirement. `packWeeklyDose` credits already-packed
+   work by adaptation, so a later `strength` requirement can inherit generic strength
+   credit rather than proving an independent exact-target floor.
+4. **A dedicated ADR (or ADR-0018 amendment) before PG7's implementation**, deciding how
+   `weeklyAllocation.ts`'s reservation search resolves performance-target-vs-broad-
+   adaptation priority. The search has no priority-tier dimension today — it maximizes
+   fulfilled-occurrence count with a deterministic traversal (deadline/key ordering,
+   dynamic constrainedness, then candidate date/template ordering) — so appending
+   performance-target occurrences into the same search naively could let it trade a
+   broad-adaptation slot for a performance-target slot (or the reverse) by accident,
+   which would violate this plan's required authority order. The analysis names two
+   candidate resolutions; picking one is a decision for that ADR, not an implementation-
+   time judgment call.
+5. **PG7 last**, reusing `comparePerformanceGoalDemands` (already shipped in
+   `performanceGoalDemand.ts`) for tie-breaking rather than reimplementing it, adding
+   `weeklyAllocation.ts` to `check-policy-drift.mjs`'s `decisionAffectingFiles` (a
+   currently-open gap, unrelated to this plan, that PG7 would otherwise slip past), and
+   adding at least one simulation scenario fixture with a typed performance goal before
+   treating `simulate:diff` as meaningful evidence either way.
+
 ### Tests
 
 At minimum:
@@ -977,7 +1024,7 @@ criterion is met only once PG5.2/PG5.3 (and, for allocation to actually change, 
 ## PG6 — audit and fill catalog coverage gaps
 
 **Status:** [ ]
-**Blocked by:** PG5 design; reviewed knowledge for any new session prescription
+**Blocked by:** PG5.2's planning-rule table (not started; PG5.1 is Implemented but PG5.2 is separate work — see "Recommended next-session sequencing" above); reviewed knowledge for any new session prescription
 **Recommendation-affecting:** yes
 
 Do not assume every new target needs a new workout. First audit the active catalog against each planning rule.
@@ -1024,7 +1071,7 @@ Generalizable training defaults belong in the Sports Knowledge Registry or an ex
 ## PG7 — weekly allocation, ranking and explainability
 
 **Status:** [ ]
-**Blocked by:** PG5, PG6
+**Blocked by:** PG5.3, PG6, and a dedicated ADR resolving `weeklyAllocation.ts`'s reservation-search priority-tier question (see "Recommended next-session sequencing" under PG5 and [the Stage 2 integration-points analysis](../analysis/2026-09-19-stage2-weekly-allocation-integration-points.md) §3 — this is a real open design gap, not settled by anything shipped so far)
 **Recommendation-affecting:** yes
 
 Wire performance-target coverage into the existing weekly allocation/selection authority rather than building a second planner.
@@ -1040,7 +1087,7 @@ Preserve:
 5. required performance-target coverage;
 6. normal support/utility/tie-break logic.
 
-The exact placement in existing role-reservation machinery must be verified against ADR-0018 rather than implemented as a new greedy pass.
+The exact placement in existing role-reservation machinery must be verified against ADR-0018 rather than implemented as a new greedy pass. The existing ranking path already gives exact authored coverage lexicographic authority through `coverageNeedTierForTemplate` before benefit/utility ordering, while a nominated ADR-0018 reservation narrows the eligible candidate set before ranking. PG7 should extend/reuse those discrete coverage paths where applicable rather than creating a second performance-goal score inside `calculateStimulusBenefit`.
 
 ### Multiple targets
 
