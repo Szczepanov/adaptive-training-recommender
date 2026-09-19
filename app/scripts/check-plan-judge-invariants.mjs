@@ -126,16 +126,33 @@ for (const day of travel.plan.slice(0, 3)) {
 fail(travel.plan.slice(0, 3).some((day) => !['Rest', 'Mobility/Recovery'].includes(day.session.category)),
   'Travel case collapses every day in the 3-day window to Rest/Mobility with no equipment-free aerobic maintenance stimulus.');
 
-// Issue #677 investigated a candidate monotonicity rule here (conservative bias must not
-// raise hard-session count / cumulative systemic cost vs. the matched neutral baseline).
-// Measured on the real corpus it is CONFIRMED violated -- see
-// docs/analysis/2026-09-19-conservative-travel-overlay-investigation.md for the exact
-// day-by-day reproduction and root-cause hypothesis (ADR-0018 weekly-role-reservation
-// search). Fixing the reservation search itself is out of scope for this change: it is a
-// safety-critical, heavily-tested path (`weeklyAllocation.ts`) that needs its own
-// dedicated, verified fix rather than a same-PR patch alongside the travel-overlay catalog
-// gap. A deliberately-failing assertion is not added here so `make check`/CI stay green;
-// the follow-up fix must add it (see the analysis doc's tracked follow-up).
+// Issue #677: conservativeBias is a preference overlay, so for matched inputs it must not
+// create *more* hard sessions or greater cumulative systemic/cardiovascular training cost.
+// These are end-to-end invariants over the real planner, not isolated optimizer-score tests.
+const planLoad = (item) => (item.plan ?? []).reduce((acc, day) => {
+  const systemic = day.session?.systemicCost ?? 0;
+  const cardiovascular = day.session?.costProfile?.cardiovascular ?? 0;
+  return {
+    hardSessions: acc.hardSessions + (systemic >= 0.6 ? 1 : 0),
+    systemic: acc.systemic + systemic,
+    cardiovascular: acc.cardiovascular + cardiovascular,
+  };
+}, { hardSessions: 0, systemic: 0, cardiovascular: 0 });
+const conservativeChecks = [];
+const assertConservativeMonotonic = (neutralId, conservativeId) => {
+  const neutral = planLoad(required(neutralId));
+  const conservative = planLoad(required(conservativeId));
+  const epsilon = 1e-9;
+  fail(conservative.hardSessions <= neutral.hardSessions,
+    `${conservativeId}: conservative plan has ${conservative.hardSessions} hard sessions vs ${neutral.hardSessions} in ${neutralId}.`);
+  fail(conservative.systemic <= neutral.systemic + epsilon,
+    `${conservativeId}: cumulative systemic cost ${conservative.systemic.toFixed(3)} exceeds ${neutral.systemic.toFixed(3)} in ${neutralId}.`);
+  fail(conservative.cardiovascular <= neutral.cardiovascular + epsilon,
+    `${conservativeId}: cumulative cardiovascular cost ${conservative.cardiovascular.toFixed(3)} exceeds ${neutral.cardiovascular.toFixed(3)} in ${neutralId}.`);
+  conservativeChecks.push({ neutralId, conservativeId, neutral, conservative });
+};
+assertConservativeMonotonic('judge_pref_neutral', 'judge_pref_conservative');
+assertConservativeMonotonic('judge_mode_event_directed', 'judge_mode_conservative_preference');
 
 const evergreen = required('judge_mode_evergreen');
 fail(evergreen.input.trainingIntentProfile?.planningMode === 'evergreen', 'Evergreen case did not propagate a valid trainingIntentProfile.planningMode.');
@@ -299,3 +316,6 @@ console.log(`Plan-judge invariants passed for ${cases.size} cases across ${famil
 console.log(`Families SHA-256: ${familiesSha256}`);
 console.log(`Event-demand sequence distance: A=${demandDistanceA.toFixed(3)}, B=${demandDistanceB.toFixed(3)}.`);
 console.log(`Compact criterium template count: criterium A=${critACompactCount}, gran fondo A=${granACompactCount}.`);
+for (const check of conservativeChecks) {
+  console.log(`Conservative monotonicity ${check.conservativeId} vs ${check.neutralId}: hard ${check.conservative.hardSessions}/${check.neutral.hardSessions}, systemic ${check.conservative.systemic.toFixed(3)}/${check.neutral.systemic.toFixed(3)}, cardiovascular ${check.conservative.cardiovascular.toFixed(3)}/${check.neutral.cardiovascular.toFixed(3)}.`);
+}

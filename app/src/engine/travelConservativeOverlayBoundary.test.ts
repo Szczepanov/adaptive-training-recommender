@@ -14,13 +14,11 @@ import type { ResolvedAvailability } from './schedule';
  *      required indoor_bike/outdoor_bike/swim_access equipment or was hard-tagged
  *      `environment: 'outdoor'`, so a travel day (no bike/treadmill, indoor-only) excluded
  *      every one of them on hard constraints -- a genuine catalog gap, not a scoring bug.
- *   2. Conservative-bias hard-session-count: `optimizer.ts`'s own per-candidate scoring
- *      (tested below) IS correctly monotonic in isolation. The real, CONFIRMED regression
- *      lives one layer up, in `weeklyAllocation.ts`'s required-role reservation search
- *      (see the analysis doc's day-by-day reproduction) -- not fixed here; tracked as a
- *      dedicated follow-up. This suite locks in the per-candidate scoring invariant as a
- *      regression guard so a future fix to the reservation search cannot be "fixed" by
- *      quietly breaking this lower layer instead.
+ *   2. Conservative-bias hard-session-count: `optimizer.ts`'s per-candidate scoring is
+ *      monotonic in isolation, while the end-to-end regression came from the weekly-role
+ *      reservation search inheriting preference-tightened fatigue thresholds. Planner-level
+ *      corpus invariants cover the end-to-end fix; the tests below retain the lower-layer
+ *      monotonicity contract so the fix cannot migrate the regression into ranking.
  */
 
 const AN_ENDURANCE_CATEGORY: readonly SessionTemplate['category'][] = [
@@ -79,6 +77,16 @@ describe('travel overlay — equipment-free aerobic fallback (issue #677)', () =
         const eligible = eligibleTemplates(TEMPLATES, travelContext(), 30, '2026-09-19');
         expect(eligible.some(t => t.category === 'Rest')).toBe(true);
         expect(eligible.some(t => t.category === 'Mobility/Recovery')).toBe(true);
+    });
+
+    it('does not let the fallback compete when an ordinary endurance candidate is feasible', () => {
+        const context = travelContext();
+        context.constraints.hasIndoorBike = true;
+        context.trainingSettings!.equipment.indoor_bike = true;
+        const eligibleIds = new Set(eligibleTemplates(TEMPLATES, context, 30, '2026-09-19').map(t => t.id));
+
+        expect(eligibleIds.has('end_easy_01')).toBe(true);
+        expect(eligibleIds.has('end_easy_05')).toBe(false);
     });
 });
 
