@@ -190,6 +190,8 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-07 ADR-0038 Recovery Placement Implementation Analysis**](./analysis/2026-09-07-adr-0038-recovery-placement-implementation-analysis.md) — Analysis of recovery placement options for external plans under ADR-0038.
 * [**2026-09-07 Recommender Optimization Analysis**](./analysis/2026-09-07-recommender-optimization-opportunities.md) — Investigation into potential optimization strategies for the core recommender engine.
 * [**2026-09-14 Body-composition and fueling observations analysis**](./analysis/2026-09-14-body-composition-and-fueling-observations.md) — Point-in-time analysis of how longitudinal body mass, home tape measurements, connected scale estimates and subjective hunger fit the recommender without recommending authority.
+* [**2026-09-16 UX heuristics review**](./analysis/2026-09-16-ux-heuristics-review.md) — Point-in-time usability audit and heuristic evaluation of a fresh account walkthrough.
+* [**2026-09-17 UX heuristics review follow-up**](./analysis/2026-09-17-ux-heuristics-review-followup.md) — Follow-up pass verifying PR fixes from the initial UX heuristics review.
 * [**2026-09-17 Plan status reconciliation**](./analysis/2026-09-17-plan-status-reconciliation.md) — Reconciles implemented plans, verification closures, and remaining evidence/activation gates.
 * [**2026-09-17 Firestore evidence reconnaissance**](./analysis/2026-09-17-firestore-evidence-recon.md) — Privacy-preserving aggregate inventory of production evidence and the gates it does and does not satisfy.
 
