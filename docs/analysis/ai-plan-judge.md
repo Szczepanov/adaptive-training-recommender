@@ -40,8 +40,8 @@ npm run simulate:plan-judge
 
 The command runs the canonical single-pass corpus builder and invariant verification:
 
-1. `build-plan-judge-corpus.mjs` loads the real engine through Vite SSR and generates 13 families / 68 cases from one canonical definition path. It applies valid preferences, scheduled event commitments, active injury guardrails, evergreen intent, capacity/equipment constraints, delivered-dose history, and explicit rolling-daily temporal recovery trajectories.
-2. `check-plan-judge-invariants.mjs` verifies corpus shape plus deterministic safety, feasibility, event-demand, temporal-evidence, and conflicting-signal assertions.
+1. `build-plan-judge-corpus.mjs` loads the real engine through Vite SSR and generates 18 families / 95 cases from one canonical definition path. It applies valid preferences, scheduled event commitments, active injury guardrails, evergreen intent, capacity/equipment constraints, delivered-dose history, same-day completion evidence, multi-event calendars, partial observation states, non-training physical load, and explicit rolling-daily recovery/clinical trajectories.
+2. `check-plan-judge-invariants.mjs` verifies corpus shape plus deterministic safety, feasibility, event-demand/lifecycle ownership, same-day completion, missing-data semantics, temporal/clinical evidence, non-training physical load, and conflicting-signal assertions.
 
 CI runs this deterministic command only. No provider credentials are required.
 
@@ -457,7 +457,7 @@ Do not reinterpret a weekly-forecast case as if the same wearable/check-in snaps
 
 ### `rolling_daily`
 
-The `temporal_acute_vs_persistent` family deliberately uses a different evidence contract. For 14 consecutive dates the harness:
+The `temporal_acute_vs_persistent` and `clinical_trajectory` families deliberately use a different evidence contract. For 14 consecutive dates the harness:
 
 1. injects that date's deterministic measured readiness into the real `evaluateTrainingWithIntent` path;
 2. records the selected effective prescription for that date;
@@ -489,7 +489,7 @@ Compare the current candidate summary with the committed pre-change baseline:
 npm run judge:diff
 ```
 
-The diff checker refuses to treat runs as comparable when the prompt, response schema, family/case set, score dimensions, or judge model changed. Phase 7 intentionally changes the family/case set and prompt, so the 11-family/60-case Phase-6 baseline is provenance, not a directly comparable score baseline for the new 13-family/68-case contract.
+The diff checker refuses to treat runs as comparable when the prompt, response schema, family/case set, score dimensions, or judge model changed. Phase 7 intentionally changes the family/case set and prompt, so the 11-family/60-case Phase-6 baseline is provenance, not a directly comparable score baseline for the current 18-family/95-case contract.
 
 For exploratory model-to-model comparisons only, explicitly opt in:
 
@@ -574,15 +574,19 @@ This produces:
 
 Review `report.md` before opening the unblinding key. Alpha/Beta assignment is derived from a random seed by default. Set `BLIND_AB_SEED` to reproduce the same assignment.
 
-## Phase 7 review boundary
+## Current judge-contract boundary
 
-Phase 7 intentionally changes the evaluation contract rather than pretending to be a score-compatible engine-only change. The reviewable contract changes are:
+The active evaluation contract is intentionally versioned rather than pretending corpus changes are score-compatible with older baselines. The reviewable contract is:
 
-1. one canonical corpus builder replaces the former simulator + compatibility-fix + diagnostic-normalization chain;
-2. corpus schema advances to `adaptive-training-recommender/ai-plan-judge-corpus@3` with 13 families / 68 cases;
-3. `temporal_acute_vs_persistent` uses explicit `rolling_daily` measured-readiness trajectories, while other families retain `weekly_forecast` semantics;
-4. conflicting local-tissue/systemic-wearable cases become first-class deterministic and pairwise coverage;
-5. the pairwise comparison graph covers all 13 families;
-6. family-level judge concurrency is configurable and part of run provenance/resume compatibility.
+1. one canonical corpus builder remains the source of deterministic family packets;
+2. corpus schema is `adaptive-training-recommender/ai-plan-judge-corpus@4` with 18 families / 95 cases;
+3. `temporal_acute_vs_persistent` and `clinical_trajectory` use explicit `rolling_daily` measured-readiness trajectories, while the other families retain `weekly_forecast` semantics;
+4. same-day execution state, multi-event lifecycle, partial observability, clinical interruption/re-entry, and non-training physical load are first-class family axes;
+5. recent-training density and D+1/D0 event proximity extend existing families without inventing new production inputs;
+6. blind descriptive features include maximum session duration, rolling 3-day systemic cost, and hard-session proximity to scheduled events; these are judge evidence only, not planner authority;
+7. the pairwise comparison graph covers all 18 families;
+8. family-level judge concurrency remains configurable and part of run provenance/resume compatibility.
+
+This expansion does not change production recommendation logic or `POLICY_VERSION`; it changes only what the synthetic regression harness observes and judges.
 
 Reviewers should treat this corpus as synthetic policy-regression evidence, not clinical calibration or proof of real-world usefulness. A new score baseline should be created only after the new contract itself is accepted.

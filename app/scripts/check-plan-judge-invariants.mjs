@@ -16,8 +16,8 @@ const families = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).m
 const EXPECTED_FAMILY_CASE_COUNTS = new Map([
   ['objective_recovery', 8],
   ['subjective_recovery', 8],
-  ['recent_training', 5],
-  ['event_proximity', 5],
+  ['recent_training', 7],
+  ['event_proximity', 7],
   ['preferences_capacity', 6],
   ['event_demand', 4],
   ['interactions', 8],
@@ -27,6 +27,11 @@ const EXPECTED_FAMILY_CASE_COUNTS = new Map([
   ['planning_modes_overlays', 4],
   ['temporal_acute_vs_persistent', 4],
   ['conflicting_tissue_vs_wearable', 4],
+  ['same_day_execution_state', 4],
+  ['multi_event_lifecycle', 5],
+  ['partial_observability', 5],
+  ['clinical_trajectory', 5],
+  ['non_training_physical_load', 4],
 ]);
 const EXPECTED_CASE_COUNT = [...EXPECTED_FAMILY_CASE_COUNTS.values()].reduce((sum, count) => sum + count, 0);
 
@@ -120,16 +125,28 @@ fail(evergreen.input.trainingIntentProfile?.planningMode === 'evergreen', 'Everg
 fail((evergreen.input.events ?? []).length === 0 && evergreen.input.event === null, 'Evergreen case still carries an event.');
 
 for (const item of cases.values()) {
-  const event = item.input?.event;
-  if (!event?.date) continue;
-  const eventCommitment = (item.input.fixedActivities ?? []).find((activity) => activity.date === event.date && activity.id?.startsWith('judge-event:'));
-  if (!eventCommitment) continue;
-  const planDates = new Set(item.plan?.map((day) => day.date) ?? []);
-  if (!planDates.has(event.date)) continue;
-  const eventDay = item.plan?.find((day) => day.date === event.date);
-  fail(Boolean(eventDay), `${item.input.caseId}: scheduled event date ${event.date} is missing from the simulated plan.`);
-  if (eventDay) {
-    fail(['Rest', 'Mobility/Recovery'].includes(eventDay.session.category), `${item.input.caseId}: scheduled event date ${event.date} also contains independent ${eventDay.session.title}.`);
+  const itemEvents = (item.input?.events?.length ?? 0) > 0
+    ? item.input.events
+    : (item.input?.event ? [item.input.event] : []);
+  const planDates = item.plan?.map((day) => day.date) ?? [];
+  // Some families (e.g. event proximity) deliberately schedule an event beyond the
+  // simulated horizon; absence there is expected, not a dropped plan day.
+  const planEndDate = planDates.length > 0 ? planDates.reduce((max, date) => (date > max ? date : max)) : null;
+
+  for (const event of itemEvents) {
+    if (!event?.date) continue;
+    const eventCommitment = (item.input.fixedActivities ?? []).find((activity) => activity.id === `judge-event:${event.id}`);
+    const inactive = event.lifecycle === 'cancelled' || event.lifecycle === 'DNS';
+    if (inactive) {
+      fail(!eventCommitment, `${item.input.caseId}: inactive event ${event.id} still owns a fixed activity.`);
+      continue;
+    }
+    if (!eventCommitment || (planEndDate && event.date > planEndDate)) continue;
+    const eventDay = item.plan?.find((day) => day.date === event.date);
+    fail(Boolean(eventDay), `${item.input.caseId}: scheduled event date ${event.date} is missing from the simulated plan.`);
+    if (eventDay) {
+      fail(['Rest', 'Mobility/Recovery'].includes(eventDay.session.category), `${item.input.caseId}: scheduled event date ${event.date} also contains independent ${eventDay.session.title}.`);
+    }
   }
 }
 
@@ -189,6 +206,71 @@ const systemicCollapse = required('judge_conflict_fresh_legs_terrible_hrv').plan
 fail(Boolean(systemicCollapse)
   && ((systemicCollapse.session.systemicCost ?? 1) <= 0.4 || ['Rest', 'Mobility/Recovery'].includes(systemicCollapse.session.category)),
 'Fresh legs with severe systemic wearable collapse did not scale back Day 1 systemic load.');
+
+
+
+const sameDaySelf = required('judge_today_self_report_done');
+const sameDayDevice = required('judge_today_device_hard');
+const sameDayBoth = required('judge_today_both_hard');
+for (const item of [sameDaySelf, sameDayDevice, sameDayBoth]) {
+  const day1 = item.plan?.[0];
+  fail(Boolean(day1) && day1.session.category === 'Rest' && (day1.session.systemicCost ?? 1) === 0,
+    `${item.input.caseId}: same-day completed-training evidence did not force canonical Rest on Day 1.`);
+}
+fail(templateSequenceDistance(sameDayDevice, sameDayBoth) === 0,
+  'Duplicate self-report + device completion evidence changed the selected-template sequence relative to device evidence alone.');
+
+const cancelledEventCase = required('judge_events_cancelled_then_A10');
+const cancelledEvent = cancelledEventCase.input.events?.find((event) => event.lifecycle === 'cancelled');
+fail(Boolean(cancelledEvent), 'Cancelled-event fixture does not contain the intended cancelled lifecycle event.');
+if (cancelledEvent) {
+  fail(!(cancelledEventCase.input.fixedActivities ?? []).some((activity) => activity.id === `judge-event:${cancelledEvent.id}`),
+    'Cancelled event still produced a fixed activity commitment.');
+}
+
+const noWearables = required('judge_obs_no_wearables');
+fail(noWearables.input.readiness?.objective?.hrv_delta === null
+  && noWearables.input.readiness?.objective?.rhr_delta === null
+  && noWearables.input.readiness?.objective?.sleep_score === null
+  && noWearables.input.readiness?.objective?.body_battery_wake === null,
+'No-wearables observability fixture does not preserve missing objective evidence as null.');
+const partialSubjective = required('judge_obs_partial_subjective');
+fail(JSON.stringify(partialSubjective.input.readiness?.subjective?.answeredDimensions) === JSON.stringify(['fatigue', 'soreness']),
+  'Partial-subjective observability fixture lost its explicit answeredDimensions contract.');
+
+const clinicalCases = [
+  required('judge_clin_neutral'),
+  required('judge_clin_illness_1d'),
+  required('judge_clin_illness_3d'),
+  required('judge_clin_pain_1d'),
+  required('judge_clin_redflag_1d'),
+];
+for (const item of clinicalCases) {
+  fail(item.input.simulationMode === 'rolling_daily', `${item.input.caseId}: clinical trajectory is not rolling_daily.`);
+  fail(trajectory(item).length === 14 && (item.plan ?? []).length === 14,
+    `${item.input.caseId}: clinical trajectory must contain 14 observations and 14 decisions.`);
+  fail(trajectory(item).every((day, index) => day.date === item.plan?.[index]?.date),
+    `${item.input.caseId}: clinical readiness dates do not align one-to-one with plan dates.`);
+}
+for (const id of ['judge_clin_illness_1d', 'judge_clin_illness_3d', 'judge_clin_pain_1d']) {
+  const day1 = required(id).plan?.[0];
+  fail(Boolean(day1)
+    && ['Rest', 'Mobility/Recovery'].includes(day1.session.category)
+    && (day1.session.systemicCost ?? 1) <= 0.15,
+  `${id}: active non-red-flag clinical symptoms exceeded the Mobility safety envelope on Day 1.`);
+}
+const redFlagDay1 = required('judge_clin_redflag_1d').plan?.[0];
+fail(Boolean(redFlagDay1) && redFlagDay1.session.category === 'Rest' && (redFlagDay1.session.systemicCost ?? 1) === 0,
+  'Red-flag clinical trajectory did not pause physical training with canonical Rest on Day 1.');
+
+const hardPhysicalWorkDay1 = required('judge_work_hard_medium').plan?.[0];
+fail(Boolean(hardPhysicalWorkDay1) && (hardPhysicalWorkDay1.session.systemicCost ?? 1) <= 0.5,
+  'Hard non-training physical work did not cap Day 1 systemic training load.');
+const exhaustingPhysicalWorkDay1 = required('judge_work_exhausting_extended').plan?.[0];
+fail(Boolean(exhaustingPhysicalWorkDay1)
+  && ['Rest', 'Mobility/Recovery'].includes(exhaustingPhysicalWorkDay1.session.category)
+  && (exhaustingPhysicalWorkDay1.session.systemicCost ?? 1) <= 0.15,
+'Extended exhausting physical work with residual fatigue did not trigger a recovery-level Day 1.');
 
 if (failures.length > 0) {
   console.error('Plan-judge invariant failures:');

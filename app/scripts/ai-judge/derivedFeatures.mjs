@@ -6,6 +6,7 @@ export function computeDerivedPlanFeatures(plan, inputContext = {}) {
   let cumulativeNeuromuscularCost = 0;
   let hardSessionCount = 0;
   let recoveryOrRestDayCount = 0;
+  let maxSessionDurationMin = 0;
 
   const modalityDistribution = {};
   const categoryDistribution = {};
@@ -24,11 +25,13 @@ export function computeDerivedPlanFeatures(plan, inputContext = {}) {
   let currentConsecutiveHard = 0;
   let consecutiveHardDaysMax = 0;
   const hardSessionDates = [];
+  const systemicByDate = [];
 
   for (const day of days) {
     const session = day.session ?? {};
     const duration = session.durationMin ?? session.durationMax ?? 0;
     totalPlannedDurationMin += duration;
+    maxSessionDurationMin = Math.max(maxSessionDurationMin, duration);
 
     const systemic = session.systemicCost ?? session.costProfile?.systemic ?? 0;
     const cardio = session.costProfile?.cardiovascular ?? 0;
@@ -37,6 +40,7 @@ export function computeDerivedPlanFeatures(plan, inputContext = {}) {
     cumulativeSystemicCost += systemic;
     cumulativeCardiovascularCost += cardio;
     cumulativeNeuromuscularCost += neuro;
+    if (day.date) systemicByDate.push({ date: day.date, systemic });
 
     const stim = session.stimulusProfile ?? {};
     stimulusTotals.aerobicEndurance += stim.aerobicEndurance ?? 0;
@@ -79,11 +83,30 @@ export function computeDerivedPlanFeatures(plan, inputContext = {}) {
     }
   }
 
-  // Event proximity features
+  // Rolling-load and event-proximity features are descriptive only; they do not
+  // become planner decision authority.
+  const dayMs = 24 * 60 * 60 * 1000;
+  let maxRolling3dSystemicCost = 0;
+  for (const anchor of systemicByDate) {
+    const anchorTime = new Date(anchor.date).getTime();
+    const windowStart = anchorTime - 2 * dayMs;
+    const rollingCost = systemicByDate
+      .filter((item) => {
+        const time = new Date(item.date).getTime();
+        return time >= windowStart && time <= anchorTime;
+      })
+      .reduce((sum, item) => sum + item.systemic, 0);
+    maxRolling3dSystemicCost = Math.max(maxRolling3dSystemicCost, rollingCost);
+  }
+
   let daysFromLastHardSessionToEvent = null;
   let eventWeekHardSessionCount = null;
-
-  const eventDate = inputContext.event?.date;
+  let hardSessionsWithin48hOfEvent = null;
+  const inputEvents = Array.isArray(inputContext.events) && inputContext.events.length > 0
+    ? inputContext.events
+    : (inputContext.event ? [inputContext.event] : []);
+  const scheduledEvents = inputEvents.filter((event) => event?.date && !['cancelled', 'DNS'].includes(event.lifecycle));
+  const eventDate = scheduledEvents[0]?.date;
   if (eventDate && hardSessionDates.length > 0) {
     const eventTime = new Date(eventDate).getTime();
     const hardTimesBeforeEvent = hardSessionDates
@@ -92,11 +115,24 @@ export function computeDerivedPlanFeatures(plan, inputContext = {}) {
 
     if (hardTimesBeforeEvent.length > 0) {
       const lastHardTime = Math.max(...hardTimesBeforeEvent);
-      daysFromLastHardSessionToEvent = Math.round((eventTime - lastHardTime) / (1000 * 60 * 60 * 24));
+      daysFromLastHardSessionToEvent = Math.round((eventTime - lastHardTime) / dayMs);
     }
 
-    const sevenDaysBefore = eventTime - 7 * 24 * 60 * 60 * 1000;
+    const sevenDaysBefore = eventTime - 7 * dayMs;
     eventWeekHardSessionCount = hardTimesBeforeEvent.filter((t) => t >= sevenDaysBefore && t < eventTime).length;
+  }
+
+  if (scheduledEvents.length > 0) {
+    const qualifyingHardDates = new Set();
+    for (const event of scheduledEvents) {
+      const eventTime = new Date(event.date).getTime();
+      const twoDaysBefore = eventTime - 2 * dayMs;
+      for (const hardDate of hardSessionDates) {
+        const hardTime = new Date(hardDate).getTime();
+        if (hardTime >= twoDaysBefore && hardTime < eventTime) qualifyingHardDates.add(hardDate);
+      }
+    }
+    hardSessionsWithin48hOfEvent = qualifyingHardDates.size;
   }
 
   return {
@@ -106,6 +142,8 @@ export function computeDerivedPlanFeatures(plan, inputContext = {}) {
     cumulativeNeuromuscularCost: Math.round(cumulativeNeuromuscularCost * 100) / 100,
     hardSessionCount,
     recoveryOrRestDayCount,
+    maxSessionDurationMin: Math.round(maxSessionDurationMin),
+    maxRolling3dSystemicCost: Math.round(maxRolling3dSystemicCost * 100) / 100,
     consecutiveHardDaysMax,
     modalityDistribution,
     categoryDistribution,
@@ -120,5 +158,7 @@ export function computeDerivedPlanFeatures(plan, inputContext = {}) {
     restrictedModalitiesViolated: restrictedViolations,
     daysFromLastHardSessionToEvent,
     eventWeekHardSessionCount,
+    hardSessionsWithin48hOfEvent,
+    scheduledEventCount: scheduledEvents.length,
   };
 }

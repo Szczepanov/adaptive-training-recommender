@@ -61,6 +61,8 @@ describe('computeDerivedPlanFeatures', () => {
     expect(features.cumulativeNeuromuscularCost).toBe(1.5);
     expect(features.hardSessionCount).toBe(2);
     expect(features.recoveryOrRestDayCount).toBe(1);
+    expect(features.maxSessionDurationMin).toBe(60);
+    expect(features.maxRolling3dSystemicCost).toBe(1.75);
     expect(features.consecutiveHardDaysMax).toBe(1);
     expect(features.modalityDistribution).toEqual({ Cycling: 3 });
     expect(features.categoryDistribution).toEqual({
@@ -72,6 +74,8 @@ describe('computeDerivedPlanFeatures', () => {
     expect(features.restrictedModalitiesViolated).toEqual([]);
     expect(features.daysFromLastHardSessionToEvent).toBe(2); // 2026-06-03 to 2026-06-05
     expect(features.eventWeekHardSessionCount).toBe(2);
+    expect(features.hardSessionsWithin48hOfEvent).toBe(1);
+    expect(features.scheduledEventCount).toBe(1);
   });
 
   it('detects restricted modality violations and consecutive hard day clusters', () => {
@@ -109,7 +113,11 @@ describe('computeDerivedPlanFeatures', () => {
     const features = computeDerivedPlanFeatures(plan, inputContext);
 
     expect(features.hardSessionCount).toBe(2);
+    expect(features.maxSessionDurationMin).toBe(45);
+    expect(features.maxRolling3dSystemicCost).toBe(1.5);
     expect(features.consecutiveHardDaysMax).toBe(2);
+    expect(features.hardSessionsWithin48hOfEvent).toBeNull();
+    expect(features.scheduledEventCount).toBe(0);
     expect(features.restrictedModalitiesViolated).toHaveLength(2);
     expect(features.restrictedModalitiesViolated[0].modality).toBe('Running');
   });
