@@ -94,6 +94,8 @@ export function Goals({ userId }: GoalsProps) {
   const [performanceProfile, setPerformanceProfile] = useState<AthletePerformanceProfile | null>(null);
   const [trainingIntentProfile, setTrainingIntentProfile] = useState<TrainingIntentProfile | null>(null);
   const [performanceObservations, setPerformanceObservations] = useState<MetricObservationRevision[]>([]);
+  const [performanceObservationState, setPerformanceObservationState] =
+    useState<'not_needed' | 'loading' | 'available' | 'unavailable'>('not_needed');
 
   const loadGoals = useCallback(async () => {
     try {
@@ -229,16 +231,24 @@ export function Goals({ userId }: GoalsProps) {
     let cancelled = false;
     if (performanceObservationMetricIds.length === 0) {
       setPerformanceObservations([]);
+      setPerformanceObservationState('not_needed');
       return () => { cancelled = true; };
     }
+    setPerformanceObservationState('loading');
     Promise.all(performanceObservationMetricIds.map(metricId =>
       metricObservationService.listCurrentRevisionsForMetric(userId, metricId)))
       .then(groups => {
-        if (!cancelled) setPerformanceObservations(groups.flat());
+        if (!cancelled) {
+          setPerformanceObservations(groups.flat());
+          setPerformanceObservationState('available');
+        }
       })
       .catch(error => {
         console.error('Error loading performance observations for goals:', error);
-        if (!cancelled) setPerformanceObservations([]);
+        if (!cancelled) {
+          setPerformanceObservations([]);
+          setPerformanceObservationState('unavailable');
+        }
       });
     return () => { cancelled = true; };
   }, [userId, performanceObservationMetricIds]);
@@ -417,6 +427,7 @@ export function Goals({ userId }: GoalsProps) {
                       targetDate={goal.targetDate ?? null}
                       performanceProfile={performanceProfile}
                       comparableObservations={performanceObservations}
+                      observationDataState={performanceObservationState}
                       capacity={goalFeasibilityCapacity}
                     />
                   )}
@@ -514,6 +525,7 @@ interface PerformanceTargetSummaryProps {
   targetDate: string | null;
   performanceProfile: AthletePerformanceProfile | null;
   comparableObservations?: readonly MetricObservationRevision[];
+  observationDataState?: 'not_needed' | 'loading' | 'available' | 'unavailable';
   capacity?: GoalFeasibilityCapacityInput;
 }
 
@@ -530,6 +542,7 @@ export function PerformanceTargetSummary({
   targetDate,
   performanceProfile,
   comparableObservations = [],
+  observationDataState = 'available',
   capacity,
 }: PerformanceTargetSummaryProps) {
   const metric = getMetricDefinition(target.metricId);
@@ -594,7 +607,11 @@ export function PerformanceTargetSummary({
         <div className="performance-target-progress muted">
           {target.subjectRef.kind === 'exercise'
             ? 'No recorded e1RM yet for this exercise.'
-            : 'No comparable logged result yet for this test.'}
+            : observationDataState === 'loading'
+              ? 'Loading comparable logged results...'
+              : observationDataState === 'unavailable'
+                ? 'Comparable logged results are currently unavailable.'
+                : 'No comparable logged result yet for this test.'}
         </div>
       )}
       <div className="performance-target-authority muted">
