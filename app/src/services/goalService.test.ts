@@ -157,6 +157,45 @@ describe('GoalService persistence shape', () => {
         expect(payload.timing).toBe(firestore.deleteMarker);
     });
 
+    describe('performanceTarget semantic read gate', () => {
+        const invalidPersistedGoal = {
+            ...eventGoal,
+            domain: 'strength' as const,
+            performanceTarget: {
+                kind: 'performance_metric' as const,
+                metricId: 'unknown_strength_metric',
+                subjectRef: { kind: 'exercise' as const, exerciseId: 'conventional_deadlift' },
+                targetValue: 220,
+            },
+        };
+
+        it('rejects a semantically invalid persisted target from getGoal', async () => {
+            firestore.getDoc.mockResolvedValue({
+                exists: () => true,
+                data: () => invalidPersistedGoal,
+                id: eventGoal.id,
+            });
+            await expect(new GoalService().getGoal('u1', eventGoal.id)).rejects.toThrow(/Invalid goal data.*Performance target is invalid/);
+        });
+
+        it('rejects a semantically invalid persisted target from listGoals/getActiveGoals', async () => {
+            firestore.getDocs.mockResolvedValue({
+                docs: [{ id: eventGoal.id, data: () => invalidPersistedGoal }],
+            });
+            const service = new GoalService();
+            await expect(service.listGoals('u1')).rejects.toThrow(/Invalid goal data.*Performance target is invalid/);
+            await expect(service.getActiveGoals('u1')).rejects.toThrow(/Invalid goal data.*Performance target is invalid/);
+        });
+
+        it('surfaces semantically invalid persisted targets as INVALID in the stateful read API', async () => {
+            firestore.getDocs.mockResolvedValue({
+                docs: [{ id: eventGoal.id, data: () => invalidPersistedGoal }],
+            });
+            const result = await new GoalService().getActiveGoalsState('u1');
+            expect(result.status).toBe('INVALID');
+        });
+    });
+
     // ADR-0041: registry/domain semantic checks for a typed performanceTarget live at this
     // write boundary (not in validateGoal -- see validationCore.ts's comment on the OV1.4
     // evidence-isolation boundary), so a goal with an unresolvable or domain-mismatched
