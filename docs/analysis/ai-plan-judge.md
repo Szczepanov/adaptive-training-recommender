@@ -72,27 +72,116 @@ The travel case intentionally tests **executed** capacity, equipment, and enviro
 
 ### 2. Run the model judge
 
-**To compare against the committed baseline, use `judge:e2e`, not `judge:local`.** The
-committed baseline (`docs/analysis/plan-judge-baseline.json`) was built with a specific
-settings bundle — `--blind` (packet v2), `--samples 5`, thinking **disabled**, and
-`--ctx 65536` — and `npm run judge:diff` only tolerates comparing runs made with that same
-bundle (see `check-plan-judge-drift.mjs`'s settings guard below). `judge:local`'s defaults
-(1 sample, packet v1, thinking **on**, `--ctx 32768`) intentionally differ, because it exists
-for fast local iteration, not baseline comparison — using it to judge "did I regress the
-baseline?" compares one noisy single-sample draw under a different prompt packet and
-thinking mode to a five-sample median, which can (and did — see
-`git log --grep 'refresh simulation, persona-judge, and plan-judge baselines'`) manufacture
-a double-digit false "regression" count with zero real behavior change:
+#### Semi-automated manual external-LLM workflow
+
+When a hosted/external LLM is preferred over the local provider, use the external package
+workflow. It is intentionally a file handoff: the export command builds the current
+deterministic corpus, writes only the blinded judge view and per-family response contracts,
+and the import command accepts saved JSON responses after human/external review.
+
+Run from `app/`:
 
 ```bash
-# Baseline-comparable: matches docs/analysis/plan-judge-baseline.json's settings exactly,
-# regenerates the corpus, runs the judge, and runs judge:diff for you.
+# Plan-judge package (regenerates the deterministic corpus first)
+npm run judge:external:export -- --out artifacts/external-judge/plan/latest
+
+# Persona-judge package
+npm run persona:external:export -- --out artifacts/external-judge/persona/latest
+
+# Optional expanded hybrid persona suite (uses the hybrid deterministic corpus).
+# Importing this package defaults back to artifacts/hybrid-persona-plan-judge/latest.
+npm run persona:external:export -- --hybrid-expansion --out artifacts/external-judge/persona-hybrid/latest
+
+# Optional: use an existing deterministic artifact directory without rebuilding it
+npm run judge:external:export -- --no-build --source artifacts/ai-plan-judge/latest
+
+# After placing one response JSON per family in the package's responses/ directory:
+npm run judge:external:import -- --package artifacts/external-judge/plan/latest --model gpt-external-review
+npm run persona:external:import -- --package artifacts/external-judge/persona/latest --model external-persona-review
+```
+
+The model label is explicit provenance only; it does not enable network access or credentials.
+The package manifest also records `variant: standard|hybrid_expansion`; unless `--out` is
+explicitly supplied, hybrid persona imports return to
+`artifacts/hybrid-persona-plan-judge/latest` instead of overwriting the standard persona
+artifact directory. Use `--help` for all options and `--dry-run` to inspect resolved paths
+without writing files.
+
+The package layout is:
+
+```text
+artifacts/external-judge/plan/latest/
+  upload/             # SAFE HANDOFF ROOT: upload this directory, not the whole package
+    manifest.json     # suite/case contract, packet hashes, provenance and privacy metadata
+    prompt.md         # judge instructions
+    packets/<family>.json
+    schemas/<family>.json
+  manifest.json       # local canonical copy used by the importer
+  prompt.md
+  packets/<family>.json
+  schemas/<family>.json
+  responses/<family>-<responseBindingSha256>.json   # local-only saved external outputs
+  local-provenance/   # local-only baseline inputs; never upload this directory
+    families.jsonl
+    corpus.json
+    judge-response-schema.json  # when produced by the source suite
+```
+
+Upload **only the generated `upload/` directory**. Never upload `responses/` or
+`local-provenance/`. Prior response files are judge outputs and feeding them back to the next
+external judge can anchor/bias a new evaluation; local provenance can contain information that
+is intentionally withheld from the blind judge view. The exporter rebuilds the managed
+`packets/`, `schemas/`, `local-provenance/`, and `upload/` directories on every export and
+removes stale response JSON whose evaluation-contract binding no longer matches, while
+preserving a response whose binding is still current.
+
+Response filenames are bound to a SHA-256 over the packet hash, per-family schema hash, prompt
+hash, and response-schema version. A prompt/schema change therefore invalidates an otherwise
+identical packet response instead of silently reusing stale judge evidence. Legacy
+`<familyId>.json` names and unknown files are rejected.
+
+Import validates every response with the existing `validateAndNormalizeJudgeRow` contract,
+aggregates it through `aggregateFamilySamples`, rejects contract/hash drift and incomplete
+family coverage, validates the local-provenance hashes, and writes the normal suite
+score/sample/stability/summary/manifest artifacts plus the copied baseline contract files.
+Response files are size-bounded regular JSON objects. Raw response paths and hashes are kept
+only in the imported run manifest; credentials and raw provider health payloads are not part
+of the package contract. The CLI requires an explicit `--model` label for imported evidence;
+the label is provenance, not proof of provider identity.
+
+A manual external import is one judge sample per family. A one-sample MAD of zero is not
+evidence that the judge is stable. In this repository, the reviewed `manual_external` run is
+the preferred canonical judge source because it is the more trusted evaluator; its model,
+provider, packet, prompt, corpus, and response hashes remain part of the committed provenance.
+For consequential changes, collect repeated independently labeled external runs and audit them
+against human/domain review before treating small score movement as meaningful.
+
+The simulation baseline remains deterministic evidence and is never externally judged. An
+external score package may update `docs/analysis/plan-judge-baseline.json` or the persona
+baseline only after the same `--reviewed` promotion, provenance/hash validation, and review of
+the case-level findings as any other judge run. Judge scores remain evaluation evidence; they
+do not become a production decision rule by themselves.
+
+**The committed baseline is currently a reviewed `manual_external` run.** To compare a new
+external run against it, keep the same corpus, packet, prompt, response schema, and model
+label, then run `npm run judge:diff`. Local/native runs intentionally differ in provider,
+model, and sampling settings; use `--allow-model-change` (and, when needed,
+`--allow-settings-change`) only for directional analysis, not as evidence of a clean
+before/after comparison.
+
+To regenerate the native multi-sample reference run, use `judge:e2e`. That workflow remains
+useful for independent triangulation, but its output is not directly comparable to the current
+external baseline without an explicit model/provider opt-in. `judge:local` is for fast local
+iteration, not baseline comparison:
+
+```bash
+# Native triangulation: regenerates the corpus, runs the multi-sample local judge,
+# and runs judge:diff for you. It is not directly comparable to the external baseline.
 npm run judge:e2e
 
 # Higher-throughput variant tuned for the 4B quick model + more VRAM headroom (10 samples,
-# thinking on, wider ctx/concurrency) -- still blind, still baseline-comparable in spirit,
-# but NOT the same settings bundle as the committed baseline, so judge:diff will refuse to
-# compare it directly unless you pass --allow-settings-change.
+# thinking on, wider ctx/concurrency) -- still blind, but not comparable to the external
+# baseline without an explicit settings/model opt-in.
 npm run judge:e2e:quick
 ```
 
@@ -104,7 +193,7 @@ a corpus change before committing to a full `judge:e2e` run):
 npm run judge:local
 
 # Multi-sample stability measurement (5 samples, fresh) -- still packet v1/thinking-on,
-# so still NOT comparable to the committed baseline; use judge:e2e for that
+# so still NOT comparable to the committed external baseline
 npm run judge:local:stability
 
 # Quick local evaluation (4B, one sample, thinking off)
