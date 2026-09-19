@@ -136,14 +136,14 @@ Power targets therefore also need registered metric and test identity, with prot
 
 ---
 
-## 4. Recommended persisted target: metric + subject + value
+## 4. Recommended persisted target: metric + existing subject authority + value
 
 Use one extensible typed contract:
 
 ~~~ts
 type PerformanceSubjectRef =
   | { kind: 'exercise'; exerciseId: string }
-  | { kind: 'test'; testId: string };
+  | { kind: 'performance_test'; performanceTestId: string };
 
 type GoalPerformanceTarget = {
   kind: 'performance_metric';
@@ -162,61 +162,59 @@ interface UserGoal {
 }
 ~~~
 
-Do not persist a user-entered unit or direction inside the typed target. Those belong to the metric definition. Do not copy the exercise/test display name into the target. Use stable ids.
+Do not persist a user-entered unit or direction inside the typed target. Those already belong to the observation MetricDefinition. Do not copy exercise/test display names into the target. Use stable ids.
 
-The target family is also derived from the registered metric rather than duplicated in the goal document.
+For test-bound goals, **reuse the existing PerformanceTestDefinition catalog in app/src/observations/performanceTestingCatalog.ts**. Each definition already owns a versioned MeasurementProtocol, TestingSessionDefinition, default comparison context and expected source. A second "performance test registry" would duplicate an authority the repository already has.
 
 Examples:
 
-| Athlete intent | metricId | subjectRef | canonical target |
+| Athlete intent | metricId candidate | subjectRef | canonical target |
 |---|---|---|---:|
 | Conventional deadlift 1RM | strength_1rm_kg | exercise: conventional_deadlift | 220 |
-| Standing 10 m sprint | sprint_elapsed_time_s | test: sprint_10m_standing | 1.75 |
-| Flying 10 m sprint | sprint_elapsed_time_s | test: sprint_flying_10m | 1.00 |
-| Countermovement jump | jump_height_cm | test: cmj_standard | 50 |
-| Cycling 5 s peak power | peak_power_w | test: cycling_5s_peak_power | 1200 |
+| Standing 10 m sprint | sprint_elapsed_time_s | performance_test: sprint_10m_standing-r1 | 1.75 |
+| Flying 10 m sprint | sprint_elapsed_time_s | performance_test: sprint_flying_10m-r1 | 1.00 |
+| Countermovement jump | jump_height_cm | performance_test: cmj_standard-r1 | 50 |
+| Cycling 5 s peak power | cycling_5s_peak_power_w | performance_test: cycling_5s_peak_power-r1 | 1200 |
 
-The exact registry ids are design candidates for the ADR, but the shape is the important decision.
+The exact new metric/test ids are ADR decisions and should follow existing registry naming conventions. The shape is the important decision.
 
 ---
 
-## 5. A registry must own semantics instead of the user
+## 5. Reuse the observation metric and performance-testing infrastructure
 
-A PerformanceMetricDefinition should own at least:
+The repository already has more of the required outcome architecture than the original draft credited:
+
+- MetricDefinition already owns id, displayName, domain, unit, direction, valueKind and description.
+- MeasurementProtocol already owns protocol id/revision, compatible metricIds, instructions, comparison dimensions, familiarization, burden and invalidation rules.
+- PerformanceTestDefinition already composes MeasurementProtocol with a TestingSessionDefinition, default comparison context and expected source.
+- MetricObservationRevision already stores protocolRef and comparisonSeriesKey.
+- buildComparisonSeries already includes metric id, protocol id/revision, canonicalization version and series-defining dimensions in comparability identity.
+
+Therefore:
+
+1. Extend app/src/observations/registry.ts with reviewed target metrics; do not invent a second metric-definition type.
+2. Extend app/src/observations/performanceTestingCatalog.ts for new test-bound speed/power goals.
+3. Extend ComparisonDimension only when a real new protocol requires another series-defining dimension.
+4. Add only a thin **goal-target policy** that says which registered metrics are target-eligible, which product family they belong to, and what subject kind they accept.
+
+Conceptually:
 
 ~~~ts
-interface PerformanceMetricDefinition {
-  id: string;
+interface PerformanceTargetPolicy {
+  metricId: string;
   family: 'strength' | 'speed' | 'power';
-  unit: string;
-  direction: 'higher_is_better' | 'lower_is_better';
-  subjectKind: 'exercise' | 'test';
+  subjectKind: 'exercise' | 'performance_test';
   targetRange?: { min: number; max: number };
 }
 ~~~
 
-A canonical PerformanceTestDefinition should own the parts that make a test comparable, for example:
+For performance_test subjects, semantic validation resolves getPerformanceTestDefinition(performanceTestId) and requires that its MeasurementProtocol declares the target metric.
 
-- test id and version;
-- display name;
-- family;
-- distance/duration where applicable;
-- start convention;
-- measurement/protocol requirements;
-- required context dimensions;
-- compatible outcome metrics.
+For exercise subjects, semantic validation resolves the canonical exercise and checks the target policy's exercise eligibility.
 
-The existing observations registry should remain the metric authority if it can be extended cleanly. Do not create one metric vocabulary for goals and a second incompatible vocabulary for outcome evidence.
+This preserves one measurement vocabulary and one protocol/comparability authority.
 
-This gives validation enough information to reject combinations such as:
-
-- sprint time bound to a barbell exercise;
-- strength 1RM bound to a sprint test;
-- negative or nonsensical target values;
-- an unregistered metric string;
-- a copied display label masquerading as identity.
-
----
+## 6. Outcome identity and training coverage are deliberately different
 
 ## 6. Outcome identity and training coverage are deliberately different
 
@@ -338,7 +336,7 @@ A later conversion flow may offer a user-confirmed mapping when the destination 
 | PG-F7 | Strength has canonical exercise identity and e1RM substrate | Reuse exercise ids and existing capacity ownership |
 | PG-F8 | Canonical sprint training primitives already exist | They are useful coverage candidates but not sufficient test identity |
 | PG-F9 | Power-oriented workout content exists | Power target metrics still need truthful metric/test semantics |
-| PG-F10 | The observation registry is cycling-first | Extend a single metric/evidence vocabulary rather than duplicating it |
+| PG-F10 | The observation metric and performance-testing catalogs are cycling-first but already versioned/comparability-aware | Extend them rather than creating duplicate metric/test registries |
 | PG-F11 | Direct test identity and weekly training coverage are different concepts | Do not force maximal testing as weekly goal coverage |
 | PG-F12 | Target value is an outcome, never current capacity or dose | Safety/readiness/autoregulation remain prescription authority |
 | PG-F13 | Current CI failure is trailing whitespace in the two new Markdown files | Normalize whitespace before pushing the revision |
