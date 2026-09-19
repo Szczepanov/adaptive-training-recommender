@@ -72,68 +72,6 @@ The travel case intentionally tests **executed** capacity, equipment, and enviro
 
 ### 2. Run the model judge
 
-#### Semi-automated manual external-LLM workflow
-
-When a hosted/external LLM is preferred over the local provider, use the external package
-workflow. It is intentionally a file handoff: the export command builds the current
-deterministic corpus, writes only the blinded judge view and per-family response contracts,
-and the import command accepts saved JSON responses after human/external review.
-
-Run from `app/`:
-
-```bash
-# Plan-judge package (regenerates the deterministic corpus first)
-npm run judge:external:export -- --out artifacts/external-judge/plan/latest
-
-# Persona-judge package
-npm run persona:external:export -- --out artifacts/external-judge/persona/latest
-
-# Optional expanded hybrid persona suite (uses the hybrid deterministic corpus)
-npm run persona:external:export -- --hybrid-expansion --out artifacts/external-judge/persona-hybrid/latest
-
-# Optional: use an existing deterministic artifact directory without rebuilding it
-npm run judge:external:export -- --no-build --source artifacts/ai-plan-judge/latest
-
-# After placing one response JSON per family in the package's responses/ directory:
-npm run judge:external:import -- --package artifacts/external-judge/plan/latest --model gpt-external-review
-npm run persona:external:import -- --package artifacts/external-judge/persona/latest --model external-persona-review
-```
-
-The model label is explicit provenance only; it does not enable network access or credentials.
-Use `--help` for all options and `--dry-run` to inspect resolved paths without writing files.
-
-The package layout is:
-
-```text
-artifacts/external-judge/plan/latest/
-  manifest.json       # suite/case contract, packet hashes, provenance and privacy metadata
-  prompt.md           # upload-visible judge instructions
-  packets/<family>.json
-  schemas/<family>.json
-  responses/<family>-<packetSha256>.json   # added by the reviewer or external LLM
-  local-provenance/   # local-only baseline inputs; never upload this directory
-    families.jsonl
-    corpus.json
-    judge-response-schema.json  # when produced by the source suite
-```
-
-The upload allowlist is exactly `manifest.json`, `prompt.md`, `packets/`, `schemas/`, and
-`responses/`. Never upload `local-provenance/`; it contains source artifacts needed only for
-local baseline promotion. Response filenames are bound to the packet hash in `manifest.json`;
-legacy `<familyId>.json` names and unknown files are rejected.
-
-Import validates every response with the existing `validateAndNormalizeJudgeRow` contract,
-aggregates it through `aggregateFamilySamples`, rejects contract/hash drift and incomplete
-family coverage, validates the local-provenance hashes, and writes the normal suite
-score/sample/stability/summary/manifest artifacts plus the copied baseline contract files.
-Response files are size-bounded regular JSON objects. Raw response paths and hashes are kept
-only in the imported run manifest; credentials and raw provider health payloads are not part
-of the package contract.
-
-The simulation baseline remains deterministic evidence and is never externally judged. An
-external score package must not be used to rewrite `docs/analysis/plan-judge-baseline.json`
-or to turn model opinions into a production decision rule.
-
 **To compare against the committed baseline, use `judge:e2e`, not `judge:local`.** The
 committed baseline (`docs/analysis/plan-judge-baseline.json`) was built with a specific
 settings bundle — `--blind` (packet v2), `--samples 5`, thinking **disabled**, and
