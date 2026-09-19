@@ -111,7 +111,7 @@ A deadlift 1RM target can legitimately require conventional-deadlift practice.
 
 A CMJ target can drive explosive lower-body work while formal CMJ testing remains periodic.
 
-The metric/test registry and the planning-coverage mapping therefore remain separate authorities.
+The existing metric/performance-testing catalogs and the planning-coverage mapping therefore remain separate authorities.
 
 ### P5 — Specificity never overrides hard constraints
 
@@ -255,7 +255,7 @@ Write and accept an ADR covering:
 
 1. performanceTarget is the canonical typed measurable outcome for new strength/speed/power goals.
 2. Metric semantics come from one registry shared with or aligned to observations.
-3. Exercise subjects use canonical exercise ids; test subjects use canonical test ids.
+3. Exercise subjects use canonical exercise ids; test-bound subjects use existing PerformanceTestDefinition ids.
 4. Current capability/evidence is not copied into the goal.
 5. Target value cannot become prescription intensity or automatic progression.
 6. Goal-test identity and workout coverage are distinct contracts.
@@ -955,7 +955,7 @@ For PG1–PG4:
 - unit/component tests;
 - Firestore emulator tests for rule changes;
 - goal parser compatibility tests;
-- metric/test registry validation;
+- metric registry + performance-testing catalog validation;
 - accessibility coverage for new controls.
 
 For PG5–PG7 recommendation-affecting work:
