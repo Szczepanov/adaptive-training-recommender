@@ -13,6 +13,7 @@ const promptPath = resolve(outputDir, 'judge-prompt.md');
 const responseSchemaPath = resolve(outputDir, 'judge-response-schema.json');
 const scoresPath = resolve(outputDir, 'judge-scores.jsonl');
 const corpusPath = resolve(outputDir, 'corpus.json');
+const runManifestPath = resolve(outputDir, 'judge-run-manifest.json');
 
 if (!reviewed) {
   console.error('Refusing to update the committed plan judge baseline without --reviewed.');
@@ -72,7 +73,15 @@ if (summary?.source && isAbsolute(summary.source)) {
 }
 
 const provenance = summary?.provenance ?? {};
-if (provenance.judgeProvider === 'manual_external') {
+let runManifest = null;
+if (existsSync(runManifestPath)) {
+  try {
+    runManifest = JSON.parse(readFileSync(runManifestPath, 'utf8'));
+  } catch (error) {
+    failures.push(`judge-run-manifest.json is malformed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+if (provenance.judgeProvider === 'manual_external' || runManifest?.judgeProvider === 'manual_external') {
   failures.push('manual_external judge evidence is exploratory and cannot be promoted to the committed plan-judge baseline; rerun the configured native judge workflow.');
 }
 for (const field of ['corpusCommit', 'corpusSchema', 'corpusSha256', 'familiesSha256', 'promptSha256', 'responseSchemaSha256', 'judgeScoresSha256', 'judgeModel', 'judgeProvider']) {
