@@ -60,11 +60,14 @@ is fed from `TrainingIntentProfile.priorities` (a persisted, athlete-selected fi
 
 `AdaptationDoseRequirement` has **no field today** for exact exercise/subject identity.
 PG5.3's "refine in place rather than duplicate" therefore needs new surface on this type
-(e.g. an optional narrowing/preference field), not an overload of an existing one. Adding
-a **second** `AdaptationDoseRequirement` with `adaptation: 'strength'` would double-count
-floor/target dose in `weeklyDosePacking.ts`'s `packWeeklyDose` — this is the literal
-double-counting PG5.3 must avoid, and the existing type gives no shortcut around doing it
-properly.
+(e.g. an optional narrowing/preference field), not an overload of an existing one. A
+**second** `AdaptationDoseRequirement` with `adaptation: 'strength'` is not an independent
+target-specific dose channel: `packWeeklyDose` computes already-delivered dose from all
+packed occurrences carrying the same adaptation. A later strength requirement can
+therefore inherit generic strength credit rather than proving direct target coverage
+(and still participates separately in requirement ordering/fair-share/shortfall logic).
+That duplicate shape cannot reliably express "keep the broad strength floor, but require
+specific direct practice"; PG5.3 needs explicit identity-aware refinement instead.
 
 ## 3. Weekly allocation / role reservation — the open design question
 
