@@ -123,6 +123,11 @@ if (existsSync(manifestPath)) {
 }
 const judgeModel = manifest?.judgeModel ?? null;
 const judgeProvider = manifest?.judgeProvider ?? null;
+if (judgeProvider === 'manual_external') {
+  console.error('Refusing to promote manual_external judge evidence to the committed persona baseline.');
+  console.error('Run the configured native persona judge workflow and review that evidence instead.');
+  process.exit(1);
+}
 const judgeConfig = manifest
   ? {
       model: manifest.judgeModel,

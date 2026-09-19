@@ -156,7 +156,9 @@ and audit them against human/domain review before treating score movement as mea
 
 The simulation baseline remains deterministic evidence and is never externally judged. An
 external score package must not be used to rewrite `docs/analysis/plan-judge-baseline.json`
-or to turn model opinions into a production decision rule.
+or to turn model opinions into a production decision rule. Both plan and persona baseline
+promotion scripts now enforce this boundary by rejecting artifacts whose judge provider is
+`manual_external`.
 
 **To compare against the committed baseline, use `judge:e2e`, not `judge:local`.** The
 committed baseline (`docs/analysis/plan-judge-baseline.json`) was built with a specific

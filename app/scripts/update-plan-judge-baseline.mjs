@@ -72,6 +72,9 @@ if (summary?.source && isAbsolute(summary.source)) {
 }
 
 const provenance = summary?.provenance ?? {};
+if (provenance.judgeProvider === 'manual_external') {
+  failures.push('manual_external judge evidence is exploratory and cannot be promoted to the committed plan-judge baseline; rerun the configured native judge workflow.');
+}
 for (const field of ['corpusCommit', 'corpusSchema', 'corpusSha256', 'familiesSha256', 'promptSha256', 'responseSchemaSha256', 'judgeScoresSha256', 'judgeModel', 'judgeProvider']) {
   requireString(provenance[field], `provenance.${field}`);
   if (provenance[field] === 'unknown') failures.push(`provenance.${field} cannot be 'unknown' for a committed baseline.`);
