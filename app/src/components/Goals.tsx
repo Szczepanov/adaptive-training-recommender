@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { goalService } from '../services/goalService';
 import { preferencesService } from '../services/preferencesService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
+import { metricObservationService } from '../services/metricObservationService';
 import type { UserGoal, GoalCategory, GoalDomain, GoalStatus, UserEvent, TrainingIntentProfile } from '../engine/models';
 import { deriveGoalCategory, deriveEventPriority, getDaysToEvent, goalToUserEvent, evaluatePeriodizationPhase } from '../engine/periodization';
 import { EVENT_PRESETS } from '../engine/eventPresets';
@@ -16,6 +17,7 @@ import {
     type PerformanceSubjectRef,
 } from '../engine/performanceTargetPolicy';
 import { getMetricDefinition } from '../observations/registry';
+import type { MetricObservationRevision } from '../observations/models';
 import { PERFORMANCE_TEST_DEFINITIONS } from '../observations/performanceTestingCatalog';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
 import { resolveGoalProgress, type GoalProgressResult } from '../engine/goalProgress';
@@ -91,6 +93,7 @@ export function Goals({ userId }: GoalsProps) {
   const [filter, setFilter] = useState<'all' | 'active' | 'archived'>('active');
   const [performanceProfile, setPerformanceProfile] = useState<AthletePerformanceProfile | null>(null);
   const [trainingIntentProfile, setTrainingIntentProfile] = useState<TrainingIntentProfile | null>(null);
+  const [performanceObservations, setPerformanceObservations] = useState<MetricObservationRevision[]>([]);
 
   const loadGoals = useCallback(async () => {
     try {
@@ -213,6 +216,32 @@ export function Goals({ userId }: GoalsProps) {
       weeklyMaxSessions: commitment.maxSessions,
     };
   }, [trainingIntentProfile]);
+
+  const performanceObservationMetricIds = useMemo(
+    () => Array.from(new Set(goals
+      .map(goal => goal.performanceTarget)
+      .filter((target): target is GoalPerformanceTarget => !!target && target.subjectRef.kind === 'performance_test')
+      .map(target => target.metricId))).sort(),
+    [goals],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (performanceObservationMetricIds.length === 0) {
+      setPerformanceObservations([]);
+      return () => { cancelled = true; };
+    }
+    Promise.all(performanceObservationMetricIds.map(metricId =>
+      metricObservationService.listCurrentRevisionsForMetric(userId, metricId)))
+      .then(groups => {
+        if (!cancelled) setPerformanceObservations(groups.flat());
+      })
+      .catch(error => {
+        console.error('Error loading performance observations for goals:', error);
+        if (!cancelled) setPerformanceObservations([]);
+      });
+    return () => { cancelled = true; };
+  }, [userId, performanceObservationMetricIds]);
 
   const filteredGoals = useMemo(() => goals.filter(goal => {
     if (filter === 'all') return true;
@@ -387,6 +416,7 @@ export function Goals({ userId }: GoalsProps) {
                       target={goal.performanceTarget}
                       targetDate={goal.targetDate ?? null}
                       performanceProfile={performanceProfile}
+                      comparableObservations={performanceObservations}
                       capacity={goalFeasibilityCapacity}
                     />
                   )}
@@ -483,6 +513,7 @@ interface PerformanceTargetSummaryProps {
   target: GoalPerformanceTarget;
   targetDate: string | null;
   performanceProfile: AthletePerformanceProfile | null;
+  comparableObservations?: readonly MetricObservationRevision[];
   capacity?: GoalFeasibilityCapacityInput;
 }
 
@@ -494,13 +525,22 @@ const PLAUSIBILITY_LABELS: Record<GoalFeasibilityAssessment['plausibility'], str
   insufficient_evidence: 'Not enough evidence yet',
 };
 
-export function PerformanceTargetSummary({ target, targetDate, performanceProfile, capacity }: PerformanceTargetSummaryProps) {
+export function PerformanceTargetSummary({
+  target,
+  targetDate,
+  performanceProfile,
+  comparableObservations = [],
+  capacity,
+}: PerformanceTargetSummaryProps) {
   const metric = getMetricDefinition(target.metricId);
   const subjectLabel = subjectDisplayName(target.subjectRef);
 
   const progress: GoalProgressResult = useMemo(
-    () => resolveGoalProgress(target, { athletePerformanceProfile: performanceProfile }),
-    [target, performanceProfile],
+    () => resolveGoalProgress(target, {
+      athletePerformanceProfile: performanceProfile,
+      comparableObservations,
+    }),
+    [target, performanceProfile, comparableObservations],
   );
 
   const feasibility: GoalFeasibilityAssessment | null = useMemo(
