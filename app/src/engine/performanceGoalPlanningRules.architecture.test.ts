@@ -57,13 +57,13 @@ function importsPlanningRulesModule(absolutePath: string): boolean {
         const isDynamicImportCall = ts.isCallExpression(node)
             && node.expression.kind === ts.SyntaxKind.ImportKeyword
             && node.arguments.length > 0
-            && ts.isStringLiteral(node.arguments[0]);
+            && ts.isStringLiteralLike(node.arguments[0]);
         const specifier = ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)
             ? node.moduleSpecifier
             : ts.isExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)
                 ? node.moduleSpecifier
                 : isDynamicImportCall
-                    ? (node.arguments[0] as ts.StringLiteral)
+                    ? (node.arguments[0] as ts.StringLiteralLike)
                     : null;
         if (specifier && resolveSpecifier(absolutePath, specifier.text) === MODULE_FILE) {
             imports = true;

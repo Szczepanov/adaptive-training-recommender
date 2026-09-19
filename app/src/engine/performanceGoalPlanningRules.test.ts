@@ -133,7 +133,7 @@ describe('workoutProvidesDirectCoverage against the real catalog', () => {
     });
 
     it('documents the known PG6 gap: no active workout in today\'s catalog covers conventional_deadlift', () => {
-        const covered = WORKOUTS.some(workout => workoutProvidesDirectCoverage(
+        const covered = WORKOUTS.some(workout => workout.status === 'active' && workoutProvidesDirectCoverage(
             workout,
             'strength_1rm_kg',
             { kind: 'exercise', exerciseId: 'conventional_deadlift' },
@@ -151,7 +151,7 @@ describe('workoutProvidesDirectCoverage against the real catalog', () => {
     });
 
     it('documents the known PG6 gap: no active workout in today\'s catalog covers the cycling 5 s peak-power target', () => {
-        const covered = WORKOUTS.some(workout => workoutProvidesDirectCoverage(
+        const covered = WORKOUTS.some(workout => workout.status === 'active' && workoutProvidesDirectCoverage(
             workout,
             'cycling_5s_peak_power_w',
             { kind: 'performance_test', performanceTestId: 'cycling_5s_peak_power-r1' },
