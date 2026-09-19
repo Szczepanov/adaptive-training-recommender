@@ -141,7 +141,10 @@ implementation covers one target per family:
 
 Delivered in Stage 1: `app/src/observations/registry.ts` and
 `performanceTestingCatalog.ts` extensions, `app/src/engine/performanceTargetPolicy.ts`
-(target-eligibility policy + semantic validators), typed `UserGoal.performanceTarget`
+(pure target-eligibility policy, no observations/workouts imports) and
+`app/src/engine/performanceTargetValidation.ts` (semantic validators, split out in
+Stage 2/PG5.1 so the policy module stays reachable from production selection/ranking
+modules without violating the OV1.4 observations-isolation boundary), typed `UserGoal.performanceTarget`
 persistence and validation, `speed`/`power` `GoalDomain` values, fail-closed semantic
 validation on both goal-service reads and writes, athlete-facing target UX in
 `Goals.tsx`, honest current-evidence/progress projection

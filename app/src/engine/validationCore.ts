@@ -707,7 +707,7 @@ export function validateGoal(raw: any): ValidationResult<UserGoal> {
 
     // Typed performance target (ADR-0041). This is a STRUCTURAL check only -- shape,
     // kind and exact keys. Registry/subject membership and domain/family consistency are
-    // semantic checks that deliberately live in engine/performanceTargetPolicy.ts's
+    // semantic checks that deliberately live in engine/performanceTargetValidation.ts's
     // validatePerformanceTargetForDomain instead, enforced by goalService.ts's
     // read/write boundary: validationCore.ts is reachable from production
     // selection/ranking modules via the engine/validation.ts barrel, and pulling the

@@ -277,7 +277,7 @@ describe('validateGoal', () => {
         // exercise/test mismatch, domain-vs-family mismatch) are semantic, not structural
         // -- validateGoal deliberately does not perform them (see validationCore.ts's
         // comment on the OV1.4 evidence-isolation boundary). They are covered by
-        // engine/performanceTargetPolicy.test.ts's validatePerformanceTargetForDomain
+        // engine/performanceTargetValidation.test.ts's validatePerformanceTargetForDomain
         // tests and services/goalService.test.ts's write-boundary tests instead.
         it('accepts a structurally well-formed but semantically unresolvable target (semantic checks happen elsewhere)', () => {
             const result = validateGoal({

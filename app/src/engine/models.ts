@@ -5,8 +5,10 @@ import type { DataIssue, DataState, DataStateSummary } from './dataState';
 import type { SubjectiveBaseline } from './subjectiveBaseline';
 import type { DataConfidenceScore } from './dataConfidence';
 import type { GoalPerformanceTarget } from './performanceTargetPolicy';
+import type { PerformanceGoalDemand } from './performanceGoalDemand';
 
 export type { GoalPerformanceTarget, PerformanceSubjectRef, PerformanceGoalFamily } from './performanceTargetPolicy';
+export type { PerformanceGoalDemand, PerformanceGoalCoverageMissReason } from './performanceGoalDemand';
 
 export type SubjectiveDimensionKey =
     | 'readiness'
@@ -251,6 +253,11 @@ export interface UserContext {
     injuryPolicyTrace?: InjuryPolicyTrace;
     /** Optional only for legacy engine callers; composed recommendations always provide it. */
     trainingSettings?: TrainingSettings;
+    /** Stage 2/PG5.1 (ADR-0041): typed strength/speed/power goal projection. Populated,
+     *  but consumed by nothing yet -- see performanceGoalDemand.architecture.test.ts,
+     *  which fails if any selection/ranking module starts reading this before PG7's
+     *  allocation-authority wiring lands. */
+    performanceGoalDemands?: readonly PerformanceGoalDemand[];
 }
 
 /** Persisted at `users/{userId}/fixed_activities/{activityId}` (ADR-0002 user-owned

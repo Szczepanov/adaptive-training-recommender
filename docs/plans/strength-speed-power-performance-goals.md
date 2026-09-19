@@ -14,7 +14,8 @@ consistency) deliberately does **not** live inside `validateGoal`
 modules (`optimizer.ts` and friends) from transitively reaching `observations/*`, and
 `validationCore.ts` is reachable from those modules through the `engine/validation.ts`
 barrel. Semantic validation (`validatePerformanceTargetForDomain`, in
-`engine/performanceTargetPolicy.ts`) is instead enforced at `goalService.ts`'s
+`engine/performanceTargetValidation.ts` since Stage 2/PG5.1 split it out of
+`performanceTargetPolicy.ts` for the same OV1.4 reason) is instead enforced at `goalService.ts`'s
 create/update **and read** boundaries, and by the Goals.tsx UI before submit.
 `validateGoal` keeps a structural-only check (shape/kind/exact keys) and still fails a
 goal closed for a malformed target; a well-formed-but-semantically-unresolvable target
@@ -417,7 +418,7 @@ Write and accept an ADR covering:
 
 ## PG1 — extend canonical metric and performance-testing catalogs
 
-**Status:** [x] Implemented — `strength_1rm_kg`, `sprint_elapsed_time_s`, `cycling_5s_peak_power_w` in `app/src/observations/registry.ts`; `sprint_10m_standing-r1` and `cycling_5s_peak_power-r1` in `app/src/observations/performanceTestingCatalog.ts`; target-eligibility policy and semantic validators in `app/src/engine/performanceTargetPolicy.ts`.
+**Status:** [x] Implemented — `strength_1rm_kg`, `sprint_elapsed_time_s`, `cycling_5s_peak_power_w` in `app/src/observations/registry.ts`; `sprint_10m_standing-r1` and `cycling_5s_peak_power-r1` in `app/src/observations/performanceTestingCatalog.ts`; target-eligibility policy in `app/src/engine/performanceTargetPolicy.ts` (pure, no observations/workouts imports) and semantic validators in `app/src/engine/performanceTargetValidation.ts` (split out in Stage 2/PG5.1 for the OV1.4 boundary).
 **Blocked by:** PG0
 **Recommendation-affecting:** no
 
@@ -507,7 +508,7 @@ Cover:
 
 ## PG2 — typed goal model, domain, validation and persistence
 
-**Status:** [x] Implemented — `UserGoal.performanceTarget`, `speed`/`power` domains in `app/src/engine/models.ts`; structural validation in `app/src/engine/validationCore.ts`; semantic/domain validation moved to `app/src/engine/performanceTargetPolicy.ts`'s `validatePerformanceTargetForDomain`, enforced at `app/src/services/goalService.ts`'s read/write boundary (see this plan's Stage 1 implementation note above for why); `firestore.rules` structural check added.
+**Status:** [x] Implemented — `UserGoal.performanceTarget`, `speed`/`power` domains in `app/src/engine/models.ts`; structural validation in `app/src/engine/validationCore.ts`; semantic/domain validation in `app/src/engine/performanceTargetValidation.ts`'s `validatePerformanceTargetForDomain`, enforced at `app/src/services/goalService.ts`'s read/write boundary (see this plan's Stage 1 implementation note above for why); `firestore.rules` structural check added.
 **Blocked by:** PG1
 **Recommendation-affecting:** no; persistence only
 
@@ -880,13 +881,23 @@ Cover:
 
 ## PG5 — goal-to-planning projection and coverage semantics
 
-**Status:** [ ]
+**Status:** [~] PG5.1 Implemented (typed projection only, no planning authority); PG5.2, PG5.3 and PG5.4's live wiring not started.
 **Blocked by:** PG0, PG2
-**Recommendation-affecting:** yes — requires POLICY_VERSION update and policy-drift verification
+**Recommendation-affecting:** yes — requires POLICY_VERSION update and policy-drift verification. PG5.1 alone already tripped the drift gate (it touches `engine/adapters.ts`) even though it changes zero actual behavior; see its implementation note below.
 
 This is the bridge from stored outcome to programming.
 
 ### PG5.1 Typed planning projection
+
+**Status:** [x] Implemented — `app/src/engine/performanceGoalDemand.ts`'s `PerformanceGoalDemand`, `goalToPerformanceGoalDemand`, `mapGoalsToPerformanceGoalDemands`; wired into `UserContext.performanceGoalDemands` via `app/src/engine/adapters.ts`'s `mapContextFromGoalsAndTrainingSettings`.
+
+Implementation notes (2026-09-19, Stage 2 PR):
+
+- **No consumer yet.** The projection is populated in `UserContext` but nothing reads it. `app/src/engine/performanceGoalDemand.architecture.test.ts` structurally guards this: it fails if `rules.ts`, `optimizer.ts`, `evergreenStrategy.ts`, `evergreenPlanning.ts`, `weeklyDosePacking.ts`, `weeklyAllocation.ts`, `planner.ts` or `sequenceSearch.ts` ever reference `performanceGoalDemands`, and must be deliberately relaxed when PG7 actually wires it in.
+- **OV1.4 boundary fix.** `engine/adapters.ts` is reachable from every production selection/ranking module via `engine/eligibility.ts` (verified by import-graph BFS). `engine/performanceTargetPolicy.ts` used to mix pure policy/type data with semantic validators that import the observations registries. Splitting the validators out into `app/src/engine/performanceTargetValidation.ts` (Stage 1's `validatePerformanceTarget`/`validatePerformanceTargetForDomain`) was necessary so `performanceGoalDemand.ts` could resolve a target's family via the now-pure `performanceTargetPolicy.ts` without pulling `observations/*` into the selection-module reachability set. `observations/architecture.test.ts`'s existing OV1.4 test would have caught the alternative.
+- **No title-fallback identity.** Unlike the existing `goalToUserEvent` precedent (`goal.id ?? goal.title`), `goalToPerformanceGoalDemand` returns `null` for a goal with no `id` rather than falling back to `goal.title` — PG7's plan text requires deterministic "ascending stable goalId lexical order" tie-breaking, which a title (not unique, not stable) would silently violate. Production data (sourced via `goalService.ts`) always has a real Firestore document id; only a hand-built fixture without one is affected.
+- **`priority` is not an allocation tier.** `PerformanceGoalDemand.priority` is copied verbatim from `UserGoal.priority` (1-5) for later use; it is not itself an allocation-search priority or tie-break authority. PG7 must define that separately.
+- **POLICY_VERSION bumped** to `2026-09-performance-goal-demand-projection-v1` because `adapters.ts` is on `check-policy-drift.mjs`'s `decisionAffectingFiles` list, regardless of the fact that this change is behaviorally inert. `simulate:diff` showed no change, but that alone is a weak signal since the committed simulation fixtures contain no goal with a typed `performanceTarget` — the real proof of inertness is the structural architecture test above plus `adapters.test.ts`'s byte-identical-`UserContext`-except-one-field test.
 
 Do not overload UserContext goal-title strings.
 
@@ -946,14 +957,18 @@ Do not hide a specific miss behind generic strength/high-intensity credit.
 
 At minimum:
 
-1. strength target projects exact exercise identity;
-2. standing 10 m and flying 10 m remain distinct subjects;
-3. target value changes do not change coverage identity;
-4. broad priority + typed target does not double dose;
-5. hard exclusions produce shortfall, not unsafe selection;
-6. legacy goal creates no typed demand.
+1. strength target projects exact exercise identity — **done**, `performanceGoalDemand.test.ts`;
+2. standing 10 m and flying 10 m remain distinct subjects — **done** for `subjectRef` inequality in general (the catalog only has one speed test today, so the test uses two synthetic `performanceTestId`s rather than a real flying-10m test);
+3. target value changes do not change coverage identity — **done**, `performanceGoalDemand.test.ts`;
+4. broad priority + typed target does not double dose — **not done**: PG5.2/PG5.3 (the dose/coverage refinement this test would exercise) are not implemented, so there is nothing yet that could double-count;
+5. hard exclusions produce shortfall, not unsafe selection — **not done**: no shortfall-producing code exists yet (PG5.4 is a type-only forward declaration; PG7 owns the actual allocation path this would exercise);
+6. legacy goal creates no typed demand — **done**, `performanceGoalDemand.test.ts`.
 
-**Done when:** the weekly planner understands what kind of specific practice matters without using the target number as training dose.
+**Done when:** the weekly planner understands what kind of specific practice matters without
+using the target number as training dose. **Not met by PG5.1 alone** — the planner receives
+a populated but entirely unused projection; see PG5.1's implementation note above and
+`performanceGoalDemand.architecture.test.ts`, which enforces that nothing reads it yet. This
+criterion is met only once PG5.2/PG5.3 (and, for allocation to actually change, PG7) land.
 
 ---
 
