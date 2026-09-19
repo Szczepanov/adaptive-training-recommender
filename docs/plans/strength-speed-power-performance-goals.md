@@ -83,10 +83,10 @@ Examples:
 
 ~~~text
 strength_1rm_kg + exercise:conventional_deadlift
-sprint_elapsed_time_s + test:sprint_10m_standing
-sprint_elapsed_time_s + test:sprint_flying_10m
-peak_power_w + test:cycling_5s_peak_power
-jump_height_cm + test:cmj_standard
+sprint_elapsed_time_s + performance_test:sprint_10m_standing-r1
+sprint_elapsed_time_s + performance_test:sprint_flying_10m-r1
+peak_power_w + performance_test:cycling_5s_peak_power-r1
+jump_height_cm + performance_test:cmj_standard-r1
 ~~~
 
 Stable ids are persisted. Display labels are resolved from registries.
@@ -148,8 +148,8 @@ type PerformanceSubjectRef =
       exerciseId: string;
     }
   | {
-      kind: 'test';
-      testId: string;
+      kind: 'performance_test';
+      performanceTestId: string;
     };
 
 type GoalPerformanceTarget = {
@@ -182,22 +182,29 @@ Do not store:
 - weekly progression increments;
 - measurement-device assumptions.
 
-Metric/test registries provide semantics.
+The existing observation MetricDefinition remains authoritative for unit and direction.
 
-### Metric definition
+### Reuse existing metric/protocol/test authorities
 
-Extend the existing observation metric vocabulary, or introduce a shared metric module consumed by observations and goals, so there is only one canonical meaning for a metric id.
+Do **not** add a second PerformanceMetricDefinition or PerformanceTestDefinition type.
 
-The target-eligible definition needs at least:
+The repository already has:
+
+- MetricDefinition and the metric registry in app/src/observations;
+- MeasurementProtocol with immutable revisions and comparison dimensions;
+- PerformanceTestDefinition in app/src/observations/performanceTestingCatalog.ts;
+- protocolRef + comparisonSeriesKey on metric observations;
+- buildComparisonSeries / areComparisonSeriesComparable.
+
+Add target metrics to the existing metric registry and test-bound targets to the existing performance-testing catalog.
+
+The goal layer only needs a thin policy describing target eligibility/family/subject shape:
 
 ~~~ts
-interface PerformanceMetricDefinition {
-  id: string;
+interface PerformanceTargetPolicy {
+  metricId: string;
   family: 'strength' | 'speed' | 'power';
-  unit: string;
-  direction: 'higher_is_better' | 'lower_is_better';
-  subjectKind: 'exercise' | 'test';
-  targetEligible: boolean;
+  subjectKind: 'exercise' | 'performance_test';
   targetRange?: {
     min: number;
     max: number;
@@ -205,40 +212,18 @@ interface PerformanceMetricDefinition {
 }
 ~~~
 
-Suggested first registry entries:
+This family is goal/product taxonomy; it does not replace MetricDefinition.domain.
 
-| metric id | family | subject | unit | direction |
-|---|---|---|---|---|
-| strength_1rm_kg | strength | exercise | kg | higher |
-| sprint_elapsed_time_s | speed | test | s | lower |
-| peak_power_w | power | test | W | higher |
-| jump_height_cm | power | test | cm | higher |
+Suggested first targets, with exact ids finalized in PG0/PG1 to match repository naming conventions:
 
-Jump height belongs to the power/explosive-performance family for product navigation, but its metric name remains jump height rather than pretending centimetres are watts.
+| target | subject authority | direction authority |
+|---|---|---|
+| strength 1RM | canonical exercise id | MetricDefinition |
+| standing 10 m time | PerformanceTestDefinition | MetricDefinition |
+| cycling 5 s peak power | PerformanceTestDefinition | MetricDefinition |
+| CMJ height later | PerformanceTestDefinition | MetricDefinition |
 
-### Test definition
-
-Add a canonical test/protocol registry for test-bound metrics. The contract should carry only what is needed for stable identity and evidence comparison, for example:
-
-~~~ts
-interface PerformanceTestDefinition {
-  id: string;
-  version: number;
-  family: 'speed' | 'power';
-  displayName: string;
-  allowedMetricIds: string[];
-  comparisonDimensions: string[];
-}
-~~~
-
-Candidate initial test ids:
-
-- sprint_10m_standing;
-- sprint_flying_10m;
-- cycling_5s_peak_power;
-- cmj_standard.
-
-The final protocol fields belong in PG1 after reviewing the observation model; do not duplicate protocol structures already owned by the outcome stack.
+For a performance_test subject, semantic validation must resolve getPerformanceTestDefinition(performanceTestId) and verify that test.protocol.metricIds contains metricId.
 
 ### Goal domain
 
@@ -255,9 +240,8 @@ general_fitness
 other
 ~~~
 
-Domain is navigation/display taxonomy. Planning authority comes from the validated performance target and its registered mapping, not from the domain string alone.
-
----
+Domain is navigation/display taxonomy. Planning authority comes from the validated performance target and its reviewed target-to-planning mapping, not from the domain string alone.
+# Work plan
 
 # Work plan
 
@@ -286,47 +270,71 @@ Write and accept an ADR covering:
 
 ---
 
-## PG1 — canonical metric and performance-test registries
+## PG1 — extend canonical metric and performance-testing catalogs
 
 **Status:** [ ]
 **Blocked by:** PG0
 **Recommendation-affecting:** no
 
-### PG1.1 Reuse one metric vocabulary
+### PG1.1 Extend the existing metric registry
 
-**Likely files:**
+**Files:**
 
-- app/src/observations/models.ts
-- app/src/observations/registry.ts
-- a small performance-target registry module only if target eligibility/planning concerns do not belong in observations
+- app/src/observations/models.ts only when the shared contract truly needs an extension;
+- app/src/observations/registry.ts;
+- registry tests.
 
-Add target-eligible metric definitions for the first supported strength, speed and power outcomes.
+Add reviewed metrics for the first supported strength, speed and power outcomes.
 
-Do not create parallel ids that mean the same measurement in goals and observations.
+MetricDefinition already owns unit and direction. Do not duplicate those fields in a goal-only registry.
 
-### PG1.2 Canonical performance tests
+Keep exact metric ids consistent with current naming conventions. The ADR should decide whether a reusable metric such as sprint_elapsed_time_s or a protocol-specific id is preferable; either choice must still use the existing registry.
 
-Add a small test registry for test-bound targets.
+### PG1.2 Extend the existing performance-testing catalog
 
-Each test definition must have:
+**Files:**
 
-- stable id and version;
-- family;
-- human display name;
-- compatible metric ids;
-- enough protocol/comparison identity to prevent accidental series mixing;
-- no hidden training prescription.
+- app/src/observations/performanceTestingCatalog.ts;
+- app/src/observations/protocols.ts only when a real new ComparisonDimension is required;
+- testing/comparability tests.
 
-Strength 1RM remains exercise-bound in the target; the eventual formal tested-1RM observation can still carry a testing protocol.
+Add PerformanceTestDefinition entries for first-slice test-bound targets such as standing 10 m and cycling 5 s peak power.
 
-### PG1.3 Semantic validators
+Each entry already composes:
+
+- a versioned MeasurementProtocol;
+- metricIds;
+- protocol instructions/invalidation;
+- comparison-context requirements;
+- TestingSessionDefinition;
+- default context;
+- expected source.
+
+Do not create a second test registry.
+
+For a future CMJ definition, encode the measurement/calculation method in protocol/comparison semantics strongly enough that incompatible jump-height methods do not enter the same comparison series.
+
+### PG1.3 Add thin target-eligibility policy
+
+Create the smallest goal-specific policy layer necessary to map registered metrics to:
+
+- family: strength / speed / power;
+- allowed subject kind: exercise / performance_test;
+- bounded target range if useful for structural validation;
+- optional exercise eligibility predicate/reference.
+
+It must not own unit, direction, protocol instructions or comparison-series logic.
+
+### PG1.4 Semantic validators
 
 Provide pure helpers that can answer:
 
-- is this metric target-eligible?
-- is this subject kind valid for the metric?
-- does the exercise/test id exist?
-- is this target value finite and within bounded structural range?
+- is this registered metric target-eligible?
+- does the target subject kind match policy?
+- does the canonical exercise exist and meet eligibility?
+- does the PerformanceTestDefinition exist?
+- does that test's MeasurementProtocol declare the target metric?
+- is the target value finite and within a bounded structural range?
 - what family, unit and direction apply?
 
 Do not import recommendation policy into these helpers.
@@ -336,17 +344,18 @@ Do not import recommendation policy into these helpers.
 Cover:
 
 - valid strength exercise target;
-- valid speed test target;
-- valid power test target;
+- valid speed performance-test target;
+- valid power performance-test target;
 - wrong subject kind;
 - unknown exercise/test;
+- test whose protocol does not declare the metric;
 - unknown metric;
 - invalid target range;
-- direction/unit lookup.
+- direction/unit lookup from the existing metric registry;
+- comparison-series behavior for new protocols.
 
-**Done when:** code can prove what a target means without title parsing or user-entered units.
-
----
+**Done when:** code can prove what a target means using existing metric/protocol/test authorities without title parsing, user-entered units or duplicate registries.
+## PG2 — typed goal model, domain, validation and persistence
 
 ## PG2 — typed goal model, domain, validation and persistence
 
@@ -487,7 +496,7 @@ Label e1RM as estimated, not tested 1RM.
 
 ### PG4.2 Speed and power observations
 
-Resolve the latest **comparable** observation for the target metric + test subject.
+Resolve the latest **comparable** observation for the target metric + PerformanceTestDefinition subject using the existing comparisonSeriesKey/protocolRef machinery.
 
 Do not invent a speed/power equivalent of estimated1RmKg merely to make the UI symmetrical.
 
@@ -720,8 +729,8 @@ Examples:
 
 ~~~text
 strength_1rm_kg + exercise:conventional_deadlift
-sprint_elapsed_time_s + test:sprint_10m_standing@v1
-peak_power_w + test:cycling_5s_peak_power@v1
+sprint_elapsed_time_s + performance_performance_test:sprint_10m_standing-r1-r1
+peak_power_w + performance_performance_test:cycling_5s_peak_power-r1-r1
 ~~~
 
 A bench result cannot join a deadlift series. A flying-10 result cannot satisfy a standing-10 goal. A 10 s peak-power result cannot silently satisfy a 5 s test.
@@ -821,7 +830,7 @@ Likely files, subject to implementation-time verification:
 | Goal UI | app/src/components/Goals.tsx, CSS/tests |
 | Firestore | app/firestore.rules, emulator tests |
 | Metric vocabulary | app/src/observations/registry.ts, app/src/observations/models.ts |
-| Test identity | new small performance-test registry or existing protocol registry if suitable |
+| Performance-test identity | reuse app/src/observations/performanceTestingCatalog.ts and MeasurementProtocol in app/src/observations/models.ts |
 | Exercise identity | reuse app/src/workouts/exercises.ts and extensions |
 | Strength current capacity | app/src/components/preferences/PerformanceSections.tsx, existing e1RM helpers |
 | Goal planning projection | app/src/engine/adapters.ts or dedicated assembler |
@@ -1024,7 +1033,7 @@ The smallest slice that proves this is **not a deadlift-only feature** should co
 
 The slice should include:
 
-- shared metric/test registry;
+- extensions to the existing metric and performance-testing catalogs;
 - typed persistence;
 - target UX;
 - current/progress projection where evidence exists;
