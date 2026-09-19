@@ -14,7 +14,7 @@ import {
  * metric/performance-test registries and the workouts exercise catalog, which must never
  * become reachable from production selection/ranking modules (see
  * observations/architecture.test.ts's OV1.4 boundary and performanceTargetPolicy.ts's
- * module doc comment). Only engine/services/goalService.ts (not reachable from any
+ * module doc comment). Only services/goalService.ts (not reachable from any
  * selection module) and the Goals.tsx UI import this module.
  */
 export type PerformanceTargetValidationReasonCode =

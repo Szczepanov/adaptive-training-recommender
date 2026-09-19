@@ -166,10 +166,11 @@ Registry heuristic; v2 uses <=1.3%/week as plausible and <=2.0%/week as stretch 
 about what it understood; the architecture generalizes to any registered
 metric/exercise/test combination without a new goal subsystem per lift or test.
 
-**Negative / deferred:** Stage 1 ships no recommendation-authority change. An athlete who
+**Negative / deferred:** PG5.1 still grants no recommendation authority. An athlete who
 sets a typed target will not yet see the weekly plan specialize for it — the UI must say
-so explicitly. That gap closes only when Stage 2 (plan PG5-PG7) is separately designed,
-policy-reviewed, `POLICY_VERSION`-bumped and simulation-verified.
+so explicitly. That gap closes only when PG5.2-PG7 are separately designed,
+policy-reviewed and simulation-verified; recommendation-affecting changes must satisfy
+the repository's `POLICY_VERSION` drift gate.
 
 ## Stage 2 (PG5.1 projection contract accepted; recommendation authority still undecided)
 
