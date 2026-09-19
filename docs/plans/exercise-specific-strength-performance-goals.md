@@ -1,38 +1,43 @@
-# Exercise-specific strength performance goals — implementation plan
+# Strength, speed and power performance goals — implementation plan
 
-**Capability prefix:** `SG`  
-**Status:** `Draft`  
-**Blocked by:** project-owner approval of this design; SG0 must record the persisted-target and planning-authority decisions in an ADR before recommendation-affecting work starts. Strength-specific prescription/progression policy must use reviewed Sports Knowledge Registry claims rather than uncited constants.  
-**Unlocks:** athlete-owned goals such as “conventional deadlift 220 kg 1RM”; exact-exercise strength coverage; current-e1RM progress display; later protocol-locked strength outcome evaluation.  
-**Source analysis:** [`2026-09-19-exercise-specific-strength-goal-gap.md`](../analysis/2026-09-19-exercise-specific-strength-goal-gap.md)
+**Capability prefix:** PG
+**Status:** Draft — revised for cross-family scope
+**Blocked by:** PG0 architecture decision before recommendation-affecting work; any new prescription defaults must use reviewed Sports Knowledge Registry claims rather than uncited constants.
+**Unlocks:** athlete-owned measurable strength, speed and power goals; target-specific planning coverage; protocol-aware progress; later formal target evaluation.
+**Source analysis:** ../analysis/2026-09-19-exercise-specific-strength-goal-gap.md
 
-> **Core invariant:** the target weight expresses an outcome. It never becomes the denominator
-> for today’s working load. Current measured/estimated capacity plus the existing RIR,
-> eligibility, injury, fatigue and schedule gates remain prescription authority.
+> **Core invariant:** the target is an outcome. It never becomes current capability, a working-load denominator, a sprint-volume prescription, or an automatic weekly progression rate. Existing safety, eligibility, readiness, tissue, schedule and higher-authority planning rules remain dose authority.
 
 ---
 
 ## Goal
 
-Let an athlete express a measurable strength-performance outcome such as:
+Let an athlete express measurable performance outcomes such as:
 
-> **Conventional deadlift — 220 kg 1RM**
+- Conventional deadlift — 220 kg tested 1RM.
+- Front squat — 160 kg tested 1RM.
+- Standing 10 m sprint — 1.75 s.
+- Flying 10 m sprint — 1.00 s.
+- Countermovement jump — 50 cm.
+- Cycling 5 s peak power — 1,200 W.
 
-and have the product carry that intent through the full relevant loop:
+and carry that intent through the relevant loop:
 
-```text
+~~~text
 typed athlete goal
-  -> exact exercise identity
-  -> goal-derived strength planning demand
-  -> exact-exercise session coverage
-  -> current-capacity-based prescription
-  -> logged execution
-  -> e1RM self-calibration
+  -> registered metric
+  -> canonical exercise or performance test
+  -> family-specific planning projection
+  -> relevant direct/supporting coverage
+  -> current-capability/autoregulated prescription
+  -> logged execution / comparable measurement
   -> visible progress
-  -> later protocol-locked outcome evidence
-```
+  -> protocol-aware target attainment
+~~~
 
-The first release should be deliberately narrow: **exercise-specific 1RM strength goals for canonical strength exercises**. Do not build a generic “any metric, any unit, any sport” framework before this real use case works end to end.
+The architecture must support **any registered strength, speed or power performance target**, not just deadlift and not just 1RM. "Any" means any target whose metric, subject and planning semantics have been registered and reviewed; it does not mean arbitrary free-text metrics can gain recommendation authority.
+
+The first implementation slice should deliberately prove the abstraction with at least one target from each family.
 
 ---
 
@@ -40,96 +45,122 @@ The first release should be deliberately narrow: **exercise-specific 1RM strengt
 
 This plan does not:
 
-- turn the user-entered target weight into a working-weight prescription;
-- implement an autonomous peaking program for powerlifting competition;
-- add an unreviewed “add 2.5 kg every week” rule;
-- infer required weekly kg gain from a target date;
-- treat any strength workout as equivalent to direct practice of the target lift;
-- replace the existing `TrainingIntentProfile` priorities;
-- replace ADR-0021 strength logging/e1RM derivation;
-- make outcome evidence automatically rewrite training without the existing confirmation/evidence gates;
-- generalize to rep-max, velocity, jump, sprint or endurance targets in the first cut.
+- make arbitrary targetMetric / targetValue / targetUnit strings recommendation-authoritative;
+- infer a training prescription from the numerical gap to a target;
+- divide target gap by days-to-target to create a required progression rate;
+- use target 1RM as current 1RM;
+- use target sprint time to force more sprint repetitions;
+- use target peak power as a session wattage prescription;
+- require a maximal outcome test every week merely to satisfy goal coverage;
+- silently treat jump height as mechanical power in watts;
+- silently merge results collected with materially different protocols;
+- create one hardcoded code path per lift, sprint distance or device;
+- bypass external-plan/event authority, injury policy, eligibility or readiness;
+- redesign all endurance/event goals in the same change;
+- ship autonomous peaking/programming logic without evidence and policy review.
 
 ---
 
 ## Design principles
 
-### P1 — Outcome, capacity, priority and dose are separate
+### P1 — Outcome, current capability, planning demand and dose are separate
 
-Keep these four concepts explicit:
+A performance goal says what result matters.
 
-| Concept | Example | Existing / new authority |
-|---|---|---|
-| Performance outcome | Deadlift 220 kg 1RM | **New typed goal target** |
-| Current capacity | Deadlift e1RM 165 kg | Existing `AthletePerformanceProfile` + strength logs |
-| Background planning priority | Strength and muscle | Existing `TrainingIntentProfile.priorities` |
-| Session dose | 3×3 at a current-capacity-derived load, RIR constrained | Existing prescription/safety machinery + reviewed strength programming |
+Current capability says what the athlete can presently demonstrate or is estimated to be capable of.
 
-A higher target does not make today’s load higher.
+Planning demand says what broad adaptations and direct practice should be represented.
 
-### P2 — Stable exercise ids, never title parsing
+Dose says what is appropriate today.
 
-The goal binds to `EXERCISES_BY_ID`, e.g. `conventional_deadlift`.
+Those concepts may interact, but none is a substitute for another.
 
-Do not derive identity from:
+### P2 — Metric plus subject defines target identity
 
-- goal title;
-- `targetMetric = "deadlift"`;
-- workout display text;
-- free-text strength-log movements.
+A number such as 220, 1.75 or 1200 is meaningless without a metric and subject.
 
-The first release should reject an exercise-specific target when no stable catalog exercise id exists.
+Examples:
 
-### P3 — Specificity is a coverage constraint, not a substitute for safety
+~~~text
+strength_1rm_kg + exercise:conventional_deadlift
+sprint_elapsed_time_s + test:sprint_10m_standing
+sprint_elapsed_time_s + test:sprint_flying_10m
+peak_power_w + test:cycling_5s_peak_power
+jump_height_cm + test:cmj_standard
+~~~
 
-A specific deadlift goal can make direct deadlift exposure important. It cannot bypass:
+Stable ids are persisted. Display labels are resolved from registries.
 
-- unavailable barbell/equipment;
-- injury restrictions;
-- `avoid_heavy_spinal_loading`;
-- recovery mode;
-- session-time limits;
-- weekly capacity;
-- plan/event authority.
+### P3 — The registry owns units, direction and allowed subject type
 
-If no eligible exact-exercise exposure can be placed, emit an explicit goal shortfall. Do not silently award exact-goal credit to a different hinge exercise.
+The user chooses a metric and target value; the product owns whether:
 
-### P4 — Reuse the existing broad strength dose
+- higher or lower is better;
+- the canonical unit is kg, seconds, W, W/kg, cm or another reviewed unit;
+- the target binds to an exercise or test;
+- the target range is structurally plausible;
+- the metric is eligible for athlete-owned goals.
 
-Do not invent a second weekly-frequency table just for a 1RM target.
+Do not persist a free-text typed unit in the new target.
 
-Use the existing evidence-backed/general-product strength allocation as the broad weekly dose. The specific goal specializes part of that allocation toward exact exercise coverage.
+### P4 — Outcome-test identity and training coverage are different
 
-If an athlete has an active exercise-specific strength goal but has not separately selected `strength_muscle`, the accepted ADR must define whether that explicit goal is itself sufficient to activate the existing strength requirement. The recommended behavior is **yes**: an explicit active performance goal should not require the athlete to discover and duplicate the same intent in Preferences.
+A standing 10 m target should drive acceleration-oriented practice, not weekly all-out testing.
 
-### P5 — e1RM is a progress proxy, not automatically proof of a tested 1RM
+A deadlift 1RM target can legitimately require conventional-deadlift practice.
 
-ADR-0021’s derived e1RM is current-capacity calibration. It may move down as well as up and is intentionally not a lifetime-PR store.
+A CMJ target can drive explosive lower-body work while formal CMJ testing remains periodic.
 
-The UI may show it as:
+The metric/test registry and the planning-coverage mapping therefore remain separate authorities.
 
-> Current estimated 1RM: 178 kg (derived from logged training)
+### P5 — Specificity never overrides hard constraints
 
-but a semantic goal of “220 kg 1RM” should not auto-complete solely because a derived estimate crosses 220 kg unless a later decision explicitly accepts that evidence basis.
+A target can influence **what eligible work is preferred or reserved**.
+
+It cannot make an unsafe workout eligible, override tissue restrictions, steal an externally authored occurrence, ignore equipment, or manufacture schedule capacity.
+
+When direct coverage cannot be placed, the system reports an explicit shortfall.
+
+### P6 — Progress requires comparable evidence
+
+Strength can use existing per-exercise e1RM as a labelled progress proxy, but estimated and tested 1RM remain distinct evidence types.
+
+Timed speed and power/jump results need protocol identity. Where measurement method can materially alter a value, the observation series must retain that context rather than pretending every value is interchangeable.
+
+### P7 — Legacy free text stays non-authoritative
+
+Existing targetMetric / targetValue / targetUnit goals continue to render.
+
+They do not silently become typed performance targets. Any conversion is explicit and user-confirmed.
 
 ---
 
-## Proposed persisted target
+## Proposed target model
 
-### SG0 decision candidate
+### PG0 decision candidate
 
-Add a discriminated target to `UserGoal`:
+Persist one generic target shape:
 
-```ts
-type GoalPerformanceTarget =
+~~~ts
+type PerformanceSubjectRef =
   | {
-      kind: 'strength_1rm';
+      kind: 'exercise';
       exerciseId: string;
-      targetKg: number;
+    }
+  | {
+      kind: 'test';
+      testId: string;
     };
 
+type GoalPerformanceTarget = {
+  kind: 'performance_metric';
+  metricId: string;
+  subjectRef: PerformanceSubjectRef;
+  targetValue: number;
+};
+
 interface UserGoal {
-  // existing fields...
+  // existing fields
   performanceTarget?: GoalPerformanceTarget | null;
 
   // legacy compatibility only
@@ -137,564 +168,625 @@ interface UserGoal {
   targetValue?: number | null;
   targetUnit?: string | null;
 }
-```
+~~~
 
-Use existing `targetDate` for optional timing.
+Use existing targetDate for optional timing.
 
-**Do not store:**
+Do not store:
 
-- current e1RM in the goal;
+- current capability;
 - current working load;
-- progression increments;
-- copied exercise name;
-- a second target unit.
+- target unit as user-entered text;
+- higher/lower direction;
+- copied exercise/test label;
+- weekly progression increments;
+- measurement-device assumptions.
 
-Persist kg canonically. Render kg/lb according to user display preferences.
+Metric/test registries provide semantics.
 
-### Why a discriminated union instead of expanding the three legacy fields?
+### Metric definition
 
-The engine must be able to prove:
+Extend the existing observation metric vocabulary, or introduce a shared metric module consumed by observations and goals, so there is only one canonical meaning for a metric id.
 
-- the metric means 1RM;
-- the subject is exactly one exercise;
-- the unit is valid;
-- target value is numeric and positive;
-- future target types cannot accidentally be interpreted as strength 1RM.
+The target-eligible definition needs at least:
 
-The legacy `targetMetric / targetValue / targetUnit` triple cannot provide those guarantees.
+~~~ts
+interface PerformanceMetricDefinition {
+  id: string;
+  family: 'strength' | 'speed' | 'power';
+  unit: string;
+  direction: 'higher_is_better' | 'lower_is_better';
+  subjectKind: 'exercise' | 'test';
+  targetEligible: boolean;
+  targetRange?: {
+    min: number;
+    max: number;
+  };
+}
+~~~
 
-### Legacy behavior
+Suggested first registry entries:
 
-Existing goals must continue to read and render.
+| metric id | family | subject | unit | direction |
+|---|---|---|---|---|
+| strength_1rm_kg | strength | exercise | kg | higher |
+| sprint_elapsed_time_s | speed | test | s | lower |
+| peak_power_w | power | test | W | higher |
+| jump_height_cm | power | test | cm | higher |
 
-Do not automatically infer planning authority from legacy strings. In particular:
+Jump height belongs to the power/explosive-performance family for product navigation, but its metric name remains jump height rather than pretending centimetres are watts.
 
-```text
-targetMetric = "deadlift"
-```
+### Test definition
 
-must not silently become `exerciseId = conventional_deadlift`.
+Add a canonical test/protocol registry for test-bound metrics. The contract should carry only what is needed for stable identity and evidence comparison, for example:
 
-A later explicit migration UI may offer “Convert this target” when an unambiguous mapping is available, but conversion must be user-confirmed.
+~~~ts
+interface PerformanceTestDefinition {
+  id: string;
+  version: number;
+  family: 'speed' | 'power';
+  displayName: string;
+  allowedMetricIds: string[];
+  comparisonDimensions: string[];
+}
+~~~
+
+Candidate initial test ids:
+
+- sprint_10m_standing;
+- sprint_flying_10m;
+- cycling_5s_peak_power;
+- cmj_standard.
+
+The final protocol fields belong in PG1 after reviewing the observation model; do not duplicate protocol structures already owned by the outcome stack.
+
+### Goal domain
+
+UserGoal.domain currently has no speed or power value. PG2 should add those values for truthful user-facing categorization:
+
+~~~text
+endurance
+strength
+speed
+power
+mobility
+weight_loss
+general_fitness
+other
+~~~
+
+Domain is navigation/display taxonomy. Planning authority comes from the validated performance target and its registered mapping, not from the domain string alone.
 
 ---
 
 # Work plan
 
-## SG0 — architecture decision and acceptance boundary
+## PG0 — architecture decision and acceptance boundary
 
-**Status:** `[ ]`  
-**Blocked by:** plan approval  
+**Status:** [ ]
+**Blocked by:** plan approval
 **Recommendation-affecting:** no code yet
 
 Write and accept an ADR covering:
 
-1. `performanceTarget` is the canonical typed athlete outcome.
-2. Current capacity remains in `AthletePerformanceProfile` / observations, not copied into the goal.
-3. Active typed performance goals may create planning demand.
-4. Exact-exercise goal coverage uses canonical exercise ids.
-5. Target weight cannot be used as current load capacity.
-6. Legacy target strings remain non-authoritative.
-7. e1RM is a progress/calibration proxy; tested target achievement has distinct evidence semantics.
-8. Goal-derived planning authority still loses to safety, active external-plan authority, and other higher-order hard constraints.
-9. Multiple simultaneous specific-strength goals need deterministic priority/conflict semantics before more than one is allowed to influence weekly selection.
+1. performanceTarget is the canonical typed measurable outcome for new strength/speed/power goals.
+2. Metric semantics come from one registry shared with or aligned to observations.
+3. Exercise subjects use canonical exercise ids; test subjects use canonical test ids.
+4. Current capability/evidence is not copied into the goal.
+5. Target value cannot become prescription intensity or automatic progression.
+6. Goal-test identity and workout coverage are distinct contracts.
+7. Active typed goals may create planning demand only through reviewed target-to-planning mappings.
+8. Legacy free-text targets remain non-authoritative.
+9. Safety, external-plan/event authority and hard eligibility outrank target coverage.
+10. Multiple active performance targets use deterministic priority/capacity conflict semantics.
+11. Estimated/proxy evidence and formal tested evidence remain distinguishable.
+12. Protocol comparability is required before observations are treated as one progress series.
 
-**Done when:** the ADR is accepted and names the initial target kind, persistence contract, authority order and compatibility rule.
+**Done when:** the ADR names the persisted contract, registry authorities, initial target families, authority order, compatibility rule and first vertical-slice metrics.
 
 ---
 
-## SG1 — typed goal model, validation and persistence
+## PG1 — canonical metric and performance-test registries
 
-**Status:** `[ ]`  
-**Blocked by:** SG0  
+**Status:** [ ]
+**Blocked by:** PG0
+**Recommendation-affecting:** no
+
+### PG1.1 Reuse one metric vocabulary
+
+**Likely files:**
+
+- app/src/observations/models.ts
+- app/src/observations/registry.ts
+- a small performance-target registry module only if target eligibility/planning concerns do not belong in observations
+
+Add target-eligible metric definitions for the first supported strength, speed and power outcomes.
+
+Do not create parallel ids that mean the same measurement in goals and observations.
+
+### PG1.2 Canonical performance tests
+
+Add a small test registry for test-bound targets.
+
+Each test definition must have:
+
+- stable id and version;
+- family;
+- human display name;
+- compatible metric ids;
+- enough protocol/comparison identity to prevent accidental series mixing;
+- no hidden training prescription.
+
+Strength 1RM remains exercise-bound in the target; the eventual formal tested-1RM observation can still carry a testing protocol.
+
+### PG1.3 Semantic validators
+
+Provide pure helpers that can answer:
+
+- is this metric target-eligible?
+- is this subject kind valid for the metric?
+- does the exercise/test id exist?
+- is this target value finite and within bounded structural range?
+- what family, unit and direction apply?
+
+Do not import recommendation policy into these helpers.
+
+### Tests
+
+Cover:
+
+- valid strength exercise target;
+- valid speed test target;
+- valid power test target;
+- wrong subject kind;
+- unknown exercise/test;
+- unknown metric;
+- invalid target range;
+- direction/unit lookup.
+
+**Done when:** code can prove what a target means without title parsing or user-entered units.
+
+---
+
+## PG2 — typed goal model, domain, validation and persistence
+
+**Status:** [ ]
+**Blocked by:** PG1
 **Recommendation-affecting:** no; persistence only
 
-### SG1.1 Model
+### PG2.1 UserGoal model
 
 **Files:**
 
-- `app/src/engine/models.ts` or a small goal-domain model imported by it;
-- avoid introducing a workouts → engine import cycle.
+- app/src/engine/models.ts or a goal-domain model imported by it;
+- avoid a workouts -> engine import cycle.
 
-Add `GoalPerformanceTarget` and `UserGoal.performanceTarget`.
+Add GoalPerformanceTarget and performanceTarget.
 
-Keep the first target-kind set to one literal: `strength_1rm`.
+Extend GoalDomain with speed and power.
 
-### SG1.2 Structural validation
+### PG2.2 Validation
 
 **Files:**
 
-- `app/src/engine/validationCore.ts`
-- new pure helper if semantic catalog validation would create an undesirable dependency
+- app/src/engine/validationCore.ts
+- semantic performance-target validator from PG1
 
-Validate:
+Structural validation checks:
 
-- known `kind`;
-- non-empty `exerciseId`;
-- finite positive `targetKg`;
-- target allowed only on `domain === 'strength'`;
-- bounded strings/numbers.
+- kind is performance_metric;
+- metricId is bounded/non-empty;
+- exactly one valid subjectRef variant;
+- targetValue is finite;
+- no unexpected keys.
 
-### SG1.3 Catalog-semantic validation
+Semantic validation checks registry membership and metric/subject compatibility.
 
-Structural validation cannot prove an exercise exists without coupling the lowest-level model validator to the workout catalog.
+Domain consistency should be explicit. Recommended rule: typed target family must match domain for strength/speed/power goals.
 
-Add one explicit semantic boundary, e.g. `goals/validatePerformanceTarget.ts`, that resolves `EXERCISES_BY_ID` and requires:
+### PG2.3 Firestore rules
 
-- exercise exists;
-- exercise modality/family is strength;
-- repetition measurement is supported;
-- load kinds include `mass` or `percent_one_rm`.
+**File:** app/firestore.rules
 
-This is also where `conventional_deadlift` becomes valid without hardcoding its name.
+Rules can validate bounded structure and exact keys for performanceTarget. They cannot prove membership in the application registries.
 
-### SG1.4 Firestore rules
+Permit old documents without performanceTarget.
 
-**File:** `app/firestore.rules`
+Update domain validation for speed and power.
 
-Extend goal validation with shallow, bounded validation for `performanceTarget`:
+### PG2.4 Service/parser compatibility
 
-- exact keys;
-- `kind == 'strength_1rm'`;
-- `exerciseId` bounded string;
-- `targetKg` positive bounded number.
+**Files:**
 
-Firestore rules cannot validate membership in the application exercise catalog; semantic catalog validation remains an application/parser concern.
+- app/src/services/goalService.ts
+- any shared read/parse boundary
 
-### SG1.5 Parser/service compatibility
-
-**File:** `app/src/services/goalService.ts` and any goal parser/validation boundary.
-
-Ensure:
-
-- old documents without `performanceTarget` remain valid;
-- unknown/malformed typed targets fail closed as invalid target data, not silently as an authoritative goal;
-- create/update never trusts a client-written copied exercise label.
+Unknown or malformed typed targets fail closed as non-authoritative invalid goal data. Do not silently fall back to legacy strings.
 
 ### Tests
 
 Add/update:
 
-- `validationCore` goal tests;
-- goal service tests;
-- Firestore emulator rule tests;
-- legacy goal regression fixtures;
-- unknown exercise / wrong-domain semantic-validation tests.
+- validationCore goal tests;
+- goal service/parser tests;
+- Firestore emulator tests;
+- old-goal fixtures;
+- new speed/power domain tests;
+- unknown metric/subject tests.
 
-**Done when:** a typed `strength_1rm / conventional_deadlift / 220 kg` target round-trips; malformed targets cannot become planning-authoritative; legacy goals still work.
+**Done when:** each initial family round-trips as typed data and no malformed target can gain planning authority.
 
 ---
 
-## SG2 — athlete-facing goal UX
+## PG3 — athlete-facing target UX
 
-**Status:** `[ ]`  
-**Blocked by:** SG1  
+**Status:** [ ]
+**Blocked by:** PG1, PG2
 **Recommendation-affecting:** no
 
-**Primary file:** `app/src/components/Goals.tsx`
+**Primary file:** app/src/components/Goals.tsx
 
-For `Domain = Strength`, replace the misleading generic target workflow with a structured surface:
+Replace the misleading free-text Optional Target workflow for new measurable performance goals with a structured flow:
 
-1. **Performance target type:** “One-rep max”
-2. **Exercise:** searchable/selectable canonical strength exercise
-3. **Target:** numeric kg/lb display
-4. optional existing `targetDate`
-5. clear explanatory text:
-   - “This is your outcome target.”
-   - “Training loads are based on current capacity and session guidance, not this target number.”
+1. Domain/family: Strength, Speed or Power.
+2. Performance metric.
+3. Exercise or performance test, filtered by metric.
+4. Target value.
+5. Unit shown read-only from the registry.
+6. Optional existing target date.
+7. short explanatory copy: target is an outcome; training dose uses current capability/readiness/safety.
 
-### Exercise picker
+Examples rendered:
 
-Build from canonical exercise data rather than a hardcoded lift list.
+~~~text
+Conventional Deadlift — 220 kg 1RM
+Standing 10 m — 1.75 s
+Cycling 5 s Peak Power — 1,200 W
+~~~
 
-Initial eligibility should follow SG1 semantic validation. Show user-friendly names, persist only `exerciseId`.
+### Legacy behavior
 
-### Goal-card rendering
+Existing free-text targets continue to render as legacy data. Editing them must not pretend they have already been converted.
 
-Render a complete target, e.g.:
+An explicit "Convert to structured target" affordance can be added later if the mapping destination is user-confirmed.
 
-> Conventional Deadlift — 220 kg 1RM
+### Accessibility and tests
 
-not merely:
+Cover:
 
-> Target: 220 kg
-
-When current e1RM is available, a later SG3 read can add:
-
-> Current estimated 1RM: 176 kg
-
-### Legacy target fields
-
-For existing legacy goals, continue rendering their old target. Do not show a typed exercise picker as though the data had been converted.
-
-For new strength goals, stop encouraging arbitrary metric/unit strings.
-
-### Tests
-
-Component tests must cover:
-
-- switching domain to strength;
-- choosing conventional deadlift;
-- kg/lb display conversion with canonical kg persistence;
+- family/metric/subject dependent controls;
+- keyboard and screen-reader labels;
+- higher/lower-is-better metric rendering;
+- unit display;
+- kg/lb presentation conversion where existing unit preference supports it while canonical storage remains metric-defined;
 - edit round-trip;
-- legacy goal rendering;
-- accessibility labels / keyboard selection;
-- explicit outcome-vs-training-load explanatory copy.
+- legacy rendering;
+- speed and power domains.
 
-**Done when:** an athlete can express the friend’s use case without typing a magic metric string.
+**Done when:** the athlete can create a meaningful target without knowing internal ids or typing a magic unit string.
 
 ---
 
-## SG3 — make current strength capacity discoverable for any eligible lift
+## PG4 — current measurement and progress projection
 
-**Status:** `[ ]`  
-**Blocked by:** SG1  
+**Status:** [ ]
+**Blocked by:** PG1, PG3
 **Recommendation-affecting:** no
 
-The model already supports arbitrary exercise-keyed e1RM. Remove the UI-only three-lift limitation.
+Progress is family-specific evidence projected through one UI contract.
 
-### SG3.1 Replace the hardcoded list
+### PG4.1 Strength capacity
 
-**File:** `app/src/components/preferences/PerformanceSections.tsx`
+Reuse AthletePerformanceProfile estimated1RmKg and provenance.
 
-Current hardcoded rows:
+Replace the current three-lift-only Preferences UI with a canonical eligible-exercise picker so any registered strength-1RM goal can show/set current e1RM.
 
-- front squat;
-- Romanian deadlift;
-- bench press.
+Preserve source ownership: derived logging must not overwrite protected manual/coach values under ADR-0021.
 
-Replace with an “Add / edit estimated 1RM” exercise picker backed by the same canonical eligible-lift resolver used by SG1/SG2.
+Label e1RM as estimated, not tested 1RM.
 
-At minimum, `conventional_deadlift` must be selectable.
+### PG4.2 Speed and power observations
 
-### SG3.2 Preserve source semantics
+Resolve the latest **comparable** observation for the target metric + test subject.
 
-Reuse `updateEstimated1Rm` and existing source ownership.
+Do not invent a speed/power equivalent of estimated1RmKg merely to make the UI symmetrical.
 
-A manually entered value remains `manual`; logged-set derivation must not overwrite it under ADR-0021.
+If no baseline exists, show a non-blocking state and a path to perform/log the registered test when supported.
 
-### SG3.3 Goal-context convenience
+### PG4.3 Direction-aware progress
 
-On a typed strength-goal card/modal, read the matching current e1RM when available. If absent, show a non-blocking path such as:
+For higher-is-better metrics, show current value, target and gap.
 
-> No current estimate yet — set one in Performance or log a qualifying strength set.
+For lower-is-better metrics, calculate the gap with the correct sign and copy.
 
-Do not require a baseline to create the goal. Missing capacity should cause relative/autoregulated prescription behavior, not target deletion.
+Avoid "82% complete" language that implies linear biological progress. Prefer:
+
+~~~text
+Current comparable result: 1.86 s
+Target: 1.75 s
+Gap: 0.11 s
+~~~
 
 ### Tests
 
-- conventional deadlift manual e1RM persistence;
-- derived/manual provenance display;
-- no hardcoded three-exercise assumption;
-- goal reads the matching exercise only.
+Cover:
 
-**Done when:** the athlete can distinguish “I currently estimate 175 kg” from “I want 220 kg”.
+- strength e1RM source labels;
+- no hardcoded three-lift limitation;
+- sprint lower-is-better gap;
+- power higher-is-better gap;
+- absent baseline;
+- incomparable protocol not selected as current;
+- target value changes without rewriting current capability.
+
+**Done when:** each target family can show honest current evidence without conflating it with the goal.
 
 ---
 
-## SG4 — exact-exercise coverage model
+## PG5 — goal-to-planning projection and coverage semantics
 
-**Status:** `[ ]`  
-**Blocked by:** SG0, SG1  
-**Recommendation-affecting:** yes — requires `POLICY_VERSION` update and policy-drift verification
+**Status:** [ ]
+**Blocked by:** PG0, PG2
+**Recommendation-affecting:** yes — requires POLICY_VERSION update and policy-drift verification
 
-This is the key bridge from a stored target to actual programming.
+This is the bridge from stored outcome to programming.
 
-### SG4.1 Typed goal planning context
+### PG5.1 Typed planning projection
 
-Do not keep overloading `UserContext.goals.shortTerm/midTerm/longTerm` strings.
+Do not overload UserContext goal-title strings.
 
-Introduce a typed planning projection, for example:
+Build a validated projection such as:
 
-```ts
-interface StrengthPerformanceGoalDemand {
+~~~ts
+interface PerformanceGoalDemand {
   goalId: string;
-  exerciseId: string;
-  metric: 'one_rep_max';
-  targetKg: number;       // explanatory/progress context, NOT dose
+  metricId: string;
+  subjectRef: PerformanceSubjectRef;
+  family: 'strength' | 'speed' | 'power';
+  targetValue: number; // explanation/progress only, never dose
   priority: number;
   targetDate: string | null;
 }
-```
+~~~
 
-Assemble it from active validated goals at the same composition boundary that currently supplies `activeGoals`.
+The engine receives this from the composition boundary. It does not reparse Firestore strings.
 
-The engine should never reparse Firestore strings during ranking.
+### PG5.2 Planning-rule registry
 
-### SG4.2 Goal activates existing strength adaptation demand
+Define a separate reviewed mapping from a target to relevant planning semantics.
 
-Recommended policy:
+Examples of intended meaning:
 
-- an active typed strength-performance goal is sufficient to request the existing `strength` adaptation requirement;
-- if `strength_muscle` is also selected, do not double the weekly requirement;
-- reuse the existing strength requirement/frequency policy;
-- the specific goal constrains **which strength coverage satisfies part of that requirement**, not how many new sessions appear.
+| Target | Broad demand reuse | Direct/specific coverage |
+|---|---|---|
+| conventional deadlift 1RM | existing strength requirement | meaningful conventional-deadlift main work |
+| standing 10 m time | existing performance/intensity architecture where appropriate | acceleration sprint exposure |
+| flying 10 m time | existing performance/intensity architecture where appropriate | max-velocity exposure |
+| cycling 5 s peak power | existing cycling/performance architecture | short high-quality cycling sprint exposure |
+| CMJ height | reviewed strength/power architecture | explosive jump/power exposure |
 
-Record this authority rule in SG0 before implementation.
+Do not invent a new broad adaptation string merely to make this table compile. Reuse current dose vocabulary where physiologically correct; any missing dose/objective requires its own evidence-backed decision.
 
-### SG4.3 Exact-exercise coverage descriptor
+### PG5.3 No double counting
 
-Add a dynamic exact-exercise coverage requirement alongside broad `primary_strength`.
+If an athlete already selected strength_muscle or speed_power, a typed target should refine the matching dose/coverage rather than silently add a second duplicate floor.
 
-Derive eligible workout ids by inspecting required/main catalog steps for exact `exerciseId`.
+If a typed goal is allowed to activate a broad requirement by itself, PG0 must state that rule explicitly.
 
-A workout receives exact goal coverage only when it contains the target exercise as a meaningful required strength step. Optional accessory presence should not automatically satisfy the goal.
+### PG5.4 Shortfalls
 
-Do not award exact `conventional_deadlift` goal credit for:
+Add typed diagnostic reasons for unmet performance-goal coverage, including:
 
-- `romanian_deadlift`;
-- `kettlebell_deadlift`;
-- free-text “deadlift”;
-- an optional step that was omitted from the resolved variant.
-
-### SG4.4 Shortfall semantics
-
-Extend weekly planning diagnostics with an exercise-specific reason, e.g.:
-
-- no workout containing exact exercise exists;
+- no eligible coverage candidate;
 - required equipment unavailable;
-- safety/guardrail excludes every exact session;
-- weekly capacity cannot fit the required exact exposure;
-- a higher-authority event/external plan occupies the available capacity.
+- injury/tissue restriction;
+- readiness/spacing restriction;
+- schedule capacity;
+- higher-authority external/event occurrence;
+- deterministic conflict with a higher-priority target.
 
-Never hide the failure behind generic `strength` credit.
+Do not hide a specific miss behind generic strength/high-intensity credit.
 
 ### Tests
 
 At minimum:
 
-1. active deadlift goal + strength priority does not double broad strength dose;
-2. active deadlift goal alone activates broad strength demand per SG0;
-3. exact deadlift session satisfies exact coverage;
-4. RDL-only session does not;
-5. target weight 180 vs 250 kg produces the same coverage identity;
-6. equipment/injury exclusion yields a shortfall rather than unsafe selection;
-7. legacy free-text goal creates no exact-exercise demand.
+1. strength target projects exact exercise identity;
+2. standing 10 m and flying 10 m remain distinct subjects;
+3. target value changes do not change coverage identity;
+4. broad priority + typed target does not double dose;
+5. hard exclusions produce shortfall, not unsafe selection;
+6. legacy goal creates no typed demand.
 
-**Done when:** the weekly planner can state “this week contains direct work for your conventional-deadlift goal” based on exact structured identity, not text similarity.
+**Done when:** the weekly planner understands what kind of specific practice matters without using the target number as training dose.
 
 ---
 
-## SG5 — add a conventional-deadlift development session to the active catalog
+## PG6 — audit and fill catalog coverage gaps
 
-**Status:** `[ ]`  
-**Blocked by:** SG4 design; reviewed strength-programming knowledge/claims for the actual dose  
+**Status:** [ ]
+**Blocked by:** PG5 design; reviewed knowledge for any new session prescription
 **Recommendation-affecting:** yes
 
-The exercise exists, but the active strength workouts reviewed in the source analysis contain Romanian deadlift rather than conventional deadlift.
+Do not assume every new target needs a new workout. First audit the active catalog against each planning rule.
 
-Add an active catalog workout suitable for exact deadlift coverage, likely in a dedicated strength-performance catalog file rather than mutating the cycling-support session into something it was not designed to be.
+Known findings:
 
-### Requirements
+- conventional_deadlift exists as a canonical exercise but the inspected active strength workouts use Romanian deadlift, so the initial deadlift example needs a legitimate direct-coverage candidate;
+- sprint_falling_start_10m and sprint_fly_10m already exist as canonical field primitives and may be reusable inside existing/new field sessions;
+- power-oriented content such as hang power clean already exists;
+- cycling power targets should reuse existing sprint-capable cycling content where it genuinely matches before adding another near-duplicate session.
 
-The session must:
+### New-session requirements
 
-- include `conventional_deadlift` as a required main step;
-- remain a normal canonical `WorkoutDefinition`;
-- expose exact exercise identity through the step;
-- use current-capacity-compatible load semantics (`percent_one_rm`, RIR or other reviewed prescription), never target-goal kg;
-- have normal full/reduced/return-to-training variants if supported by evidence/design;
-- declare equipment and safety requirements;
-- integrate with existing workload/stimulus/cost and authored-session gating;
-- preserve lower-back/spinal-load restrictions;
-- define substitutions as training alternatives **without claiming exact goal coverage** when the target lift is not performed.
+Where a real gap exists:
+
+- use canonical WorkoutDefinition / SessionDefinition contracts;
+- expose the exact exercise/movement identity required for coverage;
+- keep target outcome value out of session-load calculation;
+- use reviewed RIR, relative-load, sprint-rest and volume claims;
+- declare equipment and contraindications;
+- preserve reduced/return variants when supported;
+- distinguish substitutions that preserve broad adaptation from those that preserve **specific goal coverage**.
 
 ### Evidence boundary
 
-Do not choose sets, repetitions, %1RM, frequency or progression increments because they “look like a powerlifting program”.
+No new sets/reps/%1RM/sprint-rest/contact-volume default should be invented in this plan.
 
-Any new generalizable programming default belongs in the Sports Knowledge Registry or in an explicit product-policy claim with limitations and freshness metadata, following the repository’s current evidence-governance rules.
+Generalizable training defaults belong in the Sports Knowledge Registry or an explicit policy claim with evidence, limitations and freshness metadata.
 
 ### Tests
 
-- catalog validation;
-- prescription resolution with known e1RM;
-- relative/autoregulated behavior when e1RM is absent;
-- goal target does not alter resolved working load;
-- safety tags/equipment;
-- exact coverage;
-- variant omission semantics.
+- workout catalog validation;
+- target-specific coverage classifier;
+- variant omission semantics;
+- equipment/safety;
+- known-capacity and missing-capacity prescription behavior;
+- target value does not alter resolved load;
+- no false specific credit from merely related exercises.
 
-**Done when:** the planner has at least one legitimate, safe, exact-session candidate for a conventional-deadlift goal.
+**Done when:** each first-slice target has at least one legitimate eligible coverage path or an explicit product shortfall.
 
 ---
 
-## SG6 — selection/ranking integration
+## PG7 — weekly allocation, ranking and explainability
 
-**Status:** `[ ]`  
-**Blocked by:** SG4, SG5  
+**Status:** [ ]
+**Blocked by:** PG5, PG6
 **Recommendation-affecting:** yes
 
-Wire exact-exercise goal coverage into the same weekly allocation/selection authority that currently honors broad coverage roles.
+Wire performance-target coverage into the existing weekly allocation/selection authority rather than building a second planner.
 
-### Ordering constraints
+### Authority order
 
-1. hard safety/eligibility;
+Preserve:
+
+1. hard safety and eligibility;
 2. active external-plan/event authority where applicable;
-3. weekly capacity/time/equipment constraints;
-4. required broad adaptation dose;
-5. exact exercise-specific goal coverage;
-6. normal utility/tie-break logic.
+3. capacity/time/equipment constraints;
+4. evidence-backed broad adaptation requirements;
+5. required performance-target coverage;
+6. normal support/utility/tie-break logic.
 
-The specific goal must not bypass stronger constraints.
+The exact placement in existing role-reservation machinery must be verified against ADR-0018 rather than implemented as a new greedy pass.
 
-### Multiple goals
+### Multiple targets
 
-The initial implementation should either:
+Support multiple active targets only with deterministic capacity semantics.
 
-- support one active strength-1RM target with explicit validation, **or**
-- define deterministic multi-goal allocation before enabling multiple planning-authoritative targets.
+Use UserGoal.priority after PG0 defines ties. If two targets compete for one safe slot, the same input must always yield the same chosen coverage and an explicit shortfall for the other.
 
-Do not let array iteration order decide which lift receives the only available strength slot.
-
-Use existing `UserGoal.priority` only after SG0 defines how equal priorities and incompatible capacity are resolved.
+Array/document iteration order is never authority.
 
 ### Explainability
 
-Recommendation/provenance should expose the goal reason:
+Examples:
 
-> Selected because it provides direct conventional-deadlift coverage for active 1RM goal.
+~~~text
+Selected because it provides direct conventional-deadlift practice for your active 1RM goal.
 
-It should also be able to say:
+Selected because it provides acceleration exposure for your standing 10 m target.
 
-> Direct deadlift work withheld today because heavy spinal loading is restricted.
+Max-velocity work withheld because Achilles/tissue restrictions exclude eligible sprint sessions.
+~~~
 
 ### Verification
 
-- unit tests around the new goal-demand resolver;
-- weekly dose-packing tests;
-- planner/rules integration tests;
-- deterministic multi-goal/conflict tests if enabled;
-- `check-policy-drift`;
-- `simulate:diff`;
-- targeted plan-judge/persona scenario for a strength-focused athlete.
+- goal-demand resolver tests;
+- weekly packing/reservation tests;
+- deterministic multi-target tests;
+- recommendation provenance tests;
+- policy-drift guard;
+- simulate:diff;
+- relevant plan-judge/persona scenarios.
 
-**Done when:** exact goal specificity affects selection, but target kg does not affect unsafe dose escalation.
-
----
-
-## SG7 — progress surface using existing e1RM
-
-**Status:** `[ ]`  
-**Blocked by:** SG2, SG3  
-**Recommendation-affecting:** no
-
-Before building formal strength outcome testing, provide useful progress from the capacity data already being collected.
-
-For a goal:
-
-> Conventional deadlift — 220 kg 1RM
-
-show, when available:
-
-- current estimated 1RM;
-- source (`manual`, `coach`, `derived`);
-- computed/measured timestamp when available;
-- target;
-- absolute and percentage gap;
-- a label that the current value is **estimated** when it is e1RM.
-
-Example:
-
-```text
-Goal: 220 kg 1RM
-Current estimated 1RM: 182.5 kg
-Progress proxy: 82.9% of target
-Updated from logged training: 2026-09-18
-```
-
-Do not display “83% complete” as certainty that the athlete is 83% through a biological adaptation process. Prefer “current estimate / target” or “gap to target”.
-
-### Historical trend
-
-Reuse strength-session/e1RM history where safely reconstructable. If the profile only stores the latest e1RM, do not invent a time series by reading current state repeatedly; either derive from immutable session logs or add an explicit observation history later in SG8.
-
-**Done when:** the athlete can see whether capacity is moving toward the goal without confusing e1RM with a confirmed one-rep max.
+**Done when:** target specificity can alter eligible selection while all stronger authorities remain intact.
 
 ---
 
-## SG8 — formal strength outcome evidence
+## PG8 — formal outcome evidence and target evaluation
 
-**Status:** `[ ]`  
-**Blocked by:** real usage of SG1–SG7; OV architecture review for exercise-bound metrics  
-**Recommendation-affecting:** no — evidence/reporting first
+**Status:** [ ] future evidence phase
+**Blocked by:** real usage of PG1–PG7; outcome architecture review
+**Recommendation-affecting:** no — reporting/evidence first
 
-This extends, not replaces, the Performance Outcome Validation plan.
+Extend the existing observation/outcome system rather than building a goal-only results database.
 
-### SG8.1 Metric
+### PG8.1 Metric/subject identity
 
-Add a strength outcome metric such as:
+An observation/evaluation binding must identify both the registered metric and subject.
 
-```text
-strength_1rm_kg
-```
+Examples:
 
-Do **not** create one metric id per exercise.
+~~~text
+strength_1rm_kg + exercise:conventional_deadlift
+sprint_elapsed_time_s + test:sprint_10m_standing@v1
+peak_power_w + test:cycling_5s_peak_power@v1
+~~~
 
-### SG8.2 Exercise subject / series identity
+A bench result cannot join a deadlift series. A flying-10 result cannot satisfy a standing-10 goal. A 10 s peak-power result cannot silently satisfy a 5 s test.
 
-Extend the observation/evaluation contract so a metric binding can name the subject exercise, for example:
+### PG8.2 Evidence type
 
-```ts
-subjectRef: {
-  kind: 'exercise';
-  exerciseId: 'conventional_deadlift';
-}
-```
+Keep distinctions explicit:
 
-Add `exercise_id` as a required/series-defining comparison dimension for strength 1RM observations.
+- tested/measured 1RM versus estimated 1RM;
+- formal timed sprint versus training-rep estimate;
+- force/power meter result versus jump-height proxy;
+- valid versus questionable/invalid attempt.
 
-This prevents a bench observation from joining a deadlift series just because both use `strength_1rm_kg`.
+### PG8.3 Protocol and measurement context
 
-### SG8.3 Tested vs estimated evidence
+Use the observation model's protocol/context dimensions to preserve meaningful comparability.
 
-Keep at least two concepts distinct:
+Do not overfit the schema to one device vendor. Store the semantics needed to decide comparability.
 
-- **tested/measured 1RM** — formal goal outcome;
-- **estimated 1RM** — lower-burden current-capacity/progress proxy.
+### PG8.4 Evaluation
 
-If a standardized rep-max/e1RM checkpoint is later supported, give it its own protocol/metric semantics rather than silently calling it an actual 1RM.
+A typed goal can generate/reference an OutcomeEvaluationSpec whose target uses:
 
-### SG8.4 Goal evaluation
+- metric;
+- subject;
+- target value;
+- direction from registry;
+- comparable evidence rules.
 
-A typed goal may generate or reference an `OutcomeEvaluationSpec` whose primary binding is the exact exercise 1RM.
-
-Formal target attainment can then say:
+Result states should include at least:
 
 - achieved;
 - not yet achieved;
 - insufficient comparable evidence;
-- invalid/questionable attempt.
+- invalid/questionable evidence.
 
-Do not make this outcome evidence automatically rewrite recommendation policy. Existing OV authority boundaries remain intact.
+Outcome evaluation must not automatically rewrite recommendation policy.
 
-**Done when:** “220 kg conventional deadlift” can be assessed with exercise-specific, auditable evidence rather than a generic number.
+**Done when:** target achievement is auditable and cannot be produced by a semantically different measurement series.
 
 ---
 
-## SG9 — explicit load progression, only if later needed
+## PG9 — explicit progression automation only if later justified
 
-**Status:** `[ ]` future capability  
-**Blocked by:** SG4–SG8 usage evidence; new ADR/knowledge decision  
+**Status:** [ ] future capability
+**Blocked by:** PG5–PG8 usage evidence; separate ADR/knowledge decision
 **Recommendation-affecting:** yes
 
-H5 currently supports exact `objectiveId/sessionId/stepId` binding but only `duration_min` progression.
+H5 progression currently has exact objective/session/step binding but its registered progression variable is duration_min.
 
-Do **not** extend it to load in the first release unless the existing current-e1RM + RIR prescription proves insufficient.
+Do not generalize that mechanism to kg, seconds or watts merely because performance targets now contain numbers.
 
-If later justified, design a strength-specific progression variable such as a relative step load rather than blindly adding `kg`:
+If real use later shows a missing progression capability, design it around the **training variable being progressed**, not the outcome target:
 
-- exact step binding;
-- current-capacity reference;
+- exact step/session binding;
+- current-capability reference where relevant;
 - permitted range;
-- increment/decrement;
-- RIR/technical stop conditions;
-- adverse response handling;
-- stale-source revision protection;
-- athlete confirmation through the existing singleton progression-claim mechanism;
-- full replay/provenance.
+- increment/decrement semantics;
+- technical/RIR/quality stop conditions;
+- adverse-response handling;
+- stale-revision protection;
+- athlete confirmation where the existing claim transaction requires it;
+- replay/provenance.
 
-A confirmed load progression must still be bounded by current capacity and safety. The target outcome remains descriptive context, not the increment source.
+A 1.75 s sprint target does not mean "subtract 0.01 s from training every week"; a 220 kg deadlift target does not mean "add 2.5 kg every week".
 
 ---
 
@@ -702,18 +794,18 @@ A confirmed load progression must still be bounded by current capacity and safet
 
 | Order | Item | Product value | Policy risk |
 |---:|---|---|---|
-| 1 | SG0 ADR | Removes semantic ambiguity | none |
-| 2 | SG1 typed persistence | Canonical goal data | none |
-| 3 | SG2 goal UX | Friend can express the real goal | none |
-| 4 | SG3 arbitrary-lift e1RM UX | Current capacity is usable | none |
-| 5 | SG7 progress proxy | Immediate feedback from existing data | none |
-| 6 | SG4 exact coverage model | Goal can influence planning | **policy change** |
-| 7 | SG5 deadlift workout | Gives planner an exact candidate | **prescription change** |
-| 8 | SG6 live selection | End-to-end useful recommender behavior | **policy change** |
-| 9 | SG8 formal outcome evidence | Honest target evaluation | evidence-only initially |
-| 10 | SG9 load progression | Optional advanced progression | **high policy risk** |
+| 1 | PG0 ADR | removes semantic ambiguity | none |
+| 2 | PG1 metric/test registries | shared typed vocabulary | none |
+| 3 | PG2 typed persistence + speed/power domains | canonical goal data | none |
+| 4 | PG3 goal UX | athlete can express real targets | none |
+| 5 | PG4 current evidence/progress | honest feedback | none |
+| 6 | PG5 planning projection | target can influence planning | policy change |
+| 7 | PG6 coverage audit/gaps | real candidate sessions | policy/content change |
+| 8 | PG7 allocation/ranking | end-to-end recommender behavior | policy change |
+| 9 | PG8 formal evaluation | auditable achievement | evidence only first |
+| 10 | PG9 progression automation | only if needed | high; future |
 
-SG2/SG3/SG7 can provide substantial user value before SG4–SG6 receive recommendation authority.
+The first release can ship PG1–PG4 without claiming programming specialization. Recommendation authority begins only with PG5–PG7 and the required policy-version/simulation review.
 
 ---
 
@@ -723,189 +815,236 @@ Likely files, subject to implementation-time verification:
 
 | Area | Files |
 |---|---|
-| Goal model | `app/src/engine/models.ts`, new goal-target helper module |
-| Goal validation | `app/src/engine/validationCore.ts`, semantic target validator |
-| Goal persistence | `app/src/services/goalService.ts` |
-| Goal UI | `app/src/components/Goals.tsx`, CSS/tests |
-| Firestore | `app/firestore.rules`, emulator tests |
-| Current e1RM UI | `app/src/components/preferences/PerformanceSections.tsx`, `usePreferences.ts` tests as needed |
-| Exercise identity | reuse `app/src/workouts/exercises.ts`, `exercise-catalog-extensions.ts` |
-| Goal planning projection | `app/src/engine/adapters.ts` or a new typed goal-demand assembler |
-| Broad strategy | `app/src/engine/evergreenStrategy.ts` |
-| Dose packing / coverage | `app/src/engine/weeklyDosePacking.ts`, relevant coverage descriptors |
-| Strength workout | new/updated file under `app/src/workouts/catalog/`, `catalog.ts` |
-| Prescription | reuse `app/src/workouts/prescription.ts`; change only if required |
-| Recommendation provenance | planner/rules/provenance path that owns selected-role explanations |
-| Outcome metric | `app/src/observations/registry.ts`, `models.ts` |
-| Evaluation subject binding | `app/src/outcomes/evaluationSpec.ts` and validators |
-| Knowledge | `app/src/knowledge/sportsKnowledge.ts` if new programming defaults are introduced |
-| Plan/persona validation | weekly planner tests, simulation fixtures, plan-judge/persona cases |
+| Goal model/domain | app/src/engine/models.ts, goal-domain helper |
+| Goal validation | app/src/engine/validationCore.ts, semantic target validator |
+| Goal persistence | app/src/services/goalService.ts |
+| Goal UI | app/src/components/Goals.tsx, CSS/tests |
+| Firestore | app/firestore.rules, emulator tests |
+| Metric vocabulary | app/src/observations/registry.ts, app/src/observations/models.ts |
+| Test identity | new small performance-test registry or existing protocol registry if suitable |
+| Exercise identity | reuse app/src/workouts/exercises.ts and extensions |
+| Strength current capacity | app/src/components/preferences/PerformanceSections.tsx, existing e1RM helpers |
+| Goal planning projection | app/src/engine/adapters.ts or dedicated assembler |
+| Broad strategy | app/src/engine/evergreenStrategy.ts |
+| Weekly allocation/coverage | app/src/engine/weeklyDosePacking.ts and existing role reservation path |
+| Workout coverage | app/src/workouts/catalog/*, catalog validators |
+| Prescription | reuse app/src/workouts/prescription.ts unless a real gap is found |
+| Outcome evaluation | app/src/outcomes/* and observation comparison identity |
+| Knowledge | app/src/knowledge/sportsKnowledge.ts for new generalizable programming claims |
+| Simulation | weekly planner tests, scenario fixtures, plan-judge/persona cases |
+
+Reference symbols, not line numbers, during implementation.
 
 ---
 
 # Acceptance scenarios
 
-The implementation is not complete until these behavior-level cases pass.
+### A. Strength target
 
-### A. Express the goal
+An athlete can create:
 
-Given an athlete creates a strength goal, they can select:
+~~~text
+Conventional Deadlift
+1RM
+220 kg
+~~~
 
-- Conventional Deadlift
-- 1RM
-- 220 kg
-- optional date
+The stored target contains metricId strength_1rm_kg plus exerciseId conventional_deadlift. Current e1RM, if present, is displayed separately.
 
-and the stored object contains `exerciseId: conventional_deadlift`, not a guessed string.
+An RDL-only workout does not receive conventional-deadlift-specific coverage credit.
 
-### B. Goal and capacity are independent
+### B. Speed target
 
-Given:
+An athlete can create:
 
-- target = 220 kg;
-- current e1RM = 170 kg;
+~~~text
+Standing 10 m sprint
+1.75 s
+~~~
 
-the UI shows both separately.
+The target is bound to sprint_10m_standing. A flying-10 target has a different test id even if both use sprint_elapsed_time_s.
 
-Changing target from 220 to 250 kg does not change today’s current-capacity-derived working load.
+Acceleration work may satisfy training coverage without pretending it is a formal timed outcome observation.
 
-### C. Direct exercise coverage
+### C. Power target
 
-With an active conventional-deadlift goal, available barbell, and no relevant restriction, a weekly strength allocation can select a workout containing the exact `conventional_deadlift` step.
+An athlete can create:
 
-An RDL-only workout does not satisfy exact-goal coverage.
+~~~text
+Cycling 5 s peak power
+1,200 W
+~~~
 
-### D. Safety wins
+The metric direction is higher-is-better and the unit comes from the registry.
 
-With `avoid_heavy_spinal_loading` or another applicable exclusion, no conventional-deadlift workout is selected even when it is the athlete’s highest-priority goal.
+Changing the target to 1,300 W does not turn 1,300 W into today's workout prescription.
 
-The plan reports the goal-coverage shortfall.
+A later CMJ-height target is represented as jump_height_cm, not falsely as watts.
 
-### E. Missing e1RM degrades safely
+### D. Target and current capability are independent
 
-An athlete may create the goal with no baseline estimate.
+Changing a target value does not mutate:
 
-The planner may still use a safe relative/RIR prescription or explain missing calibration. It never uses 220 kg as assumed current capacity.
+- manual/coach e1RM;
+- latest sprint observation;
+- latest power observation;
+- resolved session working load;
+- readiness/tissue state.
 
-### F. Logged sets update capacity
+### E. Protocol identity prevents false progress
 
-A qualifying logged conventional-deadlift set updates the existing derived e1RM path when ownership permits, and the goal progress display reads the new value.
+A standing-start 10 m result does not automatically compare with a flying 10 m result.
 
-### G. Manual capacity remains protected
+A power result from a different duration/protocol does not silently satisfy a 5 s target.
 
-If the athlete/coach supplied a protected deadlift e1RM, a derived estimate does not overwrite it, preserving ADR-0021.
+If evidence is not comparable, progress shows "no comparable result" rather than a misleading delta.
 
-### H. Legacy goals do not gain accidental authority
+### F. Safety wins
 
-An old goal with:
+With an applicable spinal-load, knee, Achilles or other restriction, target-specific work is withheld when excluded.
 
-```text
+The weekly plan reports a target-coverage shortfall.
+
+### G. Goal coverage is not test spam
+
+A sprint goal can be covered by relevant training exposure without scheduling a maximal timed sprint test each week.
+
+Formal outcome testing uses its own cadence/protocol.
+
+### H. Legacy goals gain no accidental authority
+
+An old goal containing:
+
+~~~text
 targetMetric = deadlift
 targetValue = 220
 targetUnit = kg
-```
+~~~
 
-continues to render but does not create exact deadlift planning demand until explicitly converted.
+still renders but creates no typed deadlift demand until explicitly converted.
 
-### I. Multiple goal conflict is deterministic
+### I. Multiple targets are deterministic
 
-If multiple planning-authoritative specific lift goals are allowed, the same input always yields the same allocation and explicit shortfall/priority result. Collection iteration order is never authority.
+When two or more targets compete for limited capacity, priority/tie rules produce the same allocation for identical input and report every unmet target.
+
+### J. Higher/lower direction is registry-driven
+
+Strength/power targets show higher values as improvement.
+
+Sprint elapsed time shows lower values as improvement.
+
+No UI component hardcodes direction based on label text.
 
 ---
 
 # Verification gates
 
-For SG1–SG3/SG7 documentation/UI/persistence work:
+For PG1–PG4:
 
 - TypeScript typecheck;
 - lint;
 - unit/component tests;
-- Firestore emulator tests for changed rules;
-- catalog semantic-validation tests.
+- Firestore emulator tests for rule changes;
+- goal parser compatibility tests;
+- metric/test registry validation;
+- accessibility coverage for new controls.
 
-For SG4–SG6 recommendation-affecting work:
+For PG5–PG7 recommendation-affecting work:
 
 - all of the above;
-- `npm run check`;
+- npm run check;
+- explicit POLICY_VERSION bump with rationale;
 - policy-drift guard;
-- `simulate:diff`;
-- relevant plan-judge/persona suites;
+- simulate:scenarios and reviewed baseline impact;
+- simulate:diff;
+- relevant plan-judge/persona corpus;
 - deterministic replay/provenance tests;
-- explicit `POLICY_VERSION` bump with rationale;
-- no baseline update until diffs are reviewed.
+- no baseline update until behavioral diffs are reviewed.
 
-For SG8:
+For PG8:
 
-- OV metric/protocol/evaluation tests;
-- comparable-series tests proving exercise identity cannot cross-contaminate;
-- evidence/reporting only, no selection import.
+- observation/evaluation tests;
+- protocol-comparability tests;
+- subject-series contamination tests;
+- direction-aware target evaluation;
+- no selection import until a separate authority decision exists.
+
+For this documentation PR:
+
+- repository pre-commit hygiene;
+- no trailing whitespace;
+- docs-only CI expected; code/test suites may be skipped by change detection.
 
 ---
 
 # Rollout recommendation
 
-Use a staged release rather than shipping persistence and authority together.
+## Stage 1 — typed capture and honest progress
 
-### Stage 1 — honest goal capture
+Ship PG1–PG4:
 
-Ship SG1–SG3 and SG7:
+- structured target;
+- one vocabulary across strength/speed/power;
+- current evidence where available;
+- no claim yet that automatic programming specializes for the target.
 
-- typed deadlift goal;
-- current e1RM;
-- progress display;
-- no claim yet that the planner specializes for the lift.
+The UI must say when a target is tracked but not yet planning-authoritative.
 
-The UI should explicitly say when the goal is tracked but not yet influencing automatic programming if SG4–SG6 are not active.
+## Stage 2 — measured planning authority
 
-### Stage 2 — measured planning authority
-
-After SG0 and policy verification, activate SG4–SG6 behind the repository’s normal policy-version/replay discipline.
+After PG0 and policy verification, ship PG5–PG7.
 
 Collect:
 
-- rate of exact-goal coverage;
+- direct/specific coverage rate;
 - shortfall reasons;
 - safety exclusions;
-- athlete adherence;
-- whether exact sessions are being replaced/edited;
-- strength-session response;
-- e1RM trend.
+- substitutions/edits;
+- adherence;
+- target-relevant response;
+- comparable outcome trend.
 
-### Stage 3 — formal outcome loop
+## Stage 3 — formal outcome loop
 
-Add SG8 only when athletes are actually using specific lift goals long enough to justify standardized outcome assessment.
+Add PG8 when real users have enough target history to justify protocol-locked assessment.
 
-### Stage 4 — progression automation only if needed
+## Stage 4 — progression automation only if needed
 
-Consider SG9 after real use shows that current-capacity self-calibration plus autoregulated prescriptions cannot adequately express progression.
+Consider PG9 only if current-capability/autoregulated session logic plus normal periodization cannot express required training progression.
 
 ---
 
 # Recommended first vertical slice
 
-The smallest slice that solves the friend’s concrete problem without pretending more exists than is true is:
+The smallest slice that proves this is **not a deadlift-only feature** should contain one representative target from each requested family:
 
-1. typed `strength_1rm` target;
-2. canonical exercise picker including `conventional_deadlift`;
-3. target weight;
-4. current conventional-deadlift e1RM input/readout;
-5. progress proxy;
-6. a clear label that automatic programming is still broad-strength until SG4–SG6 land.
+1. Strength: strength_1rm_kg + conventional_deadlift.
+2. Speed: sprint_elapsed_time_s + sprint_10m_standing.
+3. Power: peak_power_w + cycling_5s_peak_power.
 
-The first **fully functional recommender** slice then adds:
+The slice should include:
 
-7. exact exercise coverage;
-8. a reviewed conventional-deadlift workout;
-9. live selection/provenance.
+- shared metric/test registry;
+- typed persistence;
+- target UX;
+- current/progress projection where evidence exists;
+- family-specific planning projection;
+- at least one legitimate coverage path per target;
+- target-specific explanation and shortfall;
+- formal safety precedence.
 
-This sequence makes the UI truthful at every intermediate state.
+CMJ/jump-height can be the next registered power-family metric and is a good regression test for the architecture because it proves the model can support a non-watt explosive-performance outcome without lying about units.
 
 ---
 
 # Final design test
 
-At the end of SG6, the following statement must be true:
+At the end of PG7, all three statements must be true:
 
-> When an athlete says “my goal is a 220 kg conventional deadlift”, the system stores that as a typed performance outcome, recognizes the exact lift, deliberately schedules safe direct work for that lift when constraints allow, uses the athlete’s **current** strength to determine training load, learns current capacity from logged training, explains when the goal cannot be covered, and never treats the aspirational 220 kg itself as proof of present capacity.
+> When an athlete says "my goal is a 220 kg conventional deadlift", the system recognizes the exact lift, deliberately prefers safe direct work for it when constraints allow, and uses current capacity rather than 220 kg to determine training load.
 
-If any implementation only adds a textbox, only adds a deadlift workout, or only adds a new progression variable, it has not closed the actual gap.
+> When an athlete says "my goal is a 1.75 s standing 10 m", the system recognizes the exact sprint test, drives acceleration-relevant training coverage, keeps timed testing distinct from weekly training, and interprets lower time as improvement.
+
+> When an athlete says "my goal is 1,200 W for 5 s on the bike", the system recognizes the exact power metric/test, drives relevant sprint-power coverage, uses protocol-aware observations for progress, and never turns 1,200 W into an arbitrary daily prescription.
+
+If adding another registered strength, speed or power target after that requires a new goal subsystem instead of a registry/coverage extension, the abstraction is still too narrow.
