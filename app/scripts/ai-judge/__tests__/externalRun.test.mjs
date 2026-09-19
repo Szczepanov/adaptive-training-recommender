@@ -156,6 +156,21 @@ describe('manual external judge run packages', () => {
     expect(existsSync(join(packageDir, 'upload', 'stale.txt'))).toBe(false);
   });
 
+  it('rejects sensitive fields from the upload-visible packet contract', () => {
+    const root = tempRoot();
+    const source = sourceFixture(root, 'persona');
+    const familiesPath = join(source, 'families.jsonl');
+    const family = JSON.parse(readFileSync(familiesPath, 'utf8').trim());
+    family.cases[0].input.apiKey = 'not-for-upload';
+    writeFileSync(familiesPath, `${JSON.stringify(family)}\n`);
+
+    expect(() => buildExternalPackage({
+      suite: 'persona',
+      sourceDir: source,
+      outputDir: join(root, 'package'),
+    })).toThrow(/forbidden sensitive field.*apiKey/i);
+  });
+
   it('rejects package contract/hash mismatches before importing responses', () => {
     const root = tempRoot();
     const source = sourceFixture(root, 'plan');

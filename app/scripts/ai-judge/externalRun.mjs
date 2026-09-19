@@ -59,6 +59,47 @@ function hashJson(value) {
   return hashBytes(JSON.stringify(value));
 }
 
+const FORBIDDEN_UPLOAD_FIELD_NAMES = new Set([
+  'apikey',
+  'accesstoken',
+  'refreshtoken',
+  'authorization',
+  'password',
+  'clientsecret',
+  'privatekey',
+  'serviceaccount',
+  'providerpayload',
+  'rawproviderpayload',
+  'rawhealthpayload',
+  'rawgarminpayload',
+  'garminrawpayload',
+]);
+
+function normalizedFieldName(value) {
+  return String(value).replace(/[^A-Za-z0-9]/g, '').toLowerCase();
+}
+
+function assertUploadSafe(value, path = 'upload') {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertUploadSafe(item, `${path}[${index}]`));
+    return;
+  }
+  if (isRegularObject(value)) {
+    for (const [key, child] of Object.entries(value)) {
+      if (FORBIDDEN_UPLOAD_FIELD_NAMES.has(normalizedFieldName(key))) {
+        throw new Error(`External judge upload contains forbidden sensitive field: ${path}.${key}`);
+      }
+      assertUploadSafe(child, `${path}.${key}`);
+    }
+    return;
+  }
+  if (typeof value === 'string'
+    && (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value)
+      || /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/i.test(value))) {
+    throw new Error(`External judge upload contains credential-like material at ${path}.`);
+  }
+}
+
 function readBoundedText(path, maxBytes = MAX_ARTIFACT_BYTES) {
   const size = statSync(path).size;
   if (size > maxBytes) throw new Error(`File exceeds size limit (${maxBytes} bytes): ${path}`);
@@ -175,10 +216,12 @@ function loadSource({ suite, sourceDir }) {
     seen.add(family.familyId);
     const caseIds = familyCaseIds(family);
     const packet = suite === 'plan' ? formatFamilyForPacketVersion(family, EXTERNAL_PACKET_VERSION) : family;
+    assertUploadSafe(packet, `${suite}.${family.familyId}`);
     return { family, packet, caseIds };
   });
 
   const promptContent = readBoundedText(promptPath);
+  assertUploadSafe(promptContent, `${suite}.prompt`);
   const corpusContent = readBoundedText(corpusPath);
   const corpus = JSON.parse(corpusContent);
   if (!isRegularObject(corpus) || typeof corpus.schema !== 'string') throw new Error(`Malformed corpus metadata: ${corpusPath}`);
