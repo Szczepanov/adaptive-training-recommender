@@ -73,6 +73,25 @@ describe('PerformanceTargetSummary (ADR-0041/PG3-PG4.5)', () => {
     expect(html).toContain('gap 0.15 s');
   });
 
+  it('does not mislabel an observation read failure as no logged result', () => {
+    const target: GoalPerformanceTarget = {
+      kind: 'performance_metric',
+      metricId: 'sprint_elapsed_time_s',
+      subjectRef: { kind: 'performance_test', performanceTestId: 'sprint_10m_standing-r1' },
+      targetValue: 1.75,
+    };
+    const html = renderToStaticMarkup(
+      <PerformanceTargetSummary
+        target={target}
+        targetDate={null}
+        performanceProfile={null}
+        observationDataState="unavailable"
+      />,
+    );
+    expect(html).toContain('Comparable logged results are currently unavailable.');
+    expect(html).not.toContain('No comparable logged result yet');
+  });
+
   it('shows a feasibility badge once a target date is present', () => {
     const profile: AthletePerformanceProfile = {
       estimated1RmKg: { conventional_deadlift: 100 },
