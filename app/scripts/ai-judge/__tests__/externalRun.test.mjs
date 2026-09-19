@@ -4,6 +4,7 @@ import {
   buildExternalPackage,
   importExternalRun,
   readJsonObject,
+  suiteConfig,
 } from '../externalRun.mjs';
 import { generateFamilyResponseSchema } from '../schema.mjs';
 import { createHash } from 'node:crypto';
@@ -110,6 +111,7 @@ describe('manual external judge run packages', () => {
     const manifest = buildExternalPackage({ suite: 'plan', sourceDir: source, outputDir: packageDir });
 
     expect(manifest.suite).toBe('plan');
+    expect(manifest.variant).toBe('standard');
     expect(manifest.packetVersion).toBe('v2');
     expect(manifest.privacy.containsCredentials).toBe(false);
     expect(manifest.privacy.containsRawHealthPayloads).toBe(false);
@@ -171,6 +173,38 @@ describe('manual external judge run packages', () => {
     expect(second.families[0].responseBindingSha256).not.toBe(first.families[0].responseBindingSha256);
     expect(second.families[0].responsePath).not.toBe(first.families[0].responsePath);
     expect(existsSync(oldResponse)).toBe(false);
+  });
+
+  it('routes hybrid persona imports to the hybrid artifact directory by package variant', () => {
+    const root = tempRoot();
+    const source = sourceFixture(root, 'persona');
+    const packageDir = join(root, 'package');
+    const manifest = buildExternalPackage({
+      suite: 'persona',
+      variant: 'hybrid_expansion',
+      sourceDir: source,
+      outputDir: packageDir,
+    });
+    for (const family of manifest.families) {
+      writeFileSync(join(packageDir, family.responsePath), JSON.stringify(responseFor(family.familyId, family.caseIds)));
+    }
+
+    expect(manifest.variant).toBe('hybrid_expansion');
+    const config = suiteConfig('persona');
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(root);
+      const result = importExternalRun({
+        packageDir,
+        responsesDir: join(packageDir, 'responses'),
+        model: 'external-hybrid-model',
+        expectedSuite: 'persona',
+      });
+      expect(result.outputDir).toBe(join(root, config.hybridOutputDir));
+      expect(result.manifest.variant).toBe('hybrid_expansion');
+    } finally {
+      process.chdir(originalCwd);
+    }
   });
 
   it('rejects sensitive fields from the upload-visible packet contract', () => {

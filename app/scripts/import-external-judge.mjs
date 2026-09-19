@@ -32,7 +32,7 @@ const suite = valueAfter(args, '--suite');
 const config = suiteConfig(suite);
 const packageDir = valueAfter(args, '--package') ?? `artifacts/external-judge/${suite}/latest`;
 const responsesDir = valueAfter(args, '--responses');
-const outputDir = valueAfter(args, '--out') ?? config.outputDir;
+const outputDir = valueAfter(args, '--out');
 const model = valueAfter(args, '--model');
 if (!model && !args.includes('--dry-run')) {
   console.error('--model <label> is required so imported judge evidence has explicit model provenance.');
@@ -40,7 +40,15 @@ if (!model && !args.includes('--dry-run')) {
 }
 
 if (args.includes('--dry-run')) {
-  console.log(JSON.stringify({ suite, packageDir: resolve(packageDir), responsesDir: resolve(responsesDir ?? `${packageDir}/responses`), outputDir: resolve(outputDir), model: model ?? '<required>' }, null, 2));
+  console.log(JSON.stringify({
+    suite,
+    packageDir: resolve(packageDir),
+    responsesDir: resolve(responsesDir ?? `${packageDir}/responses`),
+    outputDir: outputDir ? resolve(outputDir) : '<from package variant>',
+    standardOutputDir: resolve(config.outputDir),
+    hybridOutputDir: config.hybridOutputDir ? resolve(config.hybridOutputDir) : undefined,
+    model: model ?? '<required>',
+  }, null, 2));
   process.exit(0);
 }
 

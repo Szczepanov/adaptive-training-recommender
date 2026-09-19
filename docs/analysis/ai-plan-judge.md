@@ -88,7 +88,8 @@ npm run judge:external:export -- --out artifacts/external-judge/plan/latest
 # Persona-judge package
 npm run persona:external:export -- --out artifacts/external-judge/persona/latest
 
-# Optional expanded hybrid persona suite (uses the hybrid deterministic corpus)
+# Optional expanded hybrid persona suite (uses the hybrid deterministic corpus).
+# Importing this package defaults back to artifacts/hybrid-persona-plan-judge/latest.
 npm run persona:external:export -- --hybrid-expansion --out artifacts/external-judge/persona-hybrid/latest
 
 # Optional: use an existing deterministic artifact directory without rebuilding it
@@ -100,7 +101,11 @@ npm run persona:external:import -- --package artifacts/external-judge/persona/la
 ```
 
 The model label is explicit provenance only; it does not enable network access or credentials.
-Use `--help` for all options and `--dry-run` to inspect resolved paths without writing files.
+The package manifest also records `variant: standard|hybrid_expansion`; unless `--out` is
+explicitly supplied, hybrid persona imports return to
+`artifacts/hybrid-persona-plan-judge/latest` instead of overwriting the standard persona
+artifact directory. Use `--help` for all options and `--dry-run` to inspect resolved paths
+without writing files.
 
 The package layout is:
 

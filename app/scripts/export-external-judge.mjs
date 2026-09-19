@@ -63,6 +63,11 @@ if (!noBuild && !explicitSourceDir) {
   }
 }
 
-const manifest = buildExternalPackage({ suite, sourceDir, outputDir });
+const manifest = buildExternalPackage({
+  suite,
+  sourceDir,
+  outputDir,
+  variant: hybridExpansion ? 'hybrid_expansion' : 'standard',
+});
 console.log(`Created ${suite} external judge package with ${manifest.families.length} families at ${resolve(outputDir)}`);
 console.log(`Upload only ${resolve(outputDir, 'upload')} to the external LLM; keep responses/ and local-provenance/ local.`);

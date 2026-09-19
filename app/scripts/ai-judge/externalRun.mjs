@@ -35,6 +35,7 @@ const SUITE_CONFIG = {
     sourceDir: 'artifacts/persona-plan-judge/latest',
     hybridSourceDir: 'artifacts/hybrid-persona-plan-judge/latest',
     outputDir: 'artifacts/persona-plan-judge/latest',
+    hybridOutputDir: 'artifacts/hybrid-persona-plan-judge/latest',
     runManifestSchema: 'adaptive-training-recommender/persona-plan-judge-run-manifest@1',
     stabilitySchema: 'adaptive-training-recommender/persona-plan-judge-stability@1',
     summarySchema: 'adaptive-training-recommender/persona-plan-judge-summary@1',
@@ -259,8 +260,11 @@ function packagePath(root, relativePath) {
   return securePathWithin(root, relativePath);
 }
 
-export function buildExternalPackage({ suite, sourceDir, outputDir, packetVersion = EXTERNAL_PACKET_VERSION } = {}) {
+export function buildExternalPackage({ suite, sourceDir, outputDir, packetVersion = EXTERNAL_PACKET_VERSION, variant = 'standard' } = {}) {
   assertSuite(suite);
+  if (!['standard', 'hybrid_expansion'].includes(variant) || (variant === 'hybrid_expansion' && suite !== 'persona')) {
+    throw new Error(`Unsupported external judge variant '${variant}' for suite '${suite}'.`);
+  }
   if (packetVersion !== EXTERNAL_PACKET_VERSION) throw new Error(`Unsupported external packet version '${packetVersion}'.`);
   const source = loadSource({ suite, sourceDir });
   const packageDir = resolve(outputDir ?? `artifacts/external-judge/${suite}/latest`);
@@ -315,6 +319,7 @@ export function buildExternalPackage({ suite, sourceDir, outputDir, packetVersio
   const manifest = {
     schema: EXTERNAL_RUN_MANIFEST_SCHEMA,
     suite,
+    variant,
     suiteId: suite === 'plan' ? 'ai-plan-judge' : 'persona-plan-judge',
     packageVersion: 1,
     packetVersion,
@@ -375,6 +380,10 @@ function validateManifest(manifest, packageDir, expectedSuite) {
   if (manifest.packageVersion !== 1) throw new Error(`Unsupported external package version: ${JSON.stringify(manifest.packageVersion)}`);
   if (expectedSuite && manifest.suite !== expectedSuite) throw new Error(`Package suite mismatch: expected ${expectedSuite}, got ${manifest.suite}.`);
   assertSuite(manifest.suite);
+  if (!['standard', 'hybrid_expansion'].includes(manifest.variant)
+    || (manifest.variant === 'hybrid_expansion' && manifest.suite !== 'persona')) {
+    throw new Error(`Unsupported external package variant: ${JSON.stringify(manifest.variant)}`);
+  }
   if (manifest.packetVersion !== EXTERNAL_PACKET_VERSION || manifest.responseSchema !== RESPONSE_SCHEMA_V1) {
     throw new Error('External package contract mismatch: packet or response schema version differs.');
   }
@@ -579,7 +588,10 @@ export function importExternalRun({ packageDir, responsesDir, outputDir, model =
     sampleRows.push({ familyId: entry.familyId, sampleIndex: 0, seed: null, result, telemetry: null });
   }
 
-  const destination = resolve(outputDir ?? config.outputDir);
+  const defaultOutputDir = manifest.suite === 'persona' && manifest.variant === 'hybrid_expansion'
+    ? config.hybridOutputDir
+    : config.outputDir;
+  const destination = resolve(outputDir ?? defaultOutputDir);
   mkdirSync(destination, { recursive: true });
   for (const [outputName, content] of contractArtifacts) {
     const target = resolve(destination, outputName);
@@ -596,6 +608,7 @@ export function importExternalRun({ packageDir, responsesDir, outputDir, model =
   const completedManifest = {
     schema: config.runManifestSchema,
     suite: manifest.suite,
+    variant: manifest.variant,
     judgeModel: model,
     judgeProvider: 'manual_external',
     corpusCommit: manifest.provenance?.corpusCommit ?? 'unknown',
