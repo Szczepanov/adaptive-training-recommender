@@ -1,7 +1,7 @@
 # Strength, speed and power performance goals — implementation plan
 
 **Capability prefix:** PG
-**Status:** In progress — Stage 1 (PG0–PG4.5) Implemented; PG5–PG9 remain Draft/not started.
+**Status:** In progress — Stage 1 core (PG0–PG4 plus the population-anchored PG4.5 first slice) Implemented; PG4.5.4 personal-longitudinal trajectory and PG5–PG9 remain Draft/not started.
 **Blocked by:** PG5–PG9 require: reviewed Sports Knowledge Registry claims for any new prescription defaults, a `POLICY_VERSION` bump, `simulate:scenarios`/`simulate:diff` review, and their own item-level dependencies below. PG0's ADR is [ADR-0041](../adr/0041-strength-speed-power-performance-goals.md), accepted 2026-09-19.
 **Unlocks:** athlete-owned measurable strength, speed and power goals; target-specific planning coverage; protocol-aware progress; later formal target evaluation.
 **Source analysis:** ../analysis/2026-09-19-strength-speed-power-performance-goal-gap.md
@@ -15,13 +15,13 @@ modules (`optimizer.ts` and friends) from transitively reaching `observations/*`
 `validationCore.ts` is reachable from those modules through the `engine/validation.ts`
 barrel. Semantic validation (`validatePerformanceTargetForDomain`, in
 `engine/performanceTargetPolicy.ts`) is instead enforced at `goalService.ts`'s
-create/update write boundary, and by the Goals.tsx UI before submit. `validateGoal` keeps
-a structural-only check (shape/kind/exact keys) and still fails a goal closed for a
-malformed target; a well-formed-but-semantically-unresolvable target now passes
-`validateGoal` and is rejected one layer up instead. This preserves ADR-0041's
-"present-but-invalid performanceTarget fails closed" invariant end-to-end while keeping
-the observations evidence layer isolated from recommendation-affecting code, per the
-existing OV1.4 architecture decision.
+create/update **and read** boundaries, and by the Goals.tsx UI before submit.
+`validateGoal` keeps a structural-only check (shape/kind/exact keys) and still fails a
+goal closed for a malformed target; a well-formed-but-semantically-unresolvable target
+passes `validateGoal` but is rejected by the service before either persistence or
+read-side escape. This preserves ADR-0041's "present-but-invalid performanceTarget fails
+closed" invariant end-to-end while keeping the observations evidence layer isolated from
+recommendation-affecting code, per the existing OV1.4 architecture decision.
 
 > **Core invariant:** the target is an outcome. It never becomes current capability, a working-load denominator, a sprint-volume prescription, or an automatic weekly progression rate. Existing safety, eligibility, readiness, tissue, schedule and higher-authority planning rules remain dose authority.
 
@@ -507,7 +507,7 @@ Cover:
 
 ## PG2 — typed goal model, domain, validation and persistence
 
-**Status:** [x] Implemented — `UserGoal.performanceTarget`, `speed`/`power` domains in `app/src/engine/models.ts`; structural validation in `app/src/engine/validationCore.ts`; semantic/domain validation moved to `app/src/engine/performanceTargetPolicy.ts`'s `validatePerformanceTargetForDomain`, enforced at `app/src/services/goalService.ts`'s write boundary (see this plan's Stage 1 implementation note above for why); `firestore.rules` structural check added.
+**Status:** [x] Implemented — `UserGoal.performanceTarget`, `speed`/`power` domains in `app/src/engine/models.ts`; structural validation in `app/src/engine/validationCore.ts`; semantic/domain validation moved to `app/src/engine/performanceTargetPolicy.ts`'s `validatePerformanceTargetForDomain`, enforced at `app/src/services/goalService.ts`'s read/write boundary (see this plan's Stage 1 implementation note above for why); `firestore.rules` structural check added.
 **Blocked by:** PG1
 **Recommendation-affecting:** no; persistence only
 
@@ -631,7 +631,7 @@ Cover:
 
 ## PG4 — current measurement and progress projection
 
-**Status:** [x] Implemented — `app/src/engine/goalProgress.ts` (pure evaluator) resolves current e1RM (strength) or latest comparable observation (speed/power) and a direction-aware gap via `app/src/engine/goalMetricMath.ts`; displayed in `Goals.tsx`'s `PerformanceTargetSummary`. `PerformanceSections.tsx`'s e1RM picker is now data-driven from the target-eligibility policy rather than a hardcoded three-lift list.
+**Status:** [x] Implemented — `app/src/engine/goalProgress.ts` (pure evaluator) resolves current e1RM (strength) or latest comparable observation (speed/power) and a direction-aware gap via `app/src/engine/goalMetricMath.ts`; `metricObservationService.listCurrentRevisionsForMetric` now supplies current revision data to `Goals.tsx` so speed/power progress works in the actual UI rather than only in evaluator tests. `PerformanceSections.tsx`'s e1RM picker is data-driven from the target-eligibility policy rather than a hardcoded three-lift list.
 **Blocked by:** PG1, PG3
 **Recommendation-affecting:** no
 
@@ -687,7 +687,7 @@ Cover:
 
 ## PG4.5 — goal feasibility and realism advisory
 
-**Status:** [x] Implemented for the strength family only — `app/src/engine/goalFeasibility.ts`'s `assessGoalFeasibility`, backed by a registered Sports Knowledge Registry claim (`goalFeasibility.strength.requiredChangeBands` in `app/src/knowledge/goalFeasibilityKnowledge.ts`). Speed and power deliberately return `insufficient_evidence` rather than reusing the strength band, per PG4.5.5 -- no reviewed rate-of-change evidence was found for those families in the source analysis. Personal-longitudinal-trajectory evidence (PG4.5.4) is **not yet implemented**; the first slice uses population-anchored bands only. Displayed in `Goals.tsx`'s `PerformanceTargetSummary`.
+**Status:** [x] Implemented for the strength family first slice — `app/src/engine/goalFeasibility.ts`'s `assessGoalFeasibility`, backed by a registered Sports Knowledge Registry claim (`goalFeasibility.strength.requiredChangeBands` in `app/src/knowledge/goalFeasibilityKnowledge.ts`). Policy v2 calibrates the plausible ceiling to 1.3%/week (about 7.8% over six weeks, near the upper end of the cited trained-men benchmark) and retains 2.0%/week as an explicitly low-certainty stretch heuristic. `Goals.tsx` passes `TrainingIntentProfile.weeklyCommitment` as a total-capacity upper bound and shows horizon, required change, capacity, target-specific-frequency uncertainty and baseline provenance behind the confidence label. Speed and power deliberately return `insufficient_evidence` rather than reusing the strength band. Personal-longitudinal-trajectory evidence (PG4.5.4) is **not yet implemented**.
 **Blocked by:** PG1, PG2, PG4; PG5-PG7 improve target-specific frequency precision but are not required for an initial advisory
 **Recommendation-affecting:** no — advisory only
 
@@ -800,6 +800,16 @@ For the strength first slice, research anchors include:
 
 These are **benchmarks and evidence inputs**, not a universal expected-gain formula.
 
+The current versioned first-slice strength heuristic therefore uses <=1.3% required
+relative change per week as `plausible` at an adequate 2+/week **capacity ceiling** and
+<=2.0%/week as `stretch`; the latter deliberately extends beyond the six-week trained-men
+benchmark and is low-certainty. Lower total weekly capacity tightens these ceilings.
+Because total capacity is not target-specific frequency, plausible/stretch assessments
+remain confidence-limited until direct planned/performed coverage exists. An `unlikely`
+assessment that already holds under the optimistic capacity upper bound may retain high
+confidence because fewer actual target-specific exposures cannot make that target more
+plausible.
+
 ### PG4.5.6 Example — 100 kg bench to 200 kg in six weeks
 
 Given:
@@ -817,7 +827,8 @@ derive:
 absolute required change:      +100 kg
 relative required change:      +100%
 linearized weekly equivalent:  +16.7 kg/week (explanation only)
-maximum planned exposures:     6
+maximum relevant exposures
+under total-capacity bound:     6
 ~~~
 
 Expected UX with a recent reliable baseline and known schedule:
@@ -828,7 +839,8 @@ Confidence: High
 
 Why:
 - +100% improvement required in 6 weeks
-- at most 6 relevant planned exposures before the target date
+- total schedule capacity allows at most 6 relevant exposures before the target date
+- actual target-specific frequency is not yet known; that uncertainty cannot make this already-unlikely case more plausible
 - current strength evidence favors more frequent exposure for maximizing strength
 - requested change is far outside applicable short-term published benchmarks
 - baseline measurement uncertainty is small relative to the requested change
