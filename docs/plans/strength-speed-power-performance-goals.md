@@ -85,7 +85,7 @@ Examples:
 strength_1rm_kg + exercise:conventional_deadlift
 sprint_elapsed_time_s + performance_test:sprint_10m_standing-r1
 sprint_elapsed_time_s + performance_test:sprint_flying_10m-r1
-peak_power_w + performance_test:cycling_5s_peak_power-r1
+cycling_5s_peak_power_w + performance_test:cycling_5s_peak_power-r1
 jump_height_cm + performance_test:cmj_standard-r1
 ~~~
 
@@ -725,8 +725,8 @@ Examples:
 
 ~~~text
 strength_1rm_kg + exercise:conventional_deadlift
-sprint_elapsed_time_s + performance_performance_test:sprint_10m_standing-r1-r1
-peak_power_w + performance_performance_test:cycling_5s_peak_power-r1-r1
+sprint_elapsed_time_s + performance_test:sprint_10m_standing-r1
+cycling_5s_peak_power_w + performance_test:cycling_5s_peak_power-r1
 ~~~
 
 A bench result cannot join a deadlift series. A flying-10 result cannot satisfy a standing-10 goal. A 10 s peak-power result cannot silently satisfy a 5 s test.
@@ -867,7 +867,7 @@ Standing 10 m sprint
 1.75 s
 ~~~
 
-The target is bound to sprint_10m_standing. A flying-10 target has a different test id even if both use sprint_elapsed_time_s.
+The target is bound to PerformanceTestDefinition sprint_10m_standing-r1. A flying-10 target has a different PerformanceTestDefinition id even if both use sprint_elapsed_time_s.
 
 Acceleration work may satisfy training coverage without pretending it is a formal timed outcome observation.
 
@@ -1024,8 +1024,8 @@ Consider PG9 only if current-capability/autoregulated session logic plus normal 
 The smallest slice that proves this is **not a deadlift-only feature** should contain one representative target from each requested family:
 
 1. Strength: strength_1rm_kg + conventional_deadlift.
-2. Speed: sprint_elapsed_time_s + sprint_10m_standing.
-3. Power: peak_power_w + cycling_5s_peak_power.
+2. Speed: sprint_elapsed_time_s + performance_test:sprint_10m_standing-r1.
+3. Power: cycling_5s_cycling_5s_peak_power_w + performance_test:cycling_5s_peak_power-r1.
 
 The slice should include:
 
