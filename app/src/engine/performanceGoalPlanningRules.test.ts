@@ -4,9 +4,12 @@ import {
     directCoverageExerciseIds,
     getPerformanceGoalPlanningRule,
     workoutProvidesDirectCoverage,
+    type PerformanceGoalPlanningRule,
 } from './performanceGoalPlanningRules';
 import { PERFORMANCE_TARGET_POLICIES } from './performanceTargetPolicy';
+import { getPerformanceTestDefinition } from '../observations/performanceTestingCatalog';
 import { WORKOUTS, WORKOUTS_BY_ID } from '../workouts/catalog';
+import { EXERCISES_BY_ID } from '../workouts/exercises';
 import type { WorkoutDefinition } from '../workouts/models';
 import { repsStep, timeStep } from '../workouts/catalog/helpers';
 
@@ -40,6 +43,27 @@ describe('PERFORMANCE_GOAL_PLANNING_RULES / PERFORMANCE_TARGET_POLICIES alignmen
         }
     });
 
+    it('references registered performance tests and canonical training exercises', () => {
+        for (const rule of PERFORMANCE_GOAL_PLANNING_RULES) {
+            if (rule.directCoverage.subjectKind !== 'performance_test') continue;
+            for (const [performanceTestId, exerciseIds] of Object.entries(
+                rule.directCoverage.exerciseIdsByPerformanceTestId,
+            )) {
+                const testDefinition = getPerformanceTestDefinition(performanceTestId);
+                expect(
+                    testDefinition.protocol.metricIds,
+                    `${performanceTestId} must declare planning-rule metric ${rule.metricId}`,
+                ).toContain(rule.metricId);
+                for (const exerciseId of exerciseIds) {
+                    expect(
+                        EXERCISES_BY_ID.has(exerciseId),
+                        `${rule.metricId}/${performanceTestId} references unknown exercise ${exerciseId}`,
+                    ).toBe(true);
+                }
+            }
+        }
+    });
+
     it('returns null for an unregistered metric', () => {
         expect(getPerformanceGoalPlanningRule('unknown_metric_id')).toBeNull();
     });
@@ -68,9 +92,26 @@ describe('directCoverageExerciseIds', () => {
             .toEqual(['sprint_falling_start_10m']);
     });
 
-    it('returns an empty array, not null, for a legitimate but not-yet-covered performance-test subject', () => {
+    it('returns null for a performance-test id that has no explicit reviewed registry entry', () => {
         expect(directCoverageExerciseIds(speedRule, { kind: 'performance_test', performanceTestId: 'sprint_flying_10m-r1' }))
-            .toEqual([]);
+            .toBeNull();
+    });
+
+    it('returns an empty array only when the registry explicitly declares a reviewed coverage gap', () => {
+        const explicitGapRule: PerformanceGoalPlanningRule = {
+            metricId: 'synthetic_speed_metric',
+            family: 'speed',
+            broadAdaptation: 'high_intensity',
+            directCoverage: {
+                subjectKind: 'performance_test',
+                exerciseIdsByPerformanceTestId: { 'synthetic-reviewed-test-r1': [] },
+            },
+            rationale: 'Synthetic unit fixture for explicit-empty coverage semantics.',
+        };
+        expect(directCoverageExerciseIds(
+            explicitGapRule,
+            { kind: 'performance_test', performanceTestId: 'synthetic-reviewed-test-r1' },
+        )).toEqual([]);
     });
 });
 
@@ -150,6 +191,15 @@ describe('workoutProvidesDirectCoverage with synthetic fixtures', () => {
             workout,
             'strength_1rm_kg',
             { kind: 'performance_test', performanceTestId: 'sprint_10m_standing-r1' },
+        )).toBe(false);
+    });
+
+    it('returns false for an unreviewed performance-test subject instead of treating it as a coverage gap', () => {
+        const workout = workoutWithBlocks({ id: 'test_unreviewed_performance_test' });
+        expect(workoutProvidesDirectCoverage(
+            workout,
+            'sprint_elapsed_time_s',
+            { kind: 'performance_test', performanceTestId: 'sprint_flying_10m-r1' },
         )).toBe(false);
     });
 

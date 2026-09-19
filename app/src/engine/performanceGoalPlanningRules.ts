@@ -125,12 +125,12 @@ export function getPerformanceGoalPlanningRule(metricId: string): PerformanceGoa
  * Direct/specific-coverage exerciseIds for one goal's exact declared subject.
  *
  * Returns:
- * - `null` when no rule is registered for `metricId`, or the rule's subjectKind does not match
- *   `subjectRef.kind` -- both indicate data inconsistent with PG1's policy and must never
- *   silently degrade to "no coverage ids" the way an empty array does;
- * - `[]` when the subject is legitimately eligible but no direct-coverage exercise is
- *   registered for that exact performance-test subject yet -- a real, explicit PG6 catalog
- *   gap, not an error;
+ * - `null` when the rule's subjectKind does not match `subjectRef.kind`, or when a
+ *   performance-test id has no explicit reviewed entry in this registry. Both cases indicate
+ *   inconsistent/unreviewed data and must never silently degrade to "no coverage ids";
+ * - `[]` only when the registry explicitly includes that performance-test id with an empty
+ *   list, meaning a reviewed subject is intentionally known to have no direct-coverage
+ *   exercise yet;
  * - a non-empty list of canonical training exerciseIds otherwise.
  */
 export function directCoverageExerciseIds(
@@ -142,7 +142,9 @@ export function directCoverageExerciseIds(
         return [subjectRef.exerciseId];
     }
     if (rule.directCoverage.subjectKind !== 'performance_test') return null;
-    return rule.directCoverage.exerciseIdsByPerformanceTestId[subjectRef.performanceTestId] ?? [];
+    const coverageByTestId = rule.directCoverage.exerciseIdsByPerformanceTestId;
+    if (!Object.hasOwn(coverageByTestId, subjectRef.performanceTestId)) return null;
+    return coverageByTestId[subjectRef.performanceTestId];
 }
 
 /**
