@@ -186,7 +186,8 @@ speculatively before then.
 
 ## 7. Simulation harness (what a human actually reviews)
 
-`make simulate` = `npm run simulate:scenarios` + `npm run simulate:diff`.
+`make simulate` invokes `npm --prefix app run simulate:scenarios` followed by
+`npm --prefix app run simulate:diff`.
 
 - `simulate:scenarios` → `app/scripts/simulate-scenarios.mjs`, SSR-loads
   `src/engine/simulation/analyze.ts`'s `runAllScenarios`, writes
@@ -198,7 +199,7 @@ speculatively before then.
   diff against the committed `docs/analysis/simulation-baseline.json` — the artifact a
   human reads to judge "did this change alter live recommendations, and is that
   intended."
-- `simulate:update-baseline -- --reviewed` refuses to run without the literal
+- `npm --prefix app run simulate:update-baseline -- --reviewed` refuses to run without the literal
   `--reviewed` flag: a human must run `simulate:diff`, read the distribution deltas, and
   only then intentionally re-baseline. **This is an explicit review-acknowledgment gate**
   for recommendation-distribution changes; the flag requires deliberate opt-in but cannot
