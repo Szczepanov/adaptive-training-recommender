@@ -294,6 +294,7 @@ function planFromResult(result, templatesById) {
 
 function packetFromResult(definition, result, templatesById) {
   const plan = planFromResult(result, templatesById);
+  // Temporary issue #677 trace; removed once the reservation mechanism is verified.
   if (['judge_pref_neutral', 'judge_pref_conservative', 'judge_mode_event_directed', 'judge_mode_conservative_preference'].includes(definition.scenario.id)) {
     console.log(`ISSUE677_DIAGNOSTIC ${definition.scenario.id} ${JSON.stringify({
       plan: plan.map(day => ({ date: day.date, templateId: day.session.templateId, systemicCost: day.session.systemicCost })),
