@@ -115,7 +115,7 @@ artifacts/external-judge/plan/latest/
   prompt.md
   packets/<family>.json
   schemas/<family>.json
-  responses/<family>-<packetSha256>.json   # local-only saved external outputs
+  responses/<family>-<responseBindingSha256>.json   # local-only saved external outputs
   local-provenance/   # local-only baseline inputs; never upload this directory
     families.jsonl
     corpus.json
@@ -127,10 +127,12 @@ Upload **only the generated `upload/` directory**. Never upload `responses/` or
 external judge can anchor/bias a new evaluation; local provenance can contain information that
 is intentionally withheld from the blind judge view. The exporter rebuilds the managed
 `packets/`, `schemas/`, `local-provenance/`, and `upload/` directories on every export and
-removes stale response JSON whose packet hash no longer matches, while preserving a response
-whose hash-bound filename is still current.
+removes stale response JSON whose evaluation-contract binding no longer matches, while
+preserving a response whose binding is still current.
 
-Response filenames are bound to the packet hash in `manifest.json`; legacy
+Response filenames are bound to a SHA-256 over the packet hash, per-family schema hash, prompt
+hash, and response-schema version. A prompt/schema change therefore invalidates an otherwise
+identical packet response instead of silently reusing stale judge evidence. Legacy
 `<familyId>.json` names and unknown files are rejected.
 
 Import validates every response with the existing `validateAndNormalizeJudgeRow` contract,

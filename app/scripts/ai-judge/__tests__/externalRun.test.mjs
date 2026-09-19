@@ -125,7 +125,8 @@ describe('manual external judge run packages', () => {
     expect(packetContent).toContain('packetSchema');
     expect(packetContent).not.toMatch(/engineSummary|constraintViolations|qualityWarnings|utility/);
     expect(readFileSync(join(packageDir, 'schemas', 'plan_family.json'), 'utf8')).toContain('caseScores');
-    expect(manifest.families[0].responsePath).toMatch(/^responses\/plan_family-[a-f0-9]{64}\.json$/);
+    expect(manifest.families[0].responseBindingSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(manifest.families[0].responsePath).toBe(`responses/plan_family-${manifest.families[0].responseBindingSha256}.json`);
     expect(readFileSync(join(packageDir, 'upload', 'manifest.json'), 'utf8')).toContain(manifest.families[0].packetSha256);
     expect(readFileSync(join(packageDir, 'upload', 'prompt.md'), 'utf8')).toContain('# plan prompt');
     expect(existsSync(join(packageDir, 'upload', 'packets', 'plan_family.json'))).toBe(true);
@@ -154,6 +155,22 @@ describe('manual external judge run packages', () => {
     expect(existsSync(join(packageDir, 'packets', 'stale.json'))).toBe(false);
     expect(existsSync(join(packageDir, 'schemas', 'stale.json'))).toBe(false);
     expect(existsSync(join(packageDir, 'upload', 'stale.txt'))).toBe(false);
+  });
+
+  it('invalidates a saved response when the prompt contract changes', () => {
+    const root = tempRoot();
+    const source = sourceFixture(root, 'plan');
+    const packageDir = join(root, 'package');
+    const first = buildExternalPackage({ suite: 'plan', sourceDir: source, outputDir: packageDir });
+    const oldResponse = join(packageDir, first.families[0].responsePath);
+    writeFileSync(oldResponse, JSON.stringify(responseFor(first.families[0].familyId, first.families[0].caseIds)));
+
+    writeFileSync(join(source, 'judge-prompt.md'), '# plan prompt v2\n');
+    const second = buildExternalPackage({ suite: 'plan', sourceDir: source, outputDir: packageDir });
+
+    expect(second.families[0].responseBindingSha256).not.toBe(first.families[0].responseBindingSha256);
+    expect(second.families[0].responsePath).not.toBe(first.families[0].responsePath);
+    expect(existsSync(oldResponse)).toBe(false);
   });
 
   it('rejects sensitive fields from the upload-visible packet contract', () => {

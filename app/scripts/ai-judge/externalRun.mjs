@@ -292,14 +292,23 @@ export function buildExternalPackage({ suite, sourceDir, outputDir, packetVersio
     const schema = source.schemaByFamily[family.familyId];
     writeJson(packetPath, packet);
     writeJson(schemaPath, schema);
+    const packetSha256 = hashBytes(readFileSync(packetPath));
+    const schemaSha256 = hashBytes(readFileSync(schemaPath));
+    const responseBindingSha256 = hashJson({
+      packetSha256,
+      schemaSha256,
+      promptSha256: source.hashes.promptSha256,
+      responseSchema: RESPONSE_SCHEMA_V1,
+    });
     return {
       familyId: family.familyId,
       caseIds,
       packetPath: `packets/${fileName}`,
       schemaPath: `schemas/${fileName}`,
-      packetSha256: hashBytes(readFileSync(packetPath)),
-      schemaSha256: hashBytes(readFileSync(schemaPath)),
-      responsePath: `responses/${safeFileName(family.familyId)}-${hashBytes(readFileSync(packetPath))}.json`,
+      packetSha256,
+      schemaSha256,
+      responseBindingSha256,
+      responsePath: `responses/${safeFileName(family.familyId)}-${responseBindingSha256}.json`,
     };
   });
 
@@ -334,7 +343,7 @@ export function buildExternalPackage({ suite, sourceDir, outputDir, packetVersio
     families: familyEntries,
     instructions: {
       responseDirectory: 'responses/',
-      responseFilePattern: '<familyId>-<packetSha256>.json',
+      responseFilePattern: '<familyId>-<responseBindingSha256>.json',
       responseContract: 'Each file must be one object matching its family schema exactly.',
     },
   };
@@ -393,11 +402,13 @@ function validateManifest(manifest, packageDir, expectedSuite) {
     if (seen.has(family.familyId)) throw new Error(`Duplicate family in external package manifest: ${family.familyId}`);
     seen.add(family.familyId);
     if (new Set(family.caseIds).size !== family.caseIds.length || family.caseIds.some((id) => typeof id !== 'string' || !id.trim())) throw new Error(`Malformed case ids for family ${family.familyId}.`);
-    for (const key of ['packetPath', 'schemaPath', 'packetSha256', 'schemaSha256', 'responsePath']) {
+    for (const key of ['packetPath', 'schemaPath', 'packetSha256', 'schemaSha256', 'responseBindingSha256', 'responsePath']) {
       if (typeof family[key] !== 'string' || !family[key]) throw new Error(`Family ${family.familyId} is missing ${key}.`);
     }
-    if (!/^[a-f0-9]{64}$/.test(family.packetSha256) || !/^[a-f0-9]{64}$/.test(family.schemaSha256)) {
-      throw new Error(`Family ${family.familyId} contains a malformed packet/schema hash.`);
+    if (!/^[a-f0-9]{64}$/.test(family.packetSha256)
+      || !/^[a-f0-9]{64}$/.test(family.schemaSha256)
+      || !/^[a-f0-9]{64}$/.test(family.responseBindingSha256)) {
+      throw new Error(`Family ${family.familyId} contains a malformed packet/schema/response-binding hash.`);
     }
     if (!/^packets\/[^/]+\.json$/.test(family.packetPath) || !/^schemas\/[^/]+\.json$/.test(family.schemaPath)) {
       throw new Error(`Family ${family.familyId} packet/schema paths must be direct JSON children of their package directories.`);
@@ -472,8 +483,17 @@ function packageFamilyContracts(manifest, packageDir) {
       throw new Error(`Family ${entry.familyId} packet contract mismatch.`);
     }
     if (schema.properties?.familyId?.const !== entry.familyId) throw new Error(`Family ${entry.familyId} response schema contract mismatch.`);
-    const expectedResponseName = `${safeFileName(entry.familyId)}-${entry.packetSha256}.json`;
-    if (basename(entry.responsePath) !== expectedResponseName) throw new Error(`Family ${entry.familyId} response filename is not bound to its packet hash.`);
+    const expectedResponseBindingSha256 = hashJson({
+      packetSha256: entry.packetSha256,
+      schemaSha256: entry.schemaSha256,
+      promptSha256: manifest.hashes.promptSha256,
+      responseSchema: manifest.responseSchema,
+    });
+    if (entry.responseBindingSha256 !== expectedResponseBindingSha256) {
+      throw new Error(`Family ${entry.familyId} response binding does not match the packet/schema/prompt contract.`);
+    }
+    const expectedResponseName = `${safeFileName(entry.familyId)}-${entry.responseBindingSha256}.json`;
+    if (basename(entry.responsePath) !== expectedResponseName) throw new Error(`Family ${entry.familyId} response filename is not bound to its full evaluation contract.`);
     return { entry, packet, schema };
   });
   const schemaContractHash = hashJson(Object.fromEntries(contracts.map(({ entry, schema }) => [entry.familyId, schema])));
