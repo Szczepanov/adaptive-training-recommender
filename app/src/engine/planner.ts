@@ -260,6 +260,14 @@ export const PROJECTED_FATIGUE_RECOVER_THRESHOLD = 0.65;
 export const PROJECTED_FATIGUE_MODIFY_THRESHOLD = 0.6;
 export const PROJECTED_MODIFY_MAX_SYSTEMIC_COST = 0.5;
 
+/** Issue #679: a forecast day has no real future readiness reading to re-check against, so
+ * a literal "wait for a fresh check-in" re-entry gate is not implementable for projected
+ * days -- the equivalent this repo can offer is a slower, still-graduated ramp rather than
+ * the previous hard cutoff to fully unrestricted candidates at day 4. Days 4-5 after a
+ * severe adverse-recovery flag stay capped to an easy-only, non-strength re-entry tier;
+ * only day 6 onward reaches the unrestricted candidate pool. */
+export const RECOVERY_REENTRY_MAX_SYSTEMIC_COST = 0.35;
+
 export interface ProjectedFatigueThresholds {
     recover: number;
     modify: number;
@@ -1400,15 +1408,19 @@ export function generateWeekAheadPlan(
             && coverageNeedTierForTemplate(optContext.coverageState, template, anchorRole) <= 1
         );
         const isRecoveryPersistedDate = isSevereAdverseRecovery && offset <= 3;
+        const isRecoveryReentryDate = isSevereAdverseRecovery && (offset === 4 || offset === 5);
         let rankingCandidates = isRecoveryPersistedDate && offset === 1
             ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
             : (isRecoveryPersistedDate && offset === 2
                 ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery' || template.systemicCost <= PROJECTED_MODIFY_MAX_SYSTEMIC_COST)
                 : (isRecoveryPersistedDate && offset === 3
                     ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery' || (template.systemicCost <= 0.65 && template.category !== 'Hard Endurance' && template.category !== 'Race-Specific Endurance'))
-                    : (hasFatigueGatedRequiredCoverage
-                        ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
-                        : fatigueGated)));
+                    : (isRecoveryReentryDate
+                        ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery'
+                            || (template.systemicCost <= RECOVERY_REENTRY_MAX_SYSTEMIC_COST && template.modality !== 'Strength'))
+                        : (hasFatigueGatedRequiredCoverage
+                            ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
+                            : fatigueGated))));
 
         const exactReserved = reservation
             ? rankingCandidates.filter(template => reservation.occurrence.eligibleTemplateIds.includes(template.id))

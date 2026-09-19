@@ -26,6 +26,7 @@ import { addDaysToLocalDateString, getDayDiff, getLocalDateString } from '../uti
 import { qualifiesForObjective } from './microcycle';
 import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, type CoverageState } from './coverage';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
+import { resolveEventTaper } from './taperPolicy';
 import { resolveInjuryRestrictions } from './injuryPolicy';
 import { evaluateStrengthSpacingStatus, type StrengthExposureLike } from './strengthSpacingPolicy';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
@@ -40,6 +41,30 @@ import type { RecoveryHistorySnapshot } from './recoveryFacts';
 const STRENGTH_CATEGORIES: SessionTemplate['category'][] = [
     'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance',
 ];
+
+// Deliberately excludes 'Race-Specific Endurance': event-specific work is expected to
+// recur near the event itself (existing anchor-protection/history modulation already
+// tempers it via benefit-score softening, not a hard exclusion -- see
+// rules.planJudgeCalibration.test.ts's Priority-B race-specific-recency case), so this
+// density guard only targets generic moderate/hard endurance stacking.
+const MODERATE_OR_HARDER_ENDURANCE_CATEGORIES: SessionTemplate['category'][] = [
+    'Moderate Endurance', 'Hard Endurance',
+];
+
+/** Issue #679: within the full taper window (`resolveEventTaper`, every event category),
+ * strength stays available only as a brief primer touch, matching the knowledge registry's
+ * `policy.taper.pre_event_restrictions_v1` "reduced nonessential strength" intent and
+ * `TAPER_STRENGTH_TARGET_STIMULUS`'s light race-week-primer calibration in periodization.ts
+ * -- not the full-volume systemicCost those templates carry outside a taper. */
+export const TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST = 0.35;
+/** At most one taper-window strength touch total, so "reduced" does not silently mean
+ * "reduced but still every few days." */
+export const TAPER_STRENGTH_TOUCH_LIMIT = 1;
+/** Minimum gap this repo's taper case requires between Moderate/Hard Endurance sessions
+ * once inside the taper window, so a single discipline-specific touch stays available
+ * (D-TAPERSCOPE's "brief... touches retained") without the stacked, build-like density
+ * issue #679 reported. */
+export const TAPER_MODERATE_DENSITY_MIN_GAP_DAYS = 3;
 
 function scaleCostProfileByRatio(profile: WorkoutCostProfile, ratio: number): WorkoutCostProfile {
     return {
@@ -563,7 +588,7 @@ export function evaluateRecoveryConstraints(
     }
 
     const focusEvent = options.focusEvent;
-    if (focusEvent && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race') && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
+    if (focusEvent && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race' || focusEvent.category === 'triathlon') && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
         const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
         const daysToRace = getDayDiff(raceDate, targetDate);
         if (daysToRace >= 1 && daysToRace <= 3) {
@@ -596,6 +621,37 @@ export function evaluateRecoveryConstraints(
             const isHardOrHeavy = isStrengthModality || template.systemicCost > 0.45 || template.category === 'Hard Endurance';
             if (isHardOrHeavy) {
                 reasons.push('POST_EVENT_RECOVERY_WINDOW');
+            }
+        }
+    }
+
+    // Issue #679: the D1-D7 windows above only cover the days immediately around the race.
+    // `windows_volume_v1`'s full taper (up to 14 days for an A event) still needs "reduced
+    // nonessential strength" and no unjustified moderate-density block near the event.
+    // Scoped to the same endurance event categories as the D1-D7 block above (not every
+    // A/B event): a strength_meet's own taper is a deload of strength work itself, not
+    // "nonessential" to reduce toward zero -- generalizing the guard to that category
+    // would fight the event it exists to protect.
+    if (focusEvent && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race' || focusEvent.category === 'triathlon') && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
+        const taper = resolveEventTaper(focusEvent);
+        if (taper && targetDate >= taper.startDate && targetDate <= taper.endDate) {
+            const isStrengthCandidate = template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category);
+            if (isStrengthCandidate) {
+                const priorTaperStrengthTouches = history.filter(entry =>
+                    entry.date >= taper.startDate && entry.date < targetDate
+                    && (entry.modality === 'Strength' || (entry.category !== undefined && STRENGTH_CATEGORIES.includes(entry.category)))).length;
+                if (template.systemicCost > TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST || priorTaperStrengthTouches >= TAPER_STRENGTH_TOUCH_LIMIT) {
+                    reasons.push('TAPER_NONESSENTIAL_STRENGTH_RESTRICTION');
+                }
+            }
+
+            if (MODERATE_OR_HARDER_ENDURANCE_CATEGORIES.includes(template.category)) {
+                const recentModerateOrHarderEndurance = history.some(entry => {
+                    const diff = getDayDiff(targetDate, entry.date);
+                    return diff >= 1 && diff <= TAPER_MODERATE_DENSITY_MIN_GAP_DAYS
+                        && entry.category !== undefined && MODERATE_OR_HARDER_ENDURANCE_CATEGORIES.includes(entry.category);
+                });
+                if (recentModerateOrHarderEndurance) reasons.push('TAPER_MODERATE_DENSITY_RESTRICTION');
             }
         }
     }

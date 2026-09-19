@@ -164,6 +164,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'The external evidence supports contextual multi-signal monitoring and conservative load adjustment, not a universal readiness score. The exact 1.0/2.2/+0.4 action thresholds are explicit high-safety product policy and remain candidates for simulation and athlete-outcome calibration.',
     },
     {
+        id: 'readiness.severe_adverse_recovery_reentry', domain: 'readiness_recovery', title: 'Severe adverse-recovery graduated re-entry window',
+        currentRule: 'After a severe adverse-recovery flag, projected forecast days 4-5 stay capped to Rest/Mobility-Recovery or non-Strength candidates at systemicCost <=0.35; the unrestricted candidate pool is reached only from day 6 onward (days 1-3 keep their existing rest/modify/0.65-excluding-Hard-and-Race-Specific tiers).',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
+        codeRefs: ['engine/planner.ts:RECOVERY_REENTRY_MAX_SYSTEMIC_COST'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.severeAdverseRecoveryReentry],
+        coverageRationale: 'Registered as an explicit product-policy claim (`policy.load_recovery.severe_adverse_recovery_reentry_v1`) with alignment testing. Recovery literature supports accounting for accumulated stress before resuming quality work; the exact 5-day window and 0.35 systemic-cost ceiling are product calibration, and a forecast has no live future readiness signal to check against, so this graduated ramp is the closest implementable equivalent to a fresh-check requirement.',
+    },
+    {
         id: 'readiness.post_recover_buffer', domain: 'readiness_recovery', title: 'Post-recover one-day buffer',
         currentRule: 'A day that otherwise evaluates to train is downgraded to modify when the previous mode was recover.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'none',
@@ -312,7 +320,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'spacing.pre_event_restrictions', domain: 'session_spacing', title: 'Pre-event strength, hard and exhaustive session restrictions',
-        currentRule: 'For A/B cycling/running events: strength is blocked 1-3 days pre-race; hard work is blocked 1-2 days; exhaustive work (systemicCost >=0.75 or VO2 title) is blocked 3-7 days.',
+        currentRule: 'For A/B cycling/running/triathlon events: strength is blocked 1-3 days pre-race; hard work is blocked 1-2 days; exhaustive work (systemicCost >=0.75 or VO2 title) is blocked 3-7 days. Across the full resolved taper window (same cycling/running/triathlon categories, not strength_meet): a second-or-later or non-light (systemicCost >0.35) strength candidate is excluded as nonessential, and a Moderate/Hard Endurance candidate is excluded within 3 days of a prior one.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
         codeRefs: ['engine/optimizer.ts:evaluateRecoveryConstraints'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.preEventRestrictionsPolicy, KNOWLEDGE_CLAIM_IDS.endurancePreEventTaper],
         coverageRationale: 'Recorded as an explicit product-policy claim (`policy.taper.pre_event_restrictions_v1`) so the exact 1-3/1-2/3-7-day windows have provenance, and linked to the moderate-certainty pre-event taper boundary that competition load should fall while quality is preserved. Stays partial/P1: that boundary supports reducing load before competition in general, but validates none of these modality-specific day counts, and Evidence Pack 6 found no literature establishing per-session-type pre-competition blocking windows. SKR1 runtime lineage does not yet emit this claim: the optimizer evaluates the restriction against exact days-to-event, while `trainingIntentKnowledgeRefs` only has a coarser taper-active signal available, and attributing on that coarser signal would over-claim lineage on days where the restriction never actually evaluates. Wiring precise days-to-event into runtime lineage is a separate change.',

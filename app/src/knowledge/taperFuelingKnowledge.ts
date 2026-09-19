@@ -215,11 +215,11 @@ export const TAPER_FUELING_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: TAPER_FUELING_CLAIM_IDS.preEventRestrictionsPolicy,
-        statement: 'Product pre-event restriction v1: for A/B cycling/running events, strength is blocked 1-3 days before the event, hard work 1-2 days, and exhaustive work 3-7 days according to current event-priority logic.',
+        statement: 'Product pre-event restriction v2: for A/B cycling/running/triathlon events, strength is blocked 1-3 days before the event, hard work 1-2 days, and exhaustive work 3-7 days according to current event-priority logic. Across the full resolved taper window (`resolveEventTaper`) for those same cycling/running/triathlon categories -- deliberately excluding strength_meet, whose own taper is a deload of strength work itself, not something to treat as nonessential -- strength beyond one light (systemicCost <=0.35) touch is excluded as nonessential, and a Moderate/Hard Endurance candidate is excluded when one already occurred within the prior 3 days, so quality stays available without a stacked, build-like density near the event.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
-        applicability: { contexts: ['pre_event_taper'], sports: ['cycling', 'running'], populations: ['app_users_with_A_or_B_events'], outcomes: ['session_eligibility'], horizon: 'acute' },
+        applicability: { contexts: ['pre_event_taper'], sports: ['cycling', 'running', 'triathlon'], populations: ['app_users_with_A_or_B_events'], outcomes: ['session_eligibility'], horizon: 'acute' },
         evidence: [{ sourceId: TAPER_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
-        limitations: ['Taper evidence supports freshness and preserved quality while volume falls; it does not directly validate each 1/2/3/7-day block as a universal biological recovery threshold.'], reviewedOn: '2026-08-30', version: 1,
+        limitations: ['Taper evidence supports freshness and preserved quality while volume falls; it does not directly validate each 1/2/3/7-day block, the 0.35 light-strength ceiling, the one-touch limit, or the 3-day density gap as universal biological recovery thresholds.'], reviewedOn: '2026-09-19', version: 2,
     },
     {
         id: TAPER_FUELING_CLAIM_IDS.taperSharpeningPolicy,
