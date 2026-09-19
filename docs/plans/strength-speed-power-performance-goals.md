@@ -1082,7 +1082,7 @@ Preserve:
 5. required performance-target coverage;
 6. normal support/utility/tie-break logic.
 
-The exact placement in existing role-reservation machinery must be verified against ADR-0018 rather than implemented as a new greedy pass.
+The exact placement in existing role-reservation machinery must be verified against ADR-0018 rather than implemented as a new greedy pass. The existing ranking path already gives exact authored coverage lexicographic authority through `coverageNeedTierForTemplate` before benefit/utility ordering, while a nominated ADR-0018 reservation narrows the eligible candidate set before ranking. PG7 should extend/reuse those discrete coverage paths where applicable rather than creating a second performance-goal score inside `calculateStimulusBenefit`.
 
 ### Multiple targets
 
