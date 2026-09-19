@@ -428,10 +428,22 @@ export function makeAllFamilies(scenarios, deliveredDoseModule, resolveDemandPro
     neutral('judge_load_hard_yesterday', 'Recent training — hard cycling yesterday', { recentTraining: 'hard_yesterday' }, { initialHistory: [exposureOn(hardExposure, addDays(base.startDate, -1), 'hard-yesterday')] }),
     neutral('judge_load_hard_2d', 'Recent training — hard cycling two days ago', { recentTraining: 'hard_2d' }, { initialHistory: [exposureOn(hardExposure, addDays(base.startDate, -2), 'hard-2d')] }),
     neutral('judge_load_hard_3d', 'Recent training — hard cycling three days ago', { recentTraining: 'hard_3d' }, { initialHistory: [exposureOn(hardExposure, addDays(base.startDate, -3), 'hard-3d')] }),
+    neutral('judge_load_two_hard_clustered', 'Recent training — two hard rides clustered on D-2/D-1', { recentTraining: 'two_hard_clustered' }, {
+      initialHistory: [
+        exposureOn(hardExposure, addDays(base.startDate, -2), 'clustered-hard-d2'),
+        exposureOn(hardExposure, addDays(base.startDate, -1), 'clustered-hard-d1'),
+      ],
+    }),
+    neutral('judge_load_two_hard_spaced', 'Recent training — same two hard rides spaced on D-4/D-1', { recentTraining: 'two_hard_spaced' }, {
+      initialHistory: [
+        exposureOn(hardExposure, addDays(base.startDate, -4), 'spaced-hard-d4'),
+        exposureOn(hardExposure, addDays(base.startDate, -1), 'spaced-hard-d1'),
+      ],
+    }),
   ];
 
   // 4. Event proximity
-  const eventProximity = [40, 20, 14, 7, 3].map((daysOut) => {
+  const eventProximity = [40, 20, 14, 7, 3, 1, 0].map((daysOut) => {
     const event = clone(base.event);
     event.date = addDays(base.startDate, daysOut);
     return variant(base, `judge_event_${daysOut}d`, `Event proximity — ${daysOut} days`, { eventDaysOut: daysOut }, {
@@ -588,6 +600,184 @@ export function makeAllFamilies(scenarios, deliveredDoseModule, resolveDemandPro
     }),
   ];
 
+
+  // 14. Same-day execution state: user/device completion signals must not create doubles.
+  const todayHardTraining = {
+    type: 'Cycling Hard Endurance',
+    duration_min: 75,
+    training_effect: 4.2,
+    intensity_tag: 'Threshold',
+  };
+  const sameDayExecutionState = [
+    neutral('judge_today_none', 'Same-day execution — no completed session', { sameDayExecution: 'none' }),
+    neutral('judge_today_self_report_done', 'Same-day execution — athlete reports already trained', { sameDayExecution: 'self_report_done' }, {
+      subjective: { alreadyTrainedToday: true },
+    }),
+    neutral('judge_today_device_hard', 'Same-day execution — device reports hard session', { sameDayExecution: 'device_hard_session' }, {
+      objective: { today_training: todayHardTraining },
+    }),
+    neutral('judge_today_both_hard', 'Same-day execution — self-report and device agree on hard session', { sameDayExecution: 'both_signals' }, {
+      subjective: { alreadyTrainedToday: true },
+      objective: { today_training: todayHardTraining },
+    }),
+  ];
+
+  // 15. Multi-event lifecycle: exercise actual event arrays, priorities and cancellation.
+  const makeJudgeEvent = (id, daysOut, priority = 'A', lifecycle = 'scheduled') => ({
+    ...clone(base.event),
+    id,
+    title: `Judge event ${id}`,
+    date: addDays(base.startDate, daysOut),
+    priority,
+    lifecycle,
+  });
+  const singleA10 = makeJudgeEvent('single-a10', 10, 'A');
+  const b3 = makeJudgeEvent('b3-before-a10', 3, 'B');
+  const a10AfterB3 = makeJudgeEvent('a10-after-b3', 10, 'A');
+  const a7 = makeJudgeEvent('a7-before-b13', 7, 'A');
+  const b13 = makeJudgeEvent('b13-after-a7', 13, 'B');
+  const firstA3 = makeJudgeEvent('first-a3', 3, 'A');
+  const secondA10 = makeJudgeEvent('second-a10', 10, 'A');
+  const cancelled3 = makeJudgeEvent('cancelled-b3', 3, 'B', 'cancelled');
+  const a10AfterCancelled = makeJudgeEvent('a10-after-cancelled', 10, 'A');
+  const fixedForEvents = (events) => events.map(eventFixedActivity).filter(Boolean);
+  const multiEventLifecycle = [
+    variant(base, 'judge_events_single_A10', 'Multi-event — single A event on D+10', { multiEventLifecycle: 'single_A10' }, {
+      event: singleA10,
+      events: [singleA10],
+      fixedActivities: fixedForEvents([singleA10]),
+    }),
+    variant(base, 'judge_events_B3_A10', 'Multi-event — B on D+3 before A on D+10', { multiEventLifecycle: 'B3_A10' }, {
+      event: a10AfterB3,
+      events: [b3, a10AfterB3],
+      fixedActivities: fixedForEvents([b3, a10AfterB3]),
+    }),
+    variant(base, 'judge_events_A7_B13', 'Multi-event — A on D+7 then B on D+13', { multiEventLifecycle: 'A7_B13' }, {
+      event: a7,
+      events: [a7, b13],
+      fixedActivities: fixedForEvents([a7, b13]),
+    }),
+    variant(base, 'judge_events_two_A_7d_apart', 'Multi-event — two A events seven days apart', { multiEventLifecycle: 'two_A_7d_apart' }, {
+      event: firstA3,
+      events: [firstA3, secondA10],
+      fixedActivities: fixedForEvents([firstA3, secondA10]),
+    }),
+    variant(base, 'judge_events_cancelled_then_A10', 'Multi-event — cancelled B on D+3 then A on D+10', { multiEventLifecycle: 'cancelled_then_A10' }, {
+      event: a10AfterCancelled,
+      events: [cancelled3, a10AfterCancelled],
+      fixedActivities: fixedForEvents([cancelled3, a10AfterCancelled]),
+    }),
+  ];
+
+  // 16. Partial observability: missing information is not an adverse measurement.
+  const missingObjective = {
+    ...clone(neutralReadiness.objective),
+    total_steps: null,
+    sleep_score: null,
+    sleep_duration_min: null,
+    rhr: null,
+    rhr_7d_avg: null,
+    rhr_delta: null,
+    hrv_weekly_avg: null,
+    hrv_last_night: null,
+    hrv_delta: null,
+    respiration: null,
+    respiration_delta: null,
+    respiration_delta_28d: null,
+    respiration_mad_28d: null,
+    body_battery_wake: null,
+    yesterday_training: null,
+    today_training: null,
+    sleep_score_delta_7d: null,
+    rhr_delta_28d: null,
+    hrv_delta_28d: null,
+    sleep_score_delta_28d: null,
+    hrv_stdev_28d: null,
+    rhr_stdev_28d: null,
+    sleep_score_stdev_28d: null,
+  };
+  const partialObservability = [
+    neutral('judge_obs_complete', 'Observability — complete neutral inputs', { observability: 'complete' }),
+    neutral('judge_obs_no_wearables', 'Observability — wearable metrics unavailable', { observability: 'no_wearables' }, {
+      objective: missingObjective,
+    }),
+    neutral('judge_obs_hrv_missing', 'Observability — HRV stream unavailable', { observability: 'hrv_missing' }, {
+      objective: {
+        hrv_weekly_avg: null,
+        hrv_last_night: null,
+        hrv_delta: null,
+        hrv_delta_28d: null,
+        hrv_stdev_28d: null,
+      },
+    }),
+    neutral('judge_obs_variability_missing', 'Observability — personal variability baselines unavailable', { observability: 'variability_missing' }, {
+      objective: {
+        hrv_stdev_28d: null,
+        rhr_stdev_28d: null,
+        sleep_score_stdev_28d: null,
+        respiration_mad_28d: null,
+      },
+    }),
+    neutral('judge_obs_partial_subjective', 'Observability — only fatigue and soreness explicitly answered', { observability: 'partial_subjective' }, {
+      subjective: { answeredDimensions: ['fatigue', 'soreness'] },
+    }),
+  ];
+
+  // 17. Clinical interruption and re-entry use explicit daily observations.
+  const illnessReadiness = patchReadiness(base, {
+    painFlag: true,
+    clinicalEnvelopeSources: ['non_allergy_illness'],
+  });
+  const painReadiness = patchReadiness(base, {
+    painFlag: true,
+    clinicalEnvelopeSources: ['pain_or_injury'],
+    painOrInjuryRegionFamilies: ['lower_limb_impact'],
+  });
+  const redFlagReadiness = patchReadiness(base, {
+    painFlag: true,
+    clinicalEnvelopeSources: ['red_flag'],
+    redFlagFindings: [{
+      category: 'systemic_infection',
+      source: 'explicit_checkin',
+      description: 'Synthetic judge red-flag fixture',
+    }],
+  });
+  const clinicalTrajectory = [
+    rollingDailyVariant(base, 'judge_clin_neutral', 'Clinical trajectory — neutral baseline', { clinicalTrajectory: 'neutral' }, () => clone(neutralReadiness)),
+    rollingDailyVariant(base, 'judge_clin_illness_1d', 'Clinical trajectory — non-allergy illness on Day 1 only', { clinicalTrajectory: 'illness_1d' }, (_date, dayIndex) => (
+      dayIndex === 0 ? clone(illnessReadiness) : clone(neutralReadiness)
+    )),
+    rollingDailyVariant(base, 'judge_clin_illness_3d', 'Clinical trajectory — non-allergy illness for three days', { clinicalTrajectory: 'illness_3d' }, (_date, dayIndex) => (
+      dayIndex <= 2 ? clone(illnessReadiness) : clone(neutralReadiness)
+    )),
+    rollingDailyVariant(base, 'judge_clin_pain_1d', 'Clinical trajectory — lower-limb pain/injury signal on Day 1', { clinicalTrajectory: 'pain_1d' }, (_date, dayIndex) => (
+      dayIndex === 0 ? clone(painReadiness) : clone(neutralReadiness)
+    )),
+    rollingDailyVariant(base, 'judge_clin_redflag_1d', 'Clinical trajectory — red-flag finding on Day 1', { clinicalTrajectory: 'red_flag_1d' }, (_date, dayIndex) => (
+      dayIndex === 0 ? clone(redFlagReadiness) : clone(neutralReadiness)
+    )),
+  ];
+
+  // 18. Non-training physical load: manual work can consume recovery capacity.
+  const nonTrainingPhysicalLoad = [
+    neutral('judge_work_none', 'Physical work — none', { physicalWork: 'none' }, {
+      subjective: { physicalWork: { performed: false } },
+    }),
+    neutral('judge_work_moderate_short', 'Physical work — short moderate work on D-1', { physicalWork: 'moderate_short' }, {
+      subjective: { physicalWork: { performed: true, duration: 'short', intensity: 'moderate', loadAreas: ['legs_carrying'] } },
+    }),
+    neutral('judge_work_hard_medium', 'Physical work — medium-duration hard work on D-1', { physicalWork: 'hard_medium' }, {
+      subjective: { physicalWork: { performed: true, duration: 'medium', intensity: 'hard', loadAreas: ['legs_carrying', 'lower_back_spine'] } },
+    }),
+    neutral('judge_work_exhausting_extended', 'Physical work — extended exhausting work with residual fatigue', { physicalWork: 'exhausting_extended' }, {
+      subjective: {
+        fatigue: 6,
+        soreness: 6,
+        physicalWork: { performed: true, duration: 'extended', intensity: 'exhausting', loadAreas: ['legs_carrying', 'lower_back_spine'] },
+      },
+    }),
+  ];
+
   return [
     { familyId: 'objective_recovery', changedAxis: 'objective recovery metrics', cases: objectiveRecovery },
     { familyId: 'subjective_recovery', changedAxis: 'subjective recovery metrics', cases: subjectiveRecovery },
@@ -602,6 +792,11 @@ export function makeAllFamilies(scenarios, deliveredDoseModule, resolveDemandPro
     { familyId: 'planning_modes_overlays', changedAxis: 'macro planning modes and travel capacity/equipment constraints', cases: planningModesOverlays },
     { familyId: 'temporal_acute_vs_persistent', changedAxis: 'explicit rolling-daily recovery trajectories (acute 1-day vs persistent 3-day vs improving trend)', cases: temporalAcuteVsPersistent },
     { familyId: 'conflicting_tissue_vs_wearable', changedAxis: 'conflicting local tissue fatigue vs systemic wearable recovery signals', cases: conflictingTissueVsWearable },
+    { familyId: 'same_day_execution_state', changedAxis: 'same-day completed-training evidence from athlete/device signals', cases: sameDayExecutionState },
+    { familyId: 'multi_event_lifecycle', changedAxis: 'multiple scheduled events, priority ordering and cancelled-event lifecycle', cases: multiEventLifecycle },
+    { familyId: 'partial_observability', changedAxis: 'missing wearable/baseline/check-in dimensions without fabricating adverse evidence', cases: partialObservability },
+    { familyId: 'clinical_trajectory', changedAxis: 'rolling-daily illness, pain/injury and red-flag interruption/re-entry trajectories', cases: clinicalTrajectory },
+    { familyId: 'non_training_physical_load', changedAxis: 'preceding-day non-exercise physical-work load', cases: nonTrainingPhysicalLoad },
   ];
 }
 
@@ -652,7 +847,7 @@ export async function buildPlanJudgeCorpus(options = {}) {
     }
 
     const corpus = {
-      schema: 'adaptive-training-recommender/ai-plan-judge-corpus@3',
+      schema: 'adaptive-training-recommender/ai-plan-judge-corpus@4',
       commit: gitCommit(),
       capturedAt: new Date().toISOString(),
       familyCount: familyPackets.length,
@@ -664,7 +859,7 @@ export async function buildPlanJudgeCorpus(options = {}) {
     writeFileSync(resolve(outputDir, 'corpus.json'), `${JSON.stringify(corpus, null, 2)}\n`);
     writeFileSync(resolve(outputDir, 'families.jsonl'), `${familyPackets.map((family) => JSON.stringify(family)).join('\n')}\n`);
 
-    const prompt = `# AI plan judge instructions\n\nYou are an independent endurance-training plan evaluator. Engine rationale, fatigue tiers, rejection codes and utility are diagnostics, not ground truth. Evaluate the whole multi-day sequence. Scheduled events represented in fixedActivities own their event date and contribute reserved load; do not ask the planner to schedule another workout on top of them. Cases with simulationMode=rolling_daily include an explicit readinessTrajectory; judge each plan day against the same-date measured readiness instead of extrapolating Day 1 state across the horizon.\n\nScore each case 0-10 on safety_recovery_fit, goal_event_fit, sequencing, periodization_taper, preference_capacity_fit, robustness and overall, plus family sensitivity_quality.\n\nCalibration rules:\n- Sensitivity does not require every perturbation to change the plan. Mild isolated variation (including ~1 SD HRV/RHR movement) can legitimately leave a good plan unchanged.\n- Low motivation alone is not a physiological safety signal.\n- Easy training yesterday does not make quality work today unsafe; judge actual delivered load and residual fatigue.\n- Judge taper by workload/volume reduction with appropriate intensity/specificity, not rest-day count alone.\n- Preferences are soft unless encoded as constraints; safety restrictions and time/equipment availability are hard. Never propose violating a hard capacity/equipment restriction as the fix.\n- Criterium/surge events should emphasize repeated surges/VO2/sprint qualities, while long gran-fondo demands emphasize sustained aerobic durability/fatigue resistance.\n- More recovery is not automatically better; more training is not automatically better.\n- Prefer repeated family patterns over one-off threshold tuning.\n\nReturn exactly one JSON object matching judge-response-schema.json. All flags, suggestedChanges and familyAssessment list fields must be JSON arrays of strings.\n`;
+    const prompt = `# AI plan judge instructions\n\nYou are an independent endurance-training plan evaluator. Engine rationale, fatigue tiers, rejection codes and utility are diagnostics, not ground truth. Evaluate the whole multi-day sequence. Scheduled events represented in fixedActivities own their event date and contribute reserved load; do not ask the planner to schedule another workout on top of them. Cases with simulationMode=rolling_daily include an explicit readinessTrajectory; judge each plan day against the same-date measured readiness instead of extrapolating Day 1 state across the horizon.\n\nScore each case 0-10 on safety_recovery_fit, goal_event_fit, sequencing, periodization_taper, preference_capacity_fit, robustness and overall, plus family sensitivity_quality.\n\nCalibration rules:\n- Sensitivity does not require every perturbation to change the plan. Mild isolated variation (including ~1 SD HRV/RHR movement) can legitimately leave a good plan unchanged.\n- Low motivation alone is not a physiological safety signal.\n- Easy training yesterday does not make quality work today unsafe; judge actual delivered load and residual fatigue.\n- Judge taper by workload/volume reduction with appropriate intensity/specificity, not rest-day count alone.\n- Preferences are soft unless encoded as constraints; safety restrictions and time/equipment availability are hard. Never propose violating a hard capacity/equipment restriction as the fix.\n- Criterium/surge events should emphasize repeated surges/VO2/sprint qualities, while long gran-fondo demands emphasize sustained aerobic durability/fatigue resistance.\n- More recovery is not automatically better; more training is not automatically better.\n- Missing measurements are absence of evidence, not adverse measurements; do not reward a plan for treating null data as low readiness.\n- A same-day completed-training signal should prevent a second independent primary workout; duplicate self-report/device evidence should not double-charge the athlete.\n- Scheduled commitments across multiple events must all be respected. Cancelled/DNS events must not continue to reserve a date or drive taper behavior.\n- Active clinical red flags pause physical training. Non-red-flag illness or pain should tighten load while active and allow progressive re-entry as the explicit daily signal clears; do not invent a universal fixed rest duration.\n- Significant non-training physical work is part of the athlete's recent load and can justify short-lived modification, while mild work need not erase useful training.\n- Prefer repeated family patterns over one-off threshold tuning.\n\nReturn exactly one JSON object matching judge-response-schema.json. All flags, suggestedChanges and familyAssessment list fields must be JSON arrays of strings.\n`;
     writeFileSync(resolve(outputDir, 'judge-prompt.md'), prompt);
 
     const responseSchema = {
