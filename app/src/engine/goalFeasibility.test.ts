@@ -70,16 +70,36 @@ describe('assessGoalFeasibility', () => {
         expect(result.requiredChange.absolute).toBe(50);
     });
 
-    it('matches the plan\'s worked example: 100kg -> 200kg in 6 weeks at max 1 session/week is Unlikely/High confidence', () => {
+    it('matches the plan\'s worked example: 100kg -> 200kg in 6 weeks at max 1 session/week is Unlikely with bounded confidence', () => {
         const progress = progressWithBaseline(100, 'coach');
         const result = assessGoalFeasibility(benchTarget(200), progress, {
             targetDate: '2026-10-31', today: '2026-09-19', capacity: { weeklyMaxSessions: 1 },
         });
         expect(result.plausibility).toBe('unlikely');
-        expect(result.confidence.level).toBe('high');
+        expect(result.confidence.level).toBe('moderate');
+        expect(result.confidence.reasons).toContain('target_specific_frequency_unknown');
         expect(result.requiredChange).toMatchObject({ absolute: 100, relativePct: 100 });
         expect(result.capacity.maxRelevantExposuresBeforeTarget).not.toBeNull();
         expect(result.evidenceRefs).toContain('goalFeasibility.strength.requiredChangeBands');
+    });
+
+    it('calibrates plausible/stretch/unlikely bands to the reviewed six-week strength anchor', () => {
+        const progress = progressWithBaseline(100, 'coach');
+        const options = { targetDate: '2026-10-31', today: '2026-09-19', capacity: { weeklyMaxSessions: 2 } };
+
+        expect(assessGoalFeasibility(benchTarget(107.5), progress, options).plausibility).toBe('plausible');
+        expect(assessGoalFeasibility(benchTarget(110), progress, options).plausibility).toBe('stretch');
+        expect(assessGoalFeasibility(benchTarget(115), progress, options).plausibility).toBe('unlikely');
+    });
+
+    it('does not claim high confidence while target-specific frequency is still unknown', () => {
+        const progress = progressWithBaseline(100, 'coach');
+        const result = assessGoalFeasibility(benchTarget(105), progress, {
+            targetDate: '2026-10-31', today: '2026-09-19', capacity: { weeklyMaxSessions: 3 },
+        });
+        expect(result.confidence.level).toBe('moderate');
+        expect(result.capacity.projectedSpecificExposuresPerWeek).toBeNull();
+        expect(result.factors.some(factor => factor.code === 'target_specific_frequency_unknown')).toBe(true);
     });
 
     it('lowers confidence for the same target when the baseline is a stale/unsourced manual estimate', () => {
