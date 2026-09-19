@@ -37,13 +37,19 @@ immediately by `swim_threshold_01` (Moderate Endurance, systemicCost 0.6) and `s
 strength" the judge reported.
 
 A forecast day has no real future readiness reading to re-check against, so a literal
-"wait for a fresh check-in" gate is not implementable for projected days. The equivalent
-implemented here: the graduated window now extends to 5 days, with days 4-5 admitting only
-Rest/Mobility-Recovery or non-Strength candidates at systemicCost <=0.35
-(`RECOVERY_REENTRY_MAX_SYSTEMIC_COST`, `planner.ts`); the unrestricted pool is reached only
-from day 6.
+"wait for a fresh check-in" gate is not implementable for projected days. During review of
+the first fix, the extended ladder was found to be internally inconsistent: offset 3 still
+allowed systemicCost <=0.65 (including generic Moderate Endurance and potentially Strength)
+while the newly-added offsets 4-5 tightened back down to <=0.35. That could allow the very
+threshold/tempo work the fix was meant to defer *before* the re-entry window became stricter.
 
-**Disposition: confirmed and fixed.**
+The final implementation is monotonic: days 1-2 are Rest/Mobility-Recovery only; day 3 may
+add non-Strength, non-Moderate/Hard/Race-Specific work at systemicCost <=0.35
+(`RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST`); days 4-5 widen that same low-intensity,
+non-Strength pool to <=0.5 (`RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST`); the unrestricted
+pool is reached only from day 6.
+
+**Disposition: confirmed and fixed, including review follow-up for the non-monotonic first implementation.**
 
 ### 3. No real taper restriction for triathlon (or running) events beyond the generic volume floor — confirmed, real engine gap
 
@@ -58,8 +64,11 @@ bug) does not by itself prevent placing multiple Strength sessions or stacked Mo
 Endurance days. Reproduced against the real `taper` case: two Upper-body Strength sessions
 and two Moderate Endurance runs (one 3 days before the race) across the 14-day window.
 
-Fixed in two parts, both in `evaluateRecoveryConstraints`:
+Fixed in three parts, all in `evaluateRecoveryConstraints`:
 - The existing D1-D7 restriction now also covers `triathlon` events.
+- D-3 now excludes generic Moderate/Hard Endurance while preserving light
+  Race-Specific Endurance sharpening, so the reported "tempo three days before race"
+  symptom cannot survive merely because it is below the exhaustive-work threshold.
 - A new, independent restriction covers the full resolved taper window
   (`resolveEventTaper`) for the same cycling/running/triathlon categories: a Strength
   candidate is excluded once systemicCost exceeds 0.35 or a touch has already occurred in
@@ -129,8 +138,11 @@ branch is an explicit follow-up, not something this change can self-certify.**
   semantic diff shows changes confined to cycling/running/triathlon A-event scenarios and
   the adverse-recovery/readiness-crash scenarios; no unrelated scenario (including the
   strength-meet taper scenario, after the category-scoping fix above) changed.
-- Full `npx vitest run src/engine src/knowledge scripts/ai-judge`: 258 files, 3731 tests
+- Original branch validation before review follow-up: full `npx vitest run src/engine src/knowledge scripts/ai-judge`: 258 files, 3731 tests
   passing.
+- Review follow-up added deterministic assertions for the complete severe-recovery ladder
+  (including day 3), and D-3 generic Moderate/Hard taper exclusion while keeping a light
+  Race-Specific sharpening candidate admissible. Final CI status is recorded on PR #683.
 
 ## Not done in this session
 
