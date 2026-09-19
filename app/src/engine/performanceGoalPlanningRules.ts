@@ -1,5 +1,9 @@
 import type { AdaptationKey } from './evergreenStrategy';
-import type { PerformanceGoalFamily, PerformanceSubjectRef } from './performanceTargetPolicy';
+import {
+    getPerformanceTargetPolicy,
+    type PerformanceGoalFamily,
+    type PerformanceSubjectRef,
+} from './performanceTargetPolicy';
 import type { WorkoutDefinition } from '../workouts/models';
 
 /**
@@ -125,9 +129,10 @@ export function getPerformanceGoalPlanningRule(metricId: string): PerformanceGoa
  * Direct/specific-coverage exerciseIds for one goal's exact declared subject.
  *
  * Returns:
- * - `null` when the rule's subjectKind does not match `subjectRef.kind`, or when a
- *   performance-test id has no explicit reviewed entry in this registry. Both cases indicate
- *   inconsistent/unreviewed data and must never silently degrade to "no coverage ids";
+ * - `null` when the rule's subjectKind does not match `subjectRef.kind`, when an
+ *   exercise id is outside the metric's PG1 allowlist, or when a performance-test id has no
+ *   explicit reviewed entry in this registry. These cases indicate inconsistent/unreviewed
+ *   data and must never silently degrade to "no coverage ids";
  * - `[]` only when the registry explicitly includes that performance-test id with an empty
  *   list, meaning a reviewed subject is intentionally known to have no direct-coverage
  *   exercise yet;
@@ -139,6 +144,12 @@ export function directCoverageExerciseIds(
 ): readonly string[] | null {
     if (subjectRef.kind === 'exercise') {
         if (rule.directCoverage.subjectKind !== 'exercise') return null;
+        const policy = getPerformanceTargetPolicy(rule.metricId);
+        if (
+            !policy
+            || policy.subjectKind !== 'exercise'
+            || !policy.eligibleExerciseIds?.includes(subjectRef.exerciseId)
+        ) return null;
         return [subjectRef.exerciseId];
     }
     if (rule.directCoverage.subjectKind !== 'performance_test') return null;

@@ -80,6 +80,11 @@ describe('directCoverageExerciseIds', () => {
             .toEqual(['front_squat']);
     });
 
+    it('returns null for an exercise id outside the metric policy allowlist', () => {
+        expect(directCoverageExerciseIds(strengthRule, { kind: 'exercise', exerciseId: 'typo_deadlift' }))
+            .toBeNull();
+    });
+
     it('returns null when subjectRef.kind does not match the rule subjectKind', () => {
         expect(directCoverageExerciseIds(strengthRule, { kind: 'performance_test', performanceTestId: 'sprint_10m_standing-r1' }))
             .toBeNull();
