@@ -1025,7 +1025,7 @@ The smallest slice that proves this is **not a deadlift-only feature** should co
 
 1. Strength: strength_1rm_kg + conventional_deadlift.
 2. Speed: sprint_elapsed_time_s + performance_test:sprint_10m_standing-r1.
-3. Power: cycling_5s_cycling_5s_peak_power_w + performance_test:cycling_5s_peak_power-r1.
+3. Power: cycling_5s_peak_power_w + performance_test:cycling_5s_peak_power-r1.
 
 The slice should include:
 
