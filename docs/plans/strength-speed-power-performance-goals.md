@@ -983,8 +983,9 @@ Recommended order, each as its own PR with its own review pass:
    not a second competing requirement (which would double-count dose).
 4. **A dedicated ADR (or ADR-0018 amendment) before PG7's implementation**, deciding how
    `weeklyAllocation.ts`'s reservation search resolves performance-target-vs-broad-
-   adaptation priority. The search has no priority-tier dimension today — it purely
-   maximizes fulfilled-occurrence count with date/id tie-breaks — so appending
+   adaptation priority. The search has no priority-tier dimension today — it maximizes
+   fulfilled-occurrence count with a deterministic traversal (deadline/key ordering,
+   dynamic constrainedness, then candidate date/template ordering) — so appending
    performance-target occurrences into the same search naively could let it trade a
    broad-adaptation slot for a performance-target slot (or the reverse) by accident,
    which would violate this plan's required authority order. The analysis names two
