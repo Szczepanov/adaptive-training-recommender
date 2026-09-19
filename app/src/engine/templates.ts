@@ -766,7 +766,7 @@ export const TEMPLATES: SessionTemplate[] = [
         durationMin: 20,
         durationMax: 30,
         title: "Equipment-Free Aerobic Circuit",
-        description: "Continuous bodyweight cardio circuit (step-ups, high knees, mountain climbers, shadow boxing) held at an easy-to-moderate RPE. Genuinely zero equipment and indoor-safe; use when travel or unfamiliar surroundings remove bike, treadmill, and safe outdoor running access.",
+        description: "Continuous bodyweight cardio circuit (rotating high knees, bodyweight squats, push-ups and hip hinges) held at an easy-to-moderate RPE. Genuinely zero equipment and indoor-safe; use when travel or unfamiliar surroundings remove bike, treadmill, and safe outdoor running access.",
         requiredEquipment: [],
         environment: 'either', safetyTags: ['avoid_high_impact'],
         systemicCost: 0.25,
