@@ -970,8 +970,9 @@ Recommended order, each as its own PR with its own review pass:
    This PR can ship with no behavior change (a classifier nothing calls yet), the same
    way PG5.1 did.
 2. **PG6 next**, auditing the real catalog against PG5.2's table. The known gap
-   (conventional deadlift has no catalog session; only Romanian deadlift) gets it a
-   legitimate direct-coverage session here, with any new prescription default reviewed
+   (none of the current `app/src/workouts/catalog/*.ts` definitions contains
+   `conventional_deadlift`; the inspected barbell strength sessions use
+   `romanian_deadlift`) gets it a legitimate direct-coverage session here, with any new prescription default reviewed
    against the Sports Knowledge Registry first (no new sets/reps/%1RM/rest default may
    be invented ad hoc).
 3. **PG5.3 only after PG6 lands real coverage for a given target.** Narrowing the
