@@ -1,7 +1,7 @@
 # Strength, speed and power performance goals — implementation plan
 
 **Capability prefix:** PG
-**Status:** In progress — Stage 1 core (PG0–PG4 plus the population-anchored PG4.5 first slice) and PG5.1 are implemented; PG4.5.4 personal-longitudinal trajectory and PG5.2–PG9 remain Draft/not started.
+**Status:** In progress — Stage 1 core (PG0–PG4 plus the population-anchored PG4.5 first slice) and PG5.1–PG5.2 are implemented; PG4.5.4 personal-longitudinal trajectory and PG5.3–PG9 remain Draft/not started.
 **Blocked by:** PG5–PG9 require: reviewed Sports Knowledge Registry claims for any new prescription defaults, a `POLICY_VERSION` bump, `simulate:scenarios`/`simulate:diff` review, and their own item-level dependencies below. PG0's ADR is [ADR-0041](../adr/0041-strength-speed-power-performance-goals.md), accepted 2026-09-19.
 **Unlocks:** athlete-owned measurable strength, speed and power goals; target-specific planning coverage; protocol-aware progress; later formal target evaluation.
 **Source analysis:** ../analysis/2026-09-19-strength-speed-power-performance-goal-gap.md
@@ -881,7 +881,7 @@ Cover:
 
 ## PG5 — goal-to-planning projection and coverage semantics
 
-**Status:** [~] PG5.1 Implemented (typed projection only, no planning authority); PG5.2, PG5.3 and PG5.4's live wiring not started.
+**Status:** [~] PG5.1 and PG5.2 Implemented (typed projection and coverage classifier only, no planning authority); PG5.3 and PG5.4's live wiring not started.
 **Blocked by:** PG0, PG2
 **Recommendation-affecting:** yes — requires POLICY_VERSION update and policy-drift verification. PG5.1 alone already tripped the drift gate (it touches `engine/adapters.ts`) even though it changes zero actual behavior; see its implementation note below.
 
@@ -919,6 +919,18 @@ interface PerformanceGoalDemand {
 The engine receives this from the composition boundary. It does not reparse Firestore strings.
 
 ### PG5.2 Planning-rule registry
+
+**Status:** [x] Implemented — `app/src/engine/performanceGoalPlanningRules.ts`'s `PERFORMANCE_GOAL_PLANNING_RULES`, `getPerformanceGoalPlanningRule`, `directCoverageExerciseIds`, `workoutProvidesDirectCoverage`.
+
+Implementation notes (2026-09-19, Stage 2 PR):
+
+- **No consumer yet, same pattern as PG5.1.** `performanceGoalPlanningRules.architecture.test.ts` scans every production module for an import of this file and fails if one exists; only its own test files reference it. PG7 relaxes this deliberately once weekly allocation actually wires the classifier in.
+- **Schema question resolved as the analysis predicted.** The classifier resolves coverage against `WorkoutDefinition.blocks[].steps[].exerciseId` (`workouts/models.ts`) — the schema `weeklyDosePacking.ts`'s evergreen packing pipeline actually reads — not `sessions/models.ts`'s `SessionStep.exerciseRef` schema used by the separate, still-inert `authoredSessionProfiles.ts` pipeline. This confirms [the Stage 2 integration-points analysis](../analysis/2026-09-19-stage2-weekly-allocation-integration-points.md)'s §5 finding: no reusable "does this workout contain exercise X" helper existed, so this is new code.
+- **No new broad-adaptation string.** `broadAdaptation` is typed as the existing `AdaptationKey` from `evergreenStrategy.ts` (`'aerobic_endurance' | 'strength' | 'high_intensity'`); strength maps to `'strength'`, speed and power both map to `'high_intensity'` (the same channel `evergreenStrategy.ts` already gates `speed_power`-priority credit through). No new evidence claim was needed because no new adaptation vocabulary was introduced — PG5.3 is the step that actually refines an `AdaptationDoseRequirement` in place.
+- **Coverage table scoped to what PG1 actually registered**, not the plan's illustrative five-row table above. Flying 10 m and CMJ height have no registered `PerformanceTestDefinition`/metric yet (PG1 shipped only `sprint_10m_standing-r1` and `cycling_5s_peak_power-r1`), so adding rows for them now would be unreachable, unvalidatable dead data. Extending the table is a registry edit once PG1 registers those subjects.
+- **The table doubles as a real PG6 gap audit**, verified against the live catalog rather than assumed: `strength_full_body_maintenance_01` already gives `front_squat`/`bench_press` direct coverage; no active workout contains `conventional_deadlift` (confirms the plan's known gap); `field_sprint_mechanics_foundation_01`/`field_acceleration_braking_01` already give the standing-10 m target direct coverage via `sprint_falling_start_10m`; no active workout contains `bike_sprint_power`, so the cycling 5 s peak-power target has zero direct coverage today (a second, previously-undocumented PG6 gap). `performanceGoalPlanningRules.test.ts` asserts these facts against the real catalog so a future catalog edit that fills a gap fails the test as a visible reminder to update this note, rather than silently going unnoticed.
+- **`bike_short_surge` was deliberately not mapped as coverage** for the power target even though it is a cycling acceleration exercise: its own catalog instruction text says "Do not turn every surge into a sprint test," so crediting it would silently satisfy a maximal-power goal with submaximal work.
+- **No `POLICY_VERSION` bump.** Unlike PG5.1 (which touched `adapters.ts`, an existing `check-policy-drift.mjs` `decisionAffectingFiles` entry), this is a brand-new file not on that allowlist, with zero production consumers enforced by the architecture test above — genuinely inert under the current gate, not just behaviorally inert.
 
 Define a separate reviewed mapping from a target to relevant planning semantics.
 
@@ -961,21 +973,17 @@ Full structural detail for everything below is in
 produced while scoping PG5.1's PR so the next session doesn't have to re-derive it.
 Recommended order, each as its own PR with its own review pass:
 
-1. **PG5.2 first, on its own.** Define the planning-rule registry/coverage classifier.
-   This requires resolving a schema question the analysis found: the evergreen dose-
-   packing pipeline (`weeklyDosePacking.ts`) resolves coverage through
-   `workouts/models.ts`'s `WorkoutStep.exerciseId`, not the `sessions/models.ts` schema
-   targeted by the nearby per-exercise helpers in `authoredSessionProfiles.ts` — so
-   PG5.2's classifier is new code against the first schema, not a reuse of the second.
-   This PR can ship with no behavior change (a classifier nothing calls yet), the same
-   way PG5.1 did.
-2. **PG6 next**, auditing the real catalog against PG5.2's table. The known gap
-   (none of the current `app/src/workouts/catalog/*.ts` definitions contains
-   `conventional_deadlift`; the inspected barbell strength sessions use
-   `romanian_deadlift`) gets it a legitimate direct-coverage session here, with any
-   new prescription default reviewed
-   against the Sports Knowledge Registry first (no new sets/reps/%1RM/rest default may
-   be invented ad hoc).
+1. **PG5.2 — done, see its implementation note above.** The planning-rule
+   registry/coverage classifier now exists in `engine/performanceGoalPlanningRules.ts`,
+   resolved against `workouts/models.ts`'s `WorkoutStep.exerciseId` as predicted, with no
+   production consumer yet (same no-behavior-change shape as PG5.1).
+2. **PG6 next**, auditing the real catalog against PG5.2's table. PG5.2's own tests
+   already confirmed two concrete gaps against the live catalog: no active workout
+   contains `conventional_deadlift` (the inspected barbell strength sessions use
+   `romanian_deadlift`), and no active workout contains `bike_sprint_power` (the cycling
+   5 s peak-power target has zero direct coverage today). Either gap needs a legitimate
+   direct-coverage session, with any new prescription default reviewed against the Sports
+   Knowledge Registry first (no new sets/reps/%1RM/rest default may be invented ad hoc).
 3. **PG5.3 only after PG6 lands real coverage for a given target.** Making direct
    target coverage mandatory before that coverage exists would make a previously
    satisfiable `strength_muscle` requirement newly unsatisfiable for zero benefit — a
@@ -1008,33 +1016,34 @@ At minimum:
 1. strength target projects exact exercise identity — **done**, `performanceGoalDemand.test.ts`;
 2. standing 10 m and flying 10 m remain distinct subjects — **done** for `subjectRef` inequality in general (the catalog only has one speed test today, so the test uses two synthetic `performanceTestId`s rather than a real flying-10m test);
 3. target value changes do not change coverage identity — **done**, `performanceGoalDemand.test.ts`;
-4. broad priority + typed target does not double dose — **not done**: PG5.2/PG5.3 (the dose/coverage refinement this test would exercise) are not implemented, so there is nothing yet that could double-count;
+4. broad priority + typed target does not double dose — **not done**: PG5.3 (the dose/coverage refinement this test would exercise) is not implemented, so there is nothing yet that could double-count; PG5.2's classifier exists but has no `AdaptationDoseRequirement` consumer yet;
 5. hard exclusions produce shortfall, not unsafe selection — **not done**: no shortfall-producing code exists yet (PG5.4 is a type-only forward declaration; PG7 owns the actual allocation path this would exercise);
 6. legacy goal creates no typed demand — **done**, `performanceGoalDemand.test.ts`;
 7. multiple active targets project in deterministic priority/date/id order independent of caller/Firestore array order — **done**, `performanceGoalDemand.test.ts`.
 
 **Done when:** the weekly planner understands what kind of specific practice matters without
-using the target number as training dose. **Not met by PG5.1 alone** — the planner receives
-a populated but entirely unused projection; see PG5.1's implementation note above and
-`performanceGoalDemand.architecture.test.ts`, which enforces that nothing reads it yet. This
-criterion is met only once PG5.2/PG5.3 (and, for allocation to actually change, PG7) land.
+using the target number as training dose. **Not met by PG5.1/PG5.2 alone** — the planner
+receives a populated but entirely unused projection, and the coverage classifier has no
+`AdaptationDoseRequirement` consumer yet; see PG5.1's and PG5.2's implementation notes above
+and their respective architecture tests, which enforce that nothing reads either yet. This
+criterion is met only once PG5.3 (and, for allocation to actually change, PG7) land.
 
 ---
 
 ## PG6 — audit and fill catalog coverage gaps
 
 **Status:** [ ]
-**Blocked by:** PG5.2's planning-rule table (not started; PG5.1 is Implemented but PG5.2 is separate work — see "Recommended next-session sequencing" above); reviewed knowledge for any new session prescription
+**Blocked by:** reviewed knowledge for any new session prescription (PG5.2's planning-rule table is now Implemented — see its implementation note above, which already surfaced the two concrete catalog gaps below)
 **Recommendation-affecting:** yes
 
 Do not assume every new target needs a new workout. First audit the active catalog against each planning rule.
 
-Known findings:
+Known findings (confirmed against the live catalog by PG5.2's `performanceGoalPlanningRules.test.ts`):
 
-- conventional_deadlift exists as a canonical exercise but the inspected active strength workouts use Romanian deadlift, so the initial deadlift example needs a legitimate direct-coverage candidate;
-- sprint_falling_start_10m and sprint_fly_10m already exist as canonical field primitives and may be reusable inside existing/new field sessions;
+- conventional_deadlift exists as a canonical exercise but no active workout contains it (the inspected active strength workouts use Romanian deadlift instead), so the deadlift target needs a legitimate direct-coverage candidate;
+- sprint_falling_start_10m already provides real direct coverage for the standing 10 m target via `field_sprint_mechanics_foundation_01`/`field_acceleration_braking_01` — no gap here; sprint_fly_10m exists as a canonical field primitive and may be reusable once a flying-10m performance target/test is registered (PG1 extension, not yet done);
 - power-oriented content such as hang power clean already exists;
-- cycling power targets should reuse existing sprint-capable cycling content where it genuinely matches before adding another near-duplicate session.
+- cycling power targets have **no direct coverage today**: `bike_sprint_power` (the maximal 5-15 s cycling-sprint exercise) exists in the exercise catalog but is not used by any active `WorkoutDefinition`. The existing `bike_short_surge` exercise is a deliberately submaximal near-neighbor (its own instruction text says not to turn it into a sprint test) and must not be credited as coverage for a maximal power target — reuse it only if a new/adjusted session genuinely reaches maximal effort, not by relabeling the existing surge session.
 
 ### New-session requirements
 
