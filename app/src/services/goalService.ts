@@ -29,6 +29,21 @@ function assertSemanticallyValidPerformanceTarget(goal: UserGoal): void {
 }
 
 function validateGoalForRead(raw: unknown, userId: string): { goal: UserGoal | null; error: string | null } {
+    // validateGoal's own construction only guards against a MISSING createdAt (raw.createdAt
+    // || new Date().toISOString()) -- a truthy but non-string value (a Firestore Timestamp
+    // object, a number, ...) passes straight through untouched and would otherwise survive
+    // into the returned goal, where listGoals's localeCompare-based sort would throw on it
+    // for every goal in the list, not just this one. Reject it here instead, before
+    // normalization, so a single corrupted document is skipped by the per-document read
+    // boundary rather than taking the whole list down.
+    const rawTimestamps = raw as Partial<UserGoal>;
+    if (rawTimestamps.createdAt !== undefined && typeof rawTimestamps.createdAt !== 'string') {
+        return { goal: null, error: 'createdAt must be a string when present' };
+    }
+    if (rawTimestamps.updatedAt !== undefined && typeof rawTimestamps.updatedAt !== 'string') {
+        return { goal: null, error: 'updatedAt must be a string when present' };
+    }
+
     const validation = validateGoal(raw);
     if (!validation.isValid || !validation.data) {
         return { goal: null, error: validation.errors.map(issue => `${issue.field}: ${issue.message}`).join('; ') || 'schema validation failed' };

@@ -290,4 +290,32 @@ describe('GoalService persistence shape', () => {
             expect(firestore.setDoc).not.toHaveBeenCalled();
         });
     });
+
+    // A truthy but non-string createdAt/updatedAt (a Firestore Timestamp object, a stray
+    // number, ...) must be rejected at the per-document read boundary rather than surviving
+    // into listGoals's localeCompare-based sort, which would throw for the whole list.
+    describe('corrupted timestamp read gate', () => {
+        it('skips a goal with a non-string createdAt rather than crashing listGoals for every goal', async () => {
+            const validGoalA = { ...eventGoal, id: 'goal-a', targetDate: null, category: 'long-term' as const, eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined };
+            const corruptedGoal = { ...eventGoal, id: 'goal-corrupt', targetDate: null, category: 'long-term' as const, eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined, createdAt: { seconds: 1, nanoseconds: 0 } };
+            firestore.getDocs.mockResolvedValue({
+                docs: [
+                    { id: validGoalA.id, data: () => validGoalA },
+                    { id: corruptedGoal.id, data: () => corruptedGoal },
+                ],
+            });
+
+            const listed = await new GoalService().listGoals('u1');
+            expect(listed.map(g => g.id)).toEqual(['goal-a']);
+        });
+
+        it('rejects a non-string updatedAt from getGoal', async () => {
+            firestore.getDoc.mockResolvedValue({
+                exists: () => true,
+                data: () => ({ ...eventGoal, updatedAt: 12345 }),
+                id: eventGoal.id,
+            });
+            await expect(new GoalService().getGoal('u1', eventGoal.id)).rejects.toThrow(/Invalid goal data/);
+        });
+    });
 });

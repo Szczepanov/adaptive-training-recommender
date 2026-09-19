@@ -68,7 +68,7 @@ export const GOAL_FEASIBILITY_SOURCES: readonly KnowledgeSource[] = [
         id: CORATELLA_2016_ECCENTRIC_TRAINED_MEN,
         title: 'Eccentric resistance training increases and retains maximal strength, muscle endurance, and hypertrophy in trained men',
         sourceType: 'randomized_trial',
-        citation: 'Coratella G et al. Sport Sci Health. 2016.',
+        citation: 'Coratella G, Schena F. Appl Physiol Nutr Metab. 2016;41(11):1184-1189.',
         url: 'https://pubmed.ncbi.nlm.nih.gov/27801598/',
         publishedOn: '2016-01-01',
         externalIds: [{ type: 'pmid', value: '27801598' }],

@@ -63,6 +63,22 @@ describe('assessGoalFeasibility', () => {
         expect(result.confidence.reasons).toContain('no_target_date');
     });
 
+    it('reports unlikely (not "target date has passed") when the target date is today and the gap is unmet', () => {
+        const progress = progressWithBaseline(100, 'coach');
+        const result = assessGoalFeasibility(benchTarget(200), progress, { targetDate: '2026-09-19', today: '2026-09-19' });
+        expect(result.plausibility).toBe('unlikely');
+        expect(result.confidence.reasons).toContain('target_date_is_today');
+        expect(result.confidence.reasons).not.toContain('target_date_has_passed');
+        expect(result.factors.map(f => f.code)).not.toContain('target_date_has_passed');
+    });
+
+    it('reports "target date has passed" only once the target date is strictly in the past', () => {
+        const progress = progressWithBaseline(100, 'coach');
+        const result = assessGoalFeasibility(benchTarget(200), progress, { targetDate: '2026-09-18', today: '2026-09-19' });
+        expect(result.plausibility).toBe('unlikely');
+        expect(result.confidence.reasons).toContain('target_date_has_passed');
+    });
+
     it('returns null relativePct rather than a fabricated rate when the baseline is zero', () => {
         const progress = progressWithBaseline(0, 'coach');
         const result = assessGoalFeasibility(benchTarget(50), progress, { targetDate: '2026-10-31', today: '2026-09-19' });

@@ -210,13 +210,25 @@ export function assessGoalFeasibility(
         };
     }
 
-    if (weeksRemaining !== null && weeksRemaining <= 0) {
+    if (weeksRemaining !== null && weeksRemaining < 0) {
         factors.push({ code: 'target_date_has_passed', effect: 'limits', summary: 'The target date has already passed.', source: 'schedule' });
         return {
             ...baseAssessment,
             requiredChange,
             plausibility: 'unlikely',
             confidence: { level: 'high', reasons: ['target_date_has_passed'] },
+            factors,
+            evidenceRefs: [],
+        };
+    }
+
+    if (weeksRemaining !== null && weeksRemaining === 0) {
+        factors.push({ code: 'target_date_is_today', effect: 'limits', summary: 'The target date is today and the required change has not been reached yet.', source: 'schedule' });
+        return {
+            ...baseAssessment,
+            requiredChange,
+            plausibility: 'unlikely',
+            confidence: { level: 'high', reasons: ['target_date_is_today'] },
             factors,
             evidenceRefs: [],
         };

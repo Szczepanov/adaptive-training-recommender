@@ -458,7 +458,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     {
         id: 'goal_feasibility.strength_required_change_bands', domain: 'goal_feasibility', title: 'Strength performance-goal feasibility bands (ADR-0041, PG4.5)',
         currentRule: 'A strength typed performance target\'s required-change-per-week is compared against a conservative plausible/stretch/unlikely band, frequency-adjusted by available weekly capacity down to a 20% floor. Speed and power families report insufficient_evidence rather than reusing this band.',
-        classification: 'scientific_claim', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/goalFeasibility.ts:assessGoalFeasibility', 'engine/goalFeasibility.ts:strengthPlausibility'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.strengthRequiredChangeBands],
         coverageRationale: 'Advisory-only (never prescription authority, per ADR-0041); the numeric bands are a conservative product calibration against short-horizon 1RM dose-response/reliability evidence. Speed/power bands remain a research priority because no reviewed rate-of-change evidence was found for those families.',
     },
