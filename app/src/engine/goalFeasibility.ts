@@ -12,7 +12,7 @@ import { getLocalDateString } from '../utils/localDate';
  * and this plan section for the full contract:
  * docs/plans/strength-speed-power-performance-goals.md#pg45--goal-feasibility-and-realism-advisory
  */
-export const GOAL_FEASIBILITY_POLICY_VERSION = 'goal-feasibility-v1' as const;
+export const GOAL_FEASIBILITY_POLICY_VERSION = 'goal-feasibility-v2' as const;
 
 export type GoalPlausibility = 'already_achieved' | 'plausible' | 'stretch' | 'unlikely' | 'insufficient_evidence';
 export type FeasibilityConfidenceLevel = 'low' | 'moderate' | 'high';
@@ -65,12 +65,14 @@ function daysBetween(fromDate: string, toDate: string): number {
  * Strength first-slice evidence policy (registered as
  * `goalFeasibility.strength.requiredChangeBands` in the Sports Knowledge Registry --
  * see knowledge/goalFeasibilityKnowledge.ts). Thresholds are a required-relative-change
- * per week, adjusted for available weekly frequency, and are deliberately conservative
- * (looser than the ~4.7-7.7%/6wk trained-men result they are anchored to) so this errs
- * toward "plausible"/"stretch" rather than false-alarming on ordinary goals.
+ * per week, adjusted for available weekly frequency. The plausible ceiling (1.3%/week)
+ * linearizes to ~7.8% over six weeks, approximately the upper end of the cited
+ * resistance-trained-men result (~4.7-7.7% over six weeks). The stretch ceiling
+ * (2.0%/week) is intentionally wider and is a low-certainty product heuristic, not a
+ * directly validated physiological rate constant.
  */
-const STRENGTH_PLAUSIBLE_PCT_PER_WEEK_AT_ADEQUATE_FREQUENCY = 2.0;
-const STRENGTH_STRETCH_PCT_PER_WEEK_AT_ADEQUATE_FREQUENCY = 3.5;
+const STRENGTH_PLAUSIBLE_PCT_PER_WEEK_AT_ADEQUATE_FREQUENCY = 1.3;
+const STRENGTH_STRETCH_PCT_PER_WEEK_AT_ADEQUATE_FREQUENCY = 2.0;
 const STRENGTH_ADEQUATE_WEEKLY_FREQUENCY = 2;
 
 function strengthPlausibility(requiredPctPerWeek: number, weeklyMaxSessions: number | null): GoalPlausibility {
@@ -225,6 +227,12 @@ export function assessGoalFeasibility(
     } else {
         factors.push({ code: 'capacity_bounds_relevant_exposure', effect: 'uncertain', summary: `Total weekly capacity bounds this at no more than ${maxRelevantExposuresBeforeTarget} relevant exposures before the target date; actual target-specific frequency is not yet tracked (PG5-PG7).`, source: 'schedule' });
     }
+    factors.push({
+        code: 'target_specific_frequency_unknown',
+        effect: 'uncertain',
+        summary: 'Target-specific planned/performed frequency is not available yet; total weekly capacity is only an upper bound.',
+        source: 'schedule',
+    });
 
     const requiredPctPerWeek = weeksRemaining !== null && weeksRemaining > 0 && requiredChange.relativePct !== null
         ? Math.abs(requiredChange.relativePct) / weeksRemaining
@@ -237,7 +245,7 @@ export function assessGoalFeasibility(
         factors.push({ code: 'required_pace_vs_reviewed_band', effect: plausibility === 'unlikely' ? 'limits' : plausibility === 'plausible' ? 'supports' : 'uncertain', summary: `Required pace is approximately ${requiredPctPerWeek.toFixed(2)}%/week against a reviewed evidence band.`, source: 'population_evidence' });
     }
 
-    const confidenceReducers: string[] = [];
+    const confidenceReducers: string[] = ['target_specific_frequency_unknown'];
     if (weeklyMaxSessions === null) confidenceReducers.push('capacity_unknown');
     if (progress.currentEvidenceKind !== 'measured_observation' && progress.currentSource !== 'coach' && progress.currentSource !== 'garmin') {
         confidenceReducers.push('baseline_may_be_stale_or_unsourced');
