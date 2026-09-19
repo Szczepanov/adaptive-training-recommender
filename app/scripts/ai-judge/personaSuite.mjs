@@ -8,6 +8,18 @@ const ACTIVE_TRIATHLON_FAMILY_ID = 'persona_triathlon_established_olympic';
 const ACTIVE_TRIATHLON_PERSONA_ID = 'triathlon_established_olympic';
 const CYCLING_HYBRID_FAMILY_ID = 'persona_cycling_primary_hybrid';
 const CYCLING_HYBRID_PERSONA_ID = 'cycling_primary_hybrid_advanced';
+const RUNNING_EVENT_FAMILY_ID = 'persona_running_event_priority';
+const RUNNING_EVENT_PERSONA_ID = 'running_event_established_10k';
+const RUNNING_EVENT_DATE = '2026-09-14';
+const RUNNING_10K_DEMAND = {
+  aerobicEndurance: 0.65,
+  thresholdPower: 0.85,
+  vo2MaxPower: 0.7,
+  repeatedSurges: 0.2,
+  sprintPower: 0.15,
+  fatigueResistance: 0.55,
+  neuromuscular: 0.15,
+};
 
 /** Return a detached JSON-safe copy of fixture data. */
 function clone(value) {
@@ -351,6 +363,77 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
   };
 }
 
+/** Compose an established 10K runner family where event priority is the only changed axis. */
+function buildRunningEventPriorityFamily(catalogFamilies) {
+  const establishedFamily = requireFamily(catalogFamilies, 'persona_established_history');
+  const baselineSource = requireCase(establishedFamily, 'persona_established_history_baseline');
+
+  const context = clone(baselineSource.scenario.context);
+  context.goals = {
+    shortTerm: 'Prepare specifically for a scheduled 10K while respecting how strongly this event should shape the current block.',
+    midTerm: 'Improve 10K-relevant endurance and threshold fitness from the current established running base.',
+    longTerm: 'Build durable running performance without treating every scheduled race as an equal-priority peak.',
+  };
+
+  const preferences = clone(baselineSource.scenario.preferences);
+  const currentHistory = clone(baselineSource.scenario.initialHistory);
+  const readiness = baselineSource.scenario.readinessForWeek(0);
+
+  const persona = {
+    personaId: RUNNING_EVENT_PERSONA_ID,
+    dataAvailability: 'garmin_plus_subjective_checkin',
+    primaryGoal: 'prepare for a scheduled 10K with event-priority-appropriate periodization',
+    currentTrainingIdentity: 'established runner with a current 28-day training base',
+    eventContext: 'the race, date, current history, recovery state and preferences stay fixed; only A/B/C event priority changes',
+    judgeExpectations: [
+      'Treat A, B and C as meaningfully different event priorities rather than three labels for the same peak.',
+      'The A event may justify the strongest near-race taper restraint; B should exert less planning authority, and C should not be treated like a major peak by default.',
+      'Keep running specificity and the athlete\'s current training evidence intact across all three cases.',
+      'Do not invent race-pace capability, a finishing-time target or an exact taper percentage that is absent from the input.',
+    ],
+  };
+
+  const eventForPriority = (priority) => ({
+    id: 'persona-running-10k',
+    title: 'Scheduled 10K',
+    date: RUNNING_EVENT_DATE,
+    priority,
+    lifecycle: 'scheduled',
+    category: 'running_race',
+    demandProfile: clone(RUNNING_10K_DEMAND),
+  });
+
+  const makeCase = (priority) => {
+    const event = eventForPriority(priority);
+    return {
+      persona: clone(persona),
+      scenario: {
+        ...baselineSource.scenario,
+        id: `persona_running_event_priority_${priority.toLowerCase()}`,
+        label: `Established 10K persona — priority ${priority}`,
+        description: `Synthetic persona evaluation case for ${RUNNING_EVENT_PERSONA_ID}. No real person's name or identifying data is persisted.`,
+        context: clone(context),
+        event: clone(event),
+        events: [clone(event)],
+        trainingIntentProfile: null,
+        preferences: clone(preferences),
+        initialHistory: clone(currentHistory),
+        fixedActivities: [],
+        tags: ['ai-plan-judge', 'persona-evaluation', RUNNING_EVENT_PERSONA_ID],
+        weeks: 2,
+        ...staticReadiness(readiness),
+      },
+    };
+  };
+
+  return {
+    familyId: RUNNING_EVENT_FAMILY_ID,
+    changedAxis: 'A/B/C event priority for the same established runner, same scheduled 10K, same race date, same recovery and same current training history',
+    comparisonInstruction: 'Only event priority changes. Evaluate directionality rather than reverse-engineering an internal taper table: an A event should exert the strongest near-race planning authority, B should be secondary, and C should not receive major-peak treatment by default. Running specificity and hard safety constraints remain unchanged.',
+    cases: ['A', 'B', 'C'].map(makeCase),
+  };
+}
+
 /** Build the active judge suite from the larger reusable persona catalog. */
 export function buildPersonaFamilies({ includeHybridExpansion = false } = {}) {
   const catalogFamilies = buildCatalogFamilies();
@@ -361,6 +444,7 @@ export function buildPersonaFamilies({ includeHybridExpansion = false } = {}) {
   return [
     ...nonTriathlonFamilies,
     hybridFamily,
+    buildRunningEventPriorityFamily(catalogFamilies),
     buildActiveTriathlonFamily(catalogFamilies),
     ...(includeHybridExpansion ? buildHybridScenarioFamilies(hybridFamily) : []),
   ];
@@ -380,6 +464,28 @@ export function assertPersonaFixtureIntegrity(families) {
     const serialized = JSON.stringify({ persona, label: scenario.label, description: scenario.description }).toLowerCase();
     for (const realName of ['adrian', 'rafal', 'rafał', 'ola', 'aleksandra', 'marcin']) {
       if (serialized.includes(realName)) failures.push(`${scenario.id}: active public fixture contains a real-person name (${realName}).`);
+    }
+  }
+
+  const runningEvent = families.find((family) => family.familyId === RUNNING_EVENT_FAMILY_ID);
+  if (!runningEvent) failures.push('Active suite is missing the running-event-priority persona.');
+  if (runningEvent?.cases.length !== 3) failures.push(`Running-event-priority persona must have exactly 3 cases, found ${runningEvent?.cases.length ?? 0}.`);
+  const expectedRunningPriorities = ['A', 'B', 'C'];
+  for (const priority of expectedRunningPriorities) {
+    const definition = runningEvent?.cases.find((item) => item.scenario.id === `persona_running_event_priority_${priority.toLowerCase()}`);
+    if (!definition) {
+      failures.push(`Running-event-priority persona is missing priority ${priority} case.`);
+      continue;
+    }
+    const { scenario, persona } = definition;
+    if (persona.personaId !== RUNNING_EVENT_PERSONA_ID) failures.push(`${scenario.id}: running-event persona identity drifted.`);
+    if (scenario.event?.category !== 'running_race' || scenario.event?.priority !== priority) failures.push(`${scenario.id}: expected a priority-${priority} running_race event.`);
+    if (scenario.event?.date !== RUNNING_EVENT_DATE) failures.push(`${scenario.id}: running-event date drifted from the shared comparison date.`);
+    if (JSON.stringify(scenario.event?.demandProfile) !== JSON.stringify(RUNNING_10K_DEMAND)) failures.push(`${scenario.id}: running 10K demand profile drifted.`);
+    if ((scenario.events ?? []).length !== 1) failures.push(`${scenario.id}: running-event case must carry exactly one event.`);
+    if (scenario.trainingIntentProfile !== null) failures.push(`${scenario.id}: running-event case must remain event-directed.`);
+    if ((scenario.initialHistory ?? []).length !== 12 || scenario.initialHistory.some((item) => item.modality !== 'Running')) {
+      failures.push(`${scenario.id}: running-event case must retain the same 12-exposure Running history.`);
     }
   }
 
