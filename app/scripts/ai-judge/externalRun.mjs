@@ -188,6 +188,16 @@ function uploadSafeSourceArtifactDir(path) {
   return relativePath;
 }
 
+function caseSetSha256(families) {
+  const contract = families
+    .map((family) => ({
+      familyId: family.familyId,
+      caseIds: [...family.caseIds].sort(),
+    }))
+    .sort((a, b) => a.familyId.localeCompare(b.familyId));
+  return hashJson(contract);
+}
+
 function familyCaseIds(family) {
   if (!family || typeof family.familyId !== 'string' || !Array.isArray(family.cases) || family.cases.length === 0) {
     throw new Error('Malformed judge family: familyId and non-empty cases are required.');
@@ -514,31 +524,74 @@ function summaryFor(suite, rows, stability, manifest, outputDir) {
   const cases = rows.flatMap((row) => row.caseScores.map((item) => ({ familyId: row.familyId, ...item })));
   const dimensions = ['safety_recovery_fit', 'goal_event_fit', 'sequencing', 'periodization_taper', 'preference_capacity_fit', 'robustness', 'overall'];
   const average = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+  const normalizedText = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
+  const countStrings = (values) => {
+    const counts = new Map();
+    for (const value of values) {
+      const normalized = normalizedText(value);
+      if (normalized) counts.set(normalized, (counts.get(normalized) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([value, count]) => ({ value, count }))
+      .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+  };
+  const judgeSettings = {
+    provider: manifest.judgeProvider,
+    model: manifest.judgeModel,
+    samples: 1,
+    packetVersion: manifest.packetVersion,
+  };
+  const familySensitivity = rows.map((row) => ({
+    familyId: row.familyId,
+    sensitivityQuality: row.familyAssessment.sensitivity_quality,
+    rationale: row.familyAssessment.rationale,
+    overreactionCases: row.familyAssessment.overreactionCases,
+    underreactionCases: row.familyAssessment.underreactionCases,
+    algorithmAdjustmentHypotheses: row.familyAssessment.algorithmAdjustmentHypotheses,
+  })).sort((a, b) => a.sensitivityQuality - b.sensitivityQuality || a.familyId.localeCompare(b.familyId));
+  const familyHypotheses = countStrings(rows.flatMap((row) => row.familyAssessment.algorithmAdjustmentHypotheses))
+    .map(({ value: hypothesis, count }) => ({ hypothesis, count }));
+  const caseFlagCounts = countStrings(cases.flatMap((item) => item.flags))
+    .map(({ value: flag, count }) => ({ flag, count }));
+  const caseSuggestedChangeCounts = countStrings(cases.flatMap((item) => item.suggestedChanges))
+    .map(({ value: suggestion, count }) => ({ suggestion, count }));
+  const provenance = {
+    corpusCommit: manifest.corpusCommit,
+    corpusSchema: manifest.corpusSchema,
+    corpusSha256: manifest.corpusSha256,
+    familiesSha256: manifest.familiesSha256,
+    caseSetSha256: manifest.caseSetSha256,
+    promptSha256: manifest.promptSha256,
+    responseSchemaSha256: manifest.responseSchemaSha256,
+    judgeScoresSha256: hashBytes(readFileSync(join(outputDir, 'judge-scores.jsonl'))),
+    judgeModel: manifest.judgeModel,
+    judgeProvider: manifest.judgeProvider,
+    analyzedAt: manifest.completedAt,
+    judgeSettings,
+  };
   const summary = {
     schema: SUITE_CONFIG[suite].summarySchema,
     source: relativePortable(resolve('.'), join(outputDir, 'judge-scores.jsonl')),
-    provenance: {
-      corpusCommit: manifest.corpusCommit,
-      corpusSchema: manifest.corpusSchema,
-      corpusSha256: manifest.corpusSha256,
-      familiesSha256: manifest.familiesSha256,
-      promptSha256: manifest.promptSha256,
-      responseSchemaSha256: manifest.responseSchemaSha256,
-      judgeScoresSha256: hashBytes(readFileSync(join(outputDir, 'judge-scores.jsonl'))),
-      judgeModel: manifest.judgeModel,
-      judgeProvider: manifest.judgeProvider,
-      analyzedAt: manifest.completedAt,
-    },
+    provenance,
+    judgeSettings,
     familyCount: rows.length,
     caseCount: cases.length,
     scoreAverages: Object.fromEntries(dimensions.map((key) => [key, average(cases.map((item) => item.scores[key]))])),
     meanSensitivityQuality: average(rows.map((row) => row.familyAssessment.sensitivity_quality)),
-    familySensitivity: rows.map((row) => ({ familyId: row.familyId, sensitivityQuality: row.familyAssessment.sensitivity_quality })),
+    familySensitivity,
+    weakestCases: [...cases].sort((a, b) => a.scores.overall - b.scores.overall).slice(0, 15),
+    strongestCases: [...cases].sort((a, b) => b.scores.overall - a.scores.overall).slice(0, 10),
+    repeatedCaseFlags: caseFlagCounts.filter((item) => item.count >= 2),
+    repeatedCaseSuggestedChanges: caseSuggestedChangeCounts.filter((item) => item.count >= 2),
+    caseFlagCounts,
+    caseSuggestedChangeCounts,
+    familyHypotheses,
+    repeatedHypotheses: familyHypotheses.filter((item) => item.count >= 2),
     judgeStability: stability,
   };
   writeJson(join(outputDir, 'judge-summary.json'), summary);
-  writeFileSync(join(outputDir, 'judge-summary.md'), `# External ${suite} judge summary\n\n- Families scored: ${summary.familyCount}\n- Cases scored: ${summary.caseCount}\n- Provider/model: ${manifest.judgeProvider}/${manifest.judgeModel}\n`, 'utf8');
-  writeJson(join(outputDir, 'judge-run-provenance.json'), summary.provenance);
+  writeFileSync(join(outputDir, 'judge-summary.md'), `# External ${suite} judge summary\n\n- Families scored: ${summary.familyCount}\n- Cases scored: ${summary.caseCount}\n- Mean family sensitivity quality: ${summary.meanSensitivityQuality.toFixed(2)}/10\n- Provider/model: ${manifest.judgeProvider}/${manifest.judgeModel}\n- Samples: 1 (manual external; do not infer repeatability from zero dispersion)\n`, 'utf8');
+  writeJson(join(outputDir, 'judge-run-provenance.json'), provenance);
 }
 
 export function importExternalRun({ packageDir, responsesDir, outputDir, model = 'external-manual-unknown', expectedSuite } = {}) {
@@ -575,6 +628,9 @@ export function importExternalRun({ packageDir, responsesDir, outputDir, model =
 
   const missing = manifest.families.map((entry) => entry.familyId).filter((familyId) => !responses.has(familyId));
   if (missing.length) throw new Error(`Missing response for family/families: ${missing.join(', ')}`);
+  if (typeof model !== 'string' || !model.trim() || model === 'external-manual-unknown') {
+    throw new Error('External judge import requires an explicit non-placeholder model label.');
+  }
 
   const config = assertSuite(manifest.suite);
   const rows = [];
@@ -620,6 +676,7 @@ export function importExternalRun({ packageDir, responsesDir, outputDir, model =
     corpusSha256: manifest.hashes.corpusSha256,
     promptSha256: manifest.hashes.promptSha256,
     responseSchemaSha256: manifest.hashes.responseSchemaSha256,
+    caseSetSha256: caseSetSha256(manifest.families),
     completedAt: new Date().toISOString(),
     completedFamilies: rows.length,
     externalRunManifestSha256: hashBytes(readFileSync(manifestPath)),
@@ -636,6 +693,7 @@ export function importExternalRun({ packageDir, responsesDir, outputDir, model =
     corpusCommit: manifest.provenance?.corpusCommit ?? 'unknown',
     corpusSchema: manifest.provenance?.corpusSchema ?? 'unknown',
     familiesSha256: manifest.hashes.familiesSha256,
+    caseSetSha256: completedManifest.caseSetSha256,
     promptSha256: manifest.hashes.promptSha256,
     responseSchemaSha256: manifest.hashes.responseSchemaSha256,
   }, destination);

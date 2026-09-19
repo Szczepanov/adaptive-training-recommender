@@ -288,6 +288,7 @@ describe('manual external judge run packages', () => {
       corpusSchema: `${suite}-corpus@1`,
       corpusSha256: createHash('sha256').update(readFileSync(join(outputDir, 'corpus.json'))).digest('hex'),
       familiesSha256: createHash('sha256').update(readFileSync(join(outputDir, 'families.jsonl'))).digest('hex'),
+      caseSetSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
       promptSha256: createHash('sha256').update(readFileSync(join(outputDir, 'judge-prompt.md'))).digest('hex'),
       responseSchemaSha256: suite === 'plan'
         ? createHash('sha256').update(readFileSync(join(outputDir, 'judge-response-schema.json'))).digest('hex')
@@ -296,8 +297,33 @@ describe('manual external judge run packages', () => {
       judgeModel: 'chatgpt-external-manual-label',
       judgeProvider: 'manual_external',
       analyzedAt: expect.any(String),
+      judgeSettings: expect.objectContaining({
+        provider: 'manual_external',
+        model: 'chatgpt-external-manual-label',
+        samples: 1,
+        packetVersion: 'v2',
+      }),
+    }));
+    expect(summary.weakestCases).toHaveLength(2);
+    expect(summary.strongestCases).toHaveLength(2);
+    expect(summary.familySensitivity[0]).toEqual(expect.objectContaining({
+      familyId: manifest.families[0].familyId,
+      rationale: expect.any(String),
     }));
     if (suite === 'plan') expect(readFileSync(join(outputDir, 'judge-response-schema.json'), 'utf8')).toContain('response@1');
+  });
+
+  it('requires explicit model provenance for a complete import', () => {
+    const root = tempRoot();
+    const source = sourceFixture(root, 'plan');
+    const packageDir = join(root, 'package');
+    const manifest = buildExternalPackage({ suite: 'plan', sourceDir: source, outputDir: packageDir });
+    for (const family of manifest.families) {
+      writeFileSync(join(packageDir, family.responsePath), JSON.stringify(responseFor(family.familyId, family.caseIds)));
+    }
+
+    expect(() => importExternalRun({ packageDir, outputDir: join(root, 'output') }))
+      .toThrow(/explicit non-placeholder model label/);
   });
 
   it('validates local-provenance hashes and rejects lexical traversal', () => {
