@@ -107,12 +107,18 @@ describe('goalToPerformanceGoalDemand (Stage 2/PG5.1)', () => {
 });
 
 describe('mapGoalsToPerformanceGoalDemands', () => {
-    it('filters out nulls and preserves order for the remaining demands', () => {
-        const demands = mapGoalsToPerformanceGoalDemands([
-            testGoal({ id: 'a' }),
-            testGoal({ id: 'b', status: 'paused' }),
-            testGoal({ id: 'c' }),
-        ]);
-        expect(demands.map(d => d.goalId)).toEqual(['a', 'c']);
+    it('filters nulls and applies priority/date/id order independent of caller or Firestore order', () => {
+        const goals = [
+            testGoal({ id: 'priority-3', priority: 3, targetDate: '2026-10-01' }),
+            testGoal({ id: 'same-date-z', priority: 5, targetDate: '2026-12-01' }),
+            testGoal({ id: 'open-ended', priority: 5, targetDate: undefined }),
+            testGoal({ id: 'later-date', priority: 5, targetDate: '2027-01-01' }),
+            testGoal({ id: 'same-date-a', priority: 5, targetDate: '2026-12-01' }),
+            testGoal({ id: 'filtered-paused', priority: 5, targetDate: '2026-01-01', status: 'paused' }),
+        ];
+        const expected = ['same-date-a', 'same-date-z', 'later-date', 'open-ended', 'priority-3'];
+
+        expect(mapGoalsToPerformanceGoalDemands(goals).map(d => d.goalId)).toEqual(expected);
+        expect(mapGoalsToPerformanceGoalDemands([...goals].reverse()).map(d => d.goalId)).toEqual(expected);
     });
 });

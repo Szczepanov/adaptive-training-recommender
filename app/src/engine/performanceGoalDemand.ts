@@ -24,8 +24,9 @@ export interface PerformanceGoalDemand {
     family: PerformanceGoalFamily;
     /** Context/progress only -- never dose, never allocation authority (PG5.1). */
     targetValue: number;
-    /** Copied verbatim from UserGoal.priority (1-5). NOT an allocation tier or search
-     *  priority -- PG7 will define its own tie-break semantics when it lands. */
+    /** Copied verbatim from UserGoal.priority (1-5). Used by the shared deterministic
+     *  demand ordering below, but NOT itself an allocation tier or search authority:
+     *  PG7 still applies stronger authorities before target competition. */
     priority: number;
     targetDate: string | null;
 }
@@ -76,11 +77,40 @@ export function goalToPerformanceGoalDemand(goal: UserGoal & { id?: string }): P
     };
 }
 
-/** Filters nulls, styled after adapters.ts's mapGoalsToUserEvents. */
+/**
+ * Shared deterministic total order required by the plan's PG5/PG7 multi-target
+ * contract. This ordering is deliberately established at the projection boundary so
+ * Firestore/query/array iteration order can never become accidental authority later:
+ *
+ * 1. higher UserGoal.priority first;
+ * 2. earlier non-null targetDate first;
+ * 3. dated targets before open-ended targets;
+ * 4. ascending stable goalId lexical order.
+ *
+ * The comparator does NOT grant planning authority in PG5.1; the projection is still
+ * unread by selection/ranking code. PG7 must reuse this comparator after applying the
+ * stronger safety/external-plan/capacity/broad-adaptation authorities rather than
+ * reimplementing the tie policy ad hoc.
+ */
+export function comparePerformanceGoalDemands(a: PerformanceGoalDemand, b: PerformanceGoalDemand): number {
+    if (a.priority !== b.priority) return b.priority - a.priority;
+
+    if (a.targetDate !== b.targetDate) {
+        if (a.targetDate === null) return 1;
+        if (b.targetDate === null) return -1;
+        return a.targetDate < b.targetDate ? -1 : 1;
+    }
+
+    if (a.goalId === b.goalId) return 0;
+    return a.goalId < b.goalId ? -1 : 1;
+}
+
+/** Filters nulls and normalizes output into the shared deterministic demand order. */
 export function mapGoalsToPerformanceGoalDemands(
     goals: readonly (UserGoal & { id?: string })[],
 ): PerformanceGoalDemand[] {
     return goals
         .map(goalToPerformanceGoalDemand)
-        .filter((demand): demand is PerformanceGoalDemand => demand !== null);
+        .filter((demand): demand is PerformanceGoalDemand => demand !== null)
+        .sort(comparePerformanceGoalDemands);
 }
