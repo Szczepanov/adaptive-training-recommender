@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
+import { resolveJudgeProvider } from './ai-judge/baselinePromotionPolicy.mjs';
 
 const reviewed = process.argv.includes('--reviewed');
 const EXPECTED_SCHEMA = 'adaptive-training-recommender/ai-plan-judge-summary@3';
@@ -81,8 +82,13 @@ if (existsSync(runManifestPath)) {
     failures.push(`judge-run-manifest.json is malformed: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
-if (provenance.judgeProvider === 'manual_external' || runManifest?.judgeProvider === 'manual_external') {
-  failures.push('manual_external judge evidence is exploratory and cannot be promoted to the committed plan-judge baseline; rerun the configured native judge workflow.');
+try {
+  resolveJudgeProvider({
+    provenanceProvider: provenance.judgeProvider,
+    manifestProvider: runManifest?.judgeProvider,
+  });
+} catch (error) {
+  failures.push(error instanceof Error ? error.message : String(error));
 }
 for (const field of ['corpusCommit', 'corpusSchema', 'corpusSha256', 'familiesSha256', 'promptSha256', 'responseSchemaSha256', 'judgeScoresSha256', 'judgeModel', 'judgeProvider']) {
   requireString(provenance[field], `provenance.${field}`);

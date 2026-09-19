@@ -150,37 +150,38 @@ of the package contract. The CLI requires an explicit `--model` label for import
 the label is provenance, not proof of provider identity.
 
 A manual external import is one judge sample per family. A one-sample MAD of zero is not
-evidence that the judge is stable. For consequential comparisons, prefer the existing
-multi-sample judge/self-test workflow or collect repeated independently labeled external runs
-and audit them against human/domain review before treating score movement as meaningful.
+evidence that the judge is stable. In this repository, the reviewed `manual_external` run is
+the preferred canonical judge source because it is the more trusted evaluator; its model,
+provider, packet, prompt, corpus, and response hashes remain part of the committed provenance.
+For consequential changes, collect repeated independently labeled external runs and audit them
+against human/domain review before treating small score movement as meaningful.
 
 The simulation baseline remains deterministic evidence and is never externally judged. An
-external score package must not be used to rewrite `docs/analysis/plan-judge-baseline.json`
-or to turn model opinions into a production decision rule. Both plan and persona baseline
-promotion scripts now enforce this boundary by rejecting artifacts whose judge provider is
-`manual_external`.
+external score package may update `docs/analysis/plan-judge-baseline.json` or the persona
+baseline only after the same `--reviewed` promotion, provenance/hash validation, and review of
+the case-level findings as any other judge run. Judge scores remain evaluation evidence; they
+do not become a production decision rule by themselves.
 
-**To compare against the committed baseline, use `judge:e2e`, not `judge:local`.** The
-committed baseline (`docs/analysis/plan-judge-baseline.json`) was built with a specific
-settings bundle — `--blind` (packet v2), `--samples 5`, thinking **disabled**, and
-`--ctx 65536` — and `npm run judge:diff` only tolerates comparing runs made with that same
-bundle (see `check-plan-judge-drift.mjs`'s settings guard below). `judge:local`'s defaults
-(1 sample, packet v1, thinking **on**, `--ctx 32768`) intentionally differ, because it exists
-for fast local iteration, not baseline comparison — using it to judge "did I regress the
-baseline?" compares one noisy single-sample draw under a different prompt packet and
-thinking mode to a five-sample median, which can (and did — see
-`git log --grep 'refresh simulation, persona-judge, and plan-judge baselines'`) manufacture
-a double-digit false "regression" count with zero real behavior change:
+**The committed baseline is currently a reviewed `manual_external` run.** To compare a new
+external run against it, keep the same corpus, packet, prompt, response schema, and model
+label, then run `npm run judge:diff`. Local/native runs intentionally differ in provider,
+model, and sampling settings; use `--allow-model-change` (and, when needed,
+`--allow-settings-change`) only for directional analysis, not as evidence of a clean
+before/after comparison.
+
+To regenerate the native multi-sample reference run, use `judge:e2e`. That workflow remains
+useful for independent triangulation, but its output is not directly comparable to the current
+external baseline without an explicit model/provider opt-in. `judge:local` is for fast local
+iteration, not baseline comparison:
 
 ```bash
-# Baseline-comparable: matches docs/analysis/plan-judge-baseline.json's settings exactly,
-# regenerates the corpus, runs the judge, and runs judge:diff for you.
+# Native triangulation: regenerates the corpus, runs the multi-sample local judge,
+# and runs judge:diff for you. It is not directly comparable to the external baseline.
 npm run judge:e2e
 
 # Higher-throughput variant tuned for the 4B quick model + more VRAM headroom (10 samples,
-# thinking on, wider ctx/concurrency) -- still blind, still baseline-comparable in spirit,
-# but NOT the same settings bundle as the committed baseline, so judge:diff will refuse to
-# compare it directly unless you pass --allow-settings-change.
+# thinking on, wider ctx/concurrency) -- still blind, but not comparable to the external
+# baseline without an explicit settings/model opt-in.
 npm run judge:e2e:quick
 ```
 
@@ -192,7 +193,7 @@ a corpus change before committing to a full `judge:e2e` run):
 npm run judge:local
 
 # Multi-sample stability measurement (5 samples, fresh) -- still packet v1/thinking-on,
-# so still NOT comparable to the committed baseline; use judge:e2e for that
+# so still NOT comparable to the committed external baseline
 npm run judge:local:stability
 
 # Quick local evaluation (4B, one sample, thinking off)

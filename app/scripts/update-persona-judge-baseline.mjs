@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { buildPersonaFamilies, assertPersonaFixtureIntegrity } from './ai-judge/personaSuite.mjs';
+import { resolveJudgeProvider } from './ai-judge/baselinePromotionPolicy.mjs';
 
 const reviewed = process.argv.includes('--reviewed');
 const EXPECTED_SCHEMA = 'adaptive-training-recommender/persona-plan-judge-corpus@1';
@@ -122,11 +123,11 @@ if (existsSync(manifestPath)) {
   }
 }
 const judgeModel = manifest?.judgeModel ?? null;
-const judgeProvider = manifest?.judgeProvider ?? null;
-if (judgeProvider === 'manual_external') {
-  console.error('Refusing to promote manual_external judge evidence to the committed persona baseline.');
-  console.error('Run the configured native persona judge workflow and review that evidence instead.');
-  process.exit(1);
+let judgeProvider = manifest?.judgeProvider ?? null;
+try {
+  judgeProvider = resolveJudgeProvider({ manifestProvider: judgeProvider });
+} catch (error) {
+  failures.push(error instanceof Error ? error.message : String(error));
 }
 const judgeConfig = manifest
   ? {
