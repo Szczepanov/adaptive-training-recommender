@@ -315,7 +315,7 @@ as conventional_deadlift, or:
 metric = 10m
 ~~~
 
-as sprint_10m_standing.
+as PerformanceTestDefinition sprint_10m_standing-r1.
 
 A later conversion flow may offer a user-confirmed mapping when the destination is unambiguous. Silent migration would create recommendation authority from previously decorative free text.
 
