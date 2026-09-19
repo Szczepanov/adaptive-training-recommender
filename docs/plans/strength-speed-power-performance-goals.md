@@ -27,6 +27,7 @@ and carry that intent through the relevant loop:
 typed athlete goal
   -> registered metric
   -> canonical exercise or performance test
+  -> feasibility advisory (plausibility + confidence + evidence)
   -> family-specific planning projection
   -> relevant direct/supporting coverage
   -> current-capability/autoregulated prescription
@@ -350,6 +351,8 @@ If maxSessions is 5, do **not** infer five target-specific exposures. Until the 
 
 The generic evergreen trainingAgeProxy may contribute context, but it is not enough to classify target-specific training experience. A person with many cycling sessions is not automatically an established bench presser.
 
+---
+
 # Work plan
 
 ## PG0 — architecture decision and acceptance boundary
@@ -372,8 +375,12 @@ Write and accept an ADR covering:
 10. Multiple active performance targets use deterministic priority/capacity conflict semantics.
 11. Estimated/proxy evidence and formal tested evidence remain distinguishable.
 12. Protocol comparability is required before observations are treated as one progress series.
+13. Goal feasibility is derived advisory state, not athlete-authored UserGoal truth and not prescription authority.
+14. Plausibility and confidence are separate outputs with explicit factor/evidence provenance.
+15. Production feasibility bands/thresholds are versioned evidence policy; exact outcome probabilities are forbidden until prospectively calibrated.
+16. Total weekly commitment/schedule provides a capacity bound, while target-specific frequency comes from direct planned/performed coverage rather than assumption.
 
-**Done when:** the ADR names the persisted contract, registry authorities, initial target families, authority order, compatibility rule and first vertical-slice metrics.
+**Done when:** the ADR names the persisted contract, registry authorities, initial target families, authority order, compatibility rule, feasibility/confidence semantics and first vertical-slice metrics.
 
 ---
 
@@ -402,7 +409,7 @@ Keep exact metric ids consistent with current naming conventions. The ADR should
 **Files:**
 
 - app/src/observations/performanceTestingCatalog.ts;
-- app/src/observations/protocols.ts only when a real new ComparisonDimension is required;
+- app/src/observations/protocols.ts only when a new protocol genuinely requires another ComparisonDimension;
 - testing/comparability tests.
 
 Add PerformanceTestDefinition entries for first-slice test-bound targets such as standing 10 m and cycling 5 s peak power.
@@ -439,8 +446,8 @@ Provide pure helpers that can answer:
 - is this registered metric target-eligible?
 - does the target subject kind match policy?
 - does the canonical exercise exist and meet eligibility?
-- does the PerformanceTestDefinition exist?
-- does that test's MeasurementProtocol declare the target metric?
+- can the referenced PerformanceTestDefinition be resolved?
+- is the target metric declared by that test's MeasurementProtocol?
 - is the target value finite and within a bounded structural range?
 - what family, unit and direction apply?
 
@@ -462,6 +469,9 @@ Cover:
 - comparison-series behavior for new protocols.
 
 **Done when:** code can prove what a target means using existing metric/protocol/test authorities without title parsing, user-entered units or duplicate registries.
+
+---
+
 ## PG2 — typed goal model, domain, validation and persistence
 
 **Status:** [ ]
@@ -568,7 +578,7 @@ An explicit "Convert to structured target" affordance can be added later if the 
 
 Cover:
 
-- family/metric/subject dependent controls;
+- family-, metric-, and subject-dependent controls;
 - keyboard and screen-reader labels;
 - higher/lower-is-better metric rendering;
 - unit display;
