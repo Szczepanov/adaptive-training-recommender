@@ -48,6 +48,26 @@ describe('PerformanceTargetSummary (ADR-0041/PG3-PG4.5)', () => {
     expect(html).toContain('Goal feasibility:');
   });
 
+  it('shows the horizon, weekly capacity and unknown target-specific frequency behind confidence', () => {
+    const profile: AthletePerformanceProfile = {
+      estimated1RmKg: { conventional_deadlift: 100 },
+      estimated1RmSources: { conventional_deadlift: { source: 'coach' } },
+    };
+    const html = renderToStaticMarkup(
+      <PerformanceTargetSummary
+        target={strengthTarget()}
+        targetDate="2026-10-31"
+        performanceProfile={profile}
+        capacity={{ weeklyMinSessions: 1, weeklyTargetSessions: 2, weeklyMaxSessions: 3 }}
+      />,
+    );
+    expect(html).toContain('confidence: moderate');
+    expect(html).toContain('weeks remaining');
+    expect(html).toContain('weekly capacity 1-3 sessions (target 2)');
+    expect(html).toContain('target-specific frequency not yet known');
+    expect(html).toContain('baseline: estimated 1RM (coach)');
+  });
+
   it('omits the feasibility badge entirely when there is no target date', () => {
     const html = renderToStaticMarkup(
       <PerformanceTargetSummary target={strengthTarget()} targetDate={null} performanceProfile={null} />,
