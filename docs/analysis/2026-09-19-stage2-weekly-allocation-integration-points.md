@@ -74,7 +74,7 @@ properly.
 `app/src/engine/planner.ts`'s per-day forecast loop, fed by `app/src/engine/coverage.ts`'s
 `buildCoverageState` → `deriveRequiredRoleOccurrences`.
 
-Authority order actually implemented today, in `planner.ts`, per forecast day:
+Relevant allocation-to-ranking sequence implemented today in `planner.ts`, per forecast day:
 
 1. hard safety/eligibility gate;
 2. fatigue-tier gating;
@@ -83,9 +83,11 @@ Authority order actually implemented today, in `planner.ts`, per forecast day:
 4. normal `rankCandidates`/optimizer scoring on the surviving set.
 
 **`resolveWeeklyRoleReservations`'s search objective is "maximize count of fulfilled
-occurrences," with ties broken by `windowEnd → coverageKey → ordinal → id`. Every
-`RequiredRoleOccurrence` is weighted identically — there is no authority-tier dimension
-in the search itself.** Naively appending performance-target occurrences into the same
+occurrences." Every `RequiredRoleOccurrence` is weighted identically — there is no
+authority-tier dimension in the search itself.** Equal-cardinality branches do not replace
+the incumbent; determinism comes from the stable search traversal: occurrences start in
+deadline/key/ordinal/id order, the most constrained remaining occurrence is chosen next,
+and candidate assignments are ordered by date then template id. Naively appending performance-target occurrences into the same
 `occurrences` array the search consumes would let it trade a broad-adaptation slot for a
 performance-target slot (or vice versa) purely by count, violating the plan's required
 order (broad adaptation must outrank performance-target coverage). This is a genuine gap,
@@ -96,8 +98,9 @@ not a wiring detail, and needs a decision before implementation:
   objective function, which ADR-0018 governs.
 - **Option B — sequential reservation passes** (broad-adaptation first, performance-target
   second, over remaining unreserved dates only). Matches "priority order" semantics more
-  directly, but is exactly the "new greedy pass" the plan's PG7 section explicitly warns
-  against building without ADR sign-off.
+  directly, but creates a second priority pass outside today's single reservation search.
+  That risks the kind of bolt-on greedy authority the PG7 plan says not to introduce
+  without ADR sign-off.
 
 **Recommendation: resolve this with its own ADR amendment (or a new ADR referencing
 ADR-0018) before writing PG7's implementation**, not as an implementation-time judgment
@@ -141,8 +144,8 @@ Two separate, non-unified schemas exist for "this session contains exercise X":
 - **Pre-hoc (authored catalog), evergreen path:** `WorkoutDefinition.blocks[].steps[].exerciseId`
   (`app/src/workouts/models.ts`) — the schema `weeklyDosePacking.ts`'s
   `exactWorkoutIds`/`EVERGREEN_PACKING_COVERAGE` actually resolve through
-  (`WORKOUTS_BY_ID`). **No reusable production helper exists** to answer "does this
-  `WorkoutDefinition` contain exercise X" — every occurrence found is inline test code.
+  (`WORKOUTS_BY_ID`). **This audit found no reusable production helper** that answers "does this
+  `WorkoutDefinition` contain exercise X"; PG5.2 should not assume one already exists.
 - **Pre-hoc, external/authored-session path:** `app/src/engine/authoredSessionProfiles.ts`
   (`requiredExerciseSteps`, `classifyStep`) is the closest existing per-exercise
   classifier, but it is an explicit default-off, non-production measurement candidate
@@ -172,9 +175,9 @@ contains other decision-affecting engine surfaces unrelated to PG5-PG7. This is 
 a relevant subset, not an exhaustive transcription of the file.
 
 **Confirmed gap, still open after PG5.1:** `app/src/engine/weeklyAllocation.ts` — the
-file PG7 must actually change — is **not** on this list. Today that's masked because
-`planner.ts` (which *is* listed) is always touched alongside it in practice, but a PG7
-change isolated to `weeklyAllocation.ts` could slip past the drift gate undetected.
+file PG7 must actually change — is **not** on this list. Changes in adjacent listed files
+can incidentally trigger the gate, but a decision-affecting change isolated to
+`weeklyAllocation.ts` could slip past it undetected.
 **Add `weeklyAllocation.ts` to `decisionAffectingFiles` as part of PG7's own PR**, not
 speculatively before then.
 
@@ -194,8 +197,9 @@ speculatively before then.
   intended."
 - `simulate:update-baseline -- --reviewed` refuses to run without the literal
   `--reviewed` flag: a human must run `simulate:diff`, read the distribution deltas, and
-  only then intentionally re-baseline. **This is the actual human sign-off gate** for any
-  change that alters persisted recommendation distributions.
+  only then intentionally re-baseline. **This is an explicit review-acknowledgment gate**
+  for recommendation-distribution changes; the flag requires deliberate opt-in but cannot
+  itself prove that a human actually reviewed the diff.
 
 **Caveat confirmed against `app/src/engine/simulation/scenarios.ts`:** the committed
 simulation scenarios do not include a typed `performanceTarget`. `simulate:diff` showing zero
