@@ -64,6 +64,22 @@ function parseGoalForRead(raw: unknown, userId: string, documentPath: string): U
     return parsed.goal;
 }
 
+/**
+ * Same fail-closed semantics as parseGoalForRead, but scoped to ONE document: a single
+ * invalid/unresolvable goal (e.g. a performanceTarget referencing a since-removed
+ * exercise) must not take an entire multi-goal list down with it. Used by listGoals/
+ * getActiveGoals, which return every one of a user's goals in one call; getGoal/
+ * updateGoal intentionally keep throwing since those are already scoped to one document.
+ */
+function tryParseGoalForRead(raw: unknown, userId: string, documentPath: string): UserGoal | null {
+    try {
+        return parseGoalForRead(raw, userId, documentPath);
+    } catch (error) {
+        console.error(`Skipping invalid goal document at ${documentPath}:`, error);
+        return null;
+    }
+}
+
 /** category is never trusted as read directly from Firestore for a DATED goal -- it's
  *  recomputed here on every read, relative to *today*, so it can never drift as the
  *  target date approaches (see models.ts UserGoal.category and validation.ts
@@ -137,14 +153,16 @@ export class GoalService {
             );
 
             const querySnapshot = await getDocs(q);
-            const goals = querySnapshot.docs.map(goalDocument => ({
-                ...withResolvedCategory(parseGoalForRead(
-                    goalDocument.data(),
-                    userId,
-                    `users/${userId}/${this.collectionPath}/${goalDocument.id}`,
-                )),
-                id: goalDocument.id,
-            }));
+            const goals = querySnapshot.docs
+                .map(goalDocument => {
+                    const goal = tryParseGoalForRead(
+                        goalDocument.data(),
+                        userId,
+                        `users/${userId}/${this.collectionPath}/${goalDocument.id}`,
+                    );
+                    return goal ? { ...withResolvedCategory(goal), id: goalDocument.id } : null;
+                })
+                .filter((goal): goal is UserGoalWithId => goal !== null);
 
             return goals.sort((a, b) => {
                 const categoryCompare = a.category.localeCompare(b.category);
@@ -193,14 +211,16 @@ export class GoalService {
             );
 
             const querySnapshot = await getDocs(q);
-            const goals = querySnapshot.docs.map(goalDocument => ({
-                ...withResolvedCategory(parseGoalForRead(
-                    goalDocument.data(),
-                    userId,
-                    `users/${userId}/${this.collectionPath}/${goalDocument.id}`,
-                )),
-                id: goalDocument.id,
-            }));
+            const goals = querySnapshot.docs
+                .map(goalDocument => {
+                    const goal = tryParseGoalForRead(
+                        goalDocument.data(),
+                        userId,
+                        `users/${userId}/${this.collectionPath}/${goalDocument.id}`,
+                    );
+                    return goal ? { ...withResolvedCategory(goal), id: goalDocument.id } : null;
+                })
+                .filter((goal): goal is UserGoalWithId => goal !== null);
 
             return goals.sort((a, b) => {
                 const categoryCompare = a.category.localeCompare(b.category);

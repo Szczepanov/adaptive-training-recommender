@@ -178,13 +178,32 @@ describe('GoalService persistence shape', () => {
             await expect(new GoalService().getGoal('u1', eventGoal.id)).rejects.toThrow(/Invalid goal data.*Performance target is invalid/);
         });
 
-        it('rejects a semantically invalid persisted target from listGoals/getActiveGoals', async () => {
+        it('skips a semantically invalid persisted goal in listGoals/getActiveGoals rather than failing the whole list', async () => {
             firestore.getDocs.mockResolvedValue({
                 docs: [{ id: eventGoal.id, data: () => invalidPersistedGoal }],
             });
             const service = new GoalService();
-            await expect(service.listGoals('u1')).rejects.toThrow(/Invalid goal data.*Performance target is invalid/);
-            await expect(service.getActiveGoals('u1')).rejects.toThrow(/Invalid goal data.*Performance target is invalid/);
+            await expect(service.listGoals('u1')).resolves.toEqual([]);
+            await expect(service.getActiveGoals('u1')).resolves.toEqual([]);
+        });
+
+        it('keeps every other valid goal when only one of several is invalid (listGoals/getActiveGoals blast radius)', async () => {
+            const validGoalA = { ...eventGoal, id: 'goal-a', targetDate: null, category: 'long-term' as const, eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined };
+            const validGoalB = { ...eventGoal, id: 'goal-b', targetDate: null, category: 'short-term' as const, eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined };
+            firestore.getDocs.mockResolvedValue({
+                docs: [
+                    { id: validGoalA.id, data: () => validGoalA },
+                    { id: eventGoal.id, data: () => invalidPersistedGoal },
+                    { id: validGoalB.id, data: () => validGoalB },
+                ],
+            });
+            const service = new GoalService();
+
+            const listed = await service.listGoals('u1');
+            expect(listed.map(g => g.id).sort()).toEqual(['goal-a', 'goal-b']);
+
+            const active = await service.getActiveGoals('u1');
+            expect(active.map(g => g.id).sort()).toEqual(['goal-a', 'goal-b']);
         });
 
         it('surfaces semantically invalid persisted targets as INVALID in the stateful read API', async () => {

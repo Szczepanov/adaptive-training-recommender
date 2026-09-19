@@ -169,8 +169,7 @@ export class MetricObservationService {
             where('metricId', '==', metricId),
         ));
 
-        const revisions: MetricObservationRevision[] = [];
-        for (const headSnapshot of headsSnapshot.docs) {
+        const revisions = await Promise.all(headsSnapshot.docs.map(async headSnapshot => {
             const head = headSnapshot.data() as MetricObservationHead;
             assertValidMetricObservationHead(head);
             if (head.observationKey !== headSnapshot.id || head.metricId !== metricId) {
@@ -183,8 +182,8 @@ export class MetricObservationService {
             if (revision.metricId !== head.metricId || revision.assessmentAttemptId !== head.assessmentAttemptId) {
                 throw new Error(`Observation ${head.observationKey} head/revision identity mismatch`);
             }
-            revisions.push(revision);
-        }
+            return revision;
+        }));
         return revisions.sort((a, b) => a.observedAt.localeCompare(b.observedAt));
     }
 }
