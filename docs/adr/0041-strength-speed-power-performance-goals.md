@@ -79,8 +79,10 @@ and a versioned, comparability-aware observation/measurement-protocol system
    explicit and user-confirmed.
 
 9. **Typed-versus-legacy precedence is one rule, enforced at the goal
-   validation/persistence boundary** (`validateGoal` in
-   `app/src/engine/validationCore.ts`, `goalService.ts`):
+   validation plus service read/write boundary** (`validateGoal` in
+   `app/src/engine/validationCore.ts`, `goalService.ts`). `validateGoal` owns
+   structural shape only; `goalService` owns registry/domain semantics on both writes
+   and reads so a semantically invalid persisted target cannot reach UI/planning code:
    - a valid `performanceTarget` wins for display, progress and feasibility; conflicting
      legacy fields are ignored and cleared on write;
    - a malformed/unknown `performanceTarget` (unregistered metric, unresolvable subject,
@@ -122,6 +124,11 @@ and a versioned, comparability-aware observation/measurement-protocol system
     target-specific frequency.** Feasibility may say "at most N relevant exposures fit
     this schedule"; it must not assume N exposures were or will be specific to this
     target absent direct coverage evidence, which does not exist before Stage 2 lands.
+    Stage 1 surfaces `TrainingIntentProfile.weeklyCommitment` as that upper bound and
+    explicitly exposes target-specific frequency as unknown. That uncertainty reduces
+    confidence when it could change a plausible/stretch classification; if a target is
+    already unlikely under the optimistic upper-bound frequency, fewer actual exposures
+    cannot make it more plausible and do not reduce confidence in that conclusion.
 
 ## First vertical slice (Stage 1 scope)
 
@@ -135,11 +142,16 @@ implementation covers one target per family:
 Delivered in Stage 1: `app/src/observations/registry.ts` and
 `performanceTestingCatalog.ts` extensions, `app/src/engine/performanceTargetPolicy.ts`
 (target-eligibility policy + semantic validators), typed `UserGoal.performanceTarget`
-persistence and validation, `speed`/`power` `GoalDomain` values, athlete-facing target UX
-in `Goals.tsx`, honest current-evidence/progress projection
-(`app/src/engine/goalProgress.ts`), and an advisory feasibility assessor
-(`app/src/engine/goalFeasibility.ts`) backed by a registered Sports Knowledge Registry
-claim family for the strength band thresholds.
+persistence and validation, `speed`/`power` `GoalDomain` values, fail-closed semantic
+validation on both goal-service reads and writes, athlete-facing target UX in
+`Goals.tsx`, honest current-evidence/progress projection
+(`app/src/engine/goalProgress.ts`) with current speed/power observation revisions loaded
+through `metricObservationService`, and an advisory feasibility assessor
+(`app/src/engine/goalFeasibility.ts`) that consumes the existing weekly-commitment
+capacity bound. The strength bands are a versioned, low-certainty Sports Knowledge
+Registry heuristic; v2 uses <=1.3%/week as plausible and <=2.0%/week as stretch at the
+2+/week reference-capacity ceiling, while speed/power remain
+`insufficient_evidence` for rate-of-change plausibility.
 
 ## Consequences
 
