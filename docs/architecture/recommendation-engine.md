@@ -379,6 +379,39 @@ anything -- and the authored September event plan's taper block now actually req
 own `taper_sharpening`/`race_week_strength` coverage keys instead of only the generic
 `easy_aerobic` one.
 
+### Pre-event restrictions and taper-window strength/density guard (Issue #679, `optimizer.ts`)
+
+`evaluateRecoveryConstraints`'s D1-D7 pre-event restriction (strength blocked 1-3 days
+out, hard work 1-2 days, exhaustive work 3-7 days, plus the A-event post-event recovery
+window) now also gates `triathlon` events, not only `cycling_event`/`running_race` -- it
+previously never applied to a triathlon A/B event at all.
+
+A second, independent restriction now covers the *full* resolved taper window
+(`resolveEventTaper`, the same cycling/running/triathlon categories, not only the D1-D7
+band above -- `strength_meet` is deliberately excluded, since its own taper is a deload of
+strength work itself, not something to treat as nonessential): a Strength candidate is
+excluded once systemicCost exceeds `TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST`
+(0.35) or a strength touch already occurred earlier in the window (`TAPER_STRENGTH_TOUCH_LIMIT`
+= 1) -- "reduced nonessential strength" rather than an outright ban. A Moderate/Hard
+Endurance candidate is excluded when one already occurred within
+`TAPER_MODERATE_DENSITY_MIN_GAP_DAYS` (3) days, preventing a stacked, build-like block near
+the event while still allowing spaced, brief discipline-specific touches. Race-Specific
+Endurance is deliberately excluded from the density guard: event-specific work recurring
+near the event is expected, and a recent one is already tempered by benefit-score softening
+(anchor protection) rather than a hard exclusion.
+
+### Graduated recovery re-entry after severe adverse recovery (Issue #679, `planner.ts`)
+
+The severe-adverse-recovery graduated restriction (`isSevereAdverseRecoveryReadiness`,
+offsets 1-3: rest-only, then systemicCost-capped, then Hard/Race-Specific-excluding) used
+to snap straight to the unrestricted candidate pool at offset 4. A forecast day has no real
+future readiness reading to re-check, so a literal "wait for a fresh check-in" gate is not
+implementable for projected days -- instead, offsets 4-5 now stay capped to
+Rest/Mobility-Recovery or non-Strength candidates at `RECOVERY_REENTRY_MAX_SYSTEMIC_COST`
+(0.35), reaching the unrestricted pool only from offset 6 onward. This is the projected-day
+equivalent of requiring confirmed freshness before threshold or dense multi-day training
+resumes.
+
 ### Multi-event: one taper authority, multiple demand contributors (Phase 5.6, `periodization.ts`)
 
 `evaluatePeriodizationPhase` still picks exactly one governing event (the **taper
