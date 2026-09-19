@@ -244,9 +244,14 @@
 }
 
 .performance-target-progress.muted,
-.performance-target-authority.muted {
+.performance-target-authority.muted,
+.performance-target-feasibility-evidence.muted {
   color: var(--text-secondary);
   font-size: 0.8rem;
+}
+
+.performance-target-feasibility-evidence {
+  line-height: 1.35;
 }
 
 .performance-target-feasibility {
