@@ -243,8 +243,6 @@ other
 Domain is navigation/display taxonomy. Planning authority comes from the validated performance target and its reviewed target-to-planning mapping, not from the domain string alone.
 # Work plan
 
-# Work plan
-
 ## PG0 — architecture decision and acceptance boundary
 
 **Status:** [ ]
@@ -355,8 +353,6 @@ Cover:
 - comparison-series behavior for new protocols.
 
 **Done when:** code can prove what a target means using existing metric/protocol/test authorities without title parsing, user-entered units or duplicate registries.
-## PG2 — typed goal model, domain, validation and persistence
-
 ## PG2 — typed goal model, domain, validation and persistence
 
 **Status:** [ ]
