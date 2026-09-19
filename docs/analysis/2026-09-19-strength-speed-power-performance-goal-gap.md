@@ -339,7 +339,7 @@ A later conversion flow may offer a user-confirmed mapping when the destination 
 | PG-F10 | The observation metric and performance-testing catalogs are cycling-first but already versioned/comparability-aware | Extend them rather than creating duplicate metric/test registries |
 | PG-F11 | Direct test identity and weekly training coverage are different concepts | Do not force maximal testing as weekly goal coverage |
 | PG-F12 | Target value is an outcome, never current capacity or dose | Safety/readiness/autoregulation remain prescription authority |
-| PG-F13 | Current CI failure is trailing whitespace in the two new Markdown files | Normalize whitespace before pushing the revision |
+| PG-F13 | The prior docs-only CI failure was trailing whitespace in the two original Markdown files | The revised files are normalized before push |
 
 ---
 
