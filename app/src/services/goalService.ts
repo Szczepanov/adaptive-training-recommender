@@ -13,11 +13,12 @@ import { getErrorCode, getErrorMessage } from '../utils/errors';
 /**
  * ADR-0041: registry/subject-membership and domain/family consistency checks for a typed
  * performanceTarget are deliberately NOT part of validateGoal (see validationCore.ts's
- * comment) -- they live here, at the write boundary, so the observations metric/
- * performance-test registries never become reachable from validationCore.ts's callers
- * (some of which are production selection/ranking modules; see
- * observations/architecture.test.ts's OV1.4 boundary). A goal with an unresolvable or
- * domain-mismatched performanceTarget must never be persisted.
+ * comment) -- they live here, at the goal-service read/write boundary, so the
+ * observations metric/performance-test registries never become reachable from
+ * validationCore.ts's callers (some of which are production selection/ranking modules;
+ * see observations/architecture.test.ts's OV1.4 boundary). A goal with an unresolvable
+ * or domain-mismatched performanceTarget must neither be persisted nor escape a read as
+ * authoritative goal data.
  */
 function assertSemanticallyValidPerformanceTarget(goal: UserGoal): void {
     if (!goal.performanceTarget) return;
@@ -25,6 +26,30 @@ function assertSemanticallyValidPerformanceTarget(goal: UserGoal): void {
     if (!result.isValid) {
         throw new Error(`Performance target is invalid: ${result.message}`);
     }
+}
+
+function validateGoalForRead(raw: unknown, userId: string): { goal: UserGoal | null; error: string | null } {
+    const validation = validateGoal(raw);
+    if (!validation.isValid || !validation.data) {
+        return { goal: null, error: validation.errors.map(issue => `${issue.field}: ${issue.message}`).join('; ') || 'schema validation failed' };
+    }
+    if (validation.data.userId !== userId) {
+        return { goal: null, error: 'goal ownership does not match the requested user' };
+    }
+    try {
+        assertSemanticallyValidPerformanceTarget(validation.data);
+    } catch (error: unknown) {
+        return { goal: null, error: getErrorMessage(error) || 'performance target semantic validation failed' };
+    }
+    return { goal: validation.data, error: null };
+}
+
+function parseGoalForRead(raw: unknown, userId: string, documentPath: string): UserGoal {
+    const parsed = validateGoalForRead(raw, userId);
+    if (!parsed.goal) {
+        throw new Error(`Invalid goal data at ${documentPath}: ${parsed.error ?? 'unknown validation failure'}`);
+    }
+    return parsed.goal;
 }
 
 /** category is never trusted as read directly from Firestore for a DATED goal -- it's
@@ -100,10 +125,14 @@ export class GoalService {
             );
 
             const querySnapshot = await getDocs(q);
-            const goals = querySnapshot.docs.map(doc => withResolvedCategory({
-                ...doc.data(),
-                id: doc.id
-            } as UserGoal & { id: string }));
+            const goals = querySnapshot.docs.map(goalDocument => ({
+                ...withResolvedCategory(parseGoalForRead(
+                    goalDocument.data(),
+                    userId,
+                    `users/${userId}/${this.collectionPath}/${goalDocument.id}`,
+                )),
+                id: goalDocument.id,
+            }));
 
             return goals.sort((a, b) => {
                 const categoryCompare = a.category.localeCompare(b.category);
@@ -128,12 +157,12 @@ export class GoalService {
             const issues: DataIssue[] = [];
             const revisions: string[] = [];
             for (const goalDocument of querySnapshot.docs) {
-                const validation = validateGoal(goalDocument.data());
-                if (!validation.isValid || !validation.data || validation.data.userId !== userId) {
+                const validation = validateGoalForRead(goalDocument.data(), userId);
+                if (!validation.goal) {
                     issues.push({ code: 'schema-validation-failed', documentPath: `users/${userId}/${this.collectionPath}/${goalDocument.id}` });
                     continue;
                 }
-                goals.push({ ...withResolvedCategory(validation.data), id: goalDocument.id });
+                goals.push({ ...withResolvedCategory(validation.goal), id: goalDocument.id });
                 if (typeof goalDocument.data().updatedAt === 'string') revisions.push(`${goalDocument.id}:${goalDocument.data().updatedAt}`);
             }
             if (issues.length > 0) return { status: 'INVALID', issues };
@@ -152,10 +181,14 @@ export class GoalService {
             );
 
             const querySnapshot = await getDocs(q);
-            const goals = querySnapshot.docs.map(doc => withResolvedCategory({
-                ...doc.data(),
-                id: doc.id
-            } as UserGoal & { id: string }));
+            const goals = querySnapshot.docs.map(goalDocument => ({
+                ...withResolvedCategory(parseGoalForRead(
+                    goalDocument.data(),
+                    userId,
+                    `users/${userId}/${this.collectionPath}/${goalDocument.id}`,
+                )),
+                id: goalDocument.id,
+            }));
 
             return goals.sort((a, b) => {
                 const categoryCompare = a.category.localeCompare(b.category);
@@ -204,10 +237,14 @@ export class GoalService {
             const docSnap = await getDoc(docRef);
 
             if (docSnap.exists()) {
-                return withResolvedCategory({
-                    ...docSnap.data(),
-                    id: docSnap.id
-                } as UserGoalWithId);
+                return {
+                    ...withResolvedCategory(parseGoalForRead(
+                        docSnap.data(),
+                        userId,
+                        `users/${userId}/${this.collectionPath}/${docSnap.id}`,
+                    )),
+                    id: docSnap.id,
+                };
             }
             return null;
         } catch (error) {
