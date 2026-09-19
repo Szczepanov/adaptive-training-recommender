@@ -7,7 +7,7 @@ import { getLocalDateString } from '../utils/localDate';
 
 type UserGoalWithId = UserGoal & { id: string };
 import { validateGoal } from '../engine/validation';
-import { validatePerformanceTargetForDomain } from '../engine/performanceTargetPolicy';
+import { validatePerformanceTargetForDomain } from '../engine/performanceTargetValidation';
 import { getErrorCode, getErrorMessage } from '../utils/errors';
 
 /**

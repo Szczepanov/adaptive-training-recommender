@@ -2,6 +2,7 @@
 
 * **Status:** Accepted
 * **Date:** 2026-09-19
+* **Amended:** 2026-09-19 — PG5.1 non-authoritative planning projection and shared deterministic multi-target comparator
 * **Deciders:** Repository owner
 * **Source analysis:** [2026-09-19 strength/speed/power performance-goal gap analysis](../analysis/2026-09-19-strength-speed-power-performance-goal-gap.md), [strength, speed and power performance-goals plan](../plans/strength-speed-power-performance-goals.md)
 
@@ -68,11 +69,14 @@ and a versioned, comparability-aware observation/measurement-protocol system
    workouts count as training toward it?" That mapping (plan PG5/PG6) is deliberately
    out of scope for this ADR.
 
-7. **Active typed goals create no planning demand yet.** Stage 1 (this ADR) ships no
-   change to `evergreenStrategy.ts`, `optimizer.ts`, weekly allocation, or
-   `POLICY_VERSION`. A typed target is tracked and displayed but is not yet
-   recommendation-authoritative. Stage 2 (plan PG5-PG7) requires its own policy
-   verification, `POLICY_VERSION` bump, and simulation review before that changes.
+7. **Active typed goals create a typed planning projection but no planning authority.**
+   Stage 1 originally shipped no planning projection or `POLICY_VERSION` change. The
+   2026-09-19 PG5.1 amendment now populates `UserContext.performanceGoalDemands` at the
+   composition boundary and normalizes multiple demands with the shared deterministic
+   comparator (higher goal priority, earlier dated target, dated before open-ended, then
+   ascending stable goal id). Selection/ranking code still has no consumer of that field,
+   so recommendations remain unchanged. PG5.2-PG7 require their own policy verification
+   and simulation review before target coverage can affect allocation or session choice.
 
 8. **Legacy free-text targets remain non-authoritative.** No migration infers
    `targetMetric: 'deadlift'` as `conventional_deadlift`. Conversion, if ever added, is
@@ -141,7 +145,10 @@ implementation covers one target per family:
 
 Delivered in Stage 1: `app/src/observations/registry.ts` and
 `performanceTestingCatalog.ts` extensions, `app/src/engine/performanceTargetPolicy.ts`
-(target-eligibility policy + semantic validators), typed `UserGoal.performanceTarget`
+(pure target-eligibility policy, no observations/workouts imports) and
+`app/src/engine/performanceTargetValidation.ts` (semantic validators, split out in
+Stage 2/PG5.1 so the policy module stays reachable from production selection/ranking
+modules without violating the OV1.4 observations-isolation boundary), typed `UserGoal.performanceTarget`
 persistence and validation, `speed`/`power` `GoalDomain` values, fail-closed semantic
 validation on both goal-service reads and writes, athlete-facing target UX in
 `Goals.tsx`, honest current-evidence/progress projection
@@ -159,14 +166,24 @@ Registry heuristic; v2 uses <=1.3%/week as plausible and <=2.0%/week as stretch 
 about what it understood; the architecture generalizes to any registered
 metric/exercise/test combination without a new goal subsystem per lift or test.
 
-**Negative / deferred:** Stage 1 ships no recommendation-authority change. An athlete who
+**Negative / deferred:** PG5.1 still grants no recommendation authority. An athlete who
 sets a typed target will not yet see the weekly plan specialize for it — the UI must say
-so explicitly. That gap closes only when Stage 2 (plan PG5-PG7) is separately designed,
-policy-reviewed, `POLICY_VERSION`-bumped and simulation-verified.
+so explicitly. That gap closes only when PG5.2-PG7 are separately designed,
+policy-reviewed and simulation-verified; recommendation-affecting changes must satisfy
+the repository's `POLICY_VERSION` drift gate.
 
-## Stage 2 (explicitly not decided here)
+## Stage 2 (PG5.1 projection contract accepted; recommendation authority still undecided)
 
-Whether/how a typed target contributes to weekly allocation, ranking and coverage
-(plan PG5-PG7), and whether/how formal outcome evaluation (PG8) or progression automation
+PG5.1 now accepts the non-authoritative composition contract only: every active,
+semantically validated typed goal with a stable id maps to a `PerformanceGoalDemand`,
+and multiple demands are normalized by the exported shared comparator required by the
+plan (higher `UserGoal.priority`, earlier non-null `targetDate`, dated before
+open-ended, then ascending stable `goalId`). Firestore/query/input array order and
+target magnitude are not tie-break authority.
+
+The projection is populated but deliberately unread by recommendation selection/ranking.
+Whether/how target coverage contributes to weekly allocation, ranking and explainability
+(PG5.2-PG7), and whether/how formal outcome evaluation (PG8) or progression automation
 (PG9) is built, remain open and require their own ADR amendments or follow-on ADRs plus
-policy verification. Nothing in this ADR should be read as pre-authorizing that work.
+policy verification. Nothing in this amendment pre-authorizes those recommendation
+authority changes.

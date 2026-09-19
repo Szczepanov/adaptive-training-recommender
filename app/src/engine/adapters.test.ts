@@ -11,6 +11,7 @@ import type {
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
     TrainingSettings,
+    UserGoal,
     UserPreferences,
 } from './models';
 
@@ -276,6 +277,67 @@ describe('mapContextFromGoalsAndTrainingSettings (Phase 5.4 tissue response wiri
 
         const forecastContext = mapContextFromGoalsAndTrainingSettings([], settings, null, '2026-08-08', null);
         expect(forecastContext.constraints.restrictedModalities).not.toContain('Running');
+    });
+});
+
+// Stage 2/PG5.1 (ADR-0041): typed performance-goal projection. See
+// performanceGoalDemand.architecture.test.ts for the companion structural guard that
+// nothing in production selection/ranking reads this field yet.
+describe('mapContextFromGoalsAndTrainingSettings: performanceGoalDemands (Stage 2/PG5.1)', () => {
+    function testGoal(overrides: Partial<UserGoal> & { id?: string } = {}): UserGoal & { id?: string } {
+        return {
+            userId: 'athlete', category: 'long-term', domain: 'strength', title: 'Deadlift goal',
+            priority: 4, status: 'active', schemaVersion: 1,
+            createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+            id: 'goal-1',
+            performanceTarget: {
+                kind: 'performance_metric',
+                metricId: 'strength_1rm_kg',
+                subjectRef: { kind: 'exercise', exerciseId: 'conventional_deadlift' },
+                targetValue: 220,
+            },
+            ...overrides,
+        };
+    }
+
+    it('projects an active typed goal into performanceGoalDemands', () => {
+        const context = mapContextFromGoalsAndTrainingSettings([testGoal()], testTrainingSettings(), null, '2026-08-08');
+        expect(context.performanceGoalDemands).toEqual([{
+            goalId: 'goal-1',
+            metricId: 'strength_1rm_kg',
+            subjectRef: { kind: 'exercise', exerciseId: 'conventional_deadlift' },
+            family: 'strength',
+            targetValue: 220,
+            priority: 4,
+            targetDate: null,
+        }]);
+    });
+
+    it('produces no demand for a legacy goal with no typed target, or an inactive goal', () => {
+        const legacy = mapContextFromGoalsAndTrainingSettings(
+            [testGoal({ performanceTarget: undefined, targetMetric: 'deadlift', targetValue: 220, targetUnit: 'kg' })],
+            testTrainingSettings(), null, '2026-08-08',
+        );
+        expect(legacy.performanceGoalDemands).toEqual([]);
+
+        const paused = mapContextFromGoalsAndTrainingSettings(
+            [testGoal({ status: 'paused' })], testTrainingSettings(), null, '2026-08-08',
+        );
+        expect(paused.performanceGoalDemands).toEqual([]);
+    });
+
+    it('changes only performanceGoalDemands in the returned UserContext -- everything else stays byte-identical', () => {
+        const withoutTarget = mapContextFromGoalsAndTrainingSettings(
+            [testGoal({ performanceTarget: undefined })], testTrainingSettings(), null, '2026-08-08',
+        );
+        const withTarget = mapContextFromGoalsAndTrainingSettings(
+            [testGoal()], testTrainingSettings(), null, '2026-08-08',
+        );
+
+        expect(withoutTarget.performanceGoalDemands).toEqual([]);
+        expect(withTarget.performanceGoalDemands).toHaveLength(1);
+        expect({ ...withTarget, performanceGoalDemands: undefined })
+            .toEqual({ ...withoutTarget, performanceGoalDemands: undefined });
     });
 });
 

@@ -19,6 +19,7 @@ import type {
 } from './models';
 import { injuryRegionMappingFamily, resolveInjuryPolicy } from './injuryPolicy';
 import { goalToUserEvent } from './periodization';
+import { mapGoalsToPerformanceGoalDemands } from './performanceGoalDemand';
 import { getLocalDateString } from '../utils/localDate';
 import type { HealthSymptomType } from './healthAnomalyModels';
 
@@ -465,5 +466,6 @@ export function mapContextFromGoalsAndTrainingSettings(
             clinicalEnvelopeSources: resolveClinicalEnvelopeSources(todaysCheckin),
         },
         trainingSettings,
+        performanceGoalDemands: mapGoalsToPerformanceGoalDemands(goals),
     };
 }

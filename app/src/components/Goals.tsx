@@ -11,11 +11,11 @@ import { getErrorMessage } from '../utils/errors';
 import { SCREEN_LABELS } from '../types/navigation';
 import {
     PERFORMANCE_TARGET_POLICIES,
-    validatePerformanceTargetForDomain,
     type GoalPerformanceTarget,
     type PerformanceGoalFamily,
     type PerformanceSubjectRef,
 } from '../engine/performanceTargetPolicy';
+import { validatePerformanceTargetForDomain } from '../engine/performanceTargetValidation';
 import { getMetricDefinition } from '../observations/registry';
 import type { MetricObservationRevision } from '../observations/models';
 import { PERFORMANCE_TEST_DEFINITIONS } from '../observations/performanceTestingCatalog';
