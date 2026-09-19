@@ -216,8 +216,6 @@ This preserves one measurement vocabulary and one protocol/comparability authori
 
 ## 6. Outcome identity and training coverage are deliberately different
 
-## 6. Outcome identity and training coverage are deliberately different
-
 A goal test is not automatically a workout prescription.
 
 Examples:
