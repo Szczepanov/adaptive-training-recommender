@@ -23,6 +23,7 @@ const DIMENSIONS = [
     { id: 'warmup_revision', valueKind: 'identifier', description: 'Warm-up prescription revision.' },
     { id: 'feedback_rule', valueKind: 'identifier', description: 'Feedback/pacing information allowed during the test.' },
     { id: 'weather_note', valueKind: 'text', description: 'Contextual weather note when weather is not series-defining.' },
+    { id: 'timing_method', valueKind: 'identifier', description: 'Timing method used to capture an elapsed-time result (e.g. timing gates, radar/laser, handheld stopwatch); method materially affects comparability.' },
 ] as const satisfies readonly ComparisonDimensionDefinition[];
 
 const DIMENSION_BY_ID = new Map<ComparisonDimension, ComparisonDimensionDefinition>(

@@ -65,3 +65,14 @@ describe('PerformanceSections Garmin race predictions', () => {
     expect(html).toContain('Pace 6:50/mi');
   });
 });
+
+describe('PerformanceSections strength e1RM picker (ADR-0041/PG4.1)', () => {
+  it('offers every strength-1RM performance-goal-eligible exercise, not a hardcoded three-lift list', () => {
+    const html = render('km');
+
+    expect(html).toContain('Conventional Deadlift e1RM (kg)');
+    expect(html).toContain('Front Squat e1RM (kg)');
+    expect(html).toContain('Bench Press e1RM (kg)');
+    expect(html).toContain('Romanian Deadlift e1RM (kg)');
+  });
+});

@@ -7,7 +7,25 @@ import { getLocalDateString } from '../utils/localDate';
 
 type UserGoalWithId = UserGoal & { id: string };
 import { validateGoal } from '../engine/validation';
+import { validatePerformanceTargetForDomain } from '../engine/performanceTargetPolicy';
 import { getErrorCode, getErrorMessage } from '../utils/errors';
+
+/**
+ * ADR-0041: registry/subject-membership and domain/family consistency checks for a typed
+ * performanceTarget are deliberately NOT part of validateGoal (see validationCore.ts's
+ * comment) -- they live here, at the write boundary, so the observations metric/
+ * performance-test registries never become reachable from validationCore.ts's callers
+ * (some of which are production selection/ranking modules; see
+ * observations/architecture.test.ts's OV1.4 boundary). A goal with an unresolvable or
+ * domain-mismatched performanceTarget must never be persisted.
+ */
+function assertSemanticallyValidPerformanceTarget(goal: UserGoal): void {
+    if (!goal.performanceTarget) return;
+    const result = validatePerformanceTargetForDomain(goal.performanceTarget, goal.domain);
+    if (!result.isValid) {
+        throw new Error(`Performance target is invalid: ${result.message}`);
+    }
+}
 
 /** category is never trusted as read directly from Firestore for a DATED goal -- it's
  *  recomputed here on every read, relative to *today*, so it can never drift as the
@@ -217,6 +235,7 @@ export class GoalService {
             }
 
             const validatedGoal = validation.data!;
+            assertSemanticallyValidPerformanceTarget(validatedGoal);
 
             // Create new document. `category` is intentionally left out of what's
             // persisted for a dated goal (see stripDerivedCategoryForWrite) -- the
@@ -262,6 +281,7 @@ export class GoalService {
             }
 
             const validatedGoal = validation.data!;
+            assertSemanticallyValidPerformanceTarget(validatedGoal);
 
             // Merge writes must remove fields that are no longer valid rather than leave
             // a former event able to reappear after a reload or future date edit.

@@ -1,12 +1,57 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { goalService } from '../services/goalService';
+import { preferencesService } from '../services/preferencesService';
 import type { UserGoal, GoalCategory, GoalDomain, GoalStatus, UserEvent } from '../engine/models';
 import { deriveGoalCategory, deriveEventPriority, getDaysToEvent, goalToUserEvent, evaluatePeriodizationPhase } from '../engine/periodization';
 import { EVENT_PRESETS } from '../engine/eventPresets';
 import { getLocalDateString } from '../utils/localDate';
 import { getErrorMessage } from '../utils/errors';
 import { SCREEN_LABELS } from '../types/navigation';
+import {
+    PERFORMANCE_TARGET_POLICIES,
+    validatePerformanceTargetForDomain,
+    type GoalPerformanceTarget,
+    type PerformanceGoalFamily,
+    type PerformanceSubjectRef,
+} from '../engine/performanceTargetPolicy';
+import { getMetricDefinition } from '../observations/registry';
+import { PERFORMANCE_TEST_DEFINITIONS } from '../observations/performanceTestingCatalog';
+import { EXERCISES_BY_ID } from '../workouts/exercises';
+import { resolveGoalProgress, type GoalProgressResult } from '../engine/goalProgress';
+import { assessGoalFeasibility, type GoalFeasibilityAssessment } from '../engine/goalFeasibility';
+import type { AthletePerformanceProfile } from '../workouts/models';
 import './Goals.css';
+
+const FAMILY_LABELS: Record<PerformanceGoalFamily, string> = { strength: 'Strength', speed: 'Speed', power: 'Power' };
+
+function subjectDisplayName(subjectRef: PerformanceSubjectRef): string {
+    if (subjectRef.kind === 'exercise') {
+        return EXERCISES_BY_ID.get(subjectRef.exerciseId)?.name ?? subjectRef.exerciseId;
+    }
+    return PERFORMANCE_TEST_DEFINITIONS.find(test => test.id === subjectRef.performanceTestId)?.sessionDefinition.title
+        ?? subjectRef.performanceTestId;
+}
+
+function performanceTargetsForFamily(family: PerformanceGoalFamily) {
+    return PERFORMANCE_TARGET_POLICIES.filter(policy => policy.family === family);
+}
+
+function eligibleSubjectsForMetric(metricId: string): { subjectRef: PerformanceSubjectRef; label: string }[] {
+    const policy = PERFORMANCE_TARGET_POLICIES.find(p => p.metricId === metricId);
+    if (!policy) return [];
+    if (policy.subjectKind === 'exercise') {
+        return (policy.eligibleExerciseIds ?? [])
+            .map(exerciseId => ({ subjectRef: { kind: 'exercise' as const, exerciseId }, label: EXERCISES_BY_ID.get(exerciseId)?.name ?? exerciseId }));
+    }
+    return PERFORMANCE_TEST_DEFINITIONS
+        .filter(test => test.protocol.metricIds.includes(metricId))
+        .map(test => ({ subjectRef: { kind: 'performance_test' as const, performanceTestId: test.id }, label: test.sessionDefinition.title }));
+}
+
+function formatMetricValue(value: number, unit: string): string {
+    const rounded = Number.isInteger(value) ? value.toString() : value.toFixed(2);
+    return `${rounded} ${unit}`;
+}
 
 const EVENT_CATEGORY_LABELS: Record<UserEvent['category'], string> = {
   cycling_event: 'Cycling event',
@@ -39,6 +84,7 @@ export function Goals({ userId }: GoalsProps) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingGoal, setEditingGoal] = useState<UserGoalWithId | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'archived'>('active');
+  const [performanceProfile, setPerformanceProfile] = useState<AthletePerformanceProfile | null>(null);
 
   const loadGoals = useCallback(async () => {
     try {
@@ -56,6 +102,14 @@ export function Goals({ userId }: GoalsProps) {
   useEffect(() => {
     loadGoals();
   }, [loadGoals]);
+
+  useEffect(() => {
+    let cancelled = false;
+    preferencesService.getPreferences(userId)
+      .then(prefs => { if (!cancelled) setPerformanceProfile(prefs?.performanceProfile ?? null); })
+      .catch(() => { if (!cancelled) setPerformanceProfile(null); });
+    return () => { cancelled = true; };
+  }, [userId]);
 
   const handlePauseGoal = async (goalId: string) => {
     try {
@@ -307,7 +361,15 @@ export function Goals({ userId }: GoalsProps) {
                     )}
                   </div>
 
-                  {goal.targetMetric && (
+                  {goal.performanceTarget && (
+                    <PerformanceTargetSummary
+                      target={goal.performanceTarget}
+                      targetDate={goal.targetDate ?? null}
+                      performanceProfile={performanceProfile}
+                    />
+                  )}
+
+                  {!goal.performanceTarget && goal.targetMetric && (
                     <div className="goal-target">
                       Target: {goal.targetValue} {goal.targetUnit}
                     </div>
@@ -395,15 +457,194 @@ export function Goals({ userId }: GoalsProps) {
   );
 }
 
+interface PerformanceTargetSummaryProps {
+  target: GoalPerformanceTarget;
+  targetDate: string | null;
+  performanceProfile: AthletePerformanceProfile | null;
+}
+
+const PLAUSIBILITY_LABELS: Record<GoalFeasibilityAssessment['plausibility'], string> = {
+  already_achieved: 'Already achieved',
+  plausible: 'Plausible',
+  stretch: 'Stretch',
+  unlikely: 'Unlikely',
+  insufficient_evidence: 'Not enough evidence yet',
+};
+
+export function PerformanceTargetSummary({ target, targetDate, performanceProfile }: PerformanceTargetSummaryProps) {
+  const metric = getMetricDefinition(target.metricId);
+  const subjectLabel = subjectDisplayName(target.subjectRef);
+
+  const progress: GoalProgressResult = useMemo(
+    () => resolveGoalProgress(target, { athletePerformanceProfile: performanceProfile }),
+    [target, performanceProfile],
+  );
+
+  const feasibility: GoalFeasibilityAssessment | null = useMemo(
+    () => (targetDate ? assessGoalFeasibility(target, progress, { targetDate }) : null),
+    [target, progress, targetDate],
+  );
+
+  return (
+    <div className="goal-target performance-target">
+      <div className="performance-target-headline">
+        {subjectLabel} — {formatMetricValue(target.targetValue, metric.unit)} {metric.displayName}
+      </div>
+      {progress.hasComparableEvidence && progress.currentValue !== null ? (
+        <div className="performance-target-progress">
+          Current {progress.currentEvidenceKind === 'estimated_1rm' ? 'estimate' : 'result'}: {formatMetricValue(progress.currentValue, metric.unit)}
+          {progress.alreadyAchieved
+            ? ' — target already met'
+            : progress.gap !== null ? ` — gap ${formatMetricValue(Math.abs(progress.gap), metric.unit)}` : ''}
+        </div>
+      ) : (
+        <div className="performance-target-progress muted">
+          {target.subjectRef.kind === 'exercise'
+            ? 'No recorded e1RM yet for this exercise.'
+            : 'No comparable logged result yet for this test.'}
+        </div>
+      )}
+      <div className="performance-target-authority muted">
+        This target does not yet change your weekly plan. Training dose is still set by your current capability, readiness and safety rules.
+      </div>
+      {feasibility && (
+        <div className={`performance-target-feasibility feasibility-${feasibility.plausibility}`}>
+          Goal feasibility: {PLAUSIBILITY_LABELS[feasibility.plausibility]}
+          {feasibility.plausibility !== 'insufficient_evidence' && feasibility.plausibility !== 'already_achieved'
+            ? ` (confidence: ${feasibility.confidence.level})`
+            : ''}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface GoalModalProps {
   goal: UserGoalWithId | null;
   onSave: (data: GoalInput) => void;
   onClose: () => void;
 }
 
+function familyForMetric(metricId: string | null | undefined): PerformanceGoalFamily | null {
+  return PERFORMANCE_TARGET_POLICIES.find(p => p.metricId === metricId)?.family ?? null;
+}
+
+interface PerformanceTargetFieldsChange {
+  performanceFamily?: PerformanceGoalFamily;
+  performanceMetricId?: string;
+  performanceSubjectKey?: string;
+  performanceTargetValue?: string;
+  domain?: GoalDomain;
+}
+
+interface PerformanceTargetFieldsProps {
+  family: PerformanceGoalFamily;
+  metricId: string;
+  subjectKey: string;
+  targetValue: string;
+  error: string | null;
+  onChange: (next: PerformanceTargetFieldsChange) => void;
+}
+
+function PerformanceTargetFields({ family, metricId, subjectKey, targetValue, error, onChange }: PerformanceTargetFieldsProps) {
+  const metrics = performanceTargetsForFamily(family);
+  const subjects = eligibleSubjectsForMetric(metricId);
+  const metric = metricId ? getMetricDefinition(metricId) : null;
+
+  return (
+    <>
+      <div className="form-row">
+        <div className="form-group">
+          <label htmlFor="performance-target-family">Family</label>
+          <select
+            id="performance-target-family"
+            value={family}
+            onChange={(e) => {
+              const nextFamily = e.target.value as PerformanceGoalFamily;
+              const nextMetrics = performanceTargetsForFamily(nextFamily);
+              const nextMetricId = nextMetrics[0]?.metricId ?? '';
+              const nextSubjects = eligibleSubjectsForMetric(nextMetricId);
+              onChange({
+                performanceFamily: nextFamily,
+                performanceMetricId: nextMetricId,
+                performanceSubjectKey: nextSubjects[0] ? JSON.stringify(nextSubjects[0].subjectRef) : '',
+                domain: nextFamily,
+              });
+            }}
+          >
+            {(Object.keys(FAMILY_LABELS) as PerformanceGoalFamily[]).map(f => (
+              <option key={f} value={f}>{FAMILY_LABELS[f]}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="performance-target-metric">Metric</label>
+          <select
+            id="performance-target-metric"
+            value={metricId}
+            onChange={(e) => {
+              const nextMetricId = e.target.value;
+              const nextSubjects = eligibleSubjectsForMetric(nextMetricId);
+              onChange({
+                performanceMetricId: nextMetricId,
+                performanceSubjectKey: nextSubjects[0] ? JSON.stringify(nextSubjects[0].subjectRef) : '',
+              });
+            }}
+          >
+            {metrics.map(policy => (
+              <option key={policy.metricId} value={policy.metricId}>{getMetricDefinition(policy.metricId).displayName}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="form-row">
+        <div className="form-group">
+          <label htmlFor="performance-target-subject">Exercise / test</label>
+          <select
+            id="performance-target-subject"
+            value={subjectKey}
+            onChange={(e) => onChange({ performanceSubjectKey: e.target.value })}
+          >
+            {subjects.map(subject => (
+              <option key={JSON.stringify(subject.subjectRef)} value={JSON.stringify(subject.subjectRef)}>{subject.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="performance-target-value">Target value {metric ? `(${metric.unit})` : ''}</label>
+          <input
+            id="performance-target-value"
+            type="number"
+            step="any"
+            value={targetValue}
+            onChange={(e) => onChange({ performanceTargetValue: e.target.value })}
+            placeholder={metric ? `e.g. value in ${metric.unit}` : ''}
+          />
+        </div>
+      </div>
+
+      {error && <p className="field-hint performance-target-error" role="alert">{error}</p>}
+      <p className="field-hint">
+        This is the outcome you want to reach. Your current capability, readiness and safety rules -- not this number -- decide today&apos;s training.
+      </p>
+    </>
+  );
+}
+
 function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
   const today = getLocalDateString();
   const modalRef = React.useRef<HTMLDivElement>(null);
+
+  const initialFamily = familyForMetric(goal?.performanceTarget?.metricId) ?? 'strength';
+  const initialMetrics = performanceTargetsForFamily(initialFamily);
+  const initialMetricId = goal?.performanceTarget?.metricId || initialMetrics[0]?.metricId || '';
+  const initialSubjects = eligibleSubjectsForMetric(initialMetricId);
+  const initialSubjectKey = goal?.performanceTarget
+    ? JSON.stringify(goal.performanceTarget.subjectRef)
+    : (initialSubjects[0] ? JSON.stringify(initialSubjects[0].subjectRef) : '');
 
   const [formData, setFormData] = useState({
     title: goal?.title || '',
@@ -422,8 +663,14 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
     targetOutcome: goal?.targetOutcome || '',
     targetMetric: goal?.targetMetric || '',
     targetValue: goal?.targetValue || '',
-    targetUnit: goal?.targetUnit || ''
+    targetUnit: goal?.targetUnit || '',
+    usePerformanceTarget: !!goal?.performanceTarget,
+    performanceFamily: initialFamily,
+    performanceMetricId: initialMetricId,
+    performanceSubjectKey: initialSubjectKey,
+    performanceTargetValue: goal?.performanceTarget?.targetValue?.toString() || '',
   });
+  const [performanceTargetError, setPerformanceTargetError] = useState<string | null>(null);
 
   useEffect(() => {
     document.body.style.overflow = 'hidden';
@@ -469,18 +716,36 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
 
     const isDatedEvent = !formData.isOpenEnded && formData.isEvent && formData.eventCategory;
 
+    let performanceTarget: GoalPerformanceTarget | null = null;
+    if (formData.usePerformanceTarget && formData.performanceMetricId && formData.performanceSubjectKey && formData.performanceTargetValue) {
+      const candidate: GoalPerformanceTarget = {
+        kind: 'performance_metric',
+        metricId: formData.performanceMetricId,
+        subjectRef: JSON.parse(formData.performanceSubjectKey) as PerformanceSubjectRef,
+        targetValue: Number(formData.performanceTargetValue),
+      };
+      const result = validatePerformanceTargetForDomain(candidate, formData.performanceFamily);
+      if (!result.isValid) {
+        setPerformanceTargetError(result.message);
+        return;
+      }
+      performanceTarget = candidate;
+    }
+    setPerformanceTargetError(null);
+
     const data = {
       title: formData.title,
       description: formData.description || null,
       category: formData.isOpenEnded
         ? formData.category
         : deriveGoalCategory(formData.targetDate, today),
-      domain: formData.domain,
+      domain: performanceTarget ? formData.performanceFamily : formData.domain,
       priority: formData.priority,
       status: formData.status,
-      targetMetric: formData.targetMetric || null,
-      targetValue: formData.targetValue ? Number(formData.targetValue) : null,
-      targetUnit: formData.targetUnit || null,
+      performanceTarget,
+      targetMetric: performanceTarget ? null : (formData.targetMetric || null),
+      targetValue: performanceTarget ? null : (formData.targetValue ? Number(formData.targetValue) : null),
+      targetUnit: performanceTarget ? null : (formData.targetUnit || null),
       targetDate: formData.isOpenEnded ? null : (formData.targetDate || null),
       targetOutcome: formData.targetOutcome || null,
       eventCategory: isDatedEvent ? (formData.eventCategory as UserEvent['category']) : null,
@@ -665,11 +930,15 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
           <div className="form-group">
             <label>Domain</label>
             <select
-              value={formData.domain}
+              value={formData.usePerformanceTarget ? formData.performanceFamily : formData.domain}
+              disabled={formData.usePerformanceTarget}
               onChange={(e) => setFormData({...formData, domain: e.target.value as GoalDomain})}
+              title={formData.usePerformanceTarget ? 'Derived from the performance target family below' : undefined}
             >
               <option value="endurance">Endurance</option>
               <option value="strength">Strength</option>
+              <option value="speed">Speed</option>
+              <option value="power">Power</option>
               <option value="mobility">Mobility</option>
               <option value="weight_loss">Weight Loss</option>
               <option value="general_fitness">General Fitness</option>
@@ -709,38 +978,78 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
           )}
 
           <div className="form-section">
-            <h3>Optional Target</h3>
-            <div className="form-row">
-              <div className="form-group">
-                <label>Metric</label>
+            <div className="form-group checkbox-group">
+              <label>
                 <input
-                  type="text"
-                  value={formData.targetMetric}
-                  onChange={(e) => setFormData({...formData, targetMetric: e.target.value})}
-                  placeholder="e.g., 5k time"
+                  type="checkbox"
+                  checked={formData.usePerformanceTarget}
+                  onChange={(e) => {
+                    const usePerformanceTarget = e.target.checked;
+                    if (!usePerformanceTarget) {
+                      setFormData({ ...formData, usePerformanceTarget });
+                      return;
+                    }
+                    const metrics = performanceTargetsForFamily(formData.performanceFamily);
+                    const metricId = metrics[0]?.metricId ?? '';
+                    const subjects = eligibleSubjectsForMetric(metricId);
+                    setFormData({
+                      ...formData,
+                      usePerformanceTarget,
+                      domain: formData.performanceFamily,
+                      performanceMetricId: metricId,
+                      performanceSubjectKey: subjects[0] ? JSON.stringify(subjects[0].subjectRef) : '',
+                    });
+                  }}
                 />
-              </div>
-
-              <div className="form-group">
-                <label>Value</label>
-                <input
-                  type="number"
-                  value={formData.targetValue}
-                  onChange={(e) => setFormData({...formData, targetValue: e.target.value})}
-                  placeholder="e.g., 25"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Unit</label>
-                <input
-                  type="text"
-                  value={formData.targetUnit}
-                  onChange={(e) => setFormData({...formData, targetUnit: e.target.value})}
-                  placeholder="e.g., minutes"
-                />
-              </div>
+                {' '}Measurable strength, speed or power target
+              </label>
             </div>
+
+            {formData.usePerformanceTarget ? (
+              <PerformanceTargetFields
+                family={formData.performanceFamily}
+                metricId={formData.performanceMetricId}
+                subjectKey={formData.performanceSubjectKey}
+                targetValue={formData.performanceTargetValue}
+                error={performanceTargetError}
+                onChange={(next) => setFormData({ ...formData, ...next })}
+              />
+            ) : (
+              <>
+                <h3>Optional Target</h3>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Metric</label>
+                    <input
+                      type="text"
+                      value={formData.targetMetric}
+                      onChange={(e) => setFormData({...formData, targetMetric: e.target.value})}
+                      placeholder="e.g., 5k time"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Value</label>
+                    <input
+                      type="number"
+                      value={formData.targetValue}
+                      onChange={(e) => setFormData({...formData, targetValue: e.target.value})}
+                      placeholder="e.g., 25"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Unit</label>
+                    <input
+                      type="text"
+                      value={formData.targetUnit}
+                      onChange={(e) => setFormData({...formData, targetUnit: e.target.value})}
+                      placeholder="e.g., minutes"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="form-actions">

@@ -227,6 +227,55 @@
   margin-top: 0.25rem;
 }
 
+.performance-target {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.5rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
+}
+
+.performance-target-headline {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.performance-target-progress.muted,
+.performance-target-authority.muted {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.performance-target-feasibility {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-top: 0.15rem;
+}
+
+.performance-target-feasibility.feasibility-plausible,
+.performance-target-feasibility.feasibility-already_achieved {
+  color: #2ecc71;
+}
+
+.performance-target-feasibility.feasibility-stretch {
+  color: #f39c12;
+}
+
+.performance-target-feasibility.feasibility-unlikely {
+  color: #e74c3c;
+}
+
+.performance-target-feasibility.feasibility-insufficient_evidence {
+  color: var(--text-secondary);
+}
+
+.performance-target-error {
+  color: #e74c3c;
+}
+
 .empty-category,
 .empty-state {
   text-align: center;

@@ -7,14 +7,23 @@ import {
 } from './registry';
 
 describe('OV1 metric registry', () => {
-    it('ships only the bounded cycling-first v1 registry', () => {
+    it('ships the bounded v1 registry', () => {
         expect(listMetricDefinitions().map(metric => metric.id)).toEqual([
             'cycling_tt_20m_mean_power_w',
             'cycling_tt_4m_mean_power_w',
             'cycling_submax_mean_hr_bpm',
             'cycling_submax_rpe',
+            'strength_1rm_kg',
+            'sprint_elapsed_time_s',
+            'cycling_5s_peak_power_w',
         ]);
         expect(getMetricDefinition('cycling_tt_20m_mean_power_w').direction).toBe('higher_is_better');
+    });
+
+    it('registers the strength/speed/power performance-goal metrics with the correct direction', () => {
+        expect(getMetricDefinition('strength_1rm_kg')).toMatchObject({ domain: 'strength', unit: 'kg', direction: 'higher_is_better' });
+        expect(getMetricDefinition('sprint_elapsed_time_s')).toMatchObject({ domain: 'field', unit: 's', direction: 'lower_is_better' });
+        expect(getMetricDefinition('cycling_5s_peak_power_w')).toMatchObject({ domain: 'cycling', unit: 'W', direction: 'higher_is_better' });
     });
 
     it('requires the metric exact unit', () => {

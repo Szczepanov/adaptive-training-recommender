@@ -35,7 +35,8 @@ export type ComparisonDimension =
     | 'start_mode'
     | 'warmup_revision'
     | 'feedback_rule'
-    | 'weather_note';
+    | 'weather_note'
+    | 'timing_method';
 
 export type ComparisonContextValue = string | number | boolean;
 

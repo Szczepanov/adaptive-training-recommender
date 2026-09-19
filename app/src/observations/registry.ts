@@ -37,6 +37,33 @@ const METRICS = [
         valueKind: 'scalar',
         description: 'Session/perceived exertion recorded for a declared submaximal cycling protocol; contextual evidence in v1.',
     },
+    {
+        id: 'strength_1rm_kg',
+        displayName: 'One-repetition maximum',
+        domain: 'strength',
+        unit: 'kg',
+        direction: 'higher_is_better',
+        valueKind: 'scalar',
+        description: 'One-repetition maximum load for a canonical strength exercise, in kilograms. Tested and estimated 1RM remain distinguishable via ObservationValidity/source rather than this metric definition.',
+    },
+    {
+        id: 'sprint_elapsed_time_s',
+        displayName: 'Sprint elapsed time',
+        domain: 'field',
+        unit: 's',
+        direction: 'lower_is_better',
+        valueKind: 'scalar',
+        description: 'Elapsed time for a protocol-locked sprint distance/start convention. Not comparable across different PerformanceTestDefinition subjects (e.g. standing vs flying start) even when the distance matches.',
+    },
+    {
+        id: 'cycling_5s_peak_power_w',
+        displayName: 'Cycling 5-second peak power',
+        domain: 'cycling',
+        unit: 'W',
+        direction: 'higher_is_better',
+        valueKind: 'scalar',
+        description: 'Peak power sustained for a protocol-locked 5-second maximal cycling sprint effort.',
+    },
 ] as const satisfies readonly MetricDefinition[];
 
 const METRIC_BY_ID = new Map<string, MetricDefinition>(METRICS.map(metric => [metric.id, metric] as const));

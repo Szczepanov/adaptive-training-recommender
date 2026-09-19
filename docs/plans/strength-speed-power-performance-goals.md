@@ -1,10 +1,27 @@
 # Strength, speed and power performance goals — implementation plan
 
 **Capability prefix:** PG
-**Status:** Draft
-**Blocked by:** plan approval to start PG0; PG1–PG9 then follow their item-level dependencies. Recommendation-affecting PG5–PG7 additionally require the accepted PG0 architecture decision, reviewed Sports Knowledge Registry claims for any new prescription defaults, and policy verification.
+**Status:** In progress — Stage 1 (PG0–PG4.5) Implemented; PG5–PG9 remain Draft/not started.
+**Blocked by:** PG5–PG9 require: reviewed Sports Knowledge Registry claims for any new prescription defaults, a `POLICY_VERSION` bump, `simulate:scenarios`/`simulate:diff` review, and their own item-level dependencies below. PG0's ADR is [ADR-0041](../adr/0041-strength-speed-power-performance-goals.md), accepted 2026-09-19.
 **Unlocks:** athlete-owned measurable strength, speed and power goals; target-specific planning coverage; protocol-aware progress; later formal target evaluation.
 **Source analysis:** ../analysis/2026-09-19-strength-speed-power-performance-goal-gap.md
+
+**Stage 1 implementation note (2026-09-19):** PG2.2's semantic/domain validation of a typed
+`performanceTarget` (registry membership, exercise/test resolution, domain-family
+consistency) deliberately does **not** live inside `validateGoal`
+(`app/src/engine/validationCore.ts`), even though that was PG2.2's original sketch.
+`observations/architecture.test.ts`'s OV1.4 boundary forbids production selection/ranking
+modules (`optimizer.ts` and friends) from transitively reaching `observations/*`, and
+`validationCore.ts` is reachable from those modules through the `engine/validation.ts`
+barrel. Semantic validation (`validatePerformanceTargetForDomain`, in
+`engine/performanceTargetPolicy.ts`) is instead enforced at `goalService.ts`'s
+create/update write boundary, and by the Goals.tsx UI before submit. `validateGoal` keeps
+a structural-only check (shape/kind/exact keys) and still fails a goal closed for a
+malformed target; a well-formed-but-semantically-unresolvable target now passes
+`validateGoal` and is rejected one layer up instead. This preserves ADR-0041's
+"present-but-invalid performanceTarget fails closed" invariant end-to-end while keeping
+the observations evidence layer isolated from recommendation-affecting code, per the
+existing OV1.4 architecture decision.
 
 > **Core invariant:** the target is an outcome. It never becomes current capability, a working-load denominator, a sprint-volume prescription, or an automatic weekly progression rate. Existing safety, eligibility, readiness, tissue, schedule and higher-authority planning rules remain dose authority.
 
@@ -371,7 +388,7 @@ The generic evergreen trainingAgeProxy may contribute context, but it is not eno
 
 ## PG0 — architecture decision and acceptance boundary
 
-**Status:** [ ]
+**Status:** [x] Implemented — [ADR-0041](../adr/0041-strength-speed-power-performance-goals.md), accepted 2026-09-19.
 **Blocked by:** plan approval
 **Recommendation-affecting:** no code yet
 
@@ -400,7 +417,7 @@ Write and accept an ADR covering:
 
 ## PG1 — extend canonical metric and performance-testing catalogs
 
-**Status:** [ ]
+**Status:** [x] Implemented — `strength_1rm_kg`, `sprint_elapsed_time_s`, `cycling_5s_peak_power_w` in `app/src/observations/registry.ts`; `sprint_10m_standing-r1` and `cycling_5s_peak_power-r1` in `app/src/observations/performanceTestingCatalog.ts`; target-eligibility policy and semantic validators in `app/src/engine/performanceTargetPolicy.ts`.
 **Blocked by:** PG0
 **Recommendation-affecting:** no
 
@@ -490,7 +507,7 @@ Cover:
 
 ## PG2 — typed goal model, domain, validation and persistence
 
-**Status:** [ ]
+**Status:** [x] Implemented — `UserGoal.performanceTarget`, `speed`/`power` domains in `app/src/engine/models.ts`; structural validation in `app/src/engine/validationCore.ts`; semantic/domain validation moved to `app/src/engine/performanceTargetPolicy.ts`'s `validatePerformanceTargetForDomain`, enforced at `app/src/services/goalService.ts`'s write boundary (see this plan's Stage 1 implementation note above for why); `firestore.rules` structural check added.
 **Blocked by:** PG1
 **Recommendation-affecting:** no; persistence only
 
@@ -565,7 +582,7 @@ Add/update:
 
 ## PG3 — athlete-facing target UX
 
-**Status:** [ ]
+**Status:** [x] Implemented — structured family/metric/subject/value flow in `app/src/components/Goals.tsx`'s `GoalModal`/`PerformanceTargetFields`; legacy free-text target still renders unchanged when no typed target is set.
 **Blocked by:** PG1, PG2
 **Recommendation-affecting:** no
 
@@ -614,7 +631,7 @@ Cover:
 
 ## PG4 — current measurement and progress projection
 
-**Status:** [ ]
+**Status:** [x] Implemented — `app/src/engine/goalProgress.ts` (pure evaluator) resolves current e1RM (strength) or latest comparable observation (speed/power) and a direction-aware gap via `app/src/engine/goalMetricMath.ts`; displayed in `Goals.tsx`'s `PerformanceTargetSummary`. `PerformanceSections.tsx`'s e1RM picker is now data-driven from the target-eligibility policy rather than a hardcoded three-lift list.
 **Blocked by:** PG1, PG3
 **Recommendation-affecting:** no
 
@@ -670,7 +687,7 @@ Cover:
 
 ## PG4.5 — goal feasibility and realism advisory
 
-**Status:** [ ]
+**Status:** [x] Implemented for the strength family only — `app/src/engine/goalFeasibility.ts`'s `assessGoalFeasibility`, backed by a registered Sports Knowledge Registry claim (`goalFeasibility.strength.requiredChangeBands` in `app/src/knowledge/goalFeasibilityKnowledge.ts`). Speed and power deliberately return `insufficient_evidence` rather than reusing the strength band, per PG4.5.5 -- no reviewed rate-of-change evidence was found for those families in the source analysis. Personal-longitudinal-trajectory evidence (PG4.5.4) is **not yet implemented**; the first slice uses population-anchored bands only. Displayed in `Goals.tsx`'s `PerformanceTargetSummary`.
 **Blocked by:** PG1, PG2, PG4; PG5-PG7 improve target-specific frequency precision but are not required for an initial advisory
 **Recommendation-affecting:** no — advisory only
 

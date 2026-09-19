@@ -156,4 +156,80 @@ describe('GoalService persistence shape', () => {
         const payload = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
         expect(payload.timing).toBe(firestore.deleteMarker);
     });
+
+    // ADR-0041: registry/domain semantic checks for a typed performanceTarget live at this
+    // write boundary (not in validateGoal -- see validationCore.ts's comment on the OV1.4
+    // evidence-isolation boundary), so a goal with an unresolvable or domain-mismatched
+    // target must never reach Firestore.
+    describe('performanceTarget semantic gate', () => {
+        it('persists a structurally and semantically valid typed performance target', async () => {
+            const service = new GoalService();
+            await service.createGoal('u1', {
+                ...eventGoal, domain: 'strength', targetDate: null, category: 'long-term',
+                eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined,
+                performanceTarget: {
+                    kind: 'performance_metric',
+                    metricId: 'strength_1rm_kg',
+                    subjectRef: { kind: 'exercise', exerciseId: 'conventional_deadlift' },
+                    targetValue: 220,
+                },
+            });
+
+            const payload = firestore.addDoc.mock.calls[0][1] as Record<string, unknown>;
+            expect(payload.performanceTarget).toEqual({
+                kind: 'performance_metric',
+                metricId: 'strength_1rm_kg',
+                subjectRef: { kind: 'exercise', exerciseId: 'conventional_deadlift' },
+                targetValue: 220,
+            });
+        });
+
+        it('rejects creating a goal whose performanceTarget references an unknown exercise', async () => {
+            const service = new GoalService();
+            await expect(service.createGoal('u1', {
+                ...eventGoal, domain: 'strength', targetDate: null, category: 'long-term',
+                eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined,
+                performanceTarget: {
+                    kind: 'performance_metric',
+                    metricId: 'strength_1rm_kg',
+                    subjectRef: { kind: 'exercise', exerciseId: 'not_a_real_lift' },
+                    targetValue: 220,
+                },
+            })).rejects.toThrow(/Performance target is invalid/);
+            expect(firestore.addDoc).not.toHaveBeenCalled();
+        });
+
+        it('rejects creating a goal whose domain does not match the typed target family', async () => {
+            const service = new GoalService();
+            await expect(service.createGoal('u1', {
+                ...eventGoal, domain: 'endurance', targetDate: null, category: 'long-term',
+                eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined,
+                performanceTarget: {
+                    kind: 'performance_metric',
+                    metricId: 'strength_1rm_kg',
+                    subjectRef: { kind: 'exercise', exerciseId: 'conventional_deadlift' },
+                    targetValue: 220,
+                },
+            })).rejects.toThrow(/Domain must be strength/);
+        });
+
+        it('rejects updating a goal to reference an unknown performance test', async () => {
+            const service = new GoalService();
+            firestore.getDoc.mockResolvedValue({
+                exists: () => true,
+                data: () => ({ ...eventGoal, domain: 'speed', eventCategory: undefined, eventPreset: undefined, eventLifecycle: undefined }),
+                id: eventGoal.id,
+            });
+
+            await expect(service.updateGoal('u1', eventGoal.id, {
+                performanceTarget: {
+                    kind: 'performance_metric',
+                    metricId: 'sprint_elapsed_time_s',
+                    subjectRef: { kind: 'performance_test', performanceTestId: 'unknown-test' },
+                    targetValue: 1.75,
+                },
+            })).rejects.toThrow(/Performance target is invalid/);
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
+    });
 });

@@ -4,6 +4,9 @@ import type { IdentityDecisionProvenance } from '../observations/identityModels'
 import type { DataIssue, DataState, DataStateSummary } from './dataState';
 import type { SubjectiveBaseline } from './subjectiveBaseline';
 import type { DataConfidenceScore } from './dataConfidence';
+import type { GoalPerformanceTarget } from './performanceTargetPolicy';
+
+export type { GoalPerformanceTarget, PerformanceSubjectRef, PerformanceGoalFamily } from './performanceTargetPolicy';
 
 export type SubjectiveDimensionKey =
     | 'readiness'
@@ -1412,12 +1415,18 @@ export interface UserGoal {
      *  in on every read so it's always current relative to today, with nothing to go
      *  stale. Only meaningful as user input for open-ended goals (no `targetDate`). */
     category: 'short-term' | 'mid-term' | 'long-term';
-    domain: 'endurance' | 'strength' | 'mobility' | 'weight_loss' | 'general_fitness' | 'other';
+    domain: 'endurance' | 'strength' | 'speed' | 'power' | 'mobility' | 'weight_loss' | 'general_fitness' | 'other';
     title: string;
     description?: string | null;
     priority: number; // 1-5, 5 = highest. Also the input to deriveEventPriority (A/B/C) for event goals -- no separate persisted priority field.
     status: 'active' | 'paused' | 'completed' | 'archived';
-    // Optional target tracking
+    /** ADR-0041: the canonical typed measurable strength/speed/power outcome. When this is
+     *  present and valid, it is the only target-authoritative representation -- see
+     *  validateGoal's precedence rule in validationCore.ts. Never copy current capability,
+     *  a working load, or a computed progression rate into this field. */
+    performanceTarget?: GoalPerformanceTarget | null;
+    // Legacy free-text target tracking. Never authoritative once a valid
+    // performanceTarget exists (ADR-0041); kept only for backward-compatible display.
     targetMetric?: string | null; // e.g., '5k_time', 'bench_press_weight', 'weekly_sessions'
     targetValue?: number | null;
     targetUnit?: string | null; // e.g., 'minutes', 'kg', 'sessions'

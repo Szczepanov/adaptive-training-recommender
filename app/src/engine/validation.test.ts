@@ -213,6 +213,96 @@ describe('validateGoal', () => {
         });
         expect(invalid.errors.some(error => error.field === 'taper')).toBe(true);
     });
+
+    // ADR-0041: typed performanceTarget precedence over legacy free-text targets.
+    describe('performanceTarget', () => {
+        it('accepts a valid typed strength target and clears any conflicting legacy fields', () => {
+            const result = validateGoal({
+                ...baseFields, category: 'long-term', domain: 'strength',
+                targetMetric: 'deadlift', targetValue: 180, targetUnit: 'kg',
+                performanceTarget: {
+                    kind: 'performance_metric',
+                    metricId: 'strength_1rm_kg',
+                    subjectRef: { kind: 'exercise', exerciseId: 'conventional_deadlift' },
+                    targetValue: 220,
+                },
+            });
+            expect(result.isValid).toBe(true);
+            expect(result.data?.performanceTarget).toEqual({
+                kind: 'performance_metric',
+                metricId: 'strength_1rm_kg',
+                subjectRef: { kind: 'exercise', exerciseId: 'conventional_deadlift' },
+                targetValue: 220,
+            });
+            expect(result.data?.targetMetric).toBeNull();
+            expect(result.data?.targetValue).toBeNull();
+            expect(result.data?.targetUnit).toBeNull();
+        });
+
+        it('accepts valid typed speed and power targets', () => {
+            const speed = validateGoal({
+                ...baseFields, category: 'long-term', domain: 'speed',
+                performanceTarget: {
+                    kind: 'performance_metric',
+                    metricId: 'sprint_elapsed_time_s',
+                    subjectRef: { kind: 'performance_test', performanceTestId: 'sprint_10m_standing-r1' },
+                    targetValue: 1.75,
+                },
+            });
+            expect(speed.isValid).toBe(true);
+
+            const power = validateGoal({
+                ...baseFields, category: 'long-term', domain: 'power',
+                performanceTarget: {
+                    kind: 'performance_metric',
+                    metricId: 'cycling_5s_peak_power_w',
+                    subjectRef: { kind: 'performance_test', performanceTestId: 'cycling_5s_peak_power-r1' },
+                    targetValue: 1200,
+                },
+            });
+            expect(power.isValid).toBe(true);
+        });
+
+        it('fails the whole goal closed for a malformed performanceTarget rather than falling back to legacy fields', () => {
+            const result = validateGoal({
+                ...baseFields, category: 'long-term', domain: 'strength',
+                targetMetric: 'deadlift', targetValue: 180, targetUnit: 'kg',
+                performanceTarget: { kind: 'performance_metric', metricId: 'strength_1rm_kg' /* missing subjectRef/targetValue */ },
+            });
+            expect(result.isValid).toBe(false);
+            expect(result.errors.some(e => e.field === 'performanceTarget')).toBe(true);
+        });
+
+        // Registry/subject-membership and domain/family checks (unknown metric,
+        // exercise/test mismatch, domain-vs-family mismatch) are semantic, not structural
+        // -- validateGoal deliberately does not perform them (see validationCore.ts's
+        // comment on the OV1.4 evidence-isolation boundary). They are covered by
+        // engine/performanceTargetPolicy.test.ts's validatePerformanceTargetForDomain
+        // tests and services/goalService.test.ts's write-boundary tests instead.
+        it('accepts a structurally well-formed but semantically unresolvable target (semantic checks happen elsewhere)', () => {
+            const result = validateGoal({
+                ...baseFields, category: 'long-term', domain: 'strength',
+                performanceTarget: {
+                    kind: 'performance_metric', metricId: 'not_a_real_metric',
+                    subjectRef: { kind: 'exercise', exerciseId: 'conventional_deadlift' }, targetValue: 220,
+                },
+            });
+            expect(result.isValid).toBe(true);
+            expect(result.data?.performanceTarget?.metricId).toBe('not_a_real_metric');
+        });
+
+        it('leaves legacy-only goals fully backward compatible with no typed target', () => {
+            const result = validateGoal({
+                ...baseFields, category: 'long-term',
+                targetMetric: 'deadlift', targetValue: 180, targetUnit: 'kg',
+            });
+            expect(result.isValid).toBe(true);
+            expect(result.data?.performanceTarget).toBeNull();
+            expect(result.data?.targetMetric).toBe('deadlift');
+            expect(result.data?.targetValue).toBe(180);
+            expect(result.data?.targetUnit).toBe('kg');
+        });
+    });
 });
 
 describe('validateRecommendation', () => {
