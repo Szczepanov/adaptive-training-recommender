@@ -1,7 +1,7 @@
 # Persona coverage gap review — event priority and state arbitration
 
-**Date:** 2026-09-19  
-**Scope:** active persona AI-judge suite only  
+**Date:** 2026-09-19
+**Scope:** active persona AI-judge suite only
 **Decision:** expand the active suite from 9 families / 30 cases to 10 families / 36 cases using one new event-priority family and three state perturbations of existing personas. Do not add several new athlete archetypes merely to increase corpus size.
 
 ## Executive decision
