@@ -121,8 +121,10 @@ tie-breaker; it does not set a physiological requirement or hide a capacity shor
 Event-free `health` planning also resolves `healthPlanningPolicy.ts`
 `resolveHealthPlanningPolicy` from the current intent and preferences. When running is not
 explicitly preferred, the unified optimizer gives feasible Walking/Cycling easy-aerobic
-candidates a soft ranking prior, withholds Hard Endurance as generic quality filler, and
-keeps non-hard Running and preferred Moderate Endurance available. Quality Endurance is
+candidates a soft ranking prior. When the profile also has no explicit endurance,
+speed/power, or sport-readiness priority, it withholds Hard Endurance as generic quality
+filler; explicit performance priorities retain their high-intensity authority. Non-hard
+Running and preferred Moderate Endurance remain available. Quality Endurance is
 limited to one prior occurrence in a rolling seven-day window and is withheld from the
 projected horizon after adverse recovery;
 the next fresh planning check may re-enable it. This is an adherence-oriented product
