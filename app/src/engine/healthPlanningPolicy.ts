@@ -6,6 +6,7 @@ import type { TrainingPriority, UserPreferences } from './models';
 export const HEALTH_QUALITY_ENDURANCE_LOOKBACK_DAYS = 7;
 export const HEALTH_QUALITY_ENDURANCE_SESSION_LIMIT = 1;
 export const HEALTH_QUALITY_ENDURANCE_CATEGORIES = ['Moderate Endurance', 'Hard Endurance'] as const;
+const HEALTH_PERFORMANCE_PRIORITIES = new Set<TrainingPriority>(['endurance', 'speed_power', 'sport_readiness']);
 
 export interface HealthHistoryEvidence {
     category?: string;
@@ -57,12 +58,15 @@ export function resolveHealthPlanningPolicy(
     const runningExplicitlySupported = preferred.has('running')
         && !(preferences?.deprioritizedModalities ?? []).some(modality => modality.toLowerCase() === 'running')
         && !(preferences?.avoidedModalities ?? []).some(modality => modality.toLowerCase() === 'running');
+    // Evergreen performance priorities have their own evidence-gated high-intensity policy.
+    // A health co-priority must not veto intensity the athlete explicitly asked the planner to develop.
+    const hasExplicitPerformancePriority = priorities.some(priority => HEALTH_PERFORMANCE_PRIORITIES.has(priority));
 
     return {
         enabled: true,
         preferLowImpactAerobic: !runningExplicitlySupported,
         withholdQualityEndurance: isAdverseRecovery,
-        withholdHardEndurance: !runningExplicitlySupported,
+        withholdHardEndurance: !runningExplicitlySupported && !hasExplicitPerformancePriority,
         qualityEnduranceSessionLimit: !runningExplicitlySupported ? HEALTH_QUALITY_ENDURANCE_SESSION_LIMIT : null,
     };
 }
