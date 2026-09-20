@@ -194,7 +194,8 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-17 UX heuristics review follow-up**](./analysis/2026-09-17-ux-heuristics-review-followup.md) — Follow-up pass verifying PR fixes from the initial UX heuristics review.
 * [**2026-09-17 Plan status reconciliation**](./analysis/2026-09-17-plan-status-reconciliation.md) — Reconciles implemented plans, verification closures, and remaining evidence/activation gates.
 * [**2026-09-17 Firestore evidence reconnaissance**](./analysis/2026-09-17-firestore-evidence-recon.md) — Privacy-preserving aggregate inventory of production evidence and the gates it does and does not satisfy.
-* [**2026-09-19 Conservative and travel overlay investigation**](./analysis/2026-09-19-conservative-travel-overlay-investigation.md) — Confirms and fixes a travel-overlay aerobic-candidate catalog gap; confirms (but does not yet fix) a conservative-bias weekly-hard-session-count regression in the ADR-0018 reservation search.
+* [**2026-09-19 Issue #679 remediation — triathlon taper, recovery re-entry, weekday cap**](./analysis/2026-09-19-issue-679-triathlon-taper-recovery-capacity-remediation.md) — Reproduces and fixes the three external-judge-reported Olympic-triathlon persona problems; records a fixture bug, two real engine gaps, and two flagged-not-resolved follow-ups.
+* [**2026-09-19 Conservative and travel overlay investigation**](./analysis/2026-09-19-conservative-travel-overlay-investigation.md) — Fixes a travel-overlay aerobic-candidate catalog gap and a conservative-bias weekly-hard-session-count regression in the ADR-0018 reservation search.
 
 ---
 

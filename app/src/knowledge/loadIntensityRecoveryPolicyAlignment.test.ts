@@ -1,12 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import type { DimensionalFatigue, SessionHistoryEntry, SessionTemplate } from '../engine/models';
+import type { DimensionalFatigue, SessionHistoryEntry, SessionTemplate, UserEvent } from '../engine/models';
 import { decayFatigue } from '../engine/fatigue';
 import {
     evaluateRecoveryConstraints,
     intensityClassForTemplate,
     isIntensityClassAdmissible,
+    TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST,
 } from '../engine/optimizer';
+import {
+    RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST,
+    RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST,
+} from '../engine/planner';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from './sportsKnowledge';
+import {
+    getActiveKnowledgeClaim as getActiveRegistryKnowledgeClaim,
+    KNOWLEDGE_CLAIM_IDS as REGISTRY_KNOWLEDGE_CLAIM_IDS,
+} from './sportsKnowledgeRegistry';
 
 function template(overrides: Partial<SessionTemplate> = {}): SessionTemplate {
     return {
@@ -120,5 +129,80 @@ describe('load + intensity + recovery product-claim alignment', () => {
         expect(after36.neuromuscular).toBeCloseTo(0.5, 8);
         expect(after48.lowerBody).toBeCloseTo(0.5, 8);
         expect(after48.impactTissue).toBeCloseTo(0.5, 8);
+    });
+
+    it('issue #679: pins the monotonic severe-recovery re-entry ladder to its registered claim', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.severeAdverseRecoveryReentry);
+        expect(claim.statement).toContain('days 1-2');
+        expect(claim.statement).toContain(`${RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST}`);
+        expect(claim.statement).toContain(`${RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST}`);
+        expect(RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST).toBeLessThan(RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST);
+        expect(RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST).toBeLessThanOrEqual(0.5);
+    });
+
+    it('issue #679: pins the taper-window nonessential-strength and moderate-density guard for triathlon A-events', () => {
+        const claim = getActiveRegistryKnowledgeClaim(REGISTRY_KNOWLEDGE_CLAIM_IDS.preEventRestrictionsPolicy);
+        expect(claim.applicability.sports).toContain('triathlon');
+
+        const triathlonAEvent: UserEvent = {
+            id: 'evt-tri-a',
+            title: 'Olympic Triathlon',
+            category: 'triathlon',
+            date: '2026-09-14',
+            priority: 'A',
+            lifecycle: 'scheduled',
+            demandProfile: { aerobicEndurance: 0.75, thresholdPower: 0.8, vo2MaxPower: 0.45, repeatedSurges: 0.2, sprintPower: 0.1, fatigueResistance: 0.65, neuromuscular: 0.15 },
+        };
+        const targetDate = '2026-09-04'; // 10 days out: inside the legacy 14-day A taper window
+
+        // A second strength touch in the taper window is excluded even though it is light.
+        const lightStrength = template({ category: 'Upper-body Strength', modality: 'Strength', systemicCost: TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST });
+        const priorLightStrength = history({ date: '2026-09-01', category: 'Upper-body Strength', modality: 'Strength', systemicCost: TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST });
+        expect(evaluateRecoveryConstraints(lightStrength, targetDate, [priorLightStrength], { focusEvent: triathlonAEvent }))
+            .toContain('TAPER_NONESSENTIAL_STRENGTH_RESTRICTION');
+
+        // A first strength touch above the light ceiling is excluded outright.
+        const heavyStrength = template({ category: 'Lower-body Strength', modality: 'Strength', systemicCost: TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST + 0.1 });
+        expect(evaluateRecoveryConstraints(heavyStrength, targetDate, [], { focusEvent: triathlonAEvent }))
+            .toContain('TAPER_NONESSENTIAL_STRENGTH_RESTRICTION');
+
+        // A single light touch, with no prior one in-window, is allowed.
+        expect(evaluateRecoveryConstraints(lightStrength, targetDate, [], { focusEvent: triathlonAEvent }))
+            .not.toContain('TAPER_NONESSENTIAL_STRENGTH_RESTRICTION');
+
+        // Moderate Endurance stacked within 3 days of a prior one is excluded.
+        const moderateEndurance = template({ category: 'Moderate Endurance', modality: 'Running', systemicCost: 0.6 });
+        const priorModerate = history({ date: '2026-09-02', category: 'Moderate Endurance', modality: 'Swimming', systemicCost: 0.6 });
+        expect(evaluateRecoveryConstraints(moderateEndurance, targetDate, [priorModerate], { focusEvent: triathlonAEvent }))
+            .toContain('TAPER_MODERATE_DENSITY_RESTRICTION');
+
+        // The same candidate is admissible once spaced out (>3 days).
+        const distantPriorModerate = history({ date: '2026-08-30', category: 'Moderate Endurance', modality: 'Swimming', systemicCost: 0.6 });
+        expect(evaluateRecoveryConstraints(moderateEndurance, targetDate, [distantPriorModerate], { focusEvent: triathlonAEvent }))
+            .not.toContain('TAPER_MODERATE_DENSITY_RESTRICTION');
+
+        // D-3 excludes generic tempo/hard endurance while leaving a light race-specific
+        // sharpening touch eligible. This addresses the build-like generic tempo symptom
+        // without converting taper into a blanket intensity ban.
+        const d3Date = '2026-09-11';
+        const d3Moderate = template({ category: 'Moderate Endurance', modality: 'Running', systemicCost: 0.4 });
+        const d3Hard = template({ category: 'Hard Endurance', modality: 'Cycling', systemicCost: 0.6 });
+        const d3RaceSpecific = template({ category: 'Race-Specific Endurance', modality: 'Cycling', systemicCost: 0.4 });
+        expect(evaluateRecoveryConstraints(d3Moderate, d3Date, [], { focusEvent: triathlonAEvent }))
+            .toContain('PRE_EVENT_TAPER_RESTRICTION');
+        expect(evaluateRecoveryConstraints(d3Hard, d3Date, [], { focusEvent: triathlonAEvent }))
+            .toContain('PRE_EVENT_TAPER_RESTRICTION');
+        expect(evaluateRecoveryConstraints(d3RaceSpecific, d3Date, [], { focusEvent: triathlonAEvent }))
+            .not.toContain('PRE_EVENT_TAPER_RESTRICTION');
+
+        // Outside the taper window, none of this applies.
+        expect(evaluateRecoveryConstraints(heavyStrength, '2026-07-01', [], { focusEvent: triathlonAEvent }))
+            .not.toContain('TAPER_NONESSENTIAL_STRENGTH_RESTRICTION');
+
+        // A strength_meet's own taper is a deload of strength work itself, not something to
+        // treat as nonessential -- the guard must not fight the event it exists to protect.
+        const strengthMeetAEvent: UserEvent = { ...triathlonAEvent, id: 'evt-meet-a', category: 'strength_meet' };
+        expect(evaluateRecoveryConstraints(heavyStrength, targetDate, [priorLightStrength], { focusEvent: strengthMeetAEvent }))
+            .not.toContain('TAPER_NONESSENTIAL_STRENGTH_RESTRICTION');
     });
 });

@@ -6,6 +6,11 @@ import {
     KNOWLEDGE_CLAIM_IDS,
     validateCanonicalSportsKnowledgeRegistry,
 } from './sportsKnowledgeRegistry';
+import {
+    TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST,
+    TAPER_STRENGTH_TOUCH_LIMIT,
+    TAPER_MODERATE_DENSITY_MIN_GAP_DAYS,
+} from '../engine/optimizer';
 
 const coverageById = (id: string) => ENGINE_KNOWLEDGE_COVERAGE.find(item => item.id === id);
 
@@ -55,6 +60,15 @@ describe('taper and fueling evidence pack', () => {
         expect(getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.taperSharpeningPolicy)).toMatchObject({
             claimType: 'heuristic', evidenceCertainty: 'not_applicable',
         });
+    });
+
+    it('issue #679: keeps the pre-event restriction claim in sync with the taper-window strength/density guard constants', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.preEventRestrictionsPolicy);
+        expect(claim.statement).toContain('triathlon');
+        expect(claim.statement).toContain(`${TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST}`);
+        expect(claim.statement).toContain('one light');
+        expect(TAPER_STRENGTH_TOUCH_LIMIT).toBe(1);
+        expect(claim.statement).toContain(`${TAPER_MODERATE_DENSITY_MIN_GAP_DAYS} days`);
     });
 
     it('supports carbohydrate during endurance exercise while keeping dose bands contextual', () => {
