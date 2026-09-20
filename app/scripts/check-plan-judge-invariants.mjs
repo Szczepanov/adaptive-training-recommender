@@ -132,21 +132,18 @@ fail(travel.plan.slice(0, 3).some((day) => !['Rest', 'Mobility/Recovery'].includ
 // docs/analysis/2026-09-19-conservative-travel-overlay-investigation.md, "Mechanism A") --
 // reservation placement is now identical between matched neutral/conservative runs.
 //
-// A second, distinct mechanism ("Mechanism B" in that doc) remains open and is NOT a bug:
-// resting more on an earlier day under conservativeBias can leave the athlete genuinely
+// A second, distinct mechanism ("Mechanism B" in that doc) is an intentional property
+// of the architecture (formally accepted under issue #692):
+// resting more on an earlier day under conservativeBias leaves the athlete genuinely
 // less fatigued a few days later, which legitimately clears the train/modify fatigue-tier
-// boundary and unlocks a harder discretionary candidate that the (more fatigued) neutral
-// run stays gated away from. Every individual gate is behaving as designed -- this is
+// boundary and unlocks a fuller discretionary candidate that the (more fatigued) neutral
+// run stays gated away from. Every individual gate behaves as designed -- this is
 // recovery capacity being earned and spent, the intended purpose of recovery in any
-// periodization model, not a threshold-direction defect. Closing it would require a new,
-// deliberately opinionated rule (e.g. a rolling weekly hard-session/cost cap specifically
-// under conservativeBias, capping opportunistic hard work even once genuinely recovered)
-// that is a training-philosophy product decision, not an engineering fix, and has not been
-// made. These checks are therefore WARNINGS, not failures, until that decision is made.
-// The identical root cause (no whole-horizon load budget, only per-day local fatigue-tier
-// classification) independently surfaced from issue #676's recent-load-recency work too
-// (app/src/engine/recentLoadHorizonDensity.test.ts, also softened to a warning) -- tracked
-// jointly as cross-cutting issue #692, which un-softening this needs to resolve too.
+// periodization model, not a threshold-direction defect.
+// Cross-counterfactual whole-horizon monotonicity is explicitly not a system invariant;
+// the checks below are characterization telemetry and diagnostic warnings, not defect gates.
+// See docs/analysis/2026-09-19-conservative-travel-overlay-investigation.md and
+// docs/analysis/2026-09-20-whole-horizon-fatigue-tier-rebound.md.
 const planLoad = (item) => (item.plan ?? []).reduce((acc, day) => {
   const systemic = day.session?.systemicCost ?? 0;
   const cardiovascular = day.session?.costProfile?.cardiovascular ?? 0;
@@ -340,6 +337,6 @@ for (const check of conservativeChecks) {
   console.log(`Conservative monotonicity ${check.conservativeId} vs ${check.neutralId}: hard ${check.conservative.hardSessions}/${check.neutral.hardSessions}, systemic ${check.conservative.systemic.toFixed(3)}/${check.neutral.systemic.toFixed(3)}, cardiovascular ${check.conservative.cardiovascular.toFixed(3)}/${check.neutral.cardiovascular.toFixed(3)}.`);
 }
 if (conservativeWarnings.length > 0) {
-  console.warn('Conservative-monotonicity warnings (Mechanism B, accepted -- tracked as issue #692, see docs/analysis/2026-09-19-conservative-travel-overlay-investigation.md):');
+  console.warn('Conservative-monotonicity characterization telemetry (Mechanism B, accepted architecture characteristic under issue #692):');
   for (const warning of conservativeWarnings) console.warn(`- ${warning}`);
 }

@@ -117,20 +117,17 @@ weekly cap on hard-session count/cumulative systemic cost specifically under
 `conservativeBias`, capping opportunistic hard work even when the athlete has genuinely
 recovered enough to do it. That is a training-philosophy product decision, not an
 engineering bug fix, and is exactly the kind of judgment call issue #677 asked to be made
-explicitly rather than picked silently. **Left undecided and unimplemented.** The
-`judge_pref_conservative`/`judge_mode_conservative_preference` monotonicity assertions in
-`check-plan-judge-invariants.mjs` were softened from hard failures to non-blocking warnings
-for this reason -- see that file's inline comment for the current disposition.
+explicitly rather than picked silently.
 
-**Update 2026-09-20.** The identical root cause (no whole-horizon load budget, only
-per-day local fatigue-tier classification) independently surfaced from issue #676's
-recent-load-recency work (`app/src/engine/recentLoadHorizonDensity.test.ts`, also
-softened to a warning; see
-`docs/analysis/2026-09-20-whole-horizon-fatigue-tier-rebound.md`). Both are now tracked
-jointly as cross-cutting
+**Formal Resolution (Issue #692):** Per
 [issue #692](https://github.com/Szczepanov/adaptive-training-recommender/issues/692),
-since a same-PR patch to either finding's own heuristic was shown not to actually be the
-mechanism, and a real fix needs to close both reproductions together.
+this behavior is **formally decided and accepted as an intentional characteristic of greedy
+local fatigue-tier evaluation and periodization**. The recommender evaluates each day against
+the athlete's actual projected recovery state as-of that date; cross-counterfactual monotonicity
+(where an athlete who rested earlier is barred from full training when recovered) is explicitly
+not an architectural invariant. The conservative-monotonicity checks in
+`check-plan-judge-invariants.mjs` are retained as characterization telemetry rather than defect
+gates.
 
 ## Non-goals honored
 

@@ -57,18 +57,27 @@ individual gate (the recovery response on 2026-08-11, the tier ceiling on 2026-0
 `strength_maintenance` scheduling) is behaving exactly as designed; the emergent,
 whole-horizon consequence is what the test's monotonicity assumption doesn't hold.
 
-## Disposition
+## Disposition: Formal Resolution (Issue #692)
 
-Per the decision on issue #677/#684's identical finding: **not fixed here.** A correct fix
-needs a genuine whole-horizon load/hard-session budget (or an equivalent mechanism)
-implemented once, closing both #676's and #677's reproductions together -- not a
-same-PR patch to `optimizer.ts`'s new suppression heuristic, which was empirically ruled
-out as even being the active mechanism in this reproduction. Softened
-`recentLoadHorizonDensity.test.ts`'s monotonicity assertion from a hard failure to a
-documented, non-blocking `console.warn` (see that file's inline comment) rather than
-leaving CI red on an already-understood, cross-cutting architectural question, or
-silently deleting the check. Tracked in
-[issue #692](https://github.com/Szczepanov/adaptive-training-recommender/issues/692) with
-acceptance criteria for the actual decision (is whole-horizon monotonicity a required
-invariant at all?) and, if so, for un-softening both this test and the corresponding
-checks in `check-plan-judge-invariants.mjs`.
+Per [issue #692](https://github.com/Szczepanov/adaptive-training-recommender/issues/692),
+whole-horizon monotonicity across counterfactuals is **formally decided and accepted as
+an intentional characteristic of the greedy day-by-day fatigue-tier architecture**, not an
+unresolved defect.
+
+### Rationale:
+1. **Local state validity:** Each forecast date's fatigue tier (`train` / `modify` / `recover`)
+   is evaluated strictly against the athlete's actual projected physiological fatigue state as-of
+   that date.
+2. **Physiological principle of recovery capacity:** In periodization and adaptive training,
+   resting more on an earlier day is *intended* to clear accumulated fatigue and restore capacity
+   for subsequent training. Artificially suppressing a fully-recovered athlete on a later day
+   because they rested earlier would invert the purpose of recovery and risk under-delivering
+   required training stimulus.
+3. **Absence of counterfactuals at runtime:** In production, the recommender evaluates a single
+   athlete timeline; there is no concurrent counterfactual against which to enforce cross-scenario
+   monotonicity. Enforcing cross-run monotonicity would require ad-hoc global heuristics that
+   conflict with daily physiological readiness.
+
+Accordingly, the non-blocking warnings in `app/src/engine/recentLoadHorizonDensity.test.ts`
+and `app/scripts/check-plan-judge-invariants.mjs` are retained as characterization telemetry
+rather than defect gates.

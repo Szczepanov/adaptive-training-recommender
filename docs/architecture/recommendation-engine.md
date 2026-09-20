@@ -691,6 +691,16 @@ Rolling re-resolution carries that state by `WeeklyObjective.id`, never the disp
 `key`: one triathlon week deliberately contains separate Swimming, Cycling, and Running
 `zone2_aerobic` objectives with the same key but different qualification contracts.
 
+**Day-by-day local fatigue tier evaluation and recovery capacity.** Forecast days are evaluated
+locally against projected fatigue as-of that date (`planner.ts` `evaluateProjectedDate`). When
+earlier days rest more (e.g. from an active recovery need, a seeded prior hard exposure, or
+`conservativeBias`), accumulated fatigue clears faster; subsequent forecast days may legitimately
+cross into the `train` fatigue tier earlier than in a counterfactual run that did continuous light
+work. This is the intended periodization effect of recovery headroom under greedy local evaluation
+(Issue #692). The engine evaluates the athlete's single actual timeline without reference to
+synthetic counterfactuals, and whole-horizon monotonicity across counterfactuals is an accepted
+non-invariant.
+
 ### Required weekly-role reservations (ADR-0018)
 
 Weekly anchors remain preferences. `weeklyAllocation.ts` adds a separate, exact-identity
