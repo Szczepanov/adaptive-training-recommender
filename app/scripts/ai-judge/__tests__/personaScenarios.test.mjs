@@ -1,18 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
 import { EVENT_PRESETS } from '../../../src/engine/eventPresets.ts';
+import { resolveEventTaper } from '../../../src/engine/taperPolicy.ts';
 import { runScenario } from '../../../src/engine/simulation/analyze.ts';
 import { assertPersonaFixtureIntegrity, buildPersonaFamilies } from '../personaSuite.mjs';
 
 const EXPECTED_FAMILY_CASE_COUNTS = new Map([
   ['persona_strength_no_wearable', 3],
-  ['persona_health_fat_loss', 3],
+  ['persona_health_fat_loss', 4],
   ['persona_former_elite_return', 3],
-  ['persona_balanced_performance', 3],
+  ['persona_balanced_performance', 4],
   ['persona_stacked_constraints', 3],
   ['persona_walking_preferred', 3],
-  ['persona_established_history', 3],
+  ['persona_established_history', 4],
   ['persona_cycling_primary_hybrid', 5],
+  ['persona_running_event_priority', 3],
   ['persona_triathlon_established_olympic', 4],
 ]);
 
@@ -109,15 +111,49 @@ describe('active persona AI-judge suite', () => {
     }
   });
 
-  it('seeds the established-history persona with a real, boundary-precise 28-day/12-session base', () => {
+  it('seeds the established-history persona with a boundary-precise base and explicit recent-hard-load evidence', () => {
     const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_established_history');
     expect(family).toBeDefined();
 
     for (const definition of family.cases) {
       expect(definition.scenario.trainingIntentProfile.priorities).toEqual(['endurance']);
-      expect(definition.scenario.initialHistory.length).toBe(12);
-      expect(definition.scenario.initialHistory.every((exposure) => exposure.trainingRecordLike.duration_min === 60)).toBe(true);
+      if (definition.scenario.id === 'persona_established_history_recent_hard_load') {
+        const readiness = definition.scenario.readinessForWeek(0);
+        const hardExposures = definition.scenario.initialHistory.filter((exposure) => exposure.category === 'Hard Endurance');
+        expect(definition.scenario.initialHistory).toHaveLength(14);
+        expect(hardExposures).toHaveLength(2);
+        expect(hardExposures.map((exposure) => exposure.date)).toEqual(['2026-08-28', '2026-08-30']);
+        expect(readiness.objective.last_3_days_hard_sessions_count).toBe(2);
+        expect(readiness.subjective.readiness).toBeGreaterThanOrEqual(8);
+      } else {
+        expect(definition.scenario.initialHistory).toHaveLength(12);
+        expect(definition.scenario.initialHistory.every((exposure) => exposure.trainingRecordLike.duration_min === 60)).toBe(true);
+      }
     }
+  });
+
+  it('represents a real subjective-vs-wearable recovery disagreement instead of another concordant adverse case', () => {
+    const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_health_fat_loss');
+    const conflict = family.cases.find((definition) => definition.scenario.id === 'persona_health_fatloss_fresh_subjective_adverse_wearable');
+    const readiness = conflict.scenario.readinessForWeek(0);
+
+    expect(readiness.subjective.readiness).toBeGreaterThanOrEqual(8);
+    expect(readiness.subjective.fatigue).toBeLessThanOrEqual(2);
+    expect(readiness.objective.hrv_delta).toBeLessThanOrEqual(-10);
+    expect(readiness.objective.rhr_delta).toBeGreaterThanOrEqual(5);
+    expect(readiness.objective.body_battery_wake).toBeLessThanOrEqual(35);
+  });
+
+  it('models already-trained-today as a transient execution fact rather than persistent fatigue', async () => {
+    const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_balanced_performance');
+    const definition = family.cases.find((candidate) => candidate.scenario.id === 'persona_balanced_performance_already_trained_today');
+
+    expect(definition.scenario.readinessForWeek(0).subjective.alreadyTrainedToday).toBe(true);
+    expect(definition.scenario.readinessForWeek(1).subjective.alreadyTrainedToday).toBe(false);
+
+    const result = await runScenario(definition.scenario);
+    expect(result.decisionTraces[0].mode).toBe('recover');
+    expect(['Rest', 'Mobility/Recovery']).toContain(result.decisionTraces[0].selected.category);
   });
 
   it('adds an anonymized cycling-primary hybrid persona with explicit hierarchy and evidence-backed mixed history', () => {
@@ -158,6 +194,33 @@ describe('active persona AI-judge suite', () => {
 
     const strengthPreference = family.cases.find((definition) => definition.scenario.id === 'persona_cycling_hybrid_strength_preference');
     expect(strengthPreference.scenario.readinessForWeek(0).subjective.preferredModalityToday).toBe('Strength');
+  });
+
+  it('adds an established 10K family where A/B/C priority is the only event-axis change', () => {
+    const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_running_event_priority');
+    expect(family).toBeDefined();
+    expect(family.cases).toHaveLength(3);
+
+    const byPriority = new Map(family.cases.map((definition) => [definition.scenario.event.priority, definition]));
+    expect([...byPriority.keys()].sort()).toEqual(['A', 'B', 'C']);
+
+    for (const priority of ['A', 'B', 'C']) {
+      const definition = byPriority.get(priority);
+      expect(definition.persona.personaId).toBe('running_event_established_10k');
+      expect(definition.scenario.trainingIntentProfile).toBeNull();
+      expect(definition.scenario.event).toMatchObject({
+        title: 'Scheduled 10K',
+        date: '2026-09-14',
+        priority,
+        category: 'running_race',
+      });
+      expect(definition.scenario.initialHistory).toHaveLength(12);
+      expect(definition.scenario.initialHistory.every((exposure) => exposure.modality === 'Running')).toBe(true);
+    }
+
+    expect(resolveEventTaper(byPriority.get('A').scenario.event)?.startDate).toBe('2026-08-31');
+    expect(resolveEventTaper(byPriority.get('B').scenario.event)?.startDate).toBe('2026-09-09');
+    expect(resolveEventTaper(byPriority.get('C').scenario.event)).toBeNull();
   });
 
   it('exposes exactly one established Olympic-distance triathlon persona while preserving the unique triathlon edge cases', () => {

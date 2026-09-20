@@ -411,6 +411,7 @@ export const KNOWLEDGE_CLAIM_IDS = {
     hardLowerBodySpacing: 'policy.load_recovery.hard_lower_body_spacing_v1',
     strengthEnduranceAdjacency: 'policy.load_recovery.strength_endurance_adjacency_v1',
     recentHardReadinessPenalty: 'policy.load_recovery.recent_hard_readiness_penalty_v1',
+    severeAdverseRecoveryReentry: 'policy.load_recovery.severe_adverse_recovery_reentry_v1',
     fatigueDecayHalfLives: 'policy.load_recovery.fatigue_decay_half_lives_v1',
     readinessPhysiologicalStrainModel: 'policy.readiness.physiological_strain_model_v1',
     readinessAbsoluteDeviceFloors: 'policy.readiness.absolute_device_floors_v1',
@@ -568,6 +569,13 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
         applicability: { contexts: ['recommendation_engine', 'daily_readiness'], sports: ['all_supported_sports'], populations: ['product_users'], outcomes: ['daily_training_mode'], horizon: 'acute' },
         evidence: [{ sourceId: LOAD_INTENSITY_RECOVERY_PRODUCT_POLICY_SOURCE, directness: 'direct' }], limitations: ['The three-day window, count of two and +1.0 score contribution are product calibration values and are not validated universal physiological thresholds.'], reviewedOn: '2026-08-30', version: 1,
+    },
+    {
+        id: KNOWLEDGE_CLAIM_IDS.severeAdverseRecoveryReentry,
+        statement: 'Issue #679: after a severe adverse-recovery flag, forecast re-entry is deliberately monotonic: days 1-2 admit only Rest/Mobility-Recovery; day 3 may add non-Strength, non-Moderate/Hard/Race-Specific work at systemicCost <=0.35; days 4-5 may widen that same low-intensity/non-Strength pool to systemicCost <=0.5; the unrestricted candidate pool is reached only from day 6 onward. A forecast day carries no real future readiness reading to re-check, so this conservative ladder is the projected-day equivalent of requiring confirmed freshness before threshold, tempo, race-specific, strength, or dense multi-day training resumes.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['recommendation_engine', 'week_ahead_forecast', 'adverse_recovery'], sports: ['all_supported_sports'], populations: ['product_users'], outcomes: ['recovery_reentry_candidate_restriction'], horizon: 'acute' },
+        evidence: [{ sourceId: LOAD_INTENSITY_RECOVERY_PRODUCT_POLICY_SOURCE, directness: 'direct' }], limitations: ['The 5-day window length, the 0.35/0.5 systemic-cost ceilings, and the category exclusions are product calibration values, not a validated physiological recovery timeline for severe adverse-recovery signals.', 'Cannot substitute for a real check-in: a forecast projects forward from day-0 readiness and has no mechanism to confirm the athlete has actually recovered by day 4-6.'], reviewedOn: '2026-09-19', version: 1,
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.fatigueDecayHalfLives,

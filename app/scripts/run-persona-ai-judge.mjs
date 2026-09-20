@@ -102,9 +102,13 @@ Persona-specific calibration:
 3. Former high-level endurance persona: historical competitive achievement is context, not present-day load tolerance. Current recent training and current recovery govern dose. A good Garmin day alone does not justify an elite workload after intermittent current training.
 4. Cycling-primary hybrid persona: cycling performance is the primary performance objective, while resistance training remains a real retention requirement for strength and muscle. Prefer cycling-specific aerobic work over gratuitous running when both could satisfy generic endurance development. Favor inexpensive aerobic volume over adding unnecessary hard-session frequency. A good wearable day must not override current pain or active mechanical guardrails, and a strength preference today must not silently turn the week into strength-primary programming.
 5. Established Olympic triathlon persona: Swimming, Cycling and Running are separate race disciplines. When pool and bicycle access exist, do not accept a single discipline as a silent substitute for the others. When pool access is absent, never reward a fabricated swim for closing the gap. A short weekday window should reduce dose rather than bypass hard feasibility. In the final 14 days before the A-event, taper restraint is expected. Do not invent a brick workout, swim pace/CSS anchor, open-water competence, or long-course specialist assumptions that are absent from the input.
+6. Established 10K event-priority persona: the athlete, race, race date, recovery and recent training stay fixed while only A/B/C priority changes. A is the primary target and may justify the strongest near-race taper restraint; B is secondary; C should not be treated like a major peak by default. Judge the direction of the response rather than requiring an undocumented exact taper percentage or race-pace target.
 
 Judge methodology:
 - Missing data are different from adverse data.
+- Conflicting subjective and objective recovery signals are not the same as either source being missing; judge whether the plan responds proportionately without pretending one noisy signal is a diagnosis.
+- A completed-training flag is a same-day execution fact: it should prevent an unnecessary duplicate substantive session today without turning the rest of the horizon into chronic recovery.
+- Two recent hard sessions are load context even when today's check-in and wearable values look good; do not reward gratuitous hard-session stacking.
 - More recovery is not automatically better; more training is not automatically better.
 - Low motivation alone is not a physiological red flag.
 - Do not reward verbosity or complexity.
