@@ -48,6 +48,8 @@ export interface GateableSession {
     modality: SessionTemplate['modality'];
     category: SessionTemplate['category'];
     systemicCost: number;
+    /** Optional catalog-only availability fallback family. Imported sessions normally omit it. */
+    availabilityFallbackRole?: 'aerobic_endurance';
 }
 
 export interface SessionEligibility<T extends GateableSession = SessionTemplate> {
@@ -196,6 +198,18 @@ function withCapSafeDose<T extends GateableSession>(template: T, maxMinutes: num
     return { ...template, easierDose: cappedDose } as T;
 }
 
+const AEROBIC_ENDURANCE_CATEGORIES = new Set<SessionTemplate['category']>([
+    'Easy Endurance',
+    'Moderate Endurance',
+    'Hard Endurance',
+    'Race-Specific Endurance',
+]);
+
+/**
+ * Availability fallbacks are intentionally second-pass candidates. They solve an empty
+ * hard-feasible modality/equipment pool; they must not become a globally competitive
+ * alternative when an ordinary endurance session is already feasible.
+ */
 export function eligibleTemplates<T extends GateableSession>(
     templates: readonly T[],
     context: UserContext,
@@ -203,7 +217,14 @@ export function eligibleTemplates<T extends GateableSession>(
     date: string,
 ): T[] {
     const maxMinutes = resolveMaximumSessionMinutes(context, checkinMinutes, date);
-    return templates
+    const feasible = templates
         .filter(template => evaluateTemplateEligibility(template, context, checkinMinutes, date).eligible)
         .map(template => withCapSafeDose(template, maxMinutes));
+
+    const ordinaryAerobicAvailable = feasible.some(template =>
+        template.availabilityFallbackRole !== 'aerobic_endurance'
+        && AEROBIC_ENDURANCE_CATEGORIES.has(template.category));
+
+    return feasible.filter(template =>
+        template.availabilityFallbackRole !== 'aerobic_endurance' || !ordinaryAerobicAvailable);
 }
