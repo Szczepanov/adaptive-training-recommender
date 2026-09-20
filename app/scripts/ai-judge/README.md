@@ -17,7 +17,9 @@ Do not remove a useful catalog fixture merely because it is redundant in the act
 
 If several cases are intended to test the same underlying athlete identity, keep one persona and vary the decision-relevant axis: recovery, equipment/access, time, race proximity, pain/guardrails, or a soft preference.
 
-The consolidated triathlon family follows this model: one established Olympic-distance athlete is tested across baseline recovery, adverse recovery, pool loss, short time, and taper proximity. The lower-level novice/intermediate/advanced triathlon catalog remains available for targeted tests.
+The consolidated triathlon family follows this model: one established Olympic-distance athlete is tested across baseline recovery, adverse recovery, short time, and taper proximity. The lower-level novice/intermediate/advanced triathlon catalog remains available for targeted tests.
+
+The same rule applies when an existing identity can isolate a new engine branch. The active suite therefore adds state cases for subjective-vs-wearable disagreement, an already-trained-today override, and recent hard-session density instead of inventing three new athlete archetypes. A separate running-event family is justified because event priority itself is the comparison axis: the same established runner, same 10K and same date are evaluated as A/B/C events.
 
 ### Persona prose must agree with observed evidence
 
@@ -68,16 +70,16 @@ case, outdoor bicycle only) and event lifecycle (build, adverse build, authored 
 All seven cases share a synthetic four-week history of four 80-minute rides and two
 50-minute strength sessions per week. This is seven hours/week of observed synthetic
 training, not a declaration that the athlete already tolerates the larger time windows.
-The default active suite and its reviewed baseline remain 9 families / 30 cases.
+The default active suite is now **10 families / 36 cases**. The committed reviewed baseline intentionally remains on the previously judged 9-family / 30-case corpus until the expanded suite receives a fresh provider run and manual review; fixture work must not fabricate baseline scores.
 
-Run `npm run persona:hybrid:build` to generate 11 families / 37 cases, including the existing
+Run `npm run persona:hybrid:build` to generate 12 families / 43 cases, including the existing
 controls, in `artifacts/hybrid-persona-plan-judge/latest/`. `corpus.json` is blinded;
 `deterministic-results.json` separately records constraint violations, objective resolution,
 effective session duration ranges and modeled cost/stimulus for inspection. These are
 synthetic forecasts, not performed training or evidence of physiological adaptation.
 Only the seven opt-in H1 packets expose the additional training-settings and authored-taper
 facts required to judge their equipment, weekday/weekend limits and taper contract. The
-existing 30 control packets keep the reviewed active-suite judge-visible shape.
+existing 36 control packets keep the active-suite judge-visible shape.
 
 To judge this corpus using configured local infrastructure:
 
@@ -99,6 +101,17 @@ results have been reviewed. Do not copy scores into the active baseline or inter
 passing deterministic safety test as proof of training adequacy. See
 [`cycling-primary-hybrid-evaluation.md`](../../../docs/plans/cycling-primary-hybrid-evaluation.md)
 for findings and the next acceptance contracts.
+
+## Current deliberate coverage axes
+
+The active suite now includes explicit comparisons for decision branches that were previously structurally absent from all active packets:
+
+- **event priority:** one established 10K runner with A/B/C priority while race/date/history/readiness remain fixed;
+- **recovery-source disagreement:** favorable subjective check-in paired with clearly adverse wearable signals;
+- **already trained today:** a first-week same-day completion flag that clears for the following simulated week;
+- **recent hard-load density:** two planner-visible hard running sessions in the preceding three days despite otherwise favorable current readiness.
+
+These are intentionally narrow counterfactuals. Fixed-activity scheduling, true multi-event arbitration, additional single-sport event categories, and non-wearable endurance remain candidates for later expansion rather than being bundled into one costly judge corpus.
 
 ## Validation
 

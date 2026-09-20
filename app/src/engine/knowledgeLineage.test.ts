@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DailyReadiness, TrainingIntentProfile, UserContext, UserEvent } from './models';
+import type { DailyReadiness, TrainingIntentProfile, UserContext, UserEvent, UserPreferences } from './models';
 import type { TrainingHistoryProvider } from './trainingHistory';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
 import {
@@ -245,5 +245,23 @@ describe('recommendation knowledge lineage', () => {
             KNOWLEDGE_CLAIM_IDS.internalLoadIntensityBands,
             KNOWLEDGE_CLAIM_IDS.internalResponseStrainModel,
         ]));
+    });
+
+    it('records the active health adherence policy on health recommendations', async () => {
+        const healthProfile: TrainingIntentProfile = {
+            userId: 'u1', planningMode: 'evergreen', priorities: ['health'],
+            weeklyCommitment: { minSessions: 2, targetSessions: 3, maxSessions: 4 },
+            organizationPreference: 'auto', schemaVersion: 1, createdAt: '', updatedAt: '',
+        };
+        const healthPreferences = {
+            ...context.preferences,
+            preferredModalities: ['Strength', 'Walking', 'Cycling'],
+        } as unknown as UserPreferences;
+        const rec = await evaluateTrainingWithIntent(
+            'u1', readiness(), { ...context, preferences: healthPreferences }, [], '2026-08-31', undefined,
+            { reconstruct: async () => [] }, null, [], [], healthProfile, healthPreferences,
+        );
+
+        expect(rec.knowledgeRefs).toContain(KNOWLEDGE_CLAIM_IDS.healthAdherenceModalityIntensityPrior);
     });
 });

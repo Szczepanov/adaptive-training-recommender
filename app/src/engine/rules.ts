@@ -52,8 +52,9 @@ import { resolveEvergreenPlan } from './evergreenPlanning';
 import { isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { buildCoverageState, resolveCoverageHistory } from './coverage';
 import { applyPlanningOverlays } from './planningOverlays';
-import { mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
+import { healthPlanningKnowledgeRefs, mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
 import { progressionDoseForTemplate } from './confirmedProgressionOverrides';
+import { resolveHealthPlanningPolicy } from './healthPlanningPolicy';
 
 function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemplate | undefined {
     if (options.length === 0) return undefined;
@@ -730,6 +731,11 @@ export async function evaluateTrainingWithIntent(
     }
 
     const isAdverseRecovery = isSevereAdverseRecoveryReadiness(readiness, mode);
+    const healthPlanningPolicy = resolveHealthPlanningPolicy(
+        intent.planningContext.profile.priorities,
+        preferences,
+        isAdverseRecovery,
+    );
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, date, fixedActivities, 7, isAdverseRecovery, scheduleOverlays,
@@ -764,6 +770,7 @@ export async function evaluateTrainingWithIntent(
     const decisionKnowledgeRefs = mergeKnowledgeRefs(
         envelopeState.knowledgeRefs,
         trainingIntentKnowledgeRefs(intent),
+        healthPlanningKnowledgeRefs(healthPlanningPolicy !== null),
         evergreen?.knowledgeRefs,
     );
 
@@ -786,6 +793,7 @@ export async function evaluateTrainingWithIntent(
         date,
         {
             resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, resolvedAvailability: availability, fatigueTier: mode, authoredPlanBlocks,
+            healthPlanningPolicy,
             ...(evergreen ? {
                 coverageState: buildCoverageState(
                     evergreen.planDefinition,

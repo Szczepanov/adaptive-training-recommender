@@ -87,6 +87,7 @@ Adaptive Training Recommendations & Native Session Execution
 28. **Longitudinal Body-Composition and Fueling Observations (ADR-0039)**: Provider-agnostic body mass, home tape measurements, device body-composition estimates, and subjective fueling context without recommendation authority.
 
 29. **Server-Authoritative Anthropometry Writes (ADR-0040)**: Dedicated Python Cloud Run API that validates protocol, bounds, and identity for anthropometry observations before persisting them, superseding direct client Firestore writes.
+30. **Typed Strength, Speed and Power Performance Goals (ADR-0041)**: Explicit non-authoritative typed targets and shared deterministic multi-target comparator for performance goals.
 
 ---
 

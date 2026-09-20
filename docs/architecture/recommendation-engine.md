@@ -118,6 +118,16 @@ the conditional high-intensity prior (`canUseConditionalPrior`) is withheld, emi
 The legacy 2-to-6-session table is only an equal-dose placement
 tie-breaker; it does not set a physiological requirement or hide a capacity shortfall.
 
+Event-free `health` planning also resolves `healthPlanningPolicy.ts`
+`resolveHealthPlanningPolicy` from the current intent and preferences. When running is not
+explicitly preferred, the unified optimizer gives feasible Walking/Cycling easy-aerobic
+candidates a soft ranking prior while keeping Running available. Quality Endurance is
+limited to one prior occurrence in a rolling seven-day window and is withheld from the
+projected horizon after adverse recovery;
+the next fresh planning check may re-enable it. This is an adherence-oriented product
+heuristic, not a clinical intensity prescription. It does not apply to event-directed
+plans, explicit Running preference, or the required health aerobic/strength dose roles.
+
 The coverage registry has two descriptors. `september_cycling_event` is the frozen,
 event-directed cycling contract. `evergreen_general` is a rolling seven-day `general`
 descriptor with modality-specific exact identities, including a continuous easy run that
@@ -378,6 +388,47 @@ optional `role: PlanSessionRole` field -- previously declared but never assigned
 anything -- and the authored September event plan's taper block now actually requests its
 own `taper_sharpening`/`race_week_strength` coverage keys instead of only the generic
 `easy_aerobic` one.
+
+### Pre-event restrictions and taper-window strength/density guard (Issue #679, `optimizer.ts`)
+
+`evaluateRecoveryConstraints`'s D1-D7 pre-event restriction (strength blocked 1-3 days
+out, hard work 1-2 days, exhaustive work 3-7 days, plus the A-event post-event recovery
+window) now also gates `triathlon` events, not only `cycling_event`/`running_race` -- it
+previously never applied to a triathlon A/B event at all. At D-3, generic
+`Moderate Endurance`/`Hard Endurance` is also excluded while a light
+`Race-Specific Endurance` sharpening touch may remain available; D-1/D-2 retain the
+existing broader hard-session restriction.
+
+A second, independent restriction now covers the *full* resolved taper window
+(`resolveEventTaper`, the same cycling/running/triathlon categories, not only the D1-D7
+band above -- `strength_meet` is deliberately excluded, since its own taper is a deload of
+strength work itself, not something to treat as nonessential): a Strength candidate is
+excluded once systemicCost exceeds `TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST`
+(0.35) or a strength touch already occurred earlier in the window (`TAPER_STRENGTH_TOUCH_LIMIT`
+= 1) -- "reduced nonessential strength" rather than an outright ban. A Moderate/Hard
+Endurance candidate is excluded when one already occurred within
+`TAPER_MODERATE_DENSITY_MIN_GAP_DAYS` (3) days, preventing a stacked, build-like block near
+the event while still allowing spaced, brief discipline-specific touches. Race-Specific
+Endurance is deliberately excluded from the density guard: event-specific work recurring
+near the event is expected, and a recent one is already tempered by benefit-score softening
+(anchor protection) rather than a hard exclusion.
+
+### Graduated recovery re-entry after severe adverse recovery (Issue #679, `planner.ts`)
+
+The severe-adverse-recovery restriction (`isSevereAdverseRecoveryReadiness`) previously
+widened from recovery-only to a 0.5 ceiling and then to 0.65 by offset 3 before snapping
+straight to the unrestricted candidate pool at offset 4. The first #679 patch extended
+offsets 4-5 at 0.35, which accidentally made that ladder non-monotonic: day 3 could admit
+tempo/threshold or Strength work before days 4-5 tightened again.
+
+The final policy is monotonic and deliberately conservative because a forecast has no real
+future readiness reading to re-check: offsets 1-2 are Rest/Mobility-Recovery only; offset 3
+may add non-Strength, non-Moderate/Hard/Race-Specific work up to
+`RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST` (0.35); offsets 4-5 widen that same low-intensity
+non-Strength pool to `RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST` (0.5); only offset 6 onward
+reaches the unrestricted candidate pool. This is the projected-day equivalent of requiring
+confirmed freshness before threshold, tempo, race-specific, strength, or dense quality work
+resumes.
 
 ### Multi-event: one taper authority, multiple demand contributors (Phase 5.6, `periodization.ts`)
 

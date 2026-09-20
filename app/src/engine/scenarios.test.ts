@@ -261,7 +261,7 @@ describe('scenario quality diagnostics', () => {
     it('clears an acute high-fatigue trajectory into train-tier days after a healthy check-in', async () => {
         const result = await getResult('cycling_criterium_recovery_clear_A');
         expect(result.weekSummaries).toHaveLength(2);
-        expect(result.weekSummaries[0].fatigueTierDayCounts.recover).toBeGreaterThan(0);
+        expect(result.decisionTraces.filter(trace => trace.weekIndex === 0).some(trace => trace.mode === 'recover')).toBe(true);
         expect(result.weekSummaries[1].fatigueTierDayCounts.train).toBeGreaterThan(0);
     });
 
@@ -318,7 +318,7 @@ describe('Phase 6.3 scenario input contract', () => {
         const result = await runScenario({ ...scenario, readinessForDate });
         expect(readinessForDate).toHaveBeenNthCalledWith(1, '2026-08-07', 0);
         expect(readinessForDate).toHaveBeenNthCalledWith(2, '2026-08-14', 1);
-        expect(result.weekSummaries[0].fatigueTierDayCounts.recover).toBeGreaterThan(0);
+        expect(result.decisionTraces.filter(trace => trace.weekIndex === 0).some(trace => trace.mode === 'recover')).toBe(true);
         expect(result.weekSummaries[1].fatigueTierDayCounts.train).toBeGreaterThan(0);
     });
 

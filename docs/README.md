@@ -94,6 +94,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0038: Engine-Generated Recovery Placement as a Requirement**](./adr/0038-engine-generated-recovery-placement.md) — *Proposed.* Proposes a plan-independent product-policy recovery exposure requirement (one qualifying exact recovery identity within every seven local calendar dates), with deadline escalation and explicit historical provenance; raised by [PR #453](https://github.com/Szczepanov/adaptive-training-recommender/pull/453), implementation unstarted.
 * [**ADR-0039: Longitudinal Body-Composition and Fueling Observations**](./adr/0039-longitudinal-body-composition-and-fueling-observations.md) — *Accepted.* Provider-agnostic body mass, home tape measurements, device body-composition estimates, and subjective fueling context without recommendation authority.
 * [**ADR-0040: Server-Authoritative Anthropometry Writes**](./adr/0040-server-authoritative-anthropometry-writes.md) — *Accepted.* A verified server is the sole mutation authority for anthropometry writes, closing direct SDK mutations to prevent Rules expression-budget exhaustion while enforcing full protocol validation.
+* [**ADR-0041: Typed Strength, Speed and Power Performance Goals (Stage 1)**](./adr/0041-strength-speed-power-performance-goals.md) — *Accepted, amended.* Explicit typed performance outcomes for strength, speed, and power metrics without overriding core safety authority.
 
 ---
 
@@ -194,6 +195,10 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-17 UX heuristics review follow-up**](./analysis/2026-09-17-ux-heuristics-review-followup.md) — Follow-up pass verifying PR fixes from the initial UX heuristics review.
 * [**2026-09-17 Plan status reconciliation**](./analysis/2026-09-17-plan-status-reconciliation.md) — Reconciles implemented plans, verification closures, and remaining evidence/activation gates.
 * [**2026-09-17 Firestore evidence reconnaissance**](./analysis/2026-09-17-firestore-evidence-recon.md) — Privacy-preserving aggregate inventory of production evidence and the gates it does and does not satisfy.
+* [**2026-09-19 Issue #679 remediation — triathlon taper, recovery re-entry, weekday cap**](./analysis/2026-09-19-issue-679-triathlon-taper-recovery-capacity-remediation.md) — Reproduces and fixes the three external-judge-reported Olympic-triathlon persona problems; records a fixture bug, two real engine gaps, and two flagged-not-resolved follow-ups.
+* [**2026-09-19 Persona coverage gap review**](./analysis/2026-09-19-persona-coverage-gap-review.md) — Persona AI-judge suite expansion strategy to address coverage gaps in event-priority and state arbitration.
+* [**2026-09-19 Stage 2 weekly-allocation integration points**](./analysis/2026-09-19-stage2-weekly-allocation-integration-points.md) — Point-in-time mapping of engine files and data shapes for typed performance goals (PG5–PG7).
+* [**2026-09-19 Strength, speed and power performance-goal gap**](./analysis/2026-09-19-strength-speed-power-performance-goal-gap.md) — Point-in-time gap analysis regarding the expression and modeling of typed measurable strength, speed, and power outcomes.
 * [**2026-09-20 Symptom-compatible substitution investigation**](./analysis/2026-09-20-symptom-compatible-substitution-investigation.md) — Issue #680 root-cause findings for the check-in-only strength persona's shoulder/back flare: confirmed mistagged strength templates, a confirmed cross-day tissue re-check gap, and a strength-specificity finding deferred to ADR-0041/PG.
 
 ---
@@ -232,6 +237,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Body-composition and fueling observations**](./plans/body-composition-and-fueling-observations.md) — *Implemented.* Provider-agnostic body mass, home tape measurements, device body-composition estimates, and subjective fueling context without recommendation authority.
 
 * [**Server-authoritative anthropometry writes**](./plans/anthropometry-server-authoritative-writes.md) — *Implemented.* Dedicated Python Cloud Run API verifies Firebase ID tokens and owns strict, validated anthropometry writes; the capability has zero recommendation authority.
+* [**Strength, speed and power performance goals**](./plans/strength-speed-power-performance-goals.md) — *In progress.* Implementation plan for typed measurable strength, speed and power targets (Stage 1 core implemented).
 
 ---
 
