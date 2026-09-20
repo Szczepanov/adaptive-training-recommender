@@ -155,6 +155,12 @@ export function trainingIntentKnowledgeRefs(intent: {
     return mergeKnowledgeRefs(refs);
 }
 
+/** Claim identity for the event-free health adherence/modality policy when it was
+ * actually evaluated for a decision. */
+export function healthPlanningKnowledgeRefs(active: boolean): string[] {
+    return active ? [KNOWLEDGE_CLAIM_IDS.healthAdherenceModalityIntensityPrior] : [];
+}
+
 /** Maximum number of athlete-specific evidence refs permitted in a decision lineage snapshot. */
 export const MAX_ATHLETE_EVIDENCE_LINEAGE_REFS = 16;
 
