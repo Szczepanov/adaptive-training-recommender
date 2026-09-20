@@ -95,6 +95,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0039: Longitudinal Body-Composition and Fueling Observations**](./adr/0039-longitudinal-body-composition-and-fueling-observations.md) — *Accepted.* Provider-agnostic body mass, home tape measurements, device body-composition estimates, and subjective fueling context without recommendation authority.
 * [**ADR-0040: Server-Authoritative Anthropometry Writes**](./adr/0040-server-authoritative-anthropometry-writes.md) — *Accepted.* A verified server is the sole mutation authority for anthropometry writes, closing direct SDK mutations to prevent Rules expression-budget exhaustion while enforcing full protocol validation.
 * [**ADR-0041: Typed Strength, Speed and Power Performance Goals (Stage 1)**](./adr/0041-strength-speed-power-performance-goals.md) — *Accepted, amended.* Explicit typed performance outcomes for strength, speed, and power metrics without overriding core safety authority.
+* [**ADR-0042: Nutrition Ingestion, Provenance, and Decision Authority**](./adr/0042-nutrition-ingestion-provenance-and-decision-authority.md) — *Accepted.* Provider-neutral energy intake and macro ingestion, strict separation from energy expenditure, tripartite provenance identity, and strictly retrospective zero recommendation authority.
 
 ---
 
@@ -242,6 +243,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 
 * [**Server-authoritative anthropometry writes**](./plans/anthropometry-server-authoritative-writes.md) — *Implemented.* Dedicated Python Cloud Run API verifies Firebase ID tokens and owns strict, validated anthropometry writes; the capability has zero recommendation authority.
 * [**Strength, speed and power performance goals**](./plans/strength-speed-power-performance-goals.md) — *In progress.* Implementation plan for typed measurable strength, speed and power targets (Stage 1 core implemented).
+* [**Nutrition Ingestion**](./plans/nutrition-ingestion.md) — *Implemented.* Provider-neutral nutrition ingestion and persistence architecture, while strictly preserving that unverified or incomplete dietary logs must not exert automated training recommendation authority.
 
 ---
 
