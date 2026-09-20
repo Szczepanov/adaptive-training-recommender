@@ -121,6 +121,16 @@ function cyclingEvent(priority: 'A' | 'B' | 'C', date = '2026-09-20'): UserEvent
     } as UserEvent;
 }
 
+function generalTarget(priority: 'A' | 'B' | 'C', date = '2026-09-20'): UserEvent {
+    const event = cyclingEvent(priority, date);
+    return {
+        ...event,
+        id: `general-target-${priority}-${date}`,
+        title: `${priority} general target`,
+        category: 'general_target',
+    };
+}
+
 function strengthEvent(priority: 'A' | 'B', date = '2026-09-20'): UserEvent {
     return {
         id: `strength-event-${priority}-${date}`,
@@ -389,9 +399,19 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(longHorizon.accepted[0].benefitScore).toBeCloseTo(0.45 * 1.40 * 0.50, 5);
 
         const running = mockTemplate({ modality: 'Running', stimulusProfile: undefined });
+        const cyclingThresholdObjective = [objective('threshold_quality', { thresholdPower: 0.8 }, 'Cycling')];
+        const nonMatchingBaseline = rankCandidates(
+            [running],
+            cyclingThresholdObjective,
+            mockFatigueState(),
+            AVAILABILITY,
+            [],
+            PREFERENCES,
+            { date: '2026-09-10' },
+        );
         const nonMatching = rankCandidates(
             [running],
-            [objective('threshold_quality', { thresholdPower: 0.8 }, 'Cycling')],
+            cyclingThresholdObjective,
             mockFatigueState(),
             AVAILABILITY,
             [],
@@ -399,6 +419,17 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
             { date: '2026-09-10', focusEvent: cyclingEvent('A') },
         );
         expect(nonMatching.accepted[0].benefitScore).toBeCloseTo(0.45 * 0.20, 5);
+
+        const cGeneralTarget = rankCandidates(
+            [running],
+            cyclingThresholdObjective,
+            mockFatigueState(),
+            AVAILABILITY,
+            [],
+            PREFERENCES,
+            { date: '2026-09-10', focusEvent: generalTarget('C') },
+        );
+        expect(cGeneralTarget.accepted[0].benefitScore).toBeCloseTo(nonMatchingBaseline.accepted[0].benefitScore, 5);
 
         const strength = mockTemplate({
             id: 'strength-event-test',
@@ -430,9 +461,12 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(strengthWithAEvent.accepted[0].benefitScore).toBeCloseTo(strengthBaseline.accepted[0].benefitScore * 1.40, 5);
 
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.eventPriorityMultipliersPolicy);
-        expect(claim.statement).toContain('1.40 for an A-priority event, 1.25 for a B-priority event and 1.00 for a C-priority event');
+        expect(claim.statement).toContain('1.40 for an A-priority event and 1.25 for a B-priority event');
+        expect(claim.statement).toContain('triathlon -> Swimming, Cycling or Running');
+        expect(claim.statement).toContain('C-priority cycling_event, running_race and triathlon candidates enter the same event-aware ranking with a neutral 1.00 multiplier');
+        expect(claim.statement).toContain('C-priority general_target and strength_meet retain their prior no-op behavior');
         expect(claim.statement).toContain('for strength_meet, that priority boost applies only when the candidate satisfies an unresolved objective');
-        expect(claim.statement).toContain('For B and C events, a second race-specific endurance session within 6 days is multiplied by 0.35');
+        expect(claim.statement).toContain('For B and C cycling/running/triathlon events, a second race-specific endurance session within 6 days is multiplied by 0.35');
         expect(claim.statement).toContain('multiplied by 0.35');
         expect(claim.statement).toContain('multiplied by 0.50');
         expect(claim.statement).toContain('multiplied by 0.20');
