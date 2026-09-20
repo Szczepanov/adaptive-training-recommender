@@ -27,7 +27,7 @@ import {
     type EffectiveBundleIdentityProjection,
     type IdentityEligibilityPolicy,
 } from './identityEligibility';
-import type { SourceMetricBaseline } from './multisourceBaselines';
+import { sourceMetricBaselineKey, type SourceMetricBaseline } from './multisourceBaselines';
 
 /**
  * Default identity policy for the PI9 gate below: `eight_sleep`/`google_health` is the only
@@ -218,6 +218,14 @@ export function evaluateMultisourceFusion(params: {
           });
 
     // Step 3: Evaluate candidate-v1 fusion across active metric streams
+    // ⚡ Bolt: O(1) baseline map lookup rather than O(N) array scans inside nested loop
+    const baselineMap = new Map<string, SourceMetricBaseline>();
+    for (const b of baselines) {
+        const key = sourceMetricBaselineKey(b.metric, b.provider, b.transport);
+        // Preserve the old Array.find() first-match behavior for malformed duplicate input.
+        if (!baselineMap.has(key)) baselineMap.set(key, b);
+    }
+
     const fusedMetrics: Record<string, FusedMetricEvidence> = {};
     const candidateMetricConfigs: { metric: string; enabled: boolean }[] = [
         { metric: 'hrv_rmssd_ms', enabled: metricActivation.hrv },
@@ -242,12 +250,7 @@ export function evaluateMultisourceFusion(params: {
         }[] = [];
 
         for (const bundle of validDayBundles) {
-            const base = baselines.find(
-                (b) =>
-                    b.metric === metric &&
-                    b.provider === bundle.provider &&
-                    b.transport === bundle.transport,
-            );
+            const base = baselineMap.get(sourceMetricBaselineKey(metric, bundle.provider, bundle.transport));
 
             // Gating: Only PROVISIONAL or MATURE baselines participate
             if (!base || (base.maturity !== 'MATURE' && base.maturity !== 'PROVISIONAL')) {

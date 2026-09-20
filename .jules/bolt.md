@@ -50,3 +50,6 @@
 ## 2025-03-08 - Single dict lookup for review event categorization
 **Learning:** Checking `key in dict` followed by `dict[key]` performs two key hash lookups in Python. Using `dict.get(key)` combines both operations into a single hash lookup.
 **Action:** In inner loops over large datasets, use `dict.get(key)` to avoid redundant dict key hash operations.
+## 2026-09-20 - Index baselines for O(1) loop lookups
+**Learning:** In multisource fusion calculations (`evaluateMultisourceFusion`, `computeCrossSourceTelemetry`), repeatedly searching `baselines` arrays using `.find()` inside nested loops over metric types and observation bundles causes significant O(N) iteration overhead.
+**Action:** Always pre-build a `Map` of baselines keyed by their unique discriminator (like `${metric}_${provider}_${transport}`) before iterating over observations. Use O(1) `Map.get()` inside the loop bodies.
