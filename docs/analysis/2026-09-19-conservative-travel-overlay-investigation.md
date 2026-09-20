@@ -131,9 +131,11 @@ The plan-judge comparison remains characterization telemetry, not a defect gate.
 
 **Evidence boundary.** Recovery and readiness are appropriate inputs to day-to-day training
 decisions, but athlete-monitoring literature emphasizes contextual interpretation and the lack of
-a single definitive fatigue marker. See Halson (2014), PMID 25200666, and Ibrahim et al. (2024),
-PMID 38665139. Neither source validates this engine's internal `systemicCost` bands, fatigue
-fusion, or a specific whole-horizon monotonicity rule.
+a single definitive fatigue marker. Halson (2014; PMID 25200666) and Ibrahim et al. (2024;
+PMID 38665139) support that caution. Rebelo et al. (2026; PMID 41824225) further frames readiness
+as a contextual, longitudinal decision-support proxy rather than a stand-alone determinant.
+None of these sources validates this engine's internal `systemicCost` bands, fatigue fusion, or
+a specific whole-horizon monotonicity rule.
 
 ## Non-goals honored
 

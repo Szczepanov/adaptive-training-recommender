@@ -22,7 +22,7 @@ function horizonMetrics(result: Awaited<ReturnType<typeof runScenario>>) {
 }
 
 describe('recent load horizon response (Issue #676 / #692)', () => {
-    it('reduces near-term load after a recent hard exposure and reports whole-horizon rebound telemetry', async () => {
+    it('caps near-term load after a recent hard exposure and reports whole-horizon rebound telemetry', async () => {
         const base = SCENARIOS.find(s => s.id === 'cycling_criterium_A');
         expect(base).toBeDefined();
         if (!base) return;

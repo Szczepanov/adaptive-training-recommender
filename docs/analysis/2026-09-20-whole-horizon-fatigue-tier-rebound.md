@@ -1,11 +1,12 @@
 # 2026-09-20 Whole-Horizon Fatigue-Tier Rebound
 
 Investigation for [issue #676](https://github.com/Szczepanov/adaptive-training-recommender/issues/676)
-(hard-load density and race-week sequencing, PR #690), following up on
-`app/src/engine/recentLoadHorizonDensity.test.ts`'s monotonicity check: a more recent
-prior hard exposure should never produce more total hard sessions or cumulative systemic
-cost over a 14-day forecast than a less recent (or absent) one. This is tracked as a
-cross-cutting architectural finding in
+(hard-load density and race-week sequencing, PR #690), following up on the former monotonicity hypothesis in
+`app/src/engine/recentLoadHorizonDensity.test.ts`: the original test assumed that a more recent
+prior hard exposure would produce no more total hard sessions or cumulative systemic cost over a
+14-day forecast than a less recent (or absent) one. Issue #692 evaluates whether that assumption
+belongs in the product contract. The shared mechanism is tracked as a cross-cutting architectural
+finding in
 [issue #692](https://github.com/Szczepanov/adaptive-training-recommender/issues/692),
 since the identical root cause independently surfaced in
 [issue #677](https://github.com/Szczepanov/adaptive-training-recommender/issues/677)'s
@@ -97,6 +98,10 @@ neutral/conservative totals as telemetry rather than a warning/failure.
 - Ibrahim AH, Beaumont CT, Strohacker K. *Implementing Meta-Session Autoregulation Strategies for
   Exercise — A Scoping Review.* Int J Exerc Sci. 2024. PMID 38665139 — describes adjustment of
   training to day-to-day fitness/fatigue/readiness, while highlighting heterogeneous implementation.
+- Rebelo A, Bishop C, Thorpe RT, Turner AN, Gabbett TJ. *Monitoring Training Effects in Athletes:
+  A Multidimensional Framework for Decision-Making.* Sports Med. 2026. PMID 41824225 — positions
+  readiness as an operational proxy that can support day-to-day decisions when interpreted
+  longitudinally and in context, rather than as a stand-alone determinant of performance outcomes.
 
-These sources support cautious autoregulation as a concept; they do not validate this engine's
-specific thresholds or make the accepted non-invariant a scientific requirement.
+These sources support cautious, contextual autoregulation as a concept; they do not validate this
+engine's specific thresholds or make the accepted non-invariant a scientific requirement.
