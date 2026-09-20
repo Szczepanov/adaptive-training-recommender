@@ -368,6 +368,18 @@ overlapping derived event block, so it owns both its planned dose and its exactl
 weekly objectives (aerobic volume plus maintenance strength); it is never inferred from an
 event title, venue, or fixed activity.
 
+Travel dose scaling only ever *reduces* what an otherwise-eligible candidate pool offers —
+it does not itself guarantee that pool is non-empty. Before `end_easy_05`, every
+`Easy`/`Moderate`/`Hard Endurance` candidate in `templates.ts` required `indoor_bike`,
+`outdoor_bike`, or `swim_access` equipment, or (Running/Walking) was hard-tagged
+`environment: 'outdoor'`; a travel day with no bike/treadmill access and an indoor-only
+environment override excluded all of them on hard constraints, leaving only
+`Rest`/`Mobility/Recovery` candidates regardless of dose scaling (issue #677).
+`end_easy_05` ("Equipment-Free Aerobic Circuit", `Cross Training` modality,
+`requiredEquipment: []`, `environment: 'either'`) closes that gap with a genuinely
+zero-equipment, RPE-based bodyweight cardio option — it does not fabricate access to
+cycling, weights, or a hotel gym the athlete does not have.
+
 ### Taper as an explicit contract (Phase 5.7, `microcycle.ts`, `periodization.ts`, `planSchedule.ts`)
 
 Before this, `taperActive`/`volumeScale` reduced volume, but nothing represented "preserve

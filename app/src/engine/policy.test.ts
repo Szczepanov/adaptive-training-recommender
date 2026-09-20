@@ -6,6 +6,11 @@ describe('isHistoricalPolicyVersion', () => {
         expect(POLICY_VERSION).toBe('2026-09-hard-load-density-race-week-sequencing-v1');
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(
+                (version) => version === '2026-09-overlay-fallback-conservative-monotonicity-v1',
+            ),
+        ).toHaveLength(1);
+        expect(
+            HISTORICAL_POLICY_VERSIONS.filter(
                 (version) => version === '2026-09-symptom-compatible-strength-safety-v1',
             ),
         ).toHaveLength(1);
@@ -16,7 +21,7 @@ describe('isHistoricalPolicyVersion', () => {
         ).toHaveLength(1);
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(
-                (version) => version === '2026-09-performance-goal-demand-projection-v1',
+                (version) => version === '2026-09-health-adherence-modality-intensity-v1',
             ),
         ).toHaveLength(1);
         expect(
@@ -26,7 +31,7 @@ describe('isHistoricalPolicyVersion', () => {
         ).toHaveLength(1);
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(
-                (version) => version === '2026-09-health-adherence-modality-intensity-v1',
+                (version) => version === '2026-09-performance-goal-demand-projection-v1',
             ),
         ).toHaveLength(1);
         expect(

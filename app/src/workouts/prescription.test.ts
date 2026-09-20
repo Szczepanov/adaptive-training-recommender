@@ -41,7 +41,9 @@ describe('resolveWorkoutPrescription', () => {
     for (const template of TEMPLATES) {
       const workout = workoutForTemplate(template.id);
       expect(workout).toBeDefined();
-      if (template.modality !== 'None') expect(workout?.modality).toBe(template.modality.toLowerCase());
+      // Engine modality is space-separated title case ('Cross Training'); workout modality
+      // is snake_case ('cross_training') -- normalize rather than assume a 1:1 casing match.
+      if (template.modality !== 'None') expect(workout?.modality).toBe(template.modality.toLowerCase().replace(/\s+/g, '_'));
     }
 
     const lowerBody = workoutForTemplate('str_lower_01');

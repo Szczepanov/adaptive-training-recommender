@@ -5,6 +5,7 @@ import type { GuardrailKey } from './models';
 import { BODY_REGIONS, type BodyRegion } from './models';
 import { EXERCISES } from '../workouts/exercises';
 import { workoutForTemplate } from '../workouts/prescription';
+import type { ExerciseDefinition } from '../workouts/models';
 import type { InjuryRegionMappingFamily } from './models';
 
 /**
@@ -85,5 +86,142 @@ describe('strength template safetyTags stay aligned with their resolved workout 
         // returned no exercises for every strength template (e.g. a broken import).
         const anyGuardrailsFound = strengthTemplates.some(t => expectedGuardrailsForTemplate(t.id).size > 0);
         expect(anyGuardrailsFound).toBe(true);
+    });
+});
+
+/**
+ * Follow-up from issue #680 for the lower-limb guardrail families.
+ *
+ * These assertions intentionally test the engine's CURRENT PRODUCT TAXONOMY, not clinical
+ * clearance for a diagnosis. In particular, ExerciseDefinition.impact is a contact/landing
+ * classification used by this catalog. It is not a synonym for movement speed, explosiveness,
+ * rate of force development, tendon load, or joint load: hang_power_clean is intentionally
+ * authored as impact: 'low' while its prescription asks for fast, crisp Olympic-lift speed.
+ *
+ * ExerciseDefinition.contraindicationTags also remain descriptive metadata rather than a live
+ * production eligibility gate (see sessionChoiceEligibility.ts). Therefore lower-limb template
+ * safetyTags should be aligned with the explicit impact/load semantics the engine actually
+ * consumes, not mechanically copied from every region-level contraindication tag.
+ */
+describe('template-workout safety tag alignment (lower-limb product taxonomy)', () => {
+    const loadedLowerStrengthTemplateIds = ['str_lower_01', 'str_full_01', 'str_full_03'] as const;
+
+    function resolvedExercisesForTemplate(templateId: string): ExerciseDefinition[] {
+        const workout = workoutForTemplate(templateId);
+        expect(workout, `Workout for ${templateId} should exist`).toBeDefined();
+        if (!workout) return [];
+
+        const exercises: ExerciseDefinition[] = [];
+        for (const block of workout.blocks) {
+            for (const step of block.steps) {
+                const exercise = EXERCISES_BY_ID.get(step.exerciseId);
+                expect(
+                    exercise,
+                    `Exercise ${step.exerciseId} referenced by ${templateId} should exist in the catalog`,
+                ).toBeDefined();
+                if (exercise) exercises.push(exercise);
+            }
+        }
+        return exercises;
+    }
+
+    it('requires avoid_high_impact on every running and field session template', () => {
+        const runningAndField = TEMPLATES.filter(
+            template => template.modality === 'Running' || template.modality === 'Field',
+        );
+        expect(runningAndField.length).toBeGreaterThan(0);
+
+        for (const template of runningAndField) {
+            expect(
+                template.safetyTags,
+                `Template ${template.id} (${template.title}) must carry avoid_high_impact`,
+            ).toContain('avoid_high_impact');
+        }
+    });
+
+    it('requires avoid_high_impact when a resolved workout actually contains a catalog high-impact exercise', () => {
+        let highImpactWorkoutCount = 0;
+
+        for (const template of TEMPLATES) {
+            const workout = workoutForTemplate(template.id);
+            if (!workout) continue;
+
+            const exercises = resolvedExercisesForTemplate(template.id);
+            if (!exercises.some(exercise => exercise.impact === 'high')) continue;
+
+            highImpactWorkoutCount += 1;
+            expect(
+                template.safetyTags,
+                `Template ${template.id} resolves to a high-impact exercise and must carry avoid_high_impact`,
+            ).toContain('avoid_high_impact');
+        }
+
+        // Prevent this alignment check from silently becoming vacuous if catalog mappings change.
+        expect(highImpactWorkoutCount).toBeGreaterThan(0);
+    });
+
+    it('requires avoid_heavy_lower_body on the loaded lower-body/full-body strength templates', () => {
+        for (const templateId of loadedLowerStrengthTemplateIds) {
+            const template = TEMPLATES.find(candidate => candidate.id === templateId);
+            expect(template, `Template ${templateId} should exist`).toBeDefined();
+            expect(
+                template!.safetyTags,
+                `Template ${templateId} (${template!.title}) must carry avoid_heavy_lower_body`,
+            ).toContain('avoid_heavy_lower_body');
+        }
+    });
+
+    it('keeps loaded strength workouts outside the catalog high-impact class without calling them non-explosive', () => {
+        let sawHangPowerClean = false;
+
+        for (const templateId of loadedLowerStrengthTemplateIds) {
+            const template = TEMPLATES.find(candidate => candidate.id === templateId);
+            expect(template, `Template ${templateId} should exist`).toBeDefined();
+
+            const exercises = resolvedExercisesForTemplate(templateId);
+            expect(exercises.length).toBeGreaterThan(0);
+
+            for (const exercise of exercises) {
+                if (exercise.id === 'hang_power_clean') sawHangPowerClean = true;
+                expect(
+                    ['none', 'low'],
+                    `Exercise ${exercise.id} in ${templateId} should stay outside the catalog high-impact class`,
+                ).toContain(exercise.impact);
+            }
+
+            // This pins the current product-policy distinction only. If the product later chooses
+            // to make Olympic-lift/power exposure a separate guardrail, that should be an explicit
+            // policy change rather than an accidental consequence of the generic impact label.
+            expect(template!.safetyTags).not.toContain('avoid_high_impact');
+        }
+
+        // Makes the semantic distinction concrete: this group really does contain an explosive
+        // movement even though the catalog classifies that movement as low impact.
+        expect(sawHangPowerClean).toBe(true);
+        expect(EXERCISES_BY_ID.get('hang_power_clean')?.impact).toBe('low');
+    });
+
+    it('keeps the zero-equipment bodyweight full-body template outside heavy/high-impact guardrails', () => {
+        const template = TEMPLATES.find(candidate => candidate.id === 'str_full_02');
+        expect(template).toBeDefined();
+        expect(template!.safetyTags).not.toContain('avoid_heavy_lower_body');
+        expect(template!.safetyTags).not.toContain('avoid_high_impact');
+
+        const workout = workoutForTemplate('str_full_02');
+        expect(workout).toBeDefined();
+        expect(workout!.equipment).toEqual(['bodyweight']);
+
+        const exercises = resolvedExercisesForTemplate('str_full_02');
+        expect(exercises.length).toBeGreaterThan(0);
+        for (const exercise of exercises) {
+            expect(
+                exercise.equipment.every(equipment => equipment === 'bodyweight'),
+                `Exercise ${exercise.id} in str_full_02 should not require external load`,
+            ).toBe(true);
+            expect(
+                ['none', 'low'],
+                `Exercise ${exercise.id} in str_full_02 should stay outside the catalog high-impact class`,
+            ).toContain(exercise.impact);
+        }
     });
 });
