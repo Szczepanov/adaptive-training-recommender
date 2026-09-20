@@ -527,10 +527,10 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.rollingHardDensityCap,
-        statement: 'The product counts a prior session with systemicCost at least 0.5 as hard for rolling-density protection and rejects another systemicCost-at-least-0.5 candidate when three such sessions occurred in the previous six calendar days.',
+        statement: 'The product counts a prior session with systemicCost at least 0.5 as hard for rolling-density protection, rejects another systemicCost-at-least-0.5 candidate when three such sessions occurred in the previous six calendar days, and moderates the benefit of non-anchor hard sessions (by 0.40) when at least two hard sessions sit in the rolling window to prevent quality stacking and maintain whole-horizon load sensitivity (Issue #676).',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
         applicability: { contexts: ['recommendation_engine', 'load_management'], sports: ['all_supported_sports'], populations: ['product_users'], outcomes: ['hard_session_density_guardrail'], horizon: 'acute' },
-        evidence: [{ sourceId: LOAD_INTENSITY_RECOVERY_PRODUCT_POLICY_SOURCE, directness: 'direct' }], limitations: ['This is a conservative product guardrail; evidence on endurance intensity distribution does not establish three sessions in six days as a universal physiological maximum.', 'The internal systemicCost >= 0.5 definition is product semantics rather than an external intensity threshold.'], reviewedOn: '2026-08-30', version: 1,
+        evidence: [{ sourceId: LOAD_INTENSITY_RECOVERY_PRODUCT_POLICY_SOURCE, directness: 'direct' }], limitations: ['This is a conservative product guardrail; evidence on endurance intensity distribution does not establish three sessions in six days as a universal physiological maximum.', 'The internal systemicCost >= 0.5 definition is product semantics rather than an external intensity threshold.'], reviewedOn: '2026-09-20', version: 2,
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.anchorSpacing,
@@ -541,10 +541,10 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.hardLowerBodySpacing,
-        statement: 'The product treats lowerBodyCost at least 0.6 as hard lower-body work and applies a default two-calendar-day minimum gap to another hard-lower-body candidate, while allowing authored workout recovery metadata to specify a different requirement.',
+        statement: 'The product treats lowerBodyCost at least 0.6 as hard lower-body work and applies a default two-calendar-day minimum gap to another hard-lower-body candidate, while allowing authored workout recovery metadata to specify a different requirement; for endurance events (cycling, running, triathlon), it enforces at least a three-day gap between strength sessions and at least a four-day gap between heavy strength sessions (cost >= 0.6) to protect primary sport adaptation (Issue #676).',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
         applicability: { contexts: ['recommendation_engine', 'lower_body_recovery'], sports: ['strength', 'cycling', 'running', 'field_sports', 'endurance_multisport'], populations: ['product_users'], outcomes: ['lower_body_spacing_guardrail'], horizon: 'acute' },
-        evidence: [{ sourceId: LOAD_INTENSITY_RECOVERY_PRODUCT_POLICY_SOURCE, directness: 'direct' }], limitations: ['The 0.6 cost threshold and two-day default are product calibration, not universal physiological recovery cut-points.', 'Individual authored workout recoveryHours/minimumDays values remain catalog-specific policy data and require their own evidence/calibration audit.'], reviewedOn: '2026-08-30', version: 1,
+        evidence: [{ sourceId: LOAD_INTENSITY_RECOVERY_PRODUCT_POLICY_SOURCE, directness: 'direct' }], limitations: ['The 0.6 cost threshold and two-day default are product calibration, not universal physiological recovery cut-points.', 'Individual authored workout recoveryHours/minimumDays values remain catalog-specific policy data and require their own evidence/calibration audit.'], reviewedOn: '2026-09-20', version: 2,
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.strengthEnduranceAdjacency,
@@ -562,10 +562,10 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.severeAdverseRecoveryReentry,
-        statement: 'Issue #679: after a severe adverse-recovery flag, forecast re-entry is deliberately monotonic: days 1-2 admit only Rest/Mobility-Recovery; day 3 may add non-Strength, non-Moderate/Hard/Race-Specific work at systemicCost <=0.35; days 4-5 may widen that same low-intensity/non-Strength pool to systemicCost <=0.5; the unrestricted candidate pool is reached only from day 6 onward. A forecast day carries no real future readiness reading to re-check, so this conservative ladder is the projected-day equivalent of requiring confirmed freshness before threshold, tempo, race-specific, strength, or dense multi-day training resumes.',
+        statement: 'Issue #679 / #676: after a severe adverse-recovery flag, forecast re-entry is deliberately monotonic: days 1-2 admit only Rest/Mobility-Recovery; day 3 may add non-Strength, non-Moderate/Hard/Race-Specific work at systemicCost <=0.35; days 4-5 may widen that same low-intensity/non-Strength pool to systemicCost <=0.5, with an exception allowing light neuromuscular taper sharpening (systemicCost <=0.45) on D-2/D-3 before an A/B endurance event to prevent over-resting after severe objective adversity; the unrestricted candidate pool is reached only from day 6 onward. A forecast day carries no real future readiness reading to re-check, so this conservative ladder is the projected-day equivalent of requiring confirmed freshness before threshold, tempo, race-specific, strength, or dense multi-day training resumes.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
         applicability: { contexts: ['recommendation_engine', 'week_ahead_forecast', 'adverse_recovery'], sports: ['all_supported_sports'], populations: ['product_users'], outcomes: ['recovery_reentry_candidate_restriction'], horizon: 'acute' },
-        evidence: [{ sourceId: LOAD_INTENSITY_RECOVERY_PRODUCT_POLICY_SOURCE, directness: 'direct' }], limitations: ['The 5-day window length, the 0.35/0.5 systemic-cost ceilings, and the category exclusions are product calibration values, not a validated physiological recovery timeline for severe adverse-recovery signals.', 'Cannot substitute for a real check-in: a forecast projects forward from day-0 readiness and has no mechanism to confirm the athlete has actually recovered by day 4-6.'], reviewedOn: '2026-09-19', version: 1,
+        evidence: [{ sourceId: LOAD_INTENSITY_RECOVERY_PRODUCT_POLICY_SOURCE, directness: 'direct' }], limitations: ['The 5-day window length, the 0.35/0.5 systemic-cost ceilings, and the category exclusions are product calibration values, not a validated physiological recovery timeline for severe adverse-recovery signals.', 'Cannot substitute for a real check-in: a forecast projects forward from day-0 readiness and has no mechanism to confirm the athlete has actually recovered by day 4-6.'], reviewedOn: '2026-09-20', version: 2,
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.fatigueDecayHalfLives,

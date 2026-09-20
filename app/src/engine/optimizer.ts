@@ -572,6 +572,25 @@ export function evaluateRecoveryConstraints(
         if (hasViolation) reasons.push('HARD_LOWER_BODY_SPACING_VIOLATION');
     }
 
+    const isStrengthTemplate = template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category);
+    const focusEvent = options.focusEvent;
+    if (isStrengthTemplate && focusEvent && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race' || focusEvent.category === 'triathlon')) {
+        const isHeavyStrength = candidateLowerBodyCost >= 0.6 || template.systemicCost >= 0.6;
+        const hasSpacingViolation = history.some(h => {
+            const diff = getDayDiff(targetDate, h.date);
+            if (diff < 1) return false;
+            const isPriorStrength = h.modality === 'Strength' || (h.category && STRENGTH_CATEGORIES.includes(h.category));
+            if (!isPriorStrength) return false;
+            const isPriorHeavy = (h.lowerBodyCost ?? 0) >= 0.6 || (h.systemicCost ?? 0) >= 0.6;
+            if ((isHeavyStrength || isPriorHeavy) && diff < 4) return true;
+            if (diff < 3) return true;
+            return false;
+        });
+        if (hasSpacingViolation) {
+            reasons.push('HARD_LOWER_BODY_SPACING_VIOLATION');
+        }
+    }
+
     if (template.systemicCost >= 0.5) {
         if (histSummary.hardInRollingWindowCount >= 3) reasons.push('ROLLING_HARD_CAP_EXCEEDED');
     }
@@ -587,7 +606,6 @@ export function evaluateRecoveryConstraints(
         if (histSummary.priorHeavyStrengthWindow0to1) reasons.push('ANCHOR_PROTECTION_VIOLATION');
     }
 
-    const focusEvent = options.focusEvent;
     if (focusEvent && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race' || focusEvent.category === 'triathlon') && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
         const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
         const daysToRace = getDayDiff(raceDate, targetDate);
@@ -612,6 +630,19 @@ export function evaluateRecoveryConstraints(
             const isExhaustiveSession = template.systemicCost >= 0.75 || (template.title ?? '').toLowerCase().includes('vo2');
             if (isExhaustiveSession) {
                 reasons.push('PRE_EVENT_TAPER_RESTRICTION');
+            }
+        }
+        if (focusEvent.priority === 'A' && daysToRace >= 1 && daysToRace <= 7) {
+            const isHighCostRaceSpecificOrHard = template.systemicCost >= 0.50
+                || (template.category === 'Race-Specific Endurance' && template.systemicCost > 0.45);
+            if (isHighCostRaceSpecificOrHard) {
+                const hasRecentHardSession = history.some(h => {
+                    const diff = getDayDiff(targetDate, h.date);
+                    return diff >= 1 && diff <= 3 && (h.systemicCost ?? 0) >= 0.50;
+                });
+                if (hasRecentHardSession) {
+                    reasons.push('PRE_EVENT_TAPER_RESTRICTION');
+                }
             }
         }
         const daysSinceRace = getDayDiff(targetDate, raceDate);
@@ -910,8 +941,10 @@ export function rankCandidates(
     const targetDate = options.date ?? getLocalDateString();
     const history = normalizeHistory(rawHistory, targetDate);
     const summary = buildHistoryFeatureSummary(history, targetDate, options.resolveRecoveryHours);
-    const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance' || o.key === 'strength_development');
+    const isEnduranceEvent = Boolean(focusEvent && ['cycling_event', 'running_race', 'triathlon'].includes(focusEvent.category));
     const coverageState = options.coverageState;
+    const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance' || o.key === 'strength_development')
+        || (isEnduranceEvent && (summary.strengthInLast7DaysCount >= 1 || (coverageState?.requirements.some(r => r.key === 'primary_strength' && (r.completedSessions + r.projectedSessions) >= r.minimumSessions) ?? false)));
     const recoveryStyle = preferences.preferredRecoveryStyle ?? 'mixed';
     const sequenceIntent = options.sequenceIntent;
     const daysSinceLastKeySession = history.reduce<number | null>((closest, entry) => {
@@ -1023,6 +1056,12 @@ export function rankCandidates(
             benefit += MULTISPORT_MODALITY_COVERAGE_BENEFIT;
         }
         if (fulfilsNominatedAnchor) benefit += ANCHOR_TIMING_BENEFIT;
+
+        // When rolling 7-day hard session count is already elevated (>= 2), moderate benefit
+        // for non-anchor high-cost sessions to prevent quality stacking and excessive load density.
+        if (summary.hardInRollingWindowCount >= 2 && template.systemicCost >= 0.50 && !fulfilsNominatedAnchor) {
+            benefit *= 0.40;
+        }
 
         let costPenalty = calculateFatigueCostPenalty(template.costProfile, fatigueState);
         if (extraMargin && template.systemicCost > 0.5) costPenalty += 0.3;

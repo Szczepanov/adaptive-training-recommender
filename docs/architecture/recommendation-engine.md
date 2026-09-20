@@ -398,10 +398,31 @@ excluded once systemicCost exceeds `TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST`
 = 1) -- "reduced nonessential strength" rather than an outright ban. A Moderate/Hard
 Endurance candidate is excluded when one already occurred within
 `TAPER_MODERATE_DENSITY_MIN_GAP_DAYS` (3) days, preventing a stacked, build-like block near
-the event while still allowing spaced, brief discipline-specific touches. Race-Specific
-Endurance is deliberately excluded from the density guard: event-specific work recurring
-near the event is expected, and a recent one is already tempered by benefit-score softening
-(anchor protection) rather than a hard exclusion.
+the event while still allowing spaced, brief discipline-specific touches.
+
+### Race-week quality density guard and whole-horizon load sensitivity (Issue #676)
+
+In addition to taper volume and moderate density rules, `optimizer.ts` and `planner.ts` enforce:
+
+* **Race-week quality density guard (`optimizer.ts` `evaluateRecoveryConstraints`):** Within the 7-day
+  window before a Priority A event, candidates with `systemicCost >= 0.50` or category `Race-Specific Endurance`
+  with `systemicCost > 0.45` are excluded if any hard session (`systemicCost >= 0.50` or race-specific `> 0.45`)
+  occurred within the preceding 3 days (`1 <= diff && diff <= 3`). This prevents quality stacking between
+  recent training and pre-event surges or race simulations.
+* **Whole-horizon hard load sensitivity (`optimizer.ts` `rankCandidates`):** When rolling 6-day hard
+  session count reaches $\ge 2$, non-anchor candidates with `systemicCost >= 0.50` receive a 0.40 benefit
+  multiplier (`benefit *= 0.40`). This ensures that recent hard training ($D-1$) monotonically dampens
+  future hard session density and cumulative systemic cost across the 14-day horizon relative to a clean baseline.
+* **Severe recovery re-entry race sharpening (`planner.ts` `isRecoveryReentryCandidate`):** During late
+  re-entry (days 4–5) after severe objective adversity before an A- or B-priority endurance event, light
+  pre-event sharpening (`Race-Specific Endurance`, `systemicCost <= 0.45`, e.g. `end_taper_sharpen_01`)
+  is permitted on $D-2$ or $D-3$. This avoids 7 consecutive rest/mobility days and athlete flatness while
+  maintaining physiological safety. Forecast diagnostics report effective fatigue tiers (`'recover'` on
+  forced rest days, `'modify'` on re-entry days).
+* **Endurance-event strength spacing (`optimizer.ts` `evaluateRecoveryConstraints`):** For endurance sports
+  (`cycling_event`, `running_race`, `triathlon`), strength spacing requires $\ge 4$ days between heavy
+  strength sessions ($\ge 0.60$ systemic or lower-body cost) and $\ge 3$ days between general strength sessions.
+
 
 ### Graduated recovery re-entry after severe adverse recovery (Issue #679, `planner.ts`)
 

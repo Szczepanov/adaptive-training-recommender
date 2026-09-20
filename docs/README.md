@@ -193,8 +193,8 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-16 UX heuristics review**](./analysis/2026-09-16-ux-heuristics-review.md) — Point-in-time usability audit and heuristic evaluation of a fresh account walkthrough.
 * [**2026-09-17 UX heuristics review follow-up**](./analysis/2026-09-17-ux-heuristics-review-followup.md) — Follow-up pass verifying PR fixes from the initial UX heuristics review.
 * [**2026-09-17 Plan status reconciliation**](./analysis/2026-09-17-plan-status-reconciliation.md) — Reconciles implemented plans, verification closures, and remaining evidence/activation gates.
-* [**2026-09-17 Firestore evidence reconnaissance**](./analysis/2026-09-17-firestore-evidence-recon.md) — Privacy-preserving aggregate inventory of production evidence and the gates it does and does not satisfy.
 * [**2026-09-19 Issue #679 remediation — triathlon taper, recovery re-entry, weekday cap**](./analysis/2026-09-19-issue-679-triathlon-taper-recovery-capacity-remediation.md) — Reproduces and fixes the three external-judge-reported Olympic-triathlon persona problems; records a fixture bug, two real engine gaps, and two flagged-not-resolved follow-ups.
+* [**2026-09-20 Issue #676 remediation — hard-load density, race-week sequencing, severe recovery sharpening**](./analysis/2026-09-20-hard-load-density-and-race-week-sequencing.md) — Remediation for whole-horizon load sensitivity after recent hard training, quality spacing during Priority A race weeks, pre-event sharpening during severe recovery re-entry, and endurance strength spacing.
 
 ---
 

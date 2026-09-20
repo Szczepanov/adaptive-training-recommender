@@ -1413,13 +1413,32 @@ export function generateWeekAheadPlan(
         const isRecoveryLateReentryDate = isSevereAdverseRecovery && (offset === 4 || offset === 5);
         const isRecoveryCategory = (template: SessionTemplate) =>
             template.category === 'Rest' || template.category === 'Mobility/Recovery';
-        const isRecoveryReentryCandidate = (template: SessionTemplate, maxSystemicCost: number) =>
-            isRecoveryCategory(template)
-            || (template.systemicCost <= maxSystemicCost
-                && template.modality !== 'Strength'
-                && template.category !== 'Moderate Endurance'
-                && template.category !== 'Hard Endurance'
-                && template.category !== 'Race-Specific Endurance');
+        const isRecoveryReentryCandidate = (template: SessionTemplate, maxSystemicCost: number) => {
+            if (isRecoveryCategory(template)) return true;
+            if (template.modality === 'Strength'
+                || template.category === 'Moderate Endurance'
+                || template.category === 'Hard Endurance') {
+                return false;
+            }
+            if (template.category === 'Race-Specific Endurance') {
+                const focusEvent = sharedProjection.events.find(e => (e.priority === 'A' || e.priority === 'B') && ['cycling_event', 'running_race', 'triathlon'].includes(e.category));
+                if (focusEvent && offset >= 4) {
+                    const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
+                    const daysToRace = getDayDiff(raceDate, date);
+                    if ((daysToRace === 2 || daysToRace === 3) && template.systemicCost <= 0.45) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            return template.systemicCost <= maxSystemicCost;
+        };
+
+        const effectiveFatigueTier = isRecoveryOnlyDate
+            ? 'recover'
+            : ((isRecoveryEarlyReentryDate || isRecoveryLateReentryDate) && fatigueTier === 'train'
+                ? 'modify'
+                : fatigueTier);
 
         let rankingCandidates = isRecoveryOnlyDate
             ? fatigueGated.filter(isRecoveryCategory)
@@ -1528,7 +1547,7 @@ export function generateWeekAheadPlan(
             displacementReasons.set(
                 reservation.occurrence.id,
                 exactReserved.length === 0
-                    ? (fatigueTier === 'recover' ? 'hard_safety_or_recovery' : fatigueTier === 'modify' ? 'projected_fatigue' : 'hard_safety_or_recovery')
+                    ? (effectiveFatigueTier === 'recover' ? 'hard_safety_or_recovery' : effectiveFatigueTier === 'modify' ? 'projected_fatigue' : 'hard_safety_or_recovery')
                     : 'no_conflict_free_date',
             );
         }
@@ -1547,7 +1566,7 @@ export function generateWeekAheadPlan(
             ...(forecastDoseAdjustment ? { activeDose: forecastDoseAdjustment.activeDose, adjustment: forecastDoseAdjustment.adjustment } : {}),
             diagnostics: {
                 peakFatigue,
-                fatigueTier,
+                fatigueTier: effectiveFatigueTier,
                 topUtilityScore: pick.utilityScore,
                 runnerUpUtilityScore: ranked[1]?.utilityScore ?? null,
                 selectedBenefitScore: pick.benefitScore,
