@@ -20,6 +20,7 @@ from .canonical import (
     CanonicalGearItem,
     CanonicalHeartRateZones,
     CanonicalLapSummary,
+    CanonicalNutritionDay,
     CanonicalPerformanceTargets,
     CanonicalRacePredictions,
     CanonicalRunningDynamics,
@@ -28,6 +29,7 @@ from .canonical import (
     CanonicalTrainingReadiness,
     CanonicalTrainingStatus,
     CanonicalZoneBucket,
+    NutritionSource,
 )
 from .dates import get_date_string, local_today, n_days_ago, parse_garmin_gmt_timestamp
 from .fit_activity import FitActivityEvidence, decode_activity_original
@@ -39,6 +41,7 @@ from .provider import (
     ProviderCapabilities,
     ProviderFetchResult,
     ProviderGearResult,
+    ProviderNutritionResult,
     ProviderPerformanceTargetsResult,
 )
 
@@ -1257,6 +1260,12 @@ def canonicalize_from_raw(
         telemetry.training_readiness_today, telemetry.stats_today
     )
 
+    active_energy_kcal = _non_negative_number(telemetry.stats_today.get("activeKilocalories"))
+    resting_energy_kcal = _non_negative_number(telemetry.stats_today.get("bmrKilocalories"))
+    total_energy_expenditure_kcal = _non_negative_number(
+        telemetry.stats_today.get("totalKilocalories")
+    )
+
     return CanonicalDailyMetrics(
         date=target_date_iso,
         resting_heart_rate_bpm=rhr,
@@ -1291,6 +1300,9 @@ def canonicalize_from_raw(
         spo2=canonical_spo2,
         skin_temp_deviation_celsius=skin_temp_dev,
         recovery_time_hours=daily_rec_hours,
+        active_energy_kcal=active_energy_kcal,
+        resting_energy_kcal=resting_energy_kcal,
+        total_energy_expenditure_kcal=total_energy_expenditure_kcal,
     )
 
 
@@ -1463,6 +1475,8 @@ class GarminProviderAdapter:
         body_composition=True,
         gear_tracking=True,
         race_predictions=True,
+        energy_expenditure=True,
+        nutrition=True,
     )
 
     def __init__(self, client: GarminClientWrapper):
@@ -1744,3 +1758,54 @@ class GarminProviderAdapter:
             canonical=extract_gear_items(raw_list),
             raw_payloads={"gear": raw_list},
         )
+
+    def fetch_daily_nutrition(self, target_date_iso: str) -> ProviderNutritionResult:
+        """Build a daily nutrition observation from cached daily stats (ADR-0042).
+
+        The daily-stats payload is already fetched by fetch_daily_metrics during
+        normal sync/backfill, so this path deliberately makes no additional Garmin API
+        request. The dedicated food-log endpoint remains useful for explicit capability
+        probes, but the observed MyFitnessPal bridge adds no macros/meal detail there and
+        calling it for every historical day would only add rate-limit pressure.
+        """
+        stats_today = self._get_stats(target_date_iso)
+        has_intake_data = stats_today.get("includesCalorieConsumedData") is True
+        consumed_kcal = _non_negative_number(stats_today.get("consumedKilocalories"))
+        goal_kcal = _non_negative_number(stats_today.get("netCalorieGoal"))
+
+        today_str = get_date_string(local_today())
+        is_partial = target_date_iso == today_str
+
+        # The provider flag is the authoritative missingness discriminator. A numeric
+        # value without an affirmative flag is treated as unavailable rather than
+        # silently inventing a logged-food observation.
+        if not has_intake_data:
+            consumed_kcal = None
+
+        canonical = CanonicalNutritionDay(
+            logical_date=target_date_iso,
+            source=NutritionSource(
+                provider="garmin",
+                transport="garmin_connect",
+                origin=None,
+            ),
+            energy_intake_kcal=consumed_kcal,
+            protein_g=None,
+            carbohydrate_g=None,
+            fat_g=None,
+            fiber_g=None,
+            sugar_g=None,
+            goal_energy_intake_kcal=goal_kcal,
+            has_intake_data=has_intake_data,
+            is_partial=is_partial,
+        )
+
+        # Archive only aggregate values already present in the daily-stats payload.
+        # Never place food names, meal descriptions, serving details, or inferred
+        # upstream-app provenance in the raw nutrition sidecar.
+        raw_payload: dict[str, Any] = {
+            "stats_consumed": stats_today.get("consumedKilocalories"),
+            "stats_includes_data": stats_today.get("includesCalorieConsumedData"),
+            "stats_goal": stats_today.get("netCalorieGoal"),
+        }
+        return ProviderNutritionResult(canonical=canonical, raw_payload=raw_payload)

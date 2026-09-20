@@ -38,7 +38,7 @@ from .garmin_provider import (
 from .hr_fidelity import assess_activity_hr_fidelity
 from .mapper import build_snapshot_from_canonical, normalize_activity
 from .metrics import compute_derived_metrics
-from .models import DailyRecoverySnapshot
+from .models import DailyRecoverySnapshot, NutritionDayDTO
 from .provider import WearableProvider
 from .token_store import create_token_store
 
@@ -484,6 +484,7 @@ class GarminSyncService:
                 raw_memory_store=raw_memory_store,
             )
         )
+        self._sync_daily_nutrition(provider, target_iso, sync_run_id)
 
         logger.info(
             f"sync_completed user=<UID-redacted> date={target_iso} "
@@ -494,6 +495,48 @@ class GarminSyncService:
             f"baseline_28d_ready={snapshot.dataQuality.baseline28dReady}"
         )
         return True
+
+    def _sync_daily_nutrition(
+        self,
+        provider: Any,
+        target_iso: str,
+        sync_run_id: str,
+    ) -> None:
+        """Best-effort daily nutrition observation sync and persistence (ADR-0042)."""
+        fetch_nutrition = getattr(provider, "fetch_daily_nutrition", None)
+        save_nutrition = getattr(self.repository, "save_nutrition_day", None)
+        if not callable(fetch_nutrition) or not callable(save_nutrition):
+            return
+
+        try:
+            result = fetch_nutrition(target_iso)
+            if result is None:
+                return
+
+            if result.raw_payload:
+                self._archive_raw("nutrition", target_iso, result.raw_payload, sync_run_id)
+
+            canonical = result.canonical
+            dto = NutritionDayDTO(
+                userId=self.settings.app_user_id,
+                logicalDate=canonical.logical_date,
+                provider=canonical.source.provider,
+                transport=canonical.source.transport,
+                origin=canonical.source.origin,
+                energyIntakeKcal=canonical.energy_intake_kcal,
+                proteinG=canonical.protein_g,
+                carbohydrateG=canonical.carbohydrate_g,
+                fatG=canonical.fat_g,
+                fiberG=canonical.fiber_g,
+                sugarG=canonical.sugar_g,
+                goalEnergyIntakeKcal=canonical.goal_energy_intake_kcal,
+                hasIntakeData=canonical.has_intake_data,
+                isPartial=canonical.is_partial,
+                loggedAt=canonical.logged_at.isoformat() if canonical.logged_at else None,
+            )
+            save_nutrition(dto)
+        except Exception as e:
+            logger.warning(f"[{target_iso}] Nutrition sync failed, continuing without it: {e}")
 
     def _sync_current_performance_targets(self, target_iso: str) -> None:
         """Best-effort current-profile import, deliberately outside the daily snapshot.
@@ -834,6 +877,7 @@ class GarminSyncService:
                     raw_memory_store=raw_memory_store,
                 )
             )
+            self._sync_daily_nutrition(provider, target_iso, run_id)
             logger.info(f"[{target_iso}] Backfill sync completed.")
             return True, True
         except Exception as e:
