@@ -22,6 +22,7 @@ import type {
     ExternalRestDirective,
     ExternalRestProvenance,
     ScheduleOverlay,
+    GuardrailKey,
 } from './models';
 import type { ExternalRestDecisionProvenance } from './externalRestProvenance';
 import { TEMPLATES, ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID, TEMPLATES_BY_ID } from './templates';
@@ -51,8 +52,9 @@ import { resolveEvergreenPlan } from './evergreenPlanning';
 import { isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { buildCoverageState, resolveCoverageHistory } from './coverage';
 import { applyPlanningOverlays } from './planningOverlays';
-import { mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
+import { healthPlanningKnowledgeRefs, mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
 import { progressionDoseForTemplate } from './confirmedProgressionOverrides';
+import { resolveHealthPlanningPolicy } from './healthPlanningPolicy';
 
 function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemplate | undefined {
     if (options.length === 0) return undefined;
@@ -378,6 +380,30 @@ export function evaluateReadinessAndSafetyEnvelope(
     };
 }
 
+// Issue #680: short, athlete-facing phrases for the guardrails that can actively constrain
+// today's candidate set (see eligibility.ts / injuryPolicy.ts). Deliberately keyed off
+// context.constraints.impliedGuardrails -- the actual decision-affecting data -- rather
+// than context.injuryPolicyTrace, which is lineage-only and must never influence the
+// selected recommendation (see injuryPolicyLineageEquivalence.test.ts). Generic across
+// source (standing injury, today-derived, the one-day carry, or occupational load): the
+// athlete cares that an option is currently off the table and why, not which mechanism
+// produced it. No diagnosis, no clinical claim, no invented recovery timeline.
+const GUARDRAIL_RATIONALE_PHRASE: Partial<Record<GuardrailKey, string>> = {
+    avoid_overhead_pressing: 'shoulder-loading',
+    avoid_heavy_spinal_loading: 'heavy spinal-loading',
+    avoid_heavy_lower_body: 'heavy lower-body',
+    avoid_high_impact: 'high-impact',
+};
+
+function symptomCompatibleRationaleNote(context: UserContext): string | null {
+    const guardrails = context.constraints.impliedGuardrails ?? [];
+    const phrases = guardrails
+        .map(guardrail => GUARDRAIL_RATIONALE_PHRASE[guardrail])
+        .filter((phrase): phrase is string => Boolean(phrase));
+    if (phrases.length === 0) return null;
+    return ` An active injury/tissue restriction is limiting ${phrases.join(' and ')} options today; the plan below already avoids those.`;
+}
+
 function hasWearableObjectiveData(objective: EngineObjectiveInput): boolean {
     return [
         objective.total_steps,
@@ -479,6 +505,14 @@ export function evaluateTraining(
     }
 
     if (modalityNote) rationale += ` ${modalityNote}`;
+    // 'recover' already leads with its own pain/injury/illness caution note above; adding
+    // this too would be redundant there, so it's scoped to the modes where training
+    // continues around an active restriction -- exactly where a symptom-compatible
+    // substitution needs to be visible (issue #680).
+    if (mode !== 'recover') {
+        const symptomCompatibleNote = symptomCompatibleRationaleNote(context);
+        if (symptomCompatibleNote) rationale += symptomCompatibleNote;
+    }
     if (multiDayDriftIsDecisionRelevant) rationale += " Your recovery metrics have been trending away from baseline over several days, capping today's training load.";
     if (subjectiveDriftIsDecisionRelevant) rationale += " Your recent daily check-ins have been trending adverse relative to your own baseline, which contributed to today's more conservative call.";
     if (postRecoverBufferApplied) rationale += " Yesterday was a mandated recovery day, so easing back in today (rather than going straight to a hard session) even though this morning's numbers look fully green.";
@@ -697,6 +731,11 @@ export async function evaluateTrainingWithIntent(
     }
 
     const isAdverseRecovery = isSevereAdverseRecoveryReadiness(readiness, mode);
+    const healthPlanningPolicy = resolveHealthPlanningPolicy(
+        intent.planningContext.profile.priorities,
+        preferences,
+        isAdverseRecovery,
+    );
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, date, fixedActivities, 7, isAdverseRecovery, scheduleOverlays,
@@ -731,6 +770,7 @@ export async function evaluateTrainingWithIntent(
     const decisionKnowledgeRefs = mergeKnowledgeRefs(
         envelopeState.knowledgeRefs,
         trainingIntentKnowledgeRefs(intent),
+        healthPlanningKnowledgeRefs(healthPlanningPolicy !== null),
         evergreen?.knowledgeRefs,
     );
 
@@ -753,6 +793,7 @@ export async function evaluateTrainingWithIntent(
         date,
         {
             resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, resolvedAvailability: availability, fatigueTier: mode, authoredPlanBlocks,
+            healthPlanningPolicy,
             ...(evergreen ? {
                 coverageState: buildCoverageState(
                     evergreen.planDefinition,

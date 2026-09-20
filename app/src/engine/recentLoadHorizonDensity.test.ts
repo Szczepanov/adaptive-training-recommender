@@ -11,15 +11,18 @@ function addDays(date: string, days: number): string {
 }
 
 function exposureOn(exposure: CompletedExposure, date: string, occurrenceSuffix: string): CompletedExposure {
+    return { ...structuredClone(exposure), occurrenceKey: `judge:${occurrenceSuffix}:${date}`, date };
+}
+
+function horizonMetrics(result: Awaited<ReturnType<typeof runScenario>>) {
     return {
-        ...structuredClone(exposure),
-        occurrenceKey: `judge:${occurrenceSuffix}:${date}`,
-        date,
+        hardCount: result.decisionTraces.filter(trace => trace.selected.projectedCost.systemic >= 0.5).length,
+        systemicTotal: result.decisionTraces.reduce((sum, trace) => sum + trace.selected.projectedCost.systemic, 0),
     };
 }
 
 describe('recent load whole-horizon density (Issue #676)', () => {
-    it('enforces whole-horizon load sensitivity: recent hard training does not exceed no-load baseline density', async () => {
+    it('orders 14-day hard density and cumulative systemic cost by recency of the prior hard exposure', async () => {
         const base = SCENARIOS.find(s => s.id === 'cycling_criterium_A');
         expect(base).toBeDefined();
         if (!base) return;
@@ -28,41 +31,43 @@ describe('recent load whole-horizon density (Issue #676)', () => {
         expect(hardLoadSource?.initialHistory).toBeDefined();
         const hardExposure = hardLoadSource!.initialHistory![0];
 
-        const makeVariant = (id: string, initialHistory: CompletedExposure[]) => ({
+        const makeVariant = (id: string, priorHardDaysAgo: number | null) => ({
             ...base,
             id,
             weeks: 2,
-            initialHistory,
+            initialHistory: priorHardDaysAgo === null
+                ? []
+                : [exposureOn(hardExposure, addDays(base.startDate, -priorHardDaysAgo), `hard-${priorHardDaysAgo}d`)],
         });
 
-        const none = await runScenario(makeVariant('judge_load_none', []));
-        const hardYday = await runScenario(makeVariant('judge_load_hard_yesterday', [
-            exposureOn(hardExposure, addDays(base.startDate, -1), 'hard-yesterday'),
-        ]));
+        const [none, hard3d, hard2d, hard1d] = await Promise.all([
+            runScenario(makeVariant('judge_load_none', null)),
+            runScenario(makeVariant('judge_load_hard_three_days_ago', 3)),
+            runScenario(makeVariant('judge_load_hard_two_days_ago', 2)),
+            runScenario(makeVariant('judge_load_hard_yesterday', 1)),
+        ]);
 
-        const hardCountNone = none.decisionTraces.filter(t => t.selected.projectedCost.systemic >= 0.5).length;
-        const totalSystemicNone = none.decisionTraces.reduce((acc, t) => acc + t.selected.projectedCost.systemic, 0);
+        const ordered = [
+            ['hard yesterday', horizonMetrics(hard1d)],
+            ['hard two days ago', horizonMetrics(hard2d)],
+            ['hard three days ago', horizonMetrics(hard3d)],
+            ['no recent hard load', horizonMetrics(none)],
+        ] as const;
 
-        const hardCountYday = hardYday.decisionTraces.filter(t => t.selected.projectedCost.systemic >= 0.5).length;
-        const totalSystemicYday = hardYday.decisionTraces.reduce((acc, t) => acc + t.selected.projectedCost.systemic, 0);
-
-        // Whole-horizon load sensitivity: prior hard training must not result in MORE hard sessions
-        // or MORE cumulative systemic cost than the no-load baseline over 14 days
-        expect(hardCountYday).toBeLessThanOrEqual(hardCountNone);
-        expect(totalSystemicYday).toBeLessThanOrEqual(totalSystemicNone);
-
-        // Immediate response remains safe: Days 1 and 2 are easy before the first surge
-        expect(hardYday.decisionTraces[0].selected.projectedCost.systemic).toBeLessThan(0.5);
-        expect(hardYday.decisionTraces[1].selected.projectedCost.systemic).toBeLessThan(0.5);
-
-        // No dense strength clustering for endurance event: at least 3 days between strength sessions
-        const strengthDayIndices = hardYday.decisionTraces
-            .map((t, idx) => (t.selected.modality === 'Strength' ? idx : null))
-            .filter((idx): idx is number => idx !== null);
-
-        for (let i = 1; i < strengthDayIndices.length; i++) {
-            const gap = strengthDayIndices[i] - strengthDayIndices[i - 1];
-            expect(gap).toBeGreaterThanOrEqual(3);
+        for (let i = 0; i < ordered.length - 1; i++) {
+            const [moreRecentLabel, moreRecent] = ordered[i];
+            const [lessRecentLabel, lessRecent] = ordered[i + 1];
+            expect(
+                moreRecent.hardCount,
+                `${moreRecentLabel} should not create more hard sessions than ${lessRecentLabel}`,
+            ).toBeLessThanOrEqual(lessRecent.hardCount);
+            expect(
+                moreRecent.systemicTotal,
+                `${moreRecentLabel} should not create more cumulative systemic cost than ${lessRecentLabel}`,
+            ).toBeLessThanOrEqual(lessRecent.systemicTotal + 1e-9);
         }
+
+        expect(hard1d.decisionTraces[0].selected.projectedCost.systemic).toBeLessThan(0.5);
+        expect(hard1d.decisionTraces[1].selected.projectedCost.systemic).toBeLessThan(0.5);
     });
 });

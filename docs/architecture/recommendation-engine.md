@@ -118,6 +118,16 @@ the conditional high-intensity prior (`canUseConditionalPrior`) is withheld, emi
 The legacy 2-to-6-session table is only an equal-dose placement
 tie-breaker; it does not set a physiological requirement or hide a capacity shortfall.
 
+Event-free `health` planning also resolves `healthPlanningPolicy.ts`
+`resolveHealthPlanningPolicy` from the current intent and preferences. When running is not
+explicitly preferred, the unified optimizer gives feasible Walking/Cycling easy-aerobic
+candidates a soft ranking prior while keeping Running available. Quality Endurance is
+limited to one prior occurrence in a rolling seven-day window and is withheld from the
+projected horizon after adverse recovery;
+the next fresh planning check may re-enable it. This is an adherence-oriented product
+heuristic, not a clinical intensity prescription. It does not apply to event-directed
+plans, explicit Running preference, or the required health aerobic/strength dose roles.
+
 The coverage registry has two descriptors. `september_cycling_event` is the frozen,
 event-directed cycling contract. `evergreen_general` is a rolling seven-day `general`
 descriptor with modality-specific exact identities, including a continuous easy run that
@@ -398,33 +408,34 @@ excluded once systemicCost exceeds `TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST`
 = 1) -- "reduced nonessential strength" rather than an outright ban. A Moderate/Hard
 Endurance candidate is excluded when one already occurred within
 `TAPER_MODERATE_DENSITY_MIN_GAP_DAYS` (3) days, preventing a stacked, build-like block near
-the event while still allowing spaced, brief discipline-specific touches.
+the event while still allowing spaced, brief discipline-specific touches. Race-Specific
+Endurance is deliberately excluded from the density guard: event-specific work recurring
+near the event is expected, and a recent one is already tempered by benefit-score softening
+(anchor protection) rather than a hard exclusion.
 
-### Race-week quality density guard and whole-horizon load sensitivity (Issue #676)
+### Whole-horizon recent-load and Priority-A race-week interaction policy (Issue #676)
 
-In addition to taper volume and moderate density rules, `optimizer.ts` and `planner.ts` enforce:
+Issue #676 adds two deliberately distinct controls:
 
-* **Race-week quality density guard (`optimizer.ts` `evaluateRecoveryConstraints`):** Within the 7-day
-  window before a Priority A event, candidates with `systemicCost >= 0.50` or category `Race-Specific Endurance`
-  with `systemicCost > 0.45` are excluded if any hard session (`systemicCost >= 0.50` or race-specific `> 0.45`)
-  occurred within the preceding 3 days (`1 <= diff && diff <= 3`). This prevents quality stacking between
-  recent training and pre-event surges or race simulations.
-* **Whole-horizon hard load sensitivity (`optimizer.ts` `rankCandidates`):** When rolling 6-day hard
-  session count reaches $\ge 2$, non-anchor candidates with `systemicCost >= 0.50` receive a 0.40 benefit
-  multiplier (`benefit *= 0.40`). This ensures that recent hard training ($D-1$) monotonically dampens
-  future hard session density and cumulative systemic cost across the 14-day horizon relative to a clean baseline.
-* **Severe recovery re-entry race sharpening (`planner.ts` `isRecoveryReentryCandidate`):** During late
-  re-entry (days 4–5) after severe objective adversity before an A- or B-priority endurance event, light
-  pre-event sharpening (`Race-Specific Endurance`, `systemicCost <= 0.45`, e.g. `end_taper_sharpen_01`)
-  is permitted on $D-2$ or $D-3$. This avoids 7 consecutive rest/mobility days and athlete flatness while
-  maintaining physiological safety. Forecast diagnostics report effective fatigue tiers (`'recover'` on
-  forced rest days, `'modify'` on re-entry days).
-* **Endurance-event strength spacing (`optimizer.ts` `evaluateRecoveryConstraints`):** For endurance sports
-  (`cycling_event`, `running_race`, `triathlon`), strength spacing requires $\ge 4$ days between heavy
-  strength sessions ($\ge 0.60$ systemic or lower-body cost) and $\ge 3$ days between general strength sessions.
+* **Whole-horizon recent-load moderation:** when two systemicCost >= 0.50 sessions already
+  sit in the rolling six-day history, another non-anchor systemicCost >= 0.50 candidate gets
+  a 0.40 benefit multiplier. Required/nominated anchors are exempt from this *soft* moderation
+  but remain subject to every hard recovery/taper gate. The 0.40 value is product calibration,
+  not a physiological threshold.
+* **Priority-A race-week interaction guard:** within D-1..D-7 of an A cycling/running/triathlon
+  event, a candidate at systemicCost >= 0.50, or Race-Specific Endurance above 0.45, is
+  excluded when the preceding three days contain either systemicCost >= 0.50 work or
+  Race-Specific Endurance above 0.45. This closes the prior asymmetry where a 0.46-0.49
+  race-specific exposure could contribute to quality stacking without satisfying the generic
+  hard-history threshold.
 
+No new universal three- or four-day spacing rule was added for all endurance-event strength
+sessions. The race-week failure mode in #676 is already covered by the full-taper strength
+restriction from #679 (at most one light <=0.35 touch) and by severe-recovery re-entry, which
+keeps Strength out through day 5. Concurrent-training evidence is context-dependent and does
+not justify turning those exact 3/4-day gaps into a global physiological invariant.
 
-### Graduated recovery re-entry after severe adverse recovery (Issue #679, `planner.ts`)
+### Graduated recovery re-entry after severe adverse recovery (Issues #679/#676, `planner.ts`)
 
 The severe-adverse-recovery restriction (`isSevereAdverseRecoveryReadiness`) previously
 widened from recovery-only to a 0.5 ceiling and then to 0.65 by offset 3 before snapping
@@ -432,14 +443,19 @@ straight to the unrestricted candidate pool at offset 4. The first #679 patch ex
 offsets 4-5 at 0.35, which accidentally made that ladder non-monotonic: day 3 could admit
 tempo/threshold or Strength work before days 4-5 tightened again.
 
-The final policy is monotonic and deliberately conservative because a forecast has no real
-future readiness reading to re-check: offsets 1-2 are Rest/Mobility-Recovery only; offset 3
-may add non-Strength, non-Moderate/Hard/Race-Specific work up to
+The final policy is deliberately conservative because a forecast has no real future
+readiness reading to re-check: offsets 1-2 are Rest/Mobility-Recovery only; offset 3 may add
+non-Strength, non-Moderate/Hard/Race-Specific work up to
 `RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST` (0.35); offsets 4-5 widen that same low-intensity
-non-Strength pool to `RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST` (0.5); only offset 6 onward
-reaches the unrestricted candidate pool. This is the projected-day equivalent of requiring
-confirmed freshness before threshold, tempo, race-specific, strength, or dense quality work
-resumes.
+non-Strength pool to `RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST` (0.5). Issue #676 adds one
+narrow taper exception during offsets 4-5: before an A/B cycling/running/triathlon event,
+Race-Specific Endurance at systemicCost <=0.45 may be admitted on D-2 or D-3. The unrestricted
+candidate pool is still reached only from day 6 onward. Recovery-only forecast dates use
+effective `recover` semantics; graduated re-entry dates use effective `modify` semantics
+for dose selection, allocation viability, displacement diagnostics, and the surfaced
+forecast fatigue tier. These exact boundaries remain product policy, not a claim that a
+single adverse wearable snapshot establishes a universal five-day physiological recovery
+timeline.
 
 ### Multi-event: one taper authority, multiple demand contributors (Phase 5.6, `periodization.ts`)
 
@@ -565,6 +581,59 @@ raises a region's severity for that one read, never lowers it, and never persist
 result back to `TrainingSettings`. Wearable-derived readiness has no parameter into that
 function at all — a structural guarantee, not just tested behavior, that a good HRV
 reading can't loosen what tissue response or the injury constraint decided.
+
+A check-in-only athlete with no standing `InjuryConstraint` at all is not a gap in this
+chain: `resolveEffectiveInjuryConstraints` already synthesizes a **today-only** constraint
+directly from a bare `RegionTissueResponse`, scoped with `reviewBy: today` so it can never
+outlive the day that produced it. `resolveInjuryRestrictions` then turns that into the same
+`impliedGuardrails`/`restrictedCategories` a persisted injury would, and `eligibility.ts`
+excludes any `SessionTemplate` whose `safetyTags` intersect an active guardrail — the same
+mechanism, same code path, regardless of source.
+
+### Template/workout safety-tag alignment and the one-day pending-recheck carry (issue #680)
+
+Two related gaps surfaced from a persona-judge review of a check-in-only shoulder/back
+symptom flare, both fixed without adding a new safety-filtering mechanism:
+
+- **Mistagged templates.** `SessionTemplate.safetyTags` is the only guardrail-consuming
+  metadata layer with a live consumer; `WorkoutDefinition.contraindicationTags` and
+  `ExerciseDefinition.contraindicationTags` have none (`sessionChoiceEligibility.ts`'s own
+  docstring documents this). Several strength templates' `safetyTags` didn't reflect what
+  their linked workout (via `workoutForTemplate()`, `workouts/prescription.ts`) actually
+  contained — e.g. `str_upper_pull_01` ("Pull-up Strength Practice") had `safetyTags: []`
+  despite resolving to a workout built entirely from shoulder-tagged exercises. Fixed for
+  the reported instances; `engine/templateWorkoutSafetyAlignment.test.ts` now pins every
+  strength template's `safetyTags` as a superset of what its resolved workout's exercises
+  imply for the upper-limb and lumbar guardrail families (the lower-limb families are
+  deliberately out of scope — see that test file's own comment for why).
+- **One-day pending-recheck carry.** `resolveEffectiveInjuryConstraints` only ever
+  considers *today's* `tissueResponses`, so a today-only constraint (no standing injury)
+  vanished the moment a later day's check-in simply had no entry for that region — even
+  with no explicit settled follow-up. `injuryPolicy.ts`'s `deriveCarriedRegionRestrictions`
+  / `resolveEffectiveInjuryConstraintsWithRecheck` layer a bounded, one-day-only carry on
+  top of the unchanged base resolver: a region carries forward exactly one additional local
+  day when the next day reports nothing for it, cleared by either that day's own response
+  (any severity) or an already-covering standing injury. This is a product-policy
+  uncertainty hold, not a clinical "settled evidence required" gate — see
+  `docs/analysis/2026-09-19-symptom-compatible-substitution-investigation.md` and the
+  registered `policy.injury.tissue_recheck_carry_v1` claim for the exact scope and why a
+  fixed elapsed-time window is not evidence-backed.
+
+  The carry is computed at the composition boundary (`engine/composer.ts`
+  `composeDailyDecisionInput`, reusing the subjective-history range read it already
+  performs — no extra read) and passed into `mapContextFromGoalsAndTrainingSettings` as a
+  compact `CarriedRegionRestriction[]`, never a raw check-in. It is deliberately omitted
+  from every provisional/forecast-day context construction (`Home.tsx`, `PlanView.tsx`),
+  preserving the same no-forecast-leakage contract that already applies to today-only
+  tissue-derived restrictions.
+
+`rules.ts`'s recommendation rationale also surfaces a short, generic note ("An active
+injury/tissue restriction is limiting shoulder-loading ... options today") whenever
+`context.constraints.impliedGuardrails` is non-empty in a `train`/`modify` mode, so a
+symptom-compatible substitution is visible to the athlete rather than only appearing in
+`decisionTrace.excludedReasons`. It reads `impliedGuardrails` (decision-affecting data),
+never `injuryPolicyTrace` (lineage-only, and `injuryPolicyLineageEquivalence.test.ts`
+enforces that the trace can never influence the selected recommendation).
 
 ---
 

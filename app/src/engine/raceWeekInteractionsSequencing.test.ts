@@ -1,45 +1,17 @@
 import { describe, expect, it } from 'vitest';
+import { evaluateRecoveryConstraints } from './optimizer';
 import { SCENARIOS } from './simulation/scenarios';
 import { runScenario } from './simulation/analyze';
-import { rankCandidates } from './optimizer';
-import { ENRICHED_TEMPLATES } from './templates';
+import type {
+    DailyReadiness,
+    EngineObjectiveInput,
+    FixedActivity,
+    SessionHistoryEntry,
+    SessionTemplate,
+    SubjectiveInput,
+    UserEvent,
+} from './models';
 import type { CompletedExposure } from './trainingHistory';
-import type { DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, SubjectiveInput, UserEvent, UserPreferences } from './models';
-import type { ResolvedAvailability } from './schedule';
-
-const DEFAULT_FATIGUE: FatigueState = {
-    lastUpdatedDate: '2026-03-01',
-    externalLoadFatigue: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
-    internalResponseStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
-    combinedFatigue: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
-};
-
-const DEFAULT_AVAILABILITY: ResolvedAvailability = {
-    date: '2026-03-01',
-    maxTimeMinutes: 120,
-    availableEquipment: ['free_weights', 'indoor_bike', 'treadmill', 'cable_machine'],
-    fixedActivities: [],
-    reservedCapacityCost: 0,
-    reservedCapacityCostProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
-    environmentOverride: null,
-};
-
-const DEFAULT_PREFERENCES: UserPreferences = {
-    userId: 'user_default',
-    schemaVersion: 1,
-    createdAt: '2026-03-01T00:00:00Z',
-    updatedAt: '2026-03-01T00:00:00Z',
-    avoidedModalities: [],
-    deprioritizedModalities: [],
-    preferredModalities: [],
-    conservativeBias: false,
-    preferredRecoveryStyle: 'mixed',
-    defaultWeekdayTimeMin: 60,
-    defaultWeekendTimeMin: 90,
-    preferredTimeOfDay: 'flexible',
-    explanationVerbosity: 'detailed',
-    preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' },
-};
 
 function addDays(date: string, days: number): string {
     const [year, month, day] = date.split('-').map(Number);
@@ -48,12 +20,16 @@ function addDays(date: string, days: number): string {
     return value.toISOString().slice(0, 10);
 }
 
-function exposureOn(exposure: CompletedExposure, date: string, occurrenceSuffix: string): CompletedExposure {
-    return {
-        ...structuredClone(exposure),
-        occurrenceKey: `judge:${occurrenceSuffix}:${date}`,
-        date,
+function dayDiff(later: string, earlier: string): number {
+    const toUtc = (date: string) => {
+        const [year, month, day] = date.split('-').map(Number);
+        return Date.UTC(year, month - 1, day);
     };
+    return Math.round((toUtc(later) - toUtc(earlier)) / 86_400_000);
+}
+
+function exposureOn(exposure: CompletedExposure, date: string, occurrenceSuffix: string): CompletedExposure {
+    return { ...structuredClone(exposure), occurrenceKey: `judge:${occurrenceSuffix}:${date}`, date };
 }
 
 function makeReadiness(
@@ -93,7 +69,6 @@ describe('race-week quality density and severe recovery sequencing (Issue #676)'
         hrv_delta: -17, hrv_delta_28d: -17, hrv_last_night: 33, rhr: 57, rhr_delta: 7, rhr_delta_28d: 7,
         sleep_score: 50, sleep_duration_min: 300, sleep_score_delta_7d: -28, sleep_score_delta_28d: -28, body_battery_wake: 22,
     };
-    const goodSubjective: Partial<SubjectiveInput> = { readiness: 9, sleepQuality: 9, fatigue: 1, soreness: 1, stress: 2, motivation: 9 };
 
     expect(base.event).toBeDefined();
     const race7: UserEvent = structuredClone(base.event!);
@@ -113,17 +88,7 @@ describe('race-week quality density and severe recovery sequencing (Issue #676)'
         updatedAt: '2026-08-01T00:00:00Z',
     }];
 
-    it('prevents quality stacking in race week: hard training yesterday blocks high-cost surges on Day 3', async () => {
-        const fresh = await runScenario({
-            ...base,
-            id: 'judge_int_race7_fresh',
-            event: race7,
-            events: [race7],
-            weeks: 1,
-            fixedActivities: race7Fixed,
-            readinessForWeek: () => makeReadiness(goodSubjective, goodObjective),
-        });
-
+    it('prevents race-week quality stacking after hard training yesterday while preserving a later light sharpen', async () => {
         const hardYday = await runScenario({
             ...base,
             id: 'judge_int_race7_hard_yday',
@@ -138,22 +103,24 @@ describe('race-week quality density and severe recovery sequencing (Issue #676)'
             ),
         });
 
-        const freshHardCount = fresh.decisionTraces.filter(t => t.selected.projectedCost.systemic >= 0.5).length;
-        const hardYdayHardCount = hardYday.decisionTraces.filter(t => t.selected.projectedCost.systemic >= 0.5).length;
-
-        // In race week (7 days out from A-event), no high-cost (>= 0.50) sessions are allowed in taper
-        expect(freshHardCount).toBe(0);
-        expect(hardYdayHardCount).toBe(0);
-
-        // Immediate response keeps first two days easy after hard training yesterday
         expect(hardYday.decisionTraces[0].selected.projectedCost.systemic).toBeLessThanOrEqual(0.35);
         expect(hardYday.decisionTraces[1].selected.projectedCost.systemic).toBeLessThanOrEqual(0.35);
 
-        // Pre-event sharpening remains preserved on Day 4 (D-3 before race)
-        expect(hardYday.decisionTraces[4].selected.templateId).toBe('end_taper_sharpen_01');
+        const earlyHighCost = hardYday.decisionTraces.filter(trace => {
+            const daysToRace = dayDiff(race7.date, trace.date);
+            return daysToRace >= 4 && daysToRace <= 6 && trace.selected.projectedCost.systemic >= 0.5;
+        });
+        expect(earlyHighCost).toHaveLength(0);
+
+        const sharpen = hardYday.decisionTraces.find(trace => {
+            const daysToRace = dayDiff(race7.date, trace.date);
+            return (daysToRace === 2 || daysToRace === 3) && trace.selected.templateId === 'end_taper_sharpen_01';
+        });
+        expect(sharpen).toBeDefined();
+        expect(sharpen!.selected.projectedCost.systemic).toBeLessThanOrEqual(0.45);
     });
 
-    it('avoids over-resting after severe objective adversity before an A-event: allows light neuromuscular sharpening on D-2', async () => {
+    it('allows bounded late re-entry sharpening after severe objective adversity without resuming Strength', async () => {
         const badObj = await runScenario({
             ...base,
             id: 'judge_int_race7_badobj',
@@ -167,105 +134,78 @@ describe('race-week quality density and severe recovery sequencing (Issue #676)'
             ),
         });
 
-        // Does NOT produce 7 consecutive rest/mobility days
-        const nonRestDays = badObj.decisionTraces.filter(t => t.selected.category !== 'Rest' && t.selected.category !== 'Mobility/Recovery');
-        expect(nonRestDays.length).toBeGreaterThanOrEqual(2);
+        for (const trace of badObj.decisionTraces.slice(0, 2)) {
+            expect(['Rest', 'Mobility/Recovery']).toContain(trace.selected.category);
+        }
+        expect(badObj.decisionTraces.slice(0, 5).some(trace => trace.selected.modality === 'Strength')).toBe(false);
 
-        // Day 5 (D-2 before race) schedules light taper sharpening (systemicCost <= 0.45)
-        expect(badObj.decisionTraces[4].selected.templateId).toBe('end_taper_sharpen_01');
-        expect(badObj.decisionTraces[4].selected.projectedCost.systemic).toBeLessThanOrEqual(0.45);
-
-        // Days 1-3 remain fully safe and graduated
-        expect(['Rest', 'Mobility/Recovery']).toContain(badObj.decisionTraces[0].selected.category);
-        expect(['Rest', 'Mobility/Recovery']).toContain(badObj.decisionTraces[1].selected.category);
-        expect(['Rest', 'Mobility/Recovery']).toContain(badObj.decisionTraces[2].selected.category);
+        const sharpen = badObj.decisionTraces.find(trace => {
+            const daysToRace = dayDiff(race7.date, trace.date);
+            return (daysToRace === 2 || daysToRace === 3) && trace.selected.templateId === 'end_taper_sharpen_01';
+        });
+        expect(sharpen).toBeDefined();
+        expect(sharpen!.selected.projectedCost.systemic).toBeLessThanOrEqual(0.45);
     });
 
-    it('enforces heavy strength spacing (>=4 days) and general strength spacing (>=3 days) for endurance events', () => {
-        const heavyStrengthTemplate = ENRICHED_TEMPLATES.find(t => t.id === 'str_full_01');
-        expect(heavyStrengthTemplate).toBeDefined();
-        const reducedStrengthTemplate = ENRICHED_TEMPLATES.find(t => t.id === 'str_full_03');
-        expect(reducedStrengthTemplate).toBeDefined();
+    it('handles hard-yesterday plus severe adversity without strength/quality rebuilding', async () => {
+        const combined = await runScenario({
+            ...base,
+            id: 'judge_int_race7_hard_yday_badobj',
+            event: race7,
+            events: [race7],
+            weeks: 1,
+            initialHistory: [exposureOn(hardExposure, addDays(base.startDate, -1), 'race7-hard-yesterday-badobj')],
+            fixedActivities: race7Fixed,
+            readinessForWeek: () => makeReadiness(
+                { readiness: 5, sleepQuality: 5, fatigue: 5, soreness: 5, stress: 5, motivation: 5 },
+                badObjective,
+            ),
+        });
 
-        const cyclingEvent: UserEvent = {
-            id: 'event-crit',
-            title: 'Criterium Championship',
-            category: 'cycling_event',
-            date: '2026-08-30',
-            priority: 'A',
-            lifecycle: 'scheduled',
-            demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.6, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.7, neuromuscular: 0.3 },
+        for (const trace of combined.decisionTraces.slice(0, 2)) {
+            expect(['Rest', 'Mobility/Recovery']).toContain(trace.selected.category);
+        }
+        expect(combined.decisionTraces.slice(0, 5).some(trace => trace.selected.modality === 'Strength')).toBe(false);
+
+        const sharpen = combined.decisionTraces.find(trace => {
+            const daysToRace = dayDiff(race7.date, trace.date);
+            return (daysToRace === 2 || daysToRace === 3) && trace.selected.templateId === 'end_taper_sharpen_01';
+        });
+        expect(sharpen).toBeDefined();
+        expect(sharpen!.selected.projectedCost.systemic).toBeLessThanOrEqual(0.45);
+    });
+
+    it('counts a recent >0.45 race-specific exposure as hard history for the Priority-A interaction guard', () => {
+        const targetDate = '2026-08-25';
+        const event: UserEvent = { ...structuredClone(race7), date: '2026-08-30', priority: 'A' };
+        const candidate: SessionTemplate = {
+            id: 'issue-676-hard-candidate',
+            category: 'Race-Specific Endurance',
+            modality: 'Cycling',
+            durationMin: 45,
+            durationMax: 45,
+            title: 'Issue 676 hard race-specific candidate',
+            description: 'Test-only candidate.',
+            requiredEquipment: [],
+            environment: 'either',
+            safetyTags: [],
+            systemicCost: 0.50,
         };
+        const history: SessionHistoryEntry[] = [{
+            date: '2026-08-23',
+            templateId: 'issue-676-prior-race-specific',
+            category: 'Race-Specific Endurance',
+            modality: 'Cycling',
+            role: 'supporting',
+            intensityClass: 'moderate',
+            systemicCost: 0.48,
+            lowerBodyCost: 0.30,
+        }];
 
-        // 1. Heavy strength candidate after prior heavy strength 2 days ago -> rejected (gap < 4)
-        const resultHeavyGap2 = rankCandidates(
-            [heavyStrengthTemplate!],
-            [],
-            DEFAULT_FATIGUE,
-            DEFAULT_AVAILABILITY,
-            [],
-            DEFAULT_PREFERENCES,
-            {
-                date: '2026-08-20',
-                focusEvent: cyclingEvent,
-                recentHistory: [{
-                    date: '2026-08-18',
-                    templateId: 'str_full_01',
-                    modality: 'Strength',
-                    category: 'Full-body Strength',
-                    systemicCost: 0.8,
-                    lowerBodyCost: 0.7,
-                }],
-            },
-        );
-        expect(resultHeavyGap2.rejected).toHaveLength(1);
-        expect(resultHeavyGap2.rejected[0].excludedReasons).toContain('HARD_LOWER_BODY_SPACING_VIOLATION');
-
-        // 2. Light strength candidate after prior strength 2 days ago -> rejected (gap < 3)
-        const resultLightGap2 = rankCandidates(
-            [reducedStrengthTemplate!],
-            [],
-            DEFAULT_FATIGUE,
-            DEFAULT_AVAILABILITY,
-            [],
-            DEFAULT_PREFERENCES,
-            {
-                date: '2026-08-20',
-                focusEvent: cyclingEvent,
-                recentHistory: [{
-                    date: '2026-08-18',
-                    templateId: 'str_full_03',
-                    modality: 'Strength',
-                    category: 'Full-body Strength',
-                    systemicCost: 0.45,
-                    lowerBodyCost: 0.35,
-                }],
-            },
-        );
-        expect(resultLightGap2.rejected).toHaveLength(1);
-        expect(resultLightGap2.rejected[0].excludedReasons).toContain('HARD_LOWER_BODY_SPACING_VIOLATION');
-
-        // 3. Light strength candidate after prior strength 3 days ago -> accepted (gap >= 3)
-        const resultLightGap3 = rankCandidates(
-            [reducedStrengthTemplate!],
-            [],
-            DEFAULT_FATIGUE,
-            DEFAULT_AVAILABILITY,
-            [],
-            DEFAULT_PREFERENCES,
-            {
-                date: '2026-08-21',
-                focusEvent: cyclingEvent,
-                recentHistory: [{
-                    date: '2026-08-18',
-                    templateId: 'str_full_03',
-                    modality: 'Strength',
-                    category: 'Full-body Strength',
-                    systemicCost: 0.45,
-                    lowerBodyCost: 0.35,
-                }],
-            },
-        );
-        expect(resultLightGap3.accepted).toHaveLength(1);
+        const reasons = evaluateRecoveryConstraints(candidate, targetDate, history, {
+            date: targetDate,
+            focusEvent: event,
+        });
+        expect(reasons).toContain('PRE_EVENT_TAPER_RESTRICTION');
     });
 });

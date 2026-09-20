@@ -37,6 +37,12 @@ import {
     type RecoveryPlacementState,
 } from './recoveryPlacement';
 import type { RecoveryHistorySnapshot } from './recoveryFacts';
+import type { HealthPlanningPolicy } from './healthPlanningPolicy';
+import {
+    HEALTH_QUALITY_ENDURANCE_LOOKBACK_DAYS,
+    isHealthQualityEnduranceCategory,
+    isQualifyingHealthQualityEnduranceEvidence,
+} from './healthPlanningPolicy';
 
 const STRENGTH_CATEGORIES: SessionTemplate['category'][] = [
     'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance',
@@ -221,6 +227,8 @@ export interface OptimizationOptions {
     recoveryHistorySnapshot?: RecoveryHistorySnapshot | null;
     /** Phase-derived soft sequencing preference; never a hard safety override. */
     sequenceIntent?: SequenceIntentPolicy;
+    /** Event-free health planning prior; never applies to event-directed plans. */
+    healthPlanningPolicy?: HealthPlanningPolicy | null;
 }
 
 export interface OptimizationContext {
@@ -549,6 +557,24 @@ export function evaluateRecoveryConstraints(
     const reasons: string[] = [];
     const histSummary = summary ?? buildHistoryFeatureSummary(history, targetDate, options.resolveRecoveryHours);
 
+    const healthPolicy = options.healthPlanningPolicy;
+    if (healthPolicy && !options.focusEvent) {
+        if (healthPolicy.withholdQualityEndurance && isHealthQualityEnduranceCategory(template.category)) {
+            reasons.push('HEALTH_QUALITY_ENDURANCE_WITHHELD_AFTER_ADVERSE_RECOVERY');
+        }
+        if (healthPolicy.qualityEnduranceSessionLimit !== null && isHealthQualityEnduranceCategory(template.category)) {
+            const priorQualityEnduranceSessions = history.filter(entry => {
+                const daysAgo = getDayDiff(targetDate, entry.date);
+                return daysAgo >= 1
+                    && daysAgo <= HEALTH_QUALITY_ENDURANCE_LOOKBACK_DAYS
+                    && isQualifyingHealthQualityEnduranceEvidence(entry);
+            }).length;
+            if (priorQualityEnduranceSessions >= healthPolicy.qualityEnduranceSessionLimit) {
+                reasons.push('HEALTH_QUALITY_ENDURANCE_DENSITY_LIMIT');
+            }
+        }
+    }
+
     const isCandidateAnchor = options.anchorRole
         ? candidateMatchesAnchorRole(template, options.anchorRole)
         : ANCHOR_HISTORY_CATEGORIES.includes(template.category);
@@ -572,25 +598,6 @@ export function evaluateRecoveryConstraints(
         if (hasViolation) reasons.push('HARD_LOWER_BODY_SPACING_VIOLATION');
     }
 
-    const isStrengthTemplate = template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category);
-    const focusEvent = options.focusEvent;
-    if (isStrengthTemplate && focusEvent && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race' || focusEvent.category === 'triathlon')) {
-        const isHeavyStrength = candidateLowerBodyCost >= 0.6 || template.systemicCost >= 0.6;
-        const hasSpacingViolation = history.some(h => {
-            const diff = getDayDiff(targetDate, h.date);
-            if (diff < 1) return false;
-            const isPriorStrength = h.modality === 'Strength' || (h.category && STRENGTH_CATEGORIES.includes(h.category));
-            if (!isPriorStrength) return false;
-            const isPriorHeavy = (h.lowerBodyCost ?? 0) >= 0.6 || (h.systemicCost ?? 0) >= 0.6;
-            if ((isHeavyStrength || isPriorHeavy) && diff < 4) return true;
-            if (diff < 3) return true;
-            return false;
-        });
-        if (hasSpacingViolation) {
-            reasons.push('HARD_LOWER_BODY_SPACING_VIOLATION');
-        }
-    }
-
     if (template.systemicCost >= 0.5) {
         if (histSummary.hardInRollingWindowCount >= 3) reasons.push('ROLLING_HARD_CAP_EXCEEDED');
     }
@@ -606,6 +613,7 @@ export function evaluateRecoveryConstraints(
         if (histSummary.priorHeavyStrengthWindow0to1) reasons.push('ANCHOR_PROTECTION_VIOLATION');
     }
 
+    const focusEvent = options.focusEvent;
     if (focusEvent && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race' || focusEvent.category === 'triathlon') && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
         const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
         const daysToRace = getDayDiff(raceDate, targetDate);
@@ -632,19 +640,27 @@ export function evaluateRecoveryConstraints(
                 reasons.push('PRE_EVENT_TAPER_RESTRICTION');
             }
         }
+
+        // Issue #676: Priority-A race week must not stack another substantial quality
+        // exposure inside three days of recent hard work. Race-specific sessions just
+        // above the taper-sharpening ceiling count on both sides of this interaction even
+        // when their authored systemicCost is below the generic 0.50 hard threshold.
         if (focusEvent.priority === 'A' && daysToRace >= 1 && daysToRace <= 7) {
             const isHighCostRaceSpecificOrHard = template.systemicCost >= 0.50
                 || (template.category === 'Race-Specific Endurance' && template.systemicCost > 0.45);
             if (isHighCostRaceSpecificOrHard) {
                 const hasRecentHardSession = history.some(h => {
                     const diff = getDayDiff(targetDate, h.date);
-                    return diff >= 1 && diff <= 3 && (h.systemicCost ?? 0) >= 0.50;
+                    const isHardHistory = (h.systemicCost ?? 0) >= 0.50
+                        || (h.category === 'Race-Specific Endurance' && (h.systemicCost ?? 0) > 0.45);
+                    return diff >= 1 && diff <= 3 && isHardHistory;
                 });
-                if (hasRecentHardSession) {
+                if (hasRecentHardSession && !reasons.includes('PRE_EVENT_TAPER_RESTRICTION')) {
                     reasons.push('PRE_EVENT_TAPER_RESTRICTION');
                 }
             }
         }
+
         const daysSinceRace = getDayDiff(targetDate, raceDate);
         if (focusEvent.priority === 'A' && daysSinceRace >= 1 && daysSinceRace <= 3) {
             const isStrengthModality = template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category);
@@ -918,6 +934,7 @@ export function buildOptimizationContext(
             ...(options.resolvedAvailability ? { resolvedAvailability: options.resolvedAvailability } : {}),
             ...(options.resolveMinimumDaysAfterHardLowerBody ? { resolveMinimumDaysAfterHardLowerBody: options.resolveMinimumDaysAfterHardLowerBody } : {}),
             ...(options.resolveRecoveryHours ? { resolveRecoveryHours: options.resolveRecoveryHours } : {}),
+            ...(options.healthPlanningPolicy !== undefined ? { healthPlanningPolicy: options.healthPlanningPolicy } : {}),
         },
     };
 }
@@ -941,10 +958,8 @@ export function rankCandidates(
     const targetDate = options.date ?? getLocalDateString();
     const history = normalizeHistory(rawHistory, targetDate);
     const summary = buildHistoryFeatureSummary(history, targetDate, options.resolveRecoveryHours);
-    const isEnduranceEvent = Boolean(focusEvent && ['cycling_event', 'running_race', 'triathlon'].includes(focusEvent.category));
+    const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance' || o.key === 'strength_development');
     const coverageState = options.coverageState;
-    const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance' || o.key === 'strength_development')
-        || (isEnduranceEvent && (summary.strengthInLast7DaysCount >= 1 || (coverageState?.requirements.some(r => r.key === 'primary_strength' && (r.completedSessions + r.projectedSessions) >= r.minimumSessions) ?? false)));
     const recoveryStyle = preferences.preferredRecoveryStyle ?? 'mixed';
     const sequenceIntent = options.sequenceIntent;
     const daysSinceLastKeySession = history.reduce<number | null>((closest, entry) => {
@@ -1057,8 +1072,10 @@ export function rankCandidates(
         }
         if (fulfilsNominatedAnchor) benefit += ANCHOR_TIMING_BENEFIT;
 
-        // When rolling 7-day hard session count is already elevated (>= 2), moderate benefit
-        // for non-anchor high-cost sessions to prevent quality stacking and excessive load density.
+        // Issue #676: once two hard exposures already sit inside the rolling six-day
+        // history, keep required/nominated anchors available but strongly moderate the
+        // benefit of additional non-anchor hard work. This is a product calibration
+        // heuristic for whole-horizon load sensitivity, not a physiological cut-point.
         if (summary.hardInRollingWindowCount >= 2 && template.systemicCost >= 0.50 && !fulfilsNominatedAnchor) {
             benefit *= 0.40;
         }
@@ -1088,6 +1105,25 @@ export function rankCandidates(
             if (template.category === 'Rest' || template.category === 'Mobility/Recovery') prefMultiplier *= 1.25;
             else if (template.systemicCost <= 0.4) prefMultiplier *= 1.15;
             else prefMultiplier *= 0.85;
+        }
+
+        const healthPolicy = options.healthPlanningPolicy;
+        if (healthPolicy && !focusEvent && healthPolicy.preferLowImpactAerobic) {
+            if (template.category === 'Easy Endurance' && ['Walking', 'Cycling', 'Other'].includes(template.modality)) {
+                prefMultiplier *= 1.25;
+            } else if (template.category === 'Easy Endurance' && template.modality === 'Running') {
+                prefMultiplier *= 0.75;
+            } else if (template.category === 'Moderate Endurance') {
+                prefMultiplier *= 0.65;
+            }
+        }
+
+        if (healthPolicy && !focusEvent && healthPolicy.preferLowImpactAerobic) {
+            if (template.category === 'Easy Endurance' && ['Walking', 'Cycling', 'Other'].includes(template.modality)) {
+                benefit *= 1.15;
+            } else if (template.category === 'Easy Endurance' && template.modality === 'Running') {
+                benefit *= 0.85;
+            }
         }
 
         const hasLargeWeekdayBudget = (preferences.defaultWeekdayTimeMin ?? 0) >= 80 || availability.maxTimeMinutes >= 80;
@@ -1193,6 +1229,10 @@ export function rankCandidates(
             rationale += ' (Advances an explicit required weekly programming role.)';
         }
         if (isDisliked(template)) rationale += ` (Soft penalty applied: modality '${template.modality}' is marked as avoided/disliked).`;
+        if (healthPolicy && !focusEvent && healthPolicy.preferLowImpactAerobic
+            && (template.category === 'Easy Endurance' || isHealthQualityEnduranceCategory(template.category))) {
+            rationale += ' (Health-goal low-impact aerobic prior applied.)';
+        }
         if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate, summary)) {
             rationale += ` (Event-modality coverage: ${template.modality} has no exposure in the rolling 6-day history.)`;
         }

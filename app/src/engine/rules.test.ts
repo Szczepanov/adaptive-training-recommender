@@ -1080,6 +1080,45 @@ describe('session adjustment engine', () => {
         expect(rec.envelopes?.safety.restrictedModalities).toContain('Running');
         expect(rec.template.modality).not.toBe('Running');
     });
+
+    it("surfaces a visible symptom-compatible rationale note when an active guardrail constrains today's candidates (issue #680)", () => {
+        const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        const settings: TrainingSettings = {
+            userId: 'user1',
+            schemaVersion: 3,
+            equipment: { free_weights: true, cable_machine: true, treadmill: true, indoor_bike: true, pullup_bar: true },
+            guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
+            injuries: [{ region: 'shoulder', severity: 'limit' }],
+            defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 60, environment: 'either' },
+            preferences: { preferActiveRecovery: false },
+            migration: { legacyReviewed: true, migratedAt: null },
+            createdAt: '2026-08-08T00:00:00Z',
+            updatedAt: '2026-08-08T00:00:00Z',
+        };
+        const context = mapContextFromGoalsAndTrainingSettings([], settings, null, '2026-08-08');
+        const rec = evaluateTraining(readiness, context, '2026-08-08');
+        expect(rec.mode).not.toBe('recover');
+        expect(rec.rationale).toContain('shoulder-loading');
+        expect(rec.rationale).toContain('the plan below already avoids those');
+    });
+
+    it('does not add the symptom-compatible rationale note when no guardrail is active', () => {
+        const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        const settings: TrainingSettings = {
+            userId: 'user1',
+            schemaVersion: 3,
+            equipment: { free_weights: true, cable_machine: true, treadmill: true, indoor_bike: true, pullup_bar: true },
+            guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
+            defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 60, environment: 'either' },
+            preferences: { preferActiveRecovery: false },
+            migration: { legacyReviewed: true, migratedAt: null },
+            createdAt: '2026-08-08T00:00:00Z',
+            updatedAt: '2026-08-08T00:00:00Z',
+        };
+        const context = mapContextFromGoalsAndTrainingSettings([], settings, null, '2026-08-08');
+        const rec = evaluateTraining(readiness, context, '2026-08-08');
+        expect(rec.rationale).not.toContain('already avoids those');
+    });
 });
 
 // --- Phase 9.2: DailyReadiness carries an optional subjectiveBaseline field --------------

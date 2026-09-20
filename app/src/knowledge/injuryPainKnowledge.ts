@@ -14,6 +14,7 @@ export const INJURY_PAIN_CLAIM_IDS = {
     genericClinicalEnvelopePolicyV1: 'policy.injury.generic_clinical_envelope_v1',
     genericClinicalEnvelopePolicy: 'policy.injury.contextual_clinical_envelope_v2',
     clinicalEscalationProtocol: 'policy.safety.clinical_escalation_protocol',
+    tissueRecheckCarryPolicy: 'policy.injury.tissue_recheck_carry_v1',
 } as const;
 
 const IOC_PAIN_CONSENSUS_SOURCE = 'HAINLINE-2017-IOC-PAIN-CONSENSUS';
@@ -25,6 +26,7 @@ const CONTEXTUAL_CLINICAL_PRODUCT_POLICY_SOURCE = 'PRODUCT-INJURY-CLINICAL-SYMPT
 const TISSUE_RESPONSE_SEVERITY_PRODUCT_POLICY_V2_SOURCE = 'PRODUCT-TISSUE-RESPONSE-SEVERITY-POLICY-V2';
 const LUMBAR_LOADING_PRODUCT_POLICY_V2_SOURCE = 'PRODUCT-LUMBAR-LOADING-POLICY-V2';
 const CLINICAL_ESCALATION_PRODUCT_POLICY_SOURCE = 'PRODUCT-CLINICAL-ESCALATION-POLICY-V1';
+const TISSUE_RECHECK_CARRY_PRODUCT_POLICY_SOURCE = 'PRODUCT-TISSUE-RECHECK-CARRY-POLICY-V1';
 
 /**
  * Exact descriptor of the current injury and clinical-symptom product policy. It is
@@ -84,6 +86,20 @@ export const INJURY_PAIN_POLICY_DESCRIPTOR = {
         enforceMode: 'recover',
         requiresMedicalReferral: true,
         prohibitsPhysicalTraining: true,
+    },
+    // Issue #680: a today-only tissue-derived constraint (no standing InjuryConstraint) is
+    // scoped to the current local day by tissueResponseSeverity.derivedConstraintScope
+    // above. Without this carry, the restriction vanished the moment a day passed with no
+    // response for that region at all, even absent any explicit settled follow-up -- which
+    // let a symptom-compatible guardrail lapse with no real re-check. This is a bounded
+    // one-day uncertainty hold, not a clinical "settled evidence required" gate.
+    tissueRecheckCarry: {
+        carryDurationDays: 1,
+        appliesToSeverities: ['limit', 'exclude'],
+        deriveCarryFrom: 'prior_day_raw_tissue_response_only',
+        clearedBy: ['todays_own_response_for_the_region', 'standing_injury_already_covering_the_region'],
+        appliesToStandingInjuries: false,
+        classification: 'product_heuristic_not_evidence_derived',
     },
 } as const;
 
@@ -163,6 +179,13 @@ export const INJURY_PAIN_SOURCES: readonly KnowledgeSource[] = [
         sourceType: 'product_policy',
         citation: 'Adaptive Training Recommender product policy: clinical-escalation-protocol-v1 (SEP-C4).',
         notes: 'Red-flag presentations (neurological deficit, acute traumatic instability, severe systemic infection/fever, or rapidly worsening symptoms) halt training prescriptions, cap the plan envelope at Rest, and mandate clinical evaluation.',
+    },
+    {
+        id: TISSUE_RECHECK_CARRY_PRODUCT_POLICY_SOURCE,
+        title: 'One-day tissue pending-recheck carry policy v1 (issue #680)',
+        sourceType: 'product_policy',
+        citation: 'Adaptive Training Recommender product policy: tissue-recheck-carry-v1 (issue #680).',
+        notes: 'A today-only tissue-derived limit/exclude constraint (no standing InjuryConstraint) is carried one additional local day when the following day reports no response of its own for that region. This is a bounded product-policy uncertainty hold, not a validated clinical "settled evidence required" return-to-load rule -- see the tissueResponseTemporalMonitoring and returnToSportCriteriaBasedRiskManagement claims for why a universal elapsed-time threshold is not evidence-backed.',
     },
 ];
 
@@ -322,5 +345,22 @@ export const INJURY_PAIN_CLAIMS: readonly KnowledgeClaim[] = [
             'Enforcing a Rest ceiling does not provide clinical treatment or rehabilitation advice; it safely halts automated exercise prescription.',
         ],
         reviewedOn: '2026-09-01', version: 1,
+    },
+    {
+        id: INJURY_PAIN_CLAIM_IDS.tissueRecheckCarryPolicy,
+        statement: 'A today-only tissue-derived limit/exclude constraint (no standing InjuryConstraint covering the region) is carried forward exactly one additional local day when the following day reports no tissue response of its own for that region, so a symptom-compatible restriction does not silently lapse the day a check-in simply omits it. The carry is cleared by either an explicit response for the region on that day (whatever severity it derives) or by a standing injury already covering the region, and it is derived fresh from the prior day\'s raw response each time so it cannot compound across more than one day.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['recommendation_engine', 'tissue_response_monitoring'], sports: ['all_supported_sports'], populations: ['product_users_with_structured_tissue_response'], outcomes: ['injury_constraint_severity'], horizon: 'acute' },
+        evidence: [
+            { sourceId: TISSUE_RECHECK_CARRY_PRODUCT_POLICY_SOURCE, directness: 'direct' },
+            { sourceId: TENDINOPATHY_PROGRESSION_REVIEW_SOURCE, directness: 'indirect', note: 'Supports pain/symptom-response monitoring as a load-management concept; does not validate a universal one-day elapsed-time carry duration.' },
+            { sourceId: RETURN_TO_SPORT_CONSENSUS_SOURCE, directness: 'indirect', note: 'Supports contextual, criteria-based return-to-load decisions; explicitly does not establish a generic elapsed-time clearance rule, which this one-day window is not represented as satisfying.' },
+        ],
+        limitations: [
+            'The one-day carry duration is product-policy calibration, not an externally validated clinical washout or symptom-resolution window.',
+            'This is a bounded uncertainty hold, not evidence that the athlete\'s tissue remains symptomatic, and not a diagnosis or treatment recommendation.',
+            'It applies only to today-only derived constraints; a standing InjuryConstraint keeps its own independent review/expiry semantics, untouched by this policy.',
+        ],
+        reviewedOn: '2026-09-19', version: 1,
     },
 ];

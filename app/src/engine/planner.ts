@@ -89,6 +89,7 @@ import {
 } from './weeklyAllocation';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
+import { resolveHealthPlanningPolicy, type HealthPlanningPolicy } from './healthPlanningPolicy';
 import { fixedActivityOccurrenceKey, resolveFixedActivityIdentity } from './fixedActivityIdentity';
 import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
 import { admitsCandidate, computeDailyLedger, type DailyLedgerResult } from './dailyLedger';
@@ -170,6 +171,8 @@ export interface WeekAheadOptions {
     planDefinition?: PlanDefinition | null;
     /** Simulation-only fatigue comparison. Live callers use the default `max`. */
     fatigueFusionPolicy?: FatigueFusionPolicy;
+    /** Event-free health planning prior resolved from the current training intent. */
+    healthPlanningPolicy?: HealthPlanningPolicy | null;
 }
 
 const ZERO_COST: WorkoutCostProfile = {
@@ -509,6 +512,7 @@ export interface ProjectedDatePlanningContext {
     fatigueFusionPolicy?: FatigueFusionPolicy;
     planDefinition?: PlanDefinition | null;
     todayDate?: string;
+    healthPlanningPolicy?: HealthPlanningPolicy | null;
 }
 
 export interface ProjectedDateState {
@@ -624,6 +628,7 @@ export function evaluateProjectedDate(
         date,
         {
             anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, fatigueTier,
+            healthPlanningPolicy: shared.healthPlanningPolicy,
             authoredPlanBlocks: shared.authoredPlanBlocks,
             resolvedAvailability: availability,
             ...(planDefinition ? {
@@ -1253,6 +1258,7 @@ export function generateWeekAheadPlan(
         fatigueFusionPolicy,
         planDefinition: suppliedPlanDefinition,
         todayDate,
+        healthPlanningPolicy: options.healthPlanningPolicy,
     };
 
     type ProjectedHistoryEntry = RecentHistoryEntry & { source: 'projected' };
@@ -1421,19 +1427,23 @@ export function generateWeekAheadPlan(
                 return false;
             }
             if (template.category === 'Race-Specific Endurance') {
-                const focusEvent = sharedProjection.events.find(e => (e.priority === 'A' || e.priority === 'B') && ['cycling_event', 'running_race', 'triathlon'].includes(e.category));
-                if (focusEvent && offset >= 4) {
-                    const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
-                    const daysToRace = getDayDiff(raceDate, date);
-                    if ((daysToRace === 2 || daysToRace === 3) && template.systemicCost <= 0.45) {
-                        return true;
-                    }
+                if (!isRecoveryLateReentryDate) return false;
+                const focusEvent = optContext.options.focusEvent;
+                if (!focusEvent
+                    || (focusEvent.priority !== 'A' && focusEvent.priority !== 'B')
+                    || !['cycling_event', 'running_race', 'triathlon'].includes(focusEvent.category)) {
+                    return false;
                 }
-                return false;
+                const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
+                const daysToRace = getDayDiff(raceDate, date);
+                return (daysToRace === 2 || daysToRace === 3) && template.systemicCost <= 0.45;
             }
             return template.systemicCost <= maxSystemicCost;
         };
 
+        // The severe-recovery forecast ladder is itself an active planning constraint.
+        // Reflect that constraint consistently in dose/viability behavior and diagnostics:
+        // recovery-only days behave as recover; graduated re-entry behaves as modify.
         const effectiveFatigueTier = isRecoveryOnlyDate
             ? 'recover'
             : ((isRecoveryEarlyReentryDate || isRecoveryLateReentryDate) && fatigueTier === 'train'
@@ -1489,7 +1499,7 @@ export function generateWeekAheadPlan(
             const candidateDose = resolveTimeCapDoseAdjustment(
                 template,
                 evaluation.availability.maxTimeMinutes,
-                fatigueTier === 'modify',
+                effectiveFatigueTier === 'modify',
             )?.activeDose;
             const evaluator = allocationEvaluator(
                 forecastDatesFrom(offset + 1),
@@ -1504,7 +1514,7 @@ export function generateWeekAheadPlan(
             );
             return !after.budgetExhausted && after.fulfilledCount + selfFulfils >= allocation.fulfilledCount;
         };
-        const viabilityApplies = fatigueTier !== 'recover' && allocation.fulfilledCount > 0 && ranked.length > 1;
+        const viabilityApplies = effectiveFatigueTier !== 'recover' && allocation.fulfilledCount > 0 && ranked.length > 1;
         const pick = (viabilityApplies
             ? ranked.slice(0, WEEKLY_ALLOCATION_SEARCH_BUDGET.maxCandidatesPerOccurrence)
                 .find(candidate => preservesAllocation(candidate.template))
@@ -1512,7 +1522,7 @@ export function generateWeekAheadPlan(
             ?? ranked[0] ?? fallbackPick;
 
         const bestBenefit = [...(ranked.length > 0 ? ranked : [{ template: restFallback, benefitScore: 0 }])].sort((a, b) => b.benefitScore - a.benefitScore)[0];
-        const forecastDoseAdjustment = resolveTimeCapDoseAdjustment(pick.template, evaluation.availability.maxTimeMinutes, fatigueTier === 'modify');
+        const forecastDoseAdjustment = resolveTimeCapDoseAdjustment(pick.template, evaluation.availability.maxTimeMinutes, effectiveFatigueTier === 'modify');
         const forecastActiveDose = forecastDoseAdjustment?.activeDose;
         const pickCredits = creditingObjectivesFor(pick.template, forecastActiveDose);
         const addressed = pickCredits.map(item => item.objective.title);
@@ -1649,6 +1659,11 @@ export async function generateWeekAheadPlanWithIntent(
     const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
     const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy);
     const isAdverseRecovery = isSevereAdverseRecoveryReadiness(todayReadiness, todayRec.mode);
+    const healthPlanningPolicy = resolveHealthPlanningPolicy(
+        intent.planningContext.profile.priorities,
+        preferences,
+        isAdverseRecovery,
+    );
     // ADR-0037 D-DOSE: no progressionOverrides here -- a confirmed progression's duration
     // override is date-scoped to a single day, but this packs the whole week-ahead horizon
     // in one call. Progression influence is deliberately scoped to same-day planning
@@ -1672,6 +1687,12 @@ export async function generateWeekAheadPlanWithIntent(
             completedCoverageHistory: resolveCoverageHistory(intent.performedTrainingFacts, intent.history),
             droppedContributorObjectives: intent.droppedContributorObjectives,
         },
-        { ...options, fatigueFusionPolicy, events: intent.planningContext.mode === 'event_directed' ? events : [], ...(evergreen ? { planDefinition: evergreen.planDefinition } : {}) },
+        {
+            ...options,
+            fatigueFusionPolicy,
+            healthPlanningPolicy,
+            events: intent.planningContext.mode === 'event_directed' ? events : [],
+            ...(evergreen ? { planDefinition: evergreen.planDefinition } : {}),
+        },
     );
 }

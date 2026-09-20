@@ -1,106 +1,63 @@
-# 2026-09-20 — Issue #676 remediation: Hard-load density, race-week sequencing, and severe recovery sharpening
+# 2026-09-20 — Issue #676 remediation: hard-load density and race-week sequencing
 
-Point-in-time record of the investigation and remediation of [Issue #676](https://github.com/Szczepanov/adaptive-training-recommender/issues/676):
-AI-judge sensitivity diagnostics identifying weak whole-horizon load sensitivity after recent hard training,
-quality stacking during race week, and over-conservative severe recovery re-entry eliminating pre-event sharpening.
+Point-in-time record of the investigation and remediation of [Issue #676](https://github.com/Szczepanov/adaptive-training-recommender/issues/676).
 
----
+## Findings
 
-## Background and Findings
+### 1. Whole-horizon recent-load sensitivity — confirmed
 
-### 1. Weak whole-horizon load sensitivity after recent hard training (confirmed)
+The external judge case `judge_load_hard_yesterday` already produced an appropriately cautious immediate response, but its 14-day forecast could accumulate more hard work than the no-load baseline. The existing rolling rule only rejected another >=0.50-systemic candidate once three hard exposures were already present in the previous six calendar days; it did not otherwise make recent load matter across the rest of the horizon.
 
-**Symptom**:
-In `judge_load_hard_yesterday` (compared against `judge_load_none`), the immediate Day 1–2 response was appropriately cautious
-(two easy days before any quality exposure), but the cumulative 14-day plan accrued 5 hard sessions—exceeding the no-load baseline
-despite the athlete having performed an unabsorbed hard workout on $D-1$. The judge noted that recent hard training should dampen
-overall hard-session density or cumulative systemic cost across the planning horizon, rather than solely shifting the Day 1 selection.
+The remediation keeps that hard gate and adds a softer product-calibration layer in `rankCandidates`: once two >=0.50 hard exposures already sit in the rolling six-day history, an additional non-anchor >=0.50 candidate receives a 0.40 benefit multiplier. Nominated anchors remain eligible when safe, but all hard recovery/taper gates still apply.
 
-**Root Cause**:
-The rolling hard density gate (`evaluateRecoveryConstraints`) enforced a hard cap of 2 hard sessions per 7-day rolling window (`diff <= 6`),
-but in candidate utility ranking (`rankCandidates`), non-anchor hard sessions (`systemicCost >= 0.50`) competed on equal footing
-for high-priority weekly objectives once the rolling cap was not violated on a given day. Because the athlete began with a clean slate
-after the initial 2-day refractory period, subsequent days accumulated hard sessions up to the ceiling without horizon-level cost moderation.
+The deterministic fixture now compares all four acceptance-criterion states: no recent hard load, hard yesterday, hard two days ago, and hard three days ago. It asserts monotonic ordering of both hard-session count and cumulative systemic cost across the 14-day horizon, plus the original two-easy-day response after D-1 hard work.
 
-**Remediation**:
-- In `optimizer.ts` (`rankCandidates`), introduced whole-horizon benefit moderation: when the rolling 6-day hard session count is $\ge 2$,
-  any candidate with `systemicCost >= 0.50` that is not explicitly fulfilling a designated weekly anchor has its utility score reduced
-  (`benefit *= 0.40`).
-- This dampening allows necessary anchor sessions to proceed when safe, but strongly disincentivizes additional non-anchor hard sessions,
-  ensuring that cumulative systemic cost and hard session density for `judge_load_hard_yesterday` remain strictly $\le$ `judge_load_none`.
+### 2. Priority-A race-week quality interaction — confirmed
 
----
+The final-seven-day policy had independent hard/exhaustive restrictions, but no interaction rule that prevented a new substantial race-specific/hard candidate from following recent hard work too closely.
 
-### 2. Race-week quality density guard before Priority A events (confirmed)
+`evaluateRecoveryConstraints` now blocks a candidate inside D-1..D-7 of an A cycling/running/triathlon event when both are true:
 
-**Symptom**:
-In `judge_int_race7_hard_yday`, having completed a hard workout on $D-1$ followed by race-week planning (7 days out from an A-priority criterium)
-allowed high-cost criterium surges to be placed in close proximity (within 3 days) of the prior hard work alongside taper sharpening,
-resulting in dense quality sequencing immediately prior to competition.
+- the candidate is systemicCost >=0.50, or Race-Specific Endurance >0.45; and
+- one of the preceding three days contains systemicCost >=0.50 work, or Race-Specific Endurance >0.45.
 
-**Root Cause**:
-Existing pre-event constraints limited exhaustive work and capped volume, but did not impose a strict refractory spacing between
-recent hard training and race-week high-cost surges or race-specific workouts when approaching competition.
+The second clause is intentionally symmetric. An earlier draft checked only prior `systemicCost >=0.50`, which meant a 0.46-0.49 Race-Specific exposure could trigger the candidate-side threshold but disappear from history-side interaction detection.
 
-**Remediation**:
-- In `optimizer.ts` (`evaluateRecoveryConstraints`), added an explicit race-week quality density guard for Priority A events in the 7-day pre-race window:
-  if an event is 1 to 7 days out, candidates with `systemicCost >= 0.50` or category `Race-Specific Endurance` with `systemicCost > 0.45`
-  are blocked if a hard session (`systemicCost >= 0.50` or race-specific `> 0.45`) occurred within the preceding 3 days ($1 \le \text{diff} \le 3$).
-- Scoped strictly to Priority A events to preserve intentional race-preparation flexibility for Priority B events (where race-specific work
-  receives benefit moderation rather than a hard exclusion gate).
+### 3. Severe-recovery re-entry before an event — confirmed, but narrowed
 
----
+A severe adverse-recovery snapshot can conservatively constrain all five projected re-entry days. That is appropriate as a forecast safety default because those future days have no fresh readiness measurement, but an all-rest forecast can conflict with the taper objective of preserving a small amount of event-specific intensity/frequency when it can be done at low load.
 
-### 3. Severe recovery re-entry and pre-event sharpening (confirmed)
+The late re-entry policy therefore has one narrow exception: on offsets 4-5, before an A/B cycling/running/triathlon event, Race-Specific Endurance at systemicCost <=0.45 may be admitted on D-2 or D-3. Strength, generic Moderate Endurance, and Hard Endurance remain excluded. The forecast policy also uses effective `recover` semantics on recovery-only dates and effective `modify` semantics on graduated re-entry dates for dose selection, allocation viability, displacement diagnostics, and surfaced forecast diagnostics.
 
-**Symptom**:
-In `judge_int_race7_badobj`, severe objective adversity (HRV down 2 SD, RHR up 2 SD, poor sleep) produced 7 consecutive Rest/Mobility days
-from a single adverse snapshot, completely suppressing pre-event neuromuscular sharpening ($D-2$/$D-3$) before an A-event and causing athlete
-flatness/detraining prior to competition. Additionally, the daily forecast diagnostics reported `train` fatigue tier when rest was forced.
+This is a product heuristic, not a claim that a wearable snapshot proves a five-day recovery timeline. Taper syntheses support volume reduction while preserving meaningful intensity/frequency on average, but do not validate the exact 0.35/0.45/0.50 cut-points or D-2/D-3 exception:
+- Wang et al. 2023: https://pubmed.ncbi.nlm.nih.gov/37163550/
+- Bosquet et al. 2007: https://pubmed.ncbi.nlm.nih.gov/17762369/
 
-**Root Cause**:
-The severe recovery re-entry ladder in `planner.ts` strictly restricted days 1–5 to low systemic cost without an exception for light pre-race
-neuromuscular touchpoints, and the forecast diagnostics in `planner.ts` surfaced raw fatigue evaluation tiers rather than effective
-recovery-tier overrides.
+Likewise, HRV-guided training evidence supports contextual adjustment rather than a universal single-signal stop/resume rule:
+- Düking et al. 2021: https://pubmed.ncbi.nlm.nih.gov/34489178/
 
-**Remediation**:
-- In `planner.ts` (`isRecoveryReentryCandidate`), allowed light pre-event sharpening (`Race-Specific Endurance`, `systemicCost <= 0.45`, e.g.
-  `end_taper_sharpen_01`) during late re-entry (days 4–5 / offset $\ge 4$) on $D-2$ or $D-3$ before an A- or B-priority endurance event.
-- In `planner.ts`, introduced `effectiveFatigueTier`: dates under `isRecoveryOnlyDate` report `'recover'`, and dates under re-entry report `'modify'`.
-  This provides transparent diagnostic accounting and prevents 7-day over-resting while respecting acute recovery needs.
+### 4. Concurrent endurance-strength spacing — reported symptom confirmed, proposed global rule rejected
 
----
+The issue specifically reported the interaction of a high-cost full-body strength session four days before the race followed by late sharpening after severe adversity. That race-week failure mode is already governed by two narrower authorities merged in #679:
 
-### 4. Concurrent endurance-strength spacing (confirmed)
+- across the full resolved taper, nonessential Strength is limited to at most one light `systemicCost <=0.35` touch; and
+- under severe adverse-recovery forecast re-entry, Strength is excluded through day 5.
 
-**Symptom**:
-In endurance event preparations (`cycling_event`, `running_race`, `triathlon`), full-body strength sessions could be placed with only 1–2 days
-separation across the planning horizon, compromising musculoskeletal recovery for primary sport exposures.
+The first PR draft added a new global rule requiring >=3 days between all strength sessions and >=4 days around heavy strength for every cycling/running/triathlon event, plus a ranking shortcut that could mark an unresolved strength objective as resolved after one recent session. Review removed both changes. They were broader than the issue required, and current concurrent-training evidence is context-dependent rather than support for a universal 3/4-day physiological invariant (e.g. Huiberts et al. 2024: https://pubmed.ncbi.nlm.nih.gov/37847373/).
 
-**Root Cause**:
-Lower-body strength spacing enforced $\ge 2$ days between heavy lower-body sessions, but did not impose endurance-specific spacing for
-full-body or general strength maintenance sessions.
+## Policy and knowledge boundary
 
-**Remediation**:
-- In `optimizer.ts` (`evaluateRecoveryConstraints`), added endurance-event strength spacing rules:
-  - Any heavy strength session (`systemicCost >= 0.60` or `costProfile.lowerBody >= 0.60`) requires $\ge 4$ days since any prior strength session.
-  - Any general strength session requires $\ge 3$ days since any prior strength session.
-- Updated `isStrengthResolved` to ensure endurance events acknowledge resolved strength objectives when adequate stimulus has been placed.
+The exact rolling counts, systemic-cost thresholds, 0.40 multiplier, three-day race-week interaction window, five-day recovery ladder, and <=0.45 sharpening exception are registered as product-policy heuristics. The scientific taper/readiness literature informs direction and limitations; it does not masquerade as validation of those exact constants.
 
----
+Behavior changes bump `POLICY_VERSION` to `2026-09-hard-load-density-race-week-sequencing-v1`, while preserving every newer historical version already present on `main`.
 
-## Verification Summary
+## Deterministic verification
 
-1. **Unit & Scenario Tests**:
-   - `recentLoadHorizonDensity.test.ts`: Confirms strict whole-horizon density ordering (`hard_yesterday` $\le$ `none`) and safe 2-day initial ease.
-   - `raceWeekInteractionsSequencing.test.ts`: Verifies race-week quality density spacing, pre-event sharpening during late re-entry, and endurance strength spacing.
-   - `policy.test.ts`: Verifies `POLICY_VERSION` transition to `'2026-09-hard-load-density-race-week-sequencing-v1'`.
-   - Full Vitest suite: 508 test files passed (5,902 tests), 0 failed.
-2. **Knowledge Architecture & Lineage**:
-   - Registered and validated updated claims in `sportsKnowledge.ts` (`rollingHardDensityCap`, `hardLowerBodySpacing`, `severeAdverseRecoveryReentry`)
-     and `taperFuelingKnowledge.ts` (`preEventRestrictionsPolicy`).
-   - `npm run validate:knowledge`, `validate:knowledge-coverage`, `validate:knowledge-freshness`, and `validate:workouts` passed clean.
-3. **Simulation & Drift**:
-   - `npm run simulate:scenarios` and `npm run simulate:diff` verified intended directional changes across the 39-scenario benchmark corpus.
-4. **Backend Invariants**:
-   - `uv run ruff check .` and `uv run pytest` (977 tests) passed clean.
+The remediation adds/updates:
+
+- `recentLoadHorizonDensity.test.ts`: no-load vs D-1/D-2/D-3 hard-load horizon ordering.
+- `raceWeekInteractionsSequencing.test.ts`: hard-yesterday race week, severe adversity, combined hard-yesterday + severe adversity, bounded D-2/D-3 sharpening, and the Race-Specific 0.46-0.49 history-side interaction edge.
+- `policy.test.ts`: current policy transition while retaining the policy versions already live on `main`.
+- Knowledge/architecture documentation for the exact product-policy boundary.
+
+The repository CI pipeline remains the merge gate for the integrated branch; stale test-count snapshots from the pre-`main` branch are intentionally not copied into this document.
