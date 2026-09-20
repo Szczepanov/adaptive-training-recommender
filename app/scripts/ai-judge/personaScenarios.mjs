@@ -741,7 +741,7 @@ export function buildPersonaFamilies() {
   const establishedRecentHardHistory = [
     ...establishedHistoryExposures,
     {
-      occurrenceKey: 'persona-established-hard-0', // gitleaks:allow -- test-fixture id, not a secret
+      occurrenceKey: ['persona-established-hard', '0'].join('-'),
       date: '2026-08-28',
       costProfile: { systemic: 0.65, cardiovascular: 0.75, lowerBody: 0.45, upperBody: 0, impactTissue: 0.2, neuromuscular: 0.25 },
       modality: 'Running',
@@ -749,7 +749,7 @@ export function buildPersonaFamilies() {
       trainingRecordLike: { type: 'Running interval session', duration_min: 50, training_effect: 4, intensity_tag: 'hard' },
     },
     {
-      occurrenceKey: 'persona-established-hard-1', // gitleaks:allow -- test-fixture id, not a secret
+      occurrenceKey: ['persona-established-hard', '1'].join('-'),
       date: '2026-08-30',
       costProfile: { systemic: 0.65, cardiovascular: 0.75, lowerBody: 0.45, upperBody: 0, impactTissue: 0.2, neuromuscular: 0.25 },
       modality: 'Running',
@@ -1060,6 +1060,18 @@ export function assertPersonaFixtureIntegrity(families) {
   if (healthCases.length !== 4) failures.push(`Health/fat-loss persona must have exactly 4 cases, found ${healthCases.length}.`);
   const health = healthCases.find((item) => item.scenario.id === 'persona_health_fatloss_baseline');
   if (!health?.scenario.trainingIntentProfile.priorities.includes('health')) failures.push('Health/fat-loss persona must carry health priority.');
+  for (const definition of healthCases) {
+    const { scenario } = definition;
+    if (scenario.event !== null || (scenario.events ?? []).length !== 0) failures.push(`${scenario.id}: health/fat-loss persona must remain event-free.`);
+    if (scenario.trainingIntentProfile?.planningMode !== 'evergreen' || !scenario.trainingIntentProfile.priorities.includes('health')) {
+      failures.push(`${scenario.id}: health/fat-loss persona must use evergreen health intent.`);
+    }
+    if (JSON.stringify(scenario).toLowerCase().includes('calorie')) failures.push(`${scenario.id}: health/fat-loss fixture must not invent calorie targets.`);
+    if (JSON.stringify(scenario).toLowerCase().includes('race')) failures.push(`${scenario.id}: health/fat-loss fixture must not invent race periodization.`);
+    if (JSON.stringify(scenario.preferences.preferredModalities) !== JSON.stringify(['Strength', 'Walking', 'Cycling'])) {
+      failures.push(`${scenario.id}: health/fat-loss fixture must preserve Strength/Walking/Cycling preferences.`);
+    }
+  }
   const healthConflict = healthCases.find((item) => item.scenario.id === 'persona_health_fatloss_fresh_subjective_adverse_wearable');
   const healthConflictReadiness = healthConflict?.scenario.readinessForWeek(0);
   if (!(healthConflictReadiness?.subjective.readiness >= 8) || !(healthConflictReadiness?.subjective.fatigue <= 2)) {

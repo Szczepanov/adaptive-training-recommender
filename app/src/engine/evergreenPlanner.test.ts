@@ -69,7 +69,7 @@ describe('evergreen week-ahead integration', () => {
 
         expect(coverageKeys).toContain('aerobic_volume');
         expect(coverageKeys).toContain('primary_strength');
-        expect(plan.days.some(day => day.template.id === 'end_easy_02')).toBe(true);
+        expect(plan.days.some(day => day.template.id === 'end_walk_01')).toBe(true);
         expect(plan.days.some(day => day.template.modality === 'Strength')).toBe(true);
     });
 
