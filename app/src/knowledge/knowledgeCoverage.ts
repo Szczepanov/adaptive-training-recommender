@@ -85,6 +85,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Explicitly registered as a product heuristic, separate from the WHO >=2-day recommendation.',
     },
     {
+        id: 'evergreen.health_adherence_modality_intensity_prior', domain: 'evergreen_dose', title: 'Health adherence-friendly modality and intensity prior',
+        currentRule: 'For event-free health plans without explicit running support, Walking/Cycling receive a soft aerobic ranking preference; quality endurance is limited to one prior session in a rolling seven-day window, and adverse-recovery forecasts withhold quality endurance until the next fresh planning check. Running remains allowed and strength requirements are unchanged.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['engine/healthPlanningPolicy.ts:resolveHealthPlanningPolicy', 'engine/optimizer.ts:evaluateRecoveryConstraints', 'engine/optimizer.ts:rankCandidates'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.healthAdherenceModalityIntensityPrior],
+        coverageRationale: 'Registered as an explicit product-policy claim (`health.adherence.modality_intensity_prior_v1`) based on deterministic persona evidence. It is intentionally soft except for adverse-recovery forecast gating and preserves explicit user preference, current history and event-directed authority.',
+    },
+    {
         id: 'evergreen.high_intensity_weekly_prior', domain: 'evergreen_dose', title: 'Conditional high-intensity weekly prior',
         currentRule: 'When recent training evidence qualifies, Evergreen targets one high-intensity session and permits no more than two per week.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
@@ -288,6 +296,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
         codeRefs: ['engine/adapters.ts:mapCheckinToSubjectiveInput', 'engine/rules.ts:evaluateEnvelopes'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.symptomsRequireContextualAssessment, KNOWLEDGE_CLAIM_IDS.genericClinicalEnvelopePolicy],
         coverageRationale: 'SEP-B records a contextual symptom-assessment boundary and the exact combined clinical-symptom product policy. Neither source validates anatomy-agnostic Running restriction or Mobility ceiling as universal guidance, and illness/pain causes remain distinct; this stays partial P0 debt.',
+    },
+    {
+        id: 'injury.tissue_recheck_carry', domain: 'injury_safety', title: 'One-day tissue pending-recheck carry (issue #680)',
+        currentRule: "A today-only tissue-derived limit/exclude constraint (no standing InjuryConstraint) carries forward exactly one additional local day when the next day reports no response of its own for that region; cleared by that day's own response (any severity) or by a standing injury already covering the region, and derived fresh from the prior day's raw response each time so it cannot compound past one day.",
+        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
+        codeRefs: ['engine/injuryPolicy.ts:deriveCarriedRegionRestrictions', 'engine/injuryPolicy.ts:resolveEffectiveInjuryConstraintsWithRecheck', 'engine/composer.ts:composeDailyDecisionInput'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.tissueResponseTemporalMonitoring, KNOWLEDGE_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement, KNOWLEDGE_CLAIM_IDS.tissueRecheckCarryPolicy],
+        coverageRationale: 'The tendinopathy progression review supports pain/symptom-response monitoring as a load-management concept but reports insufficient comparative evidence for one universal criterion; the return-to-sport consensus supports contextual, criteria-based decisions and explicitly not a generic elapsed-time clearance rule. Neither validates this specific one-day carry window, which remains product-policy calibration and partial P0 debt.',
     },
     {
         id: 'spacing.anchor_next_day', domain: 'session_spacing', title: 'Anchor/quality next-day spacing gate',

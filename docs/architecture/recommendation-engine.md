@@ -118,6 +118,16 @@ the conditional high-intensity prior (`canUseConditionalPrior`) is withheld, emi
 The legacy 2-to-6-session table is only an equal-dose placement
 tie-breaker; it does not set a physiological requirement or hide a capacity shortfall.
 
+Event-free `health` planning also resolves `healthPlanningPolicy.ts`
+`resolveHealthPlanningPolicy` from the current intent and preferences. When running is not
+explicitly preferred, the unified optimizer gives feasible Walking/Cycling easy-aerobic
+candidates a soft ranking prior while keeping Running available. Quality Endurance is
+limited to one prior occurrence in a rolling seven-day window and is withheld from the
+projected horizon after adverse recovery;
+the next fresh planning check may re-enable it. This is an adherence-oriented product
+heuristic, not a clinical intensity prescription. It does not apply to event-directed
+plans, explicit Running preference, or the required health aerobic/strength dose roles.
+
 The coverage registry has two descriptors. `september_cycling_event` is the frozen,
 event-directed cycling contract. `evergreen_general` is a rolling seven-day `general`
 descriptor with modality-specific exact identities, including a continuous easy run that
@@ -544,6 +554,59 @@ raises a region's severity for that one read, never lowers it, and never persist
 result back to `TrainingSettings`. Wearable-derived readiness has no parameter into that
 function at all — a structural guarantee, not just tested behavior, that a good HRV
 reading can't loosen what tissue response or the injury constraint decided.
+
+A check-in-only athlete with no standing `InjuryConstraint` at all is not a gap in this
+chain: `resolveEffectiveInjuryConstraints` already synthesizes a **today-only** constraint
+directly from a bare `RegionTissueResponse`, scoped with `reviewBy: today` so it can never
+outlive the day that produced it. `resolveInjuryRestrictions` then turns that into the same
+`impliedGuardrails`/`restrictedCategories` a persisted injury would, and `eligibility.ts`
+excludes any `SessionTemplate` whose `safetyTags` intersect an active guardrail — the same
+mechanism, same code path, regardless of source.
+
+### Template/workout safety-tag alignment and the one-day pending-recheck carry (issue #680)
+
+Two related gaps surfaced from a persona-judge review of a check-in-only shoulder/back
+symptom flare, both fixed without adding a new safety-filtering mechanism:
+
+- **Mistagged templates.** `SessionTemplate.safetyTags` is the only guardrail-consuming
+  metadata layer with a live consumer; `WorkoutDefinition.contraindicationTags` and
+  `ExerciseDefinition.contraindicationTags` have none (`sessionChoiceEligibility.ts`'s own
+  docstring documents this). Several strength templates' `safetyTags` didn't reflect what
+  their linked workout (via `workoutForTemplate()`, `workouts/prescription.ts`) actually
+  contained — e.g. `str_upper_pull_01` ("Pull-up Strength Practice") had `safetyTags: []`
+  despite resolving to a workout built entirely from shoulder-tagged exercises. Fixed for
+  the reported instances; `engine/templateWorkoutSafetyAlignment.test.ts` now pins every
+  strength template's `safetyTags` as a superset of what its resolved workout's exercises
+  imply for the upper-limb and lumbar guardrail families (the lower-limb families are
+  deliberately out of scope — see that test file's own comment for why).
+- **One-day pending-recheck carry.** `resolveEffectiveInjuryConstraints` only ever
+  considers *today's* `tissueResponses`, so a today-only constraint (no standing injury)
+  vanished the moment a later day's check-in simply had no entry for that region — even
+  with no explicit settled follow-up. `injuryPolicy.ts`'s `deriveCarriedRegionRestrictions`
+  / `resolveEffectiveInjuryConstraintsWithRecheck` layer a bounded, one-day-only carry on
+  top of the unchanged base resolver: a region carries forward exactly one additional local
+  day when the next day reports nothing for it, cleared by either that day's own response
+  (any severity) or an already-covering standing injury. This is a product-policy
+  uncertainty hold, not a clinical "settled evidence required" gate — see
+  `docs/analysis/2026-09-19-symptom-compatible-substitution-investigation.md` and the
+  registered `policy.injury.tissue_recheck_carry_v1` claim for the exact scope and why a
+  fixed elapsed-time window is not evidence-backed.
+
+  The carry is computed at the composition boundary (`engine/composer.ts`
+  `composeDailyDecisionInput`, reusing the subjective-history range read it already
+  performs — no extra read) and passed into `mapContextFromGoalsAndTrainingSettings` as a
+  compact `CarriedRegionRestriction[]`, never a raw check-in. It is deliberately omitted
+  from every provisional/forecast-day context construction (`Home.tsx`, `PlanView.tsx`),
+  preserving the same no-forecast-leakage contract that already applies to today-only
+  tissue-derived restrictions.
+
+`rules.ts`'s recommendation rationale also surfaces a short, generic note ("An active
+injury/tissue restriction is limiting shoulder-loading ... options today") whenever
+`context.constraints.impliedGuardrails` is non-empty in a `train`/`modify` mode, so a
+symptom-compatible substitution is visible to the athlete rather than only appearing in
+`decisionTrace.excludedReasons`. It reads `impliedGuardrails` (decision-affecting data),
+never `injuryPolicyTrace` (lineage-only, and `injuryPolicyLineageEquivalence.test.ts`
+enforces that the trace can never influence the selected recommendation).
 
 ---
 

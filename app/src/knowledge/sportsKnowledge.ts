@@ -395,6 +395,7 @@ export const KNOWLEDGE_CLAIM_IDS = {
     adultAerobicHealthVolume: 'health.adults.aerobic.weekly_volume',
     adultStrengthHealthFrequency: 'health.adults.strength.weekly_frequency',
     adultStrengthDefaultUpperTarget: 'health.adults.strength.default_upper_target',
+    healthAdherenceModalityIntensityPrior: 'health.adherence.modality_intensity_prior_v1',
     conditionalHighIntensityPrior: 'performance.high_intensity.conditional_weekly_prior',
     enduranceIntensityDistribution: 'performance.endurance.intensity_distribution.low_intensity_majority',
     trainingStressRecoveryBalance: 'recovery.training.stress_recovery_balance',
@@ -445,6 +446,15 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
         applicability: { contexts: ['health', 'balanced_performance', 'strength_muscle'], sports: ['general_physical_activity'], populations: ['evergreen_mode_users'], outcomes: ['bounded_weekly_strength_allocation'], horizon: 'chronic' },
         evidence: [{ sourceId: EVERGREEN_PRODUCT_POLICY_SOURCE, directness: 'direct', note: 'Product allocation prior, deliberately separated from the WHO >=2 day recommendation.' }],
         limitations: ['This is a product allocation heuristic, not an evidence-based claim that three sessions is a physiological maximum or optimum.'], reviewedOn: '2026-08-30', version: 1,
+    },
+    {
+        id: KNOWLEDGE_CLAIM_IDS.healthAdherenceModalityIntensityPrior,
+        statement: 'For event-free health planning, when running is not explicitly preferred, the product gives feasible walking/cycling aerobic work a soft preference, limits unnecessary quality-endurance work to one session in a rolling seven-day window, and withholds quality-endurance work from an adverse-recovery forecast until a fresh planning check is available.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
+        applicability: { contexts: ['health', 'adherence', 'load_management'], sports: ['general_physical_activity', 'walking', 'cycling', 'running'], populations: ['event_free_health_focused_adults'], outcomes: ['adherence_friendly_modality_selection', 'bounded_moderate_intensity_exposure'], horizon: 'both' },
+        evidence: [{ sourceId: EVERGREEN_PRODUCT_POLICY_SOURCE, directness: 'direct', note: 'Product policy derived from issue #681 deterministic persona evidence; not clinical validation.' }],
+        limitations: ['This is a product ranking and recovery heuristic, not evidence that walking or cycling is universally superior to running.', 'The one-session/seven-day boundary is a conservative calibration value and does not establish a universal physiological maximum.', 'An explicit running preference, event-directed mode or separate clinical guidance can change the appropriate plan.'],
+        reviewedOn: '2026-09-19', version: 1,
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.conditionalHighIntensityPrior,

@@ -145,22 +145,60 @@ describe('training-settings eligibility', () => {
         expect(eligible.easierDose?.doseRatio).toBeCloseTo(0.7 * (30 / 45), 6);
     });
 
-    it('excludes a whole restricted category even when the template carries no matching safetyTag', () => {
-        // str_upper_pull_01 ("Pull-up Strength Practice") is Upper-body Strength with
-        // safetyTags: [] -- an excluded-elbow injury's avoid_overhead_pressing guardrail
-        // alone would never catch it. restrictedCategories exists precisely for this case
-        // (see injuryPolicy.ts: exclude severity on shoulder/elbow/wrist restricts the whole
-        // Upper-body Strength category, not just overhead-press-tagged templates), and it
-        // must be enforced by eligibleTemplates() itself so every caller -- planner.ts's
-        // 7-day forecast included, not just rules.ts's today/tomorrow path -- gets it for free.
+    it('excludes a whole restricted category even when a template carries no matching safetyTag', () => {
+        // Every current Upper-body Strength template now carries avoid_overhead_pressing
+        // (issue #680 fixed the gap where str_upper_pull_01 had safetyTags: []), so this
+        // uses a synthetic template to keep proving restrictedCategories is enforced on its
+        // own -- not merely redundant with safetyTags -- for a template that (by omission,
+        // future addition, or a not-yet-conservative tag) carries no matching safetyTag.
+        // restrictedCategories exists precisely for this case (see injuryPolicy.ts: exclude
+        // severity on shoulder/elbow/wrist restricts the whole Upper-body Strength category,
+        // not just overhead-press-tagged templates), and it must be enforced by
+        // eligibleTemplates() itself so every caller -- planner.ts's 7-day forecast included,
+        // not just rules.ts's today/tomorrow path -- gets it for free.
+        const untaggedUpperBodyTemplate: SessionTemplate = {
+            id: 'synthetic_upper_untagged', category: 'Upper-body Strength', modality: 'Strength',
+            durationMin: 20, durationMax: 30, title: 'Synthetic untagged upper-body template',
+            description: 'Test-only template with no safetyTags, to isolate restrictedCategories.',
+            requiredEquipment: [], environment: 'either', safetyTags: [], systemicCost: 0.3,
+        };
+
         const profile = settings({ equipment: { free_weights: true, cable_machine: true, treadmill: false, indoor_bike: true, pullup_bar: true } });
         const ctx = context(profile);
         ctx.constraints.restrictedCategories = ['Upper-body Strength'];
 
-        const result = evaluateTemplateEligibility(TEMPLATES_BY_ID.get('str_upper_pull_01')!, ctx, 60, '2026-08-07');
+        const result = evaluateTemplateEligibility(untaggedUpperBodyTemplate, ctx, 60, '2026-08-07');
         expect(result.eligible).toBe(false);
         expect(result.reasons).toContain('restricted_category');
 
         expect(eligibleTemplates(TEMPLATES, ctx, 60, '2026-08-07').some(t => t.category === 'Upper-body Strength')).toBe(false);
+    });
+
+    it('excludes pull-up and bodyweight full-body strength templates once avoid_overhead_pressing is active (issue #680)', () => {
+        // Regression for the reported gap: str_upper_pull_01 and str_full_02 had
+        // safetyTags: [] despite containing shoulder-loading movements (pull-ups, push-ups,
+        // a prone row), so an active shoulder/back guardrail never excluded them. Covers
+        // every strength template whose linked workout contains a shoulder-contraindicated
+        // exercise (see templateWorkoutSafetyAlignment.test.ts for the general audit).
+        const profile = settings({ equipment: { free_weights: true, cable_machine: true, treadmill: false, indoor_bike: true, pullup_bar: true } });
+        const ctx = context(profile);
+        ctx.constraints.impliedGuardrails = ['avoid_overhead_pressing'];
+
+        for (const templateId of ['str_upper_pull_01', 'str_upper_01', 'str_full_02', 'str_full_01', 'str_full_03', 'str_power_01']) {
+            const result = evaluateTemplateEligibility(TEMPLATES_BY_ID.get(templateId)!, ctx, 60, '2026-08-07');
+            expect(result.eligible, `${templateId} should be excluded by avoid_overhead_pressing`).toBe(false);
+            expect(result.reasons).toContain('safety_guardrail');
+        }
+    });
+
+    it('does not blanket-exclude non-strength templates when avoid_overhead_pressing is active', () => {
+        // The guardrail is scoped to templates whose safetyTags actually match -- it must
+        // not silently remove unrelated, symptom-compatible candidates (e.g. walking) that
+        // the planner could otherwise pick automatically.
+        const profile = settings({ equipment: { free_weights: true, cable_machine: true, treadmill: false, indoor_bike: true, pullup_bar: true } });
+        const ctx = context(profile);
+        ctx.constraints.impliedGuardrails = ['avoid_overhead_pressing'];
+
+        expect(eligibleTemplates(TEMPLATES, ctx, 60, '2026-08-07').some(t => t.id === 'end_walk_01')).toBe(true);
     });
 });

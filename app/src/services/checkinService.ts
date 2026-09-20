@@ -107,16 +107,23 @@ export class CheckinService {
             // Save to Firestore. validateCheckin omits `tissueResponses` from its result
             // entirely whenever it's absent -- with `merge: true`, an omitted key leaves
             // whatever was already stored untouched, it does NOT clear it. So a day that
-            // previously had tissueResponses and now reports painOrInjury: false would
-            // otherwise keep the stale region data live in Firestore even though the UI
-            // (DailyCheckin's handleBooleanToggle) already cleared it locally --
-            // mapContextFromGoalsAndTrainingSettings consumes tissueResponses regardless of
-            // painOrInjury, so a stale value would keep restricting the athlete after they
-            // explicitly reported no pain/injury. Explicitly delete the field whenever this
-            // write's own painOrInjury is false, covering every upsert path (including
-            // MinimumSafetyCheckin's partial safety-subset save), not just DailyCheckin's.
+            // previously had tissueResponses and now reports painOrInjury: false with no
+            // structured response of its own would otherwise keep the stale region data
+            // live in Firestore even though the UI (DailyCheckin's handleBooleanToggle)
+            // already cleared it locally -- mapContextFromGoalsAndTrainingSettings consumes
+            // tissueResponses regardless of painOrInjury, so a stale value would keep
+            // restricting the athlete after they explicitly reported no pain/injury.
+            // Explicitly delete the field whenever this write's own painOrInjury is false
+            // AND it carries no structured tissueResponses of its own, covering every
+            // upsert path (including MinimumSafetyCheckin's partial safety-subset save).
+            //
+            // An explicitly-supplied structured tissueResponses (e.g. a next-morning
+            // follow-up answer, which can legitimately be `normal`/`mild` while the coarse
+            // painOrInjury toggle is already false) must survive this write on its own
+            // authority -- a graded region observation is a stronger, more specific signal
+            // than the broad boolean and must not be silently discarded by it (issue #680).
             const payload: Record<string, unknown> = { ...validatedCheckin };
-            if (!validatedCheckin.painOrInjury) {
+            if (!validatedCheckin.painOrInjury && !validatedCheckin.tissueResponses) {
                 payload.tissueResponses = deleteField();
             }
             if (!validatedCheckin.physicalWork || !validatedCheckin.physicalWork.performed) {

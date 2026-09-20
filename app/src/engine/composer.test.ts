@@ -211,3 +211,64 @@ describe('DecisionComposer schedule overlays source', () => {
             .rejects.toThrow('Schedule overlays are invalid. Please review or remove the affected schedule block.');
     });
 });
+
+describe('DecisionComposer one-day pending-recheck carry (issue #680)', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        services.recovery.getRecoverySnapshotState.mockResolvedValue({ status: 'MISSING' });
+        services.checkin.getCheckinState.mockResolvedValue({ status: 'MISSING' });
+        services.goals.getActiveGoalsState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+        services.settings.getTrainingSettingsState.mockResolvedValue({ status: 'AVAILABLE', data: settings, revision: null });
+        services.preferences.getPreferencesState.mockResolvedValue({ status: 'MISSING' });
+        services.intentProfile.getProfileState.mockResolvedValue({ status: 'MISSING' });
+        services.overlays.getOverlaysInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+    });
+
+    it('carries forward a region whose only D-1 evidence is an unfollowed moderate reading, using the already-fetched history read (no extra read)', async () => {
+        const date = '2026-08-10';
+        const priorDay = addDaysToLocalDateString(date, -1);
+        const priorDayCheckin: DailySubjectiveCheckin = {
+            ...scoredCheckin(priorDay),
+            painOrInjury: true,
+            tissueResponses: { shoulder: { region: 'shoulder', morningState: 'moderate' } },
+        };
+        services.checkin.getCheckinsInRangeState.mockResolvedValue({
+            status: 'AVAILABLE', data: [priorDayCheckin], revision: 'history-r3',
+        });
+
+        const input = await new DecisionComposer().composeDailyDecisionInput('u1', date);
+
+        expect(services.checkin.getCheckinsInRangeState).toHaveBeenCalledTimes(1);
+        expect(input.carriedRegionRestrictions).toEqual([{ region: 'shoulder', severity: 'limit' }]);
+    });
+
+    it('does not carry forward a region that settled by D-1\'s next-morning reaction', async () => {
+        const date = '2026-08-10';
+        const priorDay = addDaysToLocalDateString(date, -1);
+        const priorDayCheckin: DailySubjectiveCheckin = {
+            ...scoredCheckin(priorDay),
+            painOrInjury: true,
+            tissueResponses: { shoulder: { region: 'shoulder', morningState: 'normal', painDuringTraining: 'moderate', afterTrainingState: 'mild', nextMorningReaction: 'normal' } },
+        };
+        services.checkin.getCheckinsInRangeState.mockResolvedValue({
+            status: 'AVAILABLE', data: [priorDayCheckin], revision: 'history-r4',
+        });
+
+        const input = await new DecisionComposer().composeDailyDecisionInput('u1', date);
+        expect(input.carriedRegionRestrictions).toEqual([]);
+    });
+
+    it('produces no carry when D-1 has no check-in at all', async () => {
+        services.checkin.getCheckinsInRangeState.mockResolvedValue({ status: 'MISSING' });
+        const input = await new DecisionComposer().composeDailyDecisionInput('u1', '2026-08-10');
+        expect(input.carriedRegionRestrictions).toEqual([]);
+    });
+
+    it('produces no carry when the history read is unavailable, failing open like the subjective baseline does', async () => {
+        services.checkin.getCheckinsInRangeState.mockResolvedValue({
+            status: 'UNAVAILABLE', operation: 'read subjective check-in history', retryable: true,
+        });
+        const input = await new DecisionComposer().composeDailyDecisionInput('u1', '2026-08-10');
+        expect(input.carriedRegionRestrictions).toEqual([]);
+    });
+});

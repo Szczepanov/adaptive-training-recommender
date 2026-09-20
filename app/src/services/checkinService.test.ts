@@ -90,6 +90,38 @@ describe('CheckinService.upsertCheckin tissueResponses clearing', () => {
         const payload = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
         expect(payload.tissueResponses).toEqual({ knee: { region: 'knee', morningState: 'mild' } });
     });
+
+    it('persists an explicit settled next-morning follow-up even when painOrInjury is false (issue #680)', async () => {
+        // A region-specific follow-up (e.g. "shoulder felt normal this morning") is a
+        // stronger, more specific signal than the coarse painOrInjury toggle and must not
+        // be silently dropped by it -- otherwise a cross-day re-check gate built on "was an
+        // explicit settled follow-up recorded" is unsound.
+        const service = new CheckinService();
+        await service.upsertCheckin('u1', {
+            ...baseCheckin,
+            date: '2026-08-09',
+            painOrInjury: false,
+            tissueResponses: { shoulder: { region: 'shoulder', morningState: 'normal', nextMorningReaction: 'normal' } },
+        });
+
+        expect(firestore.setDoc).toHaveBeenCalledTimes(1);
+        const payload = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
+        expect(payload.tissueResponses).toEqual({ shoulder: { region: 'shoulder', morningState: 'normal', nextMorningReaction: 'normal' } });
+    });
+
+    it('still clears stale tissueResponses when painOrInjury is false and this write carries no structured response', async () => {
+        const service = new CheckinService();
+        await service.upsertCheckin('u1', {
+            ...baseCheckin,
+            date: '2026-08-09',
+            painOrInjury: false,
+            // No tissueResponses in this write at all -- distinct from the case above.
+        });
+
+        expect(firestore.setDoc).toHaveBeenCalledTimes(1);
+        const payload = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
+        expect(payload.tissueResponses).toBe(DELETE_FIELD_SENTINEL);
+    });
 });
 
 describe('CheckinService.getCheckinsInRangeState', () => {
