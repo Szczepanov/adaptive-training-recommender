@@ -409,9 +409,10 @@ excluded once systemicCost exceeds `TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST`
 Endurance candidate is excluded when one already occurred within
 `TAPER_MODERATE_DENSITY_MIN_GAP_DAYS` (3) days, preventing a stacked, build-like block near
 the event while still allowing spaced, brief discipline-specific touches. Race-Specific
-Endurance is deliberately excluded from the density guard: event-specific work recurring
-near the event is expected, and a recent one is already tempered by benefit-score softening
-(anchor protection) rather than a hard exclusion.
+Endurance is deliberately excluded from this generic full-taper density guard because brief
+event-specific touches can remain appropriate near the event. Priority-A race week has a
+separate Issue #676 interaction guard below, which can hard-exclude substantial Race-Specific
+Endurance when another hard/race-specific exposure occurred in the preceding three days.
 
 ### Whole-horizon recent-load and Priority-A race-week interaction policy (Issue #676)
 

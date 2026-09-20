@@ -219,7 +219,7 @@ export const TAPER_FUELING_CLAIMS: readonly KnowledgeClaim[] = [
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
         applicability: { contexts: ['pre_event_taper'], sports: ['cycling', 'running', 'triathlon'], populations: ['app_users_with_A_or_B_events'], outcomes: ['session_eligibility'], horizon: 'acute' },
         evidence: [{ sourceId: TAPER_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
-        limitations: ['Taper evidence supports freshness, progressive volume reduction and preserved quality while load falls; it does not directly validate each 1/2/3/7-day block, the D-3 generic Moderate/Hard exclusion, the 0.35 light-strength ceiling, the one-touch limit, or the 3-day density gap as universal biological recovery thresholds.'], reviewedOn: '2026-09-20', version: 2,
+        limitations: ['Taper evidence supports freshness, progressive volume reduction and preserved quality while load falls; it does not directly validate each 1/2/3/7-day block, the D-3 generic Moderate/Hard exclusion, the 0.35 light-strength ceiling, the one-touch limit, or the 3-day density gap as universal biological recovery thresholds.'], reviewedOn: '2026-09-20', version: 3,
     },
     {
         id: TAPER_FUELING_CLAIM_IDS.taperSharpeningPolicy,
