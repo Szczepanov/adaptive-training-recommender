@@ -575,7 +575,7 @@ export function evaluateRecoveryConstraints(
     const healthPolicy = options.healthPlanningPolicy;
     if (healthPolicy && !options.focusEvent) {
         if (healthPolicy.withholdHardEndurance && template.category === 'Hard Endurance') {
-            reasons.push('HEALTH_HARD_ENDURANCE_WITHHELD_WITHOUT_RUNNING_SUPPORT');
+            reasons.push('HEALTH_HARD_ENDURANCE_WITHHELD_AS_GENERIC_FILLER');
         }
         if (healthPolicy.withholdQualityEndurance && isHealthQualityEnduranceCategory(template.category)) {
             reasons.push('HEALTH_QUALITY_ENDURANCE_WITHHELD_AFTER_ADVERSE_RECOVERY');
