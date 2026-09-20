@@ -1010,13 +1010,10 @@ describe('Phase 6.2b -- fixed activities as projected exposures', () => {
         // Regression for a real ordering issue: applying fixed-activity stimulus credit AFTER
         // that day's own pick meant `unresolvedObjectives` still listed strength_maintenance
         // as outstanding at ranking time, so a same-day Strength pick could still be chosen
-        // for the SAME objective the booked activity had already covered. optimizer.ts's own
-        // isStrengthResolved gate (a 0.20x same-day suppression once strength_maintenance is
-        // NOT in unresolvedObjectives) only fires correctly if the fixed activity's credit
-        // lands before ranking runs -- so the ranked field for that day must differ between
-        // "booked" and "not booked", not just the credit ledger (which self-caps at the
-        // objective's required amount regardless of application order, so it cannot tell
-        // the two orderings apart on its own).
+        // for the SAME objective the booked activity had already covered. The fixed activity
+        // must therefore be credited before the selected session's objective credits are
+        // derived; the selected template may still be needed for an independent authored
+        // weekly coverage role.
         const context = baseContext();
         context.preferences.preferredModalities = ['Strength'];
         const readiness: DailyReadiness = { subjective: neutralSubjective(), objective: quietObjective() };
@@ -1053,10 +1050,10 @@ describe('Phase 6.2b -- fixed activities as projected exposures', () => {
             c.date === '2026-08-08' && c.templateId !== 'home_gym' && c.objectiveKey === 'strength_maintenance'
         )).toBe(false);
         // The day still receives a valid recommendation; the booked activity owns the
-        // already-earned strength credit instead of a redundant selected session.
+        // already-earned strength credit instead of the selected session earning it too.
         expect(dayWith.template).toBeDefined();
         expect(dayWithout.template).toBeDefined();
-        expect(dayWith.template.id).not.toBe(dayWithout.template.id);
+        expect(dayWith.addressesObjectives).not.toContain('Strength & Neuromuscular Maintenance');
     });
 
     it('a fixed activity without expectedCost/expectedStimulus reserves time but contributes zero fabricated fatigue or credit', () => {
