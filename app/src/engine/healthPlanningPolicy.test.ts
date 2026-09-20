@@ -25,8 +25,15 @@ describe('health planning policy', () => {
         expect(resolveHealthPlanningPolicy(['health'], preferences, false)?.withholdQualityEndurance).toBe(false);
     });
 
-    it('does not alter event/performance plans or explicit running support', () => {
+    it('does not let the health hard-endurance ceiling override explicit performance intent or running support', () => {
         expect(resolveHealthPlanningPolicy(['endurance'], { preferredModalities: ['Running'], deprioritizedModalities: [], avoidedModalities: [] }, false)).toBeNull();
+        expect(resolveHealthPlanningPolicy(
+            ['health', 'endurance'],
+            { preferredModalities: ['Strength', 'Cycling'], deprioritizedModalities: [], avoidedModalities: [] },
+            false,
+        )).toMatchObject({
+            withholdHardEndurance: false,
+        });
         expect(resolveHealthPlanningPolicy(['health'], { preferredModalities: ['Running'], deprioritizedModalities: [], avoidedModalities: [] }, false)).toMatchObject({
             preferLowImpactAerobic: false,
             withholdHardEndurance: false,
