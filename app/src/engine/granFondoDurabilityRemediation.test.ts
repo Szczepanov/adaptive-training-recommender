@@ -10,6 +10,8 @@ import { runScenario } from './simulation/analyze';
 import type { DailyReadiness, FixedActivity, UserContext, UserEvent, UserPreferences, WeeklyObjective } from './models';
 import type { ResolvedAvailability } from './schedule';
 import type { TrainingHistoryProvider } from './trainingHistory';
+import type { CoverageState } from './coverage';
+import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 
 const DEFAULT_PREFERENCES: UserPreferences = {
     userId: 'user_default',
@@ -248,6 +250,117 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
         expect(capped60.benefitScore).toBeLessThan(1);
         expect(capped120.benefitScore).toBeGreaterThan(3);
         expect(capped120.benefitScore).toBeGreaterThan(capped60.benefitScore);
+    });
+
+    it('does not let a capped easier dose claim authored aerobic-volume coverage', () => {
+        const zone2 = ENRICHED_TEMPLATES.find(t => t.id === 'end_easy_01')!;
+        const coverageState: CoverageState = {
+            asOfDate: '2026-08-16',
+            phase: 'general',
+            activeBlockId: 'effective-dose-coverage-test',
+            coverageSetId: 'evergreen_general',
+            descriptor: EVERGREEN_GENERAL_COVERAGE_SET,
+            requirements: [{
+                id: 'coverage_effective_dose_aerobic',
+                key: 'aerobic_volume',
+                label: 'Continuous aerobic volume',
+                requirement: 'required',
+                minimumSessions: 1,
+                targetSessions: 1,
+                completedSessions: 0,
+                projectedSessions: 0,
+                priority: 'must_have',
+                rollingWindowDays: 7,
+                windowStart: '2026-08-10',
+                windowEnd: '2026-08-16',
+                credits: [],
+            }],
+        };
+
+        const rankAtCap = (cap: number) => {
+            const availability: ResolvedAvailability = {
+                date: '2026-08-16',
+                maxTimeMinutes: cap,
+                availableEquipment: ['indoor_bike'],
+                fixedActivities: [],
+                reservedCapacityCost: 0,
+                reservedCapacityCostProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+                environmentOverride: null,
+            };
+            return rankCandidates(
+                [zone2],
+                [],
+                createEmptyFatigue('2026-08-16'),
+                availability,
+                [],
+                DEFAULT_PREFERENCES,
+                { date: '2026-08-16', coverageState, resolvedAvailability: availability },
+            ).accepted[0];
+        };
+
+        // The authored 30-60 minute Zone 2 session qualifies for the role, while its
+        // automatic 20-30 minute easier dose is below the catalog's aerobic-volume floor.
+        expect(rankAtCap(60).coverageNeedTier).toBe(1);
+        expect(rankAtCap(30).coverageNeedTier).toBe(3);
+    });
+
+    it('prices capped easier doses from effective fatigue cost and systemic thresholds', () => {
+        const raceSpecific = ENRICHED_TEMPLATES.find(t => t.id === 'end_race_specific_01')!;
+        const candidate = {
+            ...raceSpecific,
+            easierDose: {
+                label: '60 min capped durability dose',
+                durationMin: 50,
+                durationMax: 60,
+                doseRatio: 0.4,
+                prescriptionSummary: 'Cap-safe 60 minute durability dose.',
+            },
+        };
+        const fatigue = createEmptyFatigue('2026-08-16');
+        fatigue.combinedFatigue = {
+            systemic: 0.5,
+            cardiovascular: 0.5,
+            lowerBody: 0.5,
+            upperBody: 0.5,
+            impactTissue: 0.5,
+            neuromuscular: 0.5,
+        };
+
+        const rankAtCap = (cap: number, preferences: UserPreferences) => {
+            const availability: ResolvedAvailability = {
+                date: '2026-08-16',
+                maxTimeMinutes: cap,
+                availableEquipment: ['outdoor_bike'],
+                fixedActivities: [],
+                reservedCapacityCost: 0,
+                reservedCapacityCostProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+                environmentOverride: null,
+            };
+            return rankCandidates(
+                [candidate],
+                [],
+                fatigue,
+                availability,
+                [],
+                preferences,
+                { date: '2026-08-16', resolvedAvailability: availability },
+            ).accepted[0];
+        };
+
+        const full = rankAtCap(180, DEFAULT_PREFERENCES);
+        const capped = rankAtCap(60, DEFAULT_PREFERENCES);
+        expect(full.costPenalty).toBeGreaterThan(0);
+        expect(capped.costPenalty).toBeCloseTo(full.costPenalty * 0.4, 5);
+
+        const fullWithMargin = rankAtCap(180, { ...DEFAULT_PREFERENCES, extraRecoveryMargin: true });
+        const cappedWithMargin = rankAtCap(60, { ...DEFAULT_PREFERENCES, extraRecoveryMargin: true });
+        expect(fullWithMargin.costPenalty - full.costPenalty).toBeCloseTo(0.3, 5);
+        expect(cappedWithMargin.costPenalty).toBeCloseTo(capped.costPenalty, 5);
+
+        const fullConservative = rankAtCap(180, { ...DEFAULT_PREFERENCES, conservativeBias: true, extraRecoveryMargin: false });
+        const cappedConservative = rankAtCap(60, { ...DEFAULT_PREFERENCES, conservativeBias: true, extraRecoveryMargin: false });
+        expect(fullConservative.costPenalty - full.costPenalty).toBeCloseTo(0.35, 5);
+        expect(cappedConservative.costPenalty).toBeCloseTo(capped.costPenalty, 5);
     });
 
     it('suppresses heavy lower-body strength and high systemic cost candidates when adjacent to an anchor', () => {
