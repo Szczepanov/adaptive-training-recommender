@@ -89,8 +89,8 @@ describe('cycling_gran_fondo_A -- baseline, already-covered sport', () => {
         // Under active-dose projection (PR #453), weekend residual-fatigue displacement
         // pushes race-specific rides into 60-min weekday caps where scaled stimulus
         // falls below the 0.60 Gran Fondo durability threshold in forward credit projections.
-        // Effective-dose history now records the delivered stimulus rather than the
-        // authored template, so scaled sessions do not falsely satisfy this threshold.
+        // Effective-dose history records the delivered stimulus rather than the authored
+        // template, so 60-minute capped sessions do not falsely satisfy this threshold.
         const raceSpecificDecisions = result.decisionTraces.filter(d =>
             d.selected.category === 'Race-Specific Endurance' && d.selected.modality === 'Cycling'
         );

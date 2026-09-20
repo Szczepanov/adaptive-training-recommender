@@ -874,6 +874,8 @@ export interface TemplatePhaseEligibility {
     requiresTaper?: boolean;
     /** Never eligible once the taper window is active (superseded by a taper-specific template). */
     excludeTaper?: boolean;
+    /** Minimum governing-event repeatedSurges demand required (e.g. 0.6 for surge/criterium specificity). */
+    minRepeatedSurges?: number;
 }
 
 export interface SessionTemplate {

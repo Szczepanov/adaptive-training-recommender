@@ -3,7 +3,7 @@ import type { KnowledgeClaim, KnowledgeSource } from './sportsKnowledge';
 /**
  * SKR3 Evidence Pack 6 (W1): periodization phase structure and sport/event demand profiling.
  *
- * Two scientific boundaries, four product-policy calibration records. Per the SKR3 method the
+ * Two scientific boundaries, five product-policy calibration records. Per the SKR3 method the
  * atomic claims below were drafted from the exact current product rule (see
  * `docs/plans/2026-09-02-skr3-completion-plan.md` §W1) before evidence was searched. The
  * evidence found supports the general strategies (structured periodization with no established
@@ -20,6 +20,7 @@ export const PERIODIZATION_EVENT_DEMAND_CLAIM_IDS = {
     objectiveThresholdsPolicy: 'policy.periodization.objective_thresholds_v1',
     multiEventContributionPolicy: 'policy.periodization.multi_event_contribution_v1',
     eventDemandPresetsPolicy: 'policy.event_demand.presets_v1',
+    granFondoDurabilityPolicy: 'policy.event_demand.gran_fondo_durability_v1',
 } as const;
 
 const MOLMEN_BLOCK_PERIODIZATION_META = 'MOLMEN-2019-BLOCK-PERIODIZATION-META';
@@ -31,6 +32,7 @@ const SANDERS_CYCLING_POWER_PROFILE_REVIEW = 'SANDERS-2021-CYCLING-POWER-PROFILE
 const EBERT_ROAD_CYCLING_POWER_COHORT = 'EBERT-2006-ROAD-CYCLING-POWER-COHORT';
 const SHARMA_TRIATHLON_DISTANCE_CHAPTER = 'SHARMA-2020-TRIATHLON-DISTANCE-PHYSIOLOGY-CHAPTER';
 const PERIODIZATION_EVENT_DEMAND_PRODUCT_POLICY_SOURCE = 'PRODUCT-PERIODIZATION-EVENT-DEMAND-POLICY-V1';
+const GRAN_FONDO_DURABILITY_PRODUCT_POLICY_SOURCE = 'PRODUCT-GRAN-FONDO-DURABILITY-POLICY-V1';
 
 export const PERIODIZATION_EVENT_DEMAND_SOURCES: readonly KnowledgeSource[] = [
     {
@@ -123,6 +125,14 @@ export const PERIODIZATION_EVENT_DEMAND_SOURCES: readonly KnowledgeSource[] = [
         publishedOn: '2026-09-02',
         notes: 'Registers the exact phase day-boundaries, demand-blend weights and volume/intensity scales, the normalized objective-inclusion thresholds, the multi-event contribution/merge rules, and the 19 authored event-preset demand vectors as product calibration, distinct from the scientific boundaries above.',
     },
+    {
+        id: GRAN_FONDO_DURABILITY_PRODUCT_POLICY_SOURCE,
+        title: 'Adaptive Training Recommender gran-fondo durability planning policy v1',
+        sourceType: 'product_policy',
+        citation: 'Adaptive Training Recommender product policy, reviewed 2026-09-20.',
+        publishedOn: '2026-09-20',
+        notes: 'Registers the deterministic gran-fondo durability objective target/qualification, long-horizon race-specific benefit exception, and repeated-surge eligibility gate for compact criterium sessions. These are product calibration, not study-derived physiological constants.',
+    },
 ];
 
 export const PERIODIZATION_EVENT_DEMAND_CLAIMS: readonly KnowledgeClaim[] = [
@@ -198,5 +208,14 @@ export const PERIODIZATION_EVENT_DEMAND_CLAIMS: readonly KnowledgeClaim[] = [
         evidence: [{ sourceId: PERIODIZATION_EVENT_DEMAND_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
         limitations: ['The exact numeric value on every axis of all 19 presets is product calibration informed by, but not derived from, the cited physiological-demand literature; no study measures training demand on this specific normalized scale, and the two strength_meet presets and the general_target preset have no directly cited endurance-performance-limiter literature behind them at all.'],
         reviewedOn: '2026-09-02', version: 1,
+    },
+    {
+        id: PERIODIZATION_EVENT_DEMAND_CLAIM_IDS.granFondoDurabilityPolicy,
+        statement: 'Product gran-fondo durability v1: when a cycling event has raw aerobicEndurance>=0.8 and fatigueResistance>=0.8 with repeatedSurges<0.6, demand-derived planning requests one cycling Race-Specific Endurance objective targeting aerobicEndurance 0.9/fatigueResistance 0.85/thresholdPower 0.6 and qualifies only stimulus >=0.6 on both aerobicEndurance and fatigueResistance; long-horizon race-specific benefit is preserved for this durability profile, while the compact criterium surge template requires governing-event repeatedSurges>=0.6.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
+        applicability: { contexts: ['event_demand_characterization', 'training_periodization', 'weekly_objective_generation'], sports: ['cycling'], populations: ['app_users_with_target_events'], outcomes: ['training_specificity', 'weekly_objective_resolution'], horizon: 'chronic' },
+        evidence: [{ sourceId: GRAN_FONDO_DURABILITY_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['The thresholds, target stimulus, qualification floors, long-horizon exception and template gate are internal product calibration derived from deterministic scenario evidence; they are not validated dose-response constants from sports-science literature.'],
+        reviewedOn: '2026-09-20', version: 1,
     },
 ];

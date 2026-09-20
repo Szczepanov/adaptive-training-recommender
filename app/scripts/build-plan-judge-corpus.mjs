@@ -468,11 +468,30 @@ export function makeAllFamilies(scenarios, deliveredDoseModule, resolveDemandPro
   const granEventA = { ...clone(granFondo.event), priority: 'A', eventPreset: 'gran_fondo', demandProfile: resolveDemandProfile('cycling_event', 'gran_fondo') };
   const granEventB = { ...clone(granFondo.event), priority: 'B', eventPreset: 'gran_fondo', demandProfile: resolveDemandProfile('cycling_event', 'gran_fondo') };
 
+  // Issue #675 was specifically raised against athletes with enough capacity for
+  // materially longer durability work. The base scenarios carry a 60-minute check-in,
+  // which silently dominates the 120-minute weekend profile cap. Make capacity explicit
+  // here so the event-demand judge family really tests 90-minute weekdays / 120-minute
+  // weekends instead of proving only that 60 minutes is longer than the 45-minute
+  // criterium template.
+  const eventDemandCapacity = {
+    subjective: { timeAvailable: 120 },
+    contextPatch: (c) => {
+      c.constraints.maxTimeMinutes = 120;
+      if (c.trainingSettings) {
+        c.trainingSettings.defaults.weekdayMaxMinutes = 90;
+        c.trainingSettings.defaults.weekendMaxMinutes = 120;
+      }
+    },
+  };
+  const eventDemandVariant = (id, label, axis, event) =>
+    variant(base, id, label, axis, { ...eventDemandCapacity, event });
+
   const eventDemand = [
-    variant(base, 'judge_demand_crit_A', 'Event demand — criterium A', { eventDemand: 'criterium', priority: 'A' }, { event: critEventA }),
-    variant(base, 'judge_demand_crit_B', 'Event demand — criterium B', { eventDemand: 'criterium', priority: 'B' }, { event: critEventB }),
-    variant(base, 'judge_demand_gran_A', 'Event demand — gran fondo A', { eventDemand: 'gran_fondo', priority: 'A' }, { event: granEventA }),
-    variant(base, 'judge_demand_gran_B', 'Event demand — gran fondo B', { eventDemand: 'gran_fondo', priority: 'B' }, { event: granEventB }),
+    eventDemandVariant('judge_demand_crit_A', 'Event demand — criterium A', { eventDemand: 'criterium', priority: 'A' }, critEventA),
+    eventDemandVariant('judge_demand_crit_B', 'Event demand — criterium B', { eventDemand: 'criterium', priority: 'B' }, critEventB),
+    eventDemandVariant('judge_demand_gran_A', 'Event demand — gran fondo A', { eventDemand: 'gran_fondo', priority: 'A' }, granEventA),
+    eventDemandVariant('judge_demand_gran_B', 'Event demand — gran fondo B', { eventDemand: 'gran_fondo', priority: 'B' }, granEventB),
   ];
 
   // 7. Interactions

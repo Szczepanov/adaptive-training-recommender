@@ -7,7 +7,8 @@ import {
     validateCanonicalSportsKnowledgeRegistry,
 } from './sportsKnowledgeRegistry';
 import { EVENT_PRESETS, resolveDemandProfile } from '../engine/eventPresets';
-import { evaluatePeriodizationPhase } from '../engine/periodization';
+import { evaluatePeriodizationPhase, objectivesFromDemand } from '../engine/periodization';
+import { ENRICHED_TEMPLATES } from '../engine/templates';
 import type { UserEvent } from '../engine/models';
 
 const coverageById = (id: string) => ENGINE_KNOWLEDGE_COVERAGE.find(item => item.id === id);
@@ -107,6 +108,7 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
             KNOWLEDGE_CLAIM_IDS.objectiveThresholdsPolicy,
             KNOWLEDGE_CLAIM_IDS.multiEventContributionPolicy,
             KNOWLEDGE_CLAIM_IDS.eventDemandPresetsPolicy,
+            KNOWLEDGE_CLAIM_IDS.granFondoDurabilityPolicy,
         ]) {
             expect(getActiveKnowledgeClaim(id)).toMatchObject({
                 claimType: 'heuristic', maturity: 'heuristic', evidenceCertainty: 'not_applicable',
@@ -186,6 +188,25 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
             expect(base.phase.volumeScale).toBe(1.0);
             expect(base.phase.intensityScale).toBe(0.8);
         });
+
+        it('pins the gran-fondo durability policy to objective and template behavior', () => {
+            const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.granFondoDurabilityPolicy);
+            expect(claim.statement).toContain('aerobicEndurance 0.9/fatigueResistance 0.85/thresholdPower 0.6');
+            expect(claim.statement).toContain('repeatedSurges>=0.6');
+
+            const granFondoDemand = resolveDemandProfile('cycling_event', 'gran_fondo');
+            const durability = objectivesFromDemand(granFondoDemand, 'cycling_event', false, false, ['Cycling'], granFondoDemand)
+                .find(objective => objective.id === 'obj_cycling_gran_fondo_durability');
+            expect(durability?.targetStimulus).toEqual({ aerobicEndurance: 0.9, fatigueResistance: 0.85, thresholdPower: 0.6 });
+            expect(durability?.qualification).toMatchObject({
+                minimumStimulus: { aerobicEndurance: 0.6, fatigueResistance: 0.6 },
+                allowedModalities: ['Cycling'],
+                allowedCategories: ['Race-Specific Endurance'],
+            });
+
+            const compactCriterium = ENRICHED_TEMPLATES.find(template => template.id === 'end_crit_surges_01');
+            expect(compactCriterium?.phaseEligibility?.minRepeatedSurges).toBe(0.6);
+        });
     });
 
     it('moves its five families to partial without claiming full coverage', () => {
@@ -194,6 +215,7 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
             'periodization.objective_thresholds',
             'periodization.multi_event_contribution',
             'event.demand_presets',
+            'event.gran_fondo_durability',
             'spacing.pre_event_restrictions',
         ]) {
             const item = coverageById(id);

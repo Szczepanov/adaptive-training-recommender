@@ -3,7 +3,12 @@ import { isHistoricalPolicyVersion, HISTORICAL_POLICY_VERSIONS, POLICY_VERSION }
 
 describe('isHistoricalPolicyVersion', () => {
     it('records the current transition and the previous live policies exactly once', () => {
-        expect(POLICY_VERSION).toBe('2026-09-hard-load-density-race-week-sequencing-v1');
+        expect(POLICY_VERSION).toBe('2026-09-gran-fondo-durability-anchor-spacing-v1');
+        expect(
+            HISTORICAL_POLICY_VERSIONS.filter(
+                (version) => version === '2026-09-hard-load-density-race-week-sequencing-v1',
+            ),
+        ).toHaveLength(1);
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(
                 (version) => version === '2026-09-indexed-lookup-parity-v1',

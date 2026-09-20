@@ -268,7 +268,20 @@ const ANCHOR_ROLE_BOOST = 1.35;
 const ANCHOR_TIMING_BENEFIT = 1.0;
 const MULTISPORT_MODALITY_COVERAGE_BENEFIT = ANCHOR_TIMING_BENEFIT;
 const ANCHOR_ADJACENCY_SUPPRESSION = 0.3;
-const HEAVY_LOWER_BODY_STRENGTH_CATEGORIES: SessionTemplate['category'][] = ['Lower-body Strength', 'Full-body Strength'];
+export const HEAVY_LOWER_BODY_STRENGTH_CATEGORIES: SessionTemplate['category'][] = ['Lower-body Strength', 'Full-body Strength'];
+
+/** Issue #675: keep the optimizer's durability exception on the exact same semantic
+ * boundary used by demand-derived objective generation. In particular, high aerobic
+ * demand alone is insufficient: road/triathlon/running events must not accidentally
+ * receive the cycling low-surge durability preference. */
+export function isCyclingDurabilityFocusEvent(event: UserEvent | null | undefined): boolean {
+    if (event?.category !== 'cycling_event' || !event.demandProfile) return false;
+    const demand = event.demandProfile;
+    return (demand.aerobicEndurance ?? 0) >= 0.8
+        && (demand.fatigueResistance ?? 0) >= 0.8
+        && (demand.repeatedSurges ?? 0) < 0.6;
+}
+
 const VARIETY_TIE_BREAK_GAP = 0.05;
 const BENEFIT_TIE_BAND = 0.05;
 export const ANCHOR_HISTORY_CATEGORIES: SessionTemplate['category'][] = [
@@ -956,6 +969,7 @@ export function rankCandidates(
 
     const extraMargin = preferences.extraRecoveryMargin ?? preferences.conservativeBias ?? false;
     const focusEvent = options.focusEvent;
+    const cyclingDurabilityFocusEvent = isCyclingDurabilityFocusEvent(focusEvent);
     const rawHistory = options.recentHistory ?? [];
     const targetDate = options.date ?? getLocalDateString();
     const history = normalizeHistory(rawHistory, targetDate);
@@ -1010,10 +1024,17 @@ export function rankCandidates(
 
         excludedReasons.push(...evaluateRecoveryConstraints(template, targetDate, history, options, summary));
 
-        let benefit = calculateStimulusBenefit(template, unresolvedObjectives);
+        const activeDoseAdjustment = resolveTimeCapDoseAdjustment(template, availability.maxTimeMinutes, options.fatigueTier === 'modify');
+        const effectiveCandidate = activeDoseAdjustment ? materializeEffectiveDose(template, activeDoseAdjustment.activeDose) : template;
+        let benefit = calculateStimulusBenefit(effectiveCandidate, unresolvedObjectives);
         const fulfilsNominatedAnchor = candidateMatchesAnchorRole(template, options.anchorRole);
+        const deferAnchorAdjacentHeavyStrength = Boolean(
+            options.adjacentToAnchor
+            && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category)
+            && effectiveCandidate.systemicCost >= INTENSITY_STACK_THRESHOLD
+        );
         const authoredCoverageNeedTier = coverageState
-            ? coverageNeedTierForTemplate(coverageState, template, options.anchorRole ?? null)
+            ? coverageNeedTierForTemplate(coverageState, template, options.anchorRole ?? null, deferAnchorAdjacentHeavyStrength)
             : 3;
         const recoveryPlacementTier = options.recoveryPlacementState
             ? recoveryNeedTierForCandidate(template, options.recoveryPlacementState)
@@ -1052,10 +1073,12 @@ export function rankCandidates(
                     }
                 }
 
-                // Long horizon (>21 days): prioritize foundational threshold/tempo over peak race sharpening
+                // Long horizon (>21 days): prioritize foundational threshold/tempo over peak race sharpening.
+                // Durability/Gran Fondo events center on sustained aerobic endurance rather than peak sharpening,
+                // so long race-specific aerobic endurance work is preserved throughout the horizon.
                 const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
                 const daysToRace = getDayDiff(raceDate, targetDate);
-                if (daysToRace > 21 && template.category === 'Race-Specific Endurance') {
+                if (daysToRace > 21 && template.category === 'Race-Specific Endurance' && !cyclingDurabilityFocusEvent) {
                     benefit *= 0.50;
                 }
             } else if (!matchesEvent && !isPreferred(template) && !satisfiesUnresolvedObjective && unresolvedObjectives.length > 0) {
@@ -1137,8 +1160,7 @@ export function rankCandidates(
             }
         }
 
-        const isGranFondo = focusEvent?.demandProfile && (focusEvent.demandProfile.aerobicEndurance ?? 0) >= 0.85;
-        if (isGranFondo && (template.category === 'Easy Endurance' || template.category === 'Moderate Endurance')) {
+        if (cyclingDurabilityFocusEvent && (template.category === 'Easy Endurance' || template.category === 'Moderate Endurance' || template.category === 'Race-Specific Endurance')) {
             prefMultiplier *= 1.20;
         }
 
@@ -1217,7 +1239,7 @@ export function rankCandidates(
         }
 
         if (fulfilsNominatedAnchor) prefMultiplier *= ANCHOR_ROLE_BOOST;
-        if (options.adjacentToAnchor && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category) && template.systemicCost >= INTENSITY_STACK_THRESHOLD) {
+        if (options.adjacentToAnchor && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category) && effectiveCandidate.systemicCost >= INTENSITY_STACK_THRESHOLD) {
             prefMultiplier *= ANCHOR_ADJACENCY_SUPPRESSION;
         }
 
