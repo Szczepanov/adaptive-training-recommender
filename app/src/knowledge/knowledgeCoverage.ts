@@ -366,7 +366,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'optimizer.event_priority_multipliers', domain: 'optimizer_scoring', title: 'Event-priority and horizon ranking multipliers',
-        currentRule: 'Event matching is modality-based: cycling->Cycling, running->Running, strength meet->Strength, triathlon->Cycling/Running. Matching A/B events multiply benefit by 1.40/1.25; for strength meets the boost requires an unresolved objective match. A second B race-specific session in six days is multiplied by 0.35; race-specific work >21 days out by 0.50. Non-matching work is multiplied by 0.20 only with unresolved objectives when it is neither preferred nor itself objective-matching.',
+        currentRule: 'Event matching is modality-based: cycling->Cycling, running->Running, strength meet->Strength, triathlon->Cycling/Running. Matching A/B events multiply benefit by 1.40/1.25; for strength meets the boost requires an unresolved objective match. A second B race-specific session in six days is multiplied by 0.35; race-specific work >21 days out by 0.50, except for cycling durability events (cycling_event with aerobicEndurance >=0.8 and fatigueResistance >=0.8 and repeatedSurges <0.6) where the 0.50 multiplier is skipped. Non-matching work is multiplied by 0.20 only with unresolved objectives when it is neither preferred nor itself objective-matching.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:rankCandidates'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.eventPriorityMultipliersPolicy],

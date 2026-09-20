@@ -466,6 +466,14 @@ injury, recovery, taper, duration, daily-ledger and weekly-anchor gates remain a
 the change selects a more appropriate feasible stimulus rather than maximizing duration
 unconditionally.
 
+When a time cap or modify-tier decision materializes an easier dose, ranking uses that
+**effective candidate** for dose-sensitive stimulus benefit, weekly-role coverage, dimensional
+fatigue cost, and the extra-recovery/conservative systemic-cost penalties. This prevents an
+abbreviated session from claiming the authored workout's duration-based coverage or paying its
+full fatigue cost. Template identity, category/modality, hard feasibility/safety checks, and
+unrelated legacy authored-load heuristics remain authored-template policy unless separately
+migrated and re-governed; effective-dose materialization is not a blanket rewrite of those rules.
+
 The legacy scenario pair remains a matched 60-minute control. Capacity-sensitive acceptance
 is enforced separately in the plan-judge event-demand family with a 120-minute check-in,
 90-minute weekday profile cap and 120-minute weekend cap. Its invariant gate requires both

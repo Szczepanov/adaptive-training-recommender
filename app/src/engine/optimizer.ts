@@ -1034,7 +1034,7 @@ export function rankCandidates(
             && effectiveCandidate.systemicCost >= INTENSITY_STACK_THRESHOLD
         );
         const authoredCoverageNeedTier = coverageState
-            ? coverageNeedTierForTemplate(coverageState, template, options.anchorRole ?? null, deferAnchorAdjacentHeavyStrength)
+            ? coverageNeedTierForTemplate(coverageState, effectiveCandidate, options.anchorRole ?? null, deferAnchorAdjacentHeavyStrength)
             : 3;
         const recoveryPlacementTier = options.recoveryPlacementState
             ? recoveryNeedTierForCandidate(template, options.recoveryPlacementState)
@@ -1105,10 +1105,10 @@ export function rankCandidates(
             benefit *= 0.40;
         }
 
-        let costPenalty = calculateFatigueCostPenalty(template.costProfile, fatigueState);
-        if (extraMargin && template.systemicCost > 0.5) costPenalty += 0.3;
+        let costPenalty = calculateFatigueCostPenalty(effectiveCandidate.costProfile, fatigueState);
+        if (extraMargin && effectiveCandidate.systemicCost > 0.5) costPenalty += 0.3;
         if (preferences.conservativeBias) {
-            if (template.systemicCost >= 0.6) costPenalty += 0.35;
+            if (effectiveCandidate.systemicCost >= 0.6) costPenalty += 0.35;
         }
 
         if (excludedReasons.length > 0) {
