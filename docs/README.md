@@ -194,6 +194,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-17 UX heuristics review follow-up**](./analysis/2026-09-17-ux-heuristics-review-followup.md) — Follow-up pass verifying PR fixes from the initial UX heuristics review.
 * [**2026-09-17 Plan status reconciliation**](./analysis/2026-09-17-plan-status-reconciliation.md) — Reconciles implemented plans, verification closures, and remaining evidence/activation gates.
 * [**2026-09-17 Firestore evidence reconnaissance**](./analysis/2026-09-17-firestore-evidence-recon.md) — Privacy-preserving aggregate inventory of production evidence and the gates it does and does not satisfy.
+* [**2026-09-20 Symptom-compatible substitution investigation**](./analysis/2026-09-20-symptom-compatible-substitution-investigation.md) — Issue #680 root-cause findings for the check-in-only strength persona's shoulder/back flare: confirmed mistagged strength templates, a confirmed cross-day tissue re-check gap, and a strength-specificity finding deferred to ADR-0041/PG.
 
 ---
 
