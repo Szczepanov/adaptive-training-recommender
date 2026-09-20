@@ -706,7 +706,7 @@ export const TEMPLATES: SessionTemplate[] = [
         objectiveTransferable: false,
         stimulusProfile: { aerobicEndurance: 0.45, thresholdPower: 0.65, vo2MaxPower: 0.75, repeatedSurges: 0.95, sprintPower: 0.25, fatigueResistance: 0.45, maxStrength: 0, hypertrophy: 0 },
         costProfile: { systemic: 0.55, cardiovascular: 0.7, lowerBody: 0.4, upperBody: 0.05, impactTissue: 0.1, neuromuscular: 0.6 },
-        phaseEligibility: { requiresFocusEvent: true, maxDaysToEvent: 42, excludeTaper: true }
+        phaseEligibility: { requiresFocusEvent: true, maxDaysToEvent: 42, excludeTaper: true, minRepeatedSurges: 0.6 }
     },
     {
         id: "end_race_sim_01",

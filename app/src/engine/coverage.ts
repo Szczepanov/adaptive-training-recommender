@@ -485,6 +485,7 @@ export function coverageNeedTierForTemplate(
     state: CoverageState,
     template: SessionTemplate,
     anchorRole: 'event-specific' | 'quality' | null = null,
+    deferAnchorAdjacentHeavyStrength: boolean = false,
 ): 0 | 1 | 2 | 3 {
     const keys = state.descriptor ? coverageKeysForTemplate(template, state.phase, state.descriptor) : [];
     if (keys.length === 0) return 3;
@@ -517,6 +518,13 @@ export function coverageNeedTierForTemplate(
             continue;
         }
         if (DEFERRED_SUPPORT_COVERAGE_KEYS.has(key)) {
+            advancesDeferredSupportMinimum = true;
+            continue;
+        }
+        // The optimizer computes this from both category and systemic cost. Keeping the
+        // boolean candidate-specific avoids demoting light full-body/primer work merely
+        // because it shares a broad strength category with genuinely heavy lower-body work.
+        if (deferAnchorAdjacentHeavyStrength) {
             advancesDeferredSupportMinimum = true;
             continue;
         }

@@ -223,8 +223,9 @@ export function objectivesFromDemand(
                         targetExposures: 1, completedExposures: 0,
                         targetStimulus: { aerobicEndurance: 0.9, fatigueResistance: 0.85, thresholdPower: 0.6 },
                         qualification: {
-                            minimumStimulus: { aerobicEndurance: 0.6 },
+                            minimumStimulus: { aerobicEndurance: 0.6, fatigueResistance: 0.6 },
                             allowedModalities: ['Cycling'],
+                            allowedCategories: ['Race-Specific Endurance'],
                         },
                     });
                 } else {
@@ -495,6 +496,10 @@ export function isTemplatePhaseEligible(
     if (rule.excludeTaper && result.phase.taperActive) return false;
     if (rule.maxDaysToEvent !== undefined && (result.daysToEvent === null || result.daysToEvent > rule.maxDaysToEvent)) return false;
     if (rule.minDaysToEvent !== undefined && (result.daysToEvent === null || result.daysToEvent < rule.minDaysToEvent)) return false;
+    if (rule.minRepeatedSurges !== undefined) {
+        const surgeDemand = result.focusEvent?.demandProfile?.repeatedSurges ?? 0;
+        if (surgeDemand < rule.minRepeatedSurges) return false;
+    }
 
     return true;
 }

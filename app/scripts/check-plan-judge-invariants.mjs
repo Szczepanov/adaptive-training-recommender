@@ -213,6 +213,44 @@ const demandDistanceB = templateSequenceDistance(critB, granB);
 fail(demandDistanceA > 0, 'A-priority criterium and gran-fondo cases produce identical selected-template sequences.');
 fail(demandDistanceB > 0, 'B-priority criterium and gran-fondo cases produce identical selected-template sequences.');
 
+for (const item of [critA, granA, critB, granB]) {
+  const readinessMinutes = item.input?.readiness?.subjective?.timeAvailable;
+  const defaults = item.input?.context?.trainingSettings?.defaults;
+  fail(readinessMinutes === 120, `${item.input.caseId}: event-demand fixture check-in capacity is ${readinessMinutes}, expected 120 minutes.`);
+  fail(defaults?.weekdayMaxMinutes === 90, `${item.input.caseId}: weekday profile capacity is ${defaults?.weekdayMaxMinutes}, expected 90 minutes.`);
+  fail(defaults?.weekendMaxMinutes === 120, `${item.input.caseId}: weekend profile capacity is ${defaults?.weekendMaxMinutes}, expected 120 minutes.`);
+}
+
+const maxTemplateDuration = (item, templateId) => Math.max(
+  0,
+  ...(item.plan ?? [])
+    .filter((day) => day.session?.templateId === templateId)
+    .map((day) => day.session?.durationMax ?? day.session?.durationMin ?? 0),
+);
+const maxTemplateFatigueResistance = (item, templateId) => Math.max(
+  0,
+  ...(item.plan ?? [])
+    .filter((day) => day.session?.templateId === templateId)
+    .map((day) => day.session?.stimulusProfile?.fatigueResistance ?? 0),
+);
+const granASustainedMax = maxTemplateDuration(granA, 'end_race_specific_01');
+const granBSustainedMax = maxTemplateDuration(granB, 'end_race_specific_01');
+const critACompactMax = maxTemplateDuration(critA, 'end_crit_surges_01');
+const critBCompactMax = maxTemplateDuration(critB, 'end_crit_surges_01');
+const granAFatigueResistance = maxTemplateFatigueResistance(granA, 'end_race_specific_01');
+const granBFatigueResistance = maxTemplateFatigueResistance(granB, 'end_race_specific_01');
+const critAFatigueResistance = maxTemplateFatigueResistance(critA, 'end_crit_surges_01');
+const critBFatigueResistance = maxTemplateFatigueResistance(critB, 'end_crit_surges_01');
+
+fail(granASustainedMax > 60, `A-priority gran-fondo case never uses >60 minute sustained event-specific work (max ${granASustainedMax}).`);
+fail(granBSustainedMax > 60, `B-priority gran-fondo case never uses >60 minute sustained event-specific work (max ${granBSustainedMax}).`);
+fail(critACompactMax > 0, 'A-priority criterium case never uses its compact surge-specific exposure.');
+fail(critBCompactMax > 0, 'B-priority criterium case never uses its compact surge-specific exposure.');
+fail(granASustainedMax > critACompactMax, `A-priority gran-fondo sustained exposure (${granASustainedMax} min) does not exceed the criterium-specific compact exposure (${critACompactMax} min).`);
+fail(granBSustainedMax > critBCompactMax, `B-priority gran-fondo sustained exposure (${granBSustainedMax} min) does not exceed the criterium-specific compact exposure (${critBCompactMax} min).`);
+fail(granAFatigueResistance > critAFatigueResistance, `A-priority gran-fondo demand-specific fatigue resistance (${granAFatigueResistance}) does not exceed criterium (${critAFatigueResistance}).`);
+fail(granBFatigueResistance > critBFatigueResistance, `B-priority gran-fondo demand-specific fatigue resistance (${granBFatigueResistance}) does not exceed criterium (${critBFatigueResistance}).`);
+
 const critACompactCount = templateCount(critA, 'end_crit_surges_01');
 const granACompactCount = templateCount(granA, 'end_crit_surges_01');
 fail(critACompactCount > 0, 'A-priority criterium case never selects the compact criterium surge template.');
@@ -336,6 +374,7 @@ console.log(`Plan-judge invariants passed for ${cases.size} cases across ${famil
 console.log(`Families SHA-256: ${familiesSha256}`);
 console.log(`Event-demand sequence distance: A=${demandDistanceA.toFixed(3)}, B=${demandDistanceB.toFixed(3)}.`);
 console.log(`Compact criterium template count: criterium A=${critACompactCount}, gran fondo A=${granACompactCount}.`);
+console.log(`Event-demand specific exposure: A criterium=${critACompactMax} min/FR ${critAFatigueResistance.toFixed(3)}, gran fondo=${granASustainedMax} min/FR ${granAFatigueResistance.toFixed(3)}; B criterium=${critBCompactMax} min/FR ${critBFatigueResistance.toFixed(3)}, gran fondo=${granBSustainedMax} min/FR ${granBFatigueResistance.toFixed(3)}.`);
 for (const check of conservativeChecks) {
   console.log(`Conservative monotonicity ${check.conservativeId} vs ${check.neutralId}: hard ${check.conservative.hardSessions}/${check.neutral.hardSessions}, systemic ${check.conservative.systemic.toFixed(3)}/${check.neutral.systemic.toFixed(3)}, cardiovascular ${check.conservative.cardiovascular.toFixed(3)}/${check.neutral.cardiovascular.toFixed(3)}.`);
 }
