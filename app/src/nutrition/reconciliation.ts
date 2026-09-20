@@ -98,7 +98,10 @@ export function reconcileDailyNutrition(records: readonly NutritionDay[]): Recon
     const primaryIntakeRecord =
         intakeRecords.length > 0 ? [...intakeRecords].sort(compareRecordFidelity)[0] : null;
 
-    const expenditureRecords = deduplicatedRecords.filter(
+    // Expenditure is a separate, non-fungible domain. Select it from all records so
+    // choosing a higher-fidelity intake mirror never discards wearable expenditure
+    // carried by another record for the same upstream intake origin.
+    const expenditureRecords = records.filter(
         (record) =>
             record.energyExpenditureKcal &&
             (record.energyExpenditureKcal.total != null ||
@@ -148,7 +151,7 @@ export function reconcileDailyNutrition(records: readonly NutritionDay[]): Recon
         },
         sources,
         primaryIntakeSource: primaryIntakeRecord?.source ?? null,
-        isPartialDay: deduplicatedRecords.some((record) => record.isPartialDay ?? false),
+        isPartialDay: records.some((record) => record.isPartialDay ?? false),
         hasIntakeData: hasIntake,
         hasExpenditureData: hasExpenditure,
     };

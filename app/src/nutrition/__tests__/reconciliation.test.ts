@@ -89,6 +89,9 @@ describe('Nutrition Reconciliation', () => {
         // Macros should be preserved from the higher-fidelity source
         expect(result?.macronutrients.proteinGrams).toBe(140);
         expect(result?.macronutrients.carbsGrams).toBe(230);
+        // Intake dedup must not discard Garmin expenditure carried by the losing mirror.
+        expect(result?.hasExpenditureData).toBe(true);
+        expect(result?.energyExpenditureKcal?.total).toBe(2300);
     });
 
     it('handles days with only expenditure or only intake', () => {
