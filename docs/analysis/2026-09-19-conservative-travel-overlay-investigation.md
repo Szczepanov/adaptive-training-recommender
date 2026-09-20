@@ -38,7 +38,7 @@ Q2 (equipment-free aerobic substitutes) and Q3 are both answered by this fix. Q4
 (overlay semantics documentation) is addressed by the new subsection in
 `docs/architecture/recommendation-engine.md` ("Authored travel overlays").
 
-## Q1: is conservative bias monotonic in hard-session count / systemic cost? — CONFIRMED violated, NOT fixed in this change
+## Q1: is conservative bias monotonic in hard-session count / systemic cost? — CONFIRMED violated; PARTIALLY fixed (reservation search), remainder is an open product question
 
 Every direct `conservativeBias` read (`rules.ts` strain offset, `planner.ts`
 `projectedFatigueThresholds`, `optimizer.ts` `rankCandidates` cost-penalty/preference-
@@ -67,40 +67,60 @@ issue's judge run reported. The `judge_mode_conservative_preference` /
 `judge_mode_event_directed` pair (planning-mode family) reproduces the same 1→2,
 4.49→4.95 pattern for the identical reason.
 
-**Root-cause hypothesis (not yet verified deeply enough to fix safely):**
-`app/src/engine/weeklyAllocation.ts` `resolveWeeklyRoleReservations` re-solves required
-weekly role placement once per forecast day (`planner.ts` `evaluateForecastDate`), using
-its own forward fatigue-projection (`allocationEvaluator` → `projectedEvaluation`) to
-decide which dates can host a required Hard-Endurance/VO2 occurrence. That projection
-*does* consume `conservativeBias` indirectly (it calls the same `fatigueTierFor`/
-`projectedFatigueThresholds` path). The suspected mechanism: on 2026-08-17 both runs
-organically pick `end_race_sim_01` (cost 0.568) via ordinary discretionary ranking, which
-is close enough to the *neutral* `modifyMaxSystemicCost` ceiling (0.5, +0.3 margin
-headroom) to also implicitly satisfy the week's second required VO2-family occurrence.
-Under `conservativeBias`'s tightened ceiling (`0.5 * 0.85 = 0.425`), the reservation
-search's own projection rejects 2026-08-17 as a valid *reservation* date for that
-occurrence (even though the real forward-simulated day still organically selects
-`end_race_sim_01` there for both runs) and keeps searching forward until it force-places
-the full occurrence on 2026-08-20 -- a forced reservation that overrides what discretionary
-ranking would otherwise have picked (the cheaper Strength session), producing a real,
-extra hard session not present in the neutral run.
+**Update 2026-09-20 — two distinct mechanisms found, one fixed, one still open as a
+product question.**
 
-This has **not** been fixed in this PR. `weeklyAllocation.ts`/`resolveWeeklyRoleReservations`
-is a safety-critical, heavily-tested path (ADR-0018; `weeklyAllocation.test.ts`,
-`weeklyAllocationPlanner.test.ts`, `weeklyAllocationLedgerCapacity.test.ts`,
-`coverage.test.ts`, `coverageOccurrence.test.ts`, `coverageAnchorAuthority.test.ts`) and
-the mechanism above is a hypothesis from reading the code and one reproduction, not a
-verified root cause. Shipping an unverified change to the forced-reservation search
-alongside the unrelated travel-catalog fix would risk a real regression in exchange for an
-unconfirmed fix. A deliberately-failing monotonicity assertion was **not** added to
-`check-plan-judge-invariants.mjs` for this reason -- see that file's `judge_mode_
-conservative_preference` comment. Follow-up: a dedicated session should verify the
-hypothesis above against `weeklyAllocation.ts`'s actual reservation/settlement flow
-(`evaluateForecastDate`, `settledOutcomes`, `displacementReasons` in `planner.ts`) and,
-once confirmed, decide the fix (e.g. the reservation search's projection should use the
-same ceiling relaxation semantics as ordinary discretionary ranking, or `conservativeBias`
-should feed into occurrence *eligibility* rather than only into the reservation search's
-rejection of candidate dates) and add the deterministic invariant assertion alongside it.
+**Mechanism A (fixed, commit `fix(engine): enforce overlay fallback and conservative
+monotonicity`).** The original hypothesis above was correct: `weeklyAllocation.ts`'s
+`resolveWeeklyRoleReservations`, driven by `planner.ts`'s `allocationEvaluator`, used the
+*athlete's own* (conservative-tightened) fatigue thresholds to decide which dates could
+host a required weekly-role occurrence, rejecting 2026-08-17 as a reservation date under
+`conservativeBias` even though the real forward-simulated day still organically selected
+`end_race_sim_01` there, and force-placing the occurrence on 2026-08-20 instead. The fix
+gives `projectedDateOutcomeFrom` an explicit `reservationFatigueThresholds` override and
+has `allocationEvaluator` always probe reservation feasibility with **baseline
+(non-conservative) thresholds**, while the real forecast day the athlete actually sees
+still applies conservative thresholds and ranking. Verified by re-running
+`npm run simulate:plan-judge` and diffing `allocationReports`: reservation placement is now
+byte-identical between `judge_pref_neutral` and `judge_pref_conservative`.
+
+**Mechanism B (found, NOT fixed -- a product-policy question, not a bug).** Fixing
+Mechanism A did not make the `check-plan-judge-invariants.mjs` monotonicity assertions
+pass. Diffing the two cases' per-day `activeObjectives`/`projectedFatigue`/`mode` fields
+(not just the plan summary) localizes the remaining divergence to 2026-08-20 -- an ordinary
+discretionary day with no required-role reservation in *either* run:
+
+| | neutral | conservative |
+|---|---|---|
+| Selected | `str_upper_01` (Upper-body Strength, cost 0.30) | `end_hard_02` (Hard Endurance/VO2, cost 1.00) |
+| `mode`/fatigue tier | `modify` | `train` |
+| Peak combined systemic fatigue | 0.4875 | 0.4151 |
+| `PROJECTED_FATIGUE_GATE` rejections | 15 | 0 |
+
+Conservative correctly did *less* work on 2026-08-11 (`rest_01` vs neutral's `mob_01`) and
+2026-08-18 (`rest_01` vs neutral's `end_easy_04`, cost 0.18) -- both individually correct
+applications of the preference. But resting more on those two days leaves conservative
+genuinely *less fatigued* by 2026-08-20 (0.415 vs 0.488), which is enough to cross the
+`modify`/`train` tier boundary: neutral stays gated to `systemicCost <=
+modifyMaxSystemicCost` candidates (excluding `end_hard_02`, hence 15
+`PROJECTED_FATIGUE_GATE` rejections), while conservative is ungated (0 rejections), and the
+optimizer's own ranking then legitimately prefers the higher-benefit `end_hard_02` once
+nothing excludes it.
+
+Every individual gate is working as designed -- this is recovery capacity earned by resting
+more, being spent on a harder session later, which is the intended purpose of recovery in
+any periodization model. It is not a threshold-direction bug, and a runtime fix cannot
+reference "what the neutral run would have done": production only ever runs one preference
+setting per athlete, so there is no counterfactual to compare against at decision time.
+Closing this gap would require a new, deliberately opinionated invariant -- e.g. a rolling
+weekly cap on hard-session count/cumulative systemic cost specifically under
+`conservativeBias`, capping opportunistic hard work even when the athlete has genuinely
+recovered enough to do it. That is a training-philosophy product decision, not an
+engineering bug fix, and is exactly the kind of judgment call issue #677 asked to be made
+explicitly rather than picked silently. **Left undecided and unimplemented.** The
+`judge_pref_conservative`/`judge_mode_conservative_preference` monotonicity assertions in
+`check-plan-judge-invariants.mjs` still fail against the real corpus as of this update; see
+that file's inline comment for the current disposition.
 
 ## Non-goals honored
 

@@ -34,8 +34,8 @@ const dayDiff = (later, earlier) => {
 };
 
 describe('established Olympic-triathlon persona (issue #679)', () => {
-  it('is exactly the four reviewed cases within the nine-family active suite', () => {
-    expect(assertPersonaFixtureIntegrity(families)).toEqual({ familyCount: 9, caseCount: 30 });
+  it('is exactly the four reviewed cases within the ten-family active suite', () => {
+    expect(assertPersonaFixtureIntegrity(families)).toEqual({ familyCount: 10, caseCount: 36 });
     expect(triathlon.cases.map(({ scenario }) => scenario.id).sort()).toEqual([
       'persona_triathlon_established_olympic_adverse_recovery',
       'persona_triathlon_established_olympic_baseline',

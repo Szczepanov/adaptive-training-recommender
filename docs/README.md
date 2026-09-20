@@ -195,7 +195,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-17 Plan status reconciliation**](./analysis/2026-09-17-plan-status-reconciliation.md) — Reconciles implemented plans, verification closures, and remaining evidence/activation gates.
 * [**2026-09-17 Firestore evidence reconnaissance**](./analysis/2026-09-17-firestore-evidence-recon.md) — Privacy-preserving aggregate inventory of production evidence and the gates it does and does not satisfy.
 * [**2026-09-19 Issue #679 remediation — triathlon taper, recovery re-entry, weekday cap**](./analysis/2026-09-19-issue-679-triathlon-taper-recovery-capacity-remediation.md) — Reproduces and fixes the three external-judge-reported Olympic-triathlon persona problems; records a fixture bug, two real engine gaps, and two flagged-not-resolved follow-ups.
-* [**2026-09-19 Conservative and travel overlay investigation**](./analysis/2026-09-19-conservative-travel-overlay-investigation.md) — Fixes a travel-overlay aerobic-candidate catalog gap and a conservative-bias weekly-hard-session-count regression in the ADR-0018 reservation search.
+* [**2026-09-19 Conservative and travel overlay investigation**](./analysis/2026-09-19-conservative-travel-overlay-investigation.md) — Fixes a travel-overlay aerobic-candidate catalog gap and the ADR-0018 reservation-search inconsistency under conservative bias; identifies a second, distinct mechanism (recovery capacity earned by resting more being spent on a harder session later) that is a product-policy question, left unfixed and undecided.
 
 ---
 
