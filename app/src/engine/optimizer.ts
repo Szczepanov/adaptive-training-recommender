@@ -969,6 +969,8 @@ export function rankCandidates(
 
     const extraMargin = preferences.extraRecoveryMargin ?? preferences.conservativeBias ?? false;
     const focusEvent = options.focusEvent;
+    const isCEnduranceCompetition = focusEvent?.priority === 'C'
+        && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race' || focusEvent.category === 'triathlon');
     const cyclingDurabilityFocusEvent = isCyclingDurabilityFocusEvent(focusEvent);
     const rawHistory = options.recentHistory ?? [];
     const targetDate = options.date ?? getLocalDateString();
@@ -1050,7 +1052,10 @@ export function rankCandidates(
                 : (template.modality === 'Strength' && (obj.key === 'strength_maintenance' || obj.key === 'strength_development'))
         );
 
-        if (focusEvent) {
+        // Keep legacy A/B handling intact, but only opt C into event-aware ranking for
+        // actual endurance competitions. A C-priority general target or strength meet must
+        // not acquire unrelated non-matching penalties merely because #698 adds C race logic.
+        if (focusEvent && (focusEvent.priority === 'A' || focusEvent.priority === 'B' || isCEnduranceCompetition)) {
             const categoryLower = focusEvent.category.toLowerCase();
             const templateModLower = (template.modality ?? '').toLowerCase();
             const matchesEvent =
