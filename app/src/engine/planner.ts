@@ -1448,13 +1448,36 @@ export function generateWeekAheadPlan(
         const isRecoveryLateReentryDate = isSevereAdverseRecovery && (offset === 4 || offset === 5);
         const isRecoveryCategory = (template: SessionTemplate) =>
             template.category === 'Rest' || template.category === 'Mobility/Recovery';
-        const isRecoveryReentryCandidate = (template: SessionTemplate, maxSystemicCost: number) =>
-            isRecoveryCategory(template)
-            || (template.systemicCost <= maxSystemicCost
-                && template.modality !== 'Strength'
-                && template.category !== 'Moderate Endurance'
-                && template.category !== 'Hard Endurance'
-                && template.category !== 'Race-Specific Endurance');
+        const isRecoveryReentryCandidate = (template: SessionTemplate, maxSystemicCost: number) => {
+            if (isRecoveryCategory(template)) return true;
+            if (template.modality === 'Strength'
+                || template.category === 'Moderate Endurance'
+                || template.category === 'Hard Endurance') {
+                return false;
+            }
+            if (template.category === 'Race-Specific Endurance') {
+                if (!isRecoveryLateReentryDate) return false;
+                const focusEvent = optContext.options.focusEvent;
+                if (!focusEvent
+                    || (focusEvent.priority !== 'A' && focusEvent.priority !== 'B')
+                    || !['cycling_event', 'running_race', 'triathlon'].includes(focusEvent.category)) {
+                    return false;
+                }
+                const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
+                const daysToRace = getDayDiff(raceDate, date);
+                return (daysToRace === 2 || daysToRace === 3) && template.systemicCost <= 0.45;
+            }
+            return template.systemicCost <= maxSystemicCost;
+        };
+
+        // The severe-recovery forecast ladder is itself an active planning constraint.
+        // Reflect that constraint consistently in dose/viability behavior and diagnostics:
+        // recovery-only days behave as recover; graduated re-entry behaves as modify.
+        const effectiveFatigueTier = isRecoveryOnlyDate
+            ? 'recover'
+            : ((isRecoveryEarlyReentryDate || isRecoveryLateReentryDate) && fatigueTier === 'train'
+                ? 'modify'
+                : fatigueTier);
 
         let rankingCandidates = isRecoveryOnlyDate
             ? fatigueGated.filter(isRecoveryCategory)
@@ -1505,7 +1528,7 @@ export function generateWeekAheadPlan(
             const candidateDose = resolveTimeCapDoseAdjustment(
                 template,
                 evaluation.availability.maxTimeMinutes,
-                fatigueTier === 'modify',
+                effectiveFatigueTier === 'modify',
             )?.activeDose;
             const evaluator = allocationEvaluator(
                 forecastDatesFrom(offset + 1),
@@ -1520,7 +1543,7 @@ export function generateWeekAheadPlan(
             );
             return !after.budgetExhausted && after.fulfilledCount + selfFulfils >= allocation.fulfilledCount;
         };
-        const viabilityApplies = fatigueTier !== 'recover' && allocation.fulfilledCount > 0 && ranked.length > 1;
+        const viabilityApplies = effectiveFatigueTier !== 'recover' && allocation.fulfilledCount > 0 && ranked.length > 1;
         const pick = (viabilityApplies
             ? ranked.slice(0, WEEKLY_ALLOCATION_SEARCH_BUDGET.maxCandidatesPerOccurrence)
                 .find(candidate => preservesAllocation(candidate.template))
@@ -1528,7 +1551,7 @@ export function generateWeekAheadPlan(
             ?? ranked[0] ?? fallbackPick;
 
         const bestBenefit = [...(ranked.length > 0 ? ranked : [{ template: restFallback, benefitScore: 0 }])].sort((a, b) => b.benefitScore - a.benefitScore)[0];
-        const forecastDoseAdjustment = resolveTimeCapDoseAdjustment(pick.template, evaluation.availability.maxTimeMinutes, fatigueTier === 'modify');
+        const forecastDoseAdjustment = resolveTimeCapDoseAdjustment(pick.template, evaluation.availability.maxTimeMinutes, effectiveFatigueTier === 'modify');
         const forecastActiveDose = forecastDoseAdjustment?.activeDose;
         const pickCredits = creditingObjectivesFor(pick.template, forecastActiveDose);
         const addressed = pickCredits.map(item => item.objective.title);
@@ -1563,7 +1586,7 @@ export function generateWeekAheadPlan(
             displacementReasons.set(
                 reservation.occurrence.id,
                 exactReserved.length === 0
-                    ? (fatigueTier === 'recover' ? 'hard_safety_or_recovery' : fatigueTier === 'modify' ? 'projected_fatigue' : 'hard_safety_or_recovery')
+                    ? (effectiveFatigueTier === 'recover' ? 'hard_safety_or_recovery' : effectiveFatigueTier === 'modify' ? 'projected_fatigue' : 'hard_safety_or_recovery')
                     : 'no_conflict_free_date',
             );
         }
@@ -1582,7 +1605,7 @@ export function generateWeekAheadPlan(
             ...(forecastDoseAdjustment ? { activeDose: forecastDoseAdjustment.activeDose, adjustment: forecastDoseAdjustment.adjustment } : {}),
             diagnostics: {
                 peakFatigue,
-                fatigueTier,
+                fatigueTier: effectiveFatigueTier,
                 topUtilityScore: pick.utilityScore,
                 runnerUpUtilityScore: ranked[1]?.utilityScore ?? null,
                 selectedBenefitScore: pick.benefitScore,

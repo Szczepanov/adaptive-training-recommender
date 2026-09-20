@@ -642,6 +642,27 @@ export function evaluateRecoveryConstraints(
                 reasons.push('PRE_EVENT_TAPER_RESTRICTION');
             }
         }
+
+        // Issue #676: Priority-A race week must not stack another substantial quality
+        // exposure inside three days of recent hard work. Race-specific sessions just
+        // above the taper-sharpening ceiling count on both sides of this interaction even
+        // when their authored systemicCost is below the generic 0.50 hard threshold.
+        if (focusEvent.priority === 'A' && daysToRace >= 1 && daysToRace <= 7) {
+            const isHighCostRaceSpecificOrHard = template.systemicCost >= 0.50
+                || (template.category === 'Race-Specific Endurance' && template.systemicCost > 0.45);
+            if (isHighCostRaceSpecificOrHard) {
+                const hasRecentHardSession = history.some(h => {
+                    const diff = getDayDiff(targetDate, h.date);
+                    const isHardHistory = (h.systemicCost ?? 0) >= 0.50
+                        || (h.category === 'Race-Specific Endurance' && (h.systemicCost ?? 0) > 0.45);
+                    return diff >= 1 && diff <= 3 && isHardHistory;
+                });
+                if (hasRecentHardSession && !reasons.includes('PRE_EVENT_TAPER_RESTRICTION')) {
+                    reasons.push('PRE_EVENT_TAPER_RESTRICTION');
+                }
+            }
+        }
+
         const daysSinceRace = getDayDiff(targetDate, raceDate);
         if (focusEvent.priority === 'A' && daysSinceRace >= 1 && daysSinceRace <= 3) {
             const isStrengthModality = template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category);
@@ -1052,6 +1073,14 @@ export function rankCandidates(
             benefit += MULTISPORT_MODALITY_COVERAGE_BENEFIT;
         }
         if (fulfilsNominatedAnchor) benefit += ANCHOR_TIMING_BENEFIT;
+
+        // Issue #676: once two hard exposures already sit inside the rolling six-day
+        // history, keep required/nominated anchors available but strongly moderate the
+        // benefit of additional non-anchor hard work. This is a product calibration
+        // heuristic for whole-horizon load sensitivity, not a physiological cut-point.
+        if (summary.hardInRollingWindowCount >= 2 && template.systemicCost >= 0.50 && !fulfilsNominatedAnchor) {
+            benefit *= 0.40;
+        }
 
         let costPenalty = calculateFatigueCostPenalty(template.costProfile, fatigueState);
         if (extraMargin && template.systemicCost > 0.5) costPenalty += 0.3;

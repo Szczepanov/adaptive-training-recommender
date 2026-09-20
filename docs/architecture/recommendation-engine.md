@@ -421,11 +421,34 @@ excluded once systemicCost exceeds `TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST`
 Endurance candidate is excluded when one already occurred within
 `TAPER_MODERATE_DENSITY_MIN_GAP_DAYS` (3) days, preventing a stacked, build-like block near
 the event while still allowing spaced, brief discipline-specific touches. Race-Specific
-Endurance is deliberately excluded from the density guard: event-specific work recurring
-near the event is expected, and a recent one is already tempered by benefit-score softening
-(anchor protection) rather than a hard exclusion.
+Endurance is deliberately excluded from this generic full-taper density guard because brief
+event-specific touches can remain appropriate near the event. Priority-A race week has a
+separate Issue #676 interaction guard below, which can hard-exclude substantial Race-Specific
+Endurance when another hard/race-specific exposure occurred in the preceding three days.
 
-### Graduated recovery re-entry after severe adverse recovery (Issue #679, `planner.ts`)
+### Whole-horizon recent-load and Priority-A race-week interaction policy (Issue #676)
+
+Issue #676 adds two deliberately distinct controls:
+
+* **Whole-horizon recent-load moderation:** when two systemicCost >= 0.50 sessions already
+  sit in the rolling six-day history, another non-anchor systemicCost >= 0.50 candidate gets
+  a 0.40 benefit multiplier. Required/nominated anchors are exempt from this *soft* moderation
+  but remain subject to every hard recovery/taper gate. The 0.40 value is product calibration,
+  not a physiological threshold.
+* **Priority-A race-week interaction guard:** within D-1..D-7 of an A cycling/running/triathlon
+  event, a candidate at systemicCost >= 0.50, or Race-Specific Endurance above 0.45, is
+  excluded when the preceding three days contain either systemicCost >= 0.50 work or
+  Race-Specific Endurance above 0.45. This closes the prior asymmetry where a 0.46-0.49
+  race-specific exposure could contribute to quality stacking without satisfying the generic
+  hard-history threshold.
+
+No new universal three- or four-day spacing rule was added for all endurance-event strength
+sessions. The race-week failure mode in #676 is already covered by the full-taper strength
+restriction from #679 (at most one light <=0.35 touch) and by severe-recovery re-entry, which
+keeps Strength out through day 5. Concurrent-training evidence is context-dependent and does
+not justify turning those exact 3/4-day gaps into a global physiological invariant.
+
+### Graduated recovery re-entry after severe adverse recovery (Issues #679/#676, `planner.ts`)
 
 The severe-adverse-recovery restriction (`isSevereAdverseRecoveryReadiness`) previously
 widened from recovery-only to a 0.5 ceiling and then to 0.65 by offset 3 before snapping
@@ -433,14 +456,19 @@ straight to the unrestricted candidate pool at offset 4. The first #679 patch ex
 offsets 4-5 at 0.35, which accidentally made that ladder non-monotonic: day 3 could admit
 tempo/threshold or Strength work before days 4-5 tightened again.
 
-The final policy is monotonic and deliberately conservative because a forecast has no real
-future readiness reading to re-check: offsets 1-2 are Rest/Mobility-Recovery only; offset 3
-may add non-Strength, non-Moderate/Hard/Race-Specific work up to
+The final policy is deliberately conservative because a forecast has no real future
+readiness reading to re-check: offsets 1-2 are Rest/Mobility-Recovery only; offset 3 may add
+non-Strength, non-Moderate/Hard/Race-Specific work up to
 `RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST` (0.35); offsets 4-5 widen that same low-intensity
-non-Strength pool to `RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST` (0.5); only offset 6 onward
-reaches the unrestricted candidate pool. This is the projected-day equivalent of requiring
-confirmed freshness before threshold, tempo, race-specific, strength, or dense quality work
-resumes.
+non-Strength pool to `RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST` (0.5). Issue #676 adds one
+narrow taper exception during offsets 4-5: before an A/B cycling/running/triathlon event,
+Race-Specific Endurance at systemicCost <=0.45 may be admitted on D-2 or D-3. The unrestricted
+candidate pool is still reached only from day 6 onward. Recovery-only forecast dates use
+effective `recover` semantics; graduated re-entry dates use effective `modify` semantics
+for dose selection, allocation viability, displacement diagnostics, and the surfaced
+forecast fatigue tier. These exact boundaries remain product policy, not a claim that a
+single adverse wearable snapshot establishes a universal five-day physiological recovery
+timeline.
 
 ### Multi-event: one taper authority, multiple demand contributors (Phase 5.6, `periodization.ts`)
 
