@@ -197,18 +197,30 @@ function templateDurationReferenceMin(template: Pick<SessionTemplate, 'durationM
     return max ?? min;
 }
 
+const CATALOG_REFERENCE_DURATION_INDEX = new Map<string, number[]>();
+for (const template of ENRICHED_TEMPLATES) {
+    const duration = templateDurationReferenceMin(template);
+    if (duration === undefined || !Number.isFinite(duration) || duration <= 0) continue;
+    const key = `${template.modality}:${catalogIntensity(template)}`;
+    const durations = CATALOG_REFERENCE_DURATION_INDEX.get(key);
+    if (durations) {
+        durations.push(duration);
+    } else {
+        CATALOG_REFERENCE_DURATION_INDEX.set(key, [duration]);
+    }
+}
+for (const durations of CATALOG_REFERENCE_DURATION_INDEX.values()) {
+    durations.sort((left, right) => left - right);
+}
+
 /**
  * Uses a comparable catalog session as the duration reference instead of adding a
  * modality-wide duration constant. Unknown modalities deliberately have no invented
  * reference, so their cost remains unscaled until a better source exists.
  */
-function catalogReferenceDurationMin(modality: CompletedModality, intensity: CompletedTrainingIntensity): number | undefined {
-    const durations = ENRICHED_TEMPLATES
-        .filter(template => template.modality === modality && catalogIntensity(template) === intensity)
-        .map(templateDurationReferenceMin)
-        .filter((duration): duration is number => typeof duration === 'number' && Number.isFinite(duration) && duration > 0)
-        .sort((left, right) => left - right);
-    if (durations.length === 0) return undefined;
+export function catalogReferenceDurationMin(modality: CompletedModality, intensity: CompletedTrainingIntensity): number | undefined {
+    const durations = CATALOG_REFERENCE_DURATION_INDEX.get(`${modality}:${intensity}`);
+    if (!durations || durations.length === 0) return undefined;
     return durations[Math.floor(durations.length / 2)];
 }
 

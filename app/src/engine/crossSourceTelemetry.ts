@@ -6,7 +6,7 @@
  */
 
 import type { HealthObservationDayBundle } from '../observations/models';
-import type { SourceMetricBaseline } from './multisourceBaselines';
+import { sourceMetricBaselineKey, type SourceMetricBaseline } from './multisourceBaselines';
 
 export interface CrossSourceAgreementTelemetry {
     logicalDate: string;
@@ -32,7 +32,9 @@ export function computeCrossSourceTelemetry(
     for (const b of baselines) {
         const providerKey = `${b.provider}_${b.transport}`;
         coverageMap[providerKey] = Math.max(coverageMap[providerKey] || 0, b.count28d);
-        baselineMap.set(`${b.metric}_${b.provider}_${b.transport}`, b);
+        const key = sourceMetricBaselineKey(b.metric, b.provider, b.transport);
+        // Preserve the old Array.find() first-match behavior for malformed duplicate input.
+        if (!baselineMap.has(key)) baselineMap.set(key, b);
     }
 
     // Extract observations by source
@@ -44,7 +46,7 @@ export function computeCrossSourceTelemetry(
         const sourceKey = `${bundle.provider}_${bundle.transport}`;
         for (const obs of bundle.observations) {
             if (obs.metric === 'hrv_rmssd_ms' && typeof obs.value === 'number') {
-                const base = baselineMap.get(`hrv_rmssd_ms_${bundle.provider}_${bundle.transport}`);
+                const base = baselineMap.get(sourceMetricBaselineKey('hrv_rmssd_ms', bundle.provider, bundle.transport));
                 if (base && base.median28d !== null && base.mad28d && base.mad28d > 0) {
                     const z = (obs.value - base.median28d) / base.mad28d;
                     hrvDeviations.push({ source: sourceKey, z });
@@ -52,7 +54,7 @@ export function computeCrossSourceTelemetry(
             }
 
             if (obs.metric === 'daily_resting_heart_rate_bpm' && typeof obs.value === 'number') {
-                const base = baselineMap.get(`daily_resting_heart_rate_bpm_${bundle.provider}_${bundle.transport}`);
+                const base = baselineMap.get(sourceMetricBaselineKey('daily_resting_heart_rate_bpm', bundle.provider, bundle.transport));
                 if (base && base.median28d !== null && base.mad28d && base.mad28d > 0) {
                     const z = (obs.value - base.median28d) / base.mad28d;
                     rhrDeviations.push({ source: sourceKey, z });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CompletedTrainingEvent, DailyRecommendation, NormalizedGarminActivity } from './models';
-import { completedEventToExposure, DEFAULT_COST_BY_MODALITY, DEFAULT_STIMULUS_BY_MODALITY, deriveSessionPlanRelationship, reconcileCompletedTrainingEvents, scaleCostByDeliveredDose } from './completedTraining';
+import { ENRICHED_TEMPLATES } from './templates';
+import { catalogReferenceDurationMin, completedEventToExposure, DEFAULT_COST_BY_MODALITY, DEFAULT_STIMULUS_BY_MODALITY, deriveSessionPlanRelationship, reconcileCompletedTrainingEvents, scaleCostByDeliveredDose } from './completedTraining';
 
 function activity(overrides: Partial<NormalizedGarminActivity> = {}): NormalizedGarminActivity {
     return {
@@ -21,6 +22,36 @@ function recommendation(overrides: Partial<DailyRecommendation> = {}): DailyReco
 }
 
 describe('completed training reconciliation', () => {
+    it('preserves catalog reference durations for every modality/intensity bucket, including empty buckets', () => {
+        const modalities = ['Cycling', 'Running', 'Swimming', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training', 'None', 'Unknown'] as const;
+        const intensities = ['easy', 'moderate', 'hard', 'unknown'] as const;
+        const expectedReference = (modality: typeof modalities[number], intensity: typeof intensities[number]) => {
+            const durations = ENRICHED_TEMPLATES
+                .filter(template => {
+                    const systemicCost = template.costProfile?.systemic ?? template.systemicCost;
+                    const catalogIntensity = systemicCost >= 0.55 ? 'hard' : systemicCost >= 0.25 ? 'moderate' : 'easy';
+                    return template.modality === modality && catalogIntensity === intensity;
+                })
+                .map(template => {
+                    const min = Number.isFinite(template.durationMin) && template.durationMin > 0 ? template.durationMin : undefined;
+                    const max = Number.isFinite(template.durationMax) && template.durationMax > 0 ? template.durationMax : undefined;
+                    return min !== undefined && max !== undefined ? (min + Math.max(min, max)) / 2 : max ?? min;
+                })
+                .filter((duration): duration is number => typeof duration === 'number' && Number.isFinite(duration) && duration > 0)
+                .sort((left, right) => left - right);
+            return durations.length === 0 ? undefined : durations[Math.floor(durations.length / 2)];
+        };
+
+        for (const modality of modalities) {
+            for (const intensity of intensities) {
+                expect(catalogReferenceDurationMin(modality, intensity)).toBe(expectedReference(modality, intensity));
+            }
+        }
+
+        expect(catalogReferenceDurationMin('None', 'easy')).toBeUndefined();
+        expect(catalogReferenceDurationMin('Unknown', 'unknown')).toBeUndefined();
+    });
+
     it('scales each cost dimension monotonically with delivered duration and completion ratio', () => {
         const base = { systemic: 0.6, cardiovascular: 0.7, lowerBody: 0.5, upperBody: 0.1, impactTissue: 0.2, neuromuscular: 0.4 };
         const short = scaleCostByDeliveredDose(base, { plannedDurationMin: 60, completedDurationMin: 40, completionRatio: 1 });

@@ -226,6 +226,48 @@ describe('identityEligibility (PI5, ADR-0028 D-PID-PREBASE)', () => {
         expect(baseline([sourceBundle], [exact, duplicate]).count28d).toBe(0);
     });
 
+    it('keeps exact-bundle eligibility independent of projection ordering', () => {
+        const firstBundle = bundle({ logicalDate: '2026-08-26', sourcePayloadHash: 'sha256:first' });
+        const secondBundle = bundle({ logicalDate: '2026-08-27', sourcePayloadHash: 'sha256:second' });
+        const firstProjection = projection(firstBundle);
+        const secondProjection = projection(secondBundle);
+
+        const inOrder = selectEligibleHealthObservationBundles({
+            bundles: [firstBundle, secondBundle],
+            userId: 'user-1',
+            effectiveIdentityProjections: [firstProjection, secondProjection],
+            identityPolicy: IDENTITY_POLICY,
+            requireEligibility: 'baselineLearning',
+        });
+        const permuted = selectEligibleHealthObservationBundles({
+            bundles: [firstBundle, secondBundle],
+            userId: 'user-1',
+            effectiveIdentityProjections: [secondProjection, firstProjection],
+            identityPolicy: IDENTITY_POLICY,
+            requireEligibility: 'baselineLearning',
+        });
+
+        expect(permuted).toEqual(inOrder);
+    });
+
+    it('fails closed when exact-bundle projections are ambiguous even beside unrelated projections', () => {
+        const sourceBundle = bundle();
+        const duplicate = projection(sourceBundle, { assessmentId: 'assessment-duplicate' });
+        const unrelated = projection(
+            bundle({ logicalDate: '2026-08-26', sourcePayloadHash: 'sha256:unrelated' }),
+        );
+
+        expect(
+            selectEligibleHealthObservationBundles({
+                bundles: [sourceBundle],
+                userId: 'user-1',
+                effectiveIdentityProjections: [unrelated, duplicate, projection(sourceBundle)],
+                identityPolicy: IDENTITY_POLICY,
+                requireEligibility: 'baselineLearning',
+            }),
+        ).toEqual([]);
+    });
+
     it('filters bundles from another user before any baseline calculation', () => {
         const foreign = bundle({ userId: 'user-2' });
         expect(baseline([foreign], [projection(foreign)]).count28d).toBe(0);
