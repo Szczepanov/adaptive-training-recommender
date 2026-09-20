@@ -291,6 +291,42 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
         );
     });
 
+    it('does not apply heavy-strength adjacency suppression after a cap reduces the effective dose below the heavy threshold', () => {
+        const fullBodyStrength = ENRICHED_TEMPLATES.find(t => t.id === 'str_full_01')!;
+        const availability: ResolvedAvailability = {
+            date: '2026-08-14',
+            maxTimeMinutes: 45,
+            availableEquipment: ['free_weights'],
+            fixedActivities: [],
+            reservedCapacityCost: 0,
+            reservedCapacityCostProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            environmentOverride: null,
+        };
+
+        const nonAdjacent = rankCandidates(
+            [fullBodyStrength],
+            [],
+            createEmptyFatigue('2026-08-14'),
+            availability,
+            [],
+            DEFAULT_PREFERENCES,
+            { date: '2026-08-14', adjacentToAnchor: false, resolvedAvailability: availability },
+        );
+        const adjacent = rankCandidates(
+            [fullBodyStrength],
+            [],
+            createEmptyFatigue('2026-08-14'),
+            availability,
+            [],
+            DEFAULT_PREFERENCES,
+            { date: '2026-08-14', adjacentToAnchor: true, resolvedAvailability: availability },
+        );
+
+        // The authored 0.6 session is automatically reduced to its 0.75 easier dose:
+        // 0.6 * 0.75 = 0.45, below the optimizer's 0.5 heavy/intensity-stack threshold.
+        expect(nonAdjacent.accepted[0].utilityScore).toBeCloseTo(adjacent.accepted[0].utilityScore, 5);
+    });
+
     it('enforces dailyLedger accounting boundary in evaluateTrainingWithIntent for scheduled race days', async () => {
         const raceActivity: FixedActivity = {
             id: 'gran_fondo_race',

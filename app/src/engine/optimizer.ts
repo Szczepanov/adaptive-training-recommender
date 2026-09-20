@@ -1031,7 +1031,7 @@ export function rankCandidates(
         const deferAnchorAdjacentHeavyStrength = Boolean(
             options.adjacentToAnchor
             && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category)
-            && template.systemicCost >= INTENSITY_STACK_THRESHOLD
+            && effectiveCandidate.systemicCost >= INTENSITY_STACK_THRESHOLD
         );
         const authoredCoverageNeedTier = coverageState
             ? coverageNeedTierForTemplate(coverageState, template, options.anchorRole ?? null, deferAnchorAdjacentHeavyStrength)
@@ -1239,7 +1239,7 @@ export function rankCandidates(
         }
 
         if (fulfilsNominatedAnchor) prefMultiplier *= ANCHOR_ROLE_BOOST;
-        if (options.adjacentToAnchor && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category) && template.systemicCost >= INTENSITY_STACK_THRESHOLD) {
+        if (options.adjacentToAnchor && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category) && effectiveCandidate.systemicCost >= INTENSITY_STACK_THRESHOLD) {
             prefMultiplier *= ANCHOR_ADJACENCY_SUPPRESSION;
         }
 

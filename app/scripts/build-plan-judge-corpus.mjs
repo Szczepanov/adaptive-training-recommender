@@ -476,7 +476,6 @@ export function makeAllFamilies(scenarios, deliveredDoseModule, resolveDemandPro
   // criterium template.
   const eventDemandCapacity = {
     subjective: { timeAvailable: 120 },
-    preferences: userPreferences({ defaultWeekdayTimeMin: 90, defaultWeekendTimeMin: 120 }),
     contextPatch: (c) => {
       c.constraints.maxTimeMinutes = 120;
       if (c.trainingSettings) {
