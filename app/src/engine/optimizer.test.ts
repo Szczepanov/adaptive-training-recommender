@@ -82,6 +82,36 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
         ]));
     });
 
+    it('hard-gates hard endurance without explicit running support while keeping preferred moderate work eligible', () => {
+        const preferences = { ...DEFAULT_PREFERENCES, preferredModalities: ['Strength', 'Walking', 'Cycling'] };
+        const policy = resolveHealthPlanningPolicy(['health'], preferences, false);
+        const moderateCycling = ENRICHED_TEMPLATES.find(t => t.id === 'end_mod_01')!;
+        const hardRunning = ENRICHED_TEMPLATES.find(t => t.id === 'end_hard_01')!;
+
+        const result = rankCandidates(
+            [moderateCycling, hardRunning], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], preferences,
+            { date: '2026-03-05', recentHistory: [], healthPlanningPolicy: policy },
+        );
+
+        expect(result.accepted.map(candidate => candidate.template.id)).toContain('end_mod_01');
+        expect(result.rejected.find(candidate => candidate.template.id === 'end_hard_01')?.excludedReasons).toContain(
+            'HEALTH_HARD_ENDURANCE_WITHHELD_WITHOUT_RUNNING_SUPPORT',
+        );
+    });
+
+    it('does not gate hard endurance when running is explicitly supported', () => {
+        const preferences = { ...DEFAULT_PREFERENCES, preferredModalities: ['Running'] };
+        const policy = resolveHealthPlanningPolicy(['health'], preferences, false);
+        const hardRunning = ENRICHED_TEMPLATES.find(t => t.id === 'end_hard_01')!;
+
+        const result = rankCandidates(
+            [hardRunning], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], preferences,
+            { date: '2026-03-05', recentHistory: [], healthPlanningPolicy: policy },
+        );
+
+        expect(result.accepted.map(candidate => candidate.template.id)).toContain('end_hard_01');
+    });
+
     it('enforces the rolling quality cap when qualifying moderate history is present', () => {
         const preferences = { ...DEFAULT_PREFERENCES, preferredModalities: ['Strength', 'Walking', 'Cycling'] };
         const policy = resolveHealthPlanningPolicy(['health'], preferences, false);

@@ -14,6 +14,7 @@ describe('health planning policy', () => {
             enabled: true,
             preferLowImpactAerobic: true,
             withholdQualityEndurance: false,
+            withholdHardEndurance: true,
             qualityEnduranceSessionLimit: 1,
         });
     });
@@ -28,6 +29,7 @@ describe('health planning policy', () => {
         expect(resolveHealthPlanningPolicy(['endurance'], { preferredModalities: ['Running'], deprioritizedModalities: [], avoidedModalities: [] }, false)).toBeNull();
         expect(resolveHealthPlanningPolicy(['health'], { preferredModalities: ['Running'], deprioritizedModalities: [], avoidedModalities: [] }, false)).toMatchObject({
             preferLowImpactAerobic: false,
+            withholdHardEndurance: false,
             qualityEnduranceSessionLimit: null,
         });
     });

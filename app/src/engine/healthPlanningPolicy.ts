@@ -42,6 +42,7 @@ export interface HealthPlanningPolicy {
     enabled: true;
     preferLowImpactAerobic: boolean;
     withholdQualityEndurance: boolean;
+    withholdHardEndurance: boolean;
     qualityEnduranceSessionLimit: number | null;
 }
 
@@ -61,6 +62,7 @@ export function resolveHealthPlanningPolicy(
         enabled: true,
         preferLowImpactAerobic: !runningExplicitlySupported,
         withholdQualityEndurance: isAdverseRecovery,
+        withholdHardEndurance: !runningExplicitlySupported,
         qualityEnduranceSessionLimit: !runningExplicitlySupported ? HEALTH_QUALITY_ENDURANCE_SESSION_LIMIT : null,
     };
 }

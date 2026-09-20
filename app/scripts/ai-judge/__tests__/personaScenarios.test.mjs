@@ -284,6 +284,13 @@ describe('active persona AI-judge suite', () => {
           expect(priorQualityEndurance, `${scenario.id} ${date}`).toHaveLength(0);
         }
       }
+
+      if (['persona_health_fatloss_baseline', 'persona_health_fatloss_low_time'].includes(scenario.id)) {
+        expect(
+          traces.filter((trace) => trace.selected?.category === 'Hard Endurance'),
+          scenario.id,
+        ).toHaveLength(0);
+      }
     }
   });
 
