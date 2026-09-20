@@ -87,9 +87,10 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
         const policy = resolveHealthPlanningPolicy(['health'], preferences, false);
         const moderateCycling = ENRICHED_TEMPLATES.find(t => t.id === 'end_mod_01')!;
         const hardRunning = ENRICHED_TEMPLATES.find(t => t.id === 'end_hard_01')!;
+        const hardCycling = ENRICHED_TEMPLATES.find(t => t.category === 'Hard Endurance' && t.modality === 'Cycling')!;
 
         const result = rankCandidates(
-            [moderateCycling, hardRunning], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], preferences,
+            [moderateCycling, hardRunning, hardCycling], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], preferences,
             { date: '2026-03-05', recentHistory: [], healthPlanningPolicy: policy },
         );
 
@@ -97,6 +98,23 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
         expect(result.rejected.find(candidate => candidate.template.id === 'end_hard_01')?.excludedReasons).toContain(
             'HEALTH_HARD_ENDURANCE_WITHHELD_WITHOUT_RUNNING_SUPPORT',
         );
+        expect(result.rejected.find(candidate => candidate.template.id === hardCycling.id)?.excludedReasons).toContain(
+            'HEALTH_HARD_ENDURANCE_WITHHELD_WITHOUT_RUNNING_SUPPORT',
+        );
+    });
+
+    it('preserves hard endurance when health is paired with an explicit performance priority', () => {
+        const preferences = { ...DEFAULT_PREFERENCES, preferredModalities: ['Strength', 'Walking', 'Cycling'] };
+        const policy = resolveHealthPlanningPolicy(['health', 'endurance'], preferences, false);
+        const hardCycling = ENRICHED_TEMPLATES.find(t => t.category === 'Hard Endurance' && t.modality === 'Cycling')!;
+
+        const result = rankCandidates(
+            [hardCycling], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], preferences,
+            { date: '2026-03-05', recentHistory: [], healthPlanningPolicy: policy },
+        );
+
+        expect(result.accepted.map(candidate => candidate.template.id)).toContain(hardCycling.id);
+        expect(result.rejected).toHaveLength(0);
     });
 
     it('does not gate hard endurance when running is explicitly supported', () => {
