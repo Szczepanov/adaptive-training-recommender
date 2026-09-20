@@ -40,11 +40,14 @@ Issue #675's capacity-sensitive acceptance evidence now lives in the plan-judge
 - weekday profile cap: 90 minutes;
 - weekend profile cap: 120 minutes.
 
-The deterministic invariant gate fails if those capacities regress, if either gran-fondo case
-never selects race-specific work longer than 60 minutes, or if its maximum race-specific
-duration does not exceed the matched criterium case. It also retains the sequence-separation
-and compact-criterium-template checks. This closes the original evidence gap where a
-60-minute check-in silently overrode the nominal 90-120-minute capacity.
+The deterministic invariant gate fails if those capacities regress or if either gran-fondo
+case never selects the sustained `end_race_specific_01` exposure above 60 minutes. The
+matched demand-specific comparison is deliberately template-specific: sustained gran-fondo
+`end_race_specific_01` must exceed criterium `end_crit_surges_01` in both selected
+duration and effective fatigue-resistance stimulus. This avoids a false comparison against
+other generic race-specific sessions that both plans may legitimately contain. The gate also
+retains sequence-separation and compact-criterium-template checks. This closes the original
+evidence gap where a 60-minute check-in silently overrode the nominal 90-120-minute capacity.
 
 The remediation suite additionally covers the exact cycling/low-surge durability predicate,
 effective-dose benefit scoring under time caps, phase eligibility, long-horizon ranking,

@@ -469,9 +469,12 @@ unconditionally.
 The legacy scenario pair remains a matched 60-minute control. Capacity-sensitive acceptance
 is enforced separately in the plan-judge event-demand family with a 120-minute check-in,
 90-minute weekday profile cap and 120-minute weekend cap. Its invariant gate requires both
-gran-fondo priority variants to select >60-minute race-specific work and to exceed the matched
-criterium maximum, preventing a nominal 90-120-minute fixture from silently collapsing back
-to 60 minutes.
+gran-fondo priority variants to select the sustained `end_race_specific_01` above 60 minutes
+and requires that demand-specific exposure to exceed the matched compact criterium
+`end_crit_surges_01` exposure in both duration and effective fatigue-resistance stimulus.
+The comparison is intentionally template-specific because both plans may also contain other
+generic race-specific work. This prevents a nominal 90-120-minute fixture from silently
+collapsing back to 60 minutes while measuring the event-demand distinction the policy owns.
 
 ### Graduated recovery re-entry after severe adverse recovery (Issues #679/#676, `planner.ts`)
 
