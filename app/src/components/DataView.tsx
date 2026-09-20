@@ -17,6 +17,7 @@ import { StrengthOverloadHistory } from './StrengthOverloadHistory';
 import { CompletedWorkoutList } from './CompletedWorkoutList';
 import { unlinkCompletedWorkoutSource } from './completedWorkoutActions';
 import { BodyCompositionPanel } from './anthropometry/BodyCompositionPanel';
+import { NutritionPanel } from './nutrition/NutritionPanel';
 import { configuredActivitiesReadModelPolicy } from '../training-occurrence/activitiesReadModelPolicy';
 import { getCompletedWorkoutsInRange } from '../training-occurrence/activitiesReadModelService';
 import type { CompletedWorkoutView } from '../training-occurrence/completedWorkoutView';
@@ -38,7 +39,7 @@ interface DataViewProps {
   onNavigateToBrief?: () => void;
 }
 
-type DataViewTab = 'recovery' | 'activities' | 'strength' | 'body' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief';
+type DataViewTab = 'recovery' | 'activities' | 'strength' | 'nutrition' | 'body' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief';
 
 type AdherenceStats = Awaited<ReturnType<typeof recommendationService.getAdherenceStats>>;
 
@@ -1036,6 +1037,12 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
           Strength History
         </button>
         <button
+          className={activeTab === 'nutrition' ? 'active' : ''}
+          onClick={() => setActiveTab('nutrition')}
+        >
+          Nutrition
+        </button>
+        <button
           className={activeTab === 'body' ? 'active' : ''}
           onClick={() => setActiveTab('body')}
         >
@@ -1157,6 +1164,9 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
           <div className="data-section">
             <StrengthOverloadHistory userId={userId} />
           </div>
+        )}
+        {activeTab === 'nutrition' && (
+          <NutritionPanel userId={userId} asOfDate={briefDate} />
         )}
         {activeTab === 'body' && (
           <BodyCompositionPanel userId={userId} asOfDate={briefDate} />

@@ -59,6 +59,7 @@ class MetricDates:
     weight: str | None = None
     spo2: str | None = None
     skinTempDeviation: str | None = None
+    energyExpenditure: str | None = None
 
     def to_dict(self) -> dict[str, str | None]:
         return asdict(self)
@@ -218,6 +219,9 @@ class RawMetrics:
     spo2: Spo2Summary | None = None
     skinTempDeviationCelsius: float | None = None
     recoveryTimeHours: int | None = None
+    activeEnergyKcal: float | None = None
+    restingEnergyKcal: float | None = None
+    totalEnergyExpenditureKcal: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -466,3 +470,35 @@ class HealthObservationDayBundle:
             "ingestedAt": self.ingestedAt,
             "effectiveAt": self.effectiveAt,
         }
+
+
+@dataclass
+class NutritionDayDTO:
+    userId: str
+    logicalDate: str
+    provider: str
+    transport: str
+    origin: str | None = None
+    energyIntakeKcal: float | None = None
+    proteinG: float | None = None
+    carbohydrateG: float | None = None
+    fatG: float | None = None
+    fiberG: float | None = None
+    sugarG: float | None = None
+    goalEnergyIntakeKcal: float | None = None
+    hasIntakeData: bool = False
+    isPartial: bool = False
+    loggedAt: str | None = None
+    schemaVersion: int = 1
+    revision: int = 1
+    ingestedAt: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        d = {k: v for k, v in asdict(self).items() if v is not None}
+        d["date"] = self.logicalDate
+        d["source"] = {
+            "provider": self.provider,
+            "transport": self.transport,
+            "origin": self.origin,
+        }
+        return d

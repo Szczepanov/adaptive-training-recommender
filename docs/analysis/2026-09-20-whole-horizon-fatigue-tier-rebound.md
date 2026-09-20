@@ -59,25 +59,44 @@ whole-horizon consequence is what the test's monotonicity assumption doesn't hol
 
 ## Disposition: Formal Resolution (Issue #692)
 
-Per [issue #692](https://github.com/Szczepanov/adaptive-training-recommender/issues/692),
-whole-horizon monotonicity across counterfactuals is **formally decided and accepted as
-an intentional characteristic of the greedy day-by-day fatigue-tier architecture**, not an
-unresolved defect.
+This PR resolves [issue #692](https://github.com/Szczepanov/adaptive-training-recommender/issues/692)
+by treating cross-counterfactual whole-horizon monotonicity as a **planner non-invariant**, not a
+required product invariant.
 
-### Rationale:
-1. **Local state validity:** Each forecast date's fatigue tier (`train` / `modify` / `recover`)
-   is evaluated strictly against the athlete's actual projected physiological fatigue state as-of
-   that date.
-2. **Physiological principle of recovery capacity:** In periodization and adaptive training,
-   resting more on an earlier day is *intended* to clear accumulated fatigue and restore capacity
-   for subsequent training. Artificially suppressing a fully-recovered athlete on a later day
-   because they rested earlier would invert the purpose of recovery and risk under-delivering
-   required training stimulus.
-3. **Absence of counterfactuals at runtime:** In production, the recommender evaluates a single
-   athlete timeline; there is no concurrent counterfactual against which to enforce cross-scenario
-   monotonicity. Enforcing cross-run monotonicity would require ad-hoc global heuristics that
-   conflict with daily physiological readiness.
+### Rationale
 
-Accordingly, the non-blocking warnings in `app/src/engine/recentLoadHorizonDensity.test.ts`
-and `app/scripts/check-plan-judge-invariants.mjs` are retained as characterization telemetry
-rather than defect gates.
+1. **Local state is the executable contract.** Each forecast date's fatigue tier
+   (`train` / `modify` / `recover`) is evaluated against the model-projected fatigue state as-of
+   that date. Hard safety, feasibility, injury, daily-ledger, and required-role constraints remain
+   binding regardless of this decision.
+2. **Recovery-aware autoregulation can legitimately change later capacity, but this is not a
+   physiology proof.** Training practice and autoregulation literature support adjusting workload
+   to readiness/recovery over time. They do **not** validate this engine's internal fatigue score,
+   `systemicCost` cut-points, or a universal rule that a more recent historical load must produce a
+   lower 14-day cumulative plan. The architecture explicitly records the current fatigue fusion as
+   uncalibrated; wording such as "actual physiological state" or "fully recovered" is therefore too
+   strong.
+3. **The counterfactual does not exist at runtime.** Production evaluates one athlete timeline.
+   Enforcing a paired-run total-load ordering would require a separate explicit horizon budget or
+   other product policy, not a comparison the live engine can observe.
+4. **Preference semantics remain bounded.** `conservativeBias` is surfaced as **Extra Recovery
+   Margin**: when readiness signals are borderline or ambiguous, choose lower-risk/lower-dose
+   options. Per-candidate conservative ranking remains hard-tested. This decision does not redefine
+   the preference as a global 14-day load cap.
+
+Accordingly, `app/src/engine/recentLoadHorizonDensity.test.ts` now asserts the near-term response
+to a recent hard exposure and reports the longer-horizon ordering only as characterization
+telemetry. `app/scripts/check-plan-judge-invariants.mjs` likewise reports the matched
+neutral/conservative totals as telemetry rather than a warning/failure.
+
+### Evidence boundary
+
+- Halson S. *Monitoring training load to understand fatigue in athletes.* Sports Med. 2014.
+  PMID 25200666 — emphasizes individualized, multi-marker interpretation and notes that no single
+  definitive fatigue marker has strong enough evidence to stand alone.
+- Ibrahim AH, Beaumont CT, Strohacker K. *Implementing Meta-Session Autoregulation Strategies for
+  Exercise — A Scoping Review.* Int J Exerc Sci. 2024. PMID 38665139 — describes adjustment of
+  training to day-to-day fitness/fatigue/readiness, while highlighting heterogeneous implementation.
+
+These sources support cautious autoregulation as a concept; they do not validate this engine's
+specific thresholds or make the accepted non-invariant a scientific requirement.

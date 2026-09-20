@@ -2670,5 +2670,11 @@ service cloud.firestore {
       allow read: if isOwner(userId);
       allow write: if false; // Server-managed only
     }
+
+    // --- ADR-0042: server-owned daily nutrition observation day bundles.
+    match /users/{userId}/nutrition_days/{daySourceId} {
+      allow read: if isOwner(userId);
+      allow write: if false; // Server-managed only
+    }
   }
 }

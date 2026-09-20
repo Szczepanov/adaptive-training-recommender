@@ -440,6 +440,51 @@ class CanonicalDailyMetrics:
     spo2: CanonicalSpo2 | None = None
     skin_temp_deviation_celsius: float | None = None
     recovery_time_hours: int | None = None
+    # Energy expenditure (ADR-0042) -- watch-measured resting/active/total calories.
+    active_energy_kcal: float | None = None
+    resting_energy_kcal: float | None = None
+    total_energy_expenditure_kcal: float | None = None
+
+
+@dataclass(frozen=True)
+class NutritionSource:
+    provider: str
+    transport: str
+    origin: str | None = None
+    source_record_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.provider or not self.provider.strip():
+            raise ValueError("NutritionSource requires a non-empty provider.")
+        if not self.transport or not self.transport.strip():
+            raise ValueError("NutritionSource requires a non-empty transport.")
+
+
+@dataclass
+class CanonicalNutritionDay:
+    logical_date: str
+    source: NutritionSource
+    energy_intake_kcal: float | None = None
+    protein_g: float | None = None
+    carbohydrate_g: float | None = None
+    fat_g: float | None = None
+    fiber_g: float | None = None
+    sugar_g: float | None = None
+    goal_energy_intake_kcal: float | None = None
+    has_intake_data: bool = False
+    is_partial: bool = False
+    logged_at: datetime | None = None
+    quality: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        if not self.logical_date:
+            raise ValueError("CanonicalNutritionDay requires a valid YYYY-MM-DD logical_date.")
+        try:
+            datetime.strptime(self.logical_date, "%Y-%m-%d")
+        except ValueError as exc:
+            raise ValueError(
+                f"CanonicalNutritionDay requires a valid YYYY-MM-DD logical_date, got: {self.logical_date!r}"
+            ) from exc
 
 
 @dataclass

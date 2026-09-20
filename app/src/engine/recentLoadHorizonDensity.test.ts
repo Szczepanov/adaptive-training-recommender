@@ -21,8 +21,8 @@ function horizonMetrics(result: Awaited<ReturnType<typeof runScenario>>) {
     };
 }
 
-describe('recent load whole-horizon density (Issue #676)', () => {
-    it('orders 14-day hard density and cumulative systemic cost by recency of the prior hard exposure', async () => {
+describe('recent load horizon response (Issue #676 / #692)', () => {
+    it('reduces near-term load after a recent hard exposure and reports whole-horizon rebound telemetry', async () => {
         const base = SCENARIOS.find(s => s.id === 'cycling_criterium_A');
         expect(base).toBeDefined();
         if (!base) return;
@@ -54,43 +54,33 @@ describe('recent load whole-horizon density (Issue #676)', () => {
             ['no recent hard load', horizonMetrics(none)],
         ] as const;
 
-        // Issue #692: whole-horizon monotonicity across counterfactuals is formally
-        // accepted as an intentional characteristic of the greedy day-by-day fatigue-tier
-        // architecture (see docs/analysis/2026-09-20-whole-horizon-fatigue-tier-rebound.md).
-        // Resting more on an earlier day (a correct, individually-sound response to the seeded
-        // exposure -- 2026-08-11 becomes full rest_01/'recover' tier here, vs the lighter
-        // mob_01/'modify' tier the "no recent hard load" run picks) lets fatigue clear fast
-        // enough that 2026-08-12 reaches 'train' tier instead of 'modify' tier, removing the
-        // systemicCost <= modifyMaxSystemicCost ceiling. Whatever discretionary or strength session
-        // lands there then receives the full-dose template (str_full_01, cost 0.8) instead of
-        // the ceiling-capped one (str_full_03, cost 0.45) the "no recent hard load" run uses.
-        // This is the intended periodization effect of recovery headroom under local
-        // fatigue-tier gating, not an unresolved defect. The checks below assert monotonicity
-        // where it holds and report characterization telemetry where earlier rest unlocked a
-        // fuller dose later.
+        // Issue #692 resolves the former whole-horizon monotonicity expectation as a
+        // non-invariant of this greedy day-by-day planner. A recent hard exposure can
+        // correctly reduce near-term load, create more recovery headroom in the model,
+        // and later cross a local fatigue-tier boundary sooner than a matched baseline.
+        // That later rebound is characterization telemetry, not proof that the athlete is
+        // physiologically "more recovered": the internal fatigue projection is a product
+        // model and is explicitly not calibrated as a direct physiological measurement.
+        // Hard safety/feasibility gates and the near-term response to recent load remain
+        // executable contracts; cross-counterfactual 14-day ordering does not.
         const violations: string[] = [];
         for (let i = 0; i < ordered.length - 1; i++) {
             const [moreRecentLabel, moreRecent] = ordered[i];
             const [lessRecentLabel, lessRecent] = ordered[i + 1];
             if (moreRecent.hardCount > lessRecent.hardCount) {
                 violations.push(`${moreRecentLabel} has more hard sessions (${moreRecent.hardCount}) than ${lessRecentLabel} (${lessRecent.hardCount}).`);
-            } else {
-                expect(
-                    moreRecent.hardCount,
-                    `${moreRecentLabel} should not create more hard sessions than ${lessRecentLabel}`,
-                ).toBeLessThanOrEqual(lessRecent.hardCount);
             }
             if (moreRecent.systemicTotal > lessRecent.systemicTotal + 1e-9) {
                 violations.push(`${moreRecentLabel} has higher cumulative systemic cost (${moreRecent.systemicTotal.toFixed(3)}) than ${lessRecentLabel} (${lessRecent.systemicTotal.toFixed(3)}).`);
-            } else {
-                expect(
-                    moreRecent.systemicTotal,
-                    `${moreRecentLabel} should not create more cumulative systemic cost than ${lessRecentLabel}`,
-                ).toBeLessThanOrEqual(lessRecent.systemicTotal + 1e-9);
             }
         }
         if (violations.length > 0) {
-            console.warn(`Whole-horizon monotonicity characterization telemetry (Issue #692, accepted architecture characteristic -- see docs/analysis/2026-09-20-whole-horizon-fatigue-tier-rebound.md):\n- ${violations.join('\n- ')}`);
+            console.info(`Whole-horizon monotonicity characterization telemetry (Issue #692 accepted non-invariant):\n- ${violations.join('\n- ')}`);
+        }
+
+        for (const [, metrics] of ordered) {
+            expect(Number.isFinite(metrics.hardCount)).toBe(true);
+            expect(Number.isFinite(metrics.systemicTotal)).toBe(true);
         }
 
         expect(hard1d.decisionTraces[0].selected.projectedCost.systemic).toBeLessThan(0.5);

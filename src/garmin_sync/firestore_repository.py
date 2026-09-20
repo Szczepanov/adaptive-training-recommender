@@ -723,6 +723,153 @@ class FirestoreRecoveryRepository:
         docs.sort(key=lambda d: d.get("logicalDate", ""))
         return docs
 
+    def save_nutrition_day(
+        self,
+        nutrition_day: Any,  # NutritionDayDTO
+    ) -> tuple[bool, int]:
+        """Save a day-source nutrition observation idempotently (ADR-0042).
+
+        The document identity is deterministic:
+        users/{userId}/nutrition_days/{YYYY-MM-DD}_{provider}_{transport}.
+
+        Returns (changed, revision). Replaying identical stable content is a
+        no-op and does not churn revision/ingestedAt. A changed observation
+        increments the revision. Firestore transactions close the read/compare/write
+        race in production; the non-transactional fallback keeps lightweight test
+        doubles and offline tooling usable.
+        """
+        db = self._get_db()
+        doc_id = f"{nutrition_day.logicalDate}_{nutrition_day.provider}_{nutrition_day.transport}"
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("nutrition_days")
+            .document(doc_id)
+        )
+
+        stable_keys = (
+            "userId",
+            "logicalDate",
+            "date",
+            "provider",
+            "transport",
+            "origin",
+            "source",
+            "energyIntakeKcal",
+            "proteinG",
+            "carbohydrateG",
+            "fatG",
+            "fiberG",
+            "sugarG",
+            "goalEnergyIntakeKcal",
+            "hasIntakeData",
+            "isPartial",
+            "loggedAt",
+            "schemaVersion",
+        )
+
+        def _stable_payload(payload: dict[str, Any]) -> dict[str, Any]:
+            return {key: payload.get(key) for key in stable_keys}
+
+        desired_stable = _stable_payload(nutrition_day.to_dict())
+        now_iso = datetime.now(timezone.utc).isoformat()
+        transaction_factory = getattr(db, "transaction", None)
+
+        if callable(transaction_factory) and firestore is not None:
+
+            @firestore.transactional
+            def _update_in_txn(txn: Any) -> tuple[bool, int]:
+                existing_doc = doc_ref.get(transaction=txn)
+                current_rev = 1
+                if existing_doc.exists:
+                    data = existing_doc.to_dict() or {}
+                    current_rev = data.get("revision", 1)
+                    if _stable_payload(data) == desired_stable:
+                        return False, current_rev
+                    current_rev += 1
+
+                nutrition_day.revision = current_rev
+                nutrition_day.ingestedAt = now_iso
+                txn.set(doc_ref, nutrition_day.to_dict())
+                return True, current_rev
+
+            return _update_in_txn(transaction_factory())
+
+        existing_doc = doc_ref.get()
+        current_rev = 1
+        if existing_doc.exists:
+            data = existing_doc.to_dict() or {}
+            current_rev = data.get("revision", 1)
+            if _stable_payload(data) == desired_stable:
+                return False, current_rev
+            current_rev += 1
+
+        nutrition_day.revision = current_rev
+        nutrition_day.ingestedAt = now_iso
+        doc_ref.set(nutrition_day.to_dict())
+        return True, current_rev
+
+    def get_nutrition_day(
+        self,
+        logical_date: str,
+        provider: str,
+        transport: str,
+    ) -> dict[str, Any] | None:
+        """Retrieve one day-source nutrition document if it exists."""
+        db = self._get_db()
+        doc_id = f"{logical_date}_{provider}_{transport}"
+        doc = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("nutrition_days")
+            .document(doc_id)
+            .get()
+        )
+        return doc.to_dict() if doc.exists else None
+
+    def get_nutrition_days_in_range(
+        self,
+        start_date: str,
+        end_date: str,
+        provider: str | None = None,
+        transport: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Retrieve all nutrition day documents within [start_date, end_date]."""
+        db = self._get_db()
+        query = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("nutrition_days")
+            .where(filter=FieldFilter("logicalDate", ">=", start_date))
+            .where(filter=FieldFilter("logicalDate", "<=", end_date))
+        )
+
+        docs: list[dict[str, Any]] = []
+        chunk_size = 500
+        paged_query = query.limit(chunk_size)
+
+        while True:
+            chunk_docs = list(paged_query.stream())
+            if not chunk_docs:
+                break
+
+            for doc in chunk_docs:
+                data = doc.to_dict()
+                if provider and data.get("provider") != provider:
+                    continue
+                if transport and data.get("transport") != transport:
+                    continue
+                docs.append(data)
+
+            if len(chunk_docs) < chunk_size:
+                break
+
+            last_doc = chunk_docs[-1]
+            paged_query = query.start_after(last_doc).limit(chunk_size)
+
+        docs.sort(key=lambda d: d.get("logicalDate", ""))
+        return docs
+
     def save_connection_metadata(
         self,
         connection_name: str,

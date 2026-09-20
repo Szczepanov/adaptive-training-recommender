@@ -691,15 +691,16 @@ Rolling re-resolution carries that state by `WeeklyObjective.id`, never the disp
 `key`: one triathlon week deliberately contains separate Swimming, Cycling, and Running
 `zone2_aerobic` objectives with the same key but different qualification contracts.
 
-**Day-by-day local fatigue tier evaluation and recovery capacity.** Forecast days are evaluated
-locally against projected fatigue as-of that date (`planner.ts` `evaluateProjectedDate`). When
-earlier days rest more (e.g. from an active recovery need, a seeded prior hard exposure, or
-`conservativeBias`), accumulated fatigue clears faster; subsequent forecast days may legitimately
-cross into the `train` fatigue tier earlier than in a counterfactual run that did continuous light
-work. This is the intended periodization effect of recovery headroom under greedy local evaluation
-(Issue #692). The engine evaluates the athlete's single actual timeline without reference to
-synthetic counterfactuals, and whole-horizon monotonicity across counterfactuals is an accepted
-non-invariant.
+**Day-by-day local fatigue tier evaluation and modeled recovery headroom.** Forecast days are
+evaluated locally against the planner's projected fatigue state as-of that date (`planner.ts`
+`evaluateProjectedDate`). When earlier days carry less modeled load (for example from a recovery
+need, a seeded prior hard exposure, or `conservativeBias`), a later forecast date can cross into the
+`train` tier earlier than a synthetic counterfactual that continued light work. Issue #692 accepts
+that cross-counterfactual whole-horizon monotonicity is not an invariant of this greedy local
+planner. This is an architecture/product-policy decision, **not** a claim that the internal fatigue
+projection is a calibrated measurement of physiological recovery; the completed-load section above
+explicitly records that the current fatigue fusion is not calibrated. Hard safety/feasibility gates
+and per-candidate conservative ranking contracts remain unchanged.
 
 ### Required weekly-role reservations (ADR-0018)
 
