@@ -459,13 +459,19 @@ aerobicEndurance and fatigueResistance from a Cycling `Race-Specific Endurance` 
 
 The compact criterium surge template is phase-eligible only when the governing event's
 repeatedSurges demand is at least 0.6, so it cannot satisfy a low-surge gran-fondo plan.
-Long-horizon `Race-Specific Endurance` benefit is also preserved for the high-durability
-profile instead of applying the generic >21-day race-specific softening. The existing
-eligibility, injury, recovery, taper, duration, daily-ledger and weekly-anchor gates remain
-authoritative; the change selects a more appropriate feasible stimulus rather than maximizing
-duration unconditionally. Deterministic parity fixtures in
-`granFondoDurabilityRemediation.test.ts` and the plan-judge event-demand cases compare equal
-capacity/horizon criterium and gran-fondo plans.
+Long-horizon `Race-Specific Endurance` benefit is also preserved only for that same
+**cycling + high-aerobic + high-fatigue-resistance + low-surge** predicate instead of applying
+the exception to unrelated high-aerobic running/triathlon events. The existing eligibility,
+injury, recovery, taper, duration, daily-ledger and weekly-anchor gates remain authoritative;
+the change selects a more appropriate feasible stimulus rather than maximizing duration
+unconditionally.
+
+The legacy scenario pair remains a matched 60-minute control. Capacity-sensitive acceptance
+is enforced separately in the plan-judge event-demand family with a 120-minute check-in,
+90-minute weekday profile cap and 120-minute weekend cap. Its invariant gate requires both
+gran-fondo priority variants to select >60-minute race-specific work and to exceed the matched
+criterium maximum, preventing a nominal 90-120-minute fixture from silently collapsing back
+to 60 minutes.
 
 ### Graduated recovery re-entry after severe adverse recovery (Issues #679/#676, `planner.ts`)
 

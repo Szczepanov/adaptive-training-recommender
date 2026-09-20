@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { ENRICHED_TEMPLATES } from './templates';
 import { isTemplatePhaseEligible, type PeriodizationResult } from './periodization';
 import { resolveDemandProfile } from './eventPresets';
-import { rankCandidates, HEAVY_LOWER_BODY_STRENGTH_CATEGORIES } from './optimizer';
+import { rankCandidates, HEAVY_LOWER_BODY_STRENGTH_CATEGORIES, isCyclingDurabilityFocusEvent } from './optimizer';
 import { createEmptyFatigue } from './fatigue';
 import { evaluateTrainingWithIntent } from './rules';
 import { SCENARIOS } from './simulation/scenarios';
@@ -108,6 +108,24 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
         expect(isTemplatePhaseEligible(critSurges, critPeriodization)).toBe(true);
     });
 
+    it('scopes the durability exception to low-surge cycling demand rather than high-aerobic events generally', () => {
+        const event = (category: UserEvent['category'], preset: string): UserEvent => ({
+            id: `scope-${category}-${preset}`,
+            category,
+            title: preset,
+            date: '2026-09-20',
+            priority: 'A',
+            lifecycle: 'scheduled',
+            demandProfile: resolveDemandProfile(category, preset),
+        });
+
+        expect(isCyclingDurabilityFocusEvent(event('cycling_event', 'gran_fondo'))).toBe(true);
+        expect(isCyclingDurabilityFocusEvent(event('cycling_event', 'gravel'))).toBe(true);
+        expect(isCyclingDurabilityFocusEvent(event('cycling_event', 'road_race'))).toBe(false);
+        expect(isCyclingDurabilityFocusEvent(event('triathlon', 'half_iron'))).toBe(false);
+        expect(isCyclingDurabilityFocusEvent(event('running_race', 'marathon'))).toBe(false);
+    });
+
     it('preserves long-horizon benefit for Gran Fondo durability sessions (>21 days)', () => {
         const raceSpecific = ENRICHED_TEMPLATES.find(t => t.id === 'end_race_specific_01')!;
         const granFondoDemand = resolveDemandProfile('cycling_event', 'gran_fondo');
@@ -166,6 +184,70 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
         const candidate = ranking.accepted[0];
         // Benefit should not be halved (should exceed 1.0 due to preference and stimulus)
         expect(candidate.benefitScore).toBeGreaterThan(1.0);
+    });
+
+    it('scores capped race-specific work from the effective dose, not the authored 150-minute dose', () => {
+        const raceSpecific = ENRICHED_TEMPLATES.find(t => t.id === 'end_race_specific_01')!;
+        const granFondoDemand = resolveDemandProfile('cycling_event', 'gran_fondo');
+        const focusEvent: UserEvent = {
+            id: 'e-gran-fondo-effective-dose',
+            category: 'cycling_event',
+            title: 'Gran Fondo Effective Dose',
+            date: '2026-09-30',
+            priority: 'A',
+            lifecycle: 'scheduled',
+            demandProfile: granFondoDemand,
+        };
+        const unresolved: WeeklyObjective[] = [{
+            id: 'obj_gran_fondo_effective_dose',
+            key: 'race_specific_endurance',
+            title: 'Gran Fondo Durability',
+            targetExposures: 1,
+            completedExposures: 0,
+            targetStimulus: { aerobicEndurance: 0.9, fatigueResistance: 0.85, thresholdPower: 0.6 },
+            qualification: {
+                minimumStimulus: { aerobicEndurance: 0.6, fatigueResistance: 0.6 },
+                allowedModalities: ['Cycling'],
+                allowedCategories: ['Race-Specific Endurance'],
+            },
+        }];
+
+        const rankAtCap = (cap: number, doseRatio: number) => {
+            const candidate = {
+                ...raceSpecific,
+                easierDose: {
+                    label: `cap-${cap}`,
+                    durationMin: raceSpecific.durationMin,
+                    durationMax: cap,
+                    doseRatio,
+                    prescriptionSummary: `Cap-safe ${cap} minute durability dose.`,
+                },
+            };
+            const availability: ResolvedAvailability = {
+                date: '2026-08-16',
+                maxTimeMinutes: cap,
+                availableEquipment: ['outdoor_bike'],
+                fixedActivities: [],
+                reservedCapacityCost: 0,
+                reservedCapacityCostProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+                environmentOverride: null,
+            };
+            return rankCandidates(
+                [candidate],
+                unresolved,
+                createEmptyFatigue('2026-08-16'),
+                availability,
+                [],
+                { ...DEFAULT_PREFERENCES, preferredModalities: ['Cycling'] },
+                { date: '2026-08-16', focusEvent, resolvedAvailability: availability },
+            ).accepted[0];
+        };
+
+        const capped60 = rankAtCap(60, 0.4);
+        const capped120 = rankAtCap(120, 0.8);
+        expect(capped60.benefitScore).toBeLessThan(1);
+        expect(capped120.benefitScore).toBeGreaterThan(3);
+        expect(capped120.benefitScore).toBeGreaterThan(capped60.benefitScore);
     });
 
     it('suppresses heavy lower-body strength and high systemic cost candidates when adjacent to an anchor', () => {
@@ -281,7 +363,7 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
         expect(fulfilled.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('materially separates gran fondo from criterium at equal capacity and horizon', async () => {
+    it('materially separates the 60-minute baseline gran-fondo and criterium controls at equal cap and horizon', async () => {
         const granFondo = SCENARIOS.find(s => s.id === 'cycling_gran_fondo_A');
         const criterium = SCENARIOS.find(s => s.id === 'cycling_criterium_A');
         expect(granFondo).toBeDefined();
@@ -291,6 +373,11 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
         expect(granFondo.startDate).toBe(criterium.startDate);
         expect(granFondo.weeks).toBe(criterium.weeks);
         expect(granFondo.context.constraints).toEqual(criterium.context.constraints);
+        // These legacy scenario controls intentionally remain 60-minute check-in cases.
+        // Issue #675's 90/120-minute acceptance evidence lives in the plan-judge
+        // event-demand family, where capacity is now explicit and invariant-checked.
+        expect(granFondo.readinessForWeek(0).subjective.timeAvailable).toBe(60);
+        expect(criterium.readinessForWeek(0).subjective.timeAvailable).toBe(60);
 
         const [granResult, criteriumResult] = await Promise.all([
             runScenario(granFondo),

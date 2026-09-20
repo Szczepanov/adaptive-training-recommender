@@ -27,21 +27,29 @@ and fatigue resistance an explicit objective when capacity and event demand supp
 
 ## Deterministic evidence
 
-The equal-capacity/equal-horizon `cycling_gran_fondo_A` and `cycling_criterium_A` scenarios
-both simulate 28 days with the same context constraints. The resulting event-specific
-sequences are materially different:
+The legacy `cycling_gran_fondo_A` and `cycling_criterium_A` scenarios remain useful
+60-minute-cap controls: they prove template/objective separation under identical constraints,
+but they are **not** treated as evidence that a higher-capacity athlete receives enough
+durability volume. Their event-specific paths remain intentionally different
+(`end_race_specific_01` for gran fondo, `end_crit_surges_01` for criterium).
 
-| Case | Race-specific template evidence | Maximum selected duration | Objective evidence |
-|---|---|---:|---|
-| Gran fondo | `end_race_specific_01`; no `end_crit_surges_01` | 60 min in the capped scenario | durability objective generated 4 times; delivered stimulus remains below the 0.6 qualification floor under the 60-minute cap |
-| Criterium | `end_crit_surges_01` selected for surge-specific work | 45 min | surge objective generated/resolved across the horizon |
+Issue #675's capacity-sensitive acceptance evidence now lives in the plan-judge
+`event_demand` family. All four criterium/gran-fondo A/B cases explicitly set:
 
-The plan-judge corpus was regenerated and its deterministic invariants passed for 95 cases
-across 18 families. Event-demand sequence distance was 0.286 for both A- and B-priority
-comparisons; the compact criterium template count was 2 for criterium A and 0 for gran-fondo
-A. The gran-fondo remediation suite covers phase eligibility, long-horizon ranking,
-anchor-adjacent systemic suppression, scheduled race-day ledger admission, and the equal-
-capacity/equal-horizon comparison.
+- check-in availability: 120 minutes;
+- weekday profile cap: 90 minutes;
+- weekend profile cap: 120 minutes.
+
+The deterministic invariant gate fails if those capacities regress, if either gran-fondo case
+never selects race-specific work longer than 60 minutes, or if its maximum race-specific
+duration does not exceed the matched criterium case. It also retains the sequence-separation
+and compact-criterium-template checks. This closes the original evidence gap where a
+60-minute check-in silently overrode the nominal 90-120-minute capacity.
+
+The remediation suite additionally covers the exact cycling/low-surge durability predicate,
+effective-dose benefit scoring under time caps, phase eligibility, long-horizon ranking,
+anchor-adjacent heavy-strength suppression, scheduled race-day ledger admission, and the
+legacy equal-cap/horizon control.
 
 ## Safety and feasibility review
 
@@ -53,12 +61,14 @@ handling paths were changed.
 
 ## Verification record
 
-- `npm run test -- --run src/engine/granFondoDurabilityRemediation.test.ts`: 6 passed.
-- Focused engine/knowledge/policy suites: 296 passed; the full frontend gate passed 5,972 tests
-  with 285 skipped.
-- `npm run simulate:scenarios`: 39 scenarios generated successfully.
-- `npm run simulate:plan-judge`: 95 cases / 18 families; invariants passed.
-- `npm run simulate:diff`: the reviewed baseline was refreshed after rebasing onto current
-  `origin/main`; it now reports no semantic differences.
-- External manual LLM judging was not re-run locally; the deterministic corpus/invariant run
-  is the reproducible gate used for this change.
+The PR CI is the reproducible authority for this change. In particular, the
+`Engine Simulations & AI Gates` job runs the scenario corpus, deterministic plan-judge
+corpus/invariants and simulation semantic diff; the frontend gate runs the expanded
+`granFondoDurabilityRemediation.test.ts` suite together with the full unit-test corpus.
+The event-demand invariant output reports both sequence distance and matched
+race-specific maximum durations, making the 90/120-minute acceptance condition auditable.
+
+External manual LLM judging is not required as a merge gate for this remediation; the
+deterministic corpus/invariant checks are the reproducible regression contract. A future
+external judge run can still be used as outcome-calibration evidence rather than as the
+sole proof of correctness.

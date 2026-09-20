@@ -213,6 +213,29 @@ const demandDistanceB = templateSequenceDistance(critB, granB);
 fail(demandDistanceA > 0, 'A-priority criterium and gran-fondo cases produce identical selected-template sequences.');
 fail(demandDistanceB > 0, 'B-priority criterium and gran-fondo cases produce identical selected-template sequences.');
 
+for (const item of [critA, granA, critB, granB]) {
+  const readinessMinutes = item.input?.readiness?.subjective?.timeAvailable;
+  const defaults = item.input?.context?.trainingSettings?.defaults;
+  fail(readinessMinutes === 120, `${item.input.caseId}: event-demand fixture check-in capacity is ${readinessMinutes}, expected 120 minutes.`);
+  fail(defaults?.weekdayMaxMinutes === 90, `${item.input.caseId}: weekday profile capacity is ${defaults?.weekdayMaxMinutes}, expected 90 minutes.`);
+  fail(defaults?.weekendMaxMinutes === 120, `${item.input.caseId}: weekend profile capacity is ${defaults?.weekendMaxMinutes}, expected 120 minutes.`);
+}
+
+const maxRaceSpecificDuration = (item) => Math.max(
+  0,
+  ...(item.plan ?? [])
+    .filter((day) => day.session?.category === 'Race-Specific Endurance')
+    .map((day) => day.session?.durationMax ?? day.session?.durationMin ?? 0),
+);
+const critARaceSpecificMax = maxRaceSpecificDuration(critA);
+const granARaceSpecificMax = maxRaceSpecificDuration(granA);
+const critBRaceSpecificMax = maxRaceSpecificDuration(critB);
+const granBRaceSpecificMax = maxRaceSpecificDuration(granB);
+fail(granARaceSpecificMax > 60, `A-priority gran-fondo case never uses >60 minute race-specific work (max ${granARaceSpecificMax}).`);
+fail(granBRaceSpecificMax > 60, `B-priority gran-fondo case never uses >60 minute race-specific work (max ${granBRaceSpecificMax}).`);
+fail(granARaceSpecificMax > critARaceSpecificMax, `A-priority gran-fondo race-specific duration (${granARaceSpecificMax}) does not exceed criterium (${critARaceSpecificMax}).`);
+fail(granBRaceSpecificMax > critBRaceSpecificMax, `B-priority gran-fondo race-specific duration (${granBRaceSpecificMax}) does not exceed criterium (${critBRaceSpecificMax}).`);
+
 const critACompactCount = templateCount(critA, 'end_crit_surges_01');
 const granACompactCount = templateCount(granA, 'end_crit_surges_01');
 fail(critACompactCount > 0, 'A-priority criterium case never selects the compact criterium surge template.');
@@ -336,6 +359,7 @@ console.log(`Plan-judge invariants passed for ${cases.size} cases across ${famil
 console.log(`Families SHA-256: ${familiesSha256}`);
 console.log(`Event-demand sequence distance: A=${demandDistanceA.toFixed(3)}, B=${demandDistanceB.toFixed(3)}.`);
 console.log(`Compact criterium template count: criterium A=${critACompactCount}, gran fondo A=${granACompactCount}.`);
+console.log(`Event-demand race-specific max duration: A criterium=${critARaceSpecificMax}, gran fondo=${granARaceSpecificMax}; B criterium=${critBRaceSpecificMax}, gran fondo=${granBRaceSpecificMax}.`);
 for (const check of conservativeChecks) {
   console.log(`Conservative monotonicity ${check.conservativeId} vs ${check.neutralId}: hard ${check.conservative.hardSessions}/${check.neutral.hardSessions}, systemic ${check.conservative.systemic.toFixed(3)}/${check.neutral.systemic.toFixed(3)}, cardiovascular ${check.conservative.cardiovascular.toFixed(3)}/${check.neutral.cardiovascular.toFixed(3)}.`);
 }
