@@ -10,6 +10,7 @@ from .canonical import (
     CanonicalActivityDetail,
     CanonicalDailyMetrics,
     CanonicalGearItem,
+    CanonicalNutritionDay,
     CanonicalPerformanceTargets,
     ObservationBatch,
 )
@@ -28,6 +29,8 @@ class ProviderCapabilities:
     training_readiness: bool = False
     gear_tracking: bool = False
     workout_publishing: bool = False  # no adapter in this codebase exposes mutations
+    energy_expenditure: bool = False
+    nutrition: bool = False
 
 
 @dataclass
@@ -129,3 +132,18 @@ class ProfileProvider(Protocol):
     def fetch_performance_targets(self) -> ProviderPerformanceTargetsResult: ...
 
     def fetch_gear(self) -> ProviderGearResult: ...
+
+
+@dataclass
+class ProviderNutritionResult:
+    """Canonical nutrition day plus the raw payload that produced it."""
+
+    canonical: CanonicalNutritionDay
+    raw_payload: dict[str, Any]
+
+
+@runtime_checkable
+class NutritionProvider(Protocol):
+    """Capability-specific provider boundary for source-aware daily nutrition observations (ADR-0042)."""
+
+    def fetch_daily_nutrition(self, target_date_iso: str) -> ProviderNutritionResult | None: ...

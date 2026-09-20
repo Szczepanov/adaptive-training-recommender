@@ -1133,6 +1133,7 @@ export interface DailyRecoverySnapshot {
             weight?: string | null;
             spo2?: string | null;
             skinTempDeviation?: string | null;
+            energyExpenditure?: string | null;
         };
     };
     raw: {
@@ -1186,6 +1187,9 @@ export interface DailyRecoverySnapshot {
         } | null;
         skinTempDeviationCelsius?: number | null;
         recoveryTimeHours?: number | null;
+        activeEnergyKcal?: number | null;
+        restingEnergyKcal?: number | null;
+        totalEnergyExpenditureKcal?: number | null;
     };
     derived: {
         baselineComputationVersion: number;

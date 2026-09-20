@@ -280,6 +280,13 @@ def _build_metric_dates(
         skinTempDeviation=(
             selected_sleep_date if canonical.skin_temp_deviation_celsius is not None else None
         ),
+        energyExpenditure=(
+            target_date_iso
+            if canonical.active_energy_kcal is not None
+            or canonical.resting_energy_kcal is not None
+            or canonical.total_energy_expenditure_kcal is not None
+            else None
+        ),
     )
 
 
@@ -393,6 +400,9 @@ def _build_raw_metrics(
         spo2=spo2_summary,
         skinTempDeviationCelsius=canonical.skin_temp_deviation_celsius,
         recoveryTimeHours=canonical.recovery_time_hours,
+        activeEnergyKcal=canonical.active_energy_kcal,
+        restingEnergyKcal=canonical.resting_energy_kcal,
+        totalEnergyExpenditureKcal=canonical.total_energy_expenditure_kcal,
     )
 
 
