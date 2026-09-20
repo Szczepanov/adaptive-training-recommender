@@ -119,8 +119,18 @@ recovered enough to do it. That is a training-philosophy product decision, not a
 engineering bug fix, and is exactly the kind of judgment call issue #677 asked to be made
 explicitly rather than picked silently. **Left undecided and unimplemented.** The
 `judge_pref_conservative`/`judge_mode_conservative_preference` monotonicity assertions in
-`check-plan-judge-invariants.mjs` still fail against the real corpus as of this update; see
-that file's inline comment for the current disposition.
+`check-plan-judge-invariants.mjs` were softened from hard failures to non-blocking warnings
+for this reason -- see that file's inline comment for the current disposition.
+
+**Update 2026-09-20.** The identical root cause (no whole-horizon load budget, only
+per-day local fatigue-tier classification) independently surfaced from issue #676's
+recent-load-recency work (`app/src/engine/recentLoadHorizonDensity.test.ts`, also
+softened to a warning; see
+`docs/analysis/2026-09-20-whole-horizon-fatigue-tier-rebound.md`). Both are now tracked
+jointly as cross-cutting
+[issue #692](https://github.com/Szczepanov/adaptive-training-recommender/issues/692),
+since a same-PR patch to either finding's own heuristic was shown not to actually be the
+mechanism, and a real fix needs to close both reproductions together.
 
 ## Non-goals honored
 

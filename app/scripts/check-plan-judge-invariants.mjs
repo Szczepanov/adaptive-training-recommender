@@ -143,6 +143,10 @@ fail(travel.plan.slice(0, 3).some((day) => !['Rest', 'Mobility/Recovery'].includ
 // under conservativeBias, capping opportunistic hard work even once genuinely recovered)
 // that is a training-philosophy product decision, not an engineering fix, and has not been
 // made. These checks are therefore WARNINGS, not failures, until that decision is made.
+// The identical root cause (no whole-horizon load budget, only per-day local fatigue-tier
+// classification) independently surfaced from issue #676's recent-load-recency work too
+// (app/src/engine/recentLoadHorizonDensity.test.ts, also softened to a warning) -- tracked
+// jointly as cross-cutting issue #692, which un-softening this needs to resolve too.
 const planLoad = (item) => (item.plan ?? []).reduce((acc, day) => {
   const systemic = day.session?.systemicCost ?? 0;
   const cardiovascular = day.session?.costProfile?.cardiovascular ?? 0;
@@ -336,6 +340,6 @@ for (const check of conservativeChecks) {
   console.log(`Conservative monotonicity ${check.conservativeId} vs ${check.neutralId}: hard ${check.conservative.hardSessions}/${check.neutral.hardSessions}, systemic ${check.conservative.systemic.toFixed(3)}/${check.neutral.systemic.toFixed(3)}, cardiovascular ${check.conservative.cardiovascular.toFixed(3)}/${check.neutral.cardiovascular.toFixed(3)}.`);
 }
 if (conservativeWarnings.length > 0) {
-  console.warn('Conservative-monotonicity warnings (Mechanism B, accepted -- see docs/analysis/2026-09-19-conservative-travel-overlay-investigation.md):');
+  console.warn('Conservative-monotonicity warnings (Mechanism B, accepted -- tracked as issue #692, see docs/analysis/2026-09-19-conservative-travel-overlay-investigation.md):');
   for (const warning of conservativeWarnings) console.warn(`- ${warning}`);
 }
