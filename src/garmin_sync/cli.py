@@ -583,6 +583,90 @@ def run_probe_health_cmd(args: list[str] | None = None) -> int:
         return 1
 
 
+def run_probe_nutrition_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Run safe Garmin nutrition & expenditure capability probe (ADR-0042)."
+    )
+    parser.add_argument(
+        "--date", type=str, default=None, help="Specific date YYYY-MM-DD to probe (default: today)"
+    )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=3,
+        help="Number of recent days to probe if --date is omitted (default: 3)",
+    )
+    parsed = parser.parse_args(args)
+
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+        settings = load_settings()
+        from .dates import get_date_string, local_today, n_days_ago
+        from .garmin_client import GarminClientWrapper
+        from .garmin_provider import GarminProviderAdapter
+
+        client = GarminClientWrapper(
+            retry_attempts=settings.garmin_retry_attempts,
+            retry_min_wait=settings.garmin_retry_min_wait,
+            retry_max_wait=settings.garmin_retry_max_wait,
+            verify_login=settings.garmin_verify_login,
+            allow_credential_login=False,
+        )
+        client.login_with_tokens_or_credentials(settings.garmin_token_path)
+        adapter = GarminProviderAdapter(client=client)
+
+        if parsed.date:
+            probe_dates = [parsed.date]
+        else:
+            today = local_today()
+            probe_dates = [get_date_string(n_days_ago(today, i)) for i in range(parsed.days)]
+            probe_dates.reverse()
+
+        results = []
+        for d in probe_dates:
+            nutrition_res = adapter.fetch_daily_nutrition(d)
+            canonical_nutr = nutrition_res.canonical if nutrition_res else None
+            stats = adapter._get_stats(d)
+            results.append(
+                {
+                    "date": d,
+                    "hasIntakeData": canonical_nutr.has_intake_data if canonical_nutr else False,
+                    "energyIntakeKcal": (
+                        canonical_nutr.energy_intake_kcal if canonical_nutr else None
+                    ),
+                    "goalEnergyIntakeKcal": (
+                        canonical_nutr.goal_energy_intake_kcal if canonical_nutr else None
+                    ),
+                    "isPartial": canonical_nutr.is_partial if canonical_nutr else False,
+                    "activeEnergyKcal": stats.get("activeKilocalories"),
+                    "restingEnergyKcal": stats.get("bmrKilocalories"),
+                    "totalEnergyExpenditureKcal": stats.get("totalKilocalories"),
+                    "macronutrientsAvailable": False,
+                    "macronutrientsReason": "Not provided by Garmin Connect / MyFitnessPal bridge",
+                    "provider": "garmin",
+                    "transport": "garmin_connect",
+                }
+            )
+
+        import json
+
+        print(
+            json.dumps(
+                {
+                    "authenticated": True,
+                    "probeResults": results,
+                },
+                indent=2,
+            )
+        )
+        return 0
+    except Exception as error:
+        log_exception(logger, "probe nutrition", error)
+        return 1
+
+
 def run_backfill_health_cmd(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Run historical backfill for Google Health (Eight Sleep & Garmin)."
@@ -1339,6 +1423,13 @@ def main() -> int:
         "poll-manual-sync-all", help="Poll manual sync for every active Garmin link"
     )
 
+    probe_nutrition_parser = subparsers.add_parser(
+        "probe-nutrition",
+        help="Run safe Garmin nutrition & expenditure capability probe (ADR-0042)",
+    )
+    probe_nutrition_parser.add_argument("--date", type=str, default=None)
+    probe_nutrition_parser.add_argument("--days", type=int, default=3)
+
     args = parser.parse_args()
 
     if args.command == "export-activities":
@@ -1367,6 +1458,8 @@ def main() -> int:
         return run_rebuild_cmd(sys.argv[2:])
     if args.command == "probe-health":
         return run_probe_health_cmd(sys.argv[2:])
+    if args.command == "probe-nutrition":
+        return run_probe_nutrition_cmd(sys.argv[2:])
     if args.command == "push-workout":
         return run_push_workout_cmd(sys.argv[2:])
     if args.command == "push-pending-workouts":
