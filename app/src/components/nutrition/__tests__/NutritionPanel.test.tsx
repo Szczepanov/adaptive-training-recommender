@@ -113,7 +113,7 @@ describe('NutritionPanel Component', () => {
 
         // Header and cards
         expect(html).toContain('Nutrition &amp; Energy Observations');
-        expect(html).toContain('2150 kcal');
+        expect(html).toContain('2,150 kcal');
         expect(html).toContain('Dietary Energy Intake');
         expect(html).toContain('Active Expenditure');
         expect(html).toContain('Resting Expenditure (BMR)');

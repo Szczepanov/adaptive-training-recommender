@@ -161,7 +161,7 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
 
     const formatKcal = (val: number | null | undefined): string => {
         if (val === null || val === undefined || !Number.isFinite(val)) return '—';
-        return `${Math.round(val).toLocaleString()} kcal`;
+        return `${Math.round(val).toLocaleString('en-US')} kcal`;
     };
 
     const formatGrams = (val: number | null | undefined): string => {
