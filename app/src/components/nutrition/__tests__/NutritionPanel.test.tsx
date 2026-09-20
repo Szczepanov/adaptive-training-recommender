@@ -128,7 +128,7 @@ describe('NutritionPanel Component', () => {
         expect(html).toContain('Unavailable');
 
         // Observational balance banner
-        expect(html).toContain('Observational Balance:');
+        expect(html).toContain('Observed Intake − Estimated Expenditure:');
         expect(html).toContain('-250 kcal');
 
         // History table

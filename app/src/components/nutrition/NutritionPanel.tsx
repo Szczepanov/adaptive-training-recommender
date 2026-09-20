@@ -191,7 +191,7 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
             <div className="nutrition-panel">
                 <div className="nutrition-panel-header">
                     <div>
-                        <h3 className="nutrition-panel-title">Nutrition & Energy Balance</h3>
+                        <h3 className="nutrition-panel-title">Nutrition & Energy Observations</h3>
                         <p className="nutrition-panel-subtitle">Loading nutrition and expenditure observations...</p>
                     </div>
                 </div>
@@ -204,7 +204,7 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
             <div className="nutrition-panel">
                 <div className="nutrition-panel-header">
                     <div>
-                        <h3 className="nutrition-panel-title">Nutrition & Energy Balance</h3>
+                        <h3 className="nutrition-panel-title">Nutrition & Energy Observations</h3>
                         <p className="nutrition-panel-subtitle" style={{ color: 'var(--error-color, #ef4444)' }}>
                             Error: {error}
                         </p>
@@ -218,7 +218,7 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
         <div className="nutrition-panel">
             <div className="nutrition-panel-header">
                 <div>
-                    <h3 className="nutrition-panel-title">Nutrition & Energy Balance</h3>
+                    <h3 className="nutrition-panel-title">Nutrition & Energy Observations</h3>
                     <p className="nutrition-panel-subtitle">
                         Observational dietary intake from food logs & wearable energy expenditure.
                     </p>
@@ -316,7 +316,7 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
                             <div className="nutrition-balance-banner">
                                 <span>⚖️</span>
                                 <div>
-                                    <strong>Observational Balance: </strong>
+                                    <strong>Observed Intake − Estimated Expenditure: </strong>
                                     {Math.round(
                                         currentDay.energyIntakeKcal! - currentDay.energyExpenditureKcal.total,
                                     ) > 0 ? '+' : ''}
@@ -401,7 +401,7 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
                                     <th>Active (kcal)</th>
                                     <th>BMR (kcal)</th>
                                     <th>Total Exp (kcal)</th>
-                                    <th>Balance</th>
+                                    <th>Observed Δ</th>
                                     <th>Status</th>
                                     <th>Source</th>
                                 </tr>
@@ -491,7 +491,7 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
                         No dietary intake or energy expenditure data is recorded for the past {windowSize} days.
                     </p>
                     <p style={{ fontSize: '0.85rem' }}>
-                        To sync MyFitnessPal data: ensure MyFitnessPal is linked in Garmin Connect, then run{' '}
+                        To sync dietary intake: ensure your nutrition integration is linked in Garmin Connect, then run{' '}
                         <code>garmin_sync sync</code> on the backend.
                     </p>
                 </div>
@@ -501,7 +501,9 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
             <div className="nutrition-notice">
                 ℹ️ <strong>System Constraint (ADR-0042):</strong> Nutrition data is observation-only and has zero
                 recommendation authority. The adaptive training engine does not prescribe diets or diagnose energy
-                deficits; recommendations remain strictly invariant to nutrition inputs.
+                deficits; recommendations remain strictly invariant to nutrition inputs. Displayed intake-minus-
+                expenditure differences are descriptive only: food logs can be incomplete and wearable expenditure is
+                estimated, so this is not an energy-availability or RED-S assessment.
             </div>
         </div>
     );
