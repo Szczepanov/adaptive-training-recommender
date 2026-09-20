@@ -485,6 +485,7 @@ export function coverageNeedTierForTemplate(
     state: CoverageState,
     template: SessionTemplate,
     anchorRole: 'event-specific' | 'quality' | null = null,
+    adjacentToAnchor: boolean = false,
 ): 0 | 1 | 2 | 3 {
     const keys = state.descriptor ? coverageKeysForTemplate(template, state.phase, state.descriptor) : [];
     if (keys.length === 0) return 3;
@@ -517,6 +518,10 @@ export function coverageNeedTierForTemplate(
             continue;
         }
         if (DEFERRED_SUPPORT_COVERAGE_KEYS.has(key)) {
+            advancesDeferredSupportMinimum = true;
+            continue;
+        }
+        if (adjacentToAnchor && (template.category === 'Full-body Strength' || template.category === 'Lower-body Strength')) {
             advancesDeferredSupportMinimum = true;
             continue;
         }

@@ -136,12 +136,11 @@ describe('engine knowledge coverage inventory', () => {
     });
 
     it('reports the post-issue-680 coverage and risk debt exactly (zero high-impact uncovered debt)', () => {
-        // Issue #680 added one partial/p0 item: injury.tissue_recheck_carry (the one-day
-        // tissue pending-recheck carry policy).
+        // Issue #675 added one partial/p1 item for the gran-fondo durability policy.
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(58);
-        expect(summary.byCoverage).toEqual({ covered: 36, partial: 15, uncovered: 1, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 8, p1: 6, p2: 2, p3: 0, none: 42 });
+        expect(summary.total).toBe(59);
+        expect(summary.byCoverage).toEqual({ covered: 36, partial: 16, uncovered: 1, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 8, p1: 7, p2: 2, p3: 0, none: 42 });
         expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
     });

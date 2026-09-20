@@ -430,6 +430,13 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Evidence Pack 6 reclassifies this from scientific_claim to product_heuristic (an authored 0-1 vector table is an encoding, not a measured constant) and registers a moderate-certainty boundary that endurance demands shift with event duration and race morphology, plus a product-policy record of the 19 authored preset vectors. Stays partial at P1: the field literature supports broad demand differences but validates no individual axis value or exact preset mapping, and the strength_meet/general_target presets have no cited endurance-event-demand literature behind them.',
     },
     {
+        id: 'event.gran_fondo_durability', domain: 'event_demand', title: 'Gran-fondo durability objective and surge separation',
+        currentRule: 'High-durability cycling demand (raw aerobicEndurance>=0.8, fatigueResistance>=0.8, repeatedSurges<0.6) requests a cycling Race-Specific Endurance objective targeting aerobicEndurance 0.9/fatigueResistance 0.85/thresholdPower 0.6 with 0.6 floors on aerobicEndurance and fatigueResistance; compact criterium surge work requires governing-event repeatedSurges>=0.6 and long-horizon durability work is not halved solely for being race-specific.',
+        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
+        codeRefs: ['engine/periodization.ts:objectivesFromDemand', 'engine/periodization.ts:isTemplatePhaseEligible', 'engine/optimizer.ts:rankCandidates', 'engine/templates.ts:TEMPLATES'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.granFondoDurabilityPolicy],
+        coverageRationale: 'Issue #675 records the deterministic product calibration separately from the broader event-demand vector claim. The scenario and plan-judge evidence establish separation and feasibility, but do not validate the exact normalized thresholds or target stimulus as universal physiology; retain partial/P1 status for outcome calibration.',
+    },
+    {
         id: 'stimulus.objective_credit_confidence', domain: 'stimulus_credit', title: 'Stimulus-evidence confidence discount',
         currentRule: 'Objective credit weights exact/inferred/unknown stimulus evidence at 1.0/0.75/0.4 before dose completion scaling.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'none',

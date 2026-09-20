@@ -448,6 +448,25 @@ restriction from #679 (at most one light <=0.35 touch) and by severe-recovery re
 keeps Strength out through day 5. Concurrent-training evidence is context-dependent and does
 not justify turning those exact 3/4-day gaps into a global physiological invariant.
 
+### Cycling event-demand durability split (Issue #675, `periodization.ts`, `optimizer.ts`)
+
+Demand-derived cycling planning distinguishes sustained gran-fondo durability from criterium
+surge repeatability. A raw cycling demand profile with aerobicEndurance and fatigueResistance
+at or above 0.8, and repeatedSurges below 0.6, creates the
+`obj_cycling_gran_fondo_durability` objective. Its target is aerobicEndurance 0.9,
+fatigueResistance 0.85 and thresholdPower 0.6; completion requires at least 0.6 on both
+aerobicEndurance and fatigueResistance from a Cycling `Race-Specific Endurance` template.
+
+The compact criterium surge template is phase-eligible only when the governing event's
+repeatedSurges demand is at least 0.6, so it cannot satisfy a low-surge gran-fondo plan.
+Long-horizon `Race-Specific Endurance` benefit is also preserved for the high-durability
+profile instead of applying the generic >21-day race-specific softening. The existing
+eligibility, injury, recovery, taper, duration, daily-ledger and weekly-anchor gates remain
+authoritative; the change selects a more appropriate feasible stimulus rather than maximizing
+duration unconditionally. Deterministic parity fixtures in
+`granFondoDurabilityRemediation.test.ts` and the plan-judge event-demand cases compare equal
+capacity/horizon criterium and gran-fondo plans.
+
 ### Graduated recovery re-entry after severe adverse recovery (Issues #679/#676, `planner.ts`)
 
 The severe-adverse-recovery restriction (`isSevereAdverseRecoveryReadiness`) previously
