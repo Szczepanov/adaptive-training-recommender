@@ -218,6 +218,12 @@ export function evaluateMultisourceFusion(params: {
           });
 
     // Step 3: Evaluate candidate-v1 fusion across active metric streams
+    // ⚡ Bolt: O(1) baseline map lookup rather than O(N) array scans inside nested loop
+    const baselineMap = new Map<string, SourceMetricBaseline>();
+    for (const b of baselines) {
+        baselineMap.set(`${b.metric}_${b.provider}_${b.transport}`, b);
+    }
+
     const fusedMetrics: Record<string, FusedMetricEvidence> = {};
     const candidateMetricConfigs: { metric: string; enabled: boolean }[] = [
         { metric: 'hrv_rmssd_ms', enabled: metricActivation.hrv },
@@ -242,12 +248,7 @@ export function evaluateMultisourceFusion(params: {
         }[] = [];
 
         for (const bundle of validDayBundles) {
-            const base = baselines.find(
-                (b) =>
-                    b.metric === metric &&
-                    b.provider === bundle.provider &&
-                    b.transport === bundle.transport,
-            );
+            const base = baselineMap.get(`${metric}_${bundle.provider}_${bundle.transport}`);
 
             // Gating: Only PROVISIONAL or MATURE baselines participate
             if (!base || (base.maturity !== 'MATURE' && base.maturity !== 'PROVISIONAL')) {
