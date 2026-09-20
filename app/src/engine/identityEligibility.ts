@@ -63,6 +63,27 @@ function projectionMatchesBundle(
     );
 }
 
+function exactBundleIdentityKey(bundle: HealthObservationDayBundle): string {
+    return JSON.stringify([
+        healthObservationBundleId(bundle),
+        bundle.provider,
+        bundle.transport,
+        bundle.revision,
+        bundle.sourcePayloadHash,
+    ]);
+}
+
+function exactProjectionIdentityKey(projection: EffectiveBundleIdentityProjection): string {
+    const ref = projection.assessment.sharedBundleRef;
+    return JSON.stringify([
+        ref.id,
+        ref.provider,
+        ref.transport,
+        ref.revision,
+        ref.sourcePayloadHash,
+    ]);
+}
+
 /**
  * Selects an already-authorised projection for downstream computation. For an identity-gated
  * source, exactly one exact-bundle projection must resolve to effective USER and grant the
@@ -75,6 +96,14 @@ export function selectEligibleHealthObservationBundles(params: {
     identityPolicy: IdentityEligibilityPolicy;
     requireEligibility: IdentityEligibilityRequirement;
 }): readonly HealthObservationDayBundle[] {
+    const projectionsByBundleIdentity = new Map<string, EffectiveBundleIdentityProjection[]>();
+    for (const projection of params.effectiveIdentityProjections) {
+        const key = exactProjectionIdentityKey(projection);
+        const projections = projectionsByBundleIdentity.get(key);
+        if (projections) projections.push(projection);
+        else projectionsByBundleIdentity.set(key, [projection]);
+    }
+
     return params.bundles.filter((bundle) => {
         if (bundle.userId !== params.userId) {
             return false;
@@ -83,9 +112,8 @@ export function selectEligibleHealthObservationBundles(params: {
             return true;
         }
 
-        const matches = params.effectiveIdentityProjections.filter((projection) =>
-            projectionMatchesBundle(bundle, projection),
-        );
+        const matches = (projectionsByBundleIdentity.get(exactBundleIdentityKey(bundle)) ?? [])
+            .filter((projection) => projectionMatchesBundle(bundle, projection));
         if (matches.length !== 1) {
             return false;
         }

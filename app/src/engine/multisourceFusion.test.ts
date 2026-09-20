@@ -161,6 +161,68 @@ describe('multisourceFusion (MS15)', () => {
         expect(hrvEvidence.fusedZScore).toBeNull();
     });
 
+    it('keeps the first duplicate baseline, matching the old find semantics', () => {
+        const bundle: HealthObservationDayBundle = {
+            userId: 'user_1',
+            logicalDate: '2026-08-27',
+            provider: 'garmin',
+            transport: 'garmin_direct',
+            observations: [{ observationId: 'obs_1', metric: 'hrv_rmssd_ms', value: 65 }],
+            sourcePayloadHash: 'hash_1',
+            schemaVersion: 1,
+            normalizerVersion: 1,
+            revision: 1,
+            ingestedAt: '2026-08-27T08:00:00Z',
+            effectiveAt: '2026-08-27T08:00:00Z',
+        };
+        const duplicate = { ...matureGarminHrvBaseline, median28d: 0, mad28d: 1 };
+
+        const result = evaluateMultisourceFusion({
+            logicalDate: '2026-08-27',
+            policy: 'candidate-v1',
+            bundles: [bundle],
+            baselines: [matureGarminHrvBaseline, duplicate],
+        });
+
+        expect(result.fusedMetrics.hrv_rmssd_ms.fusedZScore).toBe(1);
+    });
+
+    it('does not match a baseline whose underscore-separated fields only collide textually', () => {
+        const bundle: HealthObservationDayBundle = {
+            userId: 'user_1',
+            logicalDate: '2026-08-27',
+            provider: 'garmin',
+            transport: 'direct_x',
+            observations: [{ observationId: 'obs_1', metric: 'hrv_rmssd_ms', value: 65 }],
+            sourcePayloadHash: 'hash_1',
+            schemaVersion: 1,
+            normalizerVersion: 1,
+            revision: 1,
+            ingestedAt: '2026-08-27T08:00:00Z',
+            effectiveAt: '2026-08-27T08:00:00Z',
+        };
+
+        const result = evaluateMultisourceFusion({
+            logicalDate: '2026-08-27',
+            policy: 'candidate-v1',
+            bundles: [bundle],
+            baselines: [{
+                metric: 'hrv_rmssd_ms_garmin',
+                provider: 'direct',
+                transport: 'x',
+                count7d: 7,
+                count28d: 28,
+                median7d: 60,
+                median28d: 60,
+                mad28d: 5,
+                maturity: 'MATURE',
+                latestObservedDate: '2026-08-27',
+            }],
+        });
+
+        expect(result.fusedMetrics.hrv_rmssd_ms.agreementStatus).toBe('NO_DATA');
+    });
+
     it('fuses dual mature streams with elevated confidence when in directional agreement', () => {
         const garminBundle: HealthObservationDayBundle = {
             userId: 'user_1',

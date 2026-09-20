@@ -41,14 +41,22 @@ describe('Phase 6.2c fixed-activity exact identity', () => {
         }))).toBeNull();
     });
 
+    it('fails closed for a workout-only identity when the reverse mapping is ambiguous', () => {
+        expect(resolveFixedActivityIdentity(activity({ workoutId: 'strength_full_body_maintenance_01' }))).toBeNull();
+    });
+
     it('resolves a workout-only identity through the same canonical template mapping', () => {
-        expect(resolveFixedActivityIdentity(activity({ workoutId: 'cycling_zone2_standard_01' }))).toMatchObject({
-            templateId: 'end_easy_01',
-            workoutId: 'cycling_zone2_standard_01',
-            modality: 'Cycling',
+        const templateIdentity = resolveFixedActivityIdentity(activity({ templateId: 'end_easy_02' }));
+        const workoutIdentity = resolveFixedActivityIdentity(activity({ workoutId: 'running_easy_continuous_01' }));
+
+        expect(workoutIdentity).toMatchObject({
+            templateId: 'end_easy_02',
+            workoutId: 'running_easy_continuous_01',
+            modality: 'Running',
             category: 'Easy Endurance',
             exactCatalogIdentity: true,
         });
+        expect(workoutIdentity).toMatchObject(templateIdentity ?? {});
     });
 
     it('keeps legacy anonymous stimulus unlinked so it cannot invent cycling coverage', () => {

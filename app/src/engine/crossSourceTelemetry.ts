@@ -6,7 +6,7 @@
  */
 
 import type { HealthObservationDayBundle } from '../observations/models';
-import type { SourceMetricBaseline } from './multisourceBaselines';
+import { sourceMetricBaselineKey, type SourceMetricBaseline } from './multisourceBaselines';
 
 export interface CrossSourceAgreementTelemetry {
     logicalDate: string;
@@ -26,10 +26,15 @@ export function computeCrossSourceTelemetry(
     const dayBundles = bundles.filter((b) => b.logicalDate === logicalDate);
 
     // Compute coverage from baselines
+    // ⚡ Bolt: Build O(1) map for baselines by metric + provider + transport to avoid O(N) lookup in the inner loop
     const coverageMap: Record<string, number> = {};
+    const baselineMap = new Map<string, SourceMetricBaseline>();
     for (const b of baselines) {
-        const key = `${b.provider}_${b.transport}`;
-        coverageMap[key] = Math.max(coverageMap[key] || 0, b.count28d);
+        const providerKey = `${b.provider}_${b.transport}`;
+        coverageMap[providerKey] = Math.max(coverageMap[providerKey] || 0, b.count28d);
+        const key = sourceMetricBaselineKey(b.metric, b.provider, b.transport);
+        // Preserve the old Array.find() first-match behavior for malformed duplicate input.
+        if (!baselineMap.has(key)) baselineMap.set(key, b);
     }
 
     // Extract observations by source
@@ -41,9 +46,7 @@ export function computeCrossSourceTelemetry(
         const sourceKey = `${bundle.provider}_${bundle.transport}`;
         for (const obs of bundle.observations) {
             if (obs.metric === 'hrv_rmssd_ms' && typeof obs.value === 'number') {
-                const base = baselines.find(
-                    (b) => b.metric === 'hrv_rmssd_ms' && b.provider === bundle.provider && b.transport === bundle.transport,
-                );
+                const base = baselineMap.get(sourceMetricBaselineKey('hrv_rmssd_ms', bundle.provider, bundle.transport));
                 if (base && base.median28d !== null && base.mad28d && base.mad28d > 0) {
                     const z = (obs.value - base.median28d) / base.mad28d;
                     hrvDeviations.push({ source: sourceKey, z });
@@ -51,9 +54,7 @@ export function computeCrossSourceTelemetry(
             }
 
             if (obs.metric === 'daily_resting_heart_rate_bpm' && typeof obs.value === 'number') {
-                const base = baselines.find(
-                    (b) => b.metric === 'daily_resting_heart_rate_bpm' && b.provider === bundle.provider && b.transport === bundle.transport,
-                );
+                const base = baselineMap.get(sourceMetricBaselineKey('daily_resting_heart_rate_bpm', bundle.provider, bundle.transport));
                 if (base && base.median28d !== null && base.mad28d && base.mad28d > 0) {
                     const z = (obs.value - base.median28d) / base.mad28d;
                     rhrDeviations.push({ source: sourceKey, z });

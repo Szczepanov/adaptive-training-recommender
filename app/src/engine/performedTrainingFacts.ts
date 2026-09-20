@@ -13,8 +13,8 @@
 import type { SessionTemplate, EvidenceTier, NormalizedGarminActivity, CompletedTrainingEvent } from './models';
 import type { CoverageSetId, PlanCoverageKey, CoverageSetDescriptor } from '../workouts/event-plan';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
-import { workoutForTemplate } from '../workouts/prescription';
-import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
+import { ENRICHED_TEMPLATES_BY_ID } from './templates';
+import { getTemplateIdsForWorkoutId, getUniqueTemplateIdForWorkoutId } from './workoutTemplateIndex';
 import type { PerformedTrainingOccurrence } from '../training-occurrence/models';
 import { getLocalDateString } from '../utils/localDate';
 import { classifyGarminTier } from './completedTraining';
@@ -71,10 +71,6 @@ export interface FactsComparisonResult {
     }>;
 }
 
-function templatesForWorkoutId(workoutId: string): SessionTemplate[] {
-    return ENRICHED_TEMPLATES.filter(t => workoutForTemplate(t.id)?.id === workoutId);
-}
-
 /**
  * Reverse workout -> engine-template inference is only safe when exactly one template
  * resolves to that workout. Some catalog workouts intentionally serve multiple engine
@@ -82,15 +78,14 @@ function templatesForWorkoutId(workoutId: string): SessionTemplate[] {
  * would fabricate prescribed identity that the structured source never proved.
  */
 export function templateIdForWorkoutId(workoutId: string): string | undefined {
-    const matches = templatesForWorkoutId(workoutId);
-    return matches.length === 1 ? matches[0].id : undefined;
+    return getUniqueTemplateIdForWorkoutId(workoutId);
 }
 
 export function categoryForWorkoutId(workoutId: string): SessionTemplate['category'] | undefined {
-    const matches = templatesForWorkoutId(workoutId);
-    if (matches.length === 0) return undefined;
-    const categories = new Set(matches.map(template => template.category));
-    return categories.size === 1 ? matches[0].category : undefined;
+    const templateIds = getTemplateIdsForWorkoutId(workoutId);
+    if (templateIds.length === 0) return undefined;
+    const categories = new Set(templateIds.map(templateId => ENRICHED_TEMPLATES_BY_ID.get(templateId)?.category));
+    return categories.size === 1 ? ENRICHED_TEMPLATES_BY_ID.get(templateIds[0])?.category : undefined;
 }
 
 export function normalizeModality(raw: string | undefined): SessionTemplate['modality'] | 'Unknown' {

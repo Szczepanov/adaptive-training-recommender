@@ -32,6 +32,11 @@ export interface SourceMetricBaseline {
     latestObservedDate: string | null;
 }
 
+/** Collision-proof identity for one source-specific metric baseline. */
+export function sourceMetricBaselineKey(metric: string, provider: string, transport: string): string {
+    return JSON.stringify([metric, provider, transport]);
+}
+
 export function calculateMedian(values: readonly number[]): number | null {
     if (values.length === 0) return null;
     const sorted = [...values].sort((a, b) => a - b);
