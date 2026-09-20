@@ -121,6 +121,17 @@ describe('sports knowledge registry', () => {
         expect(whoStrength.limitations.join(' ')).toContain('does not establish the product default of three sessions');
     });
 
+    it('registers the health adherence modality/intensity prior as an explicit product heuristic', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.healthAdherenceModalityIntensityPrior);
+        expect(claim).toMatchObject({
+            maturity: 'heuristic',
+            evidenceCertainty: 'not_applicable',
+            recommendationStrength: 'conditional',
+        });
+        expect(claim.statement).toContain('one session in a rolling seven-day window');
+        expect(claim.limitations.join(' ')).toContain('not evidence');
+    });
+
     it('rejects heuristic claims that masquerade as scientific certainty', () => {
         const heuristic = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.conditionalHighIntensityPrior);
         const invalidClaim: KnowledgeClaim = { ...heuristic, id: 'test.false_certainty', evidenceCertainty: 'high' };
