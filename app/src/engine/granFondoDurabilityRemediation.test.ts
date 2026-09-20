@@ -373,7 +373,7 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
         );
 
         // The day must be designated Rest or Mobility/Recovery because race consumes systemic capacity
-        expect(['Rest', 'Active Recovery', 'Mobility / Recovery']).toContain(rec.template.category);
+        expect(['Rest', 'Mobility/Recovery']).toContain(rec.template.category);
     });
 
     it('ensures cycling_gran_fondo_A scenario achieves sustained durability anchors without criterium surges', async () => {
