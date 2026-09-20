@@ -96,10 +96,10 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
 
         expect(result.accepted.map(candidate => candidate.template.id)).toContain('end_mod_01');
         expect(result.rejected.find(candidate => candidate.template.id === 'end_hard_01')?.excludedReasons).toContain(
-            'HEALTH_HARD_ENDURANCE_WITHHELD_WITHOUT_RUNNING_SUPPORT',
+            'HEALTH_HARD_ENDURANCE_WITHHELD_AS_GENERIC_FILLER',
         );
         expect(result.rejected.find(candidate => candidate.template.id === hardCycling.id)?.excludedReasons).toContain(
-            'HEALTH_HARD_ENDURANCE_WITHHELD_WITHOUT_RUNNING_SUPPORT',
+            'HEALTH_HARD_ENDURANCE_WITHHELD_AS_GENERIC_FILLER',
         );
     });
 
