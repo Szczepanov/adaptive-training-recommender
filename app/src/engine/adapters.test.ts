@@ -278,6 +278,23 @@ describe('mapContextFromGoalsAndTrainingSettings (Phase 5.4 tissue response wiri
         const forecastContext = mapContextFromGoalsAndTrainingSettings([], settings, null, '2026-08-08', null);
         expect(forecastContext.constraints.restrictedModalities).not.toContain('Running');
     });
+
+    // Same no-forecast-leakage contract as above, for the D-1 one-day pending-recheck carry
+    // (issue #680): a carried restriction must apply to a decision built for the actual next
+    // calendar day, but must never be simulated into a provisional/forecast context that
+    // passes no checkin -- carriedRegionRestrictions is a 6th, independent argument, so
+    // omitting it (as every forecast call site does) must produce the same unrestricted
+    // result as never having the carry at all.
+    it('a carried region restriction (D-1 pending-recheck) restricts a real next-day context but must be omitted from a forecast context', () => {
+        const settings = testTrainingSettings({ injuries: [] });
+        const carried = [{ region: 'shoulder' as const, severity: 'limit' as const }];
+
+        const nextDayContext = mapContextFromGoalsAndTrainingSettings([], settings, null, '2026-08-09', null, carried);
+        expect(nextDayContext.constraints.impliedGuardrails).toContain('avoid_overhead_pressing');
+
+        const forecastContext = mapContextFromGoalsAndTrainingSettings([], settings, null, '2026-08-09', null);
+        expect(forecastContext.constraints.impliedGuardrails ?? []).not.toContain('avoid_overhead_pressing');
+    });
 });
 
 // Stage 2/PG5.1 (ADR-0041): typed performance-goal projection. See
