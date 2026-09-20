@@ -135,11 +135,13 @@ describe('engine knowledge coverage inventory', () => {
         });
     });
 
-    it('reports the post-SKR3-W2b coverage and risk debt exactly (zero high-impact uncovered debt)', () => {
+    it('reports the post-issue-680 coverage and risk debt exactly (zero high-impact uncovered debt)', () => {
+        // Issue #680 added one partial/p0 item: injury.tissue_recheck_carry (the one-day
+        // tissue pending-recheck carry policy).
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(55);
-        expect(summary.byCoverage).toEqual({ covered: 34, partial: 14, uncovered: 1, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 7, p1: 6, p2: 2, p3: 0, none: 40 });
+        expect(summary.total).toBe(56);
+        expect(summary.byCoverage).toEqual({ covered: 34, partial: 15, uncovered: 1, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 8, p1: 6, p2: 2, p3: 0, none: 40 });
         expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
     });
