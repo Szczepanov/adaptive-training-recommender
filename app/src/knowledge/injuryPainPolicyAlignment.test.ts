@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveTissueSeverity, resolveInjuryRestrictions } from '../engine/injuryPolicy';
+import { deriveCarriedRegionRestrictions, deriveTissueSeverity, resolveEffectiveInjuryConstraintsWithRecheck, resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { evaluateEnvelopes, evaluateTraining } from '../engine/rules';
 import { INJURY_PAIN_POLICY_DESCRIPTOR } from './injuryPainKnowledge';
 
@@ -141,5 +141,40 @@ describe('injury and clinical-symptom policy alignment', () => {
         expect(rec.mode).toBe(descriptor.enforceMode);
         expect(rec.template.category).toBe('Rest');
         expect(rec.template.systemicCost).toBe(0);
+    });
+
+    it('pins the one-day tissue pending-recheck carry policy (issue #680)', () => {
+        const descriptor = INJURY_PAIN_POLICY_DESCRIPTOR.tissueRecheckCarry;
+        const D0 = '2026-09-01';
+        const D1 = '2026-09-02';
+        const D2 = '2026-09-03';
+
+        // carryDurationDays: 1 -- derived fresh from D0's raw response, applied on D1, and
+        // not carried again into D2 when D1 itself reports nothing.
+        const carriedIntoD1 = deriveCarriedRegionRestrictions(undefined, { shoulder: { region: 'shoulder', morningState: 'moderate' } }, D0);
+        expect(carriedIntoD1).toEqual([{ region: 'shoulder', severity: 'limit' }]);
+        expect(resolveEffectiveInjuryConstraintsWithRecheck(undefined, undefined, D1, carriedIntoD1)[0]?.severity).toBe('limit');
+
+        const carriedIntoD2 = deriveCarriedRegionRestrictions(undefined, undefined, D1);
+        expect(carriedIntoD2).toEqual([]);
+        expect(carriedIntoD2.length).toBeLessThanOrEqual(descriptor.carryDurationDays);
+        expect(resolveEffectiveInjuryConstraintsWithRecheck(undefined, undefined, D2, carriedIntoD2)).toEqual([]);
+
+        // appliesToSeverities: ['limit', 'exclude'] -- 'monitor' is not a qualifying carry candidate.
+        const monitorOnly = deriveCarriedRegionRestrictions(undefined, { ankle: { region: 'ankle', morningState: 'mild' } }, D0);
+        expect(monitorOnly).toEqual([]);
+        expect(descriptor.appliesToSeverities).not.toContain('monitor');
+
+        // clearedBy: today's own response for the region always governs.
+        const clearedByTodaysResponse = resolveEffectiveInjuryConstraintsWithRecheck(
+            undefined, { shoulder: { region: 'shoulder', morningState: 'normal' } }, D1, [{ region: 'shoulder', severity: 'limit' }],
+        );
+        expect(clearedByTodaysResponse).toEqual([]);
+
+        // clearedBy: a standing injury already covering the region takes precedence.
+        const clearedByStandingInjury = resolveEffectiveInjuryConstraintsWithRecheck(
+            [{ region: 'shoulder', severity: 'monitor' }], undefined, D1, [{ region: 'shoulder', severity: 'limit' }],
+        );
+        expect(clearedByStandingInjury).toEqual([{ region: 'shoulder', severity: 'monitor' }]);
     });
 });

@@ -233,7 +233,10 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
           input.preferences,
           today,
           input.subjectiveCheckin,
+          input.carriedRegionRestrictions,
         );
+        // Forecast/provisional days never receive the carry (issue #680's
+        // no-forecast-leakage requirement).
         const forecastContext = mapContextFromGoalsAndTrainingSettings(
           input.activeGoals,
           input.trainingSettings,

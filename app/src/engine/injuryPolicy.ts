@@ -271,6 +271,78 @@ function tissueSeverityMateriallyApplied(
     });
 }
 
+/** A prior day's raw tissue response derived a today-only constraint (no standing injury
+ * covering it) for this region that would otherwise vanish today with no explicit
+ * re-check. Compact by design -- this is the only shape a caller needs to carry across the
+ * composition boundary; it is never a raw check-in. */
+export interface CarriedRegionRestriction {
+    region: BodyRegion;
+    severity: InjuryConstraint['severity'];
+}
+
+const TODAY_ONLY_DERIVED_NOTE = "Derived from today's tissue check-in";
+
+/** Product-policy note distinguishing a one-day pending-recheck carry from both a standing
+ * injury and a same-day derived constraint -- this is a bounded uncertainty hold, not
+ * evidence that the athlete's tissue is still symptomatic, and not a clinical rule (see
+ * docs/analysis/2026-09-19-symptom-compatible-substitution-investigation.md). */
+export const RECHECK_CARRY_NOTE = "Carried one day pending an explicit settled re-check (product heuristic, not evidence-derived; issue #680)";
+
+/**
+ * Regions worth carrying forward from a prior day into today's decision, per the one-day
+ * pending-recheck policy. Always derive this from the prior day's *raw* tissue response
+ * (never from an already-carried result) so the one-day bound stays structural: a day whose
+ * own tissueResponses is empty contributes no carry candidates of its own, so a second
+ * silent day in a row cannot extend the hold.
+ */
+export function deriveCarriedRegionRestrictions(
+    baseInjuriesOnPriorDay: InjuryConstraint[] | undefined,
+    priorDayTissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> | undefined,
+    priorDay: string,
+): CarriedRegionRestriction[] {
+    if (!priorDayTissueResponses) return [];
+    const priorEffective = resolveEffectiveInjuryConstraints(baseInjuriesOnPriorDay, priorDayTissueResponses, priorDay);
+    const carried: CarriedRegionRestriction[] = [];
+    for (const injury of priorEffective) {
+        // 'monitor' never produces a guardrail/category restriction (resolveInjuryRestrictions
+        // skips it outright), so carrying it forward would be a no-op that only adds noise to
+        // the trace -- only a qualifying transient limit/exclude is worth carrying.
+        if (injury.region && injury.note === TODAY_ONLY_DERIVED_NOTE && injury.severity !== 'monitor') {
+            carried.push({ region: injury.region, severity: injury.severity });
+        }
+    }
+    return carried;
+}
+
+/**
+ * Layers the one-day pending-recheck carry on top of resolveEffectiveInjuryConstraints
+ * without changing that function's own (separately tested) behavior. A carried region is
+ * applied only when today has no response of its own for it -- today's own data always
+ * governs when present -- and no standing injury already covers it today, since a standing
+ * injury keeps its own independent review/expiry semantics untouched by this heuristic.
+ */
+export function resolveEffectiveInjuryConstraintsWithRecheck(
+    baseInjuries: InjuryConstraint[] | undefined,
+    todayTissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> | undefined,
+    today: string,
+    carriedRestrictions: CarriedRegionRestriction[] = [],
+): InjuryConstraint[] {
+    const merged = resolveEffectiveInjuryConstraints(baseInjuries, todayTissueResponses, today);
+    if (carriedRestrictions.length === 0) return merged;
+
+    const regionsCoveredToday = new Set<BodyRegion>([
+        ...(Object.keys(todayTissueResponses ?? {}) as BodyRegion[]),
+        ...merged.flatMap(injury => injury.region ? [injury.region] : []),
+    ]);
+
+    const result = [...merged];
+    for (const { region, severity } of carriedRestrictions) {
+        if (regionsCoveredToday.has(region)) continue;
+        result.push({ region, severity, reviewBy: today, note: RECHECK_CARRY_NOTE });
+    }
+    return result;
+}
+
 /**
  * Resolves the existing injury policy with compact lineage facts. The restrictions and
  * effective constraints are exactly those returned by the pre-existing public resolvers;
@@ -280,14 +352,18 @@ export function resolveInjuryPolicy(
     baseInjuries: InjuryConstraint[] | undefined,
     tissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> | undefined,
     today: string,
+    carriedRestrictions: CarriedRegionRestriction[] = [],
 ): ResolvedInjuryPolicy {
-    const effectiveInjuries = resolveEffectiveInjuryConstraints(baseInjuries, tissueResponses, today);
+    const effectiveInjuries = resolveEffectiveInjuryConstraintsWithRecheck(baseInjuries, tissueResponses, today, carriedRestrictions);
     const restrictions = resolveInjuryRestrictions(effectiveInjuries, today);
     const regionMappingFamilies = [...new Set(
         effectiveInjuries
             .filter(injury => Boolean(injury.region) && injury.severity !== 'monitor' && isActiveConstraint(injury, today))
             .map(injury => injuryRegionMappingFamily(injury.region!)),
     )].sort() as InjuryRegionMappingFamily[];
+    const tissueRecheckCarryApplied = effectiveInjuries
+        .filter(injury => injury.note === RECHECK_CARRY_NOTE)
+        .flatMap(injury => injury.region ? [injury.region] : []);
     return {
         effectiveInjuries,
         restrictions,
@@ -295,6 +371,7 @@ export function resolveInjuryPolicy(
             tissueSeverityApplied: tissueSeverityMateriallyApplied(baseInjuries, tissueResponses, today),
             regionMappingFamilies,
             clinicalEnvelopeSources: [],
+            ...(tissueRecheckCarryApplied.length > 0 ? { tissueRecheckCarryApplied } : {}),
         },
     };
 }

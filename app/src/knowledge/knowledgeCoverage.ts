@@ -298,6 +298,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'SEP-B records a contextual symptom-assessment boundary and the exact combined clinical-symptom product policy. Neither source validates anatomy-agnostic Running restriction or Mobility ceiling as universal guidance, and illness/pain causes remain distinct; this stays partial P0 debt.',
     },
     {
+        id: 'injury.tissue_recheck_carry', domain: 'injury_safety', title: 'One-day tissue pending-recheck carry (issue #680)',
+        currentRule: "A today-only tissue-derived limit/exclude constraint (no standing InjuryConstraint) carries forward exactly one additional local day when the next day reports no response of its own for that region; cleared by that day's own response (any severity) or by a standing injury already covering the region, and derived fresh from the prior day's raw response each time so it cannot compound past one day.",
+        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
+        codeRefs: ['engine/injuryPolicy.ts:deriveCarriedRegionRestrictions', 'engine/injuryPolicy.ts:resolveEffectiveInjuryConstraintsWithRecheck', 'engine/composer.ts:composeDailyDecisionInput'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.tissueResponseTemporalMonitoring, KNOWLEDGE_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement, KNOWLEDGE_CLAIM_IDS.tissueRecheckCarryPolicy],
+        coverageRationale: 'The tendinopathy progression review supports pain/symptom-response monitoring as a load-management concept but reports insufficient comparative evidence for one universal criterion; the return-to-sport consensus supports contextual, criteria-based decisions and explicitly not a generic elapsed-time clearance rule. Neither validates this specific one-day carry window, which remains product-policy calibration and partial P0 debt.',
+    },
+    {
         id: 'spacing.anchor_next_day', domain: 'session_spacing', title: 'Anchor/quality next-day spacing gate',
         currentRule: 'A candidate anchor is rejected when an anchor occurred one day earlier.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',

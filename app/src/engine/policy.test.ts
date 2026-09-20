@@ -6,6 +6,11 @@ describe('isHistoricalPolicyVersion', () => {
         expect(POLICY_VERSION).toBe('2026-09-overlay-fallback-conservative-monotonicity-v1');
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(
+                (version) => version === '2026-09-symptom-compatible-strength-safety-v1',
+            ),
+        ).toHaveLength(1);
+        expect(
+            HISTORICAL_POLICY_VERSIONS.filter(
                 (version) => version === '2026-09-health-adherence-modality-intensity-v2',
             ),
         ).toHaveLength(1);
