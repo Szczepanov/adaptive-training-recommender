@@ -150,10 +150,10 @@ const planLoad = (item) => (item.plan ?? []).reduce((acc, day) => {
     cardiovascular: acc.cardiovascular + cardiovascular,
   };
 }, { hardSessions: 0, systemic: 0, cardiovascular: 0 });
-const conservativeChecks = [];
+const conservativeComparisons = [];
 const conservativeTelemetry = [];
 const recordConservativeTelemetry = (ok, message) => { if (!ok) conservativeTelemetry.push(message); };
-const assertConservativeMonotonic = (neutralId, conservativeId) => {
+const recordConservativeComparison = (neutralId, conservativeId) => {
   const neutral = planLoad(required(neutralId));
   const conservative = planLoad(required(conservativeId));
   const epsilon = 1e-9;
@@ -163,10 +163,10 @@ const assertConservativeMonotonic = (neutralId, conservativeId) => {
     `${conservativeId}: cumulative systemic cost ${conservative.systemic.toFixed(3)} exceeds ${neutral.systemic.toFixed(3)} in ${neutralId}.`);
   recordConservativeTelemetry(conservative.cardiovascular <= neutral.cardiovascular + epsilon,
     `${conservativeId}: cumulative cardiovascular cost ${conservative.cardiovascular.toFixed(3)} exceeds ${neutral.cardiovascular.toFixed(3)} in ${neutralId}.`);
-  conservativeChecks.push({ neutralId, conservativeId, neutral, conservative });
+  conservativeComparisons.push({ neutralId, conservativeId, neutral, conservative });
 };
-assertConservativeMonotonic('judge_pref_neutral', 'judge_pref_conservative');
-assertConservativeMonotonic('judge_mode_event_directed', 'judge_mode_conservative_preference');
+recordConservativeComparison('judge_pref_neutral', 'judge_pref_conservative');
+recordConservativeComparison('judge_mode_event_directed', 'judge_mode_conservative_preference');
 
 const evergreen = required('judge_mode_evergreen');
 fail(evergreen.input.trainingIntentProfile?.planningMode === 'evergreen', 'Evergreen case did not propagate a valid trainingIntentProfile.planningMode.');
@@ -330,10 +330,10 @@ console.log(`Plan-judge invariants passed for ${cases.size} cases across ${famil
 console.log(`Families SHA-256: ${familiesSha256}`);
 console.log(`Event-demand sequence distance: A=${demandDistanceA.toFixed(3)}, B=${demandDistanceB.toFixed(3)}.`);
 console.log(`Compact criterium template count: criterium A=${critACompactCount}, gran fondo A=${granACompactCount}.`);
-for (const check of conservativeChecks) {
-  console.log(`Conservative monotonicity ${check.conservativeId} vs ${check.neutralId}: hard ${check.conservative.hardSessions}/${check.neutral.hardSessions}, systemic ${check.conservative.systemic.toFixed(3)}/${check.neutral.systemic.toFixed(3)}, cardiovascular ${check.conservative.cardiovascular.toFixed(3)}/${check.neutral.cardiovascular.toFixed(3)}.`);
+for (const check of conservativeComparisons) {
+  console.log(`Conservative comparison ${check.conservativeId} vs ${check.neutralId}: hard ${check.conservative.hardSessions}/${check.neutral.hardSessions}, systemic ${check.conservative.systemic.toFixed(3)}/${check.neutral.systemic.toFixed(3)}, cardiovascular ${check.conservative.cardiovascular.toFixed(3)}/${check.neutral.cardiovascular.toFixed(3)}.`);
 }
 if (conservativeTelemetry.length > 0) {
-  console.log('Conservative-monotonicity characterization telemetry (Mechanism B, Issue #692 accepted non-invariant):');
+  console.log('Conservative cross-counterfactual telemetry (Mechanism B, Issue #692 accepted non-invariant):');
   for (const item of conservativeTelemetry) console.log(`- ${item}`);
 }
