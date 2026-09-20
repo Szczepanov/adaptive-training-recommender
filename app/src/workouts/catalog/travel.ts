@@ -3,6 +3,34 @@ import { repsStep, timeStep } from './helpers.ts';
 
 export const TRAVEL_WORKOUTS: WorkoutDefinition[] = [
   {
+    id: 'cross_training_bodyweight_circuit_01', version: 1, status: 'active',
+    name: 'Equipment-Free Aerobic Circuit',
+    description: 'Continuous low-impact bodyweight cardio using marching in place, no-jump step jacks, shadow boxing and easy hip hinges. Keep the session conversational and continuous; it is an availability fallback, not a sport-specific replacement.',
+    modality: 'cross_training', category: 'easy_endurance', objectives: ['aerobic_base', 'travel_maintenance'],
+    duration: { defaultMin: 30, minimumMin: 12, maximumMin: 40 },
+    loadProfile: { cardiovascular: 2, muscular: 1, mechanical: 1, eccentric: 1, coordination: 1, recoveryHours: 12 },
+    eligibility: { maximumSoreness: 7, forbiddenPainFlags: ['knee_swelling', 'worsening_achilles_pain'] },
+    equipment: [], contraindicationTags: ['knee_swelling', 'worsening_achilles_pain'], engineTemplateIds: ['end_easy_05'],
+    blocks: [
+      { id: 'warmup', name: 'Easy start', role: 'warmup', steps: [ timeStep('circuit_warmup', 'bodyweight_cardio_circuit', 'Easy warm-up rotation', 300, { target: { type: 'rpe', min: 1, max: 2 } }) ]},
+      { id: 'main', name: 'Aerobic circuit', role: 'main', steps: [ timeStep('circuit_main', 'bodyweight_cardio_circuit', 'Continuous low-impact circuit rotation', 1200, { target: { type: 'rpe', min: 2, max: 4 }, notes: ['Rotate through marching in place, no-jump step jacks, shadow boxing and easy hip hinges', 'Keep breathing continuous rather than resting fully between movements; avoid jumping or explosive reps'] }) ]},
+      { id: 'cooldown', name: 'Easy finish', role: 'cooldown', steps: [ timeStep('circuit_cooldown', 'bodyweight_cardio_circuit', 'Easy cool-down rotation', 300, { target: { type: 'rpe', min: 1, max: 2 } }) ]},
+    ],
+    variants: [
+      { id: 'full', targetDurationMin: 30, loadMultiplier: 1, rationale: 'Normal equipment-free aerobic circuit dose.', stepOverrides: [] },
+      { id: 'reduced', targetDurationMin: 21, loadMultiplier: 0.7, rationale: 'Shorten the main rotation while keeping effort conversational.', stepOverrides: [{ stepId: 'circuit_main', durationSeconds: 720 }, { stepId: 'circuit_cooldown', durationSeconds: 240 }] },
+      { id: 'return_to_training', targetDurationMin: 16, loadMultiplier: 0.5, rationale: 'Keep the session short, easy and symptom-free.', stepOverrides: [{ stepId: 'circuit_main', durationSeconds: 480, target: { type: 'rpe', min: 1, max: 3 } }, { stepId: 'circuit_cooldown', durationSeconds: 180 }] },
+    ],
+    parameters: [
+      { id: 'circuit_duration', label: 'Main circuit duration', unit: 'minutes', defaultValue: 20, minimum: 10, maximum: 25, step: 5, appliesToStepIds: ['circuit_main'], bindings: [{ stepId: 'circuit_main', property: 'duration.seconds' }], description: 'Adjust around travel fatigue, time on feet and available time.' },
+      { id: 'circuit_rpe', label: 'Circuit RPE', unit: 'rpe', defaultValue: 3, minimum: 2, maximum: 4, step: 0.5, appliesToStepIds: ['circuit_main'], bindings: [{ stepId: 'circuit_main', property: 'target.rpe.max' }], description: 'Effort control without needing a bike, treadmill or machine.' },
+    ],
+    regressions: ['recovery_mobility_tissue_01'], progressions: ['running_easy_continuous_01'], substitutions: [],
+    garmin: { exportable: false },
+    tags: ['travel', 'equipment_free', 'bodyweight', 'cardio_circuit', 'indoor', 'low_impact'],
+    sourceNotes: ['Availability fallback for issue #677. Circuit training can provide general cardiorespiratory stimulus, but the engine authors lower transfer credit than sport-specific endurance and only exposes this candidate when ordinary endurance options fail hard feasibility.'],
+  },
+  {
     id: 'travel_aerobic_maintenance_01', version: 1, status: 'active',
     name: 'Travel Aerobic Maintenance',
     description: 'Generic hotel-machine aerobic session using RPE and breathing rather than machine-specific watts.',

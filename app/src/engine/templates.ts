@@ -345,7 +345,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Pull-up Strength Practice",
         description: "Controlled pull-ups with scalable sets and accessory hanging or rowing work.",
         requiredEquipment: ["pullup_bar"],
-        environment: 'either', safetyTags: [],
+        environment: 'either', safetyTags: ['avoid_overhead_pressing'],
         systemicCost: 0.25,
         objectiveTransferable: false,
     },
@@ -407,7 +407,7 @@ export const TEMPLATES: SessionTemplate[] = [
         id: 'str_power_01', category: 'Power Maintenance', modality: 'Strength',
         durationMin: 25, durationMax: 45, title: 'Compact Power Maintenance',
         description: 'Low-fatigue power, upper-body strength, and tissue-capacity maintenance.',
-        requiredEquipment: ['free_weights'], environment: 'either', safetyTags: ['avoid_heavy_lower_body'], systemicCost: 0.35, objectiveTransferable: false,
+        requiredEquipment: ['free_weights'], environment: 'either', safetyTags: ['avoid_heavy_lower_body', 'avoid_overhead_pressing'], systemicCost: 0.35, objectiveTransferable: false,
         stimulusProfile: { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0.3, repeatedSurges: 0.6, sprintPower: 0.5, fatigueResistance: 0.2, maxStrength: 0.5, hypertrophy: 0.2 },
         costProfile: { systemic: 0.35, cardiovascular: 0.2, lowerBody: 0.4, upperBody: 0.5, impactTissue: 0.3, neuromuscular: 0.7 }
     },
@@ -428,7 +428,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Hybrid Full Body Push/Pull",
         description: "Compound movements: Squats, deadlift variations, rows, and presses.",
         requiredEquipment: ["free_weights"],
-        environment: 'either', safetyTags: ['avoid_heavy_lower_body', 'avoid_heavy_spinal_loading'],
+        environment: 'either', safetyTags: ['avoid_heavy_lower_body', 'avoid_heavy_spinal_loading', 'avoid_overhead_pressing'],
         systemicCost: 0.6,
         objectiveTransferable: false,
         easierDose: {
@@ -455,7 +455,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Reduced Full-body Strength Maintenance",
         description: "Peak-build maintenance dose that preserves force and upper-body/trunk work while staying inside the modify systemic-cost ceiling.",
         requiredEquipment: ["free_weights"],
-        environment: 'either', safetyTags: ['avoid_heavy_lower_body', 'avoid_heavy_spinal_loading'],
+        environment: 'either', safetyTags: ['avoid_heavy_lower_body', 'avoid_heavy_spinal_loading', 'avoid_overhead_pressing'],
         systemicCost: 0.45,
         objectiveTransferable: false,
         stimulusProfile: { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0.1, sprintPower: 0.1, fatigueResistance: 0.1, maxStrength: 0.7, hypertrophy: 0.4 },
@@ -484,7 +484,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Bodyweight Full Body Strength",
         description: "Controlled-tempo squat/sit-to-stand, push-up progression, glute bridge, unloaded hip hinge, self-resisted prone row, and trunk work. Genuinely zero equipment, dosed like resistance training (2-4 RIR) rather than a conditioning circuit.",
         requiredEquipment: [],
-        environment: 'either', safetyTags: [],
+        environment: 'either', safetyTags: ['avoid_overhead_pressing'],
         systemicCost: 0.55,
         objectiveTransferable: false,
         easierDose: {
@@ -755,6 +755,42 @@ export const TEMPLATES: SessionTemplate[] = [
         stimulusProfile: { aerobicEndurance: 0.2, thresholdPower: 0.1, vo2MaxPower: 0.2, repeatedSurges: 0.3, sprintPower: 0.1, fatigueResistance: 0.2, maxStrength: 0, hypertrophy: 0 },
         costProfile: { systemic: 0.15, cardiovascular: 0.2, lowerBody: 0.1, upperBody: 0.05, impactTissue: 0.05, neuromuscular: 0.2 },
         phaseEligibility: { requiresFocusEvent: true, requiresTaper: true, maxDaysToEvent: 3 }
+    },
+    {
+        // Deliberately appended. availabilityFallbackRole keeps this candidate out of
+        // ordinary rankings whenever any normal endurance option survives hard feasibility,
+        // so catalog order cannot make a hotel-room substitute displace sport-specific work.
+        id: "end_easy_05",
+        category: "Easy Endurance",
+        modality: "Cross Training",
+        durationMin: 20,
+        durationMax: 30,
+        title: "Equipment-Free Aerobic Circuit",
+        description: "Continuous low-impact bodyweight cardio (marching in place, no-jump step jacks, shadow boxing and easy hip hinges) held at an easy-to-moderate RPE. Genuinely zero equipment and indoor-safe; use only when normal endurance options are unavailable.",
+        requiredEquipment: [],
+        environment: 'either', safetyTags: [],
+        systemicCost: 0.25,
+        objectiveTransferable: true,
+        availabilityFallbackRole: 'aerobic_endurance',
+        // Cross-training can preserve general cardiorespiratory stimulus, but it is not
+        // treated as fully sport-specific cycling/running work. Keep both credit and cost
+        // authored rather than inheriting the generic Easy Endurance defaults.
+        stimulusProfile: { aerobicEndurance: 0.55, thresholdPower: 0.05, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0.1, maxStrength: 0, hypertrophy: 0 },
+        costProfile: { systemic: 0.25, cardiovascular: 0.3, lowerBody: 0.18, upperBody: 0.12, impactTissue: 0.08, neuromuscular: 0.08 },
+        easierDose: {
+            label: "15 min Light Circuit",
+            durationMin: 12,
+            durationMax: 18,
+            doseRatio: 0.6,
+            prescriptionSummary: "Light 15 min low-impact bodyweight aerobic circuit."
+        },
+        harderDose: {
+            label: "35 min Extended Circuit",
+            durationMin: 30,
+            durationMax: 40,
+            doseRatio: 1.35,
+            prescriptionSummary: "Extended 35 min low-impact bodyweight aerobic circuit."
+        }
     }
 ];
 

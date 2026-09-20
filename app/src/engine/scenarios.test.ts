@@ -261,7 +261,15 @@ describe('scenario quality diagnostics', () => {
     it('clears an acute high-fatigue trajectory into train-tier days after a healthy check-in', async () => {
         const result = await getResult('cycling_criterium_recovery_clear_A');
         expect(result.weekSummaries).toHaveLength(2);
-        expect(result.weekSummaries[0].fatigueTierDayCounts.recover).toBeGreaterThan(0);
+        // weekSummaries count only forecast days with WeekAheadDay.diagnostics; the real
+        // week-start recommendation is represented in decisionTraces. The forecast-projection
+        // fatigueTier (planner.ts's graduated severe-adverse-recovery window, PR #679/#683)
+        // ramps down over a fixed 5-day offset window from the single "today" reading rather
+        // than persisting 'recover' for the whole week, so pin the actual chained decisions
+        // rather than requiring artificial projected fatigue persistence.
+        expect(result.decisionTraces.find(trace => trace.weekIndex === 0)?.readinessTier).toBe('recover');
+        expect(result.decisionTraces.find(trace => trace.weekIndex === 1)?.readinessTier).toBe('modify');
+        expect(result.decisionTraces.filter(trace => trace.weekIndex === 0).some(trace => trace.mode === 'recover')).toBe(true);
         expect(result.weekSummaries[1].fatigueTierDayCounts.train).toBeGreaterThan(0);
     });
 
@@ -318,7 +326,12 @@ describe('Phase 6.3 scenario input contract', () => {
         const result = await runScenario({ ...scenario, readinessForDate });
         expect(readinessForDate).toHaveBeenNthCalledWith(1, '2026-08-07', 0);
         expect(readinessForDate).toHaveBeenNthCalledWith(2, '2026-08-14', 1);
-        expect(result.weekSummaries[0].fatigueTierDayCounts.recover).toBeGreaterThan(0);
+        // Same rationale as the scenario above: the forecast's graduated restriction window
+        // ramps down over fixed offsets, so pin the actual chained decisions on the two
+        // reported dates instead.
+        expect(result.decisionTraces.find(trace => trace.weekIndex === 0 && trace.date === '2026-08-07')?.readinessTier).toBe('recover');
+        expect(result.decisionTraces.find(trace => trace.weekIndex === 1 && trace.date === '2026-08-14')?.readinessTier).toBe('modify');
+        expect(result.decisionTraces.filter(trace => trace.weekIndex === 0).some(trace => trace.mode === 'recover')).toBe(true);
         expect(result.weekSummaries[1].fatigueTierDayCounts.train).toBeGreaterThan(0);
     });
 

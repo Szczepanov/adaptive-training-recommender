@@ -89,6 +89,7 @@ import {
 } from './weeklyAllocation';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
+import { resolveHealthPlanningPolicy, type HealthPlanningPolicy } from './healthPlanningPolicy';
 import { fixedActivityOccurrenceKey, resolveFixedActivityIdentity } from './fixedActivityIdentity';
 import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
 import { admitsCandidate, computeDailyLedger, type DailyLedgerResult } from './dailyLedger';
@@ -170,6 +171,8 @@ export interface WeekAheadOptions {
     planDefinition?: PlanDefinition | null;
     /** Simulation-only fatigue comparison. Live callers use the default `max`. */
     fatigueFusionPolicy?: FatigueFusionPolicy;
+    /** Event-free health planning prior resolved from the current training intent. */
+    healthPlanningPolicy?: HealthPlanningPolicy | null;
 }
 
 const ZERO_COST: WorkoutCostProfile = {
@@ -292,6 +295,20 @@ export function fatigueTierFor(peakFatigue: number, thresholds: ProjectedFatigue
     if (peakFatigue >= thresholds.recover) return 'recover';
     if (peakFatigue >= thresholds.modify) return 'modify';
     return 'train';
+}
+
+function templatesWithinProjectedFatigueGate(
+    templates: readonly SessionTemplate[],
+    peakFatigue: number,
+    thresholds: ProjectedFatigueThresholds,
+): SessionTemplate[] {
+    if (peakFatigue >= thresholds.recover) {
+        return templates.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery');
+    }
+    if (peakFatigue >= thresholds.modify) {
+        return templates.filter(template => template.systemicCost <= thresholds.modifyMaxSystemicCost);
+    }
+    return [...templates];
 }
 
 export const NEUTRAL_PREFERENCES: UserPreferences = {
@@ -509,6 +526,7 @@ export interface ProjectedDatePlanningContext {
     fatigueFusionPolicy?: FatigueFusionPolicy;
     planDefinition?: PlanDefinition | null;
     todayDate?: string;
+    healthPlanningPolicy?: HealthPlanningPolicy | null;
 }
 
 export interface ProjectedDateState {
@@ -588,15 +606,7 @@ export function evaluateProjectedDate(
     const fatigueThresholds = projectedFatigueThresholds(isConservative);
     const fatigueTier = fatigueTierFor(peakFatigue, fatigueThresholds);
 
-    const fatigueGated = ledgerAdmitted.filter(t => {
-        if (peakFatigue >= fatigueThresholds.recover) {
-            return t.category === 'Rest' || t.category === 'Mobility/Recovery';
-        }
-        if (peakFatigue >= fatigueThresholds.modify) {
-            return t.systemicCost <= fatigueThresholds.modifyMaxSystemicCost;
-        }
-        return true;
-    });
+    const fatigueGated = templatesWithinProjectedFatigueGate(ledgerAdmitted, peakFatigue, fatigueThresholds);
 
     const anchorRole = date === shared.anchors.eventSpecificAnchorDate ? 'event-specific' as const
         : date === shared.anchors.qualityAnchorDate ? 'quality' as const : null;
@@ -624,6 +634,7 @@ export function evaluateProjectedDate(
         date,
         {
             anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, fatigueTier,
+            healthPlanningPolicy: shared.healthPlanningPolicy,
             authoredPlanBlocks: shared.authoredPlanBlocks,
             resolvedAvailability: availability,
             ...(planDefinition ? {
@@ -676,13 +687,28 @@ const NOT_ELIGIBLE_ON_DATE = 'NOT_ELIGIBLE_ON_DATE';
 const DAILY_LEDGER_CAPACITY = 'DAILY_LEDGER_CAPACITY';
 const PROJECTED_DATE_OUTCOMES = new WeakMap<ProjectedDateEvaluation, ProjectedDateOutcome>();
 
-export function projectedDateOutcomeFrom(evaluation: ProjectedDateEvaluation): ProjectedDateOutcome {
-    const memoized = PROJECTED_DATE_OUTCOMES.get(evaluation);
-    if (memoized) return memoized;
-    const ranking = evaluation.rank(evaluation.fatigueGated);
+export function projectedDateOutcomeFrom(
+    evaluation: ProjectedDateEvaluation,
+    reservationFatigueThresholds?: ProjectedFatigueThresholds,
+): ProjectedDateOutcome {
+    // Normal callers memoize the exact production outcome. The weekly-role allocator may
+    // request baseline recovery thresholds: conservativeBias is a preference overlay, and
+    // allowing it to remove dates from the reservation search can paradoxically force the
+    // same required hard role onto a later date. Actual day selection still uses the
+    // conservative fatigue gate and conservative rank penalties.
+    if (!reservationFatigueThresholds) {
+        const memoized = PROJECTED_DATE_OUTCOMES.get(evaluation);
+        if (memoized) return memoized;
+    }
+
     const eligibleIds = new Set(evaluation.eligible.map(template => template.id));
-    const gatedIds = new Set(evaluation.fatigueGated.map(template => template.id));
     const ledgerExcludedIds = new Set(evaluation.ledgerExcludedTemplateIds);
+    const ledgerAdmitted = evaluation.eligible.filter(template => !ledgerExcludedIds.has(template.id));
+    const gated = reservationFatigueThresholds
+        ? templatesWithinProjectedFatigueGate(ledgerAdmitted, evaluation.peakFatigue, reservationFatigueThresholds)
+        : evaluation.fatigueGated;
+    const ranking = evaluation.rank(gated);
+    const gatedIds = new Set(gated.map(template => template.id));
     const exclusionReasons = new Map<string, readonly string[]>();
     ranking.rejected.forEach(candidate => exclusionReasons.set(candidate.template.id, candidate.excludedReasons));
     evaluation.ledgerExcludedTemplateIds.forEach(templateId => exclusionReasons.set(templateId, [DAILY_LEDGER_CAPACITY]));
@@ -691,14 +717,16 @@ export function projectedDateOutcomeFrom(evaluation: ProjectedDateEvaluation): P
     });
     const outcome: ProjectedDateOutcome = {
         date: evaluation.date,
-        fatigueTier: evaluation.fatigueTier,
+        fatigueTier: reservationFatigueThresholds
+            ? fatigueTierFor(evaluation.peakFatigue, reservationFatigueThresholds)
+            : evaluation.fatigueTier,
         acceptedTemplateIds: ranking.accepted.map(candidate => candidate.template.id),
         fatigueExcludedTemplateIds: evaluation.eligible
             .filter(template => !ledgerExcludedIds.has(template.id) && !gatedIds.has(template.id))
             .map(template => template.id),
         exclusionReasons,
     };
-    PROJECTED_DATE_OUTCOMES.set(evaluation, outcome);
+    if (!reservationFatigueThresholds) PROJECTED_DATE_OUTCOMES.set(evaluation, outcome);
     return outcome;
 }
 
@@ -1253,6 +1281,7 @@ export function generateWeekAheadPlan(
         fatigueFusionPolicy,
         planDefinition: suppliedPlanDefinition,
         todayDate,
+        healthPlanningPolicy: options.healthPlanningPolicy,
     };
 
     type ProjectedHistoryEntry = RecentHistoryEntry & { source: 'projected' };
@@ -1345,13 +1374,19 @@ export function generateWeekAheadPlan(
         return evaluation;
     };
 
+    const reservationFatigueThresholds = projectedFatigueThresholds(false);
     const allocationEvaluator = (
         forecastDates: string[],
         extra: readonly ProjectedAssignment[] = [],
     ): AllocationDateEvaluator => ({
         forecastDates,
+        // Weekly-role reservation is a feasibility/topology search, not the actual
+        // prescription. Keep baseline recovery safety gates here so a stricter preference
+        // cannot delete an earlier feasible slot and force the same required hard role later.
+        // The real forecast day below still applies conservative thresholds and ranking.
         evaluate: (assignments, date) => projectedDateOutcomeFrom(
             projectedEvaluation(date, [...extra, ...assignments].filter(item => item.date < date)),
+            reservationFatigueThresholds,
         ),
     });
 
@@ -1630,6 +1665,11 @@ export async function generateWeekAheadPlanWithIntent(
     const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
     const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy);
     const isAdverseRecovery = isSevereAdverseRecoveryReadiness(todayReadiness, todayRec.mode);
+    const healthPlanningPolicy = resolveHealthPlanningPolicy(
+        intent.planningContext.profile.priorities,
+        preferences,
+        isAdverseRecovery,
+    );
     // ADR-0037 D-DOSE: no progressionOverrides here -- a confirmed progression's duration
     // override is date-scoped to a single day, but this packs the whole week-ahead horizon
     // in one call. Progression influence is deliberately scoped to same-day planning
@@ -1653,6 +1693,12 @@ export async function generateWeekAheadPlanWithIntent(
             completedCoverageHistory: resolveCoverageHistory(intent.performedTrainingFacts, intent.history),
             droppedContributorObjectives: intent.droppedContributorObjectives,
         },
-        { ...options, fatigueFusionPolicy, events: intent.planningContext.mode === 'event_directed' ? events : [], ...(evergreen ? { planDefinition: evergreen.planDefinition } : {}) },
+        {
+            ...options,
+            fatigueFusionPolicy,
+            healthPlanningPolicy,
+            events: intent.planningContext.mode === 'event_directed' ? events : [],
+            ...(evergreen ? { planDefinition: evergreen.planDefinition } : {}),
+        },
     );
 }

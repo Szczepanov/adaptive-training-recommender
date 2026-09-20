@@ -3,7 +3,32 @@ import { isHistoricalPolicyVersion, HISTORICAL_POLICY_VERSIONS, POLICY_VERSION }
 
 describe('isHistoricalPolicyVersion', () => {
     it('records the current transition and the previous live policies exactly once', () => {
-        expect(POLICY_VERSION).toBe('2026-09-triathlon-taper-recovery-reentry-capacity-v1');
+        expect(POLICY_VERSION).toBe('2026-09-overlay-fallback-conservative-monotonicity-v1');
+        expect(
+            HISTORICAL_POLICY_VERSIONS.filter(
+                (version) => version === '2026-09-symptom-compatible-strength-safety-v1',
+            ),
+        ).toHaveLength(1);
+        expect(
+            HISTORICAL_POLICY_VERSIONS.filter(
+                (version) => version === '2026-09-health-adherence-modality-intensity-v2',
+            ),
+        ).toHaveLength(1);
+        expect(
+            HISTORICAL_POLICY_VERSIONS.filter(
+                (version) => version === '2026-09-health-adherence-modality-intensity-v1',
+            ),
+        ).toHaveLength(1);
+        expect(
+            HISTORICAL_POLICY_VERSIONS.filter(
+                (version) => version === '2026-09-triathlon-taper-recovery-reentry-capacity-v1',
+            ),
+        ).toHaveLength(1);
+        expect(
+            HISTORICAL_POLICY_VERSIONS.filter(
+                (version) => version === '2026-09-performance-goal-demand-projection-v1',
+            ),
+        ).toHaveLength(1);
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(
                 (version) => version === '2026-09-catalog-session-note-dedup-v1',

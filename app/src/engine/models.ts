@@ -213,6 +213,11 @@ export interface InjuryPolicyTrace {
     tissueSeverityApplied: boolean;
     regionMappingFamilies: InjuryRegionMappingFamily[];
     clinicalEnvelopeSources: ClinicalEnvelopeSource[];
+    /** Regions where today's restriction comes from yesterday's unresolved tissue
+     * check-in via the one-day pending-recheck carry (issue #680), not from today's own
+     * data or a standing injury. A product-policy heuristic, not a clinical finding --
+     * absent/empty means the carry didn't apply. */
+    tissueRecheckCarryApplied?: BodyRegion[];
 }
 
 export interface UserContext {
@@ -884,6 +889,10 @@ export interface SessionTemplate {
     safetyTags: GuardrailKey[];
     systemicCost: number;
     objectiveTransferable?: boolean;
+    /** Candidate is admitted only when no ordinary session in the same fallback family
+     * survives hard feasibility. This is an availability escape hatch, not a preference
+     * boost, so it cannot displace a normal sport-specific option merely on utility. */
+    availabilityFallbackRole?: 'aerobic_endurance';
     easierDose?: DoseVariation;
     harderDose?: DoseVariation;
     stimulusProfile?: WorkoutStimulusProfile;
