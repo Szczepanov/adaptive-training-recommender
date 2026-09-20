@@ -1,6 +1,7 @@
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { workoutForTemplate } from '../workouts/prescription';
-import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
+import { ENRICHED_TEMPLATES_BY_ID } from './templates';
+import { getUniqueTemplateIdForWorkoutId } from './workoutTemplateIndex';
 import type { FixedActivity, SessionTemplate } from './models';
 import type { StimulusConfidence } from './stimulus';
 
@@ -61,12 +62,12 @@ export function fixedActivityOccurrenceKey(activity: Pick<FixedActivity, 'id'>):
  * - No title/category heuristic is ever used.
  */
 export function resolveFixedActivityIdentity(activity: FixedActivity): ResolvedFixedActivityIdentity | null {
-    const templateId = activity.templateId;
+    const declaredTemplateId = activity.templateId;
     const declaredWorkoutId = activity.workoutId;
     const external = activity.externalAuthoredIdentity;
 
     // An activity cannot claim both an exact catalog link and external-derived identity.
-    if (external && (templateId || declaredWorkoutId)) return null;
+    if (external && (declaredTemplateId || declaredWorkoutId)) return null;
     if (external) {
         return {
             occurrenceKey: fixedActivityOccurrenceKey(activity),
@@ -79,7 +80,7 @@ export function resolveFixedActivityIdentity(activity: FixedActivity): ResolvedF
         };
     }
 
-    if (!templateId && !declaredWorkoutId) {
+    if (!declaredTemplateId && !declaredWorkoutId) {
         return {
             occurrenceKey: fixedActivityOccurrenceKey(activity),
             templateId: activity.id,
@@ -90,14 +91,14 @@ export function resolveFixedActivityIdentity(activity: FixedActivity): ResolvedF
         };
     }
 
-    if (templateId) {
-        const template = ENRICHED_TEMPLATES_BY_ID.get(templateId);
-        const resolvedWorkout = workoutForTemplate(templateId);
+    if (declaredTemplateId) {
+        const template = ENRICHED_TEMPLATES_BY_ID.get(declaredTemplateId);
+        const resolvedWorkout = workoutForTemplate(declaredTemplateId);
         if (!template || !resolvedWorkout) return null;
         if (declaredWorkoutId && declaredWorkoutId !== resolvedWorkout.id) return null;
         return {
             occurrenceKey: fixedActivityOccurrenceKey(activity),
-            templateId,
+            templateId: declaredTemplateId,
             workoutId: resolvedWorkout.id,
             modality: template.modality,
             category: template.category,
@@ -109,9 +110,8 @@ export function resolveFixedActivityIdentity(activity: FixedActivity): ResolvedF
     const workout = candidate && candidate.status === 'active' && !candidate.manualOnly
         ? candidate
         : undefined;
-    const template = workout
-        ? ENRICHED_TEMPLATES.find(candidate => workoutForTemplate(candidate.id)?.id === workout.id)
-        : undefined;
+    const templateId = workout ? getUniqueTemplateIdForWorkoutId(workout.id) : undefined;
+    const template = templateId ? ENRICHED_TEMPLATES_BY_ID.get(templateId) : undefined;
     if (!workout || !template) return null;
     return {
         occurrenceKey: fixedActivityOccurrenceKey(activity),

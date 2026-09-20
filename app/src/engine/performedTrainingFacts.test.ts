@@ -7,6 +7,10 @@ import {
     type PerformedExposureFact,
     type HydratedOccurrenceContext,
 } from './performedTrainingFacts';
+import {
+    getTemplateIdsForWorkoutId,
+    getUniqueTemplateIdForWorkoutId,
+} from './workoutTemplateIndex';
 import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
 import type { PerformedTrainingOccurrence } from '../training-occurrence/models';
 import { performedTrainingOccurrenceRepository as repository } from '../training-occurrence/repository';
@@ -101,6 +105,18 @@ describe('performedTrainingFacts', () => {
     });
 
     describe('template identity inference', () => {
+        it('indexes a uniquely mapped workout without scanning or choosing an arbitrary template', () => {
+            expect(getTemplateIdsForWorkoutId('running_easy_continuous_01')).toEqual(['end_easy_02']);
+            expect(getUniqueTemplateIdForWorkoutId('running_easy_continuous_01')).toBe('end_easy_02');
+        });
+
+        it('preserves ambiguity when a workout serves multiple engine templates', () => {
+            expect(getTemplateIdsForWorkoutId('strength_full_body_maintenance_01')).toEqual(
+                expect.arrayContaining(['str_full_01', 'str_full_03']),
+            );
+            expect(getUniqueTemplateIdForWorkoutId('strength_full_body_maintenance_01')).toBeUndefined();
+        });
+
         it('does not fabricate a template id when one workout serves multiple engine templates', () => {
             expect(templateIdForWorkoutId('strength_full_body_maintenance_01')).toBeUndefined();
         });
