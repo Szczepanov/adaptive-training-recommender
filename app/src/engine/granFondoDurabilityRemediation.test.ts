@@ -427,7 +427,16 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
         );
         expect(granRaceSpecific.some(trace => trace.selected.templateId === 'end_crit_surges_01')).toBe(false);
         expect(criteriumRaceSpecific.some(trace => trace.selected.templateId === 'end_crit_surges_01')).toBe(true);
-        expect(Math.max(...granRaceSpecific.map(trace => trace.selected.durationMax ?? 0)))
-            .toBeGreaterThan(Math.max(...criteriumRaceSpecific.map(trace => trace.selected.durationMax ?? 0)));
+        expect(granRaceSpecific.some(trace => trace.selected.templateId === 'end_race_specific_01')).toBe(true);
+        // Effective-dose capping makes authored durationMax misleading at a 60-minute
+        // cap (the durability ride is selected as a 60-minute effective dose), so
+        // separate on durability stimulus instead: gran-fondo picks sustain aerobic
+        // endurance with low surge content, criterium picks carry high surges.
+        const granTemplates = granRaceSpecific.map(trace => ENRICHED_TEMPLATES.find(t => t.id === trace.selected.templateId)!);
+        const criteriumTemplates = criteriumRaceSpecific.map(trace => ENRICHED_TEMPLATES.find(t => t.id === trace.selected.templateId)!);
+        expect(Math.max(...granTemplates.map(t => t.stimulusProfile?.aerobicEndurance ?? 0)))
+            .toBeGreaterThan(Math.max(...criteriumTemplates.map(t => t.stimulusProfile?.aerobicEndurance ?? 0)));
+        expect(Math.max(...granTemplates.map(t => t.stimulusProfile?.repeatedSurges ?? 0)))
+            .toBeLessThan(Math.max(...criteriumTemplates.map(t => t.stimulusProfile?.repeatedSurges ?? 0)));
     });
 });
