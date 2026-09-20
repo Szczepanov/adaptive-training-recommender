@@ -27,13 +27,15 @@ describe('health planning policy', () => {
 
     it('does not let the health hard-endurance ceiling override explicit performance intent or running support', () => {
         expect(resolveHealthPlanningPolicy(['endurance'], { preferredModalities: ['Running'], deprioritizedModalities: [], avoidedModalities: [] }, false)).toBeNull();
-        expect(resolveHealthPlanningPolicy(
-            ['health', 'endurance'],
-            { preferredModalities: ['Strength', 'Cycling'], deprioritizedModalities: [], avoidedModalities: [] },
-            false,
-        )).toMatchObject({
-            withholdHardEndurance: false,
-        });
+        for (const performancePriority of ['endurance', 'speed_power', 'sport_readiness'] as const) {
+            expect(resolveHealthPlanningPolicy(
+                ['health', performancePriority],
+                { preferredModalities: ['Strength', 'Cycling'], deprioritizedModalities: [], avoidedModalities: [] },
+                false,
+            )).toMatchObject({
+                withholdHardEndurance: false,
+            });
+        }
         expect(resolveHealthPlanningPolicy(['health'], { preferredModalities: ['Running'], deprioritizedModalities: [], avoidedModalities: [] }, false)).toMatchObject({
             preferLowImpactAerobic: false,
             withholdHardEndurance: false,
