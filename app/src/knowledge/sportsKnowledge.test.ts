@@ -127,6 +127,7 @@ describe('sports knowledge registry', () => {
             maturity: 'heuristic',
             evidenceCertainty: 'not_applicable',
             recommendationStrength: 'conditional',
+            version: 2,
         });
         expect(claim.statement).toContain('one session in a rolling seven-day window');
         expect(claim.limitations.join(' ')).toContain('not evidence');

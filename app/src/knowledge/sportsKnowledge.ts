@@ -454,7 +454,7 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
         applicability: { contexts: ['health', 'adherence', 'load_management'], sports: ['general_physical_activity', 'walking', 'cycling', 'running'], populations: ['event_free_health_focused_adults'], outcomes: ['adherence_friendly_modality_selection', 'bounded_moderate_intensity_exposure'], horizon: 'both' },
         evidence: [{ sourceId: EVERGREEN_PRODUCT_POLICY_SOURCE, directness: 'direct', note: 'Product policy derived from issue #681 and refined by issue #699 deterministic persona evidence; not clinical validation.' }],
         limitations: ['This is a product ranking and recovery heuristic, not evidence that walking or cycling is universally superior to running.', 'The Hard Endurance ceiling and one-session/seven-day boundary are conservative calibration values and do not establish universal physiological maximums.', 'An explicit running preference, event-directed mode or separate clinical guidance can change the appropriate plan.'],
-        reviewedOn: '2026-09-20', version: 1,
+        reviewedOn: '2026-09-20', version: 2,
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.conditionalHighIntensityPrior,
