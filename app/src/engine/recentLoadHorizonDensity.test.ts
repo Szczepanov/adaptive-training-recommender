@@ -63,19 +63,19 @@ describe('recent load horizon response (Issue #676 / #692)', () => {
         // model and is explicitly not calibrated as a direct physiological measurement.
         // Hard safety/feasibility gates and the near-term response to recent load remain
         // executable contracts; cross-counterfactual 14-day ordering does not.
-        const violations: string[] = [];
+        const nonMonotonicComparisons: string[] = [];
         for (let i = 0; i < ordered.length - 1; i++) {
             const [moreRecentLabel, moreRecent] = ordered[i];
             const [lessRecentLabel, lessRecent] = ordered[i + 1];
             if (moreRecent.hardCount > lessRecent.hardCount) {
-                violations.push(`${moreRecentLabel} has more hard sessions (${moreRecent.hardCount}) than ${lessRecentLabel} (${lessRecent.hardCount}).`);
+                nonMonotonicComparisons.push(`${moreRecentLabel} has more hard sessions (${moreRecent.hardCount}) than ${lessRecentLabel} (${lessRecent.hardCount}).`);
             }
             if (moreRecent.systemicTotal > lessRecent.systemicTotal + 1e-9) {
-                violations.push(`${moreRecentLabel} has higher cumulative systemic cost (${moreRecent.systemicTotal.toFixed(3)}) than ${lessRecentLabel} (${lessRecent.systemicTotal.toFixed(3)}).`);
+                nonMonotonicComparisons.push(`${moreRecentLabel} has higher cumulative systemic cost (${moreRecent.systemicTotal.toFixed(3)}) than ${lessRecentLabel} (${lessRecent.systemicTotal.toFixed(3)}).`);
             }
         }
-        if (violations.length > 0) {
-            console.info(`Whole-horizon monotonicity characterization telemetry (Issue #692 accepted non-invariant):\n- ${violations.join('\n- ')}`);
+        if (nonMonotonicComparisons.length > 0) {
+            console.info(`Whole-horizon cross-counterfactual telemetry (Issue #692 accepted non-invariant):\n- ${nonMonotonicComparisons.join('\n- ')}`);
         }
 
         for (const [, metrics] of ordered) {
