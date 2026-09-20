@@ -63,6 +63,9 @@ export function installVisualServices(fixture: VisualFixture): void {
     subjectiveBaseline: null,
     subjectiveHistoryState: { status: 'MISSING' },
     subjectiveHistoryIssues: [],
+    // Same "no Firestore history source" honesty as subjectiveHistoryState above -- visual
+    // review has no prior-day check-in to derive a carry from (issue #680).
+    carriedRegionRestrictions: [],
   });
 
   checkinService.getCheckin = async () => fixture.checkin;

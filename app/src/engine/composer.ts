@@ -4,6 +4,7 @@ import { summarizeDataState } from './dataState';
 import { isSupportedTrainingSettingsSchemaVersion } from './trainingSettingsSchema';
 import { computeSubjectiveBaseline, REFERENCE_SUBJECTIVE_BASELINE_POLICY, type SubjectiveBaseline } from './subjectiveBaseline';
 import { evaluateDataConfidence } from './dataConfidence';
+import { deriveCarriedRegionRestrictions, type CarriedRegionRestriction } from './injuryPolicy';
 import { checkinService } from '../services/checkinService';
 import { goalService } from '../services/goalService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
@@ -26,6 +27,13 @@ export interface ComposedDailyDecisionInput extends DailyDecisionInput {
     subjectiveBaseline: SubjectiveBaseline | null;
     subjectiveHistoryState: DataStateSummary;
     subjectiveHistoryIssues: DataIssue[];
+    /** Compact one-day pending-recheck carry (issue #680), derived from yesterday's raw
+     * tissue check-in already fetched for the subjective-history range read above -- never
+     * an extra read. Region + severity only, never a raw check-in, matching this module's
+     * existing "compact evidence only" composition-boundary policy. Pass to
+     * mapContextFromGoalsAndTrainingSettings only for the actual next calendar day's real
+     * context, never for a provisional/forecast day (see that function's own doc comment). */
+    carriedRegionRestrictions: CarriedRegionRestriction[];
 }
 
 export class DecisionComposer {
@@ -88,6 +96,20 @@ export class DecisionComposer {
             const subjectiveBaseline = subjectiveHistoryRawState.status === 'AVAILABLE'
                 ? computeSubjectiveBaseline(subjectiveHistoryRawState.data, targetDate, REFERENCE_SUBJECTIVE_BASELINE_POLICY)
                 : null;
+            // The one-day pending-recheck carry needs only yesterday's raw tissue response,
+            // already present in the subjective-history range read above (no extra read).
+            // An unavailable/missing history range fails open to no carry -- the same
+            // fail-open posture this module already uses for the relative subjective
+            // baseline above -- rather than blocking today's decision.
+            const priorDay = addDaysToLocalDateString(targetDate, -1);
+            const priorDayCheckin = subjectiveHistoryRawState.status === 'AVAILABLE'
+                ? subjectiveHistoryRawState.data.find(checkin => checkin.date === priorDay) ?? null
+                : null;
+            const carriedRegionRestrictions = deriveCarriedRegionRestrictions(
+                trainingSettings.injuries,
+                priorDayCheckin?.tissueResponses,
+                priorDay,
+            );
             const subjectiveHistoryIssues = subjectiveHistoryRawState.status === 'AVAILABLE'
                 ? [...(subjectiveHistoryRawState.issues ?? [])]
                 : subjectiveHistoryRawState.status === 'INVALID'
@@ -167,6 +189,7 @@ export class DecisionComposer {
                 subjectiveBaseline,
                 subjectiveHistoryState,
                 subjectiveHistoryIssues,
+                carriedRegionRestrictions,
             };
         } catch (error) {
             console.error('Error composing daily decision input:', error);

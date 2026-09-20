@@ -17,7 +17,7 @@ import type {
     TrainingSettings,
     GuardrailKey,
 } from './models';
-import { injuryRegionMappingFamily, resolveInjuryPolicy } from './injuryPolicy';
+import { injuryRegionMappingFamily, resolveInjuryPolicy, type CarriedRegionRestriction } from './injuryPolicy';
 import { goalToUserEvent } from './periodization';
 import { mapGoalsToPerformanceGoalDemands } from './performanceGoalDemand';
 import { getLocalDateString } from '../utils/localDate';
@@ -406,7 +406,11 @@ export function mapContextFromGoalsAndTrainingSettings(
     trainingSettings: TrainingSettings,
     preferences: UserPreferences | null,
     today?: string,
-    todaysCheckin?: DailySubjectiveCheckin | null
+    todaysCheckin?: DailySubjectiveCheckin | null,
+    // Compact one-day pending-recheck carry (issue #680) -- omit for any provisional/
+    // forecast-day context (see D-1 gate's no-forecast-leakage requirement); pass it only
+    // when reconstructing the actual next calendar day from its real check-in.
+    carriedRegionRestrictions?: CarriedRegionRestriction[]
 ): UserContext {
     const topGoalTitle = (category: UserGoal['category']): string => {
         const inCategory = goals.filter(g => g.category === category);
@@ -415,7 +419,7 @@ export function mapContextFromGoalsAndTrainingSettings(
     };
 
     const dateStr = today ?? getLocalDateString();
-    const injuryPolicy = resolveInjuryPolicy(trainingSettings.injuries, todaysCheckin?.tissueResponses, dateStr);
+    const injuryPolicy = resolveInjuryPolicy(trainingSettings.injuries, todaysCheckin?.tissueResponses, dateStr, carriedRegionRestrictions);
     const restrictedModalities = Array.from(new Set([
         ...injuryPolicy.restrictions.restrictedModalities,
         ...(preferences?.unavailableModalities ?? []),

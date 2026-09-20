@@ -213,6 +213,11 @@ export interface InjuryPolicyTrace {
     tissueSeverityApplied: boolean;
     regionMappingFamilies: InjuryRegionMappingFamily[];
     clinicalEnvelopeSources: ClinicalEnvelopeSource[];
+    /** Regions where today's restriction comes from yesterday's unresolved tissue
+     * check-in via the one-day pending-recheck carry (issue #680), not from today's own
+     * data or a standing injury. A product-policy heuristic, not a clinical finding --
+     * absent/empty means the carry didn't apply. */
+    tissueRecheckCarryApplied?: BodyRegion[];
 }
 
 export interface UserContext {

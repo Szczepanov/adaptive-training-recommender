@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { decisionComposer } from '../engine/composer';
+import { decisionComposer, type ComposedDailyDecisionInput } from '../engine/composer';
 import { evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateReadinessAndSafetyEnvelope } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapGoalsToUserEvents } from '../engine/adapters';
 import { generateWeekAheadPlanWithIntent, type WeekAheadPlan } from '../engine/planner';
@@ -11,7 +11,7 @@ import { resolvePlanningContext } from '../engine/planningMode';
 import { resolveExecutionDose } from '../engine/dose';
 import { resolveAvailability } from '../engine/schedule';
 import { adjudicateAuthoredSession, createAuthoredSessionTemplate, estimateAuthoredSessionSystemicCost } from '../engine/authoredSessionGates';
-import type { AuthoredPlanBlock, BodyRegion, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, FixedActivity, ShadowVerdict } from '../engine/models';
+import type { AuthoredPlanBlock, BodyRegion, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, FixedActivity, ShadowVerdict } from '../engine/models';
 import { isManualOccurrence, type SessionReferenceBinding } from '../sessions/models';
 import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import type { DataState } from '../engine/dataState';
@@ -120,7 +120,7 @@ function verifySessionBindingReplay(userId: string, saved: DailyRecommendation |
 }
 
 export function Home({ userId, onNavigate, onViewData, onStartSession }: HomeProps) {
-  const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
+  const [decisionInput, setDecisionInput] = useState<ComposedDailyDecisionInput | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [adjustmentDirection, setAdjustmentDirection] = useState<'easier' | 'harder' | null>(null);
   const [nextDayPlan, setNextDayPlan] = useState<NextDayPotentialPlan | null>(null);
@@ -436,7 +436,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       if (canGenerateNormalRecommendation(safetyStatus)) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
-        const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, input.date, input.subjectiveCheckin);
+        const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, input.date, input.subjectiveCheckin, input.carriedRegionRestrictions);
+        // Forecast/provisional days never receive the carry -- a current-day tissue
+        // response (or its carried restriction) must not be simulated across every
+        // provisional week-ahead day (issue #680's no-forecast-leakage requirement).
         const forecastContext = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, input.date, null);
         const events = mapGoalsToUserEvents(input.activeGoals);
         const preparedSnapshot = await prepareTrainingHistorySnapshot(userId, input.date);
@@ -931,7 +934,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     if (!decisionInput || (!decisionInput.recoverySnapshot && !decisionInput.subjectiveCheckin)) return null;
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
     const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
-    const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences, decisionInput.date, decisionInput.subjectiveCheckin);
+    const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences, decisionInput.date, decisionInput.subjectiveCheckin, decisionInput.carriedRegionRestrictions);
     return { subjective, objective, context };
   }, [decisionInput]);
 
@@ -939,6 +942,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     if (!decisionInput || (!decisionInput.recoverySnapshot && !decisionInput.subjectiveCheckin)) return null;
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
     const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
+    // No carry here -- forecast/provisional days never receive it (issue #680's
+    // no-forecast-leakage requirement, same as the today/forecast pair above).
     const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences, decisionInput.date, null);
     return { subjective, objective, context };
   }, [decisionInput]);
