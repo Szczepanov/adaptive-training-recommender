@@ -84,7 +84,7 @@ still applies conservative thresholds and ranking. Verified by re-running
 `npm run simulate:plan-judge` and diffing `allocationReports`: reservation placement is now
 byte-identical between `judge_pref_neutral` and `judge_pref_conservative`.
 
-**Mechanism B (found, NOT fixed -- a product-policy question, not a bug).** Fixing
+**Mechanism B (accepted under #692 as a planner non-invariant, not a defect).** Fixing
 Mechanism A did not make the `check-plan-judge-invariants.mjs` monotonicity assertions
 pass. Diffing the two cases' per-day `activeObjectives`/`projectedFatigue`/`mode` fields
 (not just the plan summary) localizes the remaining divergence to 2026-08-20 -- an ordinary
@@ -98,39 +98,44 @@ discretionary day with no required-role reservation in *either* run:
 | `PROJECTED_FATIGUE_GATE` rejections | 15 | 0 |
 
 Conservative correctly did *less* work on 2026-08-11 (`rest_01` vs neutral's `mob_01`) and
-2026-08-18 (`rest_01` vs neutral's `end_easy_04`, cost 0.18) -- both individually correct
-applications of the preference. But resting more on those two days leaves conservative
-genuinely *less fatigued* by 2026-08-20 (0.415 vs 0.488), which is enough to cross the
+2026-08-18 (`rest_01` vs neutral's `end_easy_04`, cost 0.18) -- both individually consistent
+with the preference. Those lower-load days leave the conservative run with a lower
+*model-projected* fatigue value by 2026-08-20 (0.415 vs 0.488), which is enough to cross the
 `modify`/`train` tier boundary: neutral stays gated to `systemicCost <=
 modifyMaxSystemicCost` candidates (excluding `end_hard_02`, hence 15
 `PROJECTED_FATIGUE_GATE` rejections), while conservative is ungated (0 rejections), and the
 optimizer's own ranking then legitimately prefers the higher-benefit `end_hard_02` once
 nothing excludes it.
 
-Every individual gate is working as designed -- this is recovery capacity earned by resting
-more, being spent on a harder session later, which is the intended purpose of recovery in
-any periodization model. It is not a threshold-direction bug, and a runtime fix cannot
-reference "what the neutral run would have done": production only ever runs one preference
-setting per athlete, so there is no counterfactual to compare against at decision time.
-Closing this gap would require a new, deliberately opinionated invariant -- e.g. a rolling
-weekly cap on hard-session count/cumulative systemic cost specifically under
-`conservativeBias`, capping opportunistic hard work even when the athlete has genuinely
-recovered enough to do it. That is a training-philosophy product decision, not an
-engineering bug fix, and is exactly the kind of judgment call issue #677 asked to be made
-explicitly rather than picked silently. **Left undecided and unimplemented.** The
-`judge_pref_conservative`/`judge_mode_conservative_preference` monotonicity assertions in
-`check-plan-judge-invariants.mjs` were softened from hard failures to non-blocking warnings
-for this reason -- see that file's inline comment for the current disposition.
+Every individual gate is consistent with the current planner rules, but the numeric fatigue
+projection must not be over-interpreted. The architecture already records that its external /
+internal fatigue fusion is **not calibrated as a direct physiological measurement**. The result
+therefore supports a narrower engineering statement: lower prior modeled load can move a later
+date across a local tier boundary. It does not prove that the athlete is objectively or fully
+recovered, and the literature does not establish this product score or its thresholds as a
+physiological ground truth.
 
-**Update 2026-09-20.** The identical root cause (no whole-horizon load budget, only
-per-day local fatigue-tier classification) independently surfaced from issue #676's
-recent-load-recency work (`app/src/engine/recentLoadHorizonDensity.test.ts`, also
-softened to a warning; see
-`docs/analysis/2026-09-20-whole-horizon-fatigue-tier-rebound.md`). Both are now tracked
-jointly as cross-cutting
-[issue #692](https://github.com/Szczepanov/adaptive-training-recommender/issues/692),
-since a same-PR patch to either finding's own heuristic was shown not to actually be the
-mechanism, and a real fix needs to close both reproductions together.
+A runtime fix also cannot literally compare "what the neutral run would have done": production
+executes one athlete timeline and one preference state. A stricter whole-horizon guarantee would
+need an explicit product policy such as a rolling hard-session/load budget. That may be useful in
+future, but it is a separate calibration decision and should not be smuggled in as a consequence
+of the current readiness model.
+
+**Formal Resolution (Issue #692):** this PR resolves the issue by accepting
+cross-counterfactual whole-horizon monotonicity as a **planner non-invariant**. This is compatible
+with the current user-facing **Extra Recovery Margin** contract, which says that borderline or
+ambiguous readiness decisions should prefer lower-risk/lower-dose options; it does not promise
+that every synthetic 14-day conservative counterfactual has lower cumulative load. The hard
+per-candidate conservative ranking checks remain in `travelConservativeOverlayBoundary.test.ts`.
+The plan-judge comparison remains characterization telemetry, not a defect gate.
+
+**Evidence boundary.** Recovery and readiness are appropriate inputs to day-to-day training
+decisions, but athlete-monitoring literature emphasizes contextual interpretation and the lack of
+a single definitive fatigue marker. Halson (2014; PMID 25200666) and Ibrahim et al. (2024;
+PMID 38665139) support that caution. Rebelo et al. (2026; PMID 41824225) further frames readiness
+as a contextual, longitudinal decision-support proxy rather than a stand-alone determinant.
+None of these sources validates this engine's internal `systemicCost` bands, fatigue fusion, or
+a specific whole-horizon monotonicity rule.
 
 ## Non-goals honored
 

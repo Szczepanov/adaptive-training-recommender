@@ -126,27 +126,21 @@ for (const day of travel.plan.slice(0, 3)) {
 fail(travel.plan.slice(0, 3).some((day) => !['Rest', 'Mobility/Recovery'].includes(day.session.category)),
   'Travel case collapses every day in the 3-day window to Rest/Mobility with no equipment-free aerobic maintenance stimulus.');
 
-// Issue #677: conservativeBias is a preference overlay, so for matched inputs it should
-// not create *more* hard sessions or greater cumulative systemic/cardiovascular training
-// cost. The weekly-role RESERVATION mechanism was fixed to hold this (see
-// docs/analysis/2026-09-19-conservative-travel-overlay-investigation.md, "Mechanism A") --
-// reservation placement is now identical between matched neutral/conservative runs.
+// Issue #677 originally used whole-horizon monotonicity as a diagnostic hypothesis for
+// conservativeBias. Mechanism A (reservation placement) was a real defect and remains
+// fixed: matched neutral/conservative runs reserve required roles on the same dates.
 //
-// A second, distinct mechanism ("Mechanism B" in that doc) remains open and is NOT a bug:
-// resting more on an earlier day under conservativeBias can leave the athlete genuinely
-// less fatigued a few days later, which legitimately clears the train/modify fatigue-tier
-// boundary and unlocks a harder discretionary candidate that the (more fatigued) neutral
-// run stays gated away from. Every individual gate is behaving as designed -- this is
-// recovery capacity being earned and spent, the intended purpose of recovery in any
-// periodization model, not a threshold-direction defect. Closing it would require a new,
-// deliberately opinionated rule (e.g. a rolling weekly hard-session/cost cap specifically
-// under conservativeBias, capping opportunistic hard work even once genuinely recovered)
-// that is a training-philosophy product decision, not an engineering fix, and has not been
-// made. These checks are therefore WARNINGS, not failures, until that decision is made.
-// The identical root cause (no whole-horizon load budget, only per-day local fatigue-tier
-// classification) independently surfaced from issue #676's recent-load-recency work too
-// (app/src/engine/recentLoadHorizonDensity.test.ts, also softened to a warning) -- tracked
-// jointly as cross-cutting issue #692, which un-softening this needs to resolve too.
+// Issue #692 resolves Mechanism B differently. The user-facing "Extra Recovery Margin"
+// contract is local: when readiness is borderline or ambiguous, bias the decision toward
+// lower-risk/lower-dose options. It is not a promise that every synthetic 14-day
+// counterfactual has lower cumulative load. Earlier low-load days can reduce the planner's
+// model-projected fatigue enough that a later date returns to the train tier and accepts a
+// fuller discretionary dose. The per-candidate conservative ranking contract is still a
+// hard test in travelConservativeOverlayBoundary.test.ts; the cross-run totals below are
+// characterization telemetry only. The projected fatigue score is an internal product
+// model, not a calibrated measurement of physiological recovery.
+// See docs/analysis/2026-09-19-conservative-travel-overlay-investigation.md and
+// docs/analysis/2026-09-20-whole-horizon-fatigue-tier-rebound.md.
 const planLoad = (item) => (item.plan ?? []).reduce((acc, day) => {
   const systemic = day.session?.systemicCost ?? 0;
   const cardiovascular = day.session?.costProfile?.cardiovascular ?? 0;
@@ -156,23 +150,23 @@ const planLoad = (item) => (item.plan ?? []).reduce((acc, day) => {
     cardiovascular: acc.cardiovascular + cardiovascular,
   };
 }, { hardSessions: 0, systemic: 0, cardiovascular: 0 });
-const conservativeChecks = [];
-const conservativeWarnings = [];
-const warnConservative = (ok, message) => { if (!ok) conservativeWarnings.push(message); };
-const assertConservativeMonotonic = (neutralId, conservativeId) => {
+const conservativeComparisons = [];
+const conservativeTelemetry = [];
+const recordConservativeTelemetry = (ok, message) => { if (!ok) conservativeTelemetry.push(message); };
+const recordConservativeComparison = (neutralId, conservativeId) => {
   const neutral = planLoad(required(neutralId));
   const conservative = planLoad(required(conservativeId));
   const epsilon = 1e-9;
-  warnConservative(conservative.hardSessions <= neutral.hardSessions,
+  recordConservativeTelemetry(conservative.hardSessions <= neutral.hardSessions,
     `${conservativeId}: conservative plan has ${conservative.hardSessions} hard sessions vs ${neutral.hardSessions} in ${neutralId}.`);
-  warnConservative(conservative.systemic <= neutral.systemic + epsilon,
+  recordConservativeTelemetry(conservative.systemic <= neutral.systemic + epsilon,
     `${conservativeId}: cumulative systemic cost ${conservative.systemic.toFixed(3)} exceeds ${neutral.systemic.toFixed(3)} in ${neutralId}.`);
-  warnConservative(conservative.cardiovascular <= neutral.cardiovascular + epsilon,
+  recordConservativeTelemetry(conservative.cardiovascular <= neutral.cardiovascular + epsilon,
     `${conservativeId}: cumulative cardiovascular cost ${conservative.cardiovascular.toFixed(3)} exceeds ${neutral.cardiovascular.toFixed(3)} in ${neutralId}.`);
-  conservativeChecks.push({ neutralId, conservativeId, neutral, conservative });
+  conservativeComparisons.push({ neutralId, conservativeId, neutral, conservative });
 };
-assertConservativeMonotonic('judge_pref_neutral', 'judge_pref_conservative');
-assertConservativeMonotonic('judge_mode_event_directed', 'judge_mode_conservative_preference');
+recordConservativeComparison('judge_pref_neutral', 'judge_pref_conservative');
+recordConservativeComparison('judge_mode_event_directed', 'judge_mode_conservative_preference');
 
 const evergreen = required('judge_mode_evergreen');
 fail(evergreen.input.trainingIntentProfile?.planningMode === 'evergreen', 'Evergreen case did not propagate a valid trainingIntentProfile.planningMode.');
@@ -375,10 +369,10 @@ console.log(`Families SHA-256: ${familiesSha256}`);
 console.log(`Event-demand sequence distance: A=${demandDistanceA.toFixed(3)}, B=${demandDistanceB.toFixed(3)}.`);
 console.log(`Compact criterium template count: criterium A=${critACompactCount}, gran fondo A=${granACompactCount}.`);
 console.log(`Event-demand specific exposure: A criterium=${critACompactMax} min/FR ${critAFatigueResistance.toFixed(3)}, gran fondo=${granASustainedMax} min/FR ${granAFatigueResistance.toFixed(3)}; B criterium=${critBCompactMax} min/FR ${critBFatigueResistance.toFixed(3)}, gran fondo=${granBSustainedMax} min/FR ${granBFatigueResistance.toFixed(3)}.`);
-for (const check of conservativeChecks) {
-  console.log(`Conservative monotonicity ${check.conservativeId} vs ${check.neutralId}: hard ${check.conservative.hardSessions}/${check.neutral.hardSessions}, systemic ${check.conservative.systemic.toFixed(3)}/${check.neutral.systemic.toFixed(3)}, cardiovascular ${check.conservative.cardiovascular.toFixed(3)}/${check.neutral.cardiovascular.toFixed(3)}.`);
+for (const check of conservativeComparisons) {
+  console.log(`Conservative comparison ${check.conservativeId} vs ${check.neutralId}: hard ${check.conservative.hardSessions}/${check.neutral.hardSessions}, systemic ${check.conservative.systemic.toFixed(3)}/${check.neutral.systemic.toFixed(3)}, cardiovascular ${check.conservative.cardiovascular.toFixed(3)}/${check.neutral.cardiovascular.toFixed(3)}.`);
 }
-if (conservativeWarnings.length > 0) {
-  console.warn('Conservative-monotonicity warnings (Mechanism B, accepted -- tracked as issue #692, see docs/analysis/2026-09-19-conservative-travel-overlay-investigation.md):');
-  for (const warning of conservativeWarnings) console.warn(`- ${warning}`);
+if (conservativeTelemetry.length > 0) {
+  console.log('Conservative cross-counterfactual telemetry (Mechanism B, Issue #692 accepted non-invariant):');
+  for (const item of conservativeTelemetry) console.log(`- ${item}`);
 }

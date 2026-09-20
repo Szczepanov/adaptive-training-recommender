@@ -21,8 +21,8 @@ function horizonMetrics(result: Awaited<ReturnType<typeof runScenario>>) {
     };
 }
 
-describe('recent load whole-horizon density (Issue #676)', () => {
-    it('orders 14-day hard density and cumulative systemic cost by recency of the prior hard exposure', async () => {
+describe('recent load horizon response (Issue #676 / #692)', () => {
+    it('caps near-term load after a recent hard exposure and reports whole-horizon rebound telemetry', async () => {
         const base = SCENARIOS.find(s => s.id === 'cycling_criterium_A');
         expect(base).toBeDefined();
         if (!base) return;
@@ -54,47 +54,33 @@ describe('recent load whole-horizon density (Issue #676)', () => {
             ['no recent hard load', horizonMetrics(none)],
         ] as const;
 
-        // Issue #692: whole-horizon monotonicity is NOT guaranteed by the current
-        // fatigue-tier architecture, confirmed with a concrete reproduction, not a
-        // hypothesis. Resting more on an earlier day (a correct, individually-sound
-        // response to the seeded exposure -- 2026-08-11 becomes full rest_01/'recover'
-        // tier here, vs the lighter mob_01/'modify' tier the "no recent hard load" run
-        // picks) lets fatigue clear fast enough that 2026-08-12 reaches 'train' tier
-        // instead of 'modify' tier, removing the systemicCost <= modifyMaxSystemicCost
-        // ceiling. Whatever discretionary (non-required-role) session lands there then
-        // gets the full-dose template (str_full_01, cost 0.8) instead of the
-        // ceiling-capped one (str_full_03, cost 0.45) the "no recent hard load" run's own
-        // strength days use -- producing MORE total hard sessions from more recent hard
-        // load, the opposite of what this test checks. This is the same root cause as
-        // #677/#684's conservativeBias finding (see
-        // docs/analysis/2026-09-19-conservative-travel-overlay-investigation.md and
-        // docs/analysis/2026-09-20-whole-horizon-fatigue-tier-rebound.md), not a defect
-        // local to this PR's own new code. Closing it needs a genuine whole-horizon load
-        // budget -- tracked in issue #692 rather than patched here as an unverified,
-        // possibly-regression-risking change to the shared fatigue-tier gate.
-        const violations: string[] = [];
+        // Issue #692 resolves the former whole-horizon monotonicity expectation as a
+        // non-invariant of this greedy day-by-day planner. A recent hard exposure can
+        // correctly reduce near-term load, create more recovery headroom in the model,
+        // and later cross a local fatigue-tier boundary sooner than a matched baseline.
+        // That later rebound is characterization telemetry, not proof that the athlete is
+        // physiologically "more recovered": the internal fatigue projection is a product
+        // model and is explicitly not calibrated as a direct physiological measurement.
+        // Hard safety/feasibility gates and the near-term response to recent load remain
+        // executable contracts; cross-counterfactual 14-day ordering does not.
+        const nonMonotonicComparisons: string[] = [];
         for (let i = 0; i < ordered.length - 1; i++) {
             const [moreRecentLabel, moreRecent] = ordered[i];
             const [lessRecentLabel, lessRecent] = ordered[i + 1];
             if (moreRecent.hardCount > lessRecent.hardCount) {
-                violations.push(`${moreRecentLabel} has more hard sessions (${moreRecent.hardCount}) than ${lessRecentLabel} (${lessRecent.hardCount}).`);
-            } else {
-                expect(
-                    moreRecent.hardCount,
-                    `${moreRecentLabel} should not create more hard sessions than ${lessRecentLabel}`,
-                ).toBeLessThanOrEqual(lessRecent.hardCount);
+                nonMonotonicComparisons.push(`${moreRecentLabel} has more hard sessions (${moreRecent.hardCount}) than ${lessRecentLabel} (${lessRecent.hardCount}).`);
             }
             if (moreRecent.systemicTotal > lessRecent.systemicTotal + 1e-9) {
-                violations.push(`${moreRecentLabel} has higher cumulative systemic cost (${moreRecent.systemicTotal.toFixed(3)}) than ${lessRecentLabel} (${lessRecent.systemicTotal.toFixed(3)}).`);
-            } else {
-                expect(
-                    moreRecent.systemicTotal,
-                    `${moreRecentLabel} should not create more cumulative systemic cost than ${lessRecentLabel}`,
-                ).toBeLessThanOrEqual(lessRecent.systemicTotal + 1e-9);
+                nonMonotonicComparisons.push(`${moreRecentLabel} has higher cumulative systemic cost (${moreRecent.systemicTotal.toFixed(3)}) than ${lessRecentLabel} (${lessRecent.systemicTotal.toFixed(3)}).`);
             }
         }
-        if (violations.length > 0) {
-            console.warn(`Whole-horizon monotonicity warnings (issue #692, accepted -- see docs/analysis/2026-09-20-whole-horizon-fatigue-tier-rebound.md):\n- ${violations.join('\n- ')}`);
+        if (nonMonotonicComparisons.length > 0) {
+            console.info(`Whole-horizon cross-counterfactual telemetry (Issue #692 accepted non-invariant):\n- ${nonMonotonicComparisons.join('\n- ')}`);
+        }
+
+        for (const [, metrics] of ordered) {
+            expect(Number.isFinite(metrics.hardCount)).toBe(true);
+            expect(Number.isFinite(metrics.systemicTotal)).toBe(true);
         }
 
         expect(hard1d.decisionTraces[0].selected.projectedCost.systemic).toBeLessThan(0.5);
