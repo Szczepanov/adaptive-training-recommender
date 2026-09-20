@@ -3,7 +3,12 @@ import { isHistoricalPolicyVersion, HISTORICAL_POLICY_VERSIONS, POLICY_VERSION }
 
 describe('isHistoricalPolicyVersion', () => {
     it('records the current transition and the previous live policies exactly once', () => {
-        expect(POLICY_VERSION).toBe('2026-09-effective-dose-ranking-consistency-v1');
+        expect(POLICY_VERSION).toBe('2026-09-event-priority-c-monotonicity-v1');
+        expect(
+            HISTORICAL_POLICY_VERSIONS.filter(
+                (version) => version === '2026-09-effective-dose-ranking-consistency-v1',
+            ),
+        ).toHaveLength(1);
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(
                 (version) => version === '2026-09-gran-fondo-durability-anchor-spacing-v1',

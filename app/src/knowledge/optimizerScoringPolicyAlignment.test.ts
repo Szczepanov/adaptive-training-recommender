@@ -101,7 +101,7 @@ const PREFERENCES = {
     updatedAt: '',
 } as UserPreferences;
 
-function cyclingEvent(priority: 'A' | 'B', date = '2026-09-20'): UserEvent {
+function cyclingEvent(priority: 'A' | 'B' | 'C', date = '2026-09-20'): UserEvent {
     return {
         id: `event-${priority}-${date}`,
         title: `${priority} cycling event`,
@@ -344,8 +344,12 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         const bEvent = rankCandidates([easy], [], mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
             date: '2026-09-10', focusEvent: cyclingEvent('B'),
         });
+        const cEvent = rankCandidates([easy], [], mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
+            date: '2026-09-10', focusEvent: cyclingEvent('C'),
+        });
         expect(aEvent.accepted[0].benefitScore).toBeCloseTo(baseline.accepted[0].benefitScore * 1.40, 5);
         expect(bEvent.accepted[0].benefitScore).toBeCloseTo(baseline.accepted[0].benefitScore * 1.25, 5);
+        expect(cEvent.accepted[0].benefitScore).toBeCloseTo(baseline.accepted[0].benefitScore, 5);
 
         const raceSpecific = mockTemplate({
             id: 'race-specific-test',
@@ -365,6 +369,19 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
             }],
         });
         expect(bSecondRaceSpecific.accepted[0].benefitScore).toBeCloseTo(0.45 * 1.25 * 0.35, 5);
+
+        const cSecondRaceSpecific = rankCandidates([raceSpecific], [], mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
+            date: '2026-09-10',
+            focusEvent: cyclingEvent('C'),
+            recentHistory: [{
+                date: '2026-09-06',
+                category: 'Race-Specific Endurance',
+                modality: 'Cycling',
+                systemicCost: 0.3,
+                type: 'Cycling',
+            }],
+        });
+        expect(cSecondRaceSpecific.accepted[0].benefitScore).toBeCloseTo(0.45 * 0.35, 5);
 
         const longHorizon = rankCandidates([raceSpecific], [], mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
             date: '2026-09-10', focusEvent: cyclingEvent('A', '2026-10-10'),
@@ -413,8 +430,9 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(strengthWithAEvent.accepted[0].benefitScore).toBeCloseTo(strengthBaseline.accepted[0].benefitScore * 1.40, 5);
 
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.eventPriorityMultipliersPolicy);
-        expect(claim.statement).toContain('1.40 for an A-priority event and 1.25 for a B-priority event');
+        expect(claim.statement).toContain('1.40 for an A-priority event, 1.25 for a B-priority event and 1.00 for a C-priority event');
         expect(claim.statement).toContain('for strength_meet, that priority boost applies only when the candidate satisfies an unresolved objective');
+        expect(claim.statement).toContain('For B and C events, a second race-specific endurance session within 6 days is multiplied by 0.35');
         expect(claim.statement).toContain('multiplied by 0.35');
         expect(claim.statement).toContain('multiplied by 0.50');
         expect(claim.statement).toContain('multiplied by 0.20');
