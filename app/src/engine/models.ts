@@ -889,6 +889,10 @@ export interface SessionTemplate {
     safetyTags: GuardrailKey[];
     systemicCost: number;
     objectiveTransferable?: boolean;
+    /** Candidate is admitted only when no ordinary session in the same fallback family
+     * survives hard feasibility. This is an availability escape hatch, not a preference
+     * boost, so it cannot displace a normal sport-specific option merely on utility. */
+    availabilityFallbackRole?: 'aerobic_endurance';
     easierDose?: DoseVariation;
     harderDose?: DoseVariation;
     stimulusProfile?: WorkoutStimulusProfile;

@@ -755,6 +755,42 @@ export const TEMPLATES: SessionTemplate[] = [
         stimulusProfile: { aerobicEndurance: 0.2, thresholdPower: 0.1, vo2MaxPower: 0.2, repeatedSurges: 0.3, sprintPower: 0.1, fatigueResistance: 0.2, maxStrength: 0, hypertrophy: 0 },
         costProfile: { systemic: 0.15, cardiovascular: 0.2, lowerBody: 0.1, upperBody: 0.05, impactTissue: 0.05, neuromuscular: 0.2 },
         phaseEligibility: { requiresFocusEvent: true, requiresTaper: true, maxDaysToEvent: 3 }
+    },
+    {
+        // Deliberately appended. availabilityFallbackRole keeps this candidate out of
+        // ordinary rankings whenever any normal endurance option survives hard feasibility,
+        // so catalog order cannot make a hotel-room substitute displace sport-specific work.
+        id: "end_easy_05",
+        category: "Easy Endurance",
+        modality: "Cross Training",
+        durationMin: 20,
+        durationMax: 30,
+        title: "Equipment-Free Aerobic Circuit",
+        description: "Continuous low-impact bodyweight cardio (marching in place, no-jump step jacks, shadow boxing and easy hip hinges) held at an easy-to-moderate RPE. Genuinely zero equipment and indoor-safe; use only when normal endurance options are unavailable.",
+        requiredEquipment: [],
+        environment: 'either', safetyTags: [],
+        systemicCost: 0.25,
+        objectiveTransferable: true,
+        availabilityFallbackRole: 'aerobic_endurance',
+        // Cross-training can preserve general cardiorespiratory stimulus, but it is not
+        // treated as fully sport-specific cycling/running work. Keep both credit and cost
+        // authored rather than inheriting the generic Easy Endurance defaults.
+        stimulusProfile: { aerobicEndurance: 0.55, thresholdPower: 0.05, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0.1, maxStrength: 0, hypertrophy: 0 },
+        costProfile: { systemic: 0.25, cardiovascular: 0.3, lowerBody: 0.18, upperBody: 0.12, impactTissue: 0.08, neuromuscular: 0.08 },
+        easierDose: {
+            label: "15 min Light Circuit",
+            durationMin: 12,
+            durationMax: 18,
+            doseRatio: 0.6,
+            prescriptionSummary: "Light 15 min low-impact bodyweight aerobic circuit."
+        },
+        harderDose: {
+            label: "35 min Extended Circuit",
+            durationMin: 30,
+            durationMax: 40,
+            doseRatio: 1.35,
+            prescriptionSummary: "Extended 35 min low-impact bodyweight aerobic circuit."
+        }
     }
 ];
 
