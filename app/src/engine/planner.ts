@@ -79,6 +79,7 @@ import {
     attachExactEligibleIdentities,
     deriveRequiredRoleOccurrences,
     occurrenceForTemplate,
+    occurrencesFulfilledByTemplateSelection,
     resolveWeeklyRoleReservations,
     WEEKLY_ALLOCATION_SEARCH_BUDGET,
     type AllocationAssignment,
@@ -1735,16 +1736,17 @@ export function generateWeekAheadPlan(
                 return 'unresolved_search_budget';
             }
             if (allocationSurvives(incumbentAssignments, evaluator)) return 'preserves';
-            const selfFulfils = occurrenceForTemplate(pendingOccurrences, template).length > 0 ? 1 : 0;
+            const selfFulfilledOccurrences = occurrencesFulfilledByTemplateSelection(pendingOccurrences, template);
+            const selfFulfilledIds = new Set(selfFulfilledOccurrences.map(occurrence => occurrence.id));
             const after = resolveWeeklyRoleReservations(
-                pendingOccurrences.filter(occurrence => occurrenceForTemplate([occurrence], template).length === 0),
+                pendingOccurrences.filter(occurrence => !selfFulfilledIds.has(occurrence.id)),
                 evaluator,
                 { nominatedDates },
             );
             if (after.budgetExhausted || after.outcomes.some(outcome => outcome.status === 'unresolved_search_budget')) {
                 return 'unresolved_search_budget';
             }
-            return after.fulfilledCount + selfFulfils >= allocation.fulfilledCount ? 'preserves' : 'degrades';
+            return after.fulfilledCount + selfFulfilledOccurrences.length >= allocation.fulfilledCount ? 'preserves' : 'degrades';
         };
         const viabilityApplies = shouldProtectWeeklyAllocation(effectiveFatigueTier, allocation.fulfilledCount);
         const pickSelection = selectViableForecastCandidate(
@@ -1769,12 +1771,8 @@ export function generateWeekAheadPlan(
         applyFixedActivityCost(date);
         applyScheduleOverlayCost(date);
 
-        const fulfilledKeys = new Set<string>();
-        occurrenceForTemplate(pendingOccurrences, pick.template)
-            .sort((left, right) => left.coverageKey.localeCompare(right.coverageKey) || left.ordinal - right.ordinal)
+        occurrencesFulfilledByTemplateSelection(pendingOccurrences, pick.template)
             .forEach(occurrence => {
-                if (fulfilledKeys.has(occurrence.coverageKey)) return;
-                fulfilledKeys.add(occurrence.coverageKey);
                 const nominated = nominatedDates.get(occurrence.id) ?? null;
                 const prior = allocation.outcomes.find(outcome => outcome.occurrence.id === occurrence.id);
                 settledOutcomes.set(occurrence.id, {
