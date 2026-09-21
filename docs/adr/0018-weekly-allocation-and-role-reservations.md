@@ -95,26 +95,32 @@ new projected fatigue and history. On a reserved date the planner selects a cand
 fulfils that reserved occurrence. A safe role may move to a later jointly feasible date;
 it is not lost merely because its original nominated/allocated date changed.
 
-### D-SUPPORT — supporting work may not destroy all safe allocations
+### D-SUPPORT — a selected forecast session may not destroy all safe allocations
 
-On an unreserved date, a supporting candidate is admissible only if applying its projected
-cost/history preserves the maximum achievable **stateful** required-role reservation count
-and any earlier-deadline reservation it would otherwise invalidate. This is a bounded
-one-step viability check, not horizon-wide utility search.
-It prevents a reduced-dose strength/support session from consuming the only safe quality
-or event-specific opportunity, while continuing to permit it whenever another safe
+On every train/modify forecast date, the selected candidate is admissible only if applying
+its projected cost/history preserves the maximum achievable **stateful** required-role
+reservation count and any earlier-deadline reservation it would otherwise invalidate. This
+is a bounded one-step viability check, not horizon-wide utility search. On an unreserved
+date this protects required roles from discretionary support work. On a reserved date the
+ranking pool is constrained to exact-role candidates when they survive the date gates, but
+the chosen exact candidate must still preserve the other required occurrences; satisfying
+the current reservation does not authorize starving a later one.
+It prevents a reduced-dose strength/support session, an unnecessarily costly exact-role
+substitute, or a discretionary Rest day from consuming the only safe quality or
+event-specific opportunity, while continuing to permit the selection whenever another safe
 allocation remains.
 
 Hard safety and feasibility still outrank role fulfilment. A recover-tier ceiling remains
 Rest-first; no reservation can force training through it. Rest is not made an optimisation
 target or capped by percentage.
 
-On a train/modify-tier unreserved date, a discretionary Rest selection consumes the date
-and therefore receives the same stateful viability proof as any supporting selection. It
-is rejected when it would remove the last proven required-role allocation. In a true
-recover tier, Rest-first outranks this proof: Rest is selected without forcing unsafe
-training, the remaining search is recomputed, and any resulting loss is reported as a
-recover-tier safety consequence rather than as a discretionary scheduling defect.
+On a train/modify-tier date, a Rest selection consumes the date and therefore receives the
+same stateful viability proof as any other selection. It is used as the safe fallback only
+when preservation is proven; if bounded search cannot prove preservation, the plan carries
+an explicit `unresolved_search_budget` outcome rather than silently treating Rest as proof.
+In a true recover tier, Rest-first outranks this proof: Rest is selected without forcing
+unsafe training, the remaining search is recomputed, and any resulting loss is reported as
+a recover-tier safety consequence rather than as a discretionary scheduling defect.
 
 ### D-BUDGET — allocate required roles inside the committed rolling envelope
 
