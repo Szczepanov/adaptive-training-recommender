@@ -15,6 +15,7 @@ export const OPTIMIZER_SCORING_CLAIM_IDS = {
     eventPriorityMultipliersPolicyV1: 'policy.optimizer.event_priority_multipliers_v1',
     eventPriorityMultipliersPolicy: 'policy.optimizer.event_priority_multipliers_v2',
     recoveryStreakHeuristicsPolicy: 'policy.optimizer.recovery_streak_heuristics_v1',
+    rollingLoadBudgetPolicy: 'policy.optimizer.rolling_load_budget_v1',
 } as const;
 
 const OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE = 'PRODUCT-OPTIMIZER-SCORING-POLICY-V1';
@@ -76,5 +77,18 @@ export const OPTIMIZER_SCORING_CLAIMS: readonly KnowledgeClaim[] = [
         evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
         limitations: ['Recovery alternation and training-streak shaping prevent monotonous recovery choices and excessive uninterrupted loading when plan objectives are satisfied; the 14-day lookback, 0.40/0.50 thresholds, and 1.40x/1.25x/2.0x/0.3x/0.1x/0.35x multipliers are product calibration values.'],
         reviewedOn: '2026-09-03', version: 1,
+    },
+    {
+        id: OPTIMIZER_SCORING_CLAIM_IDS.rollingLoadBudgetPolicy,
+        statement: 'Product rolling-load budget v1: when at least three completed exposures span at least 14 calendar days in the stable 35-day pre-window, the planner derives a per-athlete seven-day catalog-cost envelope from that athlete\'s own baseline, with a 15% headroom multiplier and conservative fallback limits of systemic 2.0, cardiovascular 3.0, lower-body 2.0, upper-body 2.0, impact-tissue 2.0 and neuromuscular 2.0. The envelope gates projected exercise candidates but never overrides clinical, injury, readiness, schedule, fixed-activity or authored-plan authority; sparse history leaves the new gate inactive while existing safety controls remain authoritative.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['candidate_selection', 'load_management', 'week_ahead_planning'], sports: ['all_supported_sports'], populations: ['app_users_with_stable_training_history'], outcomes: ['bounded_discretionary_catalog_load'], horizon: 'chronic' },
+        evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: [
+            'Training-load monitoring and stress-recovery evidence support longitudinal individualization, but do not validate the normalized catalog-cost scale, the 15% headroom, or the fallback limits as physiological constants.',
+            'This envelope is a conservative product guardrail for forecast allocation, not a diagnosis, injury probability, medical limit, or claim of universal dose-response.',
+            'The budget must not be increased from a physiological identity score or from a single HRV/readiness value; prospective outcome calibration remains required before relaxing it.',
+        ],
+        reviewedOn: '2026-09-20', version: 1,
     },
 ];

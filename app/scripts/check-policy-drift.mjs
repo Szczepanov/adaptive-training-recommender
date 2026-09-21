@@ -82,6 +82,7 @@ const decisionAffectingFiles = [
   'app/src/engine/periodization.ts',
   'app/src/engine/fatigue.ts',
   'app/src/engine/planner.ts',
+  'app/src/engine/rollingLoadBudget.ts',
   'app/src/engine/dose.ts',
   // Completed evidence changes future objective state and fatigue replay. A selectable
   // estimator here is policy even though it sits upstream of the ranking modules.

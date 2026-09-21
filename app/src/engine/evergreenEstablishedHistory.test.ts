@@ -133,7 +133,7 @@ describe('evergreen established-history evidence', () => {
             PROFILE,
         );
 
-        expect(requestedWindows).toEqual([7, 28]);
+        expect(requestedWindows).toEqual([7, 49, 28]);
         expect(intent.history).toHaveLength(2);
         expect(intent.history.every(item => item.date >= '2026-08-24')).toBe(true);
         expect(intent.historySnapshot?.windowDays).toBe(7);

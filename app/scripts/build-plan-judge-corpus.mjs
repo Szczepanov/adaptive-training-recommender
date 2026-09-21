@@ -440,6 +440,16 @@ export function makeAllFamilies(scenarios, deliveredDoseModule, resolveDemandPro
         exposureOn(hardExposure, addDays(base.startDate, -1), 'spaced-hard-d1'),
       ],
     }),
+    neutral('judge_load_stable_budget_clustered', 'Recent training — stable personal baseline with clustered hard load', { recentTraining: 'stable_budget_clustered' }, {
+      initialHistory: [
+        exposureOn(hardExposure, addDays(base.startDate, -35), 'stable-budget-baseline-35d'),
+        exposureOn(hardExposure, addDays(base.startDate, -28), 'stable-budget-baseline-28d'),
+        exposureOn(hardExposure, addDays(base.startDate, -21), 'stable-budget-baseline-21d'),
+        exposureOn(hardExposure, addDays(base.startDate, -3), 'stable-budget-recent-3d'),
+        exposureOn(hardExposure, addDays(base.startDate, -2), 'stable-budget-recent-2d'),
+        exposureOn(hardExposure, addDays(base.startDate, -1), 'stable-budget-recent-1d'),
+      ],
+    }),
   ];
 
   // 4. Event proximity

@@ -136,6 +136,7 @@ export function trainingIntentKnowledgeRefs(intent: {
         refs.push(
             KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance,
             KNOWLEDGE_CLAIM_IDS.fatigueDecayHalfLives,
+            KNOWLEDGE_CLAIM_IDS.rollingLoadBudgetPolicy,
             KNOWLEDGE_CLAIM_IDS.strenuousLowerBodyResidualFatigue,
             KNOWLEDGE_CLAIM_IDS.anchorSpacing,
             KNOWLEDGE_CLAIM_IDS.rollingHardDensityCap,

@@ -381,6 +381,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.optimizer.recovery_streak_heuristics_v1`) with alignment testing. The mixed-recovery 1.40x alternation, 14-day/0.40 streak definition, 1.25x easy-aerobic default boost, 2.0x/0.3x/0.1x streak shaping and 0.50/0.35x intensity stacking penalty are all explicit product calibration.',
     },
     {
+        id: 'optimizer.rolling_load_budget', domain: 'optimizer_scoring', title: 'Individualized rolling catalog-load budget',
+        currentRule: 'With at least three completed exposures spanning at least 14 days in the stable pre-window, derive per-dimension seven-day catalog-load limits from the athlete\'s own 35-day baseline with 15% headroom; otherwise leave this new gate inactive and retain existing fatigue/safety controls. Projected exercise candidates that exceed the fixed forecast envelope are excluded with LOAD_BUDGET_EXCEEDED.',
+        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p1',
+        codeRefs: ['engine/rollingLoadBudget.ts:resolveRollingLoadBudgetProfile', 'engine/rollingLoadBudget.ts:evaluateRollingLoadBudget', 'engine/planner.ts:evaluateProjectedDate'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.rollingLoadBudgetPolicy],
+        coverageRationale: 'Longitudinal load monitoring and stress–recovery evidence support tracking accumulated load against an athlete\'s own history, while the exact catalog-cost dimensions, 35-day baseline, 15% headroom and fallback limits remain product calibration. Coverage is intentionally partial until prospective outcome calibration shows when this envelope improves planning without unnecessary under-training.',
+    },
+    {
         id: 'periodization.phase_boundaries_scales', domain: 'periodization_taper', title: 'Base/Build/Specificity phase boundaries and dose scales',
         currentRule: 'Specificity begins <=35 days; Build <=84 days; farther dates are Base. Build uses 0.6 event-demand blend, volume 1.1/intensity 0.9; Base uses 0.3 blend, volume 1.0/intensity 0.8; Specificity uses volume 1.0/intensity 1.1.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',

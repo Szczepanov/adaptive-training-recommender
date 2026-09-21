@@ -744,14 +744,13 @@ Rolling re-resolution carries that state by `WeeklyObjective.id`, never the disp
 
 **Day-by-day local fatigue tier evaluation and modeled recovery headroom.** Forecast days are
 evaluated locally against the planner's projected fatigue state as-of that date (`planner.ts`
-`evaluateProjectedDate`). When earlier days carry less modeled load (for example from a recovery
-need, a seeded prior hard exposure, or `conservativeBias`), a later forecast date can cross into the
-`train` tier earlier than a synthetic counterfactual that continued light work. Issue #692 accepts
-that cross-counterfactual whole-horizon monotonicity is not an invariant of this greedy local
-planner. This is an architecture/product-policy decision, **not** a claim that the internal fatigue
-projection is a calibrated measurement of physiological recovery; the completed-load section above
-explicitly records that the current fatigue fusion is not calibrated. Hard safety/feasibility gates
-and per-candidate conservative ranking contracts remain unchanged.
+`evaluateProjectedDate`). The separate `rollingLoadBudget.ts` envelope now carries a stable
+athlete-specific catalog-load budget across the fixed forecast horizon once sufficient baseline
+history exists. Acute fatigue may still decay and improve the daily tier, but that decay does not
+replenish the same horizon's discretionary budget. Sparse history leaves this new gate inactive;
+existing safety/feasibility controls remain authoritative. The catalog-load envelope is a product
+guardrail, not a calibrated physiological recovery measurement or universal dose-response model;
+its exact limits are registered with those limitations in the knowledge library.
 
 ### Required weekly-role reservations (ADR-0018)
 

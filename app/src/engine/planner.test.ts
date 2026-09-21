@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { evaluateNextDayPlan, evaluateNextDayPlanWithIntent, evaluateTraining, evaluateTrainingWithIntent } from './rules';
 import { mapContextFromGoalsAndTrainingSettings } from './adapters';
-import { evaluateProjectedDate, generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, reconcileObjectivesForDate, resolveWeeklyAnchors, type ProjectionExposure } from './planner';
+import { evaluateProjectedDate, generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, reconcileObjectivesForDate, resolveWeeklyAnchors, NEUTRAL_PREFERENCES, type ProjectionExposure } from './planner';
 import { createEmptyFatigue } from './fatigue';
 import { resolveTrainingIntent } from './trainingIntent';
 import type { AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
@@ -287,10 +287,12 @@ describe('generateWeekAheadPlan', () => {
 
         expect(projectTrailingHistory(history)).toEqual([{
             date: '2026-08-05', type: 'hard Cycling threshold', systemicCost: 0.8, durationMin: 45,
+            costProfile: history[0].costProfile,
         }]);
         expect(prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', history).trailingHistory)
             .toEqual([{
                 date: '2026-08-05', type: 'hard Cycling threshold', systemicCost: 0.8, durationMin: 45,
+                costProfile: history[0].costProfile,
             }]);
     });
 
@@ -1168,5 +1170,36 @@ describe('D-LEDGER planner admission', () => {
         expect(evaluation.fatigueGated.some(template =>
             evaluation.ledgerExcludedTemplateIds.includes(template.id),
         )).toBe(false);
+    });
+
+    it('applies the individualized rolling catalog-load envelope after stable baseline evidence', () => {
+        const context = baseContext({ hasIndoorBike: true });
+        const phase = evaluatePeriodizationPhase([], '2026-09-13', '2026-09-13').phase;
+        const costProfile = { systemic: 0.6, cardiovascular: 0.7, lowerBody: 0.2, upperBody: 0.05, impactTissue: 0.05, neuromuscular: 0.35 };
+        const projectedHistory = [
+            { date: '2026-08-01', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'baseline-1' },
+            { date: '2026-08-08', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'baseline-2' },
+            { date: '2026-08-15', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'baseline-3' },
+            { date: '2026-09-10', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'recent-1' },
+            { date: '2026-09-11', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'recent-2' },
+            { date: '2026-09-12', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'recent-3' },
+        ];
+        const evaluation = evaluateProjectedDate('2026-09-13', {
+            microcycle: generateWeeklyObjectives(phase, '2026-09-13', null),
+            externalFatigue: createEmptyFatigue('2026-09-12'),
+            projectedHistory,
+        }, {
+            context,
+            preferences: NEUTRAL_PREFERENCES,
+            events: [], fixedActivities: [], authoredPlanBlocks: [], scheduleOverlays: [],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: '2026-09-13', todayDate: '2026-09-13',
+            rollingLoadBudgetHorizonStartDate: '2026-09-10',
+            rollingLoadBudgetHorizonEndDate: '2026-09-16',
+        });
+
+        expect(evaluation.loadBudgetExcludedTemplateIds.length).toBeGreaterThan(0);
+        expect(evaluation.fatigueGated.some(template => evaluation.loadBudgetExcludedTemplateIds.includes(template.id))).toBe(false);
     });
 });
