@@ -119,5 +119,9 @@ describe('rolling load budget', () => {
             startDate: '2026-08-02',
             endDate: '2026-08-08',
         });
+        expect(resolveRollingLoadBudgetForecastHorizon('2026-08-01')).toEqual({
+            startDate: '2026-08-02',
+            endDate: '2026-08-08',
+        });
     });
 });

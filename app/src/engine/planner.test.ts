@@ -1365,4 +1365,76 @@ describe('D-LEDGER planner admission', () => {
         expect(evaluation.loadBudgetExcludedTemplateIds.length).toBeGreaterThan(0);
         expect(evaluation.fatigueGated.some(template => evaluation.loadBudgetExcludedTemplateIds.includes(template.id))).toBe(false);
     });
+
+    it('reserves undated fixed activity expected cost across the rolling budget forecast horizon', () => {
+        const context = baseContext({ hasIndoorBike: true });
+        const phase = evaluatePeriodizationPhase([], '2026-09-13', '2026-09-13').phase;
+        const committed = fixedActivity({
+            id: 'undated-team-session',
+            date: '',
+            durationMin: 30,
+            expectedCost: { systemic: 1.6 },
+        });
+        const evaluation = evaluateProjectedDate('2026-09-14', {
+            microcycle: generateWeeklyObjectives(phase, '2026-09-14', null),
+            externalFatigue: createEmptyFatigue('2026-09-13'),
+            projectedHistory: [],
+        }, {
+            context,
+            preferences: NEUTRAL_PREFERENCES,
+            events: [],
+            fixedActivities: [committed],
+            authoredPlanBlocks: [],
+            scheduleOverlays: [],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: '2026-09-13',
+            todayDate: '2026-09-13',
+            rollingLoadBudgetProfile: {
+                policyVersion: ROLLING_LOAD_BUDGET_POLICY_VERSION,
+                confidence: 'established',
+                baselineSessionCount: 3,
+                baselineWindowStartDate: '2026-07-20',
+                baselineWindowEndDate: '2026-08-30',
+                limits: { systemic: 2.0, cardiovascular: 10, lowerBody: 10, upperBody: 10, impactTissue: 10, neuromuscular: 10 },
+            },
+            rollingLoadBudgetHorizonStartDate: '2026-09-14',
+            rollingLoadBudgetHorizonEndDate: '2026-09-20',
+        });
+
+        expect(evaluation.eligible.some(template => template.id === 'end_mod_02')).toBe(true);
+        expect(evaluation.loadBudgetExcludedTemplateIds).toContain('end_mod_02');
+    });
+
+    it('retains a 7-day rolling load budget horizon when planning fewer than 7 days ahead', () => {
+        const context = baseContext({ hasIndoorBike: true });
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context, '2026-09-13');
+        const costProfile = { systemic: 0.6, cardiovascular: 0.7, lowerBody: 0.2, upperBody: 0.05, impactTissue: 0.05, neuromuscular: 0.35 };
+        const history = [
+            { date: '2026-08-01', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'b1' },
+            { date: '2026-08-08', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'b2' },
+            { date: '2026-08-15', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'b3' },
+        ];
+        const seed = prepareWeekAheadPlanSeed(readiness, [], '2026-09-13', history);
+        const dPlus5Activity = fixedActivity({
+            id: 'd-plus-5-event',
+            date: '2026-09-18',
+            durationMin: 120,
+            expectedCost: { systemic: 10.0 },
+        });
+        const plan = generateWeekAheadPlan(
+            readiness,
+            context,
+            NEUTRAL_PREFERENCES,
+            '2026-09-13',
+            todayRec,
+            tomorrowRec,
+            seed,
+            { days: 3, fixedActivities: [dPlus5Activity] },
+        );
+
+        expect(plan.days.length).toBe(3);
+        const day2 = plan.days.find(d => d.dayOffset === 2);
+        expect(['Rest', 'Mobility/Recovery']).toContain(day2?.template.category);
+    });
 });

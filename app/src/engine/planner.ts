@@ -652,19 +652,36 @@ export function evaluateProjectedDate(
         .filter((entry): entry is RollingLoadBudgetEntry => entry !== null)
         .filter(entry => entry.date < date);
     shared.fixedActivities
-        .filter(activity => !activity.isCompleted && activity.expectedCost && activity.date
-            && activity.date >= loadBudgetHorizonStartDate && activity.date <= loadBudgetHorizonEndDate)
+        .filter(activity => !activity.isCompleted && activity.expectedCost)
         .forEach((activity, index) => {
-            if (!activity.date || !activity.expectedCost) return;
-            loadBudgetEntries.push({
-                date: activity.date,
-                occurrenceKey: fixedActivityOccurrenceKey(activity) ?? `fixed:${activity.date}:${index}`,
-                source: 'fixed',
-                costProfile: {
-                    ...ZERO_COST,
-                    ...activity.expectedCost,
-                },
-            });
+            if (!activity.expectedCost) return;
+            const costProfile = {
+                ...ZERO_COST,
+                ...activity.expectedCost,
+            };
+            if (activity.date) {
+                if (activity.date >= loadBudgetHorizonStartDate && activity.date <= loadBudgetHorizonEndDate) {
+                    loadBudgetEntries.push({
+                        date: activity.date,
+                        occurrenceKey: fixedActivityOccurrenceKey(activity) ?? `fixed:${activity.date}:${index}`,
+                        source: 'fixed',
+                        costProfile,
+                    });
+                }
+            } else if (loadBudgetHorizonStartDate <= loadBudgetHorizonEndDate) {
+                for (
+                    let forecastDate = loadBudgetHorizonStartDate;
+                    forecastDate <= loadBudgetHorizonEndDate;
+                    forecastDate = addDaysToLocalDateString(forecastDate, 1)
+                ) {
+                    loadBudgetEntries.push({
+                        date: forecastDate,
+                        occurrenceKey: `${fixedActivityOccurrenceKey(activity)}:${forecastDate}`,
+                        source: 'fixed',
+                        costProfile,
+                    });
+                }
+            }
         });
     // Schedule overlays are planned non-training load just like expected-cost fixed
     // activities. Reserve each active date once across the fixed horizon so a walking,
@@ -1233,7 +1250,7 @@ export function generateWeekAheadPlan(
         seed.rollingLoadBudgetHistory ?? seed.trailingHistory ?? [],
         todayDate,
     );
-    const rollingLoadBudgetHorizon = resolveRollingLoadBudgetForecastHorizon(todayDate, totalDays);
+    const rollingLoadBudgetHorizon = resolveRollingLoadBudgetForecastHorizon(todayDate);
 
     const periodizationToday = evaluatePeriodizationPhase(events, todayDate);
     let microcycle: MicrocycleState = seed.microcycle ?? generateWeeklyObjectives(periodizationToday.phase, todayDate, periodizationToday.focusEvent, suppliedPlanDefinition, todayDate);
