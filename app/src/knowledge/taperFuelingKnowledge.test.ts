@@ -64,7 +64,7 @@ describe('taper and fueling evidence pack', () => {
 
     it('issue #679: keeps the pre-event restriction claim in sync with the taper-window strength/density guard constants', () => {
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.preEventRestrictionsPolicy);
-        expect(claim.statement).toContain('triathlon');
+        expect(claim.statement).toContain('for A/B/C cycling/running/triathlon events');
         expect(claim.statement).toContain(`${TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST}`);
         expect(claim.statement).toContain('one light');
         expect(TAPER_STRENGTH_TOUCH_LIMIT).toBe(1);

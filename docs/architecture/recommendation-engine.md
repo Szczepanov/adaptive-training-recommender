@@ -551,6 +551,17 @@ already-placed later reservations when an earlier placement retroactively trigge
 
 Strength-maintenance benefit takes the stronger of `maxStrength` and `hypertrophy` target/evidence rather than allowing field order to choose which axis counts.
 
+Event-priority matching is modality-based: cycling events match Cycling, running races match
+Running, triathlons match Swimming/Cycling/Running, and strength meets match Strength when the
+existing objective qualification allows the priority boost. Existing A/B behavior stays at
+`1.40`/`1.25`. C-priority **cycling/running/triathlon** events enter that same event-aware
+ranking with a neutral `1.00` multiplier; C-priority general targets and strength meets retain
+their prior behavior rather than inheriting unrelated penalties from the C-race fix. A second
+Race-Specific Endurance exposure within the rolling six-day history receives a `0.35`
+multiplier for B and C endurance competitions; A retains its existing priority-specific
+behavior. C endurance events still have no inferred taper by default, so only an explicitly
+authored taper can create a taper window for them.
+
 ### The planner/workout-library boundary (Phase 5.2, `planningCandidate.ts`)
 
 Detailed `WorkoutDefinition`s (the prescription catalog) already carry recovery hours,
