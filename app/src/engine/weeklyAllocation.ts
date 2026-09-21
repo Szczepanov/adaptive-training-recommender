@@ -210,6 +210,26 @@ export function occurrenceForTemplate(
 }
 
 /**
+ * One selected session may satisfy multiple authored coverage keys when the exact template
+ * identity is valid for each key, but it may clear at most one occurrence of any one key on
+ * that date. Keep this canonical helper shared by viability proofs and final settlement so
+ * D-SUPPORT never reasons about more or fewer fulfilled roles than the planner records.
+ */
+export function occurrencesFulfilledByTemplateSelection(
+    occurrences: readonly RequiredRoleOccurrence[],
+    template: SessionTemplate,
+): RequiredRoleOccurrence[] {
+    const fulfilledKeys = new Set<PlanCoverageKey>();
+    return occurrenceForTemplate(occurrences, template)
+        .sort((left, right) => left.coverageKey.localeCompare(right.coverageKey) || left.ordinal - right.ordinal)
+        .filter(occurrence => {
+            if (fulfilledKeys.has(occurrence.coverageKey)) return false;
+            fulfilledKeys.add(occurrence.coverageKey);
+            return true;
+        });
+}
+
+/**
  * Replays an existing reservation set through the evaluator in real date order and reports
  * whether every assignment is still admissible.
  *
