@@ -198,6 +198,18 @@ export function shouldProtectWeeklyAllocation(
 }
 
 /**
+ * The incumbent fast path may skip a full reallocation only when the current reserved
+ * occurrence is itself discharged by this selection. Otherwise "all other reservations
+ * survived" is not evidence that the same allocation cardinality survived.
+ */
+export function selectionPreservesCurrentReservation(
+    reservationOccurrenceId: string | null,
+    selfFulfilledOccurrenceIds: ReadonlySet<string>,
+): boolean {
+    return reservationOccurrenceId === null || selfFulfilledOccurrenceIds.has(reservationOccurrenceId);
+}
+
+/**
  * D-SUPPORT must fail closed. Once viability protection applies, a ranked candidate is
  * admissible only after the bounded proof preserves the incumbent allocation. If no
  * candidate proves that property, Rest is allowed only when it proves preservation too;
@@ -1734,9 +1746,14 @@ export function generateWeekAheadPlan(
             if (allocation.budgetExhausted || allocation.outcomes.some(outcome => outcome.status === 'unresolved_search_budget')) {
                 return 'unresolved_search_budget';
             }
-            if (allocationSurvives(incumbentAssignments, evaluator)) return 'preserves';
             const selfFulfilledOccurrences = occurrencesFulfilledByTemplateSelection(pendingOccurrences, template);
             const selfFulfilledIds = new Set(selfFulfilledOccurrences.map(occurrence => occurrence.id));
+            if (
+                selectionPreservesCurrentReservation(reservation?.occurrence.id ?? null, selfFulfilledIds)
+                && allocationSurvives(incumbentAssignments, evaluator)
+            ) {
+                return 'preserves';
+            }
             const after = resolveWeeklyRoleReservations(
                 pendingOccurrences.filter(occurrence => !selfFulfilledIds.has(occurrence.id)),
                 evaluator,
