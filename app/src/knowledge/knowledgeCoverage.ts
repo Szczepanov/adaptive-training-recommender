@@ -86,11 +86,11 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'evergreen.health_adherence_modality_intensity_prior', domain: 'evergreen_dose', title: 'Health adherence-friendly modality and intensity prior',
-        currentRule: 'For event-free health plans without explicit running support, Walking/Cycling receive a soft aerobic ranking preference; quality endurance is limited to one prior session in a rolling seven-day window, and adverse-recovery forecasts withhold quality endurance until the next fresh planning check. Running remains allowed and strength requirements are unchanged.',
+        currentRule: 'For event-free health plans without explicit Running support (Running preferred and neither deprioritized nor avoided), Walking/Cycling receive a soft aerobic ranking preference and quality endurance is limited to one prior session in a rolling seven-day window. Hard Endurance is withheld as generic quality filler only when no endurance, speed/power, or sport-readiness priority is also selected; Moderate Endurance remains available. Adverse-recovery forecasts withhold quality endurance until the next fresh planning check. Running remains available at non-hard intensity and strength requirements are unchanged.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/healthPlanningPolicy.ts:resolveHealthPlanningPolicy', 'engine/optimizer.ts:evaluateRecoveryConstraints', 'engine/optimizer.ts:rankCandidates'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.healthAdherenceModalityIntensityPrior],
-        coverageRationale: 'Registered as an explicit product-policy claim (`health.adherence.modality_intensity_prior_v1`) based on deterministic persona evidence. It is intentionally soft except for adverse-recovery forecast gating and preserves explicit user preference, current history and event-directed authority.',
+        coverageRationale: 'Registered as an explicit product-policy claim (`health.adherence.modality_intensity_prior_v1`) based on deterministic persona evidence and refined by issue #699. It is intentionally narrow, preserves explicit user preference, explicit performance-priority authority and event-directed authority, and only hard-gates unrequested Hard Endurance quality filler in health-focused non-performance plans.',
     },
     {
         id: 'evergreen.high_intensity_weekly_prior', domain: 'evergreen_dose', title: 'Conditional high-intensity weekly prior',
