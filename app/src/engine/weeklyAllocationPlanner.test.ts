@@ -12,6 +12,7 @@ import {
     projectedDateOutcomeFrom,
     resolveWeeklyAnchors,
     selectViableForecastCandidate,
+    shouldProtectWeeklyAllocation,
     type ProjectedDatePlanningContext,
 } from './planner';
 import { rankCandidates } from './optimizer';
@@ -284,6 +285,15 @@ describe('7A.4 reservations survive discretionary work', () => {
 });
 
 describe('D-SUPPORT fail-closed selection', () => {
+    it('keeps allocation protection active on reserved train/modify days', () => {
+        // Reservation presence is intentionally absent from the decision: selecting the
+        // current reserved role can still starve a different later reservation.
+        expect(shouldProtectWeeklyAllocation('train', 1)).toBe(true);
+        expect(shouldProtectWeeklyAllocation('modify', 1)).toBe(true);
+        expect(shouldProtectWeeklyAllocation('recover', 1)).toBe(false);
+        expect(shouldProtectWeeklyAllocation('train', 0)).toBe(false);
+    });
+
     it('does not fall through to ranked[0] when no bounded candidate proves preservation', () => {
         const support = ENRICHED_TEMPLATES.find(template => template.category === 'Full-body Strength');
         const rest = ENRICHED_TEMPLATES.find(template => template.category === 'Rest');
