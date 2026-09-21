@@ -26,6 +26,7 @@ artifacts/hybrid-persona-plan-judge/
 artifacts/playwright/
 test-results/
 playwright-report/
+src/engine/__audit__/
 *.local
 .env
 .env.*

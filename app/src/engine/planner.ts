@@ -669,18 +669,17 @@ export function evaluateProjectedDate(
                     });
                 }
             } else if (loadBudgetHorizonStartDate <= loadBudgetHorizonEndDate) {
-                for (
-                    let forecastDate = loadBudgetHorizonStartDate;
-                    forecastDate <= loadBudgetHorizonEndDate;
-                    forecastDate = addDaysToLocalDateString(forecastDate, 1)
-                ) {
-                    loadBudgetEntries.push({
-                        date: forecastDate,
-                        occurrenceKey: `${fixedActivityOccurrenceKey(activity)}:${forecastDate}`,
-                        source: 'fixed',
-                        costProfile,
-                    });
-                }
+                // The exact day is unknown, but this is still a single one-time occurrence:
+                // reserve its cost once against the shared horizon total (anchored on the
+                // horizon's first day), not once per day. A per-day entry here would let a
+                // single undated commitment's cost multiply by the horizon length once
+                // uniqueEntries() sums every distinct occurrenceKey.
+                loadBudgetEntries.push({
+                    date: loadBudgetHorizonStartDate,
+                    occurrenceKey: fixedActivityOccurrenceKey(activity),
+                    source: 'fixed',
+                    costProfile,
+                });
             }
         });
     // Schedule overlays are planned non-training load just like expected-cost fixed
