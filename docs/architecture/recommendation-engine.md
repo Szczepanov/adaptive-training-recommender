@@ -784,11 +784,15 @@ fixture is an operational gate only.
 
 **Protection during greedy selection.** Reservations are recomputed after every selected
 forecast day. On a reserved date the planner ranks only candidates that fulfil that
-occurrence; if the dynamic state has made them unsafe, safety wins and the role relocates
-or is reported. On an unreserved date a discretionary supporting candidate -- and a
-discretionary Rest, which consumes the date just as surely -- is admitted only while the
-incumbent allocation still survives its projected cost. A true recover-tier selection is
-exempt: Rest-first outranks role fulfilment and the loss is attributed to recovery.
+occurrence when exact candidates survive the date gates; if the dynamic state has made
+them unsafe, safety wins and the role relocates or is reported. Reservation presence is
+not an exemption from allocation preservation: even an exact candidate that fulfils the
+current occurrence can spend rolling-budget capacity needed by another later occurrence.
+Therefore every non-recover selection -- discretionary support, an exact reserved-role
+candidate, or Rest -- is admitted only while the incumbent allocation is proven to survive
+its projected cost (or an equal-cardinality reallocation is proven). A true recover-tier
+selection is exempt: Rest-first outranks role fulfilment and the loss is attributed to
+recovery.
 
 The support check is fail-closed. It considers the bounded viability set even when that set
 contains one ranked candidate, and distinguishes a proven degradation from an exhausted
