@@ -302,5 +302,29 @@ describe('rolling load budget', () => {
             expect(result.admitted).toBe(true);
             expect(result.exceededDimensionsAfter).toEqual(['lowerBody']);
         });
+
+        it('preserves envelope-only over-budget reporting when no candidate is supplied', () => {
+            const priorEntry: RollingLoadBudgetEntry = {
+                date: '2026-08-16',
+                occurrenceKey: 'over-budget-envelope',
+                source: 'completed',
+                costProfile: { ...ZERO_COST, lowerBody: 3.0 },
+            };
+
+            const result = evaluateRollingLoadBudget({
+                asOfDate: '2026-08-14',
+                horizonStartDate: '2026-08-15',
+                horizonEndDate: '2026-08-21',
+                profile: establishedProfile,
+                entries: [priorEntry],
+            });
+
+            expect(result.candidateInHorizon).toBe(false);
+            expect(result.candidate).toEqual(ZERO_COST);
+            expect(result.blockingDimensions).toEqual([]);
+            expect(result.exceededDimensionsAfter).toEqual(['lowerBody']);
+            expect(result.admitted).toBe(false);
+            expect(result.reason).toBe('LOAD_BUDGET_EXCEEDED');
+        });
     });
 });
