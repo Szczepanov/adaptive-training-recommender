@@ -252,7 +252,13 @@ export function evaluateRollingLoadBudget(input: RollingLoadBudgetEvaluationInpu
     const blockingDimensions = candidateInHorizon
         ? DIMENSIONS.filter(d => candidateCost[d] > EPS && remaining[d] < -EPS)
         : [];
-    const admitted = blockingDimensions.length === 0;
+    // Preserve the evaluator's pre-v2 envelope-only semantics when no candidate is supplied:
+    // an over-budget snapshot remains non-admitted. When a candidate is supplied, admission
+    // is candidate-specific; a candidate outside the fixed horizon contributes nothing and
+    // therefore is not rejected by that horizon's existing overage.
+    const admitted = input.candidate
+        ? blockingDimensions.length === 0
+        : exceededDimensionsAfter.length === 0;
 
     return {
         policyVersion: input.profile.policyVersion,
