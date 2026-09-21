@@ -125,7 +125,7 @@ function isEnduranceEvent(event: UserEvent | null | undefined): boolean {
 export function trainingIntentKnowledgeRefs(intent: {
     history: readonly unknown[];
     periodization: { focusEvent: UserEvent | null; phase: { taperActive: boolean } };
-}): string[] {
+}, options: { rollingLoadBudgetEvaluated?: boolean } = {}): string[] {
     const refs: string[] = [
         KNOWLEDGE_CLAIM_IDS.enduranceIntensityDistribution,
         KNOWLEDGE_CLAIM_IDS.internalLoadIntensityBands,
@@ -136,7 +136,6 @@ export function trainingIntentKnowledgeRefs(intent: {
         refs.push(
             KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance,
             KNOWLEDGE_CLAIM_IDS.fatigueDecayHalfLives,
-            KNOWLEDGE_CLAIM_IDS.rollingLoadBudgetPolicy,
             KNOWLEDGE_CLAIM_IDS.strenuousLowerBodyResidualFatigue,
             KNOWLEDGE_CLAIM_IDS.anchorSpacing,
             KNOWLEDGE_CLAIM_IDS.rollingHardDensityCap,
@@ -144,6 +143,9 @@ export function trainingIntentKnowledgeRefs(intent: {
             KNOWLEDGE_CLAIM_IDS.concurrentStrengthEnduranceContext,
             KNOWLEDGE_CLAIM_IDS.strengthEnduranceAdjacency,
         );
+    }
+    if (options.rollingLoadBudgetEvaluated) {
+        refs.push(KNOWLEDGE_CLAIM_IDS.rollingLoadBudgetPolicy);
     }
 
     if (intent.periodization.phase.taperActive && isEnduranceEvent(intent.periodization.focusEvent)) {

@@ -542,6 +542,11 @@ export interface ProjectedDatePlanningContext {
     rollingLoadBudgetProfile?: RollingLoadBudgetProfile;
     rollingLoadBudgetHorizonStartDate?: string;
     rollingLoadBudgetHorizonEndDate?: string;
+    /** Severe-recovery forecast policy shared by budget admission and final prescription. */
+    projectedRecoveryPolicy?: {
+        severeAdverseRecovery: boolean;
+        dayOffset: number;
+    };
 }
 
 export interface ProjectedDateState {
@@ -549,6 +554,16 @@ export interface ProjectedDateState {
     externalFatigue: FatigueState;
     projectedHistory: (RecentHistoryEntry | SessionHistoryEntry)[];
     coverageHistory?: CoverageHistoryEntry[];
+}
+
+function effectiveProjectedFatigueTier(
+    fatigueTier: ProjectedDateEvaluation['fatigueTier'],
+    recoveryPolicy: ProjectedDatePlanningContext['projectedRecoveryPolicy'],
+): ProjectedDateEvaluation['fatigueTier'] {
+    if (!recoveryPolicy?.severeAdverseRecovery) return fatigueTier;
+    if (recoveryPolicy.dayOffset <= 2) return 'recover';
+    if (recoveryPolicy.dayOffset <= 5 && fatigueTier === 'train') return 'modify';
+    return fatigueTier;
 }
 
 export interface ProjectedDateEvaluation {
@@ -622,6 +637,7 @@ export function evaluateProjectedDate(
     const isConservative = shared.preferences?.conservativeBias ?? false;
     const fatigueThresholds = projectedFatigueThresholds(isConservative);
     const fatigueTier = fatigueTierFor(peakFatigue, fatigueThresholds);
+    const budgetFatigueTier = effectiveProjectedFatigueTier(fatigueTier, shared.projectedRecoveryPolicy);
 
     const loadBudgetProfile = shared.rollingLoadBudgetProfile
         ?? resolveRollingLoadBudgetProfile(state.projectedHistory, date);
@@ -679,7 +695,7 @@ export function evaluateProjectedDate(
         const activeDose = resolveTimeCapDoseAdjustment(
             template,
             availability.maxTimeMinutes,
-            fatigueTier === 'modify',
+            budgetFatigueTier === 'modify',
         )?.activeDose;
         const effective = effectiveTemplateForProjection(template, activeDose);
         return evaluateRollingLoadBudget({
@@ -1481,7 +1497,13 @@ export function generateWeekAheadPlan(
         const evaluation = evaluateProjectedDate(
             date,
             { microcycle, externalFatigue: fatigue, projectedHistory: history, coverageHistory },
-            sharedProjection,
+            {
+                ...sharedProjection,
+                projectedRecoveryPolicy: {
+                    severeAdverseRecovery: isSevereAdverseRecovery,
+                    dayOffset: getDayDiff(date, todayDate),
+                },
+            },
         );
         evaluationCache.set(cacheKey, evaluation);
         return evaluation;
@@ -1586,11 +1608,10 @@ export function generateWeekAheadPlan(
         // The severe-recovery forecast ladder is itself an active planning constraint.
         // Reflect that constraint consistently in dose/viability behavior and diagnostics:
         // recovery-only days behave as recover; graduated re-entry behaves as modify.
-        const effectiveFatigueTier = isRecoveryOnlyDate
-            ? 'recover'
-            : ((isRecoveryEarlyReentryDate || isRecoveryLateReentryDate) && fatigueTier === 'train'
-                ? 'modify'
-                : fatigueTier);
+        const effectiveFatigueTier = effectiveProjectedFatigueTier(fatigueTier, {
+            severeAdverseRecovery: isSevereAdverseRecovery,
+            dayOffset: offset,
+        });
 
         let rankingCandidates = isRecoveryOnlyDate
             ? fatigueGated.filter(isRecoveryCategory)

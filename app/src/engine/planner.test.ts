@@ -1249,6 +1249,45 @@ describe('D-LEDGER planner admission', () => {
         expect(evaluation.loadBudgetExcludedTemplateIds).not.toContain('end_mod_02');
     });
 
+    it('uses the severe-recovery re-entry dose for budget admission through D+5, then restores full-dose admission on D+6', () => {
+        const context = baseContext({ hasIndoorBike: true, maxTimeMinutes: 60 });
+        const phase = evaluatePeriodizationPhase([], '2026-09-13', '2026-09-13').phase;
+        const alreadySpent = {
+            systemic: 1.45, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0,
+        };
+        const evaluateAtOffset = (dayOffset: number) => evaluateProjectedDate('2026-09-13', {
+            microcycle: generateWeeklyObjectives(phase, '2026-09-13', null),
+            externalFatigue: createEmptyFatigue('2026-09-12'),
+            projectedHistory: [{
+                date: '2026-09-12', modality: 'Cycling' as const, systemicCost: 1.45, lowerBodyCost: 0,
+                costProfile: alreadySpent, occurrenceKey: `budget-spent-${dayOffset}`,
+            }],
+        }, {
+            context,
+            preferences: NEUTRAL_PREFERENCES,
+            events: [], fixedActivities: [], authoredPlanBlocks: [], scheduleOverlays: [],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: '2026-09-13', todayDate: '2026-09-13',
+            projectedRecoveryPolicy: { severeAdverseRecovery: true, dayOffset },
+            rollingLoadBudgetProfile: {
+                policyVersion: ROLLING_LOAD_BUDGET_POLICY_VERSION,
+                confidence: 'established',
+                baselineSessionCount: 3,
+                baselineWindowStartDate: '2026-07-20',
+                baselineWindowEndDate: '2026-08-30',
+                limits: { systemic: 2, cardiovascular: 10, lowerBody: 10, upperBody: 10, impactTissue: 10, neuromuscular: 10 },
+            },
+            rollingLoadBudgetHorizonStartDate: '2026-09-10',
+            rollingLoadBudgetHorizonEndDate: '2026-09-16',
+        });
+
+        for (const dayOffset of [3, 5]) {
+            expect(evaluateAtOffset(dayOffset).loadBudgetExcludedTemplateIds).not.toContain('end_mod_02');
+        }
+        expect(evaluateAtOffset(6).loadBudgetExcludedTemplateIds).toContain('end_mod_02');
+    });
+
     it('reserves future schedule-overlay expected cost inside the fixed rolling load horizon', () => {
         const context = baseContext({ hasIndoorBike: true });
         const phase = evaluatePeriodizationPhase([], '2026-09-13', '2026-09-13').phase;
@@ -1258,12 +1297,12 @@ describe('D-LEDGER planner admission', () => {
             title: 'Walking-heavy travel day',
             category: 'high_step_walking',
             startDate: '2026-09-16',
-            endDate: '2026-09-16',
+            endDate: '2026-09-17',
             dailyAvailabilityMinutes: 90,
             volumeScale: 1,
             intensityScale: 1,
             expectedCost: {
-                systemic: 1.5, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0,
+                systemic: 0.8, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0,
             },
             createdAt: '',
             updatedAt: '',
