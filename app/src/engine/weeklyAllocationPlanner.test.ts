@@ -352,6 +352,34 @@ describe('D-SUPPORT fail-closed selection', () => {
         expect(result.candidate.template).toBe(rest);
         expect(result.allocationUnresolved).toBe(false);
     });
+
+    it('keeps the allocator incumbent available beyond the bounded utility shortlist', () => {
+        const templates = ENRICHED_TEMPLATES.filter(template => template.category !== 'Rest').slice(0, 5);
+        const rest = ENRICHED_TEMPLATES.find(template => template.category === 'Rest');
+        if (templates.length < 5 || !rest) throw new Error('required templates missing');
+
+        const candidate = (template: (typeof templates)[number], utilityScore: number) => ({
+            template,
+            utilityScore,
+            benefitScore: utilityScore,
+            costPenalty: 0,
+            coverageNeedTier: 3 as const,
+            rationale: template.title,
+        });
+        const ranked = templates.map((template, index) => candidate(template, 10 - index));
+        const incumbent = ranked[4];
+        const restFallback = candidate(rest, 0);
+        const result = selectViableForecastCandidate(
+            ranked,
+            true,
+            restFallback,
+            candidate => candidate.template.id === incumbent.template.id ? 'preserves' : 'unresolved_search_budget',
+            incumbent,
+        );
+
+        expect(result.candidate.template.id).toBe(incumbent.template.id);
+        expect(result.allocationUnresolved).toBe(false);
+    });
 });
 
 describe('7A.3 operational latency budget', () => {
