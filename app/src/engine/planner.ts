@@ -221,13 +221,26 @@ export function selectViableForecastCandidate(
     viabilityApplies: boolean,
     restFallback: ForecastPickCandidate,
     preservesAllocation: (candidate: ForecastPickCandidate) => AllocationPreservation,
+    incumbentFallback?: ForecastPickCandidate,
 ): ForecastPickSelection {
     if (!viabilityApplies) return { candidate: ranked[0] ?? restFallback, allocationUnresolved: false };
 
-    const viable = ranked
-        .slice(0, WEEKLY_ALLOCATION_SEARCH_BUDGET.maxCandidatesPerOccurrence)
-        .find(candidate => preservesAllocation(candidate) === 'preserves');
+    const bounded = ranked.slice(0, WEEKLY_ALLOCATION_SEARCH_BUDGET.maxCandidatesPerOccurrence);
+    const viable = bounded.find(candidate => preservesAllocation(candidate) === 'preserves');
     if (viable) return { candidate: viable, allocationUnresolved: false };
+
+    // The allocator's own current reservation is not a new search branch. If it sits below
+    // the bounded utility shortlist, still allow it to act as the known-incumbent fallback
+    // before Rest; otherwise a large exact-role catalogue can turn a valid reservation into
+    // an artificial search-budget failure.
+    if (
+        incumbentFallback
+        && !bounded.some(candidate => candidate.template.id === incumbentFallback.template.id)
+        && preservesAllocation(incumbentFallback) === 'preserves'
+    ) {
+        return { candidate: incumbentFallback, allocationUnresolved: false };
+    }
+
     if (preservesAllocation(restFallback) === 'preserves') return { candidate: restFallback, allocationUnresolved: false };
     return { candidate: restFallback, allocationUnresolved: true };
 }
@@ -1743,15 +1756,30 @@ export function generateWeekAheadPlan(
                 forecastDatesFrom(offset + 1),
                 [{ date, templateId: template.id, ...(candidateDose ? { activeDose: candidateDose } : {}) }],
             );
+            const selfFulfilledOccurrences = occurrencesFulfilledByTemplateSelection(pendingOccurrences, template);
+            const selfFulfilledIds = new Set(selfFulfilledOccurrences.map(occurrence => occurrence.id));
+            const preservesCurrentReservation = selectionPreservesCurrentReservation(
+                reservation?.occurrence.id ?? null,
+                selfFulfilledIds,
+            );
+            const isIncumbentReservedTemplate = Boolean(
+                reservation
+                && reservation.templateId === template.id
+                && preservesCurrentReservation,
+            );
+
+            // A current reservation's exact allocator-selected template is already part of
+            // the best-known joint allocation. Preserve that known incumbent even when some
+            // *other* occurrence is unresolved by the bounded search; this does not spend a
+            // previously unreserved date or introduce a new template branch.
+            if (isIncumbentReservedTemplate && allocationSurvives(incumbentAssignments, evaluator)) {
+                return 'preserves';
+            }
+
             if (allocation.budgetExhausted || allocation.outcomes.some(outcome => outcome.status === 'unresolved_search_budget')) {
                 return 'unresolved_search_budget';
             }
-            const selfFulfilledOccurrences = occurrencesFulfilledByTemplateSelection(pendingOccurrences, template);
-            const selfFulfilledIds = new Set(selfFulfilledOccurrences.map(occurrence => occurrence.id));
-            if (
-                selectionPreservesCurrentReservation(reservation?.occurrence.id ?? null, selfFulfilledIds)
-                && allocationSurvives(incumbentAssignments, evaluator)
-            ) {
+            if (preservesCurrentReservation && allocationSurvives(incumbentAssignments, evaluator)) {
                 return 'preserves';
             }
             const after = resolveWeeklyRoleReservations(
@@ -1765,11 +1793,15 @@ export function generateWeekAheadPlan(
             return after.fulfilledCount + selfFulfilledOccurrences.length >= allocation.fulfilledCount ? 'preserves' : 'degrades';
         };
         const viabilityApplies = shouldProtectWeeklyAllocation(effectiveFatigueTier, allocation.fulfilledCount);
+        const incumbentFallback = reservation
+            ? ranked.find(candidate => candidate.template.id === reservation.templateId)
+            : undefined;
         const pickSelection = selectViableForecastCandidate(
             ranked,
             viabilityApplies,
             fallbackPick,
             candidate => preservesAllocation(candidate.template),
+            incumbentFallback,
         );
         if (pickSelection.allocationUnresolved) {
             allocation.reservationsByDate.forEach(({ occurrence }) => {
