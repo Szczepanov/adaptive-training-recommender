@@ -185,6 +185,19 @@ export interface ForecastPickSelection {
 }
 
 /**
+ * Reservation presence is deliberately not part of this predicate. Fulfilling one reserved
+ * occurrence can still spend rolling-budget capacity needed by another reserved occurrence,
+ * so every non-recover pick is subject to D-SUPPORT whenever the allocator has something
+ * feasible to preserve.
+ */
+export function shouldProtectWeeklyAllocation(
+    effectiveFatigueTier: 'train' | 'modify' | 'recover',
+    fulfilledCount: number,
+): boolean {
+    return effectiveFatigueTier !== 'recover' && fulfilledCount > 0;
+}
+
+/**
  * D-SUPPORT must fail closed. Once viability protection applies, a ranked candidate is
  * admissible only after the bounded proof preserves the incumbent allocation. If no
  * candidate proves that property, Rest is allowed only when it proves preservation too;
@@ -1733,7 +1746,7 @@ export function generateWeekAheadPlan(
             }
             return after.fulfilledCount + selfFulfils >= allocation.fulfilledCount ? 'preserves' : 'degrades';
         };
-        const viabilityApplies = !reservation && effectiveFatigueTier !== 'recover' && allocation.fulfilledCount > 0;
+        const viabilityApplies = shouldProtectWeeklyAllocation(effectiveFatigueTier, allocation.fulfilledCount);
         const pickSelection = selectViableForecastCandidate(
             ranked,
             viabilityApplies,
