@@ -50,9 +50,10 @@ describe('rolling load budget', () => {
         expect(claim.statement).toContain(`at least ${ROLLING_LOAD_BUDGET_MIN_BASELINE_SPAN_DAYS} calendar days`);
         expect(claim.statement).toContain(`${Math.round((ROLLING_LOAD_BUDGET_HEADROOM_MULTIPLIER - 1) * 100)}% headroom`);
         expect(claim.statement).toContain(`${DEFAULT_ROLLING_LOAD_BUDGET_LIMITS.systemic}`);
-        expect(claim.statement).toContain('pre-existing exceedance in an unrelated dimension does not veto a candidate with zero contribution');
+        expect(claim.statement).toContain('pre-existing exceedance in an unrelated dimension does not veto a candidate with non-participating contribution');
+        expect(claim.statement).toContain('1e-9 floating-point tolerance');
         expect(claim.limitations.join(' ')).toContain('as physiological constants');
-        expect(claim.limitations.join(' ')).toContain('isolates exact-zero contributions only');
+        expect(claim.limitations.join(' ')).toContain('isolates non-participating contributions within floating-point tolerance (1e-9) only');
         expect(claim.version).toBe(2);
     });
 
@@ -270,6 +271,103 @@ describe('rolling load budget', () => {
             expect(result.exceededDimensionsAfter).toEqual(['lowerBody', 'impactTissue']);
             expect(result.blockingDimensions).toEqual(['lowerBody']);
             expect(result.admitted).toBe(false);
+        });
+
+        it('evaluates admission strictly around the EPS (1e-9) candidateCost and remaining boundaries', () => {
+            const EPS = 1e-9;
+
+            // Case 1: candidateCost below EPS (0.5 * EPS) on an already-exhausted dimension is admitted
+            const candidateBelowEps: RollingLoadBudgetEntry = {
+                date: '2026-08-17',
+                occurrenceKey: 'candidate-below-eps',
+                source: 'projected',
+                costProfile: { ...ZERO_COST, lowerBody: 0.5 * EPS, systemic: 0.2 },
+            };
+            const overEntry: RollingLoadBudgetEntry = {
+                date: '2026-08-15',
+                occurrenceKey: 'prior-exhausted',
+                source: 'completed',
+                costProfile: { ...ZERO_COST, lowerBody: 2.5, systemic: 1.0 },
+            };
+            const resultBelowEps = evaluateRollingLoadBudget({
+                asOfDate: '2026-08-14',
+                horizonStartDate: '2026-08-15',
+                horizonEndDate: '2026-08-21',
+                profile: establishedProfile,
+                entries: [overEntry],
+                candidate: candidateBelowEps,
+            });
+            expect(resultBelowEps.exceededDimensionsBefore).toEqual(['lowerBody']);
+            expect(resultBelowEps.exceededDimensionsAfter).toEqual(['lowerBody']);
+            expect(resultBelowEps.blockingDimensions).toEqual([]);
+            expect(resultBelowEps.admitted).toBe(true);
+
+            // Case 2: candidateCost exactly at EPS (1.0 * EPS) on an already-exhausted dimension is admitted
+            const candidateAtEps: RollingLoadBudgetEntry = {
+                date: '2026-08-17',
+                occurrenceKey: 'candidate-at-eps',
+                source: 'projected',
+                costProfile: { ...ZERO_COST, lowerBody: EPS, systemic: 0.2 },
+            };
+            const resultAtEps = evaluateRollingLoadBudget({
+                asOfDate: '2026-08-14',
+                horizonStartDate: '2026-08-15',
+                horizonEndDate: '2026-08-21',
+                profile: establishedProfile,
+                entries: [overEntry],
+                candidate: candidateAtEps,
+            });
+            expect(resultAtEps.blockingDimensions).toEqual([]);
+            expect(resultAtEps.admitted).toBe(true);
+
+            // Case 3: candidateCost above EPS (1.5 * EPS), but remaining deficit is within EPS (-0.7 * EPS, not < -EPS) -> admitted
+            const nearLimitEntry: RollingLoadBudgetEntry = {
+                date: '2026-08-15',
+                occurrenceKey: 'prior-near-limit',
+                source: 'completed',
+                costProfile: { ...ZERO_COST, lowerBody: establishedProfile.limits.lowerBody - 0.8 * EPS, systemic: 0.5 },
+            };
+            const candidateAboveEpsNearDeficit: RollingLoadBudgetEntry = {
+                date: '2026-08-17',
+                occurrenceKey: 'candidate-above-eps-near-deficit',
+                source: 'projected',
+                costProfile: { ...ZERO_COST, lowerBody: 1.5 * EPS, systemic: 0.2 },
+            };
+            const resultAboveEpsNearDeficit = evaluateRollingLoadBudget({
+                asOfDate: '2026-08-14',
+                horizonStartDate: '2026-08-15',
+                horizonEndDate: '2026-08-21',
+                profile: establishedProfile,
+                entries: [nearLimitEntry],
+                candidate: candidateAboveEpsNearDeficit,
+            });
+            expect(resultAboveEpsNearDeficit.blockingDimensions).toEqual([]);
+            expect(resultAboveEpsNearDeficit.admitted).toBe(true);
+
+            // Case 4: candidateCost above EPS (2.0 * EPS) and remaining deficit exceeds EPS (-2.0 * EPS < -EPS) -> rejected
+            const candidateAboveEpsExceeded: RollingLoadBudgetEntry = {
+                date: '2026-08-17',
+                occurrenceKey: 'candidate-above-eps-exceeded',
+                source: 'projected',
+                costProfile: { ...ZERO_COST, lowerBody: 2.0 * EPS, systemic: 0.2 },
+            };
+            const atLimitEntry: RollingLoadBudgetEntry = {
+                date: '2026-08-15',
+                occurrenceKey: 'prior-at-limit',
+                source: 'completed',
+                costProfile: { ...ZERO_COST, lowerBody: establishedProfile.limits.lowerBody, systemic: 0.5 },
+            };
+            const resultAboveEpsExceeded = evaluateRollingLoadBudget({
+                asOfDate: '2026-08-14',
+                horizonStartDate: '2026-08-15',
+                horizonEndDate: '2026-08-21',
+                profile: establishedProfile,
+                entries: [atLimitEntry],
+                candidate: candidateAboveEpsExceeded,
+            });
+            expect(resultAboveEpsExceeded.blockingDimensions).toEqual(['lowerBody']);
+            expect(resultAboveEpsExceeded.admitted).toBe(false);
+            expect(resultAboveEpsExceeded.reason).toBe('LOAD_BUDGET_EXCEEDED');
         });
 
         it('does not reject candidates outside the forecast horizon even if the horizon is over budget', () => {
