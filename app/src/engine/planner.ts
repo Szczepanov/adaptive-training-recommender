@@ -650,6 +650,26 @@ export function evaluateProjectedDate(
                 },
             });
         });
+    // Schedule overlays are planned non-training load just like expected-cost fixed
+    // activities. Reserve each active date once across the fixed horizon so a walking,
+    // skiing or travel block cannot disappear from the envelope merely because its acute
+    // fatigue contribution decays before a later discretionary recommendation.
+    if (loadBudgetHorizonStartDate <= loadBudgetHorizonEndDate) {
+        for (
+            let overlayDate = loadBudgetHorizonStartDate;
+            overlayDate <= loadBudgetHorizonEndDate;
+            overlayDate = addDaysToLocalDateString(overlayDate, 1)
+        ) {
+            const overlayCost = scheduleOverlayCostProfileForDate(shared.scheduleOverlays ?? [], overlayDate);
+            if (!Object.values(overlayCost).some(value => value > 0)) continue;
+            loadBudgetEntries.push({
+                date: overlayDate,
+                occurrenceKey: `overlay:${overlayDate}`,
+                source: 'overlay',
+                costProfile: overlayCost,
+            });
+        }
+    }
     const isLoadBudgetAdmitted = (template: SessionTemplate): boolean => {
         if (template.category === 'Rest' || template.category === 'Mobility/Recovery') return true;
         // Do not invent a personalized ceiling from sparse history. Existing acute

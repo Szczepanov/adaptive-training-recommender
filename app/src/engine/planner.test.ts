@@ -4,7 +4,7 @@ import { mapContextFromGoalsAndTrainingSettings } from './adapters';
 import { evaluateProjectedDate, generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, reconcileObjectivesForDate, resolveWeeklyAnchors, NEUTRAL_PREFERENCES, type ProjectionExposure } from './planner';
 import { createEmptyFatigue } from './fatigue';
 import { resolveTrainingIntent } from './trainingIntent';
-import type { AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
+import type { AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, ScheduleOverlay, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { rankCandidatesByUtility } from './optimizer';
@@ -1247,6 +1247,53 @@ describe('D-LEDGER planner admission', () => {
 
         expect(evaluation.eligible.some(template => template.id === 'end_mod_02')).toBe(true);
         expect(evaluation.loadBudgetExcludedTemplateIds).not.toContain('end_mod_02');
+    });
+
+    it('reserves future schedule-overlay expected cost inside the fixed rolling load horizon', () => {
+        const context = baseContext({ hasIndoorBike: true });
+        const phase = evaluatePeriodizationPhase([], '2026-09-13', '2026-09-13').phase;
+        const overlay: ScheduleOverlay = {
+            id: 'future-walking-load',
+            userId: 'u1',
+            title: 'Walking-heavy travel day',
+            category: 'high_step_walking',
+            startDate: '2026-09-16',
+            endDate: '2026-09-16',
+            dailyAvailabilityMinutes: 90,
+            volumeScale: 1,
+            intensityScale: 1,
+            expectedCost: {
+                systemic: 1.5, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0,
+            },
+            createdAt: '',
+            updatedAt: '',
+        };
+        const evaluation = evaluateProjectedDate('2026-09-13', {
+            microcycle: generateWeeklyObjectives(phase, '2026-09-13', null),
+            externalFatigue: createEmptyFatigue('2026-09-12'),
+            projectedHistory: [],
+        }, {
+            context,
+            preferences: NEUTRAL_PREFERENCES,
+            events: [], fixedActivities: [], authoredPlanBlocks: [], scheduleOverlays: [overlay],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: '2026-09-13', todayDate: '2026-09-13',
+            rollingLoadBudgetProfile: {
+                policyVersion: ROLLING_LOAD_BUDGET_POLICY_VERSION,
+                confidence: 'established',
+                baselineSessionCount: 3,
+                baselineWindowStartDate: '2026-07-20',
+                baselineWindowEndDate: '2026-08-30',
+                limits: { systemic: 2, cardiovascular: 10, lowerBody: 10, upperBody: 10, impactTissue: 10, neuromuscular: 10 },
+            },
+            rollingLoadBudgetHorizonStartDate: '2026-09-13',
+            rollingLoadBudgetHorizonEndDate: '2026-09-19',
+        });
+
+        expect(evaluation.eligible.some(template => template.id === 'end_mod_02')).toBe(true);
+        expect(evaluation.loadBudgetExcludedTemplateIds).toContain('end_mod_02');
+        expect(evaluation.loadBudgetExcludedTemplateIds).not.toContain('end_easy_01');
     });
 
     it('applies the individualized rolling catalog-load envelope after stable baseline evidence', () => {

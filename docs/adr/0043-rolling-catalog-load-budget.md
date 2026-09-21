@@ -24,8 +24,10 @@ authorities remain independently in force.
 The operational seven-day history remains the authority for fatigue and microcycle bookkeeping.
 Week-ahead planning reads a separate forty-nine-day budget snapshot (42-day baseline plus the
 excluded recent seven-day window), so chronic calibration does not widen operational history.
-Candidate admission charges the exact dose that the planner will prescribe after automatic
-modify-tier or time-cap dose reduction rather than the unreduced authored template.
+Planned fixed-activity and schedule-overlay expected costs reserve the same horizon envelope
+without being reclassified as completed training. Candidate admission charges the exact dose
+that the planner will prescribe after automatic modify-tier or time-cap dose reduction rather
+than the unreduced authored template.
 
 The limits are product guardrails over normalized catalog costs. They are not physiological
 measurements, medical limits, injury probabilities, or claims of a universal dose-response.
