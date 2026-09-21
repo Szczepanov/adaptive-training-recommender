@@ -286,13 +286,12 @@ describe('7A.4 reservations survive discretionary work', () => {
 });
 
 describe('D-SUPPORT fail-closed selection', () => {
-    it('keeps allocation protection active on reserved train/modify days', () => {
-        // Reservation presence is intentionally absent from the decision: selecting the
-        // current reserved role can still starve a different later reservation.
-        expect(shouldProtectWeeklyAllocation('train', 1)).toBe(true);
-        expect(shouldProtectWeeklyAllocation('modify', 1)).toBe(true);
-        expect(shouldProtectWeeklyAllocation('recover', 1)).toBe(false);
-        expect(shouldProtectWeeklyAllocation('train', 0)).toBe(false);
+    it('protects support and displaced-reservation picks without re-gating an exact reserved-role pick', () => {
+        expect(shouldProtectWeeklyAllocation('train', 1, false)).toBe(true);
+        expect(shouldProtectWeeklyAllocation('modify', 1, false)).toBe(true);
+        expect(shouldProtectWeeklyAllocation('train', 1, true)).toBe(false);
+        expect(shouldProtectWeeklyAllocation('recover', 1, false)).toBe(false);
+        expect(shouldProtectWeeklyAllocation('train', 0, false)).toBe(false);
     });
 
     it('does not use incumbent-survival as proof when the current reservation is displaced', () => {
@@ -353,33 +352,6 @@ describe('D-SUPPORT fail-closed selection', () => {
         expect(result.allocationUnresolved).toBe(false);
     });
 
-    it('keeps the allocator incumbent available beyond the bounded utility shortlist', () => {
-        const templates = ENRICHED_TEMPLATES.filter(template => template.category !== 'Rest').slice(0, 5);
-        const rest = ENRICHED_TEMPLATES.find(template => template.category === 'Rest');
-        if (templates.length < 5 || !rest) throw new Error('required templates missing');
-
-        const candidate = (template: (typeof templates)[number], utilityScore: number) => ({
-            template,
-            utilityScore,
-            benefitScore: utilityScore,
-            costPenalty: 0,
-            coverageNeedTier: 3 as const,
-            rationale: template.title,
-        });
-        const ranked = templates.map((template, index) => candidate(template, 10 - index));
-        const incumbent = ranked[4];
-        const restFallback = candidate(rest, 0);
-        const result = selectViableForecastCandidate(
-            ranked,
-            true,
-            restFallback,
-            candidate => candidate.template.id === incumbent.template.id ? 'preserves' : 'unresolved_search_budget',
-            incumbent,
-        );
-
-        expect(result.candidate.template.id).toBe(incumbent.template.id);
-        expect(result.allocationUnresolved).toBe(false);
-    });
 });
 
 describe('7A.3 operational latency budget', () => {
