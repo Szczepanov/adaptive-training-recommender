@@ -6,6 +6,7 @@ import {
     occurrenceForTemplate,
     occurrencesFulfilledByTemplateSelection,
     resolveWeeklyRoleReservations,
+    weeklyRoleMissReasonForBlockers,
     WEEKLY_ALLOCATION_SEARCH_BUDGET,
     type AllocationAssignment,
     type AllocationDateEvaluator,
@@ -229,6 +230,18 @@ describe('ADR-0018 stateful reservation search', () => {
         }, ['2026-08-11']));
         expect(result.outcomes[0]).toMatchObject({ status: 'missed', reason: 'rolling_load_budget' });
         expect(result.outcomes[0].observedBlockers).toContain('2026-08-11:LOAD_BUDGET_EXCEEDED');
+    });
+
+    it('uses the highest-priority blocker across exact candidates', () => {
+        expect(weeklyRoleMissReasonForBlockers([
+            'LOAD_BUDGET_EXCEEDED',
+            'PROJECTED_FATIGUE_CEILING',
+        ])).toBe('rolling_load_budget');
+        expect(weeklyRoleMissReasonForBlockers([
+            'LOAD_BUDGET_EXCEEDED',
+            'QUALITY_SPACING_VIOLATION',
+            'PROJECTED_FATIGUE_CEILING',
+        ])).toBe('hard_safety_or_recovery');
     });
 
     it('never seeds a reservation onto an immutable today/tomorrow date', () => {

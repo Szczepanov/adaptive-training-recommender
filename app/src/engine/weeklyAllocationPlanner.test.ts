@@ -286,12 +286,11 @@ describe('7A.4 reservations survive discretionary work', () => {
 });
 
 describe('D-SUPPORT fail-closed selection', () => {
-    it('protects support and displaced-reservation picks without re-gating an exact reserved-role pick', () => {
-        expect(shouldProtectWeeklyAllocation('train', 1, false)).toBe(true);
-        expect(shouldProtectWeeklyAllocation('modify', 1, false)).toBe(true);
-        expect(shouldProtectWeeklyAllocation('train', 1, true)).toBe(false);
-        expect(shouldProtectWeeklyAllocation('recover', 1, false)).toBe(false);
-        expect(shouldProtectWeeklyAllocation('train', 0, false)).toBe(false);
+    it('protects support and exact-role substitute picks on train and modify days', () => {
+        expect(shouldProtectWeeklyAllocation('train', 1)).toBe(true);
+        expect(shouldProtectWeeklyAllocation('modify', 1)).toBe(true);
+        expect(shouldProtectWeeklyAllocation('recover', 1)).toBe(false);
+        expect(shouldProtectWeeklyAllocation('train', 0)).toBe(false);
     });
 
     it('does not use incumbent-survival as proof when the current reservation is displaced', () => {
@@ -349,6 +348,32 @@ describe('D-SUPPORT fail-closed selection', () => {
         );
 
         expect(result.candidate.template).toBe(rest);
+        expect(result.allocationUnresolved).toBe(false);
+    });
+
+    it('can use a proven incumbent reservation without disabling viability for substitutes', () => {
+        const support = ENRICHED_TEMPLATES.find(template => template.category === 'Full-body Strength');
+        const incumbent = ENRICHED_TEMPLATES.find(template => template.category === 'Hard Endurance');
+        const rest = ENRICHED_TEMPLATES.find(template => template.category === 'Rest');
+        if (!support || !incumbent || !rest) throw new Error('required templates missing');
+
+        const candidate = (template: typeof support, utilityScore: number) => ({
+            template,
+            utilityScore,
+            benefitScore: utilityScore,
+            costPenalty: 0,
+            coverageNeedTier: 3 as const,
+            rationale: template.title,
+        });
+        const result = selectViableForecastCandidate(
+            [candidate(support, 10)],
+            true,
+            candidate(rest, 1),
+            selected => selected.template.id === incumbent.id ? 'preserves' : 'degrades',
+            candidate(incumbent, 2),
+        );
+
+        expect(result.candidate.template).toBe(incumbent);
         expect(result.allocationUnresolved).toBe(false);
     });
 

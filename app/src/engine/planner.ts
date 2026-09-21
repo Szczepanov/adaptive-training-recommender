@@ -77,10 +77,13 @@ import { applyPlanningOverlays } from './planningOverlays';
 import {
     allocationSurvives,
     attachExactEligibleIdentities,
+    DAILY_LEDGER_CAPACITY_BLOCKER,
     deriveRequiredRoleOccurrences,
     occurrencesFulfilledByTemplateSelection,
     resolveWeeklyRoleReservations,
     WEEKLY_ALLOCATION_SEARCH_BUDGET,
+    PROJECTED_FATIGUE_CEILING_BLOCKER,
+    weeklyRoleMissReasonForBlockers,
     type AllocationAssignment,
     type AllocationDateEvaluator,
     type ProjectedDateOutcome,
@@ -193,11 +196,9 @@ export interface ForecastPickSelection {
 export function shouldProtectWeeklyAllocation(
     effectiveFatigueTier: 'train' | 'modify' | 'recover',
     fulfilledCount: number,
-    currentReservationHasExactCandidate: boolean,
 ): boolean {
     return effectiveFatigueTier !== 'recover'
-        && fulfilledCount > 0
-        && !currentReservationHasExactCandidate;
+        && fulfilledCount > 0;
 }
 
 /**
@@ -224,13 +225,20 @@ export function selectViableForecastCandidate(
     viabilityApplies: boolean,
     restFallback: ForecastPickCandidate,
     preservesAllocation: (candidate: ForecastPickCandidate) => AllocationPreservation,
+    incumbentFallback?: ForecastPickCandidate,
 ): ForecastPickSelection {
     if (!viabilityApplies) return { candidate: ranked[0] ?? restFallback, allocationUnresolved: false };
 
-    const viable = ranked
-        .slice(0, WEEKLY_ALLOCATION_SEARCH_BUDGET.maxCandidatesPerOccurrence)
-        .find(candidate => preservesAllocation(candidate) === 'preserves');
+    const bounded = ranked.slice(0, WEEKLY_ALLOCATION_SEARCH_BUDGET.maxCandidatesPerOccurrence);
+    const viable = bounded.find(candidate => preservesAllocation(candidate) === 'preserves');
     if (viable) return { candidate: viable, allocationUnresolved: false };
+    if (
+        incumbentFallback
+        && !bounded.some(candidate => candidate.template.id === incumbentFallback.template.id)
+        && preservesAllocation(incumbentFallback) === 'preserves'
+    ) {
+        return { candidate: incumbentFallback, allocationUnresolved: false };
+    }
     if (preservesAllocation(restFallback) === 'preserves') return { candidate: restFallback, allocationUnresolved: false };
     return { candidate: restFallback, allocationUnresolved: true };
 }
@@ -1752,7 +1760,15 @@ export function generateWeekAheadPlan(
                 reservation?.occurrence.id ?? null,
                 selfFulfilledIds,
             );
+            const isIncumbentReservedTemplate = Boolean(
+                reservation
+                && reservation.templateId === template.id
+                && preservesCurrentReservation,
+            );
 
+            if (isIncumbentReservedTemplate && allocationSurvives(incumbentAssignments, evaluator)) {
+                return 'preserves';
+            }
             if (allocation.budgetExhausted || allocation.outcomes.some(outcome => outcome.status === 'unresolved_search_budget')) {
                 return 'unresolved_search_budget';
             }
@@ -1772,13 +1788,16 @@ export function generateWeekAheadPlan(
         const viabilityApplies = shouldProtectWeeklyAllocation(
             effectiveFatigueTier,
             allocation.fulfilledCount,
-            Boolean(reservation && exactReserved.length > 0),
         );
+        const incumbentFallback = reservation
+            ? ranked.find(candidate => candidate.template.id === reservation.templateId)
+            : undefined;
         const pickSelection = selectViableForecastCandidate(
             ranked,
             viabilityApplies,
             fallbackPick,
             candidate => preservesAllocation(candidate.template),
+            incumbentFallback,
         );
         if (pickSelection.allocationUnresolved) {
             allocation.reservationsByDate.forEach(({ occurrence }) => {
@@ -1816,16 +1835,20 @@ export function generateWeekAheadPlan(
             });
 
         if (reservation && !settledOutcomes.has(reservation.occurrence.id)) {
-            const reservationBudgetBlocked = reservation.occurrence.eligibleTemplateIds.some(templateId =>
-                evaluation.loadBudgetExcludedTemplateIds.includes(templateId),
-            );
+            const projectedOutcome = projectedDateOutcomeFrom(evaluation);
+            const exactCandidateBlockers = reservation.occurrence.eligibleTemplateIds.flatMap(templateId => [
+                ...(evaluation.ledgerExcludedTemplateIds.includes(templateId) ? [DAILY_LEDGER_CAPACITY_BLOCKER] : []),
+                ...(evaluation.loadBudgetExcludedTemplateIds.includes(templateId) ? [ROLLING_LOAD_BUDGET_EXCEEDED] : []),
+                ...(projectedOutcome.fatigueExcludedTemplateIds.includes(templateId) ? [PROJECTED_FATIGUE_CEILING_BLOCKER] : []),
+                ...(projectedOutcome.exclusionReasons.get(templateId) ?? []),
+            ]);
+            const exactCandidateMissReason = weeklyRoleMissReasonForBlockers(exactCandidateBlockers);
             displacementReasons.set(
                 reservation.occurrence.id,
-                reservationBudgetBlocked
-                    ? 'rolling_load_budget'
-                    : exactReserved.length === 0
-                    ? (effectiveFatigueTier === 'recover' ? 'hard_safety_or_recovery' : effectiveFatigueTier === 'modify' ? 'projected_fatigue' : 'hard_safety_or_recovery')
-                    : 'no_conflict_free_date',
+                exactCandidateMissReason
+                    ?? (exactReserved.length === 0
+                        ? (effectiveFatigueTier === 'recover' ? 'hard_safety_or_recovery' : effectiveFatigueTier === 'modify' ? 'projected_fatigue' : 'hard_safety_or_recovery')
+                        : 'no_conflict_free_date'),
             );
         }
 

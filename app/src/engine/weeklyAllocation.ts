@@ -120,8 +120,21 @@ const SAFETY_EXCLUSION_REASONS = new Set([
     'RECOVERY_WINDOW_UNELAPSED',
 ]);
 
-const FATIGUE_CEILING_BLOCKER = 'PROJECTED_FATIGUE_CEILING';
+export const PROJECTED_FATIGUE_CEILING_BLOCKER = 'PROJECTED_FATIGUE_CEILING';
 export const DAILY_LEDGER_CAPACITY_BLOCKER = 'DAILY_LEDGER_CAPACITY';
+
+/** Return the highest-priority typed cause represented by observed candidate blockers. */
+export function weeklyRoleMissReasonForBlockers(blockers: Iterable<string>): WeeklyRoleMissReason | null {
+    const reasons = new Set([...blockers].map(blocker => {
+        const separator = blocker.indexOf(':');
+        return separator === -1 ? blocker : blocker.slice(separator + 1);
+    }));
+    if ([...reasons].some(reason => SAFETY_EXCLUSION_REASONS.has(reason))) return 'hard_safety_or_recovery';
+    if (reasons.has(DAILY_LEDGER_CAPACITY_BLOCKER)) return 'daily_ledger_capacity';
+    if (reasons.has(ROLLING_LOAD_BUDGET_EXCEEDED)) return 'rolling_load_budget';
+    if (reasons.has(PROJECTED_FATIGUE_CEILING_BLOCKER)) return 'projected_fatigue';
+    return null;
+}
 
 function canonicalOccurrenceId(parts: readonly string[]): string {
     return parts.map(part => encodeURIComponent(part)).join('|');
@@ -358,7 +371,7 @@ export function resolveWeeklyRoleReservations(
                     all.push({ date, templateId });
                 } else if (outcome.fatigueExcludedTemplateIds.includes(templateId)) {
                     sawFatigueExclusion = true;
-                    blockers.add(`${date}:${FATIGUE_CEILING_BLOCKER}`);
+                    blockers.add(`${date}:${PROJECTED_FATIGUE_CEILING_BLOCKER}`);
                 } else {
                     for (const reason of outcome.exclusionReasons.get(templateId) ?? []) {
                         blockers.add(`${date}:${reason}`);
@@ -428,7 +441,7 @@ export function resolveWeeklyRoleReservations(
             if (!outcome.acceptedTemplateIds.includes(candidate.templateId)) {
                 if (outcome.fatigueExcludedTemplateIds.includes(candidate.templateId)) {
                     next.sawFatigueExclusion = true;
-                    next.blockers.add(`${candidate.date}:${FATIGUE_CEILING_BLOCKER}`);
+                    next.blockers.add(`${candidate.date}:${PROJECTED_FATIGUE_CEILING_BLOCKER}`);
                 } else {
                     for (const reason of outcome.exclusionReasons.get(candidate.templateId) ?? []) {
                         next.blockers.add(`${candidate.date}:${reason}`);
