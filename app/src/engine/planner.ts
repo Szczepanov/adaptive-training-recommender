@@ -1779,7 +1779,8 @@ export async function generateWeekAheadPlanWithIntent(
     trainingIntentProfile: TrainingIntentProfile | null = null,
 ): Promise<WeekAheadPlan> {
     const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
-    const rollingLoadBudgetSnapshot = preparedHistorySnapshot?.windowDays >= ROLLING_LOAD_BUDGET_LOOKBACK_DAYS
+    const rollingLoadBudgetSnapshot = preparedHistorySnapshot
+        && preparedHistorySnapshot.windowDays >= ROLLING_LOAD_BUDGET_LOOKBACK_DAYS
         ? preparedHistorySnapshot
         : await prepareTrainingHistorySnapshot(
             userId,

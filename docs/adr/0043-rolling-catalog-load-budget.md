@@ -39,8 +39,10 @@ increase the budget.
 - A candidate that exceeds the envelope is rejected with `LOAD_BUDGET_EXCEEDED` and the planner
   can fall back to recovery work.
 - The profile is deterministic and replayable from policy version plus training history.
-- All seven future dates in the week-ahead strip are inside the same fixed envelope; a rest
-  day inside that strip does not replenish it.
+- The fixed accounting envelope spans all seven future dates. Day 1's already-computed
+  provisional recommendation is charged to it but is not re-selected by the planner; generated
+  day-2+ candidates are gated against the remaining envelope. A rest day inside the strip does
+  not replenish it.
 - Numeric limits require prospective calibration before any future relaxation.
 - The knowledge registry records the supporting stress–recovery claim and the product-policy
   limitations separately.

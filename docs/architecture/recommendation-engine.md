@@ -748,9 +748,10 @@ evaluated locally against the planner's projected fatigue state as-of that date 
 athlete-specific catalog-load budget across the seven future dates beginning tomorrow once
 sufficient baseline history exists. The week-ahead wrapper obtains a separate 49-day evidence
 snapshot (42-day stable baseline plus the excluded recent seven-day window) while operational
-fatigue and microcycle bookkeeping remain explicitly bounded to seven days. Candidate budget
-cost uses the same automatic easier dose that ranking will prescribe on modify/time-capped days.
-Acute fatigue may still decay and improve the daily tier, but that decay does not replenish the
+fatigue and microcycle bookkeeping remain explicitly bounded to seven days. The day-1 provisional recommendation is already selected by the separate next-day evaluator and
+is charged to the envelope without being re-ranked; generated day-2+ candidates are gated.
+Candidate budget cost uses the same automatic easier dose that ranking will prescribe on
+modify/time-capped days. Acute fatigue may still decay and improve the daily tier, but that decay does not replenish the
 same fixed forecast envelope. Sparse history leaves this new gate inactive; existing
 safety/feasibility controls remain authoritative. The catalog-load envelope is a product
 guardrail, not a calibrated physiological recovery measurement or universal dose-response model;
