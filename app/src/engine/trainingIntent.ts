@@ -156,6 +156,7 @@ export async function resolveTrainingIntent(
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
     trainingIntentProfile: TrainingIntentProfile | null = null,
     fatigueFusionPolicy: FatigueFusionPolicy = 'max',
+    preparedRollingLoadBudgetSnapshot?: TrainingHistorySnapshot | null,
 ): Promise<TrainingIntent> {
     const eventPeriodization = evaluatePeriodizationPhase(events, date);
     const planningContext = resolvePlanningContext(trainingIntentProfile, eventPeriodization, date);
@@ -183,12 +184,16 @@ export async function resolveTrainingIntent(
     // operational history explicitly bounded so a 28-day state-evidence read cannot widen
     // fatigue or microcycle bookkeeping by accident.
     const history = operationalHistory.filter(exposure => exposure.date >= operationalWindowStart && exposure.date < date);
-    // A caller-supplied snapshot is immutable evidence: do not issue a second read behind
-    // its back. Legacy injected providers without getSnapshot also retain their bounded
-    // operational history; production and simulation providers expose getSnapshot, which
-    // lets us request the wider evidence window without widening fatigue bookkeeping.
-    const budgetSnapshot = preparedHistorySnapshot
-        ?? (provider.getSnapshot
+    // The forecast may supply a separate wider immutable snapshot while the operational
+    // decision keeps its narrow audit/fatigue revision. A sufficiently wide operational
+    // snapshot can be reused; legacy providers without snapshot support fall back to the
+    // bounded operational history rather than fabricating chronic evidence.
+    const budgetSnapshot = preparedRollingLoadBudgetSnapshot
+        ?? (preparedHistorySnapshot?.windowDays !== undefined
+            && preparedHistorySnapshot.windowDays >= ROLLING_LOAD_BUDGET_LOOKBACK_DAYS
+            ? preparedHistorySnapshot
+            : null)
+        ?? (!preparedHistorySnapshot && provider.getSnapshot
             ? await prepareTrainingHistorySnapshot(userId, date, ROLLING_LOAD_BUDGET_LOOKBACK_DAYS, historyProvider)
             : null);
     const budgetHistorySource = budgetSnapshot?.exposures ?? history;

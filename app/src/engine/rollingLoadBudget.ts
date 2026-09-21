@@ -10,6 +10,9 @@ export const ROLLING_LOAD_BUDGET_POLICY_VERSION = '2026-09-rolling-load-budget-v
 export const ROLLING_LOAD_BUDGET_WINDOW_DAYS = 7 as const;
 export const ROLLING_LOAD_BUDGET_BASELINE_DAYS = 42 as const;
 export const ROLLING_LOAD_BUDGET_LOOKBACK_DAYS = ROLLING_LOAD_BUDGET_WINDOW_DAYS + ROLLING_LOAD_BUDGET_BASELINE_DAYS;
+export const ROLLING_LOAD_BUDGET_MIN_BASELINE_EXPOSURES = 3 as const;
+export const ROLLING_LOAD_BUDGET_MIN_BASELINE_SPAN_DAYS = 14 as const;
+export const ROLLING_LOAD_BUDGET_HEADROOM_MULTIPLIER = 1.15 as const;
 
 export type RollingLoadBudgetConfidence = 'provisional' | 'established';
 export type RollingLoadBudgetSource = 'completed' | 'projected' | 'fixed' | 'overlay';
@@ -69,7 +72,8 @@ const DIMENSIONS: (keyof WorkoutCostProfile)[] = [
     'systemic', 'cardiovascular', 'lowerBody', 'upperBody', 'impactTissue', 'neuromuscular',
 ];
 
-/** Conservative starting envelope for an athlete without enough stable history. */
+/** Product floors for an established profile. Sparse-history profiles are provisional and
+ * do not activate this gate; once established, personal limits cannot fall below these floors. */
 export const DEFAULT_ROLLING_LOAD_BUDGET_LIMITS: WorkoutCostProfile = {
     systemic: 2.0,
     cardiovascular: 3.0,
@@ -146,6 +150,20 @@ function entriesInRange(entries: readonly RollingLoadBudgetEntry[], startDate: s
     return uniqueEntries(entries.filter(entry => entry.date >= startDate && entry.date <= endDate));
 }
 
+/** The forecast envelope owns the requested future dates, beginning tomorrow. Today's
+ * confirmed recommendation is already decided and remains represented by the acute-fatigue
+ * chain rather than being retroactively re-gated by a forecast-only budget. */
+export function resolveRollingLoadBudgetForecastHorizon(
+    todayDate: string,
+    futureDays: number = ROLLING_LOAD_BUDGET_WINDOW_DAYS,
+): { startDate: string; endDate: string } {
+    const boundedFutureDays = Math.max(1, Math.floor(futureDays));
+    return {
+        startDate: addDaysToLocalDateString(todayDate, 1),
+        endDate: addDaysToLocalDateString(todayDate, boundedFutureDays),
+    };
+}
+
 function sumCosts(entries: readonly RollingLoadBudgetEntry[]): WorkoutCostProfile {
     return entries.reduce((sum, entry) => addCost(sum, entry.costProfile), { ...EMPTY_COST });
 }
@@ -174,7 +192,8 @@ export function resolveRollingLoadBudgetProfile(
     const unique = uniqueEntries(entries);
     const dates = unique.map(entry => entry.date).sort();
     const observedSpan = dates.length > 1 ? getDayDiff(dates[dates.length - 1], dates[0]) + 1 : 0;
-    const established = unique.length >= 3 && observedSpan >= 14;
+    const established = unique.length >= ROLLING_LOAD_BUDGET_MIN_BASELINE_EXPOSURES
+        && observedSpan >= ROLLING_LOAD_BUDGET_MIN_BASELINE_SPAN_DAYS;
 
     if (!established) {
         return {
@@ -191,7 +210,10 @@ export function resolveRollingLoadBudgetProfile(
     const weeks = Math.max(1, ROLLING_LOAD_BUDGET_BASELINE_DAYS / 7);
     const limits = Object.fromEntries(DIMENSIONS.map(dimension => [
         dimension,
-        Math.max(DEFAULT_ROLLING_LOAD_BUDGET_LIMITS[dimension], (baselineTotal[dimension] / weeks) * 1.15),
+        Math.max(
+            DEFAULT_ROLLING_LOAD_BUDGET_LIMITS[dimension],
+            (baselineTotal[dimension] / weeks) * ROLLING_LOAD_BUDGET_HEADROOM_MULTIPLIER,
+        ),
     ])) as unknown as WorkoutCostProfile;
 
     return {

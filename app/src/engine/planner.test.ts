@@ -6,12 +6,14 @@ import { createEmptyFatigue } from './fatigue';
 import { resolveTrainingIntent } from './trainingIntent';
 import type { AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
+import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { rankCandidatesByUtility } from './optimizer';
 import { resolveAvailability } from './schedule';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { generateWeeklyObjectives } from './microcycle';
 import { evaluatePeriodizationPhase } from './periodization';
 import { addDaysToLocalDateString } from '../utils/localDate';
+import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS, ROLLING_LOAD_BUDGET_POLICY_VERSION } from './rollingLoadBudget';
 
 // --- Fixtures (mirrors rules.test.ts's pattern) -----------------------------
 
@@ -273,6 +275,45 @@ describe('generateWeekAheadPlan', () => {
             'u1', readiness, context, null, [], '2026-08-07', todayRec, tomorrowRec, { days: 3 }, provider,
         );
         expect(calls).toBe(1);
+        expect(plan.days).toHaveLength(3);
+    });
+
+    it('requests the dedicated rolling-budget evidence window when a prepared operational snapshot is narrower', async () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+        const narrowSnapshot: TrainingHistorySnapshot = {
+            throughDateExclusive: '2026-08-07',
+            windowDays: 7,
+            completedEvents: [],
+            exposures: [],
+            sourceStates: {
+                activities: { status: 'AVAILABLE', revision: 'activities-7d' },
+                recommendations: { status: 'AVAILABLE', revision: 'recommendations-7d' },
+                manualTraining: { status: 'MISSING' },
+            },
+            generatedAt: '',
+            revision: 'history-7d',
+        };
+        const requestedWindows: number[] = [];
+        const provider: TrainingHistoryProvider = {
+            reconstruct: async () => [],
+            getSnapshot: async (_userId, throughDateExclusive, windowDays) => {
+                requestedWindows.push(windowDays);
+                return {
+                    ...narrowSnapshot,
+                    throughDateExclusive,
+                    windowDays,
+                    revision: `history-${windowDays}d`,
+                };
+            },
+        };
+
+        const plan = await generateWeekAheadPlanWithIntent(
+            'u1', readiness, context, null, [], '2026-08-07', todayRec, tomorrowRec,
+            { days: 3 }, provider, narrowSnapshot,
+        );
+
+        expect(requestedWindows).toEqual([ROLLING_LOAD_BUDGET_LOOKBACK_DAYS]);
         expect(plan.days).toHaveLength(3);
     });
 
@@ -1170,6 +1211,42 @@ describe('D-LEDGER planner admission', () => {
         expect(evaluation.fatigueGated.some(template =>
             evaluation.ledgerExcludedTemplateIds.includes(template.id),
         )).toBe(false);
+    });
+
+    it('charges the dose that will actually be prescribed before applying the rolling load budget', () => {
+        const context = baseContext({ hasIndoorBike: true, maxTimeMinutes: 40 });
+        const phase = evaluatePeriodizationPhase([], '2026-09-13', '2026-09-13').phase;
+        const alreadySpent = {
+            systemic: 1.4, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0,
+        };
+        const evaluation = evaluateProjectedDate('2026-09-13', {
+            microcycle: generateWeeklyObjectives(phase, '2026-09-13', null),
+            externalFatigue: createEmptyFatigue('2026-09-12'),
+            projectedHistory: [{
+                date: '2026-09-12', modality: 'Cycling' as const, systemicCost: 1.4, lowerBodyCost: 0,
+                costProfile: alreadySpent, occurrenceKey: 'budget-spent',
+            }],
+        }, {
+            context,
+            preferences: NEUTRAL_PREFERENCES,
+            events: [], fixedActivities: [], authoredPlanBlocks: [], scheduleOverlays: [],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: '2026-09-13', todayDate: '2026-09-13',
+            rollingLoadBudgetProfile: {
+                policyVersion: ROLLING_LOAD_BUDGET_POLICY_VERSION,
+                confidence: 'established',
+                baselineSessionCount: 3,
+                baselineWindowStartDate: '2026-07-20',
+                baselineWindowEndDate: '2026-08-30',
+                limits: { systemic: 2, cardiovascular: 10, lowerBody: 10, upperBody: 10, impactTissue: 10, neuromuscular: 10 },
+            },
+            rollingLoadBudgetHorizonStartDate: '2026-09-10',
+            rollingLoadBudgetHorizonEndDate: '2026-09-16',
+        });
+
+        expect(evaluation.eligible.some(template => template.id === 'end_mod_02')).toBe(true);
+        expect(evaluation.loadBudgetExcludedTemplateIds).not.toContain('end_mod_02');
     });
 
     it('applies the individualized rolling catalog-load envelope after stable baseline evidence', () => {

@@ -745,10 +745,14 @@ Rolling re-resolution carries that state by `WeeklyObjective.id`, never the disp
 **Day-by-day local fatigue tier evaluation and modeled recovery headroom.** Forecast days are
 evaluated locally against the planner's projected fatigue state as-of that date (`planner.ts`
 `evaluateProjectedDate`). The separate `rollingLoadBudget.ts` envelope now carries a stable
-athlete-specific catalog-load budget across the fixed forecast horizon once sufficient baseline
-history exists. Acute fatigue may still decay and improve the daily tier, but that decay does not
-replenish the same horizon's discretionary budget. Sparse history leaves this new gate inactive;
-existing safety/feasibility controls remain authoritative. The catalog-load envelope is a product
+athlete-specific catalog-load budget across the seven future dates beginning tomorrow once
+sufficient baseline history exists. The week-ahead wrapper obtains a separate 49-day evidence
+snapshot (42-day stable baseline plus the excluded recent seven-day window) while operational
+fatigue and microcycle bookkeeping remain explicitly bounded to seven days. Candidate budget
+cost uses the same automatic easier dose that ranking will prescribe on modify/time-capped days.
+Acute fatigue may still decay and improve the daily tier, but that decay does not replenish the
+same fixed forecast envelope. Sparse history leaves this new gate inactive; existing
+safety/feasibility controls remain authoritative. The catalog-load envelope is a product
 guardrail, not a calibrated physiological recovery measurement or universal dose-response model;
 its exact limits are registered with those limitations in the knowledge library.
 

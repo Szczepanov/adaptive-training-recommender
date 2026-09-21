@@ -66,7 +66,7 @@ import {
 } from './optimizer';
 import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
-import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
+import { prepareTrainingHistorySnapshot, resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
 import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry } from './coverage';
@@ -95,7 +95,9 @@ import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
 import { admitsCandidate, computeDailyLedger, type DailyLedgerResult } from './dailyLedger';
 import { dedupeFixedActivitiesByLedgerIdentity, pendingFixedActivityLedgerEntries } from './fixedActivityLedger';
 import {
+    ROLLING_LOAD_BUDGET_LOOKBACK_DAYS,
     evaluateRollingLoadBudget,
+    resolveRollingLoadBudgetForecastHorizon,
     resolveRollingLoadBudgetProfile,
     rollingLoadBudgetEntryFromHistory,
     type RollingLoadBudgetEntry,
@@ -617,6 +619,10 @@ export function evaluateProjectedDate(
         .filter(template => !isLedgerAdmitted(template))
         .map(template => template.id);
 
+    const isConservative = shared.preferences?.conservativeBias ?? false;
+    const fatigueThresholds = projectedFatigueThresholds(isConservative);
+    const fatigueTier = fatigueTierFor(peakFatigue, fatigueThresholds);
+
     const loadBudgetProfile = shared.rollingLoadBudgetProfile
         ?? resolveRollingLoadBudgetProfile(state.projectedHistory, date);
     const loadBudgetHorizonStartDate = shared.rollingLoadBudgetHorizonStartDate ?? date;
@@ -650,7 +656,12 @@ export function evaluateProjectedDate(
         // fatigue, safety, spacing and daily-ledger gates remain authoritative until
         // the athlete has enough stable baseline evidence for this product envelope.
         if (loadBudgetProfile.confidence === 'provisional') return true;
-        const effective = effectiveTemplateForProjection(template);
+        const activeDose = resolveTimeCapDoseAdjustment(
+            template,
+            availability.maxTimeMinutes,
+            fatigueTier === 'modify',
+        )?.activeDose;
+        const effective = effectiveTemplateForProjection(template, activeDose);
         return evaluateRollingLoadBudget({
             asOfDate: date,
             horizonStartDate: loadBudgetHorizonStartDate,
@@ -669,10 +680,6 @@ export function evaluateProjectedDate(
     const loadBudgetExcludedTemplateIds = ledgerAdmitted
         .filter(template => !isLoadBudgetAdmitted(template))
         .map(template => template.id);
-
-    const isConservative = shared.preferences?.conservativeBias ?? false;
-    const fatigueThresholds = projectedFatigueThresholds(isConservative);
-    const fatigueTier = fatigueTierFor(peakFatigue, fatigueThresholds);
 
     const fatigueGated = templatesWithinProjectedFatigueGate(budgetAdmitted, peakFatigue, fatigueThresholds);
 
@@ -1190,6 +1197,7 @@ export function generateWeekAheadPlan(
         seed.rollingLoadBudgetHistory ?? seed.trailingHistory ?? [],
         todayDate,
     );
+    const rollingLoadBudgetHorizon = resolveRollingLoadBudgetForecastHorizon(todayDate, totalDays);
 
     const periodizationToday = evaluatePeriodizationPhase(events, todayDate);
     let microcycle: MicrocycleState = seed.microcycle ?? generateWeeklyObjectives(periodizationToday.phase, todayDate, periodizationToday.focusEvent, suppliedPlanDefinition, todayDate);
@@ -1363,8 +1371,8 @@ export function generateWeekAheadPlan(
         todayDate,
         healthPlanningPolicy: options.healthPlanningPolicy,
         rollingLoadBudgetProfile,
-        rollingLoadBudgetHorizonStartDate: todayDate,
-        rollingLoadBudgetHorizonEndDate: addDaysToLocalDateString(todayDate, totalDays - 1),
+        rollingLoadBudgetHorizonStartDate: rollingLoadBudgetHorizon.startDate,
+        rollingLoadBudgetHorizonEndDate: rollingLoadBudgetHorizon.endDate,
     };
 
     type ProjectedHistoryEntry = RecentHistoryEntry & { source: 'projected' };
@@ -1771,7 +1779,27 @@ export async function generateWeekAheadPlanWithIntent(
     trainingIntentProfile: TrainingIntentProfile | null = null,
 ): Promise<WeekAheadPlan> {
     const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
-    const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy);
+    const rollingLoadBudgetSnapshot = preparedHistorySnapshot?.windowDays >= ROLLING_LOAD_BUDGET_LOOKBACK_DAYS
+        ? preparedHistorySnapshot
+        : await prepareTrainingHistorySnapshot(
+            userId,
+            todayDate,
+            ROLLING_LOAD_BUDGET_LOOKBACK_DAYS,
+            historyProvider,
+        );
+    const intent = await resolveTrainingIntent(
+        userId,
+        events,
+        todayDate,
+        todayReadiness,
+        7,
+        historyProvider,
+        preparedHistorySnapshot,
+        options.authoredPlanBlocks,
+        trainingIntentProfile,
+        fatigueFusionPolicy,
+        rollingLoadBudgetSnapshot,
+    );
     const isAdverseRecovery = isSevereAdverseRecoveryReadiness(todayReadiness, todayRec.mode);
     const healthPlanningPolicy = resolveHealthPlanningPolicy(
         intent.planningContext.profile.priorities,

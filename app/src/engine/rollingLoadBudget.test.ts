@@ -3,8 +3,12 @@ import type { SessionHistoryEntry, WorkoutCostProfile } from './models';
 import {
     DEFAULT_ROLLING_LOAD_BUDGET_LIMITS,
     ROLLING_LOAD_BUDGET_BASELINE_DAYS,
+    ROLLING_LOAD_BUDGET_HEADROOM_MULTIPLIER,
+    ROLLING_LOAD_BUDGET_MIN_BASELINE_EXPOSURES,
+    ROLLING_LOAD_BUDGET_MIN_BASELINE_SPAN_DAYS,
     ROLLING_LOAD_BUDGET_WINDOW_DAYS,
     evaluateRollingLoadBudget,
+    resolveRollingLoadBudgetForecastHorizon,
     resolveRollingLoadBudgetProfile,
     type RollingLoadBudgetEntry,
 } from './rollingLoadBudget';
@@ -40,7 +44,10 @@ function entry(date: string, occurrenceKey: string, costProfile = hardCyclingCos
 describe('rolling load budget', () => {
     it('is aligned with the active knowledge claim and keeps policy numbers explicit', () => {
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.rollingLoadBudgetPolicy);
-        expect(claim.statement).toContain(`${ROLLING_LOAD_BUDGET_BASELINE_DAYS - ROLLING_LOAD_BUDGET_WINDOW_DAYS}-day pre-window`);
+        expect(claim.statement).toContain(`${ROLLING_LOAD_BUDGET_BASELINE_DAYS}-day pre-window`);
+        expect(claim.statement).toContain(`at least ${ROLLING_LOAD_BUDGET_MIN_BASELINE_EXPOSURES} completed exposures`);
+        expect(claim.statement).toContain(`at least ${ROLLING_LOAD_BUDGET_MIN_BASELINE_SPAN_DAYS} calendar days`);
+        expect(claim.statement).toContain(`${Math.round((ROLLING_LOAD_BUDGET_HEADROOM_MULTIPLIER - 1) * 100)}% headroom`);
         expect(claim.statement).toContain(`${DEFAULT_ROLLING_LOAD_BUDGET_LIMITS.systemic}`);
         expect(claim.limitations.join(' ')).toContain('as physiological constants');
     });
@@ -55,6 +62,8 @@ describe('rolling load budget', () => {
 
         expect(profile.confidence).toBe('established');
         expect(profile.baselineSessionCount).toBe(4);
+        expect(profile.baselineWindowStartDate).toBe('2026-06-14');
+        expect(profile.baselineWindowEndDate).toBe('2026-07-25');
         expect(profile.limits.systemic).toBeGreaterThan(0);
     });
 
@@ -106,5 +115,9 @@ describe('rolling load budget', () => {
         expect(beforeRest.total.systemic).toBe(afterRest.total.systemic);
         expect(beforeRest.admitted).toBe(afterRest.admitted);
         expect(ROLLING_LOAD_BUDGET_WINDOW_DAYS).toBe(7);
+        expect(resolveRollingLoadBudgetForecastHorizon('2026-08-01', ROLLING_LOAD_BUDGET_WINDOW_DAYS)).toEqual({
+            startDate: '2026-08-02',
+            endDate: '2026-08-08',
+        });
     });
 });

@@ -382,11 +382,11 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'optimizer.rolling_load_budget', domain: 'optimizer_scoring', title: 'Individualized rolling catalog-load budget',
-        currentRule: 'With at least three completed exposures spanning at least 14 days in the stable pre-window, derive per-dimension seven-day catalog-load limits from the athlete\'s own 35-day baseline with 15% headroom; otherwise leave this new gate inactive and retain existing fatigue/safety controls. Projected exercise candidates that exceed the fixed forecast envelope are excluded with LOAD_BUDGET_EXCEEDED.',
+        currentRule: 'With at least three completed exposures spanning at least 14 days in the stable pre-window, derive per-dimension seven-day future catalog-load limits from the athlete\'s own 42-day baseline with 15% headroom and product floors; otherwise leave this new gate inactive and retain existing fatigue/safety controls. Generated forecast exercise candidates are charged at their actual prescribed dose and candidates that exceed the fixed envelope are excluded with LOAD_BUDGET_EXCEEDED.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p1',
         codeRefs: ['engine/rollingLoadBudget.ts:resolveRollingLoadBudgetProfile', 'engine/rollingLoadBudget.ts:evaluateRollingLoadBudget', 'engine/planner.ts:evaluateProjectedDate'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.rollingLoadBudgetPolicy],
-        coverageRationale: 'Longitudinal load monitoring and stress–recovery evidence support tracking accumulated load against an athlete\'s own history, while the exact catalog-cost dimensions, 35-day baseline, 15% headroom and fallback limits remain product calibration. Coverage is intentionally partial until prospective outcome calibration shows when this envelope improves planning without unnecessary under-training.',
+        coverageRationale: 'Longitudinal load monitoring and stress–recovery evidence support tracking accumulated load against an athlete\'s own history, while the exact catalog-cost dimensions, 42-day baseline, 15% headroom and product floors remain product calibration. Coverage is intentionally partial until prospective outcome calibration shows when this envelope improves planning without unnecessary under-training.',
     },
     {
         id: 'periodization.phase_boundaries_scales', domain: 'periodization_taper', title: 'Base/Build/Specificity phase boundaries and dose scales',
