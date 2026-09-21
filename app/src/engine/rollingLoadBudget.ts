@@ -6,7 +6,7 @@ import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
  * The evidence supports monitoring accumulated load and individualising it; the exact
  * normalized cost scale and limits remain product policy (see the knowledge registry).
  */
-export const ROLLING_LOAD_BUDGET_POLICY_VERSION = '2026-09-rolling-load-budget-v1' as const;
+export const ROLLING_LOAD_BUDGET_POLICY_VERSION = '2026-09-rolling-load-budget-v2' as const;
 export const ROLLING_LOAD_BUDGET_WINDOW_DAYS = 7 as const;
 export const ROLLING_LOAD_BUDGET_BASELINE_DAYS = 42 as const;
 export const ROLLING_LOAD_BUDGET_LOOKBACK_DAYS = ROLLING_LOAD_BUDGET_WINDOW_DAYS + ROLLING_LOAD_BUDGET_BASELINE_DAYS;
@@ -55,6 +55,10 @@ export interface RollingLoadBudgetSnapshot {
     candidate: WorkoutCostProfile;
     total: WorkoutCostProfile;
     remaining: WorkoutCostProfile;
+    candidateInHorizon: boolean;
+    exceededDimensionsBefore: (keyof WorkoutCostProfile)[];
+    exceededDimensionsAfter: (keyof WorkoutCostProfile)[];
+    blockingDimensions: (keyof WorkoutCostProfile)[];
     admitted: boolean;
     reason?: 'LOAD_BUDGET_EXCEEDED';
 }
@@ -226,16 +230,35 @@ export function resolveRollingLoadBudgetProfile(
     };
 }
 
+const EPS = 1e-9;
+
 export function evaluateRollingLoadBudget(input: RollingLoadBudgetEvaluationInput): RollingLoadBudgetSnapshot {
     const entries = entriesInRange(input.entries, input.horizonStartDate, input.horizonEndDate);
-    const candidate = input.candidate && input.candidate.date >= input.horizonStartDate && input.candidate.date <= input.horizonEndDate
-        ? input.candidate
-        : undefined;
+    const candidateInHorizon = Boolean(
+        input.candidate
+        && input.candidate.date >= input.horizonStartDate
+        && input.candidate.date <= input.horizonEndDate,
+    );
     const consumed = sumCosts(entries);
-    const candidateCost = candidate ? cloneCost(candidate.costProfile) : { ...EMPTY_COST };
+    const candidateCost = candidateInHorizon && input.candidate
+        ? cloneCost(input.candidate.costProfile)
+        : { ...EMPTY_COST };
+    const beforeRemaining = subtractCost(input.profile.limits, consumed);
     const total = addCost(consumed, candidateCost);
     const remaining = subtractCost(input.profile.limits, total);
-    const admitted = DIMENSIONS.every(dimension => remaining[dimension] >= -1e-9);
+
+    const exceededDimensionsBefore = DIMENSIONS.filter(d => beforeRemaining[d] < -EPS);
+    const exceededDimensionsAfter = DIMENSIONS.filter(d => remaining[d] < -EPS);
+    const blockingDimensions = candidateInHorizon
+        ? DIMENSIONS.filter(d => candidateCost[d] > EPS && remaining[d] < -EPS)
+        : [];
+    // Preserve the evaluator's pre-v2 envelope-only semantics when no candidate is supplied:
+    // an over-budget snapshot remains non-admitted. When a candidate is supplied, admission
+    // is candidate-specific; a candidate outside the fixed horizon contributes nothing and
+    // therefore is not rejected by that horizon's existing overage.
+    const admitted = input.candidate
+        ? blockingDimensions.length === 0
+        : exceededDimensionsAfter.length === 0;
 
     return {
         policyVersion: input.profile.policyVersion,
@@ -248,6 +271,10 @@ export function evaluateRollingLoadBudget(input: RollingLoadBudgetEvaluationInpu
         candidate: candidateCost,
         total,
         remaining,
+        candidateInHorizon,
+        exceededDimensionsBefore,
+        exceededDimensionsAfter,
+        blockingDimensions,
         admitted,
         ...(admitted ? {} : { reason: 'LOAD_BUDGET_EXCEEDED' as const }),
     };
