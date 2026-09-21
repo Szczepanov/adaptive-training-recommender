@@ -1,17 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { evaluateNextDayPlan, evaluateNextDayPlanWithIntent, evaluateTraining, evaluateTrainingWithIntent } from './rules';
 import { mapContextFromGoalsAndTrainingSettings } from './adapters';
-import { evaluateProjectedDate, generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, reconcileObjectivesForDate, resolveWeeklyAnchors, type ProjectionExposure } from './planner';
+import { evaluateProjectedDate, generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, reconcileObjectivesForDate, resolveWeeklyAnchors, NEUTRAL_PREFERENCES, type ProjectionExposure } from './planner';
 import { createEmptyFatigue } from './fatigue';
 import { resolveTrainingIntent } from './trainingIntent';
-import type { AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
+import type { AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, ScheduleOverlay, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
+import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { rankCandidatesByUtility } from './optimizer';
 import { resolveAvailability } from './schedule';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { generateWeeklyObjectives } from './microcycle';
 import { evaluatePeriodizationPhase } from './periodization';
 import { addDaysToLocalDateString } from '../utils/localDate';
+import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS, ROLLING_LOAD_BUDGET_POLICY_VERSION } from './rollingLoadBudget';
 
 // --- Fixtures (mirrors rules.test.ts's pattern) -----------------------------
 
@@ -276,6 +278,45 @@ describe('generateWeekAheadPlan', () => {
         expect(plan.days).toHaveLength(3);
     });
 
+    it('requests the dedicated rolling-budget evidence window when a prepared operational snapshot is narrower', async () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+        const narrowSnapshot: TrainingHistorySnapshot = {
+            throughDateExclusive: '2026-08-07',
+            windowDays: 7,
+            completedEvents: [],
+            exposures: [],
+            sourceStates: {
+                activities: { status: 'AVAILABLE', revision: 'activities-7d' },
+                recommendations: { status: 'AVAILABLE', revision: 'recommendations-7d' },
+                manualTraining: { status: 'MISSING' },
+            },
+            generatedAt: '',
+            revision: 'history-7d',
+        };
+        const requestedWindows: number[] = [];
+        const provider: TrainingHistoryProvider = {
+            reconstruct: async () => [],
+            getSnapshot: async (_userId, throughDateExclusive, windowDays) => {
+                requestedWindows.push(windowDays);
+                return {
+                    ...narrowSnapshot,
+                    throughDateExclusive,
+                    windowDays,
+                    revision: `history-${windowDays}d`,
+                };
+            },
+        };
+
+        const plan = await generateWeekAheadPlanWithIntent(
+            'u1', readiness, context, null, [], '2026-08-07', todayRec, tomorrowRec,
+            { days: 3 }, provider, narrowSnapshot,
+        );
+
+        expect(requestedWindows).toEqual([ROLLING_LOAD_BUDGET_LOOKBACK_DAYS]);
+        expect(plan.days).toHaveLength(3);
+    });
+
     it('projects completed history into the seed without inventing a modality', () => {
         const context = baseContext();
         const { readiness } = buildTodayAndTomorrow(context);
@@ -287,10 +328,12 @@ describe('generateWeekAheadPlan', () => {
 
         expect(projectTrailingHistory(history)).toEqual([{
             date: '2026-08-05', type: 'hard Cycling threshold', systemicCost: 0.8, durationMin: 45,
+            costProfile: history[0].costProfile,
         }]);
         expect(prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', history).trailingHistory)
             .toEqual([{
                 date: '2026-08-05', type: 'hard Cycling threshold', systemicCost: 0.8, durationMin: 45,
+                costProfile: history[0].costProfile,
             }]);
     });
 
@@ -1168,5 +1211,276 @@ describe('D-LEDGER planner admission', () => {
         expect(evaluation.fatigueGated.some(template =>
             evaluation.ledgerExcludedTemplateIds.includes(template.id),
         )).toBe(false);
+    });
+
+    it('charges the dose that will actually be prescribed before applying the rolling load budget', () => {
+        const context = baseContext({ hasIndoorBike: true, maxTimeMinutes: 40 });
+        const phase = evaluatePeriodizationPhase([], '2026-09-13', '2026-09-13').phase;
+        const alreadySpent = {
+            systemic: 1.4, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0,
+        };
+        const evaluation = evaluateProjectedDate('2026-09-13', {
+            microcycle: generateWeeklyObjectives(phase, '2026-09-13', null),
+            externalFatigue: createEmptyFatigue('2026-09-12'),
+            projectedHistory: [{
+                date: '2026-09-12', modality: 'Cycling' as const, systemicCost: 1.4, lowerBodyCost: 0,
+                costProfile: alreadySpent, occurrenceKey: 'budget-spent',
+            }],
+        }, {
+            context,
+            preferences: NEUTRAL_PREFERENCES,
+            events: [], fixedActivities: [], authoredPlanBlocks: [], scheduleOverlays: [],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: '2026-09-13', todayDate: '2026-09-13',
+            rollingLoadBudgetProfile: {
+                policyVersion: ROLLING_LOAD_BUDGET_POLICY_VERSION,
+                confidence: 'established',
+                baselineSessionCount: 3,
+                baselineWindowStartDate: '2026-07-20',
+                baselineWindowEndDate: '2026-08-30',
+                limits: { systemic: 2, cardiovascular: 10, lowerBody: 10, upperBody: 10, impactTissue: 10, neuromuscular: 10 },
+            },
+            rollingLoadBudgetHorizonStartDate: '2026-09-10',
+            rollingLoadBudgetHorizonEndDate: '2026-09-16',
+        });
+
+        expect(evaluation.eligible.some(template => template.id === 'end_mod_02')).toBe(true);
+        expect(evaluation.loadBudgetExcludedTemplateIds).not.toContain('end_mod_02');
+    });
+
+    it('uses the severe-recovery re-entry dose for budget admission through D+5, then restores full-dose admission on D+6', () => {
+        const context = baseContext({ hasIndoorBike: true, maxTimeMinutes: 60 });
+        const phase = evaluatePeriodizationPhase([], '2026-09-13', '2026-09-13').phase;
+        const alreadySpent = {
+            systemic: 1.45, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0,
+        };
+        const evaluateAtOffset = (dayOffset: number) => evaluateProjectedDate('2026-09-13', {
+            microcycle: generateWeeklyObjectives(phase, '2026-09-13', null),
+            externalFatigue: createEmptyFatigue('2026-09-12'),
+            projectedHistory: [{
+                date: '2026-09-12', modality: 'Cycling' as const, systemicCost: 1.45, lowerBodyCost: 0,
+                costProfile: alreadySpent, occurrenceKey: `budget-spent-${dayOffset}`,
+            }],
+        }, {
+            context,
+            preferences: NEUTRAL_PREFERENCES,
+            events: [], fixedActivities: [], authoredPlanBlocks: [], scheduleOverlays: [],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: '2026-09-13', todayDate: '2026-09-13',
+            projectedRecoveryPolicy: { severeAdverseRecovery: true, dayOffset },
+            rollingLoadBudgetProfile: {
+                policyVersion: ROLLING_LOAD_BUDGET_POLICY_VERSION,
+                confidence: 'established',
+                baselineSessionCount: 3,
+                baselineWindowStartDate: '2026-07-20',
+                baselineWindowEndDate: '2026-08-30',
+                limits: { systemic: 2, cardiovascular: 10, lowerBody: 10, upperBody: 10, impactTissue: 10, neuromuscular: 10 },
+            },
+            rollingLoadBudgetHorizonStartDate: '2026-09-10',
+            rollingLoadBudgetHorizonEndDate: '2026-09-16',
+        });
+
+        for (const dayOffset of [3, 5]) {
+            expect(evaluateAtOffset(dayOffset).loadBudgetExcludedTemplateIds).not.toContain('end_mod_02');
+        }
+        expect(evaluateAtOffset(6).loadBudgetExcludedTemplateIds).toContain('end_mod_02');
+    });
+
+    it('reserves future schedule-overlay expected cost inside the fixed rolling load horizon', () => {
+        const context = baseContext({ hasIndoorBike: true });
+        const phase = evaluatePeriodizationPhase([], '2026-09-13', '2026-09-13').phase;
+        const overlay: ScheduleOverlay = {
+            id: 'future-walking-load',
+            userId: 'u1',
+            title: 'Walking-heavy travel day',
+            category: 'high_step_walking',
+            startDate: '2026-09-16',
+            endDate: '2026-09-17',
+            dailyAvailabilityMinutes: 90,
+            volumeScale: 1,
+            intensityScale: 1,
+            expectedCost: {
+                systemic: 0.8, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0,
+            },
+            createdAt: '',
+            updatedAt: '',
+        };
+        const evaluation = evaluateProjectedDate('2026-09-13', {
+            microcycle: generateWeeklyObjectives(phase, '2026-09-13', null),
+            externalFatigue: createEmptyFatigue('2026-09-12'),
+            projectedHistory: [],
+        }, {
+            context,
+            preferences: NEUTRAL_PREFERENCES,
+            events: [], fixedActivities: [], authoredPlanBlocks: [], scheduleOverlays: [overlay],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: '2026-09-13', todayDate: '2026-09-13',
+            rollingLoadBudgetProfile: {
+                policyVersion: ROLLING_LOAD_BUDGET_POLICY_VERSION,
+                confidence: 'established',
+                baselineSessionCount: 3,
+                baselineWindowStartDate: '2026-07-20',
+                baselineWindowEndDate: '2026-08-30',
+                limits: { systemic: 2, cardiovascular: 10, lowerBody: 10, upperBody: 10, impactTissue: 10, neuromuscular: 10 },
+            },
+            rollingLoadBudgetHorizonStartDate: '2026-09-13',
+            rollingLoadBudgetHorizonEndDate: '2026-09-19',
+        });
+
+        expect(evaluation.eligible.some(template => template.id === 'end_mod_02')).toBe(true);
+        expect(evaluation.loadBudgetExcludedTemplateIds).toContain('end_mod_02');
+        expect(evaluation.loadBudgetExcludedTemplateIds).not.toContain('end_easy_01');
+    });
+
+    it('keeps exact-zero unrelated dimensions non-blocking through the real planner gate', () => {
+        const context = baseContext({ maxTimeMinutes: 90 });
+        const phase = evaluatePeriodizationPhase([], '2026-09-13', '2026-09-13').phase;
+        const fixedLowerBodyLoad = ['2026-09-14', '2026-09-15', '2026-09-16'].map((date, index) =>
+            fixedActivity({
+                id: `lower-body-only-${index + 1}`,
+                date,
+                expectedCost: { lowerBody: 0.8 },
+            }),
+        );
+
+        const evaluation = evaluateProjectedDate('2026-09-13', {
+            microcycle: generateWeeklyObjectives(phase, '2026-09-13', null),
+            externalFatigue: createEmptyFatigue('2026-09-12'),
+            projectedHistory: [],
+        }, {
+            context,
+            preferences: NEUTRAL_PREFERENCES,
+            events: [],
+            fixedActivities: fixedLowerBodyLoad,
+            authoredPlanBlocks: [],
+            scheduleOverlays: [],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: '2026-09-12',
+            todayDate: '2026-09-13',
+            rollingLoadBudgetProfile: {
+                policyVersion: ROLLING_LOAD_BUDGET_POLICY_VERSION,
+                confidence: 'established',
+                baselineSessionCount: 3,
+                baselineWindowStartDate: '2026-07-20',
+                baselineWindowEndDate: '2026-08-30',
+                limits: { systemic: 10, cardiovascular: 10, lowerBody: 2.0, upperBody: 10, impactTissue: 10, neuromuscular: 10 },
+            },
+            rollingLoadBudgetHorizonStartDate: '2026-09-13',
+            rollingLoadBudgetHorizonEndDate: '2026-09-19',
+        });
+
+        expect(evaluation.eligible.some(template => template.id === 'str_upper_01')).toBe(true);
+        expect(evaluation.eligible.some(template => template.id === 'str_lower_01')).toBe(true);
+        expect(evaluation.loadBudgetExcludedTemplateIds).not.toContain('str_upper_01');
+        expect(evaluation.loadBudgetExcludedTemplateIds).toContain('str_lower_01');
+        expect(evaluation.fatigueGated.some(template => template.id === 'str_upper_01')).toBe(true);
+        expect(evaluation.fatigueGated.some(template => template.id === 'str_lower_01')).toBe(false);
+    });
+
+    it('applies the individualized rolling catalog-load envelope after stable baseline evidence', () => {
+        const context = baseContext({ hasIndoorBike: true });
+        const phase = evaluatePeriodizationPhase([], '2026-09-13', '2026-09-13').phase;
+        const costProfile = { systemic: 0.6, cardiovascular: 0.7, lowerBody: 0.2, upperBody: 0.05, impactTissue: 0.05, neuromuscular: 0.35 };
+        const projectedHistory = [
+            { date: '2026-08-01', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'baseline-1' },
+            { date: '2026-08-08', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'baseline-2' },
+            { date: '2026-08-15', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'baseline-3' },
+            { date: '2026-09-10', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'recent-1' },
+            { date: '2026-09-11', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'recent-2' },
+            { date: '2026-09-12', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'recent-3' },
+        ];
+        const evaluation = evaluateProjectedDate('2026-09-13', {
+            microcycle: generateWeeklyObjectives(phase, '2026-09-13', null),
+            externalFatigue: createEmptyFatigue('2026-09-12'),
+            projectedHistory,
+        }, {
+            context,
+            preferences: NEUTRAL_PREFERENCES,
+            events: [], fixedActivities: [], authoredPlanBlocks: [], scheduleOverlays: [],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: '2026-09-13', todayDate: '2026-09-13',
+            rollingLoadBudgetHorizonStartDate: '2026-09-10',
+            rollingLoadBudgetHorizonEndDate: '2026-09-16',
+        });
+
+        expect(evaluation.loadBudgetExcludedTemplateIds.length).toBeGreaterThan(0);
+        expect(evaluation.fatigueGated.some(template => evaluation.loadBudgetExcludedTemplateIds.includes(template.id))).toBe(false);
+    });
+
+    it('reserves undated fixed activity expected cost across the rolling budget forecast horizon', () => {
+        const context = baseContext({ hasIndoorBike: true });
+        const phase = evaluatePeriodizationPhase([], '2026-09-13', '2026-09-13').phase;
+        const committed = fixedActivity({
+            id: 'undated-team-session',
+            date: '',
+            durationMin: 30,
+            expectedCost: { systemic: 1.6 },
+        });
+        const evaluation = evaluateProjectedDate('2026-09-14', {
+            microcycle: generateWeeklyObjectives(phase, '2026-09-14', null),
+            externalFatigue: createEmptyFatigue('2026-09-13'),
+            projectedHistory: [],
+        }, {
+            context,
+            preferences: NEUTRAL_PREFERENCES,
+            events: [],
+            fixedActivities: [committed],
+            authoredPlanBlocks: [],
+            scheduleOverlays: [],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: '2026-09-13',
+            todayDate: '2026-09-13',
+            rollingLoadBudgetProfile: {
+                policyVersion: ROLLING_LOAD_BUDGET_POLICY_VERSION,
+                confidence: 'established',
+                baselineSessionCount: 3,
+                baselineWindowStartDate: '2026-07-20',
+                baselineWindowEndDate: '2026-08-30',
+                limits: { systemic: 2.0, cardiovascular: 10, lowerBody: 10, upperBody: 10, impactTissue: 10, neuromuscular: 10 },
+            },
+            rollingLoadBudgetHorizonStartDate: '2026-09-14',
+            rollingLoadBudgetHorizonEndDate: '2026-09-20',
+        });
+
+        expect(evaluation.eligible.some(template => template.id === 'end_mod_02')).toBe(true);
+        expect(evaluation.loadBudgetExcludedTemplateIds).toContain('end_mod_02');
+    });
+
+    it('retains a 7-day rolling load budget horizon when planning fewer than 7 days ahead', () => {
+        const context = baseContext({ hasIndoorBike: true });
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context, '2026-09-13');
+        const costProfile = { systemic: 0.6, cardiovascular: 0.7, lowerBody: 0.2, upperBody: 0.05, impactTissue: 0.05, neuromuscular: 0.35 };
+        const history = [
+            { date: '2026-08-01', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'b1' },
+            { date: '2026-08-08', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'b2' },
+            { date: '2026-08-15', modality: 'Cycling' as const, systemicCost: 0.6, lowerBodyCost: 0.2, costProfile, occurrenceKey: 'b3' },
+        ];
+        const seed = prepareWeekAheadPlanSeed(readiness, [], '2026-09-13', history);
+        const dPlus5Activity = fixedActivity({
+            id: 'd-plus-5-event',
+            date: '2026-09-18',
+            durationMin: 120,
+            expectedCost: { systemic: 10.0 },
+        });
+        const plan = generateWeekAheadPlan(
+            readiness,
+            context,
+            NEUTRAL_PREFERENCES,
+            '2026-09-13',
+            todayRec,
+            tomorrowRec,
+            seed,
+            { days: 3, fixedActivities: [dPlus5Activity] },
+        );
+
+        expect(plan.days.length).toBe(3);
+        const day2 = plan.days.find(d => d.dayOffset === 2);
+        expect(['Rest', 'Mobility/Recovery']).toContain(day2?.template.category);
     });
 });

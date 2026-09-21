@@ -11,6 +11,7 @@ import { applyPlanningOverlays } from './planningOverlays';
 import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import { coverageSetFor, EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { resolveSequenceIntent, type SequenceIntentPolicy } from './sequenceIntent';
+import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS } from './rollingLoadBudget';
 
 export type PlannedRecoveryReason =
   | 'scheduled_recovery'   // Prescribed microcycle rest day
@@ -33,6 +34,9 @@ export interface TrainingIntent {
      * to the requested short planning window even when athlete-state inference needs a
      * wider observation window. */
     history: CompletedExposure[];
+    /** Wider, read-only evidence used only to derive the individualized rolling load
+     * envelope. It must never widen operational fatigue or microcycle bookkeeping. */
+    rollingLoadBudgetHistory: CompletedExposure[];
     /** Canonical performed-training facts for narrow recency/spacing cutovers. Legacy
      * history remains the fatigue/objective authority until later ADR-0034 PRs migrate it. */
     performedTrainingFacts: PerformedTrainingFactsSnapshot | null;
@@ -152,6 +156,7 @@ export async function resolveTrainingIntent(
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
     trainingIntentProfile: TrainingIntentProfile | null = null,
     fatigueFusionPolicy: FatigueFusionPolicy = 'max',
+    preparedRollingLoadBudgetSnapshot?: TrainingHistorySnapshot | null,
 ): Promise<TrainingIntent> {
     const eventPeriodization = evaluatePeriodizationPhase(events, date);
     const planningContext = resolvePlanningContext(trainingIntentProfile, eventPeriodization, date);
@@ -179,6 +184,21 @@ export async function resolveTrainingIntent(
     // operational history explicitly bounded so a 28-day state-evidence read cannot widen
     // fatigue or microcycle bookkeeping by accident.
     const history = operationalHistory.filter(exposure => exposure.date >= operationalWindowStart && exposure.date < date);
+    // The forecast may supply a separate wider immutable snapshot while the operational
+    // decision keeps its narrow audit/fatigue revision. A sufficiently wide operational
+    // snapshot can be reused; legacy providers without snapshot support fall back to the
+    // bounded operational history rather than fabricating chronic evidence.
+    const budgetSnapshot = preparedRollingLoadBudgetSnapshot
+        ?? (preparedHistorySnapshot?.windowDays !== undefined
+            && preparedHistorySnapshot.windowDays >= ROLLING_LOAD_BUDGET_LOOKBACK_DAYS
+            ? preparedHistorySnapshot
+            : null)
+        ?? (!preparedHistorySnapshot && provider.getSnapshot
+            ? await prepareTrainingHistorySnapshot(userId, date, ROLLING_LOAD_BUDGET_LOOKBACK_DAYS, historyProvider)
+            : null);
+    const budgetHistorySource = budgetSnapshot?.exposures ?? history;
+    const budgetWindowStart = addDaysToLocalDateString(date, -ROLLING_LOAD_BUDGET_LOOKBACK_DAYS);
+    const rollingLoadBudgetHistory = budgetHistorySource.filter(exposure => exposure.date >= budgetWindowStart && exposure.date < date);
     // Reusing the legacy TrainingHistorySnapshot must not suppress the canonical occurrence
     // read: Firestore history snapshots currently do not embed descriptor-scoped facts. If
     // they do carry facts, accept them only when their canonical revision proves they were
@@ -247,7 +267,7 @@ export async function resolveTrainingIntent(
         date,
     ), date, authoredPlanBlocks, planDefinition);
     return {
-        planningContext, periodization, unresolvedObjectives, plannedDose, fatigue, history, performedTrainingFacts, historySnapshot, microcycle,
+        planningContext, periodization, unresolvedObjectives, plannedDose, fatigue, history, rollingLoadBudgetHistory, performedTrainingFacts, historySnapshot, microcycle,
         droppedContributorObjectives: multiEventResolution.droppedContributorObjectives,
         sequenceIntent: resolveSequenceIntent(periodization.phase),
     };

@@ -66,7 +66,7 @@ import {
 } from './optimizer';
 import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
-import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
+import { prepareTrainingHistorySnapshot, resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
 import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry } from './coverage';
@@ -94,6 +94,15 @@ import { fixedActivityOccurrenceKey, resolveFixedActivityIdentity } from './fixe
 import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
 import { admitsCandidate, computeDailyLedger, type DailyLedgerResult } from './dailyLedger';
 import { dedupeFixedActivitiesByLedgerIdentity, pendingFixedActivityLedgerEntries } from './fixedActivityLedger';
+import {
+    ROLLING_LOAD_BUDGET_LOOKBACK_DAYS,
+    evaluateRollingLoadBudget,
+    resolveRollingLoadBudgetForecastHorizon,
+    resolveRollingLoadBudgetProfile,
+    rollingLoadBudgetEntryFromHistory,
+    type RollingLoadBudgetEntry,
+    type RollingLoadBudgetProfile,
+} from './rollingLoadBudget';
 
 export interface WeekAheadDay {
     date: string;
@@ -156,6 +165,9 @@ export interface WeekAheadPlanSeed {
     microcycle: MicrocycleState;
     fatigue: FatigueState;
     trailingHistory?: (RecentHistoryEntry | SessionHistoryEntry)[];
+    /** Wider completed evidence used only to derive the individualized rolling load
+     * envelope; it is deliberately excluded from operational fatigue and coverage. */
+    rollingLoadBudgetHistory?: (RecentHistoryEntry | SessionHistoryEntry)[];
     /** Canonical completed-role history. Operational/projected history stays separate so
      * future recommendations never reclassify completed occurrences through legacy lookup. */
     completedCoverageHistory?: CoverageHistoryEntry[];
@@ -527,6 +539,14 @@ export interface ProjectedDatePlanningContext {
     planDefinition?: PlanDefinition | null;
     todayDate?: string;
     healthPlanningPolicy?: HealthPlanningPolicy | null;
+    rollingLoadBudgetProfile?: RollingLoadBudgetProfile;
+    rollingLoadBudgetHorizonStartDate?: string;
+    rollingLoadBudgetHorizonEndDate?: string;
+    /** Severe-recovery forecast policy shared by budget admission and final prescription. */
+    projectedRecoveryPolicy?: {
+        severeAdverseRecovery: boolean;
+        dayOffset: number;
+    };
 }
 
 export interface ProjectedDateState {
@@ -534,6 +554,16 @@ export interface ProjectedDateState {
     externalFatigue: FatigueState;
     projectedHistory: (RecentHistoryEntry | SessionHistoryEntry)[];
     coverageHistory?: CoverageHistoryEntry[];
+}
+
+function effectiveProjectedFatigueTier(
+    fatigueTier: ProjectedDateEvaluation['fatigueTier'],
+    recoveryPolicy: ProjectedDatePlanningContext['projectedRecoveryPolicy'],
+): ProjectedDateEvaluation['fatigueTier'] {
+    if (!recoveryPolicy?.severeAdverseRecovery) return fatigueTier;
+    if (recoveryPolicy.dayOffset <= 2) return 'recover';
+    if (recoveryPolicy.dayOffset <= 5 && fatigueTier === 'train') return 'modify';
+    return fatigueTier;
 }
 
 export interface ProjectedDateEvaluation {
@@ -550,6 +580,8 @@ export interface ProjectedDateEvaluation {
     eligible: SessionTemplate[];
     /** Candidates excluded by the date-wide D-LEDGER capacity remainder before ranking. */
     ledgerExcludedTemplateIds: readonly string[];
+    /** Candidates excluded by the fixed forecast load envelope before fatigue ranking. */
+    loadBudgetExcludedTemplateIds: readonly string[];
     fatigueGated: SessionTemplate[];
     optimizationContext: OptimizationContext;
     rank(candidates: readonly SessionTemplate[]): RankCandidatesResult;
@@ -605,8 +637,103 @@ export function evaluateProjectedDate(
     const isConservative = shared.preferences?.conservativeBias ?? false;
     const fatigueThresholds = projectedFatigueThresholds(isConservative);
     const fatigueTier = fatigueTierFor(peakFatigue, fatigueThresholds);
+    const budgetFatigueTier = effectiveProjectedFatigueTier(fatigueTier, shared.projectedRecoveryPolicy);
 
-    const fatigueGated = templatesWithinProjectedFatigueGate(ledgerAdmitted, peakFatigue, fatigueThresholds);
+    const loadBudgetProfile = shared.rollingLoadBudgetProfile
+        ?? resolveRollingLoadBudgetProfile(state.projectedHistory, date);
+    const loadBudgetHorizonStartDate = shared.rollingLoadBudgetHorizonStartDate ?? date;
+    const loadBudgetHorizonEndDate = shared.rollingLoadBudgetHorizonEndDate ?? date;
+    const loadBudgetEntries: RollingLoadBudgetEntry[] = state.projectedHistory
+        .map((record, index) => rollingLoadBudgetEntryFromHistory(
+            record,
+            index,
+            'source' in record && record.source === 'projected' ? 'projected' : 'completed',
+        ))
+        .filter((entry): entry is RollingLoadBudgetEntry => entry !== null)
+        .filter(entry => entry.date < date);
+    shared.fixedActivities
+        .filter(activity => !activity.isCompleted && activity.expectedCost)
+        .forEach((activity, index) => {
+            if (!activity.expectedCost) return;
+            const costProfile = {
+                ...ZERO_COST,
+                ...activity.expectedCost,
+            };
+            if (activity.date) {
+                if (activity.date >= loadBudgetHorizonStartDate && activity.date <= loadBudgetHorizonEndDate) {
+                    loadBudgetEntries.push({
+                        date: activity.date,
+                        occurrenceKey: fixedActivityOccurrenceKey(activity) ?? `fixed:${activity.date}:${index}`,
+                        source: 'fixed',
+                        costProfile,
+                    });
+                }
+            } else if (loadBudgetHorizonStartDate <= loadBudgetHorizonEndDate) {
+                // The exact day is unknown, but this is still a single one-time occurrence:
+                // reserve its cost once against the shared horizon total (anchored on the
+                // horizon's first day), not once per day. A per-day entry here would let a
+                // single undated commitment's cost multiply by the horizon length once
+                // uniqueEntries() sums every distinct occurrenceKey.
+                loadBudgetEntries.push({
+                    date: loadBudgetHorizonStartDate,
+                    occurrenceKey: fixedActivityOccurrenceKey(activity),
+                    source: 'fixed',
+                    costProfile,
+                });
+            }
+        });
+    // Schedule overlays are planned non-training load just like expected-cost fixed
+    // activities. Reserve each active date once across the fixed horizon so a walking,
+    // skiing or travel block cannot disappear from the envelope merely because its acute
+    // fatigue contribution decays before a later discretionary recommendation.
+    if (loadBudgetHorizonStartDate <= loadBudgetHorizonEndDate) {
+        for (
+            let overlayDate = loadBudgetHorizonStartDate;
+            overlayDate <= loadBudgetHorizonEndDate;
+            overlayDate = addDaysToLocalDateString(overlayDate, 1)
+        ) {
+            const overlayCost = scheduleOverlayCostProfileForDate(shared.scheduleOverlays ?? [], overlayDate);
+            if (!Object.values(overlayCost).some(value => value > 0)) continue;
+            loadBudgetEntries.push({
+                date: overlayDate,
+                occurrenceKey: `overlay:${overlayDate}`,
+                source: 'overlay',
+                costProfile: overlayCost,
+            });
+        }
+    }
+    const isLoadBudgetAdmitted = (template: SessionTemplate): boolean => {
+        if (template.category === 'Rest' || template.category === 'Mobility/Recovery') return true;
+        // Do not invent a personalized ceiling from sparse history. Existing acute
+        // fatigue, safety, spacing and daily-ledger gates remain authoritative until
+        // the athlete has enough stable baseline evidence for this product envelope.
+        if (loadBudgetProfile.confidence === 'provisional') return true;
+        const activeDose = resolveTimeCapDoseAdjustment(
+            template,
+            availability.maxTimeMinutes,
+            budgetFatigueTier === 'modify',
+        )?.activeDose;
+        const effective = effectiveTemplateForProjection(template, activeDose);
+        return evaluateRollingLoadBudget({
+            asOfDate: date,
+            horizonStartDate: loadBudgetHorizonStartDate,
+            horizonEndDate: loadBudgetHorizonEndDate,
+            profile: loadBudgetProfile,
+            entries: loadBudgetEntries,
+            candidate: {
+                date,
+                occurrenceKey: `recommendation:${date}:${template.id}`,
+                source: 'projected',
+                costProfile: effective.costProfile ?? enrichedCostProfile(template.id),
+            },
+        }).admitted;
+    };
+    const budgetAdmitted = ledgerAdmitted.filter(isLoadBudgetAdmitted);
+    const loadBudgetExcludedTemplateIds = ledgerAdmitted
+        .filter(template => !isLoadBudgetAdmitted(template))
+        .map(template => template.id);
+
+    const fatigueGated = templatesWithinProjectedFatigueGate(budgetAdmitted, peakFatigue, fatigueThresholds);
 
     const anchorRole = date === shared.anchors.eventSpecificAnchorDate ? 'event-specific' as const
         : date === shared.anchors.qualityAnchorDate ? 'quality' as const : null;
@@ -662,6 +789,7 @@ export function evaluateProjectedDate(
         dailyLedger,
         eligible,
         ledgerExcludedTemplateIds,
+        loadBudgetExcludedTemplateIds,
         fatigueGated,
         optimizationContext,
         rank: (candidates: readonly SessionTemplate[]) => {
@@ -703,15 +831,18 @@ export function projectedDateOutcomeFrom(
 
     const eligibleIds = new Set(evaluation.eligible.map(template => template.id));
     const ledgerExcludedIds = new Set(evaluation.ledgerExcludedTemplateIds);
+    const loadBudgetExcludedIds = new Set(evaluation.loadBudgetExcludedTemplateIds ?? []);
     const ledgerAdmitted = evaluation.eligible.filter(template => !ledgerExcludedIds.has(template.id));
+    const budgetAdmitted = ledgerAdmitted.filter(template => !loadBudgetExcludedIds.has(template.id));
     const gated = reservationFatigueThresholds
-        ? templatesWithinProjectedFatigueGate(ledgerAdmitted, evaluation.peakFatigue, reservationFatigueThresholds)
+        ? templatesWithinProjectedFatigueGate(budgetAdmitted, evaluation.peakFatigue, reservationFatigueThresholds)
         : evaluation.fatigueGated;
     const ranking = evaluation.rank(gated);
     const gatedIds = new Set(gated.map(template => template.id));
     const exclusionReasons = new Map<string, readonly string[]>();
     ranking.rejected.forEach(candidate => exclusionReasons.set(candidate.template.id, candidate.excludedReasons));
     evaluation.ledgerExcludedTemplateIds.forEach(templateId => exclusionReasons.set(templateId, [DAILY_LEDGER_CAPACITY]));
+    (evaluation.loadBudgetExcludedTemplateIds ?? []).forEach(templateId => exclusionReasons.set(templateId, ['LOAD_BUDGET_EXCEEDED']));
     ENRICHED_TEMPLATES.forEach(template => {
         if (!eligibleIds.has(template.id)) exclusionReasons.set(template.id, [NOT_ELIGIBLE_ON_DATE]);
     });
@@ -722,7 +853,7 @@ export function projectedDateOutcomeFrom(
             : evaluation.fatigueTier,
         acceptedTemplateIds: ranking.accepted.map(candidate => candidate.template.id),
         fatigueExcludedTemplateIds: evaluation.eligible
-            .filter(template => !ledgerExcludedIds.has(template.id) && !gatedIds.has(template.id))
+            .filter(template => !ledgerExcludedIds.has(template.id) && !loadBudgetExcludedIds.has(template.id) && !gatedIds.has(template.id))
             .map(template => template.id),
         exclusionReasons,
     };
@@ -767,6 +898,8 @@ export function projectTrailingHistory(
         if ('role' in e && e.role) item.role = e.role;
         if ('templateId' in e && e.templateId) item.templateId = e.templateId;
         if ('lowerBodyCost' in e && typeof e.lowerBodyCost === 'number') item.lowerBodyCost = e.lowerBodyCost;
+        if ('costProfile' in e && e.costProfile) item.costProfile = e.costProfile;
+        if ('occurrenceKey' in e && e.occurrenceKey) item.occurrenceKey = e.occurrenceKey;
         if ('durationMin' in e && typeof e.durationMin === 'number') item.durationMin = e.durationMin;
         else if (recordDurationMin !== undefined) item.durationMin = recordDurationMin;
         if ('recoveryHours' in e && typeof e.recoveryHours === 'number') item.recoveryHours = e.recoveryHours;
@@ -786,6 +919,8 @@ export function trailingHistoryFromCompletedExposures(
         category: e.category,
         systemicCost: e.costProfile?.systemic ?? 0,
         lowerBodyCost: e.costProfile?.lowerBody ?? 0,
+        costProfile: e.costProfile,
+        ...(e.occurrenceKey ? { occurrenceKey: e.occurrenceKey } : {}),
         durationMin: e.trainingRecordLike?.duration_min ?? e.deliveredDose?.completedDurationMin,
         recoveryHours: e.recoveryHours ?? (e.templateId ? resolveRecoveryHoursForTemplate(e.templateId) : undefined),
     }));
@@ -1110,6 +1245,11 @@ export function generateWeekAheadPlan(
     const suppliedPlanDefinition = options.planDefinition ?? null;
     const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
     const effectivePreferences = preferences ?? { ...NEUTRAL_PREFERENCES, preferredRecoveryStyle: resolveRecoveryStyle(context) };
+    const rollingLoadBudgetProfile = resolveRollingLoadBudgetProfile(
+        seed.rollingLoadBudgetHistory ?? seed.trailingHistory ?? [],
+        todayDate,
+    );
+    const rollingLoadBudgetHorizon = resolveRollingLoadBudgetForecastHorizon(todayDate);
 
     const periodizationToday = evaluatePeriodizationPhase(events, todayDate);
     let microcycle: MicrocycleState = seed.microcycle ?? generateWeeklyObjectives(periodizationToday.phase, todayDate, periodizationToday.focusEvent, suppliedPlanDefinition, todayDate);
@@ -1282,6 +1422,9 @@ export function generateWeekAheadPlan(
         planDefinition: suppliedPlanDefinition,
         todayDate,
         healthPlanningPolicy: options.healthPlanningPolicy,
+        rollingLoadBudgetProfile,
+        rollingLoadBudgetHorizonStartDate: rollingLoadBudgetHorizon.startDate,
+        rollingLoadBudgetHorizonEndDate: rollingLoadBudgetHorizon.endDate,
     };
 
     type ProjectedHistoryEntry = RecentHistoryEntry & { source: 'projected' };
@@ -1295,6 +1438,8 @@ export function generateWeekAheadPlan(
             role: realizedSessionRole(date, template, anchors),
             systemicCost: effectiveTemplate.systemicCost,
             lowerBodyCost: effectiveTemplate.costProfile?.lowerBody ?? 0,
+            costProfile: effectiveTemplate.costProfile ?? enrichedCostProfile(template.id),
+            occurrenceKey: `recommendation:${date}`,
             durationMin: effectiveTemplate.durationMin,
             recoveryHours: resolveRecoveryHoursForTemplate(template.id),
             type: template.title,
@@ -1368,7 +1513,13 @@ export function generateWeekAheadPlan(
         const evaluation = evaluateProjectedDate(
             date,
             { microcycle, externalFatigue: fatigue, projectedHistory: history, coverageHistory },
-            sharedProjection,
+            {
+                ...sharedProjection,
+                projectedRecoveryPolicy: {
+                    severeAdverseRecovery: isSevereAdverseRecovery,
+                    dayOffset: getDayDiff(date, todayDate),
+                },
+            },
         );
         evaluationCache.set(cacheKey, evaluation);
         return evaluation;
@@ -1473,11 +1624,10 @@ export function generateWeekAheadPlan(
         // The severe-recovery forecast ladder is itself an active planning constraint.
         // Reflect that constraint consistently in dose/viability behavior and diagnostics:
         // recovery-only days behave as recover; graduated re-entry behaves as modify.
-        const effectiveFatigueTier = isRecoveryOnlyDate
-            ? 'recover'
-            : ((isRecoveryEarlyReentryDate || isRecoveryLateReentryDate) && fatigueTier === 'train'
-                ? 'modify'
-                : fatigueTier);
+        const effectiveFatigueTier = effectiveProjectedFatigueTier(fatigueTier, {
+            severeAdverseRecovery: isSevereAdverseRecovery,
+            dayOffset: offset,
+        });
 
         let rankingCandidates = isRecoveryOnlyDate
             ? fatigueGated.filter(isRecoveryCategory)
@@ -1686,7 +1836,28 @@ export async function generateWeekAheadPlanWithIntent(
     trainingIntentProfile: TrainingIntentProfile | null = null,
 ): Promise<WeekAheadPlan> {
     const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
-    const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy);
+    const rollingLoadBudgetSnapshot = preparedHistorySnapshot
+        && preparedHistorySnapshot.windowDays >= ROLLING_LOAD_BUDGET_LOOKBACK_DAYS
+        ? preparedHistorySnapshot
+        : await prepareTrainingHistorySnapshot(
+            userId,
+            todayDate,
+            ROLLING_LOAD_BUDGET_LOOKBACK_DAYS,
+            historyProvider,
+        );
+    const intent = await resolveTrainingIntent(
+        userId,
+        events,
+        todayDate,
+        todayReadiness,
+        7,
+        historyProvider,
+        preparedHistorySnapshot,
+        options.authoredPlanBlocks,
+        trainingIntentProfile,
+        fatigueFusionPolicy,
+        rollingLoadBudgetSnapshot,
+    );
     const isAdverseRecovery = isSevereAdverseRecoveryReadiness(todayReadiness, todayRec.mode);
     const healthPlanningPolicy = resolveHealthPlanningPolicy(
         intent.planningContext.profile.priorities,
@@ -1713,6 +1884,7 @@ export async function generateWeekAheadPlanWithIntent(
             microcycle: evergreen?.microcycle ?? intent.microcycle,
             fatigue: intent.fatigue,
             trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
+            rollingLoadBudgetHistory: trailingHistoryFromCompletedExposures(intent.rollingLoadBudgetHistory, todayDate),
             completedCoverageHistory: resolveCoverageHistory(intent.performedTrainingFacts, intent.history),
             droppedContributorObjectives: intent.droppedContributorObjectives,
         },

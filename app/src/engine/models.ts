@@ -809,6 +809,10 @@ export interface SessionHistoryEntry {
     systemicCost: number;
     lowerBodyCost: number;
     recoveryHours?: number;
+    /** Full catalog cost when available; legacy history may expose only systemic/lower-body fields. */
+    costProfile?: WorkoutCostProfile;
+    /** Stable occurrence identity used by exact-once load accounting. */
+    occurrenceKey?: string;
 }
 
 export type SessionPlanRelationship =

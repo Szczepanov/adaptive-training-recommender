@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateTraining, evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent } from './rules';
 import { resolveTrainingIntent } from './trainingIntent';
-import type { AuthoredPlanBlock, DailyReadiness, FixedActivity, TrainingIntentProfile, UserContext, UserEvent, UserPreferences } from './models';
-import type { TrainingHistoryProvider } from './trainingHistory';
+import type { AuthoredPlanBlock, DailyReadiness, FixedActivity, TrainingIntentProfile, UserContext, UserEvent, UserPreferences, WorkoutCostProfile } from './models';
+import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
+import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 
 const fixtureHistory: TrainingHistoryProvider = { reconstruct: async () => [] };
+
+const budgetHistoryCost: WorkoutCostProfile = {
+    systemic: 0.8, cardiovascular: 0.9, lowerBody: 0.5, upperBody: 0, impactTissue: 0.1, neuromuscular: 0.5,
+};
+
+const budgetHistory: CompletedExposure[] = [-35, -28, -21, -3, -2, -1].map((offset, index) => ({
+    occurrenceKey: `budget-history-${index}`,
+    date: `2026-${offset < -6 ? '07' : '08'}-${String(offset < -6 ? 3 + index * 7 : 7 + offset).padStart(2, '0')}`,
+    costProfile: budgetHistoryCost,
+    trainingRecordLike: { type: 'Cycling VO2 intervals', duration_min: 60, training_effect: 0, intensity_tag: 'hard' },
+}));
 
 function context(overrides: Partial<UserContext['constraints']> = {}): UserContext {
     return {
@@ -49,6 +61,37 @@ const cyclingPlanFixture: UserEvent = {
 };
 
 describe('day-0 event-intent acceptance', () => {
+    it('retains a wider history view for the rolling load budget without widening operational fatigue history', async () => {
+        const readHistory = async (throughDateExclusive: string, windowDays: number) => {
+            const start = new Date(`${throughDateExclusive}T00:00:00Z`);
+            start.setUTCDate(start.getUTCDate() - windowDays);
+            const startDate = start.toISOString().slice(0, 10);
+            return budgetHistory.filter(exposure => exposure.date >= startDate && exposure.date < throughDateExclusive);
+        };
+        const provider: TrainingHistoryProvider = {
+            reconstruct: async (_userId, throughDateExclusive, windowDays) => readHistory(throughDateExclusive, windowDays),
+            getSnapshot: async (_userId, throughDateExclusive, windowDays): Promise<TrainingHistorySnapshot> => ({
+                throughDateExclusive,
+                windowDays,
+                completedEvents: [],
+                exposures: await readHistory(throughDateExclusive, windowDays),
+                sourceStates: {
+                    activities: { status: 'AVAILABLE', revision: 'test-activities' },
+                    recommendations: { status: 'AVAILABLE', revision: 'test-recommendations' },
+                    manualTraining: { status: 'MISSING' },
+                },
+                generatedAt: '',
+                revision: `test-${windowDays}`,
+            }),
+        };
+
+        const intent = await resolveTrainingIntent('u1', [], '2026-08-07', readiness(), 7, provider);
+
+        expect(intent.history).toHaveLength(3);
+        expect(intent.rollingLoadBudgetHistory).toHaveLength(6);
+        expect(intent.rollingLoadBudgetHistory?.[0].date).toBe('2026-07-03');
+    });
+
     it('uses the resolved evergreen context to suppress event authority without changing profile-less event behavior', async () => {
         const legacy = await resolveTrainingIntent('u1', [roadRace], '2026-08-07', readiness(), 7, fixtureHistory);
         const evergreen = await resolveTrainingIntent('u1', [roadRace], '2026-08-07', readiness(), 7, fixtureHistory, undefined, [], evergreenProfile);

@@ -185,6 +185,8 @@ export interface RecentHistoryEntry {
     role?: SessionRole;
     systemicCost?: number;
     lowerBodyCost?: number;
+    costProfile?: WorkoutCostProfile;
+    occurrenceKey?: string;
     durationMin?: number;
     recoveryHours?: number;
     /** Forecast-only marker. Projected entries may carry effective-dose loads for state

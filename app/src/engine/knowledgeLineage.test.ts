@@ -181,7 +181,12 @@ describe('recommendation knowledge lineage', () => {
             KNOWLEDGE_CLAIM_IDS.hardLowerBodySpacing,
             KNOWLEDGE_CLAIM_IDS.strengthEnduranceAdjacency,
         ]));
+        expect(withHistory).not.toContain(KNOWLEDGE_CLAIM_IDS.rollingLoadBudgetPolicy);
         expect(withHistory).not.toContain(KNOWLEDGE_CLAIM_IDS.endurancePreEventTaper);
+
+        expect(trainingIntentKnowledgeRefs({
+            history: [{}], periodization: { focusEvent: null, phase: { taperActive: false } },
+        }, { rollingLoadBudgetEvaluated: true })).toContain(KNOWLEDGE_CLAIM_IDS.rollingLoadBudgetPolicy);
     });
 
     it('merges training-intent lineage into external-plan recommendations', async () => {

@@ -16,7 +16,7 @@ const families = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).m
 const EXPECTED_FAMILY_CASE_COUNTS = new Map([
   ['objective_recovery', 8],
   ['subjective_recovery', 8],
-  ['recent_training', 7],
+  ['recent_training', 8],
   ['event_proximity', 7],
   ['preferences_capacity', 6],
   ['event_demand', 4],

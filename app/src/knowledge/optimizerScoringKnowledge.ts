@@ -15,6 +15,7 @@ export const OPTIMIZER_SCORING_CLAIM_IDS = {
     eventPriorityMultipliersPolicyV1: 'policy.optimizer.event_priority_multipliers_v1',
     eventPriorityMultipliersPolicy: 'policy.optimizer.event_priority_multipliers_v2',
     recoveryStreakHeuristicsPolicy: 'policy.optimizer.recovery_streak_heuristics_v1',
+    rollingLoadBudgetPolicy: 'policy.optimizer.rolling_load_budget_v1',
 } as const;
 
 const OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE = 'PRODUCT-OPTIMIZER-SCORING-POLICY-V1';
@@ -76,5 +77,19 @@ export const OPTIMIZER_SCORING_CLAIMS: readonly KnowledgeClaim[] = [
         evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
         limitations: ['Recovery alternation and training-streak shaping prevent monotonous recovery choices and excessive uninterrupted loading when plan objectives are satisfied; the 14-day lookback, 0.40/0.50 thresholds, and 1.40x/1.25x/2.0x/0.3x/0.1x/0.35x multipliers are product calibration values.'],
         reviewedOn: '2026-09-03', version: 1,
+    },
+    {
+        id: OPTIMIZER_SCORING_CLAIM_IDS.rollingLoadBudgetPolicy,
+        statement: 'Product rolling-load budget v2: when at least 3 completed exposures span at least 14 calendar days in the stable 42-day pre-window, the planner derives a per-athlete seven-day future catalog-cost envelope from that athlete\'s own weekly baseline with 15% headroom. Each dimension uses the greater of that individualized value and product floors of systemic 2.0, cardiovascular 3.0, lower-body 2.0, upper-body 2.0, impact-tissue 2.0 and neuromuscular 2.0. The seven-date accounting horizon begins tomorrow. The already-computed day-1 provisional recommendation is charged to that envelope but remains selected by the separate next-day evaluator; planner-generated day-2+ projected exercise candidates are gated using the dose actually prescribed. Candidate admission evaluates each dimension independently: pre-existing exceedance in an unrelated dimension does not veto a candidate with non-participating contribution (cost within 1e-9 floating-point tolerance), while a dimension blocks admission only when candidate cost exceeds 1e-9 and remaining capacity after admission is below -1e-9. Zero is structural non-participation subject only to floating-point tolerance; no non-zero de minimis threshold is implied. Fixed-activity and schedule-overlay expected costs reserve the same horizon envelope without being reclassified as completed training. Clinical, injury and readiness authorities remain independent, and sparse history leaves the new gate inactive.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['candidate_selection', 'load_management', 'week_ahead_planning'], sports: ['all_supported_sports'], populations: ['app_users_with_stable_training_history'], outcomes: ['bounded_discretionary_catalog_load'], horizon: 'chronic' },
+        evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: [
+            'Training-load monitoring and stress-recovery evidence support longitudinal individualization, but do not validate the normalized catalog-cost scale, the 15% headroom, or the product floors as physiological constants.',
+            'This envelope is a conservative product guardrail for forecast allocation, not a diagnosis, injury probability, medical limit, or claim of universal dose-response.',
+            'The budget must not be increased from a physiological identity score or from a single HRV/readiness value; prospective outcome calibration remains required before relaxing it.',
+            'Dimensional admission isolates non-participating contributions within floating-point tolerance (1e-9) only; non-zero costs exceeding tolerance are not dismissed as de minimis without explicit calibrated product policy.',
+        ],
+        reviewedOn: '2026-09-21', version: 2,
     },
 ];
