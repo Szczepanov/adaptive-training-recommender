@@ -4,7 +4,9 @@ import {
     attachExactEligibleIdentities,
     deriveRequiredRoleOccurrences,
     occurrenceForTemplate,
+    occurrencesFulfilledByTemplateSelection,
     resolveWeeklyRoleReservations,
+    weeklyRoleMissReasonForBlockers,
     WEEKLY_ALLOCATION_SEARCH_BUDGET,
     type AllocationAssignment,
     type AllocationDateEvaluator,
@@ -133,6 +135,16 @@ describe('ADR-0018 required role occurrences', () => {
         expect(occurrenceForTemplate([target], lookalike)).toEqual([]);
         expect(occurrenceForTemplate([target], exact)).toEqual([target]);
     });
+
+    it('credits one occurrence per coverage key for a bundled template selection', () => {
+        const bundled = { id: 'bundle', modality: 'Cycling', category: 'Moderate Endurance' } as unknown as SessionTemplate;
+        const aerobic0 = occurrence('aerobic_volume', 0, ['bundle']);
+        const aerobic1 = occurrence('aerobic_volume', 1, ['bundle']);
+        const quality0 = occurrence('sustained_quality', 0, ['bundle']);
+
+        expect(occurrencesFulfilledByTemplateSelection([aerobic1, quality0, aerobic0], bundled))
+            .toEqual([aerobic0, quality0]);
+    });
 });
 
 describe('ADR-0018 stateful reservation search', () => {
@@ -207,6 +219,29 @@ describe('ADR-0018 stateful reservation search', () => {
             fatigueExcluded: { '2026-08-11': ['threshold'] },
         }, ['2026-08-11']));
         expect(result.outcomes[0]).toMatchObject({ status: 'missed', reason: 'projected_fatigue' });
+    });
+
+    it('attributes a committed rolling-budget exclusion separately from other hard gates', () => {
+        const result = resolveWeeklyRoleReservations([occurrence('sustained_quality', 0, ['threshold'])], stubEvaluator({
+            acceptedByDate: { '2026-08-11': [] },
+            exclusionReasons: {
+                '2026-08-11': { threshold: ['LOAD_BUDGET_EXCEEDED'] },
+            },
+        }, ['2026-08-11']));
+        expect(result.outcomes[0]).toMatchObject({ status: 'missed', reason: 'rolling_load_budget' });
+        expect(result.outcomes[0].observedBlockers).toContain('2026-08-11:LOAD_BUDGET_EXCEEDED');
+    });
+
+    it('uses the highest-priority blocker across exact candidates', () => {
+        expect(weeklyRoleMissReasonForBlockers([
+            'LOAD_BUDGET_EXCEEDED',
+            'PROJECTED_FATIGUE_CEILING',
+        ])).toBe('rolling_load_budget');
+        expect(weeklyRoleMissReasonForBlockers([
+            'LOAD_BUDGET_EXCEEDED',
+            'QUALITY_SPACING_VIOLATION',
+            'PROJECTED_FATIGUE_CEILING',
+        ])).toBe('hard_safety_or_recovery');
     });
 
     it('never seeds a reservation onto an immutable today/tomorrow date', () => {

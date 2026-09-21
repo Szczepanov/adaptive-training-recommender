@@ -1,5 +1,6 @@
 import { coverageSetFor, type CoverageSetId, type PlanCoverageKey, type PlanPhase } from '../workouts/event-plan';
 import type { SessionTemplate } from './models';
+import { ROLLING_LOAD_BUDGET_EXCEEDED } from './rollingLoadBudget';
 import {
     authoredSessionIdentityFor,
     coverageKeysForTemplate,
@@ -33,7 +34,7 @@ export interface RequiredRoleOccurrence {
 }
 
 export type WeeklyRoleAllocationStatus = 'reserved' | 'fulfilled' | 'missed' | 'unresolved_search_budget';
-export type WeeklyRoleMissReason = 'no_exact_candidate' | 'hard_safety_or_recovery' | 'daily_ledger_capacity' | 'projected_fatigue' | 'fixed_seed' | 'no_conflict_free_date';
+export type WeeklyRoleMissReason = 'no_exact_candidate' | 'hard_safety_or_recovery' | 'daily_ledger_capacity' | 'rolling_load_budget' | 'projected_fatigue' | 'fixed_seed' | 'no_conflict_free_date';
 
 export interface RoleReservation {
     occurrenceId: string;
@@ -119,8 +120,21 @@ const SAFETY_EXCLUSION_REASONS = new Set([
     'RECOVERY_WINDOW_UNELAPSED',
 ]);
 
-const FATIGUE_CEILING_BLOCKER = 'PROJECTED_FATIGUE_CEILING';
+export const PROJECTED_FATIGUE_CEILING_BLOCKER = 'PROJECTED_FATIGUE_CEILING';
 export const DAILY_LEDGER_CAPACITY_BLOCKER = 'DAILY_LEDGER_CAPACITY';
+
+/** Return the highest-priority typed cause represented by observed candidate blockers. */
+export function weeklyRoleMissReasonForBlockers(blockers: Iterable<string>): WeeklyRoleMissReason | null {
+    const reasons = new Set([...blockers].map(blocker => {
+        const separator = blocker.indexOf(':');
+        return separator === -1 ? blocker : blocker.slice(separator + 1);
+    }));
+    if ([...reasons].some(reason => SAFETY_EXCLUSION_REASONS.has(reason))) return 'hard_safety_or_recovery';
+    if (reasons.has(DAILY_LEDGER_CAPACITY_BLOCKER)) return 'daily_ledger_capacity';
+    if (reasons.has(ROLLING_LOAD_BUDGET_EXCEEDED)) return 'rolling_load_budget';
+    if (reasons.has(PROJECTED_FATIGUE_CEILING_BLOCKER)) return 'projected_fatigue';
+    return null;
+}
 
 function canonicalOccurrenceId(parts: readonly string[]): string {
     return parts.map(part => encodeURIComponent(part)).join('|');
@@ -209,6 +223,26 @@ export function occurrenceForTemplate(
 }
 
 /**
+ * One selected session may satisfy multiple authored coverage keys when the exact template
+ * identity is valid for each key, but it may clear at most one occurrence of any one key on
+ * that date. Keep this canonical helper shared by viability proofs and final settlement so
+ * D-SUPPORT never reasons about more or fewer fulfilled roles than the planner records.
+ */
+export function occurrencesFulfilledByTemplateSelection(
+    occurrences: readonly RequiredRoleOccurrence[],
+    template: SessionTemplate,
+): RequiredRoleOccurrence[] {
+    const fulfilledKeys = new Set<PlanCoverageKey>();
+    return occurrenceForTemplate(occurrences, template)
+        .sort((left, right) => left.coverageKey.localeCompare(right.coverageKey) || left.ordinal - right.ordinal)
+        .filter(occurrence => {
+            if (fulfilledKeys.has(occurrence.coverageKey)) return false;
+            fulfilledKeys.add(occurrence.coverageKey);
+            return true;
+        });
+}
+
+/**
  * Replays an existing reservation set through the evaluator in real date order and reports
  * whether every assignment is still admissible.
  *
@@ -249,6 +283,7 @@ interface OccurrenceSearchState {
     sawFatigueExclusion: boolean;
     sawSafetyExclusion: boolean;
     sawLedgerCapacityExclusion: boolean;
+    sawRollingLoadBudgetExclusion: boolean;
 }
 
 function assignmentSignature(assignments: readonly AllocationAssignment[]): string {
@@ -262,12 +297,14 @@ function missReasonFor(state: OccurrenceSearchState): WeeklyRoleMissReason {
     if (state.candidates.length === 0) {
         if (state.sawSafetyExclusion) return 'hard_safety_or_recovery';
         if (state.sawLedgerCapacityExclusion) return 'daily_ledger_capacity';
+        if (state.sawRollingLoadBudgetExclusion) return 'rolling_load_budget';
         if (state.sawFatigueExclusion) return 'projected_fatigue';
         return 'no_exact_candidate';
     }
     if (state.sawDateConflict) return 'no_conflict_free_date';
     if (state.sawSafetyExclusion) return 'hard_safety_or_recovery';
     if (state.sawLedgerCapacityExclusion) return 'daily_ledger_capacity';
+    if (state.sawRollingLoadBudgetExclusion) return 'rolling_load_budget';
     if (state.sawFatigueExclusion) return 'projected_fatigue';
     return 'no_conflict_free_date';
 }
@@ -326,6 +363,7 @@ export function resolveWeeklyRoleReservations(
         let sawFatigueExclusion = false;
         let sawSafetyExclusion = false;
         let sawLedgerCapacityExclusion = false;
+        let sawRollingLoadBudgetExclusion = false;
         for (const date of dates) {
             const outcome = rootOutcomes.get(date)!;
             for (const templateId of occurrence.eligibleTemplateIds) {
@@ -333,12 +371,13 @@ export function resolveWeeklyRoleReservations(
                     all.push({ date, templateId });
                 } else if (outcome.fatigueExcludedTemplateIds.includes(templateId)) {
                     sawFatigueExclusion = true;
-                    blockers.add(`${date}:${FATIGUE_CEILING_BLOCKER}`);
+                    blockers.add(`${date}:${PROJECTED_FATIGUE_CEILING_BLOCKER}`);
                 } else {
                     for (const reason of outcome.exclusionReasons.get(templateId) ?? []) {
                         blockers.add(`${date}:${reason}`);
                         if (SAFETY_EXCLUSION_REASONS.has(reason)) sawSafetyExclusion = true;
                         if (reason === DAILY_LEDGER_CAPACITY_BLOCKER) sawLedgerCapacityExclusion = true;
+                        if (reason === ROLLING_LOAD_BUDGET_EXCEEDED) sawRollingLoadBudgetExclusion = true;
                     }
                 }
             }
@@ -353,6 +392,7 @@ export function resolveWeeklyRoleReservations(
             sawFatigueExclusion,
             sawSafetyExclusion,
             sawLedgerCapacityExclusion,
+            sawRollingLoadBudgetExclusion,
         };
     });
 
@@ -401,12 +441,13 @@ export function resolveWeeklyRoleReservations(
             if (!outcome.acceptedTemplateIds.includes(candidate.templateId)) {
                 if (outcome.fatigueExcludedTemplateIds.includes(candidate.templateId)) {
                     next.sawFatigueExclusion = true;
-                    next.blockers.add(`${candidate.date}:${FATIGUE_CEILING_BLOCKER}`);
+                    next.blockers.add(`${candidate.date}:${PROJECTED_FATIGUE_CEILING_BLOCKER}`);
                 } else {
                     for (const reason of outcome.exclusionReasons.get(candidate.templateId) ?? []) {
                         next.blockers.add(`${candidate.date}:${reason}`);
                         if (SAFETY_EXCLUSION_REASONS.has(reason)) next.sawSafetyExclusion = true;
                         if (reason === DAILY_LEDGER_CAPACITY_BLOCKER) next.sawLedgerCapacityExclusion = true;
+                        if (reason === ROLLING_LOAD_BUDGET_EXCEEDED) next.sawRollingLoadBudgetExclusion = true;
                     }
                 }
                 continue;

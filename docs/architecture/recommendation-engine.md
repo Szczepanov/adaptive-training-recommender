@@ -784,11 +784,25 @@ fixture is an operational gate only.
 
 **Protection during greedy selection.** Reservations are recomputed after every selected
 forecast day. On a reserved date the planner ranks only candidates that fulfil that
-occurrence; if the dynamic state has made them unsafe, safety wins and the role relocates
-or is reported. On an unreserved date a discretionary supporting candidate -- and a
-discretionary Rest, which consumes the date just as surely -- is admitted only while the
-incumbent allocation still survives its projected cost. A true recover-tier selection is
-exempt: Rest-first outranks role fulfilment and the loss is attributed to recovery.
+occurrence when exact candidates survive the date gates; if the dynamic state has made
+them unsafe, safety wins and the role relocates or is reported. Reservation presence is
+not an exemption from allocation preservation: even an exact candidate that fulfils the
+current occurrence can spend rolling-budget capacity needed by another later occurrence.
+Therefore every non-recover selection -- discretionary support, an exact reserved-role
+candidate, or Rest -- is admitted only while the incumbent allocation is proven to survive
+its projected cost (or an equal-cardinality reallocation is proven). A true recover-tier
+selection is exempt: Rest-first outranks role fulfilment and the loss is attributed to
+recovery.
+
+The support check is fail-closed. It considers the bounded viability set even when that set
+contains one ranked candidate, and distinguishes a proven degradation from an exhausted
+search budget. If no candidate proves preservation, the planner may use Rest only when Rest
+itself proves preservation; otherwise it returns an unresolved allocation outcome rather
+than falling through to the highest-ranked candidate. A required role that is infeasible
+because committed load consumed the rolling envelope is reported with the typed
+`rolling_load_budget` miss reason, while inability to prove a result within bounded search
+remains `unresolved_search_budget`. Anchor placement and `conservativeBias` do not bypass
+or resize the rolling envelope.
 
 Outcomes are typed (`reserved`, `fulfilled`, `missed`, `unresolved_search_budget`) with
 `wasMoved` as an annotation rather than a status, and are surfaced unchanged through

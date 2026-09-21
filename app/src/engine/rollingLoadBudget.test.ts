@@ -7,6 +7,7 @@ import {
     ROLLING_LOAD_BUDGET_MIN_BASELINE_EXPOSURES,
     ROLLING_LOAD_BUDGET_MIN_BASELINE_SPAN_DAYS,
     ROLLING_LOAD_BUDGET_WINDOW_DAYS,
+    ROLLING_LOAD_BUDGET_POLICY_VERSION,
     evaluateRollingLoadBudget,
     resolveRollingLoadBudgetForecastHorizon,
     resolveRollingLoadBudgetProfile,
@@ -137,7 +138,7 @@ describe('rolling load budget', () => {
         };
 
         const establishedProfile = {
-            policyVersion: '2026-09-rolling-load-budget-v2' as const,
+            policyVersion: ROLLING_LOAD_BUDGET_POLICY_VERSION,
             confidence: 'established' as const,
             baselineSessionCount: 4,
             baselineWindowStartDate: '2026-07-01',

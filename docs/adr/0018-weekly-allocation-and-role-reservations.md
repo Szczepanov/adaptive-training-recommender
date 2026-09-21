@@ -22,6 +22,10 @@ candidate is excluded by `evaluateRecoveryConstraints` or by the projected fatig
 ceiling, the planner selects Rest and the missed role is visible only indirectly through
 coverage/simulation diagnostics.
 
+ADR-0043 adds a rolling catalog-load envelope to this same feasibility path. Committed
+fixed/overlay load can exhaust that envelope before a required role is considered; a
+nominated anchor and the Extra Recovery Margin preference do not create capacity.
+
 ADR-0015 measured a beam-search prototype and deliberately retained greedy production
 planning. The follow-up finding identifies a coverage-allocation contract; it does not by
 itself approve beam-search adoption or a global fatigue-threshold change.
@@ -91,26 +95,53 @@ new projected fatigue and history. On a reserved date the planner selects a cand
 fulfils that reserved occurrence. A safe role may move to a later jointly feasible date;
 it is not lost merely because its original nominated/allocated date changed.
 
-### D-SUPPORT — supporting work may not destroy all safe allocations
+### D-SUPPORT — a selected forecast session may not destroy all safe allocations
 
-On an unreserved date, a supporting candidate is admissible only if applying its projected
-cost/history preserves the maximum achievable **stateful** required-role reservation count
-and any earlier-deadline reservation it would otherwise invalidate. This is a bounded
-one-step viability check, not horizon-wide utility search.
-It prevents a reduced-dose strength/support session from consuming the only safe quality
-or event-specific opportunity, while continuing to permit it whenever another safe
+On every train/modify forecast date, the selected candidate is admissible only if applying
+its projected cost/history preserves the maximum achievable **stateful** required-role
+reservation count and any earlier-deadline reservation it would otherwise invalidate. This
+is a bounded one-step viability check, not horizon-wide utility search. On an unreserved
+date this protects required roles from discretionary support work. On a reserved date the
+ranking pool is constrained to exact-role candidates when they survive the date gates, but
+the chosen exact candidate must still preserve the other required occurrences; satisfying
+the current reservation does not authorize starving a later one.
+It prevents a reduced-dose strength/support session, an unnecessarily costly exact-role
+substitute, or a discretionary Rest day from consuming the only safe quality or
+event-specific opportunity, while continuing to permit the selection whenever another safe
 allocation remains.
 
 Hard safety and feasibility still outrank role fulfilment. A recover-tier ceiling remains
 Rest-first; no reservation can force training through it. Rest is not made an optimisation
 target or capped by percentage.
 
-On a train/modify-tier unreserved date, a discretionary Rest selection consumes the date
-and therefore receives the same stateful viability proof as any supporting selection. It
-is rejected when it would remove the last proven required-role allocation. In a true
-recover tier, Rest-first outranks this proof: Rest is selected without forcing unsafe
-training, the remaining search is recomputed, and any resulting loss is reported as a
-recover-tier safety consequence rather than as a discretionary scheduling defect.
+On a train/modify-tier date, a Rest selection consumes the date and therefore receives the
+same stateful viability proof as any other selection. It is used as the safe fallback only
+when preservation is proven; if bounded search cannot prove preservation, the plan carries
+an explicit `unresolved_search_budget` outcome rather than silently treating Rest as proof.
+In a true recover tier, Rest-first outranks this proof: Rest is selected without forcing
+unsafe training, the remaining search is recomputed, and any resulting loss is reported as
+a recover-tier safety consequence rather than as a discretionary scheduling defect.
+
+### D-BUDGET — allocate required roles inside the committed rolling envelope
+
+The feasibility hierarchy is explicit:
+
+1. clinical, injury, readiness, acute-fatigue, taper, and daily-capacity gates;
+2. fixed activities and schedule overlays as committed load;
+3. the rolling catalog-load envelope from ADR-0043;
+4. required-role allocation inside the remaining envelope;
+5. anchor placement as a soft timing preference;
+6. ranking preferences, including Extra Recovery Margin.
+
+Anchors never bypass the rolling envelope. `conservativeBias` does not change budget limits,
+budget admission, or role-reservation topology. It may change an effective modify-tier dose
+through the ordinary readiness path; that dose is then charged normally by ADR-0043. A
+supporting candidate that cannot prove preservation of a higher-priority required-role
+witness must not fall through to the highest-ranked candidate. The same preservation rule
+applies on reserved dates: fulfilling the current occurrence is not enough if the selected
+exact candidate would consume the last feasible witness for another required occurrence.
+The planner must select a proven-safe alternative/fallback or surface an unresolved
+allocation result.
 
 ### D-MISS — forecast role misses are first-class diagnostics
 
@@ -132,10 +163,11 @@ occurrence id. Valid transitions are unallocated → reserved → fulfilled/miss
 unallocated → missed; a reallocation is reserved → reserved with `wasMoved: true`.
 
 A terminal miss has one primary typed reason and optional observed blockers:
-`no_exact_candidate`, `hard_safety_or_recovery`, `projected_fatigue`, `fixed_seed`, or
-`no_conflict_free_date`. `unresolved_search_budget` is never encoded as one of these
-reasons. The report is forecast evidence, not a completed-exposure credit and not a
-substitute for the persisted recommendation audit.
+`no_exact_candidate`, `hard_safety_or_recovery`, `daily_ledger_capacity`,
+`rolling_load_budget`, `projected_fatigue`, `fixed_seed`, or `no_conflict_free_date`.
+`unresolved_search_budget` is never encoded as one of these reasons. The report is forecast
+evidence, not a completed-exposure credit and not a substitute for the persisted
+recommendation audit.
 
 ### D-NO-BEAM — retain the existing greedy production path
 
@@ -168,4 +200,5 @@ planner; it neither imports the beam-search wrapper nor changes its adoption sta
 * [PR #17 semantic-baseline follow-up](../analysis/2026-08-10-pr17-semantic-baseline-follow-up.md)
 * [ADR-0015](./0015-sequence-planning-and-session-role-model.md) — prototype retained, adoption deferred
 * [ADR-0016](./0016-adaptation-credit-and-weekly-coverage.md) — exact role coverage and safety authority
+* [ADR-0043](./0043-rolling-catalog-load-budget.md) — hard rolling catalog-load envelope
 * `app/src/engine/planner.ts`, `optimizer.ts`, `coverage.ts`, `sequenceSearch.ts`
