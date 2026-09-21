@@ -12,6 +12,7 @@ import {
     projectedDateOutcomeFrom,
     resolveWeeklyAnchors,
     selectViableForecastCandidate,
+    selectionPreservesCurrentReservation,
     shouldProtectWeeklyAllocation,
     type ProjectedDatePlanningContext,
 } from './planner';
@@ -292,6 +293,12 @@ describe('D-SUPPORT fail-closed selection', () => {
         expect(shouldProtectWeeklyAllocation('modify', 1)).toBe(true);
         expect(shouldProtectWeeklyAllocation('recover', 1)).toBe(false);
         expect(shouldProtectWeeklyAllocation('train', 0)).toBe(false);
+    });
+
+    it('does not use incumbent-survival as proof when the current reservation is displaced', () => {
+        expect(selectionPreservesCurrentReservation('current-role', new Set(['later-role']))).toBe(false);
+        expect(selectionPreservesCurrentReservation('current-role', new Set(['current-role']))).toBe(true);
+        expect(selectionPreservesCurrentReservation(null, new Set())).toBe(true);
     });
 
     it('does not fall through to ranked[0] when no bounded candidate proves preservation', () => {
