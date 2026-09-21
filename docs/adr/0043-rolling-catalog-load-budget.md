@@ -29,6 +29,12 @@ without being reclassified as completed training. Candidate admission charges th
 that the planner will prescribe after automatic modify-tier or time-cap dose reduction rather
 than the unreduced authored template.
 
+The rolling envelope tracks all six cost dimensions independently. A pre-existing exceedance
+remains visible in budget diagnostics, but it does not by itself veto a candidate that contributes
+no load to that dimension. A candidate is rejected when any dimension to which it contributes
+positive catalog cost would be over its configured limit after admission. Zero is structural
+non-participation; no non-zero "de minimis" threshold is implied.
+
 The limits are product guardrails over normalized catalog costs. They are not physiological
 measurements, medical limits, injury probabilities, or claims of a universal dose-response.
 The Physiological Identity Passport is not an owner or input to the budget; it remains the
@@ -38,8 +44,12 @@ increase the budget.
 ## Consequences
 
 - Acute fatigue can decay without replenishing the same fixed forecast envelope.
-- A candidate that exceeds the envelope is rejected with `LOAD_BUDGET_EXCEEDED` and the planner
-  can fall back to recovery work.
+- A candidate that exceeds the envelope in any dimension to which it contributes positive load is
+  rejected with `LOAD_BUDGET_EXCEEDED` and the planner can fall back to recovery work.
+- Pre-existing overage in an unrelated dimension does not lock out candidates with zero cost in that
+  dimension, while diagnostics preserve the full overage state (`exceededDimensionsBefore`,
+  `exceededDimensionsAfter`, `blockingDimensions`).
+- A candidate scheduled outside the budget horizon is not gated or rejected by the horizon envelope.
 - The profile is deterministic and replayable from policy version plus training history.
 - The fixed accounting envelope spans all seven future dates. Day 1's already-computed
   provisional recommendation is charged to it but is not re-selected by the planner; generated
