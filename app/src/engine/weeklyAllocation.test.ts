@@ -4,6 +4,7 @@ import {
     attachExactEligibleIdentities,
     deriveRequiredRoleOccurrences,
     occurrenceForTemplate,
+    occurrencesFulfilledByTemplateSelection,
     resolveWeeklyRoleReservations,
     WEEKLY_ALLOCATION_SEARCH_BUDGET,
     type AllocationAssignment,
@@ -132,6 +133,16 @@ describe('ADR-0018 required role occurrences', () => {
         const exact = { id: 'cycling_zone2_standard_01', modality: 'Cycling', category: 'Moderate Endurance' } as unknown as SessionTemplate;
         expect(occurrenceForTemplate([target], lookalike)).toEqual([]);
         expect(occurrenceForTemplate([target], exact)).toEqual([target]);
+    });
+
+    it('credits one occurrence per coverage key for a bundled template selection', () => {
+        const bundled = { id: 'bundle', modality: 'Cycling', category: 'Moderate Endurance' } as unknown as SessionTemplate;
+        const aerobic0 = occurrence('aerobic_volume', 0, ['bundle']);
+        const aerobic1 = occurrence('aerobic_volume', 1, ['bundle']);
+        const quality0 = occurrence('sustained_quality', 0, ['bundle']);
+
+        expect(occurrencesFulfilledByTemplateSelection([aerobic1, quality0, aerobic0], bundled))
+            .toEqual([aerobic0, quality0]);
     });
 });
 
