@@ -1335,6 +1335,52 @@ describe('D-LEDGER planner admission', () => {
         expect(evaluation.loadBudgetExcludedTemplateIds).not.toContain('end_easy_01');
     });
 
+    it('keeps exact-zero unrelated dimensions non-blocking through the real planner gate', () => {
+        const context = baseContext({ maxTimeMinutes: 90 });
+        const phase = evaluatePeriodizationPhase([], '2026-09-13', '2026-09-13').phase;
+        const fixedLowerBodyLoad = ['2026-09-14', '2026-09-15', '2026-09-16'].map((date, index) =>
+            fixedActivity({
+                id: `lower-body-only-${index + 1}`,
+                date,
+                expectedCost: { lowerBody: 0.8 },
+            }),
+        );
+
+        const evaluation = evaluateProjectedDate('2026-09-13', {
+            microcycle: generateWeeklyObjectives(phase, '2026-09-13', null),
+            externalFatigue: createEmptyFatigue('2026-09-12'),
+            projectedHistory: [],
+        }, {
+            context,
+            preferences: NEUTRAL_PREFERENCES,
+            events: [],
+            fixedActivities: fixedLowerBodyLoad,
+            authoredPlanBlocks: [],
+            scheduleOverlays: [],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: '2026-09-12',
+            todayDate: '2026-09-13',
+            rollingLoadBudgetProfile: {
+                policyVersion: ROLLING_LOAD_BUDGET_POLICY_VERSION,
+                confidence: 'established',
+                baselineSessionCount: 3,
+                baselineWindowStartDate: '2026-07-20',
+                baselineWindowEndDate: '2026-08-30',
+                limits: { systemic: 10, cardiovascular: 10, lowerBody: 2.0, upperBody: 10, impactTissue: 10, neuromuscular: 10 },
+            },
+            rollingLoadBudgetHorizonStartDate: '2026-09-13',
+            rollingLoadBudgetHorizonEndDate: '2026-09-19',
+        });
+
+        expect(evaluation.eligible.some(template => template.id === 'str_upper_01')).toBe(true);
+        expect(evaluation.eligible.some(template => template.id === 'str_lower_01')).toBe(true);
+        expect(evaluation.loadBudgetExcludedTemplateIds).not.toContain('str_upper_01');
+        expect(evaluation.loadBudgetExcludedTemplateIds).toContain('str_lower_01');
+        expect(evaluation.fatigueGated.some(template => template.id === 'str_upper_01')).toBe(true);
+        expect(evaluation.fatigueGated.some(template => template.id === 'str_lower_01')).toBe(false);
+    });
+
     it('applies the individualized rolling catalog-load envelope after stable baseline evidence', () => {
         const context = baseContext({ hasIndoorBike: true });
         const phase = evaluatePeriodizationPhase([], '2026-09-13', '2026-09-13').phase;
