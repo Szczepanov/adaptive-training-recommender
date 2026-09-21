@@ -78,7 +78,6 @@ import {
     allocationSurvives,
     attachExactEligibleIdentities,
     deriveRequiredRoleOccurrences,
-    occurrenceForTemplate,
     occurrencesFulfilledByTemplateSelection,
     resolveWeeklyRoleReservations,
     WEEKLY_ALLOCATION_SEARCH_BUDGET,
