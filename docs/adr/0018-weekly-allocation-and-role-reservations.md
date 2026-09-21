@@ -131,8 +131,11 @@ Anchors never bypass the rolling envelope. `conservativeBias` does not change bu
 budget admission, or role-reservation topology. It may change an effective modify-tier dose
 through the ordinary readiness path; that dose is then charged normally by ADR-0043. A
 supporting candidate that cannot prove preservation of a higher-priority required-role
-witness must not fall through to the highest-ranked candidate. It must select a proven-safe
-fallback or surface an unresolved allocation result.
+witness must not fall through to the highest-ranked candidate. The same preservation rule
+applies on reserved dates: fulfilling the current occurrence is not enough if the selected
+exact candidate would consume the last feasible witness for another required occurrence.
+The planner must select a proven-safe alternative/fallback or surface an unresolved
+allocation result.
 
 ### D-MISS — forecast role misses are first-class diagnostics
 
