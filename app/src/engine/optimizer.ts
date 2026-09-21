@@ -632,7 +632,7 @@ export function evaluateRecoveryConstraints(
     }
 
     const focusEvent = options.focusEvent;
-    if (focusEvent && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race' || focusEvent.category === 'triathlon') && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
+    if (focusEvent && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race' || focusEvent.category === 'triathlon')) {
         const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
         const daysToRace = getDayDiff(raceDate, targetDate);
         if (daysToRace >= 1 && daysToRace <= 3) {
@@ -699,10 +699,10 @@ export function evaluateRecoveryConstraints(
     // `windows_volume_v1`'s full taper (up to 14 days for an A event) still needs "reduced
     // nonessential strength" and no unjustified moderate-density block near the event.
     // Scoped to the same endurance event categories as the D1-D7 block above (not every
-    // A/B event): a strength_meet's own taper is a deload of strength work itself, not
+    // event category): a strength_meet's own taper is a deload of strength work itself, not
     // "nonessential" to reduce toward zero -- generalizing the guard to that category
     // would fight the event it exists to protect.
-    if (focusEvent && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race' || focusEvent.category === 'triathlon') && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
+    if (focusEvent && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race' || focusEvent.category === 'triathlon')) {
         const taper = resolveEventTaper(focusEvent);
         if (taper && targetDate >= taper.startDate && targetDate <= taper.endDate) {
             const isStrengthCandidate = template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category);
@@ -972,6 +972,8 @@ export function rankCandidates(
 
     const extraMargin = preferences.extraRecoveryMargin ?? preferences.conservativeBias ?? false;
     const focusEvent = options.focusEvent;
+    const isCEnduranceCompetition = focusEvent?.priority === 'C'
+        && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race' || focusEvent.category === 'triathlon');
     const cyclingDurabilityFocusEvent = isCyclingDurabilityFocusEvent(focusEvent);
     const rawHistory = options.recentHistory ?? [];
     const targetDate = options.date ?? getLocalDateString();
@@ -1053,7 +1055,10 @@ export function rankCandidates(
                 : (template.modality === 'Strength' && (obj.key === 'strength_maintenance' || obj.key === 'strength_development'))
         );
 
-        if (focusEvent && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
+        // Keep legacy A/B handling intact, but only opt C into event-aware ranking for
+        // actual endurance competitions. A C-priority general target or strength meet must
+        // not acquire unrelated non-matching penalties merely because #698 adds C race logic.
+        if (focusEvent && (focusEvent.priority === 'A' || focusEvent.priority === 'B' || isCEnduranceCompetition)) {
             const categoryLower = focusEvent.category.toLowerCase();
             const templateModLower = (template.modality ?? '').toLowerCase();
             const matchesEvent =
@@ -1067,10 +1072,12 @@ export function rankCandidates(
                 ));
             const eventPriorityApplies = !categoryLower.includes('strength') || satisfiesUnresolvedObjective || fulfilsNominatedAnchor;
             if (matchesEvent && eventPriorityApplies) {
-                benefit *= focusEvent.priority === 'A' ? 1.40 : 1.25;
+                const priorityMultiplier = focusEvent.priority === 'A' ? 1.40 : focusEvent.priority === 'B' ? 1.25 : 1.00;
+                benefit *= priorityMultiplier;
 
-                // Priority B: cap race-specific endurance sessions to 1 per week, directing the 2nd quality day to general tempo/threshold
-                if (focusEvent.priority === 'B' && template.category === 'Race-Specific Endurance') {
+                // Priority B/C: strongly dampen a second race-specific endurance exposure
+                // within a rolling six-day window. The exposure remains eligible.
+                if ((focusEvent.priority === 'B' || focusEvent.priority === 'C') && template.category === 'Race-Specific Endurance') {
                     if (summary.recentRaceSpecificCount6d >= 1) {
                         benefit *= 0.35;
                     }

@@ -35,4 +35,21 @@ describe('resolveEventTaper', () => {
         const cycling: UserEvent = { ...generalTarget(), category: 'cycling_event', id: 'race' };
         expect(resolveEventTaper(cycling)).toMatchObject({ startDate: '2026-08-17', endDate: '2026-08-19' });
     });
+
+    it('keeps C endurance events train-through by default while honoring an authored taper', () => {
+        const race: UserEvent = {
+            ...generalTarget(),
+            id: 'c-running-race',
+            category: 'running_race',
+            priority: 'C',
+        };
+        expect(resolveEventTaper(race)).toBeNull();
+
+        const authored: UserEvent = { ...race, taper: { startDate: '2026-08-15' } };
+        expect(resolveEventTaper(authored)).toMatchObject({
+            startDate: '2026-08-15',
+            endDate: '2026-08-19',
+            durationDays: 5,
+        });
+    });
 });
