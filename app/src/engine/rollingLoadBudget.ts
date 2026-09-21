@@ -6,7 +6,8 @@ import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
  * The evidence supports monitoring accumulated load and individualising it; the exact
  * normalized cost scale and limits remain product policy (see the knowledge registry).
  */
-export const ROLLING_LOAD_BUDGET_POLICY_VERSION = '2026-09-rolling-load-budget-v2' as const;
+export const ROLLING_LOAD_BUDGET_POLICY_VERSION = '2026-09-rolling-load-budget-v3' as const;
+export const ROLLING_LOAD_BUDGET_EXCEEDED = 'LOAD_BUDGET_EXCEEDED' as const;
 export const ROLLING_LOAD_BUDGET_WINDOW_DAYS = 7 as const;
 export const ROLLING_LOAD_BUDGET_BASELINE_DAYS = 42 as const;
 export const ROLLING_LOAD_BUDGET_LOOKBACK_DAYS = ROLLING_LOAD_BUDGET_WINDOW_DAYS + ROLLING_LOAD_BUDGET_BASELINE_DAYS;
@@ -60,7 +61,7 @@ export interface RollingLoadBudgetSnapshot {
     exceededDimensionsAfter: (keyof WorkoutCostProfile)[];
     blockingDimensions: (keyof WorkoutCostProfile)[];
     admitted: boolean;
-    reason?: 'LOAD_BUDGET_EXCEEDED';
+    reason?: typeof ROLLING_LOAD_BUDGET_EXCEEDED;
 }
 
 export interface RollingLoadBudgetEvaluationInput {
@@ -276,6 +277,6 @@ export function evaluateRollingLoadBudget(input: RollingLoadBudgetEvaluationInpu
         exceededDimensionsAfter,
         blockingDimensions,
         admitted,
-        ...(admitted ? {} : { reason: 'LOAD_BUDGET_EXCEEDED' as const }),
+        ...(admitted ? {} : { reason: ROLLING_LOAD_BUDGET_EXCEEDED }),
     };
 }

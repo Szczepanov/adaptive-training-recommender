@@ -1,5 +1,6 @@
 import { coverageSetFor, type CoverageSetId, type PlanCoverageKey, type PlanPhase } from '../workouts/event-plan';
 import type { SessionTemplate } from './models';
+import { ROLLING_LOAD_BUDGET_EXCEEDED } from './rollingLoadBudget';
 import {
     authoredSessionIdentityFor,
     coverageKeysForTemplate,
@@ -33,7 +34,7 @@ export interface RequiredRoleOccurrence {
 }
 
 export type WeeklyRoleAllocationStatus = 'reserved' | 'fulfilled' | 'missed' | 'unresolved_search_budget';
-export type WeeklyRoleMissReason = 'no_exact_candidate' | 'hard_safety_or_recovery' | 'daily_ledger_capacity' | 'projected_fatigue' | 'fixed_seed' | 'no_conflict_free_date';
+export type WeeklyRoleMissReason = 'no_exact_candidate' | 'hard_safety_or_recovery' | 'daily_ledger_capacity' | 'rolling_load_budget' | 'projected_fatigue' | 'fixed_seed' | 'no_conflict_free_date';
 
 export interface RoleReservation {
     occurrenceId: string;
@@ -249,6 +250,7 @@ interface OccurrenceSearchState {
     sawFatigueExclusion: boolean;
     sawSafetyExclusion: boolean;
     sawLedgerCapacityExclusion: boolean;
+    sawRollingLoadBudgetExclusion: boolean;
 }
 
 function assignmentSignature(assignments: readonly AllocationAssignment[]): string {
@@ -262,12 +264,14 @@ function missReasonFor(state: OccurrenceSearchState): WeeklyRoleMissReason {
     if (state.candidates.length === 0) {
         if (state.sawSafetyExclusion) return 'hard_safety_or_recovery';
         if (state.sawLedgerCapacityExclusion) return 'daily_ledger_capacity';
+        if (state.sawRollingLoadBudgetExclusion) return 'rolling_load_budget';
         if (state.sawFatigueExclusion) return 'projected_fatigue';
         return 'no_exact_candidate';
     }
     if (state.sawDateConflict) return 'no_conflict_free_date';
     if (state.sawSafetyExclusion) return 'hard_safety_or_recovery';
     if (state.sawLedgerCapacityExclusion) return 'daily_ledger_capacity';
+    if (state.sawRollingLoadBudgetExclusion) return 'rolling_load_budget';
     if (state.sawFatigueExclusion) return 'projected_fatigue';
     return 'no_conflict_free_date';
 }
@@ -326,6 +330,7 @@ export function resolveWeeklyRoleReservations(
         let sawFatigueExclusion = false;
         let sawSafetyExclusion = false;
         let sawLedgerCapacityExclusion = false;
+        let sawRollingLoadBudgetExclusion = false;
         for (const date of dates) {
             const outcome = rootOutcomes.get(date)!;
             for (const templateId of occurrence.eligibleTemplateIds) {
@@ -339,6 +344,7 @@ export function resolveWeeklyRoleReservations(
                         blockers.add(`${date}:${reason}`);
                         if (SAFETY_EXCLUSION_REASONS.has(reason)) sawSafetyExclusion = true;
                         if (reason === DAILY_LEDGER_CAPACITY_BLOCKER) sawLedgerCapacityExclusion = true;
+                        if (reason === ROLLING_LOAD_BUDGET_EXCEEDED) sawRollingLoadBudgetExclusion = true;
                     }
                 }
             }
@@ -353,6 +359,7 @@ export function resolveWeeklyRoleReservations(
             sawFatigueExclusion,
             sawSafetyExclusion,
             sawLedgerCapacityExclusion,
+            sawRollingLoadBudgetExclusion,
         };
     });
 
@@ -407,6 +414,7 @@ export function resolveWeeklyRoleReservations(
                         next.blockers.add(`${candidate.date}:${reason}`);
                         if (SAFETY_EXCLUSION_REASONS.has(reason)) next.sawSafetyExclusion = true;
                         if (reason === DAILY_LEDGER_CAPACITY_BLOCKER) next.sawLedgerCapacityExclusion = true;
+                        if (reason === ROLLING_LOAD_BUDGET_EXCEEDED) next.sawRollingLoadBudgetExclusion = true;
                     }
                 }
                 continue;

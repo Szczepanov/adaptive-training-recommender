@@ -42,6 +42,14 @@ The Physiological Identity Passport is not an owner or input to the budget; it r
 upstream measurement-trust boundary. A single HRV/readiness value or identity score cannot
 increase the budget.
 
+For weekly role allocation, this envelope is a hard feasibility boundary rather than an
+anchor-placement preference. The hierarchy is committed fixed/overlay load, hard rolling
+envelope, required-role allocation inside remaining capacity, anchor placement, then
+ranking preferences. ADR-0018's D-SUPPORT viability proof protects a real required-role
+witness within that remaining capacity; it does not bypass the envelope. Extra Recovery
+Margin is not a budget-protection switch. A modify-tier dose may legitimately change the
+charged candidate cost, but the budget policy and limits remain preference-independent.
+
 ## Consequences
 
 - Acute fatigue can decay without replenishing the same fixed forecast envelope.
@@ -60,6 +68,11 @@ increase the budget.
 - Numeric limits require prospective calibration before any future relaxation.
 - The knowledge registry records the supporting stress–recovery claim and the product-policy
   limitations separately.
+
+The weekly allocator reports a committed-load role miss as `rolling_load_budget`, distinct
+from `unresolved_search_budget` when bounded allocation cannot prove a result. See
+[ADR-0018](./0018-weekly-allocation-and-role-reservations.md) for reservation, support
+viability, movement, and typed-miss semantics.
 
 ## Verification
 

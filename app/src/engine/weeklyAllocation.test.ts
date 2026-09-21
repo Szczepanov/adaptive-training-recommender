@@ -209,6 +209,17 @@ describe('ADR-0018 stateful reservation search', () => {
         expect(result.outcomes[0]).toMatchObject({ status: 'missed', reason: 'projected_fatigue' });
     });
 
+    it('attributes a committed rolling-budget exclusion separately from other hard gates', () => {
+        const result = resolveWeeklyRoleReservations([occurrence('sustained_quality', 0, ['threshold'])], stubEvaluator({
+            acceptedByDate: { '2026-08-11': [] },
+            exclusionReasons: {
+                '2026-08-11': { threshold: ['LOAD_BUDGET_EXCEEDED'] },
+            },
+        }, ['2026-08-11']));
+        expect(result.outcomes[0]).toMatchObject({ status: 'missed', reason: 'rolling_load_budget' });
+        expect(result.outcomes[0].observedBlockers).toContain('2026-08-11:LOAD_BUDGET_EXCEEDED');
+    });
+
     it('never seeds a reservation onto an immutable today/tomorrow date', () => {
         const result = resolveWeeklyRoleReservations([occurrence('aerobic_volume', 0, ['zone2'])], stubEvaluator({
             acceptedByDate: { '2026-08-11': ['zone2'], '2026-08-12': ['zone2'] },

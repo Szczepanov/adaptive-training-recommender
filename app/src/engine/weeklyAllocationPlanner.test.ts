@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Recommendation, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
+import type { FixedActivity, Recommendation, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
 import { ENRICHED_TEMPLATES } from './templates';
 import { resolveDemandProfile } from './eventPresets';
 import { buildCyclingEventPlan } from './planSchedule';
@@ -11,6 +11,7 @@ import {
     generateWeekAheadPlan,
     projectedDateOutcomeFrom,
     resolveWeeklyAnchors,
+    selectViableForecastCandidate,
     type ProjectedDatePlanningContext,
 } from './planner';
 import { rankCandidates } from './optimizer';
@@ -104,6 +105,51 @@ function liveSizedWeek() {
     };
 }
 
+function rollingBudgetStarvationWeek(committedSystemic = 0.5) {
+    const todayDate = '2026-08-01';
+    const focusEvent: UserEvent = {
+        id: 'case-b-event', title: 'Road race', date: '2026-08-08', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+        demandProfile: resolveDemandProfile('cycling_event', 'road_race'),
+    };
+    const periodization = evaluatePeriodizationPhase([focusEvent], todayDate);
+    const planState = buildCyclingEventPlan(focusEvent);
+    if (planState.status !== 'AVAILABLE') throw new Error('event plan unavailable');
+    const qualityOnlyPlan = {
+        ...planState.data,
+        objectives: planState.data.objectives.map(objective => objective.coverageKey === 'sustained_quality'
+            ? objective
+            : { ...objective, coverageMinimumSessions: 0 }),
+    };
+    const raceSpecific = ENRICHED_TEMPLATES.find(item => item.category === 'Race-Specific Endurance' && item.modality === 'Cycling');
+    const recovery = ENRICHED_TEMPLATES.find(item => item.category === 'Mobility/Recovery');
+    if (!recovery || !raceSpecific?.stimulusProfile) throw new Error('required templates missing');
+    let microcycle = generateWeeklyObjectives(periodization.phase, addDaysToLocalDateString(todayDate, -7), focusEvent, planState.data, todayDate);
+    microcycle = creditObjectivesFromStimulus(microcycle, raceSpecific.stimulusProfile, raceSpecific.modality, raceSpecific.category);
+    const fixedActivity = (id: string, date: string, systemic: number): FixedActivity => ({
+        userId: 'allocation-planner', id, title: 'Committed budget load', date,
+        durationMin: 30, isCompleted: false, fixed: true, environment: 'either', equipment: [], expectedCost: { systemic },
+        createdAt: '', updatedAt: '',
+    });
+    const fixedActivities = committedSystemic >= 1
+        ? [fixedActivity('committed-budget-1', '2026-08-05', 0.9), fixedActivity('committed-budget-2', '2026-08-06', 0.9)]
+        : [fixedActivity('committed-budget', '2026-08-06', committedSystemic)];
+    const todayRec: Recommendation = { template: recovery, rationale: 'Recovery.', mode: 'recover' };
+    return generateWeekAheadPlan(
+        readiness, context(), preferences, todayDate, todayRec, null,
+        {
+            microcycle,
+            fatigue: createEmptyFatigue(todayDate),
+            trailingHistory: [],
+            rollingLoadBudgetHistory: [
+                { date: '2026-06-20', systemicCost: 4, lowerBodyCost: 0, occurrenceKey: 'baseline-1' },
+                { date: '2026-06-27', systemicCost: 4, lowerBodyCost: 0, occurrenceKey: 'baseline-2' },
+                { date: '2026-07-04', systemicCost: 4, lowerBodyCost: 0, occurrenceKey: 'baseline-3' },
+            ],
+        },
+        { days: 7, events: [focusEvent], planDefinition: qualityOnlyPlan, fixedActivities },
+    );
+}
+
 describe('7A.2 shared projected-date evaluation seam', () => {
     it('rejects exactly what rankCandidates rejects, with the same reasons', () => {
         const fixture = liveSizedWeek();
@@ -188,6 +234,106 @@ describe('7A.4 reservations survive discretionary work', () => {
         const first = liveSizedWeek().run().allocationReport.outcomes;
         const second = liveSizedWeek().run().allocationReport.outcomes;
         expect(JSON.stringify(first)).toEqual(JSON.stringify(second));
+    });
+
+    it('fails closed when discretionary work cannot prove preservation of the only future role witness', () => {
+        const plan = rollingBudgetStarvationWeek();
+        const quality = plan.allocationReport.outcomes.find(outcome => outcome.occurrence.coverageKey === 'sustained_quality');
+        expect(quality?.status).toBe('fulfilled');
+        expect(quality?.reservation.assignedDate).toBe('2026-08-08');
+
+        // The support candidates between the early strength reservation and the exact
+        // quality witness are not allowed to consume the remaining budget. Rest is selected
+        // only after the same viability proof, and the exact future role survives.
+        expect(plan.days.filter(day => day.date >= '2026-08-04' && day.date <= '2026-08-07')
+            .every(day => day.template.category === 'Rest')).toBe(true);
+        expect(plan.days.find(day => day.date === '2026-08-08')?.template.category).toBe('Hard Endurance');
+    });
+
+    it('reports committed-load exhaustion as a rolling-budget role miss without bypassing the envelope', () => {
+        const plan = rollingBudgetStarvationWeek(2);
+        const quality = plan.allocationReport.outcomes.find(outcome => outcome.occurrence.coverageKey === 'sustained_quality');
+
+        expect(quality?.status).toBe('missed');
+        expect(quality?.reason).toBe('rolling_load_budget');
+        expect(plan.days.find(day => day.date === '2026-08-08')?.template.category).not.toBe('Hard Endurance');
+    });
+
+    it('keeps role reservation identity separate from the soft anchor date', () => {
+        const plan = rollingBudgetStarvationWeek();
+        const anchors = resolveWeeklyAnchors(
+            '2026-08-01',
+            7,
+            [{
+                id: 'case-b-event', title: 'Road race', date: '2026-08-08', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+                demandProfile: resolveDemandProfile('cycling_event', 'road_race'),
+            }],
+            [],
+            context(),
+        );
+        const quality = plan.allocationReport.outcomes.find(outcome => outcome.occurrence.coverageKey === 'sustained_quality');
+
+        expect(quality?.occurrence.id).toContain('sustained_quality');
+        expect(quality?.reservation.nominatedDate).toBe(anchors.qualityAnchorDate);
+        expect(quality?.reservation.assignedDate).toBe(quality?.reservation.nominatedDate);
+        expect(quality?.reservation.wasMoved).toBe(false);
+        // The allocator's existing relocation contract is independently covered by the
+        // real occurrence-id test in weeklyAllocation.test.ts; this integration assertion
+        // ensures an anchor is not treated as the reservation's authority.
+    });
+});
+
+describe('D-SUPPORT fail-closed selection', () => {
+    it('does not fall through to ranked[0] when no bounded candidate proves preservation', () => {
+        const support = ENRICHED_TEMPLATES.find(template => template.category === 'Full-body Strength');
+        const rest = ENRICHED_TEMPLATES.find(template => template.category === 'Rest');
+        if (!support || !rest) throw new Error('required templates missing');
+
+        const candidate = (template: typeof support, utilityScore: number) => ({
+            template,
+            utilityScore,
+            benefitScore: utilityScore,
+            costPenalty: 0,
+            coverageNeedTier: 3 as const,
+            rationale: template.title,
+        });
+        const ranked = [candidate(support, 10)];
+        const restFallback = candidate(rest, 1);
+        const result = selectViableForecastCandidate(
+            ranked,
+            true,
+            restFallback,
+            () => 'degrades',
+        );
+
+        expect(result.candidate.template).toBe(rest);
+        expect(result.allocationUnresolved).toBe(true);
+    });
+
+    it('uses Rest only when the fallback also proves preservation', () => {
+        const support = ENRICHED_TEMPLATES.find(template => template.category === 'Full-body Strength');
+        const rest = ENRICHED_TEMPLATES.find(template => template.category === 'Rest');
+        if (!support || !rest) throw new Error('required templates missing');
+
+        const candidate = (template: typeof support, utilityScore: number) => ({
+            template,
+            utilityScore,
+            benefitScore: utilityScore,
+            costPenalty: 0,
+            coverageNeedTier: 3 as const,
+            rationale: template.title,
+        });
+        const ranked = [candidate(support, 10)];
+        const restFallback = candidate(rest, 1);
+        const result = selectViableForecastCandidate(
+            ranked,
+            true,
+            restFallback,
+            candidate => candidate.template.category === 'Rest' ? 'preserves' : 'degrades',
+        );
+
+        expect(result.candidate.template).toBe(rest);
+        expect(result.allocationUnresolved).toBe(false);
     });
 });
 

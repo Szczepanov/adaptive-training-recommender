@@ -54,6 +54,7 @@ import {
 import {
     type OptimizationContext,
     type RankCandidatesResult,
+    type RankedCandidate,
     type RecentHistoryEntry,
     ANCHOR_HISTORY_CATEGORIES,
     buildOptimizationContext,
@@ -96,6 +97,7 @@ import { admitsCandidate, computeDailyLedger, type DailyLedgerResult } from './d
 import { dedupeFixedActivitiesByLedgerIdentity, pendingFixedActivityLedgerEntries } from './fixedActivityLedger';
 import {
     ROLLING_LOAD_BUDGET_LOOKBACK_DAYS,
+    ROLLING_LOAD_BUDGET_EXCEEDED,
     evaluateRollingLoadBudget,
     resolveRollingLoadBudgetForecastHorizon,
     resolveRollingLoadBudgetProfile,
@@ -172,6 +174,37 @@ export interface WeekAheadPlanSeed {
      * future recommendations never reclassify completed occurrences through legacy lookup. */
     completedCoverageHistory?: CoverageHistoryEntry[];
     droppedContributorObjectives?: DroppedContributorObjective[];
+}
+
+type ForecastPickCandidate = Pick<RankedCandidate, 'template' | 'utilityScore' | 'benefitScore' | 'costPenalty' | 'coverageNeedTier' | 'rationale'>;
+export type AllocationPreservation = 'preserves' | 'degrades' | 'unresolved_search_budget';
+
+export interface ForecastPickSelection {
+    candidate: ForecastPickCandidate;
+    allocationUnresolved: boolean;
+}
+
+/**
+ * D-SUPPORT must fail closed. Once viability protection applies, a ranked candidate is
+ * admissible only after the bounded proof preserves the incumbent allocation. If no
+ * candidate proves that property, Rest is allowed only when it proves preservation too;
+ * otherwise the safe fallback is returned with an explicit unresolved-allocation marker.
+ * Falling through to ranked[0] would silently defeat ADR-0018 after a failed proof.
+ */
+export function selectViableForecastCandidate(
+    ranked: readonly ForecastPickCandidate[],
+    viabilityApplies: boolean,
+    restFallback: ForecastPickCandidate,
+    preservesAllocation: (candidate: ForecastPickCandidate) => AllocationPreservation,
+): ForecastPickSelection {
+    if (!viabilityApplies) return { candidate: ranked[0] ?? restFallback, allocationUnresolved: false };
+
+    const viable = ranked
+        .slice(0, WEEKLY_ALLOCATION_SEARCH_BUDGET.maxCandidatesPerOccurrence)
+        .find(candidate => preservesAllocation(candidate) === 'preserves');
+    if (viable) return { candidate: viable, allocationUnresolved: false };
+    if (preservesAllocation(restFallback) === 'preserves') return { candidate: restFallback, allocationUnresolved: false };
+    return { candidate: restFallback, allocationUnresolved: true };
 }
 
 export interface WeekAheadOptions {
@@ -842,7 +875,7 @@ export function projectedDateOutcomeFrom(
     const exclusionReasons = new Map<string, readonly string[]>();
     ranking.rejected.forEach(candidate => exclusionReasons.set(candidate.template.id, candidate.excludedReasons));
     evaluation.ledgerExcludedTemplateIds.forEach(templateId => exclusionReasons.set(templateId, [DAILY_LEDGER_CAPACITY]));
-    (evaluation.loadBudgetExcludedTemplateIds ?? []).forEach(templateId => exclusionReasons.set(templateId, ['LOAD_BUDGET_EXCEEDED']));
+    (evaluation.loadBudgetExcludedTemplateIds ?? []).forEach(templateId => exclusionReasons.set(templateId, [ROLLING_LOAD_BUDGET_EXCEEDED]));
     ENRICHED_TEMPLATES.forEach(template => {
         if (!eligibleIds.has(template.id)) exclusionReasons.set(template.id, [NOT_ELIGIBLE_ON_DATE]);
     });
@@ -1560,6 +1593,7 @@ export function generateWeekAheadPlan(
     );
     const settledOutcomes = new Map<string, WeeklyRoleAllocationOutcome>();
     const displacementReasons = new Map<string, WeeklyRoleMissReason>();
+    const unresolvedViabilityOccurrenceIds = new Set<string>();
 
     const evaluateForecastDate = (offset: number) => {
         const date = addDaysToLocalDateString(todayDate, offset);
@@ -1674,7 +1708,7 @@ export function generateWeekAheadPlan(
         const incumbentAssignments = [...allocation.reservationsByDate.entries()]
             .filter(([reservedDate]) => reservedDate !== date)
             .map(([reservedDate, item]) => ({ date: reservedDate, templateId: item.templateId }));
-        const preservesAllocation = (template: SessionTemplate): boolean => {
+        const preservesAllocation = (template: SessionTemplate): AllocationPreservation => {
             const candidateDose = resolveTimeCapDoseAdjustment(
                 template,
                 evaluation.availability.maxTimeMinutes,
@@ -1684,21 +1718,34 @@ export function generateWeekAheadPlan(
                 forecastDatesFrom(offset + 1),
                 [{ date, templateId: template.id, ...(candidateDose ? { activeDose: candidateDose } : {}) }],
             );
-            if (allocationSurvives(incumbentAssignments, evaluator)) return true;
+            if (allocation.budgetExhausted || allocation.outcomes.some(outcome => outcome.status === 'unresolved_search_budget')) {
+                return 'unresolved_search_budget';
+            }
+            if (allocationSurvives(incumbentAssignments, evaluator)) return 'preserves';
             const selfFulfils = occurrenceForTemplate(pendingOccurrences, template).length > 0 ? 1 : 0;
             const after = resolveWeeklyRoleReservations(
                 pendingOccurrences.filter(occurrence => occurrenceForTemplate([occurrence], template).length === 0),
                 evaluator,
                 { nominatedDates },
             );
-            return !after.budgetExhausted && after.fulfilledCount + selfFulfils >= allocation.fulfilledCount;
+            if (after.budgetExhausted || after.outcomes.some(outcome => outcome.status === 'unresolved_search_budget')) {
+                return 'unresolved_search_budget';
+            }
+            return after.fulfilledCount + selfFulfils >= allocation.fulfilledCount ? 'preserves' : 'degrades';
         };
-        const viabilityApplies = effectiveFatigueTier !== 'recover' && allocation.fulfilledCount > 0 && ranked.length > 1;
-        const pick = (viabilityApplies
-            ? ranked.slice(0, WEEKLY_ALLOCATION_SEARCH_BUDGET.maxCandidatesPerOccurrence)
-                .find(candidate => preservesAllocation(candidate.template))
-            : undefined)
-            ?? ranked[0] ?? fallbackPick;
+        const viabilityApplies = !reservation && effectiveFatigueTier !== 'recover' && allocation.fulfilledCount > 0;
+        const pickSelection = selectViableForecastCandidate(
+            ranked,
+            viabilityApplies,
+            fallbackPick,
+            candidate => preservesAllocation(candidate.template),
+        );
+        if (pickSelection.allocationUnresolved) {
+            allocation.reservationsByDate.forEach(({ occurrence }) => {
+                unresolvedViabilityOccurrenceIds.add(occurrence.id);
+            });
+        }
+        const pick = pickSelection.candidate;
 
         const bestBenefit = [...(ranked.length > 0 ? ranked : [{ template: restFallback, benefitScore: 0 }])].sort((a, b) => b.benefitScore - a.benefitScore)[0];
         const forecastDoseAdjustment = resolveTimeCapDoseAdjustment(pick.template, evaluation.availability.maxTimeMinutes, effectiveFatigueTier === 'modify');
@@ -1733,9 +1780,14 @@ export function generateWeekAheadPlan(
             });
 
         if (reservation && !settledOutcomes.has(reservation.occurrence.id)) {
+            const reservationBudgetBlocked = reservation.occurrence.eligibleTemplateIds.some(templateId =>
+                evaluation.loadBudgetExcludedTemplateIds.includes(templateId),
+            );
             displacementReasons.set(
                 reservation.occurrence.id,
-                exactReserved.length === 0
+                reservationBudgetBlocked
+                    ? 'rolling_load_budget'
+                    : exactReserved.length === 0
                     ? (effectiveFatigueTier === 'recover' ? 'hard_safety_or_recovery' : effectiveFatigueTier === 'modify' ? 'projected_fatigue' : 'hard_safety_or_recovery')
                     : 'no_conflict_free_date',
             );
@@ -1804,6 +1856,9 @@ export function generateWeekAheadPlan(
         if (latest.status !== 'reserved') return latest;
         const reason = displacementReasons.get(occurrence.id);
         const reservation = { ...latest.reservation, assignedDate: null, templateId: null, workoutId: null };
+        if (unresolvedViabilityOccurrenceIds.has(occurrence.id)) {
+            return { ...latest, reservation, status: 'unresolved_search_budget' as const };
+        }
         return reason
             ? { ...latest, reservation, status: 'missed' as const, reason }
             : { ...latest, reservation, status: 'unresolved_search_budget' as const };

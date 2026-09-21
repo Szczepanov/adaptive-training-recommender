@@ -790,6 +790,16 @@ discretionary Rest, which consumes the date just as surely -- is admitted only w
 incumbent allocation still survives its projected cost. A true recover-tier selection is
 exempt: Rest-first outranks role fulfilment and the loss is attributed to recovery.
 
+The support check is fail-closed. It considers the bounded viability set even when that set
+contains one ranked candidate, and distinguishes a proven degradation from an exhausted
+search budget. If no candidate proves preservation, the planner may use Rest only when Rest
+itself proves preservation; otherwise it returns an unresolved allocation outcome rather
+than falling through to the highest-ranked candidate. A required role that is infeasible
+because committed load consumed the rolling envelope is reported with the typed
+`rolling_load_budget` miss reason, while inability to prove a result within bounded search
+remains `unresolved_search_budget`. Anchor placement and `conservativeBias` do not bypass
+or resize the rolling envelope.
+
 Outcomes are typed (`reserved`, `fulfilled`, `missed`, `unresolved_search_budget`) with
 `wasMoved` as an annotation rather than a status, and are surfaced unchanged through
 `WeekAheadPlan.allocationReport` to the simulator report and the week-ahead UI. They are

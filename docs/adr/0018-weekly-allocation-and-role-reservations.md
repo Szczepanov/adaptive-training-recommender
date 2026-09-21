@@ -22,6 +22,10 @@ candidate is excluded by `evaluateRecoveryConstraints` or by the projected fatig
 ceiling, the planner selects Rest and the missed role is visible only indirectly through
 coverage/simulation diagnostics.
 
+ADR-0043 adds a rolling catalog-load envelope to this same feasibility path. Committed
+fixed/overlay load can exhaust that envelope before a required role is considered; a
+nominated anchor and the Extra Recovery Margin preference do not create capacity.
+
 ADR-0015 measured a beam-search prototype and deliberately retained greedy production
 planning. The follow-up finding identifies a coverage-allocation contract; it does not by
 itself approve beam-search adoption or a global fatigue-threshold change.
@@ -112,6 +116,24 @@ recover tier, Rest-first outranks this proof: Rest is selected without forcing u
 training, the remaining search is recomputed, and any resulting loss is reported as a
 recover-tier safety consequence rather than as a discretionary scheduling defect.
 
+### D-BUDGET — allocate required roles inside the committed rolling envelope
+
+The feasibility hierarchy is explicit:
+
+1. clinical, injury, readiness, acute-fatigue, taper, and daily-capacity gates;
+2. fixed activities and schedule overlays as committed load;
+3. the rolling catalog-load envelope from ADR-0043;
+4. required-role allocation inside the remaining envelope;
+5. anchor placement as a soft timing preference;
+6. ranking preferences, including Extra Recovery Margin.
+
+Anchors never bypass the rolling envelope. `conservativeBias` does not change budget limits,
+budget admission, or role-reservation topology. It may change an effective modify-tier dose
+through the ordinary readiness path; that dose is then charged normally by ADR-0043. A
+supporting candidate that cannot prove preservation of a higher-priority required-role
+witness must not fall through to the highest-ranked candidate. It must select a proven-safe
+fallback or surface an unresolved allocation result.
+
 ### D-MISS — forecast role misses are first-class diagnostics
 
 `WeekAheadPlan` will expose the shared `WeeklyRoleAllocationReport` for every required
@@ -132,10 +154,11 @@ occurrence id. Valid transitions are unallocated → reserved → fulfilled/miss
 unallocated → missed; a reallocation is reserved → reserved with `wasMoved: true`.
 
 A terminal miss has one primary typed reason and optional observed blockers:
-`no_exact_candidate`, `hard_safety_or_recovery`, `projected_fatigue`, `fixed_seed`, or
-`no_conflict_free_date`. `unresolved_search_budget` is never encoded as one of these
-reasons. The report is forecast evidence, not a completed-exposure credit and not a
-substitute for the persisted recommendation audit.
+`no_exact_candidate`, `hard_safety_or_recovery`, `daily_ledger_capacity`,
+`rolling_load_budget`, `projected_fatigue`, `fixed_seed`, or `no_conflict_free_date`.
+`unresolved_search_budget` is never encoded as one of these reasons. The report is forecast
+evidence, not a completed-exposure credit and not a substitute for the persisted
+recommendation audit.
 
 ### D-NO-BEAM — retain the existing greedy production path
 
@@ -168,4 +191,5 @@ planner; it neither imports the beam-search wrapper nor changes its adoption sta
 * [PR #17 semantic-baseline follow-up](../analysis/2026-08-10-pr17-semantic-baseline-follow-up.md)
 * [ADR-0015](./0015-sequence-planning-and-session-role-model.md) — prototype retained, adoption deferred
 * [ADR-0016](./0016-adaptation-credit-and-weekly-coverage.md) — exact role coverage and safety authority
+* [ADR-0043](./0043-rolling-catalog-load-budget.md) — hard rolling catalog-load envelope
 * `app/src/engine/planner.ts`, `optimizer.ts`, `coverage.ts`, `sequenceSearch.ts`
