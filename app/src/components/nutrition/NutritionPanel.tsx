@@ -330,7 +330,7 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
                                         return <span className="nutrition-badge adherence-mostly_tracked">Mostly Tracked</span>;
                                     }
                                     if (adherence === 'minimal') {
-                                        return <span className="nutrition-badge adherence-minimal">Minimally Tracked (&lt;50%)</span>;
+                                        return <span className="nutrition-badge adherence-minimal">Minimally Tracked</span>;
                                     }
                                     if (adherence === 'untracked') {
                                         return <span className="nutrition-badge adherence-untracked">Untracked</span>;
@@ -339,7 +339,7 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
                                         <span
                                             className={`nutrition-badge ${currentDay.isPartialDay ? 'partial' : 'complete'}`}
                                         >
-                                            {currentDay.isPartialDay ? 'Partial Day / In Progress' : 'Logged'}
+                                            {currentDay.isPartialDay ? 'Partial Day / In Progress' : 'Logged (adherence unrated)'}
                                         </span>
                                     ) : null;
                                 })()}
@@ -585,7 +585,7 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
                                                             </span>
                                                         ) : (
                                                             <span style={{ color: '#22c55e', fontSize: '0.8rem' }}>
-                                                                Complete
+                                                                Logged (unrated)
                                                             </span>
                                                         )
                                                     ) : (
