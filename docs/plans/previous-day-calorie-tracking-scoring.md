@@ -82,3 +82,6 @@
 - [x] Routed DailyCheckin D-1 context through canonical `reconcileDailyNutrition` instead of selecting the first provider record.
 - [x] Added a stateful nutrition read so failed/unavailable telemetry is not rendered as genuinely missing intake.
 - [x] Removed provider-specific "Garmin" labeling from the adherence context; the feature remains provider-neutral per ADR-0042.
+- [x] Hardened the raw nutrition Firestore boundary to accept only the supported v1 schema, require non-empty provider/transport provenance, reject conflicting compatibility aliases, and validate persisted metadata before mapping.
+- [x] Made realtime nutrition reads fail visibly on malformed persisted rows instead of silently dropping them into an apparently missing/partial history.
+- [x] Clarified that D-1 is a completed calendar interval, not a guarantee that upstream provider telemetry is already immutable or finalized.

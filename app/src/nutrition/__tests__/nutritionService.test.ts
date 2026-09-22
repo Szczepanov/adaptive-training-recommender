@@ -173,11 +173,18 @@ describe('NutritionService and Document Mapper', () => {
             }
         });
 
-        it('returns INVALID when schemaVersion is invalid', () => {
-            const parsedBadVersion = parseNutritionDayDoc({ ...validDoc, schemaVersion: 0 }, 'users/u1/nutrition_days/doc-1');
-            expect(parsedBadVersion.status).toBe('INVALID');
-            if (parsedBadVersion.status === 'INVALID') {
-                expect(parsedBadVersion.issues).toContainEqual(expect.objectContaining({ code: 'unsupported-schema-version', field: 'schemaVersion' }));
+        it('returns INVALID when schemaVersion is unsupported', () => {
+            for (const schemaVersion of [0, 2, '1']) {
+                const parsed = parseNutritionDayDoc(
+                    { ...validDoc, schemaVersion },
+                    'users/u1/nutrition_days/doc-1',
+                );
+                expect(parsed.status).toBe('INVALID');
+                if (parsed.status === 'INVALID') {
+                    expect(parsed.issues).toContainEqual(
+                        expect.objectContaining({ code: 'unsupported-schema-version', field: 'schemaVersion' }),
+                    );
+                }
             }
         });
 
@@ -187,6 +194,75 @@ describe('NutritionService and Document Mapper', () => {
             if (parsedBadMacro.status === 'INVALID') {
                 expect(parsedBadMacro.issues).toContainEqual(expect.objectContaining({ code: 'invalid-numeric-field', field: 'proteinG' }));
             }
+        });
+
+        it('requires non-empty provider and transport provenance and rejects contradictions', () => {
+            const missing = parseNutritionDayDoc(
+                { ...validDoc, provider: undefined, transport: undefined },
+                'users/u1/nutrition_days/doc-1',
+            );
+            expect(missing.status).toBe('INVALID');
+            if (missing.status === 'INVALID') {
+                expect(missing.issues).toEqual(
+                    expect.arrayContaining([
+                        expect.objectContaining({ code: 'missing-provenance', field: 'provider' }),
+                        expect.objectContaining({ code: 'missing-provenance', field: 'transport' }),
+                    ]),
+                );
+            }
+
+            const conflicting = parseNutritionDayDoc(
+                {
+                    ...validDoc,
+                    source: { provider: 'health_connect', transport: 'health_connect', origin: null },
+                },
+                'users/u1/nutrition_days/doc-1',
+            );
+            expect(conflicting.status).toBe('INVALID');
+            if (conflicting.status === 'INVALID') {
+                expect(conflicting.issues).toEqual(
+                    expect.arrayContaining([
+                        expect.objectContaining({ code: 'conflicting-provenance', field: 'provider' }),
+                        expect.objectContaining({ code: 'conflicting-provenance', field: 'transport' }),
+                    ]),
+                );
+            }
+        });
+
+        it('rejects conflicting date aliases and malformed persisted metadata', () => {
+            const parsed = parseNutritionDayDoc(
+                {
+                    ...validDoc,
+                    date: '2026-09-19',
+                    origin: 123,
+                    ingestedAt: 456,
+                    revision: 0,
+                    goalEnergyIntakeKcal: -1,
+                    sugarG: 'unknown',
+                },
+                'users/u1/nutrition_days/doc-1',
+            );
+            expect(parsed.status).toBe('INVALID');
+            if (parsed.status === 'INVALID') {
+                expect(parsed.issues).toEqual(
+                    expect.arrayContaining([
+                        expect.objectContaining({ code: 'conflicting-date-fields', field: 'date' }),
+                        expect.objectContaining({ code: 'invalid-type', field: 'origin' }),
+                        expect.objectContaining({ code: 'invalid-type', field: 'ingestedAt' }),
+                        expect.objectContaining({ code: 'invalid-numeric-field', field: 'revision' }),
+                        expect.objectContaining({ code: 'invalid-numeric-field', field: 'goalEnergyIntakeKcal' }),
+                        expect.objectContaining({ code: 'invalid-numeric-field', field: 'sugarG' }),
+                    ]),
+                );
+            }
+        });
+
+        it('rejects invalid request ranges before querying Firestore', async () => {
+            const invalidDate = await nutritionService.getNutritionDaysState('u1', 'not-a-date', '2026-09-20');
+            expect(invalidDate.status).toBe('INVALID');
+
+            const reversed = await nutritionService.getNutritionDaysState('u1', '2026-09-21', '2026-09-20');
+            expect(reversed.status).toBe('INVALID');
         });
     });
 });

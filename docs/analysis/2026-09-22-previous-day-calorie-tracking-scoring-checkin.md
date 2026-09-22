@@ -86,7 +86,7 @@ The scale is intentionally **behaviorally anchored**, not numerically calibrated
   - `physicalWork` records manual labor completed yesterday (`D - 1`).
   - `tissueResponses.nextMorningReaction` records morning reaction following yesterday's training (`D - 1`).
 - Calorie counting for yesterday (`D - 1`) fits this exact temporal model.
-- When an athlete checks in on date `D`, `D - 1` is completed, finalized, and closed out.
+- When an athlete checks in on date `D`, the `D - 1` calendar interval is complete. Provider telemetry may still arrive late or be corrected later, so the adherence answer describes the athlete's logging behavior and must not be treated as provider finalization.
 
 ---
 
