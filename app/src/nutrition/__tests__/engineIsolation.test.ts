@@ -24,6 +24,24 @@ function listProductionEngineFiles(dir: string = ENGINE_DIR): string[] {
 }
 
 describe('engine isolation from nutrition (ADR-0042)', () => {
+    it('keeps nutritionAdherenceYesterday out of engine decision logic', () => {
+        const allowedBoundaryFiles = new Set([
+            'engine/models.ts',
+            'engine/validationCore.ts',
+        ]);
+        const violations: string[] = [];
+
+        for (const filePath of listProductionEngineFiles()) {
+            const content = readFileSync(filePath, 'utf8');
+            const relativePath = relative(SRC_DIR, filePath).replaceAll('\\', '/');
+            if (content.includes('nutritionAdherenceYesterday') && !allowedBoundaryFiles.has(relativePath)) {
+                violations.push(relativePath);
+            }
+        }
+
+        expect(violations).toEqual([]);
+    });
+
     it('proves that engine source files have zero imports of nutrition', () => {
         const engineFiles = listProductionEngineFiles();
         expect(engineFiles.length).toBeGreaterThan(10);
