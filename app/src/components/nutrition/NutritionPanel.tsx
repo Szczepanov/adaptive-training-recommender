@@ -18,6 +18,7 @@ export interface NutritionPanelProps {
 }
 
 type WindowSize = 7 | 14 | 28;
+type AdherenceReadStatus = 'loading' | 'available' | 'missing' | 'unavailable';
 
 export const NutritionPanel: React.FC<NutritionPanelProps> = ({
     userId,
@@ -30,6 +31,9 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
     const [rawRecords, setRawRecords] = useState<NutritionDay[]>(initialRecords ?? []);
     const [snapshots, setSnapshots] = useState<DailyRecoverySnapshot[]>(initialSnapshots ?? []);
     const [checkins, setCheckins] = useState<DailySubjectiveCheckin[]>(initialCheckins ?? []);
+    const [adherenceReadStatus, setAdherenceReadStatus] = useState<AdherenceReadStatus>(
+        initialCheckins !== undefined ? 'available' : 'loading',
+    );
     const [loading, setLoading] = useState(initialRecords === undefined && initialSnapshots === undefined);
     const [error, setError] = useState<string | null>(null);
 
@@ -42,6 +46,7 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
     useEffect(() => {
         if (initialCheckins !== undefined) {
             setCheckins(initialCheckins);
+            setAdherenceReadStatus('available');
         }
     }, [initialCheckins]);
 
@@ -84,13 +89,18 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
 
             if (state.status === 'AVAILABLE') {
                 setCheckins(state.data);
+                setAdherenceReadStatus('available');
                 return;
             }
 
             setCheckins([]);
-            if (state.status === 'INVALID' || state.status === 'UNAVAILABLE') {
-                console.warn(`[NutritionPanel] Check-in adherence history unavailable: ${state.status}`);
+            if (state.status === 'MISSING') {
+                setAdherenceReadStatus('missing');
+                return;
             }
+
+            setAdherenceReadStatus('unavailable');
+            console.warn(`[NutritionPanel] Check-in adherence history unavailable: ${state.status}`);
         };
 
         if (!hasInitialCheckins) {
@@ -335,6 +345,12 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
                                     if (adherence === 'untracked') {
                                         return <span className="nutrition-badge adherence-untracked">Untracked</span>;
                                     }
+                                    if (adherenceReadStatus === 'loading') {
+                                        return <span className="nutrition-badge adherence-read-state">Adherence loading…</span>;
+                                    }
+                                    if (adherenceReadStatus === 'unavailable') {
+                                        return <span className="nutrition-badge adherence-read-state">Adherence unavailable</span>;
+                                    }
                                     return currentDay.hasIntakeData ? (
                                         <span
                                             className={`nutrition-badge ${currentDay.isPartialDay ? 'partial' : 'complete'}`}
@@ -575,6 +591,20 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
                                                         return (
                                                             <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
                                                                 Untracked
+                                                            </span>
+                                                        );
+                                                    }
+                                                    if (adherenceReadStatus === 'loading') {
+                                                        return (
+                                                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                                                Adherence loading…
+                                                            </span>
+                                                        );
+                                                    }
+                                                    if (adherenceReadStatus === 'unavailable') {
+                                                        return (
+                                                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                                                Adherence unavailable
                                                             </span>
                                                         );
                                                     }
