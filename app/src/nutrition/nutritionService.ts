@@ -6,6 +6,8 @@
 import { collection, getDocs, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { NutritionDay } from './models';
+import type { DataState } from '../engine/dataState';
+import { isPermissionDeniedError } from '../utils/errors';
 
 /**
  * Maps a raw Firestore nutrition document to the client domain NutritionDay model.
@@ -77,12 +79,13 @@ export function mapNutritionDocToNutritionDay(doc: Record<string, unknown>): Nut
 }
 
 export class NutritionService {
-    async getNutritionDays(
+    async getNutritionDaysState(
         userId: string,
         startDateInclusive: string,
         endDateInclusive: string,
-    ): Promise<NutritionDay[]> {
-        if (!userId) return [];
+    ): Promise<DataState<NutritionDay[]>> {
+        if (!userId) return { status: 'MISSING' };
+
         try {
             const collRef = collection(getDb(), 'users', userId, 'nutrition_days');
             const q = query(
@@ -92,21 +95,39 @@ export class NutritionService {
                 orderBy('logicalDate', 'asc'),
             );
             const snapshot = await getDocs(q);
+            if (snapshot.empty) return { status: 'MISSING' };
+
             const days: NutritionDay[] = [];
             for (const docSnap of snapshot.docs) {
                 const data = docSnap.data();
-                if (data) {
-                    const mapped = mapNutritionDocToNutritionDay(data);
-                    if (mapped.date) {
-                        days.push(mapped);
-                    }
+                if (!data) continue;
+                const mapped = mapNutritionDocToNutritionDay(data);
+                if (mapped.date) {
+                    days.push(mapped);
                 }
             }
-            return days;
-        } catch (err) {
-            console.error('[NutritionService] Failed to get nutrition days:', err);
-            return [];
+
+            if (days.length === 0) return { status: 'MISSING' };
+            return { status: 'AVAILABLE', data: days, revision: null };
+        } catch (error: unknown) {
+            return {
+                status: 'UNAVAILABLE',
+                operation: 'read nutrition days',
+                retryable: !isPermissionDeniedError(error),
+            };
         }
+    }
+
+    /** Compatibility wrapper for display callers that intentionally collapse non-available
+     * states to an empty list. New code that must distinguish missing from failed reads
+     * should use getNutritionDaysState. */
+    async getNutritionDays(
+        userId: string,
+        startDateInclusive: string,
+        endDateInclusive: string,
+    ): Promise<NutritionDay[]> {
+        const state = await this.getNutritionDaysState(userId, startDateInclusive, endDateInclusive);
+        return state.status === 'AVAILABLE' ? state.data : [];
     }
 
     subscribeToNutritionDays(
