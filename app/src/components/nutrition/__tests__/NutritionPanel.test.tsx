@@ -4,7 +4,7 @@ import { NutritionPanel } from '../NutritionPanel';
 import { nutritionService } from '../../../nutrition/nutritionService';
 import { recoverySnapshotService } from '../../../services/recoverySnapshotService';
 import type { NutritionDay } from '../../../nutrition/models';
-import type { DailyRecoverySnapshot } from '../../../engine/models';
+import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../../../engine/models';
 
 describe('NutritionPanel Component', () => {
     beforeEach(() => {
@@ -138,5 +138,87 @@ describe('NutritionPanel Component', () => {
         // System invariant notice
         expect(html).toContain('ADR-0042');
         expect(html).toContain('strictly invariant to nutrition inputs');
+    });
+
+    it('renders subjective adherence badge when checkin rated yesterday tracking', () => {
+        const sampleDay: NutritionDay = {
+            schemaVersion: 1,
+            date: '2026-09-20',
+            source: {
+                provider: 'garmin',
+                transport: 'garmin_connect',
+                origin: null,
+            },
+            syncedAt: '2026-09-20T10:00:00Z',
+            energyIntakeKcal: 0,
+            hasIntakeData: true,
+            isPartialDay: false,
+            confidenceScore: 1.0,
+        };
+
+        const sampleCheckin = {
+            userId: 'test-user',
+            date: '2026-09-21', // Checkin on Sep 21 rates Sep 20 (D-1)
+            nutritionAdherenceYesterday: 'fasted' as const,
+        } as unknown as DailySubjectiveCheckin;
+
+        const html = renderToStaticMarkup(
+            <NutritionPanel
+                userId="test-user"
+                asOfDate="2026-09-20"
+                initialRecords={[sampleDay]}
+                initialSnapshots={[]}
+                initialCheckins={[sampleCheckin]}
+            />,
+        );
+
+        // Should render Deliberate Fast badge instead of regular Logged/Complete badge
+        expect(html).toContain('Deliberate Fast (0 kcal)');
+        expect(html).toContain('adherence-fasted');
+    });
+
+    it('renders correct labels and classes for all tracking adherence levels', () => {
+        const sampleDay: NutritionDay = {
+            schemaVersion: 1,
+            date: '2026-09-20',
+            source: {
+                provider: 'garmin',
+                transport: 'garmin_connect',
+                origin: null,
+            },
+            syncedAt: '2026-09-20T10:00:00Z',
+            energyIntakeKcal: 2200,
+            hasIntakeData: true,
+            isPartialDay: false,
+            confidenceScore: 1.0,
+        };
+
+        const testCases = [
+            { adherence: 'fully_tracked' as const, expectedLabel: 'Fully Tracked', expectedClass: 'adherence-fully_tracked' },
+            { adherence: 'mostly_tracked' as const, expectedLabel: 'Mostly Tracked (~75%)', expectedClass: 'adherence-mostly_tracked' },
+            { adherence: 'minimal' as const, expectedLabel: 'Minimally Tracked', expectedClass: 'adherence-minimal' },
+            { adherence: 'untracked' as const, expectedLabel: 'Untracked', expectedClass: 'adherence-untracked' },
+        ];
+
+        for (const { adherence, expectedLabel, expectedClass } of testCases) {
+            const checkin = {
+                userId: 'test-user',
+                date: '2026-09-21',
+                nutritionAdherenceYesterday: adherence,
+            } as unknown as DailySubjectiveCheckin;
+
+            const html = renderToStaticMarkup(
+                <NutritionPanel
+                    userId="test-user"
+                    asOfDate="2026-09-20"
+                    initialRecords={[sampleDay]}
+                    initialSnapshots={[]}
+                    initialCheckins={[checkin]}
+                />,
+            );
+
+            expect(html).toContain(expectedLabel);
+            expect(html).toContain(expectedClass);
+        }
     });
 });

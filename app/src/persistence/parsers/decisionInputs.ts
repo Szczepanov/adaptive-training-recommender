@@ -6,8 +6,9 @@ import type {
     PhysicalWorkDuration,
     PhysicalWorkIntensity,
     PhysicalWorkLoadArea,
+    NutritionTrackingAdherence,
 } from '../../engine/models';
-import { SHADOW_VERDICTS } from '../../engine/models';
+import { NUTRITION_TRACKING_ADHERENCE_LEVELS, SHADOW_VERDICTS } from '../../engine/models';
 import { isValidDate } from '../../engine/validation';
 import { resolveLegacyIllnessSymptoms, validateHealthContext } from '../../engine/healthContextValidation';
 import {
@@ -180,6 +181,14 @@ export function parseSubjectiveCheckin(raw: unknown, documentPath: string, userI
         return issue(documentPath, 'invalid-hunger', 'hunger1To10');
     }
 
+    let nutritionAdherenceYesterday: DailySubjectiveCheckin['nutritionAdherenceYesterday'] = undefined;
+    if (raw.nutritionAdherenceYesterday !== undefined) {
+        if (raw.nutritionAdherenceYesterday !== null && (typeof raw.nutritionAdherenceYesterday !== 'string' || !NUTRITION_TRACKING_ADHERENCE_LEVELS.includes(raw.nutritionAdherenceYesterday as NutritionTrackingAdherence))) {
+            return issue(documentPath, 'invalid-nutrition-adherence', 'nutritionAdherenceYesterday');
+        }
+        nutritionAdherenceYesterday = raw.nutritionAdherenceYesterday as NutritionTrackingAdherence | null;
+    }
+
     const normalized: DailySubjectiveCheckin = {
         ...(raw as unknown as DailySubjectiveCheckin),
         illnessSymptoms: resolveLegacyIllnessSymptoms(raw.illnessSymptoms, healthContext),
@@ -187,6 +196,7 @@ export function parseSubjectiveCheckin(raw: unknown, documentPath: string, userI
         ...(physicalWork ? { physicalWork } : {}),
         ...(hunger1To10 !== undefined ? { hunger1To10 } : {}),
         ...(hungerTiming !== undefined ? { hungerTiming } : {}),
+        ...(nutritionAdherenceYesterday !== undefined ? { nutritionAdherenceYesterday } : {}),
     };
     if (!physicalWork) {
         delete (normalized as { physicalWork?: unknown }).physicalWork;
@@ -196,6 +206,9 @@ export function parseSubjectiveCheckin(raw: unknown, documentPath: string, userI
     }
     if (hungerTiming === undefined) {
         delete (normalized as { hungerTiming?: unknown }).hungerTiming;
+    }
+    if (nutritionAdherenceYesterday === undefined) {
+        delete (normalized as { nutritionAdherenceYesterday?: unknown }).nutritionAdherenceYesterday;
     }
     return {
         status: 'AVAILABLE',

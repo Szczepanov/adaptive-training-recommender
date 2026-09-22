@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { NutritionDay, ReconciledNutritionDay } from '../../nutrition/models';
-import type { DailyRecoverySnapshot } from '../../engine/models';
+import type { DailyRecoverySnapshot, DailySubjectiveCheckin, NutritionTrackingAdherence } from '../../engine/models';
 import { reconcileNutritionHistory } from '../../nutrition/reconciliation';
 import { nutritionService } from '../../nutrition/nutritionService';
 import { recoverySnapshotService } from '../../services/recoverySnapshotService';
+import { checkinService } from '../../services/checkinService';
 import { addDaysToLocalDateString, getLocalDateString } from '../../utils/localDate';
 import './NutritionPanel.css';
 
@@ -12,6 +13,7 @@ export interface NutritionPanelProps {
     asOfDate?: string;
     initialRecords?: NutritionDay[];
     initialSnapshots?: DailyRecoverySnapshot[];
+    initialCheckins?: DailySubjectiveCheckin[];
 }
 
 type WindowSize = 7 | 14 | 28;
@@ -21,16 +23,26 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
     asOfDate = getLocalDateString(),
     initialRecords,
     initialSnapshots,
+    initialCheckins,
 }) => {
     const [windowSize, setWindowSize] = useState<WindowSize>(7);
     const [rawRecords, setRawRecords] = useState<NutritionDay[]>(initialRecords ?? []);
     const [snapshots, setSnapshots] = useState<DailyRecoverySnapshot[]>(initialSnapshots ?? []);
+    const [checkins, setCheckins] = useState<DailySubjectiveCheckin[]>(initialCheckins ?? []);
     const [loading, setLoading] = useState(initialRecords === undefined && initialSnapshots === undefined);
     const [error, setError] = useState<string | null>(null);
 
     const startDate = useMemo(() => {
         return addDaysToLocalDateString(asOfDate, -(windowSize - 1));
     }, [asOfDate, windowSize]);
+
+    const hasInitialCheckins = initialCheckins !== undefined;
+
+    useEffect(() => {
+        if (initialCheckins !== undefined) {
+            setCheckins(initialCheckins);
+        }
+    }, [initialCheckins]);
 
     useEffect(() => {
         setLoading(true);
@@ -58,7 +70,23 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
 
         loadSnapshots();
 
-        // 2. Subscribe to user-scoped nutrition documents
+        // 2. Fetch recent check-ins to map subjective calorie tracking adherence if not injected
+        const loadCheckins = async () => {
+            try {
+                const recent = await checkinService.getRecentCheckins(userId, 35);
+                if (isMounted) {
+                    setCheckins(recent);
+                }
+            } catch (err) {
+                console.warn('[NutritionPanel] Failed to load check-ins for adherence:', err);
+            }
+        };
+
+        if (!hasInitialCheckins) {
+            loadCheckins();
+        }
+
+        // 3. Subscribe to user-scoped nutrition documents
         const unsubscribe = nutritionService.subscribeToNutritionDays(
             userId,
             startDate,
@@ -81,7 +109,7 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
             isMounted = false;
             unsubscribe();
         };
-    }, [userId, startDate, asOfDate]);
+    }, [userId, startDate, asOfDate, hasInitialCheckins]);
 
     // Merge food intake records with wearable expenditure snapshots
     const reconciledDays = useMemo(() => {
@@ -150,7 +178,7 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
         }
 
         return reconcileNutritionHistory(augmentedRecords);
-    }, [rawRecords, snapshots, asOfDate]);
+    }, [rawRecords, snapshots]);
 
     // Current or latest day to display in hero card
     const currentDay: ReconciledNutritionDay | null = useMemo(() => {
@@ -184,6 +212,16 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
             return transport === 'garmin_connect' ? 'Garmin Connect (MyFitnessPal sync)' : 'MyFitnessPal';
         }
         return `${origin} via ${transport}`;
+    };
+
+    const getAdherenceForDate = (date: string): NutritionTrackingAdherence | null => {
+        // The check-in submitted on date + 1 rates date (D-1)
+        const nextDate = addDaysToLocalDateString(date, 1);
+        const nextDayCheckin = checkins.find((c) => c.date === nextDate);
+        if (nextDayCheckin?.nutritionAdherenceYesterday) {
+            return nextDayCheckin.nutritionAdherenceYesterday;
+        }
+        return null;
     };
 
     if (loading && rawRecords.length === 0 && snapshots.length === 0) {
@@ -220,10 +258,10 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
                 <div>
                     <h3 className="nutrition-panel-title">Nutrition & Energy Observations</h3>
                     <p className="nutrition-panel-subtitle">
-                        Observational dietary intake from food logs & wearable energy expenditure.
+                        Retrospective energy intake and wearable expenditure context (ADR-0042)
                     </p>
                 </div>
-                <div className="nutrition-window-selector">
+                <div className="nutrition-window-selector" role="group" aria-label="Time window selection">
                     <button
                         type="button"
                         className={`nutrition-window-btn ${windowSize === 7 ? 'active' : ''}`}
@@ -259,13 +297,31 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
                                     : currentDay.date}
                             </div>
                             <div className="nutrition-badge-container">
-                                {currentDay.hasIntakeData && (
-                                    <span
-                                        className={`nutrition-badge ${currentDay.isPartialDay ? 'partial' : 'complete'}`}
-                                    >
-                                        {currentDay.isPartialDay ? 'Partial Day / In Progress' : 'Logged'}
-                                    </span>
-                                )}
+                                {(() => {
+                                    const adherence = getAdherenceForDate(currentDay.date);
+                                    if (adherence === 'fasted') {
+                                        return <span className="nutrition-badge adherence-fasted">Deliberate Fast (0 kcal)</span>;
+                                    }
+                                    if (adherence === 'fully_tracked') {
+                                        return <span className="nutrition-badge adherence-fully_tracked">Fully Tracked</span>;
+                                    }
+                                    if (adherence === 'mostly_tracked') {
+                                        return <span className="nutrition-badge adherence-mostly_tracked">Mostly Tracked (~75%)</span>;
+                                    }
+                                    if (adherence === 'minimal') {
+                                        return <span className="nutrition-badge adherence-minimal">Minimally Tracked (&lt;50%)</span>;
+                                    }
+                                    if (adherence === 'untracked') {
+                                        return <span className="nutrition-badge adherence-untracked">Untracked</span>;
+                                    }
+                                    return currentDay.hasIntakeData ? (
+                                        <span
+                                            className={`nutrition-badge ${currentDay.isPartialDay ? 'partial' : 'complete'}`}
+                                        >
+                                            {currentDay.isPartialDay ? 'Partial Day / In Progress' : 'Logged'}
+                                        </span>
+                                    ) : null;
+                                })()}
                                 <span className="nutrition-badge provenance">
                                     {formatSource(currentDay)}
                                 </span>
@@ -458,21 +514,59 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
                                                 )}
                                             </td>
                                             <td>
-                                                {day.hasIntakeData ? (
-                                                    day.isPartialDay ? (
-                                                        <span style={{ color: '#eab308', fontSize: '0.8rem' }}>
-                                                            Partial
-                                                        </span>
+                                                {(() => {
+                                                    const adherence = getAdherenceForDate(day.date);
+                                                    if (adherence === 'fasted') {
+                                                        return (
+                                                            <span style={{ color: '#a855f7', fontSize: '0.8rem', fontWeight: 600 }}>
+                                                                Fasted (0 kcal)
+                                                            </span>
+                                                        );
+                                                    }
+                                                    if (adherence === 'fully_tracked') {
+                                                        return (
+                                                            <span style={{ color: '#22c55e', fontSize: '0.8rem' }}>
+                                                                Fully Tracked
+                                                            </span>
+                                                        );
+                                                    }
+                                                    if (adherence === 'mostly_tracked') {
+                                                        return (
+                                                            <span style={{ color: '#06b6d4', fontSize: '0.8rem' }}>
+                                                                Mostly Tracked
+                                                            </span>
+                                                        );
+                                                    }
+                                                    if (adherence === 'minimal') {
+                                                        return (
+                                                            <span style={{ color: '#f59e0b', fontSize: '0.8rem' }}>
+                                                                Minimally Tracked
+                                                            </span>
+                                                        );
+                                                    }
+                                                    if (adherence === 'untracked') {
+                                                        return (
+                                                            <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+                                                                Untracked
+                                                            </span>
+                                                        );
+                                                    }
+                                                    return day.hasIntakeData ? (
+                                                        day.isPartialDay ? (
+                                                            <span style={{ color: '#eab308', fontSize: '0.8rem' }}>
+                                                                Partial
+                                                            </span>
+                                                        ) : (
+                                                            <span style={{ color: '#22c55e', fontSize: '0.8rem' }}>
+                                                                Complete
+                                                            </span>
+                                                        )
                                                     ) : (
-                                                        <span style={{ color: '#22c55e', fontSize: '0.8rem' }}>
-                                                            Complete
+                                                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                                            No Intake
                                                         </span>
-                                                    )
-                                                ) : (
-                                                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                                                        No Intake
-                                                    </span>
-                                                )}
+                                                    );
+                                                })()}
                                             </td>
                                             <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                                                 {formatSource(day)}

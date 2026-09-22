@@ -130,4 +130,42 @@ describe('decision-input parsers', () => {
             expect('physicalWork' in parsed.data).toBe(false);
         }
     });
+
+    it('parses valid nutritionAdherenceYesterday and rejects invalid values', () => {
+        const validValues = ['fully_tracked', 'mostly_tracked', 'minimal', 'untracked', 'fasted'] as const;
+        for (const val of validValues) {
+            const parsed = parseSubjectiveCheckin(
+                { ...checkin, nutritionAdherenceYesterday: val },
+                'path',
+                'u1',
+                '2026-08-07',
+            );
+            expect(parsed.status).toBe('AVAILABLE');
+            if (parsed.status === 'AVAILABLE') {
+                expect(parsed.data.nutritionAdherenceYesterday).toBe(val);
+            }
+        }
+
+        const withNull = parseSubjectiveCheckin(
+            { ...checkin, nutritionAdherenceYesterday: null },
+            'path',
+            'u1',
+            '2026-08-07',
+        );
+        expect(withNull.status).toBe('AVAILABLE');
+        if (withNull.status === 'AVAILABLE') {
+            expect(withNull.data.nutritionAdherenceYesterday).toBeNull();
+        }
+
+        const invalid = parseSubjectiveCheckin(
+            { ...checkin, nutritionAdherenceYesterday: 'somewhat_tracked' },
+            'path',
+            'u1',
+            '2026-08-07',
+        );
+        expect(invalid).toMatchObject({
+            status: 'INVALID',
+            issues: [{ code: 'invalid-nutrition-adherence', field: 'nutritionAdherenceYesterday' }],
+        });
+    });
 });

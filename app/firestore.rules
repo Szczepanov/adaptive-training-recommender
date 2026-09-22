@@ -387,14 +387,25 @@ service cloud.firestore {
         && (hasHunger == hasTiming);
     }
 
+    function hasValidNutritionAdherence(data) {
+      return !('nutritionAdherenceYesterday' in data)
+        || data.nutritionAdherenceYesterday == null
+        || data.nutritionAdherenceYesterday in ['fully_tracked', 'mostly_tracked', 'minimal', 'untracked', 'fasted'];
+    }
+
     match /daily_recovery_snapshot/{date} { allow read, write: if false; }
     match /daily_subjective_checkin/{document=**} { allow read, write: if false; }
 
     match /users/{userId}/daily_subjective_checkins/{date} {
       allow read: if isOwner(userId);
-      allow create: if hasOwnedUserId(userId) && isDateDocument(date) && hasValidSubjectiveHealthFields(request.resource.data) && hasValidHunger(request.resource.data);
+      allow create: if hasOwnedUserId(userId) && isDateDocument(date)
+        && hasValidSubjectiveHealthFields(request.resource.data)
+        && hasValidHunger(request.resource.data)
+        && hasValidNutritionAdherence(request.resource.data);
       allow update: if keepsOwnership(userId) && isDateDocument(date) && request.resource.data.createdAt == resource.data.createdAt
-        && hasValidSubjectiveHealthFields(request.resource.data) && hasValidHunger(request.resource.data);
+        && hasValidSubjectiveHealthFields(request.resource.data)
+        && hasValidHunger(request.resource.data)
+        && hasValidNutritionAdherence(request.resource.data);
       allow delete: if isOwner(userId);
     }
 
