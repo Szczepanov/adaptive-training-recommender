@@ -1,6 +1,6 @@
 # Previous-Day Calorie Tracking Scoring — Implementation Plan
 
-**Status:** Implemented in PR #710 (pending merge)
+**Status:** In progress (PR #710; CI/merge pending)
 **Blocked by:** none — builds upon [ADR-0042](../adr/0042-nutrition-ingestion-provenance-and-decision-authority.md)
 **Unlocks:** Self-reported scoring of previous-day calorie logging completeness (fully tracked, mostly tracked, minimally tracked, untracked, fasted), disambiguation of true 0-kcal fasts from forgotten logs, and adherence-aware nutrition data presentation.
 **Source analysis:** [2026-09-22 Calorie Tracking Scoring Analysis](../analysis/2026-09-22-previous-day-calorie-tracking-scoring-checkin.md)
