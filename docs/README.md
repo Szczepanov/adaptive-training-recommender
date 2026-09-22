@@ -207,6 +207,9 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-20 Symptom-compatible substitution investigation**](./analysis/2026-09-20-symptom-compatible-substitution-investigation.md) — Issue #680 root-cause findings for the check-in-only strength persona's shoulder/back flare: confirmed mistagged strength templates, a confirmed cross-day tissue re-check gap, and a strength-specificity finding deferred to ADR-0041/PG.
 * [**2026-09-20 Gran-fondo durability investigation**](./analysis/2026-09-20-gran-fondo-durability-investigation.md) — Issue #675 decision and deterministic evidence for separating sustained gran-fondo durability from criterium surge work under equal capacity and horizon.
 * [**2026-09-19 Conservative and travel overlay investigation**](./analysis/2026-09-19-conservative-travel-overlay-investigation.md) — Fixes a travel-overlay aerobic-candidate catalog gap and the ADR-0018 reservation-search inconsistency under conservative bias; identifies the separate fatigue-tier rebound mechanism that issue #692 now accepts as a planner non-invariant while preserving local Extra Recovery Margin ranking/safety contracts.
+* [**2026-09-19 Health/fat-loss modality and intensity review**](./analysis/2026-09-19-health-fat-loss-persona-modality-intensity.md) — Issue #681 resolution adding bounded product-policy refinement for health/fat-loss modality and intensity.
+* [**2026-09-20 Nutrition and Energy Ingestion Analysis: MyFitnessPal and Garmin Connect**](./analysis/2026-09-20-nutrition-myfitnesspal-garmin-ingestion.md) — Investigates ingestion of dietary nutrition and daily energy expenditure telemetry.
+* [**2026-09-21 Issue #706 review memo**](./analysis/2026-09-21-issue-706-review-memo.md) — Shareable analysis for an independent agent reviewing whether issue #706 describes a defect, design ambiguity, or already-covered behavior.
 
 ---
 
