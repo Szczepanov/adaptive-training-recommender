@@ -78,3 +78,7 @@
 - [x] Added explicit conflict display when a full-day-fast self-report coexists with positive synced intake.
 - [x] Replaced latest-N check-in reads with the validated D+1 date-range read required by retrospective `asOfDate` windows.
 - [x] Added an architecture regression guard that prevents the adherence field from entering recommendation decision code without an explicit architecture change.
+
+- [x] Routed DailyCheckin D-1 context through canonical `reconcileDailyNutrition` instead of selecting the first provider record.
+- [x] Added a stateful nutrition read so failed/unavailable telemetry is not rendered as genuinely missing intake.
+- [x] Removed provider-specific "Garmin" labeling from the adherence context; the feature remains provider-neutral per ADR-0042.
