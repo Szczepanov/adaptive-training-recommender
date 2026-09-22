@@ -57,8 +57,10 @@ export function NutritionAdherenceSection({
     let statusText: string;
     if (hasIntakeData && yesterdayIntakeKcal != null) {
       statusText = `${Math.round(yesterdayIntakeKcal).toLocaleString('en-US')} kcal`;
+    } else if (hasIntakeData) {
+      statusText = 'Intake reported; calories unavailable';
     } else {
-      statusText = 'No intake synced (unlogged)';
+      statusText = 'No intake data synced';
     }
 
     return (
@@ -135,7 +137,7 @@ export function NutritionAdherenceSection({
       </div>
 
       <p className="nutrition-adherence-helper">
-        Helps identify unlogged meals and verify true fasting days. Zero recommendation authority; does not alter your training plan (ADR-0042).
+        Self-reported logging-quality context only. “Full-Day Fast” means no caloric intake for the whole day. Zero recommendation authority; does not alter your training plan (ADR-0042).
       </p>
     </section>
   );
