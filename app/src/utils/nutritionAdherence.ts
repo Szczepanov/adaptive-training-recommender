@@ -1,4 +1,5 @@
 import type { NutritionTrackingAdherence } from '../engine/models';
+import { addDaysToLocalDateString } from './localDate';
 
 export interface NutritionAdherenceOption {
   value: NutritionTrackingAdherence;
@@ -11,32 +12,32 @@ export const NUTRITION_ADHERENCE_OPTIONS: readonly NutritionAdherenceOption[] = 
   {
     value: 'fully_tracked',
     label: 'Fully Tracked',
-    badge: '100%',
-    description: 'Logged all meals, snacks, and drinks accurately',
+    badge: 'All',
+    description: 'Logged all meals, snacks, caloric drinks, and cooking extras you intended to track',
   },
   {
     value: 'mostly_tracked',
     label: 'Mostly Tracked',
-    badge: '~75%',
-    description: 'Logged main meals; missed small snacks, drinks, or dressings',
+    badge: 'Most',
+    description: 'Logged the main meals but missed some small items or had uncertain portions',
   },
   {
     value: 'minimal',
     label: 'Minimally Tracked',
-    badge: '<50%',
-    description: 'Logged only 1–2 items (e.g. breakfast only) and stopped',
+    badge: 'Few',
+    description: 'Logged only a small part of the day before stopping',
   },
   {
     value: 'untracked',
     label: 'Untracked',
-    badge: '0%',
-    description: 'Did not log food yesterday / took a day off',
+    badge: 'None',
+    description: 'Did not meaningfully log food yesterday',
   },
   {
     value: 'fasted',
-    label: 'Fasted (0 kcal)',
-    badge: 'Fast',
-    description: 'Deliberate water or intermittent fast all day; intentional 0 kcal',
+    label: 'Full-Day Fast (0 kcal)',
+    badge: '0 kcal',
+    description: 'Deliberate full-day fast with no caloric intake',
   },
 ];
 
@@ -49,4 +50,19 @@ export function toggleNutritionAdherence(
   selected: NutritionTrackingAdherence,
 ): NutritionTrackingAdherence | null {
   return current === selected ? null : selected;
+}
+
+
+/**
+ * Daily check-in D records adherence for D-1. A nutrition display window [start, end]
+ * therefore needs check-ins [start+1, end+2) so the final displayed day can read D+1.
+ */
+export function getNutritionAdherenceCheckinRange(
+  startDateInclusive: string,
+  endDateInclusive: string,
+): { startDateInclusive: string; endDateExclusive: string } {
+  return {
+    startDateInclusive: addDaysToLocalDateString(startDateInclusive, 1),
+    endDateExclusive: addDaysToLocalDateString(endDateInclusive, 2),
+  };
 }
