@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
 import { signInWithCustomToken } from 'firebase/auth';
 import { getAuthInstance } from '../../firebase';
-import { garminAuthService } from '../../services/garminAuthService';
+import {
+  GarminAuthError,
+  garminAuthService,
+  garminRetrySecondsRemaining,
+  scheduleGarminRetryCountdown,
+  shouldRetainGarminChallenge,
+} from '../../services/garminAuthService';
 import { garminConnectionService } from '../../services/garminConnectionService';
 import { getErrorMessage } from '../../utils/errors';
 import { firestoreDateToDate, type FirestoreDateValue } from '../../utils/firestoreDate';
@@ -30,6 +36,13 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [retryUntil, setRetryUntil] = useState<number | null>(null);
+  const [clockNow, setClockNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (retryUntil === null) return;
+    return scheduleGarminRetryCountdown(retryUntil, setClockNow, () => setRetryUntil(null));
+  }, [retryUntil]);
 
   useEffect(() => {
     setLoadingConnection(true);
@@ -52,6 +65,7 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
   const isConnected = connection?.status === 'active';
   const linkedAtDate = firestoreDateToDate(connection?.linkedAt);
   const linkedAtLabel = linkedAtDate ? getLocalDateString(linkedAtDate) : null;
+  const retrySecondsRemaining = garminRetrySecondsRemaining(retryUntil, clockNow);
 
   const finish = async (customToken: string) => {
     // The backend only issues a token for the same Firebase UID when this form is used
@@ -66,10 +80,12 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
     setChallengeId(null);
     setMfaCode('');
     setShowForm(false);
+    setRetryUntil(null);
   };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (loading || retrySecondsRemaining > 0) return;
     setLoading(true);
     setError(null);
     setSuccess(false);
@@ -94,9 +110,12 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
       }
       await finish(result.customToken);
     } catch (err: unknown) {
-      if (challengeId) {
-        // MFA challenges are single-use on the server. A failed verification must return
-        // to the credential step instead of offering a retry against a consumed challenge.
+      if (err instanceof GarminAuthError && err.status === 429 && err.retryAfterSeconds !== undefined) {
+        const now = Date.now();
+        setClockNow(now);
+        setRetryUntil(now + err.retryAfterSeconds * 1000);
+      }
+      if (challengeId && !shouldRetainGarminChallenge(err)) {
         setChallengeId(null);
         setMfaCode('');
       }
@@ -175,8 +194,11 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
             </>
           )}
           {error && <p className="error-message">{error}</p>}
+          {retrySecondsRemaining > 0 && (
+            <p role="status" className="preference-desc">Retry in {retrySecondsRemaining}s.</p>
+          )}
           {success && <p className="preference-success-note">Garmin wearable is connected to this app account.</p>}
-          <button type="submit" className="login-btn" disabled={loading}>
+          <button type="submit" className="login-btn" disabled={loading || retrySecondsRemaining > 0}>
             {loading ? 'Connecting...' : challengeId ? 'Verify Garmin wearable' : 'Connect Garmin wearable'}
           </button>
           {challengeId && (

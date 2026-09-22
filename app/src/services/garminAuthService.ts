@@ -13,6 +13,9 @@ interface GarminErrorOptions {
   code: string;
   status?: number;
   retryable?: boolean;
+  retryAfterSeconds?: number;
+  challengeReusable?: boolean;
+  authStage?: 'pre_authentication' | 'post_authentication';
   requestId?: string;
 }
 
@@ -20,6 +23,9 @@ export class GarminAuthError extends Error {
   readonly code: string;
   readonly status?: number;
   readonly retryable?: boolean;
+  readonly retryAfterSeconds?: number;
+  readonly challengeReusable?: boolean;
+  readonly authStage?: 'pre_authentication' | 'post_authentication';
   readonly requestId?: string;
 
   constructor(message: string, options: GarminErrorOptions) {
@@ -28,8 +34,41 @@ export class GarminAuthError extends Error {
     this.code = options.code;
     this.status = options.status;
     this.retryable = options.retryable;
+    this.retryAfterSeconds = options.retryAfterSeconds;
+    this.challengeReusable = options.challengeReusable;
+    this.authStage = options.authStage;
     this.requestId = options.requestId;
   }
+}
+
+export function garminRetrySecondsRemaining(retryUntil: number | null, now: number): number {
+  return retryUntil === null ? 0 : Math.max(0, Math.ceil((retryUntil - now) / 1000));
+}
+
+export function scheduleGarminRetryCountdown(
+  retryUntil: number,
+  onTick: (now: number) => void,
+  onComplete: () => void,
+): () => void {
+  if (Date.now() >= retryUntil) {
+    onComplete();
+    return () => undefined;
+  }
+  const timer = globalThis.setInterval(() => {
+    const now = Date.now();
+    onTick(now);
+    if (now >= retryUntil) {
+      globalThis.clearInterval(timer);
+      onComplete();
+    }
+  }, 1000);
+  return () => globalThis.clearInterval(timer);
+}
+
+export function shouldRetainGarminChallenge(error: unknown): boolean {
+  return error instanceof GarminAuthError
+    && error.challengeReusable === true
+    && error.authStage === 'pre_authentication';
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -41,6 +80,18 @@ function responseRequestId(response: Response, payload: Record<string, unknown>)
     return payload.requestId;
   }
   return response.headers.get('X-Request-ID') ?? undefined;
+}
+
+function responseRetryAfterSeconds(response: Response, payload: Record<string, unknown>): number | undefined {
+  if (Number.isSafeInteger(payload.retryAfterSeconds) && (payload.retryAfterSeconds as number) >= 0) {
+    return payload.retryAfterSeconds as number;
+  }
+  const header = response.headers.get('Retry-After');
+  if (header !== null && /^\d+$/.test(header.trim())) {
+    const seconds = Number(header.trim());
+    if (Number.isSafeInteger(seconds)) return seconds;
+  }
+  return undefined;
 }
 
 async function request(path: string, init: RequestInit): Promise<Response> {
@@ -73,6 +124,11 @@ function responseError(
     code,
     status: response.status,
     retryable,
+    retryAfterSeconds: responseRetryAfterSeconds(response, payload),
+    challengeReusable: typeof payload.challengeReusable === 'boolean'
+      ? payload.challengeReusable : undefined,
+    authStage: payload.authStage === 'pre_authentication' || payload.authStage === 'post_authentication'
+      ? payload.authStage : undefined,
     requestId: responseRequestId(response, payload),
   });
 }

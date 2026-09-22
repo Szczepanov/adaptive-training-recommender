@@ -115,8 +115,13 @@ def test_mfa_resume_failure_preserves_challenge_for_retry(
     first = service.start_login("person@example.com", "secret")
     challenge_id = str(first["challengeId"])
 
-    with pytest.raises(account_link_module.GarminConnectAuthenticationError, match="invalid code"):
+    with pytest.raises(
+        account_link_module.GarminConnectAuthenticationError, match="invalid code"
+    ) as exc:
         service.complete_mfa(challenge_id, "000000")
+
+    assert exc.value.challenge_reusable is True
+    assert exc.value.auth_stage == "pre_authentication"
 
     assert api is not None
     assert api.password is None
@@ -244,8 +249,9 @@ def test_mfa_challenge_is_consumed_after_bounded_failed_attempts() -> None:
     for _ in range(account_link_module._MAX_MFA_ATTEMPTS):
         with pytest.raises(
             account_link_module.GarminConnectAuthenticationError, match="invalid code"
-        ):
+        ) as exc:
             service.complete_mfa(challenge_id, "000000")
+    assert exc.value.challenge_reusable is False
 
     with pytest.raises(
         account_link_module.GarminConnectAuthenticationError, match="invalid, expired"
@@ -282,31 +288,50 @@ def test_post_authentication_profile_failure_consumes_mfa_challenge() -> None:
     assert not pending.temp_dir.exists()
 
 
-def test_mfa_rate_limits_do_not_consume_code_attempts() -> None:
+def test_mfa_rate_limit_consumes_challenge_when_advised_wait_exceeds_ttl() -> None:
     class RateLimitedGarmin(FakeGarmin):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(needs_mfa=True, **kwargs)
+            self.resume_calls = 0
+
         def resume_login(self, _client_state: dict[str, Any], _code: str) -> tuple[None, None]:
+            self.resume_calls += 1
             raise account_link_module.GarminConnectTooManyRequestsError("rate limited")
 
     store = PendingLoginStore()
+    api: RateLimitedGarmin | None = None
+
+    def factory(**kwargs: Any) -> RateLimitedGarmin:
+        nonlocal api
+        api = RateLimitedGarmin(**kwargs)
+        return api
+
     service = GarminAccountLinkService(
         "bucket",
         repository=DummyRepository(),  # type: ignore[arg-type]
         pending_store=store,
-        garmin_factory=lambda **kwargs: RateLimitedGarmin(needs_mfa=True, **kwargs),  # type: ignore[arg-type]
+        garmin_factory=factory,  # type: ignore[arg-type]
     )
 
     first = service.start_login("person@example.com", "secret")
     challenge_id = str(first["challengeId"])
     pending = store._items[challenge_id]  # noqa: SLF001 - verify retry state
 
-    for _ in range(account_link_module._MAX_MFA_ATTEMPTS + 1):
-        with pytest.raises(
-            account_link_module.GarminConnectTooManyRequestsError, match="rate limited"
-        ):
-            service.complete_mfa(challenge_id, "123456")
+    with pytest.raises(
+        account_link_module.GarminConnectTooManyRequestsError, match="rate limited"
+    ) as exc:
+        service.complete_mfa(challenge_id, "123456")
+    assert exc.value.challenge_reusable is False
+    assert exc.value.auth_stage == "pre_authentication"
 
     assert pending.failed_mfa_attempts == 0
-    assert pending.temp_dir.exists()
+    assert not pending.temp_dir.exists()
+    with pytest.raises(
+        account_link_module.GarminConnectAuthenticationError, match="invalid, expired"
+    ):
+        service.complete_mfa(challenge_id, "123456")
+    assert api is not None
+    assert api.resume_calls == 1
 
 
 def test_mfa_post_authentication_verification_failure_consumes_challenge() -> None:
