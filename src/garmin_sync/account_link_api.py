@@ -50,9 +50,11 @@ class LoginRateLimiter:
 
     def check(self, key: str) -> tuple[bool, int | None]:
         """Record an allowed attempt or return its retry delay atomically."""
-        now = time.monotonic()
-        cutoff = now - RATE_LIMIT_WINDOW_SECONDS
         with self._lock:
+            # Sample time only after acquiring the lock so pruning, retry delay, and
+            # the recorded attempt all use the same current point in the window.
+            now = time.monotonic()
+            cutoff = now - RATE_LIMIT_WINDOW_SECONDS
             # Prune every expired bucket before looking up the current key. Apart from
             # bounding long-lived memory, this avoids keeping one deque forever for each
             # client address that has ever touched the login endpoint.

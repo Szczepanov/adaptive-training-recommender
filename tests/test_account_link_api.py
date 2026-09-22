@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from http import HTTPStatus
 from types import SimpleNamespace
 from typing import Any
@@ -76,6 +77,45 @@ def test_rate_limiter_returns_delay_from_same_locked_decision(monkeypatch: Any) 
     allowed, retry_after_seconds = limiter.check("client")
     assert allowed is False
     assert retry_after_seconds == account_link_api.RATE_LIMIT_WINDOW_SECONDS
+
+
+def test_rate_limiter_samples_time_after_waiting_for_lock(monkeypatch: Any) -> None:
+    now = [100.0]
+    monkeypatch.setattr(account_link_api.time, "monotonic", lambda: now[0])
+    limiter = LoginRateLimiter()
+    for _ in range(account_link_api.RATE_LIMIT_ATTEMPTS):
+        assert limiter.allow("client") is True
+
+    class ObservedLock:
+        def __init__(self) -> None:
+            self.lock = threading.Lock()
+            self.attempted = threading.Event()
+
+        def __enter__(self) -> ObservedLock:
+            self.attempted.set()
+            self.lock.acquire()
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            self.lock.release()
+
+    observed_lock = ObservedLock()
+    limiter._lock = observed_lock  # noqa: SLF001
+    observed_lock.lock.acquire()
+    result: list[tuple[bool, int | None]] = []
+    worker = threading.Thread(target=lambda: result.append(limiter.check("client")))
+    worker.start()
+
+    try:
+        assert observed_lock.attempted.wait(timeout=1)
+        now[0] += account_link_api.RATE_LIMIT_WINDOW_SECONDS + 1
+    finally:
+        if observed_lock.lock.locked():
+            observed_lock.lock.release()
+        worker.join(timeout=1)
+
+    assert not worker.is_alive()
+    assert result == [(True, None)]
 
 
 def test_error_response_adds_stable_metadata_and_sanitizes_message() -> None:
