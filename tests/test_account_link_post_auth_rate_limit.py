@@ -59,8 +59,11 @@ def test_post_auth_rate_limit_consumes_mfa_challenge_and_cleans_temp_state() -> 
     with pytest.raises(
         account_link_module.GarminConnectTooManyRequestsError,
         match="profile fetch rate limited",
-    ):
+    ) as exc:
         service.complete_mfa(challenge_id, "123456")
+
+    assert exc.value.challenge_reusable is False
+    assert exc.value.auth_stage == "post_authentication"
 
     assert pending.api.password is None
     assert not pending.temp_dir.exists()

@@ -45,6 +45,7 @@ class BaseJSONRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", origin.strip())
             self.send_header("Vary", "Origin")
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Expose-Headers", "Retry-After, X-Request-ID")
             self.send_header(
                 "Access-Control-Allow-Headers",
                 "Content-Type, Authorization, X-Request-ID",
@@ -57,7 +58,13 @@ class BaseJSONRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def _json_response(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
+    def _json_response(
+        self,
+        status: HTTPStatus,
+        payload: dict[str, Any],
+        *,
+        retry_after_seconds: int | None = None,
+    ) -> None:
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         self.send_response(status.value)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -65,6 +72,8 @@ class BaseJSONRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         if self.request_id:
             self.send_header("X-Request-ID", self.request_id)
+        if retry_after_seconds is not None:
+            self.send_header("Retry-After", str(retry_after_seconds))
         self._send_cors_headers()
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -77,6 +86,9 @@ class BaseJSONRequestHandler(BaseHTTPRequestHandler):
         message: str,
         error_code: str,
         retryable: bool,
+        retry_after_seconds: int | None = None,
+        challenge_reusable: bool | None = None,
+        auth_stage: str | None = None,
     ) -> None:
         payload: dict[str, Any] = {
             "error": sanitize_text(message),
@@ -85,4 +97,12 @@ class BaseJSONRequestHandler(BaseHTTPRequestHandler):
         }
         if self.request_id:
             payload["requestId"] = self.request_id
-        self._json_response(status, payload)
+        if challenge_reusable is not None:
+            payload["challengeReusable"] = challenge_reusable
+        if auth_stage is not None:
+            payload["authStage"] = auth_stage
+        if retry_after_seconds is not None:
+            payload["retryAfterSeconds"] = retry_after_seconds
+            self._json_response(status, payload, retry_after_seconds=retry_after_seconds)
+        else:
+            self._json_response(status, payload)

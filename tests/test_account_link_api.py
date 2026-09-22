@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from http import HTTPStatus
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 import garmin_sync.account_link_api as account_link_api
+from garmin_sync.account_link import GarminAccountLinkService, PendingLoginStore
 from garmin_sync.account_link_api import (
     GarminAccountLinkHandler,
     GarminConnectAuthenticationError,
@@ -46,6 +48,19 @@ def test_rate_limiter_prunes_expired_client_buckets(monkeypatch: Any) -> None:
 
     assert "old-client" not in limiter._attempts  # noqa: SLF001
     assert "new-client" in limiter._attempts  # noqa: SLF001
+
+
+def test_rate_limiter_reports_remaining_window(monkeypatch: Any) -> None:
+    now = [100.0]
+    monkeypatch.setattr(account_link_api.time, "monotonic", lambda: now[0])
+    limiter = LoginRateLimiter()
+    for _ in range(account_link_api.RATE_LIMIT_ATTEMPTS):
+        assert limiter.allow("client") is True
+
+    assert limiter.allow("client") is False
+    assert limiter.retry_after_seconds("client") == account_link_api.RATE_LIMIT_WINDOW_SECONDS
+    now[0] += 30.5
+    assert limiter.retry_after_seconds("client") == account_link_api.RATE_LIMIT_WINDOW_SECONDS - 30
 
 
 def test_error_response_adds_stable_metadata_and_sanitizes_message() -> None:
@@ -101,6 +116,127 @@ def test_handle_login_enforces_per_account_rate_limiting(monkeypatch: Any) -> No
     assert len(captured_errors) == 1
     assert captured_errors[0]["status"] == HTTPStatus.TOO_MANY_REQUESTS
     assert captured_errors[0]["error_code"] == "garmin_link.rate_limited"
+    assert (
+        1 <= captured_errors[0]["retry_after_seconds"] <= account_link_api.RATE_LIMIT_WINDOW_SECONDS
+    )
+
+
+def test_upstream_rate_limit_reports_explicit_retry_delay(monkeypatch: Any) -> None:
+    handler = object.__new__(GarminAccountLinkHandler)
+    handler.path = "/api/garmin/login"
+    handler._handle_login = lambda: (_ for _ in ()).throw(  # type: ignore[method-assign]  # noqa: SLF001
+        account_link_api.GarminConnectTooManyRequestsError("rate limited")
+    )
+    monkeypatch.setattr(
+        account_link_api,
+        "log_exception",
+        lambda *_args, **_kwargs: SimpleNamespace(code="garmin_link.rate_limited", retryable=True),
+    )
+    captured: list[dict[str, Any]] = []
+    handler._error_response = lambda status, **kwargs: captured.append(  # type: ignore[method-assign]  # noqa: SLF001
+        {"status": status, **kwargs}
+    )
+
+    handler.do_POST()
+
+    assert captured == [
+        {
+            "status": HTTPStatus.TOO_MANY_REQUESTS,
+            "message": "Garmin is rate limiting login attempts. Try again later.",
+            "error_code": "garmin_link.rate_limited",
+            "retryable": True,
+            "retry_after_seconds": account_link_api.UPSTREAM_RETRY_AFTER_SECONDS,
+        }
+    ]
+
+
+def test_mfa_upstream_rate_limit_includes_explicit_challenge_state(monkeypatch: Any) -> None:
+    handler = object.__new__(GarminAccountLinkHandler)
+    handler.path = "/api/garmin/mfa"
+    failure = account_link_api.GarminConnectTooManyRequestsError("rate limited")
+    failure.challenge_reusable = False
+    failure.auth_stage = "pre_authentication"
+
+    def fail() -> None:
+        raise failure
+
+    handler._handle_mfa = fail  # type: ignore[method-assign]  # noqa: SLF001
+    monkeypatch.setattr(
+        account_link_api,
+        "log_exception",
+        lambda *_args, **_kwargs: SimpleNamespace(code="garmin_link.rate_limited", retryable=True),
+    )
+    captured: list[dict[str, Any]] = []
+    handler._error_response = lambda status, **kwargs: captured.append(  # type: ignore[method-assign]  # noqa: SLF001
+        {"status": status, **kwargs}
+    )
+
+    handler.do_POST()
+
+    assert captured[0]["challenge_reusable"] is False
+    assert captured[0]["auth_stage"] == "pre_authentication"
+    assert captured[0]["retry_after_seconds"] == 1800
+
+
+def test_mfa_handler_contract_matches_consumed_rate_limited_challenge(monkeypatch: Any) -> None:
+    class FakeClient:
+        is_authenticated = False
+
+    class RateLimitedGarmin:
+        def __init__(self, **kwargs: Any) -> None:
+            self.password = kwargs.get("password")
+            self.client = FakeClient()
+            self.resume_calls = 0
+
+        def login(self, _path: str) -> tuple[str, None]:
+            return "needs_mfa", None
+
+        def resume_login(self, _state: dict[str, Any], _code: str) -> None:
+            self.resume_calls += 1
+            raise account_link_api.GarminConnectTooManyRequestsError("rate limited")
+
+    api: RateLimitedGarmin | None = None
+
+    def factory(**kwargs: Any) -> RateLimitedGarmin:
+        nonlocal api
+        api = RateLimitedGarmin(**kwargs)
+        return api
+
+    service = GarminAccountLinkService(
+        "bucket",
+        repository=object(),  # type: ignore[arg-type]
+        pending_store=PendingLoginStore(),
+        garmin_factory=factory,  # type: ignore[arg-type]
+    )
+    challenge_id = service.start_login("person@example.com", "secret")["challengeId"]
+    monkeypatch.setattr(account_link_api, "_service", lambda: service)
+    monkeypatch.setattr(
+        account_link_api,
+        "log_exception",
+        lambda *_args, **_kwargs: SimpleNamespace(code="garmin_link.rate_limited", retryable=True),
+    )
+
+    def invoke() -> dict[str, Any]:
+        handler = object.__new__(GarminAccountLinkHandler)
+        handler.path = "/api/garmin/mfa"
+        handler._read_json = lambda: {"challengeId": challenge_id, "code": "123456"}  # type: ignore[method-assign]  # noqa: SLF001
+        captured: list[dict[str, Any]] = []
+        handler._error_response = lambda status, **kwargs: captured.append(  # type: ignore[method-assign]  # noqa: SLF001
+            {"status": status, **kwargs}
+        )
+        handler.do_POST()
+        return captured[0]
+
+    first = invoke()
+    assert first["status"] == HTTPStatus.TOO_MANY_REQUESTS
+    assert first["challenge_reusable"] is False
+    assert first["auth_stage"] == "pre_authentication"
+    assert first["retry_after_seconds"] == account_link_api.UPSTREAM_RETRY_AFTER_SECONDS
+
+    second = invoke()
+    assert second["status"] == HTTPStatus.UNAUTHORIZED
+    assert api is not None
+    assert api.resume_calls == 1
 
 
 def test_handle_login_requires_verified_email_for_authenticated_link(monkeypatch: Any) -> None:

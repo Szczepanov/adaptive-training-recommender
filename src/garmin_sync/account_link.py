@@ -26,6 +26,11 @@ from .token_store import GcsTokenStore
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_MFA_TTL_SECONDS = 300
+# Application policy: garminconnect 0.3.15 discards Garmin's Retry-After header.
+# This is an advisory wait, not a claim about Garmin's actual reset time.
+UPSTREAM_RETRY_AFTER_SECONDS = 1800
+
 
 class GarminLinkConflictError(ValueError):
     """Raised when an authenticated app user tries to claim another user's Garmin account."""
@@ -33,6 +38,14 @@ class GarminLinkConflictError(ValueError):
 
 class GarminLinkConfigurationError(RuntimeError):
     """Raised when account linking is not safely configured."""
+
+
+def _mark_mfa_failure(exc: Exception, *, challenge_reusable: bool, authenticated: bool) -> None:
+    """Attach challenge state determined at the MFA continuation boundary."""
+    exc.challenge_reusable = challenge_reusable  # type: ignore[attr-defined]
+    exc.auth_stage = (  # type: ignore[attr-defined]
+        "post_authentication" if authenticated else "pre_authentication"
+    )
 
 
 # Mirrors app/src/utils/garminSyncStaleness.ts. Account linking and the browser
@@ -94,7 +107,11 @@ class PendingLoginStore:
     causes us to persist a Garmin password or SSO session to Firestore/GCS.
     """
 
-    def __init__(self, ttl_seconds: int = 300, clock: Callable[[], float] = time.monotonic):
+    def __init__(
+        self,
+        ttl_seconds: int = DEFAULT_MFA_TTL_SECONDS,
+        clock: Callable[[], float] = time.monotonic,
+    ):
         self.ttl_seconds = ttl_seconds
         self.clock = clock
         self._items: dict[str, PendingGarminLogin] = {}
@@ -155,7 +172,7 @@ class PendingLoginStore:
         consume: bool,
         failed_attempt: bool = False,
         cleanup: bool = False,
-    ) -> None:
+    ) -> bool:
         """Finish a reservation, consuming only an authenticated challenge.
 
         A failed upstream resume leaves the item in the store for a later retry. The
@@ -166,7 +183,7 @@ class PendingLoginStore:
             self._in_progress.discard(challenge_id)
             pending = self._items.get(challenge_id)
             if pending is None:
-                return
+                return False
             if failed_attempt:
                 pending.failed_mfa_attempts += 1
                 consume = pending.failed_mfa_attempts >= _MAX_MFA_ATTEMPTS
@@ -178,6 +195,7 @@ class PendingLoginStore:
                 pending_to_cleanup = self._items.pop(challenge_id)
         if pending_to_cleanup is not None:
             self._cleanup(pending_to_cleanup)
+        return not consume and pending_to_cleanup is None
 
 
 class GarminConnectionRepository:
@@ -458,37 +476,48 @@ class GarminAccountLinkService:
                 pending.temp_dir,
                 pending.requested_uid,
             )
-        except GarminConnectTooManyRequestsError:
+        except GarminConnectTooManyRequestsError as exc:
             # MFA verification 429s happen before authentication and leave the live
             # continuation reusable. The same exception can also surface later while
             # Garmin.resume_login() loads profile/settings, after the low-level client
             # has accepted MFA and cleared its pending state. Only the former is retryable.
             authenticated_after_failure = resumed or pending.api.client.is_authenticated
-            self.pending_store.release(
+            remaining_lifetime = self.pending_store.ttl_seconds - (
+                self.pending_store.clock() - pending.created_monotonic
+            )
+            consume_challenge = (
+                authenticated_after_failure or UPSTREAM_RETRY_AFTER_SECONDS >= remaining_lifetime
+            )
+            challenge_reusable = self.pending_store.release(
                 challenge_id,
-                consume=authenticated_after_failure,
-                cleanup=authenticated_after_failure,
+                consume=consume_challenge,
+                cleanup=consume_challenge,
             )
             pending.api.password = None
-            if authenticated_after_failure:
-                shutil.rmtree(pending.temp_dir, ignore_errors=True)
+            _mark_mfa_failure(
+                exc,
+                challenge_reusable=challenge_reusable,
+                authenticated=authenticated_after_failure,
+            )
             raise
-        except GarminConnectConnectionError:
+        except GarminConnectConnectionError as exc:
             # In garminconnect 0.3.15 this is raised when MFA succeeded but the
             # subsequent token verification rejected the session; the client has
             # already cleared its MFA state, so retaining the challenge cannot help.
             self.pending_store.release(challenge_id, consume=True, cleanup=True)
             pending.api.password = None
             shutil.rmtree(pending.temp_dir, ignore_errors=True)
+            _mark_mfa_failure(exc, challenge_reusable=False, authenticated=True)
             raise
-        except Exception:
+        except Exception as exc:
+            challenge_reusable = False
             if not resumed:
                 # garminconnect 0.3.15 clears its internal MFA-pending state after the
                 # code is accepted, before it loads the profile/settings that can still
                 # fail. Such a failure is authenticated already and must not leave a
                 # retryable challenge behind.
                 authenticated_after_failure = pending.api.client.is_authenticated
-                self.pending_store.release(
+                challenge_reusable = self.pending_store.release(
                     challenge_id,
                     consume=authenticated_after_failure,
                     failed_attempt=not authenticated_after_failure,
@@ -497,6 +526,11 @@ class GarminAccountLinkService:
             pending.api.password = None
             if resumed or authenticated_after_failure:
                 shutil.rmtree(pending.temp_dir, ignore_errors=True)
+            _mark_mfa_failure(
+                exc,
+                challenge_reusable=challenge_reusable,
+                authenticated=resumed or authenticated_after_failure,
+            )
             raise
 
     def _delete_token_object(self, token_object: str) -> None:

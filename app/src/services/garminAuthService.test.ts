@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { garminAuthService } from './garminAuthService';
+import {
+  GarminAuthError,
+  garminAuthService,
+  garminRetrySecondsRemaining,
+  scheduleGarminRetryCountdown,
+  shouldRetainGarminChallenge,
+} from './garminAuthService';
 
 const mockGetIdToken = vi.fn();
 
@@ -24,15 +30,59 @@ afterEach(() => {
 });
 
 describe('garminAuthService', () => {
+  it('counts down until the retry delay ends', () => {
+    expect(garminRetrySecondsRemaining(31_000, 1_000)).toBe(30);
+    expect(garminRetrySecondsRemaining(31_000, 30_001)).toBe(1);
+    expect(garminRetrySecondsRemaining(31_000, 31_000)).toBe(0);
+    expect(garminRetrySecondsRemaining(null, 1_000)).toBe(0);
+  });
+
+  it('stops countdown updates after the deadline', () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_000);
+      const onTick = vi.fn();
+      const onComplete = vi.fn();
+      const cancel = scheduleGarminRetryCountdown(3_000, onTick, onComplete);
+
+      vi.advanceTimersByTime(2_000);
+      expect(onTick).toHaveBeenCalledTimes(2);
+      expect(onComplete).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+
+      vi.advanceTimersByTime(10_000);
+      expect(onTick).toHaveBeenCalledTimes(2);
+      cancel();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('retains MFA only on explicit pre-authentication reuse authority', () => {
+    expect(shouldRetainGarminChallenge(new GarminAuthError('Wait', {
+      code: 'garmin_link.rate_limited',
+      challengeReusable: true,
+      authStage: 'pre_authentication',
+    }))).toBe(true);
+    expect(shouldRetainGarminChallenge(new GarminAuthError('Wait', {
+      code: 'garmin_link.rate_limited', retryable: true,
+    }))).toBe(false);
+    expect(shouldRetainGarminChallenge(new GarminAuthError('Wait', {
+      code: 'garmin_link.rate_limited',
+      challengeReusable: false,
+      authStage: 'post_authentication',
+    }))).toBe(false);
+  });
   it('preserves structured server diagnostics for failed requests', async () => {
     mockFetch.mockResolvedValue(new Response(JSON.stringify({
       error: 'Garmin is rate limiting login attempts. Try again later.',
       errorCode: 'garmin_link.rate_limited',
       retryable: true,
+      retryAfterSeconds: 60,
       requestId: 'req-123',
     }), {
       status: 429,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Retry-After': '30' },
     }));
 
     await expect(garminAuthService.startLogin('athlete@example.com', 'secret')).rejects.toMatchObject({
@@ -41,7 +91,45 @@ describe('garminAuthService', () => {
       code: 'garmin_link.rate_limited',
       status: 429,
       retryable: true,
+      retryAfterSeconds: 60,
       requestId: 'req-123',
+    });
+  });
+
+  it('uses a numeric Retry-After header when the body omits retry timing', async () => {
+    mockFetch.mockResolvedValue(new Response('{}', {
+      status: 429,
+      headers: { 'Retry-After': '15' },
+    }));
+
+    await expect(garminAuthService.startLogin('athlete@example.com', 'secret')).rejects.toMatchObject({
+      retryAfterSeconds: 15,
+    });
+  });
+
+  it('preserves explicit MFA challenge state on a rate limit', async () => {
+    mockFetch.mockResolvedValue(new Response(JSON.stringify({
+      error: 'Try later.',
+      retryAfterSeconds: 1800,
+      challengeReusable: true,
+      authStage: 'pre_authentication',
+    }), { status: 429 }));
+
+    await expect(garminAuthService.completeMfa('challenge', '123456')).rejects.toMatchObject({
+      retryAfterSeconds: 1800,
+      challengeReusable: true,
+      authStage: 'pre_authentication',
+    });
+  });
+
+  it('ignores malformed retry timing', async () => {
+    mockFetch.mockResolvedValue(new Response(JSON.stringify({ retryAfterSeconds: -4 }), {
+      status: 429,
+      headers: { 'Retry-After': 'not-a-delay' },
+    }));
+
+    await expect(garminAuthService.startLogin('athlete@example.com', 'secret')).rejects.toMatchObject({
+      retryAfterSeconds: undefined,
     });
   });
 

@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import os
 import secrets
 import threading
@@ -13,6 +14,7 @@ from firebase_admin import auth as firebase_auth
 from garminconnect import GarminConnectTooManyRequestsError
 
 from .account_link import (
+    UPSTREAM_RETRY_AFTER_SECONDS,
     GarminAccountLinkService,
     GarminConnectAuthenticationError,
     GarminConnectConnectionError,
@@ -64,6 +66,15 @@ class LoginRateLimiter:
                 return False
             attempts.append(now)
             return True
+
+    def retry_after_seconds(self, key: str) -> int:
+        """Seconds until the oldest recorded attempt leaves the local window."""
+        with self._lock:
+            attempts = self._attempts.get(key)
+            if not attempts:
+                return 1
+            remaining = attempts[0] + RATE_LIMIT_WINDOW_SECONDS - time.monotonic()
+            return max(1, min(RATE_LIMIT_WINDOW_SECONDS, math.ceil(remaining)))
 
 
 RATE_LIMITER = LoginRateLimiter()
@@ -196,6 +207,7 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
                 message=str(exc),
                 error_code="garmin_link.conflict",
                 retryable=False,
+                **self._mfa_error_metadata(exc),
             )
         except ValueError as exc:
             self._error_response(
@@ -203,6 +215,7 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
                 message=str(exc),
                 error_code="garmin_link.validation",
                 retryable=False,
+                **self._mfa_error_metadata(exc),
             )
         except GarminConnectTooManyRequestsError as exc:
             report = log_exception(
@@ -217,6 +230,8 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
                 message="Garmin is rate limiting login attempts. Try again later.",
                 error_code=report.code,
                 retryable=report.retryable,
+                retry_after_seconds=UPSTREAM_RETRY_AFTER_SECONDS,
+                **self._mfa_error_metadata(exc),
             )
         except GarminConnectAuthenticationError as exc:
             self._error_response(
@@ -224,6 +239,7 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
                 message=str(exc),
                 error_code="garmin_link.authentication",
                 retryable=False,
+                **self._mfa_error_metadata(exc),
             )
         except GarminLinkConfigurationError as exc:
             report = log_exception(
@@ -237,6 +253,7 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
                 message="Garmin linking is temporarily unavailable.",
                 error_code=report.code,
                 retryable=report.retryable,
+                **self._mfa_error_metadata(exc),
             )
         except GarminConnectConnectionError as exc:
             report = log_exception(
@@ -250,6 +267,7 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
                 message="Garmin could not be reached. Try again shortly.",
                 error_code=report.code,
                 retryable=report.retryable,
+                **self._mfa_error_metadata(exc),
             )
         except Exception as exc:
             report = log_exception(
@@ -263,7 +281,17 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
                 message="Garmin linking failed unexpectedly.",
                 error_code=report.code,
                 retryable=report.retryable,
+                **self._mfa_error_metadata(exc),
             )
+
+    def _mfa_error_metadata(self, exc: Exception) -> dict[str, Any]:
+        if self.path != "/api/garmin/mfa":
+            return {}
+        reusable = getattr(exc, "challenge_reusable", None)
+        stage = getattr(exc, "auth_stage", None)
+        if isinstance(reusable, bool) and stage in {"pre_authentication", "post_authentication"}:
+            return {"challenge_reusable": reusable, "auth_stage": stage}
+        return {}
 
     def _handle_status(self) -> None:
         uid = _verified_uid(
@@ -278,12 +306,7 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
     def _handle_login(self) -> None:
         client_key = self._client_key()
         if not RATE_LIMITER.allow(client_key):
-            self._error_response(
-                HTTPStatus.TOO_MANY_REQUESTS,
-                message="Too many login attempts. Try again later.",
-                error_code="garmin_link.rate_limited",
-                retryable=True,
-            )
+            self._rate_limited_response(client_key)
             return
         payload = self._read_json()
         email = payload.get("email")
@@ -292,12 +315,7 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
             raise ValueError("Garmin email and password must be strings.")
         email_key = f"account:{email.strip().lower()}"
         if not RATE_LIMITER.allow(email_key):
-            self._error_response(
-                HTTPStatus.TOO_MANY_REQUESTS,
-                message="Too many login attempts. Try again later.",
-                error_code="garmin_link.rate_limited",
-                retryable=True,
-            )
+            self._rate_limited_response(email_key)
             return
         requested_uid = _verified_uid(
             self.headers.get("Authorization"),
@@ -305,6 +323,15 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
         )
         result = _service().start_login(email, password, requested_uid=requested_uid)
         self._json_response(HTTPStatus.OK, result)
+
+    def _rate_limited_response(self, key: str) -> None:
+        self._error_response(
+            HTTPStatus.TOO_MANY_REQUESTS,
+            message="Too many login attempts. Try again later.",
+            error_code="garmin_link.rate_limited",
+            retryable=True,
+            retry_after_seconds=RATE_LIMITER.retry_after_seconds(key),
+        )
 
     def _handle_mfa(self) -> None:
         payload = self._read_json()

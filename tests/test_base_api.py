@@ -49,6 +49,7 @@ def test_json_response_without_request_id() -> None:
     assert headers["Cache-Control"] == "no-store"
     assert headers["X-Content-Type-Options"] == "nosniff"
     assert "X-Request-ID" not in headers
+    assert "Retry-After" not in headers
     body = handler.wfile.getvalue()
     assert headers["Content-Length"] == str(len(body))
     assert handler.headers_ended is True
@@ -123,6 +124,38 @@ def test_error_response_with_request_id() -> None:
     assert body["requestId"] == "req-1234"
 
 
+def test_error_response_includes_retry_delay_in_header_and_body() -> None:
+    handler = DummyJSONRequestHandler()
+
+    handler._error_response(
+        HTTPStatus.TOO_MANY_REQUESTS,
+        message="Try later.",
+        error_code="rate_limited",
+        retryable=True,
+        retry_after_seconds=45,
+    )
+
+    assert get_header(handler.headers_sent, "Retry-After") == "45"
+    body = json.loads(handler.wfile.getvalue().decode("utf-8"))
+    assert body["retryAfterSeconds"] == 45
+
+
+def test_error_response_includes_explicit_mfa_challenge_state() -> None:
+    handler = DummyJSONRequestHandler()
+    handler._error_response(
+        HTTPStatus.TOO_MANY_REQUESTS,
+        message="Try later.",
+        error_code="rate_limited",
+        retryable=True,
+        challenge_reusable=True,
+        auth_stage="pre_authentication",
+    )
+
+    body = json.loads(handler.wfile.getvalue().decode("utf-8"))
+    assert body["challengeReusable"] is True
+    assert body["authStage"] == "pre_authentication"
+
+
 def test_no_cors_headers_when_origin_header_missing(monkeypatch: Any) -> None:
     monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "https://app.example.com")
     handler = DummyJSONRequestHandler(headers={})
@@ -146,6 +179,9 @@ def test_cors_headers_added_for_allowed_origin(monkeypatch: Any) -> None:
     )
     assert "Content-Type" in (
         get_header(handler.headers_sent, "Access-Control-Allow-Headers") or ""
+    )
+    assert "Retry-After" in (
+        get_header(handler.headers_sent, "Access-Control-Expose-Headers") or ""
     )
 
 
