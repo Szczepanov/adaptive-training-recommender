@@ -29,7 +29,7 @@ dev = [
 requires-dist = [
     { name = "firebase-admin" },
     { name = "fitdecode", specifier = ">=0.11.0,<0.12" },
-    { name = "garminconnect", specifier = ">=0.3.15,<0.4" },
+    { name = "garminconnect", specifier = ">=0.3.16,<0.4" },
     { name = "google-cloud-storage" },
     { name = "pyotp", specifier = ">=2.9,<3" },
     { name = "python-dotenv" },
@@ -425,16 +425,16 @@ wheels = [
 
 [[package]]
 name = "garminconnect"
-version = "0.3.15"
+version = "0.3.16"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "curl-cffi" },
     { name = "requests" },
     { name = "ua-generator" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/22/dd/a3a5bce0ad706a0b488eb28863bc599689fbcdfcba26577503b5e8af67a1/garminconnect-0.3.15.tar.gz", hash = "sha256:015b05a25a45e4a7883a5394ecf60af01987a04ee411d331ca4121daf32f5cba", size = 102212, upload-time = "2026-09-12T13:39:51.38Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/16/d2/e96fd8209578a16ddccb78042ed6c7f86365cecbd3339429e1b81ba8a157/garminconnect-0.3.16.tar.gz", hash = "sha256:2a5e838bf19608ff62329ef9845658bfed0c4974d7b1e486e3a49595438b69c5", size = 106316, upload-time = "2026-09-18T08:32:13.901Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b0/eb/3bba21501edcdc3f1ff37cf9d356268d3ea54cdc96289702c585ae6e6001/garminconnect-0.3.15-py3-none-any.whl", hash = "sha256:aa57cb5635eb2ad8f2ba9899043b644125289fd7169cd29d74b3207df4246c0d", size = 96188, upload-time = "2026-09-12T13:39:49.98Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/28/10db6f798c426fe061c1985311533f1f84ee2e4cf6ced0ade005bf296823/garminconnect-0.3.16-py3-none-any.whl", hash = "sha256:e919b17589095227e78cbcb20fe05630ac6592bc39f598c9eee4e5bd91aeec30", size = 100350, upload-time = "2026-09-18T08:32:12.215Z" },
 ]
 
 [[package]]
