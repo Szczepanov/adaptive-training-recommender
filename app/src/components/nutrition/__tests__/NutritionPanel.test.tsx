@@ -140,6 +140,37 @@ describe('NutritionPanel Component', () => {
         expect(html).toContain('strictly invariant to nutrition inputs');
     });
 
+    it('does not infer tracking completeness when a finalized intake day is unrated', () => {
+        const sampleDay: NutritionDay = {
+            schemaVersion: 1,
+            date: '2026-09-20',
+            source: {
+                provider: 'garmin',
+                transport: 'garmin_connect',
+                origin: null,
+            },
+            syncedAt: '2026-09-20T23:00:00Z',
+            energyIntakeKcal: 2200,
+            hasIntakeData: true,
+            isPartialDay: false,
+            confidenceScore: 1.0,
+        };
+
+        const html = renderToStaticMarkup(
+            <NutritionPanel
+                userId="test-user"
+                asOfDate="2026-09-20"
+                initialRecords={[sampleDay]}
+                initialSnapshots={[]}
+                initialCheckins={[]}
+            />,
+        );
+
+        expect(html).toContain('Logged (adherence unrated)');
+        expect(html).toContain('Logged (unrated)');
+        expect(html).not.toContain('Logged / Complete');
+    });
+
     it('renders subjective adherence badge when checkin rated yesterday tracking', () => {
         const sampleDay: NutritionDay = {
             schemaVersion: 1,
@@ -172,7 +203,7 @@ describe('NutritionPanel Component', () => {
             />,
         );
 
-        // Should render Deliberate Fast badge instead of regular Logged/Complete badge
+        // Should render the full-day-fast badge instead of the unrated logged badge
         expect(html).toContain('Marked Full-Day Fast (0 kcal)');
         expect(html).toContain('adherence-fasted');
     });
