@@ -58,8 +58,9 @@ import type {
     PhysicalWorkDuration,
     PhysicalWorkIntensity,
     PhysicalWorkLoadArea,
+    NutritionTrackingAdherence,
 } from './models';
-import { EXTERNAL_PLAN_SCHEMA, SHADOW_VERDICTS } from './models';
+import { EXTERNAL_PLAN_SCHEMA, NUTRITION_TRACKING_ADHERENCE_LEVELS, SHADOW_VERDICTS } from './models';
 import { validateEventTiming, BODY_REGIONS, TISSUE_LEVELS } from './models';
 import { deriveGoalCategory } from './periodization';
 import { EVENT_PRESETS } from './eventPresets';
@@ -400,6 +401,25 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
         errors.push({ field: 'hunger1To10', message: 'hunger1To10 is required when hungerTiming is provided' });
     }
 
+    // Nutrition tracking adherence for yesterday (D-1) (ADR-0042 D-NUT-AUTH)
+    let nutritionAdherenceYesterday: NutritionTrackingAdherence | null | undefined = undefined;
+    if (raw.nutritionAdherenceYesterday !== undefined) {
+        const val = normalizeEmptyToNull(raw.nutritionAdherenceYesterday);
+        if (val !== null) {
+            if (typeof val !== 'string' || !NUTRITION_TRACKING_ADHERENCE_LEVELS.includes(val as NutritionTrackingAdherence)) {
+                errors.push({
+                    field: 'nutritionAdherenceYesterday',
+                    message: `nutritionAdherenceYesterday must be one of: ${NUTRITION_TRACKING_ADHERENCE_LEVELS.join(', ')}, or empty`,
+                    value: val,
+                });
+            } else {
+                nutritionAdherenceYesterday = val as NutritionTrackingAdherence;
+            }
+        } else {
+            nutritionAdherenceYesterday = null;
+        }
+    }
+
     if (errors.length > 0) {
         return { isValid: false, errors };
     }
@@ -423,6 +443,7 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
         ...(occupationalBaseline ? { occupationalBaseline } : {}),
         ...(hunger1To10 !== undefined ? { hunger1To10 } : {}),
         ...(hungerTiming !== undefined ? { hungerTiming } : {}),
+        ...(nutritionAdherenceYesterday !== undefined ? { nutritionAdherenceYesterday } : {}),
         availability: {
             timeAvailableMin: normalizeEmptyToNull(raw.availability?.timeAvailableMin),
             preferredModalityToday: normalizeEmptyToNull(raw.availability?.preferredModalityToday),

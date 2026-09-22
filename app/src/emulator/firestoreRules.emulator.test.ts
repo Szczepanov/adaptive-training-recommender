@@ -2486,6 +2486,52 @@ emulatorDescribe('Firestore security rules', () => {
         }));
     });
 
+    // --- ADR-0042: Nutrition tracking adherence on check-in ---
+    it('allows valid check-in with nutritionAdherenceYesterday, and rejects invalid values', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const validValues = ['fully_tracked', 'mostly_tracked', 'minimal', 'untracked', 'fasted'] as const;
+
+        for (const val of validValues) {
+            await expect(assertSucceeds(setDoc(doc(ownerDb, checkinPath), {
+                ...validCheckinWithSessionResponse(),
+                nutritionAdherenceYesterday: val,
+            }))).resolves.toBeUndefined();
+        }
+
+        // Valid null / cleared
+        await expect(assertSucceeds(setDoc(doc(ownerDb, checkinPath), {
+            ...validCheckinWithSessionResponse(),
+            nutritionAdherenceYesterday: null,
+        }))).resolves.toBeUndefined();
+
+        // Invalid string
+        await assertFails(setDoc(doc(ownerDb, checkinPath), {
+            ...validCheckinWithSessionResponse(),
+            nutritionAdherenceYesterday: 'partially_tracked',
+        }));
+
+        // Invalid type (number)
+        await assertFails(setDoc(doc(ownerDb, checkinPath), {
+            ...validCheckinWithSessionResponse(),
+            nutritionAdherenceYesterday: 1,
+        }));
+    });
+
+    it('rejects cross-user access to check-ins carrying nutritionAdherenceYesterday', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), checkinPath), {
+                ...validCheckinWithSessionResponse(),
+                nutritionAdherenceYesterday: 'fasted',
+            });
+        });
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, checkinPath)));
+        await assertFails(setDoc(doc(otherDb, checkinPath), {
+            ...validCheckinWithSessionResponse(),
+            nutritionAdherenceYesterday: 'fasted',
+        }));
+    });
+
     // --- ADR-0039: Anthropometry entries ---
     const anthropometryPath = `users/${ownerId}/anthropometry_entries/entry-1`;
 

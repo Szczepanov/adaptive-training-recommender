@@ -6,7 +6,7 @@ import { sessionResponseService } from '../services/sessionResponseService';
 import { preferencesService } from '../services/preferencesService';
 import { relevantFollowupRegions } from '../responses/followupSchedule';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
-import type { BodyRegion, DailySubjectiveCheckin, PhysicalWorkCheckin, RedFlagCategory, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
+import type { BodyRegion, DailySubjectiveCheckin, NutritionTrackingAdherence, PhysicalWorkCheckin, RedFlagCategory, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
 import type { HealthContextCheckin } from '../engine/healthAnomalyModels';
 import { BODY_REGIONS, TISSUE_LEVELS } from '../engine/models';
 import { isCompletedSubjectiveCheckin } from '../engine/checkinCompletion';
@@ -20,6 +20,9 @@ import { HealthContextSection } from './checkin/HealthContextSection';
 import { PhysicalWorkSection } from './checkin/PhysicalWorkSection';
 import { SubjectiveScaleRow } from './checkin/SubjectiveScaleRow';
 import { HungerSection } from './checkin/HungerSection';
+import { NutritionAdherenceSection } from './checkin/NutritionAdherenceSection';
+import { nutritionService } from '../nutrition/nutritionService';
+import { reconcileDailyNutrition } from '../nutrition/reconciliation';
 import { CheckinStepper } from './checkin/CheckinStepper';
 import { deriveCheckinSteps } from './checkin/checkinStepState';
 import './DailyCheckin.css';
@@ -135,6 +138,10 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
   const [pendingFollowups, setPendingFollowups] = useState<Array<{ region: BodyRegion; sessionRef?: RegionTissueResponse['sourceSessionRef'] }>>([]);
   const [pendingTissueRegion, setPendingTissueRegion] = useState<BodyRegion | ''>('');
   const [availabilityDefault, setAvailabilityDefault] = useState<CheckinAvailabilityDefault | null>(null);
+  const [yesterdayNutrition, setYesterdayNutrition] = useState<{
+    energyIntakeKcal: number | null;
+    hasIntakeData: boolean;
+  } | undefined>(undefined);
 
   const tissueSelectId = useId();
   const timeInputId = useId();
@@ -147,6 +154,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
       setError(null);
       setAvailabilityDefault(null);
       setPersistedCheckin(null);
+      setYesterdayNutrition(undefined);
       const today = getLocalDateString();
 
       try {
@@ -224,6 +232,24 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
           // read here must not block the check-in itself from loading.
         }
         setPendingFollowups(needed);
+
+        const nutritionState = await nutritionService.getNutritionDaysState(userId, yesterday, yesterday);
+        if (nutritionState.status === 'AVAILABLE') {
+          const reconciled = reconcileDailyNutrition(nutritionState.data);
+          if (reconciled) {
+            setYesterdayNutrition({
+              energyIntakeKcal: reconciled.energyIntakeKcal,
+              hasIntakeData: reconciled.hasIntakeData,
+            });
+          }
+        } else if (nutritionState.status === 'MISSING') {
+          setYesterdayNutrition({
+            energyIntakeKcal: null,
+            hasIntakeData: false,
+          });
+        }
+        // INVALID/UNAVAILABLE nutrition is optional context: leave it undefined so the
+        // check-in remains usable without misrepresenting a failed read as "no intake".
 
         if (existing) {
           setPersistedCheckin(existing);
@@ -331,6 +357,14 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
       ...checkin,
       hunger1To10,
       hungerTiming,
+    });
+  };
+
+  const handleNutritionAdherenceChange = (nutritionAdherenceYesterday: NutritionTrackingAdherence | null) => {
+    if (!checkin) return;
+    setCheckin({
+      ...checkin,
+      nutritionAdherenceYesterday,
     });
   };
 
@@ -918,6 +952,14 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
           hunger1To10={checkin.hunger1To10}
           hungerTiming={checkin.hungerTiming}
           onChange={handleHungerChange}
+        />
+
+        {/* Section: Yesterday's Calorie Tracking (ADR-0042) */}
+        <NutritionAdherenceSection
+          value={checkin.nutritionAdherenceYesterday}
+          onChange={handleNutritionAdherenceChange}
+          yesterdayIntakeKcal={yesterdayNutrition?.energyIntakeKcal}
+          hasIntakeData={yesterdayNutrition?.hasIntakeData}
         />
 
         {/* Section 3: Availability & Notes */}

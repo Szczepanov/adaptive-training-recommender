@@ -193,6 +193,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-07 ADR-0038 Recovery Placement Implementation Analysis**](./analysis/2026-09-07-adr-0038-recovery-placement-implementation-analysis.md) — Analysis of recovery placement options for external plans under ADR-0038.
 * [**2026-09-07 Recommender Optimization Analysis**](./analysis/2026-09-07-recommender-optimization-opportunities.md) — Investigation into potential optimization strategies for the core recommender engine.
 * [**2026-09-14 Body-composition and fueling observations analysis**](./analysis/2026-09-14-body-composition-and-fueling-observations.md) — Point-in-time analysis of how longitudinal body mass, home tape measurements, connected scale estimates and subjective hunger fit the recommender without recommending authority.
+* [**2026-09-22 Previous-day calorie tracking scoring**](./analysis/2026-09-22-previous-day-calorie-tracking-scoring-checkin.md) — Evidence and architecture review for behavioral D-1 logging-quality context, strict zero-vs-missing semantics, and full-day-fast conflict handling with zero recommendation authority.
 * [**2026-09-16 UX heuristics review**](./analysis/2026-09-16-ux-heuristics-review.md) — Point-in-time usability audit and heuristic evaluation of a fresh account walkthrough.
 * [**2026-09-17 UX heuristics review follow-up**](./analysis/2026-09-17-ux-heuristics-review-followup.md) — Follow-up pass verifying PR fixes from the initial UX heuristics review.
 * [**2026-09-17 Plan status reconciliation**](./analysis/2026-09-17-plan-status-reconciliation.md) — Reconciles implemented plans, verification closures, and remaining evidence/activation gates.
@@ -245,6 +246,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Server-authoritative anthropometry writes**](./plans/anthropometry-server-authoritative-writes.md) — *Implemented.* Dedicated Python Cloud Run API verifies Firebase ID tokens and owns strict, validated anthropometry writes; the capability has zero recommendation authority.
 * [**Strength, speed and power performance goals**](./plans/strength-speed-power-performance-goals.md) — *In progress.* Implementation plan for typed measurable strength, speed and power targets (Stage 1 core implemented).
 * [**Nutrition Ingestion**](./plans/nutrition-ingestion.md) — *Implemented.* Provider-neutral nutrition ingestion and persistence architecture, while strictly preserving that unverified or incomplete dietary logs must not exert automated training recommendation authority.
+* [**Previous-day calorie tracking scoring**](./plans/previous-day-calorie-tracking-scoring.md) — *In progress (PR #710; CI/merge pending).* Adds optional D-1 behavioral logging-quality context and retrospective display while preserving ADR-0042 zero recommendation authority.
 
 ---
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { mapSnapshotToEngineInput } from '../../engine/adapters';
+import { mapCheckinToSubjectiveInput, mapSnapshotToEngineInput } from '../../engine/adapters';
 import { evaluateTraining } from '../../engine/rules';
-import type { DailyRecoverySnapshot, SubjectiveInput, UserContext } from '../../engine/models';
+import type { DailyRecoverySnapshot, DailySubjectiveCheckin, SubjectiveInput, UserContext } from '../../engine/models';
 import type { NutritionDay } from '../models';
 import { reconcileDailyNutrition } from '../reconciliation';
 
@@ -197,5 +197,53 @@ describe('ADR-0042: Nutrition/expenditure decision-authority invariance', () => 
             mapSnapshotToEngineInput(snapshotWithEnergyExpenditure({})),
         );
         expect(objectiveInputKeys.some(key => /nutrition|kcal|calorie|macro/i.test(key))).toBe(false);
+    });
+
+    it('mapCheckinToSubjectiveInput produces identical SubjectiveInput regardless of nutritionAdherenceYesterday', () => {
+        const baseCheckin: DailySubjectiveCheckin = {
+            userId: 'user-1',
+            date: '2026-09-22',
+            readiness: 7,
+            sleepQuality: 8,
+            fatigue: 4,
+            soreness: 3,
+            mentalStress: 2,
+            motivation: 8,
+            painOrInjury: false,
+            illnessSymptoms: false,
+            unusuallyLimitedTime: false,
+            alreadyTrainedToday: false,
+            availability: {
+                timeAvailableMin: 60,
+                preferredModalityToday: null,
+                indoorOnly: false,
+            },
+            notes: null,
+            submittedAt: '2026-09-22T08:00:00Z',
+            dataQuality: { isComplete: true, missingFields: [] },
+            schemaVersion: 1,
+            createdAt: '2026-09-22T08:00:00Z',
+            updatedAt: '2026-09-22T08:00:00Z',
+        };
+
+        const baseline = mapCheckinToSubjectiveInput(baseCheckin);
+
+        const adherenceOptions: Array<DailySubjectiveCheckin['nutritionAdherenceYesterday']> = [
+            'fully_tracked',
+            'mostly_tracked',
+            'minimal',
+            'untracked',
+            'fasted',
+            null,
+            undefined,
+        ];
+
+        for (const adherence of adherenceOptions) {
+            const result = mapCheckinToSubjectiveInput({
+                ...baseCheckin,
+                nutritionAdherenceYesterday: adherence,
+            });
+            expect(result).toEqual(baseline);
+        }
     });
 });

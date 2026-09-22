@@ -133,6 +133,9 @@ export class CheckinService {
                 payload.hunger1To10 = deleteField();
                 payload.hungerTiming = deleteField();
             }
+            if (validatedCheckin.nutritionAdherenceYesterday === null) {
+                payload.nutritionAdherenceYesterday = deleteField();
+            }
 
             // `setDoc(..., { merge: true })` recursively preserves omitted nested fields.
             // Treat this daily context as replace-on-answer: an omitted whole block deletes

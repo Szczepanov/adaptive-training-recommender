@@ -115,6 +115,36 @@
   border: 1px solid rgba(99, 102, 241, 0.3);
 }
 
+.nutrition-badge.adherence-fasted {
+  background: rgba(139, 92, 246, 0.15);
+  color: #c4b5fd;
+  border: 1px solid rgba(139, 92, 246, 0.35);
+}
+
+.nutrition-badge.adherence-fully_tracked {
+  background: rgba(16, 185, 129, 0.15);
+  color: #6ee7b7;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.nutrition-badge.adherence-mostly_tracked {
+  background: rgba(6, 182, 212, 0.15);
+  color: #67e8f9;
+  border: 1px solid rgba(6, 182, 212, 0.35);
+}
+
+.nutrition-badge.adherence-minimal {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.nutrition-badge.adherence-untracked {
+  background: rgba(148, 163, 184, 0.15);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
 .nutrition-metrics-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -280,4 +310,11 @@
   max-width: 500px;
   margin-left: auto;
   margin-right: auto;
+}
+
+
+/* A subjective full-day-fast mark must not silently override contradictory synced intake. */
+.nutrition-badge.adherence-conflict {
+    border-color: #ef4444;
+    color: #fecaca;
 }

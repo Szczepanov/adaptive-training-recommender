@@ -109,6 +109,20 @@ describe('CheckinService.upsertCheckin tissueResponses clearing', () => {
         expect(payload.tissueResponses).toEqual({ shoulder: { region: 'shoulder', morningState: 'normal', nextMorningReaction: 'normal' } });
     });
 
+    it('explicitly deletes nutritionAdherenceYesterday when set to null', async () => {
+        const service = new CheckinService();
+        await service.upsertCheckin('u1', {
+            ...baseCheckin,
+            date: '2026-08-09',
+            painOrInjury: false,
+            nutritionAdherenceYesterday: null,
+        });
+
+        expect(firestore.setDoc).toHaveBeenCalledTimes(1);
+        const payload = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
+        expect(payload.nutritionAdherenceYesterday).toBe(DELETE_FIELD_SENTINEL);
+    });
+
     it('still clears stale tissueResponses when painOrInjury is false and this write carries no structured response', async () => {
         const service = new CheckinService();
         await service.upsertCheckin('u1', {

@@ -4,7 +4,7 @@ import { NutritionPanel } from '../NutritionPanel';
 import { nutritionService } from '../../../nutrition/nutritionService';
 import { recoverySnapshotService } from '../../../services/recoverySnapshotService';
 import type { NutritionDay } from '../../../nutrition/models';
-import type { DailyRecoverySnapshot } from '../../../engine/models';
+import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from '../../../engine/models';
 
 describe('NutritionPanel Component', () => {
     beforeEach(() => {
@@ -108,6 +108,7 @@ describe('NutritionPanel Component', () => {
                 asOfDate="2026-09-20"
                 initialRecords={[sampleDay]}
                 initialSnapshots={[sampleSnapshot]}
+                initialCheckins={[]}
             />,
         );
 
@@ -138,5 +139,183 @@ describe('NutritionPanel Component', () => {
         // System invariant notice
         expect(html).toContain('ADR-0042');
         expect(html).toContain('strictly invariant to nutrition inputs');
+    });
+
+    it('renders adherence loading badge when initialCheckins is omitted during static render', () => {
+        const sampleDay: NutritionDay = {
+            schemaVersion: 1,
+            date: '2026-09-20',
+            source: {
+                provider: 'garmin',
+                transport: 'garmin_connect',
+                origin: 'myfitnesspal',
+            },
+            syncedAt: '2026-09-20T12:00:00Z',
+            energyIntakeKcal: 2150,
+            hasIntakeData: true,
+            isPartialDay: true,
+            confidenceScore: 1.0,
+        };
+
+        const html = renderToStaticMarkup(
+            <NutritionPanel
+                userId="test-user"
+                asOfDate="2026-09-20"
+                initialRecords={[sampleDay]}
+                initialSnapshots={[]}
+            />,
+        );
+
+        expect(html).toContain('Adherence loading…');
+        expect(html).toContain('adherence-read-state');
+    });
+
+    it('does not infer tracking completeness when a finalized intake day is unrated', () => {
+        const sampleDay: NutritionDay = {
+            schemaVersion: 1,
+            date: '2026-09-20',
+            source: {
+                provider: 'garmin',
+                transport: 'garmin_connect',
+                origin: null,
+            },
+            syncedAt: '2026-09-20T23:00:00Z',
+            energyIntakeKcal: 2200,
+            hasIntakeData: true,
+            isPartialDay: false,
+            confidenceScore: 1.0,
+        };
+
+        const html = renderToStaticMarkup(
+            <NutritionPanel
+                userId="test-user"
+                asOfDate="2026-09-20"
+                initialRecords={[sampleDay]}
+                initialSnapshots={[]}
+                initialCheckins={[]}
+            />,
+        );
+
+        expect(html).toContain('Logged (adherence unrated)');
+        expect(html).toContain('Logged (unrated)');
+        expect(html).not.toContain('Logged / Complete');
+    });
+
+    it('renders subjective adherence badge when checkin rated yesterday tracking', () => {
+        const sampleDay: NutritionDay = {
+            schemaVersion: 1,
+            date: '2026-09-20',
+            source: {
+                provider: 'garmin',
+                transport: 'garmin_connect',
+                origin: null,
+            },
+            syncedAt: '2026-09-20T10:00:00Z',
+            energyIntakeKcal: 0,
+            hasIntakeData: true,
+            isPartialDay: false,
+            confidenceScore: 1.0,
+        };
+
+        const sampleCheckin = {
+            userId: 'test-user',
+            date: '2026-09-21', // Checkin on Sep 21 rates Sep 20 (D-1)
+            nutritionAdherenceYesterday: 'fasted' as const,
+        } as unknown as DailySubjectiveCheckin;
+
+        const html = renderToStaticMarkup(
+            <NutritionPanel
+                userId="test-user"
+                asOfDate="2026-09-20"
+                initialRecords={[sampleDay]}
+                initialSnapshots={[]}
+                initialCheckins={[sampleCheckin]}
+            />,
+        );
+
+        // Should render the full-day-fast badge instead of the unrated logged badge
+        expect(html).toContain('Marked Full-Day Fast (0 kcal)');
+        expect(html).toContain('adherence-fasted');
+    });
+
+    it('flags a full-day-fast self-report that conflicts with positive synced intake', () => {
+        const sampleDay: NutritionDay = {
+            schemaVersion: 1,
+            date: '2026-09-20',
+            source: {
+                provider: 'garmin',
+                transport: 'garmin_connect',
+                origin: null,
+            },
+            syncedAt: '2026-09-20T10:00:00Z',
+            energyIntakeKcal: 2200,
+            hasIntakeData: true,
+            isPartialDay: false,
+            confidenceScore: 1.0,
+        };
+        const sampleCheckin = {
+            userId: 'test-user',
+            date: '2026-09-21',
+            nutritionAdherenceYesterday: 'fasted' as const,
+        } as unknown as DailySubjectiveCheckin;
+
+        const html = renderToStaticMarkup(
+            <NutritionPanel
+                userId="test-user"
+                asOfDate="2026-09-20"
+                initialRecords={[sampleDay]}
+                initialSnapshots={[]}
+                initialCheckins={[sampleCheckin]}
+            />,
+        );
+
+        expect(html).toContain('Marked Full-Day Fast — conflicts with synced intake');
+        expect(html).toContain('adherence-conflict');
+        expect(html).toContain('2,200 kcal');
+    });
+
+    it('renders correct labels and classes for all tracking adherence levels', () => {
+        const sampleDay: NutritionDay = {
+            schemaVersion: 1,
+            date: '2026-09-20',
+            source: {
+                provider: 'garmin',
+                transport: 'garmin_connect',
+                origin: null,
+            },
+            syncedAt: '2026-09-20T10:00:00Z',
+            energyIntakeKcal: 2200,
+            hasIntakeData: true,
+            isPartialDay: false,
+            confidenceScore: 1.0,
+        };
+
+        const testCases = [
+            { adherence: 'fully_tracked' as const, expectedLabel: 'Fully Tracked', expectedClass: 'adherence-fully_tracked' },
+            { adherence: 'mostly_tracked' as const, expectedLabel: 'Mostly Tracked', expectedClass: 'adherence-mostly_tracked' },
+            { adherence: 'minimal' as const, expectedLabel: 'Minimally Tracked', expectedClass: 'adherence-minimal' },
+            { adherence: 'untracked' as const, expectedLabel: 'Untracked', expectedClass: 'adherence-untracked' },
+        ];
+
+        for (const { adherence, expectedLabel, expectedClass } of testCases) {
+            const checkin = {
+                userId: 'test-user',
+                date: '2026-09-21',
+                nutritionAdherenceYesterday: adherence,
+            } as unknown as DailySubjectiveCheckin;
+
+            const html = renderToStaticMarkup(
+                <NutritionPanel
+                    userId="test-user"
+                    asOfDate="2026-09-20"
+                    initialRecords={[sampleDay]}
+                    initialSnapshots={[]}
+                    initialCheckins={[checkin]}
+                />,
+            );
+
+            expect(html).toContain(expectedLabel);
+            expect(html).toContain(expectedClass);
+        }
     });
 });

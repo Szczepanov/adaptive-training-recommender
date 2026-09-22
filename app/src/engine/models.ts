@@ -43,6 +43,15 @@ export interface PhysicalWorkCheckin {
     notes?: string | null;
 }
 
+export const NUTRITION_TRACKING_ADHERENCE_LEVELS = [
+    'fully_tracked',
+    'mostly_tracked',
+    'minimal',
+    'untracked',
+    'fasted',
+] as const;
+export type NutritionTrackingAdherence = typeof NUTRITION_TRACKING_ADHERENCE_LEVELS[number];
+
 // --- Engine Input Models ---
 export interface SubjectiveInput {
     readiness: number; // 1-10
@@ -1368,6 +1377,8 @@ export interface DailySubjectiveCheckin {
     hunger1To10?: number | null;
     /** Context timing for the hunger rating. Preferred comparison series is morning_pre_breakfast. */
     hungerTiming?: 'morning_pre_breakfast' | 'other' | null;
+    /** Optional subjective rating of yesterday's (D-1) calorie tracking completeness. Zero recommendation authority (ADR-0042). */
+    nutritionAdherenceYesterday?: NutritionTrackingAdherence | null;
     // Availability block
     availability: {
         timeAvailableMin: number | null;
