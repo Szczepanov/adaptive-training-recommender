@@ -311,3 +311,10 @@
   margin-left: auto;
   margin-right: auto;
 }
+
+
+/* A subjective full-day-fast mark must not silently override contradictory synced intake. */
+.nutrition-badge.adherence-conflict {
+    border-color: #ef4444;
+    color: #fecaca;
+}
