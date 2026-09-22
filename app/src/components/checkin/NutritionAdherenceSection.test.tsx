@@ -12,6 +12,8 @@ describe('NutritionAdherenceSection (ADR-0042 & previous-day calorie scoring)', 
     );
 
     expect(html).toContain("Yesterday&#x27;s Calorie Tracking (D-1)");
+    expect(html).toContain('<details');
+    expect(html).not.toContain('<details class="checkin-section nutrition-adherence-section" open="">');
     expect(html).toContain('(Optional)');
     expect(html).toContain('Fully Tracked');
     expect(html).toContain('Mostly Tracked');
@@ -35,6 +37,7 @@ describe('NutritionAdherenceSection (ADR-0042 & previous-day calorie scoring)', 
     );
 
     expect(html).toContain('aria-label="Clear calorie tracking score"');
+    expect(html).toMatch(/<details class="checkin-section nutrition-adherence-section"[^>]*open="">/);
     expect(html).toContain('is-selected adherence-fasted');
     expect(html).toContain('aria-checked="true"');
   });

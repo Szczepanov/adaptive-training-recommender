@@ -299,6 +299,29 @@ const painExpandedCheckin: DailySubjectiveCheckin = {
   notes: 'Knee discomfort during stairs and early morning stiffness.',
 };
 
+const redFlagExpandedCheckin: DailySubjectiveCheckin = {
+  ...checkin,
+  redFlags: { present: true, categories: ['systemic_infection'] },
+  notes: 'Fever and chills reported; training should pause for medical evaluation.',
+};
+
+const uncategorizedRedFlagCheckin: DailySubjectiveCheckin = {
+  ...checkin,
+  redFlags: { present: true },
+  notes: 'Saved red-flag disclosure without a category.',
+};
+
+const savedOptionalContextCheckin: DailySubjectiveCheckin = {
+  ...checkin,
+  hunger1To10: 7,
+  hungerTiming: 'morning_pre_breakfast',
+  nutritionAdherenceYesterday: 'mostly_tracked',
+  availability: {
+    ...checkin.availability,
+    indoorOnly: true,
+  },
+};
+
 const restrictedSettings: TrainingSettings = {
   ...settings,
   guardrails: { ...settings.guardrails, avoid_high_impact: true, avoid_heavy_lower_body: true },
@@ -577,6 +600,27 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
     screen: 'checkin',
     expectedFocus: ['Affected body areas and tissue response levels are clearly displayed.'],
     fixture: buildFixture({ checkin: painExpandedCheckin }),
+  },
+  {
+    id: 'checkin-red-flag-expanded',
+    title: 'Daily check-in — red-flag safety detail expanded',
+    screen: 'checkin',
+    expectedFocus: ['Active red-flag safety information is visible without expanding optional data.'],
+    fixture: buildFixture({ checkin: redFlagExpandedCheckin }),
+  },
+  {
+    id: 'checkin-red-flag-uncategorized',
+    title: 'Daily check-in — legacy red-flag disclosure without category',
+    screen: 'checkin',
+    expectedFocus: ['A persisted red-flag disclosure remains visibly active even when no category was retained.'],
+    fixture: buildFixture({ checkin: uncategorizedRedFlagCheckin }),
+  },
+  {
+    id: 'checkin-optional-context-saved',
+    title: 'Daily check-in — saved optional fueling context',
+    screen: 'checkin',
+    expectedFocus: ['Saved hunger and calorie-tracking context auto-opens with compact summaries and clear actions.'],
+    fixture: buildFixture({ checkin: savedOptionalContextCheckin }),
   },
   {
     id: 'checkin-new',
