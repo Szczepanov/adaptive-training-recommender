@@ -1,9 +1,6 @@
 import type { KeyboardEvent } from 'react';
 import type { NutritionTrackingAdherence } from '../../engine/models';
-import {
-  NUTRITION_ADHERENCE_OPTIONS,
-  toggleNutritionAdherence,
-} from '../../utils/nutritionAdherence';
+import { NUTRITION_ADHERENCE_OPTIONS } from '../../utils/nutritionAdherence';
 import './NutritionAdherenceSection.css';
 
 export interface NutritionAdherenceSectionProps {
@@ -22,7 +19,9 @@ export function NutritionAdherenceSection({
   const isSet = value !== null && value !== undefined;
 
   const handleSelect = (optionValue: NutritionTrackingAdherence) => {
-    onChange(toggleNutritionAdherence(value, optionValue));
+    // ARIA radio semantics: selecting the active option keeps it selected.
+    // Clearing is an explicit action via the Clear button.
+    onChange(optionValue);
   };
 
   const handleClear = () => {
@@ -90,7 +89,7 @@ export function NutritionAdherenceSection({
                 (Optional)
               </span>
             </h2>
-            <p>Score your logging completeness to verify dietary data quality and deliberate fasting.</p>
+            <p>Describe yesterday&apos;s logging completeness and whether it was a full-day fast.</p>
           </div>
           {isSet && (
             <button
