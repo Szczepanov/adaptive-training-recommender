@@ -22,6 +22,7 @@ import { SubjectiveScaleRow } from './checkin/SubjectiveScaleRow';
 import { HungerSection } from './checkin/HungerSection';
 import { NutritionAdherenceSection } from './checkin/NutritionAdherenceSection';
 import { nutritionService } from '../nutrition/nutritionService';
+import { reconcileDailyNutrition } from '../nutrition/reconciliation';
 import { CheckinStepper } from './checkin/CheckinStepper';
 import { deriveCheckinSteps } from './checkin/checkinStepState';
 import './DailyCheckin.css';
@@ -232,22 +233,23 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
         }
         setPendingFollowups(needed);
 
-        try {
-          const days = await nutritionService.getNutritionDays(userId, yesterday, yesterday);
-          if (days.length > 0) {
+        const nutritionState = await nutritionService.getNutritionDaysState(userId, yesterday, yesterday);
+        if (nutritionState.status === 'AVAILABLE') {
+          const reconciled = reconcileDailyNutrition(nutritionState.data);
+          if (reconciled) {
             setYesterdayNutrition({
-              energyIntakeKcal: days[0].energyIntakeKcal ?? null,
-              hasIntakeData: Boolean(days[0].hasIntakeData),
-            });
-          } else {
-            setYesterdayNutrition({
-              energyIntakeKcal: null,
-              hasIntakeData: false,
+              energyIntakeKcal: reconciled.energyIntakeKcal,
+              hasIntakeData: reconciled.hasIntakeData,
             });
           }
-        } catch {
-          // Nutrition telemetry is an optional enhancement; failure must not block the check-in.
+        } else if (nutritionState.status === 'MISSING') {
+          setYesterdayNutrition({
+            energyIntakeKcal: null,
+            hasIntakeData: false,
+          });
         }
+        // INVALID/UNAVAILABLE nutrition is optional context: leave it undefined so the
+        // check-in remains usable without misrepresenting a failed read as "no intake".
 
         if (existing) {
           setPersistedCheckin(existing);
