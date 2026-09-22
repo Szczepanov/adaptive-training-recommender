@@ -24,6 +24,7 @@ from .account_link import (
 from .base_api import BaseJSONRequestHandler
 from .connection_status import reconcile_garmin_connection_status
 from .error_reporting import log_exception
+from .login_rate_limit import FirestoreLoginRateLimiter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,13 +37,14 @@ RATE_LIMIT_WINDOW_SECONDS = 10 * 60
 RATE_LIMIT_ATTEMPTS = 5
 
 
-class LoginRateLimiter:
-    """Small in-memory guard against accidental credential brute forcing.
+def _is_upstream_waf_signal(exc: GarminConnectConnectionError) -> bool:
+    """Recognize explicit Garmin bot-challenge messages without classifying generic 403s."""
+    message = str(exc).lower()
+    return any(signal in message for signal in ("cloudflare", "captcha", "bot challenge"))
 
-    The production service is intentionally capped at one Cloud Run instance, so this
-    process-local limiter covers the private/family deployment without introducing a
-    datastore containing login-attempt metadata.
-    """
+
+class LoginRateLimiter:
+    """Small in-memory guard for local development and compatibility tests."""
 
     def __init__(self) -> None:
         self._attempts: dict[str, deque[float]] = defaultdict(deque)
@@ -78,7 +80,9 @@ class LoginRateLimiter:
         return allowed
 
 
-RATE_LIMITER = LoginRateLimiter()
+RATE_LIMITER: LoginRateLimiter | FirestoreLoginRateLimiter = LoginRateLimiter()
+_MFA_ACCOUNT_KEYS: dict[str, tuple[str, float]] = {}
+_MFA_ACCOUNT_LOCK = threading.Lock()
 _SERVICE: GarminAccountLinkService | None = None
 _SERVICE_LOCK = threading.Lock()
 
@@ -89,6 +93,28 @@ def _service() -> GarminAccountLinkService:
         if _SERVICE is None:
             _SERVICE = GarminAccountLinkService(os.getenv("GARMIN_TOKEN_BUCKET", ""))
         return _SERVICE
+
+
+def _remember_mfa_account(challenge_id: str, account_key: str) -> None:
+    """Keep a short-lived in-process association; MFA sessions cannot survive a restart."""
+    with _MFA_ACCOUNT_LOCK:
+        now = time.monotonic()
+        for key, (_, expires_at) in list(_MFA_ACCOUNT_KEYS.items()):
+            if expires_at <= now:
+                del _MFA_ACCOUNT_KEYS[key]
+        _MFA_ACCOUNT_KEYS[challenge_id] = (account_key, now + 300)
+
+
+def _mfa_account_key(challenge_id: str) -> str | None:
+    with _MFA_ACCOUNT_LOCK:
+        value = _MFA_ACCOUNT_KEYS.get(challenge_id)
+        if value is None:
+            return None
+        account_key, expires_at = value
+        if expires_at <= time.monotonic():
+            del _MFA_ACCOUNT_KEYS[challenge_id]
+            return None
+        return account_key
 
 
 def _verified_uid(
@@ -226,12 +252,24 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
                 context={"path": self.path, "request_id": self.request_id},
                 level=logging.WARNING,
             )
+            retry_after_seconds = UPSTREAM_RETRY_AFTER_SECONDS
+            account_key = getattr(self, "_rate_limit_account_key", None)
+            if isinstance(RATE_LIMITER, FirestoreLoginRateLimiter) and account_key:
+                try:
+                    retry_after_seconds = RATE_LIMITER.record_upstream_rate_limit(account_key)
+                except Exception as persist_exc:
+                    log_exception(
+                        logger,
+                        "garmin link rate-limit persistence",
+                        persist_exc,
+                        context={"request_id": self.request_id},
+                    )
             self._error_response(
                 HTTPStatus.TOO_MANY_REQUESTS,
                 message="Garmin is rate limiting login attempts. Try again later.",
                 error_code=report.code,
                 retryable=report.retryable,
-                retry_after_seconds=UPSTREAM_RETRY_AFTER_SECONDS,
+                retry_after_seconds=retry_after_seconds,
                 **self._mfa_error_metadata(exc),
             )
         except GarminConnectAuthenticationError as exc:
@@ -263,6 +301,31 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
                 exc,
                 context={"path": self.path, "request_id": self.request_id},
             )
+            account_key = getattr(self, "_rate_limit_account_key", None)
+            if (
+                _is_upstream_waf_signal(exc)
+                and isinstance(RATE_LIMITER, FirestoreLoginRateLimiter)
+                and account_key
+            ):
+                try:
+                    retry_after_seconds = RATE_LIMITER.record_upstream_rate_limit(account_key)
+                except Exception as persist_exc:
+                    log_exception(
+                        logger,
+                        "garmin link rate-limit persistence",
+                        persist_exc,
+                        context={"request_id": self.request_id},
+                    )
+                    retry_after_seconds = UPSTREAM_RETRY_AFTER_SECONDS
+                self._error_response(
+                    HTTPStatus.TOO_MANY_REQUESTS,
+                    message="Garmin is rate limiting login attempts. Try again later.",
+                    error_code="garmin_link.rate_limited",
+                    retryable=True,
+                    retry_after_seconds=retry_after_seconds,
+                    **self._mfa_error_metadata(exc),
+                )
+                return
             self._error_response(
                 HTTPStatus.BAD_GATEWAY,
                 message="Garmin could not be reached. Try again shortly.",
@@ -305,8 +368,15 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
         self._json_response(HTTPStatus.OK, result)
 
     def _handle_login(self) -> None:
+        self._rate_limit_account_key = None
+        limiter = RATE_LIMITER
+        if isinstance(limiter, FirestoreLoginRateLimiter):
+            provider_allowed, provider_retry = limiter.check_provider()
+            if not provider_allowed:
+                self._rate_limited_response(provider_retry or 1)
+                return
         client_key = self._client_key()
-        allowed, retry_after_seconds = RATE_LIMITER.check(client_key)
+        allowed, retry_after_seconds = limiter.check(client_key)
         if not allowed:
             self._rate_limited_response(retry_after_seconds or 1)
             return
@@ -316,7 +386,8 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
         if not isinstance(email, str) or not isinstance(password, str):
             raise ValueError("Garmin email and password must be strings.")
         email_key = f"account:{email.strip().lower()}"
-        allowed, retry_after_seconds = RATE_LIMITER.check(email_key)
+        self._rate_limit_account_key = email_key
+        allowed, retry_after_seconds = limiter.check(email_key)
         if not allowed:
             self._rate_limited_response(retry_after_seconds or 1)
             return
@@ -324,7 +395,18 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
             self.headers.get("Authorization"),
             require_verified_email=True,
         )
+        if requested_uid and isinstance(limiter, FirestoreLoginRateLimiter):
+            allowed, retry_after_seconds = limiter.check(f"uid:{requested_uid}")
+            if not allowed:
+                self._rate_limited_response(retry_after_seconds or 1)
+                return
         result = _service().start_login(email, password, requested_uid=requested_uid)
+        if (
+            isinstance(limiter, FirestoreLoginRateLimiter)
+            and result.get("status") == "mfa_required"
+            and isinstance(result.get("challengeId"), str)
+        ):
+            _remember_mfa_account(result["challengeId"], email_key)
         self._json_response(HTTPStatus.OK, result)
 
     def _rate_limited_response(self, retry_after_seconds: int) -> None:
@@ -342,12 +424,36 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
         code = payload.get("code")
         if not isinstance(challenge_id, str) or not isinstance(code, str):
             raise ValueError("MFA challenge and code must be strings.")
+        if isinstance(RATE_LIMITER, FirestoreLoginRateLimiter):
+            account_key = _mfa_account_key(challenge_id)
+            self._rate_limit_account_key = account_key
+            if account_key is not None:
+                allowed, retry_after_seconds = RATE_LIMITER.check(account_key)
+                if not allowed:
+                    self._rate_limited_response(retry_after_seconds or 1)
+                    return
         result = _service().complete_mfa(challenge_id, code)
+        with _MFA_ACCOUNT_LOCK:
+            _MFA_ACCOUNT_KEYS.pop(challenge_id, None)
         self._json_response(HTTPStatus.OK, result)
 
 
 def main() -> int:
+    global RATE_LIMITER
+
     port = int(os.getenv("PORT", "8080"))
+    store_mode = os.getenv("GARMIN_RATE_LIMIT_STORE", "").strip().lower()
+    if store_mode == "firestore":
+        RATE_LIMITER = FirestoreLoginRateLimiter(
+            os.getenv("GARMIN_RATE_LIMIT_HMAC_KEY", ""),
+            window_seconds=RATE_LIMIT_WINDOW_SECONDS,
+            max_attempts=RATE_LIMIT_ATTEMPTS,
+            upstream_cooldown_seconds=UPSTREAM_RETRY_AFTER_SECONDS,
+        )
+    elif store_mode or os.getenv("K_SERVICE"):
+        raise GarminLinkConfigurationError(
+            "Cloud Run account linking requires GARMIN_RATE_LIMIT_STORE=firestore."
+        )
     # Fail at startup rather than accepting credentials and discovering after Garmin login
     # that there is nowhere safe to persist the refresh token.
     _service()

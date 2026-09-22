@@ -227,6 +227,24 @@ def test_rate_limit_stops_further_detail_fetches():
     )
 
 
+def test_backfill_rate_limit_stops_subsequent_detail_requests():
+    provider = DetailFakeProvider(activity_count=5)
+    provider.detail_side_effect = GarminConnectTooManyRequestsError("rate limited")
+    service, _ = _detail_service(provider)
+
+    with pytest.raises(GarminConnectTooManyRequestsError):
+        service._fetch_and_archive_backfill_activities(
+            provider,
+            datetime.fromisoformat("2026-08-06").date(),
+            datetime.fromisoformat("2026-08-06").date(),
+            include_details=True,
+            run_id="test-run",
+            stop_on_rate_limit=True,
+        )
+
+    assert provider.detail_calls == ["1"]
+
+
 def test_detail_fetch_skips_qualifying_activity_outside_target_date():
     """D-DETAIL-GATE scopes the live detail fetch to "the target-date pass of
     sync_daily" only. fetch_activities returns a 3-day lookback window (not just
@@ -818,19 +836,263 @@ def test_poll_manual_sync_requests_second_concurrent_worker_never_reaches_sync_d
 
 def test_poll_manual_sync_requests_initial_backfill(monkeypatch):
     monkeypatch.setattr("garmin_sync.service.firestore.transactional", lambda fn: fn)
-    settings = Settings(app_user_id="test_uid_789")
-    doc = _FakeSyncRequestDoc({"status": "pending", "requestType": "initial_backfill", "days": 56})
+    settings = Settings(
+        app_user_id="test_uid_789", garmin_initial_recent_days=3, garmin_backfill_chunk_days=2
+    )
+    doc = _FakeSyncRequestDoc(
+        {
+            "status": "pending",
+            "requestType": "initial_backfill",
+            "days": 10,
+            "backfillEndDate": "2026-08-10",
+        }
+    )
     service = GarminSyncService(settings=settings, repository=MagicMock(db=_FakeSyncRequestDb(doc)))
     service.backfill = MagicMock(return_value=True)
     service._sync_current_performance_targets = MagicMock()
+    service._sync_current_gear = MagicMock()
 
     result = service.poll_manual_sync_requests()
 
     assert result is True
-    service.backfill.assert_called_once_with(days=56, force=False)
-    service._sync_current_performance_targets.assert_called_once()
-    assert doc.data["status"] == "completed"
+    service.backfill.assert_called_once()
+    assert service.backfill.call_args.kwargs["start_date_str"] == "2026-08-08"
+    assert service.backfill.call_args.kwargs["end_date_str"] == "2026-08-10"
+    assert doc.data["status"] == "pending"
+    assert doc.data["backfillPhase"] == "history"
+    assert doc.data["backfillNextDate"] == "2026-08-01"
+    service.backfill.reset_mock()
+    assert service.poll_manual_sync_requests() is True
+    assert service.backfill.call_args.kwargs["start_date_str"] == "2026-08-01"
+    assert service.backfill.call_args.kwargs["end_date_str"] == "2026-08-02"
+    assert doc.data["status"] == "pending"
+    service._sync_current_performance_targets.assert_not_called()
     assert doc.data["error"] is None
+
+
+def _initial_backfill_service(monkeypatch, provider, *, days=5, recent=2, chunk=2):
+    monkeypatch.setattr("garmin_sync.service.firestore.transactional", lambda fn: fn)
+    doc = _FakeSyncRequestDoc(
+        {
+            "status": "pending",
+            "requestType": "initial_backfill",
+            "days": days,
+            "backfillEndDate": "2026-08-10",
+        }
+    )
+    db = _FakeSyncRequestDb(doc)
+    repository = MagicMock(db=db)
+    repository.get_historical_snapshots.return_value = {}
+    repository.get_snapshot.return_value = None
+    settings = Settings(
+        app_user_id="test_uid_789",
+        garmin_initial_recent_days=recent,
+        garmin_backfill_chunk_days=chunk,
+    )
+    service = GarminSyncService(settings=settings, repository=repository, provider=provider)
+    service._sync_current_performance_targets = MagicMock()
+    service._sync_current_gear = MagicMock()
+    return service, doc
+
+
+def test_initial_backfill_recent_then_history_resumes_from_persisted_cursor(monkeypatch):
+    provider = FakeTestProvider()
+    service, doc = _initial_backfill_service(monkeypatch, provider)
+
+    assert service.poll_manual_sync_requests() is True
+    assert [date for date, _ in provider.fetch_daily_metrics_calls] == [
+        "2026-08-09",
+        "2026-08-10",
+    ]
+    assert doc.data["backfillPhase"] == "history"
+    assert doc.data["backfillNextDate"] == "2026-08-06"
+
+    assert service.poll_manual_sync_requests() is True
+    assert doc.data["backfillNextDate"] == "2026-08-08"
+    assert service.poll_manual_sync_requests() is True
+    assert doc.data["status"] == "pending"
+    assert doc.data["backfillPhase"] == "refresh"
+    assert doc.data["backfillNextDate"] == "2026-08-09"
+    assert service.poll_manual_sync_requests() is True
+    assert doc.data["status"] == "completed"
+    assert [date for date, _ in provider.fetch_daily_metrics_calls] == [
+        "2026-08-09",
+        "2026-08-10",
+        "2026-08-06",
+        "2026-08-07",
+        "2026-08-08",
+        "2026-08-09",
+        "2026-08-10",
+    ]
+
+
+def test_initial_backfill_failure_keeps_first_unfinished_date(monkeypatch):
+    class FailingProvider(FakeTestProvider):
+        fail_date = "2026-08-07"
+
+        def fetch_daily_metrics(self, target_date_iso, yesterday_iso):
+            if target_date_iso == self.fail_date:
+                self.fetch_daily_metrics_calls.append((target_date_iso, yesterday_iso))
+                raise RuntimeError("unavailable")
+            return super().fetch_daily_metrics(target_date_iso, yesterday_iso)
+
+    provider = FailingProvider()
+    service, doc = _initial_backfill_service(monkeypatch, provider)
+    assert service.poll_manual_sync_requests() is True  # recent bootstrap
+    assert service.poll_manual_sync_requests() is False  # history: 6 succeeds, 7 fails
+    assert doc.data["status"] == "pending"
+    assert doc.data["backfillNextDate"] == "2026-08-07"
+    provider.fail_date = ""
+    doc.data["retryAt"] = "2026-01-01T00:00:00+00:00"
+    assert service.poll_manual_sync_requests() is True
+    assert doc.data["backfillNextDate"] == "2026-08-09"
+    assert [date for date, _ in provider.fetch_daily_metrics_calls].count("2026-08-06") == 1
+
+
+def test_initial_backfill_activity_429_records_cooldown_and_refuses_early_claim(monkeypatch):
+    class RateLimitedProvider(FakeTestProvider):
+        activity_calls = 0
+
+        def fetch_activities(self, start_date_iso, end_date_iso, zone4_floor=None):
+            self.activity_calls += 1
+            raise GarminConnectTooManyRequestsError("synthetic 429")
+
+    provider = RateLimitedProvider()
+    service, doc = _initial_backfill_service(monkeypatch, provider)
+    assert service.poll_manual_sync_requests() is True
+    assert doc.data["status"] == "pending"
+    assert doc.data.get("backfillNextDate") is None
+    assert datetime.fromisoformat(doc.data["retryAt"]) > datetime.now().astimezone()
+    assert service.poll_manual_sync_requests() is True
+    assert provider.activity_calls == 1
+
+
+def test_initial_backfill_daily_429_checkpoints_only_prior_dates(monkeypatch):
+    class RateLimitedProvider(FakeTestProvider):
+        rate_limited = True
+
+        def fetch_daily_metrics(self, target_date_iso, yesterday_iso):
+            if self.rate_limited and target_date_iso == "2026-08-10":
+                raise GarminConnectTooManyRequestsError("synthetic 429")
+            return super().fetch_daily_metrics(target_date_iso, yesterday_iso)
+
+    provider = RateLimitedProvider()
+    service, doc = _initial_backfill_service(monkeypatch, provider)
+    assert service.poll_manual_sync_requests() is True
+    assert doc.data["status"] == "pending"
+    assert doc.data["backfillPhase"] == "recent"
+    assert doc.data["backfillNextDate"] == "2026-08-10"
+    assert doc.data["retryAt"]
+    assert service.poll_manual_sync_requests() is True
+    assert [day for day, _ in provider.fetch_daily_metrics_calls] == ["2026-08-09"]
+    provider.rate_limited = False
+    doc.data["retryAt"] = "2026-01-01T00:00:00+00:00"
+    assert service.poll_manual_sync_requests() is True
+    assert doc.data["backfillPhase"] == "history"
+    assert [day for day, _ in provider.fetch_daily_metrics_calls] == [
+        "2026-08-09",
+        "2026-08-10",
+    ]
+
+
+def test_initial_backfill_nutrition_429_does_not_persist_or_advance_date(monkeypatch):
+    class NutritionRateLimitedProvider(FakeTestProvider):
+        capabilities = ProviderCapabilities(
+            daily_summary=True, sleep=True, hrv=True, activities=True, nutrition=True
+        )
+        rate_limited = True
+        nutrition_calls = 0
+
+        def fetch_daily_nutrition(self, target_date_iso):
+            self.nutrition_calls += 1
+            if self.rate_limited:
+                raise GarminConnectTooManyRequestsError("synthetic nutrition 429")
+            return None
+
+    provider = NutritionRateLimitedProvider()
+    service, doc = _initial_backfill_service(monkeypatch, provider)
+    service.repository.save_nutrition_day = MagicMock()
+
+    assert service.poll_manual_sync_requests() is True
+    assert doc.data.get("backfillPhase", "recent") == "recent"
+    assert doc.data.get("backfillNextDate") != "2026-08-10"
+    assert service.repository.upsert_snapshot.call_count == 0
+
+    provider.rate_limited = False
+    doc.data["retryAt"] = "2026-01-01T00:00:00+00:00"
+    assert service.poll_manual_sync_requests() is True
+    assert doc.data["backfillPhase"] == "history"
+    assert doc.data["backfillNextDate"] == "2026-08-06"
+    assert provider.nutrition_calls == 3
+    assert service.repository.upsert_snapshot.call_count == 2
+
+
+def test_initial_backfill_progress_rejects_stale_claim(monkeypatch):
+    service, doc = _initial_backfill_service(monkeypatch, FakeTestProvider())
+    doc.data.update({"status": "processing", "claimId": "new-owner"})
+    assert (
+        service._update_initial_backfill_request(
+            service.repository.db.collection("users")
+            .document("test_uid_789")
+            .collection("garmin_sync_requests")
+            .document("latest"),
+            "old-owner",
+            {"backfillNextDate": "2026-08-07"},
+        )
+        is False
+    )
+    assert "backfillNextDate" not in doc.data
+
+
+def test_initial_backfill_existing_dates_advance_without_provider_requests(monkeypatch):
+    provider = FakeTestProvider()
+    service, doc = _initial_backfill_service(monkeypatch, provider)
+    service.repository.get_historical_snapshots.return_value = {
+        "2026-08-09": {"raw": {"sleepScore": 80}},
+        "2026-08-10": {"raw": {"sleepScore": 81}},
+    }
+    assert service.poll_manual_sync_requests() is True
+    assert provider.fetch_daily_metrics_calls == []
+    assert doc.data["backfillPhase"] == "history"
+
+
+def test_initial_backfill_second_worker_cannot_claim_active_chunk(monkeypatch):
+    provider = FakeTestProvider()
+    worker, doc = _initial_backfill_service(monkeypatch, provider)
+    second = GarminSyncService(
+        settings=worker.settings,
+        repository=MagicMock(db=worker.repository.db),
+        provider=FakeTestProvider(),
+    )
+    second.backfill = MagicMock(return_value=True)
+    original_fetch = provider.fetch_activities
+
+    def fetch_and_probe(start_date_iso, end_date_iso, zone4_floor=None):
+        assert second.poll_manual_sync_requests() is True
+        return original_fetch(start_date_iso, end_date_iso, zone4_floor)
+
+    provider.fetch_activities = fetch_and_probe
+    assert worker.poll_manual_sync_requests() is True
+    second.backfill.assert_not_called()
+    assert doc.data["backfillPhase"] == "history"
+
+
+def test_initial_backfill_reclaims_interrupted_processing_after_lease_window(monkeypatch):
+    provider = FakeTestProvider()
+    service, doc = _initial_backfill_service(monkeypatch, provider)
+    doc.data.update(
+        {
+            "status": "processing",
+            "claimId": "dead-worker",
+            "claimedAt": (datetime.now().astimezone() - timedelta(minutes=32)).isoformat(),
+            "backfillPhase": "recent",
+            "backfillNextDate": "2026-08-10",
+        }
+    )
+    assert service.poll_manual_sync_requests() is True
+    assert doc.data["claimId"] != "dead-worker"
+    assert [day for day, _ in provider.fetch_daily_metrics_calls] == ["2026-08-10"]
+    assert doc.data["backfillPhase"] == "history"
 
 
 def test_sync_daily_cold_start_auto_backfill():

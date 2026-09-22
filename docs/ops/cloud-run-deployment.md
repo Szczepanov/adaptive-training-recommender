@@ -60,8 +60,8 @@ gcloud services enable run.googleapis.com cloudscheduler.googleapis.com \
 ## 2. Create the token bucket and service accounts
 
 A private GCS bucket holds the Garmin OAuth token JSON (`GARMIN_TOKEN_STORE=gcs`
-keeps Cloud Run stateless -- no local disk between runs). Two service accounts:
-one the Jobs run as, one Cloud Scheduler uses to invoke them (least privilege --
+keeps Cloud Run stateless -- no local disk between runs). Separate identities are used
+for the scheduled Job, public account-link service, and Cloud Scheduler (least privilege --
 the scheduler identity never touches Firestore or GCS directly).
 
 ```bash
@@ -72,17 +72,54 @@ gcloud storage buckets create gs://${GCP_PROJECT}-garmin-tokens \
 ```bash
 gcloud iam service-accounts create garmin-sync-job \
   --display-name="Garmin sync Cloud Run Job runtime identity"
+gcloud iam service-accounts create garmin-account-link \
+  --display-name="Garmin account-link Cloud Run service identity"
 ```
 
 ```bash
 export JOB_SA_EMAIL="garmin-sync-job@${GCP_PROJECT}.iam.gserviceaccount.com"
+export LINK_SA_EMAIL="garmin-account-link@${GCP_PROJECT}.iam.gserviceaccount.com"
 
 gcloud projects add-iam-policy-binding ${GCP_PROJECT} \
   --member="serviceAccount:${JOB_SA_EMAIL}" --role="roles/datastore.user"
 
 gcloud storage buckets add-iam-policy-binding gs://${GCP_PROJECT}-garmin-tokens \
   --member="serviceAccount:${JOB_SA_EMAIL}" --role="roles/storage.objectAdmin"
+gcloud projects add-iam-policy-binding ${GCP_PROJECT} \
+  --member="serviceAccount:${LINK_SA_EMAIL}" --role="roles/datastore.user"
+gcloud storage buckets add-iam-policy-binding gs://${GCP_PROJECT}-garmin-tokens \
+  --member="serviceAccount:${LINK_SA_EMAIL}" --role="roles/storage.objectAdmin"
 ```
+
+The public Garmin account-link endpoint uses a Firestore transaction for each login
+attempt. Its dedicated runtime identity has only the Firestore and token-bucket access
+needed by the link flow. Provision the HMAC key in Secret Manager once, and grant secret
+access only to that identity (never to the scheduled Job identity):
+
+```bash
+gcloud secrets create garmin-link-rate-limit-hmac --replication-policy=automatic
+openssl rand -base64 48 | gcloud secrets versions add garmin-link-rate-limit-hmac --data-file=-
+gcloud secrets add-iam-policy-binding garmin-link-rate-limit-hmac \
+  --member="serviceAccount:${LINK_SA_EMAIL}" --role="roles/secretmanager.secretAccessor"
+```
+
+Keep this key server-only and stable across deployments. Rotating it changes every HMAC
+bucket identifier, effectively resetting all active attempt windows and cooldowns; plan
+rotation during a controlled maintenance window. Firestore holds only HMAC bucket IDs,
+attempt times, cooldown deadlines, and distinct-account 429 evidence. It holds no Garmin
+email, IP, UID, credential, MFA code, token, or provider response. One account's 429
+starts a 30-minute cooldown for that account; the provider breaker opens only after
+three distinct accounts return 429 within 10 minutes. Configure a Firestore
+TTL policy for `garminLoginRateLimits.expireAt` to remove expired throttle documents
+([Google Cloud TTL command reference](https://docs.cloud.google.com/sdk/gcloud/reference/firestore/fields/ttls/update)):
+
+```bash
+gcloud firestore fields ttls update expireAt \
+  --collection-group=garminLoginRateLimits --enable-ttl
+```
+
+The account-link service fails startup if its Firestore mode or key is missing in Cloud
+Run, so this secret and IAM binding are prerequisites for deployment.
 
 ```bash
 gcloud iam service-accounts create garmin-scheduler-invoker \
@@ -136,6 +173,20 @@ It prompts for an MFA code interactively if your Garmin account has 2FA enabled.
 
 Copy `docs/ops/cloud-run-job.env.yaml.example` to `cloud-run-job.env.yaml`
 (gitignored) and fill in `GARMIN_TOKEN_BUCKET` (`${GCP_PROJECT}-garmin-tokens`) and `GCP_PROJECT_ID`.
+For a newly linked account, `GARMIN_INITIAL_RECENT_DAYS=7` limits the first pass to a
+recent slice (allowed 1–14 days). `GARMIN_BACKFILL_CHUNK_DAYS=7` bounds each historical
+continuation (allowed 1–14 days), and `GARMIN_BACKFILL_RETRY_SECONDS=1800` delays the
+next attempt after a provider throttle (minimum 60 seconds). Add these values to the env
+file when deploying manually; the GitHub workflow supplies them. Existing
+`GARMIN_BACKFILL_DELAY_MIN` / `GARMIN_BACKFILL_DELAY_MAX` settings pace each Garmin API
+call during backfill.
+Create an account-link-only copy so the scheduled Jobs do not receive the login limiter
+configuration:
+
+```bash
+cp cloud-run-job.env.yaml cloud-run-garmin-link.env.yaml
+printf 'GARMIN_RATE_LIMIT_STORE: "firestore"\n' >> cloud-run-garmin-link.env.yaml
+```
 
 ```bash
 # Garmin's interactive MFA continuation requires the same in-memory client/session.
@@ -144,8 +195,9 @@ Copy `docs/ops/cloud-run-job.env.yaml.example` to `cloud-run-job.env.yaml`
 # and the user restarts login.
 gcloud run deploy garmin-account-link \
   --image=${IMAGE_TAG} --region=${REGION} \
-  --service-account=${JOB_SA_EMAIL} \
-  --env-vars-file=cloud-run-job.env.yaml \
+  --service-account=${LINK_SA_EMAIL} \
+  --env-vars-file=cloud-run-garmin-link.env.yaml \
+  --set-secrets=GARMIN_RATE_LIMIT_HMAC_KEY=garmin-link-rate-limit-hmac:latest \
   --command=python --args=-m,garmin_sync.account_link_api \
   --port=8080 --timeout=300 --concurrency=10 \
   --min-instances=0 --max-instances=1 \

@@ -95,6 +95,7 @@ env:
   CLOUDSDK_CORE_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
   REGION: ${{ inputs.region }}
   JOB_SA_EMAIL: garmin-sync-job@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+  LINK_SA_EMAIL: garmin-account-link@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
   ANTHROPOMETRY_WRITE_SA_EMAIL: anthropometry-write-api@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
   SCHEDULER_SA_EMAIL: garmin-scheduler-invoker@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
   TOKEN_BUCKET: ${{ secrets.GCP_PROJECT_ID }}-garmin-tokens
@@ -172,8 +173,13 @@ jobs:
           GARMIN_ALLOW_CREDENTIAL_LOGIN: "false"
           GARMIN_ACTIVITY_DETAIL_ENABLED: "true"
           GARMIN_ACTIVITY_HR_FIDELITY_ENABLED: "true"
+          GARMIN_INITIAL_RECENT_DAYS: "7"
+          GARMIN_BACKFILL_CHUNK_DAYS: "7"
+          GARMIN_BACKFILL_RETRY_SECONDS: "1800"
           GCP_PROJECT_ID: "${GCP_PROJECT}"
           EOF
+          cp cloud-run-garmin.env.yaml cloud-run-garmin-link.env.yaml
+          printf 'GARMIN_RATE_LIMIT_STORE: "firestore"\n' >> cloud-run-garmin-link.env.yaml
 
       - name: Deploy self-service Garmin account linker
         run: |
@@ -183,8 +189,9 @@ jobs:
           # and the user restarts login.
           gcloud run deploy garmin-account-link \
             --image="${IMAGE_TAG}" --region="${REGION}" \
-            --service-account="${JOB_SA_EMAIL}" \
-            --env-vars-file=cloud-run-garmin.env.yaml \
+            --service-account="${LINK_SA_EMAIL}" \
+            --env-vars-file=cloud-run-garmin-link.env.yaml \
+            --set-secrets=GARMIN_RATE_LIMIT_HMAC_KEY=garmin-link-rate-limit-hmac:latest \
             --command=python --args=-m,garmin_sync.account_link_api \
             --port=8080 --timeout=300 --concurrency=10 \
             --min-instances=0 --max-instances=1 \

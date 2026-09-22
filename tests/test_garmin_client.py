@@ -4,12 +4,64 @@ import pytest
 from garminconnect import (
     Garmin,
     GarminConnectAuthenticationError,
+    GarminConnectConnectionError,
     GarminConnectInvalidFileFormatError,
     GarminConnectNotFoundError,
     GarminConnectTooManyRequestsError,
 )
 
 from garmin_sync.garmin_client import GarminClientWrapper
+
+
+def test_backfill_paces_each_wrapper_request_including_activity_pages(monkeypatch):
+    clock = [100.0]
+    sleeps = []
+    monkeypatch.setattr("garmin_sync.garmin_client.time.monotonic", lambda: clock[0])
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        clock[0] += seconds
+
+    monkeypatch.setattr("garmin_sync.garmin_client.time.sleep", sleep)
+    monkeypatch.setattr("garmin_sync.garmin_client.random.uniform", lambda low, high: low)
+    wrapper = GarminClientWrapper()
+    wrapper.api = MagicMock()
+    wrapper.api.get_activities.side_effect = [[{"startTimeLocal": "2026-08-10"}], []]
+    wrapper.configure_backfill_pacing(1.5, 4.0)
+
+    wrapper.get_stats("2026-08-10")
+    wrapper.get_activities_window("2026-08-10", "2026-08-10")
+    assert sleeps == [1.5, 1.5]
+    wrapper.configure_backfill_pacing(0.0, 0.0)
+    wrapper.get_stats("2026-08-11")
+    assert sleeps == [1.5, 1.5]
+
+
+@pytest.mark.parametrize(
+    "error,response_status",
+    [
+        (GarminConnectConnectionError("API Error 429 - Too Many Requests"), None),
+        (GarminConnectConnectionError("wrapped HTTP error"), 429),
+    ],
+)
+def test_wrapped_http_429_becomes_typed_rate_limit_error(error, response_status):
+    wrapper = GarminClientWrapper()
+    wrapper.api = MagicMock()
+    wrapper.api.get_stats.side_effect = error
+    if response_status is not None:
+        error.response = MagicMock(status_code=response_status)
+
+    with pytest.raises(GarminConnectTooManyRequestsError):
+        wrapper.get_stats("2026-08-10")
+
+
+def test_wrapped_non_429_http_error_remains_connection_error():
+    wrapper = GarminClientWrapper()
+    wrapper.api = MagicMock()
+    wrapper.api.get_stats.side_effect = GarminConnectConnectionError("API Error 403 - Forbidden")
+
+    with pytest.raises(GarminConnectConnectionError):
+        wrapper.get_stats("2026-08-10")
 
 
 def test_get_activities_window_filters_paginated_plain_list_response():
