@@ -41,17 +41,6 @@ export const NUTRITION_ADHERENCE_OPTIONS: readonly NutritionAdherenceOption[] = 
   },
 ];
 
-/**
- * Resolves the next adherence value when an option is selected.
- * Clicking the already active option toggles it off (returns null).
- */
-export function toggleNutritionAdherence(
-  current: NutritionTrackingAdherence | null | undefined,
-  selected: NutritionTrackingAdherence,
-): NutritionTrackingAdherence | null {
-  return current === selected ? null : selected;
-}
-
 
 /**
  * Daily check-in D records adherence for D-1. A nutrition display window [start, end]
