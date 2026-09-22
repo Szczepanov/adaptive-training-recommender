@@ -108,6 +108,7 @@ describe('NutritionPanel Component', () => {
                 asOfDate="2026-09-20"
                 initialRecords={[sampleDay]}
                 initialSnapshots={[sampleSnapshot]}
+                initialCheckins={[]}
             />,
         );
 
@@ -138,6 +139,35 @@ describe('NutritionPanel Component', () => {
         // System invariant notice
         expect(html).toContain('ADR-0042');
         expect(html).toContain('strictly invariant to nutrition inputs');
+    });
+
+    it('renders adherence loading badge when initialCheckins is omitted during static render', () => {
+        const sampleDay: NutritionDay = {
+            schemaVersion: 1,
+            date: '2026-09-20',
+            source: {
+                provider: 'garmin',
+                transport: 'garmin_connect',
+                origin: 'myfitnesspal',
+            },
+            syncedAt: '2026-09-20T12:00:00Z',
+            energyIntakeKcal: 2150,
+            hasIntakeData: true,
+            isPartialDay: true,
+            confidenceScore: 1.0,
+        };
+
+        const html = renderToStaticMarkup(
+            <NutritionPanel
+                userId="test-user"
+                asOfDate="2026-09-20"
+                initialRecords={[sampleDay]}
+                initialSnapshots={[]}
+            />,
+        );
+
+        expect(html).toContain('Adherence loading…');
+        expect(html).toContain('adherence-read-state');
     });
 
     it('does not infer tracking completeness when a finalized intake day is unrated', () => {
