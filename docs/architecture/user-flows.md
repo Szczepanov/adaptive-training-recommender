@@ -15,6 +15,8 @@ over inferred component names or historical plans.
   `uid` so account transitions replace account-scoped React state.
 * `app/src/App.tsx` `App`, `loadDecisionInput`, `handleNavigate` — route state, daily
   auto-routing, global overlays/banners, screen rendering, and session launch plumbing.
+* `app/src/engine/adapters.ts` `mapCheckinToSubjectiveInput` — the explicit boundary
+  between persisted daily check-in fields and decision-facing subjective inputs.
 * `app/src/components/Header.tsx` `Header` and `app/src/components/MobileNav.tsx`
   `MobileNav` — desktop and mobile navigation chrome.
 * `app/src/contexts/AuthContext.tsx` `AuthProvider` — Firebase auth phase and background
@@ -247,7 +249,7 @@ than partially applying an obsolete write.
 1. pending next-morning/tissue follow-ups from previous training;
 2. subjective recovery ratings;
 3. health/safety, physical-work, and local-tissue context;
-4. today's availability and modality/environment constraints.
+4. today's time availability and optional modality preference.
 
 Garmin context is deliberately hidden until the first complete subjective submission to
 reduce anchoring on wearable values. The normal submit path saves and returns to Home;
@@ -260,6 +262,20 @@ Safety, and Availability are derived from the last successfully persisted daily 
 prefilled defaults or unsaved edits cannot appear complete. Follow-ups reflect the outstanding
 review queue and clear only after a follow-up save succeeds (or the athlete explicitly skips
 that prompt for the current visit).
+
+Daily availability has a deliberately narrow decision boundary. `mapCheckinToSubjectiveInput`
+consumes `availability.timeAvailableMin` as today's time input and
+`availability.preferredModalityToday` as the optional modality request. The persisted legacy
+fields `availability.indoorOnly` and `unusuallyLimitedTime` remain readable/writable for
+compatibility but are not current decision inputs. `DailyCheckin` therefore does not present
+them as authoritative controls; ordinary edits preserve their stored values rather than
+deleting or migrating them. Any future UI that re-exposes either field as a constraint must
+first add matching engine authority and update this contract.
+
+The hard `painOrInjury` checkbox is similarly narrower than graded local tissue response: it
+means active pain/injury that should strongly restrict training. Stiffness or movement changes
+that do not rise to that hard flag belong in `tissueResponses`; opening or editing the local
+tissue disclosure must not require setting `painOrInjury`.
 
 ### 5. Structured sessions
 
@@ -323,11 +339,13 @@ The two routes intentionally have different authority:
   configuration and uses an explicit save/reset model for editable preference state.
 
 The distinction is architecturally important, but some concepts overlap in the UI:
-equipment versus unavailable modalities, hard time limits versus preferred/default times,
-and persistent environment setup versus today's `indoorOnly` availability. Each overlapping
-section now names its counterpart inline (`TrainingSettings` equipment, time/location, and
-guardrail notes point at `Preferences`; `ModalitySections` unavailable/avoided notes and the
-`StyleSections` default-duration note point back), and both headers state their save model.
+equipment versus unavailable modalities, and hard time limits versus preferred/default and
+per-day available times. Persistent environment setup is not duplicated as an authoritative
+daily control: the check-in's legacy `indoorOnly` field is retained only for compatibility as
+described above. Each overlapping section names its counterpart inline (`TrainingSettings`
+equipment, time/location, and guardrail notes point at `Preferences`; `ModalitySections`
+unavailable/avoided notes and the `StyleSections` default-duration note point back), and both
+headers state their save model.
 
 ### 9. Data and AI export
 

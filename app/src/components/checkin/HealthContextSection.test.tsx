@@ -8,11 +8,13 @@ describe('HealthContextSection', () => {
             <HealthContextSection
                 value={undefined}
                 symptomsPresent={false}
+                onSymptomsChange={() => {}}
                 onChange={() => {}}
             />,
         );
 
-        expect(html).toContain('Anything unusual since yesterday?');
+        expect(html).toContain('Other context since yesterday?');
+        expect(html).toContain('I feel unwell');
         expect(html).toContain('Alcohol');
         expect(html).toContain('Travel / jet lag');
         expect(html).toContain('Heat / sauna');
@@ -45,6 +47,7 @@ describe('HealthContextSection', () => {
                     closeSickContact: null,
                 }}
                 symptomsPresent={false}
+                onSymptomsChange={() => {}}
                 onChange={() => {}}
             />,
         );
@@ -55,7 +58,7 @@ describe('HealthContextSection', () => {
 
     it('shows a Yes selection and context badge when a contextual flag is reported', () => {
         const html = renderToStaticMarkup(
-            <HealthContextSection value={{ closeSickContact: true }} symptomsPresent={false} onChange={() => {}} />,
+            <HealthContextSection value={{ closeSickContact: true }} symptomsPresent={false} onSymptomsChange={() => {}} onChange={() => {}} />,
         );
 
         expect(html).toMatch(/aria-label="Close sick contact"[\s\S]*?<button[^>]*aria-pressed="true"[^>]*>Yes<\/button>/);
@@ -67,6 +70,7 @@ describe('HealthContextSection', () => {
             <HealthContextSection
                 value={{ alcoholDrinksLast24h: 2, travelDisruption: 'timezone_shift', timezoneShiftHours: 2 }}
                 symptomsPresent={false}
+                onSymptomsChange={() => {}}
                 onChange={() => {}}
             />,
         );
@@ -89,6 +93,7 @@ describe('HealthContextSection', () => {
                     },
                 }}
                 symptomsPresent={true}
+                onSymptomsChange={() => {}}
                 onChange={() => {}}
             />,
         );

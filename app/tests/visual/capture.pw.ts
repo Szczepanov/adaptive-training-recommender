@@ -65,6 +65,8 @@ for (const scenario of VISUAL_SCENARIOS) {
       for (const selector of [
         '.red-flag-disclosure',
         '.tissue-response-disclosure',
+        '.health-context',
+        '.physical-work-card',
         '.hunger-section',
         '.nutrition-adherence-section',
         '.availability-disclosure',
@@ -72,6 +74,8 @@ for (const scenario of VISUAL_SCENARIOS) {
         await expect(page.locator(`${selector}[open]`)).toHaveCount(0);
       }
       await expect(page.getByText('No warning selected', { exact: true })).toBeVisible();
+      await expect(page.getByText('I feel unwell', { exact: true })).toBeVisible();
+      await expect(page.getByText(/Yesterday's extra physical load/)).toBeVisible();
     }
 
     if (scenario.id === 'checkin-pain-expanded') {
@@ -101,7 +105,7 @@ for (const scenario of VISUAL_SCENARIOS) {
       await expect(page.locator('.availability-disclosure[open]')).toHaveCount(0);
       await expect(page.locator('.hunger-section > summary .checkin-disclosure-status')).toHaveText('7/10');
       await expect(page.locator('.nutrition-adherence-section > summary .checkin-disclosure-status')).toHaveText('Mostly Tracked');
-      await expect(page.locator('.availability-disclosure > summary .checkin-disclosure-status')).toHaveText('60 min · Running · Indoor only');
+      await expect(page.locator('.availability-disclosure > summary .checkin-disclosure-status')).toHaveText('60 min · No preference');
       await expect(page.getByRole('button', { name: 'Clear hunger score' })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Clear calorie tracking score' })).toBeVisible();
     }
@@ -178,6 +182,8 @@ test('check-in optional disclosures are keyboard-operable', async ({ page }) => 
   const disclosures = [
     '.red-flag-disclosure',
     '.tissue-response-disclosure',
+    '.health-context',
+    '.physical-work-card',
     '.hunger-section',
     '.nutrition-adherence-section',
     '.availability-disclosure',
@@ -193,6 +199,34 @@ test('check-in optional disclosures are keyboard-operable', async ({ page }) => 
     await summary.press('Space');
     await expect(details).not.toHaveAttribute('open', '');
   }
+});
+
+test('check-in safety topics can coexist and disclose independently', async ({ page }) => {
+  const scenario = VISUAL_SCENARIOS.find(candidate => candidate.id === 'checkin-new');
+  if (!scenario) throw new Error('Missing checkin-new visual scenario');
+  await visitScenario(page, scenario);
+
+  const painFlag = page.getByRole('checkbox', { name: /Active pain or injury/ });
+  await expect(painFlag).not.toBeChecked();
+
+  // Graded local tissue context must remain independently reportable without promoting
+  // the hard pain/injury gate.
+  await page.locator('.tissue-response-disclosure > summary').press('Enter');
+  await expect(page.locator('.tissue-response-disclosure[open]')).toHaveCount(1);
+  await expect(painFlag).not.toBeChecked();
+
+  await page.locator('label').filter({ hasText: 'Active pain or injury' }).click();
+  await expect(painFlag).toBeChecked();
+
+  await page.locator('label.health-context__topic').click();
+  await expect(page.locator('.health-context[open]')).toHaveCount(1);
+  await expect(page.locator('[aria-label="Illness symptom details"]')).toBeVisible();
+
+  await page.locator('.red-flag-disclosure > summary').press('Enter');
+  await page.getByRole('checkbox', { name: /Systemic \/ cardiopulmonary warning/ }).check();
+  await expect(page.locator('.red-flag-disclosure[open]')).toHaveCount(1);
+  await expect(page.locator('.tissue-response-disclosure[open]')).toHaveCount(1);
+  await expect(page.locator('.health-context[open]')).toHaveCount(1);
 });
 
 test('captures goal modal state', async ({ page }) => {

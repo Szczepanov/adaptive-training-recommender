@@ -30,7 +30,6 @@ const RECOVERY_KEYS = [
 const SAFETY_FLAGS = [
   'painOrInjury',
   'illnessSymptoms',
-  'unusuallyLimitedTime',
   'alreadyTrainedToday',
 ] as const;
 

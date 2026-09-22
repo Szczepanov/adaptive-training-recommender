@@ -1,8 +1,20 @@
 .health-context {
-  margin-top: 1rem;
+  margin-top: 0.65rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-control, 10px);
   background: rgba(255, 255, 255, 0.025);
+}
+
+.health-context-group {
+  margin-top: 1rem;
+}
+
+.health-context__topic {
+  margin: 0;
+}
+
+.health-context__topic.is-active.is-warning .toggle-info strong {
+  color: #fecaca;
 }
 
 .health-context__summary {

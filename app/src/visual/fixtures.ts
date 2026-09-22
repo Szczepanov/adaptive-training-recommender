@@ -158,7 +158,7 @@ const checkin: DailySubjectiveCheckin = {
   illnessSymptoms: false,
   unusuallyLimitedTime: false,
   alreadyTrainedToday: false,
-  availability: { timeAvailableMin: 60, preferredModalityToday: 'Running', indoorOnly: false },
+  availability: { timeAvailableMin: 60, preferredModalityToday: null, indoorOnly: false },
   notes: 'Legs feel fresh after yesterday’s ride.',
   submittedAt: TIMESTAMP,
   dataQuality: { isComplete: true, missingFields: [] },

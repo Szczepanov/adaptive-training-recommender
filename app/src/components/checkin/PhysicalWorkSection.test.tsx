@@ -9,7 +9,7 @@ describe('PhysicalWorkSection', () => {
       <PhysicalWorkSection value={undefined} onChange={vi.fn()} />,
     );
 
-    expect(html).toContain('Unlogged Physical Work / Manual Labor (Yesterday)');
+    expect(html).toContain('Yesterday&#x27;s extra physical load');
     expect(html).not.toContain('physical-work-details');
     expect(html).not.toContain('Work duration');
     expect(html).not.toContain('Main strain areas');
@@ -28,8 +28,9 @@ describe('PhysicalWorkSection', () => {
       <PhysicalWorkSection value={value} onChange={vi.fn()} />,
     );
 
+    expect(html).toContain('<details class="physical-work-card" open="">');
     expect(html).toContain('physical-work-details');
-    expect(html).toContain('Wearables miss isometric grip');
+    expect(html).toContain('This records yesterday&#x27;s load, not an injury');
     expect(html).toContain('&lt; 1 hr');
     expect(html).toContain('1–3 hrs');
     expect(html).toContain('3+ hrs');

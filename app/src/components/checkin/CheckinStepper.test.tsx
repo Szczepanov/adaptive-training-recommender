@@ -19,7 +19,7 @@ describe('deriveCheckinSteps', () => {
     // snapshot. With no document yet, only the empty follow-up queue is complete.
     expect(steps[0].status).toBe('done');
     expect(steps[1]).toMatchObject({ status: 'pending', detail: '0/6 saved' });
-    expect(steps[2]).toMatchObject({ status: 'pending', detail: '0/4 saved' });
+    expect(steps[2]).toMatchObject({ status: 'pending', detail: '0/3 saved' });
     expect(steps[3]).toMatchObject({ status: 'pending', detail: 'Not saved' });
   });
 
@@ -43,18 +43,17 @@ describe('deriveCheckinSteps', () => {
     expect(complete[1]).toMatchObject({ status: 'done', detail: '6/6 saved' });
   });
 
-  it('marks safety pending until every saved flag is present', () => {
+  it('marks safety pending until every visible safety flag is present', () => {
     const partial = deriveCheckinSteps(
-      { painOrInjury: false, illnessSymptoms: false, alreadyTrainedToday: false },
+      { painOrInjury: false, illnessSymptoms: false },
       0,
     );
-    expect(partial[2]).toMatchObject({ status: 'pending', detail: '3/4 saved' });
+    expect(partial[2]).toMatchObject({ status: 'pending', detail: '2/3 saved' });
 
     const saved = deriveCheckinSteps(
       {
         painOrInjury: false,
         illnessSymptoms: false,
-        unusuallyLimitedTime: false,
         alreadyTrainedToday: false,
       },
       0,
@@ -96,7 +95,7 @@ describe('deriveCheckinSteps', () => {
       0,
     );
 
-    expect(steps[2]).toMatchObject({ status: 'pending', detail: '3/4 saved' });
+    expect(steps[2]).toMatchObject({ status: 'pending', detail: '2/3 saved' });
     expect(steps[3]).toMatchObject({ status: 'pending', detail: 'Not saved' });
   });
 });
