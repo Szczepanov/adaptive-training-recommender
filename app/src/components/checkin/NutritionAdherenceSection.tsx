@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from 'react';
+import { useEffect, useState, type KeyboardEvent, type SyntheticEvent } from 'react';
 import type { NutritionTrackingAdherence } from '../../engine/models';
 import { NUTRITION_ADHERENCE_OPTIONS } from '../../utils/nutritionAdherence';
 import './NutritionAdherenceSection.css';
@@ -17,6 +17,16 @@ export function NutritionAdherenceSection({
   onChange,
 }: NutritionAdherenceSectionProps) {
   const isSet = value !== null && value !== undefined;
+  const selectedOption = NUTRITION_ADHERENCE_OPTIONS.find((option) => option.value === value);
+  const [disclosureOpen, setDisclosureOpen] = useState(isSet);
+
+  useEffect(() => {
+    if (isSet) setDisclosureOpen(true);
+  }, [isSet]);
+
+  const handleDisclosureToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
+    setDisclosureOpen(event.currentTarget.open);
+  };
 
   const handleSelect = (optionValue: NutritionTrackingAdherence) => {
     // ARIA radio semantics: selecting the active option keeps it selected.
@@ -71,26 +81,23 @@ export function NutritionAdherenceSection({
   };
 
   return (
-    <section className="checkin-section nutrition-adherence-section" aria-label="Yesterday calorie tracking scoring">
-      <div className="section-title-wrap">
-        <div className="nutrition-adherence-header-row">
-          <div>
-            <h2>
-              Yesterday&apos;s Calorie Tracking (D-1){' '}
-              <span
-                className="optional-badge"
-                style={{
-                  fontSize: '0.8rem',
-                  fontWeight: 'normal',
-                  color: 'var(--text-secondary, #888)',
-                  marginLeft: '0.5rem',
-                }}
-              >
-                (Optional)
-              </span>
-            </h2>
-            <p>Describe yesterday&apos;s logging completeness and whether it was a full-day fast.</p>
-          </div>
+    <details
+      className="checkin-section nutrition-adherence-section"
+      aria-label="Yesterday calorie tracking scoring"
+      open={disclosureOpen}
+      onToggle={handleDisclosureToggle}
+    >
+      <summary className="checkin-disclosure-summary">
+        <h2>
+          Yesterday&apos;s Calorie Tracking (D-1){' '}
+          <span className="optional-badge">(Optional)</span>
+        </h2>
+        <span className="checkin-disclosure-status">{selectedOption?.label ?? 'Not reported'}</span>
+      </summary>
+
+      <div className="checkin-disclosure-content">
+        <div className="checkin-disclosure-heading-row">
+          <p>Describe yesterday&apos;s logging completeness and whether it was a full-day fast.</p>
           {isSet && (
             <button
               type="button"
@@ -102,16 +109,15 @@ export function NutritionAdherenceSection({
             </button>
           )}
         </div>
-      </div>
 
-      {renderContextSummary()}
+        {renderContextSummary()}
 
-      <div
-        className="nutrition-adherence-grid"
-        role="radiogroup"
-        aria-label="Calorie tracking adherence options"
-        onKeyDown={handleGridKeyDown}
-      >
+        <div
+          className="nutrition-adherence-grid"
+          role="radiogroup"
+          aria-label="Calorie tracking adherence options"
+          onKeyDown={handleGridKeyDown}
+        >
         {NUTRITION_ADHERENCE_OPTIONS.map((opt, index) => {
           const selected = value === opt.value;
           const isRovingTarget = isSet ? selected : index === 0;
@@ -133,11 +139,12 @@ export function NutritionAdherenceSection({
             </button>
           );
         })}
-      </div>
+        </div>
 
-      <p className="nutrition-adherence-helper">
-        Self-reported logging-quality context only. “Full-Day Fast” means no caloric intake for the whole day. Zero recommendation authority; does not alter your training plan (ADR-0042).
-      </p>
-    </section>
+        <p className="nutrition-adherence-helper">
+          Self-reported logging-quality context only. “Full-Day Fast” means no caloric intake for the whole day. Zero recommendation authority; does not alter your training plan (ADR-0042).
+        </p>
+      </div>
+    </details>
   );
 }

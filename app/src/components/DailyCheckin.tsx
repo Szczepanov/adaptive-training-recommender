@@ -137,6 +137,9 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
   const [recoverySnapshot, setRecoverySnapshot] = useState<Awaited<ReturnType<typeof recoverySnapshotService.getRecoverySnapshotByDate>>>(null);
   const [pendingFollowups, setPendingFollowups] = useState<Array<{ region: BodyRegion; sessionRef?: RegionTissueResponse['sourceSessionRef'] }>>([]);
   const [pendingTissueRegion, setPendingTissueRegion] = useState<BodyRegion | ''>('');
+  const [tissueResponseOpen, setTissueResponseOpen] = useState(false);
+  const [redFlagDetailsOpen, setRedFlagDetailsOpen] = useState(false);
+  const [availabilityDetailsOpen, setAvailabilityDetailsOpen] = useState(false);
   const [availabilityDefault, setAvailabilityDefault] = useState<CheckinAvailabilityDefault | null>(null);
   const [yesterdayNutrition, setYesterdayNutrition] = useState<{
     energyIntakeKcal: number | null;
@@ -155,6 +158,9 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
       setAvailabilityDefault(null);
       setPersistedCheckin(null);
       setYesterdayNutrition(undefined);
+      setTissueResponseOpen(false);
+      setRedFlagDetailsOpen(false);
+      setAvailabilityDetailsOpen(false);
       const today = getLocalDateString();
 
       try {
@@ -232,6 +238,12 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
           // read here must not block the check-in itself from loading.
         }
         setPendingFollowups(needed);
+        setTissueResponseOpen(Boolean(
+          existing?.painOrInjury
+          || Object.keys(existing?.tissueResponses ?? {}).length > 0
+          || needed.length > 0,
+        ));
+        setRedFlagDetailsOpen(Boolean(existing?.redFlags?.present || existing?.redFlags?.categories?.length));
 
         const nutritionState = await nutritionService.getNutritionDaysState(userId, yesterday, yesterday);
         if (nutritionState.status === 'AVAILABLE') {
@@ -348,6 +360,9 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
     // Pain/injury and red-flag disclosure are independent safety channels. Turning the
     // pain toggle off must not erase an explicitly disclosed neurological/systemic/trauma
     // red flag, just as it must not erase a valid graded tissue observation.
+    if (field === 'painOrInjury' && next) {
+      setTissueResponseOpen(true);
+    }
     setCheckin({ ...checkin, [field]: next });
   };
 
@@ -418,6 +433,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
       tissueResponses: { ...existing, [region]: entry },
       ...(morningState === 'severe' ? { painOrInjury: true } : {}),
     });
+    setTissueResponseOpen(true);
     setPendingTissueRegion('');
   };
 
@@ -781,30 +797,46 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
             </label>
           </div>
 
-          <div className="red-flag-disclosure" role="group" aria-label="Red-flag safety screening">
-            <div className="red-flag-header">
-              <strong>⚠️ Any Red-Flag Symptoms?</strong>
+          <details
+            className="red-flag-disclosure"
+            open={redFlagDetailsOpen}
+            onToggle={(event) => setRedFlagDetailsOpen(event.currentTarget.open)}
+          >
+            <summary className="red-flag-summary">
+              <span className="red-flag-summary-title">
+                <span>⚠️ Red-flag symptoms</span>
+                <small>Neurologic, major-trauma, systemic/cardiopulmonary, or rapidly worsening warnings</small>
+              </span>
+              <span className="red-flag-summary-status">
+                {checkin.redFlags?.categories?.length
+                  ? `${checkin.redFlags.categories.length} reported`
+                  : checkin.redFlags?.present
+                    ? 'Reported'
+                    : 'No warning selected'}
+              </span>
+            </summary>
+            <div className="red-flag-details" role="group" aria-label="Red-flag safety screening">
               <p>These warnings can exist without a musculoskeletal injury. If present, training prescriptions are paused for medical evaluation.</p>
+              <div className="red-flag-options-grid">
+                {RED_FLAG_OPTIONS.map(opt => {
+                  const isChecked = checkin.redFlags?.categories?.includes(opt.value) ?? false;
+                  return (
+                    <label key={opt.value} className={`red-flag-option-card ${isChecked ? 'is-active' : ''}`}>
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => handleRedFlagToggle(opt.value)}
+                      />
+                      <div className="red-flag-option-text">
+                        <strong>{opt.label}</strong>
+                        <small>{opt.desc}</small>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
-            <div className="red-flag-options-grid">
-              {RED_FLAG_OPTIONS.map(opt => {
-                const isChecked = checkin.redFlags?.categories?.includes(opt.value) ?? false;
-                return (
-                  <label key={opt.value} className={`red-flag-option-card ${isChecked ? 'is-active' : ''}`}>
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={() => handleRedFlagToggle(opt.value)}
-                    />
-                    <div className="red-flag-option-text">
-                      <strong>{opt.label}</strong>
-                      <small>{opt.desc}</small>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
+          </details>
 
           <PhysicalWorkSection
             value={checkin.physicalWork}
@@ -818,13 +850,23 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
             onChange={handleHealthContextChange}
           />
 
-          <div className="tissue-response-expanded" aria-label="Local tissue response">
-            <div className="tissue-response-intro">
-              <h3>Local Tissue Response</h3>
-              <p>
-                Report local stiffness, swelling/fullness, unusual tendon or calf soreness, or altered walking/stairs/squat even when you would not call it an injury. Local tissue response can tighten today&apos;s plan independently of Garmin readiness.
-              </p>
-            </div>
+          <details
+            className="tissue-response-expanded tissue-response-disclosure"
+            open={tissueResponseOpen}
+            onToggle={(event) => setTissueResponseOpen(event.currentTarget.open)}
+          >
+            <summary className="tissue-response-summary">
+              <span className="tissue-response-summary-title">Local tissue response</span>
+              <span className="tissue-response-summary-status">
+                {tissueResponses.length > 0 ? `${tissueResponses.length} area${tissueResponses.length === 1 ? '' : 's'} reported` : 'Optional'}
+              </span>
+            </summary>
+            <div className="tissue-response-content">
+              <div className="tissue-response-intro">
+                <p>
+                  Report local stiffness, swelling/fullness, unusual tendon or calf soreness, or altered walking/stairs/squat even when you would not call it an injury. Local tissue response can tighten today&apos;s plan independently of Garmin readiness.
+                </p>
+              </div>
 
             <div className="form-group add-region-group">
               <label htmlFor={tissueSelectId}>Add body area to monitor</label>
@@ -944,7 +986,8 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
                 </article>
               );
             })}
-          </div>
+            </div>
+          </details>
         </section>
 
         {/* Section: Hunger & Fueling (ADR-0039 D-BC-HUNGER) */}
@@ -963,11 +1006,27 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
         />
 
         {/* Section 3: Availability & Notes */}
-        <section className="checkin-section" aria-label="Session availability">
-          <div className="section-title-wrap">
+        <details
+          className="checkin-section availability-disclosure"
+          aria-label="Session availability"
+          open={availabilityDetailsOpen}
+          onToggle={(event) => setAvailabilityDetailsOpen(event.currentTarget.open)}
+        >
+          <summary className="checkin-disclosure-summary">
             <h2>Today&apos;s Availability</h2>
-            <p>Time and environment preferences for today&apos;s session</p>
-          </div>
+            <span className="checkin-disclosure-status">
+              {[
+                checkin.availability?.timeAvailableMin != null
+                  ? `${checkin.availability.timeAvailableMin} min`
+                  : null,
+                checkin.availability?.preferredModalityToday,
+                checkin.availability?.indoorOnly ? 'Indoor only' : null,
+              ].filter(Boolean).join(' · ') || 'Not set'}
+            </span>
+          </summary>
+
+          <div className="checkin-disclosure-content">
+            <p className="checkin-disclosure-description">Time and environment preferences for today&apos;s session</p>
 
           <div className="availability-grid">
             <div className="form-group">
@@ -1035,7 +1094,8 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
               className="textarea-input"
             />
           </div>
-        </section>
+          </div>
+        </details>
 
         {/* Objective values remain hidden until a complete subjective submission prevents anchoring. */}
         {recoverySnapshot && (

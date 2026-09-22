@@ -13,6 +13,8 @@ describe('HungerSection component (ADR-0039 D-BC-HUNGER)', () => {
     );
 
     expect(html).toContain('Hunger Right Now');
+    expect(html).toContain('<details');
+    expect(html).not.toContain('<details class="checkin-section hunger-section" open="">');
     expect(html).toContain('1 = Not hungry at all');
     expect(html).toContain('5 = Moderate / typical');
     expect(html).toContain('10 = Extremely hungry');
@@ -41,6 +43,7 @@ describe('HungerSection component (ADR-0039 D-BC-HUNGER)', () => {
     expect(html).toContain('aria-label="Hunger 7 of 10"');
     expect(html).toContain('aria-checked="true"');
     expect(html).toContain('aria-label="Clear hunger score"');
+    expect(html).toMatch(/<details class="checkin-section hunger-section"[^>]*open="">/);
     expect(html).toContain('Measurement Timing');
     expect(html).toContain('Morning (pre-breakfast)');
     expect(html).toContain('Other timing');

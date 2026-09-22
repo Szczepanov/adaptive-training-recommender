@@ -61,6 +61,51 @@ for (const scenario of VISUAL_SCENARIOS) {
   test(`captures ${scenario.id}`, async ({ page }) => {
     await visitScenario(page, scenario);
 
+    if (scenario.id === 'checkin-new' || scenario.id === 'checkin-complete') {
+      for (const selector of [
+        '.red-flag-disclosure',
+        '.tissue-response-disclosure',
+        '.hunger-section',
+        '.nutrition-adherence-section',
+        '.availability-disclosure',
+      ]) {
+        await expect(page.locator(`${selector}[open]`)).toHaveCount(0);
+      }
+      await expect(page.getByText('No warning selected', { exact: true })).toBeVisible();
+    }
+
+    if (scenario.id === 'checkin-pain-expanded') {
+      await expect(page.locator('.tissue-response-disclosure[open]')).toHaveCount(1);
+    }
+
+    if (scenario.id === 'checkin-red-flag-expanded') {
+      await expect(page.locator('.red-flag-disclosure[open]')).toHaveCount(1);
+      await expect(page.getByText('1 reported', { exact: true })).toBeVisible();
+      await expect(page.getByText('Systemic / cardiopulmonary warning')).toBeVisible();
+      await expect(page.locator('.hunger-section[open]')).toHaveCount(0);
+      await expect(page.locator('.nutrition-adherence-section[open]')).toHaveCount(0);
+    }
+
+    if (scenario.id === 'checkin-red-flag-uncategorized') {
+      await expect(page.locator('.red-flag-disclosure[open]')).toHaveCount(1);
+      await expect(page.getByText('Reported', { exact: true })).toBeVisible();
+      await expect(page.getByText(/Neurologic, major-trauma, systemic\/cardiopulmonary/)).toBeVisible();
+      await expect(page.getByText('No warning selected', { exact: true })).toHaveCount(0);
+    }
+
+    if (scenario.id === 'checkin-optional-context-saved') {
+      await expect(page.locator('.hunger-section[open]')).toHaveCount(1);
+      await expect(page.locator('.nutrition-adherence-section[open]')).toHaveCount(1);
+      await expect(page.locator('.red-flag-disclosure[open]')).toHaveCount(0);
+      await expect(page.locator('.tissue-response-disclosure[open]')).toHaveCount(0);
+      await expect(page.locator('.availability-disclosure[open]')).toHaveCount(0);
+      await expect(page.locator('.hunger-section > summary .checkin-disclosure-status')).toHaveText('7/10');
+      await expect(page.locator('.nutrition-adherence-section > summary .checkin-disclosure-status')).toHaveText('Mostly Tracked');
+      await expect(page.locator('.availability-disclosure > summary .checkin-disclosure-status')).toHaveText('60 min · Running · Indoor only');
+      await expect(page.getByRole('button', { name: 'Clear hunger score' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Clear calorie tracking score' })).toBeVisible();
+    }
+
     if (scenario.id === 'plan-import-expanded') {
       const toggleBtn = page.getByRole('button', { name: /Import Plan|Revise Plan|Close Import/i });
       if (await toggleBtn.count()) {
@@ -122,6 +167,31 @@ test('captures navigation interaction states', async ({ page }) => {
     await expect(moreButton).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('#desktop-more-panel')).toBeVisible();
     await capture(page, scenario, 'more-panel-open', ['Desktop More opens an anchored disclosure without activating the mobile drawer.']);
+  }
+});
+
+test('check-in optional disclosures are keyboard-operable', async ({ page }) => {
+  const scenario = VISUAL_SCENARIOS.find(candidate => candidate.id === 'checkin-new');
+  if (!scenario) throw new Error('Missing checkin-new visual scenario');
+  await visitScenario(page, scenario);
+
+  const disclosures = [
+    '.red-flag-disclosure',
+    '.tissue-response-disclosure',
+    '.hunger-section',
+    '.nutrition-adherence-section',
+    '.availability-disclosure',
+  ];
+
+  for (const selector of disclosures) {
+    const details = page.locator(selector);
+    const summary = details.locator('> summary');
+    await expect(details).not.toHaveAttribute('open', '');
+    await summary.focus();
+    await summary.press('Enter');
+    await expect(details).toHaveAttribute('open', '');
+    await summary.press('Space');
+    await expect(details).not.toHaveAttribute('open', '');
   }
 });
 

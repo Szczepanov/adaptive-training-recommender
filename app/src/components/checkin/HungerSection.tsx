@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, type SyntheticEvent } from 'react';
 import type { DailySubjectiveCheckin } from '../../engine/models';
 
 export interface HungerSectionProps {
@@ -15,11 +15,21 @@ export const HungerSection: React.FC<HungerSectionProps> = ({
   onChange,
 }) => {
   const isSet = typeof hunger1To10 === 'number';
+  const hasSavedContext = isSet || Boolean(hungerTiming);
+  const [disclosureOpen, setDisclosureOpen] = useState(hasSavedContext);
   const [pendingTiming, setPendingTiming] = useState<HungerTiming | null>(hungerTiming ?? null);
 
   useEffect(() => {
     setPendingTiming(hungerTiming ?? null);
   }, [hungerTiming]);
+
+  useEffect(() => {
+    if (hasSavedContext) setDisclosureOpen(true);
+  }, [hasSavedContext]);
+
+  const handleDisclosureToggle = (event: SyntheticEvent<HTMLDetailsElement>) => {
+    setDisclosureOpen(event.currentTarget.open);
+  };
 
   const handleSelectScore = (val: number) => {
     if (!pendingTiming) return;
@@ -39,36 +49,38 @@ export const HungerSection: React.FC<HungerSectionProps> = ({
   };
 
   return (
-    <section className="checkin-section hunger-section" aria-label="Hunger and fueling assessment">
-      <div className="section-title-wrap">
-        <div className="section-title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h2>Hunger Right Now <span className="optional-badge" style={{ fontSize: '0.8rem', fontWeight: 'normal', color: 'var(--text-secondary, #888)', marginLeft: '0.5rem' }}>(Optional)</span></h2>
-            <p>Subjective hunger context for fueling observations. Does not affect your training plan.</p>
-          </div>
+    <details
+      className="checkin-section hunger-section"
+      aria-label="Hunger and fueling assessment"
+      open={disclosureOpen}
+      onToggle={handleDisclosureToggle}
+    >
+      <summary className="checkin-disclosure-summary">
+        <h2>
+          Hunger Right Now{' '}
+          <span className="optional-badge">(Optional)</span>
+        </h2>
+        <span className="checkin-disclosure-status">
+          {isSet ? `${hunger1To10}/10` : hasSavedContext ? 'Timing set' : 'Not reported'}
+        </span>
+      </summary>
+
+      <div className="checkin-disclosure-content">
+        <div className="checkin-disclosure-heading-row">
+          <p>Subjective hunger context for fueling observations. Does not affect your training plan.</p>
           {isSet && (
             <button
               type="button"
               className="btn-clear-hunger"
               onClick={handleClear}
-              style={{
-                background: 'none',
-                border: '1px solid var(--border-color, #444)',
-                borderRadius: '4px',
-                color: 'var(--text-secondary, #aaa)',
-                cursor: 'pointer',
-                fontSize: '0.8rem',
-                padding: '0.25rem 0.6rem',
-              }}
               aria-label="Clear hunger score"
             >
               Clear
             </button>
           )}
         </div>
-      </div>
 
-      <div className="hunger-scale-container" style={{ marginTop: '0.75rem' }}>
+        <div className="hunger-scale-container" style={{ marginTop: '0.75rem' }}>
         <div className="hunger-timing-group" style={{ marginBottom: '0.75rem', padding: '0.75rem', borderRadius: '6px', backgroundColor: 'var(--surface-bg, rgba(255, 255, 255, 0.03))' }}>
           <span style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', fontWeight: 600 }}>
             Measurement Timing
@@ -149,7 +161,8 @@ export const HungerSection: React.FC<HungerSectionProps> = ({
             );
           })}
         </div>
+        </div>
       </div>
-    </section>
+    </details>
   );
 };

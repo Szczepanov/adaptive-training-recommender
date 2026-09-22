@@ -23,6 +23,7 @@ import { intentBlockService } from '../services/intentBlockService';
 import { performedTrainingOccurrenceRepository } from '../training-occurrence/repository';
 import { garminConnectionService } from '../services/garminConnectionService';
 import { garminSyncRequestService } from '../services/garminSyncRequestService';
+import { nutritionService } from '../nutrition/nutritionService';
 import type { SessionOccurrence, ExternalPlanSessionOccurrence } from '../sessions/models';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { computeContentHash } from '../engine/externalPlanHash';
@@ -73,6 +74,15 @@ export function installVisualServices(fixture: VisualFixture): void {
     ...(fixture.checkin ?? { userId: fixture.input.userId, date: fixture.input.date }),
     ...update,
   }) as Awaited<ReturnType<typeof checkinService.upsertTodayCheckin>>;
+
+  // DailyCheckin reads optional D-1 nutrition context during initialisation. Keep visual
+  // scenarios deterministic and offline; the production service would otherwise wait on
+  // Firestore and leave the check-in in its loading state.
+  nutritionService.getNutritionDaysState = async () => ({ status: 'MISSING' });
+  nutritionService.subscribeToNutritionDays = (_userId, _startDate, _endDate, onUpdate) => {
+    onUpdate([]);
+    return () => {};
+  };
 
   recoverySnapshotService.getRecoverySnapshotByDate = async () => fixture.recovery;
   recoverySnapshotService.getRecoverySnapshotState = async () => (

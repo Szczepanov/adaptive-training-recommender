@@ -38,8 +38,8 @@ Adaptive Training Recommendations & Native Session Execution
 
 | Daily Subjective Check-in | Garmin Recovery & Biomarkers |
 |:---:|:---:|
-| <img src="docs/screenshots/mobile-daily-checkin.png" width="360" alt="Daily Subjective Check-in" /> | <img src="docs/screenshots/mobile-garmin-recovery.png" width="360" alt="Garmin Recovery & Biomarkers" /> |
-| *Neutral defaults, typical quick-fill preset & availability settings* | *Overnight HRV, resting HR, sleep score & 7d/28d baselines* |
+| <img src="docs/screenshots/mobile-daily-checkin.png" width="360" alt="Daily Subjective Check-in with progressive disclosure" /> | <img src="docs/screenshots/mobile-garmin-recovery.png" width="360" alt="Garmin Recovery & Biomarkers" /> |
+| *Core safety inputs stay visible while optional detail progressively discloses* | *Overnight HRV, resting HR, sleep score & 7d/28d baselines* |
 
 | Guided Session Runner | Week Architecture & Training Plan |
 |:---:|:---:|
