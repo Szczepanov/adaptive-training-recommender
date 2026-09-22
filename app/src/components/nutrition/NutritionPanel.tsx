@@ -104,6 +104,9 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
         };
 
         if (!hasInitialCheckins) {
+            // Prevent a window/as-of change from temporarily displaying stale adherence.
+            setCheckins([]);
+            setAdherenceReadStatus('loading');
             loadCheckins();
         }
 
