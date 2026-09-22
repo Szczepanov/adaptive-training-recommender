@@ -186,7 +186,8 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
                         source: {
                             provider: 'garmin',
                             transport: 'garmin_connect',
-                            origin: 'garmin',
+                            // Expenditure-only telemetry has no certified upstream food-log origin.
+                            origin: null,
                         },
                         syncedAt: snap.source.garminSyncedAt || '',
                         energyExpenditureKcal: {

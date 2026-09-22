@@ -85,3 +85,4 @@
 - [x] Hardened the raw nutrition Firestore boundary to accept only the supported v1 schema, require non-empty provider/transport provenance, reject conflicting compatibility aliases, and validate persisted metadata before mapping.
 - [x] Made realtime nutrition reads fail visibly on malformed persisted rows instead of silently dropping them into an apparently missing/partial history.
 - [x] Clarified that D-1 is a completed calendar interval, not a guarantee that upstream provider telemetry is already immutable or finalized.
+- [x] Kept expenditure-only synthetic rows provenance-safe (`origin = null`) and reject contradictory top-level/nested origin aliases at the Firestore boundary.

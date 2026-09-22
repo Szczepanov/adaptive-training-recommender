@@ -252,6 +252,7 @@ describe('NutritionService and Document Mapper', () => {
                     expect.arrayContaining([
                         expect.objectContaining({ code: 'conflicting-provenance', field: 'provider' }),
                         expect.objectContaining({ code: 'conflicting-provenance', field: 'transport' }),
+                        expect.objectContaining({ code: 'conflicting-provenance', field: 'origin' }),
                     ]),
                 );
             }

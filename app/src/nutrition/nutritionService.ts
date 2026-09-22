@@ -145,6 +145,16 @@ export function parseNutritionDayDoc(
         }
     }
 
+    const topOrigin = raw.origin;
+    const nestedOrigin = source?.origin;
+    if (
+        topOrigin !== undefined &&
+        nestedOrigin !== undefined &&
+        topOrigin !== nestedOrigin
+    ) {
+        issues.push({ code: 'conflicting-provenance', field: 'origin', documentPath });
+    }
+
     for (const [field, value] of [
         ['energyIntakeKcal', raw.energyIntakeKcal],
         ['goalEnergyIntakeKcal', raw.goalEnergyIntakeKcal],
