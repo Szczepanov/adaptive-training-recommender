@@ -65,7 +65,7 @@ export function NutritionAdherenceSection({
 
     return (
       <div className="nutrition-adherence-context" aria-label="Yesterday synced nutrition telemetry">
-        <span className="nutrition-adherence-context-label">Synced from Garmin yesterday (D-1):</span>
+        <span className="nutrition-adherence-context-label">Yesterday&apos;s synced intake (D-1):</span>
         <span className="nutrition-adherence-context-value">{statusText}</span>
       </div>
     );
