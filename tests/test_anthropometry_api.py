@@ -271,7 +271,11 @@ def test_handler_rejects_invalid_protocol_body_without_echoing_measurements(
     assert status == 422
     assert payload["errorCode"] == "anthropometry.validation.invalid_entry"
     assert payload["fields"] == ["measurements[0].value"]
-    assert "999" not in json.dumps(payload)
+    # requestId is secrets.token_hex(8): a random 16-hex-char string that, roughly 1 in ~300
+    # requests, coincidentally contains "999". Exclude it so this assertion tests for an
+    # echoed client value rather than an unrelated random collision (was observed flaky).
+    leak_check_payload = {key: value for key, value in payload.items() if key != "requestId"}
+    assert "999" not in json.dumps(leak_check_payload)
     assert repository.created == []
 
 
