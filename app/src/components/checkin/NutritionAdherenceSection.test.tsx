@@ -49,7 +49,8 @@ describe('NutritionAdherenceSection (ADR-0042 & previous-day calorie scoring)', 
       />
     );
 
-    expect(htmlWithCalories).toContain('Synced from Garmin yesterday (D-1):');
+    expect(htmlWithCalories).toContain('Yesterday&#x27;s synced intake (D-1):');
+    expect(htmlWithCalories).not.toContain('Garmin');
     expect(htmlWithCalories).toContain('2,150 kcal');
 
     const htmlReportedWithoutCalories = renderToStaticMarkup(
