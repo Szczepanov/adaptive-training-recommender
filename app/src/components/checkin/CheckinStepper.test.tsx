@@ -45,10 +45,10 @@ describe('deriveCheckinSteps', () => {
 
   it('marks safety pending until every visible safety flag is present', () => {
     const partial = deriveCheckinSteps(
-      { painOrInjury: false, illnessSymptoms: false, alreadyTrainedToday: false },
+      { painOrInjury: false, illnessSymptoms: false },
       0,
     );
-    expect(partial[2]).toMatchObject({ status: 'done', detail: 'Complete' });
+    expect(partial[2]).toMatchObject({ status: 'pending', detail: '2/3 saved' });
 
     const saved = deriveCheckinSteps(
       {
