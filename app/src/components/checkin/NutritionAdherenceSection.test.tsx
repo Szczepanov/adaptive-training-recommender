@@ -17,7 +17,7 @@ describe('NutritionAdherenceSection (ADR-0042 & previous-day calorie scoring)', 
     expect(html).toContain('Mostly Tracked');
     expect(html).toContain('Minimally Tracked');
     expect(html).toContain('Untracked');
-    expect(html).toContain('Fasted (0 kcal)');
+    expect(html).toContain('Full-Day Fast (0 kcal)');
     expect(html).toContain('Zero recommendation authority; does not alter your training plan');
 
     // No clear button when value is null
@@ -52,6 +52,17 @@ describe('NutritionAdherenceSection (ADR-0042 & previous-day calorie scoring)', 
     expect(htmlWithCalories).toContain('Synced from Garmin yesterday (D-1):');
     expect(htmlWithCalories).toContain('2,150 kcal');
 
+    const htmlReportedWithoutCalories = renderToStaticMarkup(
+      <NutritionAdherenceSection
+        value="mostly_tracked"
+        yesterdayIntakeKcal={null}
+        hasIntakeData={true}
+        onChange={() => {}}
+      />
+    );
+
+    expect(htmlReportedWithoutCalories).toContain('Intake reported; calories unavailable');
+
     const htmlZeroFast = renderToStaticMarkup(
       <NutritionAdherenceSection
         value="fasted"
@@ -72,6 +83,6 @@ describe('NutritionAdherenceSection (ADR-0042 & previous-day calorie scoring)', 
       />
     );
 
-    expect(htmlUnlogged).toContain('No intake synced (unlogged)');
+    expect(htmlUnlogged).toContain('No intake data synced');
   });
 });
