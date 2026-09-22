@@ -11,7 +11,7 @@
 ## Executive Summary
 
 1. **The User Need**:
-   Athletes syncing dietary calorie intake from MyFitnessPal via Garmin Connect frequently encounter logging lapses: forgetting to record dinner, snacks, or condiments; logging only part of the day; abandoning tracking for a day; or engaging in intentional fasting. Without subjective scoring of dietary tracking completeness, downstream views and potential future fueling models cannot distinguish between high-accuracy data, severe underreporting, unrecorded days, and genuine 0 kcal fasting days.
+   Athletes syncing dietary calorie intake through Garmin Connect can have logging lapses: forgetting dinner, snacks, or condiments; logging only part of the day; abandoning tracking for a day; or deliberately completing a full-day fast. The current Garmin adapter cannot certify the upstream food-logging application, so product copy must not assume MyFitnessPal provenance. Without subjective logging-quality context, retrospective views cannot distinguish a self-reported complete log from a partial/untracked day or a deliberate zero-calorie fast.
 
 2. **Core Inquiries Evaluated**:
    - **Can we assume 0 kcal for the previous day is untracked?**
@@ -39,9 +39,10 @@
 **Conclusion: We cannot assume 0 kcal is untracked.**
 
 #### Technical and Empirical Realities:
-1. **Garmin Provider Payload Behavior (`fetch_daily_nutrition`)**:
-   - When an athlete does not open or log in MyFitnessPal, Garmin Connect daily stats typically sets `includesCalorieConsumedData: false`. `GarminProviderAdapter` maps this to `has_intake_data: false` and `energy_intake_kcal: None`.
-   - However, if an athlete opens the MyFitnessPal diary but logs zero items, or if Garmin Connect initializes a daily food log entry without line items, Garmin may emit `consumedKilocalories: 0` with `includesCalorieConsumedData: true`.
+1. **Provider payload semantics (`fetch_daily_nutrition`)**:
+   - The Garmin adapter maps `includesCalorieConsumedData: false` to `has_intake_data: false` and a missing canonical intake value.
+   - When the provider affirmatively reports intake data, a numeric `0` remains a numeric zero rather than being normalized to missing. The adapter does not infer whether that zero represents a deliberate fast or incomplete diary behavior.
+   - Upstream food-logging origin remains `null` unless provider metadata certifies it, per ADR-0042 `D-NUT-PROV`.
 2. **Fasting terminology must stay precise**:
    - International fasting terminology distinguishes full fasting, modified fasting, intermittent fasting, and time-restricted eating; time-restricted eating normally includes caloric intake within an eating window.
    - Therefore `fasted` in this product means a deliberate **full-day zero-calorie fast**, not ordinary 16:8/time-restricted eating.
@@ -51,8 +52,8 @@
 4. **Conclusion**:
    - Telemetry alone cannot disambiguate "forgot to log" from "deliberately ate 0 kcal".
    - The daily check-in is the precise tool to resolve this ambiguity:
-     - Selecting **Fasted (0 kcal)** explicitly validates that 0 kcal was intentional.
-     - Selecting **Untracked** marks the day as unrecorded/missing regardless of whether synced calories are 0 or null.
+     - Selecting **Full-Day Fast (0 kcal)** records the athlete's subjective statement that no caloric intake occurred for the whole day.
+     - Selecting **Untracked** records that the diary was not meaningfully tracked. Neither answer rewrites or deletes contradictory provider telemetry; conflicts remain visible in the retrospective view.
 
 ---
 
@@ -95,11 +96,11 @@ The scale is intentionally **behaviorally anchored**, not numerically calibrated
 
 ```typescript
 export type NutritionTrackingAdherence =
-    | 'fully_tracked'   // Conscientiously logged all meals, snacks, and beverages (~90-100%)
-    | 'mostly_tracked'  // Logged main meals; missed small snacks, drinks, or dressings (~65-85%)
-    | 'minimal'         // Logged only 1-2 items; majority of the day unlogged (<50%)
-    | 'untracked'       // Did not log food yesterday at all
-    | 'fasted';         // Deliberate fast all day; intentional 0 kcal intake
+    | 'fully_tracked'   // Athlete reports logging the whole day
+    | 'mostly_tracked'  // Main meals logged; some smaller items or portions uncertain
+    | 'minimal'         // Only a small part of the day logged
+    | 'untracked'       // No meaningful food logging for the day
+    | 'fasted';         // Deliberate full-day fast; no caloric intake
 
 export interface DailySubjectiveCheckin {
     // ... existing fields ...
@@ -158,7 +159,7 @@ A dedicated card placed alongside Hunger & Fueling:
   - `[ Minimally Tracked ]` (Amber tint when selected)
   - `[ Untracked ]` (Gray/Red tint when selected)
   - `[ Full-Day Fast (0 kcal) ]` (Purple/Blue tint when selected)
-- **Helper text**: "Scores your MyFitnessPal/dietary tracking adherence for yesterday. Helps identify unlogged meals and verify true fasting days without affecting your workout recommendations."
+- **Helper text**: Describes this as self-reported logging-quality context, defines a full-day fast as no caloric intake for the whole day, and states that it has zero recommendation authority. It does not name an upstream diary app whose provenance Garmin has not certified.
 - **Clear Button**: Appears when a choice is active, allowing reset to unrated.
 
 ### 3.2 Retrospective Nutrition Surface (`NutritionPanel.tsx`)
