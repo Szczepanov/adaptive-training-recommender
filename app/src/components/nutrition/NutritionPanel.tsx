@@ -6,6 +6,7 @@ import { nutritionService } from '../../nutrition/nutritionService';
 import { recoverySnapshotService } from '../../services/recoverySnapshotService';
 import { checkinService } from '../../services/checkinService';
 import { addDaysToLocalDateString, getLocalDateString } from '../../utils/localDate';
+import { getNutritionAdherenceCheckinRange } from '../../utils/nutritionAdherence';
 import './NutritionPanel.css';
 
 export interface NutritionPanelProps {
@@ -72,15 +73,23 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
 
         // 2. Fetch recent check-ins to map subjective calorie tracking adherence if not injected
         const loadCheckins = async () => {
-            try {
-                // Max window (28d) + 1 day, since a day's adherence is read from the check-in on the following day (D+1)
-                const recent = await checkinService.getRecentCheckins(userId, 35);
-                if (isMounted) {
-                    setCheckins(recent);
-                }
-            } catch (err) {
-                const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : 'unknown';
-                console.warn(`[NutritionPanel] Failed to load check-ins for adherence: ${code}`);
+            const checkinRange = getNutritionAdherenceCheckinRange(startDate, asOfDate);
+            const state = await checkinService.getCheckinsInRangeState(
+                userId,
+                checkinRange.startDateInclusive,
+                checkinRange.endDateExclusive,
+            );
+
+            if (!isMounted) return;
+
+            if (state.status === 'AVAILABLE') {
+                setCheckins(state.data);
+                return;
+            }
+
+            setCheckins([]);
+            if (state.status === 'INVALID' || state.status === 'UNAVAILABLE') {
+                console.warn(`[NutritionPanel] Check-in adherence history unavailable: ${state.status}`);
             }
         };
 
@@ -302,13 +311,23 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
                                 {(() => {
                                     const adherence = getAdherenceForDate(currentDay.date);
                                     if (adherence === 'fasted') {
-                                        return <span className="nutrition-badge adherence-fasted">Deliberate Fast (0 kcal)</span>;
+                                        const conflictsWithSyncedIntake =
+                                            currentDay.hasIntakeData
+                                            && currentDay.energyIntakeKcal != null
+                                            && currentDay.energyIntakeKcal > 0;
+                                        return (
+                                            <span className={`nutrition-badge adherence-fasted${conflictsWithSyncedIntake ? ' adherence-conflict' : ''}`}>
+                                                {conflictsWithSyncedIntake
+                                                    ? 'Marked Full-Day Fast — conflicts with synced intake'
+                                                    : 'Marked Full-Day Fast (0 kcal)'}
+                                            </span>
+                                        );
                                     }
                                     if (adherence === 'fully_tracked') {
                                         return <span className="nutrition-badge adherence-fully_tracked">Fully Tracked</span>;
                                     }
                                     if (adherence === 'mostly_tracked') {
-                                        return <span className="nutrition-badge adherence-mostly_tracked">Mostly Tracked (~75%)</span>;
+                                        return <span className="nutrition-badge adherence-mostly_tracked">Mostly Tracked</span>;
                                     }
                                     if (adherence === 'minimal') {
                                         return <span className="nutrition-badge adherence-minimal">Minimally Tracked (&lt;50%)</span>;
@@ -519,9 +538,15 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
                                                 {(() => {
                                                     const adherence = getAdherenceForDate(day.date);
                                                     if (adherence === 'fasted') {
+                                                        const conflictsWithSyncedIntake =
+                                                            day.hasIntakeData
+                                                            && day.energyIntakeKcal != null
+                                                            && day.energyIntakeKcal > 0;
                                                         return (
-                                                            <span style={{ color: '#a855f7', fontSize: '0.8rem', fontWeight: 600 }}>
-                                                                Fasted (0 kcal)
+                                                            <span style={{ color: conflictsWithSyncedIntake ? '#ef4444' : '#a855f7', fontSize: '0.8rem', fontWeight: 600 }}>
+                                                                {conflictsWithSyncedIntake
+                                                                    ? 'Marked Fast — intake conflict'
+                                                                    : 'Full-Day Fast (0 kcal)'}
                                                             </span>
                                                         );
                                                     }
