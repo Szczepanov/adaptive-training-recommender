@@ -206,8 +206,17 @@ test('check-in safety topics can coexist and disclose independently', async ({ p
   if (!scenario) throw new Error('Missing checkin-new visual scenario');
   await visitScenario(page, scenario);
 
-  await page.locator('label').filter({ hasText: 'Pain, injury, or movement change' }).click();
+  const painFlag = page.getByRole('checkbox', { name: /Active pain or injury/ });
+  await expect(painFlag).not.toBeChecked();
+
+  // Graded local tissue context must remain independently reportable without promoting
+  // the hard pain/injury gate.
+  await page.locator('.tissue-response-disclosure > summary').press('Enter');
   await expect(page.locator('.tissue-response-disclosure[open]')).toHaveCount(1);
+  await expect(painFlag).not.toBeChecked();
+
+  await page.locator('label').filter({ hasText: 'Active pain or injury' }).click();
+  await expect(painFlag).toBeChecked();
 
   await page.locator('label.health-context__topic').click();
   await expect(page.locator('.health-context[open]')).toHaveCount(1);

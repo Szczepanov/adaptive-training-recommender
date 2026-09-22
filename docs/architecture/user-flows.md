@@ -272,6 +272,11 @@ them as authoritative controls; ordinary edits preserve their stored values rath
 deleting or migrating them. Any future UI that re-exposes either field as a constraint must
 first add matching engine authority and update this contract.
 
+The hard `painOrInjury` checkbox is similarly narrower than graded local tissue response: it
+means active pain/injury that should strongly restrict training. Stiffness or movement changes
+that do not rise to that hard flag belong in `tissueResponses`; opening or editing the local
+tissue disclosure must not require setting `painOrInjury`.
+
 ### 5. Structured sessions
 
 `App.tsx` uses `sessionAuthoringMode` to switch the `sessions` route between:

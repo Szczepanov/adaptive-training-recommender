@@ -768,8 +768,8 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
                 />
                 <span className="toggle-checkmark"></span>
                 <div className="toggle-info">
-                  <strong>Pain, injury, or movement change</strong>
-                  <span>Something painful, injured, unusually stiff, or moving differently today</span>
+                  <strong>Active pain or injury</strong>
+                  <span>Hard safety flag for a current issue that should strongly restrict training</span>
                 </div>
               </label>
               <TissueResponseSection
