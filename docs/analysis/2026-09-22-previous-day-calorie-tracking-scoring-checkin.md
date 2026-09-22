@@ -152,7 +152,7 @@ if (validatedCheckin.nutritionAdherenceYesterday === null) {
 
 A dedicated card placed alongside Hunger & Fueling:
 - **Title**: Yesterday's Calorie Tracking (D-1)
-- **Context Pill**: Shows yesterday's synced calories if available (e.g., `Synced: 2,150 kcal`), `Intake reported; calories unavailable` when logging is affirmative but the value is missing, or `No intake data synced` when provider intake data is absent. Missing is never rendered as zero.
+- **Context Pill**: Uses provider-neutral copy and shows yesterday's reconciled synced calories if available (e.g., `2,150 kcal`), `Intake reported; calories unavailable` when logging is affirmative but the value is missing, or `No intake data synced` when the validated read is genuinely missing. An unavailable/failed nutrition read leaves the optional context absent rather than mislabeling it as missing. Missing is never rendered as zero.
 - **Options**:
   - `[ Fully Tracked ]` (Green tint when selected)
   - `[ Mostly Tracked ]` (Teal tint when selected)
@@ -176,3 +176,8 @@ For a nutrition display window `[T0, T1]`, the corresponding adherence lives in 
 The frontend therefore queries the validated check-in range `[T0 + 1, T1 + 2)` using
 `CheckinService.getCheckinsInRangeState`. It must not use "latest N check-ins", because that silently
 breaks historical `asOfDate` views and bypasses the validated range parser.
+
+The daily check-in's D-1 calorie context similarly uses `NutritionService.getNutritionDaysState`
+so `MISSING` remains distinct from `UNAVAILABLE`, then runs all available records for that day
+through `reconcileDailyNutrition`. It must not select `days[0]`: ADR-0042 is provider-neutral
+and the canonical reconciliation layer owns multi-source deduplication/fidelity selection.
