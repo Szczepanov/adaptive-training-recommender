@@ -173,8 +173,44 @@ describe('NutritionPanel Component', () => {
         );
 
         // Should render Deliberate Fast badge instead of regular Logged/Complete badge
-        expect(html).toContain('Deliberate Fast (0 kcal)');
+        expect(html).toContain('Marked Full-Day Fast (0 kcal)');
         expect(html).toContain('adherence-fasted');
+    });
+
+    it('flags a full-day-fast self-report that conflicts with positive synced intake', () => {
+        const sampleDay: NutritionDay = {
+            schemaVersion: 1,
+            date: '2026-09-20',
+            source: {
+                provider: 'garmin',
+                transport: 'garmin_connect',
+                origin: null,
+            },
+            syncedAt: '2026-09-20T10:00:00Z',
+            energyIntakeKcal: 2200,
+            hasIntakeData: true,
+            isPartialDay: false,
+            confidenceScore: 1.0,
+        };
+        const sampleCheckin = {
+            userId: 'test-user',
+            date: '2026-09-21',
+            nutritionAdherenceYesterday: 'fasted' as const,
+        } as unknown as DailySubjectiveCheckin;
+
+        const html = renderToStaticMarkup(
+            <NutritionPanel
+                userId="test-user"
+                asOfDate="2026-09-20"
+                initialRecords={[sampleDay]}
+                initialSnapshots={[]}
+                initialCheckins={[sampleCheckin]}
+            />,
+        );
+
+        expect(html).toContain('Marked Full-Day Fast — conflicts with synced intake');
+        expect(html).toContain('adherence-conflict');
+        expect(html).toContain('2,200 kcal');
     });
 
     it('renders correct labels and classes for all tracking adherence levels', () => {
@@ -195,7 +231,7 @@ describe('NutritionPanel Component', () => {
 
         const testCases = [
             { adherence: 'fully_tracked' as const, expectedLabel: 'Fully Tracked', expectedClass: 'adherence-fully_tracked' },
-            { adherence: 'mostly_tracked' as const, expectedLabel: 'Mostly Tracked (~75%)', expectedClass: 'adherence-mostly_tracked' },
+            { adherence: 'mostly_tracked' as const, expectedLabel: 'Mostly Tracked', expectedClass: 'adherence-mostly_tracked' },
             { adherence: 'minimal' as const, expectedLabel: 'Minimally Tracked', expectedClass: 'adherence-minimal' },
             { adherence: 'untracked' as const, expectedLabel: 'Untracked', expectedClass: 'adherence-untracked' },
         ];
