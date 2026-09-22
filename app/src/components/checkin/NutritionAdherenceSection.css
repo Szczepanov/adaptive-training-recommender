@@ -57,6 +57,11 @@
   background-color: rgba(59, 130, 246, 0.04);
 }
 
+.nutrition-adherence-card:focus-visible {
+  outline: 2px solid var(--accent-color, #3b82f6);
+  outline-offset: 2px;
+}
+
 .nutrition-adherence-card.is-selected {
   border-color: var(--accent-color, #3b82f6);
   background-color: rgba(59, 130, 246, 0.12);
@@ -142,4 +147,9 @@
 .btn-clear-adherence:hover {
   background-color: rgba(255, 255, 255, 0.06);
   color: var(--text-primary, #fff);
+}
+
+.btn-clear-adherence:focus-visible {
+  outline: 2px solid var(--accent-color, #3b82f6);
+  outline-offset: 2px;
 }

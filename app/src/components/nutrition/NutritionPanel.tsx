@@ -73,12 +73,14 @@ export const NutritionPanel: React.FC<NutritionPanelProps> = ({
         // 2. Fetch recent check-ins to map subjective calorie tracking adherence if not injected
         const loadCheckins = async () => {
             try {
+                // Max window (28d) + 1 day, since a day's adherence is read from the check-in on the following day (D+1)
                 const recent = await checkinService.getRecentCheckins(userId, 35);
                 if (isMounted) {
                     setCheckins(recent);
                 }
             } catch (err) {
-                console.warn('[NutritionPanel] Failed to load check-ins for adherence:', err);
+                const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : 'unknown';
+                console.warn(`[NutritionPanel] Failed to load check-ins for adherence: ${code}`);
             }
         };
 

@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from 'react';
 import type { NutritionTrackingAdherence } from '../../engine/models';
 import {
   NUTRITION_ADHERENCE_OPTIONS,
@@ -26,6 +27,26 @@ export function NutritionAdherenceSection({
 
   const handleClear = () => {
     onChange(null);
+  };
+
+  const handleGridKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const { key } = event;
+    if (key !== 'ArrowRight' && key !== 'ArrowLeft' && key !== 'ArrowDown' && key !== 'ArrowUp') {
+      return;
+    }
+    event.preventDefault();
+    const count = NUTRITION_ADHERENCE_OPTIONS.length;
+    const currentIndex = Math.max(
+      0,
+      NUTRITION_ADHERENCE_OPTIONS.findIndex((opt) => opt.value === value),
+    );
+    const delta = key === 'ArrowRight' || key === 'ArrowDown' ? 1 : -1;
+    const nextIndex = (currentIndex + delta + count) % count;
+    const nextOption = NUTRITION_ADHERENCE_OPTIONS[nextIndex];
+    onChange(nextOption.value);
+    const grid = event.currentTarget;
+    const nextButton = grid.querySelectorAll<HTMLButtonElement>('.nutrition-adherence-card')[nextIndex];
+    nextButton?.focus();
   };
 
   const renderContextSummary = () => {
@@ -88,15 +109,18 @@ export function NutritionAdherenceSection({
         className="nutrition-adherence-grid"
         role="radiogroup"
         aria-label="Calorie tracking adherence options"
+        onKeyDown={handleGridKeyDown}
       >
-        {NUTRITION_ADHERENCE_OPTIONS.map((opt) => {
+        {NUTRITION_ADHERENCE_OPTIONS.map((opt, index) => {
           const selected = value === opt.value;
+          const isRovingTarget = isSet ? selected : index === 0;
           return (
             <button
               key={opt.value}
               type="button"
               role="radio"
               aria-checked={selected}
+              tabIndex={isRovingTarget ? 0 : -1}
               className={`nutrition-adherence-card ${selected ? `is-selected adherence-${opt.value}` : ''}`}
               onClick={() => handleSelect(opt.value)}
             >
@@ -115,4 +139,4 @@ export function NutritionAdherenceSection({
       </p>
     </section>
   );
-};
+}

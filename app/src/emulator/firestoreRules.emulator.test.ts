@@ -2517,6 +2517,21 @@ emulatorDescribe('Firestore security rules', () => {
         }));
     });
 
+    it('rejects cross-user access to check-ins carrying nutritionAdherenceYesterday', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), checkinPath), {
+                ...validCheckinWithSessionResponse(),
+                nutritionAdherenceYesterday: 'fasted',
+            });
+        });
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, checkinPath)));
+        await assertFails(setDoc(doc(otherDb, checkinPath), {
+            ...validCheckinWithSessionResponse(),
+            nutritionAdherenceYesterday: 'fasted',
+        }));
+    });
+
     // --- ADR-0039: Anthropometry entries ---
     const anthropometryPath = `users/${ownerId}/anthropometry_entries/entry-1`;
 
