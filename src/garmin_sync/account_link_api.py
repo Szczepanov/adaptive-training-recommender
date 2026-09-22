@@ -48,7 +48,8 @@ class LoginRateLimiter:
         self._attempts: dict[str, deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
 
-    def allow(self, key: str) -> bool:
+    def check(self, key: str) -> tuple[bool, int | None]:
+        """Record an allowed attempt or return its retry delay atomically."""
         now = time.monotonic()
         cutoff = now - RATE_LIMIT_WINDOW_SECONDS
         with self._lock:
@@ -63,18 +64,16 @@ class LoginRateLimiter:
 
             attempts = self._attempts[key]
             if len(attempts) >= RATE_LIMIT_ATTEMPTS:
-                return False
+                remaining = attempts[0] + RATE_LIMIT_WINDOW_SECONDS - now
+                retry_after_seconds = max(1, min(RATE_LIMIT_WINDOW_SECONDS, math.ceil(remaining)))
+                return False, retry_after_seconds
             attempts.append(now)
-            return True
+            return True, None
 
-    def retry_after_seconds(self, key: str) -> int:
-        """Seconds until the oldest recorded attempt leaves the local window."""
-        with self._lock:
-            attempts = self._attempts.get(key)
-            if not attempts:
-                return 1
-            remaining = attempts[0] + RATE_LIMIT_WINDOW_SECONDS - time.monotonic()
-            return max(1, min(RATE_LIMIT_WINDOW_SECONDS, math.ceil(remaining)))
+    def allow(self, key: str) -> bool:
+        """Compatibility wrapper for callers that only need the allow decision."""
+        allowed, _ = self.check(key)
+        return allowed
 
 
 RATE_LIMITER = LoginRateLimiter()
@@ -305,8 +304,9 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
 
     def _handle_login(self) -> None:
         client_key = self._client_key()
-        if not RATE_LIMITER.allow(client_key):
-            self._rate_limited_response(client_key)
+        allowed, retry_after_seconds = RATE_LIMITER.check(client_key)
+        if not allowed:
+            self._rate_limited_response(retry_after_seconds or 1)
             return
         payload = self._read_json()
         email = payload.get("email")
@@ -314,8 +314,9 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
         if not isinstance(email, str) or not isinstance(password, str):
             raise ValueError("Garmin email and password must be strings.")
         email_key = f"account:{email.strip().lower()}"
-        if not RATE_LIMITER.allow(email_key):
-            self._rate_limited_response(email_key)
+        allowed, retry_after_seconds = RATE_LIMITER.check(email_key)
+        if not allowed:
+            self._rate_limited_response(retry_after_seconds or 1)
             return
         requested_uid = _verified_uid(
             self.headers.get("Authorization"),
@@ -324,13 +325,13 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
         result = _service().start_login(email, password, requested_uid=requested_uid)
         self._json_response(HTTPStatus.OK, result)
 
-    def _rate_limited_response(self, key: str) -> None:
+    def _rate_limited_response(self, retry_after_seconds: int) -> None:
         self._error_response(
             HTTPStatus.TOO_MANY_REQUESTS,
             message="Too many login attempts. Try again later.",
             error_code="garmin_link.rate_limited",
             retryable=True,
-            retry_after_seconds=RATE_LIMITER.retry_after_seconds(key),
+            retry_after_seconds=retry_after_seconds,
         )
 
     def _handle_mfa(self) -> None:

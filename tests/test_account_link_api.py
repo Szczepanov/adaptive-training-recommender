@@ -57,10 +57,25 @@ def test_rate_limiter_reports_remaining_window(monkeypatch: Any) -> None:
     for _ in range(account_link_api.RATE_LIMIT_ATTEMPTS):
         assert limiter.allow("client") is True
 
-    assert limiter.allow("client") is False
-    assert limiter.retry_after_seconds("client") == account_link_api.RATE_LIMIT_WINDOW_SECONDS
+    allowed, retry_after_seconds = limiter.check("client")
+    assert allowed is False
+    assert retry_after_seconds == account_link_api.RATE_LIMIT_WINDOW_SECONDS
     now[0] += 30.5
-    assert limiter.retry_after_seconds("client") == account_link_api.RATE_LIMIT_WINDOW_SECONDS - 30
+    allowed, retry_after_seconds = limiter.check("client")
+    assert allowed is False
+    assert retry_after_seconds == account_link_api.RATE_LIMIT_WINDOW_SECONDS - 30
+
+
+def test_rate_limiter_returns_delay_from_same_locked_decision(monkeypatch: Any) -> None:
+    now = [100.0]
+    monkeypatch.setattr(account_link_api.time, "monotonic", lambda: now[0])
+    limiter = LoginRateLimiter()
+    for _ in range(account_link_api.RATE_LIMIT_ATTEMPTS):
+        assert limiter.allow("client") is True
+
+    allowed, retry_after_seconds = limiter.check("client")
+    assert allowed is False
+    assert retry_after_seconds == account_link_api.RATE_LIMIT_WINDOW_SECONDS
 
 
 def test_error_response_adds_stable_metadata_and_sanitizes_message() -> None:
@@ -119,6 +134,27 @@ def test_handle_login_enforces_per_account_rate_limiting(monkeypatch: Any) -> No
     assert (
         1 <= captured_errors[0]["retry_after_seconds"] <= account_link_api.RATE_LIMIT_WINDOW_SECONDS
     )
+
+
+def test_handle_login_uses_captured_retry_delay(monkeypatch: Any) -> None:
+    handler = object.__new__(GarminAccountLinkHandler)
+    handler.headers = {"X-Forwarded-For": "203.0.113.10"}
+    handler.client_address = ("127.0.0.1", 12345)
+    handler.request_id = "req-test"
+    limiter = LoginRateLimiter()
+    monkeypatch.setattr(account_link_api, "RATE_LIMITER", limiter)
+    for _ in range(account_link_api.RATE_LIMIT_ATTEMPTS):
+        assert limiter.allow("203.0.113.10") is True
+
+    captured_errors: list[dict[str, Any]] = []
+    handler._error_response = lambda status, **kwargs: captured_errors.append(  # type: ignore[method-assign]  # noqa: SLF001
+        {"status": status, **kwargs}
+    )
+    limiter.retry_after_seconds = lambda _key: pytest.fail("delay must not be looked up again")  # type: ignore[method-assign]  # noqa: SLF001
+
+    handler._handle_login()  # noqa: SLF001
+
+    assert captured_errors[0]["retry_after_seconds"] == account_link_api.RATE_LIMIT_WINDOW_SECONDS
 
 
 def test_upstream_rate_limit_reports_explicit_retry_delay(monkeypatch: Any) -> None:
