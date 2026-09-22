@@ -96,6 +96,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0040: Server-Authoritative Anthropometry Writes**](./adr/0040-server-authoritative-anthropometry-writes.md) — *Accepted.* A verified server is the sole mutation authority for anthropometry writes, closing direct SDK mutations to prevent Rules expression-budget exhaustion while enforcing full protocol validation.
 * [**ADR-0041: Typed Strength, Speed and Power Performance Goals (Stage 1)**](./adr/0041-strength-speed-power-performance-goals.md) — *Accepted, amended.* Explicit typed performance outcomes for strength, speed, and power metrics without overriding core safety authority.
 * [**ADR-0042: Nutrition Ingestion, Provenance, and Decision Authority**](./adr/0042-nutrition-ingestion-provenance-and-decision-authority.md) — *Accepted.* Provider-neutral energy intake and macro ingestion, strict separation from energy expenditure, tripartite provenance identity, and strictly retrospective zero recommendation authority.
+* [**ADR-0043: Individualized Rolling Catalog-Load Budget**](./adr/0043-rolling-catalog-load-budget.md) — *Accepted.* Versioned, user-history-derived catalog-load envelope to week-ahead planning.
 
 ---
 
