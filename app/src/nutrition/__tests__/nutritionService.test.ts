@@ -155,7 +155,7 @@ describe('NutritionService and Document Mapper', () => {
             const parsedMalformedDate = parseNutritionDayDoc({ ...validDoc, logicalDate: 'not-a-date' }, 'users/u1/nutrition_days/doc-1');
             expect(parsedMalformedDate.status).toBe('INVALID');
             if (parsedMalformedDate.status === 'INVALID') {
-                expect(parsedMalformedDate.issues).toContainEqual(expect.objectContaining({ code: 'invalid-date', field: 'date' }));
+                expect(parsedMalformedDate.issues).toContainEqual(expect.objectContaining({ code: 'invalid-date', field: 'logicalDate' }));
             }
         });
 
@@ -193,6 +193,34 @@ describe('NutritionService and Document Mapper', () => {
             expect(parsedBadMacro.status).toBe('INVALID');
             if (parsedBadMacro.status === 'INVALID') {
                 expect(parsedBadMacro.issues).toContainEqual(expect.objectContaining({ code: 'invalid-numeric-field', field: 'proteinG' }));
+            }
+        });
+
+        it('accepts the nested compatibility source shape when provenance is consistent', () => {
+            const parsed = parseNutritionDayDoc(
+                {
+                    schemaVersion: 1,
+                    date: '2026-09-20',
+                    source: {
+                        provider: 'garmin',
+                        transport: 'garmin_connect',
+                        origin: null,
+                    },
+                    energyIntakeKcal: 0,
+                    hasIntakeData: true,
+                },
+                'users/u1/nutrition_days/doc-1',
+            );
+
+            expect(parsed.status).toBe('AVAILABLE');
+            if (parsed.status === 'AVAILABLE') {
+                expect(parsed.data.source).toEqual({
+                    provider: 'garmin',
+                    transport: 'garmin_connect',
+                    origin: null,
+                });
+                expect(parsed.data.energyIntakeKcal).toBe(0);
+                expect(parsed.data.hasIntakeData).toBe(true);
             }
         });
 
