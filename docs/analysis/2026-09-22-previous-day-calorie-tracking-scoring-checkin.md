@@ -2,8 +2,8 @@
 
 ## Status and Scope
 
-- **Status:** Proposed & Analyzed
-- **Related ADRs:** [ADR-0042: Nutrition Ingestion, Provenance, and Decision Authority](../adr/0042-nutrition-ingestion-provenance-and-decision-authority.md), [ADR-0039: Body Composition & Fueling Observations](../adr/0039-longitudinal-body-composition-and-fueling-observations.md), [ADR-0003: Timezone & Warsaw Date Semantics](../adr/0003-warsaw-timezone-semantics.md)
+- **Status:** Implemented in PR #710 (pending merge)
+- **Related ADRs:** [ADR-0042: Nutrition Ingestion, Provenance, and Decision Authority](../adr/0042-nutrition-ingestion-provenance-and-decision-authority.md), [ADR-0039: Body Composition & Fueling Observations](../adr/0039-longitudinal-body-composition-and-fueling-observations.md), [ADR-0003: Timezone & Previous-Day Step Window](../adr/0003-timezone-semantics-and-d1-step-window.md)
 - **Related Implementation Plan:** [Previous-Day Calorie Tracking Scoring](../plans/previous-day-calorie-tracking-scoring.md)
 
 ---
@@ -15,14 +15,14 @@
 
 2. **Core Inquiries Evaluated**:
    - **Can we assume 0 kcal for the previous day is untracked?**
-     **No.** Conflating 0 kcal with "untracked" creates false missingness for athletes practicing deliberate fasting (intermittent fasting, 24-hour water fasts, religious/medical fasting). Conversely, assuming 0 kcal is always a deliberate fast would misclassify ordinary logging drop-out as starvation. Strict missingness semantics (ADR-0042 `D-NUT-MISSING`: missing != 0) dictate that 0 kcal and unlogged must remain semantically distinct, and subjective confirmation is required to certify a true 0 kcal fast.
+     **No.** Conflating 0 kcal with "untracked" creates false missingness for a deliberate full-day zero-energy fast. Conversely, assuming every 0 kcal record is a fast would misclassify logging drop-out. Strict missingness semantics (ADR-0042 `D-NUT-MISSING`: missing != 0) require zero and missing to remain distinct. The subjective check-in may mark a deliberate full-day fast, but contradictory positive synced intake must remain visible as a conflict rather than being overwritten.
    - **What scoring levels should be provided?**
      A discrete, low-cognitive-load 5-state adherence scale:
-     1. `fully_tracked`: Conscientiously logged all meals, snacks, and beverages (~90–100% complete).
-     2. `mostly_tracked`: Logged main meals; omitted minor snacks, dressings, or rough portion estimates (~65–85% complete).
-     3. `minimal`: Logged only 1–2 items (e.g. coffee or breakfast) and stopped (<50% complete).
-     4. `untracked`: Did not log food yesterday at all.
-     5. `fasted`: Deliberate fast all day; intake was intentionally 0 kcal (or non-caloric fluids only).
+     1. `fully_tracked`: Athlete reports logging the whole day.
+     2. `mostly_tracked`: Main meals logged; some smaller items or portions uncertain.
+     3. `minimal`: Only a small part of the day logged.
+     4. `untracked`: No meaningful food logging for the day.
+     5. `fasted`: Deliberate **full-day** fast with no caloric intake.
      - *Unrated / Cleared*: `null` or omitted when the athlete does not track calories or chooses to skip the question.
 
 3. **Architectural Placement & Timing Invariants**:
@@ -42,10 +42,10 @@
 1. **Garmin Provider Payload Behavior (`fetch_daily_nutrition`)**:
    - When an athlete does not open or log in MyFitnessPal, Garmin Connect daily stats typically sets `includesCalorieConsumedData: false`. `GarminProviderAdapter` maps this to `has_intake_data: false` and `energy_intake_kcal: None`.
    - However, if an athlete opens the MyFitnessPal diary but logs zero items, or if Garmin Connect initializes a daily food log entry without line items, Garmin may emit `consumedKilocalories: 0` with `includesCalorieConsumedData: true`.
-2. **Physiological Reality of Fasting**:
-   - Athletes engage in intermittent fasting (e.g., 24-hour fasts, 5:2 fasting schedules, water fasts, Ramadan/Yom Kippur observance).
-   - On a true fasting day, consumed energy is genuinely 0 kcal. The metabolic and hormonal impact of a zero-calorie day (glycogen depletion, lipolysis, sympathetic tone modulation) is profound and real.
-   - If the system automatically treated 0 kcal as "untracked", a genuine fast would be erased from the athlete's history as missing data.
+2. **Fasting terminology must stay precise**:
+   - International fasting terminology distinguishes full fasting, modified fasting, intermittent fasting, and time-restricted eating; time-restricted eating normally includes caloric intake within an eating window.
+   - Therefore `fasted` in this product means a deliberate **full-day zero-calorie fast**, not ordinary 16:8/time-restricted eating.
+   - References: https://pubmed.ncbi.nlm.nih.gov/39059384/ and https://pubmed.ncbi.nlm.nih.gov/32480126/.
 3. **Behavioral Reality of Underreporting**:
    - Conversely, if the system treated all 0 kcal days as fasting, every forgotten weekend or abandoned day would be logged as acute caloric starvation.
 4. **Conclusion**:
@@ -58,15 +58,17 @@
 
 ### 1.2 Granularity of Adherence Scoring: What levels should exist?
 
-Athletes tracking in tools like MyFitnessPal do not experience binary "perfect" vs "nothing" tracking. Nutritional epidemiology and self-monitoring studies identify four primary tracking patterns plus fasting:
+Dietary self-monitoring research does **not** provide a consensus mapping from a subjective category such as "mostly tracked" to a calibrated percentage of true energy intake. Definitions of adherence vary across studies, and omissions/portion-size errors can occur even when a diary is used. Self-reported energy intake should therefore not be treated as true energy intake or corrected by a fixed percentage (see https://pubmed.ncbi.nlm.nih.gov/30115555/, https://pubmed.ncbi.nlm.nih.gov/36041186/, and https://pubmed.ncbi.nlm.nih.gov/26468491/).
 
-| Adherence Level | Key Identifier | Estimated Completeness | Typical Real-World Athlete Scenario | Data Quality Interpretation |
-|---|---|---|---|---|
-| **Fully Tracked** | `fully_tracked` | ~90% – 100% | Weighed/measured or conscientiously logged all meals, snacks, drinks, and oils. | **High Fidelity**: Safe for longitudinal intake baselines and energy balance trends. |
-| **Mostly Tracked** | `mostly_tracked` | ~65% – 85% | Logged all primary meals (breakfast, lunch, dinner); skipped small snacks, condiments, or eating out was eyeballed. | **Underreported / Directional**: Good estimate of major intake; true intake is ~15-30% higher than synced value. |
-| **Minimally Tracked** | `minimal` | < 50% | Logged breakfast or morning shake, then got busy and abandoned logging for the rest of the day. | **Incomplete**: Synced value significantly underestimates intake; should be excluded from calorie deficit/surplus computations. |
-| **Untracked** | `untracked` | 0% | Completely forgot or deliberately took a day off from calorie counting. | **Missing / Unrecorded**: Discard intake value from analytical averaging. |
-| **Fasted (0 kcal)** | `fasted` | 100% (of 0 kcal) | Deliberate water fast, 24-hour fast, or religious fasting; intentional 0 kcal intake. | **True Zero**: Confirmed zero intake, distinct from missing data. |
+The scale is intentionally **behaviorally anchored**, not numerically calibrated:
+
+| Adherence Level | Key Identifier | Behavioral Anchor | Data Quality Interpretation |
+|---|---|---|---|
+| **Fully Tracked** | `fully_tracked` | Athlete reports logging all meals, snacks, caloric drinks and relevant cooking extras intended for tracking. | Highest subjective logging confidence; still not a validated measure of true energy intake. |
+| **Mostly Tracked** | `mostly_tracked` | Main meals logged; some smaller items or portion estimates missing/uncertain. | Partial record; retain the synced number but label it as incompletely logged. |
+| **Minimally Tracked** | `minimal` | Only a small part of the day was logged before tracking stopped. | Low-confidence intake record; do not infer the missing calories. |
+| **Untracked** | `untracked` | No meaningful food logging for the day. | Missing/unverified intake context; do not convert missing to zero. |
+| **Full-Day Fast (0 kcal)** | `fasted` | Deliberate full-day fast with no caloric intake. | Subjective zero-intake confirmation; if positive synced intake exists, surface a conflict instead of overwriting either source. |
 
 #### Cognitive Load Considerations:
 - Selecting among 5 labelled chips requires a single tap.
@@ -109,7 +111,7 @@ export interface DailySubjectiveCheckin {
 ### 2.2 Validation Rules (`validationCore.ts`, `decisionInputs.ts`)
 
 - If present, `nutritionAdherenceYesterday` must be one of the 5 allowed enum values, or `null`.
-- Empty strings or invalid strings are rejected with validation errors.
+- UI/service input normalizes an empty optional value to `null` (clear); persisted parser and Firestore rules reject non-enum strings, including an empty stored string.
 - `computeDataQuality`: Does **not** include `nutritionAdherenceYesterday` in `missingFields`. `isComplete` remains dependent only on the core subjective scales, safety flags, and time available.
 
 ### 2.3 Firestore Security Rules (`firestore.rules`)
@@ -138,7 +140,8 @@ if (validatedCheckin.nutritionAdherenceYesterday === null) {
 - The engine evaluators (`rules.ts`, `fatigue.ts`, `optimizer.ts`, `eligibility.ts`, `composer.ts`) do not import or consume `nutritionAdherenceYesterday`.
 - `mapCheckinToSubjectiveInput` in `adapters.ts` does not forward nutrition adherence to `SubjectiveInput`.
 - Architecture test `app/src/nutrition/__tests__/engineIsolation.test.ts` passes with zero engine imports of nutrition.
-- Test `app/src/nutrition/__tests__/nutritionRecommendationInvariance.test.ts` proves that recommendation outputs are 100% invariant across all adherence levels.
+- Test `app/src/nutrition/__tests__/nutritionRecommendationInvariance.test.ts` proves that mapping to `SubjectiveInput` is invariant across all adherence levels.
+- Architecture coverage additionally forbids `nutritionAdherenceYesterday` references in engine decision files outside the model/validation boundary, preventing accidental future promotion to recommendation authority.
 
 ---
 
@@ -148,19 +151,27 @@ if (validatedCheckin.nutritionAdherenceYesterday === null) {
 
 A dedicated card placed alongside Hunger & Fueling:
 - **Title**: Yesterday's Calorie Tracking (D-1)
-- **Context Pill**: Shows yesterday's synced calories if available (e.g., `Synced: 2,150 kcal` or `No intake synced (0 kcal)`).
+- **Context Pill**: Shows yesterday's synced calories if available (e.g., `Synced: 2,150 kcal`), `Intake reported; calories unavailable` when logging is affirmative but the value is missing, or `No intake data synced` when provider intake data is absent. Missing is never rendered as zero.
 - **Options**:
   - `[ Fully Tracked ]` (Green tint when selected)
-  - `[ Mostly Tracked (~75%) ]` (Teal tint when selected)
-  - `[ Minimal (<50%) ]` (Amber tint when selected)
+  - `[ Mostly Tracked ]` (Teal tint when selected)
+  - `[ Minimally Tracked ]` (Amber tint when selected)
   - `[ Untracked ]` (Gray/Red tint when selected)
-  - `[ Fasted (0 kcal) ]` (Purple/Blue tint when selected)
+  - `[ Full-Day Fast (0 kcal) ]` (Purple/Blue tint when selected)
 - **Helper text**: "Scores your MyFitnessPal/dietary tracking adherence for yesterday. Helps identify unlogged meals and verify true fasting days without affecting your workout recommendations."
 - **Clear Button**: Appears when a choice is active, allowing reset to unrated.
 
 ### 3.2 Retrospective Nutrition Surface (`NutritionPanel.tsx`)
 
 - Displays the adherence badge on yesterday's card in `NutritionPanel`.
-- If an athlete fasted (0 kcal), the UI prominently renders `Deliberate Fast (0 kcal)` rather than `Unlogged / Missing`.
+- If an athlete marks a full-day fast, the UI renders `Marked Full-Day Fast (0 kcal)`; if positive synced intake exists for that day, the UI explicitly surfaces the contradiction instead of silently treating the day as a true zero.
 - If an athlete marked `Untracked`, the badge highlights `Untracked (Intake unverified)`.
 - If `Mostly Tracked` or `Minimal`, the badge indicates `Partially Logged`.
+
+
+### 3.3 Retrospective read-window invariant
+
+For a nutrition display window `[T0, T1]`, the corresponding adherence lives in check-ins on `[T0 + 1, T1 + 1]`.
+The frontend therefore queries the validated check-in range `[T0 + 1, T1 + 2)` using
+`CheckinService.getCheckinsInRangeState`. It must not use "latest N check-ins", because that silently
+breaks historical `asOfDate` views and bypasses the validated range parser.
