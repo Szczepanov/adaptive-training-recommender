@@ -72,26 +72,30 @@ export function PhysicalWorkSection({ value, onChange }: PhysicalWorkSectionProp
   };
 
   return (
-    <div className="physical-work-card">
-      <label className={`boolean-toggle-card ${isPerformed ? 'is-active' : ''}`}>
-        <input
-          type="checkbox"
-          checked={isPerformed}
-          onChange={(e) => handleToggle(e.target.checked)}
-        />
-        <span className="toggle-checkmark"></span>
-        <div className="toggle-info">
-          <strong>🔨 Unlogged Physical Work / Manual Labor (Yesterday)</strong>
-          <span>Chainsaw/tree work, heavy yardwork, construction, hauling timber</span>
-        </div>
-      </label>
+    <details className="physical-work-card" open={isPerformed || undefined}>
+      <summary className="physical-work-summary">
+        <label
+          className={`boolean-toggle-card ${isPerformed ? 'is-active' : ''}`}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <input
+            type="checkbox"
+            checked={isPerformed}
+            onChange={(e) => handleToggle(e.target.checked)}
+          />
+          <span className="toggle-checkmark"></span>
+          <div className="toggle-info">
+            <strong>🔨 Yesterday&apos;s extra physical load</strong>
+            <span>Manual labor or demanding work that wearables may miss</span>
+          </div>
+        </label>
+        <span className="physical-work-status">{isPerformed ? 'Reported' : 'Optional'}</span>
+      </summary>
 
-      {isPerformed && (
+      <div className="physical-work-content">
+        <p className="physical-work-helper-text">This records yesterday&apos;s load, not an injury. Wearables can miss isometric grip, heavy lifting, and spinal loading when heart rate stays low.</p>
+        {isPerformed && (
         <div className="physical-work-details" aria-label="Physical work details">
-          <p className="physical-work-helper-text">
-            Wearables miss isometric grip, heavy lifting, and spinal loading when heart rate stays low. Logging this protects your muscles and central nervous system from being overloaded today.
-          </p>
-
           <div className="physical-work-row">
             <span className="physical-work-label">Duration</span>
             <div className="physical-work-chips" role="group" aria-label="Work duration">
@@ -157,7 +161,8 @@ export function PhysicalWorkSection({ value, onChange }: PhysicalWorkSectionProp
             />
           </label>
         </div>
-      )}
-    </div>
+        )}
+      </div>
+    </details>
   );
 }

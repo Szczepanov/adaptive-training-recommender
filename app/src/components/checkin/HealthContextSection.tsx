@@ -9,6 +9,7 @@ import './HealthContextSection.css';
 interface HealthContextSectionProps {
     value?: HealthContextCheckin;
     symptomsPresent: boolean;
+    onSymptomsChange: (present: boolean) => void;
     /**
      * Deprecated no-op kept only while this PR is stacked on #179, whose DailyCheckin caller
      * still supplies the old missingness object. No manual physiology reaches UI or engine state.
@@ -89,6 +90,7 @@ function hasUnusualContext(value: HealthContextCheckin | undefined, symptomsPres
 export function HealthContextSection({
     value,
     symptomsPresent,
+    onSymptomsChange,
     onChange,
 }: HealthContextSectionProps) {
     const context = normalizeHealthContext(value, symptomsPresent);
@@ -117,16 +119,30 @@ export function HealthContextSection({
     const unusual = hasUnusualContext(context, symptomsPresent);
 
     return (
-        <details className="health-context" open={unusual || undefined}>
-            <summary className="health-context__summary">
-                <span>
-                    <strong>Anything unusual since yesterday?</strong>
-                    <small>Symptoms and contextual flags default to No; alcohol to 0; travel to none.</small>
-                </span>
-                {unusual && <span className="health-context__badge">Context added</span>}
-            </summary>
+        <div className="health-context-group">
+            <label className={`boolean-toggle-card health-context__topic ${symptomsPresent ? 'is-active is-warning' : ''}`}>
+                <input
+                    type="checkbox"
+                    checked={symptomsPresent}
+                    onChange={(event) => onSymptomsChange(event.target.checked)}
+                />
+                <span className="toggle-checkmark"></span>
+                <div className="toggle-info">
+                    <strong>I feel unwell</strong>
+                    <span>Cold, fever, stomach, or other illness symptoms today</span>
+                </div>
+            </label>
 
-            <div className="health-context__body">
+            <details className="health-context" open={unusual || undefined}>
+                <summary className="health-context__summary">
+                    <span>
+                        <strong>Other context since yesterday?</strong>
+                        <small>Illness details and contextual flags default to No; alcohol to 0; travel to none.</small>
+                    </span>
+                    {unusual && <span className="health-context__badge">Context added</span>}
+                </summary>
+
+                <div className="health-context__body">
                 <div className="health-context__row">
                     <span className="health-context__label">Alcohol</span>
                     <div className="health-context__chips" role="group" aria-label="Alcohol drinks in the last 24 hours">
@@ -283,7 +299,8 @@ export function HealthContextSection({
                         </div>
                     </div>
                 )}
-            </div>
-        </details>
+                </div>
+            </details>
+        </div>
     );
 }

@@ -550,19 +550,6 @@ details[open] > .checkin-disclosure-summary::before {
   color: var(--text-secondary, #94a3b8);
 }
 
-/* Boolean Toggles Grid */
-.boolean-options-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.65rem;
-}
-
-@media (min-width: 520px) {
-  .boolean-options-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
 .boolean-toggle-card {
   display: flex;
   align-items: center;
@@ -648,6 +635,19 @@ details[open] > .checkin-disclosure-summary::before {
   margin-top: 1.25rem;
   padding-top: 1.25rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.safety-topic-grid {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.safety-topic-pain {
+  min-width: 0;
+}
+
+.safety-topic-pain > .boolean-toggle-card {
+  margin: 0;
 }
 
 .tissue-response-summary {
@@ -777,10 +777,6 @@ details[open] > .checkin-disclosure-summary::before {
   .availability-grid {
     grid-template-columns: 1fr 1fr;
   }
-}
-
-.indoor-toggle {
-  margin-bottom: 0.85rem;
 }
 
 .form-group {
@@ -1081,6 +1077,56 @@ details[open] > .checkin-disclosure-summary::before {
   overflow: hidden;
 }
 
+.physical-work-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: var(--touch-target-min, 44px);
+  cursor: pointer;
+  list-style: none;
+}
+
+.physical-work-summary::-webkit-details-marker {
+  display: none;
+}
+
+.physical-work-summary::before {
+  content: '▸';
+  color: #fdba74;
+  margin-left: 0.9rem;
+  transition: transform 0.15s ease;
+}
+
+.physical-work-card[open] > .physical-work-summary::before {
+  transform: rotate(90deg);
+}
+
+.physical-work-summary .boolean-toggle-card {
+  flex: 1;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.physical-work-summary .boolean-toggle-card:hover {
+  background: transparent;
+}
+
+.physical-work-status {
+  flex: 0 0 auto;
+  margin-right: 0.9rem;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 0.76rem;
+  text-align: right;
+}
+
+.physical-work-summary:focus-visible {
+  outline: 2px solid #fdba74;
+  outline-offset: -2px;
+}
+
 .physical-work-card .boolean-toggle-card {
   margin: 0;
   border: none;
@@ -1097,6 +1143,13 @@ details[open] > .checkin-disclosure-summary::before {
 }
 
 .physical-work-details {
+  border-top: 1px solid rgba(251, 146, 60, 0.15);
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.physical-work-content {
   border-top: 1px solid rgba(251, 146, 60, 0.15);
   padding: 0.9rem;
   display: grid;

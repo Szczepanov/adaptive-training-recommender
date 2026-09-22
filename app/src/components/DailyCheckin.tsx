@@ -8,7 +8,7 @@ import { relevantFollowupRegions } from '../responses/followupSchedule';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
 import type { BodyRegion, DailySubjectiveCheckin, NutritionTrackingAdherence, PhysicalWorkCheckin, RedFlagCategory, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
 import type { HealthContextCheckin } from '../engine/healthAnomalyModels';
-import { BODY_REGIONS, TISSUE_LEVELS } from '../engine/models';
+import { BODY_REGIONS } from '../engine/models';
 import { isCompletedSubjectiveCheckin } from '../engine/checkinCompletion';
 import { deriveTissueSeverity } from '../engine/injuryPolicy';
 import { getLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
@@ -18,6 +18,7 @@ import type { Screen } from '../types/navigation';
 import { SCREEN_LABELS } from '../types/navigation';
 import { HealthContextSection } from './checkin/HealthContextSection';
 import { PhysicalWorkSection } from './checkin/PhysicalWorkSection';
+import { TissueResponseSection } from './checkin/TissueResponseSection';
 import { SubjectiveScaleRow } from './checkin/SubjectiveScaleRow';
 import { HungerSection } from './checkin/HungerSection';
 import { NutritionAdherenceSection } from './checkin/NutritionAdherenceSection';
@@ -341,22 +342,9 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
     });
   };
 
-  const handleBooleanToggle = (field: 'painOrInjury' | 'illnessSymptoms' | 'alreadyTrainedToday') => {
+  const handleBooleanToggle = (field: 'painOrInjury' | 'alreadyTrainedToday') => {
     if (!checkin) return;
     const next = !checkin[field];
-    if (field === 'illnessSymptoms') {
-      setCheckin({
-        ...checkin,
-        illnessSymptoms: next,
-        healthContext: {
-          ...(checkin.healthContext ?? {}),
-          symptoms: next
-            ? { ...(checkin.healthContext?.symptoms ?? {}), present: true }
-            : { present: false },
-        },
-      });
-      return;
-    }
     // Pain/injury and red-flag disclosure are independent safety channels. Turning the
     // pain toggle off must not erase an explicitly disclosed neurological/systemic/trauma
     // red flag, just as it must not erase a valid graded tissue observation.
@@ -364,6 +352,20 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
       setTissueResponseOpen(true);
     }
     setCheckin({ ...checkin, [field]: next });
+  };
+
+  const handleIllnessSymptomsChange = (present: boolean) => {
+    if (!checkin) return;
+    setCheckin({
+      ...checkin,
+      illnessSymptoms: present,
+      healthContext: {
+        ...(checkin.healthContext ?? {}),
+        symptoms: present
+          ? { ...(checkin.healthContext?.symptoms ?? {}), present: true }
+          : { present: false },
+      },
+    });
   };
 
   const handleHungerChange = (hunger1To10: number | null, hungerTiming: DailySubjectiveCheckin['hungerTiming']) => {
@@ -756,32 +758,33 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
             <p>Hard safety flags are separate from graded local tissue response.</p>
           </div>
 
-          <div className="boolean-options-grid">
-            <label className={`boolean-toggle-card ${checkin.painOrInjury ? 'is-active is-warning' : ''}`}>
-              <input
-                type="checkbox"
-                checked={checkin.painOrInjury || false}
-                onChange={() => handleBooleanToggle('painOrInjury')}
+          <div className="safety-topic-grid">
+            <div className="safety-topic safety-topic-pain">
+              <label className={`boolean-toggle-card ${checkin.painOrInjury ? 'is-active is-warning' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={checkin.painOrInjury || false}
+                  onChange={() => handleBooleanToggle('painOrInjury')}
+                />
+                <span className="toggle-checkmark"></span>
+                <div className="toggle-info">
+                  <strong>Pain, injury, or movement change</strong>
+                  <span>Something painful, injured, unusually stiff, or moving differently today</span>
+                </div>
+              </label>
+              <TissueResponseSection
+                tissueSelectId={tissueSelectId}
+                pendingTissueRegion={pendingTissueRegion}
+                onPendingTissueRegionChange={setPendingTissueRegion}
+                open={tissueResponseOpen}
+                onOpenChange={setTissueResponseOpen}
+                availableBodyRegions={availableBodyRegions}
+                tissueResponses={tissueResponses}
+                onAddTissueRegion={handleAddTissueRegion}
+                onRemoveTissueRegion={handleRemoveTissueRegion}
+                onTissueFieldChange={handleTissueFieldChange}
               />
-              <span className="toggle-checkmark"></span>
-              <div className="toggle-info">
-                <strong>Active Pain or Injury</strong>
-                <span>Hard safety flag for a current issue that should strongly restrict training</span>
-              </div>
-            </label>
-
-            <label className={`boolean-toggle-card ${checkin.illnessSymptoms ? 'is-active is-warning' : ''}`}>
-              <input
-                type="checkbox"
-                checked={checkin.illnessSymptoms || false}
-                onChange={() => handleBooleanToggle('illnessSymptoms')}
-              />
-              <span className="toggle-checkmark"></span>
-              <div className="toggle-info">
-                <strong>Illness Symptoms</strong>
-                <span>Feeling sick, feverish, or systemically unwell</span>
-              </div>
-            </label>
+            </div>
 
             <label className={`boolean-toggle-card ${checkin.alreadyTrainedToday ? 'is-active' : ''}`}>
               <input
@@ -847,147 +850,9 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
             value={checkin.healthContext}
             symptomsPresent={Boolean(checkin.illnessSymptoms)}
             manualPhysiologyMissing={manualPhysiologyMissing}
+            onSymptomsChange={handleIllnessSymptomsChange}
             onChange={handleHealthContextChange}
           />
-
-          <details
-            className="tissue-response-expanded tissue-response-disclosure"
-            open={tissueResponseOpen}
-            onToggle={(event) => setTissueResponseOpen(event.currentTarget.open)}
-          >
-            <summary className="tissue-response-summary">
-              <span className="tissue-response-summary-title">Local tissue response</span>
-              <span className="tissue-response-summary-status">
-                {tissueResponses.length > 0 ? `${tissueResponses.length} area${tissueResponses.length === 1 ? '' : 's'} reported` : 'Optional'}
-              </span>
-            </summary>
-            <div className="tissue-response-content">
-              <div className="tissue-response-intro">
-                <p>
-                  Report local stiffness, swelling/fullness, unusual tendon or calf soreness, or altered walking/stairs/squat even when you would not call it an injury. Local tissue response can tighten today&apos;s plan independently of Garmin readiness.
-                </p>
-              </div>
-
-            <div className="form-group add-region-group">
-              <label htmlFor={tissueSelectId}>Add body area to monitor</label>
-              <select
-                id={tissueSelectId}
-                className="select-input"
-                value={pendingTissueRegion}
-                onChange={(e) => setPendingTissueRegion(e.target.value as BodyRegion | '')}
-              >
-                <option value="">Select a region…</option>
-                {availableBodyRegions.map(region => (
-                  <option key={region} value={region}>{REGION_LABELS[region]}</option>
-                ))}
-              </select>
-            </div>
-
-            {pendingTissueRegion && (
-              <div className="followup-tissue-prompt" aria-label={`Morning state for ${REGION_LABELS[pendingTissueRegion]}`}>
-                <p>How does your <strong>{REGION_LABELS[pendingTissueRegion]}</strong> feel this morning?</p>
-                <div className="followup-actions">
-                  {TISSUE_LEVELS.map(level => (
-                    <button
-                      key={level}
-                      type="button"
-                      className="btn-followup-pill"
-                      title={TISSUE_LEVEL_HELP[level]}
-                      onClick={() => handleAddTissueRegion(pendingTissueRegion, level)}
-                    >
-                      {TISSUE_LEVEL_LABELS[level]}
-                    </button>
-                  ))}
-                </div>
-                <small>Normal = no meaningful change · Mild = noticeable but normal function · Moderate = changes function/load · Severe = marked pain/swelling/instability or significant function loss</small>
-              </div>
-            )}
-
-            {tissueResponses.length === 0 && !pendingTissueRegion && (
-              <p className="checkin-helper-text">No local tissue issue reported today.</p>
-            )}
-
-            {tissueResponses.map(response => {
-              const region = response.region;
-              return (
-                <article className="tissue-region-card" key={region}>
-                  <div className="tissue-region-header">
-                    <strong>{REGION_LABELS[region]}</strong>
-                    <button
-                      type="button"
-                      className="tissue-region-remove"
-                      onClick={() => handleRemoveTissueRegion(region)}
-                      aria-label={`Remove ${REGION_LABELS[region]}`}
-                    >
-                      ✕ Remove
-                    </button>
-                  </div>
-
-                  <div className="tissue-region-fields">
-                    <div className="form-group">
-                      <label htmlFor={`${region}-morningState`}>This morning (resting/waking)</label>
-                      <select
-                        id={`${region}-morningState`}
-                        className="select-input"
-                        value={response.morningState}
-                        onChange={(e) => handleTissueFieldChange(region, 'morningState', e.target.value as TissueResponseLevel)}
-                      >
-                        {TISSUE_LEVELS.map(level => (
-                          <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="form-group">
-                      <label htmlFor={`${region}-painDuringTraining`}>Pain during training (if any)</label>
-                      <select
-                        id={`${region}-painDuringTraining`}
-                        className="select-input"
-                        value={response.painDuringTraining ?? ''}
-                        onChange={(e) => handleTissueFieldChange(region, 'painDuringTraining', e.target.value as TissueResponseLevel | '')}
-                      >
-                        <option value="">Did not train / not applicable</option>
-                        {TISSUE_LEVELS.map(level => (
-                          <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="form-group">
-                      <label htmlFor={`${region}-afterTrainingState`}>Right after training</label>
-                      <select
-                        id={`${region}-afterTrainingState`}
-                        className="select-input"
-                        value={response.afterTrainingState ?? ''}
-                        onChange={(e) => handleTissueFieldChange(region, 'afterTrainingState', e.target.value as TissueResponseLevel | '')}
-                      >
-                        <option value="">Did not train / not applicable</option>
-                        {TISSUE_LEVELS.map(level => (
-                          <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="form-group">
-                      <label htmlFor={`${region}-nextMorningReaction`}>Reaction to yesterday&apos;s session</label>
-                      <select
-                        id={`${region}-nextMorningReaction`}
-                        className="select-input"
-                        value={response.nextMorningReaction ?? ''}
-                        onChange={(e) => handleTissueFieldChange(region, 'nextMorningReaction', e.target.value as TissueResponseLevel | '')}
-                      >
-                        <option value="">No session yesterday / not applicable</option>
-                        {TISSUE_LEVELS.map(level => (
-                          <option key={level} value={level}>{TISSUE_LEVEL_LABELS[level]}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-            </div>
-          </details>
         </section>
 
         {/* Section: Hunger & Fueling (ADR-0039 D-BC-HUNGER) */}
@@ -1019,18 +884,17 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
                 checkin.availability?.timeAvailableMin != null
                   ? `${checkin.availability.timeAvailableMin} min`
                   : null,
-                checkin.availability?.preferredModalityToday,
-                checkin.availability?.indoorOnly ? 'Indoor only' : null,
-              ].filter(Boolean).join(' · ') || 'Not set'}
+                checkin.availability?.preferredModalityToday ?? 'No preference',
+              ].filter(Boolean).join(' · ')}
             </span>
           </summary>
 
           <div className="checkin-disclosure-content">
-            <p className="checkin-disclosure-description">Time and environment preferences for today&apos;s session</p>
+            <p className="checkin-disclosure-description">Time available today comes first; modality is an optional preference and safety always wins.</p>
 
           <div className="availability-grid">
             <div className="form-group">
-              <label htmlFor={timeInputId}>Time Available (minutes)</label>
+              <label htmlFor={timeInputId}>Time available today (minutes)</label>
               <input
                 id={timeInputId}
                 type="number"
@@ -1052,7 +916,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
             </div>
 
             <div className="form-group">
-              <label htmlFor={modalitySelectId}>Preferred Modality</label>
+              <label htmlFor={modalitySelectId}>Optional modality preference</label>
               <select
                 id={modalitySelectId}
                 value={checkin.availability?.preferredModalityToday || ''}
@@ -1069,19 +933,6 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
               </select>
             </div>
           </div>
-
-          <label className={`boolean-toggle-card indoor-toggle ${checkin.availability?.indoorOnly ? 'is-active' : ''}`}>
-            <input
-              type="checkbox"
-              checked={checkin.availability?.indoorOnly || false}
-              onChange={(e) => handleAvailabilityChange('indoorOnly', e.target.checked)}
-            />
-            <span className="toggle-checkmark"></span>
-            <div className="toggle-info">
-              <strong>Indoor Only</strong>
-              <span>Limit session to indoor options (trainer, treadmill, gym)</span>
-            </div>
-          </label>
 
           <div className="form-group notes-group">
             <label htmlFor={notesInputId}>Athlete Notes (optional)</label>
