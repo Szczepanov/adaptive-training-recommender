@@ -246,7 +246,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Server-authoritative anthropometry writes**](./plans/anthropometry-server-authoritative-writes.md) — *Implemented.* Dedicated Python Cloud Run API verifies Firebase ID tokens and owns strict, validated anthropometry writes; the capability has zero recommendation authority.
 * [**Strength, speed and power performance goals**](./plans/strength-speed-power-performance-goals.md) — *In progress.* Implementation plan for typed measurable strength, speed and power targets (Stage 1 core implemented).
 * [**Nutrition Ingestion**](./plans/nutrition-ingestion.md) — *Implemented.* Provider-neutral nutrition ingestion and persistence architecture, while strictly preserving that unverified or incomplete dietary logs must not exert automated training recommendation authority.
-* [**Previous-day calorie tracking scoring**](./plans/previous-day-calorie-tracking-scoring.md) — *Implemented in PR #710 (pending merge).* Adds optional D-1 behavioral logging-quality context and retrospective display while preserving ADR-0042 zero recommendation authority.
+* [**Previous-day calorie tracking scoring**](./plans/previous-day-calorie-tracking-scoring.md) — *In progress (PR #710; CI/merge pending).* Adds optional D-1 behavioral logging-quality context and retrospective display while preserving ADR-0042 zero recommendation authority.
 
 ---
 
