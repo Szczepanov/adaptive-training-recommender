@@ -1,3 +1,5 @@
+import { decayAcuteReadinessTowardBaseline, projectedRecoveryBaseline } from './readinessProjection.mjs';
+
 /** Targeted evaluation cases sharing the active hybrid identity, not a second persona. */
 export function buildHybridScenarioFamilies(hybridFamily) {
   const baseline = hybridFamily.cases.find(({ scenario }) => scenario.id === 'persona_cycling_hybrid_baseline');
@@ -21,14 +23,15 @@ export function buildHybridScenarioFamilies(hybridFamily) {
   function makeCase(suffix, label, source = baseline) {
     const readiness = structuredClone(source.scenario.readinessForWeek(0));
     readiness.subjective.timeAvailable = baseline.scenario.readinessForWeek(0).subjective.timeAvailable;
+    const projectedBaseline = projectedRecoveryBaseline(readiness);
     const { readinessForWeek: _week, readinessForDate: _date, ...data } = source.scenario;
     const scenario = structuredClone(data);
     scenario.id = `persona_cycling_hybrid_${suffix}`;
     scenario.label = label;
     scenario.tags = [...scenario.tags, 'hybrid-expansion'];
     scenario.initialHistory = structuredClone(currentHistory);
-    scenario.readinessForWeek = () => structuredClone(readiness);
-    scenario.readinessForDate = () => structuredClone(readiness);
+    scenario.readinessForWeek = (week = 0) => decayAcuteReadinessTowardBaseline(readiness, projectedBaseline, week * 7);
+    scenario.readinessForDate = (_date, week = 0) => decayAcuteReadinessTowardBaseline(readiness, projectedBaseline, week * 7);
     const persona = structuredClone(source.persona);
     persona.constraintContext = 'Free weights and outdoor bicycle access; exact equipment and day-specific limits are supplied in trainingSettings. No cable machine. Running is optional.';
     scenario.context.constraints.hasCableMachine = false;
@@ -45,8 +48,9 @@ export function buildHybridScenarioFamilies(hybridFamily) {
     scenario.preferences.defaultWeekendTimeMin = weekend;
     const readiness = scenario.readinessForWeek(0);
     readiness.subjective.timeAvailable = weekday;
-    scenario.readinessForWeek = () => structuredClone(readiness);
-    scenario.readinessForDate = () => structuredClone(readiness);
+    const projectedBaseline = projectedRecoveryBaseline(readiness);
+    scenario.readinessForWeek = (week = 0) => decayAcuteReadinessTowardBaseline(readiness, projectedBaseline, week * 7);
+    scenario.readinessForDate = (_date, week = 0) => decayAcuteReadinessTowardBaseline(readiness, projectedBaseline, week * 7);
     return definition;
   }
 

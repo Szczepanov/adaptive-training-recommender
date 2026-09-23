@@ -293,6 +293,18 @@ fail(Boolean(systemicCollapse)
   && ((systemicCollapse.session.systemicCost ?? 1) <= 0.4 || ['Rest', 'Mobility/Recovery'].includes(systemicCollapse.session.category)),
 'Fresh legs with severe systemic wearable collapse did not scale back Day 1 systemic load.');
 
+for (const caseId of ['judge_obj_combined_bad', 'judge_subj_combined_bad', 'judge_conflict_fresh_legs_terrible_hrv', 'judge_int_badobj_noload']) {
+  const item = required(caseId);
+  for (let day = 2; day < item.plan.length; day += 1) {
+    const afterTwoRestDays = item.plan[day - 1]?.session?.category === 'Rest'
+      && item.plan[day - 2]?.session?.category === 'Rest';
+    fail(!(afterTwoRestDays && item.plan[day]?.session?.templateId === 'end_hard_02'),
+      `${caseId}: maximal-cost VO2 intervals followed two projected rest days on ${item.plan[day]?.date}.`);
+  }
+  fail(!(item.plan[7]?.session?.category === 'Rest' && item.plan[8]?.session?.category === 'Rest'),
+    `${caseId}: acute Day-1 suppression repeated as a Week-2 D8-D9 double-rest shutdown.`);
+}
+
 
 
 const sameDaySelf = required('judge_today_self_report_done');

@@ -144,6 +144,25 @@ describe('active persona AI-judge suite', () => {
     expect(readiness.objective.body_battery_wake).toBeLessThanOrEqual(35);
   });
 
+  it('decays acute adverse signals across all active static persona forecast wrappers', () => {
+    const scenarios = buildPersonaFamilies({ includeHybridExpansion: true }).flatMap((family) => family.cases)
+      .map((definition) => definition.scenario);
+    for (const id of [
+      'persona_triathlon_established_olympic_adverse_recovery',
+      'persona_cycling_hybrid_adverse_recovery',
+      'persona_cycling_hybrid_event_adverse',
+    ]) {
+      const scenario = scenarios.find((item) => item.id === id);
+      expect(scenario, id).toBeDefined();
+      const day1 = scenario.readinessForWeek(0);
+      const week2 = scenario.readinessForWeek(1);
+      expect(week2.objective.hrv_delta, id).toBeGreaterThan(day1.objective.hrv_delta);
+      expect(week2.objective.rhr_delta, id).toBeLessThan(day1.objective.rhr_delta);
+      expect(week2.objective.hrv_delta_28d, id).toBe(day1.objective.hrv_delta_28d);
+      expect(week2.objective.rhr_delta_28d, id).toBe(day1.objective.rhr_delta_28d);
+    }
+  });
+
   it('models already-trained-today as a transient execution fact rather than persistent fatigue', async () => {
     const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_balanced_performance');
     const definition = family.cases.find((candidate) => candidate.scenario.id === 'persona_balanced_performance_already_trained_today');
@@ -254,6 +273,8 @@ describe('active persona AI-judge suite', () => {
   it('keeps health/fat-loss plans mixed, event-free and conservative about moderate intensity', async () => {
     const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_health_fat_loss');
     expect(family).toBeDefined();
+    let concordantAdverseProgression;
+    let discordantFreshProgression;
 
     for (const definition of family.cases) {
       const { scenario } = definition;
@@ -265,6 +286,12 @@ describe('active persona AI-judge suite', () => {
 
       const result = await runScenario(scenario);
       const traces = result.decisionTraces;
+      if (scenario.id === 'persona_health_fatloss_adverse_recovery') {
+        concordantAdverseProgression = traces.slice(0, 3).map((trace) => trace.selected.category);
+      }
+      if (scenario.id === 'persona_health_fatloss_fresh_subjective_adverse_wearable') {
+        discordantFreshProgression = traces.slice(0, 3).map((trace) => trace.selected.category);
+      }
       const strengthCount = traces.filter((trace) => trace.selected?.modality === 'Strength').length;
       expect(strengthCount, scenario.id).toBeGreaterThanOrEqual(2);
       expect(traces.every((trace) => (trace.selected?.durationMin ?? 0) <= (scenario.context.constraints.maxTimeMinutes ?? 60)), scenario.id).toBe(true);
@@ -292,6 +319,10 @@ describe('active persona AI-judge suite', () => {
         ).toHaveLength(0);
       }
     }
+
+    expect(discordantFreshProgression).not.toEqual(concordantAdverseProgression);
+    expect(discordantFreshProgression.filter((category) => ['Rest', 'Mobility/Recovery'].includes(category)).length)
+      .toBeLessThan(concordantAdverseProgression.filter((category) => ['Rest', 'Mobility/Recovery'].includes(category)).length);
   });
 
   it('executes every active persona state through the real multi-week planner without hard-constraint violations', async () => {

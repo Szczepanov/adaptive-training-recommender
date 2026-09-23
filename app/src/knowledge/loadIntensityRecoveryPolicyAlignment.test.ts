@@ -10,6 +10,7 @@ import {
 import {
     RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST,
     RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST,
+    POST_REST_REENTRY_MAX_SYSTEMIC_COST,
 } from '../engine/planner';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from './sportsKnowledge';
 import {
@@ -136,8 +137,11 @@ describe('load + intensity + recovery product-claim alignment', () => {
         expect(claim.statement).toContain('days 1-2');
         expect(claim.statement).toContain(`${RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST}`);
         expect(claim.statement).toContain(`${RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST}`);
+        expect(claim.statement).toContain('two projected rest days');
+        expect(claim.statement).toContain('fresh subjective check-in');
         expect(RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST).toBeLessThan(RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST);
         expect(RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST).toBeLessThanOrEqual(0.5);
+        expect(POST_REST_REENTRY_MAX_SYSTEMIC_COST).toBe(0.75);
     });
 
     it('issue #679: pins the taper-window nonessential-strength and moderate-density guard for triathlon A-events', () => {

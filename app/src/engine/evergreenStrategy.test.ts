@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CompletedExposure } from './trainingHistory';
-import { inferAthleteTrainingState, resolveEvidenceBackedStrategy } from './evergreenStrategy';
+import { inferAthleteTrainingState, isFreshSubjectiveWithAdverseWearables, resolveEvidenceBackedStrategy } from './evergreenStrategy';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledge';
 
 const exposure = (duration: number): CompletedExposure => ({
@@ -9,6 +9,29 @@ const exposure = (duration: number): CompletedExposure => ({
 });
 
 describe('evergreen evidence-backed strategy', () => {
+    it('recognizes discordant fresh subjective readiness with multiple adverse wearable signals', () => {
+        expect(isFreshSubjectiveWithAdverseWearables({
+            subjective: { readiness: 8, fatigue: 2, soreness: 2 },
+            objective: { hrv_delta: -14, rhr_delta: 7, sleep_score: 50, body_battery_wake: 24 },
+        } as never)).toBe(true);
+        expect(isFreshSubjectiveWithAdverseWearables({
+            subjective: { readiness: 4, fatigue: 7, soreness: 4 },
+            objective: { hrv_delta: -14, rhr_delta: 7 },
+        } as never)).toBe(false);
+        expect(isFreshSubjectiveWithAdverseWearables({
+            subjective: { readiness: 8, fatigue: 2, soreness: 2, painFlag: true },
+            objective: { hrv_delta: -14, rhr_delta: 7 },
+        } as never)).toBe(false);
+        expect(isFreshSubjectiveWithAdverseWearables({
+            subjective: { readiness: 8, fatigue: 2, soreness: 2, clinicalEnvelopeSources: ['red_flag'] },
+            objective: { hrv_delta: -14, rhr_delta: 7 },
+        } as never)).toBe(false);
+        expect(isFreshSubjectiveWithAdverseWearables({
+            subjective: { readiness: 8, fatigue: 2, soreness: 2, clinicalEnvelopeSources: ['non_allergy_illness'] },
+            objective: { hrv_delta: -14, rhr_delta: 7 },
+        } as never)).toBe(false);
+    });
+
     it('keeps sparse history unknown and withholds conditional intensity', () => {
         const state = inferAthleteTrainingState([], 7);
         const strategy = resolveEvidenceBackedStrategy({ priorities: ['endurance'] }, state);

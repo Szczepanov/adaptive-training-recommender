@@ -498,13 +498,27 @@ offsets 4-5 at 0.35, which accidentally made that ladder non-monotonic: day 3 co
 tempo/threshold or Strength work before days 4-5 tightened again.
 
 The final policy is deliberately conservative because a forecast has no real future
-readiness reading to re-check: offsets 1-2 are Rest/Mobility-Recovery only; offset 3 may add
-non-Strength, non-Moderate/Hard/Race-Specific work up to
-`RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST` (0.35); offsets 4-5 widen that same low-intensity
-non-Strength pool to `RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST` (0.5). Issue #676 adds one
-narrow taper exception during offsets 4-5: before an A/B cycling/running/triathlon event,
-Race-Specific Endurance at systemicCost <=0.45 may be admitted on D-2 or D-3. The unrestricted
-candidate pool is still reached only from day 6 onward. Recovery-only forecast dates use
+readiness reading to re-check: concordant severe distress keeps offsets 1-2 at
+Rest/Mobility-Recovery only. When at least two wearable markers are adverse while subjective
+readiness is fresh (readiness >= 7, fatigue/soreness <= 3, no pain flag, and no clinical
+envelope sources or red-flag findings), the recovery-only
+window is one day, followed by the same graduated low-cost re-entry. If an easy aerobic
+candidate is available during late re-entry after a rest day, it is preferred over another
+passive rest day. After any two consecutive projected rest days, candidates are capped at
+`POST_REST_REENTRY_MAX_SYSTEMIC_COST` (0.75), so the forecast cannot jump straight to maximal
+hard work. The normal severe-recovery ladder admits non-Strength, non-Moderate/Hard/Race-Specific
+work up to `RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST` (0.35), then widens that same low-intensity
+pool to `RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST` (0.5). Issue #676 adds one
+narrow taper exception during the late-re-entry window: offsets 4-5 for concordant severe
+recovery, or offsets 3-4 for fresh-subjective discordance. Before an A/B cycling/running/
+triathlon event, Race-Specific Endurance at systemicCost <=0.45 may be admitted on D-2 or D-3. The unrestricted
+candidate pool is still reached only from day 6 onward for concordant severe cases. Hard
+recovery/re-entry admission, including the post-rest ceiling, is applied inside
+`evaluateProjectedDate`, so weekly-role allocation and final prescription share the same
+feasibility seam; preferring easy aerobic work over another passive rest remains a selection
+preference after that shared gate. The judge and persona static-week fixtures decay acute
+values toward their scenario baseline over a 48-hour half-life; this is fixture behavior, not
+a physiological recovery constant. Chronic 28-day fields and missing values are retained. Recovery-only forecast dates use
 effective `recover` semantics; graduated re-entry dates use effective `modify` semantics
 for dose selection, allocation viability, displacement diagnostics, and the surfaced
 forecast fatigue tier. These exact boundaries remain product policy, not a claim that a

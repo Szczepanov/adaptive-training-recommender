@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { evaluateNextDayPlan, evaluateNextDayPlanWithIntent, evaluateTraining, evaluateTrainingWithIntent } from './rules';
 import { mapContextFromGoalsAndTrainingSettings } from './adapters';
-import { evaluateProjectedDate, generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, reconcileObjectivesForDate, resolveWeeklyAnchors, NEUTRAL_PREFERENCES, type ProjectionExposure } from './planner';
+import { evaluateProjectedDate, generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectedDateOutcomeFrom, projectTrailingHistory, reconcileObjectivesForDate, resolveWeeklyAnchors, NEUTRAL_PREFERENCES, type ProjectionExposure } from './planner';
 import { createEmptyFatigue } from './fatigue';
 import { resolveTrainingIntent } from './trainingIntent';
 import type { AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, ScheduleOverlay, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
@@ -14,6 +14,7 @@ import { generateWeeklyObjectives } from './microcycle';
 import { evaluatePeriodizationPhase } from './periodization';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS, ROLLING_LOAD_BUDGET_POLICY_VERSION } from './rollingLoadBudget';
+import { PROJECTED_RECOVERY_POLICY_BLOCKER } from './weeklyAllocation';
 
 // --- Fixtures (mirrors rules.test.ts's pattern) -----------------------------
 
@@ -73,6 +74,29 @@ function buildTodayAndTomorrow(context: UserContext, date = '2026-08-07') {
 
 describe('generateWeekAheadPlan', () => {
     afterEach(() => vi.useRealTimers());
+
+    it('limits the next day after a resting today and a resting tomorrow', () => {
+        const context = baseContext();
+        const { readiness, todayRec, tomorrowRec } = buildTodayAndTomorrow(context);
+        const rest = ENRICHED_TEMPLATES_BY_ID.get('rest_01')!;
+        const restingToday = { ...todayRec, template: rest, mode: 'recover' as const };
+        const restingTomorrow = { ...tomorrowRec!, template: rest, mode: 'recover' as const };
+        const plan = generateWeekAheadPlan(
+            readiness,
+            context,
+            null,
+            '2026-08-07',
+            restingToday,
+            restingTomorrow,
+            prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []),
+            { days: 3 },
+        );
+        const dayAfterRest = plan.days.find(day => day.dayOffset === 2);
+
+        expect(dayAfterRest?.template.id).not.toBe('end_hard_02');
+        expect(dayAfterRest?.template.costProfile?.systemic ?? dayAfterRest?.template.systemicCost ?? 1)
+            .toBeLessThanOrEqual(0.75);
+    });
 
     it('produces the requested number of future days beginning tomorrow', () => {
         const context = baseContext();
@@ -1138,6 +1162,34 @@ describe('Phase 6.2b -- fixed activities as projected exposures', () => {
     });
 
     describe('compound subjective & severe objective adverse recovery persistence', () => {
+        it('uses the shortened recovery and modify tiers for fresh-subjective wearable discordance', () => {
+            const context = baseContext();
+            const discordantReadiness: DailyReadiness = {
+                subjective: neutralSubjective({ readiness: 8, fatigue: 2, soreness: 2 }),
+                objective: quietObjective({ hrv_delta: -17, rhr_delta: 7, sleep_score: 50, body_battery_wake: 22 }),
+            };
+            const { todayRec } = buildTodayAndTomorrow(context);
+            const recoverRec = { ...todayRec, mode: 'recover' as const };
+            const plan = generateWeekAheadPlan(
+                discordantReadiness,
+                context,
+                null,
+                '2026-08-07',
+                recoverRec,
+                null,
+                prepareWeekAheadPlanSeed(discordantReadiness, [], '2026-08-07', []),
+                { days: 6 },
+            );
+
+            const day1 = plan.days.find(day => day.dayOffset === 1);
+            const day2 = plan.days.find(day => day.dayOffset === 2);
+            const day5 = plan.days.find(day => day.dayOffset === 5);
+            expect(['Rest', 'Mobility/Recovery']).toContain(day1?.template.category);
+            expect(day2?.diagnostics?.fatigueTier).toBe('modify');
+            expect(day2?.template.costProfile?.systemic ?? day2?.template.systemicCost ?? 1).toBeLessThanOrEqual(0.75);
+            expect(day5?.diagnostics?.fatigueTier).toBe('train');
+        });
+
         it('persists recovery across 3 days when compound subjective distress is reported', () => {
             const context = baseContext();
             // Compound subjective distress: readiness 3, fatigue 8, soreness 7, stress 8
@@ -1213,6 +1265,35 @@ describe('D-LEDGER planner admission', () => {
         expect(evaluation.fatigueGated.some(template =>
             evaluation.ledgerExcludedTemplateIds.includes(template.id),
         )).toBe(false);
+    });
+
+    it('exposes the post-rest recovery ceiling through the shared evaluator used by allocation', () => {
+        const context = baseContext({ hasIndoorBike: true });
+        const phase = evaluatePeriodizationPhase([], '2026-09-13', '2026-09-13').phase;
+        const evaluation = evaluateProjectedDate('2026-09-13', {
+            microcycle: generateWeeklyObjectives(phase, '2026-09-13', null),
+            externalFatigue: createEmptyFatigue('2026-09-12'),
+            projectedHistory: [
+                { date: '2026-09-11', templateId: 'rest_01', category: 'Rest', modality: 'None', systemicCost: 0, lowerBodyCost: 0, source: 'projected' as const },
+                { date: '2026-09-12', templateId: 'rest_01', category: 'Rest', modality: 'None', systemicCost: 0, lowerBodyCost: 0, source: 'projected' as const },
+            ],
+        }, {
+            context,
+            preferences: NEUTRAL_PREFERENCES,
+            events: [], fixedActivities: [], authoredPlanBlocks: [], scheduleOverlays: [],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: '2026-09-12', todayDate: '2026-09-12',
+        });
+        const highCost = evaluation.fatigueGated.find(template =>
+            (template.costProfile?.systemic ?? template.systemicCost) > 0.75
+        );
+
+        expect(highCost).toBeDefined();
+        expect(evaluation.recoveryGated.map(template => template.id)).not.toContain(highCost!.id);
+        const outcome = projectedDateOutcomeFrom(evaluation);
+        expect(outcome.acceptedTemplateIds).not.toContain(highCost!.id);
+        expect(outcome.exclusionReasons.get(highCost!.id)).toContain(PROJECTED_RECOVERY_POLICY_BLOCKER);
     });
 
     it('charges the dose that will actually be prescribed before applying the rolling load budget', () => {

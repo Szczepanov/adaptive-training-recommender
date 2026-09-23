@@ -173,11 +173,11 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'readiness.severe_adverse_recovery_reentry', domain: 'readiness_recovery', title: 'Severe adverse-recovery graduated re-entry window',
-        currentRule: 'After a severe adverse-recovery flag, projected forecast days 1-2 are Rest/Mobility-Recovery only; day 3 may add non-Strength, non-Moderate/Hard/Race-Specific work at systemicCost <=0.35; days 4-5 widen that same low-intensity/non-Strength pool to systemicCost <=0.5; the unrestricted candidate pool is reached only from day 6 onward.',
+        currentRule: 'Concordant severe recovery uses two recovery-only forecast days and reaches the unrestricted candidate pool on day 6; fresh subjective/adverse-wearable discordance uses one recovery-only day and reaches that pool on day 5. Low-cost non-Strength re-entry progresses at 0.35 then 0.5, with a light event-taper exception. Separately, after two projected Rest days systemic cost is capped at 0.75. During late severe-recovery re-entry after a Rest day, an Easy Endurance candidate that passes the shared gates is preferred over another Rest day.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
-        codeRefs: ['engine/planner.ts:RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST', 'engine/planner.ts:RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST'],
+        codeRefs: ['engine/planner.ts:RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST', 'engine/planner.ts:RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST', 'engine/planner.ts:POST_REST_REENTRY_MAX_SYSTEMIC_COST'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.severeAdverseRecoveryReentry],
-        coverageRationale: 'Registered as an explicit product-policy claim (`policy.load_recovery.severe_adverse_recovery_reentry_v1`) with alignment testing. Recovery literature supports contextual, repeated subjective/objective monitoring before resuming quality work; the exact 5-day window, 0.35/0.5 ceilings and category exclusions are product calibration, and a forecast has no live future readiness signal to check against, so this monotonic ladder is the closest implementable equivalent to a fresh-check requirement.',
+        coverageRationale: 'Registered as an explicit product-policy claim (`policy.load_recovery.severe_adverse_recovery_reentry_v1`) with alignment testing. Recovery literature supports contextual, repeated subjective/objective monitoring before resuming quality work; forecast window lengths and cost ceilings are product calibration, and future readiness remains unknown.',
     },
     {
         id: 'readiness.post_recover_buffer', domain: 'readiness_recovery', title: 'Post-recover one-day buffer',
