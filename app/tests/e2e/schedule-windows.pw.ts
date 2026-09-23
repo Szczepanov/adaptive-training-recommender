@@ -86,6 +86,12 @@ test('an athlete can add several recurring weekday time blocks at once', async (
 
   await page.getByRole('button', { name: '+ Repeat Schedule' }).click();
   await expect(page.getByRole('heading', { name: 'Repeat Training Schedule' })).toBeVisible();
+  await expect(page.getByLabel('Repeat from')).toBeFocused();
+  await page.getByRole('button', { name: 'Apply Schedule', exact: true }).focus();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.getByRole('button', { name: 'Apply Schedule', exact: true })).toBeFocused();
   await page.getByLabel('Repeat from').fill(localDateAfter(7));
   await page.getByLabel('Repeat until').fill(localDateAfter(13));
 

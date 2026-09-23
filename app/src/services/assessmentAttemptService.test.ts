@@ -6,6 +6,8 @@ const firestore = vi.hoisted(() => ({
     collection: vi.fn((_db: unknown, ...path: string[]) => ({ path: path.join('/') })),
     getDoc: vi.fn(),
     getDocs: vi.fn(),
+    query: vi.fn((_collection: unknown, ...constraints: unknown[]) => ({ constraints })),
+    where: vi.fn((field: string, op: string, value: string) => ({ field, op, value })),
     setDoc: vi.fn(),
     runTransaction: vi.fn(),
 }));
@@ -15,7 +17,9 @@ vi.mock('firebase/firestore', () => ({
     collection: firestore.collection,
     getDoc: firestore.getDoc,
     getDocs: firestore.getDocs,
+    query: firestore.query,
     setDoc: firestore.setDoc,
+    where: firestore.where,
     runTransaction: firestore.runTransaction,
 }));
 
@@ -131,7 +135,7 @@ describe('AssessmentAttemptService', () => {
                 protocolRef: { id: 'proto-1', revision: 1 },
                 state: 'scheduled',
                 purpose: 'baseline',
-                scheduledDate: '2026-03-25',
+                scheduledDate: '2026-03-29',
             };
             const attempt2: AssessmentAttempt = {
                 id: 'att-2',
@@ -139,6 +143,11 @@ describe('AssessmentAttemptService', () => {
                 state: 'in_progress',
                 purpose: 'checkpoint',
                 startedAt: '2026-03-26T10:00:00.000Z',
+            };
+            const attemptScheduledLater: AssessmentAttempt = {
+                ...attempt1,
+                id: 'att-4',
+                scheduledDate: '2026-03-30',
             };
             const attemptCompleted: AssessmentAttempt = {
                 id: 'att-3',
@@ -154,6 +163,7 @@ describe('AssessmentAttemptService', () => {
                     docSnapshot(true, attempt1, 'att-1'),
                     docSnapshot(true, attempt2, 'att-2'),
                     docSnapshot(true, attemptCompleted, 'att-3'),
+                    docSnapshot(true, attemptScheduledLater, 'att-4'),
                 ],
             });
 
@@ -195,6 +205,72 @@ describe('AssessmentAttemptService', () => {
             const result = await service.findOpenAttempt('user-1');
 
             expect(result).toBeNull();
+        });
+
+        it('can restrict recovery to the attempt linked to one execution', async () => {
+            const otherRunning: AssessmentAttempt = {
+                ...validAttempt,
+                id: 'other-running',
+                state: 'in_progress',
+                sourceSessionRef: 'occurrence:other',
+                scheduledDate: undefined,
+                startedAt: '2026-03-30T10:00:00.000Z',
+            };
+            const linkedScheduled: AssessmentAttempt = {
+                ...validAttempt,
+                id: 'linked-scheduled',
+                sourceSessionRef: 'occurrence:active',
+            };
+            firestore.getDocs.mockResolvedValue({
+                docs: [
+                    docSnapshot(true, otherRunning, otherRunning.id),
+                    docSnapshot(true, linkedScheduled, linkedScheduled.id),
+                ],
+            });
+
+            await expect(service.findOpenAttempt('user-1', 'occurrence:active')).resolves.toEqual(linkedScheduled);
+            expect(firestore.where).toHaveBeenCalledWith('sourceSessionRef', '==', 'occurrence:active');
+        });
+    });
+
+    describe('findInProgressAttempt', () => {
+        it('matches the active execution and ignores newer scheduled or unrelated attempts', async () => {
+            const scheduled: AssessmentAttempt = {
+                ...validAttempt,
+                id: 'scheduled-newer',
+                sourceSessionRef: 'occurrence:another-execution',
+            };
+            const matching: AssessmentAttempt = {
+                ...validAttempt,
+                id: 'running-match',
+                state: 'in_progress',
+                sourceSessionRef: 'occurrence:active-execution',
+                scheduledDate: undefined,
+                startedAt: '2026-03-30T10:00:00.000Z',
+            };
+            const unrelated: AssessmentAttempt = {
+                ...matching,
+                id: 'running-other',
+                sourceSessionRef: 'occurrence:other-execution',
+            };
+            firestore.getDocs.mockResolvedValue({
+                docs: [
+                    docSnapshot(true, scheduled, scheduled.id),
+                    docSnapshot(true, unrelated, unrelated.id),
+                    docSnapshot(true, matching, matching.id),
+                ],
+            });
+
+            const result = await service.findInProgressAttempt('user-1', 'occurrence:active-execution');
+
+            expect(result).toEqual(matching);
+            expect(firestore.where).toHaveBeenCalledWith('sourceSessionRef', '==', 'occurrence:active-execution');
+        });
+
+        it('returns null when the execution has no matching running attempt', async () => {
+            firestore.getDocs.mockResolvedValue({ docs: [docSnapshot(true, validAttempt)] });
+
+            await expect(service.findInProgressAttempt('user-1', 'occurrence:active-execution')).resolves.toBeNull();
         });
     });
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, memo } from 'react';
 import { scheduleWindowService, type ScheduleWindowWithId } from '../../services/scheduleWindowService';
 import { getLocalDateString } from '../../utils/localDate';
-import { useOverlayFocusVisibility, useOverlayScrollLock } from '../useOverlayDialog';
+import { useOverlayDialog } from '../useOverlayDialog';
 import '../overlayContract.css';
 import './ScheduleWindowModal.css';
 
@@ -19,15 +19,6 @@ interface ScheduleWindowModalProps {
     onSaved: () => void;
 }
 
-const FOCUSABLE_SELECTOR = [
-    'button:not([disabled])',
-    'input:not([disabled])',
-    'select:not([disabled])',
-    'textarea:not([disabled])',
-    'a[href]',
-    '[tabindex]:not([tabindex="-1"])',
-].join(',');
-
 export const ScheduleWindowModal = memo(function ScheduleWindowModal({
     userId,
     existingWindow,
@@ -44,17 +35,14 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const dialogRef = useRef<HTMLDivElement>(null);
-    const initialFocusRef = useRef<HTMLInputElement>(null);
-    const previousFocusRef = useRef<HTMLElement | null>(null);
     const onCloseRef = useRef(onClose);
     const savingRef = useRef(saving);
-    useOverlayScrollLock(isOpen);
-    useOverlayFocusVisibility(isOpen, dialogRef);
 
     const requestClose = () => {
         if (savingRef.current) return;
         onCloseRef.current();
     };
+    useOverlayDialog(isOpen, dialogRef, requestClose, '#window-date');
 
     useEffect(() => {
         onCloseRef.current = onClose;
@@ -79,57 +67,6 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
         }
         setError(null);
     }, [isOpen, existingWindow, defaultDate, today]);
-
-    useEffect(() => {
-        if (!isOpen) return;
-
-        previousFocusRef.current = document.activeElement instanceof HTMLElement
-            ? document.activeElement
-            : null;
-
-        const frame = window.requestAnimationFrame(() => {
-            initialFocusRef.current?.focus();
-        });
-
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                event.preventDefault();
-                requestClose();
-                return;
-            }
-            if (event.key !== 'Tab') return;
-
-            const dialog = dialogRef.current;
-            if (!dialog) return;
-            const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
-                .filter(element => !element.hasAttribute('hidden') && element.tabIndex !== -1);
-            if (focusable.length === 0) {
-                event.preventDefault();
-                dialog.focus();
-                return;
-            }
-
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            const active = document.activeElement;
-            if (event.shiftKey && (active === first || !dialog.contains(active))) {
-                event.preventDefault();
-                last.focus();
-            } else if (!event.shiftKey && active === last) {
-                event.preventDefault();
-                first.focus();
-            }
-        };
-
-        document.addEventListener('keydown', handleKeyDown);
-        return () => {
-            window.cancelAnimationFrame(frame);
-            document.removeEventListener('keydown', handleKeyDown);
-            const previous = previousFocusRef.current;
-            if (previous?.isConnected) previous.focus();
-            previousFocusRef.current = null;
-        };
-    }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -218,7 +155,6 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
                     <div className="form-group">
                         <label htmlFor="window-date">Date</label>
                         <input
-                            ref={initialFocusRef}
                             id="window-date"
                             type="date"
                             className="text-input"

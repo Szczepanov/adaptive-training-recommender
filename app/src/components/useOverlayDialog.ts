@@ -4,6 +4,7 @@ const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]):not([t
 let activeScrollLocks = 0;
 let previousBodyOverflow = '';
 let previousRootOverflow = '';
+const activeDialogs: symbol[] = [];
 
 /** Shared page scroll lock; a second open overlay cannot unlock the first one. */
 export function useOverlayScrollLock(open: boolean): void {
@@ -67,18 +68,24 @@ export function useOverlayDialog(
     panelRef: RefObject<HTMLElement | null>,
     onDismiss?: () => void,
     initialFocusSelector?: string,
+    shouldRestoreFocus?: () => boolean,
 ): void {
     useOverlayScrollLock(open);
     useOverlayFocusVisibility(open, panelRef);
     const dismissRef = useRef(onDismiss);
+    const shouldRestoreFocusRef = useRef(shouldRestoreFocus);
     useEffect(() => {
         dismissRef.current = onDismiss;
-    }, [onDismiss]);
+        shouldRestoreFocusRef.current = shouldRestoreFocus;
+    }, [onDismiss, shouldRestoreFocus]);
 
     useEffect(() => {
         if (!open) return;
+        const dialogId = Symbol('overlay dialog');
+        activeDialogs.push(dialogId);
         const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         const frame = window.requestAnimationFrame(() => {
+            if (activeDialogs[activeDialogs.length - 1] !== dialogId) return;
             const panel = panelRef.current;
             (initialFocusSelector ? panel?.querySelector<HTMLElement>(initialFocusSelector) : null)?.focus();
             if (!panel?.contains(document.activeElement)) {
@@ -86,9 +93,10 @@ export function useOverlayDialog(
             }
         });
         const handleKeyDown = (event: KeyboardEvent) => {
+            if (activeDialogs[activeDialogs.length - 1] !== dialogId || event.defaultPrevented) return;
             const panel = panelRef.current;
             if (!panel) return;
-            if (event.key === 'Escape' && !event.defaultPrevented && dismissRef.current) {
+            if (event.key === 'Escape' && dismissRef.current) {
                 event.preventDefault();
                 dismissRef.current();
                 return;
@@ -115,7 +123,12 @@ export function useOverlayDialog(
         return () => {
             window.cancelAnimationFrame(frame);
             document.removeEventListener('keydown', handleKeyDown);
-            if (previousFocus?.isConnected) previousFocus.focus();
+            const index = activeDialogs.indexOf(dialogId);
+            const wasTopmost = index !== -1 && index === activeDialogs.length - 1;
+            if (index !== -1) activeDialogs.splice(index, 1);
+            if (wasTopmost && shouldRestoreFocusRef.current?.() !== false && previousFocus?.isConnected) {
+                previousFocus.focus();
+            }
         };
     }, [open, panelRef, initialFocusSelector]);
 }

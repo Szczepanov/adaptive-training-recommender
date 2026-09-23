@@ -41,8 +41,10 @@ update this document in the same PR.
 private `?screen=<screen>` query parameter. `handleNavigate` pushes a browser-history entry;
 Back and Forward reconcile that entry into app state without reloading. A valid deep link is
 applied after authentication and daily check-in routing. Unknown destinations resolve to
-Home, while an incomplete or stale check-in always takes precedence and routes to Check-in.
-The screen route is not an authorization boundary and does not expose user data.
+Home. An incomplete or stale check-in routes to Check-in at startup, before a deep link is
+applied. Once the athlete skips to the dashboard, Back and Forward restore the routes already
+visited without reapplying the startup check-in gate. The screen route is not an authorization
+boundary and does not expose user data.
 
 ### Authentication and account isolation
 
@@ -117,7 +119,8 @@ because the active-goal gate also suppresses the overlay.
 
 * an open legacy Strength v1 document can be closed by transitioning it to `abandoned`;
 * an in-progress structured execution can be resumed in `sessions` or `testing`, depending
-  on the resolved `SessionIntent`.
+  on its resolved `SessionIntent` or the in-progress assessment attempt linked to its
+  occurrence. Running assessment attempts take precedence over newer scheduled attempts.
 
 The desktop `Header` is hidden while a structured runner is in progress. `MobileNav` is
 hidden during `checkin` and while a structured runner is in progress.

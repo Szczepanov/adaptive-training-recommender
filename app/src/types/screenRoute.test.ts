@@ -16,6 +16,10 @@ describe('private screen routes', () => {
     expect(readScreenRoute({ pathname: '/', search: '?screen=goals&screen=home' })).toBeNull();
   });
 
+  it('routes the Google Health callback path to Preferences', () => {
+    expect(readScreenRoute({ pathname: '/settings', search: '?googleHealthLinked=success' })).toBe('preferences');
+  });
+
   it('changes only the screen query while retaining callback parameters and the hash', () => {
     const url = screenRouteUrl({ pathname: '/', search: '?googleHealthLinked=success&screen=home', hash: '#status' }, 'preferences');
     expect(url).toBe('/?googleHealthLinked=success&screen=preferences#status');

@@ -9,7 +9,7 @@ import {
     type RecurringScheduleRule,
 } from '../../engine/scheduleWindowRecurrence';
 import { addDaysToLocalDateString, getLocalDateString } from '../../utils/localDate';
-import { useOverlayFocusVisibility, useOverlayScrollLock } from '../useOverlayDialog';
+import { useOverlayDialog } from '../useOverlayDialog';
 import '../overlayContract.css';
 import './RecurringScheduleModal.css';
 
@@ -33,15 +33,6 @@ const WEEKDAY_OPTIONS = [
     { value: 6, label: 'Saturday', shortLabel: 'Sat' },
     { value: 7, label: 'Sunday', shortLabel: 'Sun' },
 ] as const;
-
-const FOCUSABLE_SELECTOR = [
-    'button:not([disabled])',
-    'input:not([disabled])',
-    'select:not([disabled])',
-    'textarea:not([disabled])',
-    'a[href]',
-    '[tabindex]:not([tabindex="-1"])',
-].join(',');
 
 function newRule(): RuleDraft {
     return { weekdays: [...WEEKDAY_NUMBERS.slice(0, 5)], startLocal: '07:00', endLocal: '08:00', label: '' };
@@ -73,12 +64,8 @@ export const RecurringScheduleModal = memo(function RecurringScheduleModal({
     const [saving, setSaving] = useState(false);
     const [errors, setErrors] = useState<string[]>([]);
     const dialogRef = useRef<HTMLDivElement>(null);
-    const initialFocusRef = useRef<HTMLInputElement>(null);
-    const previousFocusRef = useRef<HTMLElement | null>(null);
     const onCloseRef = useRef(onClose);
     const savingRef = useRef(saving);
-    useOverlayScrollLock(isOpen);
-    useOverlayFocusVisibility(isOpen, dialogRef);
 
     useEffect(() => {
         onCloseRef.current = onClose;
@@ -92,6 +79,7 @@ export const RecurringScheduleModal = memo(function RecurringScheduleModal({
         if (savingRef.current) return;
         onCloseRef.current();
     };
+    useOverlayDialog(isOpen, dialogRef, requestClose, '#recurring-start-date');
 
     useEffect(() => {
         if (!isOpen) return;
@@ -100,45 +88,6 @@ export const RecurringScheduleModal = memo(function RecurringScheduleModal({
         setRules([newRule()]);
         setErrors([]);
     }, [isOpen, today]);
-
-    useEffect(() => {
-        if (!isOpen) return;
-
-        previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        const frame = window.requestAnimationFrame(() => initialFocusRef.current?.focus());
-        const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
-                event.preventDefault();
-                requestClose();
-                return;
-            }
-            if (event.key !== 'Tab') return;
-            const dialog = dialogRef.current;
-            if (!dialog) return;
-            const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
-            if (focusable.length === 0) {
-                event.preventDefault();
-                dialog.focus();
-                return;
-            }
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (event.shiftKey && document.activeElement === first) {
-                event.preventDefault();
-                last.focus();
-            } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault();
-                first.focus();
-            }
-        };
-        document.addEventListener('keydown', handleKeyDown);
-        return () => {
-            window.cancelAnimationFrame(frame);
-            document.removeEventListener('keydown', handleKeyDown);
-            if (previousFocusRef.current?.isConnected) previousFocusRef.current.focus();
-            previousFocusRef.current = null;
-        };
-    }, [isOpen]);
 
     const input = useMemo(() => buildInput(startDate, endDate, rules), [startDate, endDate, rules]);
     const preview = useMemo(() => {
@@ -210,7 +159,7 @@ export const RecurringScheduleModal = memo(function RecurringScheduleModal({
                     <div className="form-row">
                         <div className="form-group">
                             <label htmlFor="recurring-start-date">Repeat from</label>
-                            <input ref={initialFocusRef} id="recurring-start-date" type="date" className="text-input" value={startDate} onChange={event => { setStartDate(event.target.value); setErrors([]); }} required />
+                            <input id="recurring-start-date" type="date" className="text-input" value={startDate} onChange={event => { setStartDate(event.target.value); setErrors([]); }} required />
                         </div>
                         <div className="form-group">
                             <label htmlFor="recurring-end-date">Repeat until</label>

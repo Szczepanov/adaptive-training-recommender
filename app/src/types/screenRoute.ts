@@ -9,6 +9,7 @@ type RouteLocation = Pick<Location, 'pathname' | 'search' | 'hash'>;
 
 /** Top-level athlete screens use a private query route; transient UI has no route. */
 export function readScreenRoute(location: Pick<RouteLocation, 'pathname' | 'search'>): Screen | null {
+  if (location.pathname === '/settings') return 'preferences';
   if (location.pathname !== '/') return null;
   const values = new URLSearchParams(location.search).getAll('screen');
   return values.length === 1 && ROUTED_SCREENS.has(values[0]) ? values[0] as Screen : null;

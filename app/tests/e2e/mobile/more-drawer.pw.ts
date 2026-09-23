@@ -31,6 +31,12 @@ test('More drawer keeps focus and navigation usable on a phone', async ({ page }
   await assertDialogFocusContainment(page, drawer);
   await assertFocusedElementVisibleAfterViewportReduction(page, close, 500);
   await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('hidden');
+  await page.evaluate(() => {
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    escape.preventDefault();
+    document.dispatchEvent(escape);
+  });
+  await expect(drawer).toBeVisible();
   await assertDialogFocusRestoration(more, drawer, () => page.keyboard.press('Escape'));
   await expect.poll(() => page.evaluate(() => document.body.style.overflow)).toBe('');
 

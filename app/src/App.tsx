@@ -178,21 +178,26 @@ function App() {
       // can be closed explicitly, but no production path starts or resumes it in the old UI.
       strengthSessionService.findActiveSession(userId),
       sessionExecutionService.findInProgressExecution(userId),
-      assessmentAttemptService.findOpenAttempt(userId),
-    ]).then(async ([strengthResult, structuredResult, assessmentResult]) => {
+    ]).then(async ([strengthResult, structuredResult]) => {
       if (cancelled) return;
       const legacyStrength = strengthResult.status === 'fulfilled' ? strengthResult.value : null;
       setLegacyStrengthSessionId(legacyStrength?.sessionId ?? null);
       const structured = structuredResult.status === 'fulfilled' ? structuredResult.value : null;
       setActiveStructuredSession(structured);
       setActiveStructuredIntent(null);
-      if (
-        assessmentResult.status === 'fulfilled'
-        && structured?.state === 'in_progress'
-        && assessmentResult.value?.sourceSessionRef === `occurrence:${structured.occurrenceId}`
-      ) {
-        setActiveStructuredIntent('testing');
-        return;
+      if (structured?.state === 'in_progress' && structured.occurrenceId) {
+        try {
+          const attempt = await assessmentAttemptService.findInProgressAttempt(
+            userId,
+            `occurrence:${structured.occurrenceId}`,
+          );
+          if (!cancelled && attempt) {
+            setActiveStructuredIntent('testing');
+            return;
+          }
+        } catch {
+          // Resolving the stored session definition below remains the fallback.
+        }
       }
       if (structured?.prescriptionHash) {
         try {
@@ -266,22 +271,16 @@ function App() {
     if (!userId || authPhase !== 'AUTHENTICATED' || initialRouteUserId !== userId) return;
     const onPopState = () => {
       const requested = readScreenRoute(window.location);
-      const checkinRequired = requiresCurrentCheckin(
-        decisionInput?.date ?? null,
-        decisionInput ? hasCompletedSubjectiveCheckinForDecision(decisionInput) : false,
-        getLocalDateString(),
-      );
-      // A historical route cannot bypass the same pending-check-in gate used at startup.
       const resumeMismatch = requested === 'testing'
         && currentScreenRef.current === 'sessions'
         && activeStructuredSession?.state === 'in_progress'
         && activeStructuredIntent !== 'testing';
-      const nextScreen: Screen = checkinRequired ? 'checkin' : resumeMismatch ? 'home' : requested ?? 'home';
-      navigateToScreen(nextScreen, checkinRequired || !requested || resumeMismatch ? 'replace' : 'none');
+      const nextScreen: Screen = resumeMismatch ? 'home' : requested ?? 'home';
+      navigateToScreen(nextScreen, !requested || resumeMismatch ? 'replace' : 'none');
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [activeStructuredIntent, activeStructuredSession, authPhase, decisionInput, initialRouteUserId, navigateToScreen, userId]);
+  }, [activeStructuredIntent, activeStructuredSession, authPhase, initialRouteUserId, navigateToScreen, userId]);
 
   if (authPhase !== 'AUTHENTICATED') {
     return <LoginScreen />;
@@ -293,7 +292,7 @@ function App() {
   if (!userId || initialRouteUserId !== userId) {
     return (
       <div className="app-container">
-        <main className="app-content">
+        <main className="app-content" tabIndex={-1}>
           <div className="loading-state" role="status">Loading today&apos;s check-in status...</div>
         </main>
       </div>
@@ -348,7 +347,7 @@ function App() {
           </div>
         )}
 
-      <main className="app-content">
+      <main className="app-content" tabIndex={-1}>
         <Suspense fallback={<div className="loading-state">Loading...</div>}>
           {userId && !onboardingDismissed && decisionInput && decisionInput.activeGoals.length === 0 && (
             <OnboardingWizard
@@ -518,7 +517,11 @@ function App() {
                 if (session?.state === 'in_progress') {
                   setActiveStructuredSession(session);
                   setActiveStructuredIntent('testing');
-                } else if (session && currentScreenRef.current === 'testing') {
+                } else if (
+                  session
+                  && currentScreenRef.current === 'testing'
+                  && activeStructuredSession?.executionId === session.executionId
+                ) {
                   setActiveStructuredSession(null);
                   setActiveStructuredIntent(null);
                 }

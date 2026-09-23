@@ -85,15 +85,24 @@ test('pending check-in takes precedence over a deep link on initial authenticati
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Check-in', exact: true })).toBeVisible();
 
+  await page.getByRole('button', { name: /Skip to Dashboard/ }).click();
+  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
   const nav = page.locator('.navbar-desktop-menu');
   await nav.getByRole('button', { name: 'Plan', exact: true }).click();
-  await nav.getByRole('button', { name: 'Home', exact: true }).click();
+  await nav.getByRole('button', { name: /More/ }).click();
+  await page.locator('#desktop-more-panel').getByRole('button', { name: /Goals/ }).click();
+  await page.goBack();
+  await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\?screen=plan$/);
+  await page.goBack();
+  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
+  await expect(page).toHaveURL(/\?screen=home$/);
   await page.goBack();
   await expect(page.getByRole('heading', { name: 'Check-in', exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\?screen=checkin$/);
   await page.goForward();
-  await expect(page.getByRole('heading', { name: 'Check-in', exact: true })).toBeVisible();
-  await expect(page).toHaveURL(/\?screen=checkin$/);
+  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
+  await expect(page).toHaveURL(/\?screen=home$/);
 });
 
 test('Back minimizes a persisted structured session and Resume restores it', async ({ page }) => {

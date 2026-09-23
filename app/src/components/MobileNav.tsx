@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useRef } from 'react';
 import type { Screen } from '../types/navigation';
 import { SCREEN_LABELS } from '../types/navigation';
 import { getAuthInstance } from '../firebase';
 import { buildInfo } from '../buildInfo';
-import { useOverlayScrollLock } from './useOverlayDialog';
+import { useOverlayDialog } from './useOverlayDialog';
 import {
   DRAWER_GROUPS,
   PRIMARY_NAV_ITEMS,
@@ -21,55 +21,14 @@ interface MobileNavProps {
 }
 
 export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, loadDecisionInput, mobileMoreOpen, setMobileMoreOpen }) => {
-  const mobileMoreBtnRef = useRef<HTMLButtonElement>(null);
   const mobileDrawerRef = useRef<HTMLDivElement>(null);
-  const restoreFocusOnCloseRef = useRef(false);
-  useOverlayScrollLock(mobileMoreOpen);
+  const restoreFocusOnCloseRef = useRef(true);
 
   const closeDrawer = useCallback(() => {
     restoreFocusOnCloseRef.current = true;
     setMobileMoreOpen(false);
   }, [setMobileMoreOpen]);
-
-  useEffect(() => {
-    if (mobileMoreOpen) {
-      const closeBtn = mobileDrawerRef.current?.querySelector<HTMLButtonElement>('.close-drawer-btn');
-      closeBtn?.focus();
-    } else if (restoreFocusOnCloseRef.current) {
-      restoreFocusOnCloseRef.current = false;
-      mobileMoreBtnRef.current?.focus();
-    }
-  }, [mobileMoreOpen]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (mobileMoreOpen) {
-          closeDrawer();
-        }
-      }
-      if (mobileMoreOpen && event.key === 'Tab' && mobileDrawerRef.current) {
-        const focusables = Array.from(
-          mobileDrawerRef.current.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
-        );
-        if (focusables.length === 0) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [mobileMoreOpen, closeDrawer]);
+  useOverlayDialog(mobileMoreOpen, mobileDrawerRef, closeDrawer, '.close-drawer-btn', () => restoreFocusOnCloseRef.current);
 
   const handleLogout = async () => {
     const { signOut } = await import('firebase/auth');
@@ -87,7 +46,6 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
     requestAnimationFrame(() => {
       const main = document.querySelector<HTMLElement>('main');
       if (main) {
-        main.tabIndex = -1;
         main.focus();
       }
     });
@@ -112,12 +70,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
         })}
 
         <button
-          ref={mobileMoreBtnRef}
           className={`nav-item ${!isPrimaryNavigationScreen(screen) ? 'active' : ''}`}
-          onClick={() => setMobileMoreOpen((isOpen) => {
-            restoreFocusOnCloseRef.current = isOpen;
-            return !isOpen;
-          })}
+          onClick={() => {
+            restoreFocusOnCloseRef.current = true;
+            setMobileMoreOpen(isOpen => !isOpen);
+          }}
           aria-expanded={mobileMoreOpen}
           aria-haspopup="dialog"
         >

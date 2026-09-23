@@ -3,8 +3,10 @@ import {
     doc,
     getDoc,
     getDocs,
+    query,
     runTransaction,
     setDoc,
+    where,
     type Firestore,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
@@ -41,12 +43,15 @@ export class AssessmentAttemptService {
     }
 
     /**
-     * Resume seam for OV3. There is intentionally at most one active structured execution in
-     * the current product, so the newest scheduled/in-progress assessment is the only candidate
-     * a testing screen may recover after background/reload.
-     */
-    async findOpenAttempt(userId: string): Promise<AssessmentAttempt | null> {
-        const snapshots = await getDocs(collection(this.db, 'users', userId, 'assessment_attempts'));
+     * Resume seam for OV3. A running attempt always takes precedence over a newer scheduled
+     * attempt; scheduled attempts are only recovery candidates when no attempt is in progress.
+    */
+    async findOpenAttempt(userId: string, sourceSessionRef?: string): Promise<AssessmentAttempt | null> {
+        const attemptsRef = collection(this.db, 'users', userId, 'assessment_attempts');
+        const attempts = sourceSessionRef
+            ? query(attemptsRef, where('sourceSessionRef', '==', sourceSessionRef))
+            : attemptsRef;
+        const snapshots = await getDocs(attempts);
         const candidates: AssessmentAttempt[] = [];
         for (const snapshot of snapshots.docs) {
             const attempt = snapshot.data() as AssessmentAttempt;
@@ -56,10 +61,43 @@ export class AssessmentAttemptService {
                 continue;
             }
             if (attempt.id !== snapshot.id) continue;
-            if (attempt.state === 'scheduled' || attempt.state === 'in_progress') candidates.push(attempt);
+            if (
+                (attempt.state === 'scheduled' || attempt.state === 'in_progress')
+                && (!sourceSessionRef || attempt.sourceSessionRef === sourceSessionRef)
+            ) {
+                candidates.push(attempt);
+            }
         }
         const rank = (attempt: AssessmentAttempt): string => attempt.startedAt ?? `${attempt.scheduledDate ?? ''}T00:00:00`;
-        return candidates.sort((a, b) => rank(b).localeCompare(rank(a)))[0] ?? null;
+        return candidates.sort((a, b) => {
+            const runningFirst = Number(b.state === 'in_progress') - Number(a.state === 'in_progress');
+            return runningFirst || rank(b).localeCompare(rank(a));
+        })[0] ?? null;
+    }
+
+    /** Find the running assessment attempt bound to one exact structured execution. */
+    async findInProgressAttempt(userId: string, sourceSessionRef: string): Promise<AssessmentAttempt | null> {
+        const attempts = query(
+            collection(this.db, 'users', userId, 'assessment_attempts'),
+            where('sourceSessionRef', '==', sourceSessionRef),
+        );
+        const snapshots = await getDocs(attempts);
+        for (const snapshot of snapshots.docs) {
+            const attempt = snapshot.data() as AssessmentAttempt;
+            try {
+                assertValidAssessmentAttempt(attempt);
+            } catch {
+                continue;
+            }
+            if (
+                attempt.id === snapshot.id
+                && attempt.state === 'in_progress'
+                && attempt.sourceSessionRef === sourceSessionRef
+            ) {
+                return attempt;
+            }
+        }
+        return null;
     }
 
     async startAttempt(userId: string, attemptId: string, startedAt: string): Promise<void> {
