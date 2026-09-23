@@ -72,7 +72,7 @@ import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedu
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
 import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry } from './coverage';
 import { resolveEvergreenPlan } from './evergreenPlanning';
-import { isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
+import { isFreshSubjectiveWithAdverseWearables, isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { applyPlanningOverlays } from './planningOverlays';
 import {
     allocationSurvives,
@@ -346,12 +346,14 @@ export const PROJECTED_MODIFY_MAX_SYSTEMIC_COST = 0.5;
 
 /** Issue #679: a forecast day has no real future readiness reading to re-check against, so
  * a literal "wait for a fresh check-in" re-entry gate is not implementable for projected
- * days. Keep the forecast conservative and monotonic instead: days 1-2 remain recovery-only,
- * day 3 admits only low-cost non-strength work, days 4-5 may widen to the normal modify
- * ceiling while still excluding Strength and Moderate/Hard/Race-Specific Endurance, and
- * only day 6 onward reaches the unrestricted candidate pool. */
+ * days. Keep the forecast conservative and monotonic instead: concordant severe recovery
+ * uses two recovery-only days, then graduated low-cost non-strength work; fresh subjective
+ * readiness with discordant adverse wearables shortens the recovery-only window to one day.
+ * Two consecutive projected rest days independently retain a systemic-cost ceiling when
+ * training resumes, even after the severe-recovery ladder has ended. */
 export const RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST = 0.35;
 export const RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST = PROJECTED_MODIFY_MAX_SYSTEMIC_COST;
+export const POST_REST_REENTRY_MAX_SYSTEMIC_COST = 0.75;
 
 export interface ProjectedFatigueThresholds {
     recover: number;
@@ -615,6 +617,8 @@ export interface ProjectedDatePlanningContext {
     projectedRecoveryPolicy?: {
         severeAdverseRecovery: boolean;
         dayOffset: number;
+        recoveryOnlyThrough?: number;
+        graduatedReentryThrough?: number;
     };
 }
 
@@ -630,8 +634,8 @@ function effectiveProjectedFatigueTier(
     recoveryPolicy: ProjectedDatePlanningContext['projectedRecoveryPolicy'],
 ): ProjectedDateEvaluation['fatigueTier'] {
     if (!recoveryPolicy?.severeAdverseRecovery) return fatigueTier;
-    if (recoveryPolicy.dayOffset <= 2) return 'recover';
-    if (recoveryPolicy.dayOffset <= 5 && fatigueTier === 'train') return 'modify';
+    if (recoveryPolicy.dayOffset <= (recoveryPolicy.recoveryOnlyThrough ?? 2)) return 'recover';
+    if (recoveryPolicy.dayOffset <= (recoveryPolicy.graduatedReentryThrough ?? 5) && fatigueTier === 'train') return 'modify';
     return fatigueTier;
 }
 
@@ -1295,6 +1299,11 @@ export function generateWeekAheadPlan(
     options: WeekAheadOptions = {}
 ): WeekAheadPlan {
     const isSevereAdverseRecovery = isSevereAdverseRecoveryReadiness(todayReadiness, todayRec.mode);
+    const hasFreshSubjectiveDiscordance = isSevereAdverseRecovery
+        && isFreshSubjectiveWithAdverseWearables(todayReadiness);
+    const recoveryOnlyThrough = hasFreshSubjectiveDiscordance ? 1 : 2;
+    const earlyReentryOffset = hasFreshSubjectiveDiscordance ? 2 : 3;
+    const graduatedReentryThrough = hasFreshSubjectiveDiscordance ? 4 : 5;
 
     const totalDays = Math.max(1, options.days ?? 7);
     const events = options.events ?? [];
@@ -1587,6 +1596,8 @@ export function generateWeekAheadPlan(
                 projectedRecoveryPolicy: {
                     severeAdverseRecovery: isSevereAdverseRecovery,
                     dayOffset: getDayDiff(date, todayDate),
+                    recoveryOnlyThrough,
+                    graduatedReentryThrough,
                 },
             },
         );
@@ -1664,9 +1675,10 @@ export function generateWeekAheadPlan(
                 || template.category === 'Moderate Endurance')
             && coverageNeedTierForTemplate(optContext.coverageState, template, anchorRole) <= 1
         );
-        const isRecoveryOnlyDate = isSevereAdverseRecovery && offset <= 2;
-        const isRecoveryEarlyReentryDate = isSevereAdverseRecovery && offset === 3;
-        const isRecoveryLateReentryDate = isSevereAdverseRecovery && (offset === 4 || offset === 5);
+        const lateReentryOffsets = hasFreshSubjectiveDiscordance ? [3, 4] : [4, 5];
+        const isRecoveryOnlyDate = isSevereAdverseRecovery && offset <= recoveryOnlyThrough;
+        const isRecoveryEarlyReentryDate = isSevereAdverseRecovery && offset === earlyReentryOffset;
+        const isRecoveryLateReentryDate = isSevereAdverseRecovery && lateReentryOffsets.includes(offset);
         const isRecoveryCategory = (template: SessionTemplate) =>
             template.category === 'Rest' || template.category === 'Mobility/Recovery';
         const isRecoveryReentryCandidate = (template: SessionTemplate, maxSystemicCost: number) => {
@@ -1697,6 +1709,8 @@ export function generateWeekAheadPlan(
         const effectiveFatigueTier = effectiveProjectedFatigueTier(fatigueTier, {
             severeAdverseRecovery: isSevereAdverseRecovery,
             dayOffset: offset,
+            recoveryOnlyThrough,
+            graduatedReentryThrough,
         });
 
         let rankingCandidates = isRecoveryOnlyDate
@@ -1708,6 +1722,23 @@ export function generateWeekAheadPlan(
                     : (hasFatigueGatedRequiredCoverage
                         ? fatigueGated.filter(isRecoveryCategory)
                         : fatigueGated)));
+
+        const previousDay = resultDays.at(-1);
+        const twoDaysAgo = resultDays.at(-2) ?? (offset === 2 ? { template: todayRec.template } : undefined);
+        const followsTwoRestDays = previousDay?.template.category === 'Rest'
+            && twoDaysAgo?.template.category === 'Rest';
+        if (isRecoveryLateReentryDate && previousDay?.template.category === 'Rest') {
+            const progressiveEasyCandidates = rankingCandidates.filter(template =>
+                template.category === 'Easy Endurance'
+            );
+            if (progressiveEasyCandidates.length > 0) rankingCandidates = rankingCandidates.filter(template => template.category !== 'Rest');
+        }
+        if (followsTwoRestDays) {
+            rankingCandidates = rankingCandidates.filter(template =>
+                (template.costProfile?.systemic ?? enrichedCostProfile(template.id).systemic)
+                    <= POST_REST_REENTRY_MAX_SYSTEMIC_COST,
+            );
+        }
 
         const exactReserved = reservation
             ? rankingCandidates.filter(template => reservation.occurrence.eligibleTemplateIds.includes(template.id))

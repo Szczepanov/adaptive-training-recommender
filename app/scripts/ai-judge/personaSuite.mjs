@@ -3,6 +3,7 @@ import {
   buildPersonaFamilies as buildCatalogFamilies,
 } from './personaScenarios.mjs';
 import { assertHybridScenarioIntegrity, buildHybridScenarioFamilies } from './hybridScenarioFamilies.mjs';
+import { decayAcuteReadinessTowardBaseline, projectedRecoveryBaseline } from './readinessProjection.mjs';
 
 const ACTIVE_TRIATHLON_FAMILY_ID = 'persona_triathlon_established_olympic';
 const ACTIVE_TRIATHLON_PERSONA_ID = 'triathlon_established_olympic';
@@ -43,9 +44,10 @@ function requireCase(family, caseId) {
 /** Adapt one readiness snapshot to the week- and date-based scenario interfaces. */
 function staticReadiness(readiness) {
   const snapshot = clone(readiness);
+  const baseline = projectedRecoveryBaseline(snapshot);
   return {
-    readinessForWeek: () => clone(snapshot),
-    readinessForDate: () => clone(snapshot),
+    readinessForWeek: (week = 0) => decayAcuteReadinessTowardBaseline(snapshot, baseline, week * 7),
+    readinessForDate: (_date, week = 0) => decayAcuteReadinessTowardBaseline(snapshot, baseline, week * 7),
   };
 }
 

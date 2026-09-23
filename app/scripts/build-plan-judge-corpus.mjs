@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { createServer } from 'vite';
 import { createHash } from 'node:crypto';
+import { decayAcuteReadinessTowardBaseline } from './ai-judge/readinessProjection.mjs';
 
 function gitCommit() {
   try {
@@ -164,8 +165,10 @@ function variant(base, id, label, axis, options = {}) {
   const events = options.events !== undefined ? clone(options.events) : clone(base.events);
   if (options.eventDaysOut !== undefined && event) event.date = addDays(base.startDate, options.eventDaysOut);
 
-  const readinessForDate = options.readinessForDate ?? (() => clone(readiness));
-  const readinessForWeek = options.readinessForWeek ?? (() => clone(readiness));
+  const readinessForDate = options.readinessForDate ?? ((_date, weekIndex = 0) =>
+    decayAcuteReadinessTowardBaseline(readiness, base.readinessForWeek(weekIndex), weekIndex * 7));
+  const readinessForWeek = options.readinessForWeek ?? ((weekIndex = 0) =>
+    decayAcuteReadinessTowardBaseline(readiness, base.readinessForWeek(weekIndex), weekIndex * 7));
 
   return {
     axis,

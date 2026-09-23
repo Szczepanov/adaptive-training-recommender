@@ -124,6 +124,27 @@ export function isSevereAdverseRecoveryReadiness(
     );
 }
 
+/** Fresh subjective recovery does not erase adverse wearable evidence, but it makes a
+ * multi-day shutdown disproportionate when that evidence is discordant. */
+export function isFreshSubjectiveWithAdverseWearables(readiness: DailyReadiness | null | undefined): boolean {
+    if (!readiness) return false;
+    const obj = readiness.objective ?? {};
+    const adverseCount = [
+        obj.hrv_delta !== null && obj.hrv_delta !== undefined && obj.hrv_delta <= -10,
+        obj.rhr_delta !== null && obj.rhr_delta !== undefined && obj.rhr_delta >= 5,
+        obj.body_battery_wake !== null && obj.body_battery_wake !== undefined && obj.body_battery_wake <= 35,
+        obj.sleep_score !== null && obj.sleep_score !== undefined && obj.sleep_score <= 55,
+    ].filter(Boolean).length;
+    const subj = readiness.subjective ?? {};
+    return adverseCount >= 2
+        && subj.readiness !== null && subj.readiness !== undefined && subj.readiness >= 7
+        && subj.fatigue !== null && subj.fatigue !== undefined && subj.fatigue <= 3
+        && subj.soreness !== null && subj.soreness !== undefined && subj.soreness <= 3
+        && subj.painFlag !== true
+        && (subj.clinicalEnvelopeSources?.length ?? 0) === 0
+        && (subj.redFlagFindings?.length ?? 0) === 0;
+}
+
 export interface PolicyWarning {
     code: 'conditional_prior_withheld';
     message: string;

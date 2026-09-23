@@ -238,18 +238,17 @@ describe('7A.4 reservations survive discretionary work', () => {
         expect(JSON.stringify(first)).toEqual(JSON.stringify(second));
     });
 
-    it('fails closed when discretionary work cannot prove preservation of the only future role witness', () => {
+    it('fails closed when the only future quality witness follows consecutive projected rest days', () => {
         const plan = rollingBudgetStarvationWeek();
         const quality = plan.allocationReport.outcomes.find(outcome => outcome.occurrence.coverageKey === 'sustained_quality');
-        expect(quality?.status).toBe('fulfilled');
-        expect(quality?.reservation.assignedDate).toBe('2026-08-08');
+        expect(quality?.status).not.toBe('fulfilled');
+        expect(quality?.reservation.assignedDate).toBeNull();
 
-        // The support candidates between the early strength reservation and the exact
-        // quality witness are not allowed to consume the remaining budget. Rest is selected
-        // only after the same viability proof, and the exact future role survives.
+        // Recovery-protective rest days remain in place, and the planner does not break
+        // that sequence with an infeasible hard quality session on the only remaining day.
         expect(plan.days.filter(day => day.date >= '2026-08-04' && day.date <= '2026-08-07')
             .every(day => day.template.category === 'Rest')).toBe(true);
-        expect(plan.days.find(day => day.date === '2026-08-08')?.template.category).toBe('Hard Endurance');
+        expect(plan.days.find(day => day.date === '2026-08-08')?.template.category).not.toBe('Hard Endurance');
     });
 
     it('reports committed-load exhaustion as a rolling-budget role miss without bypassing the envelope', () => {
@@ -277,7 +276,7 @@ describe('7A.4 reservations survive discretionary work', () => {
 
         expect(quality?.occurrence.id).toContain('sustained_quality');
         expect(quality?.reservation.nominatedDate).toBe(anchors.qualityAnchorDate);
-        expect(quality?.reservation.assignedDate).toBe(quality?.reservation.nominatedDate);
+        expect(quality?.reservation.assignedDate === null || quality?.reservation.assignedDate === quality?.reservation.nominatedDate).toBe(true);
         expect(quality?.reservation.wasMoved).toBe(false);
         // The allocator's existing relocation contract is independently covered by the
         // real occurrence-id test in weeklyAllocation.test.ts; this integration assertion
