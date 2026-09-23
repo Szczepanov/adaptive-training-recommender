@@ -37,6 +37,30 @@ describe('training-settings eligibility', () => {
         expect(eligibleTemplates(TEMPLATES, context(profile), 60, '2026-08-07').some(t => t.modality === 'Running' || t.modality === 'Field')).toBe(false);
     });
 
+    it('keeps low-load strength available under overhead and spinal-loading guardrails', () => {
+        const guarded = settings({ guardrails: {
+            avoid_high_impact: false, avoid_heavy_lower_body: false,
+            avoid_overhead_pressing: true, avoid_heavy_spinal_loading: true,
+        } });
+        const candidate = TEMPLATES_BY_ID.get('str_low_load_maint_01')!;
+        expect(candidate.systemicCost).toBeLessThanOrEqual(0.35);
+        expect(candidate.safetyTags).not.toContain('avoid_overhead_pressing');
+        expect(candidate.safetyTags).not.toContain('avoid_heavy_spinal_loading');
+        expect(evaluateTemplateEligibility(candidate, context(guarded), 30, '2026-08-07').eligible).toBe(true);
+        expect(evaluateTemplateEligibility(TEMPLATES_BY_ID.get('str_full_03')!, context(guarded), 60, '2026-08-07').eligible).toBe(false);
+    });
+
+    it('activates low-load strength only when a shoulder or spinal guardrail calls for that fallback', () => {
+        const id = 'str_low_load_maint_01';
+        const candidateIds = (profile: TrainingSettings) => eligibleTemplates(TEMPLATES, context(profile), 60, '2026-08-07').map(template => template.id);
+        expect(candidateIds(settings())).not.toContain(id);
+        for (const guardrail of ['avoid_overhead_pressing', 'avoid_heavy_spinal_loading'] as const) {
+            expect(candidateIds(settings({ guardrails: { ...settings().guardrails, [guardrail]: true } }))).toContain(id);
+        }
+        expect(candidateIds(settings({ guardrails: { ...settings().guardrails, avoid_heavy_lower_body: true, avoid_overhead_pressing: true } })))
+            .not.toContain(id);
+    });
+
     it('filters explicitly restricted modalities as a hard gate', () => {
         const profile = settings();
         const ctx = context(profile);

@@ -619,9 +619,34 @@ lexicographic priority      objective/timing benefit outranks preference
 utility score & cost        dimensional interference & preference multipliers
 ```
 
-Preferences rank; they never unlock. An avoided modality is a hard exclude on Path A and a
-0.2× soft penalty on Path B — a deliberate distinction, since taste must never behave like
-a safety constraint ([ADR-0007](../adr/0007-adaptive-multisport-engine-architecture.md) §6).
+General modality preferences rank; they do not become clinical safety gates. An avoided
+modality is a hard exclude on Path A and a 0.2× soft penalty on Path B — a deliberate
+distinction, since taste must never masquerade as injury/safety authority
+([ADR-0007](../adr/0007-adaptive-multisport-engine-architecture.md) §6).
+
+Path B also demotes a non-preferred training candidate when at least one preferred training
+candidate passes the same hard gates, unless the candidate strictly advances an unresolved
+weekly objective (its qualification passes and it contributes positive stimulus on a positive
+target axis). Rest and Mobility/Recovery remain available.
+Specialized automatic catalog content may separately declare
+`requiresExplicitModalityPreference`; that is a catalog-admission opt-in, not a safety
+restriction or a general permission system for ordinary modalities. Current Field
+Maintenance and Field technical/Sprint Mechanics templates carry that marker, so they
+require explicit Field preference instead of leaking in as generic fallbacks. The current
+event schema has no team-sport category mapped to those marked templates; if one is added,
+its event-specific admission must be modeled explicitly rather than inferred from this
+preference opt-in. The check-in's `preferredModalityToday`
+breaks ties only after hard gates, coverage, recovery placement and objective-benefit tier
+agree, and only when the requested modality is also in `preferredModalities`. It applies to
+the current decision and does not rewrite the athlete's longer-term preferences.
+
+Automatic Path B catalog selection excludes a second strength session on the calendar day
+immediately after any strength exposure, including upper-body/full-body combinations. This
+extra adjacent-day rule is scoped to automatic catalog ranking; it does not change the
+canonical performed-training spacing policy used by other consumers. A low-load full-body
+maintenance template remains available under shoulder-overhead and heavy-spinal-loading guardrails;
+its low cost and absence of those safety tags do not override other active injury tags,
+equipment, time, readiness or dose gates.
 
 ### Injury gate sub-ordering (Phase 5.4)
 
