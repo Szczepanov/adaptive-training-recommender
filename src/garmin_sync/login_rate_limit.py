@@ -147,13 +147,17 @@ class FirestoreLoginRateLimiter:
         def decide(transaction: Any) -> tuple[bool, int | None]:
             now = self._clock()
             provider = self._data(provider_ref.get(transaction=transaction))
-            buckets = [(ref, self._data(ref.get(transaction=transaction))) for ref in refs]
+            buckets = [
+                (ref, self._data(ref.get(transaction=transaction)))
+                for ref in refs
+            ]
             blocked_until = max(
                 [float(provider.get("cooldownUntil", 0))]
                 + [float(bucket.get("cooldownUntil", 0)) for _, bucket in buckets]
             )
             attempts_by_ref = [
-                (ref, self._attempts(bucket, now)) for ref, bucket in buckets
+                (ref, self._attempts(bucket, now))
+                for ref, bucket in buckets
             ]
             for _, attempts in attempts_by_ref:
                 if len(attempts) >= self._max_attempts:
