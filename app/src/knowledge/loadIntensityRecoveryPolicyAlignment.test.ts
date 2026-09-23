@@ -199,6 +199,35 @@ describe('load + intensity + recovery product-claim alignment', () => {
         expect(evaluateRecoveryConstraints(d3RaceSpecific, d3Date, [], { focusEvent: triathlonAEvent }))
             .not.toContain('PRE_EVENT_TAPER_RESTRICTION');
 
+        const cWithoutAuthoredTaper: UserEvent = { ...triathlonAEvent, priority: 'C' };
+        const cAuthoredTaper: UserEvent = { ...cWithoutAuthoredTaper, taper: { startDate: '2026-09-07' } };
+
+        // Issue #737: unauthored C events preserve normal D-3 quality/strength allocation;
+        // an explicit taper opts back into the A/B D-3 gates.
+        expect(evaluateRecoveryConstraints(d3Moderate, d3Date, [], { focusEvent: cWithoutAuthoredTaper }))
+            .not.toContain('PRE_EVENT_TAPER_RESTRICTION');
+        expect(evaluateRecoveryConstraints(d3Hard, d3Date, [], { focusEvent: cWithoutAuthoredTaper }))
+            .not.toContain('PRE_EVENT_TAPER_RESTRICTION');
+        expect(evaluateRecoveryConstraints(heavyStrength, d3Date, [], { focusEvent: cWithoutAuthoredTaper }))
+            .not.toContain('PRE_EVENT_STRENGTH_RESTRICTION');
+        expect(evaluateRecoveryConstraints(d3Hard, d3Date, [], { focusEvent: cAuthoredTaper }))
+            .toContain('PRE_EVENT_TAPER_RESTRICTION');
+        expect(evaluateRecoveryConstraints(heavyStrength, d3Date, [], { focusEvent: cAuthoredTaper }))
+            .toContain('PRE_EVENT_STRENGTH_RESTRICTION');
+
+        // The exception ends exactly at the final-48-hour boundary.
+        const d2Date = '2026-09-12';
+        expect(evaluateRecoveryConstraints(d3Hard, d2Date, [], { focusEvent: cWithoutAuthoredTaper }))
+            .toContain('PRE_EVENT_TAPER_RESTRICTION');
+        expect(evaluateRecoveryConstraints(heavyStrength, d2Date, [], { focusEvent: cWithoutAuthoredTaper }))
+            .toContain('PRE_EVENT_STRENGTH_RESTRICTION');
+
+        const exhaustive = template({ category: 'Hard Endurance', modality: 'Running', systemicCost: 0.8, title: 'VO2 intervals' });
+        expect(evaluateRecoveryConstraints(exhaustive, '2026-09-09', [], { focusEvent: cWithoutAuthoredTaper }))
+            .not.toContain('PRE_EVENT_TAPER_RESTRICTION');
+        expect(evaluateRecoveryConstraints(exhaustive, '2026-09-09', [], { focusEvent: cAuthoredTaper }))
+            .toContain('PRE_EVENT_TAPER_RESTRICTION');
+
         // Outside the taper window, none of this applies.
         expect(evaluateRecoveryConstraints(heavyStrength, '2026-07-01', [], { focusEvent: triathlonAEvent }))
             .not.toContain('TAPER_NONESSENTIAL_STRENGTH_RESTRICTION');

@@ -444,6 +444,62 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(bEvent.accepted[0].benefitScore).toBeCloseTo(baseline.accepted[0].benefitScore * 1.25, 5);
         expect(cEvent.accepted[0].benefitScore).toBeCloseTo(baseline.accepted[0].benefitScore, 5);
 
+        const granFondoEvent: UserEvent = {
+            ...cyclingEvent('A'),
+            demandProfile: {
+                aerobicEndurance: 0.95,
+                thresholdPower: 0.55,
+                vo2MaxPower: 0.2,
+                repeatedSurges: 0.3,
+                sprintPower: 0.1,
+                fatigueResistance: 0.9,
+                neuromuscular: 0.1,
+            },
+        };
+        const highSurgeCycling = mockTemplate({
+            id: 'high-surge-cycling',
+            category: 'Hard Endurance',
+            modality: 'Cycling',
+            stimulusProfile: {
+                aerobicEndurance: 0.6,
+                thresholdPower: 0.8,
+                vo2MaxPower: 0.9,
+                repeatedSurges: 1.0,
+                sprintPower: 0.3,
+                fatigueResistance: 0.6,
+                maxStrength: 0,
+                hypertrophy: 0,
+            },
+        });
+        const granD35 = rankCandidates(
+            [highSurgeCycling], [], mockFatigueState(), { ...AVAILABILITY, date: '2026-08-16' }, [], PREFERENCES,
+            { date: '2026-08-16', focusEvent: granFondoEvent },
+        );
+        const granD36 = rankCandidates(
+            [highSurgeCycling], [], mockFatigueState(), { ...AVAILABILITY, date: '2026-08-15' }, [], PREFERENCES,
+            { date: '2026-08-15', focusEvent: granFondoEvent },
+        );
+        expect(granD35.accepted).toHaveLength(1);
+        expect(granD35.rejected).toHaveLength(0);
+        expect(granD35.accepted[0].benefitScore)
+            .toBeCloseTo(granD36.accepted[0].benefitScore * 0.3, 5);
+
+        const belowHighSurgeFloor = mockTemplate({
+            ...highSurgeCycling,
+            id: 'below-high-surge-floor',
+            stimulusProfile: { ...highSurgeCycling.stimulusProfile!, repeatedSurges: 0.59 },
+        });
+        const belowFloorD35 = rankCandidates(
+            [belowHighSurgeFloor], [], mockFatigueState(), { ...AVAILABILITY, date: '2026-08-16' }, [], PREFERENCES,
+            { date: '2026-08-16', focusEvent: granFondoEvent },
+        );
+        const belowFloorD36 = rankCandidates(
+            [belowHighSurgeFloor], [], mockFatigueState(), { ...AVAILABILITY, date: '2026-08-15' }, [], PREFERENCES,
+            { date: '2026-08-15', focusEvent: granFondoEvent },
+        );
+        expect(belowFloorD35.accepted[0].benefitScore)
+            .toBeCloseTo(belowFloorD36.accepted[0].benefitScore, 5);
+
         const raceSpecific = mockTemplate({
             id: 'race-specific-test',
             category: 'Race-Specific Endurance',
@@ -474,7 +530,19 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
                 type: 'Cycling',
             }],
         });
-        expect(cSecondRaceSpecific.accepted[0].benefitScore).toBeCloseTo(0.45 * 0.35, 5);
+        expect(cSecondRaceSpecific.accepted[0].benefitScore).toBeCloseTo(0.45, 5);
+        const cRaceSpecificDuringAuthoredTaper = rankCandidates([raceSpecific], [], mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
+            date: '2026-09-10',
+            focusEvent: { ...cyclingEvent('C'), taper: { startDate: '2026-09-07' } },
+            recentHistory: [{ date: '2026-09-06', category: 'Race-Specific Endurance', modality: 'Cycling', systemicCost: 0.3, type: 'Cycling' }],
+        });
+        expect(cRaceSpecificDuringAuthoredTaper.accepted[0].benefitScore).toBeCloseTo(0.45 * 0.35, 5);
+        const cRaceSpecificAtD2 = rankCandidates([raceSpecific], [], mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
+            date: '2026-09-18',
+            focusEvent: cyclingEvent('C'),
+            recentHistory: [{ date: '2026-09-14', category: 'Race-Specific Endurance', modality: 'Cycling', systemicCost: 0.3, type: 'Cycling' }],
+        });
+        expect(cRaceSpecificAtD2.accepted[0].benefitScore).toBeCloseTo(0.45 * 0.35, 5);
 
         const longHorizon = rankCandidates([raceSpecific], [], mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
             date: '2026-09-10', focusEvent: cyclingEvent('A', '2026-10-10'),
@@ -549,8 +617,12 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(claim.statement).toContain('C-priority cycling_event, running_race and triathlon candidates enter the same event-aware ranking with a neutral 1.00 multiplier');
         expect(claim.statement).toContain('C-priority general_target and strength_meet retain their prior no-op behavior');
         expect(claim.statement).toContain('for strength_meet, that priority boost applies only when the candidate satisfies an unresolved objective');
-        expect(claim.statement).toContain('For B and C cycling/running/triathlon events, a second race-specific endurance session within 6 days is multiplied by 0.35');
-        expect(claim.statement).toContain('multiplied by 0.35');
+        expect(claim.statement).toContain('B endurance events dampen a second race-specific endurance session within 6 days by 0.35');
+        expect(claim.statement).toContain('C endurance events without an active authored taper retain build volume through D-3');
+        expect(claim.statement).toContain('by 0.35');
+        expect(claim.statement).toContain('Within the final 35 days before a low-surge cycling durability event');
+        expect(claim.statement).toContain('remains eligible but has its benefit multiplied by event repeatedSurges / candidate repeatedSurges');
+        expect(claim.statement).toContain('does not apply earlier than D-35');
         expect(claim.statement).toContain('multiplied by 0.50');
         expect(claim.statement).toContain('multiplied by 0.20');
     });

@@ -204,8 +204,8 @@ const critB = required('judge_demand_crit_B');
 const granB = required('judge_demand_gran_B');
 const demandDistanceA = templateSequenceDistance(critA, granA);
 const demandDistanceB = templateSequenceDistance(critB, granB);
-fail(demandDistanceA > 0, 'A-priority criterium and gran-fondo cases produce identical selected-template sequences.');
-fail(demandDistanceB > 0, 'B-priority criterium and gran-fondo cases produce identical selected-template sequences.');
+fail(demandDistanceA >= 3 / 14, `A-priority criterium and gran-fondo sequence distance ${demandDistanceA.toFixed(3)} is below the 3/14 acceptance floor.`);
+fail(demandDistanceB >= 3 / 14, `B-priority criterium and gran-fondo sequence distance ${demandDistanceB.toFixed(3)} is below the 3/14 acceptance floor.`);
 
 for (const item of [critA, granA, critB, granB]) {
   const readinessMinutes = item.input?.readiness?.subjective?.timeAvailable;

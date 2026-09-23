@@ -81,16 +81,14 @@ describe('cycling_gran_fondo_A -- baseline, already-covered sport', () => {
         expect(result.objectiveResolution.map(o => o.key)).not.toContain('surge_repeatability');
     });
 
-    it('derives and completes a protected cycling race-specific objective from high durability demand', async () => {
+    it('does not credit duration-capped cycling durability work below its dose threshold', async () => {
         const result = await getResult('cycling_gran_fondo_A');
         expect(result.objectiveResolution).toContainEqual(expect.objectContaining({
             key: 'race_specific_endurance', timesGenerated: 4, timesResolved: 0,
         }));
-        // Under active-dose projection (PR #453), weekend residual-fatigue displacement
-        // pushes race-specific rides into 60-min weekday caps where scaled stimulus
-        // falls below the 0.60 Gran Fondo durability threshold in forward credit projections.
-        // Effective-dose history records the delivered stimulus rather than the authored
-        // template, so 60-minute capped sessions do not falsely satisfy this threshold.
+        // The effective doses in this 60-minute legacy scenario remain below the
+        // Gran Fondo credit threshold; the 120-minute plan-judge case covers sustained
+        // durability separately without granting credit to these capped sessions.
         const raceSpecificDecisions = result.decisionTraces.filter(d =>
             d.selected.category === 'Race-Specific Endurance' && d.selected.modality === 'Cycling'
         );

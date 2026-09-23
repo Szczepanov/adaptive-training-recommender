@@ -407,13 +407,14 @@ own `taper_sharpening`/`race_week_strength` coverage keys instead of only the ge
 
 ### Pre-event restrictions and taper-window strength/density guard (Issue #679, `optimizer.ts`)
 
-`evaluateRecoveryConstraints`'s D1-D7 pre-event restriction (strength blocked 1-3 days
-out, hard work 1-2 days, exhaustive work 3-7 days, plus the A-event post-event recovery
-window) now also gates `triathlon` events, not only `cycling_event`/`running_race` -- it
-previously never applied to a triathlon A/B event at all. At D-3, generic
-`Moderate Endurance`/`Hard Endurance` is also excluded while a light
-`Race-Specific Endurance` sharpening touch may remain available; D-1/D-2 retain the
-existing broader hard-session restriction.
+`evaluateRecoveryConstraints`'s D1-D7 pre-event restriction now also gates `triathlon`
+events, not only `cycling_event`/`running_race`. For A/B events, strength is blocked D-1
+through D-3, hard work D-1/D-2, generic `Moderate Endurance`/`Hard Endurance` at D-3,
+and exhaustive work D-3 through D-7, while a light `Race-Specific Endurance` sharpening
+touch may remain available at D-3. An unauthored C-priority event deliberately skips the
+D-3 through D-7 restrictions so normal build dose and quality can continue through D-3;
+the shared D-1/D-2 strength/hard gates still apply. An athlete-authored C taper opts back
+into the A/B-style D-3 restrictions.
 
 A second, independent restriction now covers the *full* resolved taper window
 (`resolveEventTaper`, the same cycling/running/triathlon categories, not only the D1-D7
@@ -576,9 +577,18 @@ existing objective qualification allows the priority boost. Existing A/B behavio
 ranking with a neutral `1.00` multiplier; C-priority general targets and strength meets retain
 their prior behavior rather than inheriting unrelated penalties from the C-race fix. A second
 Race-Specific Endurance exposure within the rolling six-day history receives a `0.35`
-multiplier for B and C endurance competitions; A retains its existing priority-specific
-behavior. C endurance events still have no inferred taper by default, so only an explicitly
-authored taper can create a taper window for them.
+multiplier for B endurance events; C endurance competitions without an active athlete-authored
+taper defer that repeat dampener until D-2, preserving build load through D-3 while the existing
+final 48-hour gates remain in force. An authored taper restores the resolved taper-window
+exhaustive-work restriction and repeat-session dampener. C endurance events still have no
+inferred taper by default.
+
+For low-surge cycling durability demand, event specificity stays in the scoring layer rather
+than becoming a global feasibility gate. During the final 35 days before the event, a Cycling
+candidate with repeated-surge stimulus at least `0.6` and above event demand remains eligible,
+but its event-aware benefit is scaled by `event repeatedSurges / candidate repeatedSurges`.
+Earlier than D-35 that specificity factor is inactive, so a distant Gran Fondo does not ban
+VO2/surge development during Base/Build.
 
 ### The planner/workout-library boundary (Phase 5.2, `planningCandidate.ts`)
 

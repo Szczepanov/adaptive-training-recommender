@@ -3,7 +3,17 @@ import { isHistoricalPolicyVersion, HISTORICAL_POLICY_VERSIONS, POLICY_VERSION }
 
 describe('isHistoricalPolicyVersion', () => {
     it('records the current transition and the previous live policies exactly once', () => {
-        expect(POLICY_VERSION).toBe('2026-09-post-rest-reentry-and-preferred-modality-strength-fallback-v1');
+        expect(POLICY_VERSION).toBe('2026-09-event-demand-taper-window-v1');
+        expect(
+            HISTORICAL_POLICY_VERSIONS.filter(
+                (version) => version === '2026-09-post-rest-reentry-and-preferred-modality-strength-fallback-v1',
+            ),
+        ).toHaveLength(1);
+        expect(
+            HISTORICAL_POLICY_VERSIONS.filter(
+                (version) => version === '2026-09-rolling-load-budget-v3',
+            ),
+        ).toHaveLength(1);
         expect(HISTORICAL_POLICY_VERSIONS.filter(
             (version) => version === '2026-09-post-rest-reentry-readiness-decay-v1',
         )).toHaveLength(1);
@@ -11,7 +21,7 @@ describe('isHistoricalPolicyVersion', () => {
             (version) => version === '2026-09-preferred-modality-strength-fallback-v1',
         )).toHaveLength(1);
         expect(HISTORICAL_POLICY_VERSIONS.filter(
-            (version) => version === '2026-09-rolling-load-budget-v3',
+            (version) => version === '2026-09-preferred-modality-strength-fallback-v1',
         )).toHaveLength(1);
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(
