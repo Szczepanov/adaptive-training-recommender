@@ -16,6 +16,8 @@ describe('projected D-LEDGER outcome classification', () => {
             eligible: [ledgerBlocked, rest],
             ledgerExcludedTemplateIds: [ledgerBlocked.id],
             fatigueGated: [rest],
+            recoveryGated: [rest],
+            applyProjectedRecoveryPolicy: (candidates: readonly (typeof rest)[]) => [...candidates],
             rank: () => ({
                 accepted: [{ template: rest }],
                 rejected: [],

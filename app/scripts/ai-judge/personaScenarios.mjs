@@ -1,3 +1,5 @@
+import { decayAcuteReadinessTowardBaseline, projectedRecoveryBaseline } from './readinessProjection.mjs';
+
 const OBJECTIVE_FIELDS = [
   'total_steps',
   'sleep_score',
@@ -200,6 +202,7 @@ function preferences(preferredModalities = [], deprioritizedModalities = [], avo
 }
 
 function makeScenario({ id, label, persona, readiness, context: userContext, trainingIntentProfile, userPreferences, initialHistory = [], event = null, weeks = 2 }) {
+  const projectedBaseline = projectedRecoveryBaseline(readiness);
   return {
     persona,
     scenario: {
@@ -216,8 +219,8 @@ function makeScenario({ id, label, persona, readiness, context: userContext, tra
       fixedActivities: [],
       tags: ['ai-plan-judge', 'persona-evaluation', persona.personaId],
       weeks,
-      readinessForWeek: () => clone(readiness),
-      readinessForDate: () => clone(readiness),
+      readinessForWeek: (week = 0) => decayAcuteReadinessTowardBaseline(readiness, projectedBaseline, week * 7),
+      readinessForDate: (_date, week = 0) => decayAcuteReadinessTowardBaseline(readiness, projectedBaseline, week * 7),
     },
   };
 }

@@ -6,6 +6,7 @@ import {
     occurrenceForTemplate,
     occurrencesFulfilledByTemplateSelection,
     resolveWeeklyRoleReservations,
+    PROJECTED_RECOVERY_POLICY_BLOCKER,
     weeklyRoleMissReasonForBlockers,
     WEEKLY_ALLOCATION_SEARCH_BUDGET,
     type AllocationAssignment,
@@ -240,6 +241,10 @@ describe('ADR-0018 stateful reservation search', () => {
         expect(weeklyRoleMissReasonForBlockers([
             'LOAD_BUDGET_EXCEEDED',
             'QUALITY_SPACING_VIOLATION',
+            'PROJECTED_FATIGUE_CEILING',
+        ])).toBe('hard_safety_or_recovery');
+        expect(weeklyRoleMissReasonForBlockers([
+            PROJECTED_RECOVERY_POLICY_BLOCKER,
             'PROJECTED_FATIGUE_CEILING',
         ])).toBe('hard_safety_or_recovery');
     });
