@@ -219,8 +219,8 @@ function makeScenario({ id, label, persona, readiness, context: userContext, tra
       fixedActivities: [],
       tags: ['ai-plan-judge', 'persona-evaluation', persona.personaId],
       weeks,
-      readinessForWeek: (week) => decayAcuteReadinessTowardBaseline(readiness, projectedBaseline, week * 7),
-      readinessForDate: (_date, week) => decayAcuteReadinessTowardBaseline(readiness, projectedBaseline, week * 7),
+      readinessForWeek: (week = 0) => decayAcuteReadinessTowardBaseline(readiness, projectedBaseline, week * 7),
+      readinessForDate: (_date, week = 0) => decayAcuteReadinessTowardBaseline(readiness, projectedBaseline, week * 7),
     },
   };
 }
