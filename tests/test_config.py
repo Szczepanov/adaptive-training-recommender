@@ -64,6 +64,23 @@ def test_settings_validation_backfill_delays_min_greater_than_max() -> None:
         settings.validate()
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("garmin_initial_recent_days", 0),
+        ("garmin_initial_recent_days", 15),
+        ("garmin_backfill_chunk_days", 0),
+        ("garmin_backfill_chunk_days", 15),
+        ("garmin_backfill_retry_seconds", 59),
+    ],
+)
+def test_settings_validation_initial_backfill_bounds(field: str, value: int) -> None:
+    settings = Settings(app_user_id="test_user")
+    setattr(settings, field, value)
+    with pytest.raises(ValueError):
+        settings.validate()
+
+
 def test_settings_validation_gcs_token_missing_bucket() -> None:
     settings = Settings(
         app_user_id="test_user",

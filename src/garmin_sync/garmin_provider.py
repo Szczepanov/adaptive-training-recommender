@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, TypeVar
 
-from garminconnect import GarminConnectNotFoundError
+from garminconnect import GarminConnectNotFoundError, GarminConnectTooManyRequestsError
 
 from .canonical import (
     CanonicalActivity,
@@ -1529,6 +1529,10 @@ class GarminProviderAdapter:
         """
         try:
             return fetch_fn()
+        except GarminConnectTooManyRequestsError:
+            # A 429 is an account-wide stop signal, including optional enrichment.
+            # Continuing to the next endpoint would immediately spend more requests.
+            raise
         except Exception as e:
             if fatal_exceptions and isinstance(e, fatal_exceptions):
                 raise

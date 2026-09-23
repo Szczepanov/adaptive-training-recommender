@@ -68,6 +68,13 @@ Primary Firestore paths written or coordinated by this subsystem are:
 * `users/{userId}/garmin_workout_queue/{date}` — outbound workout queue.
 * `users/{userId}/health_observation_days/{YYYY-MM-DD}_{provider}_{transport}` — multi-source day-source recovery observation bundles (ADR-0027).
 
+Server-only operational metadata deliberately sits outside the user hierarchy and is never
+client-readable: `garminConnections/{firebaseUid}` owns canonical Garmin-link identity/token
+references, while `garminLoginRateLimits/{scope-hmac}` owns only domain-separated HMAC bucket
+IDs, attempt timestamps, cooldowns, provider-breaker evidence, and TTL metadata. The latter is
+cross-user operational abuse-control state rather than athlete telemetry, so ADR-0002's
+user-scoped data invariant still applies to all athlete-owned records.
+
 ---
 
 ## 🌐 Multi-Source Recovery Ingestion Architecture (ADR-0027)
@@ -174,6 +181,7 @@ recommendation path consumes gated shared-source output yet.
 * [`src/garmin_sync/audit.py`](../../src/garmin_sync/audit.py) — `garmin-sync audit` snapshot-completeness reporting, including SpO2/skin-temperature coverage.
 * [`src/garmin_sync/service.py`](../../src/garmin_sync/service.py) — daily sync, lookback resync, backfill, rebuild, activity enrichment, and workout orchestration.
 * [`src/garmin_sync/account_link.py`](../../src/garmin_sync/account_link.py) / [`account_link_api.py`](../../src/garmin_sync/account_link_api.py) — self-service Garmin account linking and token bootstrap.
+* [`src/garmin_sync/login_rate_limit.py`](../../src/garmin_sync/login_rate_limit.py) — durable HMAC-keyed login attempt budgets, account cooldowns, and evidence-gated provider breaker state.
 * [`src/garmin_sync/coordination.py`](../../src/garmin_sync/coordination.py) — Firestore-backed per-user Garmin execution lease.
 * [`src/garmin_sync/workout_export.py`](../../src/garmin_sync/workout_export.py) — canonical workout-to-Garmin JSON transformation.
 * [`src/garmin_sync/eight_sleep_client.py`](../../src/garmin_sync/eight_sleep_client.py), [`eight_sleep_config.py`](../../src/garmin_sync/eight_sleep_config.py), [`eight_sleep_mapper.py`](../../src/garmin_sync/eight_sleep_mapper.py), [`eight_sleep_provider.py`](../../src/garmin_sync/eight_sleep_provider.py), [`eight_sleep_probe.py`](../../src/garmin_sync/eight_sleep_probe.py) — owned direct read-only Eight Sleep private-API connector (ADR-0030), default-off, not yet wired into any production CLI command.
@@ -381,6 +389,22 @@ Backend `poll-manual-sync` / `poll-manual-sync-all` commands claim pending work 
 operations. `GarminExecutionLease` serializes Garmin work per user at
 `users/{userId}/garmin_runtime/execution_lease` so overlapping Cloud Run executions do not
 perform concurrent Garmin operations for the same account.
+
+A newly linked account queues a resumable `initial_backfill` request instead of trying to fill
+history inside the login request. The worker persists `backfillEndDate`, phase, next-date cursor,
+and retry deadline on `garmin_sync_requests/latest`. It processes the recent slice first, then
+bounded historical chunks, then force-refreshes the recent slice. The cursor advances only after
+a date is complete; a typed Garmin 429 stops the chunk immediately and leaves the request pending
+until `retryAt`. Wrapper-level request pacing applies to actual Garmin calls, and optional
+activity-detail requests are sequential during backfill so a 429 cannot leave already-started
+parallel requests running.
+
+The account-link HTTP service uses a separate Cloud Run identity and durable Firestore login
+admission. IP, normalized account, and authenticated UID attempt budgets are checked and recorded
+in one transaction so a denied identity cannot consume another scope's budget. A Garmin 429 or
+explicit bot/WAF challenge cools only the attempted account; the provider-wide breaker opens only
+after evidence from three distinct HMAC account buckets inside ten minutes. Invalid credentials
+and generic transport failures never open the provider breaker.
 
 ---
 

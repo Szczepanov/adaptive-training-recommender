@@ -900,6 +900,10 @@ def test_finalize_queues_initial_backfill_request(
     assert sync_req["status"] == "pending"
     assert sync_req["requestType"] == "initial_backfill"
     assert sync_req["days"] == 56
+    assert sync_req["backfillPhase"] == "recent"
+    assert sync_req["backfillNextDate"] is None
+    assert sync_req["retryAt"] is None
+    assert len(sync_req["backfillEndDate"]) == 10
 
 
 def test_finalize_does_not_stomp_a_live_in_flight_sync_request(

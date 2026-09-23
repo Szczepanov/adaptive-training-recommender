@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
 from firebase_admin import auth as firebase_auth
 from garminconnect import (
@@ -609,6 +610,7 @@ class GarminAccountLinkService:
             if db is not None:
                 try:
                     now = datetime.now(timezone.utc)
+                    backfill_end = datetime.now(ZoneInfo("Europe/Warsaw")).date()
                     sync_req_ref = (
                         db.collection("users")
                         .document(target_uid)
@@ -635,6 +637,15 @@ class GarminAccountLinkService:
                             and not _is_sync_request_stale(existing, now)
                         ):
                             return
+                        # A dead worker may have completed some dates before its claim
+                        # expired. Relinking must retain that durable cursor.
+                        resume = (
+                            existing
+                            if existing
+                            and existing.get("requestType") == "initial_backfill"
+                            and existing.get("status") in {"pending", "processing"}
+                            else {}
+                        )
                         transaction.set(
                             sync_req_ref,
                             {
@@ -642,6 +653,12 @@ class GarminAccountLinkService:
                                 "status": "pending",
                                 "requestType": "initial_backfill",
                                 "days": 56,
+                                "backfillEndDate": resume.get(
+                                    "backfillEndDate", backfill_end.isoformat()
+                                ),
+                                "backfillPhase": resume.get("backfillPhase", "recent"),
+                                "backfillNextDate": resume.get("backfillNextDate"),
+                                "retryAt": resume.get("retryAt"),
                                 "requestedAt": now.isoformat(),
                                 "completedAt": None,
                                 "error": None,

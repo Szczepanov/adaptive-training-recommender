@@ -19,9 +19,12 @@ DEPLOYER_SA_EMAIL="${DEPLOYER_SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com"
 FRONTEND_DEPLOYER_SA_NAME="github-frontend-deployer"
 FRONTEND_DEPLOYER_SA_EMAIL="${FRONTEND_DEPLOYER_SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com"
 JOB_SA_EMAIL="garmin-sync-job@${GCP_PROJECT}.iam.gserviceaccount.com"
+LINK_SA_EMAIL="garmin-account-link@${GCP_PROJECT}.iam.gserviceaccount.com"
+GOOGLE_HEALTH_LINK_SA_EMAIL="google-health-account-link@${GCP_PROJECT}.iam.gserviceaccount.com"
 ANTHROPOMETRY_WRITE_SA_EMAIL="anthropometry-write-api@${GCP_PROJECT}.iam.gserviceaccount.com"
 SCHEDULER_SA_EMAIL="garmin-scheduler-invoker@${GCP_PROJECT}.iam.gserviceaccount.com"
 TOKEN_BUCKET="${GCP_PROJECT}-garmin-tokens"
+RATE_LIMIT_SECRET="garmin-link-rate-limit-hmac"
 AUTH_USER_ROLE_ID="garminLinkAuthUsers"
 AUTH_USER_ROLE="projects/${GCP_PROJECT}/roles/${AUTH_USER_ROLE_ID}"
 AUTH_TOKEN_VERIFIER_ROLE_ID="anthropometryTokenVerifier"
@@ -34,7 +37,8 @@ gcloud services enable \
   iam.googleapis.com iamcredentials.googleapis.com sts.googleapis.com \
   run.googleapis.com cloudscheduler.googleapis.com \
   artifactregistry.googleapis.com firestore.googleapis.com storage.googleapis.com \
-  firebasehosting.googleapis.com firebaserules.googleapis.com identitytoolkit.googleapis.com
+  firebasehosting.googleapis.com firebaserules.googleapis.com identitytoolkit.googleapis.com \
+  secretmanager.googleapis.com
 
 PROJECT_NUMBER="$(gcloud projects describe "${GCP_PROJECT}" --format='value(projectNumber)')"
 
@@ -68,7 +72,15 @@ fi
 echo "==> Creating runtime service accounts"
 if ! gcloud iam service-accounts describe "${JOB_SA_EMAIL}" >/dev/null 2>&1; then
   gcloud iam service-accounts create garmin-sync-job \
-    --display-name="Garmin sync/link Cloud Run runtime identity"
+    --display-name="Garmin sync Cloud Run Job runtime identity"
+fi
+if ! gcloud iam service-accounts describe "${LINK_SA_EMAIL}" >/dev/null 2>&1; then
+  gcloud iam service-accounts create garmin-account-link \
+    --display-name="Garmin account-link Cloud Run service identity"
+fi
+if ! gcloud iam service-accounts describe "${GOOGLE_HEALTH_LINK_SA_EMAIL}" >/dev/null 2>&1; then
+  gcloud iam service-accounts create google-health-account-link \
+    --display-name="Google Health account-link Cloud Run service identity"
 fi
 if ! gcloud iam service-accounts describe "${ANTHROPOMETRY_WRITE_SA_EMAIL}" >/dev/null 2>&1; then
   gcloud iam service-accounts create anthropometry-write-api \
@@ -79,11 +91,18 @@ if ! gcloud iam service-accounts describe "${SCHEDULER_SA_EMAIL}" >/dev/null 2>&
     --display-name="Cloud Scheduler -> Cloud Run Jobs invoker"
 fi
 
-# The same bounded runtime identity serves the account-link service and scheduled jobs.
-# Firestore stores server-only link metadata plus normal user-scoped training data.
+# Scheduled Garmin work, Garmin account linking and Google Health account linking use
+# separate bounded identities.
+# Firestore stores server-only link/throttle metadata plus normal user-scoped training data.
 echo "==> Granting runtime Firestore access"
 gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
   --member="serviceAccount:${JOB_SA_EMAIL}" --role="roles/datastore.user" \
+  --condition=None >/dev/null
+gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
+  --member="serviceAccount:${LINK_SA_EMAIL}" --role="roles/datastore.user" \
+  --condition=None >/dev/null
+gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
+  --member="serviceAccount:${GOOGLE_HEALTH_LINK_SA_EMAIL}" --role="roles/datastore.user" \
   --condition=None >/dev/null
 gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
   --member="serviceAccount:${ANTHROPOMETRY_WRITE_SA_EMAIL}" --role="roles/datastore.user" \
@@ -110,23 +129,23 @@ else
 fi
 
 gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
-  --member="serviceAccount:${JOB_SA_EMAIL}" --role="${AUTH_USER_ROLE}" \
+  --member="serviceAccount:${LINK_SA_EMAIL}" --role="${AUTH_USER_ROLE}" \
   --condition=None >/dev/null
 
 # verify_id_token(..., check_revoked=True) resolves the Firebase Auth user record. The
-# anthropometry API needs only that read, never account create/delete or Auth configuration.
+# account-link services and anthropometry API need only that read, never account management.
 echo "==> Creating/updating least-privilege Firebase token verifier role"
 if gcloud iam roles describe "${AUTH_TOKEN_VERIFIER_ROLE_ID}" --project="${GCP_PROJECT}" >/dev/null 2>&1; then
   gcloud iam roles update "${AUTH_TOKEN_VERIFIER_ROLE_ID}" \
     --project="${GCP_PROJECT}" \
-    --title="Anthropometry Firebase Token Verifier" \
+    --title="Firebase Token Verifier" \
     --description="Read Firebase Auth users solely to enforce revoked-token checks" \
     --permissions="firebaseauth.users.get" \
     --stage="GA" --quiet >/dev/null
 else
   gcloud iam roles create "${AUTH_TOKEN_VERIFIER_ROLE_ID}" \
     --project="${GCP_PROJECT}" \
-    --title="Anthropometry Firebase Token Verifier" \
+    --title="Firebase Token Verifier" \
     --description="Read Firebase Auth users solely to enforce revoked-token checks" \
     --permissions="firebaseauth.users.get" \
     --stage="GA" --quiet >/dev/null
@@ -135,12 +154,19 @@ fi
 gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
   --member="serviceAccount:${ANTHROPOMETRY_WRITE_SA_EMAIL}" --role="${AUTH_TOKEN_VERIFIER_ROLE}" \
   --condition=None >/dev/null
+gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
+  --member="serviceAccount:${LINK_SA_EMAIL}" --role="${AUTH_TOKEN_VERIFIER_ROLE}" \
+  --condition=None >/dev/null
+gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
+  --member="serviceAccount:${GOOGLE_HEALTH_LINK_SA_EMAIL}" --role="${AUTH_TOKEN_VERIFIER_ROLE}" \
+  --condition=None >/dev/null
 
 # Firebase Admin custom tokens are signed through IAM when running with ADC on Cloud Run.
-# Grant the runtime identity signBlob on itself only; this does not let it impersonate other SAs.
-echo "==> Allowing runtime identity to sign Firebase custom tokens"
-gcloud iam service-accounts add-iam-policy-binding "${JOB_SA_EMAIL}" \
-  --member="serviceAccount:${JOB_SA_EMAIL}" \
+# Only the public linker mints them; grant signBlob on that identity itself, never on the
+# scheduled sync Job.
+echo "==> Allowing account-link identity to sign Firebase custom tokens"
+gcloud iam service-accounts add-iam-policy-binding "${LINK_SA_EMAIL}" \
+  --member="serviceAccount:${LINK_SA_EMAIL}" \
   --role="roles/iam.serviceAccountTokenCreator" >/dev/null
 
 echo "==> Creating token bucket and granting runtime-only token access"
@@ -150,6 +176,24 @@ gcloud storage buckets describe "gs://${TOKEN_BUCKET}" >/dev/null 2>&1 || \
 
 gcloud storage buckets add-iam-policy-binding "gs://${TOKEN_BUCKET}" \
   --member="serviceAccount:${JOB_SA_EMAIL}" --role="roles/storage.objectAdmin" >/dev/null
+gcloud storage buckets add-iam-policy-binding "gs://${TOKEN_BUCKET}" \
+  --member="serviceAccount:${LINK_SA_EMAIL}" --role="roles/storage.objectAdmin" >/dev/null
+gcloud storage buckets add-iam-policy-binding "gs://${TOKEN_BUCKET}" \
+  --member="serviceAccount:${GOOGLE_HEALTH_LINK_SA_EMAIL}" --role="roles/storage.objectAdmin" >/dev/null
+
+echo "==> Provisioning Garmin account-link rate-limit secret"
+if ! gcloud secrets describe "${RATE_LIMIT_SECRET}" >/dev/null 2>&1; then
+  gcloud secrets create "${RATE_LIMIT_SECRET}" --replication-policy=automatic
+  openssl rand -base64 48 | \
+    gcloud secrets versions add "${RATE_LIMIT_SECRET}" --data-file=- >/dev/null
+fi
+gcloud secrets add-iam-policy-binding "${RATE_LIMIT_SECRET}" \
+  --member="serviceAccount:${LINK_SA_EMAIL}" \
+  --role="roles/secretmanager.secretAccessor" >/dev/null
+
+echo "==> Enabling TTL cleanup for Garmin login-throttle metadata"
+gcloud firestore fields ttls update expireAt \
+  --collection-group=garminLoginRateLimits --enable-ttl --async >/dev/null
 
 echo "==> Creating Artifact Registry repository"
 gcloud artifacts repositories describe garmin-sync --location="${REGION}" >/dev/null 2>&1 || \
@@ -182,6 +226,14 @@ for ROLE in \
 done
 
 gcloud iam service-accounts add-iam-policy-binding "${JOB_SA_EMAIL}" \
+  --member="serviceAccount:${DEPLOYER_SA_EMAIL}" \
+  --role="roles/iam.serviceAccountUser" >/dev/null
+
+gcloud iam service-accounts add-iam-policy-binding "${LINK_SA_EMAIL}" \
+  --member="serviceAccount:${DEPLOYER_SA_EMAIL}" \
+  --role="roles/iam.serviceAccountUser" >/dev/null
+
+gcloud iam service-accounts add-iam-policy-binding "${GOOGLE_HEALTH_LINK_SA_EMAIL}" \
   --member="serviceAccount:${DEPLOYER_SA_EMAIL}" \
   --role="roles/iam.serviceAccountUser" >/dev/null
 

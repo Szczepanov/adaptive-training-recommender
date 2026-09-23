@@ -52,7 +52,8 @@ gcloud builds submit --tag europe-central2-docker.pkg.dev/adaptive-training-reco
 ```bash
 gcloud services enable run.googleapis.com cloudscheduler.googleapis.com \
   artifactregistry.googleapis.com cloudbuild.googleapis.com \
-  firestore.googleapis.com storage.googleapis.com
+  firestore.googleapis.com storage.googleapis.com secretmanager.googleapis.com \
+  iam.googleapis.com iamcredentials.googleapis.com identitytoolkit.googleapis.com
 ```
 
 ---
@@ -60,9 +61,10 @@ gcloud services enable run.googleapis.com cloudscheduler.googleapis.com \
 ## 2. Create the token bucket and service accounts
 
 A private GCS bucket holds the Garmin OAuth token JSON (`GARMIN_TOKEN_STORE=gcs`
-keeps Cloud Run stateless -- no local disk between runs). Two service accounts:
-one the Jobs run as, one Cloud Scheduler uses to invoke them (least privilege --
-the scheduler identity never touches Firestore or GCS directly).
+keeps Cloud Run stateless -- no local disk between runs). Separate identities are used
+for the scheduled Job, Garmin account-link service, Google Health account-link service,
+and Cloud Scheduler (least privilege -- the scheduler identity never touches Firestore or
+GCS directly).
 
 ```bash
 gcloud storage buckets create gs://${GCP_PROJECT}-garmin-tokens \
@@ -72,17 +74,109 @@ gcloud storage buckets create gs://${GCP_PROJECT}-garmin-tokens \
 ```bash
 gcloud iam service-accounts create garmin-sync-job \
   --display-name="Garmin sync Cloud Run Job runtime identity"
+gcloud iam service-accounts create garmin-account-link \
+  --display-name="Garmin account-link Cloud Run service identity"
+gcloud iam service-accounts create google-health-account-link \
+  --display-name="Google Health account-link Cloud Run service identity"
 ```
 
 ```bash
 export JOB_SA_EMAIL="garmin-sync-job@${GCP_PROJECT}.iam.gserviceaccount.com"
+export LINK_SA_EMAIL="garmin-account-link@${GCP_PROJECT}.iam.gserviceaccount.com"
+export GOOGLE_HEALTH_LINK_SA_EMAIL="google-health-account-link@${GCP_PROJECT}.iam.gserviceaccount.com"
 
 gcloud projects add-iam-policy-binding ${GCP_PROJECT} \
   --member="serviceAccount:${JOB_SA_EMAIL}" --role="roles/datastore.user"
 
 gcloud storage buckets add-iam-policy-binding gs://${GCP_PROJECT}-garmin-tokens \
   --member="serviceAccount:${JOB_SA_EMAIL}" --role="roles/storage.objectAdmin"
+gcloud projects add-iam-policy-binding ${GCP_PROJECT} \
+  --member="serviceAccount:${LINK_SA_EMAIL}" --role="roles/datastore.user"
+gcloud storage buckets add-iam-policy-binding gs://${GCP_PROJECT}-garmin-tokens \
+  --member="serviceAccount:${LINK_SA_EMAIL}" --role="roles/storage.objectAdmin"
+gcloud projects add-iam-policy-binding ${GCP_PROJECT} \
+  --member="serviceAccount:${GOOGLE_HEALTH_LINK_SA_EMAIL}" --role="roles/datastore.user"
+gcloud storage buckets add-iam-policy-binding gs://${GCP_PROJECT}-garmin-tokens \
+  --member="serviceAccount:${GOOGLE_HEALTH_LINK_SA_EMAIL}" --role="roles/storage.objectAdmin"
 ```
+
+The public Garmin account-link endpoint uses Firestore transactions for login
+admission and also creates/rolls back Firebase Auth users and mints custom sign-in tokens.
+Its dedicated runtime identity therefore needs the narrow Firebase Auth user role and
+permission to sign as itself in addition to Firestore and token-bucket access. The
+idempotent `setup-workload-identity.sh` script creates/updates the custom role and grants
+these bindings. For a manual setup, mirror its least-privilege grants:
+
+```bash
+export AUTH_USER_ROLE_ID="garminLinkAuthUsers"
+export AUTH_USER_ROLE="projects/${GCP_PROJECT}/roles/${AUTH_USER_ROLE_ID}"
+
+if gcloud iam roles describe "${AUTH_USER_ROLE_ID}" --project="${GCP_PROJECT}" >/dev/null 2>&1; then
+  gcloud iam roles update "${AUTH_USER_ROLE_ID}" --project="${GCP_PROJECT}" \
+    --title="Garmin Link Auth Users" \
+    --description="Create/delete/get Firebase Auth users for Garmin self-service linking" \
+    --permissions="firebaseauth.users.create,firebaseauth.users.delete,firebaseauth.users.get" \
+    --stage="GA"
+else
+  gcloud iam roles create "${AUTH_USER_ROLE_ID}" --project="${GCP_PROJECT}" \
+    --title="Garmin Link Auth Users" \
+    --description="Create/delete/get Firebase Auth users for Garmin self-service linking" \
+    --permissions="firebaseauth.users.create,firebaseauth.users.delete,firebaseauth.users.get" \
+    --stage="GA"
+fi
+
+gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
+  --member="serviceAccount:${LINK_SA_EMAIL}" --role="${AUTH_USER_ROLE}"
+gcloud iam service-accounts add-iam-policy-binding "${LINK_SA_EMAIL}" \
+  --member="serviceAccount:${LINK_SA_EMAIL}" \
+  --role="roles/iam.serviceAccountTokenCreator"
+```
+
+The Google Health account-link service runs as `GOOGLE_HEALTH_LINK_SA_EMAIL`, separate from
+the scheduled sync Job. It only verifies Firebase ID tokens, so grant it the custom
+`firebaseauth.users.get` role. The setup script creates the role and binding; for manual
+provisioning, create the role if needed and add the binding:
+
+```bash
+export AUTH_TOKEN_VERIFIER_ROLE_ID="anthropometryTokenVerifier"
+export AUTH_TOKEN_VERIFIER_ROLE="projects/${GCP_PROJECT}/roles/${AUTH_TOKEN_VERIFIER_ROLE_ID}"
+if ! gcloud iam roles describe "${AUTH_TOKEN_VERIFIER_ROLE_ID}" --project="${GCP_PROJECT}" >/dev/null 2>&1; then
+  gcloud iam roles create "${AUTH_TOKEN_VERIFIER_ROLE_ID}" --project="${GCP_PROJECT}" \
+    --title="Firebase Token Verifier" \
+    --description="Read Firebase Auth users solely to enforce revoked-token checks" \
+    --permissions="firebaseauth.users.get" --stage="GA"
+fi
+gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
+  --member="serviceAccount:${GOOGLE_HEALTH_LINK_SA_EMAIL}" --role="${AUTH_TOKEN_VERIFIER_ROLE}"
+```
+
+Provision the HMAC key in Secret Manager once, and grant secret access only to the
+account-link identity (never to the scheduled Job identity):
+
+```bash
+gcloud secrets create garmin-link-rate-limit-hmac --replication-policy=automatic
+openssl rand -base64 48 | gcloud secrets versions add garmin-link-rate-limit-hmac --data-file=-
+gcloud secrets add-iam-policy-binding garmin-link-rate-limit-hmac \
+  --member="serviceAccount:${LINK_SA_EMAIL}" --role="roles/secretmanager.secretAccessor"
+```
+
+Keep this key server-only and stable across deployments. Rotating it changes every HMAC
+bucket identifier, effectively resetting all active attempt windows and cooldowns; plan
+rotation during a controlled maintenance window. Firestore holds only HMAC bucket IDs,
+attempt times, cooldown deadlines, and distinct-account 429 evidence. It holds no Garmin
+email, IP, UID, credential, MFA code, token, or provider response. One account's 429
+starts a 30-minute cooldown for that account; the provider breaker opens only after
+three distinct accounts return 429 within 10 minutes. Configure a Firestore
+TTL policy for `garminLoginRateLimits.expireAt` to remove expired throttle documents
+([Google Cloud TTL command reference](https://docs.cloud.google.com/sdk/gcloud/reference/firestore/fields/ttls/update)):
+
+```bash
+gcloud firestore fields ttls update expireAt \
+  --collection-group=garminLoginRateLimits --enable-ttl
+```
+
+The account-link service fails startup if its Firestore mode or key is missing in Cloud
+Run, so this secret and IAM binding are prerequisites for deployment.
 
 ```bash
 gcloud iam service-accounts create garmin-scheduler-invoker \
@@ -136,6 +230,20 @@ It prompts for an MFA code interactively if your Garmin account has 2FA enabled.
 
 Copy `docs/ops/cloud-run-job.env.yaml.example` to `cloud-run-job.env.yaml`
 (gitignored) and fill in `GARMIN_TOKEN_BUCKET` (`${GCP_PROJECT}-garmin-tokens`) and `GCP_PROJECT_ID`.
+For a newly linked account, `GARMIN_INITIAL_RECENT_DAYS=7` limits the first pass to a
+recent slice (allowed 1–14 days). `GARMIN_BACKFILL_CHUNK_DAYS=7` bounds each historical
+continuation (allowed 1–14 days), and `GARMIN_BACKFILL_RETRY_SECONDS=1800` delays the
+next attempt after a provider throttle (minimum 60 seconds). Add these values to the env
+file when deploying manually; the GitHub workflow supplies them. Existing
+`GARMIN_BACKFILL_DELAY_MIN` / `GARMIN_BACKFILL_DELAY_MAX` settings pace each Garmin API
+call during backfill.
+Create an account-link-only copy so the scheduled Jobs do not receive the login limiter
+configuration:
+
+```bash
+cp cloud-run-job.env.yaml cloud-run-garmin-link.env.yaml
+printf 'GARMIN_RATE_LIMIT_STORE: "firestore"\n' >> cloud-run-garmin-link.env.yaml
+```
 
 ```bash
 # Garmin's interactive MFA continuation requires the same in-memory client/session.
@@ -144,8 +252,9 @@ Copy `docs/ops/cloud-run-job.env.yaml.example` to `cloud-run-job.env.yaml`
 # and the user restarts login.
 gcloud run deploy garmin-account-link \
   --image=${IMAGE_TAG} --region=${REGION} \
-  --service-account=${JOB_SA_EMAIL} \
-  --env-vars-file=cloud-run-job.env.yaml \
+  --service-account=${LINK_SA_EMAIL} \
+  --env-vars-file=cloud-run-garmin-link.env.yaml \
+  --set-secrets=GARMIN_RATE_LIMIT_HMAC_KEY=garmin-link-rate-limit-hmac:latest \
   --command=python --args=-m,garmin_sync.account_link_api \
   --port=8080 --timeout=300 --concurrency=10 \
   --min-instances=0 --max-instances=1 \
@@ -420,9 +529,10 @@ one run.
 `setup-workload-identity.sh` provisions everything (APIs, buckets, service accounts, Artifact
 Registry repo) itself, run once with your own full-privilege `gcloud` session. The
 `github-deployer` identity that `deploy-garmin-sync.yml` authenticates as afterward only ever
-holds deployment-scoped roles -- Cloud Run, Artifact Registry push, Cloud
-Scheduler, and impersonating (only) `garmin-sync-job` to attach it to the Jobs it deploys --
-never project-IAM-admin or service-account-admin. A workflow file added or compromised later
+holds deployment-scoped roles -- Cloud Run, Artifact Registry push, Cloud Scheduler, and
+`roles/iam.serviceAccountUser` on the bounded runtime identities it must attach to deployed
+services/jobs (`garmin-sync-job`, `garmin-account-link`, the anthropometry writer, and the
+scheduler invoker) -- never project-IAM-admin or service-account-admin. A workflow file added or compromised later
 in this repo therefore cannot use it to widen its own access; it can deploy Cloud Run Jobs and
 nothing else. The Workload Identity Provider itself additionally only accepts tokens from
 `main` (`assertion.ref == 'refs/heads/main'`), so a run from any other branch can't
@@ -461,8 +571,9 @@ will be dropped on that first run.
    bash docs/ops/setup-workload-identity.sh
    ```
    This creates the Workload Identity Pool + OIDC Provider (restricted to that one repo's
-   `main` branch), the token bucket, the Garmin, scheduler, and dedicated anthropometry runtime
-   service accounts, the Artifact Registry
+   `main` branch), the token bucket, the Garmin sync, Garmin account-link, scheduler, and dedicated
+   anthropometry runtime service accounts, the Garmin login-throttle HMAC secret/TTL policy,
+   the Artifact Registry
    repo, and the narrowly-scoped `github-deployer` identity the workflows authenticate as. It
    prints three values at the end.
 3. Add those three, plus your Firebase UID and Garmin credentials, as **repo secrets**

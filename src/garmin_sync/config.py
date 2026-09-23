@@ -35,13 +35,14 @@ class Settings:
     # HRF2: original FIT acquisition remains explicitly opt-in until the downstream
     # assessment/persistence path is delivered and evidence-gated.
     garmin_activity_hr_fidelity_enabled: bool = False
-    # Jittered pacing between per-date live Garmin fetches during backfill (D-BACKFILL-RATE-LIMIT):
-    # each date that isn't skipped as already-synced sleeps a random duration in this range before
-    # the next one, so a wide --days range doesn't hammer Garmin with dozens of back-to-back
-    # requests. Defaults to 0/0 here (no delay) so tests constructing Settings directly stay fast;
-    # _load_base_settings below gives the real CLI path a non-zero default.
+    # Jittered pacing between wrapper-level Garmin calls during a backfill. Providers
+    # without that wrapper retain per-date pacing. Directly constructed Settings
+    # default to 0/0 for fast synthetic tests; the CLI has a nonzero default.
     garmin_backfill_delay_min_seconds: float = 0.0
     garmin_backfill_delay_max_seconds: float = 0.0
+    garmin_initial_recent_days: int = 7
+    garmin_backfill_chunk_days: int = 7
+    garmin_backfill_retry_seconds: int = 1800
 
     def resolved_archive_bucket(self) -> str | None:
         return self.garmin_archive_bucket or self.garmin_token_bucket
@@ -80,6 +81,12 @@ class Settings:
                 "Configuration error: GARMIN_BACKFILL_DELAY_MIN_SECONDS must not exceed "
                 "GARMIN_BACKFILL_DELAY_MAX_SECONDS."
             )
+        if not 1 <= self.garmin_initial_recent_days <= 14:
+            raise ValueError("GARMIN_INITIAL_RECENT_DAYS must be between 1 and 14.")
+        if not 1 <= self.garmin_backfill_chunk_days <= 14:
+            raise ValueError("GARMIN_BACKFILL_CHUNK_DAYS must be between 1 and 14.")
+        if self.garmin_backfill_retry_seconds < 60:
+            raise ValueError("GARMIN_BACKFILL_RETRY_SECONDS must be at least 60.")
 
         if self.garmin_archive_enabled and self.garmin_archive_store.lower() == "gcs":
             if not self.resolved_archive_bucket():
@@ -132,6 +139,9 @@ def _load_base_settings(user_id: str) -> Settings:
     # Settings.garmin_backfill_delay_min/max_seconds); set both to 0 via env to disable.
     backfill_delay_min = float(os.getenv("GARMIN_BACKFILL_DELAY_MIN_SECONDS", "1.5"))
     backfill_delay_max = float(os.getenv("GARMIN_BACKFILL_DELAY_MAX_SECONDS", "4.0"))
+    initial_recent_days = int(os.getenv("GARMIN_INITIAL_RECENT_DAYS", "7"))
+    backfill_chunk_days = int(os.getenv("GARMIN_BACKFILL_CHUNK_DAYS", "7"))
+    backfill_retry_seconds = int(os.getenv("GARMIN_BACKFILL_RETRY_SECONDS", "1800"))
 
     return Settings(
         app_user_id=user_id,
@@ -162,6 +172,9 @@ def _load_base_settings(user_id: str) -> Settings:
         garmin_activity_hr_fidelity_enabled=activity_hr_fidelity_enabled,
         garmin_backfill_delay_min_seconds=backfill_delay_min,
         garmin_backfill_delay_max_seconds=backfill_delay_max,
+        garmin_initial_recent_days=initial_recent_days,
+        garmin_backfill_chunk_days=backfill_chunk_days,
+        garmin_backfill_retry_seconds=backfill_retry_seconds,
     )
 
 

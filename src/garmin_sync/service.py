@@ -3,14 +3,16 @@ import logging
 import random
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from firebase_admin import firestore
-from garminconnect import GarminConnectTooManyRequestsError
+from garminconnect import (
+    GarminConnectAuthenticationError,
+    GarminConnectTooManyRequestsError,
+)
 
 from ._hr_fidelity_devices import source_evidence_from_fit_devices
 from .archive import ArchiveRecord, RawArchiveStore, create_archive_store
@@ -23,6 +25,7 @@ from .canonical import (
 )
 from .config import Settings
 from .dates import get_date_range, get_date_string, local_today, n_days_ago, parse_date_string
+from .error_reporting import log_exception
 from .firestore_repository import FirestoreRecoveryRepository
 from .fit_activity import FitDeviceInventoryEntry
 from .fit_workout_identity import compute_fit_workout_fingerprint
@@ -43,6 +46,8 @@ from .provider import WearableProvider
 from .token_store import create_token_store
 
 logger = logging.getLogger(__name__)
+
+_INITIAL_BACKFILL_MAX_FAILURES_PER_DATE = 5
 
 
 def _source_evidence_from_fit_devices(
@@ -501,6 +506,7 @@ class GarminSyncService:
         provider: Any,
         target_iso: str,
         sync_run_id: str,
+        stop_on_rate_limit: bool = False,
     ) -> None:
         """Best-effort daily nutrition observation sync and persistence (ADR-0042)."""
         fetch_nutrition = getattr(provider, "fetch_daily_nutrition", None)
@@ -535,8 +541,22 @@ class GarminSyncService:
                 loggedAt=canonical.logged_at.isoformat() if canonical.logged_at else None,
             )
             save_nutrition(dto)
+        except GarminConnectTooManyRequestsError:
+            if stop_on_rate_limit:
+                raise
+            logger.warning(
+                "[%s] Nutrition sync rate-limited; stopping this enrichment.", target_iso
+            )
+        except GarminConnectAuthenticationError:
+            raise
         except Exception as e:
-            logger.warning(f"[{target_iso}] Nutrition sync failed, continuing without it: {e}")
+            log_exception(
+                logger,
+                "daily nutrition sync",
+                e,
+                context={"date": target_iso},
+                level=logging.WARNING,
+            )
 
     def _sync_current_performance_targets(self, target_iso: str) -> None:
         """Best-effort current-profile import, deliberately outside the daily snapshot.
@@ -734,6 +754,7 @@ class GarminSyncService:
         end_d: date,
         include_details: bool,
         run_id: str,
+        stop_on_rate_limit: bool = False,
     ) -> list[dict[str, Any]]:
         """Batch fetch activities for backfill window, optionally fetch details, and archive them."""
         batch_start_iso = get_date_string(n_days_ago(start_d, 3))
@@ -761,30 +782,33 @@ class GarminSyncService:
                 logger.info(
                     f"Fetching activity details for {len(qualifying)} qualifying activities in backfill window..."
                 )
-                with ThreadPoolExecutor(max_workers=5) as executor:
-                    future_to_activity = {
-                        executor.submit(fetch_detail, activity.activity_id): activity
-                        for activity in qualifying
-                        if activity.activity_id is not None
-                    }
-                    for future in as_completed(future_to_activity):
-                        activity = future_to_activity[future]
-                        try:
-                            result: Any = future.result()
-                            if activity.activity_id:
-                                details_by_activity_id[activity.activity_id] = result.canonical
-                        except GarminConnectTooManyRequestsError as error:
-                            logger.warning(
-                                f"Garmin activity-detail rate limit reached during backfill; "
-                                f"abandoning remaining detail fetches: {error}"
-                            )
-                            if hasattr(executor, "shutdown"):
-                                executor.shutdown(wait=False, cancel_futures=True)
-                            break
-                        except Exception as error:
-                            logger.warning(
-                                f"[{activity.date}] Garmin activity detail failed for activity=<ID-redacted>, continuing with the base record: {error}"
-                            )
+                # Keep enrichment sequential so a 429 stops every subsequent
+                # upstream detail request immediately; cancelling futures cannot
+                # stop requests that have already started.
+                for activity in qualifying:
+                    if activity.activity_id is None:
+                        continue
+                    try:
+                        result: Any = fetch_detail(activity.activity_id)
+                        details_by_activity_id[activity.activity_id] = result.canonical
+                    except GarminConnectTooManyRequestsError as error:
+                        logger.warning(
+                            "Garmin activity-detail rate limit reached during backfill; "
+                            f"abandoning remaining detail fetches: {error}"
+                        )
+                        if stop_on_rate_limit:
+                            raise
+                        break
+                    except GarminConnectAuthenticationError:
+                        raise
+                    except Exception as error:
+                        log_exception(
+                            logger,
+                            "backfill activity detail",
+                            error,
+                            context={"date": activity.date},
+                            level=logging.WARNING,
+                        )
 
         self._archive_activities(
             all_activities_canonical,
@@ -825,6 +849,7 @@ class GarminSyncService:
         existing_snapshots: dict[str, dict[str, Any]],
         bulk_snapshot_lookup_succeeded: bool,
         force: bool,
+        stop_on_rate_limit: bool = False,
     ) -> tuple[bool, bool]:
         """Process a single date for backfill.
 
@@ -869,6 +894,9 @@ class GarminSyncService:
                 date_activities_raw, zone4_floor=zone4_floor
             )
 
+            self._sync_daily_nutrition(
+                provider, target_iso, run_id, stop_on_rate_limit=stop_on_rate_limit
+            )
             self._build_and_store_snapshot(
                 SnapshotContext(
                     target_iso=target_iso,
@@ -877,11 +905,22 @@ class GarminSyncService:
                     raw_memory_store=raw_memory_store,
                 )
             )
-            self._sync_daily_nutrition(provider, target_iso, run_id)
             logger.info(f"[{target_iso}] Backfill sync completed.")
             return True, True
+        except GarminConnectTooManyRequestsError:
+            if stop_on_rate_limit:
+                raise
+            logger.warning("[%s] Garmin rate limit stopped this backfill date.", target_iso)
+            return False, True
+        except GarminConnectAuthenticationError:
+            raise
         except Exception as e:
-            logger.error(f"[{target_iso}] Backfill failed: {e}")
+            log_exception(
+                logger,
+                "backfill date",
+                e,
+                context={"date": target_iso},
+            )
             return False, True
 
     def backfill(
@@ -891,6 +930,8 @@ class GarminSyncService:
         end_date_str: str | None = None,
         force: bool = False,
         include_details: bool = False,
+        on_date_complete: Callable[[date], None] | None = None,
+        stop_on_failure: bool = False,
     ) -> bool:
         """Run historical backfill for date range."""
         start_d, end_d, target_dates = self._resolve_backfill_date_range(
@@ -904,53 +945,88 @@ class GarminSyncService:
             f"Starting historical backfill for user=<UID-redacted> range {get_date_string(start_d)} -> {get_date_string(end_d)} ({len(target_dates)} dates)..."
         )
 
-        provider = self._init_provider()
-        provider.clear_cache()
-        run_id = _new_sync_run_id(f"backfill-{get_date_string(n_days_ago(start_d, 3))}")
-
-        all_activities_raw = self._fetch_and_archive_backfill_activities(
-            provider, start_d, end_d, include_details, run_id
-        )
-
-        raw_memory_store: dict[str, dict[str, Any]] = {}
-        failed_dates: list[str] = []
-        self._seed_prehistory(raw_memory_store, start_d)
-
         existing_snapshots, bulk_snapshot_lookup_succeeded = (
             self._fetch_existing_historical_snapshots(target_dates, force)
         )
+        if bulk_snapshot_lookup_succeeded and all(
+            existing_snapshots.get(get_date_string(day), {}).get("raw") for day in target_dates
+        ):
+            for day in target_dates:
+                if on_date_complete is not None:
+                    on_date_complete(day)
+            return True
 
-        delay_min = self.settings.garmin_backfill_delay_min_seconds
-        delay_max = self.settings.garmin_backfill_delay_max_seconds
-        last_index = len(target_dates) - 1
-        for index, target_date in enumerate(target_dates):
-            success, fetched_from_garmin = self._process_single_backfill_date(
-                target_date,
-                provider,
-                run_id,
-                all_activities_raw,
-                raw_memory_store,
-                existing_snapshots,
-                bulk_snapshot_lookup_succeeded,
-                force,
+        provider = self._init_provider()
+        provider.clear_cache()
+        client = (
+            provider.client if isinstance(provider, GarminProviderAdapter) else self.garmin_client
+        )
+        request_pacing = isinstance(client, GarminClientWrapper)
+        if isinstance(client, GarminClientWrapper):
+            client.configure_backfill_pacing(
+                self.settings.garmin_backfill_delay_min_seconds,
+                self.settings.garmin_backfill_delay_max_seconds,
             )
-            if not success:
-                failed_dates.append(get_date_string(target_date))
+        run_id = _new_sync_run_id(f"backfill-{get_date_string(n_days_ago(start_d, 3))}")
+        try:
+            fetch_dates = [
+                day
+                for day in target_dates
+                if force
+                or not bulk_snapshot_lookup_succeeded
+                or not existing_snapshots.get(get_date_string(day), {}).get("raw")
+            ]
+            all_activities_raw = self._fetch_and_archive_backfill_activities(
+                provider,
+                fetch_dates[0],
+                fetch_dates[-1],
+                include_details,
+                run_id,
+                stop_on_rate_limit=stop_on_failure,
+            )
+            raw_memory_store: dict[str, dict[str, Any]] = {}
+            failed_dates: list[str] = []
+            self._seed_prehistory(raw_memory_store, start_d)
 
-            # Pace only after a date that actually hit the Garmin API (D-BACKFILL-RATE-LIMIT)
-            # -- skipped (already-synced) dates never called Garmin, so there's nothing to
-            # pace, and there's no point delaying after the very last date in the range.
-            if fetched_from_garmin and index < last_index and delay_max > 0:
-                time.sleep(random.uniform(delay_min, delay_max))
+            delay_min = self.settings.garmin_backfill_delay_min_seconds
+            delay_max = self.settings.garmin_backfill_delay_max_seconds
+            last_index = len(target_dates) - 1
+            for index, target_date in enumerate(target_dates):
+                success, fetched_from_garmin = self._process_single_backfill_date(
+                    target_date,
+                    provider,
+                    run_id,
+                    all_activities_raw,
+                    raw_memory_store,
+                    existing_snapshots,
+                    bulk_snapshot_lookup_succeeded,
+                    force,
+                    stop_on_rate_limit=stop_on_failure,
+                )
+                if not success:
+                    failed_dates.append(get_date_string(target_date))
+                    if stop_on_failure:
+                        break
+                elif on_date_complete is not None:
+                    on_date_complete(target_date)
 
-        self.token_store.persist(self.token_file_path)
+                if (
+                    fetched_from_garmin
+                    and index < last_index
+                    and delay_max > 0
+                    and not request_pacing
+                ):
+                    time.sleep(random.uniform(delay_min, delay_max))
 
-        if failed_dates:
-            logger.warning(f"Backfill finished with {len(failed_dates)} failures: {failed_dates}")
-            return False
-
-        logger.info("Backfill completed successfully for all requested dates.")
-        return True
+            if failed_dates:
+                logger.warning("Backfill finished with %s failed dates.", len(failed_dates))
+                return False
+            logger.info("Backfill completed successfully for all requested dates.")
+            return True
+        finally:
+            self.token_store.persist(self.token_file_path)
+            if isinstance(client, GarminClientWrapper):
+                client.configure_backfill_pacing(0.0, 0.0)
 
     def rebuild(self, start_date_str: str, end_date_str: str) -> bool:
         """Recreate normalized Firestore snapshots from archived raw payloads, without
@@ -1261,6 +1337,219 @@ class GarminSyncService:
         logger.error(f"Workout upload returned no workoutId; leaving queue pending: {res}")
         return False
 
+    def _update_initial_backfill_request(
+        self, request_ref: Any, claim_id: str, fields: dict[str, Any]
+    ) -> bool:
+        """Write progress only while this worker still owns the claimed request."""
+
+        @firestore.transactional  # pyright: ignore[reportAttributeAccessIssue]
+        def update(transaction: Any) -> bool:
+            snapshot = request_ref.get(transaction=transaction)
+            if not snapshot.exists:
+                return False
+            data = snapshot.to_dict() or {}
+            if data.get("status") != "processing" or data.get("claimId") != claim_id:
+                return False
+            transaction.update(request_ref, fields)
+            return True
+
+        return bool(update(self.repository.db.transaction()))
+
+    def _retry_or_fail_initial_backfill(
+        self,
+        request_ref: Any,
+        claim_id: str,
+        *,
+        error: str,
+        retry_after: timedelta,
+    ) -> bool:
+        """Count failures at the current cursor and stop after a bounded number.
+
+        Returns True when the request remains retryable, False when the retry cap
+        makes it terminal. The transaction uses the persisted cursor/claim, so a
+        stale worker cannot increment attempts for a newer owner or completed date.
+        """
+
+        @firestore.transactional  # pyright: ignore[reportAttributeAccessIssue]
+        def record(transaction: Any) -> bool:
+            snapshot = request_ref.get(transaction=transaction)
+            if not snapshot.exists:
+                return False
+            data = snapshot.to_dict() or {}
+            if data.get("status") != "processing" or data.get("claimId") != claim_id:
+                return False
+            previous = data.get("backfillAttempts", 0)
+            attempts = previous + 1 if isinstance(previous, int) and previous >= 0 else 1
+            if attempts >= _INITIAL_BACKFILL_MAX_FAILURES_PER_DATE:
+                transaction.update(
+                    request_ref,
+                    {
+                        "status": "failed",
+                        "retryAt": None,
+                        "error": "Backfill stopped after repeated failures at the same date.",
+                        "backfillAttempts": attempts,
+                    },
+                )
+                return False
+            transaction.update(
+                request_ref,
+                {
+                    "status": "pending",
+                    "retryAt": (datetime.now(timezone.utc) + retry_after).isoformat(),
+                    "error": error,
+                    "backfillAttempts": attempts,
+                },
+            )
+            return True
+
+        return bool(record(self.repository.db.transaction()))
+
+    def _run_initial_backfill_chunk(
+        self, request_ref: Any, claim_id: str, request_data: dict[str, Any]
+    ) -> bool:
+        """Fill recent dates first, then older dates, checkpointing each completed day."""
+        try:
+            end_date = parse_date_string(
+                request_data.get("backfillEndDate")
+                or get_date_string(local_today(self.settings.app_timezone))
+            )
+            days = max(1, min(int(request_data.get("days") or 56), 56))
+            start_date = n_days_ago(end_date, days - 1)
+            recent_start = max(
+                start_date,
+                n_days_ago(end_date, min(days, self.settings.garmin_initial_recent_days) - 1),
+            )
+            phase = request_data.get("backfillPhase")
+            if phase not in ("recent", "history", "refresh"):
+                phase = "recent"
+            phase_start = recent_start if phase in {"recent", "refresh"} else start_date
+            phase_end = end_date if phase in {"recent", "refresh"} else n_days_ago(recent_start, 1)
+            next_iso = request_data.get("backfillNextDate")
+            next_date = parse_date_string(next_iso) if next_iso else phase_start
+            if next_date < phase_start:
+                next_date = phase_start
+        except (TypeError, ValueError) as exc:
+            logger.error("Invalid initial-backfill cursor: %s", exc)
+            self._finish_manual_sync_request(
+                request_ref, claim_id, "failed", "Invalid backfill cursor."
+            )
+            return False
+
+        if next_date <= phase_end:
+            chunk_days = self.settings.garmin_backfill_chunk_days
+            if phase in {"recent", "refresh"}:
+                chunk_days = self.settings.garmin_initial_recent_days
+            chunk_end = min(phase_end, next_date + timedelta(days=chunk_days - 1))
+
+            def checkpoint(completed_date: date) -> None:
+                if not self._update_initial_backfill_request(
+                    request_ref,
+                    claim_id,
+                    {
+                        "backfillPhase": phase,
+                        "backfillNextDate": get_date_string(completed_date + timedelta(days=1)),
+                        "backfillAttempts": 0,
+                        # Renew the processing lease with each durable checkpoint so
+                        # a slow but active chunk cannot be reclaimed by another poller.
+                        "claimedAt": datetime.now(timezone.utc).isoformat(),
+                    },
+                ):
+                    raise RuntimeError("Initial backfill claim changed during a chunk.")
+
+            try:
+                ok = self.backfill(
+                    start_date_str=get_date_string(next_date),
+                    end_date_str=get_date_string(chunk_end),
+                    force=phase == "refresh",
+                    on_date_complete=checkpoint,
+                    stop_on_failure=True,
+                )
+            except GarminConnectTooManyRequestsError:
+                retry_at = datetime.now(timezone.utc) + timedelta(
+                    seconds=self.settings.garmin_backfill_retry_seconds
+                )
+                self._update_initial_backfill_request(
+                    request_ref,
+                    claim_id,
+                    {
+                        "status": "pending",
+                        "retryAt": retry_at.isoformat(),
+                        "error": "Garmin rate limited; waiting before retry.",
+                    },
+                )
+                return True
+            except GarminConnectAuthenticationError:
+                logger.error("Initial Garmin backfill requires account re-authentication.")
+                self._finish_manual_sync_request(
+                    request_ref,
+                    claim_id,
+                    "failed",
+                    "Garmin re-authentication required. Relink the account and request a new sync.",
+                )
+                return False
+            except Exception as error:
+                log_exception(logger, "initial backfill chunk", error)
+                self._retry_or_fail_initial_backfill(
+                    request_ref,
+                    claim_id,
+                    error="Chunk interrupted.",
+                    retry_after=timedelta(minutes=15),
+                )
+                return False
+            if not ok:
+                self._retry_or_fail_initial_backfill(
+                    request_ref,
+                    claim_id,
+                    error="Date incomplete.",
+                    retry_after=timedelta(minutes=15),
+                )
+                return False
+            next_date = chunk_end + timedelta(days=1)
+
+        if phase == "recent" and start_date < recent_start:
+            return self._update_initial_backfill_request(
+                request_ref,
+                claim_id,
+                {
+                    "status": "pending",
+                    "backfillPhase": "history",
+                    "backfillNextDate": get_date_string(start_date),
+                    "backfillAttempts": 0,
+                    "retryAt": None,
+                    "error": None,
+                },
+            )
+        if phase == "history" and next_date > phase_end:
+            return self._update_initial_backfill_request(
+                request_ref,
+                claim_id,
+                {
+                    "status": "pending",
+                    "backfillPhase": "refresh",
+                    "backfillNextDate": get_date_string(recent_start),
+                    "backfillAttempts": 0,
+                    "retryAt": None,
+                    "error": None,
+                },
+            )
+        if next_date <= phase_end:
+            return self._update_initial_backfill_request(
+                request_ref,
+                claim_id,
+                {"status": "pending", "retryAt": None, "error": None},
+            )
+        if not self._update_initial_backfill_request(
+            request_ref,
+            claim_id,
+            {"backfillNextDate": get_date_string(next_date), "retryAt": None},
+        ):
+            return False
+        target_iso = get_date_string(local_today(self.settings.app_timezone))
+        self._sync_current_performance_targets(target_iso)
+        self._sync_current_gear(target_iso)
+        self._finish_manual_sync_request(request_ref, claim_id, "completed", error=None)
+        return True
+
     def poll_manual_sync_requests(self) -> bool:
         """Poll for a manual "Sync Now" request queued by the web app
         (users/{uid}/garmin_sync_requests/latest) and, if one is pending, atomically
@@ -1302,8 +1591,35 @@ class GarminSyncService:
             if not snapshot.exists:
                 return False
             data = snapshot.to_dict() or {}
-            if data.get("status") != "pending":
+            now = datetime.now(timezone.utc)
+            if data.get("status") == "processing" and data.get("requestType") == "initial_backfill":
+                claimed_at = data.get("claimedAt")
+                try:
+                    if not isinstance(claimed_at, str):
+                        return False
+                    claimed_time = datetime.fromisoformat(claimed_at)
+                    if claimed_time.tzinfo is None:
+                        claimed_time = claimed_time.replace(tzinfo=timezone.utc)
+                except (TypeError, ValueError):
+                    return False
+                # The execution lease expires at 30 minutes. Reclaim only after
+                # that window so a second worker cannot overlap a live chunk.
+                if now - claimed_time <= timedelta(minutes=31):
+                    return False
+            elif data.get("status") != "pending":
                 return False
+            retry_at = data.get("retryAt")
+            if retry_at:
+                try:
+                    if not isinstance(retry_at, str):
+                        return False
+                    retry_time = datetime.fromisoformat(retry_at)
+                    if retry_time.tzinfo is None:
+                        retry_time = retry_time.replace(tzinfo=timezone.utc)
+                except (TypeError, ValueError):
+                    return False
+                if retry_time > now:
+                    return False
             # Firestore retries this callback on write contention (see docstring above);
             # each retry re-reads the doc from scratch, so only the successful attempt's
             # payload may survive -- an earlier attempt's data could belong to a request
@@ -1314,7 +1630,7 @@ class GarminSyncService:
                 {
                     "status": "processing",
                     "claimId": claim_id,
-                    "claimedAt": datetime.now(timezone.utc).isoformat(),
+                    "claimedAt": now.isoformat(),
                 },
             )
             return True
@@ -1326,7 +1642,9 @@ class GarminSyncService:
         req_type = req_data.get("requestType")
         days = req_data.get("days") or 56
 
-        if req_type in ("initial_backfill", "backfill"):
+        if req_type == "initial_backfill":
+            return self._run_initial_backfill_chunk(request_ref, claim_id, req_data)
+        if req_type == "backfill":
             logger.info(
                 f"Claimed manual sync request (type={req_type}, days={days}); running backfill..."
             )

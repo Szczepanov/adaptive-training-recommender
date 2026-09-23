@@ -1,4 +1,8 @@
 import logging
+import random
+import re
+import threading
+import time
 from pathlib import Path
 from typing import Any, Callable, Protocol, cast
 
@@ -74,6 +78,44 @@ class GarminClientWrapper:
         self.verify_login = verify_login
         self.allow_credential_login = allow_credential_login
         self.api: Garmin | None = None
+        self._backfill_pace: tuple[float, float] | None = None
+        self._last_backfill_request: float | None = None
+        self._backfill_pace_lock = threading.Lock()
+
+    def configure_backfill_pacing(self, minimum: float, maximum: float) -> None:
+        """Pace actual wrapper requests during one bounded backfill chunk."""
+        with self._backfill_pace_lock:
+            self._backfill_pace = (minimum, maximum) if maximum > 0 else None
+            self._last_backfill_request = None
+
+    def _call_api(self, method: str, *args: Any, **kwargs: Any) -> Any:
+        if self.api is None:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        # Each wrapper call maps to one upstream method call. garminconnect may issue
+        # internal authentication/refresh requests, which cannot be paced here.
+        with self._backfill_pace_lock:
+            if self._backfill_pace is not None:
+                now = time.monotonic()
+                if self._last_backfill_request is not None:
+                    target = random.uniform(*self._backfill_pace)
+                    wait = target - (now - self._last_backfill_request)
+                    if wait > 0:
+                        time.sleep(wait)
+                self._last_backfill_request = time.monotonic()
+        try:
+            return getattr(self.api, method)(*args, **kwargs)
+        except GarminConnectConnectionError as error:
+            # garminconnect 0.3.16 wraps most non-404 HTTP failures in the generic
+            # connection error. Preserve the typed stop signal needed by resumable
+            # backfills when that wrapped response is HTTP 429.
+            response = getattr(error, "response", None)
+            # In 0.3.16 `_run_request` formats an API Error <status> message but
+            # does not attach the response to GarminConnectConnectionError.
+            if getattr(response, "status_code", None) == 429 or re.match(
+                r"^API Error 429(?:\s|$)", str(error)
+            ):
+                raise GarminConnectTooManyRequestsError(str(error)) from error
+            raise
 
     def login_with_tokens_or_credentials(self, token_path: Path | str) -> None:
         """Log in via garminconnect's own load-or-refresh-or-fresh-login flow.
@@ -124,22 +166,22 @@ class GarminClientWrapper:
     def get_stats(self, date_iso: str) -> dict[str, Any]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_stats(date_iso) or {}
+        return self._call_api("get_stats", date_iso) or {}
 
     def get_sleep_data(self, date_iso: str) -> dict[str, Any]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_sleep_data(date_iso) or {}
+        return self._call_api("get_sleep_data", date_iso) or {}
 
     def get_hrv_data(self, date_iso: str) -> dict[str, Any]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_hrv_data(date_iso) or {}
+        return self._call_api("get_hrv_data", date_iso) or {}
 
     def get_stress_data(self, date_iso: str) -> dict[str, Any]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_all_day_stress(date_iso) or {}
+        return self._call_api("get_all_day_stress", date_iso) or {}
 
     def get_respiration_data(self, date_iso: str) -> dict[str, Any]:
         """The dedicated all-day respiration endpoint. Unlike `dailySleepDTO`'s single
@@ -149,7 +191,7 @@ class GarminClientWrapper:
         precise sleep-window average."""
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_respiration_data(date_iso) or {}
+        return self._call_api("get_respiration_data", date_iso) or {}
 
     def get_spo2_data(self, date_iso: str) -> dict[str, Any]:
         """Fetch Garmin's date-scoped Pulse Ox summary.
@@ -160,22 +202,22 @@ class GarminClientWrapper:
         """
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_spo2_data(date_iso) or {}
+        return self._call_api("get_spo2_data", date_iso) or {}
 
     def get_body_battery(self, date_iso: str) -> list[dict[str, Any]]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_body_battery(date_iso, date_iso) or []
+        return self._call_api("get_body_battery", date_iso, date_iso) or []
 
     def get_training_readiness(self, date_iso: str) -> list[dict[str, Any]]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_training_readiness(date_iso) or []
+        return self._call_api("get_training_readiness", date_iso) or []
 
     def get_training_status(self, date_iso: str) -> dict[str, Any]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_training_status(date_iso) or {}
+        return self._call_api("get_training_status", date_iso) or {}
 
     def get_heart_rate_zones(self) -> list[dict[str, Any]]:
         """Configured HR zones per sport profile -- not date-scoped, this is a profile
@@ -183,66 +225,66 @@ class GarminClientWrapper:
         a manually entered one), not per-day telemetry."""
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_heart_rate_zones() or []
+        return self._call_api("get_heart_rate_zones") or []
 
     def get_cycling_ftp(self) -> dict[str, Any] | list[dict[str, Any]]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_cycling_ftp() or {}
+        return self._call_api("get_cycling_ftp") or {}
 
     def get_lactate_threshold(self) -> dict[str, Any]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_lactate_threshold(latest=True) or {}
+        return self._call_api("get_lactate_threshold", latest=True) or {}
 
     def get_race_predictions(self) -> dict[str, Any]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_race_predictions() or {}
+        return self._call_api("get_race_predictions") or {}
 
     def get_body_composition(
         self, start_date_iso: str, end_date_iso: str | None = None
     ) -> dict[str, Any]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_body_composition(start_date_iso, end_date_iso) or {}
+        return self._call_api("get_body_composition", start_date_iso, end_date_iso) or {}
 
     def get_daily_weigh_ins(self, date_iso: str) -> dict[str, Any]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_daily_weigh_ins(date_iso) or {}
+        return self._call_api("get_daily_weigh_ins", date_iso) or {}
 
     def get_activity_power_zones(self, activity_id: str) -> list[dict[str, Any]]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        result = self.api.get_activity_power_in_timezones(activity_id)
+        result = self._call_api("get_activity_power_in_timezones", activity_id)
         return result if isinstance(result, list) else []
 
     def get_activity_hr_zones(self, activity_id: str) -> list[dict[str, Any]]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        result = self.api.get_activity_hr_in_timezones(activity_id)
+        result = self._call_api("get_activity_hr_in_timezones", activity_id)
         return result if isinstance(result, list) else []
 
     def get_activity_splits(self, activity_id: str) -> dict[str, Any]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_activity_splits(activity_id) or {}
+        return self._call_api("get_activity_splits", activity_id) or {}
 
     def get_activity_exercise_sets(self, activity_id: str | int) -> dict[str, Any]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_activity_exercise_sets(activity_id) or {}
+        return self._call_api("get_activity_exercise_sets", activity_id) or {}
 
     def get_nutrition_daily_food_log(self, date_iso: str) -> dict[str, Any]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_nutrition_daily_food_log(date_iso) or {}
+        return self._call_api("get_nutrition_daily_food_log", date_iso) or {}
 
     def get_nutrition_daily_meals(self, date_iso: str) -> dict[str, Any]:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
-        return self.api.get_nutrition_daily_meals(date_iso) or {}
+        return self._call_api("get_nutrition_daily_meals", date_iso) or {}
 
     def download_activity_original(self, activity_id: str) -> bytes | None:
         """Return Garmin's original activity archive without interpreting its contents.
@@ -256,7 +298,8 @@ class GarminClientWrapper:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
         try:
-            result = self.api.download_activity(
+            result = self._call_api(
+                "download_activity",
                 activity_id,
                 dl_fmt=Garmin.ActivityDownloadFormat.ORIGINAL,
             )
@@ -279,7 +322,7 @@ class GarminClientWrapper:
         max_pages = 30
 
         for _ in range(max_pages):
-            raw_batch = self.api.get_activities(start_index, limit)
+            raw_batch = self._call_api("get_activities", start_index, limit)
             if isinstance(raw_batch, list):
                 batch = raw_batch
             elif isinstance(raw_batch, dict) and isinstance(raw_batch.get("activityList"), list):
