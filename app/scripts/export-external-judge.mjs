@@ -51,10 +51,8 @@ function runNode(script, scriptArgs) {
 
 if (!noBuild && !explicitSourceDir) {
   if (suite === 'plan') {
-    const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-    const result = spawnSync(npmCommand, ['run', 'simulate:plan-judge'], { stdio: 'inherit', shell: false });
-    if (result.error) throw result.error;
-    if (result.status !== 0) process.exit(result.status ?? 1);
+    runNode('scripts/build-plan-judge-corpus.mjs', []);
+    runNode('scripts/check-plan-judge-invariants.mjs', []);
   } else {
     runNode('scripts/run-persona-ai-judge.mjs', [
       '--build-only',

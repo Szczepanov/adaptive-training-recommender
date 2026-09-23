@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { createServer } from 'vite';
 
@@ -13,6 +14,14 @@ import { familyForJudgeSample, shouldExposeHybridExpansionFacts } from './ai-jud
 const HYBRID_EXPANSION = process.argv.includes('--hybrid-expansion');
 const OUTPUT_DIR = resolve(HYBRID_EXPANSION ? 'artifacts/hybrid-persona-plan-judge/latest' : 'artifacts/persona-plan-judge/latest');
 const BUILD_ONLY = process.argv.includes('--build-only');
+
+function resolveGitCommit() {
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+  } catch {
+    return 'unknown';
+  }
+}
 
 /** Return a detached JSON-safe copy of fixture data. */
 function clone(value) {
@@ -171,6 +180,7 @@ async function buildCorpus() {
 
     const corpus = {
       schema: 'adaptive-training-recommender/persona-plan-judge-corpus@1',
+      commit: resolveGitCommit(),
       capturedAt: new Date().toISOString(),
       familyCount: families.length,
       caseCount: families.reduce((sum, family) => sum + family.cases.length, 0),
