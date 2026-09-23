@@ -1100,6 +1100,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                     onChange={e => setEditWeight(e.target.value)}
                                                     placeholder="kg"
                                                     className="edit-input"
+                                                    aria-label={`Weight for set ${idx + 1} in kilograms`}
                                                 />
                                                 <input
                                                     type="number"
@@ -1108,6 +1109,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                     onChange={e => setEditReps(e.target.value)}
                                                     placeholder="reps"
                                                     className="edit-input"
+                                                    aria-label={`Repetitions for set ${idx + 1}`}
                                                 />
                                                 <button type="button" className="save-edit-btn" onClick={() => handleSaveEdit(entry.id)}>
                                                     Save
@@ -1145,11 +1147,11 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                 </div>
                                                 <div className="entry-actions">
                                                     {entry.payload.kind === 'repetition' && (
-                                                        <button type="button" className="entry-btn edit" onClick={() => handleStartEdit(entry)}>
+                                                        <button type="button" className="entry-btn edit" onClick={() => handleStartEdit(entry)} aria-label={`Edit set ${idx + 1}`}>
                                                             Edit
                                                         </button>
                                                     )}
-                                                    <button type="button" className="entry-btn remove" onClick={() => runner.removeEntry(entry.id)}>
+                                                    <button type="button" className="entry-btn remove" onClick={() => runner.removeEntry(entry.id)} aria-label={`Remove set ${idx + 1}`}>
                                                         ✕
                                                     </button>
                                                 </div>

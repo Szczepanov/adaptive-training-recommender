@@ -6,6 +6,7 @@ import { Goals } from '../components/Goals';
 import { Home } from '../components/Home';
 import { Preferences } from '../components/Preferences';
 import { SessionRunner } from '../components/session/SessionRunner';
+import { ManualSessionBuilder } from '../components/session/ManualSessionBuilder';
 import { TrainingSettings } from '../components/TrainingSettings';
 import { PlanView } from '../components/PlanView';
 import { Header } from '../components/Header';
@@ -71,7 +72,7 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
     navigate(mapScreenToVisual(next));
   };
 
-  const appScreen: Screen = screen === 'session' ? 'sessions' : screen;
+  const appScreen: Screen = screen === 'session' || screen === 'builder' ? 'sessions' : screen;
   const isWorkoutRunnerActive = screen === 'session' && sessionExecution?.state === 'in_progress';
   const isCheckin = screen === 'checkin';
 
@@ -95,6 +96,12 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
         {screen === 'data' && <DataView decisionInput={scenario.fixture.input} userId={VISUAL_USER_ID} onBack={() => navigate('home')} initialTab={scenario.initialDataTab} />}
         {screen === 'constraints' && <TrainingSettings userId={VISUAL_USER_ID} />}
         {screen === 'preferences' && <Preferences userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} />}
+        {screen === 'builder' && <ManualSessionBuilder
+          userId={VISUAL_USER_ID}
+          initialDefinition={scenario.builderDefinition}
+          onClose={() => navigate('session')}
+          onStartExecution={() => navigate('session')}
+        />}
         {screen === 'session' && initialSessionError && (
           <div className="session-runner-container" role="alert">
             Unable to prepare the catalog session for visual review.

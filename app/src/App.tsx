@@ -9,6 +9,7 @@ import type { HealthAnomalyAssessmentRevision } from './engine/healthAnomalyMode
 import type { DailyDecisionInput } from './engine/models';
 import type { SessionDefinition, SessionExecution, SessionIntent } from './sessions/models';
 import type { Screen } from './types/navigation';
+import { readScreenRoute, requiresCurrentCheckin, screenRouteUrl } from './types/screenRoute';
 import { useAuth } from './contexts/AuthContext';
 import { LoginScreen } from './components/LoginScreen';
 import { Header } from './components/Header';
@@ -84,9 +85,16 @@ function App() {
       const needsDailyRoute = lastRoutedDate.current !== input.date;
       const isSafeAutoRouteScreen = currentScreenRef.current === 'home' || currentScreenRef.current === 'checkin';
       if (needsInitialRoute || (needsDailyRoute && isSafeAutoRouteScreen)) {
-        const nextScreen: Screen = hasCompletedSubjectiveCheckinForDecision(input) ? 'home' : 'checkin';
+        const checkinComplete = hasCompletedSubjectiveCheckinForDecision(input);
+        const checkinRequired = requiresCurrentCheckin(input.date, checkinComplete, getLocalDateString());
+        const nextScreen: Screen = checkinRequired
+          ? 'checkin'
+          : needsInitialRoute
+            ? readScreenRoute(window.location) ?? 'home'
+            : 'home';
         currentScreenRef.current = nextScreen;
         setScreen(nextScreen);
+        window.history.replaceState(window.history.state, '', screenRouteUrl(window.location, nextScreen));
         initialRouteUserIdRef.current = requestUserId;
         lastRoutedDate.current = input.date;
         setInitialRouteUserId(requestUserId);
@@ -124,6 +132,7 @@ function App() {
         lastRoutedDate.current = getLocalDateString();
         currentScreenRef.current = 'checkin';
         setScreen('checkin');
+        window.history.replaceState(window.history.state, '', screenRouteUrl(window.location, 'checkin'));
         setInitialRouteUserId(requestUserId);
       }
     }
@@ -217,6 +226,49 @@ function App() {
     };
   }, [userId, authPhase, initialRouteUserId, loadDecisionInput]);
 
+  const navigateToScreen = useCallback((newScreen: Screen, historyMode: 'push' | 'replace' | 'none') => {
+    const screenChanged = currentScreenRef.current !== newScreen;
+    currentScreenRef.current = newScreen;
+    setScreen(newScreen);
+    setDesktopSettingsOpen(false);
+    setMobileMoreOpen(false);
+
+    if (historyMode !== 'none') {
+      const url = screenRouteUrl(window.location, newScreen);
+      if (historyMode === 'push' && screenChanged) {
+        window.history.pushState(window.history.state, '', url);
+      } else {
+        window.history.replaceState(window.history.state, '', url);
+      }
+    }
+
+    // A structured execution is persisted before it becomes active. Leaving its runner by
+    // Back or visible navigation minimizes it; the Resume banner restores the same execution.
+    if (
+      (newScreen === 'home' || newScreen === 'checkin')
+      && lastRoutedDate.current !== getLocalDateString()
+    ) {
+      void loadDecisionInput();
+    }
+  }, [loadDecisionInput]);
+
+  useEffect(() => {
+    if (!userId || authPhase !== 'AUTHENTICATED' || initialRouteUserId !== userId) return;
+    const onPopState = () => {
+      const requested = readScreenRoute(window.location);
+      const checkinRequired = requiresCurrentCheckin(
+        decisionInput?.date ?? null,
+        decisionInput ? hasCompletedSubjectiveCheckinForDecision(decisionInput) : false,
+        getLocalDateString(),
+      );
+      // A historical route cannot bypass the same pending-check-in gate used at startup.
+      const nextScreen: Screen = checkinRequired ? 'checkin' : requested ?? 'home';
+      navigateToScreen(nextScreen, checkinRequired || !requested ? 'replace' : 'none');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [authPhase, decisionInput, initialRouteUserId, navigateToScreen, userId]);
+
   if (authPhase !== 'AUTHENTICATED') {
     return <LoginScreen />;
   }
@@ -235,19 +287,7 @@ function App() {
   }
 
   const handleNavigate = (newScreen: Screen) => {
-    currentScreenRef.current = newScreen;
-    setScreen(newScreen);
-    setDesktopSettingsOpen(false);
-    setMobileMoreOpen(false);
-
-    // If the app spent midnight/background time inside a non-routable workflow, re-evaluate
-    // the daily default as soon as the athlete next returns to Home or Check-in.
-    if (
-      (newScreen === 'home' || newScreen === 'checkin')
-      && lastRoutedDate.current !== getLocalDateString()
-    ) {
-      void loadDecisionInput();
-    }
+    navigateToScreen(newScreen, 'push');
   };
 
   const isWorkoutRunnerActive =

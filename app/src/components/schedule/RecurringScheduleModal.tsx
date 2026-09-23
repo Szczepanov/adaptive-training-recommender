@@ -9,6 +9,8 @@ import {
     type RecurringScheduleRule,
 } from '../../engine/scheduleWindowRecurrence';
 import { addDaysToLocalDateString, getLocalDateString } from '../../utils/localDate';
+import { useOverlayFocusVisibility, useOverlayScrollLock } from '../useOverlayDialog';
+import '../overlayContract.css';
 import './RecurringScheduleModal.css';
 
 interface RecurringScheduleModalProps {
@@ -75,6 +77,8 @@ export const RecurringScheduleModal = memo(function RecurringScheduleModal({
     const previousFocusRef = useRef<HTMLElement | null>(null);
     const onCloseRef = useRef(onClose);
     const savingRef = useRef(saving);
+    useOverlayScrollLock(isOpen);
+    useOverlayFocusVisibility(isOpen, dialogRef);
 
     useEffect(() => {
         onCloseRef.current = onClose;
@@ -181,10 +185,10 @@ export const RecurringScheduleModal = memo(function RecurringScheduleModal({
     if (!isOpen) return null;
 
     return (
-        <div className="modal-backdrop" onClick={requestClose}>
+        <div className="modal-backdrop overlay-viewport" onClick={requestClose}>
             <div
                 ref={dialogRef}
-                className="recurring-schedule-modal-card"
+                className="recurring-schedule-modal-card overlay-panel"
                 onClick={event => event.stopPropagation()}
                 role="dialog"
                 aria-modal="true"

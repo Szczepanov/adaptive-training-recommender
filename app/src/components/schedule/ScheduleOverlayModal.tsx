@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import type {
     ScheduleOverlayCategory,
     ScheduleOverlaySport,
@@ -14,6 +14,8 @@ import {
     type ScheduleOverlayWithId,
 } from '../../services/scheduleOverlayService';
 import { getLocalDateString } from '../../utils/localDate';
+import { useOverlayDialog } from '../useOverlayDialog';
+import '../overlayContract.css';
 import './ScheduleOverlayModal.css';
 
 interface ScheduleOverlayModalProps {
@@ -70,6 +72,11 @@ export const ScheduleOverlayModal = memo(function ScheduleOverlayModal({
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const dialogRef = useRef<HTMLDivElement>(null);
+    const requestClose = () => {
+        if (!saving) onClose();
+    };
+    useOverlayDialog(isOpen, dialogRef, requestClose, '#overlay-title');
 
     useEffect(() => {
         if (!isOpen) return;
@@ -175,16 +182,16 @@ export const ScheduleOverlayModal = memo(function ScheduleOverlayModal({
     };
 
     return (
-        <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
-            <div className="schedule-overlay-modal-card" onClick={e => e.stopPropagation()}>
+        <div className="modal-backdrop overlay-viewport" onClick={requestClose} role="dialog" aria-modal="true" aria-labelledby="schedule-overlay-modal-title">
+            <div ref={dialogRef} className="schedule-overlay-modal-card overlay-panel" onClick={e => e.stopPropagation()} tabIndex={-1}>
                 <div className="modal-header">
                     <div>
-                        <h3>{existingOverlay ? 'Edit Schedule Block' : 'Plan Time Off / Sport Block'}</h3>
+                        <h3 id="schedule-overlay-modal-title">{existingOverlay ? 'Edit Schedule Block' : 'Plan Time Off / Sport Block'}</h3>
                         <p className="modal-subtitle">
                             Informs periodization, weekly anchors, availability, and recovery demand about planned schedule constraints or extra activity.
                         </p>
                     </div>
-                    <button type="button" className="btn-close-modal" onClick={onClose} aria-label="Close">
+                    <button type="button" className="btn-close-modal" onClick={requestClose} disabled={saving} aria-label="Close">
                         &times;
                     </button>
                 </div>
@@ -429,7 +436,7 @@ export const ScheduleOverlayModal = memo(function ScheduleOverlayModal({
                             <button
                                 type="button"
                                 className="btn-secondary"
-                                onClick={onClose}
+                                onClick={requestClose}
                                 disabled={saving}
                             >
                                 Cancel

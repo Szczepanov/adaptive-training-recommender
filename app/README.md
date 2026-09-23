@@ -104,6 +104,14 @@ Parses the input JSON payload, feeds the historical recovery snapshot and athlet
 | `npm run visual:serve` | Visual harness server | Starts Vite in visual testing mode (`.env.visual`, entry point `visual.html`) rendering synthetic athlete fixtures on `http://127.0.0.1:4174`. |
 | `npm run visual:refresh` | Refresh review screenshots | Prepares workspace, executes Playwright visual screenshot tests across desktop (1440x1000) and mobile (390x844) viewports against synthetic fixtures, and finalizes review artifacts. |
 | `npm run test:e2e` | Browser journey suite | Starts disposable Firebase Auth and Firestore emulators, serves the normal application in e2e mode, and runs the Chromium sign-in, check-in/recommendation, session lifecycle, and duplicate-start journeys. |
+| `npm run test:e2e:mobile` | Curated phone interaction suite | Uses the same disposable emulators and app server; runs only the `e2e-mobile` Chromium project at 390 × 844 CSS pixels. |
+
+`playwright.e2e.config.ts` keeps `e2e-chromium` on the existing desktop specs and selects
+`tests/e2e/mobile/*.pw.ts` for `e2e-mobile`. The full `test:e2e` command runs both projects;
+the mobile command runs only the curated drawer journey and assertion fixtures. Add later
+mobile journeys to that folder to include them in the bounded phone suite. This suite uses
+the e2e app at port 4173 and the Auth/Firestore emulators; the separate visual harness uses
+port 4174 and its own fixture data.
 
 `test:e2e` reads the checked-in `.env.e2e` demo configuration only. It never accesses a
 production Firebase project or Garmin account. Playwright saves a trace, screenshot, video,

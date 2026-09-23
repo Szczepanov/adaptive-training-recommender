@@ -68,7 +68,7 @@
     font-weight: 500;
     cursor: pointer;
     transition: all 0.15s ease;
-    min-height: 36px;
+    min-height: var(--touch-target-min, 44px);
     display: inline-flex;
     align-items: center;
     justify-content: center;

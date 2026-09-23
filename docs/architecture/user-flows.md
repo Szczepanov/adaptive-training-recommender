@@ -16,6 +16,8 @@ over inferred component names or historical plans.
   `uid` so account transitions replace account-scoped React state.
 * `app/src/App.tsx` `App`, `loadDecisionInput`, `handleNavigate` — route state, daily
   auto-routing, global overlays/banners, screen rendering, and session launch plumbing.
+* `app/src/types/screenRoute.ts` — private `?screen=<screen>` URL parsing and safe route
+  resolution used by browser history.
 * `app/src/engine/adapters.ts` `mapCheckinToSubjectiveInput` — the explicit boundary
   between persisted daily check-in fields and decision-facing subjective inputs.
 * `app/src/components/Header.tsx` `Header` and `app/src/components/MobileNav.tsx`
@@ -35,8 +37,12 @@ update this document in the same PR.
 
 ## Global shell
 
-There is no URL router. `App.tsx` keeps a `Screen` value in React state and renders the
-corresponding screen.
+`App.tsx` keeps a `Screen` value in React state and mirrors safe top-level destinations to the
+private `?screen=<screen>` query parameter. `handleNavigate` pushes a browser-history entry;
+Back and Forward reconcile that entry into app state without reloading. A valid deep link is
+applied after authentication and daily check-in routing. Unknown destinations resolve to
+Home, while an incomplete or stale check-in always takes precedence and routes to Check-in.
+The screen route is not an authorization boundary and does not expose user data.
 
 ### Authentication and account isolation
 
@@ -77,8 +83,11 @@ on `home` or `checkin`. The check runs on window focus, visibility change, and a
 interval. It does not eject the athlete from `sessions`, `testing`, `plan`, or another
 workflow mid-task. Returning to `home` or `checkin` across midnight triggers a refresh.
 
-`handleNavigate` updates the route and closes the desktop Settings menu and mobile More
-drawer; it is not a URL/history transition.
+`handleNavigate` updates the route, writes the safe screen query to browser history, and closes
+the desktop Settings menu and mobile More drawer. On browser Back from an active structured
+session, the persisted execution remains in progress and the app returns to Home with its
+Resume action; Forward restores the runner. The athlete can also leave and resume through the
+same persisted execution.
 
 ### Onboarding overlay and resume banners
 

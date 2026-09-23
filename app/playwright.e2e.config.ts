@@ -27,6 +27,15 @@ export default defineConfig({
     timeout: 45_000,
   },
   projects: [
-    { name: 'e2e-chromium', use: { ...devices['Desktop Chrome'], browserName: 'chromium' } },
+    {
+      name: 'e2e-chromium',
+      testIgnore: '**/mobile/*.pw.ts',
+      use: { ...devices['Desktop Chrome'], browserName: 'chromium' },
+    },
+    {
+      name: 'e2e-mobile',
+      testMatch: '**/mobile/*.pw.ts',
+      use: { ...devices['iPhone 13'], browserName: 'chromium', viewport: { width: 390, height: 844 } },
+    },
   ],
 });

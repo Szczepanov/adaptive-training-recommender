@@ -27,6 +27,8 @@ import {
   type GoalFeasibilityCapacityInput,
 } from '../engine/goalFeasibility';
 import type { AthletePerformanceProfile } from '../workouts/models';
+import { useOverlayDialog } from './useOverlayDialog';
+import './overlayContract.css';
 import './Goals.css';
 
 const FAMILY_LABELS: Record<PerformanceGoalFamily, string> = { strength: 'Strength', speed: 'Speed', power: 'Power' };
@@ -787,38 +789,7 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
   });
   const [performanceTargetError, setPerformanceTargetError] = useState<string | null>(null);
 
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    const titleInput = modalRef.current?.querySelector<HTMLInputElement>('input[type="text"]');
-    titleInput?.focus();
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-      if (e.key === 'Tab' && modalRef.current) {
-        const focusables = Array.from(
-          modalRef.current.querySelectorAll<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
-        );
-        if (focusables.length === 0) return;
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.body.style.overflow = '';
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [onClose]);
+  useOverlayDialog(true, modalRef, onClose, 'input[type="text"]');
 
   const derivedCategory = !formData.isOpenEnded && formData.targetDate
     ? deriveGoalCategory(formData.targetDate, today)
@@ -886,10 +857,10 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay overlay-viewport" onClick={onClose}>
       <div
         ref={modalRef}
-        className="modal-content"
+        className="modal-content overlay-panel"
         role="dialog"
         aria-modal="true"
         aria-labelledby="goal-modal-title"

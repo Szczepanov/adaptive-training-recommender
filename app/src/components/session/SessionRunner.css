@@ -9,6 +9,41 @@
     box-sizing: border-box;
 }
 
+/* The runner replaces the normal mobile chrome during a workout. Keep every
+   actionable control at the app's touch size, including controls rendered by
+   its input cards and completion dialogs. The text and icons stay compact. */
+.session-runner-container :is(button, input:not([type="checkbox"]), select, textarea) {
+    min-width: var(--touch-target-min, 44px);
+    min-height: var(--touch-target-min, 44px);
+    box-sizing: border-box;
+}
+
+.session-runner-container :is(button, input, select, textarea):focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+}
+
+.session-runner-container :is(.warmup-toggle, .technical-met-toggle) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: var(--touch-target-min, 44px);
+    min-width: var(--touch-target-min, 44px);
+    box-sizing: border-box;
+}
+
+.session-runner-container :is(.warmup-toggle, .technical-met-toggle):focus-within {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+.session-completion-sheet .checkbox-label {
+    display: flex;
+    align-items: center;
+    min-height: var(--touch-target-min, 44px);
+}
+
 .session-runner-container.no-active {
     max-width: 720px;
 }
@@ -438,7 +473,7 @@
 }
 
 .group-next-button {
-    min-height: 40px;
+    min-height: var(--touch-target-min, 44px);
     padding: 0.4rem 0.65rem;
     border: 1px solid #60a5fa;
     border-radius: 6px;
@@ -746,7 +781,8 @@
     font-size: 1rem;
     cursor: pointer;
     line-height: 1;
-    min-height: 38px;
+    min-height: var(--touch-target-min, 44px);
+    min-width: var(--touch-target-min, 44px);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -767,7 +803,7 @@
     font-size: 0.8rem;
     font-weight: 600;
     cursor: pointer;
-    min-height: 38px;
+    min-height: var(--touch-target-min, 44px);
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
@@ -884,7 +920,7 @@
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
-    min-height: 38px;
+    min-height: var(--touch-target-min, 44px);
 }
 
 .rest-adjust-btn:hover {
@@ -936,7 +972,59 @@
     padding: 0.5rem 0.85rem;
     font-size: 0.85rem;
     cursor: pointer;
-    min-height: 38px;
+    min-height: var(--touch-target-min, 44px);
+}
+
+.session-runner-container :is(.input-card-container, .active-step-panel, .step-titles,
+    .group-progress-main, .entry-details, .set-metrics) {
+    min-width: 0;
+}
+
+.session-runner-container .input-group {
+    min-width: 0;
+}
+
+.session-runner-container .gauge-row,
+.session-runner-container .gauge-selector-group,
+.session-runner-container .technical-gauge-inputs,
+.session-runner-container .timer-display-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.session-runner-container .gauge-selector-group {
+    flex: 1 1 12rem;
+    justify-content: flex-end;
+}
+
+.session-runner-container .gauge-type-select,
+.session-runner-container .gauge-val-input {
+    flex: 1 1 6rem;
+    min-width: var(--touch-target-min, 44px);
+    max-width: 100%;
+}
+
+.session-runner-container .technical-gauge-inputs {
+    width: 100%;
+}
+
+.session-runner-container .timer-display-row > .timer-control-btn {
+    flex: 1 1 auto;
+}
+
+.session-runner-container .entry-details {
+    overflow-wrap: anywhere;
+}
+
+.session-runner-container .entry-edit-box {
+    flex-wrap: wrap;
+}
+
+.session-runner-container .edit-input {
+    flex: 1 1 60px;
 }
 
 /* 390px mobile responsiveness */
@@ -955,6 +1043,26 @@
         justify-content: space-between;
         flex-wrap: wrap;
     }
+    .active-step-header {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    .step-target-summary {
+        justify-content: flex-start;
+    }
+    .group-progress {
+        flex-wrap: wrap;
+    }
+    .group-next-button {
+        width: 100%;
+    }
+    .entry-row {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    .entry-actions {
+        margin-left: auto;
+    }
     .fixture-card {
         flex-direction: column;
         align-items: flex-start;
@@ -971,6 +1079,7 @@
         align-items: stretch;
     }
     .rest-timer-actions {
-        justify-content: flex-end;
+        justify-content: flex-start;
+        flex-wrap: wrap;
     }
 }

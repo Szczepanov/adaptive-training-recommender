@@ -35,7 +35,8 @@ describe('OnboardingWizard', () => {
       <OnboardingWizard userId="athlete-1" onCompleted={() => {}} />
     );
 
-    expect(html).toContain('class="onboarding-modal-backdrop"');
+    expect(html).toContain('class="onboarding-modal-backdrop overlay-viewport"');
+    expect(html).toContain('class="onboarding-card overlay-panel" role="dialog" aria-modal="true"');
     expect(html).toContain('Welcome to Adaptive Training');
     expect(html).toContain('Let&#x27;s Set Up Your Profile →');
   });

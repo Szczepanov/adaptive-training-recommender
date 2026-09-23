@@ -1,0 +1,55 @@
+/* Shared geometry for dialogs and sheets. The backdrop owns the safe viewport; the
+   panel owns scrolling so focused form controls stay within the visible area. */
+.overlay-viewport.overlay-viewport {
+    box-sizing: border-box;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    z-index: 1200;
+    overflow: hidden;
+    overscroll-behavior: contain;
+    padding: max(1rem, env(safe-area-inset-top))
+        max(1rem, env(safe-area-inset-right))
+        max(1rem, env(safe-area-inset-bottom))
+        max(1rem, env(safe-area-inset-left));
+}
+
+.overlay-panel.overlay-panel {
+    box-sizing: border-box;
+    max-height: 100%;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scroll-padding-block: 1rem 2rem;
+}
+
+.overlay-panel :is(button, input:not([type='checkbox']):not([type='radio']):not([type='range']), select, textarea) {
+    min-height: 44px;
+}
+
+.overlay-panel button {
+    min-width: 44px;
+}
+
+@media (max-width: 520px) {
+    .overlay-viewport.overlay-viewport {
+        padding: max(0.75rem, env(safe-area-inset-top))
+            max(0.75rem, env(safe-area-inset-right))
+            max(0.75rem, env(safe-area-inset-bottom))
+            max(0.75rem, env(safe-area-inset-left));
+    }
+
+    .overlay-viewport .overlay-panel {
+        border-radius: 16px;
+        padding: 1rem;
+    }
+
+    .overlay-viewport--sheet {
+        align-items: flex-end;
+    }
+
+    .overlay-viewport--sheet .overlay-panel {
+        border-radius: 16px 16px 0 0;
+    }
+}

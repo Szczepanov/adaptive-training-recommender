@@ -1,8 +1,9 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import type { Screen } from '../types/navigation';
 import { SCREEN_LABELS } from '../types/navigation';
 import { getAuthInstance } from '../firebase';
 import { buildInfo } from '../buildInfo';
+import { useOverlayScrollLock } from './useOverlayDialog';
 import {
   DRAWER_GROUPS,
   PRIMARY_NAV_ITEMS,
@@ -22,26 +23,29 @@ interface MobileNavProps {
 export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, loadDecisionInput, mobileMoreOpen, setMobileMoreOpen }) => {
   const mobileMoreBtnRef = useRef<HTMLButtonElement>(null);
   const mobileDrawerRef = useRef<HTMLDivElement>(null);
+  const restoreFocusOnCloseRef = useRef(false);
+  useOverlayScrollLock(mobileMoreOpen);
+
+  const closeDrawer = useCallback(() => {
+    restoreFocusOnCloseRef.current = true;
+    setMobileMoreOpen(false);
+  }, [setMobileMoreOpen]);
 
   useEffect(() => {
     if (mobileMoreOpen) {
-      document.body.style.overflow = 'hidden';
       const closeBtn = mobileDrawerRef.current?.querySelector<HTMLButtonElement>('.close-drawer-btn');
       closeBtn?.focus();
-    } else {
-      document.body.style.overflow = '';
+    } else if (restoreFocusOnCloseRef.current) {
+      restoreFocusOnCloseRef.current = false;
+      mobileMoreBtnRef.current?.focus();
     }
-    return () => {
-      document.body.style.overflow = '';
-    };
   }, [mobileMoreOpen]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         if (mobileMoreOpen) {
-          setMobileMoreOpen(false);
-          mobileMoreBtnRef.current?.focus();
+          closeDrawer();
         }
       }
       if (mobileMoreOpen && event.key === 'Tab' && mobileDrawerRef.current) {
@@ -65,7 +69,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [mobileMoreOpen, setMobileMoreOpen]);
+  }, [mobileMoreOpen, closeDrawer]);
 
   const handleLogout = async () => {
     const { signOut } = await import('firebase/auth');
@@ -75,10 +79,18 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
   const buildTitle = `Git commit ${buildInfo.gitSha}${buildInfo.dirty ? ' (local working tree has uncommitted changes)' : ''}`;
 
   const navigateToDrawerDestination = (destination: DrawerDestination) => {
+    restoreFocusOnCloseRef.current = false;
     if (destination.refreshDecisionInput) {
       loadDecisionInput();
     }
     handleNavigate(destination.screen);
+    requestAnimationFrame(() => {
+      const main = document.querySelector<HTMLElement>('main');
+      if (main) {
+        main.tabIndex = -1;
+        main.focus();
+      }
+    });
   };
 
   return (
@@ -102,7 +114,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
         <button
           ref={mobileMoreBtnRef}
           className={`nav-item ${!isPrimaryNavigationScreen(screen) ? 'active' : ''}`}
-          onClick={() => setMobileMoreOpen((isOpen) => !isOpen)}
+          onClick={() => setMobileMoreOpen((isOpen) => {
+            restoreFocusOnCloseRef.current = isOpen;
+            return !isOpen;
+          })}
           aria-expanded={mobileMoreOpen}
           aria-haspopup="dialog"
         >
@@ -112,11 +127,11 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
       </nav>
 
       {mobileMoreOpen && (
-        <div className="mobile-more-overlay" onClick={() => setMobileMoreOpen(false)}>
+        <div className="mobile-more-overlay" onClick={closeDrawer}>
           <div ref={mobileDrawerRef} className="mobile-more-drawer" role="dialog" aria-modal="true" aria-labelledby="mobile-more-title" onClick={(e) => e.stopPropagation()}>
             <div className="drawer-header">
               <h3 id="mobile-more-title">Navigation & Settings</h3>
-              <button className="close-drawer-btn" onClick={() => setMobileMoreOpen(false)} aria-label="Close navigation and settings">✕</button>
+              <button className="close-drawer-btn" onClick={closeDrawer} aria-label="Close navigation and settings">✕</button>
             </div>
             <div className="drawer-items">
               {DRAWER_GROUPS.map((group) => {

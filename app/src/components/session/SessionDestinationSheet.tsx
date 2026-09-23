@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { useOverlayDialog } from '../useOverlayDialog';
+import '../overlayContract.css';
 import type { SessionDefinition, SessionOccurrence } from '../../sessions/models';
 import type { PreparedSessionLaunch } from '../../sessions/sessionLaunch';
 import { validateSessionDefinition } from '../../sessions/validation';
@@ -46,6 +48,8 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
     const [scheduleDate, setScheduleDate] = useState<string>(getLocalDateString());
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const dialogRef = useRef<HTMLDivElement>(null);
+    useOverlayDialog(isOpen, dialogRef, saving ? undefined : onClose, 'input[type="radio"]');
 
     if (!isOpen) return null;
 
@@ -116,8 +120,8 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
                         : 'Save & add to today';
 
     return (
-        <div className="destination-sheet-overlay" role="dialog" aria-modal="true" aria-labelledby="destination-title">
-            <div className="destination-sheet-card">
+        <div className="destination-sheet-overlay overlay-viewport overlay-viewport--sheet" role="dialog" aria-modal="true" aria-labelledby="destination-title">
+            <div ref={dialogRef} className="destination-sheet-card overlay-panel" tabIndex={-1}>
                 <header className="destination-header">
                     <h3 id="destination-title">Save or start session</h3>
                     <p className="destination-subtitle">{definition.title}</p>

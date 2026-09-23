@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, memo } from 'react';
 import { scheduleWindowService, type ScheduleWindowWithId } from '../../services/scheduleWindowService';
 import { getLocalDateString } from '../../utils/localDate';
+import { useOverlayFocusVisibility, useOverlayScrollLock } from '../useOverlayDialog';
+import '../overlayContract.css';
 import './ScheduleWindowModal.css';
 
 interface ScheduleWindowModalProps {
@@ -45,10 +47,22 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
     const initialFocusRef = useRef<HTMLInputElement>(null);
     const previousFocusRef = useRef<HTMLElement | null>(null);
     const onCloseRef = useRef(onClose);
+    const savingRef = useRef(saving);
+    useOverlayScrollLock(isOpen);
+    useOverlayFocusVisibility(isOpen, dialogRef);
+
+    const requestClose = () => {
+        if (savingRef.current) return;
+        onCloseRef.current();
+    };
 
     useEffect(() => {
         onCloseRef.current = onClose;
     }, [onClose]);
+
+    useEffect(() => {
+        savingRef.current = saving;
+    }, [saving]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -80,7 +94,7 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
                 event.preventDefault();
-                onCloseRef.current();
+                requestClose();
                 return;
             }
             if (event.key !== 'Tab') return;
@@ -175,10 +189,10 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
     };
 
     return (
-        <div className="modal-backdrop" onClick={onClose}>
+        <div className="modal-backdrop overlay-viewport" onClick={requestClose}>
             <div
                 ref={dialogRef}
-                className="schedule-window-modal-card"
+                className="schedule-window-modal-card overlay-panel"
                 onClick={e => e.stopPropagation()}
                 role="dialog"
                 aria-modal="true"
@@ -195,7 +209,7 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
                             both windows exist here.
                         </p>
                     </div>
-                    <button type="button" className="btn-close-modal" onClick={onClose} aria-label="Close">
+                    <button type="button" className="btn-close-modal" onClick={requestClose} disabled={saving} aria-label="Close">
                         &times;
                     </button>
                 </div>
@@ -261,7 +275,7 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
                             </button>
                         )}
                         <div className="actions-right">
-                            <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>
+                            <button type="button" className="btn-secondary" onClick={requestClose} disabled={saving}>
                                 Cancel
                             </button>
                             <button type="submit" className="btn-primary" disabled={saving}>
