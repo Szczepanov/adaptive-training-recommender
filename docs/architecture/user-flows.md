@@ -1,8 +1,9 @@
 # User flows
 
-Living reference for how navigation and user flows work today. Design rationale belongs in
-ADRs and implementation plans; this document describes current behaviour. When this document
-and code disagree, the code wins.
+Living reference for how navigation and user flows work today. Cross-cutting UI/UX quality
+requirements live in [`docs/standards/ui-ux.md`](../standards/ui-ux.md); design rationale
+belongs in ADRs and implementation plans. This document describes current behaviour. When
+this document and code disagree, the code wins.
 
 ## Source map and maintenance contract
 
@@ -21,6 +22,8 @@ over inferred component names or historical plans.
   `MobileNav` — desktop and mobile navigation chrome.
 * `app/src/contexts/AuthContext.tsx` `AuthProvider` — Firebase auth phase and background
   first-use/default-data initialization.
+* `docs/standards/ui-ux.md` — normative accessibility, responsive, navigation, interaction,
+  content, and verification quality bar for any flow change.
 * `docs/architecture/morning-decision-ux.md` — Home disclosure, confidence, and
   alternatives contracts.
 * `docs/architecture/account-scoped-ui-state.md` — account-isolation invariant.

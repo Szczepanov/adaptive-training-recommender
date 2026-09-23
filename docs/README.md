@@ -15,15 +15,19 @@ this repository so far — a fixed defect was re-reported three times because an
 |---|---|---|---|
 | [`adr/`](./adr/) | "What did we choose, and why?" | The intended design and its rationale. Immutable once accepted. | What the code *does today* — an ADR can be aspirational or partly unimplemented. |
 | [`architecture/`](./architecture/) | "How does it work now?" | Current behaviour. Living reference, updated with the code. | Rationale — it describes, it does not justify. |
+| [`standards/`](./standards/) | "What quality bar must changes meet?" | Normative, living cross-cutting product/engineering standards. | What the code necessarily does today — deviations can exist and should be tracked explicitly. |
 | [`analysis/`](./analysis/) | "What was true on date X?" | Evidence gathered on its date. Dated, never edited after publication. | Current state. Findings may have been fixed since. Verify against code. |
 | [`plans/`](./plans/) | "How do we get from here to there?" | Sequenced work, with per-task status markers. | Anything in a plan marked `Implemented` or `Archived` — historical record only. |
 | [`ops/`](./ops/) | "How do I run it?" | Operational procedure. | Design intent. |
 
-**Precedence when two documents disagree: the code wins, then `architecture/`, then
-`adr/`, then everything else.** If you find a disagreement, do not silently pick one —
-record it in the current review document
-([`analysis/2026-08-08-architecture-review.md`](./analysis/2026-08-08-architecture-review.md))
-or fix the doc, and say which you did.
+**Precedence when documents disagree about current behaviour: the code wins, then
+`architecture/`, then `adr/`, then everything else.** `standards/` is different: it is
+normative rather than descriptive. If current code violates a standard, the code still
+describes today's behaviour, but the mismatch is product/engineering debt to fix or document
+as an explicit exception (`docs/standards/ui-ux.md` § 10). If you find a disagreement, do
+not silently pick one — fix the stale document, document an explicit standard exception, or
+record the divergence in a new dated `analysis/` review or tracked plan/issue in
+[`plans/README.md`](./plans/README.md), and say which you did.
 
 Two conventions apply to every document here, both added after being violated (see
 [`plans/README.md` § Conventions](./plans/README.md#conventions-that-exist-because-they-were-violated)):
@@ -38,6 +42,7 @@ Two conventions apply to every document here, both added after being violated (s
 | If you are… | Read, in order |
 |---|---|
 | Changing engine decision behaviour | [`architecture/recommendation-engine.md`](./architecture/recommendation-engine.md) → the relevant ADR → [`analysis/2026-08-08-architecture-review.md`](./analysis/2026-08-08-architecture-review.md) for known divergences |
+| Changing UI, UX, accessibility, responsive layout, or navigation | [`standards/ui-ux.md`](./standards/ui-ux.md) → [`architecture/user-flows.md`](./architecture/user-flows.md) → the relevant flow-specific architecture doc/component; use dated UX analyses only as historical evidence |
 | Picking up scheduled work | [`plans/README.md`](./plans/README.md) — the status table says what is startable today |
 | Changing Firestore paths, rules, or schema | [ADR-0002](./adr/0002-user-scoped-firestore-isolation.md) → [ADR-0010](./adr/0010-decision-provenance-and-audit-replay.md) → `app/firestore.rules` |
 | Changing saved or authored session templates | [`architecture/session-execution.md`](./architecture/session-execution.md) → [ADR-0023](./adr/0023-multidomain-session-authoring-execution-and-evidence.md) → [`plans/custom-template-read-integrity-and-lifecycle.md`](./plans/custom-template-read-integrity-and-lifecycle.md) |
@@ -49,6 +54,10 @@ Two conventions apply to every document here, both added after being violated (s
 ---
 
 ## 📚 Documentation Index
+
+### ✅ Standards
+
+* [**UI/UX and accessibility standard**](./standards/ui-ux.md) — normative living quality bar for accessibility, mobile ergonomics, responsive behavior, navigation, interaction states, content clarity, trust, and UI verification.
 
 ### 🏛️ Architecture Decision Records (ADRs)
 Architectural choices, system invariants, and technical trade-offs are documented as ADRs in [`docs/adr/`](./adr/):
@@ -102,6 +111,8 @@ Architectural choices, system invariants, and technical trade-offs are documente
 
 ### 🔍 Reviews & Analysis
 Point-in-time assessments of the system as built, including gaps between documented decisions and implemented behaviour:
+
+* [**2026-09-23 UI/UX foundation and documentation review**](./analysis/2026-09-23-ui-ux-foundation-review.md) — audit of the repository's fragmented UI/UX guidance against WCAG 2.2, mobile ergonomics, usability heuristics, and current test coverage; establishes the need for the living UI/UX standard.
 
 * [**2026-08-08 Codebase, Docs & Decision Review**](./analysis/2026-08-08-architecture-review.md) — Full-repository review with a sequenced remediation plan.
 * [**2026-08-09 Phase 0–5 completion review**](./analysis/2026-08-09-phase-0-5-completion-review.md) — Current reconciliation of the remediation plans, verification evidence, and remaining calibration/process work.

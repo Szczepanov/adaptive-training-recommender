@@ -1,8 +1,10 @@
 # Session execution and saved-template lifecycle
 
-This is the living reference for source-neutral session execution. Design rationale lives in
+Cross-cutting accessibility, mobile touch-target, modal focus, and UI verification requirements
+come from [`docs/standards/ui-ux.md`](../standards/ui-ux.md) (including the active-workout
+**focused and capable** experience contract). Design rationale lives in
 [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md); this document
-describes the current application behavior.
+describes the current application behavior for source-neutral session execution.
 
 ## Content and persistence boundary
 

@@ -94,6 +94,7 @@ Full statements, with rationale and the checks that enforce them, are in
 * `npm run check` — the frontend gate: `tsc -b`, `eslint`, `vitest run`, knowledge validation, knowledge-coverage validation, knowledge-freshness reporting, workout catalog validation
 * `npm test` — `vitest run` only; the fast inner loop (`npm run test:watch`, `npm run test:coverage`)
 * `npm run test:rules` — Firestore security-rule suite inside the Firebase emulator (needs Java)
+* `npm run test:e2e` — Playwright browser E2E suite inside the Auth + Firestore emulators (`playwright.e2e.config.ts`; `npm run e2e:serve` serves the E2E app at `http://127.0.0.1:4173`)
 * `npm run build` — `npm run check && vite build`
 * `npm run dev` — Vite dev server (`predev` runs `npm run check` first)
 * `npm run validate:workouts` / `npm run validate:knowledge` / `npm run validate:knowledge-coverage` — catalog and registry validators, individually
@@ -105,7 +106,7 @@ Full statements, with rationale and the checks that enforce them, are in
 * `npm run build:plan-judge-corpus && npm run report:sequencing` — deterministic sequencing collision/spacing/opportunity-cost diagnostics (issue #458; report only, no gate)
 * `judge:*` and `persona:*` are script-name families, **not executable npm wildcards**. Use concrete scripts such as `npm run judge:run`, `npm run judge:diff`, `npm run judge:update-baseline`, `npm run persona:run`, `npm run persona:diff`, and `npm run persona:update-baseline`; see `app/package.json` for local/quick/e2e/resume variants.
 * `npm run evidence:health-anomaly`, `npm run evidence:identity-replay`, `npm run measure:garmin-zone-credit` — shadow-mode evidence runs
-* `npm run visual:install` → `npm run visual:refresh` — Playwright screenshots into `artifacts/visual-review/latest/`; `npm run visual:serve` runs the harness at `http://127.0.0.1:4174`
+* `npm run visual:install` → `npm run visual:refresh` — finalized Playwright review bundle for `visual-desktop` (1440 px) + `visual-mobile` (390 px) in `artifacts/visual-review/latest/`; `npx playwright test` can ad hoc capture `visual-mobile-narrow` (360 px) and `visual-mobile-wide` (412 px), but does not prepare/finalize the review bundle; `npm run visual:serve` runs the harness at `http://127.0.0.1:4174`
 
 ### What CI gates (`.github/workflows/ci.yml`)
 
@@ -117,7 +118,7 @@ fails the PR if any required job on that path fails.
 | Docs-only | Documentation & security hygiene | repository-hygiene `pre-commit` checks (the CI job skips the code-only uv-lock/Ruff/mypy/ESLint hooks) |
 | Code | Python test suite | `uv lock --check`, repository-hygiene `pre-commit`, `ruff check`, `ruff format --check`, `mypy src/garmin_sync`, `pytest` with coverage, `uvx pip-audit` |
 | Code | Frontend hygiene & static gates | `npm audit --audit-level=high`, `typecheck`, `lint`, `validate:knowledge`, `validate:knowledge-coverage`, `validate:knowledge-freshness` (reports only, non-blocking), `validate:workouts`, policy-version drift vs the PR base, `build:bundle` |
-| Code | Frontend unit tests & Firestore rules | `npm run test:coverage`, `npm run test:rules` (emulator + Java) |
+| Code | Frontend unit tests, Firestore rules & browser E2E | `npm run test:coverage`, `npm run test:rules`, `npm run test:e2e` (emulators + Java + Chromium) |
 | Code | Engine simulations & AI gates | `simulate:scenarios` plus committed-baseline `git diff --exit-code`, `simulate:plan-judge`, persona corpus build; `simulate:diff` is advisory (`continue-on-error`) |
 | Code | Docker build & compose smoke | root image build, Compose config/build/up, smoke checks |
 
@@ -400,13 +401,20 @@ The short version:
 |---|---|---|---|
 | `docs/adr/` | Immutable decisions | Intended design and rationale | What the code does today |
 | `docs/architecture/` | Living reference | How it works today | Why it was chosen |
+| `docs/standards/` | Normative living standards | Cross-cutting quality requirements | What the code necessarily does today |
 | `docs/analysis/` | Dated audit | Evidence as of its date | Current state — verify against code |
 | `docs/plans/` | Mutable, status-tracked | Work to be done; the status board in [`docs/plans/README.md`](./docs/plans/README.md) | Anything marked `Implemented`/`Archived` — that is history |
 | `docs/ops/` | Runbooks | Operational procedure | Design intent |
 
-**When two documents disagree, the code wins, then `architecture/`, then `adr/`.** Do not
-silently pick one — fix the doc or record the divergence in the current review document,
-and say which you did.
+**When documents disagree about current behaviour, the code wins, then `architecture/`,
+then `adr/`.** Standards are normative: a code/standard mismatch is a deviation to fix or
+document explicitly, not evidence that the standard should silently change.
+
+**Before changing user-facing UI, responsive layout, navigation, accessibility, forms,
+dialogs, or interaction behavior**, read [`docs/standards/ui-ux.md`](./docs/standards/ui-ux.md)
+first, then [`docs/architecture/user-flows.md`](./docs/architecture/user-flows.md) and the
+relevant flow-specific architecture document. Dated UX analyses and implemented plans are
+evidence/history, not the current quality bar.
 
 ### Writing conventions
 
