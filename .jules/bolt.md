@@ -53,3 +53,6 @@
 ## 2026-09-20 - Index baselines for O(1) loop lookups
 **Learning:** In multisource fusion calculations (`evaluateMultisourceFusion`, `computeCrossSourceTelemetry`), repeatedly searching `baselines` arrays using `.find()` inside nested loops over metric types and observation bundles causes significant O(N) iteration overhead.
 **Action:** Always pre-build a `Map` of baselines keyed by their unique discriminator (like `${metric}_${provider}_${transport}`) before iterating over observations. Use O(1) `Map.get()` inside the loop bodies.
+## 2026-09-23 - [Concurrent batched reads in Firestore]
+**Learning:** Sequential calls to `db.get_all(chunk)` in loops across many batches cause cumulative network roundtrip delays (N+1 latency across chunks).
+**Action:** When fetching multiple large chunks (e.g. 400 documents) from Firestore in Python, use `concurrent.futures.ThreadPoolExecutor` to map `db.get_all` across the chunks concurrently and merge the results, eliminating sequential I/O bottlenecks.

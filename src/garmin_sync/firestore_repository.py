@@ -124,22 +124,39 @@ class FirestoreRecoveryRepository:
         """Fetch multiple recovery snapshots efficiently in batches."""
         db = self._get_db()
         refs = [self._get_doc_ref(d) for d in date_isos]
-        snapshots = {}
+        snapshots: dict[str, dict[str, Any]] = {}
 
+        # The audit uses this batch reader when its historical range query fails.
+        # Fetch fallback date ranges in concurrent chunks to avoid serial get_all roundtrips.
         chunk_size = 400
-        for i in range(0, len(refs), chunk_size):
-            chunk = refs[i : i + chunk_size]
+        chunks = [refs[i : i + chunk_size] for i in range(0, len(refs), chunk_size)]
+
+        if not chunks:
+            return snapshots
+
+        def _fetch_chunk(chunk: list[Any]) -> dict[str, dict[str, Any]]:
+            chunk_snapshots = {}
             try:
                 for doc_snap in db.get_all(chunk):
                     if doc_snap.exists:
                         data = doc_snap.to_dict()
                         if data.get("userId") == self.user_id:
-                            snapshots[doc_snap.id] = data
+                            chunk_snapshots[doc_snap.id] = data
             except Exception as e:
                 logger.warning(
                     f"Error reading batch of Firestore snapshots for user {self.user_id}: {e}"
                 )
                 raise
+            return chunk_snapshots
+
+        if len(chunks) == 1:
+            return _fetch_chunk(chunks[0])
+
+        max_workers = min(10, len(chunks))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for result in executor.map(_fetch_chunk, chunks):
+                snapshots.update(result)
+
         return snapshots
 
     def is_fresh(
