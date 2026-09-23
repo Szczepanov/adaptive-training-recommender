@@ -499,7 +499,8 @@ tempo/threshold or Strength work before days 4-5 tightened again.
 The final policy is deliberately conservative because a forecast has no real future
 readiness reading to re-check: concordant severe distress keeps offsets 1-2 at
 Rest/Mobility-Recovery only. When at least two wearable markers are adverse while subjective
-readiness is fresh (readiness >= 7, fatigue/soreness <= 3, and no pain flag), the recovery-only
+readiness is fresh (readiness >= 7, fatigue/soreness <= 3, no pain flag, and no clinical
+envelope sources or red-flag findings), the recovery-only
 window is one day, followed by the same graduated low-cost re-entry. If an easy aerobic
 candidate is available during late re-entry after a rest day, it is preferred over another
 passive rest day. After any two consecutive projected rest days, candidates are capped at

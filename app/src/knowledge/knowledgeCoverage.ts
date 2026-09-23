@@ -173,7 +173,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'readiness.severe_adverse_recovery_reentry', domain: 'readiness_recovery', title: 'Severe adverse-recovery graduated re-entry window',
-        currentRule: 'Concordant severe recovery uses two recovery-only forecast days; fresh subjective/adverse-wearable discordance uses one. Low-cost non-Strength re-entry progresses at 0.35 then 0.5; after two projected rest days, systemic cost is capped at 0.75 and an available easy aerobic candidate displaces another rest day.',
+        currentRule: 'Concordant severe recovery uses two recovery-only forecast days and reaches the unrestricted candidate pool on day 6; fresh subjective/adverse-wearable discordance uses one recovery-only day and reaches that pool on day 5. Low-cost non-Strength re-entry progresses at 0.35 then 0.5, with a light event-taper exception. Separately, after two projected Rest days systemic cost is capped at 0.75. During late severe-recovery re-entry after a Rest day, an Easy Endurance candidate that passes the shared gates is preferred over another Rest day.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
         codeRefs: ['engine/planner.ts:RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST', 'engine/planner.ts:RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST', 'engine/planner.ts:POST_REST_REENTRY_MAX_SYSTEMIC_COST'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.severeAdverseRecoveryReentry],
