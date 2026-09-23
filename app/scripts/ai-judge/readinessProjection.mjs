@@ -18,8 +18,14 @@ export function projectedRecoveryBaseline(readiness) {
 
   const objective = baseline.objective ?? {};
   const neutral = {
-    hrv_delta: 0, hrv_last_night: 42, rhr_delta: 0, rhr: 58, sleep_score: 80,
-    sleep_duration_min: 440, body_battery_wake: 72, sleep_score_delta_7d: 0,
+    hrv_delta: 0,
+    hrv_last_night: typeof objective.hrv_weekly_avg === 'number' ? objective.hrv_weekly_avg : 42,
+    rhr_delta: 0,
+    rhr: typeof objective.rhr_7d_avg === 'number' ? objective.rhr_7d_avg : 58,
+    sleep_score: 80,
+    sleep_duration_min: 440,
+    body_battery_wake: 72,
+    sleep_score_delta_7d: 0,
   };
   const adverse = {
     hrv_delta: value => value <= -10,
