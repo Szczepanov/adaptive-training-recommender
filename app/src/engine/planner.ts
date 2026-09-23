@@ -645,7 +645,8 @@ function followsTwoProjectedRestDays(
     date: string,
 ): boolean {
     const isProjectedRestOn = (targetDate: string) => history.some(entry =>
-        entry.source === 'projected'
+        'source' in entry
+        && entry.source === 'projected'
         && entry.date === targetDate
         && entry.category === 'Rest'
     );
