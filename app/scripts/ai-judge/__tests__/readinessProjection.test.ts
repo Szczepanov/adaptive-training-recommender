@@ -40,6 +40,20 @@ describe('decayAcuteReadinessTowardBaseline', () => {
     expect(baseline.objective).toMatchObject({ hrv_delta: 0, hrv_delta_28d: -14, rhr_delta: null, body_battery_wake: null });
   });
 
+  it('uses within-scenario rolling HRV and RHR anchors when they are available', () => {
+    const baseline = projectedRecoveryBaseline({
+      subjective: { readiness: 7, fatigue: 3, soreness: 2 },
+      objective: {
+        hrv_weekly_avg: 70, hrv_last_night: 45, hrv_delta: -25,
+        rhr_7d_avg: 48, rhr: 60, rhr_delta: 12,
+      },
+    });
+    expect(baseline.objective).toMatchObject({
+      hrv_weekly_avg: 70, hrv_last_night: 70, hrv_delta: 0,
+      rhr_7d_avg: 48, rhr: 48, rhr_delta: 0,
+    });
+  });
+
   it('does not coerce missing subjective readings into synthetic baseline values', () => {
     const readiness = {
       subjective: { readiness: null, sleepQuality: null, fatigue: null, soreness: null, stress: null },
