@@ -197,6 +197,20 @@ describe('load + intensity + recovery product-claim alignment', () => {
 
         const cWithoutAuthoredTaper: UserEvent = { ...triathlonAEvent, priority: 'C' };
         const cAuthoredTaper: UserEvent = { ...cWithoutAuthoredTaper, taper: { startDate: '2026-09-07' } };
+
+        // Issue #737: unauthored C events preserve normal D-3 quality/strength allocation;
+        // an explicit taper opts back into the A/B D-3 gates.
+        expect(evaluateRecoveryConstraints(d3Moderate, d3Date, [], { focusEvent: cWithoutAuthoredTaper }))
+            .not.toContain('PRE_EVENT_TAPER_RESTRICTION');
+        expect(evaluateRecoveryConstraints(d3Hard, d3Date, [], { focusEvent: cWithoutAuthoredTaper }))
+            .not.toContain('PRE_EVENT_TAPER_RESTRICTION');
+        expect(evaluateRecoveryConstraints(heavyStrength, d3Date, [], { focusEvent: cWithoutAuthoredTaper }))
+            .not.toContain('PRE_EVENT_STRENGTH_RESTRICTION');
+        expect(evaluateRecoveryConstraints(d3Hard, d3Date, [], { focusEvent: cAuthoredTaper }))
+            .toContain('PRE_EVENT_TAPER_RESTRICTION');
+        expect(evaluateRecoveryConstraints(heavyStrength, d3Date, [], { focusEvent: cAuthoredTaper }))
+            .toContain('PRE_EVENT_STRENGTH_RESTRICTION');
+
         const exhaustive = template({ category: 'Hard Endurance', modality: 'Running', systemicCost: 0.8, title: 'VO2 intervals' });
         expect(evaluateRecoveryConstraints(exhaustive, '2026-09-09', [], { focusEvent: cWithoutAuthoredTaper }))
             .not.toContain('PRE_EVENT_TAPER_RESTRICTION');

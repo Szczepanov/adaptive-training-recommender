@@ -642,12 +642,17 @@ export function evaluateRecoveryConstraints(
             && taper && targetDate >= taper.startDate && targetDate <= taper.endDate);
         if (daysToRace >= 1 && daysToRace <= 3) {
             const isStrengthModality = template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category);
-            if (isStrengthModality) {
+            // Issue #737: an unauthored C event trains normally through D-3. The shared
+            // pre-event strength/hard gates begin at D-2; an explicit athlete-authored
+            // taper opts back into the A/B D-3 restrictions.
+            const cTrainThroughAtD3 = focusEvent.priority === 'C' && !authoredTaperActive && daysToRace === 3;
+            if (isStrengthModality && !cTrainThroughAtD3) {
                 reasons.push('PRE_EVENT_STRENGTH_RESTRICTION');
             }
-            // Preserve short race-specific sharpening, but keep generic tempo/hard endurance
-            // out of D-3 as well. D-1/D-2 are already covered by the hard-session gate below.
-            if (daysToRace === 3 && MODERATE_OR_HARDER_ENDURANCE_CATEGORIES.includes(template.category)) {
+            // Preserve short race-specific sharpening for A/B (and authored C tapers),
+            // but keep generic tempo/hard endurance out of D-3 for those tapering cases.
+            // D-1/D-2 are covered by the hard-session gate below for every priority.
+            if (daysToRace === 3 && !cTrainThroughAtD3 && MODERATE_OR_HARDER_ENDURANCE_CATEGORIES.includes(template.category)) {
                 reasons.push('PRE_EVENT_TAPER_RESTRICTION');
             }
         }

@@ -407,13 +407,14 @@ own `taper_sharpening`/`race_week_strength` coverage keys instead of only the ge
 
 ### Pre-event restrictions and taper-window strength/density guard (Issue #679, `optimizer.ts`)
 
-`evaluateRecoveryConstraints`'s D1-D7 pre-event restriction (strength blocked 1-3 days
-out, hard work 1-2 days, exhaustive work 3-7 days, plus the A-event post-event recovery
-window) now also gates `triathlon` events, not only `cycling_event`/`running_race` -- it
-previously never applied to a triathlon A/B event at all. At D-3, generic
-`Moderate Endurance`/`Hard Endurance` is also excluded while a light
-`Race-Specific Endurance` sharpening touch may remain available; D-1/D-2 retain the
-existing broader hard-session restriction.
+`evaluateRecoveryConstraints`'s D1-D7 pre-event restriction now also gates `triathlon`
+events, not only `cycling_event`/`running_race`. For A/B events, strength is blocked D-1
+through D-3, hard work D-1/D-2, generic `Moderate Endurance`/`Hard Endurance` at D-3,
+and exhaustive work D-3 through D-7, while a light `Race-Specific Endurance` sharpening
+touch may remain available at D-3. An unauthored C-priority event deliberately skips the
+D-3 through D-7 restrictions so normal build dose and quality can continue through D-3;
+the shared D-1/D-2 strength/hard gates still apply. An athlete-authored C taper opts back
+into the A/B-style D-3 restrictions.
 
 A second, independent restriction now covers the *full* resolved taper window
 (`resolveEventTaper`, the same cycling/running/triathlon categories, not only the D1-D7

@@ -64,11 +64,11 @@ describe('taper and fueling evidence pack', () => {
 
     it('issue #679: keeps the pre-event restriction claim in sync with the taper-window strength/density guard constants', () => {
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.preEventRestrictionsPolicy);
-        expect(claim.statement).toContain('for A/B/C cycling/running/triathlon events');
-        expect(claim.statement).toContain('Exhaustive work is blocked 3-7 days for A/B events');
-        expect(claim.statement).toContain('C-priority event with no active athlete-authored taper may train through D-3');
-        expect(claim.statement).toContain('active authored taper restores the D-3–D-7 exhaustive restriction and repeat-session dampener');
-        expect(claim.statement).toContain('Shared D-1/D-2 restrictions remain in force');
+        expect(claim.statement).toContain('for A/B cycling/running/triathlon events');
+        expect(claim.statement).toContain('A C-priority event without an active athlete-authored taper skips those D-3–D-7 restrictions');
+        expect(claim.statement).toContain('normal build dose and quality can continue through D-3');
+        expect(claim.statement).toContain('D-1/D-2 strength and hard-work restrictions remain in force');
+        expect(claim.statement).toContain('active authored taper restores the A/B-style D-3 and D-3–D-7 restrictions plus the repeat-session dampener');
         expect(claim.statement).toContain(`${TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST}`);
         expect(claim.statement).toContain('one light');
         expect(TAPER_STRENGTH_TOUCH_LIMIT).toBe(1);
