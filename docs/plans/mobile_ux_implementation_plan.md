@@ -7,7 +7,7 @@
 `Open app → subjective check-in → understand today's state in ~5 sec → inspect today's recommendation → start/export workout`
 
 > [!NOTE]
-> **Historical Record:** This implementation plan has been delivered. Retained for reasoning and architectural context.
+> **Historical Record:** This implementation plan has been delivered. Retained for reasoning and architectural context. For current cross-cutting UI/UX requirements, use [`docs/standards/ui-ux.md`](../standards/ui-ux.md); for current navigation and flow behavior, use [`docs/architecture/user-flows.md`](../architecture/user-flows.md).
 
 ---
 
