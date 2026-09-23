@@ -126,14 +126,8 @@ class FirestoreRecoveryRepository:
         refs = [self._get_doc_ref(d) for d in date_isos]
         snapshots: dict[str, dict[str, Any]] = {}
 
-        # ⚡ Bolt Optimization:
-        # 💡 What: Replaced sequential loop over db.get_all(chunk) with a ThreadPoolExecutor
-        #          to fetch multiple chunk batches concurrently.
-        # 🎯 Why: Previously, fetching many snapshots over a long date range meant sequentially
-        #         blocking on network roundtrips for each 400-document batch chunk, causing O(N) latency spikes.
-        # 📊 Impact: Eliminates sequential I/O latency for historical backfills/audits that fetch >400 snapshots.
-        # 🔬 Measurement: This pattern was successfully measured to eliminate N+1 roundtrip delays in
-        #                 delete_health_observation_day_bundles_batch.
+        # The audit uses this batch reader when its historical range query fails.
+        # Fetch fallback date ranges in concurrent chunks to avoid serial get_all roundtrips.
         chunk_size = 400
         chunks = [refs[i : i + chunk_size] for i in range(0, len(refs), chunk_size)]
 

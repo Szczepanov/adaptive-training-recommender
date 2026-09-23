@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -87,6 +89,59 @@ def test_firestore_repository_user_mismatch_raises_error():
     invalid_payload = {"userId": "other_uid_789", "date": "2026-08-06", "raw": {}}
     with pytest.raises(ValueError, match="does not match configured user_id"):
         repo.upsert_snapshot("2026-08-06", invalid_payload)
+
+
+def test_get_snapshots_batch_chunks_merges_and_filters_user_id() -> None:
+    mock_db = MagicMock()
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+    date_isos = [(date(2024, 1, 1) + timedelta(days=index)).isoformat() for index in range(805)]
+    repo._get_doc_ref = MagicMock(side_effect=lambda date_iso: SimpleNamespace(id=date_iso))
+    excluded_dates = {date_isos[401], date_isos[800]}
+
+    def get_all(refs: list[SimpleNamespace]) -> list[SimpleNamespace]:
+        snapshots = []
+        for ref in refs:
+            if ref.id == date_isos[800]:
+                snapshots.append(SimpleNamespace(id=ref.id, exists=False))
+                continue
+            user_id = "other_uid_789" if ref.id == date_isos[401] else repo.user_id
+            data = {"userId": user_id, "date": ref.id}
+            snapshots.append(
+                SimpleNamespace(id=ref.id, exists=True, to_dict=lambda data=data: data)
+            )
+        return snapshots
+
+    mock_db.get_all.side_effect = get_all
+
+    snapshots = repo.get_snapshots_batch(date_isos)
+
+    assert snapshots == {
+        date_iso: {"userId": repo.user_id, "date": date_iso}
+        for date_iso in date_isos
+        if date_iso not in excluded_dates
+    }
+    chunks = [call.args[0] for call in mock_db.get_all.call_args_list]
+    assert sorted(len(chunk) for chunk in chunks) == [5, 400, 400]
+    assert {ref.id for chunk in chunks for ref in chunk} == set(date_isos)
+
+
+def test_get_snapshots_batch_propagates_chunk_failure() -> None:
+    mock_db = MagicMock()
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+    date_isos = [(date(2024, 1, 1) + timedelta(days=index)).isoformat() for index in range(401)]
+    repo._get_doc_ref = MagicMock(side_effect=lambda date_iso: SimpleNamespace(id=date_iso))
+
+    def get_all(refs: list[SimpleNamespace]) -> list[SimpleNamespace]:
+        if refs[0].id == date_isos[400]:
+            raise RuntimeError("synthetic Firestore failure")
+        return []
+
+    mock_db.get_all.side_effect = get_all
+
+    with pytest.raises(RuntimeError, match="synthetic Firestore failure"):
+        repo.get_snapshots_batch(date_isos)
+
+    assert sorted(len(call.args[0]) for call in mock_db.get_all.call_args_list) == [1, 400]
 
 
 def test_is_snapshot_complete_all_metrics_present():
