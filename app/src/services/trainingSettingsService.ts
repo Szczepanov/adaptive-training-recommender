@@ -1,4 +1,4 @@
-import { doc, getDoc, runTransaction, setDoc } from 'firebase/firestore';
+import { doc, getDoc, runTransaction } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { BodyRegion, SessionTemplate, TrainingSettings, UserConstraint } from '../engine/models';
 import type { DataState } from '../engine/dataState';
@@ -193,6 +193,8 @@ export function buildRevertUpdate(previous: TrainingSettings, update: TrainingSe
 }
 
 export class TrainingSettingsService {
+    private readonly inFlightMigrations = new Map<string, Promise<DataState<TrainingSettings>>>();
+
     private ref(userId: string) {
         return doc(getDb(), 'users', userId, COLLECTION, DOCUMENT);
     }
@@ -219,17 +221,50 @@ export class TrainingSettingsService {
         }
     }
 
+    private async migrateMissingTrainingSettings(userId: string): Promise<DataState<TrainingSettings>> {
+        // A missing settings profile is the documented first-run migration path,
+        // not an unavailable source. Re-reading inside a transaction makes initialization
+        // first-writer-wins so concurrent sign-in readers (e.g. AuthContext initialization
+        // and DecisionComposer) never attempt an update with a mismatched createdAt timestamp
+        // or clobber a concurrently committed profile.
+        const legacy = await constraintService.listConstraints(userId);
+        const ref = this.ref(userId);
+        return runTransaction(getDb(), async transaction => {
+            const snapshot = await transaction.get(ref);
+            if (snapshot.exists()) {
+                const parsed = parseTrainingSettings(snapshot.data(), userId);
+                if (!parsed) {
+                    return {
+                        status: 'INVALID' as const,
+                        issues: [{ code: 'schema-validation-failed', documentPath: `users/${userId}/${COLLECTION}/${DOCUMENT}` }],
+                    };
+                }
+                return { status: 'AVAILABLE' as const, data: parsed, revision: parsed.updatedAt };
+            }
+
+            const migrated = migrateLegacyConstraints(userId, legacy);
+            transaction.set(ref, migrated);
+            return { status: 'AVAILABLE' as const, data: migrated, revision: migrated.updatedAt };
+        });
+    }
+
     async getTrainingSettingsState(userId: string): Promise<DataState<TrainingSettings>> {
         try {
             const existing = await this.peekTrainingSettingsState(userId);
             if (existing.status !== 'MISSING') return existing;
 
-            // A missing settings profile is the documented first-run migration path,
-            // not an unavailable source. Its write is still subject to Firestore rules.
-            const legacy = await constraintService.listConstraints(userId);
-            const migrated = migrateLegacyConstraints(userId, legacy);
-            await setDoc(this.ref(userId), migrated);
-            return { status: 'AVAILABLE', data: migrated, revision: migrated.updatedAt };
+            const existingInFlight = this.inFlightMigrations.get(userId);
+            if (existingInFlight) return await existingInFlight;
+
+            const migrationPromise = this.migrateMissingTrainingSettings(userId);
+            this.inFlightMigrations.set(userId, migrationPromise);
+            try {
+                return await migrationPromise;
+            } finally {
+                if (this.inFlightMigrations.get(userId) === migrationPromise) {
+                    this.inFlightMigrations.delete(userId);
+                }
+            }
         } catch (error: unknown) {
             return {
                 status: 'UNAVAILABLE',
