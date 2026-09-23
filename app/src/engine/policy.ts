@@ -6,6 +6,7 @@ export const POLICY_VERSION = '2026-09-event-demand-taper-window-v1';
  * audits remain readable evidence, but replay is rejected explicitly because the old
  * decision function is not bundled alongside the current policy. */
 export const HISTORICAL_POLICY_VERSIONS = [
+    '2026-09-rolling-load-budget-v3',
     '2026-09-rolling-load-budget-v2',
     '2026-09-rolling-load-budget-v1',
     '2026-09-health-hard-endurance-event-priority-c-merge-v1',
