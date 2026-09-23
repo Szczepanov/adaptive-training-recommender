@@ -1,7 +1,7 @@
 # UI/UX and accessibility standard
 
-**Status:** Normative, living standard  
-**Applies to:** `app/` user-facing web UI, including mobile/PWA layouts  
+**Status:** Normative, living standard
+**Applies to:** `app/` user-facing web UI, including mobile/PWA layouts
 **Primary product context:** an athlete often using the app quickly, one-handed, on a phone, before or during training
 
 This document defines the cross-cutting UI/UX quality bar for Adaptive Training Recommender.
