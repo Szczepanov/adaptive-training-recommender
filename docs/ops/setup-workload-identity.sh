@@ -120,9 +120,6 @@ else
 fi
 
 gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
-  --member="serviceAccount:${JOB_SA_EMAIL}" --role="${AUTH_USER_ROLE}" \
-  --condition=None >/dev/null
-gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
   --member="serviceAccount:${LINK_SA_EMAIL}" --role="${AUTH_USER_ROLE}" \
   --condition=None >/dev/null
 
@@ -150,11 +147,9 @@ gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
   --condition=None >/dev/null
 
 # Firebase Admin custom tokens are signed through IAM when running with ADC on Cloud Run.
-# Grant the runtime identity signBlob on itself only; this does not let it impersonate other SAs.
-echo "==> Allowing runtime identity to sign Firebase custom tokens"
-gcloud iam service-accounts add-iam-policy-binding "${JOB_SA_EMAIL}" \
-  --member="serviceAccount:${JOB_SA_EMAIL}" \
-  --role="roles/iam.serviceAccountTokenCreator" >/dev/null
+# Only the public linker mints them; grant signBlob on that identity itself, never on the
+# scheduled sync Job.
+echo "==> Allowing account-link identity to sign Firebase custom tokens"
 gcloud iam service-accounts add-iam-policy-binding "${LINK_SA_EMAIL}" \
   --member="serviceAccount:${LINK_SA_EMAIL}" \
   --role="roles/iam.serviceAccountTokenCreator" >/dev/null
