@@ -400,13 +400,20 @@ The short version:
 |---|---|---|---|
 | `docs/adr/` | Immutable decisions | Intended design and rationale | What the code does today |
 | `docs/architecture/` | Living reference | How it works today | Why it was chosen |
+| `docs/standards/` | Normative living standards | Cross-cutting quality requirements | What the code necessarily does today |
 | `docs/analysis/` | Dated audit | Evidence as of its date | Current state — verify against code |
 | `docs/plans/` | Mutable, status-tracked | Work to be done; the status board in [`docs/plans/README.md`](./docs/plans/README.md) | Anything marked `Implemented`/`Archived` — that is history |
 | `docs/ops/` | Runbooks | Operational procedure | Design intent |
 
-**When two documents disagree, the code wins, then `architecture/`, then `adr/`.** Do not
-silently pick one — fix the doc or record the divergence in the current review document,
-and say which you did.
+**When documents disagree about current behaviour, the code wins, then `architecture/`,
+then `adr/`.** Standards are normative: a code/standard mismatch is a deviation to fix or
+document explicitly, not evidence that the standard should silently change.
+
+**Before changing user-facing UI, responsive layout, navigation, accessibility, forms,
+dialogs, or interaction behavior**, read [`docs/standards/ui-ux.md`](./docs/standards/ui-ux.md)
+first, then [`docs/architecture/user-flows.md`](./docs/architecture/user-flows.md) and the
+relevant flow-specific architecture document. Dated UX analyses and implemented plans are
+evidence/history, not the current quality bar.
 
 ### Writing conventions
 
