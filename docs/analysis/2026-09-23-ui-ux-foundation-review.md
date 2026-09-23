@@ -27,7 +27,8 @@ External references checked for the baseline:
 - WCAG 2.2 Target Size (Minimum), Focus Not Obscured, Redundant Entry, and Accessible
   Authentication guidance
 - Nielsen Norman Group's ten usability heuristics
-- Apple Human Interface Guidelines for mobile hit targets and touch-control spacing
+- Apple Human Interface Guidelines for mobile hit targets, design principles, writing,
+  feedback, and touch-control spacing
 
 This is a dated analysis. The new `docs/standards/ui-ux.md` is the living standard produced
 from it.
@@ -161,6 +162,32 @@ which layer.
 **Resolution:** define a layered UI verification strategy and a UI-specific definition of
 done.
 
+### 8. Emotional intent is implied but not specified
+
+The reviewed documents contain ingredients of a good emotional experience — trust,
+transparency, progressive disclosure, user control, clear recovery paths, and safety-aware
+copy — but none explicitly answers **how the athlete should feel while using the product**.
+
+That omission matters because otherwise two designs can satisfy the same functional
+requirements while creating very different experiences. For example, a recovery day can be
+presented as an intentional training decision or as a red "failure"; both may encode the same
+engine state, but only one supports the product's purpose.
+
+Apple's current design principles explicitly recommend identifying the emotion appropriate to
+the experience and pair that with agency, responsibility, simplicity, and proportionate
+feedback. Its writing guidance likewise recommends establishing a voice and adapting tone to
+the user's context.
+
+**Resolution:** define the product's emotional intent as **calm confidence, agency, and
+focused momentum**, with explicit anti-goals against guilt/shame, routine-data anxiety,
+false reassurance, artificial urgency, compulsive engagement mechanics, punishment framing,
+and disproportionate celebration. Make the intent concrete per journey moment and include it
+in the UI definition of done.
+
+This is not a claim that the interface can or should control a person's emotions. It is a
+design criterion for the tone, hierarchy, feedback, and interaction patterns the product
+chooses.
+
 ## Documentation decision
 
 Create `docs/standards/ui-ux.md` as a **normative, living standard**.
@@ -207,7 +234,8 @@ conflated.
 
 ## Resulting documentation changes
 
-1. Add `docs/standards/ui-ux.md`.
+1. Add `docs/standards/ui-ux.md`, including explicit experience/emotional intent and
+   anti-manipulation principles.
 2. Add `docs/standards/` to the documentation routing model.
 3. Add a UI/UX task-oriented entry point in `docs/README.md`.
 4. Update `AGENTS.md` and `CLAUDE.md` so UI changes read the standard before historical
