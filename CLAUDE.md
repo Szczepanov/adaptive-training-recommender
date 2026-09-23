@@ -50,6 +50,11 @@ policy-alignment test (ADR-0033). Do not add one silently.
   Never infer delivery status from a file's existence or from this file.
 - For engine behaviour: `docs/architecture/recommendation-engine.md`, then the relevant ADR,
   then `docs/analysis/2026-08-08-architecture-review.md` for known ADR/code divergences.
+- For user-facing UI/UX, responsive layout, navigation, accessibility, forms, dialogs, or
+  interaction behavior: read [`docs/standards/ui-ux.md`](./docs/standards/ui-ux.md), then
+  [`docs/architecture/user-flows.md`](./docs/architecture/user-flows.md) and the relevant
+  flow-specific architecture document. Do not treat dated UX audits or an `Implemented`
+  plan as the current standard.
 - See [`AGENTS.md` § Reading the documentation](./AGENTS.md#reading-the-documentation) for
   which `docs/` directory is authoritative for what. **Code wins, then `architecture/`,
   then `adr/`.**
@@ -80,6 +85,10 @@ make check          # ruff check/format + mypy + pytest; tsc + eslint + vitest +
   CI; `simulate:diff` is advisory there, so read it but do not block on it.
 - Firestore rules change → `cd app && npm run test:rules` (needs the emulator and Java).
   CI runs it on every code change, not only rules changes.
+- Material UI/UX change → verify the affected states against
+  [`docs/standards/ui-ux.md`](./docs/standards/ui-ux.md); run the relevant component tests
+  and browser E2E, and refresh/review the existing Playwright visual fixtures at the affected
+  mobile/desktop widths. Report any standard exception explicitly.
 - `make all` = `check` + `simulate` + `build`. Run it when the change is broad.
 - The full CI gate list is in
   [`AGENTS.md` § What CI gates](./AGENTS.md#what-ci-gates-githubworkflowsciyml).
@@ -118,6 +127,7 @@ cd app && npm test                     # vitest only — the fast inner loop
 | Looking for | Go to |
 |---|---|
 | Package routing map | [`AGENTS.md` § Package architecture](./AGENTS.md#package-architecture) |
+| UI/UX, mobile, responsive, accessibility, and interaction quality bar | [`docs/standards/ui-ux.md`](./docs/standards/ui-ux.md) |
 | Adaptive engine (rules, fatigue, optimizer, planner, coverage) | `app/src/engine/` |
 | Knowledge registry, coverage inventory, alignment tests | `app/src/knowledge/` |
 | Source-neutral session authoring, execution, response, outcomes (ADR-0023) | `app/src/sessions/`, `app/src/responses/`, `app/src/observations/`, `app/src/outcomes/` |
