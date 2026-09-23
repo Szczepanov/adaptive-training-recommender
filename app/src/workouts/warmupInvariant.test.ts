@@ -6,7 +6,7 @@ import { validateWorkoutLibrary } from './validation';
 describe('catalog strength warm-up invariant', () => {
   it('starts every active catalog strength workout with a non-empty warm-up block', () => {
     const strengthWorkouts = WORKOUTS.filter(workout => workout.status === 'active' && workout.modality === 'strength' && !workout.manualOnly);
-    expect(strengthWorkouts).toHaveLength(9);
+    expect(strengthWorkouts).toHaveLength(10);
     for (const workout of strengthWorkouts) {
       expect(workout.blocks[0]).toMatchObject({ role: 'warmup' });
       expect(workout.blocks[0]?.steps.length).toBeGreaterThan(0);

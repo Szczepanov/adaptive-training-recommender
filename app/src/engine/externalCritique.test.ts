@@ -176,6 +176,16 @@ describe('projected fatigue vs tier ceiling', () => {
 });
 
 describe('recovery constraints', () => {
+    it('does not apply the automatic catalog-only consecutive-strength reason to an authored week', () => {
+        const strength: Partial<ExternalPlanSession> = {
+            gating: { modality: 'strength', intensity: 'easy', durationMin: 25, durationMax: 30, environment: 'either', equipment: [] },
+        };
+        const result = critiqueExternalWeek(input({
+            placed: [placed(MONDAY, { ...strength, id: 'strength-a' }), placed('2026-08-18', { ...strength, id: 'strength-b' })],
+        }));
+        expect(result.findings.map(item => item.rule)).not.toContain('CONSECUTIVE_STRENGTH_DAYS');
+    });
+
     it('flags two anchor-grade sessions on consecutive days', () => {
         const result = critiqueExternalWeek(input({
             placed: [

@@ -16,6 +16,10 @@ export const OPTIMIZER_SCORING_CLAIM_IDS = {
     eventPriorityMultipliersPolicy: 'policy.optimizer.event_priority_multipliers_v2',
     recoveryStreakHeuristicsPolicy: 'policy.optimizer.recovery_streak_heuristics_v1',
     rollingLoadBudgetPolicy: 'policy.optimizer.rolling_load_budget_v1',
+    fieldCatalogExplicitPreferencePolicy: 'policy.optimizer.field_catalog_explicit_preference_v1',
+    unpreferredModalityFallbackPolicy: 'policy.optimizer.unpreferred_modality_fallback_v1',
+    preferredModalityTodayTieBreakPolicy: 'policy.optimizer.preferred_modality_today_tiebreak_v1',
+    catalogStrengthAdjacencyPolicy: 'policy.optimizer.catalog_strength_adjacency_v1',
 } as const;
 
 const OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE = 'PRODUCT-OPTIMIZER-SCORING-POLICY-V1';
@@ -32,6 +36,42 @@ export const OPTIMIZER_SCORING_SOURCES: readonly KnowledgeSource[] = [
 ];
 
 export const OPTIMIZER_SCORING_CLAIMS: readonly KnowledgeClaim[] = [
+    {
+        id: OPTIMIZER_SCORING_CLAIM_IDS.fieldCatalogExplicitPreferencePolicy,
+        statement: 'Product candidate-selection policy v1: an automatic catalog template marked requiresExplicitModalityPreference is ineligible unless the athlete explicitly prefers that template modality under canonical alias matching. The current marked catalog templates are Field Maintenance and Field technical/sprint-mechanics sessions.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
+        applicability: { contexts: ['candidate_selection', 'catalog_admission'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['catalog_candidate_eligibility'], horizon: 'acute' },
+        evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['This is an explicit catalog opt-in rule for specialized automatic content, not a clinical safety restriction and not a general rule that preferences unlock ordinary training modalities. Event-specific demand remains a separate planning authority.'],
+        reviewedOn: '2026-09-23', version: 1,
+    },
+    {
+        id: OPTIMIZER_SCORING_CLAIM_IDS.unpreferredModalityFallbackPolicy,
+        statement: 'Product candidate-selection policy v1: when at least one preferred non-recovery training candidate clears hard gates, another non-preferred, non-recovery, non-event-matching candidate remains eligible but its benefit and utility are multiplied by 0.25 unless it qualifies for an unresolved weekly objective and contributes positive stimulus on a positive target axis.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'low',
+        applicability: { contexts: ['candidate_selection', 'modality_preference'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['preferred_modality_ranking'], horizon: 'acute' },
+        evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['The 0.25 multiplier is product calibration, not a measured physiological effect size. Hard safety/feasibility gates, explicit event demand, and genuinely unresolved programming objectives remain authoritative.'],
+        reviewedOn: '2026-09-23', version: 1,
+    },
+    {
+        id: OPTIMIZER_SCORING_CLAIM_IDS.preferredModalityTodayTieBreakPolicy,
+        statement: 'Product candidate-selection policy v1: preferredModalityToday is honored only when it also belongs to the athlete’s preferredModalities, and then wins only among candidates in the same coverage, recovery-preference, and objective-benefit tier before utility ranking and the final variety tie-break.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'low',
+        applicability: { contexts: ['candidate_selection', 'same_day_preference'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['current_day_candidate_order'], horizon: 'acute' },
+        evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['The current-day preference changes only the present ranking decision; it does not rewrite chronic preferences and cannot override hard gates or higher-priority programming tiers.'],
+        reviewedOn: '2026-09-23', version: 1,
+    },
+    {
+        id: OPTIMIZER_SCORING_CLAIM_IDS.catalogStrengthAdjacencyPolicy,
+        statement: 'Product candidate-selection policy v1: automatic catalog ranking rejects a strength candidate on the athlete-local calendar day immediately after any prior strength exposure, across strength categories. Shared recovery evaluation retains its existing workout-specific spacing semantics so authored-plan critique does not inherit this catalog-only rule.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
+        applicability: { contexts: ['candidate_selection', 'strength_spacing'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['strength_spacing'], horizon: 'acute' },
+        evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['The adjacent-local-date rule is a conservative scheduling policy, not a literal 48-hour elapsed-time threshold or a universal physiological recovery requirement.'],
+        reviewedOn: '2026-09-23', version: 1,
+    },
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.fatigueCostWeightsPolicy,
         statement: "Product optimizer scoring v1: candidate session fatigue penalty weights dimensional fatigue as systemic 2.0, cardiovascular 1.5, lower-body 2.5, upper-body 1.5, impact-tissue 2.0 and neuromuscular 1.8 against the workout's costProfile. An explicit extraRecoveryMargin, or conservativeBias when extraRecoveryMargin is unset, adds a fixed 0.3 cost penalty when systemicCost > 0.5; conservativeBias additionally adds 0.35 when systemicCost >= 0.6.",

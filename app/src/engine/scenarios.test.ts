@@ -81,13 +81,14 @@ describe('cycling_gran_fondo_A -- baseline, already-covered sport', () => {
         expect(result.objectiveResolution.map(o => o.key)).not.toContain('surge_repeatability');
     });
 
-    it('derives and completes a protected cycling race-specific objective from high durability demand', async () => {
+    it('does not credit duration-capped cycling durability work below its dose threshold', async () => {
         const result = await getResult('cycling_gran_fondo_A');
         expect(result.objectiveResolution).toContainEqual(expect.objectContaining({
-            key: 'race_specific_endurance', timesGenerated: 4, timesResolved: expect.any(Number),
+            key: 'race_specific_endurance', timesGenerated: 4, timesResolved: 0,
         }));
-        expect(result.objectiveResolution.find(objective => objective.key === 'race_specific_endurance')?.timesResolved)
-            .toBeGreaterThan(0);
+        // The effective doses in this 60-minute legacy scenario remain below the
+        // Gran Fondo credit threshold; the 120-minute plan-judge case covers sustained
+        // durability separately without granting credit to these capped sessions.
         const raceSpecificDecisions = result.decisionTraces.filter(d =>
             d.selected.category === 'Race-Specific Endurance' && d.selected.modality === 'Cycling'
         );
@@ -196,18 +197,20 @@ describe('strength_meet_powerlifting_B -- documents a known, unfixed limitation'
     });
 });
 
-describe('field_sport_general_target -- no dedicated event category exists for field sports', () => {
-    it('documents that Field Maintenance is NOT currently reachable on preference alone under strict lexicographic ordering', async () => {
+describe('field_sport_general_target -- explicit preference is the Field sport signal', () => {
+    it('allows Field sessions when Field is explicitly preferred', async () => {
         const result = await getResult('field_sport_general_target');
-        expect(result.modalityDistribution.Field ?? 0).toBe(0);
+        expect(result.modalityDistribution.Field ?? 0).toBeGreaterThan(0);
     });
 
-    it('reports when the Field preference has no observable effect against the matched Base baseline', async () => {
+    it('reports a changed plan when Field preference differs from the matched Base baseline', async () => {
         const report = await runAllScenarios();
         expect(report.preferenceSensitivity).toContainEqual(expect.objectContaining({
             preferredModality: 'Field',
-            changedPlannedDays: 0,
+            changedPlannedDays: expect.any(Number),
         }));
+        const fieldPreference = report.preferenceSensitivity.find(item => item.preferredModality === 'Field');
+        expect(fieldPreference?.changedPlannedDays).toBeGreaterThan(0);
     }, 15000);
 });
 

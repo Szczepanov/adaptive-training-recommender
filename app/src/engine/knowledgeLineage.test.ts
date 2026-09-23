@@ -3,6 +3,7 @@ import type { DailyReadiness, TrainingIntentProfile, UserContext, UserEvent, Use
 import type { TrainingHistoryProvider } from './trainingHistory';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
 import {
+    candidateSelectionKnowledgeRefs,
     compareKnowledgeLineage,
     readinessKnowledgeRefs,
     snapshotKnowledgeLineage,
@@ -40,6 +41,21 @@ const context = {
 } as unknown as UserContext;
 
 describe('recommendation knowledge lineage', () => {
+    it('attributes atomic candidate-selection policies to intent-aware ranking', () => {
+        const refs = candidateSelectionKnowledgeRefs();
+        expect(refs).toEqual([
+            KNOWLEDGE_CLAIM_IDS.fieldCatalogExplicitPreferencePolicy,
+            KNOWLEDGE_CLAIM_IDS.unpreferredModalityFallbackPolicy,
+            KNOWLEDGE_CLAIM_IDS.preferredModalityTodayTieBreakPolicy,
+            KNOWLEDGE_CLAIM_IDS.catalogStrengthAdjacencyPolicy,
+        ]);
+        expect(snapshotKnowledgeLineage(refs)).toEqual(
+            [...refs].sort().map(claimId => ({
+                claimId,
+                version: getActiveKnowledgeClaim(claimId).version,
+            })),
+        );
+    });
     it('freezes active claim versions in deterministic deduplicated order', () => {
         const ids = [
             KNOWLEDGE_CLAIM_IDS.readinessModeThresholds,

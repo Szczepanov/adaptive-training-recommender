@@ -52,7 +52,7 @@ import { resolveEvergreenPlan } from './evergreenPlanning';
 import { isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { buildCoverageState, resolveCoverageHistory } from './coverage';
 import { applyPlanningOverlays } from './planningOverlays';
-import { healthPlanningKnowledgeRefs, mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
+import { candidateSelectionKnowledgeRefs, healthPlanningKnowledgeRefs, mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
 import { progressionDoseForTemplate } from './confirmedProgressionOverrides';
 import { resolveHealthPlanningPolicy } from './healthPlanningPolicy';
 
@@ -770,6 +770,7 @@ export async function evaluateTrainingWithIntent(
     const decisionKnowledgeRefs = mergeKnowledgeRefs(
         envelopeState.knowledgeRefs,
         trainingIntentKnowledgeRefs(intent),
+        candidateSelectionKnowledgeRefs(),
         healthPlanningKnowledgeRefs(healthPlanningPolicy !== null),
         evergreen?.knowledgeRefs,
     );
@@ -794,6 +795,7 @@ export async function evaluateTrainingWithIntent(
         {
             resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, resolvedAvailability: availability, fatigueTier: mode, authoredPlanBlocks,
             healthPlanningPolicy,
+            preferredModalityToday: readiness.subjective.preferredModalityToday,
             ...(evergreen ? {
                 coverageState: buildCoverageState(
                     evergreen.planDefinition,

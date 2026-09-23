@@ -9,6 +9,9 @@ describe('isHistoricalPolicyVersion', () => {
                 (version) => version === '2026-09-rolling-load-budget-v3',
             ),
         ).toHaveLength(1);
+        expect(HISTORICAL_POLICY_VERSIONS.filter(
+            (version) => version === '2026-09-preferred-modality-strength-fallback-v1',
+        )).toHaveLength(1);
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(
                 (version) => version === '2026-09-rolling-load-budget-v1',

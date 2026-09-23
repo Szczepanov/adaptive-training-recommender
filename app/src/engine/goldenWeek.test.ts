@@ -96,7 +96,7 @@ describe('goldenWeek coaching contract: cycling_a_event_build_week', () => {
         expect(threshold!.timesResolved).toBeGreaterThanOrEqual(threshold!.timesGenerated);
 
         expect(strength).toBeDefined();
-        expect(strength!.timesResolved).toBeGreaterThanOrEqual(strength!.timesGenerated);
+        expect(strength!.timesResolved, JSON.stringify(result.decisionTraces.map(trace => ({ date: trace.date, id: trace.selected.templateId, objectives: trace.activeObjectives, rejected: trace.rejectionCounts })))).toBeGreaterThanOrEqual(strength!.timesGenerated);
     });
 
     it('contains at least 1 Rest or Mobility/Recovery day', async () => {
