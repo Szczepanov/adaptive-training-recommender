@@ -114,35 +114,54 @@ class FirestoreLoginRateLimiter:
 
         return decide(self._db.transaction())
 
-    def check_login(self, client_ip: str, account_key: str) -> tuple[bool, int | None]:
-        """Apply both login budgets in one transaction and return the longest delay."""
+    def check_login(
+        self,
+        client_ip: str,
+        account_key: str,
+        uid_key: str | None = None,
+    ) -> tuple[bool, int | None]:
+        """Apply all login budgets atomically and return the longest delay.
+
+        A denied account or UID must not consume the shared IP budget. Otherwise a
+        caller could repeatedly submit a known-cooled identity through a shared NAT and
+        exhaust the IP bucket for unrelated users.
+        """
         ip_kind, ip_digest = self._key(client_ip)
         account_kind, account_digest = self._key(account_key)
         if ip_kind != "ip" or account_kind != "account":
             raise ValueError("Login check requires an IP and account key.")
-        ip_ref = self._ref(ip_kind, ip_digest)
-        account_ref = self._ref(account_kind, account_digest)
+
+        refs = [
+            self._ref(ip_kind, ip_digest),
+            self._ref(account_kind, account_digest),
+        ]
+        if uid_key is not None:
+            uid_kind, uid_digest = self._key(uid_key)
+            if uid_kind != "uid":
+                raise ValueError("Login UID key must use the uid: prefix.")
+            refs.append(self._ref(uid_kind, uid_digest))
+
         provider_ref = self._db.collection(COLLECTION).document(PROVIDER_DOCUMENT)
 
         @firestore.transactional
         def decide(transaction: Any) -> tuple[bool, int | None]:
             now = self._clock()
             provider = self._data(provider_ref.get(transaction=transaction))
-            ip_bucket = self._data(ip_ref.get(transaction=transaction))
-            account_bucket = self._data(account_ref.get(transaction=transaction))
+            buckets = [(ref, self._data(ref.get(transaction=transaction))) for ref in refs]
             blocked_until = max(
-                float(provider.get("cooldownUntil", 0)),
-                float(ip_bucket.get("cooldownUntil", 0)),
-                float(account_bucket.get("cooldownUntil", 0)),
+                [float(provider.get("cooldownUntil", 0))]
+                + [float(bucket.get("cooldownUntil", 0)) for _, bucket in buckets]
             )
-            ip_attempts = self._attempts(ip_bucket, now)
-            account_attempts = self._attempts(account_bucket, now)
-            for attempts in (ip_attempts, account_attempts):
+            attempts_by_ref = [
+                (ref, self._attempts(bucket, now)) for ref, bucket in buckets
+            ]
+            for _, attempts in attempts_by_ref:
                 if len(attempts) >= self._max_attempts:
                     blocked_until = max(blocked_until, attempts[0] + self._window_seconds)
             if blocked_until > now:
                 return False, self._delay(blocked_until, now)
-            for ref, attempts in ((ip_ref, ip_attempts), (account_ref, account_attempts)):
+
+            for ref, attempts in attempts_by_ref:
                 attempts.append(now)
                 transaction.set(
                     ref,

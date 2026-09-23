@@ -91,10 +91,40 @@ gcloud storage buckets add-iam-policy-binding gs://${GCP_PROJECT}-garmin-tokens 
   --member="serviceAccount:${LINK_SA_EMAIL}" --role="roles/storage.objectAdmin"
 ```
 
-The public Garmin account-link endpoint uses a Firestore transaction for each login
-attempt. Its dedicated runtime identity has only the Firestore and token-bucket access
-needed by the link flow. Provision the HMAC key in Secret Manager once, and grant secret
-access only to that identity (never to the scheduled Job identity):
+The public Garmin account-link endpoint uses Firestore transactions for login
+admission and also creates/rolls back Firebase Auth users and mints custom sign-in tokens.
+Its dedicated runtime identity therefore needs the narrow Firebase Auth user role and
+permission to sign as itself in addition to Firestore and token-bucket access. The
+idempotent `setup-workload-identity.sh` script creates/updates the custom role and grants
+these bindings. For a manual setup, mirror its least-privilege grants:
+
+```bash
+export AUTH_USER_ROLE_ID="garminLinkAuthUsers"
+export AUTH_USER_ROLE="projects/${GCP_PROJECT}/roles/${AUTH_USER_ROLE_ID}"
+
+if gcloud iam roles describe "${AUTH_USER_ROLE_ID}" --project="${GCP_PROJECT}" >/dev/null 2>&1; then
+  gcloud iam roles update "${AUTH_USER_ROLE_ID}" --project="${GCP_PROJECT}" \
+    --title="Garmin Link Auth Users" \
+    --description="Create/delete/get Firebase Auth users for Garmin self-service linking" \
+    --permissions="firebaseauth.users.create,firebaseauth.users.delete,firebaseauth.users.get" \
+    --stage="GA"
+else
+  gcloud iam roles create "${AUTH_USER_ROLE_ID}" --project="${GCP_PROJECT}" \
+    --title="Garmin Link Auth Users" \
+    --description="Create/delete/get Firebase Auth users for Garmin self-service linking" \
+    --permissions="firebaseauth.users.create,firebaseauth.users.delete,firebaseauth.users.get" \
+    --stage="GA"
+fi
+
+gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
+  --member="serviceAccount:${LINK_SA_EMAIL}" --role="${AUTH_USER_ROLE}"
+gcloud iam service-accounts add-iam-policy-binding "${LINK_SA_EMAIL}" \
+  --member="serviceAccount:${LINK_SA_EMAIL}" \
+  --role="roles/iam.serviceAccountTokenCreator"
+```
+
+Provision the HMAC key in Secret Manager once, and grant secret access only to the
+account-link identity (never to the scheduled Job identity):
 
 ```bash
 gcloud secrets create garmin-link-rate-limit-hmac --replication-policy=automatic
@@ -472,9 +502,10 @@ one run.
 `setup-workload-identity.sh` provisions everything (APIs, buckets, service accounts, Artifact
 Registry repo) itself, run once with your own full-privilege `gcloud` session. The
 `github-deployer` identity that `deploy-garmin-sync.yml` authenticates as afterward only ever
-holds deployment-scoped roles -- Cloud Run, Artifact Registry push, Cloud
-Scheduler, and impersonating (only) `garmin-sync-job` to attach it to the Jobs it deploys --
-never project-IAM-admin or service-account-admin. A workflow file added or compromised later
+holds deployment-scoped roles -- Cloud Run, Artifact Registry push, Cloud Scheduler, and
+`roles/iam.serviceAccountUser` on the bounded runtime identities it must attach to deployed
+services/jobs (`garmin-sync-job`, `garmin-account-link`, the anthropometry writer, and the
+scheduler invoker) -- never project-IAM-admin or service-account-admin. A workflow file added or compromised later
 in this repo therefore cannot use it to widen its own access; it can deploy Cloud Run Jobs and
 nothing else. The Workload Identity Provider itself additionally only accepts tokens from
 `main` (`assertion.ref == 'refs/heads/main'`), so a run from any other branch can't
@@ -513,8 +544,9 @@ will be dropped on that first run.
    bash docs/ops/setup-workload-identity.sh
    ```
    This creates the Workload Identity Pool + OIDC Provider (restricted to that one repo's
-   `main` branch), the token bucket, the Garmin, scheduler, and dedicated anthropometry runtime
-   service accounts, the Artifact Registry
+   `main` branch), the token bucket, the Garmin sync, Garmin account-link, scheduler, and dedicated
+   anthropometry runtime service accounts, the Garmin login-throttle HMAC secret/TTL policy,
+   the Artifact Registry
    repo, and the narrowly-scoped `github-deployer` identity the workflows authenticate as. It
    prints three values at the end.
 3. Add those three, plus your Firebase UID and Garmin credentials, as **repo secrets**

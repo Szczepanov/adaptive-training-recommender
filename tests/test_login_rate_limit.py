@@ -133,6 +133,42 @@ def test_combined_login_check_returns_longest_applicable_retry_delay(
     ) == (False, 1800)
 
 
+def test_combined_login_check_denial_does_not_consume_other_budgets(
+    fake_firestore: FakeFirestore,
+) -> None:
+    now = [1_000_000.0]
+    limiter = _limiter(fake_firestore, now)
+    limiter.record_upstream_rate_limit("account:cooled@example.com")
+
+    for _ in range(5):
+        assert limiter.check_login("198.51.100.7", "account:cooled@example.com") == (
+            False,
+            1800,
+        )
+
+    assert limiter.check("198.51.100.7") == (True, None)
+    assert limiter.check("account:other@example.com") == (True, None)
+
+
+def test_combined_login_check_blocked_uid_does_not_consume_ip_or_account(
+    fake_firestore: FakeFirestore,
+) -> None:
+    now = [1_000_000.0]
+    limiter = _limiter(fake_firestore, now)
+    for _ in range(5):
+        assert limiter.check("uid:firebase-uid-123") == (True, None)
+
+    for _ in range(5):
+        assert limiter.check_login(
+            "198.51.100.8",
+            "account:athlete@example.com",
+            "uid:firebase-uid-123",
+        ) == (False, 600)
+
+    assert limiter.check("198.51.100.8") == (True, None)
+    assert limiter.check("account:athlete@example.com") == (True, None)
+
+
 def test_upstream_cooldown_is_account_local_and_survives_restart(
     fake_firestore: FakeFirestore,
 ) -> None:
@@ -237,6 +273,13 @@ def test_login_handler_records_upstream_429_and_blocks_same_account(
     _login_handler("athlete@example.com", second)._handle_login()  # noqa: SLF001
     assert second[0]["status"] == HTTPStatus.TOO_MANY_REQUESTS
     assert second[0]["retry_after_seconds"] == 1800
+
+    # Rejected attempts for the cooled account must not burn the shared NAT/IP budget.
+    for _ in range(4):
+        blocked: list[dict[str, Any]] = []
+        _login_handler("athlete@example.com", blocked)._handle_login()  # noqa: SLF001
+        assert blocked[0]["status"] == HTTPStatus.TOO_MANY_REQUESTS
+    assert limiter.check("198.51.100.7") == (True, None)
     assert service.calls == 1
 
 

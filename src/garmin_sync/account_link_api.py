@@ -375,11 +375,14 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
             if not provider_allowed:
                 self._rate_limited_response(provider_retry or 1)
                 return
+
         client_key = self._client_key()
-        allowed, retry_after_seconds = limiter.check(client_key)
-        if not allowed:
-            self._rate_limited_response(retry_after_seconds or 1)
-            return
+        if not isinstance(limiter, FirestoreLoginRateLimiter):
+            allowed, retry_after_seconds = limiter.check(client_key)
+            if not allowed:
+                self._rate_limited_response(retry_after_seconds or 1)
+                return
+
         payload = self._read_json()
         email = payload.get("email")
         password = payload.get("password")
@@ -387,19 +390,20 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
             raise ValueError("Garmin email and password must be strings.")
         email_key = f"account:{email.strip().lower()}"
         self._rate_limit_account_key = email_key
-        allowed, retry_after_seconds = limiter.check(email_key)
-        if not allowed:
-            self._rate_limited_response(retry_after_seconds or 1)
-            return
         requested_uid = _verified_uid(
             self.headers.get("Authorization"),
             require_verified_email=True,
         )
-        if requested_uid and isinstance(limiter, FirestoreLoginRateLimiter):
-            allowed, retry_after_seconds = limiter.check(f"uid:{requested_uid}")
-            if not allowed:
-                self._rate_limited_response(retry_after_seconds or 1)
-                return
+
+        if isinstance(limiter, FirestoreLoginRateLimiter):
+            uid_key = f"uid:{requested_uid}" if requested_uid else None
+            allowed, retry_after_seconds = limiter.check_login(client_key, email_key, uid_key)
+        else:
+            allowed, retry_after_seconds = limiter.check(email_key)
+        if not allowed:
+            self._rate_limited_response(retry_after_seconds or 1)
+            return
+
         result = _service().start_login(email, password, requested_uid=requested_uid)
         if (
             isinstance(limiter, FirestoreLoginRateLimiter)
