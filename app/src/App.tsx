@@ -17,6 +17,7 @@ import { MobileNav } from './components/MobileNav';
 import { getLocalDateString } from './utils/localDate';
 import { strengthSessionService } from './services/strengthSessionService';
 import { sessionExecutionService } from './services/sessionExecutionService';
+import { assessmentAttemptService } from './services/assessmentAttemptService';
 import { runConfiguredHealthAnomalyShadow } from './services/healthAnomalyRuntime';
 import { resolveSessionDefinition } from './sessions/sessionDefinitionResolver';
 import { OnboardingWizard } from './components/OnboardingWizard';
@@ -177,13 +178,22 @@ function App() {
       // can be closed explicitly, but no production path starts or resumes it in the old UI.
       strengthSessionService.findActiveSession(userId),
       sessionExecutionService.findInProgressExecution(userId),
-    ]).then(async ([strengthResult, structuredResult]) => {
+      assessmentAttemptService.findOpenAttempt(userId),
+    ]).then(async ([strengthResult, structuredResult, assessmentResult]) => {
       if (cancelled) return;
       const legacyStrength = strengthResult.status === 'fulfilled' ? strengthResult.value : null;
       setLegacyStrengthSessionId(legacyStrength?.sessionId ?? null);
       const structured = structuredResult.status === 'fulfilled' ? structuredResult.value : null;
       setActiveStructuredSession(structured);
       setActiveStructuredIntent(null);
+      if (
+        assessmentResult.status === 'fulfilled'
+        && structured?.state === 'in_progress'
+        && assessmentResult.value?.sourceSessionRef === `occurrence:${structured.occurrenceId}`
+      ) {
+        setActiveStructuredIntent('testing');
+        return;
+      }
       if (structured?.prescriptionHash) {
         try {
           const definition = await resolveSessionDefinition(userId, structured.sessionSource, structured.prescriptionHash);
@@ -262,12 +272,16 @@ function App() {
         getLocalDateString(),
       );
       // A historical route cannot bypass the same pending-check-in gate used at startup.
-      const nextScreen: Screen = checkinRequired ? 'checkin' : requested ?? 'home';
-      navigateToScreen(nextScreen, checkinRequired || !requested ? 'replace' : 'none');
+      const resumeMismatch = requested === 'testing'
+        && currentScreenRef.current === 'sessions'
+        && activeStructuredSession?.state === 'in_progress'
+        && activeStructuredIntent !== 'testing';
+      const nextScreen: Screen = checkinRequired ? 'checkin' : resumeMismatch ? 'home' : requested ?? 'home';
+      navigateToScreen(nextScreen, checkinRequired || !requested || resumeMismatch ? 'replace' : 'none');
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [authPhase, decisionInput, initialRouteUserId, navigateToScreen, userId]);
+  }, [activeStructuredIntent, activeStructuredSession, authPhase, decisionInput, initialRouteUserId, navigateToScreen, userId]);
 
   if (authPhase !== 'AUTHENTICATED') {
     return <LoginScreen />;
@@ -381,6 +395,7 @@ function App() {
                   allowDuplicateCompleted: options?.allowDuplicateCompleted,
                 };
                 setSessionLaunch(launch);
+                setActiveStructuredIntent(definitionState.data.intent);
                 handleNavigate('sessions');
               }}
             />
@@ -450,6 +465,7 @@ function App() {
                 onClose={() => setSessionAuthoringMode(null)}
                 onStartExecution={session => {
                   setSessionLaunch(session);
+                  setActiveStructuredIntent(session.definition.intent);
                   setSessionAuthoringMode(null);
                 }}
               />
@@ -464,6 +480,7 @@ function App() {
                 }}
                 onStartExecution={session => {
                   setSessionLaunch(session);
+                  setActiveStructuredIntent(session.definition.intent);
                   setSessionAuthoringMode(null);
                   setSessionAuthoringDefinition(null);
                 }}
@@ -482,7 +499,7 @@ function App() {
                   }}
                   onSessionStateChange={session => {
                     setActiveStructuredSession(session?.state === 'in_progress' ? session : null);
-                    if (session?.state !== 'in_progress') setActiveStructuredIntent(null);
+                    if (session && session.state !== 'in_progress') setActiveStructuredIntent(null);
                   }}
                   onClose={() => handleNavigate('home')}
                 />
@@ -498,8 +515,13 @@ function App() {
               key={userId}
               userId={userId!}
               onSessionStateChange={session => {
-                setActiveStructuredSession(session?.state === 'in_progress' ? session : null);
-                setActiveStructuredIntent(session?.state === 'in_progress' ? 'testing' : null);
+                if (session?.state === 'in_progress') {
+                  setActiveStructuredSession(session);
+                  setActiveStructuredIntent('testing');
+                } else if (session && currentScreenRef.current === 'testing') {
+                  setActiveStructuredSession(null);
+                  setActiveStructuredIntent(null);
+                }
               }}
               onClose={() => handleNavigate('home')}
             />

@@ -101,6 +101,12 @@ test('Back minimizes a persisted structured session and Resume restores it', asy
   const date = await seedRecoverySnapshot(athlete);
   await signInThroughUi(page, athlete);
   await completeCheckin(page, athlete, date);
+
+  const nav = page.locator('.navbar-desktop-menu');
+  await nav.getByRole('button', { name: /More/ }).click();
+  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await expect(page).toHaveURL(/\?screen=testing$/);
+
   await openFixturePicker(page);
   await page.getByRole('button', { name: 'Start Session →', exact: true }).first().click();
   await expect.poll(async () => (await readSessionExecutions(athlete)).filter(item => item.state === 'in_progress').length).toBe(1);
@@ -122,4 +128,12 @@ test('Back minimizes a persisted structured session and Resume restores it', asy
   await expect(page).toHaveURL(/\?screen=sessions$/);
   await expect.poll(async () => (await readSessionExecutions(athlete)).map(item => `${item.executionId}:${item.state}`))
     .toEqual([`${activeId}:in_progress`]);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\?screen=home$/);
+  await nav.getByRole('button', { name: /More/ }).click();
+  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await nav.getByRole('button', { name: 'Plan', exact: true }).click();
+  await page.goBack();
+  await expect(page).toHaveURL(/\?screen=testing$/);
 });

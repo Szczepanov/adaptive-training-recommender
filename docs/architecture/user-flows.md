@@ -85,9 +85,11 @@ workflow mid-task. Returning to `home` or `checkin` across midnight triggers a r
 
 `handleNavigate` updates the route, writes the safe screen query to browser history, and closes
 the desktop Settings menu and mobile More drawer. On browser Back from an active structured
-session, the persisted execution remains in progress and the app returns to Home with its
-Resume action; Forward restores the runner. The athlete can also leave and resume through the
-same persisted execution.
+session, the persisted execution remains in progress and the app returns to the preceding
+history route. If that route is Testing but the session is an ordinary structured workout,
+the app returns Home so the Resume action is available. Home shows its Resume action whenever
+it is the destination; Forward restores the runner. The athlete can also leave and resume
+through the same persisted execution.
 
 ### Onboarding overlay and resume banners
 

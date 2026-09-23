@@ -51,6 +51,11 @@ Adaptive Training Recommendations & Native Session Execution
 | <img src="docs/screenshots/mobile-activity-telemetry.png" width="360" alt="Activity Telemetry & Power Distribution" /> | |
 | *Power/HR zones, lap splits, and training load tracking* | |
 
+| Session Builder |
+|:---:|
+| <img src="docs/screenshots/mobile-session-builder.png" width="360" alt="Mobile structured session builder" /> |
+| *Create a structured workout with touch-friendly movement controls* |
+
 </div>
 
 ---

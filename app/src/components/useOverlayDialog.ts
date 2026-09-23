@@ -88,7 +88,7 @@ export function useOverlayDialog(
         const handleKeyDown = (event: KeyboardEvent) => {
             const panel = panelRef.current;
             if (!panel) return;
-            if (event.key === 'Escape' && dismissRef.current) {
+            if (event.key === 'Escape' && !event.defaultPrevented && dismissRef.current) {
                 event.preventDefault();
                 dismissRef.current();
                 return;

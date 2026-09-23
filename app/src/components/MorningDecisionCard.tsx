@@ -85,7 +85,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
         // without this, assistive tech announces a dialog that keyboard focus never reaches.
         cancelRedoButtonRef.current?.focus();
         const handleKeyDown = (event: KeyboardEvent) => {
-            if (event.key === 'Escape') {
+            if (event.key === 'Escape' && !event.defaultPrevented) {
                 setConfirmRedoOpen(false);
             }
         };
