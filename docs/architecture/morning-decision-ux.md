@@ -6,6 +6,12 @@ flow-specific contracts for the morning decision surface.
 
 This document records the implementation contracts behind the morning-decision progressive-disclosure UI introduced in PR #233. The dashboard is an execution surface over the recommendation engine; it must not invent stronger safety, physiological, or persistence semantics than the engine and stored data provide.
 
+The emotional intent for this surface inherits the standard's **calm confidence + agency**
+contract. After reading the morning decision, the athlete should be oriented about what to do
+and why, without feeling commanded, judged for a recovery/reduced-load state, or falsely
+reassured by uncertain data. The card should create focus through clarity rather than urgency,
+celebration, or alarm.
+
 ## 1. Progressive disclosure
 
 The morning card answers three questions in order:
