@@ -110,6 +110,39 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
         expect(isTemplatePhaseEligible(critSurges, critPeriodization)).toBe(true);
     });
 
+    it('excludes cycling hard-endurance candidates whose surge dose exceeds Gran Fondo demand', () => {
+        const granFondoDemand = resolveDemandProfile('cycling_event', 'gran_fondo');
+        const mismatched = ENRICHED_TEMPLATES.find(template => template.modality === 'Cycling'
+            && template.category === 'Hard Endurance'
+            && (template.stimulusProfile?.repeatedSurges ?? 0) >= 0.6
+            && (template.stimulusProfile?.repeatedSurges ?? 0) > granFondoDemand.repeatedSurges);
+        expect(mismatched).toBeDefined();
+
+        const result = rankCandidates(
+            [mismatched!],
+            [],
+            createEmptyFatigue('2026-08-16'),
+            {
+                date: '2026-08-16', maxTimeMinutes: 120, availableEquipment: ['indoor_bike', 'outdoor_bike'],
+                fixedActivities: [], reservedCapacityCost: 0,
+                reservedCapacityCostProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+                environmentOverride: null,
+            },
+            [],
+            { ...DEFAULT_PREFERENCES, preferredModalities: ['Cycling'] },
+            {
+                date: '2026-08-16',
+                focusEvent: {
+                    id: 'e-gran-fondo-demand-match', category: 'cycling_event', title: 'Gran Fondo', date: '2026-09-20',
+                    priority: 'A', lifecycle: 'scheduled', demandProfile: granFondoDemand,
+                },
+            },
+        );
+
+        expect(result.accepted).toHaveLength(0);
+        expect(result.rejected[0].excludedReasons).toContain('EVENT_DEMAND_MISMATCH');
+    });
+
     it('scopes the durability exception to low-surge cycling demand rather than high-aerobic events generally', () => {
         const event = (category: UserEvent['category'], preset: string): UserEvent => ({
             id: `scope-${category}-${preset}`,

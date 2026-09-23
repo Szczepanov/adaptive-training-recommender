@@ -637,6 +637,9 @@ export function evaluateRecoveryConstraints(
     if (focusEvent && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race' || focusEvent.category === 'triathlon')) {
         const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
         const daysToRace = getDayDiff(raceDate, targetDate);
+        const taper = resolveEventTaper(focusEvent);
+        const authoredTaperActive = Boolean(focusEvent.taper?.startDate
+            && taper && targetDate >= taper.startDate && targetDate <= taper.endDate);
         if (daysToRace >= 1 && daysToRace <= 3) {
             const isStrengthModality = template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category);
             if (isStrengthModality) {
@@ -656,7 +659,10 @@ export function evaluateRecoveryConstraints(
         }
         if (daysToRace >= 3 && daysToRace <= 7) {
             const isExhaustiveSession = template.systemicCost >= 0.75 || (template.title ?? '').toLowerCase().includes('vo2');
-            if (isExhaustiveSession) {
+            // A C-priority event is train-through by policy. Keep readiness, fatigue,
+            // spacing and the final D-1/D-2 gates, but do not apply the major-event
+            // exhaustive-work restriction across the whole final week.
+            if (isExhaustiveSession && (focusEvent.priority !== 'C' || authoredTaperActive)) {
                 reasons.push('PRE_EVENT_TAPER_RESTRICTION');
             }
         }
@@ -974,11 +980,14 @@ export function rankCandidates(
 
     const extraMargin = preferences.extraRecoveryMargin ?? preferences.conservativeBias ?? false;
     const focusEvent = options.focusEvent;
+    const targetDate = options.date ?? getLocalDateString();
     const isCEnduranceCompetition = focusEvent?.priority === 'C'
         && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race' || focusEvent.category === 'triathlon');
+    const resolvedTaper = focusEvent ? resolveEventTaper(focusEvent) : null;
+    const authoredTaperActive = Boolean(focusEvent?.taper?.startDate
+        && resolvedTaper && targetDate >= resolvedTaper.startDate && targetDate <= resolvedTaper.endDate);
     const cyclingDurabilityFocusEvent = isCyclingDurabilityFocusEvent(focusEvent);
     const rawHistory = options.recentHistory ?? [];
-    const targetDate = options.date ?? getLocalDateString();
     const history = normalizeHistory(rawHistory, targetDate);
     const summary = buildHistoryFeatureSummary(history, targetDate, options.resolveRecoveryHours);
     const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance' || o.key === 'strength_development');
@@ -1029,6 +1038,13 @@ export function rankCandidates(
             excludedReasons.push('INTENSITY_SCALE_INADMISSIBLE');
         }
 
+        if (cyclingDurabilityFocusEvent
+            && template.modality === 'Cycling'
+            && (template.stimulusProfile?.repeatedSurges ?? 0) >= 0.6
+            && (template.stimulusProfile?.repeatedSurges ?? 0) > (focusEvent?.demandProfile?.repeatedSurges ?? 0)) {
+            excludedReasons.push('EVENT_DEMAND_MISMATCH');
+        }
+
         excludedReasons.push(...evaluateRecoveryConstraints(template, targetDate, history, options, summary));
 
         const activeDoseAdjustment = resolveTimeCapDoseAdjustment(template, availability.maxTimeMinutes, options.fatigueTier === 'modify');
@@ -1074,12 +1090,16 @@ export function rankCandidates(
                 ));
             const eventPriorityApplies = !categoryLower.includes('strength') || satisfiesUnresolvedObjective || fulfilsNominatedAnchor;
             if (matchesEvent && eventPriorityApplies) {
+                const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
+                const daysToRace = getDayDiff(raceDate, targetDate);
                 const priorityMultiplier = focusEvent.priority === 'A' ? 1.40 : focusEvent.priority === 'B' ? 1.25 : 1.00;
                 benefit *= priorityMultiplier;
 
-                // Priority B/C: strongly dampen a second race-specific endurance exposure
-                // within a rolling six-day window. The exposure remains eligible.
-                if ((focusEvent.priority === 'B' || focusEvent.priority === 'C') && template.category === 'Race-Specific Endurance') {
+                // C-priority endurance races train through until the final 48 hours;
+                // retain the short-window repeat dampener at that boundary for safety.
+                // B continues to taper race-specific repeats throughout the final week.
+                if ((focusEvent.priority === 'B' || (focusEvent.priority === 'C' && (daysToRace <= 2 || authoredTaperActive)))
+                    && template.category === 'Race-Specific Endurance') {
                     if (summary.recentRaceSpecificCount6d >= 1) {
                         benefit *= 0.35;
                     }
@@ -1088,8 +1108,6 @@ export function rankCandidates(
                 // Long horizon (>21 days): prioritize foundational threshold/tempo over peak race sharpening.
                 // Durability/Gran Fondo events center on sustained aerobic endurance rather than peak sharpening,
                 // so long race-specific aerobic endurance work is preserved throughout the horizon.
-                const raceDate = focusEvent.timing?.planningDate ?? focusEvent.date;
-                const daysToRace = getDayDiff(raceDate, targetDate);
                 if (daysToRace > 21 && template.category === 'Race-Specific Endurance' && !cyclingDurabilityFocusEvent) {
                     benefit *= 0.50;
                 }

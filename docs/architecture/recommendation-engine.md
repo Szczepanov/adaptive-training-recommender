@@ -562,9 +562,15 @@ existing objective qualification allows the priority boost. Existing A/B behavio
 ranking with a neutral `1.00` multiplier; C-priority general targets and strength meets retain
 their prior behavior rather than inheriting unrelated penalties from the C-race fix. A second
 Race-Specific Endurance exposure within the rolling six-day history receives a `0.35`
-multiplier for B and C endurance competitions; A retains its existing priority-specific
-behavior. C endurance events still have no inferred taper by default, so only an explicitly
-authored taper can create a taper window for them.
+multiplier for B endurance events; C endurance competitions without an active athlete-authored
+taper defer that repeat dampener until D-2, preserving build load through D-3 while the existing
+final 48-hour gates remain in force. An authored taper restores the resolved taper-window
+exhaustive-work restriction and repeat-session dampener. C endurance events still have no
+inferred taper by default.
+
+For low-surge Gran Fondo demand, cycling candidates with repeated-surge stimulus at least `0.6`
+and above the event's demand are excluded. This keeps sustained aerobic power
+available without treating a Gran Fondo as a criterium or VO2-focused event.
 
 ### The planner/workout-library boundary (Phase 5.2, `planningCandidate.ts`)
 

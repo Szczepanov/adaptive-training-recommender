@@ -195,6 +195,14 @@ describe('load + intensity + recovery product-claim alignment', () => {
         expect(evaluateRecoveryConstraints(d3RaceSpecific, d3Date, [], { focusEvent: triathlonAEvent }))
             .not.toContain('PRE_EVENT_TAPER_RESTRICTION');
 
+        const cWithoutAuthoredTaper: UserEvent = { ...triathlonAEvent, priority: 'C' };
+        const cAuthoredTaper: UserEvent = { ...cWithoutAuthoredTaper, taper: { startDate: '2026-09-07' } };
+        const exhaustive = template({ category: 'Hard Endurance', modality: 'Running', systemicCost: 0.8, title: 'VO2 intervals' });
+        expect(evaluateRecoveryConstraints(exhaustive, '2026-09-09', [], { focusEvent: cWithoutAuthoredTaper }))
+            .not.toContain('PRE_EVENT_TAPER_RESTRICTION');
+        expect(evaluateRecoveryConstraints(exhaustive, '2026-09-09', [], { focusEvent: cAuthoredTaper }))
+            .toContain('PRE_EVENT_TAPER_RESTRICTION');
+
         // Outside the taper window, none of this applies.
         expect(evaluateRecoveryConstraints(heavyStrength, '2026-07-01', [], { focusEvent: triathlonAEvent }))
             .not.toContain('TAPER_NONESSENTIAL_STRENGTH_RESTRICTION');

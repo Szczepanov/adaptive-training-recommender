@@ -391,7 +391,19 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
                 type: 'Cycling',
             }],
         });
-        expect(cSecondRaceSpecific.accepted[0].benefitScore).toBeCloseTo(0.45 * 0.35, 5);
+        expect(cSecondRaceSpecific.accepted[0].benefitScore).toBeCloseTo(0.45, 5);
+        const cRaceSpecificDuringAuthoredTaper = rankCandidates([raceSpecific], [], mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
+            date: '2026-09-10',
+            focusEvent: { ...cyclingEvent('C'), taper: { startDate: '2026-09-07' } },
+            recentHistory: [{ date: '2026-09-06', category: 'Race-Specific Endurance', modality: 'Cycling', systemicCost: 0.3, type: 'Cycling' }],
+        });
+        expect(cRaceSpecificDuringAuthoredTaper.accepted[0].benefitScore).toBeCloseTo(0.45 * 0.35, 5);
+        const cRaceSpecificAtD2 = rankCandidates([raceSpecific], [], mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
+            date: '2026-09-18',
+            focusEvent: cyclingEvent('C'),
+            recentHistory: [{ date: '2026-09-14', category: 'Race-Specific Endurance', modality: 'Cycling', systemicCost: 0.3, type: 'Cycling' }],
+        });
+        expect(cRaceSpecificAtD2.accepted[0].benefitScore).toBeCloseTo(0.45 * 0.35, 5);
 
         const longHorizon = rankCandidates([raceSpecific], [], mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
             date: '2026-09-10', focusEvent: cyclingEvent('A', '2026-10-10'),
@@ -466,8 +478,9 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(claim.statement).toContain('C-priority cycling_event, running_race and triathlon candidates enter the same event-aware ranking with a neutral 1.00 multiplier');
         expect(claim.statement).toContain('C-priority general_target and strength_meet retain their prior no-op behavior');
         expect(claim.statement).toContain('for strength_meet, that priority boost applies only when the candidate satisfies an unresolved objective');
-        expect(claim.statement).toContain('For B and C cycling/running/triathlon events, a second race-specific endurance session within 6 days is multiplied by 0.35');
-        expect(claim.statement).toContain('multiplied by 0.35');
+        expect(claim.statement).toContain('B endurance events dampen a second race-specific endurance session within 6 days by 0.35');
+        expect(claim.statement).toContain('C endurance events without an active authored taper retain build volume through D-3');
+        expect(claim.statement).toContain('by 0.35');
         expect(claim.statement).toContain('multiplied by 0.50');
         expect(claim.statement).toContain('multiplied by 0.20');
     });
