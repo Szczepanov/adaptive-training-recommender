@@ -510,9 +510,13 @@ pool to `RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST` (0.5). Issue #676 adds one
 narrow taper exception during the late-re-entry window: offsets 4-5 for concordant severe
 recovery, or offsets 3-4 for fresh-subjective discordance. Before an A/B cycling/running/
 triathlon event, Race-Specific Endurance at systemicCost <=0.45 may be admitted on D-2 or D-3. The unrestricted
-candidate pool is still reached only from day 6 onward for concordant severe cases. The judge
-and persona static-week fixtures decay acute values toward their scenario baseline over a
-48-hour half-life; chronic 28-day fields and missing values are retained. Recovery-only forecast dates use
+candidate pool is still reached only from day 6 onward for concordant severe cases. Hard
+recovery/re-entry admission, including the post-rest ceiling, is applied inside
+`evaluateProjectedDate`, so weekly-role allocation and final prescription share the same
+feasibility seam; preferring easy aerobic work over another passive rest remains a selection
+preference after that shared gate. The judge and persona static-week fixtures decay acute
+values toward their scenario baseline over a 48-hour half-life; this is fixture behavior, not
+a physiological recovery constant. Chronic 28-day fields and missing values are retained. Recovery-only forecast dates use
 effective `recover` semantics; graduated re-entry dates use effective `modify` semantics
 for dose selection, allocation viability, displacement diagnostics, and the surfaced
 forecast fatigue tier. These exact boundaries remain product policy, not a claim that a
