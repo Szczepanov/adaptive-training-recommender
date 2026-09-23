@@ -211,6 +211,13 @@ describe('load + intensity + recovery product-claim alignment', () => {
         expect(evaluateRecoveryConstraints(heavyStrength, d3Date, [], { focusEvent: cAuthoredTaper }))
             .toContain('PRE_EVENT_STRENGTH_RESTRICTION');
 
+        // The exception ends exactly at the final-48-hour boundary.
+        const d2Date = '2026-09-12';
+        expect(evaluateRecoveryConstraints(d3Hard, d2Date, [], { focusEvent: cWithoutAuthoredTaper }))
+            .toContain('PRE_EVENT_TAPER_RESTRICTION');
+        expect(evaluateRecoveryConstraints(heavyStrength, d2Date, [], { focusEvent: cWithoutAuthoredTaper }))
+            .toContain('PRE_EVENT_STRENGTH_RESTRICTION');
+
         const exhaustive = template({ category: 'Hard Endurance', modality: 'Running', systemicCost: 0.8, title: 'VO2 intervals' });
         expect(evaluateRecoveryConstraints(exhaustive, '2026-09-09', [], { focusEvent: cWithoutAuthoredTaper }))
             .not.toContain('PRE_EVENT_TAPER_RESTRICTION');

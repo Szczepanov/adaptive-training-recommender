@@ -388,18 +388,34 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
                 hypertrophy: 0,
             },
         });
-        const granSpecificity = rankCandidates(
-            [highSurgeCycling], [], mockFatigueState(), { ...AVAILABILITY, date: '2026-09-10' }, [], PREFERENCES,
-            { date: '2026-09-10', focusEvent: granFondoEvent },
+        const granD35 = rankCandidates(
+            [highSurgeCycling], [], mockFatigueState(), { ...AVAILABILITY, date: '2026-08-16' }, [], PREFERENCES,
+            { date: '2026-08-16', focusEvent: granFondoEvent },
         );
-        const granBuild = rankCandidates(
-            [highSurgeCycling], [], mockFatigueState(), { ...AVAILABILITY, date: '2026-07-01' }, [], PREFERENCES,
-            { date: '2026-07-01', focusEvent: granFondoEvent },
+        const granD36 = rankCandidates(
+            [highSurgeCycling], [], mockFatigueState(), { ...AVAILABILITY, date: '2026-08-15' }, [], PREFERENCES,
+            { date: '2026-08-15', focusEvent: granFondoEvent },
         );
-        expect(granSpecificity.accepted).toHaveLength(1);
-        expect(granSpecificity.rejected).toHaveLength(0);
-        expect(granSpecificity.accepted[0].benefitScore)
-            .toBeCloseTo(granBuild.accepted[0].benefitScore * 0.3, 5);
+        expect(granD35.accepted).toHaveLength(1);
+        expect(granD35.rejected).toHaveLength(0);
+        expect(granD35.accepted[0].benefitScore)
+            .toBeCloseTo(granD36.accepted[0].benefitScore * 0.3, 5);
+
+        const belowHighSurgeFloor = mockTemplate({
+            ...highSurgeCycling,
+            id: 'below-high-surge-floor',
+            stimulusProfile: { ...highSurgeCycling.stimulusProfile!, repeatedSurges: 0.59 },
+        });
+        const belowFloorD35 = rankCandidates(
+            [belowHighSurgeFloor], [], mockFatigueState(), { ...AVAILABILITY, date: '2026-08-16' }, [], PREFERENCES,
+            { date: '2026-08-16', focusEvent: granFondoEvent },
+        );
+        const belowFloorD36 = rankCandidates(
+            [belowHighSurgeFloor], [], mockFatigueState(), { ...AVAILABILITY, date: '2026-08-15' }, [], PREFERENCES,
+            { date: '2026-08-15', focusEvent: granFondoEvent },
+        );
+        expect(belowFloorD35.accepted[0].benefitScore)
+            .toBeCloseTo(belowFloorD36.accepted[0].benefitScore, 5);
 
         const raceSpecific = mockTemplate({
             id: 'race-specific-test',
