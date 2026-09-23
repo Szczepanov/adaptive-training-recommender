@@ -619,17 +619,21 @@ lexicographic priority      objective/timing benefit outranks preference
 utility score & cost        dimensional interference & preference multipliers
 ```
 
-Preferences rank; they never unlock. An avoided modality is a hard exclude on Path A and a
-0.2× soft penalty on Path B — a deliberate distinction, since taste must never behave like
-a safety constraint ([ADR-0007](../adr/0007-adaptive-multisport-engine-architecture.md) §6).
+General modality preferences rank; they do not become clinical safety gates. An avoided
+modality is a hard exclude on Path A and a 0.2× soft penalty on Path B — a deliberate
+distinction, since taste must never masquerade as injury/safety authority
+([ADR-0007](../adr/0007-adaptive-multisport-engine-architecture.md) §6).
 
 Path B also demotes a non-preferred training candidate when at least one preferred training
 candidate passes the same hard gates, unless the candidate satisfies an unresolved weekly
 objective. Rest and Mobility/Recovery remain available.
-An explicit event-directed candidate in its event modality remains eligible for the event
-objective. Automatic catalog candidates in the Field modality, including Field Maintenance
-and Sprint Mechanics, require an explicit Field preference; their generic catalog presence
-is not enough to make them a fallback. The check-in's `preferredModalityToday`
+Specialized automatic catalog content may separately declare
+`requiresExplicitModalityPreference`; that is a catalog-admission opt-in, not a safety
+restriction or a general permission system for ordinary modalities. Current Field
+Maintenance and Field technical/Sprint Mechanics templates carry that marker, so they
+require explicit Field preference instead of leaking in as generic fallbacks. An explicit
+event-directed candidate remains governed by event/programming authority rather than this
+generic fallback mechanism. The check-in's `preferredModalityToday`
 breaks ties only after hard gates, coverage, recovery placement and objective-benefit tier
 agree, and only when the requested modality is also in `preferredModalities`. It applies to
 the current decision and does not rewrite the athlete's longer-term preferences.

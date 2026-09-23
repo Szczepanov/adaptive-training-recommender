@@ -1066,9 +1066,9 @@ export function rankCandidates(
         }
 
         const lowerMod = (template.modality ?? '').toLowerCase();
-        if (template.modality === 'Field'
-            && !preferences.preferredModalities.some(modality => matchesPreferredModality(modality, 'Field'))) {
-            excludedReasons.push('FIELD_MODALITY_NOT_REQUESTED');
+        if (template.requiresExplicitModalityPreference
+            && !preferences.preferredModalities.some(modality => matchesPreferredModality(modality, template.modality))) {
+            excludedReasons.push('EXPLICIT_MODALITY_PREFERENCE_REQUIRED');
         }
         if (injuryConstraints.some(inj => inj.toLowerCase() === lowerMod || inj.toLowerCase().includes(lowerMod))) {
             excludedReasons.push('INJURY_RESTRICTION');

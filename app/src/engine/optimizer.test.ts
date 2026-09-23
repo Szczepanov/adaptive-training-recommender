@@ -60,7 +60,7 @@ describe('optimizer — preferred modality and safe strength fallback (#736)', (
             ...DEFAULT_PREFERENCES, preferredModalities: ['Strength'],
         }, { date: '2026-03-05' });
         expect(unrequested.rejected.map(item => item.template.id)).toEqual(expect.arrayContaining([field.id, sprint.id]));
-        expect(unrequested.rejected.every(item => item.excludedReasons.includes('FIELD_MODALITY_NOT_REQUESTED'))).toBe(true);
+        expect(unrequested.rejected.every(item => item.excludedReasons.includes('EXPLICIT_MODALITY_PREFERENCE_REQUIRED'))).toBe(true);
         const requested = rankCandidates([field, sprint], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], {
             ...DEFAULT_PREFERENCES, preferredModalities: ['Field'],
         }, { date: '2026-03-05' });

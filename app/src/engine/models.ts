@@ -910,6 +910,9 @@ export interface SessionTemplate {
     availabilityFallbackRole?: 'aerobic_endurance';
     /** Catalog strength fallback admitted only for active shoulder/spinal guardrails. */
     guardrailFallbackRole?: 'shoulder_spinal_strength';
+    /** Specialized automatic catalog content may require explicit opt-in for its modality.
+     * This is catalog-admission metadata, not a safety restriction or generic preference rule. */
+    requiresExplicitModalityPreference?: boolean;
     easierDose?: DoseVariation;
     harderDose?: DoseVariation;
     stimulusProfile?: WorkoutStimulusProfile;

@@ -91,7 +91,7 @@ The current technical progressions are deliberately conservative:
 
 Technical templates are not placed in the default green-day hard-session pool. They are selected when the athlete explicitly requests the matching modality, preventing a coordination session from being substituted randomly for a primary endurance or strength objective.
 
-Field-modality templates, including Field Maintenance and Sprint Mechanics, are available through the intent-aware optimizer only when the athlete explicitly prefers Field; they are deliberately not generic fallbacks for other training preferences and are not in the readiness-only green-day pool. Field Maintenance's catalogue spacing rule (two days after hard lower-body work) cannot be represented by that path's template filter, so this avoids suggesting high-impact field work without its required spacing check.
+Field Maintenance and the automatic Field technical/Sprint Mechanics templates declare `requiresExplicitModalityPreference`, so the intent-aware optimizer admits them only when the athlete explicitly prefers Field; this is specialized catalog opt-in metadata rather than a generic safety restriction, and these sessions are not fallbacks for other training preferences or members of the readiness-only green-day pool. Field Maintenance's catalogue spacing rule (two days after hard lower-body work) cannot be represented by that path's template filter, so this avoids suggesting high-impact field work without its required spacing check.
 
 ## Generic session families
 

@@ -23,7 +23,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Sprint Mechanics Foundation",
         description: "Low-volume posture, projection and acceleration mechanics with full recovery between repetitions.",
         requiredEquipment: [],
-        environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'],
+        environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'], requiresExplicitModalityPreference: true,
         systemicCost: 0.45,
         objectiveTransferable: false
     },
@@ -36,7 +36,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Acceleration & Braking Skill",
         description: "Quality-controlled acceleration and braking practice for athletes already tolerating sprint mechanics.",
         requiredEquipment: [],
-        environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'],
+        environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'], requiresExplicitModalityPreference: true,
         systemicCost: 0.6,
         objectiveTransferable: false
     },
@@ -415,7 +415,7 @@ export const TEMPLATES: SessionTemplate[] = [
         id: 'field_maint_01', category: 'Field Maintenance', modality: 'Field',
         durationMin: 25, durationMax: 50, title: 'Controlled Field & Football Maintenance',
         description: 'Controlled acceleration, braking, cutting, and ball skill for athletes already tolerating field mechanics.',
-        requiredEquipment: [], environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'], systemicCost: 0.6, objectiveTransferable: false,
+        requiredEquipment: [], environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'], requiresExplicitModalityPreference: true, systemicCost: 0.6, objectiveTransferable: false,
         stimulusProfile: { aerobicEndurance: 0.4, thresholdPower: 0.2, vo2MaxPower: 0.5, repeatedSurges: 0.7, sprintPower: 0.4, fatigueResistance: 0.3, maxStrength: 0.1, hypertrophy: 0 },
         costProfile: { systemic: 0.6, cardiovascular: 0.5, lowerBody: 0.7, upperBody: 0.05, impactTissue: 0.8, neuromuscular: 0.8 }
     },

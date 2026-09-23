@@ -98,6 +98,10 @@ describe('engine knowledge coverage inventory', () => {
             'optimizer.stimulus_benefit_weights': KNOWLEDGE_CLAIM_IDS.stimulusBenefitWeightsPolicy,
             'optimizer.event_priority_multipliers': KNOWLEDGE_CLAIM_IDS.eventPriorityMultipliersPolicy,
             'optimizer.recovery_streak_heuristics': KNOWLEDGE_CLAIM_IDS.recoveryStreakHeuristicsPolicy,
+            'optimizer.field_catalog_explicit_preference': KNOWLEDGE_CLAIM_IDS.fieldCatalogExplicitPreferencePolicy,
+            'optimizer.unpreferred_modality_fallback': KNOWLEDGE_CLAIM_IDS.unpreferredModalityFallbackPolicy,
+            'optimizer.preferred_modality_today_tiebreak': KNOWLEDGE_CLAIM_IDS.preferredModalityTodayTieBreakPolicy,
+            'optimizer.catalog_strength_adjacency': KNOWLEDGE_CLAIM_IDS.catalogStrengthAdjacencyPolicy,
         } as const;
 
         Object.entries(expectedClaims).forEach(([id, claimId]) => {
@@ -138,9 +142,9 @@ describe('engine knowledge coverage inventory', () => {
     it('reports the post-issue-736 coverage and risk debt exactly (zero high-impact uncovered debt)', () => {
         // Issue #675 added one partial/p1 item for the gran-fondo durability policy.
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(61);
-        expect(summary.byCoverage).toEqual({ covered: 37, partial: 17, uncovered: 1, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 8, p1: 8, p2: 2, p3: 0, none: 43 });
+        expect(summary.total).toBe(64);
+        expect(summary.byCoverage).toEqual({ covered: 40, partial: 17, uncovered: 1, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 8, p1: 8, p2: 2, p3: 0, none: 46 });
         expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
     });

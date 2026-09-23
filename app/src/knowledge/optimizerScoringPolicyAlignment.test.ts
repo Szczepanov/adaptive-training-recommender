@@ -180,10 +180,9 @@ function objective(
 }
 
 describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
-    it('aligns preferred-modality fallback and strength spacing policy to candidate ranking', () => {
-        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.preferredModalityFallbackPolicy);
+    it('pins the unpreferred-modality demotion policy to candidate ranking', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.unpreferredModalityFallbackPolicy);
         expect(claim.statement).toContain('0.25');
-        expect(claim.statement).toContain('two athlete-local-calendar-day gap');
         expect(UNPREFERRED_MODALITY_MULTIPLIER).toBe(0.25);
 
         const cycling = mockTemplate({ id: 'preferred-bike', modality: 'Cycling' });
@@ -192,11 +191,46 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         const ranked = rankCandidates([running, cycling], [], mockFatigueState(), AVAILABILITY, [], prefs, { date: '2026-09-10' });
         expect(ranked.accepted.find(item => item.template.id === running.id)?.benefitScore)
             .toBeCloseTo(ranked.accepted.find(item => item.template.id === cycling.id)!.benefitScore * UNPREFERRED_MODALITY_MULTIPLIER);
+    });
 
-        const requested = rankCandidates([running, cycling], [], mockFatigueState(), AVAILABILITY, [], prefs, {
+    it('pins the current-day modality tie-break to same-tier candidate ordering', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.preferredModalityTodayTieBreakPolicy);
+        expect(claim.statement).toContain('preferredModalityToday');
+        const cycling = mockTemplate({ id: 'preferred-bike', modality: 'Cycling' });
+        const strength = mockTemplate({ id: 'preferred-strength', modality: 'Strength' });
+        const prefs = { ...PREFERENCES, preferredModalities: ['Cycling', 'Strength'] };
+        const requested = rankCandidates([strength, cycling], [], mockFatigueState(), AVAILABILITY, [], prefs, {
             date: '2026-09-10', preferredModalityToday: 'Cycling',
         });
         expect(requested.accepted[0].template.id).toBe(cycling.id);
+    });
+
+    it('pins specialized catalog opt-in to declarative template metadata', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.fieldCatalogExplicitPreferencePolicy);
+        expect(claim.statement).toContain('requiresExplicitModalityPreference');
+        const field = mockTemplate({
+            id: 'field-candidate',
+            modality: 'Field',
+            category: 'Technical Skill',
+            requiresExplicitModalityPreference: true,
+        });
+        const blocked = rankCandidates([field], [], mockFatigueState(), AVAILABILITY, [], PREFERENCES, { date: '2026-09-10' });
+        expect(blocked.rejected[0].excludedReasons).toContain('EXPLICIT_MODALITY_PREFERENCE_REQUIRED');
+        const optedIn = rankCandidates([field], [], mockFatigueState(), AVAILABILITY, [], {
+            ...PREFERENCES, preferredModalities: ['Field/Football'],
+        }, { date: '2026-09-10' });
+        expect(optedIn.accepted[0].template.id).toBe(field.id);
+    });
+
+    it('pins adjacent-day strength exclusion to automatic catalog ranking only', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.catalogStrengthAdjacencyPolicy);
+        expect(claim.statement).toContain('immediately after any prior strength exposure');
+        const strength = mockTemplate({ id: 'strength-candidate', modality: 'Strength', category: 'Full-body Strength' });
+        const result = rankCandidates([strength], [], mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
+            date: '2026-09-10',
+            recentHistory: [{ date: '2026-09-09', modality: 'Strength', category: 'Upper-body Strength', systemicCost: 0.3, lowerBodyCost: 0 }],
+        });
+        expect(result.rejected[0].excludedReasons).toContain('CONSECUTIVE_STRENGTH_DAYS');
     });
 
     it('does not exempt a nonpreferred candidate that matches an objective modality but fails its category', () => {
