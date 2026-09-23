@@ -568,9 +568,12 @@ final 48-hour gates remain in force. An authored taper restores the resolved tap
 exhaustive-work restriction and repeat-session dampener. C endurance events still have no
 inferred taper by default.
 
-For low-surge Gran Fondo demand, cycling candidates with repeated-surge stimulus at least `0.6`
-and above the event's demand are excluded. This keeps sustained aerobic power
-available without treating a Gran Fondo as a criterium or VO2-focused event.
+For low-surge cycling durability demand, event specificity stays in the scoring layer rather
+than becoming a global feasibility gate. During the final 35 days before the event, a Cycling
+candidate with repeated-surge stimulus at least `0.6` and above event demand remains eligible,
+but its event-aware benefit is scaled by `event repeatedSurges / candidate repeatedSurges`.
+Earlier than D-35 that specificity factor is inactive, so a distant Gran Fondo does not ban
+VO2/surge development during Base/Build.
 
 ### The planner/workout-library boundary (Phase 5.2, `planningCandidate.ts`)
 

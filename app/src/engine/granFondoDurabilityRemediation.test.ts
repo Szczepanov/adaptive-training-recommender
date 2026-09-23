@@ -110,7 +110,7 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
         expect(isTemplatePhaseEligible(critSurges, critPeriodization)).toBe(true);
     });
 
-    it('excludes cycling hard-endurance candidates whose surge dose exceeds Gran Fondo demand', () => {
+    it('softens high-surge cycling benefit inside Gran Fondo specificity without hard-excluding the session', () => {
         const granFondoDemand = resolveDemandProfile('cycling_event', 'gran_fondo');
         const mismatched = ENRICHED_TEMPLATES.find(template => template.modality === 'Cycling'
             && template.category === 'Hard Endurance'
@@ -118,29 +118,39 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
             && (template.stimulusProfile?.repeatedSurges ?? 0) > granFondoDemand.repeatedSurges);
         expect(mismatched).toBeDefined();
 
-        const result = rankCandidates(
+        const focusEvent: UserEvent = {
+            id: 'e-gran-fondo-demand-match',
+            category: 'cycling_event',
+            title: 'Gran Fondo',
+            date: '2026-09-20',
+            priority: 'A',
+            lifecycle: 'scheduled',
+            demandProfile: granFondoDemand,
+        };
+        const rankAt = (date: string) => rankCandidates(
             [mismatched!],
             [],
-            createEmptyFatigue('2026-08-16'),
+            createEmptyFatigue(date),
             {
-                date: '2026-08-16', maxTimeMinutes: 120, availableEquipment: ['indoor_bike', 'outdoor_bike'],
+                date, maxTimeMinutes: 120, availableEquipment: ['indoor_bike', 'outdoor_bike'],
                 fixedActivities: [], reservedCapacityCost: 0,
                 reservedCapacityCostProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
                 environmentOverride: null,
             },
             [],
             { ...DEFAULT_PREFERENCES, preferredModalities: ['Cycling'] },
-            {
-                date: '2026-08-16',
-                focusEvent: {
-                    id: 'e-gran-fondo-demand-match', category: 'cycling_event', title: 'Gran Fondo', date: '2026-09-20',
-                    priority: 'A', lifecycle: 'scheduled', demandProfile: granFondoDemand,
-                },
-            },
+            { date, focusEvent },
         );
 
-        expect(result.accepted).toHaveLength(0);
-        expect(result.rejected[0].excludedReasons).toContain('EVENT_DEMAND_MISMATCH');
+        const specificity = rankAt('2026-09-01'); // D-19: event-specific scoring is active.
+        const build = rankAt('2026-07-01'); // D-81: the same VO2/surge work remains fully available.
+
+        expect(specificity.accepted).toHaveLength(1);
+        expect(specificity.rejected).toHaveLength(0);
+        expect(build.accepted).toHaveLength(1);
+        const surgeRatio = granFondoDemand.repeatedSurges / mismatched!.stimulusProfile!.repeatedSurges;
+        expect(specificity.accepted[0].benefitScore)
+            .toBeCloseTo(build.accepted[0].benefitScore * surgeRatio, 5);
     });
 
     it('scopes the durability exception to low-surge cycling demand rather than high-aerobic events generally', () => {

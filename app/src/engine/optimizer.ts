@@ -1038,13 +1038,6 @@ export function rankCandidates(
             excludedReasons.push('INTENSITY_SCALE_INADMISSIBLE');
         }
 
-        if (cyclingDurabilityFocusEvent
-            && template.modality === 'Cycling'
-            && (template.stimulusProfile?.repeatedSurges ?? 0) >= 0.6
-            && (template.stimulusProfile?.repeatedSurges ?? 0) > (focusEvent?.demandProfile?.repeatedSurges ?? 0)) {
-            excludedReasons.push('EVENT_DEMAND_MISMATCH');
-        }
-
         excludedReasons.push(...evaluateRecoveryConstraints(template, targetDate, history, options, summary));
 
         const activeDoseAdjustment = resolveTimeCapDoseAdjustment(template, availability.maxTimeMinutes, options.fatigueTier === 'modify');
@@ -1094,6 +1087,23 @@ export function rankCandidates(
                 const daysToRace = getDayDiff(raceDate, targetDate);
                 const priorityMultiplier = focusEvent.priority === 'A' ? 1.40 : focusEvent.priority === 'B' ? 1.25 : 1.00;
                 benefit *= priorityMultiplier;
+
+                // Event specificity is a ranking concern, not a feasibility/safety gate.
+                // During the same final-35-day horizon used by Specificity, low-surge
+                // cycling durability events softly de-emphasize high-surge candidates
+                // in proportion to how far their surge dose overshoots event demand.
+                // Outside that horizon, VO2/surge work remains fully available for
+                // general development instead of being globally banned by a distant event.
+                const candidateRepeatedSurges = template.stimulusProfile?.repeatedSurges ?? 0;
+                const eventRepeatedSurges = focusEvent.demandProfile?.repeatedSurges ?? 0;
+                if (cyclingDurabilityFocusEvent
+                    && daysToRace >= 0
+                    && daysToRace <= 35
+                    && template.modality === 'Cycling'
+                    && candidateRepeatedSurges >= 0.6
+                    && candidateRepeatedSurges > eventRepeatedSurges) {
+                    benefit *= eventRepeatedSurges / candidateRepeatedSurges;
+                }
 
                 // C-priority endurance races train through until the final 48 hours;
                 // retain the short-window repeat dampener at that boundary for safety.

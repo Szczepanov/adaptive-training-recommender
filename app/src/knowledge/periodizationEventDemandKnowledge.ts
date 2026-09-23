@@ -211,11 +211,11 @@ export const PERIODIZATION_EVENT_DEMAND_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: PERIODIZATION_EVENT_DEMAND_CLAIM_IDS.granFondoDurabilityPolicy,
-        statement: 'Product gran-fondo durability v2: when a cycling event has raw aerobicEndurance>=0.8 and fatigueResistance>=0.8 with repeatedSurges<0.6, demand-derived planning requests one cycling Race-Specific Endurance objective targeting aerobicEndurance 0.9/fatigueResistance 0.85/thresholdPower 0.6 and qualifies only stimulus >=0.6 on both aerobicEndurance and fatigueResistance; long-horizon race-specific benefit is preserved for this durability profile, compact criterium surge work requires governing-event repeatedSurges>=0.6, and cycling candidates with repeatedSurges>=0.6 and above event demand are excluded.',
+        statement: 'Product gran-fondo durability v1: when a cycling event has raw aerobicEndurance>=0.8 and fatigueResistance>=0.8 with repeatedSurges<0.6, demand-derived planning requests one cycling Race-Specific Endurance objective targeting aerobicEndurance 0.9/fatigueResistance 0.85/thresholdPower 0.6 and qualifies only stimulus >=0.6 on both aerobicEndurance and fatigueResistance; long-horizon race-specific benefit is preserved for this durability profile, while the compact criterium surge template requires governing-event repeatedSurges>=0.6.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
         applicability: { contexts: ['event_demand_characterization', 'training_periodization', 'weekly_objective_generation'], sports: ['cycling'], populations: ['app_users_with_target_events'], outcomes: ['training_specificity', 'weekly_objective_resolution'], horizon: 'chronic' },
         evidence: [{ sourceId: GRAN_FONDO_DURABILITY_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
         limitations: ['The thresholds, target stimulus, qualification floors, long-horizon exception and template gate are internal product calibration derived from deterministic scenario evidence; they are not validated dose-response constants from sports-science literature.'],
-        reviewedOn: '2026-09-23', version: 2,
+        reviewedOn: '2026-09-20', version: 1,
     },
 ];
