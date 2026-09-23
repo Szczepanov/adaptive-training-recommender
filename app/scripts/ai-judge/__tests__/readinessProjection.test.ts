@@ -28,6 +28,7 @@ describe('decayAcuteReadinessTowardBaseline', () => {
     expect(decayAcuteReadinessTowardBaseline(readiness, { subjective: { readiness: 8 }, objective: { hrv_delta: 0 } }, 7))
       .toEqual(readiness);
     expect(decayAcuteReadinessTowardBaseline(readiness, {}, 0)).toEqual(readiness);
+    expect(decayAcuteReadinessTowardBaseline(readiness, {}, Number.NaN)).toEqual(readiness);
   });
 
   it('derives a recovery baseline without filling missing sensors or rewriting chronic readings', () => {
@@ -37,5 +38,13 @@ describe('decayAcuteReadinessTowardBaseline', () => {
     });
     expect(baseline.subjective).toMatchObject({ readiness: 7, fatigue: 3, soreness: 3 });
     expect(baseline.objective).toMatchObject({ hrv_delta: 0, hrv_delta_28d: -14, rhr_delta: null, body_battery_wake: null });
+  });
+
+  it('does not coerce missing subjective readings into synthetic baseline values', () => {
+    const readiness = {
+      subjective: { readiness: null, sleepQuality: null, fatigue: null, soreness: null, stress: null },
+      objective: { hrv_delta: null },
+    };
+    expect(projectedRecoveryBaseline(readiness)).toEqual(readiness);
   });
 });
