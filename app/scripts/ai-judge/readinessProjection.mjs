@@ -4,17 +4,17 @@ const OBJECTIVE_ACUTE_FIELDS = [
   'sleep_duration_min', 'body_battery_wake', 'sleep_score_delta_7d',
 ];
 
-/** Derive a conservative athlete-specific forecast baseline only for acute adverse
- * observations. Chronic 28-day fields and missing sensor values remain untouched. */
+/** Derive a conservative synthetic recovery baseline for static judge fixtures only.
+ * Chronic 28-day fields and missing sensor values remain untouched. */
 export function projectedRecoveryBaseline(readiness) {
   const baseline = structuredClone(readiness);
   if (!baseline) return baseline;
   const subjective = baseline.subjective ?? {};
-  if (subjective.readiness <= 4) subjective.readiness = 7;
-  if (subjective.sleepQuality <= 4) subjective.sleepQuality = 7;
-  if (subjective.fatigue >= 7) subjective.fatigue = 3;
-  if (subjective.soreness >= 7) subjective.soreness = 3;
-  if (subjective.stress >= 8) subjective.stress = 4;
+  if (typeof subjective.readiness === 'number' && subjective.readiness <= 4) subjective.readiness = 7;
+  if (typeof subjective.sleepQuality === 'number' && subjective.sleepQuality <= 4) subjective.sleepQuality = 7;
+  if (typeof subjective.fatigue === 'number' && subjective.fatigue >= 7) subjective.fatigue = 3;
+  if (typeof subjective.soreness === 'number' && subjective.soreness >= 7) subjective.soreness = 3;
+  if (typeof subjective.stress === 'number' && subjective.stress >= 8) subjective.stress = 4;
 
   const objective = baseline.objective ?? {};
   const neutral = {
@@ -41,7 +41,7 @@ export function projectedRecoveryBaseline(readiness) {
 /** Static weekly forecasts have no new check-in. Let acute Day-1 values return toward the
  * athlete's baseline over time, while retaining null/missing data and chronic 28-day fields. */
 export function decayAcuteReadinessTowardBaseline(readiness, baseline, elapsedDays) {
-  if (!readiness || !baseline || elapsedDays <= 0) return structuredClone(readiness);
+  if (!readiness || !baseline || !Number.isFinite(elapsedDays) || elapsedDays <= 0) return structuredClone(readiness);
   const remainingSignal = 2 ** (-elapsedDays / 2);
   const result = structuredClone(readiness);
   for (const [section, fields] of [['subjective', SUBJECTIVE_ACUTE_FIELDS], ['objective', OBJECTIVE_ACUTE_FIELDS]]) {
