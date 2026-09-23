@@ -2,82 +2,789 @@
   "schema": "adaptive-training-recommender/ai-plan-judge-summary@3",
   "source": "artifacts/ai-plan-judge/latest/judge-scores.jsonl",
   "provenance": {
-    "corpusCommit": "12c3d7d67aeb5d150d710830f535041dd25719af",
-    "corpusSchema": "adaptive-training-recommender/ai-plan-judge-corpus@3",
-    "corpusSha256": "0f64bda8cae22efde5fed61a385fbe3b3aa09b9ad62404960e18e6eea913499d",
-    "familiesSha256": "671173e47cd16c841bba0958be875c1773a34e6e6352f2f7c231b920c014b184",
-    "promptSha256": "21acc629e5710e513359c080de4ec5cf8fb56557f6e53af4b9bedcadd1b70f3c",
+    "corpusCommit": "a887e0047da5f44767dc86fde41743fb434c6039",
+    "corpusSchema": "adaptive-training-recommender/ai-plan-judge-corpus@4",
+    "corpusSha256": "60d792b6ed4df1f8ef5840700081bbf7d7969c6133649e904c45f17963646c0a",
+    "familiesSha256": "a004f0defb427670ce56442354240f55959fbe8a33ee3e0cabf85e11b5aaeb3f",
+    "caseSetSha256": "a1db253a50bd64c18fb3f5dede29acf08936844298dd7ccbd4724e90aa3d30e0",
+    "promptSha256": "40f85a0c782dd6dd1df8a8713fa76ff3793505b5ecc6bfb13fe60994f157cd62",
     "responseSchemaSha256": "ab96127b7dee8fb1bc664897fcfe7d0ff563ba7d7cabf4dd433e1d0b7ed2d21a",
-    "judgeScoresSha256": "6bf1870895c2e392980f845034a55464e946a500ec5372e4d9f8720fa993b8af",
+    "judgeScoresSha256": "dcb06b7f13afe9da035dcdbe1b373e900b833f1ce723e59435a72b0064606032",
     "judgeModel": "external-llm",
     "judgeProvider": "manual_external",
-    "analyzedAt": "2026-09-19T12:04:48.556Z"
+    "analyzedAt": "2026-09-23T18:19:19.496Z",
+    "judgeSettings": {
+      "provider": "manual_external",
+      "model": "external-llm",
+      "samples": 1,
+      "packetVersion": "v2"
+    }
   },
-  "familyCount": 13,
-  "caseCount": 68,
+  "judgeSettings": {
+    "provider": "manual_external",
+    "model": "external-llm",
+    "samples": 1,
+    "packetVersion": "v2"
+  },
+  "familyCount": 18,
+  "caseCount": 96,
   "scoreAverages": {
-    "safety_recovery_fit": 9.064705882352941,
-    "goal_event_fit": 8.577941176470587,
-    "sequencing": 8.530882352941173,
-    "periodization_taper": 8.02941176470588,
-    "preference_capacity_fit": 9.088235294117647,
-    "robustness": 8.508823529411766,
-    "overall": 8.532352941176466
+    "safety_recovery_fit": 9.237499999999999,
+    "goal_event_fit": 9.110416666666664,
+    "sequencing": 9.093750000000009,
+    "periodization_taper": 9.07187500000001,
+    "preference_capacity_fit": 9.256249999999993,
+    "robustness": 9.145833333333334,
+    "overall": 9.154166666666667
   },
-  "meanSensitivityQuality": 8.361538461538462,
+  "meanSensitivityQuality": 9.299999999999997,
   "familySensitivity": [
     {
-      "familyId": "objective_recovery",
-      "sensitivityQuality": 8.6
-    },
-    {
-      "familyId": "subjective_recovery",
-      "sensitivityQuality": 9.2
-    },
-    {
-      "familyId": "recent_training",
-      "sensitivityQuality": 6.8
-    },
-    {
-      "familyId": "event_proximity",
-      "sensitivityQuality": 8.7
-    },
-    {
-      "familyId": "preferences_capacity",
-      "sensitivityQuality": 7.8
-    },
-    {
-      "familyId": "event_demand",
-      "sensitivityQuality": 6.7
-    },
-    {
       "familyId": "interactions",
-      "sensitivityQuality": 8.1
+      "sensitivityQuality": 8.9,
+      "rationale": "The family demonstrates strong multi-signal discrimination across residual training load, autonomic suppression, subjective discordance, and 7-day A-race taper reservations. The three race-taper cases (fresh, hard yesterday, bad objective) are particularly well-calibrated. The only mild overreaction occurs in judge_int_goodsubj_badobj, where high subjective readiness paired with poor objective biomarkers results in more mid-week rest days (Days 4-6) than judge_int_badobj_noload.",
+      "overreactionCases": [
+        "judge_int_goodsubj_badobj"
+      ],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": [
+        "Cap the multi-day projection decay of subjective-objective masking penalties so that good_subjective_bad_objective converges to the same Day 4-6 easy-aerobic re-entry as bad_objective_no_load."
+      ]
     },
     {
       "familyId": "delivered_dose_variance",
-      "sensitivityQuality": 9
+      "sensitivityQuality": 9,
+      "rationale": "The planner exhibits smooth, monotonic sensitivity in Week 1 to delivered dose variance: D1-D3 load scales cleanly from surged (Z2 + reduced strength + rest) to exact (Z2 + reduced strength + mobility) to curtailed/skipped (Z2 + reduced strength + Z2). A minor boundary effect in judge_dose_curtailed shifts Week 1 hard sessions to Days 5 and 7, which pushes the second Week 2 hard session past the Day 14 horizon.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": [
+        "When Week 1 quality sessions shift to Days 5 and 7 due to Day 3 aerobic volume reclamation, allow Week 2 quality spacing on Days 11 and 14 so total 14-day quality exposure matches the exact-dose baseline."
+      ]
+    },
+    {
+      "familyId": "recent_training",
+      "sensitivityQuality": 9,
+      "rationale": "The family handles recency and clustering well: easy yesterday allows immediate D1 VO2 quality followed by recovery; hard yesterday protects D1-D2; two spaced hard days retain higher Week 2 race-simulation load than two clustered hard days; and a 3-day hard cluster pushes the first quality session back from D3 to D5. The only mild conservatism is that a single hard session 2-3 days before D1 still trims the second cycling interval session late in Week 1 (D6).",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": [
+        "Allow rolling 7-day hard-session budget credit from a single hard session 2-3 days before D1 to roll off by D6-D7 so late Week 1 can still schedule a second cycling quality session."
+      ]
     },
     {
       "familyId": "concurrent_strength_endurance",
-      "sensitivityQuality": 9
+      "sensitivityQuality": 9.1,
+      "rationale": "Excellent dimension-specific sensitivity: heavy upper-body and power-maintenance strength sessions leave the cycling build untouched, whereas heavy lower-body strength triggers targeted Week 1 load attenuation (Day 3 rest, Day 5 shortened spin) while preserving Day 4 criterium surges and Day 6 VO2 intervals.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": [
+        "Increase the 48-hour lower-body strength-to-strength spacing penalty after a high lowerBody cost session (>= 0.8) so str_full_03 is deferred on Day 2 in favor of aerobic/mobility work."
+      ]
     },
     {
-      "familyId": "injury_constraints",
-      "sensitivityQuality": 9.5
+      "familyId": "objective_recovery",
+      "sensitivityQuality": 9.1,
+      "rationale": "The family exhibits well-calibrated tiered sensitivity: 1 SD single-marker autonomic fluctuations and discordant single-sensor dips leave an already easy Day 1-3 entry unchanged, 2 SD HRV/RHR perturbations trigger localized early-week unloading with mobility insertion, and combined multi-marker autonomic/sleep distress triggers two immediate rest days and a gradual 6-day progressive ramp before hard intervals resume.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": [
+        "When a 2 SD autonomic perturbation (HRV -2 SD or RHR +2 SD) shifts the D1-D2 pair to str_full_03 + mob_01, ordering mob_01 on D1 before str_full_03 on D2 would align immediate Day 1 recovery even more cleanly."
+      ]
     },
     {
-      "familyId": "planning_modes_overlays",
-      "sensitivityQuality": 7.2
+      "familyId": "non_training_physical_load",
+      "sensitivityQuality": 9.2,
+      "rationale": "The planner exhibits a well-graded, monotonic response to non-training physical work: short moderate work leaves easy aerobic and quality training intact, hard medium work softens Days 1-2 while keeping D4/D6 quality, and extended exhausting work with elevated soreness grants Day 1 Total Rest before resuming the week's progression.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": [
+        "Check whether D-1 occupational strain or shifted microcycle rest-day anchors slightly reduce Week 2's final day (D14) selection in weekly_forecast mode."
+      ]
     },
     {
-      "familyId": "temporal_acute_vs_persistent",
-      "sensitivityQuality": 9.6
+      "familyId": "subjective_recovery",
+      "sensitivityQuality": 9.2,
+      "rationale": "Subjective recovery sensitivity is well-calibrated across the family: isolated low motivation does not falsely trigger safety rest, high fatigue or soreness triggers immediate D1 rest while keeping later-week quality intact, high stress lowers D1-D2 session duration/cost with mobility, and combined subjective distress down-regulates Days 1-6 into progressive recovery before reintroducing hard work on D7.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": [
+        "When high soreness (soreness >= 7) triggers D1 rest, prioritize mobility or easy cycling on D2 over reduced full-body strength maintenance."
+      ]
     },
     {
       "familyId": "conflicting_tissue_vs_wearable",
-      "sensitivityQuality": 8.5
+      "sensitivityQuality": 9.3,
+      "rationale": "The planner clearly differentiates local tissue fatigue, systemic autonomic collapse, and psychological stress/low motivation: local leg soreness pauses Day 1 lower-body loading despite high HRV; severe multi-metric wearable collapse enforces a multi-day systemic recovery ramp despite fresh legs; and high stress/low motivation lightens early-week cognitive/session burden while preserving key race-specific cycling stimuli.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": []
+    },
+    {
+      "familyId": "event_demand",
+      "sensitivityQuality": 9.3,
+      "rationale": "The planner clearly differentiates Criterium vs Gran Fondo demand profiles: Criterium plans prioritize repeated surges (end_crit_surges_01), criterium race simulation (end_race_sim_01), and two VO2max sessions (end_hard_02), whereas Gran Fondo plans swap surge/race-sim sessions for sustained 50-90 min race-specific aerobic durability rides (end_race_specific_01) and threshold endurance (end_mod_02). At 40 days out with a single scheduled event, keeping A and B build phases aligned is appropriate.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": []
+    },
+    {
+      "familyId": "planning_modes_overlays",
+      "sensitivityQuality": 9.3,
+      "rationale": "All four planning modes and overlays produce distinct, domain-appropriate 14-day schedules: event_directed targets criterium surge/VO2 demands, evergreen balances strength and multi-modal aerobic health, travel_overlay enforces strict <=30m zero-equipment rules, and conservative_preference trims secondary sessions in favor of passive rest.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": [
+        "In zero-equipment travel overlays, maintain at least one weekly bodyweight strength exposure (str_full_02) in Week 2 rather than repeating end_easy_05 for 7 consecutive days."
+      ]
+    },
+    {
+      "familyId": "preferences_capacity",
+      "sensitivityQuality": 9.3,
+      "rationale": "The planner adapts cleanly across both soft preferences and hard time-capacity bounds: conservativeBias inserts extra rest days in place of filler without dropping core intervals, active_recovery replaces rest_01 with mobility flows, 45-min weekday capacity down-scales interval and aerobic durations to <=45 min, and 90-min weekday capacity unlocks 50-90 min race-simulation workouts.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": [
+        "Discount the systemic cost of active-recovery mobility replacements (mob_01/mob_02) against weekly hard-session budget so active_recovery preference does not displace D14 end_hard_02."
+      ]
+    },
+    {
+      "familyId": "clinical_trajectory",
+      "sensitivityQuality": 9.4,
+      "rationale": "In rolling-daily evaluation, active illness, lower-limb pain, and red-flag findings immediately pause physical training for the exact active window (1 day vs 3 days) and scale the post-clearance progressive re-entry ramp proportionally (2 ramp days after 1-day illness vs 3 ramp days after 3-day illness) before restoring VO2/surge sessions.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": []
+    },
+    {
+      "familyId": "event_proximity",
+      "sensitivityQuality": 9.5,
+      "rationale": "Taper and event-commitment handling across the 40d -> 0d horizon is outstanding: every scheduled race date in fixedActivities is strictly respected with rest_01, systemic volume and intensity taper progressively as the event approaches, sharpening sessions (end_taper_sharpen_01) and light openers (end_easy_01 / cycling_technical_01) are placed 3-4 days and 1 day pre-race, and post-event days transition through rest and easy aerobic sessions before resuming moderate loads.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": [
+        "On the day immediately after an A-priority endurance event (D+1 in judge_event_0d), prioritize rest_01 or mob_01 over upper-body strength (str_upper_01)."
+      ]
+    },
+    {
+      "familyId": "same_day_execution_state",
+      "sensitivityQuality": 9.5,
+      "rationale": "The family exhibits clean same-day execution gating and multi-source deduplication: any same-day completed-training signal replaces Day 1's planned session with Total Rest, and concordant self-report plus device telemetry does not double-count load or suppress downstream quality sessions.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": []
+    },
+    {
+      "familyId": "temporal_acute_vs_persistent",
+      "sensitivityQuality": 9.5,
+      "rationale": "The rolling-daily planner cleanly distinguishes a 1-day acute perturbation (1 rest day + 2 transitional days before Day 4 VO2) from a 3-day persistent slump (3 rest days + 3 transitional days before Day 7 VO2) without extrapolating Day 1 suppression across the rest of the 14-day horizon.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": []
+    },
+    {
+      "familyId": "injury_constraints",
+      "sensitivityQuality": 9.6,
+      "rationale": "Exact surgical sensitivity across all four injury states: irrelevant modality restrictions (Running for a cyclist) and expired injury records leave the optimal plan untouched, while active lower-body strength restrictions cleanly strip tagged lower-body strength sessions while preserving upper-body strength and cycling specificity.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": []
+    },
+    {
+      "familyId": "multi_event_lifecycle",
+      "sensitivityQuality": 9.6,
+      "rationale": "Multi-event coordination, priority ordering (B-then-A, A-then-B, dual-A bridging), fixed-activity date reservation, post-event recovery, and cancelled-event invariance all behave cleanly and match endurance coaching best practices.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": []
+    },
+    {
+      "familyId": "partial_observability",
+      "sensitivityQuality": 9.6,
+      "rationale": "Across all partial-observability perturbations (missing all wearables, missing HRV, missing personal variability baselines, and partial subjective check-in), the engine exhibits zero false-positive downshifts and strictly treats missing telemetry as absence of evidence rather than low readiness.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": []
     }
   ],
+  "weakestCases": [
+    {
+      "familyId": "interactions",
+      "caseId": "judge_int_goodsubj_badobj",
+      "scores": {
+        "safety_recovery_fit": 8.5,
+        "goal_event_fit": 7.9,
+        "sequencing": 8.1,
+        "periodization_taper": 8.2,
+        "preference_capacity_fit": 8.3,
+        "robustness": 8.3,
+        "overall": 8.2
+      },
+      "confidence": 0.9,
+      "flags": [
+        "mild_week1_over_conservatism"
+      ],
+      "rationale": "The engine rightly prevents high subjective readiness (9/10) and motivation (9/10) from overriding severe objective autonomic suppression (HRV 33, RHR 57, sleep 50) on Days 1-2. However, scheduling 6 total rest days within the first 8 days (Days 1, 2, 4, 5, 6, 8) is more restrictive than judge_int_badobj_noload (which had identical objective metrics and worse subjective readiness yet kept short Zone 2 spins on Days 4-6). Week 2 recovers well with criterium surges on Day 11 and VO2 intervals on Day 14.",
+      "suggestedChanges": [
+        "Ensure subjective-objective discordance penalties do not produce more mid-week total rest days (Days 4-6) than the equivalent bad-objective/neutral-subjective baseline."
+      ]
+    },
+    {
+      "familyId": "objective_recovery",
+      "caseId": "judge_obj_hrv_2sd",
+      "scores": {
+        "safety_recovery_fit": 8.6,
+        "goal_event_fit": 8.5,
+        "sequencing": 8.4,
+        "periodization_taper": 8.5,
+        "preference_capacity_fit": 9,
+        "robustness": 8.6,
+        "overall": 8.6
+      },
+      "confidence": 0.92,
+      "flags": [],
+      "rationale": "Responds to a 2 SD HRV drop (-17 ms) by inserting early mobility (D2 mob_01), delaying aerobic riding to D3, and moderating second-week peak load (replacing D14 VO2 intervals with rest). Placing reduced strength maintenance on D1 ahead of D2 mobility is slightly less intuitive than putting mobility/easy spin on D1, but systemic strain remains well controlled.",
+      "suggestedChanges": [
+        "Swap D1 str_full_03 and D2 mob_01 so the immediate day of a 2 SD HRV drop starts with mobility or an easy recovery spin before strength maintenance."
+      ]
+    },
+    {
+      "familyId": "recent_training",
+      "caseId": "judge_load_hard_3d",
+      "scores": {
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 8.3,
+        "sequencing": 8.6,
+        "periodization_taper": 8.6,
+        "preference_capacity_fit": 9.1,
+        "robustness": 8.6,
+        "overall": 8.6
+      },
+      "confidence": 0.9,
+      "flags": [],
+      "rationale": "Safe and well-spaced with strong Week 2 specificity (D10 Race Simulation, D14 VO2 Intervals), but mildly conservative in Week 1 where a single hard session 3 days before D1 still suppresses the second Week 1 bike interval workout on D6 in favor of str_full_03.",
+      "suggestedChanges": [
+        "Ensure a single hard session 3 days prior does not consume Week 1's second cycling quality slot 8 days later on D6."
+      ]
+    },
+    {
+      "familyId": "interactions",
+      "caseId": "judge_int_badobj_hard_yday",
+      "scores": {
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 8.3,
+        "sequencing": 8.5,
+        "periodization_taper": 8.5,
+        "preference_capacity_fit": 8.7,
+        "robustness": 8.7,
+        "overall": 8.6
+      },
+      "confidence": 0.9,
+      "flags": [],
+      "rationale": "Combining severe objective strain with yesterday's hard VO2 workout appropriately triggers rest on Days 1-2, mobility on Day 3, and capped Zone 2 volume on Days 4-6, while pushing high-intensity cycling (end_crit_surges_01 and end_hard_02) into Week 2 (Days 11 and 14). Scheduling heavy full-body strength (str_full_01, cost 0.8) on Day 7 is slightly aggressive compared to a moderate cycling or reduced strength session.",
+      "suggestedChanges": [
+        "Substitute str_full_03 (reduced strength maintenance) or moderate aerobic cycling for str_full_01 on Day 7 when transitioning out of compounded objective and training strain."
+      ]
+    },
+    {
+      "familyId": "recent_training",
+      "caseId": "judge_load_hard_2d",
+      "scores": {
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 8.4,
+        "sequencing": 8.7,
+        "periodization_taper": 8.6,
+        "preference_capacity_fit": 9.1,
+        "robustness": 8.7,
+        "overall": 8.7
+      },
+      "confidence": 0.9,
+      "flags": [],
+      "rationale": "Preserves safe recovery spacing after a hard session 2 days prior and schedules a strong Week 2 (D10 Race Simulation + D14 VO2 Intervals), though Week 1 replaces D6 Bike VO2 Intervals with reduced strength maintenance (str_full_03) even though 7 days have elapsed since the prior hard ride.",
+      "suggestedChanges": [
+        "Allow a second cycling quality session around D6-D7 when the single prior hard workout was 2 days before D1 and readiness is neutral."
+      ]
+    },
+    {
+      "familyId": "interactions",
+      "caseId": "judge_int_fresh_hard_yday",
+      "scores": {
+        "safety_recovery_fit": 9.2,
+        "goal_event_fit": 8.3,
+        "sequencing": 8.6,
+        "periodization_taper": 8.6,
+        "preference_capacity_fit": 8.8,
+        "robustness": 8.8,
+        "overall": 8.7
+      },
+      "confidence": 0.92,
+      "flags": [],
+      "rationale": "Despite fresh morning biomarkers (HRV +8, RHR -4, readiness 9/10), the planner appropriately respects yesterday's high-intensity VO2 cycling load (systemic cost 0.8) by scheduling an easy Zone 2 spin on Day 1 and mobility on Day 2 before reintroducing race-specific criterium surges on Day 3. One minor build-efficiency limitation is placing two full-body strength sessions in Week 1 (Day 5 str_full_03 and Day 7 str_full_01 at cost 0.8) while delaying the next VO2 cycling session until Day 13.",
+      "suggestedChanges": [
+        "Replace Day 7 str_full_01 (cost 0.8) with a cycling VO2 or threshold session (or swap Day 7 and Day 13) so the primary Cycling modality receives two quality sessions in Week 1."
+      ]
+    },
+    {
+      "familyId": "delivered_dose_variance",
+      "caseId": "judge_dose_curtailed",
+      "scores": {
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 8.4,
+        "sequencing": 8.7,
+        "periodization_taper": 8.6,
+        "preference_capacity_fit": 8.9,
+        "robustness": 8.7,
+        "overall": 8.7
+      },
+      "confidence": 0.9,
+      "flags": [],
+      "rationale": "After a curtailed 50-minute session yesterday (cost 0.5), Week 1 appropriately adds an extra 30-60 minute Outdoor Zone 2 ride on Day 3 and hits both criterium surges (Day 5) and VO2 intervals (Day 7). However, Week 2 drops the Day 14 hard VO2 session in favor of rest_01, yielding one fewer high-intensity cycling session across the 14-day window than the exact and surged cases.",
+      "suggestedChanges": [
+        "Retain the second Week 2 high-intensity cycling session (Day 14 end_hard_02) when Day 5/7 quality sessions are shifted by one day in Week 1."
+      ]
+    },
+    {
+      "familyId": "objective_recovery",
+      "caseId": "judge_obj_low_battery",
+      "scores": {
+        "safety_recovery_fit": 8.5,
+        "goal_event_fit": 9,
+        "sequencing": 8.8,
+        "periodization_taper": 8.9,
+        "preference_capacity_fit": 9.1,
+        "robustness": 8.6,
+        "overall": 8.8
+      },
+      "confidence": 0.9,
+      "flags": [],
+      "rationale": "An isolated low wake body battery (25) alongside 80 sleep score and normal HRV/RHR is treated as a discordant single-metric dip rather than a multi-system red flag. Because D1-D3 are already easy endurance and light strength maintenance, the plan remains safe without overreacting.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "subjective_recovery",
+      "caseId": "judge_subj_soreness",
+      "scores": {
+        "safety_recovery_fit": 8.8,
+        "goal_event_fit": 9,
+        "sequencing": 8.5,
+        "periodization_taper": 8.9,
+        "preference_capacity_fit": 9.1,
+        "robustness": 8.8,
+        "overall": 8.8
+      },
+      "confidence": 0.92,
+      "flags": [],
+      "rationale": "Prescribes Total Rest on D1 in response to high muscular soreness (8/10) and preserves mid-to-late week quality training. Scheduling str_full_03 on D2 before end_easy_01 on D3 is a minor sequencing blemish after 8/10 soreness, as an easy spin or mobility on D2 before strength work would be gentler on sore tissue.",
+      "suggestedChanges": [
+        "After D1 rest for high soreness (8/10), prefer easy spinning (end_easy_01) or mobility (mob_01) on D2 ahead of str_full_03 on D3."
+      ]
+    },
+    {
+      "familyId": "interactions",
+      "caseId": "judge_int_badobj_noload",
+      "scores": {
+        "safety_recovery_fit": 9.2,
+        "goal_event_fit": 8.5,
+        "sequencing": 8.8,
+        "periodization_taper": 8.6,
+        "preference_capacity_fit": 9,
+        "robustness": 8.9,
+        "overall": 8.8
+      },
+      "confidence": 0.91,
+      "flags": [],
+      "rationale": "Severe autonomic suppression (HRV 33 vs 50 baseline, RHR +7 bpm, sleep score 50, Body Battery 22) without prior training load warrants immediate protection. The plan prescribes two rest days followed by mobility (Day 3) and reduced-duration Zone 2 rides (Days 4-6, cost 0.18) before resuming VO2 intervals on Day 7 and criterium surges on Day 11.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "interactions",
+      "caseId": "judge_int_badsubj_goodobj",
+      "scores": {
+        "safety_recovery_fit": 9.1,
+        "goal_event_fit": 8.6,
+        "sequencing": 8.8,
+        "periodization_taper": 8.7,
+        "preference_capacity_fit": 8.9,
+        "robustness": 8.8,
+        "overall": 8.8
+      },
+      "confidence": 0.91,
+      "flags": [],
+      "rationale": "Well-calibrated handling of poor subjective readiness (readiness 3, fatigue 8, soreness 7) despite fresh autonomic markers (HRV 58, RHR 46). The plan grants Day 1 rest to respect acute soreness/fatigue, uses light maintenance strength (Day 2), mobility (Day 3), and short Zone 2 spins (Days 4-6) rather than multi-day forced rest, and restores VO2 and criterium surge quality on Days 7 and 12.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "concurrent_strength_endurance",
+      "caseId": "judge_concurrent_heavy_lower",
+      "scores": {
+        "safety_recovery_fit": 8.8,
+        "goal_event_fit": 9,
+        "sequencing": 8.5,
+        "periodization_taper": 8.9,
+        "preference_capacity_fit": 9,
+        "robustness": 8.8,
+        "overall": 8.8
+      },
+      "confidence": 0.91,
+      "flags": [],
+      "rationale": "The planner properly protects high-intensity cycling against lower-body interference by keeping Day 1 easy (Zone 2 spin), inserting rest on Day 3, and delaying criterium surges until Day 4 (72+ hours after heavy lower-body strength). However, scheduling str_full_03 (Full-body Strength, lowerBody cost 0.315) on Day 2 just 48 hours after heavy lower-body strength (lowerBody cost 0.85) is slightly redundant when Day 3 is forced to Total Rest.",
+      "suggestedChanges": [
+        "Swap Day 2 str_full_03 for mobility or an easy aerobic spin after yesterday's heavy lower-body strength session so lower-body tissue is not re-loaded 48 hours later."
+      ]
+    },
+    {
+      "familyId": "planning_modes_overlays",
+      "caseId": "judge_mode_travel_overlay",
+      "scores": {
+        "safety_recovery_fit": 9.2,
+        "goal_event_fit": 8.5,
+        "sequencing": 8.3,
+        "periodization_taper": 8.6,
+        "preference_capacity_fit": 9.5,
+        "robustness": 9,
+        "overall": 8.8
+      },
+      "confidence": 0.92,
+      "flags": [
+        "low_week2_modality_variety"
+      ],
+      "rationale": "Strictly honors hard travel constraints (maxTimeMinutes: 30 and zero equipment available across all 14 days) by selecting exclusively zero-equipment sessions (mob_01, str_full_02 bodyweight strength, end_easy_05 cross-training, mob_travel_flow_01) capped at <=30 minutes. While Week 1 mixes mobility, bodyweight strength, and cross-training well, Days 7-13 schedule end_easy_05 for 7 consecutive days without repeating str_full_02.",
+      "suggestedChanges": [
+        "Insert str_full_02 (bodyweight strength, 15-25m) or a rest/mobility day during Days 7-13 to break up 7 consecutive days of end_easy_05 under zero-equipment travel constraints."
+      ]
+    },
+    {
+      "familyId": "objective_recovery",
+      "caseId": "judge_obj_rhr_2sd",
+      "scores": {
+        "safety_recovery_fit": 8.8,
+        "goal_event_fit": 9,
+        "sequencing": 8.7,
+        "periodization_taper": 8.9,
+        "preference_capacity_fit": 9.1,
+        "robustness": 8.8,
+        "overall": 8.9
+      },
+      "confidence": 0.92,
+      "flags": [],
+      "rationale": "Reacts to a 2 SD RHR elevation (+7 bpm) by shifting early days to reduced strength maintenance (D1) and mobility (D2) before resuming normal endurance on D3 and criterium surges on D4, while preserving the full Week 2 progression once acute elevation resolves.",
+      "suggestedChanges": [
+        "Consider placing mob_01 on D1 and str_full_03 on D2 when RHR is elevated by 2 SD."
+      ]
+    },
+    {
+      "familyId": "objective_recovery",
+      "caseId": "judge_obj_poor_sleep",
+      "scores": {
+        "safety_recovery_fit": 8.7,
+        "goal_event_fit": 9.1,
+        "sequencing": 8.9,
+        "periodization_taper": 8.9,
+        "preference_capacity_fit": 9.2,
+        "robustness": 8.8,
+        "overall": 8.9
+      },
+      "confidence": 0.91,
+      "flags": [],
+      "rationale": "With a single poor sleep night (score 52, 315 min) but completely stable autonomic markers (HRV delta 0, RHR delta 0) and neutral subjective readiness, starting D1 with an easy Zone 2 spin and keeping quality workouts at D4/D6 avoids unnecessary cancellation of productive training.",
+      "suggestedChanges": []
+    }
+  ],
+  "strongestCases": [
+    {
+      "familyId": "event_proximity",
+      "caseId": "judge_event_7d",
+      "scores": {
+        "safety_recovery_fit": 9.5,
+        "goal_event_fit": 9.5,
+        "sequencing": 9.5,
+        "periodization_taper": 9.6,
+        "preference_capacity_fit": 9.4,
+        "robustness": 9.4,
+        "overall": 9.5
+      },
+      "confidence": 0.97,
+      "flags": [],
+      "rationale": "Exemplary race-week taper and post-event recovery around the Day 8 (2026-08-14) criterium: sheds fatigue with easy spins (D1, D3, D5), places Taper Sharpening on D4 (4 days out), mobility on D6, a light technical opener (cycling_technical_01) on D7, respects the fixed race commitment with rest_01 on D8, and eases back post-race with light upper-body work (D9), rest (D10), easy riding (D11), and moderate endurance (D12, D14).",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "event_proximity",
+      "caseId": "judge_event_3d",
+      "scores": {
+        "safety_recovery_fit": 9.6,
+        "goal_event_fit": 9.5,
+        "sequencing": 9.5,
+        "periodization_taper": 9.6,
+        "preference_capacity_fit": 9.4,
+        "robustness": 9.5,
+        "overall": 9.5
+      },
+      "confidence": 0.97,
+      "flags": [],
+      "rationale": "Ideal 3-day lead-in and post-race recovery around the Day 4 (2026-08-10) criterium: schedules Taper Sharpening on D1 (3 days out), mobility on D2, an easy spin opener on D3, Total Rest alongside the reserved race on D4, Total Rest the day after the race (D5), and two easy Zone 2 spins (D6-D7) before resuming moderate endurance on D8.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "event_proximity",
+      "caseId": "judge_event_1d",
+      "scores": {
+        "safety_recovery_fit": 9.6,
+        "goal_event_fit": 9.5,
+        "sequencing": 9.5,
+        "periodization_taper": 9.6,
+        "preference_capacity_fit": 9.4,
+        "robustness": 9.5,
+        "overall": 9.5
+      },
+      "confidence": 0.97,
+      "flags": [],
+      "rationale": "Prescribes an easy Zone 2 spin opener on D1 (1 day before the event), leaves D2 clear for the scheduled criterium fixedActivity (rest_01), gives Total Rest on D3 (day after race), and rebuilds gradually via easy Zone 2 rides on D4-D5 before moderate work on D6.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "interactions",
+      "caseId": "judge_int_race7_fresh",
+      "scores": {
+        "safety_recovery_fit": 9.5,
+        "goal_event_fit": 9.5,
+        "sequencing": 9.4,
+        "periodization_taper": 9.6,
+        "preference_capacity_fit": 9.4,
+        "robustness": 9.4,
+        "overall": 9.5
+      },
+      "confidence": 0.95,
+      "flags": [],
+      "rationale": "Textbook 7-day A-race criterium taper and post-event progression. The plan reduces cumulative volume while maintaining neuromuscular sharpness via end_taper_sharpen_01 on Day 4 and cycling_technical_01 opener on Day 7, reserves Day 8 for the fixed criterium event (cost 0.95), and transitions smoothly into post-race recovery and moderate aerobic rebuilding.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "multi_event_lifecycle",
+      "caseId": "judge_events_two_A_7d_apart",
+      "scores": {
+        "safety_recovery_fit": 9.5,
+        "goal_event_fit": 9.5,
+        "sequencing": 9.5,
+        "periodization_taper": 9.5,
+        "preference_capacity_fit": 9.4,
+        "robustness": 9.5,
+        "overall": 9.5
+      },
+      "confidence": 0.95,
+      "flags": [],
+      "rationale": "Handles two A-priority races 7 days apart (D4 and D11) with textbook inter-race management: tapers into D4, assigns Total Rest on D5, eliminates fatiguing strength/VO2 work between the two A-races while maintaining neuromuscular freshness via technical skills (D6) and a Taper Sharpening Ride (D8), and reserves D11 with post-race rest on D12.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "multi_event_lifecycle",
+      "caseId": "judge_events_cancelled_then_A10",
+      "scores": {
+        "safety_recovery_fit": 9.5,
+        "goal_event_fit": 9.5,
+        "sequencing": 9.4,
+        "periodization_taper": 9.5,
+        "preference_capacity_fit": 9.4,
+        "robustness": 9.5,
+        "overall": 9.5
+      },
+      "confidence": 0.96,
+      "flags": [],
+      "rationale": "The cancelled B-event on D4 (2026-08-10) is completely ignored for both date reservation and taper planning: the planner schedules a productive Compact Criterium Surge Session on D4 and matches the exact single_A10 build-and-taper trajectory into the scheduled A-event on D11.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "event_proximity",
+      "caseId": "judge_event_14d",
+      "scores": {
+        "safety_recovery_fit": 9.4,
+        "goal_event_fit": 9.4,
+        "sequencing": 9.3,
+        "periodization_taper": 9.5,
+        "preference_capacity_fit": 9.3,
+        "robustness": 9.3,
+        "overall": 9.4
+      },
+      "confidence": 0.96,
+      "flags": [],
+      "rationale": "Textbook 14-day pre-event progression: Week 1 completes the last full quality block (D4 surges, D6 VO2 intervals), and Week 2 transitions into a structured taper with reduced volume, mobility on D11, Taper Sharpening (end_taper_sharpen_01, c=0.4) on D12 (3 days out), and easy aerobic spins on D13-D14 leading into the race on Day 15.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "preferences_capacity",
+      "caseId": "judge_pref_conservative",
+      "scores": {
+        "safety_recovery_fit": 9.5,
+        "goal_event_fit": 9.2,
+        "sequencing": 9.4,
+        "periodization_taper": 9.2,
+        "preference_capacity_fit": 9.5,
+        "robustness": 9.4,
+        "overall": 9.4
+      },
+      "confidence": 0.96,
+      "flags": [],
+      "rationale": "Enabling conservativeBias cleanly replaces secondary filler sessions (D5 mob_01 and D12 str_upper_01) with Total Rest (yielding 4 rest_01 days across 14 days: D5, D7, D10, D12) while retaining all four primary criterium quality sessions (D4, D6, D11, D14).",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "preferences_capacity",
+      "caseId": "judge_pref_90min",
+      "scores": {
+        "safety_recovery_fit": 9.3,
+        "goal_event_fit": 9.5,
+        "sequencing": 9.4,
+        "periodization_taper": 9.3,
+        "preference_capacity_fit": 9.5,
+        "robustness": 9.3,
+        "overall": 9.4
+      },
+      "confidence": 0.96,
+      "flags": [],
+      "rationale": "Takes advantage of the 90-minute weekday time capacity by upgrading D11 from a 45-minute compact surge session to a 50-90 minute Criterium Race Simulation (end_race_sim_01, c=0.85) followed by a D12 rest day, increasing race-specific stimulus while maintaining recovery balance.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "event_demand",
+      "caseId": "judge_demand_crit_A",
+      "scores": {
+        "safety_recovery_fit": 9.3,
+        "goal_event_fit": 9.5,
+        "sequencing": 9.4,
+        "periodization_taper": 9.3,
+        "preference_capacity_fit": 9.4,
+        "robustness": 9.3,
+        "overall": 9.4
+      },
+      "confidence": 0.96,
+      "flags": [],
+      "rationale": "Strong specificity for an A-priority criterium with 90-minute weekday capacity: schedules Compact Criterium Surges (D4), Bike VO2 Intervals (D6, D14), and a 50-90 min Criterium Race Simulation (D11), surrounded by Zone 2 endurance, strength maintenance, mobility, and rest.",
+      "suggestedChanges": []
+    }
+  ],
+  "repeatedCaseFlags": [],
+  "repeatedCaseSuggestedChanges": [],
+  "caseFlagCounts": [
+    {
+      "flag": "low_week2_modality_variety",
+      "count": 1
+    },
+    {
+      "flag": "mild_week1_over_conservatism",
+      "count": 1
+    }
+  ],
+  "caseSuggestedChangeCounts": [
+    {
+      "suggestion": "After D1 rest for high soreness (8/10), prefer easy spinning (end_easy_01) or mobility (mob_01) on D2 ahead of str_full_03 on D3.",
+      "count": 1
+    },
+    {
+      "suggestion": "Allow a second cycling quality session around D6-D7 when the single prior hard workout was 2 days before D1 and readiness is neutral.",
+      "count": 1
+    },
+    {
+      "suggestion": "Consider placing an upper-body or mobility session on Day 2 before Reduced Full-body Strength Maintenance when Day 1 leg soreness is 8/10.",
+      "count": 1
+    },
+    {
+      "suggestion": "Consider placing mob_01 on D1 and str_full_03 on D2 when RHR is elevated by 2 SD.",
+      "count": 1
+    },
+    {
+      "suggestion": "Ensure a single hard session 3 days prior does not consume Week 1's second cycling quality slot 8 days later on D6.",
+      "count": 1
+    },
+    {
+      "suggestion": "Ensure D-1 occupational strain decays fully by Week 2 so Day 14 retains its second weekly high-intensity cycling session rather than converting to Total Rest.",
+      "count": 1
+    },
+    {
+      "suggestion": "Ensure low-cost active recovery sessions (c=0.06-0.10) substituting for rest_01 do not crowd out the final Week 2 primary interval session on D14.",
+      "count": 1
+    },
+    {
+      "suggestion": "Ensure subjective-objective discordance penalties do not produce more mid-week total rest days (Days 4-6) than the equivalent bad-objective/neutral-subjective baseline.",
+      "count": 1
+    },
+    {
+      "suggestion": "Insert str_full_02 (bodyweight strength, 15-25m) or a rest/mobility day during Days 7-13 to break up 7 consecutive days of end_easy_05 under zero-equipment travel constraints.",
+      "count": 1
+    },
+    {
+      "suggestion": "Prefer mob_01 or rest_01 on D2 (the day immediately following a Day 1 A-priority race) ahead of str_upper_01.",
+      "count": 1
+    },
+    {
+      "suggestion": "Replace Day 7 str_full_01 (cost 0.8) with a cycling VO2 or threshold session (or swap Day 7 and Day 13) so the primary Cycling modality receives two quality sessions in Week 1.",
+      "count": 1
+    },
+    {
+      "suggestion": "Restore the second high-intensity cycling session at the end of Week 2 (D14) once Day 0 occupational load has long since cleared.",
+      "count": 1
+    },
+    {
+      "suggestion": "Retain the second Week 2 high-intensity cycling session (Day 14 end_hard_02) when Day 5/7 quality sessions are shifted by one day in Week 1.",
+      "count": 1
+    },
+    {
+      "suggestion": "Substitute str_full_03 (reduced strength maintenance) or moderate aerobic cycling for str_full_01 on Day 7 when transitioning out of compounded objective and training strain.",
+      "count": 1
+    },
+    {
+      "suggestion": "Swap D1 str_full_03 and D2 mob_01 so the immediate day of a 2 SD HRV drop starts with mobility or an easy recovery spin before strength maintenance.",
+      "count": 1
+    },
+    {
+      "suggestion": "Swap D2 str_full_03 and D3 mob_01 so mobility precedes strength work when recovering from combined high fatigue and soreness.",
+      "count": 1
+    },
+    {
+      "suggestion": "Swap Day 2 str_full_03 for mobility or an easy aerobic spin after yesterday's heavy lower-body strength session so lower-body tissue is not re-loaded 48 hours later.",
+      "count": 1
+    }
+  ],
+  "familyHypotheses": [
+    {
+      "hypothesis": "Allow rolling 7-day hard-session budget credit from a single hard session 2-3 days before D1 to roll off by D6-D7 so late Week 1 can still schedule a second cycling quality session.",
+      "count": 1
+    },
+    {
+      "hypothesis": "Cap the multi-day projection decay of subjective-objective masking penalties so that good_subjective_bad_objective converges to the same Day 4-6 easy-aerobic re-entry as bad_objective_no_load.",
+      "count": 1
+    },
+    {
+      "hypothesis": "Check whether D-1 occupational strain or shifted microcycle rest-day anchors slightly reduce Week 2's final day (D14) selection in weekly_forecast mode.",
+      "count": 1
+    },
+    {
+      "hypothesis": "Discount the systemic cost of active-recovery mobility replacements (mob_01/mob_02) against weekly hard-session budget so active_recovery preference does not displace D14 end_hard_02.",
+      "count": 1
+    },
+    {
+      "hypothesis": "In zero-equipment travel overlays, maintain at least one weekly bodyweight strength exposure (str_full_02) in Week 2 rather than repeating end_easy_05 for 7 consecutive days.",
+      "count": 1
+    },
+    {
+      "hypothesis": "Increase the 48-hour lower-body strength-to-strength spacing penalty after a high lowerBody cost session (>= 0.8) so str_full_03 is deferred on Day 2 in favor of aerobic/mobility work.",
+      "count": 1
+    },
+    {
+      "hypothesis": "On the day immediately after an A-priority endurance event (D+1 in judge_event_0d), prioritize rest_01 or mob_01 over upper-body strength (str_upper_01).",
+      "count": 1
+    },
+    {
+      "hypothesis": "When a 2 SD autonomic perturbation (HRV -2 SD or RHR +2 SD) shifts the D1-D2 pair to str_full_03 + mob_01, ordering mob_01 on D1 before str_full_03 on D2 would align immediate Day 1 recovery even more cleanly.",
+      "count": 1
+    },
+    {
+      "hypothesis": "When high soreness (soreness >= 7) triggers D1 rest, prioritize mobility or easy cycling on D2 over reduced full-body strength maintenance.",
+      "count": 1
+    },
+    {
+      "hypothesis": "When Week 1 quality sessions shift to Days 5 and 7 due to Day 3 aerobic volume reclamation, allow Week 2 quality spacing on Days 11 and 14 so total 14-day quality exposure matches the exact-dose baseline.",
+      "count": 1
+    }
+  ],
+  "repeatedHypotheses": [],
   "stabilitySource": "docs/analysis/plan-judge-stability.json"
 }
