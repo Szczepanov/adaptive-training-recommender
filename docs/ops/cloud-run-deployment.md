@@ -52,7 +52,8 @@ gcloud builds submit --tag europe-central2-docker.pkg.dev/adaptive-training-reco
 ```bash
 gcloud services enable run.googleapis.com cloudscheduler.googleapis.com \
   artifactregistry.googleapis.com cloudbuild.googleapis.com \
-  firestore.googleapis.com storage.googleapis.com
+  firestore.googleapis.com storage.googleapis.com secretmanager.googleapis.com \
+  iam.googleapis.com iamcredentials.googleapis.com identitytoolkit.googleapis.com
 ```
 
 ---
