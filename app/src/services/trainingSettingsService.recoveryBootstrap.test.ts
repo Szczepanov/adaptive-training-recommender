@@ -101,4 +101,35 @@ describe('ADR-0038 recovery bootstrap persistence', () => {
             defaults: expect.objectContaining({ weekdayMaxMinutes: 45 }),
         });
     });
+
+    it('re-reads inside getTrainingSettingsState transaction so a concurrent first writer wins without an overwriting update', async () => {
+        const concurrentlyCreated = createDefaultTrainingSettings('athlete', '2026-09-01T00:00:00.000Z');
+        firestore.getDoc.mockResolvedValue({ exists: () => false, data: () => null });
+        firestore.transactionGet.mockResolvedValue(snapshot(concurrentlyCreated));
+
+        const state = await new TrainingSettingsService().getTrainingSettingsState('athlete');
+
+        expect(state).toEqual({
+            status: 'AVAILABLE',
+            data: concurrentlyCreated,
+            revision: '2026-09-01T00:00:00.000Z',
+        });
+        expect(firestore.transactionSet).not.toHaveBeenCalled();
+    });
+
+    it('deduplicates concurrent getTrainingSettingsState calls for a missing profile into a single transactional write', async () => {
+        firestore.getDoc.mockResolvedValue({ exists: () => false, data: () => null });
+        firestore.transactionGet.mockResolvedValue({ exists: () => false, data: () => null });
+
+        const service = new TrainingSettingsService();
+        const [first, second] = await Promise.all([
+            service.getTrainingSettingsState('athlete'),
+            service.getTrainingSettingsState('athlete'),
+        ]);
+
+        expect(first.status).toBe('AVAILABLE');
+        expect(second).toEqual(first);
+        expect(firestore.runTransaction).toHaveBeenCalledTimes(1);
+        expect(firestore.transactionSet).toHaveBeenCalledTimes(1);
+    });
 });

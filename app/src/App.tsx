@@ -348,21 +348,22 @@ function App() {
         )}
 
       <main className="app-content" tabIndex={-1}>
+        {userId && !onboardingDismissed && decisionInput && decisionInput.activeGoals.length === 0 && (
+          <OnboardingWizard
+            userId={userId}
+            onCompleted={() => {
+              setOnboardingDismissed(true);
+              try {
+                window.localStorage.setItem(getOnboardingDoneStorageKey(userId), 'true');
+              } catch {
+                // Ignore localStorage unavailable errors
+              }
+              void loadDecisionInput();
+            }}
+          />
+        )}
+
         <Suspense fallback={<div className="loading-state">Loading...</div>}>
-          {userId && !onboardingDismissed && decisionInput && decisionInput.activeGoals.length === 0 && (
-            <OnboardingWizard
-              userId={userId}
-              onCompleted={() => {
-                setOnboardingDismissed(true);
-                try {
-                  window.localStorage.setItem(getOnboardingDoneStorageKey(userId), 'true');
-                } catch {
-                  // Ignore localStorage unavailable errors
-                }
-                void loadDecisionInput();
-              }}
-            />
-          )}
 
           {screen === 'home' && (
             <Home
