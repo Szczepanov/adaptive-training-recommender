@@ -154,6 +154,122 @@ Normal navigation and editing should feel reversible.
 - Never place destructive and primary completion actions so close together that a slip can
   cause permanent state change.
 
+### 2.7 Experience intent: calm confidence, agency, and focused momentum
+
+The interface should not only be correct and usable. It should have a deliberate emotional
+character.
+
+The intended experience is:
+
+> **A calm, competent coach that helps the athlete understand the situation, make the next
+> decision, and get on with training.**
+
+The app should generally leave the athlete feeling:
+
+- **oriented** — "I understand today's state and what happens next";
+- **calm** — important information is visible without routine uncertainty being dramatized;
+- **confident** — the interface is predictable and the recommendation is explained honestly;
+- **in control** — the athlete can inspect, adjust, correct, back out, resume, or provide
+  feedback without fighting the system;
+- **supported, not judged** — reduced load, recovery, missed training, incomplete data, or a
+  changed plan are handled as normal training states rather than moral failures;
+- **focused** — during training, the interface reduces cognitive work and keeps attention on
+  the current step;
+- **appropriately accomplished** — meaningful completion can feel satisfying without turning
+  adherence into pressure or spectacle.
+
+These are **design goals, not promises about a person's emotional state**. Different athletes,
+contexts, injuries, and training outcomes produce different emotions. The product must not
+measure success by manipulating a user into a particular feeling.
+
+Useful platform guidance is consistent with this intent:
+
+- [Apple Human Interface Guidelines — Design principles](https://developer.apple.com/design/human-interface-guidelines/design-principles)
+  emphasizes agency, responsibility, simplicity, and choosing the emotion appropriate to the
+  experience;
+- [Apple Human Interface Guidelines — Writing](https://developer.apple.com/design/human-interface-guidelines/writing)
+  recommends defining an app voice and adapting tone to the situation;
+- [Apple Human Interface Guidelines — Feedback](https://developer.apple.com/design/human-interface-guidelines/feedback)
+  recommends matching the prominence and interruption level of feedback to its actual
+  significance.
+
+#### Emotional anti-goals
+
+The app should **not intentionally create or exploit**:
+
+- **guilt or shame** about missed sessions, reduced load, recovery days, low readiness, or
+  imperfect adherence;
+- **fear or medical anxiety** from routine data variation, missing wearable data, uncertain
+  signals, or non-diagnostic health context;
+- **false reassurance** when safety-relevant uncertainty or restrictions are present;
+- **urgency** when no real deadline, safety condition, or time-critical action exists;
+- **dependency or compulsive checking** through streak-loss threats, artificial scarcity,
+  variable-reward mechanics, or repeated prompts that exist mainly to increase engagement;
+- **punishment framing** such as treating rest as failure or harder training as inherently
+  more successful;
+- **over-celebration** that encourages an athlete to value app rewards above the quality,
+  safety, or intent of the training itself;
+- **overwhelm** from exposing every metric, engine explanation, or configuration choice at
+  once.
+
+The product is allowed to be energetic when the context deserves it. A completed test, a
+personal best, or a finished training block can use warmer and more celebratory language.
+Safety warnings, injury context, failed writes, and uncertain health signals should instead
+use a calm, direct, proportionate tone.
+
+#### Emotional intent by moment
+
+| Moment | Desired experience | Design implication |
+|---|---|---|
+| Opening the app / morning check-in | Calm, quick, low-friction | Do not turn normal input into an interrogation; show progress and the next action clearly. |
+| Recommendation ready | Oriented and confident, not commanded | State the recommendation and reason; preserve alternatives and uncertainty. |
+| Reduced-load or recovery day | Supported and legitimate | Present recovery as an intentional training decision, not a failed day or downgraded achievement. |
+| Missing/partial wearable data | Informed, not alarmed | Explain what is missing and what still works; reserve warning severity for consequences that justify it. |
+| Injury/illness/safety restriction | Safe, respected, not diagnosed | Be direct about the restriction and next safe action without speculative medical language. |
+| Active workout | Focused and capable | Minimize navigation and reading; keep the current action, timer/rest state, and correction path obvious. |
+| Mistake / wrong entry | Forgiven and in control | Make correction, undo, or safe recovery easy; avoid accusatory copy. |
+| Save/sync failure | Informed and recoverable | Preserve work, distinguish local/pending/failed states, and provide a specific retry path. |
+| Workout/session completion | Satisfied, then finished | Confirm meaningful completion without unnecessary animation, pressure, or engagement traps. |
+| Missed/abandoned session | Neutral and useful | Record what happened, allow context/correction, and move forward without shame language. |
+
+#### Voice and tone
+
+The default voice is:
+
+- concise;
+- calm;
+- competent;
+- respectful;
+- athlete-facing rather than engine-facing;
+- supportive without cheerleading;
+- direct without sounding authoritarian;
+- confident about known facts and explicit about uncertainty.
+
+Tone changes with context:
+
+- **normal daily flow:** neutral, efficient, lightly encouraging;
+- **successful completion:** warm but proportionate;
+- **recovery/reduced load:** matter-of-fact and validating of the training decision;
+- **warning/safety:** serious, specific, and calm;
+- **error:** non-accusatory, explain what happened and how to recover;
+- **uncertain data:** transparent and non-alarmist.
+
+Avoid anthropomorphizing the engine in ways that imply certainty, care, medical judgment, or
+human understanding it does not possess. Prefer "Today's recommendation is..." over claims
+such as "I know your body needs..." unless the product actually has evidence for that
+statement.
+
+#### Review question
+
+For every material user-facing change, reviewers should be able to answer:
+
+> **If this behaves exactly as designed, what is the athlete likely to feel at this moment,
+> and is that emotional effect appropriate to the task and evidence?**
+
+If the likely effect is pressure, guilt, confusion, alarm, helplessness, or false certainty,
+the design needs a deliberate justification or revision.
+
+
 ## 3. Accessibility requirements
 
 ### 3.1 Semantic structure
@@ -486,6 +602,10 @@ a screen reader for new custom controls or complex dialog/tab patterns.
 Before calling a user-facing change complete:
 
 - [ ] The main user task is clear and the primary action is obvious.
+- [ ] The intended emotional effect is appropriate to the moment: calm/confident/controlled
+      by default, with no accidental guilt, alarm, pressure, or false reassurance.
+- [ ] Recovery, reduced load, missed work, and imperfect adherence are not framed as moral
+      failure or punished through engagement mechanics.
 - [ ] Normal and failure states are both designed.
 - [ ] No new engine/internal jargon leaks into the primary flow.
 - [ ] Keyboard operation works.
