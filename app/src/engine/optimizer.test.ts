@@ -66,6 +66,12 @@ describe('optimizer — preferred modality and safe strength fallback (#736)', (
         }, { date: '2026-03-05' });
         expect(requested.accepted.map(item => item.template.id)).toContain(field.id);
         expect(requested.accepted.map(item => item.template.id)).toContain(sprint.id);
+
+        const unmarkedFutureFieldTemplate = { ...field, id: 'future-field-template', requiresExplicitModalityPreference: undefined };
+        const unmarked = rankCandidates([unmarkedFutureFieldTemplate], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], {
+            ...DEFAULT_PREFERENCES, preferredModalities: ['Strength'],
+        }, { date: '2026-03-05' });
+        expect(unmarked.accepted.map(item => item.template.id)).toContain(unmarkedFutureFieldTemplate.id);
     });
 
     it('prefers an eligible cycling spin over unpreferred walking and running in a short window', () => {
@@ -76,8 +82,9 @@ describe('optimizer — preferred modality and safe strength fallback (#736)', (
             { date: '2026-03-05' },
         );
         expect(result.accepted[0].template.id).toBe('end_easy_01');
-        expect(result.accepted.find(item => item.template.id === 'end_walk_01')?.benefitScore)
-            .toBeLessThan(result.accepted[0].benefitScore);
+        const walking = result.accepted.find(item => item.template.id === 'end_walk_01')!;
+        expect(walking.benefitScore).toBeLessThan(result.accepted[0].benefitScore);
+        expect(walking.rationale).toContain(`Benefit score: ${walking.benefitScore.toFixed(2)}`);
     });
 
     it('demotes unpreferred running for a health athlete while allowing it as a last feasible training fallback', () => {

@@ -1103,7 +1103,10 @@ export function rankCandidates(
             : authoredCoverageNeedTier;
         const recoveryPreferenceTier = recoveryPreferenceTierFor(template);
 
-        const advancesUnresolvedObjective = satisfiesUnresolvedObjective(template);
+        // Preserve the pre-#736 broad objective-match semantics for legacy event-priority
+        // ranking. The stricter advancesUnresolvedObjective() helper below is intentionally
+        // reserved for the new unpreferred-modality fallback exemption.
+        const matchesUnresolvedObjectiveForLegacyEventPolicy = satisfiesUnresolvedObjective(template);
 
         // Keep legacy A/B handling intact, but only opt C into event-aware ranking for
         // actual endurance competitions. A C-priority general target or strength meet must
@@ -1120,7 +1123,7 @@ export function rankCandidates(
                     || templateModLower.includes('cycling')
                     || templateModLower.includes('running')
                 ));
-            const eventPriorityApplies = !categoryLower.includes('strength') || advancesUnresolvedObjective || fulfilsNominatedAnchor;
+            const eventPriorityApplies = !categoryLower.includes('strength') || matchesUnresolvedObjectiveForLegacyEventPolicy || fulfilsNominatedAnchor;
             if (matchesEvent && eventPriorityApplies) {
                 const priorityMultiplier = focusEvent.priority === 'A' ? 1.40 : focusEvent.priority === 'B' ? 1.25 : 1.00;
                 benefit *= priorityMultiplier;
@@ -1141,10 +1144,10 @@ export function rankCandidates(
                 if (daysToRace > 21 && template.category === 'Race-Specific Endurance' && !cyclingDurabilityFocusEvent) {
                     benefit *= 0.50;
                 }
-            } else if (!matchesEvent && !isPreferred(template) && !advancesUnresolvedObjective && unresolvedObjectives.length > 0) {
+            } else if (!matchesEvent && !isPreferred(template) && !matchesUnresolvedObjectiveForLegacyEventPolicy && unresolvedObjectives.length > 0) {
                 benefit *= 0.20;
             }
-        } else if (!advancesUnresolvedObjective) {
+        } else if (!matchesUnresolvedObjectiveForLegacyEventPolicy) {
             if (isDisliked(template)) {
                 benefit *= 0.20;
             } else if (isDeprioritized(template)) {
@@ -1358,8 +1361,13 @@ export function rankCandidates(
                 || (focusEvent.category === 'strength_meet' && template.modality === 'Strength')
                 || (focusEvent.category === 'triathlon' && ['Swimming', 'Cycling', 'Running'].includes(template.modality))
             )) return;
+            const benefitBeforeFallbackDemotion = candidate.benefitScore;
             candidate.benefitScore *= UNPREFERRED_MODALITY_MULTIPLIER;
             candidate.utilityScore *= UNPREFERRED_MODALITY_MULTIPLIER;
+            candidate.rationale = candidate.rationale.replace(
+                `Benefit score: ${benefitBeforeFallbackDemotion.toFixed(2)}`,
+                `Benefit score: ${candidate.benefitScore.toFixed(2)}`,
+            );
             candidate.rationale += ' (Non-preferred modality deferred while preferred training is feasible.)';
         });
     }

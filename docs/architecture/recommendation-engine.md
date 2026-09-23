@@ -631,9 +631,10 @@ Specialized automatic catalog content may separately declare
 `requiresExplicitModalityPreference`; that is a catalog-admission opt-in, not a safety
 restriction or a general permission system for ordinary modalities. Current Field
 Maintenance and Field technical/Sprint Mechanics templates carry that marker, so they
-require explicit Field preference instead of leaking in as generic fallbacks. An explicit
-event-directed candidate remains governed by event/programming authority rather than this
-generic fallback mechanism. The check-in's `preferredModalityToday`
+require explicit Field preference instead of leaking in as generic fallbacks. The current
+event schema has no team-sport category mapped to those marked templates; if one is added,
+its event-specific admission must be modeled explicitly rather than inferred from this
+preference opt-in. The check-in's `preferredModalityToday`
 breaks ties only after hard gates, coverage, recovery placement and objective-benefit tier
 agree, and only when the requested modality is also in `preferredModalities`. It applies to
 the current decision and does not rewrite the athlete's longer-term preferences.
