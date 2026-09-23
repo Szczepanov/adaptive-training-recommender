@@ -219,6 +219,11 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-20 Gran-fondo durability investigation**](./analysis/2026-09-20-gran-fondo-durability-investigation.md) — Issue #675 decision and deterministic evidence for separating sustained gran-fondo durability from criterium surge work under equal capacity and horizon.
 * [**2026-09-19 Conservative and travel overlay investigation**](./analysis/2026-09-19-conservative-travel-overlay-investigation.md) — Fixes a travel-overlay aerobic-candidate catalog gap and the ADR-0018 reservation-search inconsistency under conservative bias; identifies the separate fatigue-tier rebound mechanism that issue #692 now accepts as a planner non-invariant while preserving local Extra Recovery Margin ranking/safety contracts.
 
+* [**2026-09-19 Health/fat-loss modality and intensity review**](./analysis/2026-09-19-health-fat-loss-persona-modality-intensity.md) — Issue #681 findings confirming coherent adherence/intensity patterns within a 30-minute daily time cap and multi-state recovery.
+* [**2026-09-20 Nutrition and Energy Ingestion Analysis**](./analysis/2026-09-20-nutrition-myfitnesspal-garmin-ingestion.md) — Investigates ingestion of dietary nutrition and daily energy expenditure telemetry, evaluating Garmin Connect APIs and Android Health Connect.
+* [**2026-09-21 Issue #706 review memo**](./analysis/2026-09-21-issue-706-review-memo.md) — Analysis of a reported anchor-day rolling-budget issue, confirming expected hard-gate behavior rather than an anchor-placement bug.
+* [**2026-09-23 UI/UX foundation review addendum**](./analysis/2026-09-23-ui-ux-foundation-review-addendum.md) — Follow-up documentation changes regarding session-execution architecture, visual review bundles, and documentation hub routing.
+
 ---
 
 ### 🗺️ Implementation Plans
