@@ -29,6 +29,8 @@ describe('SessionDestinationSheet (M3.3)', () => {
             <SessionDestinationSheet userId="u1" definition={definition} isOpen={true} onClose={vi.fn()} onStartExecution={vi.fn()} />,
         );
         expect(html).toContain('Full Body Maintenance');
+        expect(html).toContain('destination-sheet-overlay overlay-viewport overlay-viewport--sheet');
+        expect(html).toContain('destination-sheet-card overlay-panel');
         expect(html).toContain('Start now');
         expect(html).toContain('Schedule for a date');
         expect(html).toContain('Replace today');

@@ -236,7 +236,7 @@
     font-weight: 600;
     cursor: pointer;
     transition: all 0.15s ease;
-    min-height: 38px;
+    min-height: var(--touch-target-min, 44px);
 }
 
 .decision-tab-btn:hover {
@@ -260,6 +260,7 @@
     font-weight: 600;
     cursor: pointer;
     transition: all 0.15s ease;
+    min-height: var(--touch-target-min, 44px);
 }
 
 .btn-reclassify-trigger:hover {
@@ -317,7 +318,7 @@
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
-    min-height: 40px;
+    min-height: var(--touch-target-min, 44px);
     transition: all 0.15s ease;
 }
 

@@ -25,7 +25,7 @@ export const VISUAL_USER_ID = 'visual-athlete';
 export const VISUAL_DATE = '2026-09-12';
 const TIMESTAMP = '2026-09-12T08:00:00.000+02:00';
 
-export type VisualScreen = 'home' | 'checkin' | 'goals' | 'data' | 'constraints' | 'preferences' | 'session' | 'plan';
+export type VisualScreen = 'home' | 'checkin' | 'goals' | 'data' | 'constraints' | 'preferences' | 'session' | 'builder' | 'plan';
 
 export interface VisualScenario {
   id: string;
@@ -34,6 +34,7 @@ export interface VisualScenario {
   expectedFocus: string[];
   fixture: VisualFixture;
   initialDataTab?: 'recovery' | 'activities';
+  builderDefinition?: SessionDefinition;
 }
 
 export interface VisualFixture {
@@ -410,6 +411,35 @@ const savedTemplateFixture = buildFixture({
   ],
 });
 
+const mobileBuilderDefinition: SessionDefinition = {
+  ...savedUpperBodyStrengthMaintenance,
+  id: 'visual-mobile-builder',
+  title: 'Mobile strength builder',
+  blocks: [{
+    ...savedUpperBodyStrengthMaintenance.blocks[0],
+    executionMode: 'sequential',
+    steps: [
+      {
+        ...savedUpperBodyStrengthMaintenance.blocks[0].steps[0],
+        alternatives: [{
+          id: 'press-alternative', title: 'Dumbbell floor press',
+          exerciseRef: { kind: 'unresolved_free_text', name: 'Dumbbell floor press' },
+        }],
+        notes: 'Keep the shoulder comfortable.',
+      },
+      savedUpperBodyStrengthMaintenance.blocks[0].steps[1],
+    ],
+    optionSets: [{
+      id: 'press-choice', appliesAtStepId: 'bench-press',
+      trigger: { kind: 'athlete_observed', description: 'How does the shoulder feel?' },
+      options: [{
+        id: 'press-option', label: 'Use the alternative',
+        actions: [{ kind: 'select_alternative', targetStepId: 'bench-press', alternativeId: 'press-alternative' }],
+      }],
+    }],
+  }],
+};
+
 const fullTelemetryActivity: NormalizedGarminActivity = {
   activityId: 'visual-ride-full', date: VISUAL_DATE, type: 'cycling', durationMin: 72,
   trainingEffectAerobic: 3.6, trainingEffectAnaerobic: 1.2, averageHr: 148,
@@ -524,6 +554,33 @@ const importedPlan: ExternalTrainingPlan = {
 const externallyPlannedFixture = buildFixture({ externalPlan: importedPlan }, externallyPlannedProfile);
 
 export const VISUAL_SCENARIOS: VisualScenario[] = [
+  {
+    id: 'manual-builder-empty',
+    title: 'Manual builder — first session',
+    screen: 'builder',
+    expectedFocus: ['The first movement and primary review action are clear at phone widths.'],
+    fixture: standardFixture,
+  },
+  {
+    id: 'manual-builder-multi-step',
+    title: 'Manual builder — saved multi-step session',
+    screen: 'builder',
+    builderDefinition: mobileBuilderDefinition,
+    expectedFocus: ['Two movement cards remain legible; saved alternatives and choices are visible for editing.'],
+    fixture: standardFixture,
+  },
+  {
+    id: 'manual-builder-validation',
+    title: 'Manual builder — validation feedback',
+    screen: 'builder',
+    builderDefinition: {
+      ...mobileBuilderDefinition,
+      id: 'visual-builder-invalid',
+      intent: 'invalid' as SessionDefinition['intent'],
+    },
+    expectedFocus: ['The validation message is readable and the builder remains editable.'],
+    fixture: standardFixture,
+  },
   {
     id: 'home-externally-planned',
     title: 'Home — imported plan governs today',

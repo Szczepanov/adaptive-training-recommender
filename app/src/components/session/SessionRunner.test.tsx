@@ -120,6 +120,35 @@ describe('SessionRunner session picker', () => {
         expect(html).not.toContain('save-template-header-btn');
     });
 
+    it('keeps set logging before long history during rest and names each history action', () => {
+        const step = repetitionStep('squat', 10);
+        const definition = definitionWithBlock('sequential', [step]);
+        vi.mocked(useSessionRunner).mockReturnValueOnce({
+            activeStep: step,
+            activeBlock: definition.blocks[0],
+            activeBlockIndex: 0,
+            activeStepIndex: 0,
+            definition,
+            entries: Array.from({ length: 8 }, (_, index) => repetitionEntry(step.id, index + 1)),
+            execution: { state: 'in_progress' },
+            isRestoring: false,
+            elapsedSeconds: 0,
+            isRestRunning: true,
+            restSecondsRemaining: 30,
+            syncStatus: 'synced',
+            canUndo: false,
+            sessionEnded: false,
+            ineligibleOptionIds: new Set<string>(),
+        } as unknown as ReturnType<typeof useSessionRunner>);
+        const html = renderToStaticMarkup(<SessionRunner userId="user-1" />);
+
+        expect(html.indexOf('Skip Rest')).toBeLessThan(html.indexOf('Log Set'));
+        expect(html.indexOf('Log Set')).toBeLessThan(html.indexOf('Performed for this step'));
+        expect(html).toContain('aria-label="Edit set 1"');
+        expect(html).toContain('aria-label="Remove set 1"');
+        expect(html).toContain('aria-label="Remove set 8"');
+    });
+
     it('tints the running header for locked assessments (#496)', () => {
         const step = repetitionStep('squat', 3);
         const definition = definitionWithBlock('sequential', [step]);

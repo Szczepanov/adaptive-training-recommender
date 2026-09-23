@@ -266,6 +266,8 @@
   color: var(--text-secondary);
   cursor: pointer;
   padding: 0.1rem;
+  min-width: var(--touch-target-min, 44px);
+  min-height: var(--touch-target-min, 44px);
 }
 
 .modality-chip button {
@@ -275,8 +277,9 @@
   font-size: 1.25rem;
   cursor: pointer;
   padding: 0;
-  width: 20px;
-  height: 20px;
+  width: var(--touch-target-min, 44px);
+  min-width: var(--touch-target-min, 44px);
+  height: var(--touch-target-min, 44px);
   display: flex;
   align-items: center;
   justify-content: center;

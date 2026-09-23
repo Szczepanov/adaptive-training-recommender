@@ -746,7 +746,7 @@ details[open] > .checkin-disclosure-summary::before {
   font-size: 0.75rem;
   font-weight: 600;
   padding: 0.25rem 0.5rem;
-  min-height: 32px;
+  min-height: var(--touch-target-min, 44px);
 }
 
 .tissue-region-remove:hover {
@@ -1084,6 +1084,8 @@ details[open] > .checkin-disclosure-summary::before {
   gap: 0.75rem;
   min-height: var(--touch-target-min, 44px);
   cursor: pointer;
+  min-height: var(--touch-target-min, 44px);
+  box-sizing: border-box;
   list-style: none;
 }
 
@@ -1181,7 +1183,7 @@ details[open] > .checkin-disclosure-summary::before {
 }
 
 .physical-work-chip {
-  min-height: var(--touch-target-min, 40px);
+  min-height: var(--touch-target-min, 44px);
   border: 1px solid #334155;
   border-radius: var(--radius-control, 8px);
   background: rgba(15, 23, 42, 0.6);

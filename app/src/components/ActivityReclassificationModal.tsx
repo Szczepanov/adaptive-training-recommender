@@ -1,4 +1,6 @@
-import { useEffect, useState, memo } from 'react';
+import { useEffect, useRef, useState, memo } from 'react';
+import { useOverlayDialog } from './useOverlayDialog';
+import './overlayContract.css';
 import type { ActivityOverride, NormalizedGarminActivity, SessionTemplate, WorkoutStimulusProfile } from '../engine/models';
 import { activityOverrideService } from '../services/activityOverrideService';
 import './ActivityReclassificationModal.css';
@@ -64,6 +66,11 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
     const [notes, setNotes] = useState('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const dialogRef = useRef<HTMLDivElement>(null);
+    const requestClose = () => {
+        if (!saving) onClose();
+    };
+    useOverlayDialog(isOpen, dialogRef, requestClose, '#activity-select');
 
     const hydrateEditor = (activityId: string) => {
         const activity = activities.find(a => a.activityId === activityId);
@@ -164,8 +171,8 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
     };
 
     return (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="reclassify-title">
-            <div className="reclassify-modal-card">
+        <div className="modal-backdrop overlay-viewport" role="dialog" aria-modal="true" aria-labelledby="reclassify-title">
+            <div ref={dialogRef} className="reclassify-modal-card overlay-panel" tabIndex={-1}>
                 <header className="modal-header">
                     <div>
                         <h3 id="reclassify-title">Correct Garmin Activity</h3>
@@ -173,7 +180,7 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
                             Did Garmin classify your sport or intensity incorrectly? Update it here to keep your training stimulus and recovery baselines accurate.
                         </p>
                     </div>
-                    <button type="button" className="btn-close-modal" onClick={onClose} aria-label="Close modal">
+                    <button type="button" className="btn-close-modal" onClick={requestClose} disabled={saving} aria-label="Close modal">
                         ✕
                     </button>
                 </header>
@@ -281,7 +288,7 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
                             </button>
                         )}
                         <div className="modal-right-actions">
-                            <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>
+                            <button type="button" className="btn-secondary" onClick={requestClose} disabled={saving}>
                                 Cancel
                             </button>
                             <button type="submit" className="btn-primary" disabled={saving || !selectedActivity}>

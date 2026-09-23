@@ -118,7 +118,50 @@ for (const scenario of VISUAL_SCENARIOS) {
       }
     }
 
+    if (scenario.id === 'manual-builder-validation') {
+      await page.getByRole('button', { name: 'Review session' }).click();
+      await expect(page.getByRole('alert')).toContainText(/intent/i);
+    }
+
+    if (scenario.id.startsWith('manual-builder-') && test.info().project.name.includes('mobile')) {
+      const controls = page.locator('.manual-session-builder :is(button, input:not([type="checkbox"]), select, textarea, summary):visible');
+      for (const control of await controls.all()) {
+        const box = await control.boundingBox();
+        const description = await control.evaluate((element) => `${element.outerHTML}`);
+        expect(box?.height, `${description} rendered height`).toBeGreaterThanOrEqual(44);
+        expect(box?.width, `${description} rendered width`).toBeGreaterThanOrEqual(44);
+      }
+    }
+
     await capture(page, scenario);
+
+    if (scenario.id === 'manual-builder-empty') {
+      await page.getByRole('button', { name: 'Add movement' }).click();
+      await page.getByRole('textbox', { name: 'Movement 2 name' }).fill('Dumbbell row');
+      await page.getByRole('button', { name: 'Move movement 2 up' }).click();
+      await expect(page.locator('.builder-step-card').first().getByRole('textbox', { name: 'Movement 1 name' })).toHaveValue('Dumbbell row');
+      await capture(page, scenario, 'multi-step', ['Movement cards can be added, named, and reordered on a narrow screen.']);
+
+      await page.locator('.builder-step-card').first().locator('.builder-advanced-fields > summary').click();
+      await capture(page, scenario, 'advanced-expanded', ['Advanced prescription fields expand into a single readable column.']);
+      await page.locator('.builder-step-card').first().getByRole('button', { name: 'Add alternative' }).click();
+      await page.locator('.builder-choices > summary').click();
+      await page.getByRole('button', { name: 'Add choice' }).click();
+      await capture(page, scenario, 'alternatives-options', ['Alternatives and authored options are editable with touch sized controls.']);
+      if (test.info().project.name.includes('mobile')) {
+        const width = page.viewportSize()?.width ?? 390;
+        await page.setViewportSize({ width, height: 460 });
+        const trigger = page.getByRole('textbox', { name: 'Trigger — what the athlete observes' });
+        await trigger.focus();
+        await expect.poll(async () => trigger.evaluate(element => {
+          const bottom = element.getBoundingClientRect().bottom;
+          const viewport = window.visualViewport;
+          return bottom <= (viewport?.offsetTop ?? 0) + (viewport?.height ?? window.innerHeight) - 16;
+        })).toBe(true);
+      }
+      await page.getByRole('button', { name: 'Remove movement 1' }).click();
+      await expect(page.locator('.builder-step-card')).toHaveCount(1);
+    }
 
     if (scenario.id === 'home-normal-load') {
       const confidenceButton = page.getByRole('button', { name: /Data confidence: / });

@@ -170,7 +170,7 @@ export async function signUpThroughUi(page: Page): Promise<{ email: string; pass
 
 export async function openFixturePicker(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('button', { name: /Sessions$/ }).click();
+  await page.getByRole('button', { name: /Sessions/ }).click();
   await page.getByRole('button', { name: '＋ New session', exact: true }).click();
   await page.getByRole('button', { name: 'From fixture', exact: true }).click();
   await page.getByRole('button', { name: 'Start Session →', exact: true }).first().waitFor();

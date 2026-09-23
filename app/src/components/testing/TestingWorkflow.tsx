@@ -87,6 +87,11 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
     const [launch, setLaunch] = useState<PreparedSessionLaunch | null>(null);
     const [attempt, setAttempt] = useState<AssessmentAttempt | null>(null);
     const [execution, setExecution] = useState<SessionExecution | null>(null);
+    const onSessionStateChangeRef = useRef(onSessionStateChange);
+
+    useEffect(() => {
+        onSessionStateChangeRef.current = onSessionStateChange;
+    }, [onSessionStateChange]);
     const [metricValues, setMetricValues] = useState<Record<string, string>>({});
     const [validity, setValidity] = useState<ObservationValidity>('valid');
     const [invalidReason, setInvalidReason] = useState('');
@@ -124,8 +129,12 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
 
     useEffect(() => {
         let cancelled = false;
-        assessmentAttemptService.findOpenAttempt(userId)
-            .then(async openAttempt => {
+        sessionExecutionService.findInProgressExecution(userId)
+            .then(async activeExecution => {
+                const linkedAttempt = activeExecution?.occurrenceId
+                    ? await assessmentAttemptService.findOpenAttempt(userId, `occurrence:${activeExecution.occurrenceId}`)
+                    : null;
+                const openAttempt = linkedAttempt ?? await assessmentAttemptService.findOpenAttempt(userId);
                 if (cancelled || !openAttempt) return;
                 const loadedProtocol = await measurementProtocolService.getRevision(
                     userId,
@@ -144,7 +153,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                     : null;
                 if (cancelled) return;
                 setExecution(linkedExecution);
-                onSessionStateChange?.(linkedExecution);
+                onSessionStateChangeRef.current?.(linkedExecution);
 
                 if (!linkedExecution) {
                     setError('An open test attempt exists, but its session execution could not be found. You may abandon it and start a fresh attempt.');
@@ -181,7 +190,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                 if (!cancelled) setRecovering(false);
             });
         return () => { cancelled = true; };
-    }, [onSessionStateChange, populateProtocol, refreshSaved, userId]);
+    }, [populateProtocol, refreshSaved, userId]);
 
     const loadBundledTest = async (definitionId: string) => {
         setBusy(true);

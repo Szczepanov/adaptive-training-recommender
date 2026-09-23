@@ -1,7 +1,7 @@
 # Mobile UX remediation: interaction, overlays, and navigation
 
-**Status:** `Approved`
-**Blocked by:** no technical prerequisite blocks discovery or the test-harness foundation
+**Status:** `In progress`
+**Blocked by:** manual keyboard/screen-reader and real-device spot checks; PR review
 **Unlocks:** implementation and verified closure of GitHub issues [#727](https://github.com/Szczepanov/adaptive-training-recommender/issues/727)–[#732](https://github.com/Szczepanov/adaptive-training-recommender/issues/732)
 **Tracking issue:** [#734](https://github.com/Szczepanov/adaptive-training-recommender/issues/734)
 **Scope authority:** [`docs/standards/ui-ux.md`](../standards/ui-ux.md)
@@ -116,6 +116,22 @@ Repository search found all six issues open and no existing umbrella issue. Thei
 - Static quality: `cd app && npm run check` after each coherent implementation PR and `npm run build` for the integrated delivery.
 - Manual: phone-sized browser, keyboard-only flow, focus visibility with reduced viewport height, and a real-device check for the active runner/builder where available.
 - Repository hygiene: check `POLICY_VERSION` only if a UI change unexpectedly affects recommendation behavior; this plan explicitly forbids that scope expansion.
+
+## Automated delivery evidence (2026-09-23)
+
+- `cd app && npm run check` — passed: typecheck, ESLint, 6,104 Vitest tests, and all
+  knowledge/workout validators.
+- `cd app && npm run test:e2e` — passed all 18 desktop and mobile journeys, including
+  check-in precedence, Back/Forward, persisted session resume, overlays, and runner controls.
+- `cd app && npm run visual:refresh` — passed all 76 finalized desktop and 390 px mobile
+  captures. The manual builder's 9 Playwright visual cases passed across 360, 390, and 412 px;
+  collectively they capture empty, multi-step, expanded advanced, alternatives/options,
+  validation-error, and reduced-viewport focus states.
+- Focused post-review reruns: MobileNav/builder/route unit tests (10 passed) and the session
+  runner completion target E2E (passed).
+
+Manual keyboard/screen-reader and real-device checks remain delivery follow-ups and are not
+represented as completed by browser automation.
 
 ## Risks and mitigations
 

@@ -310,8 +310,6 @@
   padding: 2rem;
   max-width: 680px;
   width: 100%;
-  max-height: 90vh;
-  overflow-y: auto;
   box-sizing: border-box;
 }
 
@@ -336,8 +334,8 @@
   cursor: pointer;
   line-height: 1;
   padding: 0;
-  width: 2rem;
-  height: 2rem;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;

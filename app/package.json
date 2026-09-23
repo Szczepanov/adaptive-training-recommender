@@ -92,6 +92,7 @@
     "test:rules:emulator": "vitest run src/emulator --fileParallelism=false --maxWorkers=1",
     "e2e:serve": "vite --mode e2e --host 127.0.0.1 --port 4173",
     "test:e2e": "firebase --project demo-adaptive-training-e2e emulators:exec --only auth,firestore \"playwright test --config=playwright.e2e.config.ts\"",
+    "test:e2e:mobile": "firebase --project demo-adaptive-training-e2e emulators:exec --only auth,firestore \"playwright test --config=playwright.e2e.config.ts --project=e2e-mobile\"",
     "firestore:rules:drift": "node scripts/check-firestore-rules-drift.mjs --project adaptive-training-recommender",
     "firestore:rules:deploy": "node scripts/deploy-firestore-rules.mjs --project adaptive-training-recommender",
     "firestore:rules:rollback": "node scripts/rollback-firestore-rules.mjs --project adaptive-training-recommender",

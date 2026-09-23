@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type {
     BlockExecutionMode,
     BlockRole,
@@ -78,6 +78,11 @@ function initialBlocks(): SessionBlock[] {
     }];
 }
 
+function hasAdvancedValues(step: SessionStep): boolean {
+    return Boolean(step.optional || (step.laterality && step.laterality !== 'bilateral') || step.tempo || step.load ||
+        step.notes || step.stopConditions?.length || step.alternatives?.length);
+}
+
 interface ManualSessionBuilderProps {
     onClose: () => void;
     onStartExecution: (session: PreparedSessionLaunch) => void;
@@ -87,6 +92,7 @@ interface ManualSessionBuilderProps {
 }
 
 export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ userId, onClose, onStartExecution, initialDefinition }) => {
+    const builderRef = useRef<HTMLDivElement>(null);
     const [baseDefinition] = useState(() => initialDefinition);
     const [definitionId] = useState(() => initialDefinition?.id ?? newId('manual'));
     const [revision] = useState(() => initialDefinition?.revision ?? 1);
@@ -100,9 +106,44 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
     });
     const [durationMin, setDurationMin] = useState(initialDefinition?.duration?.min ?? 45);
     const [blocks, setBlocks] = useState<SessionBlock[]>(() => initialDefinition?.blocks ?? initialBlocks());
+    const [advancedOpen, setAdvancedOpen] = useState<Record<string, boolean>>(() => Object.fromEntries(
+        (initialDefinition?.blocks ?? []).flatMap(block => block.steps.filter(hasAdvancedValues).map(step => [step.id, true]))
+    ));
+    const [choicesOpen, setChoicesOpen] = useState<Record<string, boolean>>(() => Object.fromEntries(
+        (initialDefinition?.blocks ?? []).filter(block => (block.optionSets?.length ?? 0) > 0).map(block => [block.id, true])
+    ));
     const [showPreview, setShowPreview] = useState(false);
     const [showDestination, setShowDestination] = useState(false);
     const [validationError, setValidationError] = useState<string | null>(null);
+
+    useEffect(() => {
+        const viewport = window.visualViewport;
+        const builder = builderRef.current;
+        if (!builder) return;
+        let focusTimer: number | undefined;
+        const revealFocusedField = () => {
+            if (!window.matchMedia('(max-width: 520px)').matches) return;
+            const active = document.activeElement;
+            if (!(active instanceof HTMLElement) || !builder.contains(active)) return;
+            const rect = active.getBoundingClientRect();
+            const visibleTop = viewport?.offsetTop ?? 0;
+            const visibleBottom = visibleTop + (viewport?.height ?? window.innerHeight);
+            if (rect.top < visibleTop + 16 || rect.bottom > visibleBottom - 16) {
+                active.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            }
+        };
+        const scheduleFocusReveal = () => {
+            window.clearTimeout(focusTimer);
+            focusTimer = window.setTimeout(revealFocusedField, 250);
+        };
+        builder.addEventListener('focusin', scheduleFocusReveal);
+        viewport?.addEventListener('resize', revealFocusedField);
+        return () => {
+            builder.removeEventListener('focusin', scheduleFocusReveal);
+            viewport?.removeEventListener('resize', revealFocusedField);
+            window.clearTimeout(focusTimer);
+        };
+    }, []);
 
     const definition = useMemo<SessionDefinition>(() => withResolvedSummary({
         ...baseDefinition,
@@ -291,7 +332,7 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
     };
 
     return (
-        <div className="manual-session-builder">
+        <div className="manual-session-builder" ref={builderRef}>
             <header className="builder-header">
                 <div><h2>{baseDefinition ? `Edit template · revision ${revision}` : 'Build a session'}</h2><p>Choose a catalog movement when it exists; custom movements stay explicitly unresolved.</p></div>
                 <button type="button" className="close-builder-btn" onClick={onClose} aria-label="Close builder">×</button>
@@ -344,15 +385,17 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
                                     const effortTarget = typeof step.effort?.target === 'number' ? step.effort.target : '';
                                     const loadKind: LoadKind = step.load?.kind ?? 'none';
                                     return <div key={step.id} className="builder-step-card">
-                                        <div className="builder-step-row"><span className="step-idx">{stepIndex + 1}.</span>
+                                        <div className="builder-step-row"><span className="step-idx">Movement {stepIndex + 1}</span>
                                             <input className="step-title-input" value={step.title ?? ''} onChange={event => updateStep(blockIndex, stepIndex, {
                                                 title: event.target.value,
                                                 ...(step.exerciseRef?.kind === 'unresolved_free_text' ? { exerciseRef: { kind: 'unresolved_free_text', name: event.target.value } } : {}),
-                                            })} aria-label="Movement name" />
-                                            <button type="button" className="draft-order-btn" disabled={stepIndex === 0} onClick={() => moveStep(blockIndex, stepIndex, stepIndex - 1)}>↑</button>
-                                            <button type="button" className="draft-order-btn" disabled={stepIndex === block.steps.length - 1} onClick={() => moveStep(blockIndex, stepIndex, stepIndex + 1)}>↓</button>
-                                            <button type="button" className="draft-order-btn" onClick={() => duplicateStep(blockIndex, stepIndex)}>Duplicate</button>
-                                            <button type="button" className="remove-step-btn" onClick={() => removeStep(blockIndex, stepIndex)} aria-label="Remove movement">Remove</button>
+                                            })} aria-label={`Movement ${stepIndex + 1} name`} />
+                                            <div className="builder-step-actions">
+                                                <button type="button" className="draft-order-btn" disabled={stepIndex === 0} onClick={() => moveStep(blockIndex, stepIndex, stepIndex - 1)} aria-label={`Move movement ${stepIndex + 1} up`}>↑</button>
+                                                <button type="button" className="draft-order-btn" disabled={stepIndex === block.steps.length - 1} onClick={() => moveStep(blockIndex, stepIndex, stepIndex + 1)} aria-label={`Move movement ${stepIndex + 1} down`}>↓</button>
+                                                <button type="button" className="draft-order-btn" onClick={() => duplicateStep(blockIndex, stepIndex)} aria-label={`Duplicate movement ${stepIndex + 1}`}>Duplicate</button>
+                                                <button type="button" className="remove-step-btn builder-remove-btn" onClick={() => removeStep(blockIndex, stepIndex)} aria-label={`Remove movement ${stepIndex + 1}`} title={`Remove movement ${stepIndex + 1}`}>×</button>
+                                            </div>
                                         </div>
                                         <div className="builder-step-fields">
                                             <label>Movement<select value={selectedExercise} onChange={event => {
@@ -369,7 +412,10 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
                                             {effortKind !== 'none' && <label>{effortKind === 'rpe' ? 'RPE target' : 'RIR target'}<input type="number" min={0} max={10} step={0.5} value={effortTarget} onChange={event => updateStep(blockIndex, stepIndex, { effort: { kind: effortKind, target: Number(event.target.value) || 0 } })} /></label>}
                                             <label>Rest (sec)<input type="number" min={1} placeholder="Optional" value={typeof step.rest === 'number' ? step.rest : ''} onChange={event => updateStep(blockIndex, stepIndex, { rest: event.target.value === '' ? undefined : Math.max(1, Number(event.target.value)) })} /></label>
                                         </div>
-                                        <details className="builder-advanced-fields">
+                                        <details className="builder-advanced-fields" open={advancedOpen[step.id] ?? false} onToggle={event => {
+                                            const isOpen = event.currentTarget.open;
+                                            setAdvancedOpen(current => ({ ...current, [step.id]: isOpen }));
+                                        }}>
                                             <summary>Advanced prescription</summary>
                                             <label><input type="checkbox" checked={Boolean(step.optional)} onChange={event => updateStep(blockIndex, stepIndex, { optional: event.target.checked || undefined })} /> Optional movement</label>
                                             <label>Laterality<select value={step.laterality ?? 'bilateral'} onChange={event => updateStep(blockIndex, stepIndex, { laterality: event.target.value as SessionStep['laterality'] })}><option value="bilateral">Bilateral</option><option value="per_side">Per side</option><option value="alternating">Alternating sides</option></select></label>
@@ -393,7 +439,7 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
                                                             const exercise = EXERCISES_BY_ID.get(event.target.value);
                                                             updateAlternative(blockIndex, stepIndex, alt.id, exercise?.id, exercise?.name ?? alt.title);
                                                         }} aria-label="Alternative movement"><option value="__custom__">Custom / free text</option>{exerciseOptions}</select>
-                                                        <button type="button" onClick={() => removeAlternative(blockIndex, stepIndex, alt.id)} aria-label="Remove alternative">Remove</button>
+                                                        <button type="button" className="builder-remove-btn" onClick={() => removeAlternative(blockIndex, stepIndex, alt.id)} aria-label={`Remove alternative ${alt.title} from movement ${stepIndex + 1}`} title={`Remove alternative ${alt.title}`}>×</button>
                                                     </div>;
                                                 })}
                                             </div>
@@ -402,9 +448,13 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
                                 })}
                                 <button type="button" className="add-step-btn" onClick={() => addStep(blockIndex)}>Add movement</button>
                             </div>
-                            <section className="builder-choices">
+                            <details className="builder-choices" open={choicesOpen[block.id] ?? false} onToggle={event => {
+                                const isOpen = event.currentTarget.open;
+                                setChoicesOpen(current => ({ ...current, [block.id]: isOpen }));
+                            }}>
+                                <summary>Choices and actions{block.optionSets?.length ? ` (${block.optionSets.length})` : ''}</summary>
                                 <div className="builder-choices-header">
-                                    <span>Authored choices — a bounded option set the athlete answers at a step (D-MCHOICE)</span>
+                                    <span>Choices for this block</span>
                                     <button type="button" disabled={block.steps.length === 0} onClick={() => addChoice(blockIndex, block.steps[0].id)}>Add choice</button>
                                 </div>
                                 {(block.optionSets ?? []).map(choice => <div key={choice.id} className="builder-choice-card">
@@ -412,14 +462,14 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
                                         <label>Applies at<select value={choice.appliesAtStepId} onChange={event => updateChoiceAppliesAtStep(blockIndex, choice.id, event.target.value)}>
                                             {block.steps.map(step => <option key={step.id} value={step.id}>{step.title ?? step.id}</option>)}
                                         </select></label>
-                                        <button type="button" onClick={() => removeChoice(blockIndex, choice.id)} aria-label="Remove choice">Remove choice</button>
+                                        <button type="button" className="builder-remove-btn" onClick={() => removeChoice(blockIndex, choice.id)} aria-label={`Remove choice for ${block.steps.find(step => step.id === choice.appliesAtStepId)?.title ?? 'movement'}`} title="Remove choice">×</button>
                                     </div>
                                     <label>Trigger — what the athlete observes<input value={choice.trigger.description} placeholder="e.g. How did the warm-up sets feel?" onChange={event => updateChoice(blockIndex, choice.id, { trigger: { kind: 'athlete_observed', description: event.target.value } })} /></label>
                                     <div className="builder-options-list">
                                         {choice.options.map(option => <div key={option.id} className="builder-option-card">
                                             <div className="builder-option-row">
                                                 <input value={option.label} onChange={event => updateOptionLabel(blockIndex, choice.id, option.id, event.target.value)} aria-label="Option label" />
-                                                <button type="button" disabled={choice.options.length <= 1} onClick={() => removeOption(blockIndex, choice.id, option.id)} aria-label="Remove option">Remove</button>
+                                                <button type="button" className="builder-remove-btn" disabled={choice.options.length <= 1} onClick={() => removeOption(blockIndex, choice.id, option.id)} aria-label={`Remove option ${option.label}`} title={`Remove option ${option.label}`}>×</button>
                                             </div>
                                             {option.actions.map((action, actionIndex) => {
                                                 const targetStep = block.steps.find(step => step.id === choice.appliesAtStepId);
@@ -434,7 +484,7 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
                                                         <option value="">Choose…</option>
                                                         {(targetStep?.alternatives ?? []).map(alt => <option key={alt.id} value={alt.id}>{alt.title}</option>)}
                                                     </select>{(targetStep?.alternatives ?? []).length === 0 && <em className="builder-choice-warning">Add an alternative to “{targetStep?.title ?? choice.appliesAtStepId}” first</em>}</label>}
-                                                    <button type="button" onClick={() => removeAction(blockIndex, choice.id, option.id, actionIndex)} aria-label="Remove action">Remove action</button>
+                                                    <button type="button" className="builder-remove-btn" onClick={() => removeAction(blockIndex, choice.id, option.id, actionIndex)} aria-label={`Remove action ${actionIndex + 1} from option ${option.label}`} title={`Remove action ${actionIndex + 1}`}>×</button>
                                                 </div>;
                                             })}
                                             <button type="button" className="add-action-btn" onClick={() => addAction(blockIndex, block, choice, option.id, 'reduce_load_percent')}>Add action</button>
@@ -442,7 +492,7 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
                                         <button type="button" className="add-option-btn" onClick={() => addOption(blockIndex, choice.id)}>Add option</button>
                                     </div>
                                 </div>)}
-                            </section>
+                            </details>
                         </article>
                     ))}
                 </section>

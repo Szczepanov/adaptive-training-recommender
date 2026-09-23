@@ -4,8 +4,6 @@
     border-radius: 16px;
     width: 100%;
     max-width: 580px;
-    max-height: 90vh;
-    overflow-y: auto;
     padding: 1.5rem;
     display: flex;
     flex-direction: column;

@@ -26,10 +26,12 @@
   color: #dbeafe;
   font-size: 0.9rem;
   font-weight: 600;
+  flex-wrap: wrap;
+  text-align: center;
 }
 
 .active-session-banner button {
-  min-height: 36px;
+  min-height: var(--touch-target-min, 44px);
   padding: 0.35rem 0.7rem;
   border: 1px solid rgba(147, 197, 253, 0.6);
   border-radius: 0.35rem;
@@ -352,6 +354,7 @@
   cursor: pointer;
   transition: all 0.2s;
   position: relative;
+  min-height: var(--touch-target-min, 44px);
 }
 
 .nav-item::before {
@@ -439,8 +442,9 @@
   background: rgba(255, 255, 255, 0.08);
   border: none;
   color: var(--text-secondary);
-  width: 32px;
-  height: 32px;
+  width: var(--touch-target-min, 44px);
+  min-width: var(--touch-target-min, 44px);
+  height: var(--touch-target-min, 44px);
   border-radius: 50%;
   cursor: pointer;
   display: flex;
@@ -475,6 +479,8 @@
   text-align: left;
   cursor: pointer;
   transition: all 0.2s ease;
+  min-height: var(--touch-target-min, 44px);
+  box-sizing: border-box;
 }
 
 .drawer-item:hover {

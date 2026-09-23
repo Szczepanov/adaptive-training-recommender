@@ -9,6 +9,7 @@ import type { HealthAnomalyAssessmentRevision } from './engine/healthAnomalyMode
 import type { DailyDecisionInput } from './engine/models';
 import type { SessionDefinition, SessionExecution, SessionIntent } from './sessions/models';
 import type { Screen } from './types/navigation';
+import { readScreenRoute, requiresCurrentCheckin, screenRouteUrl } from './types/screenRoute';
 import { useAuth } from './contexts/AuthContext';
 import { LoginScreen } from './components/LoginScreen';
 import { Header } from './components/Header';
@@ -16,6 +17,7 @@ import { MobileNav } from './components/MobileNav';
 import { getLocalDateString } from './utils/localDate';
 import { strengthSessionService } from './services/strengthSessionService';
 import { sessionExecutionService } from './services/sessionExecutionService';
+import { assessmentAttemptService } from './services/assessmentAttemptService';
 import { runConfiguredHealthAnomalyShadow } from './services/healthAnomalyRuntime';
 import { resolveSessionDefinition } from './sessions/sessionDefinitionResolver';
 import { OnboardingWizard } from './components/OnboardingWizard';
@@ -84,9 +86,16 @@ function App() {
       const needsDailyRoute = lastRoutedDate.current !== input.date;
       const isSafeAutoRouteScreen = currentScreenRef.current === 'home' || currentScreenRef.current === 'checkin';
       if (needsInitialRoute || (needsDailyRoute && isSafeAutoRouteScreen)) {
-        const nextScreen: Screen = hasCompletedSubjectiveCheckinForDecision(input) ? 'home' : 'checkin';
+        const checkinComplete = hasCompletedSubjectiveCheckinForDecision(input);
+        const checkinRequired = requiresCurrentCheckin(input.date, checkinComplete, getLocalDateString());
+        const nextScreen: Screen = checkinRequired
+          ? 'checkin'
+          : needsInitialRoute
+            ? readScreenRoute(window.location) ?? 'home'
+            : 'home';
         currentScreenRef.current = nextScreen;
         setScreen(nextScreen);
+        window.history.replaceState(window.history.state, '', screenRouteUrl(window.location, nextScreen));
         initialRouteUserIdRef.current = requestUserId;
         lastRoutedDate.current = input.date;
         setInitialRouteUserId(requestUserId);
@@ -124,6 +133,7 @@ function App() {
         lastRoutedDate.current = getLocalDateString();
         currentScreenRef.current = 'checkin';
         setScreen('checkin');
+        window.history.replaceState(window.history.state, '', screenRouteUrl(window.location, 'checkin'));
         setInitialRouteUserId(requestUserId);
       }
     }
@@ -175,6 +185,20 @@ function App() {
       const structured = structuredResult.status === 'fulfilled' ? structuredResult.value : null;
       setActiveStructuredSession(structured);
       setActiveStructuredIntent(null);
+      if (structured?.state === 'in_progress' && structured.occurrenceId) {
+        try {
+          const attempt = await assessmentAttemptService.findInProgressAttempt(
+            userId,
+            `occurrence:${structured.occurrenceId}`,
+          );
+          if (!cancelled && attempt) {
+            setActiveStructuredIntent('testing');
+            return;
+          }
+        } catch {
+          // Resolving the stored session definition below remains the fallback.
+        }
+      }
       if (structured?.prescriptionHash) {
         try {
           const definition = await resolveSessionDefinition(userId, structured.sessionSource, structured.prescriptionHash);
@@ -217,6 +241,47 @@ function App() {
     };
   }, [userId, authPhase, initialRouteUserId, loadDecisionInput]);
 
+  const navigateToScreen = useCallback((newScreen: Screen, historyMode: 'push' | 'replace' | 'none') => {
+    const screenChanged = currentScreenRef.current !== newScreen;
+    currentScreenRef.current = newScreen;
+    setScreen(newScreen);
+    setDesktopSettingsOpen(false);
+    setMobileMoreOpen(false);
+
+    if (historyMode !== 'none') {
+      const url = screenRouteUrl(window.location, newScreen);
+      if (historyMode === 'push' && screenChanged) {
+        window.history.pushState(window.history.state, '', url);
+      } else {
+        window.history.replaceState(window.history.state, '', url);
+      }
+    }
+
+    // A structured execution is persisted before it becomes active. Leaving its runner by
+    // Back or visible navigation minimizes it; the Resume banner restores the same execution.
+    if (
+      (newScreen === 'home' || newScreen === 'checkin')
+      && lastRoutedDate.current !== getLocalDateString()
+    ) {
+      void loadDecisionInput();
+    }
+  }, [loadDecisionInput]);
+
+  useEffect(() => {
+    if (!userId || authPhase !== 'AUTHENTICATED' || initialRouteUserId !== userId) return;
+    const onPopState = () => {
+      const requested = readScreenRoute(window.location);
+      const resumeMismatch = requested === 'testing'
+        && currentScreenRef.current === 'sessions'
+        && activeStructuredSession?.state === 'in_progress'
+        && activeStructuredIntent !== 'testing';
+      const nextScreen: Screen = resumeMismatch ? 'home' : requested ?? 'home';
+      navigateToScreen(nextScreen, !requested || resumeMismatch ? 'replace' : 'none');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [activeStructuredIntent, activeStructuredSession, authPhase, initialRouteUserId, navigateToScreen, userId]);
+
   if (authPhase !== 'AUTHENTICATED') {
     return <LoginScreen />;
   }
@@ -227,7 +292,7 @@ function App() {
   if (!userId || initialRouteUserId !== userId) {
     return (
       <div className="app-container">
-        <main className="app-content">
+        <main className="app-content" tabIndex={-1}>
           <div className="loading-state" role="status">Loading today&apos;s check-in status...</div>
         </main>
       </div>
@@ -235,19 +300,7 @@ function App() {
   }
 
   const handleNavigate = (newScreen: Screen) => {
-    currentScreenRef.current = newScreen;
-    setScreen(newScreen);
-    setDesktopSettingsOpen(false);
-    setMobileMoreOpen(false);
-
-    // If the app spent midnight/background time inside a non-routable workflow, re-evaluate
-    // the daily default as soon as the athlete next returns to Home or Check-in.
-    if (
-      (newScreen === 'home' || newScreen === 'checkin')
-      && lastRoutedDate.current !== getLocalDateString()
-    ) {
-      void loadDecisionInput();
-    }
+    navigateToScreen(newScreen, 'push');
   };
 
   const isWorkoutRunnerActive =
@@ -294,7 +347,7 @@ function App() {
           </div>
         )}
 
-      <main className="app-content">
+      <main className="app-content" tabIndex={-1}>
         <Suspense fallback={<div className="loading-state">Loading...</div>}>
           {userId && !onboardingDismissed && decisionInput && decisionInput.activeGoals.length === 0 && (
             <OnboardingWizard
@@ -341,6 +394,7 @@ function App() {
                   allowDuplicateCompleted: options?.allowDuplicateCompleted,
                 };
                 setSessionLaunch(launch);
+                setActiveStructuredIntent(definitionState.data.intent);
                 handleNavigate('sessions');
               }}
             />
@@ -410,6 +464,7 @@ function App() {
                 onClose={() => setSessionAuthoringMode(null)}
                 onStartExecution={session => {
                   setSessionLaunch(session);
+                  setActiveStructuredIntent(session.definition.intent);
                   setSessionAuthoringMode(null);
                 }}
               />
@@ -424,6 +479,7 @@ function App() {
                 }}
                 onStartExecution={session => {
                   setSessionLaunch(session);
+                  setActiveStructuredIntent(session.definition.intent);
                   setSessionAuthoringMode(null);
                   setSessionAuthoringDefinition(null);
                 }}
@@ -442,7 +498,7 @@ function App() {
                   }}
                   onSessionStateChange={session => {
                     setActiveStructuredSession(session?.state === 'in_progress' ? session : null);
-                    if (session?.state !== 'in_progress') setActiveStructuredIntent(null);
+                    if (session && session.state !== 'in_progress') setActiveStructuredIntent(null);
                   }}
                   onClose={() => handleNavigate('home')}
                 />
@@ -458,8 +514,17 @@ function App() {
               key={userId}
               userId={userId!}
               onSessionStateChange={session => {
-                setActiveStructuredSession(session?.state === 'in_progress' ? session : null);
-                setActiveStructuredIntent(session?.state === 'in_progress' ? 'testing' : null);
+                if (session?.state === 'in_progress') {
+                  setActiveStructuredSession(session);
+                  setActiveStructuredIntent('testing');
+                } else if (
+                  session
+                  && currentScreenRef.current === 'testing'
+                  && activeStructuredSession?.executionId === session.executionId
+                ) {
+                  setActiveStructuredSession(null);
+                  setActiveStructuredIntent(null);
+                }
               }}
               onClose={() => handleNavigate('home')}
             />

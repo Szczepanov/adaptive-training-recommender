@@ -16,6 +16,8 @@ over inferred component names or historical plans.
   `uid` so account transitions replace account-scoped React state.
 * `app/src/App.tsx` `App`, `loadDecisionInput`, `handleNavigate` — route state, daily
   auto-routing, global overlays/banners, screen rendering, and session launch plumbing.
+* `app/src/types/screenRoute.ts` — private `?screen=<screen>` URL parsing and safe route
+  resolution used by browser history.
 * `app/src/engine/adapters.ts` `mapCheckinToSubjectiveInput` — the explicit boundary
   between persisted daily check-in fields and decision-facing subjective inputs.
 * `app/src/components/Header.tsx` `Header` and `app/src/components/MobileNav.tsx`
@@ -35,8 +37,14 @@ update this document in the same PR.
 
 ## Global shell
 
-There is no URL router. `App.tsx` keeps a `Screen` value in React state and renders the
-corresponding screen.
+`App.tsx` keeps a `Screen` value in React state and mirrors safe top-level destinations to the
+private `?screen=<screen>` query parameter. `handleNavigate` pushes a browser-history entry;
+Back and Forward reconcile that entry into app state without reloading. A valid deep link is
+applied after authentication and daily check-in routing. Unknown destinations resolve to
+Home. An incomplete or stale check-in routes to Check-in at startup, before a deep link is
+applied. Once the athlete skips to the dashboard, Back and Forward restore the routes already
+visited without reapplying the startup check-in gate. The screen route is not an authorization
+boundary and does not expose user data.
 
 ### Authentication and account isolation
 
@@ -77,8 +85,13 @@ on `home` or `checkin`. The check runs on window focus, visibility change, and a
 interval. It does not eject the athlete from `sessions`, `testing`, `plan`, or another
 workflow mid-task. Returning to `home` or `checkin` across midnight triggers a refresh.
 
-`handleNavigate` updates the route and closes the desktop Settings menu and mobile More
-drawer; it is not a URL/history transition.
+`handleNavigate` updates the route, writes the safe screen query to browser history, and closes
+the desktop Settings menu and mobile More drawer. On browser Back from an active structured
+session, the persisted execution remains in progress and the app returns to the preceding
+history route. If that route is Testing but the session is an ordinary structured workout,
+the app returns Home so the Resume action is available. Home shows its Resume action whenever
+it is the destination; Forward restores the runner. The athlete can also leave and resume
+through the same persisted execution.
 
 ### Onboarding overlay and resume banners
 
@@ -106,7 +119,8 @@ because the active-goal gate also suppresses the overlay.
 
 * an open legacy Strength v1 document can be closed by transitioning it to `abandoned`;
 * an in-progress structured execution can be resumed in `sessions` or `testing`, depending
-  on the resolved `SessionIntent`.
+  on its resolved `SessionIntent` or the in-progress assessment attempt linked to its
+  occurrence. Running assessment attempts take precedence over newer scheduled attempts.
 
 The desktop `Header` is hidden while a structured runner is in progress. `MobileNav` is
 hidden during `checkin` and while a structured runner is in progress.

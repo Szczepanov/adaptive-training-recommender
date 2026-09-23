@@ -1,4 +1,6 @@
-import { useState, memo } from 'react';
+import { useEffect, useRef, useState, memo } from 'react';
+import { useOverlayDialog } from './useOverlayDialog';
+import './overlayContract.css';
 import { goalService } from '../services/goalService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
@@ -59,7 +61,14 @@ export function ExerciseDaysSlider({ value, onChange, disabled = false }: Exerci
 }
 
 export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompleted, initialStep = 1 }: OnboardingWizardProps) {
+    const dialogRef = useRef<HTMLDivElement>(null);
+    useOverlayDialog(true, dialogRef);
     const [step, setStep] = useState<1 | 2 | 3>(initialStep);
+    useEffect(() => {
+        // Step transitions remove the activated button; put keyboard focus on the
+        // next step's first action instead of leaving it on the page behind.
+        dialogRef.current?.querySelector<HTMLElement>('.onboarding-step button:not([disabled])')?.focus();
+    }, [step]);
     const [focus, setFocus] = useState<GoalFocus>('general_fitness');
     const [equipment, setEquipment] = useState<EquipmentTier>('full_gym');
     const [exerciseDaysPerWeek, setExerciseDaysPerWeek] = useState<number>(4);
@@ -189,8 +198,8 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
     };
 
     return (
-        <main className="onboarding-modal-backdrop" role="main" aria-label="Rapid Onboarding Setup">
-            <div className="onboarding-card">
+        <div className="onboarding-modal-backdrop overlay-viewport">
+            <div ref={dialogRef} className="onboarding-card overlay-panel" role="dialog" aria-modal="true" aria-label="Rapid Onboarding Setup" tabIndex={-1}>
                 {blockedSkipStage && (
                     <>
                         <p className="form-error-msg" role="alert">
@@ -317,6 +326,6 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                     </div>
                 )}
             </div>
-        </main>
+        </div>
     );
 });
