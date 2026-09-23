@@ -244,11 +244,12 @@ describe('7A.4 reservations survive discretionary work', () => {
         expect(quality?.status).toBe('fulfilled');
         expect(quality?.reservation.assignedDate).toBe('2026-08-08');
 
-        // The support candidates between the early strength reservation and the exact
-        // quality witness are not allowed to consume the remaining budget. Rest is selected
-        // only after the same viability proof, and the exact future role survives.
+        // Discretionary training between the early strength reservation and the exact
+        // quality witness cannot consume the remaining budget. Rest or low-cost mobility
+        // is allowed only when the viability proof preserves the exact future role.
         expect(plan.days.filter(day => day.date >= '2026-08-04' && day.date <= '2026-08-07')
-            .every(day => day.template.category === 'Rest')).toBe(true);
+            .every(day => day.template.category === 'Rest' || day.template.category === 'Mobility/Recovery'),
+        JSON.stringify(plan.days.map(day => ({ date: day.date, id: day.template.id, category: day.template.category })))).toBe(true);
         expect(plan.days.find(day => day.date === '2026-08-08')?.template.category).toBe('Hard Endurance');
     });
 

@@ -164,6 +164,11 @@ export function healthPlanningKnowledgeRefs(active: boolean): string[] {
     return active ? [KNOWLEDGE_CLAIM_IDS.healthAdherenceModalityIntensityPrior] : [];
 }
 
+/** Candidate-ranking policy is evaluated on the intent-aware catalog path. */
+export function candidateSelectionKnowledgeRefs(): string[] {
+    return [KNOWLEDGE_CLAIM_IDS.preferredModalityFallbackPolicy];
+}
+
 /** Maximum number of athlete-specific evidence refs permitted in a decision lineage snapshot. */
 export const MAX_ATHLETE_EVIDENCE_LINEAGE_REFS = 16;
 

@@ -16,6 +16,7 @@ export const OPTIMIZER_SCORING_CLAIM_IDS = {
     eventPriorityMultipliersPolicy: 'policy.optimizer.event_priority_multipliers_v2',
     recoveryStreakHeuristicsPolicy: 'policy.optimizer.recovery_streak_heuristics_v1',
     rollingLoadBudgetPolicy: 'policy.optimizer.rolling_load_budget_v1',
+    preferredModalityFallbackPolicy: 'policy.optimizer.preferred_modality_fallback_v1',
 } as const;
 
 const OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE = 'PRODUCT-OPTIMIZER-SCORING-POLICY-V1';
@@ -32,6 +33,15 @@ export const OPTIMIZER_SCORING_SOURCES: readonly KnowledgeSource[] = [
 ];
 
 export const OPTIMIZER_SCORING_CLAIMS: readonly KnowledgeClaim[] = [
+    {
+        id: OPTIMIZER_SCORING_CLAIM_IDS.preferredModalityFallbackPolicy,
+        statement: 'Product candidate-selection policy v1: all Field catalog templates, including Field Maintenance and Sprint Mechanics, require an explicit Field or Field/Football preference because no team-sport event category is modeled. When at least one preferred training candidate clears the hard gates, other non-recovery, non-event-matching modalities retain eligibility but their benefit and utility are multiplied by 0.25 unless they satisfy an unresolved weekly objective. An explicit preferredModalityToday that also belongs to the athlete’s preferredModalities wins within the same coverage, recovery, and objective-benefit tier before utility ranking, including the final variety tie-break. Automatic catalog recommendations require at least a two athlete-local-calendar-day gap between strength sessions of any category, while shared recovery evaluation retains its existing workout-specific minimum and upper-body exception for authored-plan critique.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
+        applicability: { contexts: ['candidate_selection', 'modality_preference', 'strength_spacing'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['preferred_modality_ranking', 'strength_spacing'], horizon: 'acute' },
+        evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['The preference multiplier and two-local-day catalog spacing rule are product decisions; they are not measured physiological effect sizes or literal 48-hour elapsed-time thresholds. Hard safety and feasibility gates, event-specific demand, and required programming coverage remain authoritative.'],
+        reviewedOn: '2026-09-23', version: 1,
+    },
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.fatigueCostWeightsPolicy,
         statement: "Product optimizer scoring v1: candidate session fatigue penalty weights dimensional fatigue as systemic 2.0, cardiovascular 1.5, lower-body 2.5, upper-body 1.5, impact-tissue 2.0 and neuromuscular 1.8 against the workout's costProfile. An explicit extraRecoveryMargin, or conservativeBias when extraRecoveryMargin is unset, adds a fixed 0.3 cost penalty when systemicCost > 0.5; conservativeBias additionally adds 0.35 when systemicCost >= 0.6.",

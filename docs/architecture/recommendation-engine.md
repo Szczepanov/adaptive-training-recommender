@@ -623,6 +623,25 @@ Preferences rank; they never unlock. An avoided modality is a hard exclude on Pa
 0.2× soft penalty on Path B — a deliberate distinction, since taste must never behave like
 a safety constraint ([ADR-0007](../adr/0007-adaptive-multisport-engine-architecture.md) §6).
 
+Path B also demotes a non-preferred training candidate when at least one preferred training
+candidate passes the same hard gates, unless the candidate satisfies an unresolved weekly
+objective. Rest and Mobility/Recovery remain available.
+An explicit event-directed candidate in its event modality remains eligible for the event
+objective. Automatic catalog candidates in the Field modality, including Field Maintenance
+and Sprint Mechanics, require an explicit Field preference; their generic catalog presence
+is not enough to make them a fallback. The check-in's `preferredModalityToday`
+breaks ties only after hard gates, coverage, recovery placement and objective-benefit tier
+agree, and only when the requested modality is also in `preferredModalities`. It applies to
+the current decision and does not rewrite the athlete's longer-term preferences.
+
+Automatic Path B catalog selection excludes a second strength session on the calendar day
+immediately after any strength exposure, including upper-body/full-body combinations. This
+extra adjacent-day rule is scoped to automatic catalog ranking; it does not change the
+canonical performed-training spacing policy used by other consumers. A low-load full-body
+maintenance template remains available under shoulder-overhead and heavy-axial guardrails;
+its low cost and absence of those safety tags do not override other active injury tags,
+equipment, time, readiness or dose gates.
+
 ### Injury gate sub-ordering (Phase 5.4)
 
 Within the "clinical / safety gates" step above, `injuryPolicy.ts` itself has a total

@@ -199,18 +199,20 @@ describe('strength_meet_powerlifting_B -- documents a known, unfixed limitation'
     });
 });
 
-describe('field_sport_general_target -- no dedicated event category exists for field sports', () => {
-    it('documents that Field Maintenance is NOT currently reachable on preference alone under strict lexicographic ordering', async () => {
+describe('field_sport_general_target -- explicit preference is the Field sport signal', () => {
+    it('allows Field sessions when Field is explicitly preferred', async () => {
         const result = await getResult('field_sport_general_target');
-        expect(result.modalityDistribution.Field ?? 0).toBe(0);
+        expect(result.modalityDistribution.Field ?? 0).toBeGreaterThan(0);
     });
 
-    it('reports when the Field preference has no observable effect against the matched Base baseline', async () => {
+    it('reports a changed plan when Field preference differs from the matched Base baseline', async () => {
         const report = await runAllScenarios();
         expect(report.preferenceSensitivity).toContainEqual(expect.objectContaining({
             preferredModality: 'Field',
-            changedPlannedDays: 0,
+            changedPlannedDays: expect.any(Number),
         }));
+        const fieldPreference = report.preferenceSensitivity.find(item => item.preferredModality === 'Field');
+        expect(fieldPreference?.changedPlannedDays).toBeGreaterThan(0);
     }, 15000);
 });
 

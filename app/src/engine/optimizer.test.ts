@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildOptimizationContext, calculateStimulusBenefit, evaluateRecoveryConstraints, rankCandidates, rankCandidatesByUtility, type RecentHistoryEntry } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
 import { resolveHealthPlanningPolicy } from './healthPlanningPolicy';
-import type { FatigueState, SessionTemplate, UserContext, UserPreferences, WeeklyObjective } from './models';
+import type { FatigueState, SessionHistoryEntry, SessionTemplate, UserContext, UserPreferences, WeeklyObjective } from './models';
 import type { ResolvedAvailability } from './schedule';
 
 const DEFAULT_FATIGUE: FatigueState = {
@@ -49,6 +49,91 @@ const ZERO_CANONICAL_STIMULUS = {
     maxStrength: 0,
     hypertrophy: 0,
 };
+
+describe('optimizer — preferred modality and safe strength fallback (#736)', () => {
+    const candidate = (id: string) => ENRICHED_TEMPLATES.find(template => template.id === id)!;
+
+    it('excludes Field Maintenance and Sprint Mechanics without explicit field preference', () => {
+        const field = candidate('field_maint_01');
+        const sprint = candidate('field_technical_01');
+        const unrequested = rankCandidates([field, sprint], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], {
+            ...DEFAULT_PREFERENCES, preferredModalities: ['Strength'],
+        }, { date: '2026-03-05' });
+        expect(unrequested.rejected.map(item => item.template.id)).toEqual(expect.arrayContaining([field.id, sprint.id]));
+        expect(unrequested.rejected.every(item => item.excludedReasons.includes('FIELD_MODALITY_NOT_REQUESTED'))).toBe(true);
+        const requested = rankCandidates([field, sprint], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], {
+            ...DEFAULT_PREFERENCES, preferredModalities: ['Field'],
+        }, { date: '2026-03-05' });
+        expect(requested.accepted.map(item => item.template.id)).toContain(field.id);
+        expect(requested.accepted.map(item => item.template.id)).toContain(sprint.id);
+    });
+
+    it('prefers an eligible cycling spin over unpreferred walking and running in a short window', () => {
+        const preferences = { ...DEFAULT_PREFERENCES, preferredModalities: ['Cycling', 'Strength'] };
+        const result = rankCandidates(
+            [candidate('end_walk_01'), candidate('end_easy_02'), candidate('end_easy_01')],
+            [], DEFAULT_FATIGUE, { ...DEFAULT_AVAILABILITY, maxTimeMinutes: 35 }, [], preferences,
+            { date: '2026-03-05' },
+        );
+        expect(result.accepted[0].template.id).toBe('end_easy_01');
+        expect(result.accepted.find(item => item.template.id === 'end_walk_01')?.benefitScore)
+            .toBeLessThan(result.accepted[0].benefitScore);
+    });
+
+    it('demotes unpreferred running for a health athlete while allowing it as a last feasible training fallback', () => {
+        const preferences = { ...DEFAULT_PREFERENCES, preferredModalities: ['Strength', 'Walking', 'Cycling'] };
+        const running = candidate('end_easy_02');
+        const walking = candidate('end_walk_01');
+        const both = rankCandidates([running, walking], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], preferences, { date: '2026-03-05' });
+        expect(both.accepted[0].template.id).toBe(walking.id);
+        const fallback = rankCandidates([running], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], preferences, { date: '2026-03-05' });
+        expect(fallback.accepted[0].template.id).toBe(running.id);
+    });
+
+    it('honors an explicit current-decision modality within equal coverage and recovery tiers', () => {
+        const preferences = { ...DEFAULT_PREFERENCES, preferredModalities: ['Cycling', 'Strength'] };
+        const strength = candidate('str_low_load_maint_01');
+        const templates = [strength, { ...strength, id: 'equal-benefit-bike', modality: 'Cycling' as const }];
+        const select = (preferredModalityToday: string) => rankCandidates(
+            templates, [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], preferences,
+            { date: '2026-03-05', preferredModalityToday },
+        ).accepted[0].template.modality;
+        expect(select('Cycling')).toBe('Cycling');
+        expect(select('Strength')).toBe('Strength');
+    });
+
+    it('keeps an unresolved strength objective ahead of chronic and current-day modality preference', () => {
+        const preferences = { ...DEFAULT_PREFERENCES, preferredModalities: ['Cycling'] };
+        const strength = candidate('str_full_03');
+        const cycling = candidate('end_easy_01');
+        const strengthObjective: WeeklyObjective = {
+            id: 'strength-maintenance', key: 'strength_maintenance', title: 'Strength maintenance',
+            targetExposures: 1, completedExposures: 0,
+            targetStimulus: { maxStrength: 0.7, hypertrophy: 0.5 },
+        };
+        const options = { date: '2026-03-05', preferredModalityToday: 'Cycling' };
+        const ranked = rankCandidates([strength, cycling], [strengthObjective], DEFAULT_FATIGUE,
+            DEFAULT_AVAILABILITY, [], preferences, options);
+        const withoutPreferredAlternative = rankCandidates([strength], [strengthObjective], DEFAULT_FATIGUE,
+            DEFAULT_AVAILABILITY, [], preferences, options);
+
+        expect(ranked.accepted[0].template.id).toBe(strength.id);
+        expect(ranked.accepted.find(item => item.template.id === strength.id)?.benefitScore)
+            .toBeCloseTo(withoutPreferredAlternative.accepted[0].benefitScore);
+    });
+
+    it('excludes adjacent-day strength across upper, full-body, and low-load maintenance templates', () => {
+        const templates = [candidate('str_upper_01'), candidate('str_full_03'), candidate('str_low_load_maint_01')];
+        for (const category of ['Upper-body Strength', 'Full-body Strength']) {
+            const result = rankCandidates(
+                templates, [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
+                { date: '2026-03-09', recentHistory: [{ date: '2026-03-08', modality: 'Strength', category: category as SessionTemplate['category'], systemicCost: 0.3, lowerBodyCost: 0.2 }] },
+            );
+            expect(result.rejected).toHaveLength(templates.length);
+            expect(result.rejected.every(item => item.excludedReasons.includes('CONSECUTIVE_STRENGTH_DAYS'))).toBe(true);
+        }
+    });
+});
 
 describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () => {
     it('ranks feasible low-impact health aerobic work ahead of running without explicit running support', () => {
@@ -249,8 +334,8 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
             if (!template) throw new Error('No Lower-body Strength template in ENRICHED_TEMPLATES');
             return template;
         };
-        const oneDayPriorHistory: RecentHistoryEntry[] = [
-            { date: '2026-03-04', modality: 'Strength', category: 'Lower-body Strength', role: 'anchor', systemicCost: 0.7, lowerBodyCost: 0.8, type: 'Lower-body Strength' },
+        const oneDayPriorHistory: SessionHistoryEntry[] = [
+            { date: '2026-03-04', modality: 'Strength', category: 'Lower-body Strength', role: 'anchor', systemicCost: 0.7, lowerBodyCost: 0.8 },
         ];
 
         it('a stricter (3-day) workout-level requirement rejects at a day-2 gap that the flat 2-day default accepts', () => {
@@ -274,14 +359,17 @@ describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () =
             expect(strictResult.rejected[0].excludedReasons).toContain('HARD_LOWER_BODY_SPACING_VIOLATION');
         });
 
-        it('a more lenient (1-day) workout-level requirement accepts a candidate the flat 2-day default would reject', () => {
+        it('keeps a 1-day workout override for shared recovery constraints while automatic catalog spacing still rejects adjacent strength', () => {
             const template = heavySquat();
+            const options = { date: '2026-03-05', recentHistory: oneDayPriorHistory, resolveMinimumDaysAfterHardLowerBody: () => 1 };
+            const sharedReasons = evaluateRecoveryConstraints(template, '2026-03-05', oneDayPriorHistory, options);
+            expect(sharedReasons).not.toContain('HARD_LOWER_BODY_SPACING_VIOLATION');
+            expect(sharedReasons).not.toContain('RECENT_STRENGTH_SPACING_VIOLATION');
             const result = rankCandidates(
                 [template], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
-                { date: '2026-03-05', recentHistory: oneDayPriorHistory, resolveMinimumDaysAfterHardLowerBody: () => 1 },
+                options,
             );
-            expect(result.accepted).toHaveLength(1);
-            expect(result.accepted[0].excludedReasons).not.toContain('HARD_LOWER_BODY_SPACING_VIOLATION');
+            expect(result.rejected[0].excludedReasons).toContain('CONSECUTIVE_STRENGTH_DAYS');
         });
 
         it('a resolver that returns undefined for this template falls back to the flat 2-day default, unchanged', () => {
@@ -548,6 +636,24 @@ describe('optimizer — lexicographic ordering (3.2)', () => {
 });
 
 describe('optimizer — one optimizer invocation context (F4 / 3.3)', () => {
+    it('uses projected prior-day strength history for the week-ahead spacing gate', () => {
+        const intent = {
+            unresolvedObjectives: [], fatigue: DEFAULT_FATIGUE, periodization: { focusEvent: null },
+            history: [{ date: '2026-03-08', modality: 'Strength', category: 'Upper-body Strength' as const, systemicCost: 0.3, lowerBodyCost: 0.1, source: 'projected' as const }],
+        };
+        const context = { constraints: { restrictedModalities: [] }, preferences: DEFAULT_PREFERENCES } as unknown as UserContext;
+        const optimization = buildOptimizationContext(intent, context, DEFAULT_PREFERENCES, '2026-03-09', {
+            resolvedAvailability: DEFAULT_AVAILABILITY,
+        });
+        expect(optimization.options.recentPerformedExposures).toBeUndefined();
+        const ranked = rankCandidates(
+            [ENRICHED_TEMPLATES.find(template => template.id === 'str_full_03')!],
+            optimization.unresolvedObjectives, optimization.fatigueState, optimization.availability,
+            optimization.injuryConstraints, optimization.preferences, optimization.options,
+        );
+        expect(ranked.rejected[0].excludedReasons).toContain('CONSECUTIVE_STRENGTH_DAYS');
+    });
+
     it('buildOptimizationContext produces equivalent context from intent and context inputs', () => {
         const intent = {
             unresolvedObjectives: [], fatigue: DEFAULT_FATIGUE, periodization: { focusEvent: null },
@@ -567,7 +673,7 @@ describe('optimizer — one optimizer invocation context (F4 / 3.3)', () => {
     });
 
     it('returns identical ranking when given identical OptimizationContext', () => {
-        const template = ENRICHED_TEMPLATES.find(t => (t.requiredEquipment ?? []).length === 0)!;
+        const template = ENRICHED_TEMPLATES.find(t => (t.requiredEquipment ?? []).length === 0 && t.modality !== 'Field')!;
         const intent = { unresolvedObjectives: [], fatigue: DEFAULT_FATIGUE, periodization: { focusEvent: null }, history: [] };
         const testContext = {
             trainingSettings: { userId: 'user_1', defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 90 } },

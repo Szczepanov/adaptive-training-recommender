@@ -105,6 +105,36 @@ export const STRENGTH_WORKOUTS: WorkoutDefinition[] = [
     regressions: [], progressions: ['strength_full_body_maintenance_01'], substitutions: [], garmin: { exportable: false }, tags: ['power', 'plyometric', 'tissue_capacity'], sourceNotes: ['Reactive work is intentionally low-volume, fully recovered, and limited to athletes with normal tendon and landing tolerance.']
   },
   {
+    id: 'strength_low_load_trunk_01', version: 1, status: 'active',
+    name: 'Low-load Strength and Trunk Maintenance',
+    description: 'Supported, low-load lower-body and trunk work. Avoid overhead pressing and heavy spinal compression.',
+    modality: 'strength', category: 'full_body_strength', objectives: ['strength_maintenance', 'tissue_capacity'],
+    duration: { defaultMin: 30, minimumMin: 20, maximumMin: 35 },
+    loadProfile: { cardiovascular: 1, muscular: 2, mechanical: 1, eccentric: 1, coordination: 1, recoveryHours: 24 },
+    eligibility: { minimumReadiness: 3, maximumSoreness: 8, forbiddenPainFlags: [] },
+    equipment: ['bodyweight'], contraindicationTags: [], engineTemplateIds: ['str_low_load_maint_01'],
+    warmupKnowledgeClaimIds: ['strength.warmup.contextual_preparation', 'strength.warmup.specific_rehearsal'],
+    blocks: [
+      { id: 'warmup', name: 'Gentle supported pattern rehearsal', role: 'warmup', steps: [
+        repsStep('low_warmup_squat', 'bodyweight_squat', 'Supported sit-to-stand', 6, { load: { kind: 'bodyweight' }, notes: ['Use a comfortable, pain-free depth and chair support.'] }),
+        repsStep('low_warmup_bridge', 'glute_bridge', 'Easy glute bridge', 6, { load: { kind: 'bodyweight' }, notes: ['Keep the spine comfortable and avoid bracing against pain.'] })
+      ]},
+      { id: 'main', name: 'Low-load strength maintenance', role: 'main', steps: [
+        repsStep('low_squat', 'bodyweight_squat', 'Supported sit-to-stand', 8, { sets: 2, restAfterSec: 60, load: { kind: 'bodyweight' }, target: { type: 'reps_in_reserve', min: 5, max: 7 }, notes: ['Stop or shorten the range if back or lower-body symptoms increase.'] }),
+        repsStep('low_bridge', 'glute_bridge', 'Glute bridge', 8, { sets: 2, restAfterSec: 45, load: { kind: 'bodyweight' }, target: { type: 'reps_in_reserve', min: 5, max: 7 } }),
+        repsStep('low_deadbug', 'dead_bug', 'Dead bug trunk stability', 6, { sets: 2, restAfterSec: 30, load: { kind: 'bodyweight' }, notes: ['Use slow, comfortable range and steady breathing.'] })
+      ]}
+    ],
+    variants: [
+      { id: 'full', targetDurationMin: 30, loadMultiplier: 1, rationale: 'Two easy sets of each comfortable pattern.', stepOverrides: [] },
+      { id: 'reduced', targetDurationMin: 25, loadMultiplier: 0.7, rationale: 'Keep low-load movement with less volume.', stepOverrides: [{ stepId: 'low_squat', sets: 1 }, { stepId: 'low_bridge', sets: 1 }] },
+      { id: 'return_to_training', targetDurationMin: 20, loadMultiplier: 0.5, rationale: 'Use only symptom-free lower-body and trunk patterns.', stepOverrides: [{ stepId: 'low_squat', sets: 1 }, { stepId: 'low_bridge', sets: 1 }, { stepId: 'low_deadbug', sets: 1 }] }
+    ],
+    regressions: [], progressions: ['strength_bodyweight_full_body_01'], substitutions: [],
+    garmin: { exportable: false }, tags: ['bodyweight', 'low_load', 'trunk', 'symptom_compatible'],
+    sourceNotes: ['Issue #736 shoulder/spinal guardrail-compatible maintenance option. Use only movements that remain comfortable.']
+  },
+  {
     id: 'strength_bodyweight_full_body_01', version: 2, status: 'active',
     name: 'Bodyweight Full-body Strength',
     description: 'Genuine zero-equipment full-body resistance session: controlled-tempo squat, push-up, hip hinge, glute bridge, self-resisted prone row, and trunk work.',

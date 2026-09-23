@@ -53,6 +53,16 @@ describe('resolveWorkoutPrescription', () => {
     expect(exerciseIds).not.toContain('pull_up');
   });
 
+  it('maps the low-load strength fallback to its symptom-compatible prescription', () => {
+    const workout = workoutForTemplate('str_low_load_maint_01');
+    expect(workout?.id).toBe('strength_low_load_trunk_01');
+    const exerciseIds = workout?.blocks.flatMap(block => block.steps.map(step => step.exerciseId));
+    expect(exerciseIds).not.toContain('bench_press');
+    expect(exerciseIds).not.toContain('front_squat');
+    expect(exerciseIds).not.toContain('pull_up');
+    expect(exerciseIds).not.toContain('prone_scapular_row');
+  });
+
   it('does not resolve a deprecated matching workout', () => {
     const matching = WORKOUTS.find((workout) => workout.engineTemplateIds?.includes('str_lower_01'));
     expect(matching).toBeDefined();

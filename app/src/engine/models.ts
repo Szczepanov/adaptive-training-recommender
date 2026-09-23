@@ -908,6 +908,8 @@ export interface SessionTemplate {
      * survives hard feasibility. This is an availability escape hatch, not a preference
      * boost, so it cannot displace a normal sport-specific option merely on utility. */
     availabilityFallbackRole?: 'aerobic_endurance';
+    /** Catalog strength fallback admitted only for active shoulder/spinal guardrails. */
+    guardrailFallbackRole?: 'shoulder_spinal_strength';
     easierDose?: DoseVariation;
     harderDose?: DoseVariation;
     stimulusProfile?: WorkoutStimulusProfile;

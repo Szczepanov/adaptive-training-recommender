@@ -28,7 +28,7 @@ import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveEventTaper } from './taperPolicy';
 import { resolveInjuryRestrictions } from './injuryPolicy';
-import { evaluateStrengthSpacingStatus, type StrengthExposureLike } from './strengthSpacingPolicy';
+import { classifyCandidateStrength, classifyPriorStrength, evaluateStrengthSpacingStatus, type StrengthExposureLike } from './strengthSpacingPolicy';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import {
     composeCoverageNeedTier,
@@ -197,6 +197,8 @@ export interface RecentHistoryEntry {
 
 export interface OptimizationOptions {
     date?: string;
+    /** Athlete's explicit modality request for this decision date only. */
+    preferredModalityToday?: string | null;
     focusEvent?: UserEvent | null;
     recentHistory?: (RecentHistoryEntry | SessionHistoryEntry)[];
     /** Canonical performed-training exposure facts are the recency/spacing authority for
@@ -270,6 +272,9 @@ const ANCHOR_ROLE_BOOST = 1.35;
 const ANCHOR_TIMING_BENEFIT = 1.0;
 const MULTISPORT_MODALITY_COVERAGE_BENEFIT = ANCHOR_TIMING_BENEFIT;
 const ANCHOR_ADJACENCY_SUPPRESSION = 0.3;
+/** Explicit chronic preferences outweigh incidental stimulus matches when a preferred
+ * training candidate passes the same hard gates. Recovery remains separately ranked. */
+export const UNPREFERRED_MODALITY_MULTIPLIER = 0.25;
 export const HEAVY_LOWER_BODY_STRENGTH_CATEGORIES: SessionTemplate['category'][] = ['Lower-body Strength', 'Full-body Strength'];
 
 /** Issue #675: keep the optimizer's durability exception on the exact same semantic
@@ -744,8 +749,25 @@ export function evaluateRecoveryConstraints(
     if (strengthSpacing.isRestricted && strengthSpacing.reasonCode) {
         reasons.push(strengthSpacing.reasonCode);
     }
-
     return reasons;
+}
+
+/** Automatic catalog selection keeps all resistance sessions off adjacent local dates.
+ * Shared recovery constraints also serve authored-plan critique, whose established
+ * strength-spacing contract must not acquire this new catalog-only restriction. */
+function hasAdjacentStrengthExposure(
+    template: SessionTemplate,
+    targetDate: string,
+    exposures: readonly StrengthExposureLike[],
+): boolean {
+    if (classifyCandidateStrength(template) === 'none') return false;
+    return exposures.some(exposure => {
+        const exposureDate = exposure.localDate ?? exposure.date;
+        const priorClass = classifyPriorStrength(exposure);
+        return priorClass !== 'none'
+            && exposureDate !== undefined
+            && getDayDiff(targetDate, exposureDate) === 1;
+    });
 }
 
 export function calculateStimulusBenefit(
@@ -939,6 +961,7 @@ export function buildOptimizationContext(
         coverageState,
         options: {
             date,
+            ...(options.preferredModalityToday !== undefined ? { preferredModalityToday: options.preferredModalityToday } : {}),
             focusEvent,
             recentHistory: rawHistory,
             anchorRole: options.anchorRole ?? null,
@@ -968,9 +991,31 @@ export function rankCandidates(
     preferences: UserPreferences,
     options: OptimizationOptions = {}
 ): RankCandidatesResult {
+    const normalizePreferredModality = (modality: string) => {
+        const normalized = modality.trim().toLowerCase();
+        return normalized === 'field/football' ? 'field' : normalized;
+    };
+    const matchesPreferredModality = (preference: string, modality: string) =>
+        normalizePreferredModality(preference) === normalizePreferredModality(modality);
     const isDisliked = (t: SessionTemplate) => preferences.avoidedModalities.some(m => m.toLowerCase() === (t.modality ?? '').toLowerCase());
-    const isPreferred = (t: SessionTemplate) => preferences.preferredModalities.some(m => m.toLowerCase() === (t.modality ?? '').toLowerCase());
+    const isPreferred = (t: SessionTemplate) => preferences.preferredModalities.some(m => matchesPreferredModality(m, t.modality));
     const isDeprioritized = (t: SessionTemplate) => preferences.deprioritizedModalities.some(m => m.toLowerCase() === (t.modality ?? '').toLowerCase());
+    const satisfiesUnresolvedObjective = (template: SessionTemplate) => unresolvedObjectives.some(obj =>
+        obj.qualification?.allowedModalities
+            ? obj.qualification.allowedModalities.includes(template.modality)
+            : (template.modality === 'Strength' && (obj.key === 'strength_maintenance' || obj.key === 'strength_development'))
+    );
+    const advancesUnresolvedObjective = (template: SessionTemplate) => {
+        const stimulus = template.stimulusProfile;
+        if (!stimulus) return false;
+        return unresolvedObjectives.some(obj =>
+            qualifiesForObjective(stimulus, template.modality, obj.qualification, template.category)
+            && Object.entries(obj.targetStimulus).some(([axis, target]) =>
+                (target ?? 0) > 0 && (stimulus[axis as keyof WorkoutStimulusProfile] ?? 0) > 0)
+        );
+    };
+    const preferredToday = options.preferredModalityToday?.trim();
+    const honorPreferredToday = Boolean(preferredToday && preferences.preferredModalities.some(modality => matchesPreferredModality(modality, preferredToday)));
 
     const extraMargin = preferences.extraRecoveryMargin ?? preferences.conservativeBias ?? false;
     const focusEvent = options.focusEvent;
@@ -1021,6 +1066,10 @@ export function rankCandidates(
         }
 
         const lowerMod = (template.modality ?? '').toLowerCase();
+        if (template.modality === 'Field'
+            && !preferences.preferredModalities.some(modality => matchesPreferredModality(modality, 'Field'))) {
+            excludedReasons.push('FIELD_MODALITY_NOT_REQUESTED');
+        }
         if (injuryConstraints.some(inj => inj.toLowerCase() === lowerMod || inj.toLowerCase().includes(lowerMod))) {
             excludedReasons.push('INJURY_RESTRICTION');
         }
@@ -1030,6 +1079,9 @@ export function rankCandidates(
         }
 
         excludedReasons.push(...evaluateRecoveryConstraints(template, targetDate, history, options, summary));
+        if (hasAdjacentStrengthExposure(template, targetDate, options.recentPerformedExposures ?? history)) {
+            excludedReasons.push('CONSECUTIVE_STRENGTH_DAYS');
+        }
 
         const activeDoseAdjustment = resolveTimeCapDoseAdjustment(template, availability.maxTimeMinutes, options.fatigueTier === 'modify');
         const effectiveCandidate = activeDoseAdjustment ? materializeEffectiveDose(template, activeDoseAdjustment.activeDose) : template;
@@ -1051,11 +1103,7 @@ export function rankCandidates(
             : authoredCoverageNeedTier;
         const recoveryPreferenceTier = recoveryPreferenceTierFor(template);
 
-        const satisfiesUnresolvedObjective = unresolvedObjectives.some(obj =>
-            obj.qualification?.allowedModalities
-                ? obj.qualification.allowedModalities.includes(template.modality)
-                : (template.modality === 'Strength' && (obj.key === 'strength_maintenance' || obj.key === 'strength_development'))
-        );
+        const advancesUnresolvedObjective = satisfiesUnresolvedObjective(template);
 
         // Keep legacy A/B handling intact, but only opt C into event-aware ranking for
         // actual endurance competitions. A C-priority general target or strength meet must
@@ -1072,7 +1120,7 @@ export function rankCandidates(
                     || templateModLower.includes('cycling')
                     || templateModLower.includes('running')
                 ));
-            const eventPriorityApplies = !categoryLower.includes('strength') || satisfiesUnresolvedObjective || fulfilsNominatedAnchor;
+            const eventPriorityApplies = !categoryLower.includes('strength') || advancesUnresolvedObjective || fulfilsNominatedAnchor;
             if (matchesEvent && eventPriorityApplies) {
                 const priorityMultiplier = focusEvent.priority === 'A' ? 1.40 : focusEvent.priority === 'B' ? 1.25 : 1.00;
                 benefit *= priorityMultiplier;
@@ -1093,10 +1141,10 @@ export function rankCandidates(
                 if (daysToRace > 21 && template.category === 'Race-Specific Endurance' && !cyclingDurabilityFocusEvent) {
                     benefit *= 0.50;
                 }
-            } else if (!matchesEvent && !isPreferred(template) && !satisfiesUnresolvedObjective && unresolvedObjectives.length > 0) {
+            } else if (!matchesEvent && !isPreferred(template) && !advancesUnresolvedObjective && unresolvedObjectives.length > 0) {
                 benefit *= 0.20;
             }
-        } else if (!satisfiesUnresolvedObjective) {
+        } else if (!advancesUnresolvedObjective) {
             if (isDisliked(template)) {
                 benefit *= 0.20;
             } else if (isDeprioritized(template)) {
@@ -1294,6 +1342,28 @@ export function rankCandidates(
         all.push(item);
     });
 
+    const hasEligiblePreferredTraining = accepted.some(candidate =>
+        isPreferred(candidate.template)
+        && candidate.template.category !== 'Rest'
+        && candidate.template.category !== 'Mobility/Recovery');
+    if (hasEligiblePreferredTraining) {
+        accepted.forEach(candidate => {
+            const template = candidate.template;
+            if (template.category === 'Rest' || template.category === 'Mobility/Recovery'
+                || isPreferred(template) || advancesUnresolvedObjective(template)) return;
+            // An explicit event may require a modality outside the long-term preference list.
+            if (focusEvent && (
+                (focusEvent.category === 'running_race' && template.modality === 'Running')
+                || (focusEvent.category === 'cycling_event' && template.modality === 'Cycling')
+                || (focusEvent.category === 'strength_meet' && template.modality === 'Strength')
+                || (focusEvent.category === 'triathlon' && ['Swimming', 'Cycling', 'Running'].includes(template.modality))
+            )) return;
+            candidate.benefitScore *= UNPREFERRED_MODALITY_MULTIPLIER;
+            candidate.utilityScore *= UNPREFERRED_MODALITY_MULTIPLIER;
+            candidate.rationale += ' (Non-preferred modality deferred while preferred training is feasible.)';
+        });
+    }
+
     const byBenefitDesc = [...accepted].sort((a, b) => b.benefitScore - a.benefitScore);
     const benefitTierByCandidate = new Map<RankedCandidate, number>();
     byBenefitDesc.forEach((c, idx) => {
@@ -1311,6 +1381,11 @@ export function rankCandidates(
         if (recoveryPreferenceDiff !== 0) return recoveryPreferenceDiff;
         const tierDiff = getBenefitTier(a) - getBenefitTier(b);
         if (tierDiff !== 0) return tierDiff;
+        if (honorPreferredToday) {
+            const todayDiff = Number(matchesPreferredModality(preferredToday!, b.template.modality))
+                - Number(matchesPreferredModality(preferredToday!, a.template.modality));
+            if (todayDiff !== 0) return todayDiff;
+        }
         return b.utilityScore - a.utilityScore;
     });
 
@@ -1321,6 +1396,8 @@ export function rankCandidates(
             c.coverageNeedTier === topCandidate.coverageNeedTier &&
             c.recoveryPreferenceTier === topCandidate.recoveryPreferenceTier &&
             getBenefitTier(c) === topBenefitTier &&
+            (!honorPreferredToday || matchesPreferredModality(c.template.modality, preferredToday!)
+                === matchesPreferredModality(topCandidate.template.modality, preferredToday!)) &&
             c.template.category === topCandidate.template.category &&
             (c.template.modality === topCandidate.template.modality ||
              (focusEvent?.category === 'triathlon'
