@@ -1,4 +1,4 @@
-import type { EquipmentKey, SessionTemplate, TrainingSettings, TrainingEnvironment, UserContext } from './models';
+import type { EquipmentKey, GuardrailKey, SessionTemplate, TrainingSettings, TrainingEnvironment, UserContext } from './models';
 import { resolveInjuryRestrictions } from './injuryPolicy';
 import { DEFAULT_MAX_TIME_MINUTES } from './adapters';
 
@@ -50,6 +50,7 @@ export interface GateableSession {
     systemicCost: number;
     /** Optional catalog-only availability fallback family. Imported sessions normally omit it. */
     availabilityFallbackRole?: 'aerobic_endurance';
+    guardrailFallbackRole?: 'shoulder_spinal_strength';
 }
 
 export interface SessionEligibility<T extends GateableSession = SessionTemplate> {
@@ -217,7 +218,19 @@ export function eligibleTemplates<T extends GateableSession>(
     date: string,
 ): T[] {
     const maxMinutes = resolveMaximumSessionMinutes(context, checkinMinutes, date);
+    const injuries = context.trainingSettings?.injuries
+        ?? (context.constraints as { injuries?: import('./models').InjuryConstraint[] })?.injuries
+        ?? (context as { injuries?: import('./models').InjuryConstraint[] })?.injuries
+        ?? [];
+    const impliedGuardrails = resolveInjuryRestrictions(injuries, date).impliedGuardrails;
+    const shoulderSpinalGuardrails: GuardrailKey[] = ['avoid_overhead_pressing', 'avoid_heavy_spinal_loading'];
+    const hasShoulderSpinalGuardrail = shoulderSpinalGuardrails.some(guardrail =>
+        context.constraints.impliedGuardrails?.includes(guardrail)
+        || impliedGuardrails.includes(guardrail)
+        || context.trainingSettings?.guardrails[guardrail]
+        || (context as { guardrails?: Record<string, boolean> }).guardrails?.[guardrail]);
     const feasible = templates
+        .filter(template => template.guardrailFallbackRole !== 'shoulder_spinal_strength' || hasShoulderSpinalGuardrail)
         .filter(template => evaluateTemplateEligibility(template, context, checkinMinutes, date).eligible)
         .map(template => withCapSafeDose(template, maxMinutes));
 

@@ -64,7 +64,7 @@ The catalogue is grounded in the active [Sustained Multidirectional Field Macroc
 - controlled threshold and over-under work;
 - short accelerations and longer gap-closing efforts;
 - outdoor event-specific endurance and peak race simulation;
-- primary full-body and lower-body strength sessions plus compact, reactive-power, upper-body, and cable alternatives;
+- primary full-body and lower-body strength sessions plus compact, reactive-power, upper-body, cable, and low-load trunk-maintenance alternatives;
 - controlled field exposure and optional walk-run;
 - travel aerobic and hotel-gym maintenance sessions;
 - taper sharpening, pre-race openers and race-week strength primer;
@@ -91,7 +91,7 @@ The current technical progressions are deliberately conservative:
 
 Technical templates are not placed in the default green-day hard-session pool. They are selected when the athlete explicitly requests the matching modality, preventing a coordination session from being substituted randomly for a primary endurance or strength objective.
 
-Field Maintenance is available through the intent-aware optimizer but is deliberately not in the readiness-only green-day pool. Its catalogue spacing rule (two days after hard lower-body work) cannot be represented by that path's template filter, so this avoids suggesting high-impact field work without its required spacing check.
+Field Maintenance and the automatic Field technical/Sprint Mechanics templates declare `requiresExplicitModalityPreference`, so the intent-aware optimizer admits them only when the athlete explicitly prefers Field; this is specialized catalog opt-in metadata rather than a generic safety restriction, and these sessions are not fallbacks for other training preferences or members of the readiness-only green-day pool. Field Maintenance's catalogue spacing rule (two days after hard lower-body work) cannot be represented by that path's template filter, so this avoids suggesting high-impact field work without its required spacing check.
 
 ## Generic session families
 

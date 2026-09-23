@@ -23,7 +23,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Sprint Mechanics Foundation",
         description: "Low-volume posture, projection and acceleration mechanics with full recovery between repetitions.",
         requiredEquipment: [],
-        environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'],
+        environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'], requiresExplicitModalityPreference: true,
         systemicCost: 0.45,
         objectiveTransferable: false
     },
@@ -36,7 +36,7 @@ export const TEMPLATES: SessionTemplate[] = [
         title: "Acceleration & Braking Skill",
         description: "Quality-controlled acceleration and braking practice for athletes already tolerating sprint mechanics.",
         requiredEquipment: [],
-        environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'],
+        environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'], requiresExplicitModalityPreference: true,
         systemicCost: 0.6,
         objectiveTransferable: false
     },
@@ -415,7 +415,7 @@ export const TEMPLATES: SessionTemplate[] = [
         id: 'field_maint_01', category: 'Field Maintenance', modality: 'Field',
         durationMin: 25, durationMax: 50, title: 'Controlled Field & Football Maintenance',
         description: 'Controlled acceleration, braking, cutting, and ball skill for athletes already tolerating field mechanics.',
-        requiredEquipment: [], environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'], systemicCost: 0.6, objectiveTransferable: false,
+        requiredEquipment: [], environment: 'outdoor', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'], requiresExplicitModalityPreference: true, systemicCost: 0.6, objectiveTransferable: false,
         stimulusProfile: { aerobicEndurance: 0.4, thresholdPower: 0.2, vo2MaxPower: 0.5, repeatedSurges: 0.7, sprintPower: 0.4, fatigueResistance: 0.3, maxStrength: 0.1, hypertrophy: 0 },
         costProfile: { systemic: 0.6, cardiovascular: 0.5, lowerBody: 0.7, upperBody: 0.05, impactTissue: 0.8, neuromuscular: 0.8 }
     },
@@ -474,6 +474,28 @@ export const TEMPLATES: SessionTemplate[] = [
             doseRatio: 1.25,
             prescriptionSummary: "Full 3 sets maintenance dose with compound lifts."
         }
+    },
+    {
+        id: 'str_low_load_maint_01',
+        category: 'Full-body Strength',
+        modality: 'Strength',
+        durationMin: 25,
+        durationMax: 35,
+        title: 'Low-load Strength and Trunk Maintenance',
+        description: 'Supported sit-to-stands, glute bridges, and dead-bug trunk stability. Keep loads light and avoid overhead pressing and spinal compression.',
+        requiredEquipment: [],
+        environment: 'either', safetyTags: ['avoid_heavy_lower_body'], guardrailFallbackRole: 'shoulder_spinal_strength',
+        systemicCost: 0.3,
+        objectiveTransferable: false,
+        stimulusProfile: { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0.1, maxStrength: 0.45, hypertrophy: 0.35 },
+        costProfile: { systemic: 0.3, cardiovascular: 0.1, lowerBody: 0.25, upperBody: 0.05, impactTissue: 0.05, neuromuscular: 0.25 },
+        easierDose: {
+            label: 'Brief low-load maintenance (20 min)',
+            durationMin: 20,
+            durationMax: 25,
+            doseRatio: 0.7,
+            prescriptionSummary: 'One or two controlled sets of supported lower-body and trunk stability work.',
+        },
     },
     {
         id: "str_full_02",
