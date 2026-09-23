@@ -96,6 +96,7 @@ env:
   REGION: ${{ inputs.region }}
   JOB_SA_EMAIL: garmin-sync-job@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
   LINK_SA_EMAIL: garmin-account-link@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+  GOOGLE_HEALTH_LINK_SA_EMAIL: google-health-account-link@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
   ANTHROPOMETRY_WRITE_SA_EMAIL: anthropometry-write-api@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
   SCHEDULER_SA_EMAIL: garmin-scheduler-invoker@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
   TOKEN_BUCKET: ${{ secrets.GCP_PROJECT_ID }}-garmin-tokens
@@ -218,7 +219,7 @@ jobs:
           EOF
           gcloud run deploy google-health-account-link \
             --image="${IMAGE_TAG}" --region="${REGION}" \
-            --service-account="${JOB_SA_EMAIL}" \
+            --service-account="${GOOGLE_HEALTH_LINK_SA_EMAIL}" \
             --env-vars-file=cloud-run-google-health.env.yaml \
             --command=python --args=-m,garmin_sync.google_health_account_link_api \
             --port=8080 --timeout=300 --concurrency=80 \

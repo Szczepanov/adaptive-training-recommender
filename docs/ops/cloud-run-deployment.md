@@ -62,8 +62,9 @@ gcloud services enable run.googleapis.com cloudscheduler.googleapis.com \
 
 A private GCS bucket holds the Garmin OAuth token JSON (`GARMIN_TOKEN_STORE=gcs`
 keeps Cloud Run stateless -- no local disk between runs). Separate identities are used
-for the scheduled Job, public account-link service, and Cloud Scheduler (least privilege --
-the scheduler identity never touches Firestore or GCS directly).
+for the scheduled Job, Garmin account-link service, Google Health account-link service,
+and Cloud Scheduler (least privilege -- the scheduler identity never touches Firestore or
+GCS directly).
 
 ```bash
 gcloud storage buckets create gs://${GCP_PROJECT}-garmin-tokens \
@@ -75,11 +76,14 @@ gcloud iam service-accounts create garmin-sync-job \
   --display-name="Garmin sync Cloud Run Job runtime identity"
 gcloud iam service-accounts create garmin-account-link \
   --display-name="Garmin account-link Cloud Run service identity"
+gcloud iam service-accounts create google-health-account-link \
+  --display-name="Google Health account-link Cloud Run service identity"
 ```
 
 ```bash
 export JOB_SA_EMAIL="garmin-sync-job@${GCP_PROJECT}.iam.gserviceaccount.com"
 export LINK_SA_EMAIL="garmin-account-link@${GCP_PROJECT}.iam.gserviceaccount.com"
+export GOOGLE_HEALTH_LINK_SA_EMAIL="google-health-account-link@${GCP_PROJECT}.iam.gserviceaccount.com"
 
 gcloud projects add-iam-policy-binding ${GCP_PROJECT} \
   --member="serviceAccount:${JOB_SA_EMAIL}" --role="roles/datastore.user"
@@ -90,6 +94,10 @@ gcloud projects add-iam-policy-binding ${GCP_PROJECT} \
   --member="serviceAccount:${LINK_SA_EMAIL}" --role="roles/datastore.user"
 gcloud storage buckets add-iam-policy-binding gs://${GCP_PROJECT}-garmin-tokens \
   --member="serviceAccount:${LINK_SA_EMAIL}" --role="roles/storage.objectAdmin"
+gcloud projects add-iam-policy-binding ${GCP_PROJECT} \
+  --member="serviceAccount:${GOOGLE_HEALTH_LINK_SA_EMAIL}" --role="roles/datastore.user"
+gcloud storage buckets add-iam-policy-binding gs://${GCP_PROJECT}-garmin-tokens \
+  --member="serviceAccount:${GOOGLE_HEALTH_LINK_SA_EMAIL}" --role="roles/storage.objectAdmin"
 ```
 
 The public Garmin account-link endpoint uses Firestore transactions for login
@@ -122,6 +130,24 @@ gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
 gcloud iam service-accounts add-iam-policy-binding "${LINK_SA_EMAIL}" \
   --member="serviceAccount:${LINK_SA_EMAIL}" \
   --role="roles/iam.serviceAccountTokenCreator"
+```
+
+The Google Health account-link service runs as `GOOGLE_HEALTH_LINK_SA_EMAIL`, separate from
+the scheduled sync Job. It only verifies Firebase ID tokens, so grant it the custom
+`firebaseauth.users.get` role. The setup script creates the role and binding; for manual
+provisioning, create the role if needed and add the binding:
+
+```bash
+export AUTH_TOKEN_VERIFIER_ROLE_ID="anthropometryTokenVerifier"
+export AUTH_TOKEN_VERIFIER_ROLE="projects/${GCP_PROJECT}/roles/${AUTH_TOKEN_VERIFIER_ROLE_ID}"
+if ! gcloud iam roles describe "${AUTH_TOKEN_VERIFIER_ROLE_ID}" --project="${GCP_PROJECT}" >/dev/null 2>&1; then
+  gcloud iam roles create "${AUTH_TOKEN_VERIFIER_ROLE_ID}" --project="${GCP_PROJECT}" \
+    --title="Firebase Token Verifier" \
+    --description="Read Firebase Auth users solely to enforce revoked-token checks" \
+    --permissions="firebaseauth.users.get" --stage="GA"
+fi
+gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
+  --member="serviceAccount:${GOOGLE_HEALTH_LINK_SA_EMAIL}" --role="${AUTH_TOKEN_VERIFIER_ROLE}"
 ```
 
 Provision the HMAC key in Secret Manager once, and grant secret access only to the

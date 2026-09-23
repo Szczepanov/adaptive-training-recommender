@@ -3,7 +3,10 @@ from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
-from garminconnect import GarminConnectTooManyRequestsError
+from garminconnect import (
+    GarminConnectAuthenticationError,
+    GarminConnectTooManyRequestsError,
+)
 
 from garmin_sync.canonical import (
     CanonicalActivity,
@@ -926,20 +929,21 @@ def test_initial_backfill_recent_then_history_resumes_from_persisted_cursor(monk
     ]
 
 
-def test_initial_backfill_failure_keeps_first_unfinished_date(monkeypatch):
+def test_initial_backfill_failure_keeps_first_unfinished_date(monkeypatch, caplog):
     class FailingProvider(FakeTestProvider):
         fail_date = "2026-08-07"
 
         def fetch_daily_metrics(self, target_date_iso, yesterday_iso):
             if target_date_iso == self.fail_date:
                 self.fetch_daily_metrics_calls.append((target_date_iso, yesterday_iso))
-                raise RuntimeError("unavailable")
+                raise RuntimeError("password=private-provider-secret")
             return super().fetch_daily_metrics(target_date_iso, yesterday_iso)
 
     provider = FailingProvider()
     service, doc = _initial_backfill_service(monkeypatch, provider)
     assert service.poll_manual_sync_requests() is True  # recent bootstrap
     assert service.poll_manual_sync_requests() is False  # history: 6 succeeds, 7 fails
+    assert "private-provider-secret" not in caplog.text
     assert doc.data["status"] == "pending"
     assert doc.data["backfillNextDate"] == "2026-08-07"
     provider.fail_date = ""
@@ -1025,6 +1029,79 @@ def test_initial_backfill_nutrition_429_does_not_persist_or_advance_date(monkeyp
     assert doc.data["backfillNextDate"] == "2026-08-06"
     assert provider.nutrition_calls == 3
     assert service.repository.upsert_snapshot.call_count == 2
+
+
+def test_initial_backfill_authentication_failure_is_terminal_and_sanitized(monkeypatch):
+    service, doc = _initial_backfill_service(monkeypatch, FakeTestProvider())
+    service.backfill = MagicMock(
+        side_effect=GarminConnectAuthenticationError("private token details")
+    )
+
+    assert service.poll_manual_sync_requests() is False
+    assert service.backfill.call_count == 1
+    assert doc.data["status"] == "failed"
+    assert doc.data["error"] == (
+        "Garmin re-authentication required. Relink the account and request a new sync."
+    )
+    assert "private token details" not in doc.data["error"]
+
+
+def test_initial_backfill_daily_authentication_error_is_not_swallowed(monkeypatch):
+    class AuthenticationFailureProvider(FakeTestProvider):
+        def fetch_daily_metrics(self, target_date_iso, yesterday_iso):
+            raise GarminConnectAuthenticationError("revoked token")
+
+    service, doc = _initial_backfill_service(monkeypatch, AuthenticationFailureProvider())
+
+    assert service.poll_manual_sync_requests() is False
+    assert doc.data["status"] == "failed"
+    assert doc.data["error"] == (
+        "Garmin re-authentication required. Relink the account and request a new sync."
+    )
+    assert "backfillAttempts" not in doc.data
+
+
+@pytest.mark.parametrize("failure_mode", ["exception", "not_ok"])
+def test_initial_backfill_repeated_failures_at_same_cursor_become_terminal(
+    monkeypatch, caplog, failure_mode
+):
+    service, doc = _initial_backfill_service(monkeypatch, FakeTestProvider())
+    if failure_mode == "exception":
+        service.backfill = MagicMock(side_effect=RuntimeError("password=private-token-details"))
+    else:
+        service.backfill = MagicMock(return_value=False)
+
+    for attempt in range(1, 6):
+        if attempt > 1:
+            doc.data["retryAt"] = "2026-01-01T00:00:00+00:00"
+        assert service.poll_manual_sync_requests() is False
+        assert doc.data["backfillAttempts"] == attempt
+        if attempt < 5:
+            assert doc.data["status"] == "pending"
+        else:
+            assert doc.data["status"] == "failed"
+            assert doc.data["retryAt"] is None
+            assert doc.data["error"] == (
+                "Backfill stopped after repeated failures at the same date."
+            )
+    if failure_mode == "exception":
+        assert "private-token-details" not in caplog.text
+
+
+def test_initial_backfill_checkpoint_resets_failure_count_for_new_cursor(monkeypatch):
+    service, doc = _initial_backfill_service(monkeypatch, FakeTestProvider())
+    doc.data["backfillAttempts"] = 4
+
+    def checkpoint_then_fail(**kwargs):
+        kwargs["on_date_complete"](datetime.fromisoformat("2026-08-09").date())
+        return False
+
+    service.backfill = MagicMock(side_effect=checkpoint_then_fail)
+
+    assert service.poll_manual_sync_requests() is False
+    assert doc.data["backfillNextDate"] == "2026-08-10"
+    assert doc.data["backfillAttempts"] == 1
+    assert doc.data["status"] == "pending"
 
 
 def test_initial_backfill_progress_rejects_stale_claim(monkeypatch):

@@ -20,6 +20,7 @@ FRONTEND_DEPLOYER_SA_NAME="github-frontend-deployer"
 FRONTEND_DEPLOYER_SA_EMAIL="${FRONTEND_DEPLOYER_SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com"
 JOB_SA_EMAIL="garmin-sync-job@${GCP_PROJECT}.iam.gserviceaccount.com"
 LINK_SA_EMAIL="garmin-account-link@${GCP_PROJECT}.iam.gserviceaccount.com"
+GOOGLE_HEALTH_LINK_SA_EMAIL="google-health-account-link@${GCP_PROJECT}.iam.gserviceaccount.com"
 ANTHROPOMETRY_WRITE_SA_EMAIL="anthropometry-write-api@${GCP_PROJECT}.iam.gserviceaccount.com"
 SCHEDULER_SA_EMAIL="garmin-scheduler-invoker@${GCP_PROJECT}.iam.gserviceaccount.com"
 TOKEN_BUCKET="${GCP_PROJECT}-garmin-tokens"
@@ -77,6 +78,10 @@ if ! gcloud iam service-accounts describe "${LINK_SA_EMAIL}" >/dev/null 2>&1; th
   gcloud iam service-accounts create garmin-account-link \
     --display-name="Garmin account-link Cloud Run service identity"
 fi
+if ! gcloud iam service-accounts describe "${GOOGLE_HEALTH_LINK_SA_EMAIL}" >/dev/null 2>&1; then
+  gcloud iam service-accounts create google-health-account-link \
+    --display-name="Google Health account-link Cloud Run service identity"
+fi
 if ! gcloud iam service-accounts describe "${ANTHROPOMETRY_WRITE_SA_EMAIL}" >/dev/null 2>&1; then
   gcloud iam service-accounts create anthropometry-write-api \
     --display-name="Anthropometry write API Cloud Run runtime identity"
@@ -86,7 +91,8 @@ if ! gcloud iam service-accounts describe "${SCHEDULER_SA_EMAIL}" >/dev/null 2>&
     --display-name="Cloud Scheduler -> Cloud Run Jobs invoker"
 fi
 
-# Scheduled Garmin work and public account linking use separate bounded identities.
+# Scheduled Garmin work, Garmin account linking and Google Health account linking use
+# separate bounded identities.
 # Firestore stores server-only link/throttle metadata plus normal user-scoped training data.
 echo "==> Granting runtime Firestore access"
 gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
@@ -94,6 +100,9 @@ gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
   --condition=None >/dev/null
 gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
   --member="serviceAccount:${LINK_SA_EMAIL}" --role="roles/datastore.user" \
+  --condition=None >/dev/null
+gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
+  --member="serviceAccount:${GOOGLE_HEALTH_LINK_SA_EMAIL}" --role="roles/datastore.user" \
   --condition=None >/dev/null
 gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
   --member="serviceAccount:${ANTHROPOMETRY_WRITE_SA_EMAIL}" --role="roles/datastore.user" \
@@ -124,19 +133,19 @@ gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
   --condition=None >/dev/null
 
 # verify_id_token(..., check_revoked=True) resolves the Firebase Auth user record. The
-# anthropometry API needs only that read, never account create/delete or Auth configuration.
+# account-link services and anthropometry API need only that read, never account management.
 echo "==> Creating/updating least-privilege Firebase token verifier role"
 if gcloud iam roles describe "${AUTH_TOKEN_VERIFIER_ROLE_ID}" --project="${GCP_PROJECT}" >/dev/null 2>&1; then
   gcloud iam roles update "${AUTH_TOKEN_VERIFIER_ROLE_ID}" \
     --project="${GCP_PROJECT}" \
-    --title="Anthropometry Firebase Token Verifier" \
+    --title="Firebase Token Verifier" \
     --description="Read Firebase Auth users solely to enforce revoked-token checks" \
     --permissions="firebaseauth.users.get" \
     --stage="GA" --quiet >/dev/null
 else
   gcloud iam roles create "${AUTH_TOKEN_VERIFIER_ROLE_ID}" \
     --project="${GCP_PROJECT}" \
-    --title="Anthropometry Firebase Token Verifier" \
+    --title="Firebase Token Verifier" \
     --description="Read Firebase Auth users solely to enforce revoked-token checks" \
     --permissions="firebaseauth.users.get" \
     --stage="GA" --quiet >/dev/null
@@ -144,6 +153,12 @@ fi
 
 gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
   --member="serviceAccount:${ANTHROPOMETRY_WRITE_SA_EMAIL}" --role="${AUTH_TOKEN_VERIFIER_ROLE}" \
+  --condition=None >/dev/null
+gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
+  --member="serviceAccount:${LINK_SA_EMAIL}" --role="${AUTH_TOKEN_VERIFIER_ROLE}" \
+  --condition=None >/dev/null
+gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
+  --member="serviceAccount:${GOOGLE_HEALTH_LINK_SA_EMAIL}" --role="${AUTH_TOKEN_VERIFIER_ROLE}" \
   --condition=None >/dev/null
 
 # Firebase Admin custom tokens are signed through IAM when running with ADC on Cloud Run.
@@ -163,6 +178,8 @@ gcloud storage buckets add-iam-policy-binding "gs://${TOKEN_BUCKET}" \
   --member="serviceAccount:${JOB_SA_EMAIL}" --role="roles/storage.objectAdmin" >/dev/null
 gcloud storage buckets add-iam-policy-binding "gs://${TOKEN_BUCKET}" \
   --member="serviceAccount:${LINK_SA_EMAIL}" --role="roles/storage.objectAdmin" >/dev/null
+gcloud storage buckets add-iam-policy-binding "gs://${TOKEN_BUCKET}" \
+  --member="serviceAccount:${GOOGLE_HEALTH_LINK_SA_EMAIL}" --role="roles/storage.objectAdmin" >/dev/null
 
 echo "==> Provisioning Garmin account-link rate-limit secret"
 if ! gcloud secrets describe "${RATE_LIMIT_SECRET}" >/dev/null 2>&1; then
@@ -213,6 +230,10 @@ gcloud iam service-accounts add-iam-policy-binding "${JOB_SA_EMAIL}" \
   --role="roles/iam.serviceAccountUser" >/dev/null
 
 gcloud iam service-accounts add-iam-policy-binding "${LINK_SA_EMAIL}" \
+  --member="serviceAccount:${DEPLOYER_SA_EMAIL}" \
+  --role="roles/iam.serviceAccountUser" >/dev/null
+
+gcloud iam service-accounts add-iam-policy-binding "${GOOGLE_HEALTH_LINK_SA_EMAIL}" \
   --member="serviceAccount:${DEPLOYER_SA_EMAIL}" \
   --role="roles/iam.serviceAccountUser" >/dev/null
 
