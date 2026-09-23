@@ -56,8 +56,8 @@ policy-alignment test (ADR-0033). Do not add one silently.
   flow-specific architecture document. Do not treat dated UX audits or an `Implemented`
   plan as the current standard.
 - See [`AGENTS.md` § Reading the documentation](./AGENTS.md#reading-the-documentation) for
-  which `docs/` directory is authoritative for what. **Code wins, then `architecture/`,
-  then `adr/`.**
+  which `docs/` directory is authoritative for what. **For current behaviour, code wins,
+  then `architecture/`, then `adr/`; `standards/` defines the normative quality bar.**
 
 **While writing code**
 - Keep evaluators pure — no Firestore, no `fetch`, no `Date.now()` inside a decision path.

@@ -46,7 +46,11 @@ Apple's 44 x 44 point mobile hit-target guidance:
 - [Apple Human Interface Guidelines — Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)
 - [Apple UI Design Dos and Don'ts](https://developer.apple.com/design/tips/)
 
-The visible glyph may be smaller than 44 px. The **interactive hit area** may not be.
+The visible glyph may be smaller than 44 px. The **interactive hit area** for standalone
+controls (buttons, icon controls, chips, tabs, steppers, checkboxes, radios, and form fields)
+may not be. Inline text links inside flowing prose are a built-in exception (consistent with
+WCAG 2.2 SC 2.5.8's inline exception), provided they keep clear link affordance and do not
+crowd adjacent interactive controls.
 
 ### 1.3 Usability evaluation framework
 
@@ -263,8 +267,8 @@ statement.
 
 For every material user-facing change, reviewers should be able to answer:
 
-> **If this behaves exactly as designed, what is the athlete likely to feel at this moment,
-> and is that emotional effect appropriate to the task and evidence?**
+> **If this behaves exactly as designed, how is the athlete likely to feel at this point in
+> the flow, and is that emotional effect appropriate to the task and evidence?**
 
 If the likely effect is pressure, guilt, confusion, alarm, helplessness, or false certainty,
 the design needs a deliberate justification or revision.
@@ -307,10 +311,12 @@ Appearance is Level AAA.
 
 ### 3.3 Pointer and touch
 
-- Default mobile hit area: >=44 x 44 CSS px.
+- Default mobile hit area: >=44 x 44 CSS px (exceeding WCAG 2.2 SC 2.5.8).
 - Keep sufficient spacing between adjacent controls.
-- Do not make precision gestures the only way to perform an important action.
-- If drag-and-drop is introduced, provide a non-dragging alternative.
+- Do not make precision gestures the only way to perform an important action (WCAG 2.2
+  SC 2.5.1).
+- If drag-and-drop is introduced, provide a single-pointer non-dragging alternative (WCAG 2.2
+  SC 2.5.7).
 - Avoid tiny icon-only destructive actions; use a large hit area and a specific accessible
   name.
 
@@ -318,18 +324,19 @@ Appearance is Level AAA.
 
 At minimum, meet WCAG 2.2 AA contrast requirements:
 
-- normal text: 4.5:1;
-- large text: 3:1;
-- meaningful non-text UI boundaries/indicators: 3:1 where WCAG requires it.
+- normal text: 4.5:1 (WCAG 2.2 SC 1.4.3);
+- large text: 3:1 (WCAG 2.2 SC 1.4.3);
+- meaningful non-text UI boundaries/indicators: 3:1 where WCAG requires it (WCAG 2.2
+  SC 1.4.11).
 
 Do not encode training mode, warning severity, completion, validation, or sync state by color
-alone. Pair color with text, shape, iconography, or another redundant cue.
+alone (WCAG 2.2 SC 1.4.1). Pair color with text, shape, iconography, or another redundant cue.
 
 ### 3.5 Text, zoom, and reflow
 
-- Text must remain usable at 200% zoom.
+- Text must remain usable at 200% zoom (WCAG 2.2 SC 1.4.4).
 - Layout should reflow without page-level horizontal scrolling at a 320 CSS-pixel viewport,
-  except for content that genuinely requires two-dimensional presentation.
+  except for content that genuinely requires two-dimensional presentation (WCAG 2.2 SC 1.4.10).
 - Long athlete-entered names, workout titles, units, dates, and localized strings must wrap
   or truncate deliberately without hiding essential meaning.
 - Do not disable browser zoom.
@@ -346,16 +353,17 @@ sound, or color alone.
 
 ### 3.7 Forms and validation
 
-- Keep labels visible.
+- Keep labels visible (WCAG 2.2 SC 3.3.2).
 - Identify required input before submission where practical.
-- Put validation near the affected field and also expose it programmatically.
+- Put validation near the affected field and also expose it programmatically (WCAG 2.2
+  SC 3.3.1, SC 3.3.3).
 - Error copy says what happened and how to recover, in athlete-facing language.
 - Preserve valid user input when another field fails.
 - Use appropriate `type`, `inputmode`, `autocomplete`, min/max and step constraints.
 - Do not block password-manager paste or other accessibility-supporting authentication
-  mechanisms.
+  mechanisms (WCAG 2.2 SC 3.3.8).
 - Do not make users re-enter information already supplied in the same process when it can
-  safely be reused.
+  safely be reused (WCAG 2.2 SC 3.3.7).
 
 ## 4. Responsive and mobile interaction standard
 
@@ -551,7 +559,7 @@ Visual consistency is not a reason to force desktop composition onto mobile.
 
 UI quality uses several layers because none is sufficient alone.
 
-### 9.1 Component/unit tests
+### 9.1 Component/unit tests (`cd app && npm test`)
 
 Use for:
 
@@ -563,10 +571,14 @@ Use for:
 - semantic attributes;
 - error/success states.
 
-### 9.2 Visual regression
+### 9.2 Visual regression (`cd app && npm run visual:refresh` / `npx playwright test`)
 
-Use the existing Playwright visual harness for representative states at 360/390/412 px and
-desktop.
+Use the existing Playwright visual harness (`app/playwright.config.ts`) for representative
+states across `visual-mobile-narrow` (360 px), `visual-mobile` (390 px), `visual-mobile-wide`
+(412 px), and `visual-desktop` (1440 px). `npm run visual:refresh` runs `visual-desktop` and
+`visual-mobile` (390 px) and finalizes the review bundle. `npx playwright test` can capture
+the narrow and wide projects, but is an ad hoc capture: it does not prepare or finalize the
+review bundle, so its manifest and contact sheet may be missing or stale.
 
 At minimum, relevant UI changes should verify:
 
@@ -576,9 +588,10 @@ At minimum, relevant UI changes should verify:
 - long text and non-happy-path states render;
 - mobile and desktop composition both remain intentional.
 
-### 9.3 Browser E2E
+### 9.3 Browser E2E (`cd app && npm run test:e2e`)
 
-Use E2E for behavior screenshots cannot prove:
+Use the emulator-backed Playwright E2E suite (`app/playwright.e2e.config.ts`) for behavior
+screenshots cannot prove:
 
 - complete critical workflows;
 - focus movement;
@@ -644,6 +657,8 @@ This standard consolidates durable rules that were previously scattered across:
   evidence;
 - `docs/architecture/morning-decision-ux.md` — current contracts for the morning decision
   surface;
+- `docs/architecture/session-execution.md` — current contracts for active-workout execution,
+  warm-up/set logging, advisory rest timers, and custom-template completion/save modals;
 - `docs/architecture/user-flows.md` — current navigation and flow behavior;
 - design tokens and responsive conventions in `app/src/index.css` and component styles.
 

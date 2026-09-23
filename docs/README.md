@@ -24,10 +24,10 @@ this repository so far — a fixed defect was re-reported three times because an
 `architecture/`, then `adr/`, then everything else.** `standards/` is different: it is
 normative rather than descriptive. If current code violates a standard, the code still
 describes today's behaviour, but the mismatch is product/engineering debt to fix or document
-as an explicit exception. If you find a disagreement, do not silently pick one — record it
-in the current review document
-([`analysis/2026-08-08-architecture-review.md`](./analysis/2026-08-08-architecture-review.md))
-or fix the doc, and say which you did.
+as an explicit exception (`docs/standards/ui-ux.md` § 10). If you find a disagreement, do
+not silently pick one — fix the stale document, document an explicit standard exception, or
+record the divergence in a new dated `analysis/` review or tracked plan/issue in
+[`plans/README.md`](./plans/README.md), and say which you did.
 
 Two conventions apply to every document here, both added after being violated (see
 [`plans/README.md` § Conventions](./plans/README.md#conventions-that-exist-because-they-were-violated)):
