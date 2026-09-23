@@ -625,8 +625,9 @@ distinction, since taste must never masquerade as injury/safety authority
 ([ADR-0007](../adr/0007-adaptive-multisport-engine-architecture.md) §6).
 
 Path B also demotes a non-preferred training candidate when at least one preferred training
-candidate passes the same hard gates, unless the candidate satisfies an unresolved weekly
-objective. Rest and Mobility/Recovery remain available.
+candidate passes the same hard gates, unless the candidate strictly advances an unresolved
+weekly objective (its qualification passes and it contributes positive stimulus on a positive
+target axis). Rest and Mobility/Recovery remain available.
 Specialized automatic catalog content may separately declare
 `requiresExplicitModalityPreference`; that is a catalog-admission opt-in, not a safety
 restriction or a general permission system for ordinary modalities. Current Field
@@ -643,7 +644,7 @@ Automatic Path B catalog selection excludes a second strength session on the cal
 immediately after any strength exposure, including upper-body/full-body combinations. This
 extra adjacent-day rule is scoped to automatic catalog ranking; it does not change the
 canonical performed-training spacing policy used by other consumers. A low-load full-body
-maintenance template remains available under shoulder-overhead and heavy-axial guardrails;
+maintenance template remains available under shoulder-overhead and heavy-spinal-loading guardrails;
 its low cost and absence of those safety tags do not override other active injury tags,
 equipment, time, readiness or dose gates.
 
