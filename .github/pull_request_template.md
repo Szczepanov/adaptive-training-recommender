@@ -19,7 +19,7 @@ Results:
 - Manual check: scenario and observed result
 -->
 
-- [ ] `uv run pytest` (backend changes)
+- [ ] `make verify` (canonical handoff/PR gate; if blocked, explain exactly which step and why)\n- [ ] `uv run pytest` (backend changes; optional to list separately when already covered by `make verify`)
 - [ ] `uv run ruff check .` and `uv run mypy` (backend changes)
 - [ ] `cd app && npm run check` (frontend changes)
 - [ ] `cd app && npm run test:rules` (Firestore rules changes)

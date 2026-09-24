@@ -58,6 +58,7 @@ Two conventions apply to every document here, both added after being violated (s
 ### ✅ Standards
 
 * [**UI/UX and accessibility standard**](./standards/ui-ux.md) — normative living quality bar for accessibility, mobile ergonomics, responsive behavior, navigation, interaction states, content clarity, trust, and UI verification.
+* [**Agent tooling standard**](./standards/agent-tooling.md) — Context7 routing/version discipline, the canonical `make verify` handoff contract, and coding-agent evaluation policy.
 
 ### 🏛️ Architecture Decision Records (ADRs)
 Architectural choices, system invariants, and technical trade-offs are documented as ADRs in [`docs/adr/`](./adr/):

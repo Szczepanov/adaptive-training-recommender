@@ -1,0 +1,260 @@
+{
+  "schema_version": 1,
+  "suite": "adaptive-training-recommender-coding-agents",
+  "cases": [
+    {
+      "id": "constructor-signature-cross-boundary",
+      "kind": "regression",
+      "source": {
+        "type": "pr",
+        "ref": "#791"
+      },
+      "start_ref": "a89be6a7b5a9ea75c1f493d0e09bf32d5e27a268",
+      "prompt": "A recent GarminClientWrapper constructor refactor may have left callers outside src/garmin_sync stale while CI remained green. Find the full impact, fix the defect and the verification gap that allowed it, strengthen tests where appropriate, and update agent/docs commands that would accidentally narrow the corrected typecheck scope. Do not change runtime behavior beyond restoring compatibility.",
+      "success_criteria": [
+        "All stale constructor call sites are repaired.",
+        "Static typing covers the relevant scripts instead of only src/garmin_sync.",
+        "The permissive test stub no longer hides constructor-signature drift.",
+        "Repository instructions use the canonical typecheck scope rather than narrowing it."
+      ],
+      "grader": {
+        "commands": [
+          "uv run mypy",
+          "uv run pytest",
+          "uv run ruff check .",
+          "uv run ruff format --check ."
+        ],
+        "forbidden_modified_globs": [
+          "app/src/engine/**"
+        ]
+      },
+      "tool_expectations": [
+        {
+          "capability": "semantic_navigation",
+          "expectation": "recommended",
+          "reason": "Cross-directory callers and constructor references should be discovered systematically."
+        },
+        {
+          "capability": "context7",
+          "expectation": "not_expected",
+          "reason": "This is repository-internal signature drift; external documentation is unnecessary."
+        }
+      ]
+    },
+    {
+      "id": "allocation-incumbent-survival",
+      "kind": "regression",
+      "source": {
+        "type": "pr",
+        "ref": "#761"
+      },
+      "start_ref": "4b47854a493733fe80b1c96d70e75c8c6817be4f",
+      "prompt": "Investigate the planner regression where fresh positive subjective readiness combined with severely suppressed wearable recovery can produce more passive rest than the neutral-readiness comparison. Preserve fail-closed allocation safety, identify the actual ordering/viability defect, add a deterministic regression invariant, and update architecture/analysis only where current behavior changes.",
+      "success_criteria": [
+        "The planner proves incumbent survival before rejecting a candidate for unresolved allocation budget.",
+        "Fail-closed behavior remains intact when incumbent survival cannot be proven.",
+        "A deterministic regression test/corpus invariant covers the reported readiness comparison.",
+        "Policy/version and documentation rules are handled consistently with repository conventions."
+      ],
+      "grader": {
+        "commands": [
+          "npm --prefix app run check",
+          "npm --prefix app run simulate:plan-judge",
+          "npm --prefix app run simulate:scenarios"
+        ],
+        "forbidden_modified_globs": [
+          "src/garmin_sync/**"
+        ]
+      },
+      "tool_expectations": [
+        {
+          "capability": "semantic_navigation",
+          "expectation": "recommended",
+          "reason": "Planner, allocation and test/corpus wiring span multiple modules."
+        },
+        {
+          "capability": "context7",
+          "expectation": "not_expected",
+          "reason": "The defect is internal planner logic governed by repo ADRs/tests."
+        }
+      ]
+    },
+    {
+      "id": "cycling-time-cap-specificity",
+      "kind": "regression",
+      "source": {
+        "type": "pr",
+        "ref": "#764"
+      },
+      "start_ref": "aed0de3f3a0e0cf2fa385081fb4a461f487e4f83",
+      "prompt": "A cycling-focused athlete with a 35-minute cap is being shifted toward walking because capped easy-endurance prescriptions lose weekly aerobic-volume credit. Diagnose the interaction among time-cap dose adjustment, coverage credit and week-ahead ranking; fix it without weakening modify-tier recovery behavior; maintain knowledge-lineage ownership and add deterministic evidence.",
+      "success_criteria": [
+        "Train-tier easy-endurance work can preserve cycling specificity when the authored minimum fits the cap.",
+        "Modify-tier easier-dose behavior is not unintentionally widened.",
+        "Knowledge claims/coverage/alignment remain synchronized for any decision-authority change.",
+        "Simulation/persona evidence demonstrates the intended capped-cycling behavior."
+      ],
+      "grader": {
+        "commands": [
+          "npm --prefix app run check",
+          "npm --prefix app run simulate:scenarios",
+          "npm --prefix app run simulate:plan-judge"
+        ],
+        "forbidden_modified_globs": [
+          "src/garmin_sync/**"
+        ]
+      },
+      "tool_expectations": [
+        {
+          "capability": "semantic_navigation",
+          "expectation": "recommended",
+          "reason": "The change crosses optimizer, eligibility, coverage, planner and knowledge alignment."
+        },
+        {
+          "capability": "context7",
+          "expectation": "not_expected",
+          "reason": "External package behavior is not part of the defect."
+        }
+      ]
+    },
+    {
+      "id": "firestore-targeted-prior-revision-query",
+      "kind": "capability",
+      "source": {
+        "type": "pr",
+        "ref": "#790"
+      },
+      "start_ref": "77887528235cf8446e23495b466edc4d1a6e0d7e",
+      "prompt": "Optimize external-plan occurrence prior-revision lookup so it does not fetch and parse every occurrence for the date. Preserve the existing identity/state semantics and tests. If you need Firestore query/operator behavior that is not already established by local code/tests, verify it against documentation for the installed Firebase SDK before implementation.",
+      "success_criteria": [
+        "Prior-revision lookup uses a targeted query rather than all same-day occurrences.",
+        "Existing scheduled-state and external plan/session identity semantics are preserved.",
+        "Tests cover the targeted lookup behavior."
+      ],
+      "grader": {
+        "commands": [
+          "npm --prefix app run check"
+        ],
+        "forbidden_modified_globs": [
+          "src/garmin_sync/**"
+        ]
+      },
+      "tool_expectations": [
+        {
+          "capability": "context7",
+          "expectation": "recommended",
+          "reason": "Use current Firebase docs if query/operator syntax is not already proven locally."
+        },
+        {
+          "capability": "semantic_navigation",
+          "expectation": "recommended",
+          "reason": "Find the service symbol and its callers/tests before editing."
+        }
+      ]
+    },
+    {
+      "id": "external-library-version-routing",
+      "kind": "capability",
+      "source": {
+        "type": "synthetic",
+        "ref": "P0-context7"
+      },
+      "start_ref": "e2181760c566783c7d3c9a27865135a639035e50",
+      "prompt": "Without changing code, determine the currently installed Firebase JavaScript SDK version in this repository and explain how its documented Firestore query API supports combining equality filters for a targeted lookup. Base the external API explanation on current version-appropriate documentation and distinguish that from what the repository itself proves.",
+      "success_criteria": [
+        "The installed/resolved dependency version is derived from repository manifests/lockfiles.",
+        "External API claims are grounded in current version-appropriate documentation.",
+        "Repository-local evidence and external documentation are clearly distinguished.",
+        "No files are modified."
+      ],
+      "grader": {
+        "commands": [],
+        "forbidden_modified_globs": [
+          "**"
+        ]
+      },
+      "tool_expectations": [
+        {
+          "capability": "context7",
+          "expectation": "required",
+          "reason": "The case explicitly tests current external library documentation routing."
+        },
+        {
+          "capability": "semantic_navigation",
+          "expectation": "not_expected",
+          "reason": "No source-symbol impact analysis is needed for the requested documentation answer."
+        }
+      ]
+    },
+    {
+      "id": "internal-architecture-no-external-docs",
+      "kind": "capability",
+      "source": {
+        "type": "synthetic",
+        "ref": "P0-routing-negative"
+      },
+      "start_ref": "e2181760c566783c7d3c9a27865135a639035e50",
+      "prompt": "Without changing code, explain which repository artifacts are authoritative when current engine behavior disagrees with an ADR and a dated analysis, and identify the required lineage artifacts before changing a decision-authority constant.",
+      "success_criteria": [
+        "The answer follows docs/README.md authority precedence.",
+        "The answer identifies sportsKnowledgeRegistry, knowledgeCoverage and PolicyAlignment tests for decision-authority constants.",
+        "No external library documentation is treated as relevant evidence.",
+        "No files are modified."
+      ],
+      "grader": {
+        "commands": [],
+        "forbidden_modified_globs": [
+          "**"
+        ]
+      },
+      "tool_expectations": [
+        {
+          "capability": "context7",
+          "expectation": "not_expected",
+          "reason": "This is entirely repository-internal policy and architecture."
+        },
+        {
+          "capability": "semantic_navigation",
+          "expectation": "optional",
+          "reason": "Repository docs are sufficient; semantic source lookup is not required."
+        }
+      ]
+    },
+    {
+      "id": "docs-only-minimal-verification",
+      "kind": "regression",
+      "source": {
+        "type": "pr",
+        "ref": "#767"
+      },
+      "start_ref": "cf764e68b3a013116b08db745b6b47bb1b6a4022",
+      "prompt": "Improve Serena navigation guidance and remove duplicated Serena memories that have drifted from authoritative repository docs. Keep Serena optional per developer, retain docs as the source of truth, and verify a documentation/agent-config-only change without running unrelated product simulations.",
+      "success_criteria": [
+        "Duplicated mutable project facts are removed from Serena memories and replaced by pointers.",
+        "Agent guidance explains semantic navigation without making Serena a hard repository dependency.",
+        "The verification performed is appropriate for docs/agent-config scope rather than unrelated runtime gates."
+      ],
+      "grader": {
+        "commands": [
+          "uv run pre-commit run --all-files"
+        ],
+        "forbidden_modified_globs": [
+          "app/src/**",
+          "src/garmin_sync/**"
+        ]
+      },
+      "tool_expectations": [
+        {
+          "capability": "context7",
+          "expectation": "not_expected",
+          "reason": "The task is repository guidance cleanup, not an external API question."
+        },
+        {
+          "capability": "semantic_navigation",
+          "expectation": "not_expected",
+          "reason": "No source-symbol discovery is needed."
+        }
+      ]
+    }
+  ]
+}
