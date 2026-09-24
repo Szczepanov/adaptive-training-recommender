@@ -65,6 +65,20 @@ Deterministic assertions cover two distinct contracts:
 
 The second assertion is essential: a judge score must never be improved by inventing coverage equivalence.
 
+## Evidence and governance boundary
+
+The tier-2 support rule is an explicit product-ranking heuristic, registered as
+`policy.optimizer.symptom_compatible_strength_support_v1` under ADR-0033. It is not
+presented as a clinical treatment rule, a measured physiological effect size, or evidence
+that a reduced-load session is equivalent to normal primary strength. The exact
+`primary_strength` descriptor remains the programming-role authority, while local
+symptom/guardrail state remains decision evidence rather than global sports knowledge.
+
+The product heuristic is deliberately narrower than the broader rationale for preserving
+some resistance exposure: it only changes ordering among already-eligible candidates and
+cannot relax hard safety, recovery, rolling-load, spacing, time, equipment, event or taper
+gates.
+
 ## Non-goals
 
 This change does **not**:
