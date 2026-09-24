@@ -501,6 +501,14 @@ abbreviated session from claiming the authored workout's duration-based coverage
 full fatigue cost. Template identity, category/modality, hard feasibility/safety checks, and
 unrelated legacy authored-load heuristics remain authored-template policy unless separately
 migrated and re-governed; effective-dose materialization is not a blanket rewrite of those rules.
+On train-tier days, `resolveCapTruncatedPrescription` keeps an Easy Endurance template within
+its authored duration range when the cap binds and its minimum fits, so a shorter feasible ride
+can retain weekly aerobic-volume coverage; modify-tier days still use the authored easier dose.
+The shorter ride's objective credit remains dose-scaled, and the fixed catalog aerobic-volume
+duration floor remains an unresolved product policy tracked in issue #757.
+For severe-recovery forecast re-entry, `evaluateProjectedDate` ranks with the effective
+modify tier used by load-budget admission and final dosing, so a 20–30-minute readiness
+dose cannot claim the train-tier truncated prescription's aerobic coverage.
 
 The legacy scenario pair remains a matched 60-minute control. Capacity-sensitive acceptance
 is enforced separately in the plan-judge event-demand family with a 120-minute check-in,

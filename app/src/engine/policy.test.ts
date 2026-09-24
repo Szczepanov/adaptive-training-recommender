@@ -3,7 +3,11 @@ import { isHistoricalPolicyVersion, HISTORICAL_POLICY_VERSIONS, POLICY_VERSION }
 
 describe('isHistoricalPolicyVersion', () => {
     it('records the current transition and the previous live policies exactly once', () => {
-        expect(POLICY_VERSION).toBe('2026-09-physical-work-knowledge-lineage-v1');
+        expect(POLICY_VERSION).toBe('2026-09-time-cap-easy-endurance-truncation-v1');
+        expect(HISTORICAL_POLICY_VERSIONS[0]).toBe('2026-09-physical-work-knowledge-lineage-v1');
+        expect(HISTORICAL_POLICY_VERSIONS.filter(
+            (version) => version === '2026-09-physical-work-knowledge-lineage-v1',
+        )).toHaveLength(1);
         expect(HISTORICAL_POLICY_VERSIONS.filter(
             (version) => version === '2026-09-dsupport-incumbent-proof-order-v1',
         )).toHaveLength(1);

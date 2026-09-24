@@ -421,6 +421,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Issue #736 registers the exact fallback multiplier and strict objective exemption as product policy with deterministic alignment coverage.',
     },
     {
+        id: 'optimizer.time_cap_easy_endurance_truncation', domain: 'optimizer_scoring', title: 'Time-capped Easy Endurance prescription truncation',
+        currentRule: 'On non-modify days, a binding time cap truncates an Easy Endurance prescription within its authored duration range when the authored minimum fits and its easier dose starts below that minimum; the dose ratio is at least the easier-dose ratio and otherwise follows the midpoint-duration ratio. Modify-tier days keep the authored easier dose.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
+        codeRefs: ['engine/optimizer.ts:resolveCapTruncatedPrescription'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.timeCapEasyEnduranceTruncationPolicy],
+        coverageRationale: 'Issue #744 registers the cap-truncation rule as product policy with alignment testing. A duration-feasible shorter ride can satisfy the current weekly coverage floor, while objective credit remains dose-scaled; neither result establishes aerobic-dose adequacy.',
+    },
+    {
         id: 'optimizer.preferred_modality_today_tiebreak', domain: 'optimizer_scoring', title: 'Current-day preferred-modality tie-break',
         currentRule: 'preferredModalityToday is honored only when also present in chronic preferredModalities and only after hard gates plus coverage/recovery/objective-benefit tiering, before utility and the final variety tie-break.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
@@ -547,6 +555,13 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         codeRefs: ['engine/stimulus.ts:deriveObjectiveCreditFromProfile'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.raceSpecificCreditFormulaPolicy],
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.stimulus.race_specific_credit_formula_v1`) with alignment testing. Internal stimulus blending formula balancing fatigue resistance and surge/aerobic combinations.',
+    },
+    {
+        id: 'stimulus.aerobic_volume_duration_floor', domain: 'stimulus_credit', title: 'Fixed aerobic-volume session duration floor',
+        currentRule: 'An aerobic-volume session earns exact weekly coverage only when its effective durationMin reaches the catalog workout minimum; the aerobic-volume packing role uses that same catalog minimum.',
+        classification: 'product_heuristic', coverage: 'uncovered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'p1',
+        codeRefs: ['engine/coverage.ts:hasRequiredAerobicDose', 'engine/weeklyDosePacking.ts'], knowledgeRefs: [],
+        coverageRationale: 'The fixed catalog minimum is a product floor, not an evidence-backed athlete-relative adequacy threshold. Issue #757 (https://github.com/Szczepanov/adaptive-training-recommender/issues/757) owns the athlete-relative rule and its future knowledge claim.',
     },
     {
         id: 'stimulus.coverage_threshold', domain: 'stimulus_credit', title: 'Stimulus coverage qualification threshold',

@@ -968,7 +968,10 @@ export function evaluateProjectedDate(
         shared.preferences,
         date,
         {
-            anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, fatigueTier,
+            anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate,
+            // Use the same severe-recovery re-entry tier as budget admission and the
+            // final forecast dose so ranking cannot credit a dose it will not prescribe.
+            fatigueTier: budgetFatigueTier,
             healthPlanningPolicy: shared.healthPlanningPolicy,
             authoredPlanBlocks: shared.authoredPlanBlocks,
             resolvedAvailability: availability,

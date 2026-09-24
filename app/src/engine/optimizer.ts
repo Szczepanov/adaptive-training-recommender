@@ -48,6 +48,9 @@ const STRENGTH_CATEGORIES: SessionTemplate['category'][] = [
     'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance',
 ];
 
+/** Product-policy claim: policy.optimizer.time_cap_easy_endurance_truncation_v1. */
+export const CAP_TRUNCATION_CATEGORIES: readonly SessionTemplate['category'][] = ['Easy Endurance'];
+
 // Deliberately excludes 'Race-Specific Endurance': event-specific work is expected to
 // recur near the event itself (existing anchor-protection/history modulation already
 // tempers it via benefit-score softening, not a hard exclusion -- see
@@ -114,6 +117,27 @@ export function materializeEffectiveDose(template: SessionTemplate, activeDose: 
     };
 }
 
+/** Shorten a train-tier easy-endurance prescription only when its authored minimum fits
+ * the cap and its readiness dose would fall below that minimum. Modify-tier callers
+ * retain the readiness dose by skipping this helper. */
+export function resolveCapTruncatedPrescription(template: SessionTemplate, maxTimeMinutes: number): DoseVariation | null {
+    if (!CAP_TRUNCATION_CATEGORIES.includes(template.category)
+        || template.durationMax <= maxTimeMinutes
+        || template.durationMin > maxTimeMinutes
+        || !template.easierDose
+        || template.easierDose.durationMin >= template.durationMin) return null;
+
+    const baseMidpoint = (template.durationMin + template.durationMax) / 2;
+    const cappedMidpoint = (template.durationMin + maxTimeMinutes) / 2;
+    return {
+        label: `${template.durationMin}-${maxTimeMinutes} min ${template.title}`,
+        durationMin: template.durationMin,
+        durationMax: maxTimeMinutes,
+        doseRatio: Math.max(template.easierDose.doseRatio, cappedMidpoint / baseMidpoint),
+        prescriptionSummary: `${template.description} Keep total duration at or below ${maxTimeMinutes} minutes.`,
+    };
+}
+
 /** Eligibility only requires a template's durationMin to fit the day's time cap (see
  * eligibleTemplates/resolveMaximumSessionMinutes in eligibility.ts), so a wide-range
  * template can remain eligible on a capped day even though its authored durationMax does
@@ -132,18 +156,24 @@ export function resolveTimeCapDoseAdjustment(
     if (!easierDose) return null;
     const pickedDurationMax = template.durationMax ?? template.durationMin ?? 0;
     const timeCapExceeded = pickedDurationMax > maxTimeMinutes;
+    const truncatedPrescription = !isModifyTier && timeCapExceeded
+        ? resolveCapTruncatedPrescription(template, maxTimeMinutes)
+        : null;
     const easierDoseFitsTimeCap = (easierDose.durationMax ?? easierDose.durationMin ?? 0) <= maxTimeMinutes;
-    if (!(isModifyTier || (timeCapExceeded && easierDoseFitsTimeCap))) return null;
+    if (!(isModifyTier || truncatedPrescription || (timeCapExceeded && easierDoseFitsTimeCap))) return null;
+    const activeDose = truncatedPrescription ?? easierDose;
     return {
-        activeDose: easierDose,
+        activeDose,
         adjustment: {
             direction: 'easier',
             tier: 1,
             originalTemplateId: template.id,
             originalTemplateTitle: template.title,
-            adjustedDoseLabel: easierDose.label,
+            adjustedDoseLabel: activeDose.label,
             rationale: isModifyTier
                 ? `This day's readiness calls for a modify-tier session, so it automatically uses its easier dose (${easierDose.label}) rather than the full prescription.`
+                : truncatedPrescription
+                    ? `The full prescription's duration range extends past this day's ${maxTimeMinutes}-minute time cap, so it is shortened within its authored range to ${activeDose.label}.`
                 : `The full prescription's duration range extends past this day's ${maxTimeMinutes}-minute time cap, so it automatically uses its easier dose (${easierDose.label}), which fits within it.`,
         },
     };

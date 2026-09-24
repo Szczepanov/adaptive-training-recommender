@@ -129,6 +129,7 @@ describe('engine knowledge coverage inventory', () => {
             'optimizer.recovery_streak_heuristics': KNOWLEDGE_CLAIM_IDS.recoveryStreakHeuristicsPolicy,
             'optimizer.field_catalog_explicit_preference': KNOWLEDGE_CLAIM_IDS.fieldCatalogExplicitPreferencePolicy,
             'optimizer.unpreferred_modality_fallback': KNOWLEDGE_CLAIM_IDS.unpreferredModalityFallbackPolicy,
+            'optimizer.time_cap_easy_endurance_truncation': KNOWLEDGE_CLAIM_IDS.timeCapEasyEnduranceTruncationPolicy,
             'optimizer.preferred_modality_today_tiebreak': KNOWLEDGE_CLAIM_IDS.preferredModalityTodayTieBreakPolicy,
             'optimizer.catalog_strength_adjacency': KNOWLEDGE_CLAIM_IDS.catalogStrengthAdjacencyPolicy,
             'optimizer.symptom_compatible_strength_support': KNOWLEDGE_CLAIM_IDS.symptomCompatibleStrengthSupportPolicy,
@@ -142,6 +143,23 @@ describe('engine knowledge coverage inventory', () => {
             });
             expect(byId(id)?.knowledgeRefs).toContain(claimId);
         });
+    });
+
+    it('tracks the fixed aerobic-volume floor as unresolved product policy for issue #757', () => {
+        const floor = byId('stimulus.aerobic_volume_duration_floor');
+        expect(floor).toMatchObject({
+            classification: 'product_heuristic',
+            coverage: 'uncovered',
+            decisionImpact: 'moderate',
+            safetyImpact: 'low',
+            researchPriority: 'p1',
+            knowledgeRefs: [],
+        });
+        expect(floor?.codeRefs).toEqual(expect.arrayContaining([
+            'engine/coverage.ts:hasRequiredAerobicDose',
+            'engine/weeklyDosePacking.ts',
+        ]));
+        expect(floor?.coverageRationale).toContain('issues/757');
     });
 
     it('keeps W2b families covered with their intended product-policy claims', () => {
@@ -171,11 +189,12 @@ describe('engine knowledge coverage inventory', () => {
 
     it('reports the post-symptom-support coverage and risk debt exactly (zero high-impact uncovered debt)', () => {
         // Issue #675 added one partial/p1 item for the gran-fondo durability policy; the
-        // physical-work strain mapping, readiness gates and guardrails added three covered items.
+        // physical-work strain mapping, readiness gates and guardrails added three covered items;
+        // issue #744 adds one covered optimizer policy and one uncovered/p1 aerobic floor.
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(70);
-        expect(summary.byCoverage).toEqual({ covered: 46, partial: 17, uncovered: 1, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 8, p1: 8, p2: 2, p3: 0, none: 52 });
+        expect(summary.total).toBe(72);
+        expect(summary.byCoverage).toEqual({ covered: 47, partial: 17, uncovered: 2, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 8, p1: 9, p2: 2, p3: 0, none: 53 });
         expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
     });

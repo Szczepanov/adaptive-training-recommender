@@ -169,7 +169,9 @@ function isSessionTemplate(template: GateableSession): template is SessionTempla
  * is still too large, narrow only that bound and scale its volume ratio proportionally. If
  * no authored easier variation can start inside the cap, derive a duration-only variation
  * from the base template. The template itself is not mutated and its authored range remains
- * available for provenance/audit.
+ * available for provenance/audit. This cap-safe easier variation remains the readiness
+ * dose on modify days; train-day Easy Endurance cap truncation happens later in
+ * resolveTimeCapDoseAdjustment.
  */
 function withCapSafeDose<T extends GateableSession>(template: T, maxMinutes: number): T {
     if (!isSessionTemplate(template) || template.durationMax <= maxMinutes) return template;

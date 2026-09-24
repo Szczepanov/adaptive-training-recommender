@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildOptimizationContext, calculateStimulusBenefit, evaluateRecoveryConstraints, rankCandidates, rankCandidatesByUtility, type RecentHistoryEntry } from './optimizer';
+import { buildOptimizationContext, calculateStimulusBenefit, evaluateRecoveryConstraints, rankCandidates, rankCandidatesByUtility, resolveCapTruncatedPrescription, resolveTimeCapDoseAdjustment, type RecentHistoryEntry } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
 import { resolveHealthPlanningPolicy } from './healthPlanningPolicy';
 import type { FatigueState, SessionHistoryEntry, SessionTemplate, UserContext, UserPreferences, WeeklyObjective } from './models';
@@ -51,6 +51,92 @@ const ZERO_CANONICAL_STIMULUS = {
     maxStrength: 0,
     hypertrophy: 0,
 };
+
+describe('resolveTimeCapDoseAdjustment — Easy Endurance cap truncation (#744)', () => {
+    const template = (id: string) => ENRICHED_TEMPLATES.find(item => item.id === id)!;
+
+    it('shortens a train-tier Zone 2 prescription within its authored range', () => {
+        const result = resolveTimeCapDoseAdjustment(template('end_easy_01'), 35, false);
+        expect(result?.activeDose).toMatchObject({ durationMin: 30, durationMax: 35 });
+        expect(result?.activeDose.doseRatio).toBeCloseTo(32.5 / 45);
+        expect(result?.adjustment).toMatchObject({ direction: 'easier', tier: 1, originalTemplateId: 'end_easy_01' });
+        expect(result?.adjustment.rationale).toContain('time cap');
+        expect(result?.adjustment.rationale).toContain('shortened within its authored range');
+    });
+
+    it('keeps the authored readiness dose on modify-tier days', () => {
+        expect(resolveTimeCapDoseAdjustment(template('end_easy_01'), 35, true)?.activeDose)
+            .toEqual(template('end_easy_01').easierDose);
+    });
+
+    it('falls back to the authored easier dose below the prescription minimum', () => {
+        const authored = template('end_easy_01');
+        const capSafeTemplate = {
+            ...authored,
+            easierDose: { ...authored.easierDose!, durationMax: 25, doseRatio: 0.5 },
+        };
+        expect(resolveTimeCapDoseAdjustment(capSafeTemplate, 25, false)?.activeDose)
+            .toEqual(capSafeTemplate.easierDose);
+    });
+
+    it.each([
+        ['end_walk_01', 35], ['end_mod_02', 45], ['str_full_02', 35],
+    ] as const)(
+        'preserves the existing easier dose for %s', (id, cap) => {
+            expect(resolveCapTruncatedPrescription(template(id), cap)).toBeNull();
+            expect(resolveTimeCapDoseAdjustment(template(id), cap, false)?.activeDose)
+                .toEqual(template(id).easierDose);
+        },
+    );
+
+    it('does not truncate an out-of-scope moderate ride at a 35-minute cap', () => {
+        expect(resolveCapTruncatedPrescription(template('end_mod_02'), 35)).toBeNull();
+        expect(resolveTimeCapDoseAdjustment(template('end_mod_02'), 35, false)).toBeNull();
+    });
+
+    it('keeps every eligible Easy Endurance truncated ratio at least as high as its easier dose', () => {
+        let checked = 0;
+        for (const item of ENRICHED_TEMPLATES.filter(candidate => candidate.category === 'Easy Endurance')) {
+            for (let cap = item.durationMin; cap < item.durationMax; cap++) {
+                const dose = resolveCapTruncatedPrescription(item, cap);
+                if (!item.easierDose || item.easierDose.durationMin >= item.durationMin) {
+                    expect(dose).toBeNull();
+                    continue;
+                }
+                expect(dose).not.toBeNull();
+                checked += 1;
+                expect(dose!.durationMin).toBe(item.durationMin);
+                expect(dose!.durationMax).toBeLessThanOrEqual(cap);
+                expect(dose!.doseRatio).toBeGreaterThanOrEqual(item.easierDose.doseRatio);
+            }
+        }
+        expect(checked).toBeGreaterThan(0);
+    });
+
+    it('gives a capped cycling and walking session the same unmet aerobic coverage tier', () => {
+        const coverageState: CoverageState = {
+            asOfDate: '2026-03-05', phase: 'general', activeBlockId: 'block_general',
+            coverageSetId: 'evergreen_general', descriptor: EVERGREEN_GENERAL_COVERAGE_SET,
+            requirements: [{
+                id: 'coverage_aerobic', key: 'aerobic_volume', label: 'Aerobic volume',
+                requirement: 'required', minimumSessions: 1, targetSessions: 2,
+                completedSessions: 0, projectedSessions: 0, priority: 'must_have',
+                rollingWindowDays: 7, windowStart: '2026-02-26', windowEnd: '2026-03-11', credits: [],
+            }],
+        };
+        const result = rankCandidates(
+            [template('end_easy_01'), template('end_walk_01')], [], DEFAULT_FATIGUE,
+            { ...DEFAULT_AVAILABILITY, date: '2026-03-05', maxTimeMinutes: 35 }, [],
+            { ...DEFAULT_PREFERENCES, preferredModalities: ['Cycling', 'Strength'] },
+            { date: '2026-03-05', coverageState },
+        );
+        expect(result.accepted.find(item => item.template.id === 'end_easy_01')?.coverageNeedTier).toBe(1);
+        expect(result.accepted.find(item => item.template.id === 'end_walk_01')?.coverageNeedTier).toBe(1);
+        // This is the original #744 failure boundary: once capped cycling no longer loses
+        // coverage urgency to walking, the athlete's chronic cycling preference must win.
+        expect(result.accepted[0]?.template.id).toBe('end_easy_01');
+    });
+});
 
 describe('optimizer — preferred modality and safe strength fallback (#736)', () => {
     const candidate = (id: string) => ENRICHED_TEMPLATES.find(template => template.id === id)!;
