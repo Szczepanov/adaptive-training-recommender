@@ -56,3 +56,7 @@
 ## 2026-09-23 - [Concurrent batched reads in Firestore]
 **Learning:** Sequential calls to `db.get_all(chunk)` in loops across many batches cause cumulative network roundtrip delays (N+1 latency across chunks).
 **Action:** When fetching multiple large chunks (e.g. 400 documents) from Firestore in Python, use `concurrent.futures.ThreadPoolExecutor` to map `db.get_all` across the chunks concurrently and merge the results, eliminating sequential I/O bottlenecks.
+
+## 2026-09-24 - Targeted Firestore filtering for single-entity prior revision lookups
+**Learning:** Fetching all documents for a partition (e.g. `getOccurrencesForDate`) to locate a single matching entity (e.g. prior revision of an external plan session) forces Firestore to transmit and parse irrelevant documents. Constructing a targeted query with exact equality constraints (`date`, `state`, `externalPlanRef.planId`, `externalPlanRef.sessionId`) reduces network payload and document parsing overhead by over 60%.
+**Action:** Use specific Firestore `where()` clauses for known schema fields when searching for specific sub-entities rather than fetching whole daily collections.

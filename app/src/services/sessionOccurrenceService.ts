@@ -299,15 +299,24 @@ export class SessionOccurrenceService {
             ? this.windowReservationRef(userId, date, options.windowBinding.windowId)
             : null;
 
-        const sameDayOccurrences = await this.getOccurrencesForDate(userId, date);
-        const priorRevision = sameDayOccurrences.find(
-            (occ): occ is ExternalPlanSessionOccurrence =>
-                isExternalPlanOccurrence(occ)
-                && occ.externalPlanRef.planId === externalPlanRef.planId
-                && occ.externalPlanRef.sessionId === externalPlanRef.sessionId
-                && occ.occurrenceId !== deterministicId
-                && occ.state === 'scheduled',
+        const occurrencesColl = collection(this.db, 'users', userId, 'session_occurrences');
+        const priorQuery = query(
+            occurrencesColl,
+            where('date', '==', date),
+            where('state', '==', 'scheduled'),
+            where('externalPlanRef.planId', '==', externalPlanRef.planId),
+            where('externalPlanRef.sessionId', '==', externalPlanRef.sessionId),
         );
+        const priorSnap = await getDocs(priorQuery);
+        let priorRevision: ExternalPlanSessionOccurrence | null = null;
+        for (const docSnap of priorSnap.docs) {
+            if (docSnap.id === deterministicId) continue;
+            const parsed = parseSessionOccurrenceDocument(docSnap.data(), docSnap.ref.path);
+            if (parsed.status === 'AVAILABLE' && isExternalPlanOccurrence(parsed.data) && parsed.data.state === 'scheduled') {
+                priorRevision = parsed.data;
+                break;
+            }
+        }
         const priorRef = priorRevision ? this.occurrenceRef(userId, priorRevision.occurrenceId) : null;
 
         let result: SessionOccurrence | null = null;
