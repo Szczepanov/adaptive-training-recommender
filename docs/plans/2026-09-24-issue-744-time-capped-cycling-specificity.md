@@ -484,13 +484,13 @@ focused dose, coverage, progression and re-entry tests pass. Knowledge lineage i
 the new product-policy claim, coverage item and alignment test; the fixed aerobic floor
 is separately recorded as uncovered work for #757. `POLICY_VERSION` was bumped.
 
-`make check` passed: 1,036 Python tests, 6,183 frontend tests, typecheck, lint, knowledge
+`make check` passed: 1,036 Python tests, 6,205 frontend tests, typecheck, lint, knowledge
 and workout validators. `make simulate` passed all 39 scenarios with zero constraint
 violations; the reviewed deterministic baseline was refreshed. `npm run
 simulate:plan-judge` passed invariants for 96 cases across 18 families, and `npm run
 persona:build` generated 36 cases across 10 families. The policy-drift check passed after
 the code commit: two engine files changed and `POLICY_VERSION` advanced from
-`2026-09-performance-goal-workout-coverage-v1` to
+`2026-09-physical-work-knowledge-lineage-v1` to
 `2026-09-time-cap-easy-endurance-truncation-v1`.
 `npm run visual:refresh` passed 76 desktop/mobile checks; the 390-pixel Plan forecast
 capture showed compact duration text without horizontal overflow. `WeekAheadStrip` renders
