@@ -849,16 +849,22 @@ them unsafe, safety wins and the role relocates or is reported. Reservation pres
 not an exemption from allocation preservation: even an exact candidate that fulfils the
 current occurrence can spend rolling-budget capacity needed by another later occurrence.
 Therefore every non-recover selection -- discretionary support, an exact reserved-role
-candidate, or Rest -- is admitted only while the incumbent allocation is proven to survive
-its projected cost (or an equal-cardinality reallocation is proven). A true recover-tier
-selection is exempt: Rest-first outranks role fulfilment and the loss is attributed to
-recovery.
+candidate, or Rest -- is admitted only while the still-required incumbent allocation is
+proven to survive its projected cost (or an equal-cardinality reallocation is proven).
+If the current candidate itself fulfils one or more occurrences that had later incumbent
+reservations, those occurrences are discharged before the incumbent replay rather than
+being charged twice as future proof obligations. A true recover-tier selection is exempt:
+Rest-first outranks role fulfilment and the loss is attributed to recovery.
 
 The support check is fail-closed. It considers the bounded viability set even when that set
 contains one ranked candidate, and distinguishes a proven degradation from an exhausted
 search budget. If no candidate proves preservation, the planner may use Rest only when Rest
 itself proves preservation; otherwise it returns an unresolved allocation outcome rather
-than falling through to the highest-ranked candidate. A required role that is infeasible
+than falling through to the highest-ranked candidate. The proof order is owned by
+`planner.ts` `classifyAllocationPreservation`: incumbent survival is checked first, so an
+occurrence the incumbent allocation already left `unresolved_search_budget` cannot veto a
+candidate that provably keeps every reserved role (issue #745); only a candidate that fails
+that proof fails closed on an unresolved incumbent. A required role that is infeasible
 because committed load consumed the rolling envelope is reported with the typed
 `rolling_load_budget` miss reason, while inability to prove a result within bounded search
 remains `unresolved_search_budget`. Anchor placement and `conservativeBias` do not bypass

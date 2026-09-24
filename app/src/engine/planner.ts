@@ -214,6 +214,59 @@ export function selectionPreservesCurrentReservation(
     return reservationOccurrenceId === null || selfFulfilledOccurrenceIds.has(reservationOccurrenceId);
 }
 
+interface IncumbentReservationWitness {
+    occurrence: { id: string };
+    templateId: string;
+}
+
+/**
+ * Build the still-required incumbent witness after applying the candidate on `selectedDate`.
+ * A candidate may legitimately fulfil several authored coverage keys at once; any future
+ * reservation for an occurrence it already fulfils today is discharged and must not be
+ * replayed a second time as proof debt.
+ */
+export function incumbentAssignmentsRemainingAfterSelection(
+    reservationsByDate: ReadonlyMap<string, IncumbentReservationWitness>,
+    selectedDate: string,
+    selfFulfilledOccurrenceIds: ReadonlySet<string>,
+): AllocationAssignment[] {
+    return [...reservationsByDate.entries()]
+        .filter(([reservedDate, item]) =>
+            reservedDate !== selectedDate
+            && !selfFulfilledOccurrenceIds.has(item.occurrence.id))
+        .map(([date, item]) => ({ date, templateId: item.templateId }));
+}
+
+export interface AllocationPreservationProof {
+    /** `selectionPreservesCurrentReservation` for this candidate. */
+    preservesCurrentReservation: boolean;
+    /** Replays the incumbent reservations after this candidate (`allocationSurvives`). */
+    incumbentSurvives: () => boolean;
+    /** The incumbent allocation itself left an occurrence `unresolved_search_budget`. */
+    incumbentAllocationUnresolved: boolean;
+    /** Full bounded re-search without this candidate's self-fulfilled occurrences. */
+    reallocate: () => AllocationPreservation;
+}
+
+/**
+ * ADR-0018 D-BOUND/D-SUPPORT proof order. Incumbent survival is a complete proof that the
+ * candidate preserves the incumbent allocation, so it runs first -- an occurrence the
+ * incumbent already left unresolved cannot veto a candidate that provably keeps everything
+ * the allocator did place (issue #745: that veto turned train/modify-tier forecast days
+ * into repeated passive Rest). Only when that proof fails does an unresolved incumbent
+ * fail closed, because a full re-search could not prove preservation either.
+ *
+ * The proof is about reserved roles, not load: an accepted candidate may cost more than
+ * Rest and narrow a later re-plan's room for the unresolved occurrence. Rest is no better
+ * proven for that occurrence, and readiness/fatigue gates already bound the candidate's
+ * cost, so that difference is deliberately outside this check.
+ */
+export function classifyAllocationPreservation(proof: AllocationPreservationProof): AllocationPreservation {
+    if (proof.preservesCurrentReservation && proof.incumbentSurvives()) return 'preserves';
+    if (proof.incumbentAllocationUnresolved) return 'unresolved_search_budget';
+    return proof.reallocate();
+}
+
 /**
  * D-SUPPORT must fail closed. Once viability protection applies, a ranked candidate is
  * admissible only after the bounded proof preserves the incumbent allocation. If no
@@ -1825,9 +1878,6 @@ export function generateWeekAheadPlan(
             rationale: 'Fallback rest day.',
         };
 
-        const incumbentAssignments = [...allocation.reservationsByDate.entries()]
-            .filter(([reservedDate]) => reservedDate !== date)
-            .map(([reservedDate, item]) => ({ date: reservedDate, templateId: item.templateId }));
         const preservesAllocation = (template: SessionTemplate): AllocationPreservation => {
             const candidateDose = resolveTimeCapDoseAdjustment(
                 template,
@@ -1840,34 +1890,31 @@ export function generateWeekAheadPlan(
             );
             const selfFulfilledOccurrences = occurrencesFulfilledByTemplateSelection(pendingOccurrences, template);
             const selfFulfilledIds = new Set(selfFulfilledOccurrences.map(occurrence => occurrence.id));
-            const preservesCurrentReservation = selectionPreservesCurrentReservation(
-                reservation?.occurrence.id ?? null,
+            const incumbentAssignments = incumbentAssignmentsRemainingAfterSelection(
+                allocation.reservationsByDate,
+                date,
                 selfFulfilledIds,
             );
-            const isIncumbentReservedTemplate = Boolean(
-                reservation
-                && reservation.templateId === template.id
-                && preservesCurrentReservation,
-            );
-
-            if (isIncumbentReservedTemplate && allocationSurvives(incumbentAssignments, evaluator)) {
-                return 'preserves';
-            }
-            if (allocation.budgetExhausted || allocation.outcomes.some(outcome => outcome.status === 'unresolved_search_budget')) {
-                return 'unresolved_search_budget';
-            }
-            if (preservesCurrentReservation && allocationSurvives(incumbentAssignments, evaluator)) {
-                return 'preserves';
-            }
-            const after = resolveWeeklyRoleReservations(
-                pendingOccurrences.filter(occurrence => !selfFulfilledIds.has(occurrence.id)),
-                evaluator,
-                { nominatedDates },
-            );
-            if (after.budgetExhausted || after.outcomes.some(outcome => outcome.status === 'unresolved_search_budget')) {
-                return 'unresolved_search_budget';
-            }
-            return after.fulfilledCount + selfFulfilledOccurrences.length >= allocation.fulfilledCount ? 'preserves' : 'degrades';
+            return classifyAllocationPreservation({
+                preservesCurrentReservation: selectionPreservesCurrentReservation(
+                    reservation?.occurrence.id ?? null,
+                    selfFulfilledIds,
+                ),
+                incumbentSurvives: () => allocationSurvives(incumbentAssignments, evaluator),
+                incumbentAllocationUnresolved: allocation.budgetExhausted
+                    || allocation.outcomes.some(outcome => outcome.status === 'unresolved_search_budget'),
+                reallocate: () => {
+                    const after = resolveWeeklyRoleReservations(
+                        pendingOccurrences.filter(occurrence => !selfFulfilledIds.has(occurrence.id)),
+                        evaluator,
+                        { nominatedDates },
+                    );
+                    if (after.budgetExhausted || after.outcomes.some(outcome => outcome.status === 'unresolved_search_budget')) {
+                        return 'unresolved_search_budget';
+                    }
+                    return after.fulfilledCount + selfFulfilledOccurrences.length >= allocation.fulfilledCount ? 'preserves' : 'degrades';
+                },
+            });
         };
         const viabilityApplies = shouldProtectWeeklyAllocation(
             effectiveFatigueTier,
