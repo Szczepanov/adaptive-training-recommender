@@ -498,7 +498,11 @@ export class SessionExecutionService {
      * execution merely because the app was backgrounded or reloaded.
      */
     async findInProgressExecution(userId: string): Promise<SessionExecution | null> {
-        const snap = await getDocs(collection(this.db, 'users', userId, 'session_executions'));
+        const q = query(
+            collection(this.db, 'users', userId, 'session_executions'),
+            where('state', '==', 'in_progress'),
+        );
+        const snap = await getDocs(q);
         const candidates: SessionExecution[] = [];
         for (const docSnap of snap.docs) {
             const parsed = parseSessionExecutionDocument(docSnap.data(), docSnap.ref.path);

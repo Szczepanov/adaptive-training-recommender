@@ -1,10 +1,10 @@
-import importlib.metadata
 import logging
 import random
 import time
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from importlib import metadata
 from pathlib import Path
 from typing import Any, Callable
 
@@ -78,8 +78,10 @@ class GarminSyncService:
         garmin_client: Any | None = None,
         archive_store: RawArchiveStore | None = None,
         provider: WearableProvider | None = None,
+        sleep_fn: Callable[[float], None] | None = None,
     ):
         self.settings = settings
+        self._sleep_fn = sleep_fn
         self.repository = repository or FirestoreRecoveryRepository(
             user_id=settings.app_user_id,
             collection_name=settings.firestore_recovery_collection,
@@ -103,8 +105,8 @@ class GarminSyncService:
             prefix=settings.garmin_archive_prefix,
         )
         try:
-            self.garminconnect_version: str | None = importlib.metadata.version("garminconnect")
-        except importlib.metadata.PackageNotFoundError:
+            self.garminconnect_version: str | None = metadata.version("garminconnect")
+        except metadata.PackageNotFoundError:
             self.garminconnect_version = None
 
     def _init_garmin_client(self) -> GarminClientWrapper:
@@ -946,6 +948,7 @@ class GarminSyncService:
         include_details: bool = False,
         on_date_complete: Callable[[date], None] | None = None,
         stop_on_failure: bool = False,
+        sleep_fn: Callable[[float], None] | None = None,
     ) -> bool:
         """Run historical backfill for date range."""
         start_d, end_d, target_dates = self._resolve_backfill_date_range(
@@ -1030,7 +1033,8 @@ class GarminSyncService:
                     and delay_max > 0
                     and not request_pacing
                 ):
-                    time.sleep(random.uniform(delay_min, delay_max))
+                    sleep_func = sleep_fn or self._sleep_fn or time.sleep
+                    sleep_func(random.uniform(delay_min, delay_max))
 
             if failed_dates:
                 logger.warning("Backfill finished with %s failed dates.", len(failed_dates))

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { where } from 'firebase/firestore';
 
 const firestore = vi.hoisted(() => {
     return {
@@ -633,6 +634,49 @@ describe('SessionExecutionService', () => {
                 expect(res).not.toBeNull();
                 expect(res?.executionId).toBe('exec-new');
             });
+        });
+    });
+
+    describe('findInProgressExecution', () => {
+        it('queries Firestore with state == in_progress filter and returns the most recent startedAt execution', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    {
+                        id: 'exec-older',
+                        ref: { path: `users/${USER_ID}/session_executions/exec-older` },
+                        data: () => validExecution({
+                            executionId: 'exec-older',
+                            state: 'in_progress',
+                            startedAt: '2026-08-17T09:00:00.000Z',
+                        }),
+                    },
+                    {
+                        id: 'exec-newer',
+                        ref: { path: `users/${USER_ID}/session_executions/exec-newer` },
+                        data: () => validExecution({
+                            executionId: 'exec-newer',
+                            state: 'in_progress',
+                            startedAt: '2026-08-17T10:00:00.000Z',
+                        }),
+                    },
+                ],
+            });
+
+            const result = await service.findInProgressExecution(USER_ID);
+
+            expect(firestore.query).toHaveBeenCalledWith(
+                expect.anything(),
+                where('state', '==', 'in_progress'),
+            );
+            expect(result?.executionId).toBe('exec-newer');
+        });
+
+        it('returns null when no in-progress execution exists', async () => {
+            firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+
+            const result = await service.findInProgressExecution(USER_ID);
+
+            expect(result).toBeNull();
         });
     });
 });
