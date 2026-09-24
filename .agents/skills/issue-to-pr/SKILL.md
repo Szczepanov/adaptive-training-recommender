@@ -81,6 +81,9 @@ Follow the `docs/README.md` precedence: **code wins, then `architecture/`, then 
   unsupported language-server cases, and as a completeness check. Never use semantic results from
   a different checkout.
 - Identify: reusable utilities, existing test fixtures (`tests/fixtures/`, engine `tests/`, `simulation/`), schema validators, and the `TrainingHistoryProvider` / Firestore boundaries if history or persistence is involved.
+- When correctness depends on an external library/API contract, use Context7 for current,
+  version-appropriate documentation as defined by `docs/standards/agent-tooling.md`. Do not use
+  Context7 for repository-internal behavior.
 - Check `app/src/engine/policy.ts` `POLICY_VERSION` relevance early: if the issue changes recommendation decision logic, a version bump plus `node scripts/check-policy-drift.mjs <base-sha>` will be required later.
 
 ## Phase 4 — Create the detailed implementation plan
@@ -136,7 +139,9 @@ Run the narrow checks first, then widen. Use the Makefile as the authority (`mak
 | Material UI change | `cd app && npm run visual:refresh` (after `npm run visual:install` once) |
 | Mixed / unsure | `make check` (ruff + mypy + pytest + tsc + eslint + vitest + workout validation); engine changes add `make simulate`; release readiness adds `make build` |
 
-- Prefer `make check` / `make simulate` / `make build` over ad-hoc commands when verifying the whole change.
+- Use narrow commands while iterating, but finish with `make verify`, the repository-owned
+  scope-aware handoff gate. Do not manually recreate its command matrix.
+- Prefer `make check` / `make simulate` / `make build` for focused intermediate verification.
 - `npm run dev` runs a `check` pre-flight; do not use it as a substitute for the explicit checks above.
 - Record exact command plus pass/fail for the PR body. If an applicable check is skipped, say why — never claim CI will cover it.
 - Fix failures in place; re-run the affected scope until green. Do not open a PR on red checks without explicit user instruction.
