@@ -799,6 +799,12 @@ class GarminSyncService:
                     try:
                         result: Any = fetch_detail(activity.activity_id)
                         details_by_activity_id[activity.activity_id] = result.canonical
+                        if getattr(result, "rate_limited", False):
+                            # Partial detail arrived before an optional endpoint hit the
+                            # rate limit: stop exactly as for a raised 429 below.
+                            raise GarminConnectTooManyRequestsError(
+                                "rate limited after partial activity detail"
+                            )
                     except GarminConnectTooManyRequestsError as error:
                         logger.warning(
                             "Garmin activity-detail rate limit reached during backfill; "
