@@ -412,7 +412,7 @@ Do not make ceremonial Serena calls for docs-only work or a known tiny edit whos
 established. The objective is better evidence with less broad reading, not tool-call count.
 
 This matters especially before changing an engine constant
-([ `CLAUDE.md` § 2](./CLAUDE.md#2-before-you-change-a-number-in-the-engine)): one reference
+([`CLAUDE.md` § 2](./CLAUDE.md#2-before-you-change-a-number-in-the-engine)): one reference
 query can expose the implemented constant, its knowledge claim/coverage ownership, and the
 `*PolicyAlignment.test.ts` assertions that must remain aligned.
 
