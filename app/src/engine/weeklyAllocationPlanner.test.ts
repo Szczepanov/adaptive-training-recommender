@@ -8,6 +8,7 @@ import { creditObjectivesFromStimulus, generateWeeklyObjectives } from './microc
 import { createEmptyFatigue } from './fatigue';
 import {
     classifyAllocationPreservation,
+    incumbentAssignmentsRemainingAfterSelection,
     evaluateProjectedDate,
     generateWeekAheadPlan,
     projectedDateOutcomeFrom,
@@ -300,6 +301,22 @@ describe('D-SUPPORT fail-closed selection', () => {
         expect(selectionPreservesCurrentReservation('current-role', new Set(['later-role']))).toBe(false);
         expect(selectionPreservesCurrentReservation('current-role', new Set(['current-role']))).toBe(true);
         expect(selectionPreservesCurrentReservation(null, new Set())).toBe(true);
+    });
+
+    it('does not replay a future incumbent reservation already fulfilled by the current candidate', () => {
+        const reservations = new Map([
+            ['2026-08-12', { occurrence: { id: 'current-role' }, templateId: 'current-template' }],
+            ['2026-08-13', { occurrence: { id: 'bundled-future-role' }, templateId: 'bundled-template' }],
+            ['2026-08-14', { occurrence: { id: 'still-required-role' }, templateId: 'still-required-template' }],
+        ]);
+
+        expect(incumbentAssignmentsRemainingAfterSelection(
+            reservations,
+            '2026-08-12',
+            new Set(['current-role', 'bundled-future-role']),
+        )).toEqual([
+            { date: '2026-08-14', templateId: 'still-required-template' },
+        ]);
     });
 
     // Issue #745: an unresolved occurrence elsewhere in the allocation must not veto a

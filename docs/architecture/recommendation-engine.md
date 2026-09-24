@@ -849,10 +849,12 @@ them unsafe, safety wins and the role relocates or is reported. Reservation pres
 not an exemption from allocation preservation: even an exact candidate that fulfils the
 current occurrence can spend rolling-budget capacity needed by another later occurrence.
 Therefore every non-recover selection -- discretionary support, an exact reserved-role
-candidate, or Rest -- is admitted only while the incumbent allocation is proven to survive
-its projected cost (or an equal-cardinality reallocation is proven). A true recover-tier
-selection is exempt: Rest-first outranks role fulfilment and the loss is attributed to
-recovery.
+candidate, or Rest -- is admitted only while the still-required incumbent allocation is
+proven to survive its projected cost (or an equal-cardinality reallocation is proven).
+If the current candidate itself fulfils one or more occurrences that had later incumbent
+reservations, those occurrences are discharged before the incumbent replay rather than
+being charged twice as future proof obligations. A true recover-tier selection is exempt:
+Rest-first outranks role fulfilment and the loss is attributed to recovery.
 
 The support check is fail-closed. It considers the bounded viability set even when that set
 contains one ranked candidate, and distinguishes a proven degradation from an exhausted

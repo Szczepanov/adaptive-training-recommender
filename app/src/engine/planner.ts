@@ -214,6 +214,29 @@ export function selectionPreservesCurrentReservation(
     return reservationOccurrenceId === null || selfFulfilledOccurrenceIds.has(reservationOccurrenceId);
 }
 
+interface IncumbentReservationWitness {
+    occurrence: { id: string };
+    templateId: string;
+}
+
+/**
+ * Build the still-required incumbent witness after applying the candidate on `selectedDate`.
+ * A candidate may legitimately fulfil several authored coverage keys at once; any future
+ * reservation for an occurrence it already fulfils today is discharged and must not be
+ * replayed a second time as proof debt.
+ */
+export function incumbentAssignmentsRemainingAfterSelection(
+    reservationsByDate: ReadonlyMap<string, IncumbentReservationWitness>,
+    selectedDate: string,
+    selfFulfilledOccurrenceIds: ReadonlySet<string>,
+): AllocationAssignment[] {
+    return [...reservationsByDate.entries()]
+        .filter(([reservedDate, item]) =>
+            reservedDate !== selectedDate
+            && !selfFulfilledOccurrenceIds.has(item.occurrence.id))
+        .map(([date, item]) => ({ date, templateId: item.templateId }));
+}
+
 export interface AllocationPreservationProof {
     /** `selectionPreservesCurrentReservation` for this candidate. */
     preservesCurrentReservation: boolean;
@@ -1855,9 +1878,6 @@ export function generateWeekAheadPlan(
             rationale: 'Fallback rest day.',
         };
 
-        const incumbentAssignments = [...allocation.reservationsByDate.entries()]
-            .filter(([reservedDate]) => reservedDate !== date)
-            .map(([reservedDate, item]) => ({ date: reservedDate, templateId: item.templateId }));
         const preservesAllocation = (template: SessionTemplate): AllocationPreservation => {
             const candidateDose = resolveTimeCapDoseAdjustment(
                 template,
@@ -1870,6 +1890,11 @@ export function generateWeekAheadPlan(
             );
             const selfFulfilledOccurrences = occurrencesFulfilledByTemplateSelection(pendingOccurrences, template);
             const selfFulfilledIds = new Set(selfFulfilledOccurrences.map(occurrence => occurrence.id));
+            const incumbentAssignments = incumbentAssignmentsRemainingAfterSelection(
+                allocation.reservationsByDate,
+                date,
+                selfFulfilledIds,
+            );
             return classifyAllocationPreservation({
                 preservesCurrentReservation: selectionPreservesCurrentReservation(
                     reservation?.occurrence.id ?? null,
