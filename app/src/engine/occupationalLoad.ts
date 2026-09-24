@@ -19,7 +19,7 @@ function clamp01(value: number): number {
     return Math.min(1, Math.max(0, value));
 }
 
-function workStrain(work: PhysicalWorkCheckin | undefined): number {
+export function resolvePhysicalWorkRawStrain(work: PhysicalWorkCheckin | undefined): number {
     if (!work?.performed) return 0;
     // Preserve the pre-baseline engine's conservative fallback semantics: a performed
     // work block with omitted optional detail is treated as moderate/medium, not as zero.
@@ -51,9 +51,9 @@ export function resolveOccupationalLoadContext(
     ambientSteps: number | null,
     steps7dAvg: number | null,
 ): OccupationalLoadContext {
-    const rawStrain = workStrain(work);
+    const rawStrain = resolvePhysicalWorkRawStrain(work);
     const baselineStrain = baseline
-        ? workStrain({ performed: true, intensity: baseline.typicalIntensity, duration: baseline.typicalDuration })
+        ? resolvePhysicalWorkRawStrain({ performed: true, intensity: baseline.typicalIntensity, duration: baseline.typicalDuration })
         : 0;
     const baselineConfidence = baseline ? clamp01(baseline.confidence) : 0;
     const loadAreaOverlap = baseline ? loadAreaOverlapRatio(work?.loadAreas, baseline.typicalLoadAreas) : 0;

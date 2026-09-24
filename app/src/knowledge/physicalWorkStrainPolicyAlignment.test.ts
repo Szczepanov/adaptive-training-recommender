@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mapContextFromGoalsAndTrainingSettings } from '../engine/adapters';
 import { computeInternalResponseStrain } from '../engine/fatigue';
 import { readinessKnowledgeRefs } from '../engine/knowledgeLineage';
-import { resolveOccupationalLoadContext } from '../engine/occupationalLoad';
+import { resolveOccupationalLoadContext, resolvePhysicalWorkRawStrain } from '../engine/occupationalLoad';
 import { evaluateEnvelopes, evaluateReadinessAndSafetyEnvelope, evaluateTraining } from '../engine/rules';
 import type {
     DailyReadiness,
@@ -64,7 +64,7 @@ function expectDimensions(actual: DimensionalFatigue, expected: DimensionalFatig
 }
 
 function rawStrain(work: PhysicalWorkCheckin): number {
-    return resolveOccupationalLoadContext(work, undefined, null, null).rawStrain;
+    return resolvePhysicalWorkRawStrain(work);
 }
 
 const READINESS_CONTEXT: UserContext = {

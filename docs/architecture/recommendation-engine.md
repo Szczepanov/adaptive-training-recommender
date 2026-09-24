@@ -207,7 +207,10 @@ ownership and constrain availability before candidates are selected.
 | `occupationalLoad.ts` | Separates optional adapted occupational baseline from daily acute work using confidence and load-area overlap, and reports physical-work/activity-adjusted-ambient-step overlap |
 
 Physical-work knowledge lineage separates the baseline-discounted fatigue mapping from the
-raw-strain readiness mode gates. A performed work check-in emits both claim IDs. The context
+raw-strain readiness mode gates. Both paths derive the raw magnitude through
+`resolvePhysicalWorkRawStrain`, so the intensity/duration table has one implementation
+authority even though the readiness gate intentionally ignores the baseline discount. A
+performed work check-in emits both claim IDs. The context
 adapter also records which area-specific guardrails it actually added, so
 `readinessKnowledgeRefs` emits the physical-work guardrail claim only when that policy applied;
 an identical guardrail from injury policy does not acquire physical-work provenance. The
