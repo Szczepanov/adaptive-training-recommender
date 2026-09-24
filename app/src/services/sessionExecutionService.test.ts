@@ -601,5 +601,38 @@ describe('SessionExecutionService', () => {
                 expect(batch.commit).toHaveBeenCalledTimes(1);
             });
         });
+
+        describe('findExecutionByOccurrenceId', () => {
+            it('queries session_executions by occurrenceId and returns the most recent matching execution', async () => {
+                firestore.query.mockImplementation((coll, ...clauses) => ({ coll, clauses }));
+                firestore.where.mockImplementation((field, op, val) => ({ field, op, val }));
+                firestore.getDocs.mockResolvedValueOnce({
+                    docs: [
+                        {
+                            ref: { path: `users/${USER_ID}/session_executions/exec-old` },
+                            data: () => validExecution({
+                                executionId: 'exec-old',
+                                occurrenceId: 'occ-123',
+                                startedAt: '2026-08-17T10:00:00Z',
+                            }),
+                        },
+                        {
+                            ref: { path: `users/${USER_ID}/session_executions/exec-new` },
+                            data: () => validExecution({
+                                executionId: 'exec-new',
+                                occurrenceId: 'occ-123',
+                                startedAt: '2026-08-17T12:00:00Z',
+                            }),
+                        },
+                    ],
+                });
+
+                const res = await service.findExecutionByOccurrenceId(USER_ID, 'occ-123');
+
+                expect(firestore.where).toHaveBeenCalledWith('occurrenceId', '==', 'occ-123');
+                expect(res).not.toBeNull();
+                expect(res?.executionId).toBe('exec-new');
+            });
+        });
     });
 });

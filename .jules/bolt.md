@@ -56,3 +56,7 @@
 ## 2026-09-23 - [Concurrent batched reads in Firestore]
 **Learning:** Sequential calls to `db.get_all(chunk)` in loops across many batches cause cumulative network roundtrip delays (N+1 latency across chunks).
 **Action:** When fetching multiple large chunks (e.g. 400 documents) from Firestore in Python, use `concurrent.futures.ThreadPoolExecutor` to map `db.get_all` across the chunks concurrently and merge the results, eliminating sequential I/O bottlenecks.
+
+## 2026-03-30 - Filter session_executions lookup by occurrenceId
+**Learning:** `findExecutionByOccurrenceId` in `SessionExecutionService` was fetching all documents from the `session_executions` collection and filtering in memory. Adding a Firestore `where('occurrenceId', '==', occurrenceId)` clause restricts document retrieval at the database level, preventing network/memory overhead that scales linearly with collection size.
+**Action:** Always verify Firestore collection reads in service lookup methods to ensure field equality filters are pushed down to queries via `where(...)` rather than loaded via full collection `getDocs(collection(...))`.
