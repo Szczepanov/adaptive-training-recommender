@@ -169,6 +169,18 @@ candidate. This keeps primary-modality aerobic maintenance (such as a 20–30 mi
 spin or easy jog) ahead of walking on `modify` days without falsely closing the weekly
 `aerobic_volume` role.
 
+Exact `aerobic_volume` credit uses one athlete-level duration floor (#757):
+`aerobicVolumeFloor.ts` `resolveAerobicVolumeFloor` takes the median full-dose continuous
+aerobic session from the read-only rolling-load evidence window (last 28 days, at least 4
+sessions) and sets the floor to max(catalog minimum, 0.75 × median, rounded to 5 min).
+The orchestration entry points resolve it once and pass it to `buildCoverageState`, so the
+same floor applies to completed history and to ranked candidates in every modality. A
+30-minute walk therefore cannot claim the role for an athlete whose typical ride is 60
+minutes. When no usable window can reach the floor, `evergreenPlanning.ts`
+`aerobicPackingForFloor` keeps the aerobic role planned at its catalog duration and
+reports an explicit `minimum_dose_shortfall`. The floor admits coverage; it does not
+claim dose adequacy.
+
 Authored travel blocks scale planned dose through `applyPlanningOverlays` across
 structured, demand-derived, and evergreen paths. Fixed activities retain schedule
 ownership and constrain availability before candidates are selected.

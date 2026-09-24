@@ -581,11 +581,11 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.stimulus.race_specific_credit_formula_v1`) with alignment testing. Internal stimulus blending formula balancing fatigue resistance and surge/aerobic combinations.',
     },
     {
-        id: 'stimulus.aerobic_volume_duration_floor', domain: 'stimulus_credit', title: 'Fixed aerobic-volume session duration floor',
-        currentRule: 'An aerobic-volume session earns exact weekly coverage only when its effective durationMin reaches the catalog workout minimum; the aerobic-volume packing role uses that same catalog minimum.',
-        classification: 'product_heuristic', coverage: 'uncovered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'p1',
-        codeRefs: ['engine/coverage.ts:hasRequiredAerobicDose', 'engine/weeklyDosePacking.ts'], knowledgeRefs: [],
-        coverageRationale: 'The fixed catalog minimum is a product floor, not an evidence-backed athlete-relative adequacy threshold. Issue #757 (https://github.com/Szczepanov/adaptive-training-recommender/issues/757) owns the athlete-relative rule and its future knowledge claim.',
+        id: 'stimulus.aerobic_volume_duration_floor', domain: 'stimulus_credit', title: 'Athlete-relative aerobic-volume session duration floor',
+        currentRule: 'An aerobic-volume session earns exact weekly coverage only when its effective durationMin reaches one athlete-level floor, max(catalog minimum, round5(0.75 x median full-dose continuous aerobic session over 28 days)), with >=4 qualifying sessions and a catalog-minimum fallback; the packed aerobic_volume role is budgeted at the same floor.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
+        codeRefs: ['engine/aerobicVolumeFloor.ts:resolveAerobicVolumeFloor', 'engine/coverage.ts:hasRequiredAerobicDose', 'engine/evergreenPlanning.ts:resolveEvergreenPlan'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.aerobicVolumeFloorPolicy],
+        coverageRationale: 'Registered as an explicit product-policy claim (`policy.stimulus.aerobic_volume_athlete_relative_floor_v1`) with alignment testing (#757). The claim states that evidence does not support a sharp minimum-effective-session threshold; the floor is a coverage-admission heuristic, not a dose-adequacy claim.',
     },
     {
         id: 'stimulus.coverage_threshold', domain: 'stimulus_credit', title: 'Stimulus coverage qualification threshold',

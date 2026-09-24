@@ -73,6 +73,7 @@ import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedu
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
 import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry } from './coverage';
 import { resolveEvergreenPlan } from './evergreenPlanning';
+import { resolveAerobicVolumeFloor, type AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { isFreshSubjectiveWithAdverseWearables, isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { applyPlanningOverlays } from './planningOverlays';
 import {
@@ -181,6 +182,9 @@ export interface WeekAheadPlanSeed {
      * future recommendations never reclassify completed occurrences through legacy lookup. */
     completedCoverageHistory?: CoverageHistoryEntry[];
     droppedContributorObjectives?: DroppedContributorObjective[];
+    /** Issue #757: athlete-level `aerobic_volume` floor resolved as of today from completed
+     * evidence. Held constant across the horizon; projected picks never move it. */
+    aerobicVolumeFloor?: AerobicVolumeFloor | null;
 }
 
 type ForecastPickCandidate = Pick<RankedCandidate, 'template' | 'utilityScore' | 'benefitScore' | 'costPenalty' | 'coverageNeedTier' | 'rationale'>;
@@ -668,6 +672,7 @@ export interface ProjectedDatePlanningContext {
     planDefinition?: PlanDefinition | null;
     todayDate?: string;
     healthPlanningPolicy?: HealthPlanningPolicy | null;
+    aerobicVolumeFloor?: AerobicVolumeFloor | null;
     rollingLoadBudgetProfile?: RollingLoadBudgetProfile;
     rollingLoadBudgetHorizonStartDate?: string;
     rollingLoadBudgetHorizonEndDate?: string;
@@ -984,6 +989,8 @@ export function evaluateProjectedDate(
                     planDefinition,
                     date,
                     state.coverageHistory ?? resolveCoverageHistory(undefined, state.projectedHistory),
+                    undefined,
+                    shared.aerobicVolumeFloor,
                 ),
             } : {}),
         },
@@ -1751,6 +1758,7 @@ export function generateWeekAheadPlan(
         planDefinition: suppliedPlanDefinition,
         todayDate,
         healthPlanningPolicy: options.healthPlanningPolicy,
+        aerobicVolumeFloor: seed.aerobicVolumeFloor ?? null,
         rollingLoadBudgetProfile,
         rollingLoadBudgetHorizonStartDate: rollingLoadBudgetHorizon.startDate,
         rollingLoadBudgetHorizonEndDate: rollingLoadBudgetHorizon.endDate,
@@ -2261,10 +2269,13 @@ export async function generateWeekAheadPlanWithIntent(
     // override is date-scoped to a single day, but this packs the whole week-ahead horizon
     // in one call. Progression influence is deliberately scoped to same-day planning
     // (rules.ts's evaluateTrainingWithIntent) until the packer has a date-scoped resolver.
+    // Issue #757: one athlete-level aerobic floor, resolved as of today, for both the packer
+    // and every projected date's coverage state.
+    const aerobicVolumeFloor = resolveAerobicVolumeFloor(intent.rollingLoadBudgetHistory, todayDate);
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, todayDate, options.fixedActivities ?? [], options.days ?? 7,
-        isAdverseRecovery, options.scheduleOverlays ?? [],
+        isAdverseRecovery, options.scheduleOverlays ?? [], new Map(), aerobicVolumeFloor,
     );
     return generateWeekAheadPlan(
         todayReadiness,
@@ -2281,6 +2292,7 @@ export async function generateWeekAheadPlanWithIntent(
             rollingLoadBudgetHistory: trailingHistoryFromCompletedExposures(intent.rollingLoadBudgetHistory, todayDate),
             completedCoverageHistory: resolveCoverageHistory(intent.performedTrainingFacts, intent.history),
             droppedContributorObjectives: intent.droppedContributorObjectives,
+            aerobicVolumeFloor,
         },
         {
             ...options,

@@ -120,6 +120,9 @@ const decisionAffectingFiles = [
   'app/src/engine/evergreenStrategy.ts',
   'app/src/engine/weeklyDosePacking.ts',
   'app/src/engine/coverage.ts',
+  // #757: the athlete-relative aerobic_volume floor decides which sessions earn exact
+  // weekly coverage, the first ranking key.
+  'app/src/engine/aerobicVolumeFloor.ts',
   'app/src/engine/evergreenPlanning.ts',
   'app/src/engine/planSchedule.ts',
   // trainingIntent.ts/trainingHistorySnapshot.ts decide which history window feeds

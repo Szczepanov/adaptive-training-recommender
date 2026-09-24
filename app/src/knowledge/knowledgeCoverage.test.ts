@@ -147,21 +147,22 @@ describe('engine knowledge coverage inventory', () => {
         });
     });
 
-    it('tracks the fixed aerobic-volume floor as unresolved product policy for issue #757', () => {
+    it('tracks the athlete-relative aerobic-volume floor policy for issue #757', () => {
         const floor = byId('stimulus.aerobic_volume_duration_floor');
         expect(floor).toMatchObject({
             classification: 'product_heuristic',
-            coverage: 'uncovered',
+            coverage: 'covered',
             decisionImpact: 'moderate',
             safetyImpact: 'low',
-            researchPriority: 'p1',
-            knowledgeRefs: [],
+            researchPriority: 'none',
+            knowledgeRefs: ['policy.stimulus.aerobic_volume_athlete_relative_floor_v1'],
         });
         expect(floor?.codeRefs).toEqual(expect.arrayContaining([
+            'engine/aerobicVolumeFloor.ts:resolveAerobicVolumeFloor',
             'engine/coverage.ts:hasRequiredAerobicDose',
-            'engine/weeklyDosePacking.ts',
+            'engine/evergreenPlanning.ts:resolveEvergreenPlan',
         ]));
-        expect(floor?.coverageRationale).toContain('issues/757');
+        expect(floor?.coverageRationale).toContain('#757');
     });
 
     it('keeps W2b families covered with their intended product-policy claims', () => {
@@ -196,8 +197,8 @@ describe('engine knowledge coverage inventory', () => {
         // #756 adds one covered readiness-modified aerobic coverage item with no research debt.
         const summary = summarizeKnowledgeCoverage();
         expect(summary.total).toBe(75);
-        expect(summary.byCoverage).toEqual({ covered: 50, partial: 17, uncovered: 2, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 8, p1: 9, p2: 2, p3: 0, none: 56 });
+        expect(summary.byCoverage).toEqual({ covered: 51, partial: 17, uncovered: 1, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 8, p1: 8, p2: 2, p3: 0, none: 57 });
         expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
     });

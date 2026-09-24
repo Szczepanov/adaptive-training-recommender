@@ -32,6 +32,7 @@ import {
     supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback,
     type CoverageState,
 } from './coverage';
+import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveEventTaper } from './taperPolicy';
 import { resolveInjuryRestrictions } from './injuryPolicy';
@@ -252,6 +253,9 @@ export interface OptimizationOptions {
      * booked work. Otherwise buildOptimizationContext derives it from exact recent-history
      * template identity and the event-relative PlanDefinition. */
     coverageState?: CoverageState;
+    /** Issue #757: athlete-level `aerobic_volume` floor, resolved by the orchestration
+     * entry point from completed evidence. Used only when `coverageState` is not supplied. */
+    aerobicVolumeFloor?: AerobicVolumeFloor | null;
     /** W3: projected fatigue band for ordinal recovery preference. Defaults to train. */
     fatigueTier?: 'train' | 'modify' | 'recover';
     /** Phase 5.2: per-workout hard-lower-body spacing. */
@@ -988,6 +992,8 @@ export function buildOptimizationContext(
         resolvePlanDefinitionForEvent(focusEvent, options.authoredPlanBlocks),
         date,
         coverageHistory,
+        undefined,
+        options.aerobicVolumeFloor,
     );
     const recentPerformedExposures = options.recentPerformedExposures ?? intent.performedTrainingFacts?.exposures;
     const recoveryPlacementState = options.recoveryPlacementState !== undefined
