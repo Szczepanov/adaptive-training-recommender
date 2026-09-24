@@ -41,11 +41,11 @@ export const OPTIMIZER_SCORING_SOURCES: readonly KnowledgeSource[] = [
 export const OPTIMIZER_SCORING_CLAIMS: readonly KnowledgeClaim[] = [
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.residualLowerBodyStrengthDeferralPolicy,
-        statement: 'Product candidate-selection policy v1: when combined lower-body fatigue is at least 0.6, a heavy lower-body strength candidate whose tier-0/1 urgency comes only from primary_strength is ranked at coverage tier 3. Upper-body strength and candidates advancing another required role retain their authored tier. Exact coverage credit and weekly reservations remain unchanged.',
+        statement: 'Product candidate-selection policy v1: when combined lower-body fatigue is at least 0.6, a heavy lower-body strength candidate whose tier-0/1 urgency comes only from primary_strength has that primary-strength urgency removed. Any other authored coverage tier remains authoritative; the candidate reaches tier 3 only when it advances no other active role. Upper-body strength and candidates advancing another required role retain their authored tier. Exact coverage credit and weekly reservations remain unchanged.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
         applicability: { contexts: ['candidate_selection', 'week_ahead_planning'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['strength_session_ranking'], horizon: 'acute' },
         evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
-        limitations: ['The 0.6 threshold is product ranking calibration, not a physiological injury cut-point. It does not make a candidate ineligible or grant, remove, or reserve exact weekly-role credit.'],
+        limitations: ['The 0.6 threshold is product ranking calibration, not a physiological injury cut-point. It does not make a candidate ineligible or grant, remove, or reserve exact weekly-role credit; non-primary authored roles are still ranked normally.'],
         reviewedOn: '2026-09-24', version: 1,
     },
     {

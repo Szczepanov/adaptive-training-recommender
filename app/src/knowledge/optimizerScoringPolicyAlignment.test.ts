@@ -8,12 +8,9 @@ import {
     calculateFatigueCostPenalty,
     calculateStimulusBenefit,
     rankCandidates,
-<<<<<<< HEAD
     resolveCapTruncatedPrescription,
     resolveTimeCapDoseAdjustment,
-=======
     RESIDUAL_LOWER_BODY_STRENGTH_DEFERRAL_THRESHOLD,
->>>>>>> 4c3a0d9d (feat(engine): delay Day 2 heavy-lower strength and age forecast objective credit (#746))
     UNPREFERRED_MODALITY_MULTIPLIER,
     type OptimizationOptions,
 } from '../engine/optimizer';
