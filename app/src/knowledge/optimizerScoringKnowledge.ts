@@ -75,7 +75,7 @@ export const OPTIMIZER_SCORING_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.symptomCompatibleStrengthSupportPolicy,
-        statement: 'Product candidate-selection policy v1: when the exact evergreen primary-strength minimum remains unmet, a template explicitly marked guardrailFallbackRole=shoulder_spinal_strength receives coverage tier 2 ranking urgency only while avoid_heavy_spinal_loading or avoid_overhead_pressing is active. This support never grants a coverage key, fulfils or reserves primary_strength, and remains below exact tier-0/tier-1 role authority.',
+        statement: 'Product candidate-selection policy v1: when the active coverage state has an unmet primary-strength minimum, a template explicitly marked guardrailFallbackRole=shoulder_spinal_strength receives coverage tier 2 ranking urgency only while avoid_heavy_spinal_loading or avoid_overhead_pressing is active. This support never grants a coverage key, fulfils or reserves primary_strength, and remains below exact tier-0/tier-1 role authority.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
         applicability: { contexts: ['candidate_selection', 'week_ahead_planning'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['strength_support_ranking'], horizon: 'acute' },
         evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
