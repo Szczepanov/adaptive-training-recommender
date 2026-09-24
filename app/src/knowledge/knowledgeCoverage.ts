@@ -390,7 +390,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'optimizer.symptom_compatible_strength_support', domain: 'optimizer_scoring', title: 'Symptom-compatible strength support ranking',
-        currentRule: 'When the exact evergreen primary_strength minimum remains unmet, a shoulder_spinal_strength guardrail fallback receives coverage tier 2 ranking urgency only while avoid_heavy_spinal_loading or avoid_overhead_pressing is active; it gains no exact coverage credit and cannot fulfil or reserve the primary-strength occurrence.',
+        currentRule: 'When the active coverage state has an unmet primary_strength minimum, a shoulder_spinal_strength guardrail fallback receives coverage tier 2 ranking urgency only while avoid_heavy_spinal_loading or avoid_overhead_pressing is active; it gains no exact coverage credit and cannot fulfil or reserve the primary-strength occurrence.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/coverage.ts:supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback', 'engine/optimizer.ts:rankCandidates'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.symptomCompatibleStrengthSupportPolicy],
