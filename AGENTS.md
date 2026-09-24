@@ -437,8 +437,8 @@ for client-specific Claude Code/Codex/Antigravity guidance and the rationale for
   `CLAUDE.md`, this file and `docs/`, plus Serena-specific notes. Do not copy invariants,
   command lists, package maps or version pins into a memory. When a memory disagrees with
   repository docs, the docs win; fix the memory.
-* **Symbol edits pass the same gates.** Edits made with `replace_symbol_body`,
-  `rename_symbol` or `replace_in_files` get the same verification as any other change
+* **Serena edits pass the same gates.** Edits made with `replace_symbol_body`,
+  `rename_symbol` or `replace_content` get the same verification as any other change
   ([`CLAUDE.md` § 3](./CLAUDE.md#3-working-loop)). Review the diff before finishing.
 
 ---
