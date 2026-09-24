@@ -145,7 +145,9 @@ unmet. That signal is intentionally one-way: the fallback does not acquire a cov
 does not fulfill/reserve the primary-strength occurrence, and does not erase the allocation
 shortfall. This lets the planner preserve low-load resistance exposure during a temporary
 loading constraint while keeping the real weekly strength role visible for a later feasible
-settled state.
+settled state. The exact tier-2 calibration is registered under ADR-0033 as the product
+heuristic `policy.optimizer.symptom_compatible_strength_support_v1`; it is not a clinical
+or physiological-equivalence claim.
 
 Authored travel blocks scale planned dose through `applyPlanningOverlays` across
 structured, demand-derived, and evergreen paths. Fixed activities retain schedule
