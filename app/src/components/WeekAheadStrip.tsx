@@ -92,6 +92,24 @@ function weekdayLabel(dateStr: string): string {
   return WEEKDAY_FORMATTER.format(new Date(dateStr + 'T00:00:00Z'));
 }
 
+function strengthRoleSummary(plan: WeekAheadPlan): string | null {
+  const strength = plan.allocationReport.outcomes.filter(outcome => outcome.occurrence.coverageKey === 'primary_strength');
+  if (strength.length === 0) return null;
+
+  const planned = strength.filter(outcome => outcome.status === 'fulfilled' || outcome.status === 'reserved').length;
+  const missed = strength.filter(outcome => outcome.status === 'missed');
+  const unresolved = strength.filter(outcome => outcome.status === 'unresolved_search_budget').length;
+  const roleWord = strength.length === 1 ? 'role' : 'roles';
+  const parts = [`Strength ${roleWord}: ${planned}/${strength.length} planned`];
+
+  if (missed.length > 0) {
+    const reasons = [...new Set(missed.map(outcome => outcome.reason?.replaceAll('_', ' ') ?? 'unknown reason'))];
+    parts.push(`${missed.length} blocked (${reasons.join(', ')})`);
+  }
+  if (unresolved > 0) parts.push(`${unresolved} still unresolved`);
+  return `${parts.join('; ')}.`;
+}
+
 // ⚡ Bolt Performance Optimization:
 // Wrapped WeekAheadStrip in React.memo to prevent unnecessary re-renders when the parent dashboard
 // state updates (e.g., toggling workout details).
@@ -118,6 +136,7 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
   const evergreenWeekPurpose = planningMode === 'evergreen' && trainingIntentProfile
     ? `${trainingIntentProfile.weeklyCommitment.targetSessions} typical sessions${openObjective ? `; ${openObjective.title} is still open` : ''}.`
     : null;
+  const strengthSummary = strengthRoleSummary(plan);
   // ADR-0018 D-MISS: forecast evidence rendered straight from the shared allocation
   // report, never rebuilt from the selected recommendations, and never presented as
   // completed training.
@@ -214,6 +233,10 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
 
       {evergreenWeekPurpose && (
         <p className="week-purpose">Week purpose: {evergreenWeekPurpose}</p>
+      )}
+
+      {strengthSummary && (
+        <p className="week-role-summary">{strengthSummary}</p>
       )}
 
       <div className={`week-ahead-detail confidence-${selected.confidence}`}>
