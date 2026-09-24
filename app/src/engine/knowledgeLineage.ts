@@ -171,6 +171,7 @@ export function candidateSelectionKnowledgeRefs(): string[] {
         KNOWLEDGE_CLAIM_IDS.unpreferredModalityFallbackPolicy,
         KNOWLEDGE_CLAIM_IDS.preferredModalityTodayTieBreakPolicy,
         KNOWLEDGE_CLAIM_IDS.catalogStrengthAdjacencyPolicy,
+        KNOWLEDGE_CLAIM_IDS.symptomCompatibleStrengthSupportPolicy,
     ];
 }
 
