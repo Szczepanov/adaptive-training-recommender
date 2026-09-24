@@ -136,3 +136,4 @@ cd app && npm test                     # vitest only — the fast inner loop
 | Garmin OAuth bootstrap | `scripts/bootstrap_garmin_tokens.py` |
 | Warsaw date helper / user-scoped Firestore reader / security rules | `app/src/utils/localDate.ts`, `app/src/services/recoverySnapshotService.ts`, `app/firestore.rules` |
 | Which document to trust | [`docs/README.md`](./docs/README.md) — routing table and precedence |
+| Symbol navigation (optional Serena MCP) and `.serena/memories/` policy | [`AGENTS.md` § Code navigation with Serena](./AGENTS.md#code-navigation-with-serena-optional) |
