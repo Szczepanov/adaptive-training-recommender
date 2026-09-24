@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := all
-.PHONY: all help check check-python check-frontend \
+.PHONY: all verify agent-evals help check check-python check-frontend \
         lint lint-python lint-frontend \
         format format-check format-python-check format-python format-frontend \
         typecheck typecheck-python typecheck-frontend \
@@ -16,11 +16,16 @@
 # Main Verification Targets
 # -----------------------------------------------------------------------------
 
-## Run all code checks, test suites (including Firestore rules), simulations, and production build
-all: check test-rules simulate build
-	@echo ================================================================================
-	@echo [OK] All checks, tests, simulations, and build passed successfully!
-	@echo ================================================================================
+## Backwards-compatible alias for the canonical repository verification contract
+all: verify
+
+## Canonical agent/developer handoff gate; scope is auto-detected from the diff
+verify:
+	uv run python scripts/verify_repo.py
+
+## Validate the provider-neutral coding-agent evaluation corpus
+agent-evals:
+	uv run python scripts/agent_eval.py validate
 
 ## Run full test suites for both backend and frontend
 test: test-python test-frontend
@@ -223,7 +228,9 @@ help:
 	@echo Adaptive Training Recommender - Makefile Commands
 	@echo --------------------------------------------------------------------------------
 	@echo Main Targets:
-	@echo   make all               - Run all code checks, test suites (incl. Firestore rules), simulations, and build
+	@echo   make verify            - Canonical scope-aware handoff/PR verification contract
+	@echo   make all               - Alias for make verify
+	@echo   make agent-evals       - Validate the coding-agent evaluation corpus
 	@echo   make check             - Run all Python and Frontend checks and tests
 	@echo   make test              - Run backend and frontend test suites
 	@echo   make test-rules        - Run Firestore security-rule tests against the emulator
