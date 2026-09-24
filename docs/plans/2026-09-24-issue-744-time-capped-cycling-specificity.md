@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | `Ready`: option E was approved on 2026-09-24 (§9), and every dependency is on `main` |
+| Status | `In review`: TC1–TC5 and the deterministic part of TC6 are implemented; externally scored plan/persona judge baselines await a comparable reviewed run (§10) |
 | Issue | [#744](https://github.com/Szczepanov/adaptive-training-recommender/issues/744) |
 | Blocked by | Nothing |
 | Unlocks | [#756](https://github.com/Szczepanov/adaptive-training-recommender/issues/756) (modify-tier walking), [#757](https://github.com/Szczepanov/adaptive-training-recommender/issues/757) (athlete-relative aerobic floor), and [#758](https://github.com/Szczepanov/adaptive-training-recommender/issues/758) as a soft dependency (cap-fitting cycling quality). See §8 |
@@ -12,6 +12,9 @@
 ---
 
 ## 1. Verdict
+
+> Historical diagnosis from before the implementation. The outcome and current verification
+> are recorded in §10; verify any behaviour described below against the current code.
 
 The issue describes a real symptom, but it gets the mechanism wrong. Its proposed fix,
 "add a compact dose and boost cycling rank", would not change the outcome.
@@ -202,7 +205,7 @@ needs a sentence in the PR:
 
 ---
 
-## 6. Implementation steps (TDD order)
+## 6. Implementation checklist (TDD order; outcome in §10)
 
 Work items are numbered `TC1`–`TC6`, the plan-board prefix in `docs/plans/README.md`. All paths are under `app/src/`. Symbols are named instead of line numbers, per CLAUDE.md §5.
 
@@ -350,25 +353,29 @@ This is a new decision-authority rule: it changes which session wins on capped d
   `persona:update-baseline` flows. Put this in a separate `chore(baselines)` commit, as
   in #743.
 
+The simulation baseline has been reviewed and refreshed. The plan/persona baselines were
+scored with `manual_external`; a local-model run would not be comparable. They remain
+unchanged pending fresh, comparable external scoring (§10).
+
 ---
 
 ## 7. Revised acceptance criteria
 
-- [ ] In `persona_cycling_hybrid_low_time` (35-min cap), train-mode days no longer choose
+- [x] In `persona_cycling_hybrid_low_time` (35-min cap), train-mode days no longer choose
       `end_walk_01` while a capped `end_easy_01`/`end_easy_04` is feasible. The persona
       corpus shows at most 1 walk and at least 6 cycling days in 14.
-- [ ] Every session in every simulated plan satisfies `effective durationMax ≤ cap`, with
+- [x] Every session in every simulated plan satisfies `effective durationMax ≤ cap`, with
       0 constraint violations across `simulate:scenarios`.
-- [ ] Modify-tier days still use the authored `easierDose`. The adverse-recovery re-entry
+- [x] Modify-tier days still use the authored `easierDose`. The adverse-recovery re-entry
       spins stay at 20–30 min.
-- [ ] The deterministic planner regression from Step 1.3 passes. This replaces the
+- [x] The deterministic planner regression from Step 1.3 passes. This replaces the
       unmeasurable "`persona:build` passes" criterion; `persona:build` must still run
       cleanly.
-- [ ] The claim, the coverage item and the alignment test are present, and the knowledge
+- [x] The claim, the coverage item and the alignment test are present, and the knowledge
       validators pass.
-- [ ] The aerobic-volume duration floor is recorded as a coverage item that links #757
+- [x] The aerobic-volume duration floor is recorded as a coverage item that links #757
       (Step 3.5).
-- [ ] `POLICY_VERSION` is bumped and the policy-drift check is green.
+- [ ] `POLICY_VERSION` is bumped; the policy-drift check must be rerun against the committed change.
 - [ ] The gates in the next list pass, and their output is reported verbatim in the PR.
 
 Gates, per CLAUDE.md §3 (engine/policy change):
@@ -456,3 +463,45 @@ next persona run still flags it after #744 and #756.
 Option D (all categories) is not pursued: it lengthens compact strength sessions and would
 need its own ratio review. The approval also covers the follow-ups in §8, and recording
 the aerobic floor in the knowledge inventory (Step 3.5).
+
+---
+
+## 10. Implementation and verification (2026-09-24)
+
+Option E is implemented in `optimizer.ts` `resolveCapTruncatedPrescription` and
+`resolveTimeCapDoseAdjustment`. Capped train-tier Easy Endurance work keeps its authored
+minimum; modify-tier work keeps the authored easier dose. `planner.ts`
+`evaluateProjectedDate` also uses the effective severe-recovery re-entry tier when ranking,
+matching the tier used for load-budget admission and the final forecast prescription. A
+code-review finding exposed that mismatch, and a synthetic re-entry regression now checks
+the ranked dose, final dose and weekly coverage together.
+
+The 35-minute cycling persona now has **8 cycling, 1 walking, 3 strength, 1 mobility and
+1 rest** sessions over 14 days. Every session fits the cap. The walk is a modify-tier day;
+the train-tier Zone 2 rides start at 30 minutes. The deterministic 14-day regression and
+focused dose, coverage, progression and re-entry tests pass. Knowledge lineage includes
+the new product-policy claim, coverage item and alignment test; the fixed aerobic floor
+is separately recorded as uncovered work for #757. `POLICY_VERSION` was bumped.
+
+`make check` passed: 1,036 Python tests, 6,183 frontend tests, typecheck, lint, knowledge
+and workout validators. `make simulate` passed all 39 scenarios with zero constraint
+violations; the reviewed deterministic baseline was refreshed. `npm run
+simulate:plan-judge` passed invariants for 96 cases across 18 families, and `npm run
+persona:build` generated 36 cases across 10 families. The policy-drift check is run after
+the code commit so it can compare committed changes with `origin/main`.
+`npm run visual:refresh` passed 76 desktop/mobile checks; the 390-pixel Plan forecast
+capture showed compact duration text without horizontal overflow. `WeekAheadStrip` renders
+the effective duration, not the longer dose label.
+
+The semantic simulation diff before baseline promotion showed the expected travel-day
+improvement and a reduced-time diagnostic change. The re-entry alignment also made three
+severe-recovery scenarios more conservative (more rest in place of mobility or cycling),
+with no new quality warnings or constraint violations. Plan-judge hard-session invariants
+still pass. The triathlon short-time persona's September 5 strength session is a weekend
+session under its 90-minute weekend setting, so its 55-minute maximum fits.
+
+The committed plan and persona judge baselines remain from a reviewed `manual_external`
+run. Their new corpora were built, but replacing those baselines with scores from the
+available local model would make the before/after comparison invalid. Comparable external
+rescoring and `judge:update-baseline` / `persona:update-baseline` remain pending by the
+user's choice; the PR must state this explicitly.

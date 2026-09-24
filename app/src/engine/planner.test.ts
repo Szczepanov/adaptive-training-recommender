@@ -4,10 +4,10 @@ import { mapContextFromGoalsAndTrainingSettings } from './adapters';
 import { evaluateProjectedDate, generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectedDateOutcomeFrom, projectTrailingHistory, reconcileObjectivesForDate, resolveWeeklyAnchors, NEUTRAL_PREFERENCES, type ProjectionExposure } from './planner';
 import { createEmptyFatigue } from './fatigue';
 import { resolveTrainingIntent } from './trainingIntent';
-import type { AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, ScheduleOverlay, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
+import type { AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, ScheduleOverlay, SubjectiveInput, TrainingIntentProfile, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
-import { rankCandidatesByUtility } from './optimizer';
+import { materializeEffectiveDose, rankCandidatesByUtility, resolveTimeCapDoseAdjustment } from './optimizer';
 import { resolveAvailability } from './schedule';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { generateWeeklyObjectives } from './microcycle';
@@ -15,6 +15,9 @@ import { evaluatePeriodizationPhase } from './periodization';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS, ROLLING_LOAD_BUDGET_POLICY_VERSION } from './rollingLoadBudget';
 import { PROJECTED_RECOVERY_POLICY_BLOCKER } from './weeklyAllocation';
+import { buildPlanDefinition } from './planSchedule';
+import { coverageNeedTierForTemplate } from './coverage';
+import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 
 // --- Fixtures (mirrors rules.test.ts's pattern) -----------------------------
 
@@ -430,6 +433,125 @@ describe('generateWeekAheadPlanWithIntent forecast days respect the same time ca
         // (dayOffset >= 2) -- today (offset 0, handled separately) and tomorrow (offset 1)
         // are not the gap this regression covers.
         expect(overCapDays.some(day => day.dayOffset >= 2)).toBe(true);
+    });
+});
+
+describe('cycling-primary athlete keeps cycling on 35-minute capped train days (#744)', () => {
+    it('keeps a deterministic 14-day evergreen plan cycling-specific and within the cap', async () => {
+        const date = '2026-08-31';
+        const context = baseContext({ hasIndoorBike: true, hasFreeWeights: true, maxTimeMinutes: 35 });
+        context.trainingSettings = weeklyTrainingSettings({ weekdayMaxMinutes: 35, weekendMaxMinutes: 35 });
+        context.preferences.preferredModalities = ['Cycling', 'Strength'];
+        context.preferences.deprioritizedModalities = ['Running'];
+        const preferences: UserPreferences = {
+            ...NEUTRAL_PREFERENCES, userId: 'cycling-primary-test',
+            preferredModalities: ['Cycling', 'Strength'], deprioritizedModalities: ['Running'],
+            defaultWeekdayTimeMin: 35, defaultWeekendTimeMin: 35,
+        };
+        const intentProfile: TrainingIntentProfile = {
+            userId: 'cycling-primary-test', planningMode: 'evergreen',
+            priorities: ['endurance', 'strength_muscle'],
+            weeklyCommitment: { minSessions: 5, targetSessions: 6, maxSessions: 7 },
+            organizationPreference: 'auto', schemaVersion: 1, createdAt: '', updatedAt: '',
+        };
+        const readiness: DailyReadiness = {
+            subjective: neutralSubjective({ readiness: 8, fatigue: 2, soreness: 2, motivation: 9, timeAvailable: 35, preferredModalityToday: 'Cycling' }),
+            objective: quietObjective(),
+        };
+        const historyProvider: TrainingHistoryProvider = { reconstruct: async () => [] };
+        const todayRec = await evaluateTrainingWithIntent('cycling-primary-test', readiness, context, [], date, undefined, historyProvider);
+        const nextDay = await evaluateNextDayPlanWithIntent('cycling-primary-test', [], readiness, context, date, todayRec, historyProvider);
+        const tomorrowRec = nextDay.branches.yellow.recommendation;
+        const plan = await generateWeekAheadPlanWithIntent(
+            'cycling-primary-test', readiness, context, preferences, [], date,
+            todayRec, tomorrowRec, { days: 14 }, historyProvider, null, intentProfile,
+        );
+        expect(plan.days).toHaveLength(14);
+        for (const day of plan.days) {
+            expect(day.activeDose?.durationMax ?? day.template.durationMax).toBeLessThanOrEqual(35);
+        }
+        const trainDays = plan.days.filter(day => day.mode === 'train');
+        expect(trainDays.length).toBeGreaterThan(0);
+        expect(trainDays.filter(day => day.template.modality === 'Walking').length).toBeLessThanOrEqual(1);
+        expect(plan.days.filter(day => day.template.modality === 'Cycling').length).toBeGreaterThanOrEqual(6);
+        const cappedZone2Rides = plan.days.filter(day => day.template.modality === 'Cycling'
+            && day.template.category === 'Easy Endurance' && day.template.durationMax > 35);
+        expect(cappedZone2Rides.length).toBeGreaterThan(0);
+        for (const day of cappedZone2Rides) {
+            expect(day.activeDose?.durationMin).toBeGreaterThanOrEqual(30);
+        }
+    });
+});
+
+describe('capped severe-recovery re-entry ranking uses the final modify dose (#744)', () => {
+    it('keeps ranked aerobic coverage aligned with the forecast prescription', () => {
+        const date = '2026-09-13';
+        const context = baseContext({ hasIndoorBike: true, maxTimeMinutes: 35 });
+        context.trainingSettings = weeklyTrainingSettings({ weekdayMaxMinutes: 35, weekendMaxMinutes: 35 });
+        const planState = buildPlanDefinition(
+            EVERGREEN_GENERAL_COVERAGE_SET.coverage,
+            [{ id: 'block_general', phase: 'general', startDate: '2026-09-10', endDate: '2026-09-16', volumeScale: 1, intensityScale: 1 }],
+            { id: 'reentry-test' } as UserEvent,
+            [{ key: 'zone2_aerobic', coverageKey: 'aerobic_volume', blockId: 'block_general', requiredCredit: 1,
+                priority: 'must_have', role: 'primary_developmental', coverageMinimumSessions: 1, coverageTargetSessions: 1 }],
+            [], 'plan_reentry_test', EVERGREEN_GENERAL_COVERAGE_SET.id,
+        );
+        if (planState.status !== 'AVAILABLE') throw new Error('synthetic re-entry plan invalid');
+        const readiness: DailyReadiness = {
+            subjective: neutralSubjective({ readiness: 3, fatigue: 8, soreness: 7, stress: 8, timeAvailable: 35 }),
+            objective: quietObjective(),
+        };
+        const seed = prepareWeekAheadPlanSeed(readiness, [], '2026-09-10', []);
+        const evaluation = evaluateProjectedDate(date, {
+            microcycle: seed.microcycle,
+            externalFatigue: createEmptyFatigue('2026-09-12'),
+            projectedHistory: [],
+        }, {
+            context, preferences: NEUTRAL_PREFERENCES,
+            events: [], fixedActivities: [], authoredPlanBlocks: [], scheduleOverlays: [],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: date, todayDate: '2026-09-10',
+            planDefinition: planState.data,
+            projectedRecoveryPolicy: { severeAdverseRecovery: true, dayOffset: 3 },
+        });
+        const cycling = evaluation.recoveryGated.find(item => item.id === 'end_easy_01')!;
+        const walking = evaluation.recoveryGated.find(item => item.id === 'end_walk_01')!;
+        expect(cycling).toBeDefined();
+        expect(walking).toBeDefined();
+        expect(evaluation.fatigueTier).toBe('train');
+        expect(evaluation.optimizationContext.options.fatigueTier).toBe('modify');
+        const ranked = evaluation.rank([cycling, walking]);
+        const cyclingRank = ranked.accepted.find(item => item.template.id === cycling.id)!;
+        const walkingRank = ranked.accepted.find(item => item.template.id === walking.id)!;
+        const finalCyclingDose = resolveTimeCapDoseAdjustment(cycling, 35, true)?.activeDose;
+        expect(finalCyclingDose).toMatchObject({ durationMin: 20, durationMax: 30 });
+        expect(cyclingRank.coverageNeedTier).toBe(coverageNeedTierForTemplate(
+            evaluation.optimizationContext.coverageState,
+            materializeEffectiveDose(cycling, finalCyclingDose),
+        ));
+        expect(cyclingRank.coverageNeedTier).toBe(3);
+        expect(walkingRank.coverageNeedTier).toBe(1);
+
+        const todayRec = evaluateTraining(readiness, context, '2026-09-10');
+        const forecast = generateWeekAheadPlan(
+            readiness, context, NEUTRAL_PREFERENCES, '2026-09-10',
+            { ...todayRec, mode: 'recover' }, null, seed,
+            { days: 3, planDefinition: planState.data },
+        );
+        const reentryDay = forecast.days.find(day => day.dayOffset === 3)!;
+        expect(reentryDay).toBeDefined();
+        expect(reentryDay.diagnostics?.fatigueTier).toBe('modify');
+        expect(reentryDay.template.category).toBe('Easy Endurance');
+        const finalDose = resolveTimeCapDoseAdjustment(reentryDay.template, 35, true)?.activeDose;
+        expect(reentryDay.activeDose).toEqual(finalDose);
+        const selectedRank = evaluation.rank([reentryDay.template]).accepted[0];
+        expect(selectedRank.coverageNeedTier).toBe(coverageNeedTierForTemplate(
+            evaluation.optimizationContext.coverageState,
+            materializeEffectiveDose(reentryDay.template, reentryDay.activeDose),
+        ));
+        expect(reentryDay.template.modality).toBe('Walking');
+        expect(selectedRank.coverageNeedTier).toBe(1);
     });
 });
 

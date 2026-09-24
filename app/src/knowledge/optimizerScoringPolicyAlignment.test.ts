@@ -4,9 +4,12 @@ import type { CoverageState } from '../engine/coverage';
 import type { ResolvedAvailability } from '../engine/schedule';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import {
+    CAP_TRUNCATION_CATEGORIES,
     calculateFatigueCostPenalty,
     calculateStimulusBenefit,
     rankCandidates,
+    resolveCapTruncatedPrescription,
+    resolveTimeCapDoseAdjustment,
     UNPREFERRED_MODALITY_MULTIPLIER,
     type OptimizationOptions,
 } from '../engine/optimizer';
@@ -182,6 +185,30 @@ function objective(
 }
 
 describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
+    it('pins time-cap truncation to Easy Endurance train days and the midpoint ratio', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.timeCapEasyEnduranceTruncationPolicy);
+        expect(claim.statement).toContain('Easy Endurance');
+        expect(claim.statement).toContain('Modify-tier days retain the authored easierDose');
+        expect(claim.statement).toContain('max(easierDose.doseRatio, midpoint(durationMin, cap) / midpoint(durationMin, durationMax))');
+        expect(claim.statement).toContain('duration-feasible; not a claim of dose adequacy');
+        expect(CAP_TRUNCATION_CATEGORIES).toEqual(['Easy Endurance']);
+
+        const template = mockTemplate({
+            durationMin: 30,
+            durationMax: 60,
+            easierDose: { label: 'Light Spin', durationMin: 20, durationMax: 30, doseRatio: 0.6, prescriptionSummary: 'Easy spin.' },
+        });
+        const truncated = resolveCapTruncatedPrescription(template, 35);
+        expect(truncated).toMatchObject({ durationMin: 30, durationMax: 35 });
+        expect(truncated?.doseRatio).toBeCloseTo(Math.max(0.6, ((30 + 35) / 2) / ((30 + 60) / 2)));
+        expect(resolveTimeCapDoseAdjustment(template, 35, false)?.activeDose).toEqual(truncated);
+        expect(resolveTimeCapDoseAdjustment(template, 35, true)?.activeDose).toEqual(template.easierDose);
+        expect(resolveCapTruncatedPrescription({ ...template, category: 'Moderate Endurance' }, 35)).toBeNull();
+        expect(resolveCapTruncatedPrescription(template, 25)).toBeNull();
+        expect(resolveCapTruncatedPrescription({ ...template, easierDose: { ...template.easierDose!, durationMin: 30 } }, 35)).toBeNull();
+        expect(resolveCapTruncatedPrescription({ ...template, easierDose: { ...template.easierDose!, doseRatio: 0.8 } }, 35)?.doseRatio).toBe(0.8);
+    });
+
     it('pins the unpreferred-modality demotion policy to candidate ranking', () => {
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.unpreferredModalityFallbackPolicy);
         expect(claim.statement).toContain('0.25');

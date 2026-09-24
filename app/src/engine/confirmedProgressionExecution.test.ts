@@ -150,4 +150,16 @@ describe('confirmed progression execution authority', () => {
         expect(rec.rationale).toContain('The confirmed progression remains the authored target');
         expect(rec.rationale).toContain('today’s readiness/time ceiling is lower');
     });
+
+    it('applies a 30-minute confirmed progression at the capped train-day floor', async () => {
+        const rec = await recommend(
+            { subjective: subjective({ timeAvailable: 35 }), objective: objective() },
+            new Map([[progressionOverrideKey('aerobic_volume', PROGRESSED_WORKOUT_ID), 30]]),
+        );
+
+        expect(rec.mode).toBe('train');
+        expect(workoutForTemplate(rec.template.id)?.id).toBe(PROGRESSED_WORKOUT_ID);
+        expect(rec.activeDose).toMatchObject({ durationMin: 30, durationMax: 30 });
+        expect(rec.rationale).toContain('the confirmed progression dose (Confirmed progression · 30 min)');
+    });
 });

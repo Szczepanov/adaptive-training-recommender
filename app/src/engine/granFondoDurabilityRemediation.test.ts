@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { ENRICHED_TEMPLATES } from './templates';
 import { isTemplatePhaseEligible, type PeriodizationResult } from './periodization';
 import { resolveDemandProfile } from './eventPresets';
-import { rankCandidates, HEAVY_LOWER_BODY_STRENGTH_CATEGORIES, isCyclingDurabilityFocusEvent } from './optimizer';
+import { rankCandidates, resolveTimeCapDoseAdjustment, HEAVY_LOWER_BODY_STRENGTH_CATEGORIES, isCyclingDurabilityFocusEvent } from './optimizer';
 import { createEmptyFatigue } from './fatigue';
 import { evaluateTrainingWithIntent } from './rules';
 import { SCENARIOS } from './simulation/scenarios';
@@ -295,7 +295,7 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
         expect(capped120.benefitScore).toBeGreaterThan(capped60.benefitScore);
     });
 
-    it('does not let a capped easier dose claim authored aerobic-volume coverage', () => {
+    it('credits a train-day cap within the authored aerobic floor but not a modify-tier easier dose', () => {
         const zone2 = ENRICHED_TEMPLATES.find(t => t.id === 'end_easy_01')!;
         const coverageState: CoverageState = {
             asOfDate: '2026-08-16',
@@ -320,7 +320,7 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
             }],
         };
 
-        const rankAtCap = (cap: number) => {
+        const rankAtCap = (cap: number, fatigueTier: 'train' | 'modify' = 'train') => {
             const availability: ResolvedAvailability = {
                 date: '2026-08-16',
                 maxTimeMinutes: cap,
@@ -337,14 +337,17 @@ describe('Gran Fondo Durability & Anchor Protection Remediation (Issue #675)', (
                 availability,
                 [],
                 DEFAULT_PREFERENCES,
-                { date: '2026-08-16', coverageState, resolvedAvailability: availability },
+                { date: '2026-08-16', coverageState, resolvedAvailability: availability, fatigueTier },
             ).accepted[0];
         };
 
-        // The authored 30-60 minute Zone 2 session qualifies for the role, while its
-        // automatic 20-30 minute easier dose is below the catalog's aerobic-volume floor.
+        // Train-day truncation retains the authored 30-minute floor. A modify-tier day
+        // still uses the 20-30 minute readiness dose, which cannot claim this role.
         expect(rankAtCap(60).coverageNeedTier).toBe(1);
-        expect(rankAtCap(30).coverageNeedTier).toBe(3);
+        expect(resolveTimeCapDoseAdjustment(zone2, 30, false)?.activeDose).toMatchObject({ durationMin: 30, durationMax: 30 });
+        expect(rankAtCap(30).coverageNeedTier).toBe(1);
+        expect(resolveTimeCapDoseAdjustment(zone2, 30, true)?.activeDose).toMatchObject({ durationMin: 20, durationMax: 30 });
+        expect(rankAtCap(30, 'modify').coverageNeedTier).toBe(3);
     });
 
     it('prices capped easier doses from effective fatigue cost and systemic thresholds', () => {
