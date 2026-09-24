@@ -389,6 +389,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Issue #736 registers same-day tie-breaking independently so a transient preference cannot be mistaken for a new safety or long-term planning authority.',
     },
     {
+        id: 'optimizer.symptom_compatible_strength_support', domain: 'optimizer_scoring', title: 'Symptom-compatible strength support ranking',
+        currentRule: 'When the exact evergreen primary_strength minimum remains unmet, a shoulder_spinal_strength guardrail fallback receives coverage tier 2 ranking urgency only while avoid_heavy_spinal_loading or avoid_overhead_pressing is active; it gains no exact coverage credit and cannot fulfil or reserve the primary-strength occurrence.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['engine/coverage.ts:supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback', 'engine/optimizer.ts:rankCandidates'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.symptomCompatibleStrengthSupportPolicy],
+        coverageRationale: 'Registered as explicit product ranking policy rather than as a clinical or physiological-equivalence claim. Exact role identity remains governed by the coverage descriptor and ADR-0018 allocation contract.',
+    },
+    {
         id: 'optimizer.catalog_strength_adjacency', domain: 'optimizer_scoring', title: 'Automatic catalog adjacent-day strength exclusion',
         currentRule: 'Automatic catalog ranking rejects a strength candidate on the local calendar day immediately after any strength exposure, across categories; authored-plan critique retains the shared recovery-spacing contract instead.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
