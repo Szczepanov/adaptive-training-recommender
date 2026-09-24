@@ -15,7 +15,7 @@ import { ActivityTelemetry } from './ActivityTelemetry';
 import { ActivityReclassificationModal } from './ActivityReclassificationModal';
 import { StrengthOverloadHistory } from './StrengthOverloadHistory';
 import { CompletedWorkoutList } from './CompletedWorkoutList';
-import { unlinkCompletedWorkoutSource } from './completedWorkoutActions';
+import { linkCompletedWorkoutSources, unlinkCompletedWorkoutSource } from './completedWorkoutActions';
 import { BodyCompositionPanel } from './anthropometry/BodyCompositionPanel';
 import { NutritionPanel } from './nutrition/NutritionPanel';
 import { configuredActivitiesReadModelPolicy } from '../training-occurrence/activitiesReadModelPolicy';
@@ -1139,6 +1139,11 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
                     unlinkCompletedWorkoutSource(userId, performedOccurrenceId, sourceKey, userId)
                       .then(() => setCanonicalWorkoutWindow(null))
                       .catch(err => console.warn('[training-occurrence] unlink failed', err));
+                  }}
+                  onLinkSources={(structuredOccurrenceId, providerOccurrenceId) => {
+                    linkCompletedWorkoutSources(userId, structuredOccurrenceId, providerOccurrenceId, userId)
+                      .then(() => setCanonicalWorkoutWindow(null))
+                      .catch(err => console.warn('[training-occurrence] manual link failed', err));
                   }}
                 />
               )

@@ -291,6 +291,7 @@ export function parseNormalizedGarminActivity(
     const trainingEffectLabel = parseOptionalString(raw.trainingEffectLabel);
     const epoc = optionalNonNegativeNumber(raw.epoc);
     const recoveryTimeHours = optionalNonNegativeNumber(raw.recoveryTimeHours);
+    const maxHr = optionalNonNegativeNumber(raw.maxHr);
     const exerciseSets = parseExerciseSets(raw.exerciseSets);
     const hrMeasurement = parseHrMeasurement(raw.hrMeasurement);
 
@@ -307,6 +308,7 @@ export function parseNormalizedGarminActivity(
             trainingEffectAerobic: trainingEffectAerobic ?? null,
             trainingEffectAnaerobic: trainingEffectAnaerobic ?? null,
             averageHr: averageHr ?? null,
+            ...(maxHr !== undefined && maxHr !== null && maxHr > 0 ? { maxHr } : {}),
             activityTrainingLoad: activityTrainingLoad ?? null,
             intensityTag: raw.intensityTag,
             ...(primaryBenefit !== undefined ? { primaryBenefit } : {}),

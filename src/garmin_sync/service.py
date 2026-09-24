@@ -216,8 +216,8 @@ class GarminSyncService:
     ) -> dict[str, CanonicalActivityDetail]:
         """Best-effort target-date activity enrichment.
 
-        Strength exercise sets are always eligible because they are the core data of a
-        strength session and require a single endpoint. The existing cycling power
+        Strength exercise sets (plus that session's HR time-in-zone) are always eligible
+        because they are the core data of a strength session and cost two endpoints. The existing cycling power
         detail path remains behind ``GARMIN_ACTIVITY_DETAIL_ENABLED`` via
         ``include_power_details`` so this feature does not silently triple detail-call
         traffic for qualifying rides.

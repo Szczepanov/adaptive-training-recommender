@@ -88,6 +88,8 @@ on:
         required: false
       VITE_HEALTH_ANOMALY_POLICY:
         required: false
+      VITE_TRAINING_OCCURRENCE_ACTIVITIES_POLICY:
+        required: false
 
 permissions:
   contents: read
@@ -244,6 +246,11 @@ jobs:
           # (resolveConfiguredHealthAnomalyShadowPolicy), so without this line the secret being
           # set has no effect on the deployed build.
           VITE_HEALTH_ANOMALY_POLICY: ${{ secrets.VITE_HEALTH_ANOMALY_POLICY }}
+          # ADR-0034 Stage 3 Activities cutover (see app/.env.example). Same forwarding
+          # requirement as above: without this line the repo secret never reaches Vite, and
+          # a missing value fails closed to 'off' (resolveConfiguredActivitiesReadModelPolicy),
+          # keeping the raw-Garmin Activities view. Set the secret to canonical-v1 to enable.
+          VITE_TRAINING_OCCURRENCE_ACTIVITIES_POLICY: ${{ secrets.VITE_TRAINING_OCCURRENCE_ACTIVITIES_POLICY }}
           VITE_GIT_SHA: ${{ github.sha }}
           VITE_GIT_DIRTY: "false"
         run: npm run typecheck && npm run build:bundle

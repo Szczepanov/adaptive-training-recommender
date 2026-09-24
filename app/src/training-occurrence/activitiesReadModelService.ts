@@ -14,9 +14,11 @@ import { addDaysToLocalDateString, getPreviousLocalDateString } from '../utils/l
 import type { NormalizedGarminActivity } from '../engine/models';
 import type { CompletedWorkoutView } from './completedWorkoutView';
 import { sourceBadgeFor } from './completedWorkoutView';
+import { buildStructuredStepDetails } from './structuredSetDetail';
 import { compareActivitiesReadModels, recordActivitiesReadModelComparison } from './activitiesReadModelDiagnostics';
 import { isProviderActivityRef, isStructuredExecutionRef, type PerformedTrainingOccurrence } from './models';
 import { performedTrainingOccurrenceRepository as repository } from './repository';
+import { sourceKeyForRef } from './sourceIdentity';
 
 async function resolveStructuredDetail(
     userId: string,
@@ -29,10 +31,17 @@ async function resolveStructuredDetail(
     const definitionState = await resolveSessionDefinition(userId, execution.sessionSource, execution.prescriptionHash);
     if (definitionState.status !== 'AVAILABLE') return undefined;
 
-    const entries = await sessionExecutionService.getEntries(userId, executionId);
+    const [entries, restEvents] = await Promise.all([
+        sessionExecutionService.getEntries(userId, executionId),
+        // Performed rest is enrichment: an execution recorded before durable rest events
+        // existed (or a failed read) still renders its sets, just without actual rest.
+        sessionExecutionService.getRestEvents(userId, executionId).catch(() => []),
+    ]);
     return {
         title: definitionState.data.title,
         comparison: comparePlannedVsPerformed(definitionState.data, entries),
+        steps: buildStructuredStepDetails(definitionState.data, entries, restEvents),
+        hasPerformedRest: restEvents.length > 0,
     };
 }
 
@@ -57,6 +66,7 @@ async function hydrateOccurrence(
 
     return {
         performedOccurrenceId: occurrence.performedOccurrenceId,
+        sourceKeys: occurrence.sourceRefs.map(sourceKeyForRef),
         localDate: occurrence.localDate,
         modality: occurrence.modality,
         startedAt: occurrence.startedAt,

@@ -13,6 +13,7 @@
  */
 import type { NormalizedGarminActivity } from '../engine/models';
 import type { PerformedSessionComparison } from '../sessions/performedComparison';
+import type { StructuredStepDetail } from './structuredSetDetail';
 import { isProviderActivityRef, isStructuredExecutionRef, type PerformedTrainingOccurrence, type ReconciliationProvenance } from './models';
 
 export interface CompletedWorkoutSourceBadge {
@@ -24,10 +25,18 @@ export interface CompletedWorkoutSourceBadge {
 export interface CompletedWorkoutStructuredDetail {
     title: string;
     comparison: PerformedSessionComparison;
+    /** Prescribed target plus per-set performed rows and performed rest, per step. */
+    steps: StructuredStepDetail[];
+    /** Whether any durable performed-rest event was recorded for this execution --
+     * lets the UI say "not recorded" rather than implying zero rest for older sessions. */
+    hasPerformedRest: boolean;
 }
 
 export interface CompletedWorkoutView {
     performedOccurrenceId: string;
+    /** `sourceIdentity.ts` keys of every attached source -- lets a manual-link offer
+     * respect a prior sticky unlink between the same two sources. */
+    sourceKeys: string[];
     localDate?: string;
     modality?: string;
     startedAt?: string;
@@ -53,4 +62,34 @@ export function sourceBadgeFor(occurrence: Pick<PerformedTrainingOccurrence, 'so
         hasProvider: providerRefs.length > 0,
         providers: [...new Set(providerRefs.map(ref => ref.provider))],
     };
+}
+
+export interface ManualLinkCandidate {
+    providerOccurrenceId: string;
+    activity: NormalizedGarminActivity;
+}
+
+/**
+ * ADR-0034 "Manual reconciliation UX": when automatic reconciliation left a structured
+ * execution and a Garmin activity as two rows (ambiguous, or no timestamps to match on),
+ * the athlete can say they are the same workout. Offered only for a structured-only row
+ * and a Garmin-only row on the same local date with no known modality conflict, and never
+ * for a pair the athlete previously unlinked -- that exclusion is sticky and re-linking it
+ * would need its own explicit undo flow.
+ */
+export function manualLinkCandidatesFor(
+    workout: CompletedWorkoutView,
+    all: readonly CompletedWorkoutView[],
+): ManualLinkCandidate[] {
+    if (!workout.sourceBadge.hasStructured || workout.sourceBadge.hasProvider || !workout.localDate) return [];
+    const excludedByStructured = new Set(workout.reconciliation.excludedSourceKeys ?? []);
+    return all.flatMap(other => {
+        if (other.performedOccurrenceId === workout.performedOccurrenceId) return [];
+        if (other.sourceBadge.hasStructured || !other.garmin || other.localDate !== workout.localDate) return [];
+        if (workout.modality && other.modality && workout.modality !== other.modality) return [];
+        const excludedByProvider = new Set(other.reconciliation.excludedSourceKeys ?? []);
+        const previouslySeparated = other.sourceKeys.some(key => excludedByStructured.has(key))
+            || workout.sourceKeys.some(key => excludedByProvider.has(key));
+        return previouslySeparated ? [] : [{ providerOccurrenceId: other.performedOccurrenceId, activity: other.garmin }];
+    });
 }

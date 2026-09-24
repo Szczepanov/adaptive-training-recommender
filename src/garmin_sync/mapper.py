@@ -67,6 +67,7 @@ def normalize_activity(
         "trainingEffectAerobic": activity.training_effect_aerobic,
         "trainingEffectAnaerobic": activity.training_effect_anaerobic,
         "averageHr": activity.average_hr,
+        **({"maxHr": activity.max_hr} if activity.max_hr is not None else {}),
         "activityTrainingLoad": activity.training_load,
         "intensityTag": activity.intensity_tag,
         **(

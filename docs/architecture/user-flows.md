@@ -138,7 +138,7 @@ The complete `app/src/types/navigation.ts` `Screen` union is:
 | `goals` | `Goals` | Goal and target-event CRUD used by periodization/taper logic |
 | `constraints` | `TrainingSettings` | Hard training setup: equipment, safety limits, time/location, injury constraints |
 | `preferences` | `Preferences` | Soft coaching preferences, planning intent, capabilities, and provider connections |
-| `data` | `DataView` plus anomaly/identity cards | Telemetry/context inspection and export; Activities also exposes explicit corrective writes such as reclassification/source unlinking |
+| `data` | `DataView` plus anomaly/identity cards | Telemetry/context inspection and export; Activities also exposes explicit corrective writes such as reclassification/source unlinking/manual linking |
 | `brief` | `DataView` with `initialTab="brief"` | Export context for AI through the same component with a different entry tab |
 | `plan` | `PlanView` | Seven-day coach-plan versus adaptive-forecast view and plan editing/import |
 | `sessions` | `SessionRunner`, `SessionJsonImport`, `ManualSessionBuilder` | Execute, import, build, and manage structured sessions/templates |
@@ -372,8 +372,13 @@ headers state their save model.
 `Training Setup` | `Coach Preferences` | `Adherence` | `Context brief`.
 
 Most of the surface is inspection/export. The Activities tab is the exception: it exposes
-corrective actions (for example activity reclassification, and canonical-source unlinking
-when that read model is enabled), so the screen must not be described as strictly read-only.
+corrective actions (for example activity reclassification, and — when the canonical
+Completed Workout read model is enabled with `VITE_TRAINING_OCCURRENCE_ACTIVITIES_POLICY=canonical-v1`
+— unlinking a Garmin source from a structured workout, or manually linking a same-day
+Garmin-only recording to a structured-only workout), so the screen must not be described as
+strictly read-only. In that read model a structured strength workout shows its prescription,
+every logged set (warm-up/work, reps × load, logged RIR/RPE) and actual vs. target rest, with the
+linked watch recording's HR summary and HR zones alongside.
 
 The `brief` route is the same `DataView` component opened on `Context brief`, and it is
 the canonical Export-for-AI surface. From the Data screen, the Context brief tab and the

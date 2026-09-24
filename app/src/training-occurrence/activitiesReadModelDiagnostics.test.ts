@@ -10,6 +10,7 @@ function activity(id: string): NormalizedGarminActivity {
 function workout(overrides: Partial<CompletedWorkoutView> = {}): CompletedWorkoutView {
     return {
         performedOccurrenceId: 'pto-1',
+        sourceKeys: [],
         sourceBadge: { hasStructured: false, hasProvider: true, providers: ['garmin'] },
         reconciliation: { state: 'single_source' },
         garminExerciseSetsAreDiagnosticOnly: false,

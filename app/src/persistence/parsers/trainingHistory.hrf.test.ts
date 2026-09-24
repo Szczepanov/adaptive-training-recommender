@@ -51,3 +51,15 @@ it('accepts the valid upper coverage bound', () => {
         data: { hrMeasurement: { coveragePct: 100 } },
     });
 });
+
+it('carries a positive max HR through and drops a malformed one without invalidating the activity', () => {
+    const withMax = parseNormalizedGarminActivity({ ...activity, maxHr: 171 }, 'users/u1/activities/a-1', 'a-1');
+    if (withMax.status !== 'AVAILABLE') throw new Error('expected available activity');
+    expect(withMax.data.maxHr).toBe(171);
+
+    for (const maxHr of ['171', -1, 0, null]) {
+        const parsed = parseNormalizedGarminActivity({ ...activity, maxHr }, 'users/u1/activities/a-1', 'a-1');
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available activity');
+        expect(parsed.data).not.toHaveProperty('maxHr');
+    }
+});

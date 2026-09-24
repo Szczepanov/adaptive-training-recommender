@@ -314,6 +314,27 @@ def test_normalize_activity_maps_canonical_fields():
     assert "syncedAt" in normalized
     assert "startedAt" not in normalized
     assert "endedAt" not in normalized
+    assert "maxHr" not in normalized
+
+
+def test_normalize_activity_maps_max_hr_when_present() -> None:
+    activity = CanonicalActivity(
+        activity_id="999",
+        date="2026-08-05",
+        type="strength_training",
+        duration_min=40,
+        duration_seconds=2400,
+        training_effect_aerobic=2.0,
+        training_effect_anaerobic=1.0,
+        average_hr=112,
+        training_load=40.0,
+        intensity_tag="moderate",
+        max_hr=161,
+    )
+
+    normalized = normalize_activity(activity, sync_run_id="run-abc")
+
+    assert normalized["maxHr"] == 161
 
 
 def test_normalize_activity_maps_started_and_ended_at_when_present() -> None:
