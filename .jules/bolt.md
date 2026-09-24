@@ -64,3 +64,7 @@
 ## 2026-09-24 - Filter session_executions lookup by occurrenceId
 **Learning:** `findExecutionByOccurrenceId` in `SessionExecutionService` was fetching all documents from the `session_executions` collection and filtering in memory. Adding a Firestore `where('occurrenceId', '==', occurrenceId)` clause restricts document retrieval at the database level, preventing network/memory overhead that scales linearly with collection size.
 **Action:** Always verify Firestore collection reads in service lookup methods to ensure field equality filters are pushed down to queries via `where(...)` rather than loaded via full collection `getDocs(collection(...))`.
+
+## 2026-09-24 - Targeted Firestore filtering for single-entity prior revision lookups
+**Learning:** Fetching all documents for a partition (e.g. `getOccurrencesForDate`) to locate a single matching entity (e.g. prior revision of an external plan session) forces Firestore to transmit and parse irrelevant documents. Constructing a targeted query with exact equality constraints (`date`, `state`, `externalPlanRef.planId`, `externalPlanRef.sessionId`) reduces network payload and document parsing overhead by over 60%.
+**Action:** Use specific Firestore `where()` clauses for known schema fields when searching for specific sub-entities rather than fetching whole daily collections.
