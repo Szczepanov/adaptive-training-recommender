@@ -220,6 +220,11 @@ jobs:
   # gates, so keep their coverage identical while allowing GitHub Actions to schedule them
   # concurrently. This deliberately preserves Vitest/Playwright's existing intra-suite
   # concurrency settings; cross-job isolation is the low-risk speedup.
+  #
+  # The two emulator suites are additionally sharded across jobs (Vitest/Playwright
+  # `--shard`), each shard with its own emulator process, so the serial-in-process
+  # contract (`--maxWorkers=1`, `workers: 1`) is untouched. Shard both or neither: they
+  # take ~2.5 minutes each, so sharding only one leaves the critical path unchanged.
   frontend-unit-tests:
     name: Frontend Unit Tests & Coverage
     if: needs.detect-changes.outputs.code_changed == 'true'
@@ -258,10 +263,15 @@ jobs:
           if-no-files-found: warn
 
   firestore-rules-tests:
-    name: Firestore Security Rules Tests
+    name: Firestore Security Rules Tests (${{ matrix.shard }}/${{ strategy.job-total }})
     if: needs.detect-changes.outputs.code_changed == 'true'
     needs: detect-changes
     runs-on: ubuntu-latest
+    strategy:
+      # Report every failing shard instead of cancelling the sibling on the first failure.
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     defaults:
       run:
         working-directory: app
@@ -295,14 +305,20 @@ jobs:
           restore-keys: |
             firebase-emulators-${{ runner.os }}-
 
-      - name: Run Firestore security-rule emulator suite
-        run: npm run test:rules
+      - name: Run Firestore security-rule emulator suite shard
+        # Same emulator wrapper and Vitest command as `npm run test:rules`, restricted to
+        # this job's file shard.
+        run: npm run emulators:exec:rules -- "npm run test:rules:emulator -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}"
 
   frontend-e2e-tests:
-    name: Browser E2E Tests
+    name: Browser E2E Tests (${{ matrix.shard }}/${{ strategy.job-total }})
     if: needs.detect-changes.outputs.code_changed == 'true'
     needs: detect-changes
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     defaults:
       run:
         working-directory: app
@@ -347,19 +363,23 @@ jobs:
           restore-keys: |
             firebase-emulators-${{ runner.os }}-
 
-      - name: Run browser E2E emulator suite
-        run: npm run test:e2e
+      - name: Run browser E2E emulator suite shard
+        # Same emulator wrapper and Playwright command as `npm run test:e2e`, restricted to
+        # this job's shard. With `fullyParallel: false` Playwright shards by whole spec file,
+        # so in-file test order is preserved.
+        run: npm run emulators:exec:e2e -- "npm run test:e2e:emulator -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}"
 
       - name: Upload Playwright E2E artifacts
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-e2e-artifacts
+          name: playwright-e2e-artifacts-shard-${{ matrix.shard }}-of-${{ strategy.job-total }}
           path: app/artifacts/playwright
           if-no-files-found: warn
 
   # Compatibility aggregate: keep the historical required-check name stable for
-  # branch protection while the expensive suites execute in parallel above.
+  # branch protection while the expensive suites execute in parallel above. A matrix
+  # job's `needs.<job>.result` is `success` only when every shard succeeded.
   frontend-tests:
     name: Frontend Unit Tests, Firestore Rules & Browser E2E
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
