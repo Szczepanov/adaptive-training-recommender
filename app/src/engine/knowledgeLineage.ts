@@ -114,6 +114,15 @@ export function readinessKnowledgeRefs(readiness: DailyReadiness, context: UserC
     if (hasHrv || hasRhr) refs.push(KNOWLEDGE_CLAIM_IDS.readinessAcuteBiometricFloors);
     if (hasRecentHardPenalty) refs.push(KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.recentHardReadinessPenalty);
     if (hasObjectiveDecisionInput) refs.push(KNOWLEDGE_CLAIM_IDS.readinessModeThresholds);
+    if (readiness.subjective.physicalWork?.performed) {
+        refs.push(
+            KNOWLEDGE_CLAIM_IDS.physicalWorkStrainMappingPolicy,
+            KNOWLEDGE_CLAIM_IDS.physicalWorkReadinessModeGatesPolicy,
+        );
+    }
+    if (context.physicalWorkGuardrailsApplied?.length) {
+        refs.push(KNOWLEDGE_CLAIM_IDS.physicalWorkGuardrailsPolicy);
+    }
     return mergeKnowledgeRefs(refs, injuryPolicyKnowledgeRefs(readiness, context));
 }
 

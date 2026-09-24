@@ -117,6 +117,34 @@ describe('recommendation knowledge lineage', () => {
         expect(refs).toEqual(subjectiveReadinessKnowledgeRefs());
     });
 
+    it('attributes physical-work mapping and readiness gates only for performed work', () => {
+        const absent = readiness();
+        const declined = readiness();
+        declined.subjective.physicalWork = { performed: false, intensity: 'exhausting', duration: 'extended' };
+        expect(readinessKnowledgeRefs(absent, context)).toEqual(subjectiveReadinessKnowledgeRefs());
+        expect(readinessKnowledgeRefs(declined, context)).toEqual(subjectiveReadinessKnowledgeRefs());
+
+        const performed = readiness();
+        performed.subjective.physicalWork = { performed: true };
+        const refs = readinessKnowledgeRefs(performed, context);
+        expect(refs).toContain(KNOWLEDGE_CLAIM_IDS.physicalWorkStrainMappingPolicy);
+        expect(refs).toContain(KNOWLEDGE_CLAIM_IDS.physicalWorkReadinessModeGatesPolicy);
+        expect(snapshotKnowledgeLineage(refs)).toEqual(refs.map(claimId => ({
+            claimId,
+            version: getActiveKnowledgeClaim(claimId).version,
+        })));
+        expect(refs).not.toContain(KNOWLEDGE_CLAIM_IDS.physicalWorkGuardrailsPolicy);
+
+        const guardedContext = {
+            ...context,
+            constraints: { ...context.constraints, impliedGuardrails: ['avoid_heavy_spinal_loading'] },
+            physicalWorkGuardrailsApplied: ['avoid_heavy_spinal_loading'],
+        } as UserContext;
+        expect(readinessKnowledgeRefs(performed, guardedContext)).toContain(KNOWLEDGE_CLAIM_IDS.physicalWorkGuardrailsPolicy);
+        const injuryOnlyContext = { ...guardedContext, physicalWorkGuardrailsApplied: [] };
+        expect(readinessKnowledgeRefs(performed, injuryOnlyContext)).not.toContain(KNOWLEDGE_CLAIM_IDS.physicalWorkGuardrailsPolicy);
+    });
+
     it('attributes only materially applied injury-policy families and preserves pain versus illness boundaries', () => {
         const traced = {
             ...context,

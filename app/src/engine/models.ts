@@ -265,6 +265,9 @@ export interface UserContext {
     /** Runtime-only facts explaining which injury/symptom policy families were evaluated.
      * The trace is translated into versioned claim references and is never persisted itself. */
     injuryPolicyTrace?: InjuryPolicyTrace;
+    /** Runtime-only trace of physical-work guardrails actually added by the context adapter.
+     * This distinguishes work policy from an identical guardrail supplied by injury policy. */
+    physicalWorkGuardrailsApplied?: readonly GuardrailKey[];
     /** Optional only for legacy engine callers; composed recommendations always provide it. */
     trainingSettings?: TrainingSettings;
     /** Stage 2/PG5.1 (ADR-0041): typed strength/speed/power goal projection. Populated,
