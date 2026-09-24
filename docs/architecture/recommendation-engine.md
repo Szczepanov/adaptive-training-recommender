@@ -138,6 +138,15 @@ descriptor with modality-specific exact identities, including a continuous easy 
 is distinct from walk-run. `buildCoverageState` receives the descriptor from the active
 plan, so the coverage tier is meaningful for eventless athletes too.
 
+Exact coverage identity remains stricter than symptom-compatible support. A catalog template
+marked `guardrailFallbackRole: shoulder_spinal_strength` can receive tier-2 ranking urgency
+when a shoulder/spinal guardrail is active and the exact `primary_strength` minimum remains
+unmet. That signal is intentionally one-way: the fallback does not acquire a coverage key,
+does not fulfill/reserve the primary-strength occurrence, and does not erase the allocation
+shortfall. This lets the planner preserve low-load resistance exposure during a temporary
+loading constraint while keeping the real weekly strength role visible for a later feasible
+settled state.
+
 Authored travel blocks scale planned dose through `applyPlanningOverlays` across
 structured, demand-derived, and evergreen paths. Fixed activities retain schedule
 ownership and constrain availability before candidates are selected.
