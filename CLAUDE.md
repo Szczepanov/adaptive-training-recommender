@@ -42,6 +42,20 @@ it. So check first, every time:
 A **new** decision-authority rule needs all three: a claim, a coverage item, and a
 policy-alignment test (ADR-0033). Do not add one silently.
 
+## 2.5 External library/API documentation
+
+When Context7 is connected, use it before relying on model memory for third-party library/API
+documentation, setup/configuration, migrations, deprecations, or version-specific examples.
+Determine the installed version from this repository's manifest/lockfile when practical and ask
+for version-appropriate docs.
+
+Do not use Context7 for repository-internal behavior or architecture; use the code/docs for that.
+If Context7 is unavailable or insufficient, fall back to official upstream docs/source and say so
+when it affects confidence. See
+[`docs/standards/agent-tooling.md`](./docs/standards/agent-tooling.md).
+
+---
+
 ## 3. Working loop
 
 **Before writing code**
@@ -76,8 +90,13 @@ policy-alignment test (ADR-0033). Do not add one silently.
 
 **Before you call it done**
 ```bash
-make check          # ruff check/format + mypy + pytest; tsc + eslint + vitest + knowledge/workout validators
+make verify         # canonical scope-aware handoff/PR verification contract
 ```
+
+Use narrower checks while iterating, but run `make verify` before declaring the task complete.
+The contract is defined in `scripts/verify_repo.py` and
+[`docs/standards/agent-tooling.md`](./docs/standards/agent-tooling.md); do not recreate its
+command matrix in prompts.
 - Docs-only change → `uv run pre-commit run --all-files`. CI uses the docs-hygiene fast path
   and skips the code test/build/simulation jobs.
 - `make check` already runs `ruff format --check` through `lint-python`; if formatting
@@ -94,7 +113,7 @@ make check          # ruff check/format + mypy + pytest; tsc + eslint + vitest +
   [`docs/standards/ui-ux.md`](./docs/standards/ui-ux.md); run the relevant component tests
   and browser E2E, and refresh/review the existing Playwright visual fixtures at the affected
   mobile/desktop widths. Report any standard exception explicitly.
-- `make all` = `check` + `simulate` + `build`. Run it when the change is broad.
+- `make all` is a backwards-compatible alias for `make verify`.
 - The full CI gate list is in
   [`AGENTS.md` § What CI gates](./AGENTS.md#what-ci-gates-githubworkflowsciyml).
 
@@ -106,7 +125,7 @@ The full index is in [`AGENTS.md` § Commands](./AGENTS.md#commands-reference). 
 need most:
 
 ```bash
-make check                             # core local code gate, including knowledge/workout validators
+make verify                            # canonical handoff/PR gate\nmake check                             # fast core local code gate, including knowledge/workout validators
 make test                              # pytest + vitest only
 make simulate                          # scenario simulations + baseline diff
 uv sync                                # restore Python deps
