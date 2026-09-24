@@ -4330,8 +4330,8 @@
       },
       "restOrRecoveryDayCount": 7,
       "restOrRecoveryDayPct": 25,
-      "maxConsecutiveSameTemplateStreakWithinCall": 2,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
+      "maxConsecutiveSameTemplateStreakWithinCall": 1,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 1,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -4532,7 +4532,7 @@
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 11,
+        "fragileSelectionCount": 10,
         "lowerBenefitSelectionCount": 7,
         "trainTierRestOrRecoveryCount": 0
       },
@@ -4725,7 +4725,7 @@
                   "occurrenceId": "september_cycling_event|2026-08-12|2026-09-12|peak|aerobic_volume|september_cycling_event%3Aaerobic_volume|0",
                   "nominatedDate": "2026-08-16",
                   "assignedDate": "2026-08-16",
-                  "templateId": "end_easy_01",
+                  "templateId": "end_easy_04",
                   "workoutId": "cycling_zone2_standard_01",
                   "wasMoved": false
                 },
@@ -5270,9 +5270,9 @@
         },
         "opportunityCost": {
           "daysWithRankingAudit": 28,
-          "utilityWinnerDifferentCount": 12,
+          "utilityWinnerDifferentCount": 11,
           "utilityWinnerBlockedCount": 11,
-          "utilityWinnerDifferentWithoutTierBlockCount": 1,
+          "utilityWinnerDifferentWithoutTierBlockCount": 0,
           "meanBlockedUtilityGap": 0.26580765187857547,
           "maxBlockedUtilityGap": 1.1053752380529158,
           "blockedByTier": {
@@ -5308,20 +5308,6 @@
                 "benefit": true
               },
               "selectedAdvancesRequiredRole": false
-            },
-            {
-              "date": "2026-08-16",
-              "weekIndex": 1,
-              "selectedTemplateId": "end_easy_01",
-              "bestUtilityTemplateId": "end_easy_04",
-              "selectedVsBestUtilityGap": 0.4049746042716296,
-              "tierBlocked": false,
-              "blockedByTier": {
-                "coverage": false,
-                "recovery": false,
-                "benefit": false
-              },
-              "selectedAdvancesRequiredRole": true
             },
             {
               "date": "2026-08-18",

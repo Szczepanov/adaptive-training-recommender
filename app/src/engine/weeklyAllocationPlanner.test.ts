@@ -7,6 +7,8 @@ import { evaluatePeriodizationPhase } from './periodization';
 import { creditObjectivesFromStimulus, generateWeeklyObjectives } from './microcycle';
 import { createEmptyFatigue } from './fatigue';
 import {
+    classifyAllocationPreservation,
+    incumbentAssignmentsRemainingAfterSelection,
     evaluateProjectedDate,
     generateWeekAheadPlan,
     projectedDateOutcomeFrom,
@@ -299,6 +301,92 @@ describe('D-SUPPORT fail-closed selection', () => {
         expect(selectionPreservesCurrentReservation('current-role', new Set(['later-role']))).toBe(false);
         expect(selectionPreservesCurrentReservation('current-role', new Set(['current-role']))).toBe(true);
         expect(selectionPreservesCurrentReservation(null, new Set())).toBe(true);
+    });
+
+    it('does not replay a future incumbent reservation already fulfilled by the current candidate', () => {
+        const reservations = new Map([
+            ['2026-08-12', { occurrence: { id: 'current-role' }, templateId: 'current-template' }],
+            ['2026-08-13', { occurrence: { id: 'bundled-future-role' }, templateId: 'bundled-template' }],
+            ['2026-08-14', { occurrence: { id: 'still-required-role' }, templateId: 'still-required-template' }],
+        ]);
+
+        expect(incumbentAssignmentsRemainingAfterSelection(
+            reservations,
+            '2026-08-12',
+            new Set(['current-role', 'bundled-future-role']),
+        )).toEqual([
+            { date: '2026-08-14', templateId: 'still-required-template' },
+        ]);
+    });
+
+    // Issue #745: an unresolved occurrence elsewhere in the allocation must not veto a
+    // candidate that already proved the incumbent allocation survives (ADR-0018 D-BOUND).
+    it('admits a candidate proving incumbent survival even when another occurrence is unresolved', () => {
+        let reallocated = false;
+        const result = classifyAllocationPreservation({
+            preservesCurrentReservation: true,
+            incumbentSurvives: () => true,
+            incumbentAllocationUnresolved: true,
+            reallocate: () => {
+                reallocated = true;
+                return 'unresolved_search_budget';
+            },
+        });
+
+        expect(result).toBe('preserves');
+        expect(reallocated).toBe(false);
+    });
+
+    it('fails closed without a full search when the incumbent breaks and the allocation is unresolved', () => {
+        let reallocated = false;
+        const result = classifyAllocationPreservation({
+            preservesCurrentReservation: true,
+            incumbentSurvives: () => false,
+            incumbentAllocationUnresolved: true,
+            reallocate: () => {
+                reallocated = true;
+                return 'preserves';
+            },
+        });
+
+        expect(result).toBe('unresolved_search_budget');
+        expect(reallocated).toBe(false);
+    });
+
+    it('never uses incumbent survival as proof when the current reservation is displaced', () => {
+        let survivalChecked = false;
+        const incumbentSurvives = () => {
+            survivalChecked = true;
+            return true;
+        };
+
+        expect(classifyAllocationPreservation({
+            preservesCurrentReservation: false,
+            incumbentSurvives,
+            incumbentAllocationUnresolved: true,
+            reallocate: () => 'preserves',
+        })).toBe('unresolved_search_budget');
+        expect(classifyAllocationPreservation({
+            preservesCurrentReservation: false,
+            incumbentSurvives,
+            incumbentAllocationUnresolved: false,
+            reallocate: () => 'degrades',
+        })).toBe('degrades');
+        expect(survivalChecked).toBe(false);
+    });
+
+    it('defers to the full bounded reallocation when the incumbent breaks and the allocation is resolved', () => {
+        const classify = (reallocation: 'preserves' | 'degrades' | 'unresolved_search_budget') =>
+            classifyAllocationPreservation({
+                preservesCurrentReservation: true,
+                incumbentSurvives: () => false,
+                incumbentAllocationUnresolved: false,
+                reallocate: () => reallocation,
+            });
+
+        expect(classify('preserves')).toBe('preserves');
+        expect(classify('degrades')).toBe('degrades');
+        expect(classify('unresolved_search_budget')).toBe('unresolved_search_budget');
     });
 
     it('does not fall through to ranked[0] when no bounded candidate proves preservation', () => {

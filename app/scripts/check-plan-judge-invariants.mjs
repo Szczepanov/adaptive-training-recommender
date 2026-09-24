@@ -305,7 +305,34 @@ for (const caseId of ['judge_obj_combined_bad', 'judge_subj_combined_bad', 'judg
     `${caseId}: acute Day-1 suppression repeated as a Week-2 D8-D9 double-rest shutdown.`);
 }
 
+// Issue #745: with identical objective suppression, fresh subjective readiness must not
+// re-enter later or lighter than neutral subjective readiness. A passive rest_01 on a
+// train/modify-tier forecast day is the D-SUPPORT unresolved-allocation fallback, never
+// a readiness decision.
+{
+  const FIRST_WEEK_DAYS = 7;
+  const freshSubjective = required('judge_int_goodsubj_badobj');
+  const neutralSubjective = required('judge_int_badobj_noload');
+  const firstWeek = (item) => item.plan.slice(0, FIRST_WEEK_DAYS);
+  const isRecoveryDay = (day) => ['Rest', 'Mobility/Recovery'].includes(day.session.category);
+  const firstTrainingDay = (item) => firstWeek(item).findIndex((day) => !isRecoveryDay(day));
+  const systemicOf = (days) => days.reduce((sum, day) => sum + (day.session.systemicCost ?? 0), 0);
+  const firstWeekSystemic = (item) => systemicOf(firstWeek(item));
+  // Neutral readiness may spend a recovery-ladder day on mobility where fresh readiness
+  // re-enters with training; that recovery-category load alone must not fail the comparison.
+  const mobilityTolerance = systemicOf(firstWeek(neutralSubjective).filter(isRecoveryDay));
 
+  for (const day of firstWeek(freshSubjective)) {
+    fail(!(day.session.templateId === 'rest_01' && day.mode !== 'recover'),
+      `judge_int_goodsubj_badobj: passive rest_01 selected on a ${day.mode}-tier day (${day.date}).`);
+  }
+  const freshStart = firstTrainingDay(freshSubjective);
+  const neutralStart = firstTrainingDay(neutralSubjective);
+  fail(freshStart !== -1 && (neutralStart === -1 || freshStart <= neutralStart),
+    `judge_int_goodsubj_badobj: fresh subjective readiness re-entered training on day index ${freshStart}, later than neutral readiness (${neutralStart}).`);
+  fail(firstWeekSystemic(freshSubjective) >= firstWeekSystemic(neutralSubjective) - mobilityTolerance,
+    `judge_int_goodsubj_badobj: week-1 systemic load ${firstWeekSystemic(freshSubjective).toFixed(2)} is lighter than neutral readiness (${firstWeekSystemic(neutralSubjective).toFixed(2)}).`);
+}
 
 const sameDaySelf = required('judge_today_self_report_done');
 const sameDayDevice = required('judge_today_device_hard');
