@@ -472,13 +472,17 @@ describe('cycling-primary athlete keeps cycling on 35-minute capped train days (
         }
         const trainDays = plan.days.filter(day => day.mode === 'train');
         expect(trainDays.length).toBeGreaterThan(0);
-        expect(trainDays.filter(day => day.template.modality === 'Walking').length).toBeLessThanOrEqual(1);
+        expect(trainDays.filter(day => day.template.modality === 'Walking')).toHaveLength(0);
         expect(plan.days.filter(day => day.template.modality === 'Cycling').length).toBeGreaterThanOrEqual(6);
         const cappedZone2Rides = plan.days.filter(day => day.template.modality === 'Cycling'
             && day.template.category === 'Easy Endurance' && day.template.durationMax > 35);
         expect(cappedZone2Rides.length).toBeGreaterThan(0);
         for (const day of cappedZone2Rides) {
-            expect(day.activeDose?.durationMin).toBeGreaterThanOrEqual(30);
+            if (day.adjustment?.rationale.includes('modify-tier session')) {
+                expect(day.activeDose?.durationMin).toBe(20);
+            } else {
+                expect(day.activeDose?.durationMin).toBeGreaterThanOrEqual(30);
+            }
         }
     });
 });
@@ -531,7 +535,7 @@ describe('capped severe-recovery re-entry ranking uses the final modify dose (#7
             materializeEffectiveDose(cycling, finalCyclingDose),
         ));
         expect(cyclingRank.coverageNeedTier).toBe(3);
-        expect(walkingRank.coverageNeedTier).toBe(1);
+        expect(walkingRank.coverageNeedTier).toBe(3);
 
         const todayRec = evaluateTraining(readiness, context, '2026-09-10');
         const forecast = generateWeekAheadPlan(
@@ -548,10 +552,10 @@ describe('capped severe-recovery re-entry ranking uses the final modify dose (#7
         const selectedRank = evaluation.rank([reentryDay.template]).accepted[0];
         expect(selectedRank.coverageNeedTier).toBe(coverageNeedTierForTemplate(
             evaluation.optimizationContext.coverageState,
-            materializeEffectiveDose(reentryDay.template, reentryDay.activeDose),
+            { ...materializeEffectiveDose(reentryDay.template, reentryDay.activeDose), isReadinessModifiedDose: true },
         ));
         expect(reentryDay.template.modality).toBe('Walking');
-        expect(selectedRank.coverageNeedTier).toBe(1);
+        expect(selectedRank.coverageNeedTier).toBe(3);
     });
 });
 

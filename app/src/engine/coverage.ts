@@ -25,6 +25,10 @@ export interface ExposureIdentity {
     /** Exact completed or projected duration. Coverage that requires a real aerobic dose
      * fails closed when this evidence is unavailable or below the catalog minimum. */
     durationMin?: number;
+    /** True when the exposure uses a readiness-limited (`modify`-tier) easier dose rather
+     * than its full prescription. Readiness-modified doses preserve aerobic maintenance
+     * without claiming exact weekly `aerobic_volume` role coverage. */
+    isReadinessModifiedDose?: boolean;
     modality?: SessionTemplate['modality'];
     category?: SessionTemplate['category'];
 }
@@ -173,6 +177,7 @@ export function coverageHistoryFromCompletedExposures(history: readonly Coverage
             ...(entry.templateId ? { templateId: entry.templateId } : {}),
             ...(entry.workoutId ? { workoutId: entry.workoutId } : {}),
             ...(durationMin !== undefined ? { durationMin } : {}),
+            ...('isReadinessModifiedDose' in entry && entry.isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
             ...(entry.modality && entry.modality !== 'Unknown' ? { modality: entry.modality as SessionTemplate['modality'] } : {}),
             ...(entry.category ? { category: entry.category as SessionTemplate['category'] } : {}),
             source: ('source' in entry && entry.source) ? entry.source : 'completed' as const,
@@ -243,6 +248,7 @@ export function workoutIdForTemplateId(templateId: string | undefined): string |
 }
 
 function hasRequiredAerobicDose(identity: ExposureIdentity, workoutId: string): boolean {
+    if (identity.isReadinessModifiedDose) return false;
     const minimumDuration = WORKOUTS_BY_ID.get(workoutId)?.duration.minimumMin;
     return typeof minimumDuration === 'number'
         && typeof identity.durationMin === 'number'
@@ -290,7 +296,7 @@ function canonicalCoverageKeysForExposure(
 }
 
 export function coverageKeysForTemplate(
-    template: SessionTemplate,
+    template: SessionTemplate & { isReadinessModifiedDose?: boolean },
     phase: PlanPhase | null,
     descriptor: CoverageSetDescriptor = SEPTEMBER_CYCLING_EVENT_COVERAGE_SET,
 ): PlanCoverageKey[] {
@@ -299,6 +305,7 @@ export function coverageKeysForTemplate(
         modality: template.modality,
         category: template.category,
         durationMin: template.durationMin,
+        ...(template.isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
     }, phase, descriptor);
 }
 
@@ -505,7 +512,7 @@ export function supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback(
  */
 export function coverageNeedTierForTemplate(
     state: CoverageState,
-    template: SessionTemplate,
+    template: SessionTemplate & { isReadinessModifiedDose?: boolean },
     anchorRole: 'event-specific' | 'quality' | null = null,
     deferAnchorAdjacentHeavyStrength: boolean = false,
 ): 0 | 1 | 2 | 3 {

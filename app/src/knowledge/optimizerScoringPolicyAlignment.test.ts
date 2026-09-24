@@ -328,6 +328,140 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(unguarded.accepted.find(item => item.template.id === fallback.id)?.coverageNeedTier).toBe(3);
     });
 
+    it('pins readiness-modified aerobic exclusion to coverage tier 3 and prevents walking from outranking preferred cycling or running on modify days', () => {
+        const supportClaim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.readinessModifiedAerobicSupportPolicy);
+        expect(supportClaim.statement).toContain('isReadinessModifiedDose');
+        expect(supportClaim.statement).toContain('coverage tier 3');
+        const fallbackClaim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.unpreferredModalityFallbackPolicy);
+        expect(fallbackClaim.statement).toContain('not already advanced by any eligible preferred training candidate');
+
+        const bikeEasy = mockTemplate({
+            id: 'end_easy_01',
+            modality: 'Cycling',
+            category: 'Easy Endurance',
+            durationMin: 45,
+            durationMax: 60,
+            easierDose: {
+                label: '20-30 min Zone 2 Spin',
+                durationMin: 20,
+                durationMax: 30,
+                doseRatio: 0.6,
+                prescriptionSummary: 'Short Zone 2 spin.',
+            },
+            stimulusProfile: {
+                aerobicEndurance: 0.8,
+                thresholdPower: 0.2,
+                vo2MaxPower: 0,
+                repeatedSurges: 0,
+                sprintPower: 0,
+                fatigueResistance: 0.2,
+                maxStrength: 0,
+                hypertrophy: 0,
+            },
+        });
+        const runEasy = mockTemplate({
+            id: 'end_easy_02',
+            modality: 'Running',
+            category: 'Easy Endurance',
+            durationMin: 35,
+            durationMax: 45,
+            easierDose: {
+                label: '20-25 min Easy Jog',
+                durationMin: 20,
+                durationMax: 25,
+                doseRatio: 0.6,
+                prescriptionSummary: 'Short easy jog.',
+            },
+            stimulusProfile: {
+                aerobicEndurance: 0.8,
+                thresholdPower: 0.2,
+                vo2MaxPower: 0,
+                repeatedSurges: 0,
+                sprintPower: 0,
+                fatigueResistance: 0.2,
+                maxStrength: 0,
+                hypertrophy: 0,
+            },
+        });
+        const walkEasy = mockTemplate({
+            id: 'end_walk_01',
+            modality: 'Walking',
+            category: 'Easy Endurance',
+            durationMin: 30,
+            durationMax: 60,
+            easierDose: {
+                label: '30 min Brisk Walk',
+                durationMin: 30,
+                durationMax: 30,
+                doseRatio: 0.75,
+                prescriptionSummary: 'Brisk walk.',
+            },
+            stimulusProfile: {
+                aerobicEndurance: 0.8,
+                thresholdPower: 0.2,
+                vo2MaxPower: 0,
+                repeatedSurges: 0,
+                sprintPower: 0,
+                fatigueResistance: 0.2,
+                maxStrength: 0,
+                hypertrophy: 0,
+            },
+        });
+
+        const coverageState: CoverageState = {
+            asOfDate: '2026-09-10',
+            phase: 'general',
+            activeBlockId: 'block_general',
+            coverageSetId: 'evergreen_general',
+            descriptor: EVERGREEN_GENERAL_COVERAGE_SET,
+            requirements: [{
+                id: 'coverage_block_general_aerobic_volume_0',
+                key: 'aerobic_volume',
+                label: 'Aerobic volume',
+                requirement: 'required',
+                minimumSessions: 2,
+                targetSessions: 3,
+                completedSessions: 0,
+                projectedSessions: 0,
+                priority: 'must_have',
+                rollingWindowDays: 7,
+                windowStart: '2026-09-03',
+                windowEnd: '2026-09-16',
+                credits: [],
+            }],
+        };
+        const zone2Objective: WeeklyObjective[] = [{
+            ...objective('zone2_aerobic', { aerobicEndurance: 0.8 }, 'Cycling'),
+            qualification: { minimumStimulus: { aerobicEndurance: 0.4 } },
+        }];
+
+        const cyclingRanked = rankCandidates(
+            [walkEasy, bikeEasy],
+            zone2Objective,
+            mockFatigueState(),
+            AVAILABILITY,
+            [],
+            { ...PREFERENCES, preferredModalities: ['Cycling', 'Strength'] },
+            { date: '2026-09-10', coverageState, fatigueTier: 'modify' },
+        );
+        expect(cyclingRanked.accepted[0].template.id).toBe(bikeEasy.id);
+        expect(cyclingRanked.accepted[0].coverageNeedTier).toBe(3);
+        expect(cyclingRanked.accepted.find(item => item.template.id === walkEasy.id)?.coverageNeedTier).toBe(3);
+        expect(cyclingRanked.accepted.find(item => item.template.id === walkEasy.id)?.rationale)
+            .toContain('Non-preferred modality deferred');
+
+        const runningRanked = rankCandidates(
+            [walkEasy, runEasy],
+            zone2Objective,
+            mockFatigueState(),
+            AVAILABILITY,
+            [],
+            { ...PREFERENCES, preferredModalities: ['Running'] },
+            { date: '2026-09-10', coverageState, fatigueTier: 'modify' },
+        );
+        expect(runningRanked.accepted[0].template.id).toBe(runEasy.id);
+    });
+
     it('does not exempt a nonpreferred candidate that matches an objective modality but fails its category', () => {
         const preferredCycling = mockTemplate({ id: 'preferred-bike', modality: 'Cycling' });
         const easyRun = mockTemplate({ id: 'easy-run', modality: 'Running', category: 'Easy Endurance' });

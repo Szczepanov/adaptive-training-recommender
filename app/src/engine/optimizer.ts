@@ -24,7 +24,14 @@ import type { ResolvedAvailability } from './schedule';
 import { resolveAvailability } from './schedule';
 import { addDaysToLocalDateString, getDayDiff, getLocalDateString } from '../utils/localDate';
 import { qualifiesForObjective } from './microcycle';
-import { buildCoverageState, coverageKeysForTemplate, coverageNeedTierForTemplate, resolveCoverageHistory, supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback, type CoverageState } from './coverage';
+import {
+    buildCoverageState,
+    coverageKeysForTemplate,
+    coverageNeedTierForTemplate,
+    resolveCoverageHistory,
+    supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback,
+    type CoverageState,
+} from './coverage';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveEventTaper } from './taperPolicy';
 import { resolveInjuryRestrictions } from './injuryPolicy';
@@ -1048,14 +1055,12 @@ export function rankCandidates(
             ? obj.qualification.allowedModalities.includes(template.modality)
             : (template.modality === 'Strength' && (obj.key === 'strength_maintenance' || obj.key === 'strength_development'))
     );
-    const advancesUnresolvedObjective = (template: SessionTemplate) => {
+    const templateAdvancesObjective = (template: SessionTemplate, obj: WeeklyObjective) => {
         const stimulus = template.stimulusProfile;
         if (!stimulus) return false;
-        return unresolvedObjectives.some(obj =>
-            qualifiesForObjective(stimulus, template.modality, obj.qualification, template.category)
+        return qualifiesForObjective(stimulus, template.modality, obj.qualification, template.category)
             && Object.entries(obj.targetStimulus).some(([axis, target]) =>
-                (target ?? 0) > 0 && (stimulus[axis as keyof WorkoutStimulusProfile] ?? 0) > 0)
-        );
+                (target ?? 0) > 0 && (stimulus[axis as keyof WorkoutStimulusProfile] ?? 0) > 0);
     };
     const preferredToday = options.preferredModalityToday?.trim();
     const honorPreferredToday = Boolean(preferredToday && preferences.preferredModalities.some(modality => matchesPreferredModality(modality, preferredToday)));
@@ -1130,7 +1135,13 @@ export function rankCandidates(
         }
 
         const activeDoseAdjustment = resolveTimeCapDoseAdjustment(template, availability.maxTimeMinutes, options.fatigueTier === 'modify');
-        const effectiveCandidate = activeDoseAdjustment ? materializeEffectiveDose(template, activeDoseAdjustment.activeDose) : template;
+        const isReadinessModifiedDose = Boolean(activeDoseAdjustment && options.fatigueTier === 'modify');
+        const effectiveCandidate = activeDoseAdjustment
+            ? {
+                ...materializeEffectiveDose(template, activeDoseAdjustment.activeDose),
+                ...(isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
+            }
+            : template;
         let benefit = calculateStimulusBenefit(effectiveCandidate, unresolvedObjectives);
         const fulfilsNominatedAnchor = candidateMatchesAnchorRole(template, options.anchorRole);
         const deferAnchorAdjacentHeavyStrength = Boolean(
@@ -1456,10 +1467,26 @@ export function rankCandidates(
         && candidate.template.category !== 'Rest'
         && candidate.template.category !== 'Mobility/Recovery');
     if (hasEligiblePreferredTraining) {
+        const objectivesAdvancedByPreferredTraining = new Set(
+            accepted
+                .filter(candidate =>
+                    isPreferred(candidate.template)
+                    && candidate.template.category !== 'Rest'
+                    && candidate.template.category !== 'Mobility/Recovery')
+                .flatMap(candidate =>
+                    unresolvedObjectives
+                        .filter(obj => templateAdvancesObjective(candidate.template, obj))
+                        .map(obj => obj.key)),
+        );
+        const advancesUnresolvedObjectiveWithoutPreferredAlternative = (template: SessionTemplate) =>
+            unresolvedObjectives.some(obj =>
+                !objectivesAdvancedByPreferredTraining.has(obj.key)
+                && templateAdvancesObjective(template, obj),
+            );
         accepted.forEach(candidate => {
             const template = candidate.template;
             if (template.category === 'Rest' || template.category === 'Mobility/Recovery'
-                || isPreferred(template) || advancesUnresolvedObjective(template)) return;
+                || isPreferred(template) || advancesUnresolvedObjectiveWithoutPreferredAlternative(template)) return;
             // An explicit event may require a modality outside the long-term preference list.
             if (focusEvent && (
                 (focusEvent.category === 'running_race' && template.modality === 'Running')

@@ -1755,8 +1755,15 @@ export function generateWeekAheadPlan(
         rollingLoadBudgetHorizonEndDate: rollingLoadBudgetHorizon.endDate,
     };
 
-    type ProjectedHistoryEntry = RecentHistoryEntry & { source: 'projected' };
-    const historyEntryFor = (date: string, template: SessionTemplate, activeDose?: DoseVariation): ProjectedHistoryEntry => {
+    type ProjectedHistoryEntry = RecentHistoryEntry & { source: 'projected'; isReadinessModifiedDose?: boolean };
+    const isReadinessModifiedAdjustment = (activeDose?: DoseVariation, rationale?: string): boolean =>
+        Boolean(activeDose && rationale?.includes('modify-tier session'));
+    const historyEntryFor = (
+        date: string,
+        template: SessionTemplate,
+        activeDose?: DoseVariation,
+        isReadinessModifiedDose: boolean = false,
+    ): ProjectedHistoryEntry => {
         const effectiveTemplate = effectiveTemplateForProjection(template, activeDose);
         return {
             date,
@@ -1769,16 +1776,25 @@ export function generateWeekAheadPlan(
             costProfile: effectiveTemplate.costProfile ?? enrichedCostProfile(template.id),
             occurrenceKey: `recommendation:${date}`,
             durationMin: effectiveTemplate.durationMin,
+            ...(isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
             recoveryHours: resolveRecoveryHoursForTemplate(template.id),
             type: template.title,
             source: 'projected',
         };
     };
 
+    const todayIsReadinessModifiedDose = Boolean(todayRec.activeDose)
+        && (todayRec.mode === 'modify' || isReadinessModifiedAdjustment(todayRec.activeDose, todayRec.adjustment?.rationale));
+
     const liveProjectedHistory = (): (RecentHistoryEntry | SessionHistoryEntry)[] => [
         ...(seed.trailingHistory ?? []),
-        historyEntryFor(todayDate, todayRec.template, todayRec.activeDose),
-        ...resultDays.map(day => historyEntryFor(day.date, day.template, day.activeDose)),
+        historyEntryFor(todayDate, todayRec.template, todayRec.activeDose, todayIsReadinessModifiedDose),
+        ...resultDays.map(day => historyEntryFor(
+            day.date,
+            day.template,
+            day.activeDose,
+            isReadinessModifiedAdjustment(day.activeDose, day.adjustment?.rationale),
+        )),
     ];
 
     const completedCoverageHistory = seed.completedCoverageHistory
@@ -1786,8 +1802,13 @@ export function generateWeekAheadPlan(
     const liveProjectedCoverageHistory = (): CoverageHistoryEntry[] => [
         ...completedCoverageHistory,
         ...resolveCoverageHistory(undefined, [
-            historyEntryFor(todayDate, todayRec.template, todayRec.activeDose),
-            ...resultDays.map(day => historyEntryFor(day.date, day.template, day.activeDose)),
+            historyEntryFor(todayDate, todayRec.template, todayRec.activeDose, todayIsReadinessModifiedDose),
+            ...resultDays.map(day => historyEntryFor(
+                day.date,
+                day.template,
+                day.activeDose,
+                isReadinessModifiedAdjustment(day.activeDose, day.adjustment?.rationale),
+            )),
         ]),
     ];
 
