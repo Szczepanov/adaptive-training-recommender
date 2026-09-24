@@ -20,6 +20,7 @@ export const OPTIMIZER_SCORING_CLAIM_IDS = {
     unpreferredModalityFallbackPolicy: 'policy.optimizer.unpreferred_modality_fallback_v1',
     preferredModalityTodayTieBreakPolicy: 'policy.optimizer.preferred_modality_today_tiebreak_v1',
     catalogStrengthAdjacencyPolicy: 'policy.optimizer.catalog_strength_adjacency_v1',
+    symptomCompatibleStrengthSupportPolicy: 'policy.optimizer.symptom_compatible_strength_support_v1',
 } as const;
 
 const OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE = 'PRODUCT-OPTIMIZER-SCORING-POLICY-V1';
@@ -71,6 +72,15 @@ export const OPTIMIZER_SCORING_CLAIMS: readonly KnowledgeClaim[] = [
         evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
         limitations: ['The adjacent-local-date rule is a conservative scheduling policy, not a literal 48-hour elapsed-time threshold or a universal physiological recovery requirement.'],
         reviewedOn: '2026-09-23', version: 1,
+    },
+    {
+        id: OPTIMIZER_SCORING_CLAIM_IDS.symptomCompatibleStrengthSupportPolicy,
+        statement: 'Product candidate-selection policy v1: when the exact evergreen primary-strength minimum remains unmet, a template explicitly marked guardrailFallbackRole=shoulder_spinal_strength receives coverage tier 2 ranking urgency only while avoid_heavy_spinal_loading or avoid_overhead_pressing is active. This support never grants a coverage key, fulfils or reserves primary_strength, and remains below exact tier-0/tier-1 role authority.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
+        applicability: { contexts: ['candidate_selection', 'week_ahead_planning'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['strength_support_ranking'], horizon: 'acute' },
+        evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['Tier 2 is product ranking calibration, not a clinical treatment rule, a measured physiological effect size, or evidence that reduced-load support is equivalent to the exact primary-strength role. Hard safety, recovery, load, spacing, time, equipment, event and taper authorities remain independent and authoritative.'],
+        reviewedOn: '2026-09-24', version: 1,
     },
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.fatigueCostWeightsPolicy,
