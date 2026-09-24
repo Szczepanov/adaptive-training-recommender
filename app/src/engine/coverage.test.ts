@@ -10,6 +10,7 @@ import {
     supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback,
     getUnfulfilledRequiredCoverage,
     getUnfulfilledTargetCoverage,
+    type CoverageState,
 } from './coverage';
 import type { SessionTemplate, UserEvent } from './models';
 import { addDaysToLocalDateString } from '../utils/localDate';
@@ -73,7 +74,7 @@ describe('Phase 6.2c explicit weekly coverage', () => {
     it('keeps symptom-compatible low-load strength outside exact primary-strength credit', () => {
         const fallback = ENRICHED_TEMPLATES_BY_ID.get('str_low_load_maint_01');
         if (!fallback) throw new Error('Symptom-compatible low-load strength template missing');
-        const state = {
+        const state: CoverageState = {
             asOfDate: '2026-09-24',
             phase: 'general',
             activeBlockId: 'block_general',
@@ -94,7 +95,7 @@ describe('Phase 6.2c explicit weekly coverage', () => {
                 windowEnd: '2026-09-30',
                 credits: [],
             }],
-        } as const;
+        };
 
         expect(coverageKeysForTemplate(fallback, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).not.toContain('primary_strength');
         expect(supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback(
