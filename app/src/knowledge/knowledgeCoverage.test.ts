@@ -16,6 +16,35 @@ describe('engine knowledge coverage inventory', () => {
         expect(result.valid).toBe(true);
     });
 
+    it('keeps PG6 performance-goal workout prescriptions evidence-bounded', () => {
+        const deadlift = byId('workout_catalog.performance_goal_deadlift_direct_practice');
+        const cycling = byId('workout_catalog.performance_goal_cycling_sprint_power');
+
+        expect(deadlift).toMatchObject({
+            classification: 'product_heuristic',
+            coverage: 'covered',
+            decisionImpact: 'high',
+            safetyImpact: 'moderate',
+            researchPriority: 'none',
+        });
+        expect(deadlift?.knowledgeRefs).toEqual(expect.arrayContaining([
+            KNOWLEDGE_CLAIM_IDS.strengthHighLoadStrengthGain,
+            KNOWLEDGE_CLAIM_IDS.deadliftDirectPracticePolicy,
+        ]));
+
+        expect(cycling).toMatchObject({
+            classification: 'product_heuristic',
+            coverage: 'covered',
+            decisionImpact: 'high',
+            safetyImpact: 'moderate',
+            researchPriority: 'none',
+        });
+        expect(cycling?.knowledgeRefs).toEqual(expect.arrayContaining([
+            KNOWLEDGE_CLAIM_IDS.cyclingShortSprintAnaerobicPerformance,
+            KNOWLEDGE_CLAIM_IDS.cyclingSprintPowerPolicy,
+        ]));
+    });
+
     it('keeps the original Sports Knowledge Registry migrations covered', () => {
         expect(byId('evergreen.adult_aerobic_weekly_volume')).toMatchObject({ coverage: 'covered', knowledgeRefs: ['health.adults.aerobic.weekly_volume'] });
         expect(byId('evergreen.adult_strength_weekly_frequency')).toMatchObject({ coverage: 'covered', knowledgeRefs: ['health.adults.strength.weekly_frequency'] });
@@ -143,9 +172,9 @@ describe('engine knowledge coverage inventory', () => {
     it('reports the post-symptom-support coverage and risk debt exactly (zero high-impact uncovered debt)', () => {
         // Issue #675 added one partial/p1 item for the gran-fondo durability policy.
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(65);
-        expect(summary.byCoverage).toEqual({ covered: 41, partial: 17, uncovered: 1, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 8, p1: 8, p2: 2, p3: 0, none: 47 });
+        expect(summary.total).toBe(67);
+        expect(summary.byCoverage).toEqual({ covered: 43, partial: 17, uncovered: 1, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 8, p1: 8, p2: 2, p3: 0, none: 49 });
         expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
     });
