@@ -39,12 +39,12 @@ Full statements, with rationale and the checks that enforce them, are in
 
 ### Full suite (Makefile, repository root)
 
-* `make check` — the core local code gate: `ruff check`, `ruff format --check`, `mypy`,
+* `make verify` — the canonical scope-aware handoff/PR gate for coding agents; it reuses CI's docs-vs-code classification and runs the deterministic local gates required for that scope.\n* `make agent-evals` — validate the provider-neutral coding-agent evaluation corpus.\n* `make check` — the core local code gate: `ruff check`, `ruff format --check`, `mypy`,
   `pytest`, `tsc -b`, `eslint`, `vitest`, knowledge validation, knowledge-coverage
   validation, knowledge-freshness reporting, and workout validation. `check-frontend` mirrors the app's `npm run check`
   gate; CI adds further path-specific checks such as dependency audits, policy drift,
   coverage/rules, simulations, and Docker validation.
-* `make all` — `check` + `simulate` + `build` (the default target)
+* `make all` — alias for `make verify` (the default target)
 * `make test` — unit tests only (`pytest` + `vitest`)
 * `make typecheck` / `make lint` — both stacks
 * `make format` — auto-format Python and TypeScript; `make format-check` verifies Python formatting without writing
@@ -386,6 +386,24 @@ app/src/knowledge/
 (the two selection paths) and the relevant ADR. Known divergences between the ADRs and the
 code are tracked in `docs/analysis/2026-08-08-architecture-review.md`, with remediation
 sequenced in `docs/plans/`.
+
+---
+
+## External library documentation with Context7
+
+Context7 is configured per developer/client rather than committed as repository MCP state. When its
+tools are available, use Context7 **before relying on model memory** for external library/API
+documentation, setup/configuration, migrations, deprecations, or version-specific code examples.
+
+Before querying, derive the installed dependency version from this repository's manifest/lockfile
+when practical and request version-appropriate docs. Do not use Context7 for repository-internal
+architecture, business rules, ADRs, current implementation, or Git history.
+
+If Context7 is unavailable or lacks the required version, use the dependency's official docs/source
+and state the fallback when it materially affects confidence.
+
+The normative routing and versioning policy is
+[`docs/standards/agent-tooling.md`](./docs/standards/agent-tooling.md).
 
 ---
 
