@@ -27,7 +27,16 @@ Keep guidance durable and generalizable, not task-local.
 Add or update memories only with stable, non-obvious project conventions that avoid complex rediscovery in the future.
 Do not add: quick-read facts; generic language/framework knowledge; one-off task notes; volatile line-level details; behavior likely to change soon.
 
+## No duplication of repository docs
+
+- `CLAUDE.md`, `AGENTS.md` and `docs/` are the source of truth. A memory points at them (file + section name) and never restates them.
+- Never copy into a memory: invariants, command lists, CLI subcommand lists, package/module maps, verification gates, dependency versions, delivery status. Copies of these drifted within one commit.
+- Knowledge the docs lack belongs in the docs (via a normal PR), not in a memory. Memories are only for Serena-specific notes (e.g. language-server quirks, useful symbol queries).
+- If a memory contradicts the repository docs, the docs win: fix or delete the memory.
+
 ## Maintenance Actions
 
 - Renaming memories: References are updated automatically if handled via Serena's memory rename tool.
 - Checking for stale memories (e.g. after deletion): Call `serena memories check` for a report.
+  On Windows it crashes with `UnicodeEncodeError` (cp1250 console); run it with `PYTHONIOENCODING=utf-8` set
+  (bash: `PYTHONIOENCODING=utf-8 serena memories check`; PowerShell: `$env:PYTHONIOENCODING = "utf-8"` first).

@@ -388,6 +388,28 @@ sequenced in `docs/plans/`.
 
 ---
 
+## Code navigation with Serena (optional)
+
+The repository ships a [Serena](https://github.com/oraios/serena) project config in
+`.serena/` (TypeScript and Python language servers). Serena is **not** required. It is set up
+per developer, and an agent without it follows this file unchanged.
+
+* **Use it to explore.** When the `mcp__serena__*` tools are available, prefer
+  `find_symbol`, `get_symbols_overview` and `find_referencing_symbols` over text search to
+  locate a symbol and all of its uses. This matters most before changing an engine constant
+  ([`CLAUDE.md` § 2](./CLAUDE.md#2-before-you-change-a-number-in-the-engine)): one
+  reference query covers `app/src/engine/`, `app/src/knowledge/` and the
+  `*PolicyAlignment.test.ts` suites together.
+* **Its memories are an index, not a source.** `.serena/memories/` holds only pointers into
+  `CLAUDE.md`, this file and `docs/`, plus Serena-specific notes. Do not copy invariants,
+  command lists, package maps or version pins into a memory. When a memory disagrees with
+  the repository docs, the docs win; fix the memory.
+* **Symbol edits pass the same gates.** Edits made with `replace_symbol_body`,
+  `rename_symbol` or `replace_in_files` get the same verification as any other change
+  ([`CLAUDE.md` § 3](./CLAUDE.md#3-working-loop)). Review the diff before you finish.
+
+---
+
 ## Reading the documentation
 
 `docs/` directories are not interchangeable — each has a different relationship to the
