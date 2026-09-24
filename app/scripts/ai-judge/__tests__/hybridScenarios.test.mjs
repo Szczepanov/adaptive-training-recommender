@@ -8,6 +8,8 @@ import { ENRICHED_TEMPLATES } from '../../../src/engine/templates.ts';
 import { EVENT_PRESETS } from '../../../src/engine/eventPresets.ts';
 import { resolvePlanningContext } from '../../../src/engine/planningMode.ts';
 import { evaluatePeriodizationPhase } from '../../../src/engine/periodization.ts';
+import { coverageKeysForTemplate } from '../../../src/engine/coverage.ts';
+import { EVERGREEN_GENERAL_COVERAGE_SET } from '../../../src/workouts/event-plan.ts';
 
 const families = buildPersonaFamilies({ includeHybridExpansion: true });
 const definitions = families.filter(({ familyId }) => familyId.startsWith('persona_hybrid_')).flatMap(({ cases }) => cases);
@@ -127,13 +129,21 @@ describe('cycling hybrid targeted evaluation', () => {
     ]));
   });
 
-  it('restores at least one exact primary-strength allocation after the tissue state is settled', async () => {
+  it('restores at least one exact primary-strength exposure after the tissue state is settled', async () => {
     const settled = await resultFor(find('reentry_settled'));
-    const primaryStrength = settled.allocationReports[0].report.outcomes
+    const exactPrimaryStrength = settled.decisionTraces.slice(0, 7).filter((trace) => {
+      const template = ENRICHED_TEMPLATES.find(({ id }) => id === trace.selected.templateId);
+      return template && coverageKeysForTemplate(template, 'general', EVERGREEN_GENERAL_COVERAGE_SET).includes('primary_strength');
+    });
+    expect(exactPrimaryStrength.length).toBeGreaterThan(0);
+
+    // If the exact role is not already consumed by today's recommendation, the remaining
+    // weekly allocation must still expose it and ultimately fulfil it.
+    const remainingPrimaryStrength = settled.allocationReports[0].report.outcomes
       .filter((outcome) => outcome.occurrence.coverageKey === 'primary_strength');
-    expect(primaryStrength.length).toBeGreaterThan(0);
-    expect(primaryStrength.some((outcome) => outcome.status === 'fulfilled')).toBe(true);
-    expect(settled.decisionTraces.slice(0, 7).some((trace) => trace.selected.modality === 'Strength')).toBe(true);
+    if (remainingPrimaryStrength.length > 0) {
+      expect(remainingPrimaryStrength.some((outcome) => outcome.status === 'fulfilled')).toBe(true);
+    }
   });
 
   it('uses low-load strength as degraded support under stacked spinal/overhead guardrails without false exact credit', async () => {
