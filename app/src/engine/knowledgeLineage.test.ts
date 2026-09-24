@@ -48,6 +48,7 @@ describe('recommendation knowledge lineage', () => {
             KNOWLEDGE_CLAIM_IDS.unpreferredModalityFallbackPolicy,
             KNOWLEDGE_CLAIM_IDS.preferredModalityTodayTieBreakPolicy,
             KNOWLEDGE_CLAIM_IDS.catalogStrengthAdjacencyPolicy,
+            KNOWLEDGE_CLAIM_IDS.symptomCompatibleStrengthSupportPolicy,
         ]);
         expect(snapshotKnowledgeLineage(refs)).toEqual(
             [...refs].sort().map(claimId => ({
