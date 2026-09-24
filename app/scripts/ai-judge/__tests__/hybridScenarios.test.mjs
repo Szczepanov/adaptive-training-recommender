@@ -120,6 +120,7 @@ describe('cycling hybrid targeted evaluation', () => {
     expect(active.readinessForWeek(0).subjective.painFlag).toBe(true);
     expect(pending.readinessForWeek(0).subjective.painFlag).toBe(false);
     expect(settled.readinessForWeek(0).subjective.painFlag).toBe(false);
+    expect(stacked.readinessForWeek(0).subjective).toEqual(pending.readinessForWeek(0).subjective);
     expect(active.context.constraints.impliedGuardrails).toContain('avoid_heavy_spinal_loading');
     expect(pending.context.constraints.impliedGuardrails).toContain('avoid_heavy_spinal_loading');
     expect(settled.context.constraints.impliedGuardrails ?? []).toEqual([]);
