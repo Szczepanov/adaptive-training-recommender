@@ -216,15 +216,66 @@ jobs:
       - name: Build frontend bundle
         run: npm run build:bundle
 
-  frontend-tests:
-    name: Frontend Unit Tests, Firestore Rules & Browser E2E
+  # These suites used to run serially in one ~6.5 minute job. They are independent
+  # gates, so keep their coverage identical while allowing GitHub Actions to schedule them
+  # concurrently. This deliberately preserves Vitest/Playwright's existing intra-suite
+  # concurrency settings; cross-job isolation is the low-risk speedup.
+  #
+  # The two emulator suites are additionally sharded across jobs (Vitest/Playwright
+  # `--shard`), each shard with its own emulator process, so the serial-in-process
+  # contract (`--maxWorkers=1`, `workers: 1`) is untouched. Shard both or neither: they
+  # take ~2.5 minutes each, so sharding only one leaves the critical path unchanged.
+  frontend-unit-tests:
+    name: Frontend Unit Tests & Coverage
     if: needs.detect-changes.outputs.code_changed == 'true'
     needs: detect-changes
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: app
-    timeout-minutes: 20
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install Node dependencies
+        # npm audit is a dedicated gate in frontend-hygiene; avoid repeating its registry
+        # request in test-only jobs while keeping npm ci's lockfile-exact install semantics.
+        run: npm ci --no-audit --fund=false
+
+      - name: Run frontend test suite with coverage
+        run: npm run test:coverage
+
+      - name: Upload frontend coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-coverage
+          path: app/artifacts/coverage/frontend
+          if-no-files-found: warn
+
+  firestore-rules-tests:
+    name: Firestore Security Rules Tests (${{ matrix.shard }}/${{ strategy.job-total }})
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    strategy:
+      # Report every failing shard instead of cancelling the sibling on the first failure.
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    defaults:
+      run:
+        working-directory: app
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -244,7 +295,54 @@ jobs:
           java-version: "21"
 
       - name: Install Node dependencies
-        run: npm ci
+        run: npm ci --no-audit --fund=false
+
+      - name: Cache Firestore emulator
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('app/package-lock.json') }}
+          restore-keys: |
+            firebase-emulators-${{ runner.os }}-
+
+      - name: Run Firestore security-rule emulator suite shard
+        # Same emulator wrapper and Vitest command as `npm run test:rules`, restricted to
+        # this job's file shard.
+        run: npm run emulators:exec:rules -- "npm run test:rules:emulator -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}"
+
+  frontend-e2e-tests:
+    name: Browser E2E Tests (${{ matrix.shard }}/${{ strategy.job-total }})
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    defaults:
+      run:
+        working-directory: app
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Set up Java for Firebase Emulators
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Node dependencies
+        run: npm ci --no-audit --fund=false
 
       - name: Cache Playwright Chromium
         uses: actions/cache@v6
@@ -265,30 +363,53 @@ jobs:
           restore-keys: |
             firebase-emulators-${{ runner.os }}-
 
-      - name: Run frontend test suite with coverage
-        run: npm run test:coverage
-
-      - name: Upload frontend coverage report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: frontend-coverage
-          path: app/artifacts/coverage/frontend
-          if-no-files-found: warn
-
-      - name: Run Firestore security-rule emulator suite
-        run: npm run test:rules
-
-      - name: Run browser E2E emulator suite
-        run: npm run test:e2e
+      - name: Run browser E2E emulator suite shard
+        # Same emulator wrapper and Playwright command as `npm run test:e2e`, restricted to
+        # this job's shard. With `fullyParallel: false` Playwright shards by whole spec file,
+        # so in-file test order is preserved.
+        run: npm run emulators:exec:e2e -- "npm run test:e2e:emulator -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}"
 
       - name: Upload Playwright E2E artifacts
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-e2e-artifacts
+          name: playwright-e2e-artifacts-shard-${{ matrix.shard }}-of-${{ strategy.job-total }}
           path: app/artifacts/playwright
           if-no-files-found: warn
+
+  # Compatibility aggregate: keep the historical required-check name stable for
+  # branch protection while the expensive suites execute in parallel above. A matrix
+  # job's `needs.<job>.result` is `success` only when every shard succeeded.
+  frontend-tests:
+    name: Frontend Unit Tests, Firestore Rules & Browser E2E
+    if: always() && needs.detect-changes.outputs.code_changed == 'true'
+    needs:
+      - detect-changes
+      - frontend-unit-tests
+      - firestore-rules-tests
+      - frontend-e2e-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify frontend test gates
+        shell: bash
+        run: |
+          echo "Frontend test job results:"
+          echo "  unit:      ${{ needs.frontend-unit-tests.result }}"
+          echo "  rules:     ${{ needs.firestore-rules-tests.result }}"
+          echo "  browser:   ${{ needs.frontend-e2e-tests.result }}"
+
+          for result in \
+            "${{ needs.frontend-unit-tests.result }}" \
+            "${{ needs.firestore-rules-tests.result }}" \
+            "${{ needs.frontend-e2e-tests.result }}"; do
+            if [ "$result" != "success" ]; then
+              echo "A required frontend test job did not succeed (status: $result)." >&2
+              exit 1
+            fi
+          done
+
+          echo "All frontend test gates completed successfully."
 
   engine-simulations:
     name: Engine Simulations & AI Gates
