@@ -18,8 +18,12 @@ def test_parse_iso_datetime():
     assert parse_iso_datetime(None) is None
     assert parse_iso_datetime("") is None
     assert parse_iso_datetime("invalid-date") is None
-    assert parse_iso_datetime("2026-08-26T22:30:00Z") == datetime(2026, 8, 26, 22, 30, 0, tzinfo=timezone.utc)
-    assert parse_iso_datetime("2026-08-26T22:30:00+00:00") == datetime(2026, 8, 26, 22, 30, 0, tzinfo=timezone.utc)
+    assert parse_iso_datetime("2026-08-26T22:30:00Z") == datetime(
+        2026, 8, 26, 22, 30, 0, tzinfo=timezone.utc
+    )
+    assert parse_iso_datetime("2026-08-26T22:30:00+00:00") == datetime(
+        2026, 8, 26, 22, 30, 0, tzinfo=timezone.utc
+    )
 
 
 def test_resolve_provider_from_package():
