@@ -33,6 +33,35 @@ function weekAheadPlan(rationale: string): WeekAheadPlan {
     } as unknown as WeekAheadPlan;
 }
 
+describe('WeekAheadStrip weekly role visibility', () => {
+    it('summarizes planned and blocked primary-strength roles for the whole horizon', () => {
+        const plan = weekAheadPlan('Easy aerobic day.');
+        plan.allocationReport = {
+            outcomes: [
+                {
+                    occurrence: { id: 'strength-0', coverageKey: 'primary_strength', label: 'Primary full-body strength' },
+                    reservation: { occurrenceId: 'strength-0', nominatedDate: '2026-09-19', assignedDate: '2026-09-19', wasMoved: false },
+                    status: 'fulfilled',
+                },
+                {
+                    occurrence: { id: 'strength-1', coverageKey: 'primary_strength', label: 'Primary full-body strength' },
+                    reservation: { occurrenceId: 'strength-1', nominatedDate: '2026-09-21', assignedDate: null, wasMoved: false },
+                    status: 'missed',
+                    reason: 'hard_safety_or_recovery',
+                },
+            ],
+        } as WeekAheadPlan['allocationReport'];
+
+        const html = renderToStaticMarkup(<WeekAheadStrip plan={plan} />);
+        expect(html).toContain('Strength roles: 1/2 planned; 1 blocked (hard safety or recovery).');
+    });
+
+    it('does not invent a strength summary when no primary-strength role exists', () => {
+        const html = renderToStaticMarkup(<WeekAheadStrip plan={weekAheadPlan('Easy aerobic day.')} />);
+        expect(html).not.toContain('Strength role');
+    });
+});
+
 describe('WeekAheadStrip rationale display (UX review follow-up)', () => {
     it('moves engine scoring internals into a collapsed detail instead of the visible rationale', () => {
         const html = renderToStaticMarkup(
