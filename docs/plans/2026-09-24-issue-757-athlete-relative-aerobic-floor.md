@@ -141,21 +141,27 @@ Work items are numbered `AF1`–`AF6`. All paths are under `app/src/`.
      `{ floorMin, source: 'athlete_history' | 'catalog_minimum', sampleCount, medianMin }`;
    - `aerobicVolumeFloorForWorkout(workoutId, floor)`.
 2. **`engine/coverage.ts`:**
-   - `hasRequiredAerobicDose` takes the resolved athlete floor;
+   - `hasRequiredAerobicDose` takes the resolved athlete floor. The lower bound must reach
+     the catalog minimum; the athlete floor is met by actual duration (completed) or by the
+     upper bound of the prescribed range (planned; `ExposureIdentity.durationMax`);
    - `coverageKeysForExposure`, `coverageKeysForTemplate` and `buildCoverageState` accept
      an optional floor;
    - `CoverageState` carries the floor, so `coverageNeedTierForTemplate` applies it to
      candidates;
    - when no floor is supplied, behaviour is unchanged.
-3. **Callers:**
-   - `rules.ts` resolves the floor from `intent.rollingLoadBudgetHistory` and passes it
-     to `buildCoverageState`;
-   - the `optimizer.ts` `buildOptimizationContext` fallback passes the floor too;
-   - `planner.ts` resolves it once in the forecast seed and threads it into
-     `evaluateProjectedDate`.
-4. **Packer:** `evergreenPlanning.ts` `resolveEvergreenPlan` raises the `aerobic_volume`
-   role's `durationMinutes` to the athlete floor. Capacity shortfalls then surface through
-   the existing `PackingWarning` path.
+3. **Resolution (once):** `trainingIntent.ts` `resolveTrainingIntent` is the only place the
+   floor is resolved, as `TrainingIntent.aerobicVolumeFloor`, from evidence it already
+   holds and never with an extra read (§2.1). Callers only consume it:
+   - `rules.ts` passes `intent.aerobicVolumeFloor` to `resolveEvergreenPlan` and, through
+     the `buildOptimizationContext` `aerobicVolumeFloor` option, to `buildCoverageState`;
+   - `planner.ts` `generateWeekAheadPlanWithIntent` puts it on the forecast seed, which
+     threads it into `evaluateProjectedDate` and `attachExactEligibleIdentities`;
+   - projected picks record `durationMax` so the forecast ledger judges them by
+     prescribed range.
+4. **Packer:** `evergreenPlanning.ts` `aerobicPackingForFloor` raises the `aerobic_volume`
+   role's `durationMinutes` to the athlete floor **only when some usable window can hold
+   it**. Otherwise the role stays at its catalog duration and an explicit
+   `minimum_dose_shortfall` for `aerobic_endurance` is added; the role is never dropped.
 5. **`workouts/event-plan.ts`:** update the `aerobic_volume` notes in both coverage sets.
 
 ### AF3: knowledge lineage (I4, ADR-0033)
