@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { computeInternalResponseStrain } from '../engine/fatigue';
 import { evaluateReadinessAndSafetyEnvelope } from '../engine/rules';
 import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput, UserContext } from '../engine/models';
+import { ENGINE_KNOWLEDGE_COVERAGE } from './knowledgeCoverage';
+import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from './sportsKnowledgeRegistry';
 
 function context(): UserContext {
     return {
@@ -122,5 +124,46 @@ describe('readiness evidence pack aligns with current decision policy', () => {
             impactTissue: 0,
             neuromuscular: 0.5,
         });
+    });
+
+    it('pins each unsaturated systemic fusion weight so the registered weights cannot drift', () => {
+        // fatigue 1 zeroes the subjective term, leaving each objective signal isolated.
+        const systemic = (objectiveOverrides: Partial<EngineObjectiveInput>, subjectiveOverrides: Partial<SubjectiveInput> = {}) =>
+            computeInternalResponseStrain(readiness(objectiveOverrides, { fatigue: 1, ...subjectiveOverrides })).systemic;
+
+        expect(systemic({})).toBe(0);
+        expect(systemic({}, { fatigue: 7 })).toBeCloseTo(0.3 * (6 / 9), 10);
+        expect(systemic({ hrv_delta: -15 })).toBeCloseTo(0.25, 10);
+        expect(systemic({ sleep_score: 25 })).toBeCloseTo(0.25, 10);
+        expect(systemic({ body_battery_wake: 20 })).toBeCloseTo(0.2, 10);
+        expect(systemic({ hrv_delta: -15, sleep_score: 25, body_battery_wake: 20 }, { fatigue: 7 })).toBeCloseTo(0.9, 10);
+
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.internalResponseStrainModel);
+        const coverage = ENGINE_KNOWLEDGE_COVERAGE.find(item => item.id === 'fatigue.internal_response_model');
+        expect(claim.statement).toContain('0.3 subjective fatigue + 0.25 HRV + 0.25 sleep + 0.2 Body Battery');
+        expect(coverage?.currentRule).toContain('0.3 subjective fatigue +0.25 HRV +0.25 sleep +0.2 Body Battery');
+    });
+
+    it('pins the non-diluted internal-response floors and their cut-points', () => {
+        const strain = (objectiveOverrides: Partial<EngineObjectiveInput>, subjectiveOverrides: Partial<SubjectiveInput> = {}) =>
+            computeInternalResponseStrain(readiness(objectiveOverrides, subjectiveOverrides));
+
+        expect(strain({}, { fatigue: 8 }).systemic).toBe(0.60);
+        expect(strain({}, { fatigue: 8, readiness: 4 }).systemic).toBe(0.65);
+        expect(strain({}, { fatigue: 8, stress: 8 }).systemic).toBe(0.65);
+        expect(strain({}, { readiness: 3, stress: 8 }).systemic).toBe(0.65);
+        expect(strain({}, { stress: 9 }).systemic).toBe(0.60);
+        expect(strain({}, { stress: 8 }).systemic).toBeLessThan(0.60);
+
+        const concordant = strain({ hrv_delta: -10, rhr_delta: 5, body_battery_wake: 35 });
+        expect(concordant.systemic).toBe(0.80);
+        expect(concordant.cardiovascular).toBe(0.80);
+        expect(strain({ hrv_delta: -9, rhr_delta: 5, body_battery_wake: 35 }).cardiovascular).toBeLessThan(0.80);
+
+        const sore = strain({}, { soreness: 8 });
+        expect(sore.lowerBody).toBe(0.88);
+        expect(sore.impactTissue).toBe(0.88);
+        expect(sore.upperBody).toBeCloseTo(0.88 * 0.7, 10);
+        expect(strain({}, { soreness: 7 }).lowerBody).toBeCloseTo(6 / 9, 10);
     });
 });
