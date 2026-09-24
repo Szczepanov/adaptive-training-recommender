@@ -25,6 +25,7 @@ class VerificationStep:
     name: str
     argv: tuple[str, ...]
     cwd: Path = ROOT
+    required: bool = True
 
 
 def classify_paths(paths: list[str]) -> VerificationMode:
@@ -100,10 +101,18 @@ def build_plan(mode: VerificationMode, base_sha: str) -> list[VerificationStep]:
             "browser E2E",
             ("npm", "--prefix", "app", "run", "test:e2e"),
         ),
-        VerificationStep("engine simulations", ("make", "simulate")),
+        VerificationStep(
+            "engine simulations",
+            ("npm", "--prefix", "app", "run", "simulate:scenarios"),
+        ),
         VerificationStep(
             "simulation baseline cleanliness",
             ("git", "diff", "--exit-code", "--", "docs/analysis/simulation-baseline.json"),
+        ),
+        VerificationStep(
+            "simulation semantic diff (advisory)",
+            ("npm", "--prefix", "app", "run", "simulate:diff"),
+            required=False,
         ),
         VerificationStep(
             "deterministic plan-judge corpus",
@@ -130,6 +139,12 @@ def run_plan(steps: list[VerificationStep]) -> int:
         print(f"[verify {index}/{len(steps)}] {step.name}: {command} (cwd={relative_cwd})")
         completed = subprocess.run(step.argv, cwd=step.cwd, check=False)
         if completed.returncode != 0:
+            if not step.required:
+                print(
+                    f"[verify] ADVISORY: {step.name} exited {completed.returncode}; continuing",
+                    file=sys.stderr,
+                )
+                continue
             print(
                 f"[verify] FAILED: {step.name} exited {completed.returncode}",
                 file=sys.stderr,
