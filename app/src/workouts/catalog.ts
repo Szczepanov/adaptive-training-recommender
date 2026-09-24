@@ -15,6 +15,7 @@ import { CYCLING_TECHNIQUE_WORKOUTS } from './catalog/cycling-technique.ts';
 import { QUALITY_SUPPORT_WORKOUTS } from './catalog/quality-support.ts';
 import { SWIMMING_WORKOUTS } from './catalog/swimming.ts';
 import { RUNNING_RACE_WORKOUTS } from './catalog/running-race.ts';
+import { PERFORMANCE_GOAL_SUPPORT_WORKOUTS } from './catalog/performance-goal-support.ts';
 
 export const WORKOUTS: WorkoutDefinition[] = [
   ...CYCLING_BASE_WORKOUTS,
@@ -31,6 +32,7 @@ export const WORKOUTS: WorkoutDefinition[] = [
   ...QUALITY_SUPPORT_WORKOUTS,
   ...SWIMMING_WORKOUTS,
   ...RUNNING_RACE_WORKOUTS,
+  ...PERFORMANCE_GOAL_SUPPORT_WORKOUTS,
   ...RECOVERY_WORKOUTS,
   ...TAPER_RACE_WORKOUTS
 ];
