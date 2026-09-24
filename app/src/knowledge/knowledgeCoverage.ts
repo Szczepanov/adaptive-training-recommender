@@ -64,6 +64,22 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'The rule is a cautious product implementation of conditional acute preparation and rehearsal evidence; it deliberately avoids a universal dose or injury-prevention claim.',
     },
     {
+        id: 'workout_catalog.performance_goal_deadlift_direct_practice', domain: 'workout_catalog', title: 'Conventional-deadlift performance-goal direct practice',
+        currentRule: 'The PG6 catalog candidate uses exact conventional-deadlift practice with 3x3 work sets at RIR 3-5 and 180 s rest; reduced keeps direct practice, while return-to-training removes the goal-specific loaded step.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['workouts/catalog/performance-goal-support.ts:strength_conventional_deadlift_practice_01', 'engine/performanceGoalPlanningRules.ts:workoutProvidesDirectCoverage'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.strengthHighLoadStrengthGain, KNOWLEDGE_CLAIM_IDS.deadliftDirectPracticePolicy],
+        coverageRationale: 'External evidence supports loaded resistance training for strength and favors higher loads on average; the exact catalog dose is separately registered as explicit conservative product calibration and never uses aspirational goal 1RM as load authority.',
+    },
+    {
+        id: 'workout_catalog.performance_goal_cycling_sprint_power', domain: 'workout_catalog', title: 'Cycling peak-power performance-goal direct practice',
+        currentRule: 'The PG6 catalog candidate uses 5x8 s maximal cycling sprints with 240 s easy recovery; reduced keeps three maximal sprints, while return-to-training removes maximal sprint exposure.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['workouts/catalog/performance-goal-support.ts:cycling_sprint_power_5s_01', 'engine/performanceGoalPlanningRules.ts:workoutProvidesDirectCoverage'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.cyclingShortSprintAnaerobicPerformance, KNOWLEDGE_CLAIM_IDS.cyclingSprintPowerPolicy],
+        coverageRationale: 'Short sprint training is supported for anaerobic performance, while the exact repetition/recovery defaults are explicit product calibration. The goal wattage remains an outcome and never becomes the prescribed sprint wattage.',
+    },
+    {
         id: 'evergreen.adult_aerobic_weekly_volume', domain: 'evergreen_dose', title: 'Adult aerobic health-volume floor and range',
         currentRule: 'Evergreen health/balanced planning uses 150 min/week as the non-droppable aerobic floor and a 150-300 min target range.',
         classification: 'scientific_claim', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'low', researchPriority: 'none',
