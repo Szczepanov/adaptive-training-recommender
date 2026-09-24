@@ -15,3 +15,27 @@ export async function unlinkCompletedWorkoutSource(
 ): Promise<void> {
     await performedTrainingOccurrenceRepository.unlinkSource(userId, performedOccurrenceId, sourceKey, actor, 'manual diagnostic unlink from Activities');
 }
+
+/** Manual link (ADR-0034 "manual confirms are sticky"): merges a Garmin-only occurrence
+ * into the structured occurrence the athlete says it belongs to. The structured row
+ * survives so its stable ID and structured field authority are kept; the recorded `link`
+ * decision is sticky, and "Unlink Garmin source" reverses it. */
+export async function linkCompletedWorkoutSources(
+    userId: string,
+    structuredOccurrenceId: string,
+    providerOccurrenceId: string,
+    actor: string,
+): Promise<void> {
+    const now = new Date().toISOString();
+    await performedTrainingOccurrenceRepository.mergeOccurrences(userId, structuredOccurrenceId, providerOccurrenceId, {
+        state: 'matched',
+        linkedAt: now,
+        manualDecision: {
+            decision: 'link',
+            actor,
+            decidedAt: now,
+            resultingState: 'matched',
+            reason: 'manual link from Activities',
+        },
+    });
+}

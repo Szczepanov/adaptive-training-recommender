@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from garmin_sync.garmin_provider import (
     GarminProviderAdapter,
     RawGarminTelemetry,
@@ -552,6 +554,24 @@ def test_canonicalize_activities_extracts_average_hr_from_average_hr_key():
     act = canonicalize_activities(raw)[0]
     assert act.average_hr == 125.0
     assert act.intensity_tag == "easy"
+    assert act.max_hr is None
+
+
+@pytest.mark.parametrize(
+    ("raw_max", "expected"), [(163, 163.0), (0, None), ("163", None), (None, None)]
+)
+def test_canonicalize_activities_extracts_max_hr(raw_max: object, expected: float | None):
+    raw = [
+        {
+            "activityId": 1002,
+            "startTimeLocal": "2026-08-05T18:00:00",
+            "activityType": {"typeKey": "strength_training"},
+            "duration": 2700,
+            "averageHR": 110,
+            "maxHR": raw_max,
+        }
+    ]
+    assert canonicalize_activities(raw)[0].max_hr == expected
 
 
 def test_canonicalize_activities_extracts_running_dynamics():

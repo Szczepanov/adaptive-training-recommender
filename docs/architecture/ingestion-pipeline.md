@@ -23,7 +23,7 @@ Garmin Connect
   │     cycling FTP, running lactate threshold, body composition,
   │     race predictions, gear inventory/mileage
   ├── Activity detail:
-  │     strength exercise sets OR power zones + HR zones + splits;
+  │     strength exercise sets + HR zones OR power zones + HR zones + splits;
   │     running-dynamics summary fields on eligible run activities
   └── Workout mutation: upload + schedule
                     │
@@ -282,16 +282,22 @@ considerations, and Firestore security rules for this path.
 ### 4. Activity telemetry
 
 `users/{userId}/activities/{activityId}` stores normalized cross-day activity records. Base
-activity data includes aerobic/anaerobic Training Effect, average HR, activity training load,
+activity data includes aerobic/anaerobic Training Effect, average HR, max HR when Garmin reports
+it (`maxHr`, display only), activity training load,
 intensity tag, primary-benefit/training-effect descriptors, EPOC when present, and recovery
 hours when present.
 
 Additional activity detail has separate paths:
 
 * **Strength / fitness-equipment activities** — target-date live sync fetches Garmin exercise
-  sets. REST rows are folded into the preceding work set; work rows can carry set order, type,
-  reps, weight in kg, exercise category/name, duration, and rest duration. `ActivityTelemetry`
-  renders the resulting `exerciseSets` table.
+  sets, then that activity's HR time-in-zone (two endpoints; never the power or splits
+  endpoints). REST rows are folded into the preceding work set; work rows can carry set order,
+  type, reps, weight in kg, exercise category/name, duration, and rest duration. The HR-zone call
+  is enrichment: a 404 or any other failure keeps the exercise sets and omits `hrInZones`; only a
+  429 propagates, abandoning the run's remaining detail work. `ActivityTelemetry` renders the
+  `exerciseSets` table; the canonical Completed Workout card (ADR-0034) shows them only as a
+  collapsed diagnostic when a structured execution is linked, and shows the HR zones and
+  average/max HR next to the structured sets.
 * **Power-bearing cycling activities** — only when `GARMIN_ACTIVITY_DETAIL_ENABLED=true`,
   target-date live sync can add power zones, HR zones, lap summaries, normalized power,
   intensity factor, and derived variability index. `ActivityTelemetry` renders these read-only

@@ -45,6 +45,7 @@ describe('computeHistoryShadowDiffForUser', () => {
         vi.mocked(recommendationService.getRecommendationsInRange).mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
         vi.mocked(getCompletedWorkoutsInRange).mockResolvedValue([{
             performedOccurrenceId: 'pto-1',
+            sourceKeys: [],
             sourceBadge: { hasStructured: false, hasProvider: true, providers: ['garmin'] },
             reconciliation: { state: 'single_source' },
             garminExerciseSetsAreDiagnosticOnly: false,

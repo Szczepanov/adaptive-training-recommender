@@ -76,6 +76,34 @@ export class OccurrenceMergeConflictError extends Error {
     }
 }
 
+/** A merge would re-join a source pair the athlete explicitly separated (ADR-0034
+ * "manual confirms/unlinks are sticky"). Enforced inside the merge transaction so no
+ * caller -- automatic reconciliation or the manual Activities link -- can reverse a
+ * sticky unlink by merging the two occurrences back together. */
+export class ManualExclusionConflictError extends Error {
+    readonly survivorId: string;
+    readonly loserId: string;
+    readonly excludedSourceKey: string;
+
+    constructor(survivorId: string, loserId: string, excludedSourceKey: string) {
+        super(`Occurrences ${survivorId} and ${loserId} were manually separated (excluded source ${excludedSourceKey})`);
+        this.survivorId = survivorId;
+        this.loserId = loserId;
+        this.excludedSourceKey = excludedSourceKey;
+        this.name = 'ManualExclusionConflictError';
+    }
+}
+
+/** The first source key either occurrence has explicitly excluded that the other one
+ * carries, or null when the pair has no sticky exclusion between them. */
+function crossExcludedSourceKey(a: PerformedTrainingOccurrence, b: PerformedTrainingOccurrence): string | null {
+    const aExcluded = new Set(a.reconciliation.excludedSourceKeys ?? []);
+    const bExcluded = new Set(b.reconciliation.excludedSourceKeys ?? []);
+    return b.sourceRefs.map(sourceKeyForRef).find(key => aExcluded.has(key))
+        ?? a.sourceRefs.map(sourceKeyForRef).find(key => bExcluded.has(key))
+        ?? null;
+}
+
 function newPerformedOccurrenceId(): string {
     return `pto-${Date.now()}-${crypto.randomUUID()}`;
 }
@@ -451,6 +479,10 @@ export class PerformedTrainingOccurrenceRepository {
                 const existingSurvivor = await this.followMergeChainTx(transaction, userId, loser);
                 if (existingSurvivor.performedOccurrenceId === survivor.performedOccurrenceId) return survivor;
                 throw new OccurrenceMergeConflictError(loserId, survivor.performedOccurrenceId, existingSurvivor.performedOccurrenceId);
+            }
+            const excludedSourceKey = crossExcludedSourceKey(survivor, loser);
+            if (excludedSourceKey !== null) {
+                throw new ManualExclusionConflictError(survivor.performedOccurrenceId, loser.performedOccurrenceId, excludedSourceKey);
             }
 
             const survivorKeys = new Set(survivor.sourceRefs.map(sourceKeyForRef));

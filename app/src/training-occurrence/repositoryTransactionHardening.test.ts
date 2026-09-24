@@ -41,6 +41,7 @@ vi.mock('firebase/firestore', () => ({
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
 
 const {
+    ManualExclusionConflictError,
     OccurrenceMergeConflictError,
     PerformedTrainingOccurrenceRepository,
     SourceLinkConflictError,
@@ -131,6 +132,26 @@ describe('transactional source-link hardening', () => {
             requestedSurvivor.performedOccurrenceId,
             loser.performedOccurrenceId,
         )).rejects.toBeInstanceOf(OccurrenceMergeConflictError);
+    });
+
+    it('refuses to merge back a pair the athlete manually unlinked, from either side', async () => {
+        const repo = new PerformedTrainingOccurrenceRepository({} as never);
+        const { occurrence } = await repo.createOrGetForSource(userId, structuredFacts('exec-1'));
+        await repo.attachSource(userId, occurrence.performedOccurrenceId, garminFacts('act-1'), { state: 'matched' });
+        const { survivor, detached } = await repo.unlinkSource(
+            userId,
+            occurrence.performedOccurrenceId,
+            'provider_activity:garmin:act-1',
+            'athlete-1',
+        );
+
+        await expect(repo.mergeOccurrences(userId, survivor.performedOccurrenceId, detached.performedOccurrenceId))
+            .rejects.toBeInstanceOf(ManualExclusionConflictError);
+        await expect(repo.mergeOccurrences(userId, detached.performedOccurrenceId, survivor.performedOccurrenceId))
+            .rejects.toBeInstanceOf(ManualExclusionConflictError);
+
+        const rawDetached = docStore.get(`users/${userId}/performedTrainingOccurrences/${detached.performedOccurrenceId}`);
+        expect(rawDetached?.status).toBe('active');
     });
 
     it('enforces the one-structured-execution invariant at the repository boundary', async () => {

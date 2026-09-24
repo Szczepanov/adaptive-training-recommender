@@ -452,7 +452,7 @@ def qualifies_for_activity_detail(activity: CanonicalActivity) -> bool:
 
     At three endpoints per qualifying activity, the worst-case incremental request
     budget is ``3 * N`` for that run. Strength sets are deliberately handled by the
-    separate one-endpoint predicate below so enabling their auto-sync does not silently
+    separate two-endpoint predicate below so enabling their auto-sync does not silently
     turn on the more expensive cycling/running telemetry path.
 
     Running qualifies alongside the power-sport types so interval/lap splits (pace,
@@ -476,7 +476,7 @@ def qualifies_for_strength_exercise_sets(activity: CanonicalActivity) -> bool:
     Live Garmin observations and other consumers of the same endpoint confirm both
     ``strength_training`` and ``fitness_equipment`` can carry ``exerciseSets``. Unlike
     power detail, intensity is irrelevant: an easy strength session still has useful
-    reps/set structure and costs just one extra endpoint call.
+    reps/set structure. It costs two endpoint calls (exercise sets + HR time-in-zone).
     """
     return activity.activity_id is not None and activity.type.lower() in _STRENGTH_ACTIVITY_TYPES
 
@@ -1396,6 +1396,8 @@ def _canonicalize_activity(
             avg_hr = float(raw_avg_hr)
         except (ValueError, TypeError):
             avg_hr = None
+    raw_max_hr = _non_negative_number(act.get("maxHR") or act.get("maxHeartRate"))
+    max_hr = raw_max_hr if raw_max_hr else None
     # Use whichever training effect is higher: an interval/strength session can be a hard
     # stimulus through anaerobic load alone even when its aerobic TE stays moderate, and
     # only consulting aerobic TE (as the pre-canonical-layer code did) would silently
@@ -1448,6 +1450,7 @@ def _canonicalize_activity(
         training_effect_aerobic=te_aero,
         training_effect_anaerobic=te_anaero,
         average_hr=avg_hr,
+        max_hr=max_hr,
         training_load=act.get("activityTrainingLoad"),
         intensity_tag=intensity_tag,
         running_dynamics=extract_running_dynamics(act),
@@ -1695,25 +1698,58 @@ class GarminProviderAdapter:
             raw_payload=raw_activities,
         )
 
+    def _fetch_strength_hr_zones(
+        self, activity_id: str
+    ) -> tuple[list[dict[str, Any]] | None, bool]:
+        """HR time-in-zone is enrichment for a strength session; exercise sets are its
+        core data. Returns ``(zones, rate_limited)``. A 404 is a definitive "no HR zones"
+        (``[]``); any other failure is logged and reported as unavailable (``None``) so it
+        can never cost the exercise sets already fetched. A 429 is also returned rather
+        than raised -- raising would discard those sets -- and the caller surfaces it as
+        ``ProviderActivityDetailResult.rate_limited`` so the run still stops requesting."""
+        no_zones: list[dict[str, Any]] = []
+        try:
+            return (
+                _fetch_optional_endpoint(
+                    lambda: self.client.get_activity_hr_zones(activity_id), no_zones
+                ),
+                False,
+            )
+        except GarminConnectTooManyRequestsError:
+            return None, True
+        except Exception as error:
+            logger.warning(
+                "Garmin strength HR-zone fetch failed for activity=<ID-redacted>; "
+                f"keeping exercise sets without HR zones: {type(error).__name__}"
+            )
+            return None, False
+
     def fetch_activity_detail(self, activity_id: str) -> ProviderActivityDetailResult:
         summary = self._activity_summary_cache.get(activity_id, {})
         type_str = _activity_type_key(summary).lower()
 
-        # Strength detail is a different one-endpoint data product from cycling power
-        # telemetry. Fetching the three power-detail endpoints first wastes requests and
-        # can fail before exercise sets are ever reached. Keep the paths disjoint.
+        # Strength detail is a different data product from cycling power telemetry:
+        # exercise sets plus HR time-in-zone (the only per-activity physiology a strength
+        # session has, shown next to the structured sets in Activities). Never the power
+        # or splits endpoints -- fetching them first wastes requests and can fail before
+        # exercise sets are ever reached. Keep the paths disjoint.
         if type_str in _STRENGTH_ACTIVITY_TYPES:
             exercise_sets = self.client.get_activity_exercise_sets(activity_id)
+            strength_hr_zones, rate_limited = self._fetch_strength_hr_zones(activity_id)
             return ProviderActivityDetailResult(
                 canonical=canonicalize_activity_detail(
                     activity_id=activity_id,
                     activity_summary=summary,
                     power_zones=None,
-                    hr_zones=None,
+                    hr_zones=strength_hr_zones,
                     splits=None,
                     exercise_sets=exercise_sets,
                 ),
-                raw_payloads={"activity_exercise_sets": exercise_sets},
+                raw_payloads={
+                    "activity_exercise_sets": exercise_sets,
+                    "activity_hr_zones": strength_hr_zones,
+                },
+                rate_limited=rate_limited,
             )
 
         # Fetched independently (not as one try/except around all three) because

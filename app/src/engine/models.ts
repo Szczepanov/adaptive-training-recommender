@@ -1892,6 +1892,8 @@ export interface NormalizedGarminActivity {
     trainingEffectAerobic: number | null;
     trainingEffectAnaerobic: number | null;
     averageHr: number | null;
+    /** Peak activity HR as the provider reported it. Display only -- no decision authority. */
+    maxHr?: number;
     activityTrainingLoad: number | null;
     intensityTag: string;
     primaryBenefit?: string | null;

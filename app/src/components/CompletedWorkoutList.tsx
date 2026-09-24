@@ -6,7 +6,12 @@
  * telemetry as enrichment, never the reverse (ADR-0034 "Source precedence rules").
  */
 import { useState } from 'react';
-import type { CompletedWorkoutView } from '../training-occurrence/completedWorkoutView';
+import type { IntensityGauge } from '../engine/models';
+import { formatSessionLoad } from '../sessions/loadDisplay';
+import type { RangeOrNumber, SessionEffort, SessionEntryPayload } from '../sessions/models';
+import type { PerformedSessionComparison } from '../sessions/performedComparison';
+import { manualLinkCandidatesFor, type CompletedWorkoutView, type ManualLinkCandidate } from '../training-occurrence/completedWorkoutView';
+import type { PerformedRestDetail, PrescribedStepTarget, StructuredStepDetail } from '../training-occurrence/structuredSetDetail';
 import { sourceKeyForRef } from '../training-occurrence/sourceIdentity';
 import { copyActivityJsonToClipboard } from '../utils/activityJsonExport';
 import {
@@ -24,6 +29,9 @@ interface CompletedWorkoutListProps {
   /** Diagnostic-only affordance (ADR-0034 "Manual reconciliation UX") -- omitted by
    * default; pass a handler to surface an "Unlink" control on matched workouts. */
   onUnlinkSource?: (performedOccurrenceId: string, sourceKey: string) => void;
+  /** Offered on a structured-only workout when a same-day Garmin-only workout could be the
+   * same session recorded on the watch (see `manualLinkCandidatesFor`). */
+  onLinkSources?: (structuredOccurrenceId: string, providerOccurrenceId: string) => void;
 }
 
 function sourceBadgeLabel(workout: CompletedWorkoutView): string {
@@ -49,36 +57,153 @@ function formatLocalTime(iso: string | undefined): string | null {
   });
 }
 
+function formatRange(value: RangeOrNumber, format: (n: number) => string = String): string {
+  return typeof value === 'number' ? format(value) : `${format(value.min)}–${format(value.max)}`;
+}
+
+function formatClock(totalSeconds: number): string {
+  const rounded = Math.round(totalSeconds);
+  const minutes = Math.floor(rounded / 60);
+  const seconds = rounded % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function formatEffort(effort: SessionEffort): string | null {
+  if (effort.rir !== undefined) return `RIR ${formatRange(effort.rir)}`;
+  if (effort.rpe !== undefined) return `RPE ${formatRange(effort.rpe)}`;
+  return null;
+}
+
+function formatGauge(gauge: IntensityGauge): string {
+  switch (gauge.scale) {
+    case 'rir': return `RIR ${gauge.value}`;
+    case 'rpe_rts': return `RPE ${gauge.value}`;
+    case 'velocity_loss': return `VL ${gauge.percent}%`;
+    case 'technical': return gauge.met ? 'technique held' : 'technique broke down';
+  }
+}
+
+function formatTarget(target: PrescribedStepTarget): string {
+  const parts: string[] = [];
+  if (target.reps !== undefined) parts.push(`${target.sets} × ${formatRange(target.reps)}`);
+  else if (target.seconds !== undefined) parts.push(`${target.sets} × ${formatRange(target.seconds, formatClock)}`);
+  else if (target.meters !== undefined) parts.push(`${target.sets} × ${formatRange(target.meters)} m`);
+  else parts.push(`${target.sets} ${target.sets === 1 ? 'set' : 'sets'}`);
+  if (target.load) parts[0] += ` @ ${formatSessionLoad(target.load)}`;
+  const effort = target.effort ? formatEffort(target.effort) : null;
+  if (effort) parts.push(effort);
+  if (target.restSeconds !== undefined) parts.push(`rest ${formatRange(target.restSeconds, formatClock)}`);
+  return parts.join(' · ');
+}
+
+function formatPerformed(payload: SessionEntryPayload): string {
+  switch (payload.kind) {
+    case 'repetition': {
+      const work = payload.weightKg !== undefined && payload.weightKg > 0
+        ? `${payload.reps} × ${payload.weightKg} kg`
+        : `${payload.reps} reps`;
+      return payload.gauge ? `${work} · ${formatGauge(payload.gauge)}` : work;
+    }
+    case 'duration':
+      return `${formatClock(payload.seconds)}${payload.loadKg ? ` @ ${payload.loadKg} kg` : ''}`;
+    case 'distance':
+      return `${payload.meters} m${payload.durationSeconds !== undefined ? ` in ${formatClock(payload.durationSeconds)}` : ''}`;
+    case 'sprint':
+      return `${payload.meters} m in ${payload.splitSeconds.toFixed(2)} s`;
+    case 'jump_attempt':
+      if (payload.heightInches !== undefined) return `${payload.heightInches} in`;
+      return payload.distanceMeters !== undefined ? `${payload.distanceMeters} m` : 'Attempt';
+    case 'checkoff':
+      return payload.completed ? 'Done' : 'Not done';
+    case 'choice':
+      return 'Choice';
+  }
+}
+
+/** Rest that ran until the session ended is not rest between sets -- omitted rather
+ * than shown as a misleadingly long interval. */
+function formatRest(rest: PerformedRestDetail): string | null {
+  if (rest.endReason === 'session_ended') return null;
+  const actual = rest.endReason === 'skipped' ? `Rest skipped at ${formatClock(rest.actualSeconds)}` : `Rest ${formatClock(rest.actualSeconds)}`;
+  return rest.prescribedSeconds !== undefined ? `${actual} (target ${formatClock(rest.prescribedSeconds)})` : actual;
+}
+
+function stepStatus(step: StructuredStepDetail, comparison: PerformedSessionComparison['stepComparisons'][number] | undefined): string {
+  if (comparison?.isComplete) return '✓ complete';
+  if (step.isOptional) return step.sets.length > 0 ? 'optional, partial' : 'optional, skipped';
+  return step.sets.length > 0 ? `✗ ${comparison?.completedSets ?? step.sets.length}/${step.prescribed.sets} sets` : '✗ missed';
+}
+
 function StructuredDetail({ structured }: { structured: NonNullable<CompletedWorkoutView['structured']> }) {
-  const { comparison } = structured;
+  const { comparison, steps, performedRest } = structured;
+  const comparisonByStepId = new Map(comparison.stepComparisons.map(step => [step.stepId, step] as const));
   return (
-    <section className="activity-exercise-sets" aria-label="Prescribed vs performed">
-      <h5>Adaptive prescription &amp; performance</h5>
-      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted, #71717a)', margin: '0 0 0.5rem' }}>
+    <section className="activity-exercise-sets completed-workout-structured" aria-label="Prescribed vs performed">
+      <h5>Sets, reps &amp; rest</h5>
+      <p className="completed-workout-summary">
         {comparison.completedStepsCount}/{comparison.totalPlannedSteps} steps completed
         {comparison.missingRequiredStepsCount > 0 ? ` · ${comparison.missingRequiredStepsCount} required step(s) missed` : ''}
         {comparison.summary.totalTonnageKg > 0 ? ` · ${Math.round(comparison.summary.totalTonnageKg)} kg total tonnage` : ''}
+        {performedRest === 'not_recorded' ? ' · actual rest not recorded for this session' : ''}
+        {performedRest === 'unavailable' ? ' · actual rest could not be loaded' : ''}
       </p>
-      <div className="activity-lap-table-wrap">
-        <table>
-          <thead><tr><th>Step</th><th>Target sets</th><th>Completed</th><th>Warm-up</th><th>Status</th></tr></thead>
-          <tbody>
-            {comparison.stepComparisons.map(step => {
-              const warmupCount = step.entries.filter(entry => entry.payload.kind === 'repetition' && entry.payload.isWarmup).length;
-              return (
-                <tr key={step.stepId}>
-                  <td>{step.stepTitle}</td>
-                  <td>{step.targetSets}</td>
-                  <td>{step.completedSets}</td>
-                  <td>{warmupCount > 0 ? `${warmupCount} warm-up` : '—'}</td>
-                  <td>{step.isComplete ? '✓ complete' : step.isOptional ? 'optional, skipped' : '✗ missed'}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {steps.map(step => (
+        <div className="completed-workout-step" key={step.stepId}>
+          <div className="completed-workout-step-head">
+            <strong>{step.title}</strong>
+            <span className="completed-workout-step-status">{stepStatus(step, comparisonByStepId.get(step.stepId))}</span>
+          </div>
+          <p className="completed-workout-step-target">Target: {formatTarget(step.prescribed)}</p>
+          {step.sets.length > 0 && (
+            <ol className="completed-workout-sets" aria-label={`${step.title} sets`}>
+              {step.sets.map(set => {
+                const rest = set.rest ? formatRest(set.rest) : null;
+                return (
+                  <li key={set.entryId} className={set.isWarmup ? 'is-warmup' : undefined}>
+                    <span className="completed-workout-set-label">{set.isWarmup ? `Warm-up ${set.setNumber}` : `Set ${set.setNumber}`}</span>
+                    <span className="completed-workout-set-performed">{formatPerformed(set.payload)}</span>
+                    {rest && <span className="completed-workout-set-rest">{rest}</span>}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </div>
+      ))}
     </section>
+  );
+}
+
+function HeartRateSummary({ activity }: { activity: NonNullable<CompletedWorkoutView['garmin']> }) {
+  if (activity.averageHr === null && activity.maxHr === undefined) return null;
+  const parts: string[] = [];
+  if (activity.averageHr !== null) parts.push(`Avg ${Math.round(activity.averageHr)} bpm`);
+  if (activity.maxHr !== undefined) parts.push(`Max ${Math.round(activity.maxHr)} bpm`);
+  if (activity.durationMin !== null) parts.push(`${activity.durationMin} min recorded on watch`);
+  return (
+    <p className="completed-workout-hr" aria-label="Heart rate">
+      <strong>Heart rate</strong> · {parts.join(' · ')}
+    </p>
+  );
+}
+
+function GarminExerciseSetsTable({ sets }: { sets: NonNullable<NonNullable<CompletedWorkoutView['garmin']>['exerciseSets']> }) {
+  return (
+    <div className="activity-lap-table-wrap">
+      <table>
+        <thead><tr><th>Set</th><th>Exercise</th><th>Reps</th><th>Weight</th></tr></thead>
+        <tbody>
+          {sets.map((set, idx) => (
+            <tr key={idx}>
+              <td>{set.setOrder + 1}</td>
+              <td>{(set.exerciseName || set.exerciseCategory || 'Exercise').replaceAll('_', ' ')}</td>
+              <td>{set.repetitionCount ?? '—'}</td>
+              <td>{set.weightKg != null ? `${set.weightKg} kg` : '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -93,6 +218,7 @@ function GarminEnrichment({ workout }: { workout: CompletedWorkoutView }) {
 
   return (
     <>
+      <HeartRateSummary activity={activity} />
       {(activity.trainingEffectAerobic != null || trainingEffectDescriptor) && (
         <p className="activity-te-metrics" style={{ fontSize: '0.8rem', color: 'var(--text-muted, #71717a)' }}>
           {trainingEffectDescriptor ? formatTrainingEffectDescriptor(trainingEffectDescriptor) : ''}
@@ -120,26 +246,52 @@ function GarminEnrichment({ workout }: { workout: CompletedWorkoutView }) {
         <ZoneBars title="Heart-rate zones" unit="bpm" zones={activity.hrInZones} />
       )}
       {activity.exerciseSets !== undefined && activity.exerciseSets.length > 0 && (
-        <section className="activity-exercise-sets" aria-label="Garmin-detected exercise sets">
-          <h5>{workout.garminExerciseSetsAreDiagnosticOnly ? 'Garmin-detected sets (diagnostic only)' : 'Strength sets & reps'}</h5>
-          <div className="activity-lap-table-wrap">
-            <table>
-              <thead><tr><th>Set</th><th>Exercise</th><th>Reps</th><th>Weight</th></tr></thead>
-              <tbody>
-                {activity.exerciseSets.map((set, idx) => (
-                  <tr key={idx}>
-                    <td>{set.setOrder + 1}</td>
-                    <td>{(set.exerciseName || set.exerciseCategory || 'Exercise').replaceAll('_', ' ')}</td>
-                    <td>{set.repetitionCount ?? '—'}</td>
-                    <td>{set.weightKg != null ? `${set.weightKg} kg` : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        workout.garminExerciseSetsAreDiagnosticOnly ? (
+          // A structured source is canonical for exercise/reps/weight (ADR-0034); Garmin's
+          // own recognition stays inspectable but collapsed, never a competing listing.
+          <details className="activity-exercise-sets completed-workout-diagnostics">
+            <summary>Garmin-detected sets (diagnostic only)</summary>
+            <GarminExerciseSetsTable sets={activity.exerciseSets} />
+          </details>
+        ) : (
+          <section className="activity-exercise-sets" aria-label="Garmin-detected exercise sets">
+            <h5>Strength sets &amp; reps</h5>
+            <GarminExerciseSetsTable sets={activity.exerciseSets} />
+          </section>
+        )
       )}
     </>
+  );
+}
+
+function ManualLinkOffer({ workout, candidates, onLinkSources }: {
+  workout: CompletedWorkoutView;
+  candidates: ManualLinkCandidate[];
+  onLinkSources: NonNullable<CompletedWorkoutListProps['onLinkSources']>;
+}) {
+  if (candidates.length === 0) return null;
+  return (
+    <section className="completed-workout-link-offer" aria-label="Link watch recording">
+      <p>Recorded this on your watch too? Link it to see heart rate with these sets.</p>
+      {candidates.map(candidate => {
+        const start = formatLocalTime(candidate.activity.startedAt);
+        const label = [
+          candidate.activity.type.replaceAll('_', ' '),
+          start,
+          candidate.activity.durationMin !== null ? `${candidate.activity.durationMin} min` : null,
+        ].filter(Boolean).join(' · ');
+        return (
+          <button
+            key={candidate.providerOccurrenceId}
+            type="button"
+            className="btn-reclassify-activity"
+            onClick={() => onLinkSources(workout.performedOccurrenceId, candidate.providerOccurrenceId)}
+          >
+            Link Garmin {label}
+          </button>
+        );
+      })}
+    </section>
   );
 }
 
@@ -166,7 +318,7 @@ function ProvenanceDisclosure({ workout, onUnlinkSource }: { workout: CompletedW
   );
 }
 
-export function CompletedWorkoutList({ workouts, onReclassify, onUnlinkSource }: CompletedWorkoutListProps) {
+export function CompletedWorkoutList({ workouts, onReclassify, onUnlinkSource, onLinkSources }: CompletedWorkoutListProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   if (workouts === null) return <p className="activity-telemetry-state">Loading recent activities…</p>;
@@ -228,6 +380,9 @@ export function CompletedWorkoutList({ workouts, onReclassify, onUnlinkSource }:
             </header>
 
             {workout.structured && <StructuredDetail structured={workout.structured} />}
+            {onLinkSources && (
+              <ManualLinkOffer workout={workout} candidates={manualLinkCandidatesFor(workout, workouts)} onLinkSources={onLinkSources} />
+            )}
             <GarminEnrichment workout={workout} />
             {!workout.structured && !workout.garmin && (
               <p className="activity-telemetry-empty">No structured or telemetry detail is available for this occurrence.</p>

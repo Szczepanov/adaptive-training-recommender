@@ -1,5 +1,8 @@
 from unittest.mock import MagicMock
 
+import pytest
+from garminconnect import GarminConnectNotFoundError, GarminConnectTooManyRequestsError
+
 from garmin_sync.canonical import (
     CanonicalActivity,
     CanonicalActivityDetail,
@@ -131,7 +134,7 @@ def test_strength_set_gate_is_independent_of_intensity_and_power_detail_gate():
     assert not qualifies_for_strength_exercise_sets(_activity("strength_training", None))
 
 
-def test_strength_adapter_calls_only_exercise_sets_endpoint():
+def test_strength_adapter_calls_only_exercise_sets_and_hr_zone_endpoints():
     client = MagicMock()
     client.get_activities_window.return_value = [
         {
@@ -142,18 +145,71 @@ def test_strength_adapter_calls_only_exercise_sets_endpoint():
         }
     ]
     client.get_activity_exercise_sets.return_value = _realistic_strength_payload()
+    client.get_activity_hr_zones.return_value = [
+        {"zoneNumber": 1, "secsInZone": 900.0, "zoneLowBoundary": 98},
+        {"zoneNumber": 2, "secsInZone": 600.0, "zoneLowBoundary": 118},
+    ]
     adapter = GarminProviderAdapter(client)
 
     adapter.fetch_activities("2026-08-23", "2026-08-23")
     result = adapter.fetch_activity_detail("42")
 
     client.get_activity_exercise_sets.assert_called_once_with("42")
+    client.get_activity_hr_zones.assert_called_once_with("42")
     client.get_activity_power_zones.assert_not_called()
-    client.get_activity_hr_zones.assert_not_called()
     client.get_activity_splits.assert_not_called()
-    assert set(result.raw_payloads) == {"activity_exercise_sets"}
+    assert set(result.raw_payloads) == {"activity_exercise_sets", "activity_hr_zones"}
     assert result.canonical.exercise_sets is not None
     assert result.canonical.exercise_sets[0].weight_kg == 12.47
+    assert result.canonical.hr_zones is not None
+    assert [bucket.seconds_in_zone for bucket in result.canonical.hr_zones] == [900.0, 600.0]
+
+
+@pytest.mark.parametrize(
+    "hr_zone_error",
+    [GarminConnectNotFoundError("no hr"), RuntimeError("transient")],
+)
+def test_strength_hr_zone_failure_never_costs_exercise_sets(hr_zone_error: Exception):
+    client = MagicMock()
+    client.get_activities_window.return_value = [
+        {
+            "activityId": 42,
+            "startTimeLocal": "2026-08-23T08:00:00",
+            "duration": 2700,
+            "activityType": {"typeKey": "strength_training"},
+        }
+    ]
+    client.get_activity_exercise_sets.return_value = _realistic_strength_payload()
+    client.get_activity_hr_zones.side_effect = hr_zone_error
+    adapter = GarminProviderAdapter(client)
+
+    adapter.fetch_activities("2026-08-23", "2026-08-23")
+    result = adapter.fetch_activity_detail("42")
+
+    assert result.canonical.exercise_sets is not None
+    assert not result.canonical.hr_zones
+
+
+def test_strength_hr_zone_rate_limit_keeps_sets_and_flags_the_stop():
+    client = MagicMock()
+    client.get_activities_window.return_value = [
+        {
+            "activityId": 42,
+            "startTimeLocal": "2026-08-23T08:00:00",
+            "duration": 2700,
+            "activityType": {"typeKey": "strength_training"},
+        }
+    ]
+    client.get_activity_exercise_sets.return_value = _realistic_strength_payload()
+    client.get_activity_hr_zones.side_effect = GarminConnectTooManyRequestsError("slow down")
+    adapter = GarminProviderAdapter(client)
+
+    adapter.fetch_activities("2026-08-23", "2026-08-23")
+    result = adapter.fetch_activity_detail("42")
+
+    assert result.rate_limited is True
+    assert result.canonical.exercise_sets is not None
+    assert result.canonical.hr_zones is None
 
 
 class _StrengthProvider:
@@ -165,9 +221,10 @@ class _StrengthProvider:
         activity_details=True,
     )
 
-    def __init__(self, activity_type: str):
+    def __init__(self, activity_type: str, rate_limited: bool = False):
         self.activity = _activity(activity_type)
         self.detail_calls: list[str] = []
+        self.rate_limited = rate_limited
 
     def clear_cache(self) -> None:
         pass
@@ -202,6 +259,7 @@ class _StrengthProvider:
                 ],
             ),
             raw_payloads={"activity_exercise_sets": _realistic_strength_payload()},
+            rate_limited=self.rate_limited,
         )
 
 
@@ -225,6 +283,15 @@ def test_strength_sets_auto_sync_when_power_detail_flag_is_disabled():
     payload = repo.upsert_activities.call_args.args[0][0][1]
     assert payload["exerciseSets"][0]["repetitionCount"] == 10
     assert payload["exerciseSets"][0]["weightKg"] == 12.47
+
+
+def test_partial_detail_before_a_rate_limit_is_still_persisted():
+    provider = _StrengthProvider("strength_training", rate_limited=True)
+    service, repo = _service(provider)
+
+    assert service.sync_daily("2026-08-23", force=True, resync_lookback_days=0)
+    payload = repo.upsert_activities.call_args.args[0][0][1]
+    assert payload["exerciseSets"][0]["repetitionCount"] == 10
 
 
 def test_disabled_power_detail_flag_still_skips_cycling_detail():

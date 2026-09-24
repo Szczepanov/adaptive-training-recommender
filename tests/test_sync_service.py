@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime, timedelta
+from functools import partial
 from unittest.mock import MagicMock
 
 import pytest
@@ -98,6 +99,7 @@ class DetailFakeProvider(FakeTestProvider):
         super().__init__()
         self.detail_calls: list[str] = []
         self.detail_side_effect: Exception | None = None
+        self.detail_rate_limited = False
         self.activities = [
             CanonicalActivity(
                 activity_id=str(index + 1),
@@ -131,7 +133,9 @@ class DetailFakeProvider(FakeTestProvider):
             power_zones=[CanonicalZoneBucket(2, 1200.0, 150.0)],
             normalized_power_watts=230.0,
         )
-        return ProviderActivityDetailResult(canonical=detail, raw_payloads={})
+        return ProviderActivityDetailResult(
+            canonical=detail, raw_payloads={}, rate_limited=self.detail_rate_limited
+        )
 
 
 class HrFidelityFakeProvider(DetailFakeProvider):
@@ -244,6 +248,34 @@ def test_backfill_rate_limit_stops_subsequent_detail_requests():
             run_id="test-run",
             stop_on_rate_limit=True,
         )
+
+    assert provider.detail_calls == ["1"]
+
+
+@pytest.mark.parametrize("stop_on_rate_limit", [True, False])
+def test_backfill_partial_detail_rate_limit_stops_subsequent_detail_requests(
+    stop_on_rate_limit: bool,
+):
+    provider = DetailFakeProvider(activity_count=5)
+    provider.detail_rate_limited = True
+    service, repo = _detail_service(provider)
+
+    call = partial(
+        service._fetch_and_archive_backfill_activities,
+        provider,
+        datetime.fromisoformat("2026-08-06").date(),
+        datetime.fromisoformat("2026-08-06").date(),
+        include_details=True,
+        run_id="test-run",
+        stop_on_rate_limit=stop_on_rate_limit,
+    )
+    if stop_on_rate_limit:
+        with pytest.raises(GarminConnectTooManyRequestsError):
+            call()
+    else:
+        call()
+        payloads = {doc_id: payload for doc_id, payload in repo.upsert_activities.call_args.args[0]}
+        assert payloads["1"]["normalizedPower"] == 230.0
 
     assert provider.detail_calls == ["1"]
 

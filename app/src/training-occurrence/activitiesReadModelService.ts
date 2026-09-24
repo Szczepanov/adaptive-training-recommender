@@ -12,11 +12,13 @@ import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver'
 import { comparePlannedVsPerformed } from '../sessions/performedComparison';
 import { addDaysToLocalDateString, getPreviousLocalDateString } from '../utils/localDate';
 import type { NormalizedGarminActivity } from '../engine/models';
-import type { CompletedWorkoutView } from './completedWorkoutView';
+import type { CompletedWorkoutView, PerformedRestAvailability } from './completedWorkoutView';
 import { sourceBadgeFor } from './completedWorkoutView';
+import { buildStructuredStepDetails } from './structuredSetDetail';
 import { compareActivitiesReadModels, recordActivitiesReadModelComparison } from './activitiesReadModelDiagnostics';
 import { isProviderActivityRef, isStructuredExecutionRef, type PerformedTrainingOccurrence } from './models';
 import { performedTrainingOccurrenceRepository as repository } from './repository';
+import { sourceKeyForRef } from './sourceIdentity';
 
 async function resolveStructuredDetail(
     userId: string,
@@ -29,10 +31,20 @@ async function resolveStructuredDetail(
     const definitionState = await resolveSessionDefinition(userId, execution.sessionSource, execution.prescriptionHash);
     if (definitionState.status !== 'AVAILABLE') return undefined;
 
-    const entries = await sessionExecutionService.getEntries(userId, executionId);
+    const [entries, restEvents] = await Promise.all([
+        sessionExecutionService.getEntries(userId, executionId),
+        // Performed rest is enrichment: a failed read still renders the sets, just without
+        // actual rest -- and is reported as `unavailable`, never as "not recorded".
+        sessionExecutionService.getRestEvents(userId, executionId).catch(() => null),
+    ]);
+    const performedRest: PerformedRestAvailability = restEvents === null
+        ? 'unavailable'
+        : restEvents.length > 0 ? 'recorded' : 'not_recorded';
     return {
         title: definitionState.data.title,
         comparison: comparePlannedVsPerformed(definitionState.data, entries),
+        steps: buildStructuredStepDetails(definitionState.data, entries, restEvents ?? []),
+        performedRest,
     };
 }
 
@@ -57,6 +69,7 @@ async function hydrateOccurrence(
 
     return {
         performedOccurrenceId: occurrence.performedOccurrenceId,
+        sourceKeys: occurrence.sourceRefs.map(sourceKeyForRef),
         localDate: occurrence.localDate,
         modality: occurrence.modality,
         startedAt: occurrence.startedAt,

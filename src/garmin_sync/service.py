@@ -216,8 +216,8 @@ class GarminSyncService:
     ) -> dict[str, CanonicalActivityDetail]:
         """Best-effort target-date activity enrichment.
 
-        Strength exercise sets are always eligible because they are the core data of a
-        strength session and require a single endpoint. The existing cycling power
+        Strength exercise sets (plus that session's HR time-in-zone) are always eligible
+        because they are the core data of a strength session and cost two endpoints. The existing cycling power
         detail path remains behind ``GARMIN_ACTIVITY_DETAIL_ENABLED`` via
         ``include_power_details`` so this feature does not silently triple detail-call
         traffic for qualifying rides.
@@ -247,6 +247,14 @@ class GarminSyncService:
             try:
                 result: Any = fetch_detail(activity.activity_id)
                 details[activity.activity_id] = result.canonical
+                if getattr(result, "rate_limited", False):
+                    # The core detail arrived before an optional endpoint hit the rate
+                    # limit: keep it, then stop exactly as for a raised 429.
+                    logger.warning(
+                        f"[{target_iso}] Garmin activity-detail rate limit reached after "
+                        "partial detail; abandoning remaining detail fetches for this run"
+                    )
+                    break
             except GarminConnectTooManyRequestsError as error:
                 logger.warning(
                     f"[{target_iso}] Garmin activity-detail rate limit reached; "
@@ -791,6 +799,12 @@ class GarminSyncService:
                     try:
                         result: Any = fetch_detail(activity.activity_id)
                         details_by_activity_id[activity.activity_id] = result.canonical
+                        if getattr(result, "rate_limited", False):
+                            # Partial detail arrived before an optional endpoint hit the
+                            # rate limit: stop exactly as for a raised 429 below.
+                            raise GarminConnectTooManyRequestsError(
+                                "rate limited after partial activity detail"
+                            )
                     except GarminConnectTooManyRequestsError as error:
                         logger.warning(
                             "Garmin activity-detail rate limit reached during backfill; "

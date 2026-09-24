@@ -219,6 +219,96 @@
   color: var(--danger-color, #d85b5b);
 }
 
+/* Completed Workout card (ADR-0034): per-set structured detail. Stacked rows rather than a
+   wide table so a set, its load and its rest stay readable at 320 px without local scrolling. */
+.completed-workout-summary,
+.completed-workout-step-target,
+.completed-workout-hr {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin: 0 0 0.5rem;
+}
+
+.completed-workout-step {
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.completed-workout-step-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+}
+
+.completed-workout-step-status {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.completed-workout-step-target {
+  margin: 0.2rem 0 0.35rem;
+}
+
+.completed-workout-sets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.85rem;
+}
+
+.completed-workout-sets li {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.1rem 0.75rem;
+  padding: 0.2rem 0;
+}
+
+.completed-workout-sets li.is-warmup {
+  color: var(--text-secondary);
+}
+
+.completed-workout-set-label {
+  font-variant-numeric: tabular-nums;
+}
+
+.completed-workout-set-performed {
+  font-variant-numeric: tabular-nums;
+}
+
+.completed-workout-set-rest {
+  grid-column: 2;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.completed-workout-diagnostics > summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  /* Keeps the native disclosure marker (list-item display) while giving a 44 px target. */
+  padding: 0.75rem 0;
+}
+
+.completed-workout-link-offer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.completed-workout-link-offer p {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.completed-workout-link-offer button {
+  min-height: 44px;
+}
+
 @media (max-width: 640px) {
   .activity-telemetry-card > header {
     flex-direction: column;

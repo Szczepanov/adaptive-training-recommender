@@ -579,6 +579,8 @@ class CanonicalActivity:
     # matching -- `date` alone cannot support that. None when Garmin omitted startTimeGMT.
     started_at: str | None = None
     ended_at: str | None = None
+    # Peak activity HR as Garmin reports it (display only; no decision authority).
+    max_hr: float | None = None
 
 
 @dataclass

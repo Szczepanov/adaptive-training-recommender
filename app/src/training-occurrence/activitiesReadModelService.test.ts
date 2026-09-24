@@ -7,7 +7,7 @@ vi.mock('./repository', async () => {
 });
 vi.mock('../services/activityService', () => ({ activityService: { getActivitiesInRange: vi.fn() } }));
 vi.mock('../services/sessionExecutionService', () => ({
-    sessionExecutionService: { getExecution: vi.fn(), getEntries: vi.fn() },
+    sessionExecutionService: { getExecution: vi.fn(), getEntries: vi.fn(), getRestEvents: vi.fn() },
 }));
 vi.mock('../sessions/sessionDefinitionResolver', () => ({ resolveSessionDefinition: vi.fn() }));
 
@@ -38,6 +38,7 @@ function occurrence(overrides: Partial<PerformedTrainingOccurrence> = {}): Perfo
 beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+    vi.mocked(sessionExecutionService.getRestEvents).mockResolvedValue([]);
 });
 
 describe('getCompletedWorkoutsInRange', () => {
@@ -58,6 +59,7 @@ describe('getCompletedWorkoutsInRange', () => {
         const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
 
         expect(view.structured?.title).toBe('Heavy Squat Day');
+        expect(view.structured?.performedRest).toBe('not_recorded');
         expect(view.garmin).toBeUndefined();
         expect(view.garminExerciseSetsAreDiagnosticOnly).toBe(true);
         expect(view.sourceBadge).toEqual({ hasStructured: true, hasProvider: false, providers: [] });
@@ -92,6 +94,53 @@ describe('getCompletedWorkoutsInRange', () => {
         expect(view.structured?.title).toBe('Heavy Squat Day');
         expect(view.garmin?.activityId).toBe('act-1');
         expect(view.garminExerciseSetsAreDiagnosticOnly).toBe(true);
+    });
+
+    it('attaches per-set rows and durable performed rest to the structured detail', async () => {
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence()]);
+        vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({
+            status: 'AVAILABLE',
+            data: { userId: 'user-1', executionId: 'exec-1', sessionSource: { kind: 'catalog', workoutId: 'w', catalogVersion: '1' }, date: '2026-08-26', startedAt: '2026-08-26T06:52:00.000Z', completedAt: '2026-08-26T07:32:00.000Z', updatedAt: '2026-08-26T07:32:00.000Z', state: 'completed', schemaVersion: 1 },
+            revision: null,
+        });
+        vi.mocked(resolveSessionDefinition).mockResolvedValue({
+            status: 'AVAILABLE',
+            data: { schemaVersion: 1, id: 'w', revision: 1, title: 'Heavy Squat Day', intent: 'training', blocks: [{ id: 'b1', role: 'main', steps: [{ id: 'squat', kind: 'exercise', title: 'Back Squat', dose: { kind: 'repetition', sets: 1, reps: 5 }, rest: 180 }] }] } as never,
+            revision: null,
+        });
+        vi.mocked(sessionExecutionService.getEntries).mockResolvedValue([{
+            id: 'e1', executionId: 'exec-1', stepId: 'squat', completedAt: '2026-08-26T07:00:00.000Z', createdAt: '2026-08-26T07:00:00.000Z', updatedAt: '2026-08-26T07:00:00.000Z',
+            payload: { kind: 'repetition', setIndex: 0, reps: 5, weightKg: 100 },
+        }]);
+        vi.mocked(sessionExecutionService.getRestEvents).mockResolvedValue([{
+            id: 'rest-1', executionId: 'exec-1', afterEntryId: 'e1', prescribedSeconds: 180, startedAt: '2026-08-26T07:00:00.000Z', endedAt: '2026-08-26T07:03:20.000Z', actualSeconds: 200, endReason: 'next_set_started', createdAt: '2026-08-26T07:03:20.000Z', updatedAt: '2026-08-26T07:03:20.000Z',
+        }]);
+
+        const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
+
+        expect(view.structured?.performedRest).toBe('recorded');
+        expect(view.structured?.steps[0].sets[0].rest).toEqual({ prescribedSeconds: 180, actualSeconds: 200, endReason: 'next_set_started' });
+    });
+
+    it('still renders sets when the performed-rest read fails', async () => {
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence()]);
+        vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({
+            status: 'AVAILABLE',
+            data: { userId: 'user-1', executionId: 'exec-1', sessionSource: { kind: 'catalog', workoutId: 'w', catalogVersion: '1' }, date: '2026-08-26', startedAt: '2026-08-26T06:52:00.000Z', completedAt: '2026-08-26T07:32:00.000Z', updatedAt: '2026-08-26T07:32:00.000Z', state: 'completed', schemaVersion: 1 },
+            revision: null,
+        });
+        vi.mocked(resolveSessionDefinition).mockResolvedValue({
+            status: 'AVAILABLE',
+            data: { schemaVersion: 1, id: 'w', revision: 1, title: 'Heavy Squat Day', intent: 'training', blocks: [] },
+            revision: null,
+        });
+        vi.mocked(sessionExecutionService.getEntries).mockResolvedValue([]);
+        vi.mocked(sessionExecutionService.getRestEvents).mockRejectedValue(new Error('permission-denied'));
+
+        const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
+
+        expect(view.structured?.title).toBe('Heavy Squat Day');
+        expect(view.structured?.performedRest).toBe('unavailable');
     });
 
     it('marks a Garmin-only occurrence so its own exercise sets are NOT diagnostic-only', async () => {
