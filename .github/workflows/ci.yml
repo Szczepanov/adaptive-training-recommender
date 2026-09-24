@@ -358,6 +358,39 @@ jobs:
           path: app/artifacts/playwright
           if-no-files-found: warn
 
+  # Compatibility aggregate: keep the historical required-check name stable for
+  # branch protection while the expensive suites execute in parallel above.
+  frontend-tests:
+    name: Frontend Unit Tests, Firestore Rules & Browser E2E
+    if: always() && needs.detect-changes.outputs.code_changed == 'true'
+    needs:
+      - detect-changes
+      - frontend-unit-tests
+      - firestore-rules-tests
+      - frontend-e2e-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify frontend test gates
+        shell: bash
+        run: |
+          echo "Frontend test job results:"
+          echo "  unit:      ${{ needs.frontend-unit-tests.result }}"
+          echo "  rules:     ${{ needs.firestore-rules-tests.result }}"
+          echo "  browser:   ${{ needs.frontend-e2e-tests.result }}"
+
+          for result in \
+            "${{ needs.frontend-unit-tests.result }}" \
+            "${{ needs.firestore-rules-tests.result }}" \
+            "${{ needs.frontend-e2e-tests.result }}"; do
+            if [ "$result" != "success" ]; then
+              echo "A required frontend test job did not succeed (status: $result)." >&2
+              exit 1
+            fi
+          done
+
+          echo "All frontend test gates completed successfully."
+
   engine-simulations:
     name: Engine Simulations & AI Gates
     if: needs.detect-changes.outputs.code_changed == 'true'
@@ -503,9 +536,7 @@ jobs:
       - docs-hygiene
       - python-tests
       - frontend-hygiene
-      - frontend-unit-tests
-      - firestore-rules-tests
-      - frontend-e2e-tests
+      - frontend-tests
       - engine-simulations
       - docker-build
     runs-on: ubuntu-latest
@@ -519,9 +550,7 @@ jobs:
           echo "  docs-hygiene: ${{ needs.docs-hygiene.result }}"
           echo "  python-tests: ${{ needs.python-tests.result }}"
           echo "  frontend-hygiene: ${{ needs.frontend-hygiene.result }}"
-          echo "  frontend-unit-tests: ${{ needs.frontend-unit-tests.result }}"
-          echo "  firestore-rules-tests: ${{ needs.firestore-rules-tests.result }}"
-          echo "  frontend-e2e-tests: ${{ needs.frontend-e2e-tests.result }}"
+          echo "  frontend-tests: ${{ needs.frontend-tests.result }}"
           echo "  engine-simulations: ${{ needs.engine-simulations.result }}"
           echo "  docker-build: ${{ needs.docker-build.result }}"
 
@@ -530,9 +559,7 @@ jobs:
             "${{ needs.docs-hygiene.result }}" \
             "${{ needs.python-tests.result }}" \
             "${{ needs.frontend-hygiene.result }}" \
-            "${{ needs.frontend-unit-tests.result }}" \
-            "${{ needs.firestore-rules-tests.result }}" \
-            "${{ needs.frontend-e2e-tests.result }}" \
+            "${{ needs.frontend-tests.result }}" \
             "${{ needs.engine-simulations.result }}" \
             "${{ needs.docker-build.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
