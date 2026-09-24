@@ -18,6 +18,21 @@ When acting as or using the **planner** skill:
 
 ## Planning Process
 
+### Navigation strategy
+
+When Serena is available and bound to the checkout being planned:
+
+- Prefer `get_symbols_overview` / `find_symbol` to locate unfamiliar source symbols.
+- Use `find_referencing_symbols` to establish impact radius and `find_implementations` for
+  interfaces/abstract contracts before proposing cross-module changes.
+- Use Grep/text search for literals, configuration, docs, generated files, unsupported
+  language-server cases, and completeness checks.
+- Do not call Serena merely to satisfy a process rule when the target is already known and semantic
+  discovery would add no evidence.
+
+If Serena is unavailable or cannot be verified against the current checkout/worktree, use the
+normal search/read tools instead.
+
 ### 1. Requirements Analysis
 - Understand the feature request completely.
 - Identify success criteria.
