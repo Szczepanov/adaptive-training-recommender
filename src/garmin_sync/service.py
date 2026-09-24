@@ -1,10 +1,10 @@
-import importlib.metadata
 import logging
 import random
 import time
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+from importlib import metadata
 from pathlib import Path
 from typing import Any, Callable
 
@@ -103,8 +103,8 @@ class GarminSyncService:
             prefix=settings.garmin_archive_prefix,
         )
         try:
-            self.garminconnect_version: str | None = importlib.metadata.version("garminconnect")
-        except importlib.metadata.PackageNotFoundError:
+            self.garminconnect_version: str | None = metadata.version("garminconnect")
+        except metadata.PackageNotFoundError:
             self.garminconnect_version = None
 
     def _init_garmin_client(self) -> GarminClientWrapper:
