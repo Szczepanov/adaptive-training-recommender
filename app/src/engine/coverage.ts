@@ -94,6 +94,7 @@ export type CoverageHistoryInput =
         templateId?: string;
         workoutId?: string;
         durationMin?: number;
+        isReadinessModifiedDose?: boolean;
         modality?: SessionTemplate['modality'] | string;
         category?: SessionTemplate['category'] | string;
         source?: CoverageCreditSource;
@@ -108,6 +109,7 @@ export interface CoverageExposureLike {
     durationMin?: number;
     modality?: SessionTemplate['modality'] | string;
     category?: SessionTemplate['category'] | string;
+    isReadinessModifiedDose?: boolean;
 }
 
 export type CoverageCreditLike = Pick<CoverageCreditFact,
@@ -151,6 +153,7 @@ export function coverageHistoryFromFacts(performedFacts: CoveragePerformedFacts)
             ...(fact.workoutId ? { workoutId: fact.workoutId } : {}),
             ...(fact.templateId ? { templateId: fact.templateId } : {}),
             ...(fact.durationMin !== undefined ? { durationMin: fact.durationMin } : {}),
+            ...('isReadinessModifiedDose' in fact && fact.isReadinessModifiedDose ? { isReadinessModifiedDose: true as const } : {}),
             ...(fact.modality && fact.modality !== 'Unknown' ? { modality: fact.modality as SessionTemplate['modality'] } : {}),
             ...(fact.category ? { category: fact.category as SessionTemplate['category'] } : {}),
             ...(hasCanonicalCreditLedger ? {

@@ -1467,22 +1467,34 @@ export function rankCandidates(
         && candidate.template.category !== 'Rest'
         && candidate.template.category !== 'Mobility/Recovery');
     if (hasEligiblePreferredTraining) {
+        const effectiveTemplateForObjectiveCheck = (template: SessionTemplate): SessionTemplate => {
+            const adjustment = resolveTimeCapDoseAdjustment(
+                template,
+                availability.maxTimeMinutes,
+                options.fatigueTier === 'modify',
+            );
+            return adjustment ? materializeEffectiveDose(template, adjustment.activeDose) : template;
+        };
         const objectivesAdvancedByPreferredTraining = new Set(
             accepted
                 .filter(candidate =>
                     isPreferred(candidate.template)
                     && candidate.template.category !== 'Rest'
                     && candidate.template.category !== 'Mobility/Recovery')
-                .flatMap(candidate =>
-                    unresolvedObjectives
-                        .filter(obj => templateAdvancesObjective(candidate.template, obj))
-                        .map(obj => obj.key)),
+                .flatMap(candidate => {
+                    const effective = effectiveTemplateForObjectiveCheck(candidate.template);
+                    return unresolvedObjectives
+                        .filter(obj => templateAdvancesObjective(effective, obj))
+                        .map(obj => obj.key);
+                }),
         );
-        const advancesUnresolvedObjectiveWithoutPreferredAlternative = (template: SessionTemplate) =>
-            unresolvedObjectives.some(obj =>
+        const advancesUnresolvedObjectiveWithoutPreferredAlternative = (template: SessionTemplate) => {
+            const effective = effectiveTemplateForObjectiveCheck(template);
+            return unresolvedObjectives.some(obj =>
                 !objectivesAdvancedByPreferredTraining.has(obj.key)
-                && templateAdvancesObjective(template, obj),
+                && templateAdvancesObjective(effective, obj),
             );
+        };
         accepted.forEach(candidate => {
             const template = candidate.template;
             if (template.category === 'Rest' || template.category === 'Mobility/Recovery'
