@@ -33,8 +33,8 @@ All scripts defined in `package.json` are organized below by feature domain:
 |---|---|---|
 | `npm run check` | Pre-flight validation | Executes `typecheck`, `lint`, `test`, and `validate:workouts`. Required before builds and dev server start. |
 | `npm run typecheck` | Static type checking | Runs `tsc -b` across TypeScript project references (`tsconfig.json`, `tsconfig.app.json`, `tsconfig.node.json`). |
-| `npm run lint` | ESLint analysis | Scans TypeScript/React files for code quality, hook usage, and pattern warnings. |
-| `npm run lint:fix` | ESLint auto-fix | Automatically resolves fixable ESLint warnings and formatting issues. |
+| `npm run lint` | ESLint analysis | Scans TypeScript/React files for code quality, hook usage, and pattern warnings. Results are cached per file content under `node_modules/.cache/eslint/`, so repeat runs (pre-commit/pre-push hooks, `npm run check`) only re-lint changed files; see the note in `eslint.config.js` before adding cross-file rules. |
+| `npm run lint:fix` | ESLint auto-fix | Automatically resolves fixable ESLint warnings and formatting issues (same cache as `lint`). |
 | `npm run validate:workouts` | Workout catalog validation | Runs `scripts/validate-workouts.ts` via `node --experimental-strip-types` to ensure prescription contracts, parameter ranges, and intensity levels in `src/engine/workouts/` are valid. |
 
 > **Experimental: dual TypeScript compiler setup.** `devDependencies` currently installs two different major versions of TypeScript under `npm:` aliases:
@@ -59,7 +59,8 @@ All scripts defined in `package.json` are organized below by feature domain:
 | `npm run test:watch` | Watch mode unit tests | Runs Vitest in interactive watch mode for test-driven development. |
 | `npm run test:coverage` | Code coverage report | Executes Vitest V8 coverage and writes terminal, JSON, and HTML reports to `artifacts/coverage/frontend/`. |
 | `npm run test:rules` | Firestore security rules test | Launches Firebase local emulator with `--only firestore` and executes security rules unit tests (`test:rules:emulator`). |
-| `npm run test:rules:emulator` | Direct rules test | Executes Vitest directly against `src/emulator/firestoreRules.emulator.test.ts` (called internally by `test:rules`). |
+| `npm run test:rules:emulator` | Direct rules test | Executes Vitest serially against every `src/emulator/*.emulator.test.ts` file (called internally by `test:rules`; expects a running Firestore emulator). |
+| `npm run emulators:exec:rules -- "<cmd>"` | Run inside the rules emulator | Starts the same Firestore emulator as `test:rules` and runs `<cmd>` against it. CI uses it to shard the suite: `npm run emulators:exec:rules -- "npm run test:rules:emulator -- --shard=1/2"`. |
 | `npm run firestore:rules:drift` | Production rules comparison | Reads the deployed default Firestore ruleset through local Application Default Credentials and fails if its source differs from `firestore.rules`. |
 | `npm run firestore:rules:deploy -- --confirm` | Production rules deployment | Runs emulator tests, saves rollback metadata locally, deploys only `firestore:rules`, then verifies the deployed source. See `docs/ops/firestore-rules-deployment.md`. |
 | `npm run firestore:rules:rollback -- --backup <file> --confirm` | Production rules rollback | Restores the release to the ruleset recorded by a previous local deployment. |
@@ -105,6 +106,8 @@ Parses the input JSON payload, feeds the historical recovery snapshot and athlet
 | `npm run visual:refresh` | Refresh review screenshots | Prepares workspace, executes Playwright visual screenshot tests across desktop (1440x1000) and mobile (390x844) viewports against synthetic fixtures, and finalizes review artifacts. |
 | `npm run test:e2e` | Browser journey suite | Starts disposable Firebase Auth and Firestore emulators, serves the normal application in e2e mode, and runs the Chromium sign-in, check-in/recommendation, session lifecycle, and duplicate-start journeys. |
 | `npm run test:e2e:mobile` | Phone interaction suite | Uses the same disposable emulators and app server; runs all `tests/e2e/mobile/*.pw.ts` specs in the `e2e-mobile` Chromium project at 390 × 844 CSS pixels. |
+| `npm run test:e2e:emulator` | Direct browser suite | Runs `playwright test --config=playwright.e2e.config.ts` against already-running emulators (called internally by `test:e2e` and `test:e2e:mobile`). |
+| `npm run emulators:exec:e2e -- "<cmd>"` | Run inside the E2E emulators | Starts the same Auth + Firestore emulators as `test:e2e` and runs `<cmd>` against them. CI uses it to shard the suite by spec file: `npm run emulators:exec:e2e -- "npm run test:e2e:emulator -- --shard=1/2"`. |
 
 `playwright.e2e.config.ts` keeps `e2e-chromium` on the existing desktop specs and selects
 `tests/e2e/mobile/*.pw.ts` for `e2e-mobile`. The full `test:e2e` command runs both projects;
@@ -116,7 +119,8 @@ port 4174 and its own fixture data.
 
 `test:e2e` reads the checked-in `.env.e2e` demo configuration only. It never accesses a
 production Firebase project or Garmin account. Playwright saves a trace, screenshot, video,
-and HTML report under `artifacts/playwright/` when a journey fails; CI uploads that directory.
+and HTML report under `artifacts/playwright/` when a journey fails; CI uploads that directory
+once per shard (`playwright-e2e-artifacts-shard-<n>-of-<total>`), each report covering its shard's specs.
 
 #### Visual Review Artifacts
 Regenerated into `artifacts/visual-review/latest/`:

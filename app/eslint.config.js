@@ -5,6 +5,12 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
+// `npm run lint` uses `--cache`, which is only sound for single-file rules. Adding
+// type-aware (`parserOptions.project`) or import-resolution rules means a file's result can
+// change when a different file changes: remove `--cache` from the lint scripts first.
+// The cache key covers ESLint/Node versions and the resolved rule config, not plugin
+// versions: `npm ci` clears it with node_modules, but after an in-place `npm install` of a
+// plugin upgrade, delete `node_modules/.cache/eslint/`. CI always lints uncached.
 export default defineConfig([
   globalIgnores(['dist', 'artifacts/coverage']),
   {
