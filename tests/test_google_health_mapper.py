@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from garmin_sync.canonical import (
     METRIC_DAILY_RESTING_HEART_RATE_BPM,
     METRIC_HRV_RMSSD_MS,
@@ -7,8 +9,21 @@ from garmin_sync.canonical import (
 from garmin_sync.google_health_mapper import (
     NORMALIZER_VERSION,
     GoogleHealthMapper,
+    parse_iso_datetime,
     resolve_provider_from_package,
 )
+
+
+def test_parse_iso_datetime():
+    assert parse_iso_datetime(None) is None
+    assert parse_iso_datetime("") is None
+    assert parse_iso_datetime("invalid-date") is None
+    assert parse_iso_datetime("2026-08-26T22:30:00Z") == datetime(
+        2026, 8, 26, 22, 30, 0, tzinfo=timezone.utc
+    )
+    assert parse_iso_datetime("2026-08-26T22:30:00+00:00") == datetime(
+        2026, 8, 26, 22, 30, 0, tzinfo=timezone.utc
+    )
 
 
 def test_resolve_provider_from_package():
