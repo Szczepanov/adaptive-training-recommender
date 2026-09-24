@@ -3,7 +3,7 @@ import { mapContextFromGoalsAndTrainingSettings } from '../engine/adapters';
 import { computeInternalResponseStrain } from '../engine/fatigue';
 import { readinessKnowledgeRefs } from '../engine/knowledgeLineage';
 import { resolveOccupationalLoadContext } from '../engine/occupationalLoad';
-import { evaluateReadinessAndSafetyEnvelope } from '../engine/rules';
+import { evaluateEnvelopes, evaluateReadinessAndSafetyEnvelope, evaluateTraining } from '../engine/rules';
 import type {
     DailyReadiness,
     DailySubjectiveCheckin,
@@ -93,6 +93,12 @@ function modeFor(physicalWork: PhysicalWorkCheckin | undefined, overrides: Parti
         { subjective: subjective({ physicalWork, ...overrides }), objective: NEUTRAL_OBJECTIVE },
         READINESS_CONTEXT,
     ).mode;
+}
+
+function decisionSurface(recommendation: ReturnType<typeof evaluateTraining>) {
+    const surface = { ...recommendation };
+    delete surface.knowledgeRefs;
+    return surface;
 }
 
 // Unsaturated reference magnitude: hard x medium = 0.70.
@@ -295,5 +301,20 @@ describe('physical-work guardrails align with policy.safety.physical_work_guardr
 
         const noArea = contextForWork({ performed: true, intensity: 'hard' });
         expect(readinessKnowledgeRefs(readiness, noArea)).not.toContain(KNOWLEDGE_CLAIM_IDS.physicalWorkGuardrailsPolicy);
+    });
+
+    it('keeps the physical-work guardrail provenance trace decision-inert', () => {
+        const hardBackWork: PhysicalWorkCheckin = { performed: true, intensity: 'hard', loadAreas: ['lower_back_spine'] };
+        const readiness: DailyReadiness = { subjective: subjective({ physicalWork: hardBackWork }), objective: NEUTRAL_OBJECTIVE };
+        const tracedContext = contextForWork(hardBackWork);
+        const untracedContext = { ...tracedContext, physicalWorkGuardrailsApplied: undefined };
+
+        expect(evaluateEnvelopes(readiness, tracedContext)).toEqual(evaluateEnvelopes(readiness, untracedContext));
+
+        const tracedRecommendation = evaluateTraining(readiness, tracedContext, '2026-08-08');
+        const untracedRecommendation = evaluateTraining(readiness, untracedContext, '2026-08-08');
+        expect(decisionSurface(tracedRecommendation)).toEqual(decisionSurface(untracedRecommendation));
+        expect(tracedRecommendation.knowledgeRefs).toContain(KNOWLEDGE_CLAIM_IDS.physicalWorkGuardrailsPolicy);
+        expect(untracedRecommendation.knowledgeRefs).not.toContain(KNOWLEDGE_CLAIM_IDS.physicalWorkGuardrailsPolicy);
     });
 });
