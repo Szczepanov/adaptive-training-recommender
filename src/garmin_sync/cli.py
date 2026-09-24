@@ -604,16 +604,17 @@ def run_probe_nutrition_cmd(args: list[str] | None = None) -> int:
         load_dotenv()
         settings = load_settings()
         from .dates import get_date_string, local_today, n_days_ago
-        from .garmin_client import GarminClientWrapper
+        from .garmin_client import GarminClientConfig, GarminClientWrapper
         from .garmin_provider import GarminProviderAdapter
 
-        client = GarminClientWrapper(
+        config = GarminClientConfig(
             retry_attempts=settings.garmin_retry_attempts,
             retry_min_wait=settings.garmin_retry_min_wait,
             retry_max_wait=settings.garmin_retry_max_wait,
             verify_login=settings.garmin_verify_login,
             allow_credential_login=False,
         )
+        client = GarminClientWrapper(config=config)
         client.login_with_tokens_or_credentials(settings.garmin_token_path)
         adapter = GarminProviderAdapter(client=client)
 

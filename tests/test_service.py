@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 from garmin_sync.canonical import CanonicalDailyMetrics
 from garmin_sync.config import Settings
 from garmin_sync.fit_activity import FitDeviceInventoryEntry
+from garmin_sync.garmin_client import GarminClientConfig
 from garmin_sync.service import (
     GarminSyncService,
     SnapshotContext,
@@ -84,13 +85,15 @@ def test_init_garmin_client_restores_login_and_persists_tokens() -> None:
     assert service.garmin_client == mock_wrapper_instance
     mock_token_store.restore.assert_called_once_with(service.token_file_path)
     mock_wrapper_cls.assert_called_once_with(
-        email="test@example.com",
-        password="secret_password",
-        retry_attempts=settings.garmin_retry_attempts,
-        retry_min_wait=settings.garmin_retry_min_wait,
-        retry_max_wait=settings.garmin_retry_max_wait,
-        verify_login=settings.garmin_verify_login,
-        allow_credential_login=settings.garmin_allow_credential_login,
+        config=GarminClientConfig(
+            email="test@example.com",
+            password="secret_password",
+            retry_attempts=settings.garmin_retry_attempts,
+            retry_min_wait=settings.garmin_retry_min_wait,
+            retry_max_wait=settings.garmin_retry_max_wait,
+            verify_login=settings.garmin_verify_login,
+            allow_credential_login=settings.garmin_allow_credential_login,
+        )
     )
     mock_wrapper_instance.login_with_tokens_or_credentials.assert_called_once_with(
         service.token_file_path

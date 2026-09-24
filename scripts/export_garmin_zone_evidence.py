@@ -18,7 +18,7 @@ from garminconnect import GarminConnectTooManyRequestsError
 
 from garmin_sync.config import load_settings
 from garmin_sync.dates import local_today
-from garmin_sync.garmin_client import GarminClientWrapper
+from garmin_sync.garmin_client import GarminClientConfig, GarminClientWrapper
 from garmin_sync.garmin_provider import GarminProviderAdapter, qualifies_for_activity_detail
 
 
@@ -83,10 +83,12 @@ def _deidentified_activity(ordinal: int, activity: Any, detail: Any) -> dict[str
 def export(days: int, max_activities: int) -> list[dict[str, Any]]:
     settings = load_settings()
     client = GarminClientWrapper(
-        retry_attempts=settings.garmin_retry_attempts,
-        retry_min_wait=settings.garmin_retry_min_wait,
-        retry_max_wait=settings.garmin_retry_max_wait,
-        verify_login=settings.garmin_verify_login,
+        config=GarminClientConfig(
+            retry_attempts=settings.garmin_retry_attempts,
+            retry_min_wait=settings.garmin_retry_min_wait,
+            retry_max_wait=settings.garmin_retry_max_wait,
+            verify_login=settings.garmin_verify_login,
+        )
     )
     client.login_with_tokens_or_credentials(Path(settings.garmin_token_path))
     provider = GarminProviderAdapter(client)

@@ -29,7 +29,7 @@ from .error_reporting import log_exception
 from .firestore_repository import FirestoreRecoveryRepository
 from .fit_activity import FitDeviceInventoryEntry
 from .fit_workout_identity import compute_fit_workout_fingerprint
-from .garmin_client import GarminClientWrapper
+from .garmin_client import GarminClientConfig, GarminClientWrapper
 from .garmin_provider import (
     GarminProviderAdapter,
     RawGarminTelemetry,
@@ -118,7 +118,7 @@ class GarminSyncService:
         )
         self.token_store.restore(self.token_file_path)
 
-        wrapper = GarminClientWrapper(
+        config = GarminClientConfig(
             email=self.settings.garmin_email,
             password=self.settings.garmin_password,
             retry_attempts=self.settings.garmin_retry_attempts,
@@ -127,6 +127,7 @@ class GarminSyncService:
             verify_login=self.settings.garmin_verify_login,
             allow_credential_login=self.settings.garmin_allow_credential_login,
         )
+        wrapper = GarminClientWrapper(config=config)
         # garmin_client.py already raises correctly-typed exceptions here (a
         # token_rebootstrap_required GarminConnectAuthenticationError, or the original
         # GarminConnectTooManyRequestsError/GarminConnectConnectionError untouched) --
