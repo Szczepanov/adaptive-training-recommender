@@ -113,6 +113,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 ### 🔍 Reviews & Analysis
 Point-in-time assessments of the system as built, including gaps between documented decisions and implemented behaviour:
 
+* [**2026-09-24 Coding-agent evaluation baseline (capability & routing suite)**](./analysis/2026-09-24-coding-agent-eval-baseline.md) — initial isolated-worktree baseline trials for `external-library-version-routing`, `internal-architecture-no-external-docs`, and `firestore-targeted-prior-revision-query` (`3 / 3 PASS`), plus operational findings for Vite/Vitest worktree dependency installation and Serena project root binding.
 * [**2026-09-23 UI/UX foundation and documentation review**](./analysis/2026-09-23-ui-ux-foundation-review.md) — audit of the repository's fragmented UI/UX guidance against WCAG 2.2, mobile ergonomics, usability heuristics, and current test coverage; establishes the need for the living UI/UX standard.
 
 * [**2026-08-08 Codebase, Docs & Decision Review**](./analysis/2026-08-08-architecture-review.md) — Full-repository review with a sequenced remediation plan.
