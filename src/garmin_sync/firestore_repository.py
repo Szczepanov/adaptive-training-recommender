@@ -1,8 +1,8 @@
-import concurrent.futures
 import itertools
 import logging
 import os
 from collections.abc import Iterable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Mapping, cast
 
@@ -153,7 +153,7 @@ class FirestoreRecoveryRepository:
             return _fetch_chunk(chunks[0])
 
         max_workers = min(10, len(chunks))
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             for result in executor.map(_fetch_chunk, chunks):
                 snapshots.update(result)
 
@@ -692,7 +692,7 @@ class FirestoreRecoveryRepository:
             return _process_chunk(chunks[0])
 
         max_workers = min(10, len(chunks))
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             results = list(executor.map(_process_chunk, chunks))
 
         return sum(results)
