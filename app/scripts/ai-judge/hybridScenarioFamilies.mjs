@@ -54,6 +54,7 @@ export function buildHybridScenarioFamilies(hybridFamily) {
     return definition;
   }
 
+  /** Clone the current readiness snapshot and override only the requested subjective fields. */
   function withReadiness(definition, subjectiveOverrides) {
     const { scenario } = definition;
     const readiness = structuredClone(scenario.readinessForWeek(0));
@@ -64,6 +65,7 @@ export function buildHybridScenarioFamilies(hybridFamily) {
     return definition;
   }
 
+  /** Replace the scenario's implied and persisted guardrail set with one matched state. */
   function withGuardrails(definition, guardrails) {
     const { scenario } = definition;
     scenario.context.constraints.impliedGuardrails = [...guardrails];
@@ -73,6 +75,7 @@ export function buildHybridScenarioFamilies(hybridFamily) {
     return definition;
   }
 
+  /** Move a synthetic case beyond the last strength exposure and tag it for re-entry analysis. */
   function asReentryState(definition) {
     definition.scenario.startDate = '2026-09-04';
     definition.scenario.tags = [...definition.scenario.tags, 'tissue-reentry'];
@@ -105,7 +108,7 @@ export function buildHybridScenarioFamilies(hybridFamily) {
   ));
   const reentryStackedFallback = asReentryState(withGuardrails(withReadiness(
     makeCase('reentry_stacked_guardrail_fallback', 'Hybrid tissue re-entry — spinal and overhead guardrails require low-load strength support'),
-    { readiness: 7, fatigue: 3, soreness: 3, motivation: 8, timeAvailable: 75, painFlag: false, preferredModalityToday: 'Strength' },
+    { readiness: 8, fatigue: 2, soreness: 2, motivation: 9, timeAvailable: 75, painFlag: false, preferredModalityToday: 'Cycling' },
   ), ['avoid_heavy_spinal_loading', 'avoid_overhead_pressing']));
 
   // Synthetic dates, not the athlete's actual race calendar. Keep the two-week taper
