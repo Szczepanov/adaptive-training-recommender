@@ -205,4 +205,25 @@ describe('Phase 6.2c explicit weekly coverage', () => {
         const dayAfterTomorrow = buildCoverageState(planState.data, addDaysToLocalDateString(date, 2), [{ date: exposureDate, templateId: raceTemplate.id }]);
         expect(dayAfterTomorrow.requirements.find(item => item.key === 'outdoor_event_specific')?.completedSessions).toBe(0);
     });
+
+    it('excludes readiness-modified easier doses from exact aerobic_volume coverage while preserving tier-2 fallback support', () => {
+        const planState = buildCyclingEventPlan(cyclingEvent());
+        if (planState.status !== 'AVAILABLE') throw new Error('cycling plan should be available');
+        const plan = planState.data;
+        const walkTemplate = ENRICHED_TEMPLATES.find(item => item.id === 'end_walk_01')!;
+        const bikeTemplate = ENRICHED_TEMPLATES.find(item => item.id === 'end_easy_01')!;
+
+        // Even though end_walk_01's easierDose has durationMin=30 (matching walking_brisk_continuous_01's minimumMin=30),
+        // a readiness-modified exposure must not earn exact aerobic_volume coverage.
+        const stateAfterModifyWalk = buildCoverageState(plan, '2026-09-03', [{
+            date: '2026-09-02',
+            templateId: 'end_walk_01',
+            durationMin: 30,
+            isReadinessModifiedDose: true,
+        }]);
+        const aerobicVolume = stateAfterModifyWalk.requirements.find(item => item.key === 'aerobic_volume')!;
+        expect(aerobicVolume.completedSessions).toBe(0);
+        expect(coverageNeedTierForTemplate(stateAfterModifyWalk, { ...walkTemplate, durationMin: 30, isReadinessModifiedDose: true })).toBe(3);
+        expect(coverageNeedTierForTemplate(stateAfterModifyWalk, { ...bikeTemplate, durationMin: 20, isReadinessModifiedDose: true })).toBe(3);
+    });
 });

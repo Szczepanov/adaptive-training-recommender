@@ -8,7 +8,9 @@ import type { PerformedTrainingOccurrence } from './models';
 import { activityService } from '../services/activityService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
-import type { NormalizedGarminActivity } from '../engine/models';
+import { recommendationService } from '../services/recommendationService';
+import { templateIdForWorkoutId } from '../engine/performedTrainingFacts';
+import type { DailyRecommendation, NormalizedGarminActivity } from '../engine/models';
 import type { SessionExecution } from '../sessions/models';
 import type { SessionDefinition } from '../sessions/models';
 
@@ -32,6 +34,12 @@ vi.mock('../services/activityService', () => ({
 
 vi.mock('../sessions/sessionDefinitionResolver', () => ({
     resolveSessionDefinition: vi.fn(),
+}));
+
+vi.mock('../services/recommendationService', () => ({
+    recommendationService: {
+        getRecommendationsInRange: vi.fn(),
+    },
 }));
 
 function occurrence(overrides: Partial<PerformedTrainingOccurrence> = {}): PerformedTrainingOccurrence {
@@ -82,12 +90,45 @@ function sessionExecution(overrides: Partial<SessionExecution> = {}): SessionExe
     };
 }
 
+const MODIFY_TIER_WALK_WORKOUT_ID = 'walking_brisk_continuous_01';
+
+function modifyTierRecommendation(overrides: Partial<DailyRecommendation> = {}): DailyRecommendation {
+    return {
+        userId: 'user-1',
+        date: '2026-09-01',
+        templateId: templateIdForWorkoutId(MODIFY_TIER_WALK_WORKOUT_ID) ?? 'missing-template',
+        templateTitle: 'Easy walk',
+        category: 'Easy Endurance',
+        modality: 'Walking',
+        mode: 'modify',
+        rationale: 'modify-tier day',
+        schemaVersion: 2,
+        createdAt: '2026-09-01T06:00:00Z',
+        updatedAt: '2026-09-01T06:00:00Z',
+        adjustment: {
+            direction: 'easier',
+            tier: 1,
+            originalTemplateId: 'template',
+            originalTemplateTitle: 'Session',
+            adjustedDoseLabel: 'Short',
+            rationale: 'easier dose',
+        },
+        primarySession: {
+            sessionSource: { kind: 'catalog', workoutId: MODIFY_TIER_WALK_WORKOUT_ID, catalogVersion: 'v1' },
+            prescriptionHash: 'hash-1',
+        },
+        adherence: { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null },
+        ...overrides,
+    };
+}
+
 describe('performedTrainingFactsService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
         vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'MISSING' });
         vi.mocked(resolveSessionDefinition).mockResolvedValue({ status: 'MISSING' });
+        vi.mocked(recommendationService.getRecommendationsInRange).mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
     });
 
     describe('getPerformedTrainingFactsInRange', () => {
@@ -230,6 +271,80 @@ describe('performedTrainingFactsService', () => {
                 const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02');
 
                 expect(snapshot.exposures[0].modality).toBe('Cycling');
+            });
+        });
+
+        describe('readiness-modified dose marker', () => {
+            function arrangeStructuredExecution(execution: SessionExecution = sessionExecution({ sessionSource: { kind: 'catalog', workoutId: MODIFY_TIER_WALK_WORKOUT_ID, catalogVersion: 'v1' } })) {
+                vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([
+                    occurrence({ sourceRefs: [{ kind: 'structured_execution', executionId: execution.executionId }] }),
+                ]);
+                vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'AVAILABLE', data: execution, revision: null });
+            }
+
+            function arrangeRecommendations(data: DailyRecommendation[], revision: string | null = null) {
+                vi.mocked(recommendationService.getRecommendationsInRange).mockResolvedValue({ status: 'AVAILABLE', data, revision });
+            }
+
+            const baseRecommendation = modifyTierRecommendation();
+
+            it('marks the executed primary session of a modify-tier easier-dose recommendation', async () => {
+                arrangeStructuredExecution();
+                arrangeRecommendations([baseRecommendation], '2026-09-01:3');
+
+                const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02');
+
+                expect(snapshot.exposures[0].isReadinessModifiedDose).toBe(true);
+                expect(recommendationService.getRecommendationsInRange).toHaveBeenCalledWith('user-1', '2026-09-01', '2026-09-02');
+                expect(snapshot.revision).toMatch(/:rec=2026-09-01:3$/);
+            });
+
+            it('falls back to the recommended template when the recommendation has no session binding', async () => {
+                arrangeStructuredExecution();
+                arrangeRecommendations([modifyTierRecommendation({ primarySession: undefined })]);
+
+                const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02');
+
+                expect(snapshot.exposures[0].isReadinessModifiedDose).toBe(true);
+            });
+
+            it.each([
+                ['a train-tier recommendation', modifyTierRecommendation({ mode: 'train' })],
+                ['a modify-tier recommendation without a dose adjustment', modifyTierRecommendation({ adjustment: undefined })],
+                ['a harder adjustment', modifyTierRecommendation({ adjustment: { ...baseRecommendation.adjustment!, direction: 'harder' } })],
+                ['a template swap rather than a dose variation', modifyTierRecommendation({ adjustment: { ...baseRecommendation.adjustment!, tier: 3 } })],
+                ['a different bound prescription', modifyTierRecommendation({ primarySession: { ...baseRecommendation.primarySession!, prescriptionHash: 'hash-other' } })],
+                ['a recommendation for another date', modifyTierRecommendation({ date: '2026-08-31' })],
+            ])('does not mark an execution matched against %s', async (_label, recommendation) => {
+                arrangeStructuredExecution();
+                arrangeRecommendations([recommendation]);
+
+                const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-08-31', '2026-09-02');
+
+                expect(snapshot.exposures[0].isReadinessModifiedDose).toBeUndefined();
+            });
+
+            it('degrades to no marker when recommendations are unavailable', async () => {
+                arrangeStructuredExecution();
+                vi.mocked(recommendationService.getRecommendationsInRange).mockResolvedValue({
+                    status: 'UNAVAILABLE', operation: 'read recommendation history', retryable: true,
+                });
+
+                const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02');
+
+                expect(snapshot.exposures).toHaveLength(1);
+                expect(snapshot.exposures[0].isReadinessModifiedDose).toBeUndefined();
+                expect(snapshot.revision).not.toContain(':rec=');
+            });
+
+            it('skips the recommendation read when no occurrence has a structured execution', async () => {
+                vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([
+                    occurrence({ sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: 'act-1' }] }),
+                ]);
+
+                await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02', { preloadedActivities: [garminActivity()] });
+
+                expect(recommendationService.getRecommendationsInRange).not.toHaveBeenCalled();
             });
         });
 

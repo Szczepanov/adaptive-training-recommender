@@ -422,11 +422,11 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'optimizer.unpreferred_modality_fallback', domain: 'optimizer_scoring', title: 'Unpreferred-modality fallback demotion',
-        currentRule: 'When preferred non-recovery training is hard-feasible, a non-preferred non-recovery/non-event candidate remains eligible but receives 0.25x benefit and utility unless it strictly advances an unresolved objective.',
+        currentRule: 'When preferred non-recovery training is hard-feasible, a non-preferred non-recovery/non-event candidate remains eligible but receives 0.25x benefit and utility unless it strictly advances an unresolved objective that is not already advanced by any eligible preferred training candidate.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:rankCandidates'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.unpreferredModalityFallbackPolicy],
-        coverageRationale: 'Issue #736 registers the exact fallback multiplier and strict objective exemption as product policy with deterministic alignment coverage.',
+        coverageRationale: 'Issues #736 and #756 register the exact fallback multiplier and preferred-alternative-aware objective exemption as product policy with deterministic alignment coverage.',
     },
     {
         id: 'optimizer.time_cap_easy_endurance_truncation', domain: 'optimizer_scoring', title: 'Time-capped Easy Endurance prescription truncation',
@@ -451,6 +451,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         codeRefs: ['engine/coverage.ts:supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback', 'engine/optimizer.ts:rankCandidates'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.symptomCompatibleStrengthSupportPolicy],
         coverageRationale: 'Registered as explicit product ranking policy rather than as a clinical or physiological-equivalence claim. Exact role identity remains governed by the coverage descriptor and ADR-0018 allocation contract.',
+    },
+    {
+        id: 'optimizer.readiness_modified_aerobic_support', domain: 'optimizer_scoring', title: 'Readiness-modified aerobic coverage exclusion',
+        currentRule: 'On modify-tier days, easier-dose aerobic exposures are marked isReadinessModifiedDose and do not earn exact aerobic_volume coverage credit (remaining at coverage tier 3 when they advance no other role) even when their reduced duration meets a catalog minimumMin.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'low', researchPriority: 'none',
+        codeRefs: ['engine/coverage.ts:coverageKeysForExposure', 'engine/coverage.ts:coverageKeysForTemplate', 'engine/optimizer.ts:rankCandidates'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.readinessModifiedAerobicSupportPolicy],
+        coverageRationale: 'Issue #756 registers modify-tier easier-dose coverage exclusion as product role-accounting policy with deterministic alignment testing.',
     },
     {
         id: 'optimizer.residual_lower_body_strength_deferral', domain: 'optimizer_scoring', title: 'Residual lower-body primary-strength tier deferral',

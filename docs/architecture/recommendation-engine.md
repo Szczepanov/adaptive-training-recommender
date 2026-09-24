@@ -157,6 +157,18 @@ a later feasible date. Upper-body strength and the planner's exact reserved-role
 filter are unchanged. The threshold and deferral are registered product policy under
 ADR-0033; they do not infer tissue damage from soreness.
 
+Readiness-limited (`modify`-tier) easier doses follow a parallel separation between
+maintenance ranking and exact weekly-role completion. An easier-dose aerobic exposure
+(`isReadinessModifiedDose`) does not earn exact `aerobic_volume` coverage credit in
+`coverageKeysForExposure` / `buildCoverageState` (remaining at coverage tier 3 when it
+advances no other role) even when its reduced duration meets a catalog `minimumMin`
+(such as `end_walk_01`'s 30-minute easier dose). Meanwhile, `rankCandidates` exempts
+non-preferred modalities from `UNPREFERRED_MODALITY_MULTIPLIER` only when they advance
+an unresolved weekly objective not already covered by an eligible preferred training
+candidate. This keeps primary-modality aerobic maintenance (such as a 20–30 minute Zone 2
+spin or easy jog) ahead of walking on `modify` days without falsely closing the weekly
+`aerobic_volume` role.
+
 Authored travel blocks scale planned dose through `applyPlanningOverlays` across
 structured, demand-derived, and evergreen paths. Fixed activities retain schedule
 ownership and constrain availability before candidates are selected.

@@ -22,6 +22,7 @@ export const OPTIMIZER_SCORING_CLAIM_IDS = {
     preferredModalityTodayTieBreakPolicy: 'policy.optimizer.preferred_modality_today_tiebreak_v1',
     catalogStrengthAdjacencyPolicy: 'policy.optimizer.catalog_strength_adjacency_v1',
     symptomCompatibleStrengthSupportPolicy: 'policy.optimizer.symptom_compatible_strength_support_v1',
+    readinessModifiedAerobicSupportPolicy: 'policy.optimizer.readiness_modified_aerobic_support_v1',
     residualLowerBodyStrengthDeferralPolicy: 'policy.optimizer.residual_lower_body_strength_deferral_v1',
 } as const;
 
@@ -59,12 +60,12 @@ export const OPTIMIZER_SCORING_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.unpreferredModalityFallbackPolicy,
-        statement: 'Product candidate-selection policy v1: when at least one preferred non-recovery training candidate clears hard gates, another non-preferred, non-recovery, non-event-matching candidate remains eligible but its benefit and utility are multiplied by 0.25 unless it qualifies for an unresolved weekly objective and contributes positive stimulus on a positive target axis.',
+        statement: 'Product candidate-selection policy v2: when at least one preferred non-recovery training candidate clears hard gates, another non-preferred, non-recovery, non-event-matching candidate remains eligible but its benefit and utility are multiplied by 0.25 unless it qualifies for an unresolved weekly objective that is not already advanced by any eligible preferred training candidate and contributes positive stimulus on a positive target axis.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'low',
         applicability: { contexts: ['candidate_selection', 'modality_preference'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['preferred_modality_ranking'], horizon: 'acute' },
         evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
-        limitations: ['The 0.25 multiplier is product calibration, not a measured physiological effect size. Hard safety/feasibility gates, explicit event demand, and genuinely unresolved programming objectives remain authoritative.'],
-        reviewedOn: '2026-09-23', version: 1,
+        limitations: ['The 0.25 multiplier is product calibration, not a measured physiological effect size. Hard safety/feasibility gates, explicit event demand, and genuinely unresolved programming objectives lacking a preferred-modality alternative remain authoritative.'],
+        reviewedOn: '2026-09-24', version: 2,
     },
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.timeCapEasyEnduranceTruncationPolicy,
@@ -100,6 +101,15 @@ export const OPTIMIZER_SCORING_CLAIMS: readonly KnowledgeClaim[] = [
         applicability: { contexts: ['candidate_selection', 'week_ahead_planning'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['strength_support_ranking'], horizon: 'acute' },
         evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
         limitations: ['Tier 2 is product ranking calibration, not a clinical treatment rule, a measured physiological effect size, or evidence that reduced-load support is equivalent to the exact primary-strength role. Hard safety, recovery, load, spacing, time, equipment, event and taper authorities remain independent and authoritative.'],
+        reviewedOn: '2026-09-24', version: 1,
+    },
+    {
+        id: OPTIMIZER_SCORING_CLAIM_IDS.readinessModifiedAerobicSupportPolicy,
+        statement: 'Product candidate-selection policy v1: on a readiness-limited (modify-tier) day, an easier-dose aerobic exposure is marked isReadinessModifiedDose and does not earn exact aerobic_volume coverage credit (remaining at coverage tier 3 when it fulfills no other role) even when its reduced duration meets or exceeds a catalog minimumMin. Combined with preferred-alternative-aware unpreferred-modality demotion, readiness-modified aerobic candidates compete on equal coverage tier 3 urgency so primary/preferred-modality maintenance wins without claiming weekly aerobic_volume completion.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'low',
+        applicability: { contexts: ['candidate_selection', 'week_ahead_planning'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['readiness_modified_aerobic_ranking'], horizon: 'acute' },
+        evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['Excluding modify-tier easier doses from exact aerobic_volume coverage is product role-accounting calibration, not a physiological dose-equivalence claim. Readiness-modified easier doses preserve light aerobic maintenance on modify days while leaving the exact weekly aerobic_volume requirement open for full-prescription days.'],
         reviewedOn: '2026-09-24', version: 1,
     },
     {

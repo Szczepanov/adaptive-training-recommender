@@ -26,6 +26,12 @@ vi.mock('../services/activityService', () => ({
     },
 }));
 
+vi.mock('../services/recommendationService', () => ({
+    recommendationService: {
+        getRecommendationsInRange: vi.fn().mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null }),
+    },
+}));
+
 vi.mock('../sessions/sessionDefinitionResolver', () => ({
     resolveSessionDefinition: vi.fn().mockResolvedValue({ status: 'MISSING' }),
 }));

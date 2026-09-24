@@ -34,6 +34,10 @@ export interface PerformedExposureFact {
     evidenceTier: EvidenceTier;
     workoutId?: string;
     templateId?: string;
+    /** True when the completed exposure used a readiness-limited (`modify`-tier) easier
+     * dose. Preserved through canonical coverage history so a completed modify-tier walk
+     * cannot claim exact weekly `aerobic_volume` role coverage. */
+    isReadinessModifiedDose?: boolean;
 }
 
 export interface CoverageCreditFact {
@@ -125,6 +129,7 @@ export interface HydratedOccurrenceContext {
         endedAt?: string;
         durationMin?: number;
         isLegacyStrength?: boolean;
+        isReadinessModifiedDose?: boolean;
     };
     provider?: {
         activityId: string;
@@ -265,6 +270,7 @@ export function deriveFactsFromOccurrence(
         evidenceTier,
         ...(workoutId ? { workoutId } : {}),
         ...(templateId ? { templateId } : {}),
+        ...(hydrated.structured?.isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
     };
 
     const coverageCredits: CoverageCreditFact[] = [];

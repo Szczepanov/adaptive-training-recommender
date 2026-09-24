@@ -498,8 +498,9 @@ export function effectiveTemplateForProjection(
 /** An allocator assignment replayed by the projection ledger. `activeDose` is present only
  * when the caller already knows the dose the candidate would actually be prescribed (the
  * greedy loop's viability probe); hypothetical allocator reservations leave it undefined
- * because their final dose is not resolved yet. */
-type ProjectedAssignment = AllocationAssignment & { activeDose?: DoseVariation };
+ * because their final dose is not resolved yet. `isReadinessModifiedDose` preserves the
+ * known modify-tier marker so coverage reflects the dose actually assigned. */
+type ProjectedAssignment = AllocationAssignment & { activeDose?: DoseVariation; isReadinessModifiedDose?: boolean };
 
 export interface ProjectedObjectiveCreditInput {
     objectiveId: string;
@@ -1755,8 +1756,15 @@ export function generateWeekAheadPlan(
         rollingLoadBudgetHorizonEndDate: rollingLoadBudgetHorizon.endDate,
     };
 
-    type ProjectedHistoryEntry = RecentHistoryEntry & { source: 'projected' };
-    const historyEntryFor = (date: string, template: SessionTemplate, activeDose?: DoseVariation): ProjectedHistoryEntry => {
+    type ProjectedHistoryEntry = RecentHistoryEntry & { source: 'projected'; isReadinessModifiedDose?: boolean };
+    const isReadinessModifiedAdjustment = (activeDose?: DoseVariation, rationale?: string): boolean =>
+        Boolean(activeDose && rationale?.includes('modify-tier session'));
+    const historyEntryFor = (
+        date: string,
+        template: SessionTemplate,
+        activeDose?: DoseVariation,
+        isReadinessModifiedDose: boolean = false,
+    ): ProjectedHistoryEntry => {
         const effectiveTemplate = effectiveTemplateForProjection(template, activeDose);
         return {
             date,
@@ -1769,16 +1777,25 @@ export function generateWeekAheadPlan(
             costProfile: effectiveTemplate.costProfile ?? enrichedCostProfile(template.id),
             occurrenceKey: `recommendation:${date}`,
             durationMin: effectiveTemplate.durationMin,
+            ...(isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
             recoveryHours: resolveRecoveryHoursForTemplate(template.id),
             type: template.title,
             source: 'projected',
         };
     };
 
+    const todayIsReadinessModifiedDose = Boolean(todayRec.activeDose)
+        && (todayRec.mode === 'modify' || isReadinessModifiedAdjustment(todayRec.activeDose, todayRec.adjustment?.rationale));
+
     const liveProjectedHistory = (): (RecentHistoryEntry | SessionHistoryEntry)[] => [
         ...(seed.trailingHistory ?? []),
-        historyEntryFor(todayDate, todayRec.template, todayRec.activeDose),
-        ...resultDays.map(day => historyEntryFor(day.date, day.template, day.activeDose)),
+        historyEntryFor(todayDate, todayRec.template, todayRec.activeDose, todayIsReadinessModifiedDose),
+        ...resultDays.map(day => historyEntryFor(
+            day.date,
+            day.template,
+            day.activeDose,
+            isReadinessModifiedAdjustment(day.activeDose, day.adjustment?.rationale),
+        )),
     ];
 
     const completedCoverageHistory = seed.completedCoverageHistory
@@ -1786,8 +1803,13 @@ export function generateWeekAheadPlan(
     const liveProjectedCoverageHistory = (): CoverageHistoryEntry[] => [
         ...completedCoverageHistory,
         ...resolveCoverageHistory(undefined, [
-            historyEntryFor(todayDate, todayRec.template, todayRec.activeDose),
-            ...resultDays.map(day => historyEntryFor(day.date, day.template, day.activeDose)),
+            historyEntryFor(todayDate, todayRec.template, todayRec.activeDose, todayIsReadinessModifiedDose),
+            ...resultDays.map(day => historyEntryFor(
+                day.date,
+                day.template,
+                day.activeDose,
+                isReadinessModifiedAdjustment(day.activeDose, day.adjustment?.rationale),
+            )),
         ]),
     ];
 
@@ -1804,7 +1826,7 @@ export function generateWeekAheadPlan(
             resultDays.length,
             externalFatigue.lastUpdatedDate,
             date,
-            applied.map(item => `${item.date}:${item.templateId}:${item.activeDose ? `${item.activeDose.label}:${item.activeDose.doseRatio}` : ''}`).sort().join(','),
+            applied.map(item => `${item.date}:${item.templateId}:${item.activeDose ? `${item.activeDose.label}:${item.activeDose.doseRatio}` : ''}:${item.isReadinessModifiedDose ? 'modified' : ''}`).sort().join(','),
         ].join('#');
         const cached = evaluationCache.get(cacheKey);
         if (cached) return cached;
@@ -1831,7 +1853,7 @@ export function generateWeekAheadPlan(
             if (!template) return;
             const effective = effectiveTemplateForProjection(template, item.activeDose);
             loads.push({ date: item.date, cost: effective.costProfile ?? enrichedCostProfile(item.templateId) });
-            const projectedEntry = historyEntryFor(item.date, template, item.activeDose);
+            const projectedEntry = historyEntryFor(item.date, template, item.activeDose, item.isReadinessModifiedDose ?? false);
             history.push(projectedEntry);
             coverageHistory.push(...resolveCoverageHistory(undefined, [projectedEntry]));
         });
@@ -2002,10 +2024,18 @@ export function generateWeekAheadPlan(
                 evaluation.availability.maxTimeMinutes,
                 effectiveFatigueTier === 'modify',
             )?.activeDose;
+            const candidateIsModified = Boolean(candidateDose && effectiveFatigueTier === 'modify');
             const evaluator = allocationEvaluator(
                 forecastDatesFrom(offset + 1),
-                [{ date, templateId: template.id, ...(candidateDose ? { activeDose: candidateDose } : {}) }],
+                [{ date, templateId: template.id, ...(candidateDose ? { activeDose: candidateDose } : {}), ...(candidateIsModified ? { isReadinessModifiedDose: true as const } : {}) }],
             );
+            // Viability stays authored-template-based: the allocator's reservations are
+            // intentionally optimistic (dose unresolved), so a maintenance walk must not be
+            // treated as degrading allocation merely because its modify-tier dose cannot
+            // close `aerobic_volume`. The replayed evaluator above already carries the
+            // marker so future coverage reflects the dose actually assigned, while the
+            // coverage ledger itself (`coverage.ts` `hasRequiredAerobicDose`) stays
+            // dose-aware and leaves the role open for ranking.
             const selfFulfilledOccurrences = occurrencesFulfilledByTemplateSelection(pendingOccurrences, template);
             const selfFulfilledIds = new Set(selfFulfilledOccurrences.map(occurrence => occurrence.id));
             const incumbentAssignments = incumbentAssignmentsRemainingAfterSelection(

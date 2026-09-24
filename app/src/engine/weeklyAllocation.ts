@@ -33,6 +33,13 @@ export interface RequiredRoleOccurrence {
     eligibleWorkoutIds: string[];
 }
 
+/**
+ * `fulfilled` is settled on authored template identity (`occurrencesFulfilledByTemplateSelection`),
+ * because allocator reservations are made before a dose is resolved. It is not a coverage-ledger
+ * claim: a readiness-modified dose of an eligible template settles its occurrence here while
+ * `coverage.ts` still withholds exact `aerobic_volume` credit from it. Read coverage state, not
+ * this status, for whether a role's stimulus was actually delivered.
+ */
 export type WeeklyRoleAllocationStatus = 'reserved' | 'fulfilled' | 'missed' | 'unresolved_search_budget';
 export type WeeklyRoleMissReason = 'no_exact_candidate' | 'hard_safety_or_recovery' | 'daily_ledger_capacity' | 'rolling_load_budget' | 'projected_fatigue' | 'fixed_seed' | 'no_conflict_free_date';
 
