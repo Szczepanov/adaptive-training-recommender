@@ -13,6 +13,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+from detect_ci_changes import get_worktree_changed_files
+
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CORPUS = ROOT / "agent-evals" / "cases.json"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -96,9 +98,7 @@ def _validate_case(case: Any, index: int) -> dict[str, Any]:
     seen_capabilities: set[str] = set()
     for expectation_index, expectation in enumerate(expectations):
         if not isinstance(expectation, dict):
-            raise CorpusError(
-                f"{case_id}.tool_expectations[{expectation_index}] must be an object"
-            )
+            raise CorpusError(f"{case_id}.tool_expectations[{expectation_index}] must be an object")
         expectation_typed = cast(dict[str, Any], expectation)
         capability = _require_nonempty_string(
             expectation_typed.get("capability"),
@@ -153,8 +153,9 @@ def find_case(corpus: dict[str, Any], case_id: str) -> dict[str, Any]:
 
 
 def _changed_files(base_ref: str) -> list[str]:
+    """Paths changed since the merge-base with ``base_ref``, including uncommitted work."""
     completed = subprocess.run(
-        ["git", "diff", "--name-only", f"{base_ref}...HEAD"],
+        ["git", "merge-base", base_ref, "HEAD"],
         cwd=ROOT,
         check=False,
         capture_output=True,
@@ -162,9 +163,12 @@ def _changed_files(base_ref: str) -> list[str]:
     )
     if completed.returncode != 0:
         raise CorpusError(
-            f"git diff failed for base {base_ref}: {completed.stderr.strip() or 'unknown error'}"
+            f"git merge-base failed for base {base_ref}: {completed.stderr.strip() or 'unknown error'}"
         )
-    return [line.strip().replace("\\", "/") for line in completed.stdout.splitlines() if line.strip()]
+    try:
+        return get_worktree_changed_files(completed.stdout.strip(), cwd=ROOT)
+    except RuntimeError as exc:
+        raise CorpusError(f"Cannot list changed files for base {base_ref}: {exc}") from exc
 
 
 def _forbidden_changes(case: dict[str, Any], changed_files: list[str]) -> list[str]:
@@ -215,9 +219,7 @@ def validate_result(result: dict[str, Any], corpus: dict[str, Any]) -> None:
     outcome_typed = cast(dict[str, Any], outcome)
     status = _require_nonempty_string(outcome_typed.get("status"), "result.outcome.status")
     if status not in ALLOWED_RESULT_STATUSES:
-        raise CorpusError(
-            f"result.outcome.status must be one of {sorted(ALLOWED_RESULT_STATUSES)}"
-        )
+        raise CorpusError(f"result.outcome.status must be one of {sorted(ALLOWED_RESULT_STATUSES)}")
     if not isinstance(outcome_typed.get("notes"), str):
         raise CorpusError("result.outcome.notes must be a string")
 

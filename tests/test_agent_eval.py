@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from agent_eval import (
     CorpusError,
     create_result_template,
