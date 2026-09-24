@@ -216,15 +216,56 @@ jobs:
       - name: Build frontend bundle
         run: npm run build:bundle
 
-  frontend-tests:
-    name: Frontend Unit Tests, Firestore Rules & Browser E2E
+  # These suites used to run serially in one ~6.5 minute job. They are independent
+  # gates, so keep their coverage identical while allowing GitHub Actions to schedule them
+  # concurrently. This deliberately preserves Vitest/Playwright's existing intra-suite
+  # concurrency settings; cross-job isolation is the low-risk speedup.
+  frontend-unit-tests:
+    name: Frontend Unit Tests & Coverage
     if: needs.detect-changes.outputs.code_changed == 'true'
     needs: detect-changes
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: app
-    timeout-minutes: 20
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install Node dependencies
+        # npm audit is a dedicated gate in frontend-hygiene; avoid repeating its registry
+        # request in test-only jobs while keeping npm ci's lockfile-exact install semantics.
+        run: npm ci --no-audit --fund=false
+
+      - name: Run frontend test suite with coverage
+        run: npm run test:coverage
+
+      - name: Upload frontend coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-coverage
+          path: app/artifacts/coverage/frontend
+          if-no-files-found: warn
+
+  firestore-rules-tests:
+    name: Firestore Security Rules Tests
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -244,7 +285,48 @@ jobs:
           java-version: "21"
 
       - name: Install Node dependencies
-        run: npm ci
+        run: npm ci --no-audit --fund=false
+
+      - name: Cache Firestore emulator
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('app/package-lock.json') }}
+          restore-keys: |
+            firebase-emulators-${{ runner.os }}-
+
+      - name: Run Firestore security-rule emulator suite
+        run: npm run test:rules
+
+  frontend-e2e-tests:
+    name: Browser E2E Tests
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Set up Java for Firebase Emulators
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Node dependencies
+        run: npm ci --no-audit --fund=false
 
       - name: Cache Playwright Chromium
         uses: actions/cache@v6
@@ -264,20 +346,6 @@ jobs:
           key: firebase-emulators-${{ runner.os }}-${{ hashFiles('app/package-lock.json') }}
           restore-keys: |
             firebase-emulators-${{ runner.os }}-
-
-      - name: Run frontend test suite with coverage
-        run: npm run test:coverage
-
-      - name: Upload frontend coverage report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: frontend-coverage
-          path: app/artifacts/coverage/frontend
-          if-no-files-found: warn
-
-      - name: Run Firestore security-rule emulator suite
-        run: npm run test:rules
 
       - name: Run browser E2E emulator suite
         run: npm run test:e2e
@@ -435,7 +503,9 @@ jobs:
       - docs-hygiene
       - python-tests
       - frontend-hygiene
-      - frontend-tests
+      - frontend-unit-tests
+      - firestore-rules-tests
+      - frontend-e2e-tests
       - engine-simulations
       - docker-build
     runs-on: ubuntu-latest
@@ -449,7 +519,9 @@ jobs:
           echo "  docs-hygiene: ${{ needs.docs-hygiene.result }}"
           echo "  python-tests: ${{ needs.python-tests.result }}"
           echo "  frontend-hygiene: ${{ needs.frontend-hygiene.result }}"
-          echo "  frontend-tests: ${{ needs.frontend-tests.result }}"
+          echo "  frontend-unit-tests: ${{ needs.frontend-unit-tests.result }}"
+          echo "  firestore-rules-tests: ${{ needs.firestore-rules-tests.result }}"
+          echo "  frontend-e2e-tests: ${{ needs.frontend-e2e-tests.result }}"
           echo "  engine-simulations: ${{ needs.engine-simulations.result }}"
           echo "  docker-build: ${{ needs.docker-build.result }}"
 
@@ -458,7 +530,9 @@ jobs:
             "${{ needs.docs-hygiene.result }}" \
             "${{ needs.python-tests.result }}" \
             "${{ needs.frontend-hygiene.result }}" \
-            "${{ needs.frontend-tests.result }}" \
+            "${{ needs.frontend-unit-tests.result }}" \
+            "${{ needs.firestore-rules-tests.result }}" \
+            "${{ needs.frontend-e2e-tests.result }}" \
             "${{ needs.engine-simulations.result }}" \
             "${{ needs.docker-build.result }}"; do
             if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
