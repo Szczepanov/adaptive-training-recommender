@@ -132,13 +132,19 @@ describe('workoutProvidesDirectCoverage against the real catalog', () => {
         expect(workoutProvidesDirectCoverage(workout, 'strength_1rm_kg', { kind: 'exercise', exerciseId: 'conventional_deadlift' })).toBe(false);
     });
 
-    it('documents the known PG6 gap: no active workout in today\'s catalog covers conventional_deadlift', () => {
-        const covered = WORKOUTS.some(workout => workout.status === 'active' && workoutProvidesDirectCoverage(
+    it('closes the PG6 conventional-deadlift catalog gap with exact-lift direct practice', () => {
+        const workout = requireWorkout('strength_conventional_deadlift_practice_01');
+        expect(workout.status).toBe('active');
+        expect(workoutProvidesDirectCoverage(
             workout,
             'strength_1rm_kg',
             { kind: 'exercise', exerciseId: 'conventional_deadlift' },
-        ));
-        expect(covered).toBe(false);
+        )).toBe(true);
+        expect(WORKOUTS.some(candidate => candidate.status === 'active' && workoutProvidesDirectCoverage(
+            candidate,
+            'strength_1rm_kg',
+            { kind: 'exercise', exerciseId: 'conventional_deadlift' },
+        ))).toBe(true);
     });
 
     it('credits the active field-technique workouts for a standing 10 m speed target', () => {
@@ -150,13 +156,36 @@ describe('workoutProvidesDirectCoverage against the real catalog', () => {
         )).toBe(true);
     });
 
-    it('documents the known PG6 gap: no active workout in today\'s catalog covers the cycling 5 s peak-power target', () => {
-        const covered = WORKOUTS.some(workout => workout.status === 'active' && workoutProvidesDirectCoverage(
+    it('closes the PG6 cycling peak-power catalog gap with the exact maximal-sprint exercise', () => {
+        const workout = requireWorkout('cycling_sprint_power_5s_01');
+        expect(workout.status).toBe('active');
+        expect(workoutProvidesDirectCoverage(
             workout,
             'cycling_5s_peak_power_w',
             { kind: 'performance_test', performanceTestId: 'cycling_5s_peak_power-r1' },
-        ));
-        expect(covered).toBe(false);
+        )).toBe(true);
+        expect(WORKOUTS.some(candidate => candidate.status === 'active' && workoutProvidesDirectCoverage(
+            candidate,
+            'cycling_5s_peak_power_w',
+            { kind: 'performance_test', performanceTestId: 'cycling_5s_peak_power-r1' },
+        ))).toBe(true);
+    });
+
+    it('keeps return-to-training variants from masquerading as delivered direct coverage', () => {
+        const cases = [
+            ['strength_conventional_deadlift_practice_01', 'deadlift_main'],
+            ['cycling_sprint_power_5s_01', 'sprint_power_main'],
+        ] as const;
+
+        for (const [workoutId, directStepId] of cases) {
+            const workout = requireWorkout(workoutId);
+            const returnVariant = workout.variants.find(variant => variant.id === 'return_to_training');
+            expect(returnVariant, `${workoutId} must expose a return-to-training variant`).toBeDefined();
+            expect(returnVariant?.stepOverrides).toContainEqual(expect.objectContaining({
+                stepId: directStepId,
+                omit: true,
+            }));
+        }
     });
 
     it('does not credit a submaximal cycling surge workout for the maximal 5 s peak-power target', () => {
