@@ -80,7 +80,7 @@ Serena client guidance: <https://oraios.github.io/serena/02-usage/030_clients.ht
 
 Keep one repository semantic-navigation policy and use each client's supported Serena context.
 
-- **Codex:** use Serena's current Codex setup/context with project-from-CWD behavior and verify the MCP connection; explicitly activate the current directory where the client does not do so automatically.
+- **Codex:** use Serena's current Codex setup/context with project-from-CWD behavior and verify the MCP connection. Current Serena guidance also provides Codex lifecycle hooks (`activate`, `remind`, `reset`, and `cleanup`); enable them locally when semantic tools still lose out to shell-based search in longer sessions. Explicitly activate the current directory where the app does not do so automatically.
 - **Antigravity:** use Serena's Antigravity context and explicitly activate the current project when the client cannot provide its working directory to the MCP configuration.
 
 Keep volatile client commands in upstream Serena docs rather than duplicating them in this repository.
