@@ -20,7 +20,7 @@ Results:
 -->
 
 - [ ] `uv run pytest` (backend changes)
-- [ ] `uv run ruff check .` and `uv run mypy src/garmin_sync` (backend changes)
+- [ ] `uv run ruff check .` and `uv run mypy` (backend changes)
 - [ ] `cd app && npm run check` (frontend changes)
 - [ ] `cd app && npm run test:rules` (Firestore rules changes)
 - [ ] `cd app && npm run simulate:scenarios` (recommendation-engine changes)

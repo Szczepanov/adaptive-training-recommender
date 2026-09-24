@@ -120,7 +120,7 @@ Run the narrow checks first, then widen. Use the Makefile as the authority (`mak
 
 | Touching… | Run |
 |---|---|
-| Python backend | `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy src/garmin_sync`, `uv run pytest` |
+| Python backend | `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy`, `uv run pytest` |
 | TypeScript frontend | `cd app && npm run check` (tsc + eslint + vitest + workout validation); narrow: `npm run typecheck`, `npm run lint`, `npm run test`, `npm run validate:workouts` |
 | Firestore rules | `cd app && npm run test:rules` (needs Java / emulator) |
 | Recommendation engine | `cd app && npm run simulate:scenarios`, `cd app && npm run simulate:diff`, `node scripts/check-policy-drift.mjs <base-sha>` when decision logic changed |

@@ -123,7 +123,7 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Type check Python with mypy
-        run: uv run mypy src/garmin_sync
+        run: uv run mypy
 
       - name: Run pytest with coverage summary
         run: |
