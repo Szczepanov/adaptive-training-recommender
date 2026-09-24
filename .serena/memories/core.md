@@ -22,8 +22,9 @@ restates them. If a doc and a memory disagree, the doc wins: fix the memory.
 
 ## Serena usage
 
-- Before changing an engine constant, run `find_referencing_symbols` on it. The owning
-  claim (`app/src/knowledge/sportsKnowledgeRegistry.ts`), coverage item
-  (`knowledgeCoverage.ts`) and `*PolicyAlignment.test.ts` all have to change together.
-- Before adding or editing a memory, read `mem:memory_maintenance`. It covers the
-  no-duplication rule and when a memory is warranted.
+- Semantic navigation policy, worktree safety and fallbacks: `AGENTS.md` § Code navigation with
+  Serena.
+- Client-specific adoption findings and local Claude Code/Codex/Antigravity setup guidance:
+  `docs/analysis/2026-09-24-serena-agent-tooling-adoption-review.md`.
+- Before adding or editing a memory, read `mem:memory_maintenance`. It covers the no-duplication
+  rule and when a memory is warranted.
