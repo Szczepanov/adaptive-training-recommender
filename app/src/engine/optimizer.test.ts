@@ -169,6 +169,36 @@ describe('residual lower-body primary-strength deferral (#746)', () => {
         expect(coverageState.requirements[0].completedSessions).toBe(0);
     });
 
+    it('preserves another authored target tier when primary-strength urgency is deferred', () => {
+        const descriptor = {
+            ...EVERGREEN_GENERAL_COVERAGE_SET,
+            coverage: EVERGREEN_GENERAL_COVERAGE_SET.coverage.map(item => item.key === 'compact_strength'
+                ? { ...item, workoutIds: [...item.workoutIds, 'strength_full_body_maintenance_01'] }
+                : item),
+        };
+        const result = rankCandidates([full], [],
+            { ...DEFAULT_FATIGUE, combinedFatigue: { ...DEFAULT_FATIGUE.combinedFatigue, lowerBody: 0.9 } },
+            DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
+            {
+                date: '2026-03-05',
+                coverageState: {
+                    ...coverageState,
+                    descriptor,
+                    requirements: [
+                        ...coverageState.requirements,
+                        {
+                            id: 'compact', key: 'compact_strength', label: 'Compact support', requirement: 'optional',
+                            minimumSessions: 0, targetSessions: 1, completedSessions: 0, projectedSessions: 0,
+                            priority: 'nice_to_have', rollingWindowDays: 7, credits: [],
+                        },
+                    ],
+                },
+            },
+        );
+        expect(result.accepted[0].coverageNeedTier).toBe(2);
+        expect(result.accepted[0].rationale).toContain('Primary strength deferred');
+    });
+
     it('does not defer full-body strength without primary-strength urgency', () => {
         const result = rankCandidates([full], [],
             { ...DEFAULT_FATIGUE, combinedFatigue: { ...DEFAULT_FATIGUE.combinedFatigue, lowerBody: 0.9 } },
