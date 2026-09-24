@@ -22,14 +22,18 @@ export interface CompletedWorkoutSourceBadge {
     providers: string[];
 }
 
+export type PerformedRestAvailability = 'recorded' | 'not_recorded' | 'unavailable';
+
 export interface CompletedWorkoutStructuredDetail {
     title: string;
     comparison: PerformedSessionComparison;
     /** Prescribed target plus per-set performed rows and performed rest, per step. */
     steps: StructuredStepDetail[];
-    /** Whether any durable performed-rest event was recorded for this execution --
-     * lets the UI say "not recorded" rather than implying zero rest for older sessions. */
-    hasPerformedRest: boolean;
+    /** `recorded`: durable performed-rest events exist. `not_recorded`: the read
+     * succeeded with none (e.g. a session logged before rest events existed), so the UI
+     * says so rather than implying zero rest. `unavailable`: the read itself failed, so
+     * nothing may be inferred about whether rest was recorded. */
+    performedRest: PerformedRestAvailability;
 }
 
 export interface CompletedWorkoutView {

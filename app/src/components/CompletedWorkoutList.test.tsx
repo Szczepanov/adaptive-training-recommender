@@ -41,7 +41,7 @@ const structuredOnly: CompletedWorkoutView = {
                 ],
             },
         ],
-        hasPerformedRest: true,
+        performedRest: 'recorded',
     },
     garminExerciseSetsAreDiagnosticOnly: true,
 };
@@ -99,8 +99,15 @@ describe('CompletedWorkoutList', () => {
     });
 
     it('says actual rest was not recorded instead of implying zero rest', () => {
-        const legacy: CompletedWorkoutView = { ...structuredOnly, structured: { ...structuredOnly.structured!, hasPerformedRest: false } };
+        const legacy: CompletedWorkoutView = { ...structuredOnly, structured: { ...structuredOnly.structured!, performedRest: 'not_recorded' } };
         expect(renderToStaticMarkup(<CompletedWorkoutList workouts={[legacy]} />)).toContain('actual rest not recorded for this session');
+    });
+
+    it('never claims rest was not recorded when the rest read itself failed', () => {
+        const failedRead: CompletedWorkoutView = { ...structuredOnly, structured: { ...structuredOnly.structured!, performedRest: 'unavailable' } };
+        const html = renderToStaticMarkup(<CompletedWorkoutList workouts={[failedRead]} />);
+        expect(html).toContain('actual rest could not be loaded');
+        expect(html).not.toContain('not recorded');
     });
 
     it('shows watch heart rate next to the structured sets and collapses Garmin-detected sets', () => {

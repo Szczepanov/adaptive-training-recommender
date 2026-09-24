@@ -411,6 +411,33 @@ def test_normalize_activity_adds_detail_without_schema_version_or_null_fields():
     assert without_timestamp == expected
 
 
+def test_normalize_activity_writes_empty_hr_zones_to_clear_a_stale_value():
+    from garmin_sync.canonical import CanonicalActivityDetail
+
+    activity = CanonicalActivity(
+        activity_id="42",
+        date="2026-08-05",
+        type="strength_training",
+        duration_min=45,
+        duration_seconds=2700,
+        training_effect_aerobic=2.0,
+        training_effect_anaerobic=1.0,
+        average_hr=110,
+        training_load=40.0,
+        intensity_tag="moderate",
+    )
+
+    empty = normalize_activity(
+        activity, sync_run_id="run", detail=CanonicalActivityDetail(activity_id="42", hr_zones=[])
+    )
+    unavailable = normalize_activity(
+        activity, sync_run_id="run", detail=CanonicalActivityDetail(activity_id="42", hr_zones=None)
+    )
+
+    assert empty["hrInZones"] == []
+    assert "hrInZones" not in unavailable
+
+
 def test_normalize_activity_includes_lap_distance_and_pace_when_present():
     from garmin_sync.canonical import CanonicalActivityDetail, CanonicalLapSummary
 

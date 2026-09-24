@@ -56,6 +56,10 @@ class ProviderActivitiesResult:
 class ProviderActivityDetailResult:
     canonical: CanonicalActivityDetail
     raw_payloads: dict[str, Any]
+    # True when a later, optional endpoint for this activity hit Garmin's rate limit after
+    # the core detail was already fetched. The caller keeps this (partial) detail and then
+    # stops issuing further detail requests for the run, exactly as for a raised 429.
+    rate_limited: bool = False
 
 
 @dataclass

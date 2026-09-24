@@ -59,6 +59,7 @@ describe('getCompletedWorkoutsInRange', () => {
         const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
 
         expect(view.structured?.title).toBe('Heavy Squat Day');
+        expect(view.structured?.performedRest).toBe('not_recorded');
         expect(view.garmin).toBeUndefined();
         expect(view.garminExerciseSetsAreDiagnosticOnly).toBe(true);
         expect(view.sourceBadge).toEqual({ hasStructured: true, hasProvider: false, providers: [] });
@@ -117,7 +118,7 @@ describe('getCompletedWorkoutsInRange', () => {
 
         const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
 
-        expect(view.structured?.hasPerformedRest).toBe(true);
+        expect(view.structured?.performedRest).toBe('recorded');
         expect(view.structured?.steps[0].sets[0].rest).toEqual({ prescribedSeconds: 180, actualSeconds: 200, endReason: 'next_set_started' });
     });
 
@@ -139,7 +140,7 @@ describe('getCompletedWorkoutsInRange', () => {
         const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
 
         expect(view.structured?.title).toBe('Heavy Squat Day');
-        expect(view.structured?.hasPerformedRest).toBe(false);
+        expect(view.structured?.performedRest).toBe('unavailable');
     });
 
     it('marks a Garmin-only occurrence so its own exercise sets are NOT diagnostic-only', async () => {

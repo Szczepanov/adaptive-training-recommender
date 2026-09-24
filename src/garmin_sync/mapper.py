@@ -145,7 +145,10 @@ def normalize_activity(
             }
             for bucket in detail.power_zones
         ]
-    if detail.hr_zones:
+    # An empty list is a definitive "no HR zones" answer (e.g. a 404 for an activity
+    # without HR) and deliberately clears a stale value under the merge write; None means
+    # the enrichment was unavailable and leaves any stored value untouched.
+    if detail.hr_zones is not None:
         payload["hrInZones"] = [
             {
                 "zoneNumber": bucket.zone_number,

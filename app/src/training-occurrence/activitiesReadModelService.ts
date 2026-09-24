@@ -12,7 +12,7 @@ import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver'
 import { comparePlannedVsPerformed } from '../sessions/performedComparison';
 import { addDaysToLocalDateString, getPreviousLocalDateString } from '../utils/localDate';
 import type { NormalizedGarminActivity } from '../engine/models';
-import type { CompletedWorkoutView } from './completedWorkoutView';
+import type { CompletedWorkoutView, PerformedRestAvailability } from './completedWorkoutView';
 import { sourceBadgeFor } from './completedWorkoutView';
 import { buildStructuredStepDetails } from './structuredSetDetail';
 import { compareActivitiesReadModels, recordActivitiesReadModelComparison } from './activitiesReadModelDiagnostics';
@@ -33,15 +33,18 @@ async function resolveStructuredDetail(
 
     const [entries, restEvents] = await Promise.all([
         sessionExecutionService.getEntries(userId, executionId),
-        // Performed rest is enrichment: an execution recorded before durable rest events
-        // existed (or a failed read) still renders its sets, just without actual rest.
-        sessionExecutionService.getRestEvents(userId, executionId).catch(() => []),
+        // Performed rest is enrichment: a failed read still renders the sets, just without
+        // actual rest -- and is reported as `unavailable`, never as "not recorded".
+        sessionExecutionService.getRestEvents(userId, executionId).catch(() => null),
     ]);
+    const performedRest: PerformedRestAvailability = restEvents === null
+        ? 'unavailable'
+        : restEvents.length > 0 ? 'recorded' : 'not_recorded';
     return {
         title: definitionState.data.title,
         comparison: comparePlannedVsPerformed(definitionState.data, entries),
-        steps: buildStructuredStepDetails(definitionState.data, entries, restEvents),
-        hasPerformedRest: restEvents.length > 0,
+        steps: buildStructuredStepDetails(definitionState.data, entries, restEvents ?? []),
+        performedRest,
     };
 }
 

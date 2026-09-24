@@ -190,7 +190,7 @@ def test_strength_hr_zone_failure_never_costs_exercise_sets(hr_zone_error: Excep
     assert not result.canonical.hr_zones
 
 
-def test_strength_hr_zone_rate_limit_still_propagates():
+def test_strength_hr_zone_rate_limit_keeps_sets_and_flags_the_stop():
     client = MagicMock()
     client.get_activities_window.return_value = [
         {
@@ -205,8 +205,11 @@ def test_strength_hr_zone_rate_limit_still_propagates():
     adapter = GarminProviderAdapter(client)
 
     adapter.fetch_activities("2026-08-23", "2026-08-23")
-    with pytest.raises(GarminConnectTooManyRequestsError):
-        adapter.fetch_activity_detail("42")
+    result = adapter.fetch_activity_detail("42")
+
+    assert result.rate_limited is True
+    assert result.canonical.exercise_sets is not None
+    assert result.canonical.hr_zones is None
 
 
 class _StrengthProvider:
@@ -218,9 +221,10 @@ class _StrengthProvider:
         activity_details=True,
     )
 
-    def __init__(self, activity_type: str):
+    def __init__(self, activity_type: str, rate_limited: bool = False):
         self.activity = _activity(activity_type)
         self.detail_calls: list[str] = []
+        self.rate_limited = rate_limited
 
     def clear_cache(self) -> None:
         pass
@@ -255,6 +259,7 @@ class _StrengthProvider:
                 ],
             ),
             raw_payloads={"activity_exercise_sets": _realistic_strength_payload()},
+            rate_limited=self.rate_limited,
         )
 
 
@@ -278,6 +283,15 @@ def test_strength_sets_auto_sync_when_power_detail_flag_is_disabled():
     payload = repo.upsert_activities.call_args.args[0][0][1]
     assert payload["exerciseSets"][0]["repetitionCount"] == 10
     assert payload["exerciseSets"][0]["weightKg"] == 12.47
+
+
+def test_partial_detail_before_a_rate_limit_is_still_persisted():
+    provider = _StrengthProvider("strength_training", rate_limited=True)
+    service, repo = _service(provider)
+
+    assert service.sync_daily("2026-08-23", force=True, resync_lookback_days=0)
+    payload = repo.upsert_activities.call_args.args[0][0][1]
+    assert payload["exerciseSets"][0]["repetitionCount"] == 10
 
 
 def test_disabled_power_detail_flag_still_skips_cycling_detail():

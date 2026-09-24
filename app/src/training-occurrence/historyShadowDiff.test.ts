@@ -38,7 +38,7 @@ function workout(overrides: Partial<CompletedWorkoutView> = {}): CompletedWorkou
 describe('estimateCanonicalEvidenceTier', () => {
     it('floors a structured workout at completedStructuredWorkout regardless of Garmin telemetry richness', () => {
         const withGarmin = workout({
-            structured: { title: 'Squat Day', comparison: { definitionId: 'd', revision: 1, title: 't', totalPlannedSteps: 1, completedStepsCount: 1, missingRequiredStepsCount: 0, stepComparisons: [], summary: { totalReps: 0, totalTonnageKg: 0, totalDurationSeconds: 0, totalDistanceMeters: 0 } }, steps: [], hasPerformedRest: false },
+            structured: { title: 'Squat Day', comparison: { definitionId: 'd', revision: 1, title: 't', totalPlannedSteps: 1, completedStepsCount: 1, missingRequiredStepsCount: 0, stepComparisons: [], summary: { totalReps: 0, totalTonnageKg: 0, totalDurationSeconds: 0, totalDistanceMeters: 0 } }, steps: [], performedRest: 'not_recorded' },
             garmin: { activityId: 'a1', date: '2026-08-26', type: 'strength_training', durationMin: 40, trainingEffectAerobic: null, trainingEffectAnaerobic: null, averageHr: null, activityTrainingLoad: null, intensityTag: 'moderate' },
         });
         expect(estimateCanonicalEvidenceTier(withGarmin)).toBe('completedStructuredWorkout');
@@ -86,7 +86,7 @@ describe('diffCompletedTrainingHistory', () => {
     it('tallies evidence tiers on both sides independently', () => {
         const diff = diffCompletedTrainingHistory(
             [liveEvent({ evidenceTier: 'garminTrainingEffect' }), liveEvent({ evidenceTier: 'durationIntensity' })],
-            [workout({ structured: { title: 't', comparison: { definitionId: 'd', revision: 1, title: 't', totalPlannedSteps: 0, completedStepsCount: 0, missingRequiredStepsCount: 0, stepComparisons: [], summary: { totalReps: 0, totalTonnageKg: 0, totalDurationSeconds: 0, totalDistanceMeters: 0 } }, steps: [], hasPerformedRest: false } })],
+            [workout({ structured: { title: 't', comparison: { definitionId: 'd', revision: 1, title: 't', totalPlannedSteps: 0, completedStepsCount: 0, missingRequiredStepsCount: 0, stepComparisons: [], summary: { totalReps: 0, totalTonnageKg: 0, totalDurationSeconds: 0, totalDistanceMeters: 0 } }, steps: [], performedRest: 'not_recorded' } })],
         );
         expect(diff.liveEvidenceTierCounts).toEqual({ garminTrainingEffect: 1, durationIntensity: 1 });
         expect(diff.canonicalEvidenceTierCounts).toEqual({ completedStructuredWorkout: 1 });

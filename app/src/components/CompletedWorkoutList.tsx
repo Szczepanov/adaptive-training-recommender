@@ -135,7 +135,7 @@ function stepStatus(step: StructuredStepDetail, comparison: PerformedSessionComp
 }
 
 function StructuredDetail({ structured }: { structured: NonNullable<CompletedWorkoutView['structured']> }) {
-  const { comparison, steps, hasPerformedRest } = structured;
+  const { comparison, steps, performedRest } = structured;
   const comparisonByStepId = new Map(comparison.stepComparisons.map(step => [step.stepId, step] as const));
   return (
     <section className="activity-exercise-sets completed-workout-structured" aria-label="Prescribed vs performed">
@@ -144,7 +144,8 @@ function StructuredDetail({ structured }: { structured: NonNullable<CompletedWor
         {comparison.completedStepsCount}/{comparison.totalPlannedSteps} steps completed
         {comparison.missingRequiredStepsCount > 0 ? ` · ${comparison.missingRequiredStepsCount} required step(s) missed` : ''}
         {comparison.summary.totalTonnageKg > 0 ? ` · ${Math.round(comparison.summary.totalTonnageKg)} kg total tonnage` : ''}
-        {hasPerformedRest ? '' : ' · actual rest not recorded for this session'}
+        {performedRest === 'not_recorded' ? ' · actual rest not recorded for this session' : ''}
+        {performedRest === 'unavailable' ? ' · actual rest could not be loaded' : ''}
       </p>
       {steps.map(step => (
         <div className="completed-workout-step" key={step.stepId}>

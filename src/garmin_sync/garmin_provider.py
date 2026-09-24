@@ -1698,24 +1698,31 @@ class GarminProviderAdapter:
             raw_payload=raw_activities,
         )
 
-    def _fetch_strength_hr_zones(self, activity_id: str) -> list[dict[str, Any]] | None:
+    def _fetch_strength_hr_zones(
+        self, activity_id: str
+    ) -> tuple[list[dict[str, Any]] | None, bool]:
         """HR time-in-zone is enrichment for a strength session; exercise sets are its
-        core data. A 404 means "no HR for this activity"; any other failure is logged and
-        dropped so it can never cost the exercise sets already fetched. A rate limit still
-        propagates so the caller stops issuing further detail requests this run."""
+        core data. Returns ``(zones, rate_limited)``. A 404 is a definitive "no HR zones"
+        (``[]``); any other failure is logged and reported as unavailable (``None``) so it
+        can never cost the exercise sets already fetched. A 429 is also returned rather
+        than raised -- raising would discard those sets -- and the caller surfaces it as
+        ``ProviderActivityDetailResult.rate_limited`` so the run still stops requesting."""
         no_zones: list[dict[str, Any]] = []
         try:
-            return _fetch_optional_endpoint(
-                lambda: self.client.get_activity_hr_zones(activity_id), no_zones
+            return (
+                _fetch_optional_endpoint(
+                    lambda: self.client.get_activity_hr_zones(activity_id), no_zones
+                ),
+                False,
             )
         except GarminConnectTooManyRequestsError:
-            raise
+            return None, True
         except Exception as error:
             logger.warning(
                 "Garmin strength HR-zone fetch failed for activity=<ID-redacted>; "
                 f"keeping exercise sets without HR zones: {type(error).__name__}"
             )
-            return None
+            return None, False
 
     def fetch_activity_detail(self, activity_id: str) -> ProviderActivityDetailResult:
         summary = self._activity_summary_cache.get(activity_id, {})
@@ -1728,7 +1735,7 @@ class GarminProviderAdapter:
         # exercise sets are ever reached. Keep the paths disjoint.
         if type_str in _STRENGTH_ACTIVITY_TYPES:
             exercise_sets = self.client.get_activity_exercise_sets(activity_id)
-            strength_hr_zones = self._fetch_strength_hr_zones(activity_id)
+            strength_hr_zones, rate_limited = self._fetch_strength_hr_zones(activity_id)
             return ProviderActivityDetailResult(
                 canonical=canonicalize_activity_detail(
                     activity_id=activity_id,
@@ -1742,6 +1749,7 @@ class GarminProviderAdapter:
                     "activity_exercise_sets": exercise_sets,
                     "activity_hr_zones": strength_hr_zones,
                 },
+                rate_limited=rate_limited,
             )
 
         # Fetched independently (not as one try/except around all three) because
