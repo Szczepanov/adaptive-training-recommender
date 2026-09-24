@@ -1141,17 +1141,26 @@ export function rankCandidates(
         const authoredCoverageNeedTier = coverageState
             ? coverageNeedTierForTemplate(coverageState, effectiveCandidate, options.anchorRole ?? null, deferAnchorAdjacentHeavyStrength)
             : 3;
-        const primaryStrengthOnlyUrgency = Boolean(coverageState?.descriptor
-            && authoredCoverageNeedTier <= 1
-            && coverageKeysForTemplate(effectiveCandidate, coverageState.phase, coverageState.descriptor).includes('primary_strength')
-            && coverageNeedTierForTemplate({
+        const advancesPrimaryStrength = Boolean(coverageState?.descriptor
+            && coverageKeysForTemplate(effectiveCandidate, coverageState.phase, coverageState.descriptor).includes('primary_strength'));
+        const nonPrimaryStrengthCoverageNeedTier: 0 | 1 | 2 | 3 = coverageState && advancesPrimaryStrength
+            ? coverageNeedTierForTemplate({
                 ...coverageState,
                 requirements: coverageState.requirements.filter(requirement => requirement.key !== 'primary_strength'),
-            }, effectiveCandidate, options.anchorRole ?? null, deferAnchorAdjacentHeavyStrength) > 1);
+            }, effectiveCandidate, options.anchorRole ?? null, deferAnchorAdjacentHeavyStrength)
+            : authoredCoverageNeedTier;
+        const primaryStrengthOnlyUrgency = authoredCoverageNeedTier <= 1
+            && advancesPrimaryStrength
+            && nonPrimaryStrengthCoverageNeedTier > 1;
         const primaryStrengthDeferred = primaryStrengthOnlyUrgency
             && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category)
             && fatigueState.combinedFatigue.lowerBody >= RESIDUAL_LOWER_BODY_STRENGTH_DEFERRAL_THRESHOLD;
-        const fatigueAdjustedCoverageNeedTier = primaryStrengthDeferred ? 3 : authoredCoverageNeedTier;
+        // Remove only the primary-strength urgency. If the exact identity still advances
+        // an authored optional/target role, preserve that tier instead of erasing all
+        // coverage authority and forcing tier 3.
+        const fatigueAdjustedCoverageNeedTier = primaryStrengthDeferred
+            ? nonPrimaryStrengthCoverageNeedTier
+            : authoredCoverageNeedTier;
         const symptomCompatibleStrengthSupport = coverageState
             ? supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback(
                 coverageState,
