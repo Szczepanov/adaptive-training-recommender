@@ -454,7 +454,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'optimizer.residual_lower_body_strength_deferral', domain: 'optimizer_scoring', title: 'Residual lower-body primary-strength tier deferral',
-        currentRule: 'Heavy lower-body strength with tier-0/1 urgency only from primary_strength is ranked at tier 3 when combined lower-body fatigue is at least 0.6; exact coverage and reservations are unchanged.',
+        currentRule: 'When combined lower-body fatigue is at least 0.6, heavy lower-body strength whose tier-0/1 urgency comes only from primary_strength loses that urgency and keeps any other authored coverage tier (tier 3 only when no other role applies); exact coverage and reservations are unchanged.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:rankCandidates'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.residualLowerBodyStrengthDeferralPolicy],
