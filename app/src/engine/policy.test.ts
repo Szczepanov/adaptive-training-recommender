@@ -5,10 +5,13 @@ describe('isHistoricalPolicyVersion', () => {
     it('records the current transition and the previous live policies exactly once', () => {
         expect(POLICY_VERSION).toBe('2026-09-dsupport-incumbent-proof-order-v1');
         expect(HISTORICAL_POLICY_VERSIONS.filter(
-            (version) => version === '2026-09-symptom-compatible-strength-weekly-support-v1',
+            (version) => version === '2026-09-performance-goal-workout-coverage-v1',
         )).toHaveLength(1);
         expect(HISTORICAL_POLICY_VERSIONS.filter(
             (version) => version === '2026-09-event-demand-taper-window-v1',
+        )).toHaveLength(1);
+        expect(HISTORICAL_POLICY_VERSIONS.filter(
+            (version) => version === '2026-09-symptom-compatible-strength-weekly-support-v1',
         )).toHaveLength(1);
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(

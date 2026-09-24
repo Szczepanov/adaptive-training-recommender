@@ -72,7 +72,8 @@ The catalogue is grounded in the active [Sustained Multidirectional Field Macroc
 - sprint-mechanics foundation plus acceleration-and-braking progression;
 - cycling pedalling-economy practice and a manual-only traffic-free braking/cornering session;
 - matching tempo, VO2, hill-repeat, variable-intensity, and short-interval prescriptions for the engine's running and cycling quality templates;
-- breathwork-led recovery plus eccentric hamstring and calf-capacity accessories.
+- breathwork-led recovery plus eccentric hamstring and calf-capacity accessories;
+- goal-specific direct-practice candidates for conventional-deadlift 1RM and cycling 5-second peak-power targets. These PG6 definitions are catalog content only: they have no `engineTemplateIds` and therefore do not alter ordinary automatic recommendations before the PG7 allocation-authority decision. Their return-to-training variants deliberately remove the goal-specific heavy/maximal step rather than falsely counting generic low-intensity work as delivered direct coverage.
 
 The catalogue does not encode fixed personal watts. Power targets remain relative, device-specific, or RPE-led because different bikes and power systems may not agree.
 
@@ -125,6 +126,18 @@ stepField(
 ```
 
 Simple parameters bind to typed fields such as sets, time, repetitions, recovery, RPE, or repetitions in reserve. Composite behavior uses named resolver strategies, for example embedded race surges or walk-run distribution. The current resolver snapshots the selected canonical variant and its overrides; parameter bindings remain the contract for future athlete- or coach-selected parameter values.
+
+## Performance-goal direct coverage
+
+Typed performance goals distinguish a measurable outcome from the training content that can legitimately support it. The first PG6 catalog audit found:
+
+- conventional-deadlift 1RM had no active exact-lift workout even though `conventional_deadlift` was already a canonical exercise;
+- standing 10 m sprint already had direct acceleration coverage through the existing sprint-mechanics/acceleration-and-braking sessions, so no duplicate sprint workout was added;
+- cycling 5-second peak power had no active workout using the canonical maximal `bike_sprint_power` exercise; submaximal `bike_short_surge` work remains intentionally insufficient for maximal-power direct coverage.
+
+PG6 adds one exact-lift strength candidate and one short maximal cycling-sprint candidate. Their scientific lineage supports the **direction** of loaded strength work and short maximal sprint training; the exact set/repetition/rest defaults are separately registered product heuristics in the Sports Knowledge Registry. Aspirational target values never become session load or sprint-wattage prescriptions.
+
+These definitions intentionally have no engine-template binding. They become candidates for goal-specific allocation only after PG7 defines the priority/shortfall authority and verifies the resolved variant. A canonical workout can contain the required exercise while its selected return-to-training variant omits it; catalog classification therefore cannot by itself prove that direct coverage was delivered.
 
 The canonical definition stays unchanged. A `WorkoutPrescription` stores resolved values for one user and date.
 

@@ -194,30 +194,39 @@ export class ScheduleWindowService {
             return [date, current] as const;
         }));
         const preflightByDate = new Map(preflightEntries);
-        const committedDates: string[] = [];
+        // A date is recorded before its transaction runs: a commit can land even when the
+        // client only sees an error, and id-based compensation is a no-op where it did not.
+        const attemptedDates: string[] = [];
 
         try {
             for (const date of dates) {
+                attemptedDates.push(date);
                 await runTransaction(this.db, async transaction => {
                     const snapshot = await transaction.get(this.ref(userId, date));
                     const current = this.manifestFromSnapshot(userId, date, snapshot.exists() ? snapshot.data() : undefined);
+                    const dateCandidates = candidatesByDate.get(date) ?? [];
+                    // The SDK re-runs this function after a retryable commit error, including
+                    // one reported after the backend applied the write. Operation-scoped ids
+                    // identify that earlier attempt's write, so it is not mistaken for a
+                    // concurrent edit.
+                    const persistedIds = new Set(current?.windows.map(window => window.id) ?? []);
+                    if (dateCandidates.length > 0 && dateCandidates.every(candidate => persistedIds.has(candidate.id))) return;
                     // A changed manifest is revalidated against the same candidates in this
                     // date-level transaction. Any failure triggers compensation of dates that
-                    // this operation already committed.
+                    // this operation already attempted.
                     const expected = preflightByDate.get(date);
                     if ((current?.revision ?? 0) !== (expected?.revision ?? 0)) {
                         throw new Error(`Schedule window data changed while applying ${date}; retry the repeating schedule`);
                     }
                     transaction.set(
                         this.ref(userId, date),
-                        this.buildManifest(userId, date, current, [...(current?.windows ?? []), ...(candidatesByDate.get(date) ?? [])]),
+                        this.buildManifest(userId, date, current, [...(current?.windows ?? []), ...dateCandidates]),
                     );
                 });
-                committedDates.push(date);
             }
         } catch (applyError) {
             const rollbackFailures: string[] = [];
-            for (const date of [...committedDates].reverse()) {
+            for (const date of [...attemptedDates].reverse()) {
                 const candidateIds = new Set((candidatesByDate.get(date) ?? []).map(candidate => candidate.id));
                 try {
                     await runTransaction(this.db, async transaction => {

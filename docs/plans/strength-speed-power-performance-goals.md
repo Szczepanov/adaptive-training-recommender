@@ -1033,7 +1033,7 @@ criterion is met only once PG5.3 (and, for allocation to actually change, PG7) l
 
 ## PG6 — audit and fill catalog coverage gaps
 
-**Status:** [ ]
+**Status:** [x] Implemented 2026-09-24 — catalog coverage only; automatic allocation remains PG7
 **Blocked by:** reviewed knowledge for any new session prescription (PG5.2's planning-rule table is now Implemented — see its implementation note above, which already surfaced the two concrete catalog gaps below)
 **Recommendation-affecting:** yes
 
@@ -1041,10 +1041,10 @@ Do not assume every new target needs a new workout. First audit the active catal
 
 Known findings (confirmed against the live catalog by PG5.2's `performanceGoalPlanningRules.test.ts`):
 
-- conventional_deadlift exists as a canonical exercise but no active workout contains it (the inspected active strength workouts use Romanian deadlift instead), so the deadlift target needs a legitimate direct-coverage candidate;
+- conventional_deadlift previously existed as a canonical exercise with no active exact-lift workout; PG6 closes this with `strength_conventional_deadlift_practice_01`, which has no engine-template binding and therefore does not silently change ordinary recommendations;
 - sprint_falling_start_10m already provides real direct coverage for the standing 10 m target via `field_sprint_mechanics_foundation_01`/`field_acceleration_braking_01` — no gap here; sprint_fly_10m exists as a canonical field primitive and may be reusable once a flying-10m performance target/test is registered (PG1 extension, not yet done);
 - power-oriented content such as hang power clean already exists;
-- cycling power targets have **no direct coverage today**: `bike_sprint_power` (the maximal 5-15 s cycling-sprint exercise) exists in the exercise catalog but is not used by any active `WorkoutDefinition`. The existing `bike_short_surge` exercise is a deliberately submaximal near-neighbor (its own instruction text says not to turn it into a sprint test) and must not be credited as coverage for a maximal power target — reuse it only if a new/adjusted session genuinely reaches maximal effort, not by relabeling the existing surge session.
+- cycling power targets previously had **no direct coverage**: `bike_sprint_power` existed but was unused by active workouts. PG6 closes this with `cycling_sprint_power_5s_01`; `bike_short_surge` remains deliberately submaximal and still receives no maximal-power coverage credit.
 
 ### New-session requirements
 
@@ -1064,17 +1064,30 @@ No new sets/reps/%1RM/sprint-rest/contact-volume default should be invented in t
 
 Generalizable training defaults belong in the Sports Knowledge Registry or an explicit policy claim with evidence, limitations and freshness metadata.
 
+### Implementation note — 2026-09-24
+
+PG6 adds exactly the two missing first-slice direct-coverage candidates rather than expanding the catalog by taxonomy alone:
+
+- `strength_conventional_deadlift_practice_01` contains exact `conventional_deadlift` work. Its full/reduced variants retain direct practice; its return-to-training variant deliberately omits loaded conventional deadlift. An RDL substitution is explicitly broad hinge-strength support only and does **not** preserve exact goal coverage.
+- `cycling_sprint_power_5s_01` contains the canonical maximal `bike_sprint_power` exercise with long recovery. Its full/reduced variants retain maximal sprint exposure; its return-to-training variant deliberately omits it. Existing `bike_short_surge` remains submaximal and does not gain false peak-power coverage credit.
+- standing 10 m sprint required no new workout: the existing acceleration-technique sessions already contain `sprint_falling_start_10m`.
+- both new workouts intentionally omit `engineTemplateIds`. PG6 supplies valid catalog content; PG7 still owns whether/when goal specificity can alter weekly allocation.
+
+Prescription lineage is explicit in `knowledge/performanceGoalTrainingKnowledge.ts`: scientific claims support the direction of higher-load strength work and short maximal sprint training, while the exact 3×3/RIR/rest and 5×8 s/240 s defaults are separate product heuristics. Aspirational target values never become workout loads or sprint-wattage targets.
+
+The broader 2026–2027 macrocycle cross-check did not reveal another immediate catalog hole in the current phases: controlled tempo/subthreshold, long aerobic work, 3–5 min VO₂, variable long VO₂, 30/15-type work, recovery/Z2, strength/power, acceleration/braking and low-volume reactive work already have catalog families. Future flying-10/max-velocity and additional outcome-test families should be added only when their typed performance tests/planning semantics are registered, rather than pre-populating unused workouts.
+
 ### Tests
 
-- workout catalog validation;
-- target-specific coverage classifier;
-- variant omission semantics;
-- equipment/safety;
-- known-capacity and missing-capacity prescription behavior;
-- target value does not alter resolved load;
-- no false specific credit from merely related exercises.
+- [x] workout catalog/direct-coverage tests close the two known gaps;
+- [x] target-specific classifier still rejects RDL/submaximal surge as false exact coverage;
+- [x] return-to-training variants are pinned to omit the direct heavy/maximal step;
+- [x] equipment/safety and standard workout-library validation remain applicable;
+- [x] Sports Knowledge Registry separates scientific direction from exact product calibration;
+- [x] target value remains outside coverage identity and prescription authority;
+- [ ] delivered-variant shortfall/weekly allocation remains PG7.
 
-**Done when:** each first-slice target has at least one legitimate eligible coverage path or an explicit product shortfall.
+**Done when:** each first-slice target has at least one legitimate eligible coverage path or an explicit product shortfall. **Met for PG6 catalog coverage; allocation/delivery authority remains deliberately deferred to PG7.**
 
 ---
 

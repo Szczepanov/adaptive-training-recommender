@@ -64,6 +64,22 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'The rule is a cautious product implementation of conditional acute preparation and rehearsal evidence; it deliberately avoids a universal dose or injury-prevention claim.',
     },
     {
+        id: 'workout_catalog.performance_goal_deadlift_direct_practice', domain: 'workout_catalog', title: 'Conventional-deadlift performance-goal direct practice',
+        currentRule: 'The PG6 catalog candidate uses exact conventional-deadlift practice with 3x3 work sets at RIR 3-5 and 180 s rest; reduced keeps direct practice, while return-to-training removes the goal-specific loaded step.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['workouts/catalog/performance-goal-support.ts:strength_conventional_deadlift_practice_01', 'engine/performanceGoalPlanningRules.ts:workoutProvidesDirectCoverage'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.strengthHighLoadStrengthGain, KNOWLEDGE_CLAIM_IDS.deadliftDirectPracticePolicy],
+        coverageRationale: 'External evidence supports loaded resistance training for strength and favors higher loads on average; the exact catalog dose is separately registered as explicit conservative product calibration and never uses aspirational goal 1RM as load authority.',
+    },
+    {
+        id: 'workout_catalog.performance_goal_cycling_sprint_power', domain: 'workout_catalog', title: 'Cycling peak-power performance-goal direct practice',
+        currentRule: 'The PG6 catalog candidate uses 5x8 s maximal cycling sprints with 240 s easy recovery; reduced keeps three maximal sprints, while return-to-training removes maximal sprint exposure.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['workouts/catalog/performance-goal-support.ts:cycling_sprint_power_5s_01', 'engine/performanceGoalPlanningRules.ts:workoutProvidesDirectCoverage'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.cyclingShortSprintAnaerobicPerformance, KNOWLEDGE_CLAIM_IDS.cyclingSprintPowerPolicy],
+        coverageRationale: 'Short sprint training is supported for anaerobic performance, while the exact repetition/recovery defaults are explicit product calibration. The goal wattage remains an outcome and never becomes the prescribed sprint wattage.',
+    },
+    {
         id: 'evergreen.adult_aerobic_weekly_volume', domain: 'evergreen_dose', title: 'Adult aerobic health-volume floor and range',
         currentRule: 'Evergreen health/balanced planning uses 150 min/week as the non-droppable aerobic floor and a 150-300 min target range.',
         classification: 'scientific_claim', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'low', researchPriority: 'none',
@@ -212,7 +228,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'fatigue.internal_response_model', domain: 'fatigue_load', title: 'Internal response strain normalization and fusion weights',
-        currentRule: 'HRV drop saturates at 15 ms, RHR rise at 10 bpm, sleep strain begins below score 75; systemic is 0.4 subjective fatigue +0.3 HRV +0.3 sleep, cardiovascular 0.5 RHR +0.5 HRV, upper-body soreness multiplier 0.7, neuromuscular 0.5 fatigue +0.5 inverse motivation.',
+        currentRule: 'HRV drop saturates at 15 ms, RHR rise at 10 bpm, sleep strain is (75 - score)/50 below score 75 (unclamped), Body Battery depletion begins below 50 and saturates at 20; base systemic is 0.3 subjective fatigue +0.25 HRV +0.25 sleep +0.2 Body Battery, cardiovascular 0.5 RHR +0.5 HRV, upper-body soreness multiplier 0.7, neuromuscular 0.5 fatigue +0.5 inverse motivation. Non-diluted floors override the weighted sums: systemic 0.60 at fatigue >=8 (0.65 with readiness <=4 or stress >=8, or at readiness <=3 with stress >=8), systemic 0.60 at stress >=9, systemic and cardiovascular 0.80 on concordant HRV <=-10 ms, RHR >=+5 bpm and Body Battery <=35, and soreness >=8 replaces normalized soreness with a 0.88 lower-body/impact tissue floor. Ambient step-surge strain (fatigue.ambient_step_surge) and unlogged physical-work strain are combined on top and are not owned by this item.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/fatigue.ts:computeInternalResponseStrain'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring, KNOWLEDGE_CLAIM_IDS.rhrContextualMonitoring, KNOWLEDGE_CLAIM_IDS.sleepPerformanceImportance, KNOWLEDGE_CLAIM_IDS.internalResponseStrainModel],

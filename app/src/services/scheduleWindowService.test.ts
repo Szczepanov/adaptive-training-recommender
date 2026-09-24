@@ -178,6 +178,131 @@ describe('ScheduleWindowService manifest persistence', () => {
         });
     });
 
+    describe('when the SDK retries a date transaction whose commit already landed', () => {
+        const secondDate = '2026-09-11';
+        const firstPath = `users/u1/schedule_window_manifests/${DATE}`;
+        const secondPath = `users/u1/schedule_window_manifests/${secondDate}`;
+        type RetryTransaction = {
+            get: (ref: { path: string }) => Promise<ReturnType<typeof snapshot>>;
+            set: (ref: { path: string }, data: ScheduleWindowManifest) => void;
+        };
+        let manifests: Map<string, ScheduleWindowManifest>;
+
+        // Mirrors the web SDK TransactionRunner: a retryable commit error (here UNAVAILABLE,
+        // reported after the backend applied the write) re-runs the update function, whose
+        // reads now observe this operation's own write.
+        function runWithLostCommitAck(options: { lostAckOnCall: number; beforeCall?: (call: number) => void }) {
+            let call = 0;
+            firestore.runTransaction.mockImplementation(async (_db: unknown, callback: (transaction: RetryTransaction) => Promise<void>) => {
+                call += 1;
+                options.beforeCall?.(call);
+                const attempt = async () => {
+                    const writes = new Map<string, ScheduleWindowManifest>();
+                    await callback({
+                        get: async ref => snapshot(manifests.get(ref.path)),
+                        set: (ref, data) => { writes.set(ref.path, data); },
+                    });
+                    for (const [path, data] of writes) manifests.set(path, data);
+                };
+                await attempt();
+                if (call === options.lostAckOnCall) await attempt();
+            });
+        }
+
+        beforeEach(() => {
+            manifests = new Map();
+            firestore.getDoc.mockImplementation(async (ref: { path: string }) => snapshot(manifests.get(ref.path)));
+        });
+
+        it('treats the date as committed instead of reporting a false conflict', async () => {
+            runWithLostCommitAck({ lostAckOnCall: 1 });
+
+            const created = await service(['first-new', 'second-new']).createRecurringWindows('u1', {
+                startDate: DATE,
+                endDate: secondDate,
+                rules: [{ weekdays: [4, 5], startLocal: '12:30', endLocal: '14:00' }],
+            });
+
+            expect(created.map(window => window.id)).toEqual(['first-new', 'second-new']);
+            expect(manifests.get(firstPath)).toMatchObject({
+                revision: 1,
+                windows: [expect.objectContaining({ id: 'first-new' })],
+            });
+            expect(manifests.get(firstPath)?.windows).toHaveLength(1);
+            expect(manifests.get(secondPath)).toMatchObject({ revision: 1, windows: [expect.objectContaining({ id: 'second-new' })] });
+        });
+
+        it('compensates the retried date when a later date genuinely conflicts', async () => {
+            runWithLostCommitAck({
+                lostAckOnCall: 1,
+                beforeCall: call => {
+                    if (call !== 2) return;
+                    manifests.set(secondPath, {
+                        userId: 'u1', date: secondDate, revision: 1,
+                        windows: [window({ id: 'concurrent-window', date: secondDate, startLocal: '18:00', endLocal: '19:00' })],
+                        createdAt: NOW, updatedAt: NOW,
+                    });
+                },
+            });
+
+            await expect(service(['first-new', 'second-new']).createRecurringWindows('u1', {
+                startDate: DATE,
+                endDate: secondDate,
+                rules: [{ weekdays: [4, 5], startLocal: '12:30', endLocal: '14:00' }],
+            })).rejects.toThrow(/data changed while applying 2026-09-11/);
+
+            expect(manifests.get(firstPath)).toMatchObject({ revision: 2, windows: [] });
+            expect(manifests.get(secondPath)).toMatchObject({
+                revision: 1,
+                windows: [expect.objectContaining({ id: 'concurrent-window' })],
+            });
+        });
+
+        it('compensates a date whose write landed even when its transaction ultimately rejects', async () => {
+            let call = 0;
+            firestore.runTransaction.mockImplementation(async (_db: unknown, callback: (transaction: RetryTransaction) => Promise<void>) => {
+                call += 1;
+                const writes = new Map<string, ScheduleWindowManifest>();
+                await callback({
+                    get: async ref => snapshot(manifests.get(ref.path)),
+                    set: (ref, data) => { writes.set(ref.path, data); },
+                });
+                for (const [path, data] of writes) manifests.set(path, data);
+                // Retries exhausted: the write is durable but the client only sees the error.
+                if (call === 1) throw Object.assign(new Error('Commit unavailable'), { name: 'FirebaseError', code: 'unavailable' });
+            });
+
+            await expect(service(['first-new', 'second-new']).createRecurringWindows('u1', {
+                startDate: DATE,
+                endDate: secondDate,
+                rules: [{ weekdays: [4, 5], startLocal: '12:30', endLocal: '14:00' }],
+            })).rejects.toThrow(/Commit unavailable/);
+
+            expect(manifests.get(firstPath)).toMatchObject({ revision: 2, windows: [] });
+            expect(manifests.get(secondPath)).toBeUndefined();
+        });
+
+        it('still rejects a concurrent edit by another writer on the date being applied', async () => {
+            manifests.set(firstPath, manifest([window({ id: 'someone-else', startLocal: '18:00', endLocal: '19:00' })]));
+            runWithLostCommitAck({
+                lostAckOnCall: 0,
+                beforeCall: call => {
+                    if (call !== 1) return;
+                    manifests.set(firstPath, manifest([window({ id: 'someone-else', startLocal: '18:00', endLocal: '19:30' })], 2));
+                },
+            });
+
+            await expect(service(['first-new']).createRecurringWindows('u1', {
+                startDate: DATE,
+                endDate: DATE,
+                rules: [{ weekdays: [4], startLocal: '12:30', endLocal: '14:00' }],
+            })).rejects.toThrow(/data changed while applying 2026-09-10/);
+
+            expect(manifests.get(firstPath)).toMatchObject({ revision: 2, windows: [expect.objectContaining({ id: 'someone-else' })] });
+            expect(manifests.get(firstPath)?.windows).toHaveLength(1);
+        });
+    });
+
     it('updates in place with a stable id, a per-window revision bump, and a manifest revision bump', async () => {
         stored = manifest([window()]);
 
