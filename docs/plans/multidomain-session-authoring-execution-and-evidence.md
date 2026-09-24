@@ -1499,7 +1499,7 @@ no dedicated history UI was built.
   for the same four-level tissue scale. `unknown` is returned both for zero data and for
   immediate-only data with no later_day/next_morning signal yet -- a `passed` claim requires
   actual follow-up to have happened, never a fabricated default. `SESSION_OUTCOME_POLICY_VERSION`
-  (`'m5.3-outcome-v1'`) is carried on every result.
+  (introduced as `'m5.3-outcome-v1'`) is carried on every result.
 * **Scoping decision: no new persisted "reason" field.** The plan asks this to "record
   athlete override reason." No UI anywhere in the repository currently captures a structured
   reason for *any* session (`SessionAdjustment.athleteReason` itself has no writer today).

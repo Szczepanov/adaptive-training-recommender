@@ -9,9 +9,9 @@ import { useState } from 'react';
 import type { IntensityGauge } from '../engine/models';
 import { formatSessionLoad } from '../sessions/loadDisplay';
 import type { RangeOrNumber, SessionEffort, SessionEntryPayload } from '../sessions/models';
-import type { PerformedSessionComparison } from '../sessions/performedComparison';
+import type { StepComparison } from '../sessions/performedComparison';
 import { manualLinkCandidatesFor, type CompletedWorkoutView, type ManualLinkCandidate } from '../training-occurrence/completedWorkoutView';
-import type { PerformedRestDetail, PrescribedStepTarget, StructuredStepDetail } from '../training-occurrence/structuredSetDetail';
+import type { PerformedRestDetail, PrescribedStepTarget } from '../training-occurrence/structuredSetDetail';
 import { sourceKeyForRef } from '../training-occurrence/sourceIdentity';
 import { copyActivityJsonToClipboard } from '../utils/activityJsonExport';
 import {
@@ -128,10 +128,14 @@ function formatRest(rest: PerformedRestDetail): string | null {
   return rest.prescribedSeconds !== undefined ? `${actual} (target ${formatClock(rest.prescribedSeconds)})` : actual;
 }
 
-function stepStatus(step: StructuredStepDetail, comparison: PerformedSessionComparison['stepComparisons'][number] | undefined): string {
-  if (comparison?.isComplete) return '✓ complete';
-  if (step.isOptional) return step.sets.length > 0 ? 'optional, partial' : 'optional, skipped';
-  return step.sets.length > 0 ? `✗ ${comparison?.completedSets ?? step.sets.length}/${step.prescribed.sets} sets` : '✗ missed';
+/** Completion is the shared planned-vs-performed comparison's call (work sets only --
+ * warm-ups never complete a prescription, ADR-0021 D-SETLOG); the card does not recount. */
+function stepStatus(comparison: StepComparison | undefined): string | null {
+  if (!comparison) return null;
+  if (comparison.isComplete) return '✓ complete';
+  const logged = comparison.entries.length > 0;
+  if (comparison.isOptional) return logged ? 'optional, partial' : 'optional, skipped';
+  return logged ? `✗ ${comparison.completedSets}/${comparison.targetSets} sets` : '✗ missed';
 }
 
 function StructuredDetail({ structured }: { structured: NonNullable<CompletedWorkoutView['structured']> }) {
@@ -151,7 +155,7 @@ function StructuredDetail({ structured }: { structured: NonNullable<CompletedWor
         <div className="completed-workout-step" key={step.stepId}>
           <div className="completed-workout-step-head">
             <strong>{step.title}</strong>
-            <span className="completed-workout-step-status">{stepStatus(step, comparisonByStepId.get(step.stepId))}</span>
+            <span className="completed-workout-step-status">{stepStatus(comparisonByStepId.get(step.stepId))}</span>
           </div>
           <p className="completed-workout-step-target">Target: {formatTarget(step.prescribed)}</p>
           {step.sets.length > 0 && (

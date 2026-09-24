@@ -305,4 +305,18 @@ describe('resolveRestPreviewStep', () => {
 
         expect(resolveRestPreviewStep(definition, entries, 0, 0)?.id).toBe(first.id);
     });
+
+    it('does not count a warm-up set toward the current exercise\'s prescribed sets', () => {
+        const first = repetitionStep('front-squat', 3);
+        const second = repetitionStep('bench', 2);
+        const definition = definitionWithBlock('sequential', [first, second]);
+        const warmup = repetitionEntry(first.id, 0);
+        const entries = [
+            { ...warmup, payload: { kind: 'repetition' as const, setIndex: 0, reps: 5, isWarmup: true } },
+            repetitionEntry(first.id, 1),
+            repetitionEntry(first.id, 2),
+        ];
+
+        expect(resolveRestPreviewStep(definition, entries, 0, 0)?.id).toBe(first.id);
+    });
 });

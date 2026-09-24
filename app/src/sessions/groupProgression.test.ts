@@ -74,4 +74,17 @@ describe('group progression', () => {
         // A choice sharing 'press's entries would otherwise look like a logged set.
         expect(getGroupProgress(group, [choiceEntry], 0)).toMatchObject({ completedRounds: 0, totalRounds: 3, nextStepIndex: 1 });
     });
+
+    it('does not let a warm-up set complete a round or the group (ADR-0021 D-SETLOG)', () => {
+        const group = block('superset', 1);
+        const warmup = (stepId: string): SessionEntry => ({
+            ...entry(stepId, `${stepId}-warmup`),
+            payload: { kind: 'repetition', setIndex: 0, reps: 5, isWarmup: true },
+        });
+
+        expect(getGroupProgress(group, [warmup('press'), warmup('row')], 1))
+            .toMatchObject({ completedRounds: 0, totalRounds: 1, isComplete: false });
+        expect(getGroupProgress(group, [warmup('press'), entry('press'), warmup('row'), entry('row')], 1))
+            .toMatchObject({ completedRounds: 1, isComplete: true, nextStepIndex: null });
+    });
 });

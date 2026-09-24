@@ -1,7 +1,17 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import type { SessionEntry } from '../sessions/models';
 import type { CompletedWorkoutView } from '../training-occurrence/completedWorkoutView';
 import { CompletedWorkoutList } from './CompletedWorkoutList';
+
+const squatWarmup = { kind: 'repetition', setIndex: 0, reps: 5, weightKg: 60, isWarmup: true } as const;
+const squatSet1 = { kind: 'repetition', setIndex: 1, reps: 5, weightKg: 120, gauge: { scale: 'rir', value: 2 } } as const;
+const squatSet2 = { kind: 'repetition', setIndex: 2, reps: 4, weightKg: 120 } as const;
+const squatEntries: SessionEntry[] = [
+    { id: 'w1', executionId: 'exec-1', stepId: 's1', completedAt: '2026-08-26T06:55:00.000Z', createdAt: '2026-08-26T06:55:00.000Z', updatedAt: '2026-08-26T06:55:00.000Z', payload: squatWarmup },
+    { id: 'e1', executionId: 'exec-1', stepId: 's1', completedAt: '2026-08-26T07:00:00.000Z', createdAt: '2026-08-26T07:00:00.000Z', updatedAt: '2026-08-26T07:00:00.000Z', payload: squatSet1 },
+    { id: 'e2', executionId: 'exec-1', stepId: 's1', completedAt: '2026-08-26T07:04:00.000Z', createdAt: '2026-08-26T07:04:00.000Z', updatedAt: '2026-08-26T07:04:00.000Z', payload: squatSet2 },
+];
 
 const structuredOnly: CompletedWorkoutView = {
     performedOccurrenceId: 'pto-1',
@@ -16,26 +26,26 @@ const structuredOnly: CompletedWorkoutView = {
         title: 'Heavy Squat Day',
         comparison: {
             definitionId: 'w-1', revision: 1, title: 'Heavy Squat Day',
-            totalPlannedSteps: 2, completedStepsCount: 2, missingRequiredStepsCount: 0,
+            totalPlannedSteps: 1, completedStepsCount: 0, missingRequiredStepsCount: 1,
             stepComparisons: [
-                { stepId: 's1', blockId: 'b1', stepTitle: 'Back Squat', isOptional: false, targetSets: 5, completedSets: 5, isComplete: true, entries: [] },
+                { stepId: 's1', blockId: 'b1', stepTitle: 'Back Squat', isOptional: false, targetSets: 5, completedSets: 2, isComplete: false, entries: squatEntries },
             ],
-            summary: { totalReps: 25, totalTonnageKg: 3000, totalDurationSeconds: 0, totalDistanceMeters: 0 },
+            summary: { totalReps: 14, totalTonnageKg: 1080, totalDurationSeconds: 0, totalDistanceMeters: 0 },
         },
         steps: [
             {
                 stepId: 's1', title: 'Back Squat', isOptional: false,
                 prescribed: { sets: 5, reps: 5, load: { kind: 'mass', kg: 120 }, effort: { rir: 2 }, restSeconds: 180 },
                 sets: [
-                    { entryId: 'w1', setNumber: 1, isWarmup: true, completedAt: '2026-08-26T06:55:00.000Z', payload: { kind: 'repetition', setIndex: 0, reps: 5, weightKg: 60, isWarmup: true } },
+                    { entryId: 'w1', setNumber: 1, isWarmup: true, completedAt: '2026-08-26T06:55:00.000Z', payload: squatWarmup },
                     {
                         entryId: 'e1', setNumber: 1, isWarmup: false, completedAt: '2026-08-26T07:00:00.000Z',
-                        payload: { kind: 'repetition', setIndex: 1, reps: 5, weightKg: 120, gauge: { scale: 'rir', value: 2 } },
+                        payload: squatSet1,
                         rest: { prescribedSeconds: 180, actualSeconds: 205, endReason: 'next_set_started' },
                     },
                     {
                         entryId: 'e2', setNumber: 2, isWarmup: false, completedAt: '2026-08-26T07:04:00.000Z',
-                        payload: { kind: 'repetition', setIndex: 2, reps: 4, weightKg: 120 },
+                        payload: squatSet2,
                         rest: { prescribedSeconds: 180, actualSeconds: 1500, endReason: 'session_ended' },
                     },
                 ],
@@ -96,6 +106,22 @@ describe('CompletedWorkoutList', () => {
         // Rest that ran into the end of the session is not between-set rest.
         expect(html).not.toContain('Rest 25:00');
         expect(html).not.toContain('actual rest not recorded');
+    });
+
+    it('takes step status and the summary line from the shared comparison, which never counts a warm-up as a work set', () => {
+        const html = renderToStaticMarkup(<CompletedWorkoutList workouts={[structuredOnly]} />);
+        expect(html).toContain('✗ 2/5 sets');
+        expect(html).toContain('0/1 steps completed · 1 required step(s) missed · 1080 kg total tonnage');
+
+        const doneComparison = { ...structuredOnly.structured!.comparison.stepComparisons[0], isComplete: true };
+        const done: CompletedWorkoutView = {
+            ...structuredOnly,
+            structured: {
+                ...structuredOnly.structured!,
+                comparison: { ...structuredOnly.structured!.comparison, stepComparisons: [doneComparison] },
+            },
+        };
+        expect(renderToStaticMarkup(<CompletedWorkoutList workouts={[done]} />)).toContain('✓ complete');
     });
 
     it('says actual rest was not recorded instead of implying zero rest', () => {
