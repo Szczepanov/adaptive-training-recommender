@@ -1,4 +1,4 @@
-/** Return true only for the seven opt-in H1 cases that intentionally expose extra judge facts. */
+/** Return true only for opt-in hybrid evaluation cases that intentionally expose extra judge facts. */
 export function shouldExposeHybridExpansionFacts(scenario, hybridExpansion) {
   return Boolean(hybridExpansion && scenario?.tags?.includes('hybrid-expansion'));
 }
