@@ -45,6 +45,11 @@ policy-alignment test (ADR-0033). Do not add one silently.
 ## 3. Working loop
 
 **Before writing code**
+- For source-code discovery, when Serena is connected follow
+  [`AGENTS.md` § Code navigation with Serena](./AGENTS.md#code-navigation-with-serena):
+  prefer symbol/reference/implementation traversal for unfamiliar or cross-module code, and keep
+  Grep/text search for literals, docs/config and completeness checks. In worktrees, verify Serena
+  is bound to that worktree before trusting semantic results.
 - Check [`docs/plans/README.md`](./docs/plans/README.md) — the authoritative status board.
   It says what is in progress, what shipped, and what is deliberately shadow-mode only.
   Never infer delivery status from a file's existence or from this file.
@@ -136,4 +141,4 @@ cd app && npm test                     # vitest only — the fast inner loop
 | Garmin OAuth bootstrap | `scripts/bootstrap_garmin_tokens.py` |
 | Warsaw date helper / user-scoped Firestore reader / security rules | `app/src/utils/localDate.ts`, `app/src/services/recoverySnapshotService.ts`, `app/firestore.rules` |
 | Which document to trust | [`docs/README.md`](./docs/README.md) — routing table and precedence |
-| Symbol navigation (optional Serena MCP) and `.serena/memories/` policy | [`AGENTS.md` § Code navigation with Serena](./AGENTS.md#code-navigation-with-serena-optional) |
+| Semantic symbol navigation (Serena when available) and `.serena/memories/` policy | [`AGENTS.md` § Code navigation with Serena](./AGENTS.md#code-navigation-with-serena) |

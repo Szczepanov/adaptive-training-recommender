@@ -149,7 +149,14 @@ added_modes:
 
 # initial prompt for the project. It will always be given to the LLM upon activating the project
 # (contrary to the memories, which are loaded on demand).
-initial_prompt: ""
+initial_prompt: |
+  This repository prefers Serena for semantic source-code navigation when Serena is available.
+  For unfamiliar code, cross-module changes, reviews, or refactors, use get_symbols_overview /
+  find_symbol to locate the target, then find_referencing_symbols (and find_implementations for
+  polymorphic symbols) before broad text-search sweeps. Use text search for literals, docs/config,
+  generated files, and language-server gaps. For worktrees, only use Serena after confirming that
+  the worktree itself is the active project. Repository docs remain authoritative; see AGENTS.md
+  "Code navigation with Serena" and read mem:core when project routing is needed.
 
 # time budget (seconds) per tool call for the retrieval of additional symbol information
 # such as docstrings or parameter information.

@@ -36,6 +36,10 @@ You take a GitHub issue number as input and drive it to an opened PR: issue inta
    - `totalSteps` means the completed previous calendar day (`D - 1`); do not reinterpret it without touching `fatigue.ts` deduction logic.
     - Reference symbols, never line numbers, in docs and plans (e.g. `` `rules.ts` `evaluateEnvelopes` ``).
     - Work in `WORKTREE` on its feature branch, never directly on `main` and never in the main checkout. One issue = one worktree = one branch unless the user says otherwise.
+    - If Serena is available, semantic reads must come from `WORKTREE`, not the checkout that
+      happened to be active when the MCP server started. Activate/retarget Serena to the absolute
+      `WORKTREE` path and verify it before using symbol tools. If that cannot be done safely,
+      skip Serena for this run and use ordinary repository search/read tools.
 
 ## Phase 1 — Read the GitHub issue and its history
 
@@ -70,7 +74,12 @@ Follow the `docs/README.md` precedence: **code wins, then `architecture/`, then 
 ## Phase 3 — Analyze the code and related artifacts
 
 - Locate affected modules using the `AGENTS.md` package-architecture map (`src/garmin_sync/`, `app/src/engine/`, `app/src/sessions/`, `app/src/responses/`, `app/src/observations/`, `app/src/outcomes/`, `app/src/knowledge/` — directory wins over the map).
-- Use search/read tools, not assumptions: find definitions, callers, validators, and existing tests/fixtures for each touched area.
+- When Serena is available and correctly bound to `WORKTREE`, use semantic navigation first for
+  source-code discovery: `get_symbols_overview` / `find_symbol` to locate the target,
+  `find_referencing_symbols` for callers/impact radius, and `find_implementations` for
+  polymorphic contracts. Use Grep/text search for literals, docs/config, generated files,
+  unsupported language-server cases, and as a completeness check. Never use semantic results from
+  a different checkout.
 - Identify: reusable utilities, existing test fixtures (`tests/fixtures/`, engine `tests/`, `simulation/`), schema validators, and the `TrainingHistoryProvider` / Firestore boundaries if history or persistence is involved.
 - Check `app/src/engine/policy.ts` `POLICY_VERSION` relevance early: if the issue changes recommendation decision logic, a version bump plus `node scripts/check-policy-drift.mjs <base-sha>` will be required later.
 

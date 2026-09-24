@@ -389,25 +389,58 @@ sequenced in `docs/plans/`.
 
 ---
 
-## Code navigation with Serena (optional)
+## Code navigation with Serena
 
 The repository ships a [Serena](https://github.com/oraios/serena) project config in
-`.serena/` (TypeScript and Python language servers). Serena is **not** required. It is set up
-per developer, and an agent without it follows this file unchanged.
+`.serena/` (TypeScript and Python language servers). Serena is an optional local dependency,
+but **when its tools are connected it is the preferred semantic navigation layer for source-code
+discovery**. Do not block a task because Serena is unavailable; fall back to the normal repository
+tools.
 
-* **Use it to explore.** When the `mcp__serena__*` tools are available, prefer
-  `find_symbol`, `get_symbols_overview` and `find_referencing_symbols` over text search to
-  locate a symbol and all of its uses. This matters most before changing an engine constant
-  ([`CLAUDE.md` § 2](./CLAUDE.md#2-before-you-change-a-number-in-the-engine)): one
-  reference query covers `app/src/engine/`, `app/src/knowledge/` and the
-  `*PolicyAlignment.test.ts` suites together.
-* **Its memories are an index, not a source.** `.serena/memories/` holds only pointers into
+### Retrieval policy
+
+For reviews, refactors, bug tracing and unfamiliar code:
+
+1. Use `get_symbols_overview` for an unfamiliar file/area and `find_symbol` for the target.
+2. Use `find_referencing_symbols` before changing a public/exported symbol, an engine
+   decision-authority constant, or cross-module wiring. Add `find_implementations` when an
+   interface/abstract symbol can have multiple implementations.
+3. Use exact text search for literals, error messages, configuration keys, docs, YAML/JSON,
+   generated files, and as a completeness check when appropriate.
+4. If the language server cannot answer reliably, fall back rather than forcing a semantic query.
+
+Do not make ceremonial Serena calls for docs-only work or a known tiny edit whose target is already
+established. The objective is better evidence with less broad reading, not tool-call count.
+
+This matters especially before changing an engine constant
+([`CLAUDE.md` § 2](./CLAUDE.md#2-before-you-change-a-number-in-the-engine)): one reference
+query can expose the implemented constant, its knowledge claim/coverage ownership, and the
+`*PolicyAlignment.test.ts` assertions that must remain aligned.
+
+### Worktree safety
+
+Serena is stateful around an active project. A shell `workdir` change does not prove that a
+long-lived Serena server is reading the same checkout. If a workflow creates a worktree after the
+session starts:
+
+- activate/retarget Serena to the **worktree path** and verify that project before semantic reads;
+- prefer per-session startup with Serena's current `--project-from-cwd` support when possible;
+- if the client cannot safely verify/retarget the active Serena project, skip Serena for that
+  worktree and use ordinary repository tools rather than querying the wrong checkout.
+
+See the dated tooling review
+[`docs/analysis/2026-09-24-serena-agent-tooling-adoption-review.md`](./docs/analysis/2026-09-24-serena-agent-tooling-adoption-review.md)
+for client-specific Claude Code/Codex/Antigravity guidance and the rationale for this policy.
+
+### Memory and edit policy
+
+* **Memories are an index, not a source.** `.serena/memories/` holds only pointers into
   `CLAUDE.md`, this file and `docs/`, plus Serena-specific notes. Do not copy invariants,
   command lists, package maps or version pins into a memory. When a memory disagrees with
-  the repository docs, the docs win; fix the memory.
-* **Symbol edits pass the same gates.** Edits made with `replace_symbol_body`,
-  `rename_symbol` or `replace_in_files` get the same verification as any other change
-  ([`CLAUDE.md` § 3](./CLAUDE.md#3-working-loop)). Review the diff before you finish.
+  repository docs, the docs win; fix the memory.
+* **Serena edits pass the same gates.** Edits made with `replace_symbol_body`,
+  `rename_symbol` or `replace_content` get the same verification as any other change
+  ([`CLAUDE.md` § 3](./CLAUDE.md#3-working-loop)). Review the diff before finishing.
 
 ---
 
