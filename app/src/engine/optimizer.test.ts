@@ -4,6 +4,8 @@ import { ENRICHED_TEMPLATES } from './templates';
 import { resolveHealthPlanningPolicy } from './healthPlanningPolicy';
 import type { FatigueState, SessionHistoryEntry, SessionTemplate, UserContext, UserPreferences, WeeklyObjective } from './models';
 import type { ResolvedAvailability } from './schedule';
+import type { CoverageState } from './coverage';
+import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 
 const DEFAULT_FATIGUE: FatigueState = {
     lastUpdatedDate: '2026-03-01',
@@ -127,6 +129,66 @@ describe('optimizer — preferred modality and safe strength fallback (#736)', (
         expect(ranked.accepted[0].template.id).toBe(strength.id);
         expect(ranked.accepted.find(item => item.template.id === strength.id)?.benefitScore)
             .toBeCloseTo(withoutPreferredAlternative.accepted[0].benefitScore);
+    });
+
+    it('ranks spinal-safe strength as degraded support while leaving primary strength open', () => {
+        const fallback = candidate('str_low_load_maint_01');
+        const cycling = candidate('end_easy_01');
+        const coverageState: CoverageState = {
+            asOfDate: '2026-03-05',
+            phase: 'general',
+            activeBlockId: 'block_general',
+            coverageSetId: 'evergreen_general',
+            descriptor: EVERGREEN_GENERAL_COVERAGE_SET,
+            requirements: [{
+                id: 'coverage_block_general_primary_strength_0',
+                key: 'primary_strength',
+                label: 'Primary full-body strength',
+                requirement: 'required',
+                minimumSessions: 1,
+                targetSessions: 1,
+                completedSessions: 0,
+                projectedSessions: 0,
+                priority: 'must_have',
+                rollingWindowDays: 7,
+                windowStart: '2026-02-26',
+                windowEnd: '2026-03-11',
+                credits: [],
+            }],
+        };
+        const strengthObjective: WeeklyObjective = {
+            id: 'strength-reentry',
+            key: 'strength_development',
+            title: 'Strength development',
+            targetExposures: 1,
+            completedExposures: 0,
+            targetStimulus: { maxStrength: 0.6, hypertrophy: 0.4 },
+        };
+        const preferences = { ...DEFAULT_PREFERENCES, preferredModalities: ['Cycling', 'Strength'] };
+        const guarded = rankCandidates(
+            [cycling, fallback],
+            [strengthObjective],
+            DEFAULT_FATIGUE,
+            DEFAULT_AVAILABILITY,
+            [],
+            preferences,
+            { date: '2026-03-05', coverageState, guardrails: ['avoid_heavy_spinal_loading'] },
+        );
+        const fallbackRank = guarded.accepted.find(item => item.template.id === fallback.id);
+        expect(fallbackRank?.coverageNeedTier).toBe(2);
+        expect(fallbackRank?.rationale).toContain('exact primary-strength role remains open');
+        expect(guarded.accepted[0].template.id).toBe(fallback.id);
+
+        const unguarded = rankCandidates(
+            [cycling, fallback],
+            [strengthObjective],
+            DEFAULT_FATIGUE,
+            DEFAULT_AVAILABILITY,
+            [],
+            preferences,
+            { date: '2026-03-05', coverageState, guardrails: [] },
+        );
+        expect(unguarded.accepted.find(item => item.template.id === fallback.id)?.coverageNeedTier).toBe(3);
     });
 
     it('excludes adjacent-day strength across upper, full-body, and low-load maintenance templates', () => {
