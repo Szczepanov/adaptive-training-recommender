@@ -149,6 +149,14 @@ settled state. The exact tier-2 calibration is registered under ADR-0033 as the 
 heuristic `policy.optimizer.symptom_compatible_strength_support_v1`; it is not a clinical
 or physiological-equivalence claim.
 
+`rankCandidates` normally places an unmet exact `primary_strength` minimum in the
+highest coverage-need tier. When that is the candidate's only urgent role, a
+`Full-body Strength` or `Lower-body Strength` candidate loses that day's coverage
+urgency at combined lower-body fatigue ≥ 0.6. Its exact role credit remains open for
+a later feasible date. Upper-body strength and the planner's exact reserved-role
+filter are unchanged. The threshold and deferral are registered product policy under
+ADR-0033; they do not infer tissue damage from soreness.
+
 Authored travel blocks scale planned dose through `applyPlanningOverlays` across
 structured, demand-derived, and evergreen paths. Fixed activities retain schedule
 ownership and constrain availability before candidates are selected.
@@ -669,7 +677,11 @@ planned intensity gate      hard-class candidates require adequate plan intensit
 dated recovery constraints  quality spacing, rolling hard caps, anchor protection,
                             prior session's own declared recovery window (RECOVERY_WINDOW_UNELAPSED)
         ↓
-lexicographic priority      objective/timing benefit outranks preference
+coverage-need tier          exact required role urgency; residual lower-body
+                            fatigue may defer heavy-lower primary strength
+        ↓
+lexicographic priority      recovery placement and objective/timing benefit
+                            outrank preference
         ↓
 utility score & cost        dimensional interference & preference multipliers
 ```
@@ -817,6 +829,24 @@ Forecast recommendations never mutate completed credit. They accumulate in
 `completedCredit + projectedCredit`, while live unresolved state ignores projected credit.
 The planner's `objectiveCredits` display is derived from the same V2 objective-credit
 function used by the live ledger, not the old `stimulusCoverage >= 0.6` model.
+
+At each forecast date, `ageCompletedObjectiveCreditForForecastDate` recomputes
+historical `completedCredit` from actual exposures in `[date − 7 days, today)` using
+the daily credit rules. It can only lower previously carried completed credit;
+prior projected stimuli are replayed so credit formerly capped by completed
+history is restored when that history expires. The compatibility exposure count
+is recomputed from completed plus projected credit. Active plan blocks select which objectives exist, while
+the historical lookback follows the live daily path across a block boundary.
+This prevents a Week-1 completion from remaining resolved throughout Week 2 after
+it has aged out. The judge harness's `objectiveResolution` tally now reflects that
+rolling expiration, so tallies from older policy versions are not directly comparable.
+
+Tomorrow's yellow and red readiness branches carry today's measured internal
+response strain after 24 hours of dimensional decay. The carried strain and each
+branch's own synthetic strain combine by dimension-wise maximum before history
+fatigue is built. Green remains the explicit fully recovered hypothetical, and a
+single mandatory recovery plan continues to use its own readiness input. Days 3+
+already decay today's strain through the forecast fatigue path.
 
 Rolling re-resolution carries that state by `WeeklyObjective.id`, never the display
 `key`: one triathlon week deliberately contains separate Swimming, Cycling, and Running

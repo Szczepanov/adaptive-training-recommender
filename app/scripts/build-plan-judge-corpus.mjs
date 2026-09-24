@@ -571,7 +571,7 @@ export function makeAllFamilies(scenarios, deliveredDoseModule, resolveDemandPro
       trainingIntentProfile: evergreenIntent(),
       preferences: userPreferences({ preferredRecoveryStyle: 'mixed' }),
     }),
-    neutral('judge_mode_travel_overlay', 'Planning mode — 3-day travel capacity/equipment constraints', { planningMode: 'travel_constraints' }, {
+    neutral('judge_mode_travel_overlay', 'Planning mode — 14-day travel capacity/equipment constraints', { planningMode: 'travel_constraints' }, {
       contextPatch: (c) => {
         c.constraints.maxTimeMinutes = 30;
         c.constraints.hasFreeWeights = false;

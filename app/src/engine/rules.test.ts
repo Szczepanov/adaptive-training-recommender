@@ -10,6 +10,8 @@ import type { DailyReadiness, UserContext, EngineObjectiveInput, SubjectiveInput
 import type { SubjectiveBaseline, SubjectiveBaselineMetric, SubjectiveMetricBaseline } from './subjectiveBaseline';
 import { createSubjectiveOnlyObjectiveInput, mapContextFromGoalsAndTrainingSettings } from './adapters';
 import { TEMPLATES_BY_ID } from './templates';
+import { computeInternalResponseStrain, decayFatigue } from './fatigue';
+import { resolveTrainingIntent } from './trainingIntent';
 
 // --- Fixtures --------------------------------------------------------------
 
@@ -408,6 +410,36 @@ describe('constraint filtering', () => {
 // --- evaluateNextDayPlan -----------------------------------------------------
 
 describe('evaluateNextDayPlan', () => {
+    it('carries measured soreness into yellow/red intent strain but leaves green and mandatory recovery untouched', async () => {
+        const todayReadiness: DailyReadiness = { subjective: greenSubjective({ soreness: 8 }), objective: quietObjective() };
+        const context = baseContext();
+        const todayRec = evaluateTraining(todayReadiness, context, '2026-08-01');
+        const scenarios = buildNextDayScenarios(todayReadiness, context, '2026-08-01', todayRec);
+        const carried = decayFatigue(computeInternalResponseStrain(todayReadiness), 24);
+        expect(scenarios.scenarios.green.carriedInternalStrain).toBeUndefined();
+        expect(scenarios.scenarios.yellow.carriedInternalStrain).toEqual(carried);
+        expect(scenarios.scenarios.red.carriedInternalStrain).toEqual(carried);
+        const provider: TrainingHistoryProvider = { reconstruct: async () => [] };
+        for (const branch of [scenarios.scenarios.yellow, scenarios.scenarios.red]) {
+            const intent = await resolveTrainingIntent('u1', [], scenarios.date, branch.readiness, 7, provider,
+                undefined, [], null, 'max', undefined, branch.carriedInternalStrain);
+            expect(intent.fatigue.internalResponseStrain.lowerBody).toBeGreaterThanOrEqual(carried.lowerBody);
+            expect(intent.fatigue.internalResponseStrain.lowerBody).toBeGreaterThanOrEqual(
+                computeInternalResponseStrain(branch.readiness).lowerBody,
+            );
+        }
+        const quietToday: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
+        const quiet = buildNextDayScenarios(quietToday, context, '2026-08-01',
+            evaluateTraining(quietToday, context, '2026-08-01'));
+        const quietIntent = await resolveTrainingIntent('u1', [], quiet.date, quiet.scenarios.yellow.readiness, 7,
+            provider, undefined, [], null, 'max', undefined, quiet.scenarios.yellow.carriedInternalStrain);
+        expect(quietIntent.fatigue.internalResponseStrain).toEqual(computeInternalResponseStrain(quiet.scenarios.yellow.readiness));
+        const painful: DailyReadiness = { subjective: greenSubjective({ painFlag: true, soreness: 8 }), objective: quietObjective() };
+        const mandatory = buildNextDayScenarios(painful, context, '2026-08-01',
+            evaluateTraining(painful, context, '2026-08-01'));
+        expect(mandatory.isSinglePlan).toBe(true);
+        expect(mandatory.scenarios.yellow.carriedInternalStrain).toBeUndefined();
+    });
     it('retains independently evaluable synthetic inputs for each scenario', () => {
         const todayReadiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
         const context = baseContext();

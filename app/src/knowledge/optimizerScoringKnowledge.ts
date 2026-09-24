@@ -22,6 +22,7 @@ export const OPTIMIZER_SCORING_CLAIM_IDS = {
     preferredModalityTodayTieBreakPolicy: 'policy.optimizer.preferred_modality_today_tiebreak_v1',
     catalogStrengthAdjacencyPolicy: 'policy.optimizer.catalog_strength_adjacency_v1',
     symptomCompatibleStrengthSupportPolicy: 'policy.optimizer.symptom_compatible_strength_support_v1',
+    residualLowerBodyStrengthDeferralPolicy: 'policy.optimizer.residual_lower_body_strength_deferral_v1',
 } as const;
 
 const OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE = 'PRODUCT-OPTIMIZER-SCORING-POLICY-V1';
@@ -38,6 +39,15 @@ export const OPTIMIZER_SCORING_SOURCES: readonly KnowledgeSource[] = [
 ];
 
 export const OPTIMIZER_SCORING_CLAIMS: readonly KnowledgeClaim[] = [
+    {
+        id: OPTIMIZER_SCORING_CLAIM_IDS.residualLowerBodyStrengthDeferralPolicy,
+        statement: 'Product candidate-selection policy v1: when combined lower-body fatigue is at least 0.6, a heavy lower-body strength candidate whose tier-0/1 urgency comes only from primary_strength is ranked at coverage tier 3. Upper-body strength and candidates advancing another required role retain their authored tier. Exact coverage credit and weekly reservations remain unchanged.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
+        applicability: { contexts: ['candidate_selection', 'week_ahead_planning'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['strength_session_ranking'], horizon: 'acute' },
+        evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['The 0.6 threshold is product ranking calibration, not a physiological injury cut-point. It does not make a candidate ineligible or grant, remove, or reserve exact weekly-role credit.'],
+        reviewedOn: '2026-09-24', version: 1,
+    },
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.fieldCatalogExplicitPreferencePolicy,
         statement: 'Product candidate-selection policy v1: an automatic catalog template marked requiresExplicitModalityPreference is ineligible unless the athlete explicitly prefers that template modality under canonical alias matching. The current marked catalog templates are Field Maintenance and Field technical/sprint-mechanics sessions.',

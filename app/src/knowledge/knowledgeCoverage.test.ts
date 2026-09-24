@@ -133,6 +133,8 @@ describe('engine knowledge coverage inventory', () => {
             'optimizer.preferred_modality_today_tiebreak': KNOWLEDGE_CLAIM_IDS.preferredModalityTodayTieBreakPolicy,
             'optimizer.catalog_strength_adjacency': KNOWLEDGE_CLAIM_IDS.catalogStrengthAdjacencyPolicy,
             'optimizer.symptom_compatible_strength_support': KNOWLEDGE_CLAIM_IDS.symptomCompatibleStrengthSupportPolicy,
+            'optimizer.residual_lower_body_strength_deferral': KNOWLEDGE_CLAIM_IDS.residualLowerBodyStrengthDeferralPolicy,
+            'forecast.next_day_branch_strain_carry': KNOWLEDGE_CLAIM_IDS.nextDayInternalStrainCarryPolicy,
         } as const;
 
         Object.entries(expectedClaims).forEach(([id, claimId]) => {
@@ -187,14 +189,14 @@ describe('engine knowledge coverage inventory', () => {
         });
     });
 
-    it('reports the post-symptom-support coverage and risk debt exactly (zero high-impact uncovered debt)', () => {
-        // Issue #675 added one partial/p1 item for the gran-fondo durability policy; the
-        // physical-work strain mapping, readiness gates and guardrails added three covered items;
-        // issue #744 adds one covered optimizer policy and one uncovered/p1 aerobic floor.
+    it('reports coverage and risk debt after the #746 strength and forecast policies', () => {
+        // Issue #675 added one partial/p1 item; #762 added three covered items;
+        // #744 added one covered optimizer policy and one uncovered/p1 aerobic floor;
+        // #746 WP1 and WP2 each add one covered product-policy item with no research debt.
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(72);
-        expect(summary.byCoverage).toEqual({ covered: 47, partial: 17, uncovered: 2, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 8, p1: 9, p2: 2, p3: 0, none: 53 });
+        expect(summary.total).toBe(74);
+        expect(summary.byCoverage).toEqual({ covered: 49, partial: 17, uncovered: 2, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 8, p1: 9, p2: 2, p3: 0, none: 55 });
         expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
     });

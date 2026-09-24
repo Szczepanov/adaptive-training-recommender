@@ -66,7 +66,7 @@ export const FAMILY_EDGES = {
   ],
   planning_modes_overlays: [
     { from: 'judge_mode_event_directed', to: 'judge_mode_evergreen', axis: 'Event directed vs Evergreen maintenance', expectedDirection: 'specificity_shift', expectedMagnitude: 'large' },
-    { from: 'judge_mode_event_directed', to: 'judge_mode_travel_overlay', axis: 'Event directed vs 3-day travel overlay', expectedDirection: 'specificity_shift', expectedMagnitude: 'large' },
+    { from: 'judge_mode_event_directed', to: 'judge_mode_travel_overlay', axis: 'Event directed vs 14-day travel constraints', expectedDirection: 'specificity_shift', expectedMagnitude: 'large' },
     { from: 'judge_mode_event_directed', to: 'judge_mode_conservative_preference', axis: 'Event directed vs High conservative bias', expectedDirection: 'less_load', expectedMagnitude: 'moderate' },
   ],
   temporal_acute_vs_persistent: [

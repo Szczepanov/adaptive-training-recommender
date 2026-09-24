@@ -24,7 +24,7 @@ import type { ResolvedAvailability } from './schedule';
 import { resolveAvailability } from './schedule';
 import { addDaysToLocalDateString, getDayDiff, getLocalDateString } from '../utils/localDate';
 import { qualifiesForObjective } from './microcycle';
-import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback, type CoverageState } from './coverage';
+import { buildCoverageState, coverageKeysForTemplate, coverageNeedTierForTemplate, resolveCoverageHistory, supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback, type CoverageState } from './coverage';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveEventTaper } from './taperPolicy';
 import { resolveInjuryRestrictions } from './injuryPolicy';
@@ -306,6 +306,8 @@ const ANCHOR_ADJACENCY_SUPPRESSION = 0.3;
  * training candidate passes the same hard gates. Recovery remains separately ranked. */
 export const UNPREFERRED_MODALITY_MULTIPLIER = 0.25;
 export const HEAVY_LOWER_BODY_STRENGTH_CATEGORIES: SessionTemplate['category'][] = ['Lower-body Strength', 'Full-body Strength'];
+/** Product ranking policy: defer urgent primary strength while residual lower-body load is high. */
+export const RESIDUAL_LOWER_BODY_STRENGTH_DEFERRAL_THRESHOLD = 0.6;
 
 /** Issue #675: keep the optimizer's durability exception on the exact same semantic
  * boundary used by demand-derived objective generation. In particular, high aerobic
@@ -1139,6 +1141,17 @@ export function rankCandidates(
         const authoredCoverageNeedTier = coverageState
             ? coverageNeedTierForTemplate(coverageState, effectiveCandidate, options.anchorRole ?? null, deferAnchorAdjacentHeavyStrength)
             : 3;
+        const primaryStrengthOnlyUrgency = Boolean(coverageState?.descriptor
+            && authoredCoverageNeedTier <= 1
+            && coverageKeysForTemplate(effectiveCandidate, coverageState.phase, coverageState.descriptor).includes('primary_strength')
+            && coverageNeedTierForTemplate({
+                ...coverageState,
+                requirements: coverageState.requirements.filter(requirement => requirement.key !== 'primary_strength'),
+            }, effectiveCandidate, options.anchorRole ?? null, deferAnchorAdjacentHeavyStrength) > 1);
+        const primaryStrengthDeferred = primaryStrengthOnlyUrgency
+            && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category)
+            && fatigueState.combinedFatigue.lowerBody >= RESIDUAL_LOWER_BODY_STRENGTH_DEFERRAL_THRESHOLD;
+        const fatigueAdjustedCoverageNeedTier = primaryStrengthDeferred ? 3 : authoredCoverageNeedTier;
         const symptomCompatibleStrengthSupport = coverageState
             ? supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback(
                 coverageState,
@@ -1151,9 +1164,9 @@ export function rankCandidates(
         // can preserve resistance exposure ahead of unrelated discretionary work while the
         // true primary-strength occurrence remains open for a later feasible date.
         const supportAdjustedCoverageNeedTier: 0 | 1 | 2 | 3 =
-            symptomCompatibleStrengthSupport && authoredCoverageNeedTier > 2
+            symptomCompatibleStrengthSupport && fatigueAdjustedCoverageNeedTier > 2
                 ? 2
-                : authoredCoverageNeedTier;
+                : fatigueAdjustedCoverageNeedTier;
         const recoveryPlacementTier = options.recoveryPlacementState
             ? recoveryNeedTierForCandidate(template, options.recoveryPlacementState)
             : undefined;
@@ -1392,6 +1405,9 @@ export function rankCandidates(
             rationale += ' (Eligible for proactive weekly recovery placement.)';
         } else if (coverageNeedTier <= 1) {
             rationale += ' (Advances an explicit required weekly programming role.)';
+        }
+        if (primaryStrengthDeferred) {
+            rationale += ` (Primary strength deferred: residual lower-body fatigue ${fatigueState.combinedFatigue.lowerBody.toFixed(2)} meets the ${RESIDUAL_LOWER_BODY_STRENGTH_DEFERRAL_THRESHOLD.toFixed(2)} threshold; exact coverage credit remains available later.)`;
         }
         if (symptomCompatibleStrengthSupport) {
             rationale += ' (Symptom-compatible strength support: preserves resistance exposure while the exact primary-strength role remains open and receives no exact weekly-role credit.)';
