@@ -69,9 +69,16 @@ def test_window_duration_computes_sum_of_durations() -> None:
     assert window_duration(windows) == 15.0
 
 
+def test_window_duration_empty_windows() -> None:
+    assert window_duration(()) == 0.0
+
+
 def test_window_duration_ignores_negative_durations() -> None:
-    windows = ((_START + timedelta(seconds=10), _START),)
-    assert window_duration(windows) == 0.0
+    windows = (
+        (_START + timedelta(seconds=10), _START),
+        (_START, _START + timedelta(seconds=15)),
+    )
+    assert window_duration(windows) == 15.0
 
 
 def test_in_windows_checks_inclusion_correctly() -> None:
