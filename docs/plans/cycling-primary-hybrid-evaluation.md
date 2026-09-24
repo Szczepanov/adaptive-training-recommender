@@ -62,11 +62,11 @@ medical timeline, measurements or actual event date is committed.
 
 ## H1 — Delivered coverage
 
-`personaSuite.mjs` already contained five evergreen hybrid cases covering normal/adverse
+`personaSuite.mjs` already contains five evergreen hybrid cases covering normal/adverse
 recovery, local tissue conflict despite favorable wearables, today's strength preference,
-and a short time window. These remain unchanged in the active 9-family/30-case suite.
+and a short time window. These remain unchanged in the active 10-family/36-case suite.
 
-`hybridScenarioFamilies.mjs` adds two opt-in families with seven cases, all using the same
+`hybridScenarioFamilies.mjs` adds three opt-in families with eleven cases, all using the same
 persona identity and a matched synthetic 28-day history: 16 cycling exposures at 80 minutes
 and eight strength exposures at 50 minutes, totaling 1,680 minutes (seven hours/week).
 The history is identical across perturbations; available time and current capacity are
@@ -76,12 +76,13 @@ different inputs. The existing active history is not silently rewritten.
 |---|---|---|
 | `persona_hybrid_capacity_equipment` | Reference; 180-minute availability; 90-minute weekdays/20-minute weekend stress; outdoor bicycle without indoor bike | Does the plan respect actual windows/access while retaining useful cycling and strength? Does extra time invent additional capacity? |
 | `persona_hybrid_event_lifecycle` | A-event build; same build/adverse recovery; explicitly authored 14-day taper | Does the same athlete enter the real structured cycling path, preserve supporting strength, tighten for recovery and honor the taper boundary? |
+| `persona_hybrid_tissue_reentry` | Active lumbar-loading guardrail; good recovery with restriction pending re-check; explicit settled state; stacked spinal/overhead guardrails | Does local tissue authority constrain loading without erasing longer-horizon resistance exposure, and does an explicit settled state restore exact primary-strength planning? |
 
 The 20-minute weekend is a deliberately binding stress perturbation, not a statement of
 the athlete's normal weekend availability. The event and dates are synthetic. Race day is
 outside the simulated taper horizon, so race participation is not being adjudicated here.
 
-The opt-in command includes existing controls: **11 families / 37 cases**. It writes to a
+The opt-in command includes existing controls: **13 families / 47 cases**. It writes to a
 separate gitignored directory so exploration cannot overwrite reviewed active-suite
 artifacts or promote an unjudged baseline.
 
@@ -93,8 +94,8 @@ binding weekend perturbation, event objectives and taper objective changes. Ever
 case runs through `runScenario`, using the real planner.
 
 The judge is responsible for qualitative hierarchy, sequencing and adequacy questions.
-Only the seven opt-in H1 packets receive the additional authored-taper and training-settings
-facts needed to judge those contracts; the existing 30 control packets retain the reviewed
+Only the eleven opt-in hybrid packets receive the additional authored-taper and training-settings
+facts needed to judge those contracts; the existing 36 control packets retain the reviewed
 active-suite judge-visible shape. Hidden optimizer scores remain excluded.
 `deterministic-results.json` is a separate developer artifact; its modeled cost/stimulus
 and objective diagnostics are not used as an answer key.
@@ -109,6 +110,26 @@ This harness chains seven-day forecasts with synthetic completion. It is not a d
 prospective athlete trial, an AM/PM execution simulator, a nutrition model, or evidence
 that any intervention improves health/performance. Passing hard constraints is necessary
 but not sufficient for a good program.
+
+### 2026-09-24 tissue-reentry follow-up
+
+The symptom-compatible strength work from #680/#691 and #736/#741 made a low-load
+shoulder/spinal-safe strength template reachable, but exact weekly-role semantics correctly
+kept it outside `primary_strength`. That left a ranking gap: while a true primary-strength
+occurrence was unmet, the safe fallback still looked like generic tier-3 work and could be
+repeatedly displaced by cycling.
+
+The follow-up keeps exact credit strict and adds a separate degraded-support signal. When
+`primary_strength` is still below its minimum and a shoulder/spinal guardrail activates the
+catalog's `shoulder_spinal_strength` fallback, that fallback receives tier-2 weekly support
+urgency. It **does not** gain a coverage key, cannot fulfill or reserve the exact
+`primary_strength` occurrence, and therefore cannot hide a strength shortfall. Once the
+restriction is explicitly settled, normal exact primary-strength candidates compete again.
+
+The seven-day UI now summarizes the whole-horizon primary-strength allocation (planned,
+blocked, or unresolved) instead of requiring the athlete to click the one date carrying the
+allocation note. This is forecast evidence only; it does not create catch-up debt or require
+strength on the current day.
 
 ### Reproduced findings
 

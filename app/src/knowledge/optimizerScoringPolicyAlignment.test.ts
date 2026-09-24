@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { FatigueState, SessionTemplate, UserEvent, UserPreferences, WeeklyObjective } from '../engine/models';
+import type { CoverageState } from '../engine/coverage';
 import type { ResolvedAvailability } from '../engine/schedule';
+import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import {
     calculateFatigueCostPenalty,
     calculateStimulusBenefit,
@@ -231,6 +233,64 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
             recentHistory: [{ date: '2026-09-09', modality: 'Strength', category: 'Upper-body Strength', systemicCost: 0.3, lowerBodyCost: 0 }],
         });
         expect(result.rejected[0].excludedReasons).toContain('CONSECUTIVE_STRENGTH_DAYS');
+    });
+
+    it('pins symptom-compatible strength support to tier 2 without inventing exact coverage', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.symptomCompatibleStrengthSupportPolicy);
+        expect(claim.statement).toContain('coverage tier 2');
+        expect(claim.statement).toContain('never grants a coverage key');
+
+        const fallback = mockTemplate({
+            id: 'symptom-compatible-strength',
+            modality: 'Strength',
+            category: 'Full-body Strength',
+            guardrailFallbackRole: 'shoulder_spinal_strength',
+            stimulusProfile: {
+                aerobicEndurance: 0,
+                thresholdPower: 0,
+                vo2MaxPower: 0,
+                repeatedSurges: 0,
+                sprintPower: 0,
+                fatigueResistance: 0.1,
+                maxStrength: 0.45,
+                hypertrophy: 0.35,
+            },
+        });
+        const cycling = mockTemplate({ id: 'generic-cycling' });
+        const coverageState: CoverageState = {
+            asOfDate: '2026-09-10',
+            phase: 'general',
+            activeBlockId: 'block_general',
+            coverageSetId: 'evergreen_general',
+            descriptor: EVERGREEN_GENERAL_COVERAGE_SET,
+            requirements: [{
+                id: 'coverage_block_general_primary_strength_0',
+                key: 'primary_strength',
+                label: 'Primary full-body strength',
+                requirement: 'required',
+                minimumSessions: 1,
+                targetSessions: 1,
+                completedSessions: 0,
+                projectedSessions: 0,
+                priority: 'must_have',
+                rollingWindowDays: 7,
+                windowStart: '2026-09-03',
+                windowEnd: '2026-09-16',
+                credits: [],
+            }],
+        };
+        const preferences = { ...PREFERENCES, preferredModalities: ['Cycling', 'Strength'] };
+        const guarded = rankCandidates(
+            [cycling, fallback], [], mockFatigueState(), AVAILABILITY, [], preferences,
+            { date: '2026-09-10', coverageState, guardrails: ['avoid_heavy_spinal_loading'] },
+        );
+        expect(guarded.accepted.find(item => item.template.id === fallback.id)?.coverageNeedTier).toBe(2);
+
+        const unguarded = rankCandidates(
+            [cycling, fallback], [], mockFatigueState(), AVAILABILITY, [], preferences,
+            { date: '2026-09-10', coverageState, guardrails: [] },
+        );
+        expect(unguarded.accepted.find(item => item.template.id === fallback.id)?.coverageNeedTier).toBe(3);
     });
 
     it('does not exempt a nonpreferred candidate that matches an objective modality but fails its category', () => {

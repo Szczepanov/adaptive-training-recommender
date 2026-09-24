@@ -8,6 +8,8 @@ import { ENRICHED_TEMPLATES } from '../../../src/engine/templates.ts';
 import { EVENT_PRESETS } from '../../../src/engine/eventPresets.ts';
 import { resolvePlanningContext } from '../../../src/engine/planningMode.ts';
 import { evaluatePeriodizationPhase } from '../../../src/engine/periodization.ts';
+import { coverageKeysForTemplate } from '../../../src/engine/coverage.ts';
+import { EVERGREEN_GENERAL_COVERAGE_SET } from '../../../src/workouts/event-plan.ts';
 
 const families = buildPersonaFamilies({ includeHybridExpansion: true });
 const definitions = families.filter(({ familyId }) => familyId.startsWith('persona_hybrid_')).flatMap(({ cases }) => cases);
@@ -20,14 +22,14 @@ async function resultFor(definition) {
 }
 
 describe('cycling hybrid targeted evaluation', () => {
-  it('adds seven cases in two comparison families without changing the reviewed active suite', () => {
+  it('adds eleven cases in three comparison families without changing the reviewed active suite', () => {
     expect(assertPersonaFixtureIntegrity(buildPersonaFamilies())).toEqual({ familyCount: 10, caseCount: 36 });
-    expect(assertPersonaFixtureIntegrity(families)).toEqual({ familyCount: 12, caseCount: 43 });
-    expect(definitions).toHaveLength(7);
+    expect(assertPersonaFixtureIntegrity(families)).toEqual({ familyCount: 13, caseCount: 47 });
+    expect(definitions).toHaveLength(11);
     expect(new Set(definitions.map(({ persona }) => persona.personaId)).size).toBe(1);
   });
 
-  it('scopes expanded judge facts to the seven opt-in cases only', () => {
+  it('scopes expanded judge facts to the eleven opt-in cases only', () => {
     const activeDefinitions = buildPersonaFamilies().flatMap(({ cases }) => cases);
     expect(activeDefinitions.every(({ scenario }) => !shouldExposeHybridExpansionFacts(scenario, true))).toBe(true);
     expect(definitions.every(({ scenario }) => shouldExposeHybridExpansionFacts(scenario, true))).toBe(true);
@@ -103,6 +105,56 @@ describe('cycling hybrid targeted evaluation', () => {
     const weekendDates = new Set(['2026-09-05', '2026-09-06', '2026-09-12', '2026-09-13']);
     expect(reference.decisionTraces.some((trace) => weekendDates.has(trace.date) && trace.selected.durationMax > 20)).toBe(true);
     expect(short.decisionTraces.filter((trace) => weekendDates.has(trace.date)).every((trace) => trace.selected.durationMax <= 20)).toBe(true);
+  });
+
+  it('keeps tissue re-entry as counterfactual states on one existing persona', () => {
+    const reentryFamily = families.find(({ familyId }) => familyId === 'persona_hybrid_tissue_reentry');
+    expect(reentryFamily?.cases).toHaveLength(4);
+    expect(new Set(reentryFamily.cases.map(({ persona }) => persona.personaId))).toEqual(new Set(['cycling_primary_hybrid_advanced']));
+    expect(reentryFamily.cases.every(({ scenario }) => scenario.startDate === '2026-09-04')).toBe(true);
+
+    const active = find('reentry_active_back_guardrail').scenario;
+    const pending = find('reentry_pending_recheck').scenario;
+    const settled = find('reentry_settled').scenario;
+    const stacked = find('reentry_stacked_guardrail_fallback').scenario;
+    expect(active.readinessForWeek(0).subjective.painFlag).toBe(true);
+    expect(pending.readinessForWeek(0).subjective.painFlag).toBe(false);
+    expect(settled.readinessForWeek(0).subjective.painFlag).toBe(false);
+    expect(stacked.readinessForWeek(0).subjective).toEqual(pending.readinessForWeek(0).subjective);
+    expect(active.context.constraints.impliedGuardrails).toContain('avoid_heavy_spinal_loading');
+    expect(pending.context.constraints.impliedGuardrails).toContain('avoid_heavy_spinal_loading');
+    expect(settled.context.constraints.impliedGuardrails ?? []).toEqual([]);
+    expect(stacked.context.constraints.impliedGuardrails).toEqual(expect.arrayContaining([
+      'avoid_heavy_spinal_loading',
+      'avoid_overhead_pressing',
+    ]));
+  });
+
+  it('restores at least one exact primary-strength exposure after the tissue state is settled', async () => {
+    const settled = await resultFor(find('reentry_settled'));
+    const exactPrimaryStrength = settled.decisionTraces.slice(0, 7).filter((trace) => {
+      const template = ENRICHED_TEMPLATES.find(({ id }) => id === trace.selected.templateId);
+      return template && coverageKeysForTemplate(template, 'general', EVERGREEN_GENERAL_COVERAGE_SET).includes('primary_strength');
+    });
+    expect(exactPrimaryStrength.length).toBeGreaterThan(0);
+
+    // If the exact role is not already consumed by today's recommendation, the remaining
+    // weekly allocation must still expose it and ultimately fulfil it.
+    const remainingPrimaryStrength = settled.allocationReports[0].report.outcomes
+      .filter((outcome) => outcome.occurrence.coverageKey === 'primary_strength');
+    if (remainingPrimaryStrength.length > 0) {
+      expect(remainingPrimaryStrength.some((outcome) => outcome.status === 'fulfilled')).toBe(true);
+    }
+  });
+
+  it('uses low-load strength as degraded support under stacked spinal/overhead guardrails without false exact credit', async () => {
+    const guarded = await resultFor(find('reentry_stacked_guardrail_fallback'));
+    expect(guarded.decisionTraces.some((trace) => trace.selected.templateId === 'str_low_load_maint_01')).toBe(true);
+
+    const primaryStrength = guarded.allocationReports.flatMap(({ report }) => report.outcomes)
+      .filter((outcome) => outcome.occurrence.coverageKey === 'primary_strength');
+    expect(primaryStrength.length).toBeGreaterThan(0);
+    expect(primaryStrength.some((outcome) => outcome.status === 'fulfilled')).toBe(false);
   });
 
   it.each(definitions)('runs $scenario.id with real equipment and per-date duration checks', async (definition) => {

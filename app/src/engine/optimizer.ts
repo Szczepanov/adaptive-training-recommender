@@ -24,7 +24,7 @@ import type { ResolvedAvailability } from './schedule';
 import { resolveAvailability } from './schedule';
 import { addDaysToLocalDateString, getDayDiff, getLocalDateString } from '../utils/localDate';
 import { qualifiesForObjective } from './microcycle';
-import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, type CoverageState } from './coverage';
+import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback, type CoverageState } from './coverage';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveEventTaper } from './taperPolicy';
 import { resolveInjuryRestrictions } from './injuryPolicy';
@@ -1109,12 +1109,27 @@ export function rankCandidates(
         const authoredCoverageNeedTier = coverageState
             ? coverageNeedTierForTemplate(coverageState, effectiveCandidate, options.anchorRole ?? null, deferAnchorAdjacentHeavyStrength)
             : 3;
+        const symptomCompatibleStrengthSupport = coverageState
+            ? supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback(
+                coverageState,
+                effectiveCandidate,
+                options.guardrails ?? [],
+            )
+            : false;
+        // Keep exact weekly-role accounting strict: a symptom-compatible fallback never
+        // earns primary-strength coverage. It receives only tier-2 support urgency so it
+        // can preserve resistance exposure ahead of unrelated discretionary work while the
+        // true primary-strength occurrence remains open for a later feasible date.
+        const supportAdjustedCoverageNeedTier: 0 | 1 | 2 | 3 =
+            symptomCompatibleStrengthSupport && authoredCoverageNeedTier > 2
+                ? 2
+                : authoredCoverageNeedTier;
         const recoveryPlacementTier = options.recoveryPlacementState
             ? recoveryNeedTierForCandidate(template, options.recoveryPlacementState)
             : undefined;
         const coverageNeedTier = recoveryPlacementTier !== undefined
-            ? composeCoverageNeedTier(authoredCoverageNeedTier, recoveryPlacementTier)
-            : authoredCoverageNeedTier;
+            ? composeCoverageNeedTier(supportAdjustedCoverageNeedTier, recoveryPlacementTier)
+            : supportAdjustedCoverageNeedTier;
         const recoveryPreferenceTier = recoveryPreferenceTierFor(template);
 
         // Preserve the pre-#736 broad objective-match semantics for legacy event-priority
@@ -1347,6 +1362,9 @@ export function rankCandidates(
             rationale += ' (Eligible for proactive weekly recovery placement.)';
         } else if (coverageNeedTier <= 1) {
             rationale += ' (Advances an explicit required weekly programming role.)';
+        }
+        if (symptomCompatibleStrengthSupport) {
+            rationale += ' (Symptom-compatible strength support: preserves resistance exposure while the exact primary-strength role remains open and receives no exact weekly-role credit.)';
         }
         if (isDisliked(template)) rationale += ` (Soft penalty applied: modality '${template.modality}' is marked as avoided/disliked).`;
         if (healthPolicy && !focusEvent && healthPolicy.preferLowImpactAerobic

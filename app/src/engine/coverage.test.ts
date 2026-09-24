@@ -7,8 +7,10 @@ import {
     coverageKeysForExposure,
     coverageKeysForTemplate,
     coverageNeedTierForTemplate,
+    supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback,
     getUnfulfilledRequiredCoverage,
     getUnfulfilledTargetCoverage,
+    type CoverageState,
 } from './coverage';
 import type { SessionTemplate, UserEvent } from './models';
 import { addDaysToLocalDateString } from '../utils/localDate';
@@ -67,6 +69,48 @@ describe('Phase 6.2c explicit weekly coverage', () => {
         expect(coverageKeysForTemplate(walking, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).toContain('aerobic_volume');
         expect(coverageKeysForExposure({ templateId: walking.id, durationMin: 29 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).not.toContain('aerobic_volume');
         expect(coverageKeysForExposure({ templateId: walking.id, durationMin: 30 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).toContain('aerobic_volume');
+    });
+
+    it('keeps symptom-compatible low-load strength outside exact primary-strength credit', () => {
+        const fallback = ENRICHED_TEMPLATES_BY_ID.get('str_low_load_maint_01');
+        if (!fallback) throw new Error('Symptom-compatible low-load strength template missing');
+        const state: CoverageState = {
+            asOfDate: '2026-09-24',
+            phase: 'general',
+            activeBlockId: 'block_general',
+            coverageSetId: 'evergreen_general',
+            descriptor: EVERGREEN_GENERAL_COVERAGE_SET,
+            requirements: [{
+                id: 'coverage_block_general_primary_strength_0',
+                key: 'primary_strength',
+                label: 'Primary full-body strength',
+                requirement: 'required',
+                minimumSessions: 1,
+                targetSessions: 1,
+                completedSessions: 0,
+                projectedSessions: 0,
+                priority: 'must_have',
+                rollingWindowDays: 7,
+                windowStart: '2026-09-17',
+                windowEnd: '2026-09-30',
+                credits: [],
+            }],
+        };
+
+        expect(coverageKeysForTemplate(fallback, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).not.toContain('primary_strength');
+        expect(supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback(
+            state,
+            fallback,
+            ['avoid_heavy_spinal_loading'],
+        )).toBe(true);
+        expect(supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback(state, fallback, [])).toBe(false);
+
+        state.requirements[0].completedSessions = 1;
+        expect(supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback(
+            state,
+            fallback,
+            ['avoid_heavy_spinal_loading'],
+        )).toBe(false);
     });
 
     it('maps exact authored workout identity, never overlapping stimulus', () => {
