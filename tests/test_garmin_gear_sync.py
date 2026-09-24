@@ -7,7 +7,7 @@ from garmin_sync.garmin_provider import GarminProviderAdapter
 
 
 def _wrapper_with_api() -> tuple[GarminClientWrapper, MagicMock]:
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     api = MagicMock()
     wrapper.api = api
     return wrapper, api

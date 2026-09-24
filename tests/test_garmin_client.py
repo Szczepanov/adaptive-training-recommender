@@ -10,7 +10,24 @@ from garminconnect import (
     GarminConnectTooManyRequestsError,
 )
 
-from garmin_sync.garmin_client import GarminClientWrapper
+from garmin_sync.garmin_client import GarminClientConfig, GarminClientWrapper
+
+
+def test_garmin_client_config_initialization():
+    config = GarminClientConfig(
+        email="user@example.com",
+        password="password123",
+        retry_attempts=5,
+        verify_login=False,
+        allow_credential_login=True,
+    )
+    wrapper = GarminClientWrapper(config=config)
+    assert wrapper.config == config
+    assert wrapper.email == "user@example.com"
+    assert wrapper.password == "password123"
+    assert wrapper.retry_attempts == 5
+    assert wrapper.verify_login is False
+    assert wrapper.allow_credential_login is True
 
 
 def test_backfill_paces_each_wrapper_request_including_activity_pages(monkeypatch):
@@ -65,7 +82,7 @@ def test_wrapped_non_429_http_error_remains_connection_error():
 
 
 def test_get_activities_window_filters_paginated_plain_list_response():
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     wrapper.api = MagicMock()
     wrapper.api.get_activities.side_effect = [
         [
@@ -88,7 +105,7 @@ def test_get_activities_window_filters_paginated_plain_list_response():
 
 
 def test_get_activities_window_accepts_activity_list_envelope():
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     wrapper.api = MagicMock()
     wrapper.api.get_activities.side_effect = [
         {
@@ -105,7 +122,7 @@ def test_get_activities_window_accepts_activity_list_envelope():
 
 
 def test_get_activities_window_ignores_malformed_activity_entries():
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     wrapper.api = MagicMock()
     wrapper.api.get_activities.side_effect = [
         [
@@ -123,7 +140,7 @@ def test_get_activities_window_ignores_malformed_activity_entries():
 
 @pytest.mark.parametrize("response", [{"activityList": "not-a-list"}, {"other": []}, None, "bad"])
 def test_get_activities_window_ignores_malformed_response_envelopes(response):
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     wrapper.api = MagicMock()
     wrapper.api.get_activities.return_value = response
 
@@ -141,12 +158,13 @@ def test_login_success_persists_via_single_call(tmp_path):
         mock_instance = MagicMock()
         mock_garmin_cls.return_value = mock_instance
 
-        wrapper = GarminClientWrapper(
+        config = GarminClientConfig(
             email="user@example.com",
             password="secret",
             allow_credential_login=True,
             verify_login=True,
         )
+        wrapper = GarminClientWrapper(config=config)
         wrapper.login_with_tokens_or_credentials(token_file)
 
         mock_garmin_cls.assert_called_once()
@@ -164,7 +182,7 @@ def test_login_propagates_rate_limit_untouched(tmp_path):
         mock_instance.login.side_effect = GarminConnectTooManyRequestsError("rate limited")
         mock_garmin_cls.return_value = mock_instance
 
-        wrapper = GarminClientWrapper(allow_credential_login=False)
+        wrapper = GarminClientWrapper()
 
         with pytest.raises(GarminConnectTooManyRequestsError):
             wrapper.login_with_tokens_or_credentials(token_file)
@@ -183,7 +201,7 @@ def test_login_token_only_wraps_unexpected_failure_as_rebootstrap(tmp_path):
         mock_instance.login.side_effect = ValueError("no valid token and no credentials")
         mock_garmin_cls.return_value = mock_instance
 
-        wrapper = GarminClientWrapper(allow_credential_login=False)
+        wrapper = GarminClientWrapper()
 
         with pytest.raises(GarminConnectAuthenticationError, match="token_rebootstrap_required"):
             wrapper.login_with_tokens_or_credentials(token_file)
@@ -191,26 +209,27 @@ def test_login_token_only_wraps_unexpected_failure_as_rebootstrap(tmp_path):
 
 def test_login_credential_mode_requires_email_and_password(tmp_path):
     token_file = tmp_path / "garmin_tokens.json"
-    wrapper = GarminClientWrapper(email=None, password=None, allow_credential_login=True)
+    config = GarminClientConfig(email=None, password=None, allow_credential_login=True)
+    wrapper = GarminClientWrapper(config=config)
 
     with pytest.raises(RuntimeError, match="GARMIN_EMAIL"):
         wrapper.login_with_tokens_or_credentials(token_file)
 
 
 def test_get_sleep_data_unauthenticated():
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     with pytest.raises(RuntimeError, match="Garmin client is not authenticated. Call login first."):
         wrapper.get_sleep_data("2023-10-10")
 
 
 def test_get_stats_unauthenticated():
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     with pytest.raises(RuntimeError, match="Garmin client is not authenticated. Call login first."):
         wrapper.get_stats("2023-10-10")
 
 
 def test_get_spo2_data_uses_supported_garmin_method():
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     wrapper.api = MagicMock()
     wrapper.api.get_spo2_data.return_value = {
         "calendarDate": "2026-08-23",
@@ -228,7 +247,7 @@ def test_get_spo2_data_does_not_hide_dependency_contract_failure():
     class ApiWithoutSpo2:
         pass
 
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     wrapper.api = ApiWithoutSpo2()  # type: ignore[assignment]
 
     with pytest.raises(AttributeError):
@@ -240,13 +259,13 @@ def test_get_spo2_data_does_not_hide_dependency_contract_failure():
     ["get_activity_power_zones", "get_activity_hr_zones", "get_activity_splits"],
 )
 def test_activity_detail_methods_require_login(method_name):
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     with pytest.raises(RuntimeError, match="Garmin client is not authenticated"):
         getattr(wrapper, method_name)("123")
 
 
 def test_activity_detail_methods_tolerate_empty_response():
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     wrapper.api = MagicMock()
     wrapper.api.get_activity_power_in_timezones.return_value = None
     wrapper.api.get_activity_hr_in_timezones.return_value = None
@@ -258,7 +277,7 @@ def test_activity_detail_methods_tolerate_empty_response():
 
 
 def test_download_activity_original_uses_verified_upstream_enum():
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     wrapper.api = MagicMock()
     wrapper.api.download_activity.return_value = b"original-bytes"
 
@@ -269,7 +288,7 @@ def test_download_activity_original_uses_verified_upstream_enum():
 
 
 def test_download_activity_original_returns_none_only_for_not_found():
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     wrapper.api = MagicMock()
     wrapper.api.download_activity.side_effect = GarminConnectNotFoundError("not found")
 
@@ -280,7 +299,7 @@ def test_download_activity_original_returns_none_only_for_not_found():
     "error", [GarminConnectAuthenticationError("auth"), GarminConnectTooManyRequestsError("rate")]
 )
 def test_download_activity_original_preserves_operational_errors(error):
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     wrapper.api = MagicMock()
     wrapper.api.download_activity.side_effect = error
 
@@ -289,7 +308,7 @@ def test_download_activity_original_preserves_operational_errors(error):
 
 
 def test_download_activity_original_rejects_non_binary_success():
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     wrapper.api = MagicMock()
     wrapper.api.download_activity.return_value = None
 
@@ -298,7 +317,7 @@ def test_download_activity_original_rejects_non_binary_success():
 
 
 def test_body_composition_methods():
-    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper = GarminClientWrapper()
     with pytest.raises(RuntimeError, match="Garmin client is not authenticated"):
         wrapper.get_body_composition("2026-08-01", "2026-08-23")
 
