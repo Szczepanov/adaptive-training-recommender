@@ -33,8 +33,8 @@ All scripts defined in `package.json` are organized below by feature domain:
 |---|---|---|
 | `npm run check` | Pre-flight validation | Executes `typecheck`, `lint`, `test`, and `validate:workouts`. Required before builds and dev server start. |
 | `npm run typecheck` | Static type checking | Runs `tsc -b` across TypeScript project references (`tsconfig.json`, `tsconfig.app.json`, `tsconfig.node.json`). |
-| `npm run lint` | ESLint analysis | Scans TypeScript/React files for code quality, hook usage, and pattern warnings. |
-| `npm run lint:fix` | ESLint auto-fix | Automatically resolves fixable ESLint warnings and formatting issues. |
+| `npm run lint` | ESLint analysis | Scans TypeScript/React files for code quality, hook usage, and pattern warnings. Results are cached per file content under `node_modules/.cache/eslint/`, so repeat runs (pre-commit/pre-push hooks, `npm run check`) only re-lint changed files; see the note in `eslint.config.js` before adding cross-file rules. |
+| `npm run lint:fix` | ESLint auto-fix | Automatically resolves fixable ESLint warnings and formatting issues (same cache as `lint`). |
 | `npm run validate:workouts` | Workout catalog validation | Runs `scripts/validate-workouts.ts` via `node --experimental-strip-types` to ensure prescription contracts, parameter ranges, and intensity levels in `src/engine/workouts/` are valid. |
 
 > **Experimental: dual TypeScript compiler setup.** `devDependencies` currently installs two different major versions of TypeScript under `npm:` aliases:
