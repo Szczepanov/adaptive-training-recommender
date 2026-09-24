@@ -39,7 +39,9 @@ import { deriveTissueSeverity } from '../engine/injuryPolicy';
 import type { PerformedSessionComparison } from '../sessions/performedComparison';
 import type { SessionResponse, SessionResponseSourceRef } from './models';
 
-export const SESSION_OUTCOME_POLICY_VERSION = 'm5.3-outcome-v1';
+/** v2: the carried `override` step counts come from a comparison that no longer counts a
+ * warm-up set as a prescribed work set (ADR-0021 D-SETLOG); `status` is unchanged. */
+export const SESSION_OUTCOME_POLICY_VERSION = 'm5.3-outcome-v2';
 
 export type SessionOutcomeStatus = 'passed' | 'caution' | 'reactive' | 'unknown';
 

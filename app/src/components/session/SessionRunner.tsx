@@ -17,6 +17,7 @@ import { sessionDefinitionService, type SessionDefinitionHeader } from '../../se
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
 import { archivedSavedDefinitionError } from '../../sessions/sessionLaunch';
 import { getGroupProgress, targetEntriesForGroupStep } from '../../sessions/groupProgression';
+import { countsTowardPrescribedSets } from '../../sessions/workSets';
 import { stepName } from '../../sessions/stepDisplay';
 import { GroupProgress } from './GroupProgress';
 import { ChoiceCard } from './ChoiceCard';
@@ -114,7 +115,7 @@ export function resolveRestPreviewStep(
     if (!activeBlock || !activeStep) return null;
 
     const completedForActiveStep = entries.reduce(
-        (count, entry) => count + (entry.stepId === activeStep.id && entry.payload.kind !== 'choice' ? 1 : 0),
+        (count, entry) => count + (entry.stepId === activeStep.id && countsTowardPrescribedSets(entry) ? 1 : 0),
         0,
     );
     const targetForActiveStep = targetEntriesForGroupStep(activeBlock, activeStep);
@@ -588,7 +589,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const stepCompletedCounts = useMemo(() => {
         const counts = new Map<string, number>();
         for (const e of entries) {
-            if (e.stepId && e.payload.kind !== 'choice') {
+            if (e.stepId && countsTowardPrescribedSets(e)) {
                 counts.set(e.stepId, (counts.get(e.stepId) ?? 0) + 1);
             }
         }

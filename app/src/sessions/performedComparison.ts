@@ -5,6 +5,7 @@ import type {
     DurationEntryPayload,
     DistanceEntryPayload,
 } from './models';
+import { countsTowardPrescribedSets } from './workSets';
 
 export interface StepComparison {
     stepId: string;
@@ -12,8 +13,11 @@ export interface StepComparison {
     stepTitle: string;
     isOptional: boolean;
     targetSets: number;
+    /** Work sets only: warm-up sets never count toward the prescription (ADR-0021 D-SETLOG). */
     completedSets: number;
     isComplete: boolean;
+    /** Every performed entry for the step, warm-ups included (they stay visible, flagged by
+     * `isWarmup`); recorded choices excluded. */
     entries: SessionEntry[];
 }
 
@@ -26,7 +30,9 @@ export interface PerformedSessionComparison {
     missingRequiredStepsCount: number;
     stepComparisons: StepComparison[];
     summary: {
+        /** All performed reps, warm-ups included -- they are real reps. */
         totalReps: number;
+        /** Work sets only: warm-ups are excluded from tonnage (ADR-0021 D-SETLOG). */
         totalTonnageKg: number;
         totalDurationSeconds: number;
         totalDistanceMeters: number;
@@ -73,7 +79,7 @@ export function comparePlannedVsPerformed(
                 targetSets = step.dose.sets;
             }
 
-            const completedSets = stepEntries.length;
+            const completedSets = stepEntries.filter(countsTowardPrescribedSets).length;
             const isComplete = completedSets >= targetSets;
 
             if (isComplete) {
@@ -88,7 +94,7 @@ export function comparePlannedVsPerformed(
                 if (payload.kind === 'repetition') {
                     const rep = payload as RepetitionEntryPayload;
                     totalReps += rep.reps;
-                    if (rep.weightKg && rep.weightKg > 0) {
+                    if (!rep.isWarmup && rep.weightKg && rep.weightKg > 0) {
                         totalTonnageKg += rep.weightKg * rep.reps;
                     }
                 } else if (payload.kind === 'duration') {
