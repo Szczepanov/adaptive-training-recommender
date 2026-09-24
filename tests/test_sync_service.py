@@ -500,6 +500,42 @@ def test_backfill_does_not_pace_dates_skipped_via_existing_snapshot(monkeypatch)
     assert sleep_calls == []
 
 
+def test_backfill_uses_injected_sleep_fn() -> None:
+    provider = DetailFakeProvider()
+    settings = Settings(
+        app_user_id="test_uid_789",
+        garmin_backfill_delay_min_seconds=1.0,
+        garmin_backfill_delay_max_seconds=2.0,
+    )
+    repo = MagicMock()
+    repo.is_fresh.return_value = False
+    repo.get_historical_snapshots.return_value = {}
+
+    init_sleep_calls: list[float] = []
+    backfill_sleep_calls: list[float] = []
+
+    service = GarminSyncService(
+        settings=settings,
+        repository=repo,
+        provider=provider,
+        sleep_fn=lambda seconds: init_sleep_calls.append(seconds),
+    )
+
+    # Test init sleep_fn
+    assert service.backfill(start_date_str="2026-08-06", end_date_str="2026-08-08", force=True)
+    assert len(init_sleep_calls) == 2
+
+    # Test per-call backfill sleep_fn override
+    provider.fetch_daily_metrics_calls.clear()
+    assert service.backfill(
+        start_date_str="2026-08-06",
+        end_date_str="2026-08-08",
+        force=True,
+        sleep_fn=lambda seconds: backfill_sleep_calls.append(seconds),
+    )
+    assert len(backfill_sleep_calls) == 2
+
+
 def test_backfill_delay_disabled_by_default_in_directly_constructed_settings() -> None:
     """Settings() constructed directly (as every other test in this file does) defaults
     to no backfill pacing -- only _load_base_settings (the real CLI path) turns it on by

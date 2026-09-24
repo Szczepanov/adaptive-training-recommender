@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { where } from 'firebase/firestore';
 
 const firestore = vi.hoisted(() => {
     return {
@@ -600,6 +601,82 @@ describe('SessionExecutionService', () => {
                 expect(exec.executionId).toBe('exec-server-winner');
                 expect(batch.commit).toHaveBeenCalledTimes(1);
             });
+        });
+
+        describe('findExecutionByOccurrenceId', () => {
+            it('queries session_executions by occurrenceId and returns the most recent matching execution', async () => {
+                firestore.query.mockImplementation((coll, ...clauses) => ({ coll, clauses }));
+                firestore.where.mockImplementation((field, op, val) => ({ field, op, val }));
+                firestore.getDocs.mockResolvedValueOnce({
+                    docs: [
+                        {
+                            ref: { path: `users/${USER_ID}/session_executions/exec-old` },
+                            data: () => validExecution({
+                                executionId: 'exec-old',
+                                occurrenceId: 'occ-123',
+                                startedAt: '2026-08-17T10:00:00Z',
+                            }),
+                        },
+                        {
+                            ref: { path: `users/${USER_ID}/session_executions/exec-new` },
+                            data: () => validExecution({
+                                executionId: 'exec-new',
+                                occurrenceId: 'occ-123',
+                                startedAt: '2026-08-17T12:00:00Z',
+                            }),
+                        },
+                    ],
+                });
+
+                const res = await service.findExecutionByOccurrenceId(USER_ID, 'occ-123');
+
+                expect(firestore.where).toHaveBeenCalledWith('occurrenceId', '==', 'occ-123');
+                expect(res).not.toBeNull();
+                expect(res?.executionId).toBe('exec-new');
+            });
+        });
+    });
+
+    describe('findInProgressExecution', () => {
+        it('queries Firestore with state == in_progress filter and returns the most recent startedAt execution', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    {
+                        id: 'exec-older',
+                        ref: { path: `users/${USER_ID}/session_executions/exec-older` },
+                        data: () => validExecution({
+                            executionId: 'exec-older',
+                            state: 'in_progress',
+                            startedAt: '2026-08-17T09:00:00.000Z',
+                        }),
+                    },
+                    {
+                        id: 'exec-newer',
+                        ref: { path: `users/${USER_ID}/session_executions/exec-newer` },
+                        data: () => validExecution({
+                            executionId: 'exec-newer',
+                            state: 'in_progress',
+                            startedAt: '2026-08-17T10:00:00.000Z',
+                        }),
+                    },
+                ],
+            });
+
+            const result = await service.findInProgressExecution(USER_ID);
+
+            expect(firestore.query).toHaveBeenCalledWith(
+                expect.anything(),
+                where('state', '==', 'in_progress'),
+            );
+            expect(result?.executionId).toBe('exec-newer');
+        });
+
+        it('returns null when no in-progress execution exists', async () => {
+            firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+
+            const result = await service.findInProgressExecution(USER_ID);
+
+            expect(result).toBeNull();
         });
     });
 });

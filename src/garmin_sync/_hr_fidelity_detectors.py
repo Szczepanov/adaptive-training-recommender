@@ -231,21 +231,6 @@ def _nearby(
     )
 
 
-def _has_persistent_context(
-    before: list[FitRecordSample],
-    after: list[FitRecordSample],
-    policy: ArtifactPolicy,
-) -> bool:
-    if len(before) < 2 or len(after) < 2:
-        return False
-    before_duration = (record_timestamp(before[-1]) - record_timestamp(before[0])).total_seconds()
-    after_duration = (record_timestamp(after[-1]) - record_timestamp(after[0])).total_seconds()
-    return (
-        before_duration >= policy.abrupt_persistence_seconds
-        and after_duration >= policy.abrupt_persistence_seconds
-    )
-
-
 def _hr_values(records: list[FitRecordSample]) -> list[float]:
     values = [record.heart_rate_bpm for record in records if record.heart_rate_bpm is not None]
     assert values

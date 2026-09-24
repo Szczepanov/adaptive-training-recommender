@@ -1,4 +1,4 @@
-from garmin_sync.presence_filter import validate_co_presence
+from garmin_sync.presence_filter import PresenceFilterConfig, validate_co_presence
 
 
 def test_co_presence_concordant_match() -> None:
@@ -182,3 +182,38 @@ def test_calculate_session_overlap_minutes_invalid_inputs() -> None:
         )
         == 0
     )
+
+
+def test_co_presence_custom_config() -> None:
+    garmin_snap = {
+        "raw": {
+            "restingHr": 44,
+            "sleep": {"startTimeGmt": "2026-08-27T22:30:00Z", "endTimeGmt": "2026-08-28T06:30:00Z"},
+        }
+    }
+    eight_bundle = {
+        "observations": [
+            {"metric": "daily_resting_heart_rate_bpm", "value": 50.0},
+            {
+                "metric": "sleep_duration_seconds",
+                "observedStart": "2026-08-27T22:45:00Z",
+                "observedEnd": "2026-08-28T06:15:00Z",
+            },
+        ]
+    }
+
+    # Strict config with max_rhr_delta_bpm = 5.0 (delta is 6.0 bpm) -> DISCORDANT_SECONDARY
+    strict_config = PresenceFilterConfig(max_rhr_delta_bpm=5.0)
+    verdict_strict = validate_co_presence(
+        garmin_snap, eight_bundle, athlete_rhr_28d_median=44.0, config=strict_config
+    )
+    assert verdict_strict.verifiedAthlete is False
+    assert verdict_strict.concordanceStatus == "DISCORDANT_SECONDARY"
+
+    # Lenient config with max_rhr_delta_bpm = 10.0 (delta is 6.0 bpm) -> CONCORDANT
+    lenient_config = PresenceFilterConfig(max_rhr_delta_bpm=10.0)
+    verdict_lenient = validate_co_presence(
+        garmin_snap, eight_bundle, athlete_rhr_28d_median=44.0, config=lenient_config
+    )
+    assert verdict_lenient.verifiedAthlete is True
+    assert verdict_lenient.concordanceStatus == "CONCORDANT"

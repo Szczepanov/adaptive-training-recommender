@@ -3,6 +3,7 @@ import random
 import re
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Protocol, cast
 
@@ -55,28 +56,33 @@ class GarminDataClient(Protocol):
     def get_nutrition_daily_meals(self, date_iso: str) -> dict[str, Any]: ...
 
 
+@dataclass(frozen=True)
+class GarminClientConfig:
+    email: str | None = None
+    password: str | None = None
+    prompt_mfa: Callable[[], str] | None = None
+    retry_attempts: int = 3
+    retry_min_wait: float = 1.0
+    retry_max_wait: float = 10.0
+    verify_login: bool = True
+    allow_credential_login: bool = False
+
+
 class GarminClientWrapper:
     """Wrapper around garminconnect.Garmin supporting token-only auth and paginated activity windows."""
 
-    def __init__(
-        self,
-        email: str | None = None,
-        password: str | None = None,
-        prompt_mfa: Callable[[], str] | None = None,
-        retry_attempts: int = 3,
-        retry_min_wait: float = 1.0,
-        retry_max_wait: float = 10.0,
-        verify_login: bool = True,
-        allow_credential_login: bool = False,
-    ):
-        self.email = email if allow_credential_login else None
-        self.password = password if allow_credential_login else None
-        self.prompt_mfa = prompt_mfa
-        self.retry_attempts = retry_attempts
-        self.retry_min_wait = retry_min_wait
-        self.retry_max_wait = retry_max_wait
-        self.verify_login = verify_login
-        self.allow_credential_login = allow_credential_login
+    def __init__(self, config: GarminClientConfig | None = None):
+        if config is None:
+            config = GarminClientConfig()
+        self.config = config
+        self.email = config.email if config.allow_credential_login else None
+        self.password = config.password if config.allow_credential_login else None
+        self.prompt_mfa = config.prompt_mfa
+        self.retry_attempts = config.retry_attempts
+        self.retry_min_wait = config.retry_min_wait
+        self.retry_max_wait = config.retry_max_wait
+        self.verify_login = config.verify_login
+        self.allow_credential_login = config.allow_credential_login
         self.api: Garmin | None = None
         self._backfill_pace: tuple[float, float] | None = None
         self._last_backfill_request: float | None = None

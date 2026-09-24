@@ -604,16 +604,17 @@ def run_probe_nutrition_cmd(args: list[str] | None = None) -> int:
         load_dotenv()
         settings = load_settings()
         from .dates import get_date_string, local_today, n_days_ago
-        from .garmin_client import GarminClientWrapper
+        from .garmin_client import GarminClientConfig, GarminClientWrapper
         from .garmin_provider import GarminProviderAdapter
 
-        client = GarminClientWrapper(
+        config = GarminClientConfig(
             retry_attempts=settings.garmin_retry_attempts,
             retry_min_wait=settings.garmin_retry_min_wait,
             retry_max_wait=settings.garmin_retry_max_wait,
             verify_login=settings.garmin_verify_login,
             allow_credential_login=False,
         )
+        client = GarminClientWrapper(config=config)
         client.login_with_tokens_or_credentials(settings.garmin_token_path)
         adapter = GarminProviderAdapter(client=client)
 
@@ -1262,7 +1263,8 @@ def run_export_activities_cmd(args: list[str] | None = None) -> int:
         return 1
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """Build and return the argument parser for the CLI."""
     parser = argparse.ArgumentParser(description="Garmin Sync Pipeline CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -1430,47 +1432,58 @@ def main() -> int:
     probe_nutrition_parser.add_argument("--date", type=str, default=None)
     probe_nutrition_parser.add_argument("--days", type=int, default=3)
 
-    args = parser.parse_args()
+    return parser
 
-    if args.command == "export-activities":
-        return run_export_activities_cmd(sys.argv[2:])
-    if args.command == "sync":
-        return run_daily_sync(sys.argv[2:])
-    if args.command == "sync-all":
-        return run_daily_sync_all(sys.argv[2:])
-    if args.command == "backfill":
-        return run_backfill(sys.argv[2:])
-    if args.command == "backfill-health":
-        return run_backfill_health_cmd(sys.argv[2:])
-    if args.command == "compare-transports":
-        return run_compare_transports_cmd(sys.argv[2:])
-    if args.command == "audit-multisource":
-        return run_audit_multisource_cmd(sys.argv[2:])
-    if args.command == "backfill-eight-sleep-direct":
-        return run_backfill_eight_sleep_direct_cmd(sys.argv[2:])
-    if args.command == "compare-eight-sleep-transports":
-        return run_compare_eight_sleep_transports_cmd(sys.argv[2:])
-    if args.command == "export-identity-replay":
-        return run_export_identity_replay_cmd(sys.argv[2:])
-    if args.command == "audit":
-        return run_audit_cmd(sys.argv[2:])
-    if args.command == "rebuild":
-        return run_rebuild_cmd(sys.argv[2:])
-    if args.command == "probe-health":
-        return run_probe_health_cmd(sys.argv[2:])
-    if args.command == "probe-nutrition":
-        return run_probe_nutrition_cmd(sys.argv[2:])
-    if args.command == "push-workout":
-        return run_push_workout_cmd(sys.argv[2:])
-    if args.command == "push-pending-workouts":
-        return run_push_pending_workouts_cmd(sys.argv[2:])
-    if args.command == "push-pending-workouts-all":
-        return run_push_pending_workouts_all_cmd(sys.argv[2:])
-    if args.command == "poll-manual-sync":
-        return run_poll_manual_sync_cmd(sys.argv[2:])
-    if args.command == "poll-manual-sync-all":
-        return run_poll_manual_sync_all_cmd(sys.argv[2:])
+
+def dispatch_command(command: str) -> int:
+    """Dispatch the given command string to the corresponding handler."""
+    args_list = sys.argv[2:]
+    if command == "export-activities":
+        return run_export_activities_cmd(args_list)
+    if command == "sync":
+        return run_daily_sync(args_list)
+    if command == "sync-all":
+        return run_daily_sync_all(args_list)
+    if command == "backfill":
+        return run_backfill(args_list)
+    if command == "backfill-health":
+        return run_backfill_health_cmd(args_list)
+    if command == "compare-transports":
+        return run_compare_transports_cmd(args_list)
+    if command == "audit-multisource":
+        return run_audit_multisource_cmd(args_list)
+    if command == "backfill-eight-sleep-direct":
+        return run_backfill_eight_sleep_direct_cmd(args_list)
+    if command == "compare-eight-sleep-transports":
+        return run_compare_eight_sleep_transports_cmd(args_list)
+    if command == "export-identity-replay":
+        return run_export_identity_replay_cmd(args_list)
+    if command == "audit":
+        return run_audit_cmd(args_list)
+    if command == "rebuild":
+        return run_rebuild_cmd(args_list)
+    if command == "probe-health":
+        return run_probe_health_cmd(args_list)
+    if command == "probe-nutrition":
+        return run_probe_nutrition_cmd(args_list)
+    if command == "push-workout":
+        return run_push_workout_cmd(args_list)
+    if command == "push-pending-workouts":
+        return run_push_pending_workouts_cmd(args_list)
+    if command == "push-pending-workouts-all":
+        return run_push_pending_workouts_all_cmd(args_list)
+    if command == "poll-manual-sync":
+        return run_poll_manual_sync_cmd(args_list)
+    if command == "poll-manual-sync-all":
+        return run_poll_manual_sync_all_cmd(args_list)
     return 1
+
+
+def main() -> int:
+    """Main CLI entrypoint."""
+    parser = build_parser()
+    args = parser.parse_args()
+    return dispatch_command(args.command)
 
 
 if __name__ == "__main__":
