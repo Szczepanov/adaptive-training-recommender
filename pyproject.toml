@@ -49,7 +49,7 @@ ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 
 [tool.mypy]
 python_version = "3.14"
-files = ["src/garmin_sync"]
+files = ["src/garmin_sync", "scripts"]
 disallow_untyped_defs = true
 check_untyped_defs = true
 ignore_missing_imports = true

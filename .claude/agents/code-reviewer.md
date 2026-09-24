@@ -36,7 +36,7 @@ Run what the change touches; state what you ran, where, and the exit code. Say p
 - TypeScript: `cd app && npm run typecheck`, `npm run lint`, targeted `npx vitest run <paths>`.
 - Engine/policy: `make simulate`, `cd app && npm run simulate:plan-judge`, the policy-drift check.
 - Knowledge: `cd app && npm run validate:knowledge && npm run validate:knowledge-coverage`.
-- Python: `uv run ruff check`, `uv run mypy src/garmin_sync`, targeted `uv run pytest`.
+- Python: `uv run ruff check`, `uv run mypy`, targeted `uv run pytest`.
 - Firestore rules: `cd app && npm run test:rules` (needs emulator + Java).
 
 ## Report format

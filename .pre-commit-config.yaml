@@ -54,13 +54,15 @@ repos:
     hooks:
       # Python static typing.
       #
-      # Run only when garmin_sync or its configuration changes.
+      # Scope comes from [tool.mypy] files in pyproject.toml (src/garmin_sync and
+      # scripts/), shared with `make typecheck-python` and CI. Run only when a checked
+      # file or its configuration changes.
       - id: mypy
-        name: mypy (garmin_sync)
-        entry: uv run --locked mypy src/garmin_sync
+        name: mypy (garmin_sync + scripts)
+        entry: uv run --locked mypy
         language: system
         pass_filenames: false
-        files: '^(src/garmin_sync/.*\.py|pyproject\.toml)$'
+        files: '^(src/garmin_sync/.*\.py|scripts/[^/]*\.py|pyproject\.toml)$'
 
       # Domain-specific architecture rule.
       - id: no-utc-iso-string-in-engine

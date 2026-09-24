@@ -65,7 +65,7 @@ policy-alignment test (ADR-0033). Do not add one silently.
   for IO, and only as a lazily-imported default when the caller injected no provider
   (`trainingHistory.ts` in TypeScript, `provider.py` in Python). Follow that pattern rather
   than importing a service into an evaluator.
-- Python: type hints everywhere; `mypy src/garmin_sync` must stay clean.
+- Python: type hints everywhere; `uv run mypy` (`src/garmin_sync` + `scripts/`) must stay clean.
 - Tests use synthetic fixtures (`tests/fixtures/`). Never call a live API from a test.
 - Reference symbols in docs and commit messages, never line numbers (§5).
 

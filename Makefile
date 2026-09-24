@@ -99,9 +99,9 @@ format-python:
 	uv run ruff format .
 	uv run ruff check --fix .
 
-## Run static type checking with mypy on backend source
+## Run static type checking with mypy (scope: [tool.mypy] files in pyproject.toml)
 typecheck-python:
-	uv run mypy src/garmin_sync
+	uv run mypy
 
 ## Run backend unit tests with pytest
 test-python:

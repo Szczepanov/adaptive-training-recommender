@@ -36,7 +36,9 @@ def _mfa_prompt() -> Callable[[], str]:
     return lambda: input("Garmin MFA code: ")
 
 
-def bootstrap(bucket_name: str | None = None, object_name: str = "garmin/garmin_tokens.json"):
+def bootstrap(
+    bucket_name: str | None = None, object_name: str = "garmin/garmin_tokens.json"
+) -> None:
     settings = load_settings()
     local_file = Path(settings.garmin_token_path).expanduser().resolve()
 
@@ -69,7 +71,7 @@ def bootstrap(bucket_name: str | None = None, object_name: str = "garmin/garmin_
     print("Token bootstrap completed successfully!")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Bootstrap Garmin OAuth tokens to GCS.")
     parser.add_argument(
         "--bucket", type=str, default=None, help="GCS bucket name for token storage"

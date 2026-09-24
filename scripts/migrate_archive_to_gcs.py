@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from google.cloud import storage
+from google.cloud import storage  # type: ignore[attr-defined]
 
 from garmin_sync.config import load_settings
 
@@ -61,7 +61,7 @@ def migrate_file(
     return rel_path, True, None
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Migrate local archive to GCS.")
     parser.add_argument(
         "--bucket",

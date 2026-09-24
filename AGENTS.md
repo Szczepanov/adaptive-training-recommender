@@ -64,7 +64,8 @@ Full statements, with rationale and the checks that enforce them, are in
 * `uv run pytest` — unit tests
 * `uv run ruff check .` — lint and import sort
 * `uv run ruff format --check .` — formatting check (`uv run ruff format .` to apply)
-* `uv run mypy src/garmin_sync` — static type check
+* `uv run mypy` — static type check of `src/garmin_sync` and `scripts/` (scope set by `[tool.mypy] files`
+  in `pyproject.toml`; passing a path explicitly narrows it)
 * `uv run python scripts/bootstrap_garmin_tokens.py` — Garmin OAuth token bootstrap
 * `uv run python scripts/respiration_baseline_evidence.py` — synthetic respiration baseline sweep (ADR-0024)
 
@@ -117,7 +118,7 @@ fails the PR if any required job on that path fails.
 | Change class | Job | Gates on |
 |---|---|---|
 | Docs-only | Documentation & security hygiene | repository-hygiene `pre-commit` checks (the CI job skips the code-only uv-lock/Ruff/mypy/ESLint hooks) |
-| Code | Python test suite | `uv lock --check`, repository-hygiene `pre-commit`, `ruff check`, `ruff format --check`, `mypy src/garmin_sync`, `pytest` with coverage, `uvx pip-audit` |
+| Code | Python test suite | `uv lock --check`, repository-hygiene `pre-commit`, `ruff check`, `ruff format --check`, `mypy` (`src/garmin_sync` + `scripts/`), `pytest` with coverage, `uvx pip-audit` |
 | Code | Frontend hygiene & static gates | `npm audit --audit-level=high`, `typecheck`, `lint`, `validate:knowledge`, `validate:knowledge-coverage`, `validate:knowledge-freshness` (reports only, non-blocking), `validate:workouts`, policy-version drift vs the PR base, `build:bundle` |
 | Code | Frontend unit tests, Firestore rules & browser E2E | `npm run test:coverage`, `npm run test:rules`, `npm run test:e2e` (emulators + Java + Chromium), run as parallel jobs; the rules and E2E suites are each split into two `--shard` jobs with their own emulator, and one aggregate check passes only when every job and shard passes |
 | Code | Engine simulations & AI gates | `simulate:scenarios` plus committed-baseline `git diff --exit-code`, `simulate:plan-judge`, persona corpus build; `simulate:diff` is advisory (`continue-on-error`) |
@@ -453,8 +454,8 @@ evidence/history, not the current quality bar.
 
 ## Code style & testing standards
 
-* **Python** — type hints on every module; `mypy src/garmin_sync` stays clean. Format with
-  `ruff format`; lint with `ruff check`.
+* **Python** — type hints on every module; `uv run mypy` (covering `src/garmin_sync` and
+  `scripts/`) stays clean. Format with `ruff format`; lint with `ruff check`.
 * **TypeScript** — every change must pass `tsc -b` and `eslint`. Engine evaluators stay
   pure: no Firestore, no `fetch`, no `Date.now()` in a decision path (there is none today).
   IO arrives through an injected boundary — `trainingHistory.ts` in TypeScript,
