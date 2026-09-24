@@ -54,6 +54,31 @@ export function buildHybridScenarioFamilies(hybridFamily) {
     return definition;
   }
 
+  function withReadiness(definition, subjectiveOverrides) {
+    const { scenario } = definition;
+    const readiness = structuredClone(scenario.readinessForWeek(0));
+    readiness.subjective = { ...readiness.subjective, ...subjectiveOverrides };
+    const projectedBaseline = projectedRecoveryBaseline(readiness);
+    scenario.readinessForWeek = (week = 0) => decayAcuteReadinessTowardBaseline(readiness, projectedBaseline, week * 7);
+    scenario.readinessForDate = (_date, week = 0) => decayAcuteReadinessTowardBaseline(readiness, projectedBaseline, week * 7);
+    return definition;
+  }
+
+  function withGuardrails(definition, guardrails) {
+    const { scenario } = definition;
+    scenario.context.constraints.impliedGuardrails = [...guardrails];
+    for (const key of Object.keys(scenario.context.trainingSettings.guardrails)) {
+      scenario.context.trainingSettings.guardrails[key] = guardrails.includes(key);
+    }
+    return definition;
+  }
+
+  function asReentryState(definition) {
+    definition.scenario.startDate = '2026-09-04';
+    definition.scenario.tags = [...definition.scenario.tags, 'tissue-reentry'];
+    return definition;
+  }
+
   const reference = makeCase('capacity_reference', 'Hybrid capacity — reference availability');
   const moreTime = withCapacity(makeCase('more_time', 'Hybrid capacity — more time, unchanged observed training'), 180, 180);
   const shortWeekends = withCapacity(makeCase('short_weekends', 'Hybrid capacity — 90-minute weekdays, 20-minute weekend stress case'), 90, 20);
@@ -61,6 +86,27 @@ export function buildHybridScenarioFamilies(hybridFamily) {
   outdoorOnly.scenario.context.constraints.hasIndoorBike = false;
   outdoorOnly.scenario.context.trainingSettings.equipment.indoor_bike = false;
   outdoorOnly.persona.constraintContext += ' An airbike is not modeled as indoor-bicycle access or as a source of bicycle FTP.';
+
+  // Tissue re-entry is modeled as matched counterfactual states, not as a diagnosis and
+  // not as an assumption that a future day will automatically clear symptoms. Moving the
+  // start date past the last synthetic strength exposure makes the weekly strength role
+  // genuinely open in every case while identity/history/commitment remain identical.
+  const reentryActive = asReentryState(withGuardrails(withReadiness(
+    makeCase('reentry_active_back_guardrail', 'Hybrid tissue re-entry — active lumbar-loading guardrail'),
+    { readiness: 6, fatigue: 3, soreness: 5, motivation: 8, timeAvailable: 75, painFlag: true, preferredModalityToday: 'Cycling' },
+  ), ['avoid_heavy_spinal_loading']));
+  const reentryPending = asReentryState(withGuardrails(withReadiness(
+    makeCase('reentry_pending_recheck', 'Hybrid tissue re-entry — good recovery but restriction still pending re-check'),
+    { readiness: 8, fatigue: 2, soreness: 2, motivation: 9, timeAvailable: 75, painFlag: false, preferredModalityToday: 'Cycling' },
+  ), ['avoid_heavy_spinal_loading']));
+  const reentrySettled = asReentryState(withReadiness(
+    makeCase('reentry_settled', 'Hybrid tissue re-entry — explicit settled state restores normal strength planning'),
+    { readiness: 8, fatigue: 2, soreness: 2, motivation: 9, timeAvailable: 75, painFlag: false, preferredModalityToday: 'Cycling' },
+  ));
+  const reentryStackedFallback = asReentryState(withGuardrails(withReadiness(
+    makeCase('reentry_stacked_guardrail_fallback', 'Hybrid tissue re-entry — spinal and overhead guardrails require low-load strength support'),
+    { readiness: 7, fatigue: 3, soreness: 3, motivation: 8, timeAvailable: 75, painFlag: false, preferredModalityToday: 'Strength' },
+  ), ['avoid_heavy_spinal_loading', 'avoid_overhead_pressing']));
 
   // Synthetic dates, not the athlete's actual race calendar. Keep the two-week taper
   // horizon entirely before race day, with an explicit authored taper boundary.
@@ -97,6 +143,12 @@ export function buildHybridScenarioFamilies(hybridFamily) {
       comparisonInstruction: 'Compare a cycling A-event build, the same build with adverse recovery, and an explicitly authored taper. Recovery must constrain the event plan. Retain feasible supporting strength in build; taper should remove fatigue without inventing new developmental work. The event date and authored taper boundary are synthetic explicit inputs, not inferred from the persona.',
       cases: [eventBuild, eventAdverse, eventTaper],
     },
+    {
+      familyId: 'persona_hybrid_tissue_reentry',
+      changedAxis: 'local lumbar/shoulder guardrail state after interrupted training; unchanged athlete identity, history, weekly commitment and favorable global recovery',
+      comparisonInstruction: 'Compare matched tissue-re-entry states for the same cycling-primary hybrid athlete. An active or pending local restriction must continue to constrain incompatible loading even when wearable recovery is favorable. A settled state should restore a feasible exact primary-strength opportunity. When spinal and overhead guardrails block exact full-body strength, a symptom-compatible low-load strength session may preserve resistance exposure, but it must not be credited as completion of the exact primary-strength weekly role.',
+      cases: [reentryActive, reentryPending, reentrySettled, reentryStackedFallback],
+    },
   ];
 }
 
@@ -105,9 +157,11 @@ export function assertHybridScenarioIntegrity(families, hybridFamily) {
   const expansion = families.filter(({ familyId }) => familyId.startsWith('persona_hybrid_'));
   if (!expansion.length) return;
   const expected = new Map([
-    ['persona_hybrid_capacity_equipment', 4], ['persona_hybrid_event_lifecycle', 3],
+    ['persona_hybrid_capacity_equipment', 4],
+    ['persona_hybrid_event_lifecycle', 3],
+    ['persona_hybrid_tissue_reentry', 4],
   ]);
-  if (expansion.length !== expected.size) throw new Error('Hybrid expansion requires both comparison families.');
+  if (expansion.length !== expected.size) throw new Error('Hybrid expansion requires all targeted comparison families.');
   const baseline = hybridFamily.cases.find(({ scenario }) => scenario.id === 'persona_cycling_hybrid_baseline');
   const reference = expansion.find(({ familyId }) => familyId === 'persona_hybrid_capacity_equipment')?.cases[0]?.scenario;
   for (const family of expansion) {
@@ -129,6 +183,9 @@ export function assertHybridScenarioIntegrity(families, hybridFamily) {
       if (scenario.trainingIntentProfile.planningMode !== (eventDirected ? 'event_directed' : 'evergreen')
         || (eventDirected ? scenario.event?.category !== 'cycling_event' : scenario.event !== null)) {
         throw new Error(`${scenario.id}: hybrid family planning authority mismatch.`);
+      }
+      if (family.familyId === 'persona_hybrid_tissue_reentry' && scenario.startDate !== '2026-09-04') {
+        throw new Error(`${scenario.id}: tissue-reentry cases must share the post-interruption start date.`);
       }
     }
   }
