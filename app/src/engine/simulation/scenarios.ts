@@ -231,6 +231,32 @@ function subjectiveProfileScenario(kind: SubjectiveProfileKind): AthleteScenario
     };
 }
 
+/** Issue #757 fixture: deterministic Zone 2 ride history ending the day before START_DATE. */
+function zone2RideHistory(durationMin: number, count: number): CompletedExposure[] {
+    return Array.from({ length: count }, (_, index) => {
+        const date = addDaysToLocalDateString(START_DATE, -(1 + index * 3));
+        return {
+            occurrenceKey: `scenario:aerobic-floor:${durationMin}:${date}`, date, templateId: 'end_easy_01',
+            workoutId: 'cycling_zone2_standard_01', modality: 'Cycling', category: 'Easy Endurance', stimulusConfidence: 'exact',
+            costProfile: { systemic: 0.3, cardiovascular: 0.4, lowerBody: 0.3, upperBody: 0, impactTissue: 0, neuromuscular: 0.1 },
+            trainingRecordLike: { type: 'Cycling Easy Endurance', duration_min: durationMin, training_effect: 2, intensity_tag: 'easy' },
+        };
+    });
+}
+
+function aerobicFloorScenario(id: string, label: string, historyRideMinutes: number, description: string): AthleteScenario {
+    return {
+        id, label, description,
+        context: context({ indoor_bike: true, outdoor_bike: true, free_weights: true }, ['Cycling', 'Strength'], [], { weekdayMaxMinutes: 35, weekendMaxMinutes: 35 }),
+        event: null,
+        trainingIntentProfile: evergreenProfile(['endurance', 'strength_muscle'], { minSessions: 3, targetSessions: 4, maxSessions: 5 }),
+        preferences: preferences(35, 35),
+        initialHistory: zone2RideHistory(historyRideMinutes, historyRideMinutes >= 60 ? 8 : 4),
+        startDate: START_DATE, weeks: 2, tags: ['coverage', 'aerobic-floor', 'time-cap'],
+        readinessForWeek: () => stableReadiness(),
+    };
+}
+
 export const SCENARIOS: AthleteScenario[] = [
     {
         id: 'evergreen_health_two_sessions',
@@ -695,4 +721,11 @@ export const SCENARIOS: AthleteScenario[] = [
         tags: ['adversarial', 'safety', 'cross-sport-guardrails'],
         readinessForWeek: () => stableReadiness({ readiness: 7, fatigue: 4, soreness: 4 }),
     },
+    // Issue #757: the same 35-minute evergreen cap for a novice and an established cyclist.
+    // Only the seeded 28-day history differs, so any aerobic-coverage difference is the
+    // athlete-relative floor (novice: catalog 30 min; established: 0.75 x 60 = 45 min).
+    aerobicFloorScenario('aerobic_floor_novice_35min_cap', 'Novice cyclist under a 35-minute cap (#757)', 30,
+        'Four ~30-minute Zone 2 rides in the prior 28 days keep the aerobic_volume floor at the 30-minute catalog minimum, so capped rides still earn weekly aerobic coverage.'),
+    aerobicFloorScenario('aerobic_floor_established_35min_cap', 'Established cyclist under a 35-minute cap (#757)', 60,
+        'Eight 60-minute Zone 2 rides raise the athlete floor to 45 minutes. Under the same 35-minute cap no candidate reaches it: the aerobic role is reported as a packing shortfall, and a 30-minute walk does not claim it in place of a capped ride.'),
 ];

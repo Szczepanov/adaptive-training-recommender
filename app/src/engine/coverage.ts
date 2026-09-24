@@ -1,12 +1,12 @@
 import type { CoverageSetDescriptor, CoverageSetId, EventPlanCoverageKey, EventPlanRequirement, PlanCoverageKey, PlanPhase } from '../workouts/event-plan';
 import { coverageSetFor, SEPTEMBER_CYCLING_EVENT_COVERAGE_SET } from '../workouts/event-plan';
-import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { workoutForTemplate } from '../workouts/prescription';
 import type { GuardrailKey, ObjectivePriority, SessionTemplate } from './models';
 import type { PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CoverageCreditFact, PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import type { CompletedExposure } from './trainingHistory';
+import { aerobicVolumeFloorForWorkout, type AerobicVolumeFloor } from './aerobicVolumeFloor';
 
 /**
  * Phase 6.2c / ADR-0016: physiological stimulus credit and programming-role coverage
@@ -25,6 +25,10 @@ export interface ExposureIdentity {
     /** Exact completed or projected duration. Coverage that requires a real aerobic dose
      * fails closed when this evidence is unavailable or below the catalog minimum. */
     durationMin?: number;
+    /** Upper bound of a planned (candidate or projected) prescription. Completed exposures
+     * omit it: their `durationMin` is the actual duration. Issue #757 judges a planned
+     * session against the athlete floor by the range it prescribes. */
+    durationMax?: number;
     /** True when the exposure uses a readiness-limited (`modify`-tier) easier dose rather
      * than its full prescription. Readiness-modified doses preserve aerobic maintenance
      * without claiming exact weekly `aerobic_volume` role coverage. */
@@ -71,6 +75,9 @@ export interface CoverageState {
     /** Descriptor authority used for exact identity lookup. */
     descriptor?: CoverageSetDescriptor | null;
     requirements: WeeklyCoverageRequirement[];
+    /** Issue #757: athlete-level `aerobic_volume` duration floor applied to both completed
+     * history and candidate templates. Absent means the catalog minimum. */
+    aerobicVolumeFloor?: AerobicVolumeFloor | null;
 }
 
 export interface CoverageHistoryEntry extends ExposureIdentity {
@@ -94,6 +101,7 @@ export type CoverageHistoryInput =
         templateId?: string;
         workoutId?: string;
         durationMin?: number;
+        durationMax?: number;
         isReadinessModifiedDose?: boolean;
         modality?: SessionTemplate['modality'] | string;
         category?: SessionTemplate['category'] | string;
@@ -180,6 +188,7 @@ export function coverageHistoryFromCompletedExposures(history: readonly Coverage
             ...(entry.templateId ? { templateId: entry.templateId } : {}),
             ...(entry.workoutId ? { workoutId: entry.workoutId } : {}),
             ...(durationMin !== undefined ? { durationMin } : {}),
+            ...('durationMax' in entry && typeof entry.durationMax === 'number' ? { durationMax: entry.durationMax } : {}),
             ...('isReadinessModifiedDose' in entry && entry.isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
             ...(entry.modality && entry.modality !== 'Unknown' ? { modality: entry.modality as SessionTemplate['modality'] } : {}),
             ...(entry.category ? { category: entry.category as SessionTemplate['category'] } : {}),
@@ -250,26 +259,34 @@ export function workoutIdForTemplateId(templateId: string | undefined): string |
     return workoutForTemplate(templateId)?.id;
 }
 
-function hasRequiredAerobicDose(identity: ExposureIdentity, workoutId: string): boolean {
+/** The lower bound must reach the catalog minimum, as before #757. Issue #757 adds the
+ * athlete-level floor: a completed session meets it with its actual duration, a planned
+ * one with the upper bound of its prescribed range (a capped day truncates that bound). */
+function hasRequiredAerobicDose(identity: ExposureIdentity, workoutId: string, floor?: AerobicVolumeFloor | null): boolean {
     if (identity.isReadinessModifiedDose) return false;
-    const minimumDuration = WORKOUTS_BY_ID.get(workoutId)?.duration.minimumMin;
-    return typeof minimumDuration === 'number'
-        && typeof identity.durationMin === 'number'
-        && Number.isFinite(identity.durationMin)
-        && identity.durationMin >= minimumDuration;
+    const catalogMinimum = aerobicVolumeFloorForWorkout(workoutId, null);
+    const athleteFloor = aerobicVolumeFloorForWorkout(workoutId, floor);
+    const lower = identity.durationMin;
+    if (catalogMinimum === undefined || athleteFloor === undefined
+        || typeof lower !== 'number' || !Number.isFinite(lower) || lower < catalogMinimum) return false;
+    const reach = typeof identity.durationMax === 'number' && Number.isFinite(identity.durationMax)
+        ? Math.max(lower, identity.durationMax)
+        : lower;
+    return reach >= athleteFloor;
 }
 
 export function coverageKeysForExposure(
     identity: ExposureIdentity,
     phase: PlanPhase | null,
     descriptor: CoverageSetDescriptor = SEPTEMBER_CYCLING_EVENT_COVERAGE_SET,
+    floor?: AerobicVolumeFloor | null,
 ): PlanCoverageKey[] {
     if (!phase) return [];
     const workoutId = identity.workoutId ?? workoutIdForTemplateId(identity.templateId);
     if (!workoutId) return [];
     return descriptor.coverage
         .filter(item => item.phases.includes(phase) && item.workoutIds.includes(workoutId))
-        .filter(item => item.key !== 'aerobic_volume' || hasRequiredAerobicDose(identity, workoutId))
+        .filter(item => item.key !== 'aerobic_volume' || hasRequiredAerobicDose(identity, workoutId, floor))
         .map(item => item.key);
 }
 
@@ -278,6 +295,7 @@ function canonicalCoverageKeysForExposure(
     phase: PlanPhase,
     descriptor: CoverageSetDescriptor,
     workoutId: string | undefined,
+    floor?: AerobicVolumeFloor | null,
 ): PlanCoverageKey[] | null {
     if (exposure.canonicalCoverageCredits === undefined) return null;
 
@@ -292,7 +310,7 @@ function canonicalCoverageKeysForExposure(
             // coverage-state concern so a short exact Z2 execution cannot satisfy the
             // authored aerobic-volume floor merely because its catalog id is known.
             if (key !== 'aerobic_volume') return true;
-            return workoutId !== undefined && hasRequiredAerobicDose(exposure, workoutId);
+            return workoutId !== undefined && hasRequiredAerobicDose(exposure, workoutId, floor);
         });
 
     return keys;
@@ -302,14 +320,16 @@ export function coverageKeysForTemplate(
     template: SessionTemplate & { isReadinessModifiedDose?: boolean },
     phase: PlanPhase | null,
     descriptor: CoverageSetDescriptor = SEPTEMBER_CYCLING_EVENT_COVERAGE_SET,
+    floor?: AerobicVolumeFloor | null,
 ): PlanCoverageKey[] {
     return coverageKeysForExposure({
         templateId: template.id,
         modality: template.modality,
         category: template.category,
         durationMin: template.durationMin,
+        durationMax: template.durationMax,
         ...(template.isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
-    }, phase, descriptor);
+    }, phase, descriptor, floor);
 }
 
 function laterDate(left: string, right: string): string {
@@ -362,10 +382,11 @@ export function buildCoverageState(
     asOfDate: string,
     history: readonly CoverageHistoryEntry[] = [],
     descriptor: CoverageSetDescriptor | null = planDefinition ? coverageSetFor(planDefinition.coverageSetId) : null,
+    aerobicVolumeFloor?: AerobicVolumeFloor | null,
 ): CoverageState {
     const block = activePlanBlock(planDefinition, asOfDate);
     if (!planDefinition || !block || !descriptor) {
-        return { asOfDate, phase: null, activeBlockId: null, coverageSetId: null, descriptor: null, requirements: [] };
+        return { asOfDate, phase: null, activeBlockId: null, coverageSetId: null, descriptor: null, requirements: [], aerobicVolumeFloor };
     }
 
     const rollingWindowDays = 7;
@@ -435,8 +456,8 @@ export function buildCoverageState(
         if (seenOccurrences.has(occurrenceKey)) continue;
         seenOccurrences.add(occurrenceKey);
 
-        const canonicalKeys = canonicalCoverageKeysForExposure(exposure, block.phase, descriptor, workoutId);
-        const keys = canonicalKeys ?? coverageKeysForExposure(exposure, block.phase, descriptor);
+        const canonicalKeys = canonicalCoverageKeysForExposure(exposure, block.phase, descriptor, workoutId, aerobicVolumeFloor);
+        const keys = canonicalKeys ?? coverageKeysForExposure(exposure, block.phase, descriptor, aerobicVolumeFloor);
         for (const key of keys) {
             const requirement = requirementsByKey.get(key);
             if (!requirement) continue;
@@ -461,6 +482,7 @@ export function buildCoverageState(
         coverageSetId: descriptor.id,
         descriptor,
         requirements: Array.from(requirementsByKey.values()),
+        aerobicVolumeFloor,
     };
 }
 
@@ -519,7 +541,7 @@ export function coverageNeedTierForTemplate(
     anchorRole: 'event-specific' | 'quality' | null = null,
     deferAnchorAdjacentHeavyStrength: boolean = false,
 ): 0 | 1 | 2 | 3 {
-    const keys = state.descriptor ? coverageKeysForTemplate(template, state.phase, state.descriptor) : [];
+    const keys = state.descriptor ? coverageKeysForTemplate(template, state.phase, state.descriptor, state.aerobicVolumeFloor) : [];
     if (keys.length === 0) return 3;
 
     const anchorKey: PlanCoverageKey | null = anchorRole === 'event-specific'

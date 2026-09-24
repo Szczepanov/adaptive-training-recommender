@@ -1,4 +1,5 @@
 import { coverageSetFor, type CoverageSetId, type PlanCoverageKey, type PlanPhase } from '../workouts/event-plan';
+import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
 import type { SessionTemplate } from './models';
 import { ROLLING_LOAD_BUDGET_EXCEEDED } from './rollingLoadBudget';
 import {
@@ -36,9 +37,10 @@ export interface RequiredRoleOccurrence {
 /**
  * `fulfilled` is settled on authored template identity (`occurrencesFulfilledByTemplateSelection`),
  * because allocator reservations are made before a dose is resolved. It is not a coverage-ledger
- * claim: a readiness-modified dose of an eligible template settles its occurrence here while
- * `coverage.ts` still withholds exact `aerobic_volume` credit from it. Read coverage state, not
- * this status, for whether a role's stimulus was actually delivered.
+ * claim: a readiness-modified dose of an eligible template, or a time-capped dose below the
+ * athlete-relative floor (#757), settles its occurrence here while `coverage.ts` still
+ * withholds exact `aerobic_volume` credit from it. Read coverage state, not this status, for
+ * whether a role's stimulus was actually delivered.
  */
 export type WeeklyRoleAllocationStatus = 'reserved' | 'fulfilled' | 'missed' | 'unresolved_search_budget';
 export type WeeklyRoleMissReason = 'no_exact_candidate' | 'hard_safety_or_recovery' | 'daily_ledger_capacity' | 'rolling_load_budget' | 'projected_fatigue' | 'fixed_seed' | 'no_conflict_free_date';
@@ -194,10 +196,13 @@ export function deriveRequiredRoleOccurrences(state: CoverageState): RequiredRol
 export function attachExactEligibleIdentities(
     occurrences: readonly RequiredRoleOccurrence[],
     templates: readonly SessionTemplate[],
+    /** Issue #757: the same athlete floor the coverage ledger applies, so allocation cannot
+     * settle an aerobic occurrence with a template the ledger would never credit. */
+    aerobicVolumeFloor: AerobicVolumeFloor | null = null,
 ): RequiredRoleOccurrence[] {
     return occurrences.map(occurrence => {
         const eligibleTemplateIds = templates
-            .filter(template => coverageKeysForTemplate(template, occurrence.phase, coverageSetFor(occurrence.coverageSetId)).includes(occurrence.coverageKey))
+            .filter(template => coverageKeysForTemplate(template, occurrence.phase, coverageSetFor(occurrence.coverageSetId), aerobicVolumeFloor).includes(occurrence.coverageKey))
             .map(template => template.id)
             .sort();
         return {

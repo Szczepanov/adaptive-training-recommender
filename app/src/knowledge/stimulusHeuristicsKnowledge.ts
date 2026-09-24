@@ -17,6 +17,7 @@ export const STIMULUS_HEURISTICS_CLAIM_IDS = {
     raceSpecificCreditFormulaPolicy: 'policy.stimulus.race_specific_credit_formula_v1',
     coverageThresholdPolicy: 'policy.stimulus.coverage_threshold_v1',
     legacyKeywordCreditPolicy: 'policy.stimulus.legacy_keyword_credit_v1',
+    aerobicVolumeFloorPolicy: 'policy.stimulus.aerobic_volume_athlete_relative_floor_v1',
     maxFusionPolicy: 'policy.fatigue.max_fusion_policy_v1',
     ambientStepSurgePolicy: 'policy.fatigue.ambient_step_surge_v1',
     planTierCostCeilingsPolicy: 'policy.readiness.plan_tier_cost_ceilings_v1',
@@ -93,6 +94,20 @@ export const STIMULUS_HEURISTICS_CLAIMS: readonly KnowledgeClaim[] = [
         evidence: [{ sourceId: STIMULUS_CREDIT_POLICY_SOURCE, directness: 'direct' }],
         limitations: ['Legacy keyword credit is backward-compatibility logic for workouts lacking structured stimulus profiles; it deliberately discounts unstructured free text.'],
         reviewedOn: '2026-09-02', version: 1,
+    },
+    {
+        id: STIMULUS_HEURISTICS_CLAIM_IDS.aerobicVolumeFloorPolicy,
+        statement: 'Product aerobic-volume coverage floor v1 (#757): weekly aerobic_volume coverage stays binary, and a continuous aerobic session earns exact role credit only when its duration (actual for a completed session; the upper bound of the prescribed range for a planned one, whose lower bound must still reach the catalog minimum) reaches one athlete-level floor, max(catalog minimum, 0.75 x median), rounded to the nearest 5 minutes and clamped to the catalog maximum of each workout. The median is taken over full-dose Cycling, Running, Walking and Swimming sessions of at least the 30-minute catalog minimum in the preceding 28 days, excluding readiness-modified doses; with fewer than 4 such sessions the floor stays at the catalog minimum. The same floor applies to every aerobic modality and budgets the packed aerobic_volume role; it is not clamped to the daily time cap, so an unreachable floor is reported as a packing shortfall rather than satisfied by a different modality.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'low',
+        applicability: { contexts: ['coverage_admission', 'weekly_role_credit'], sports: ['cycling', 'running', 'walking', 'endurance_multisport', 'general_physical_activity'], populations: ['app_users'], outcomes: ['aerobic_volume_coverage_credit'], horizon: 'acute' },
+        evidence: [{ sourceId: STIMULUS_CREDIT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: [
+            'Evidence does not show a sharp minimum-effective-session threshold in trained athletes; aerobic adaptation tracks accumulated volume and intensity over weeks.',
+            'The 0.75 fraction, 28-day window, 4-session minimum and 5-minute rounding are product calibration heuristics, not physiological constants.',
+            'This is a coverage-admission floor, not a claim of dose adequacy; the dose-scaled zone2_aerobic objective ledger remains separate, and converging the two ledgers (partial coverage credit) is deferred.',
+            'Applying one athlete-level floor across modalities deliberately prevents a short non-primary session from satisfying the role; it does not model modality-specific aerobic equivalence.',
+        ],
+        reviewedOn: '2026-09-24', version: 1,
     },
     {
         id: STIMULUS_HEURISTICS_CLAIM_IDS.maxFusionPolicy,

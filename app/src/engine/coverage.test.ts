@@ -15,6 +15,7 @@ import {
 import type { SessionTemplate, UserEvent } from './models';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { EVERGREEN_GENERAL_COVERAGE_SET, type EventPlanCoverageKey, type EventPlanPhase } from '../workouts/event-plan';
+import { resolveAerobicVolumeFloor, type AerobicVolumeFloor } from './aerobicVolumeFloor';
 
 function templateForCoverage(key: EventPlanCoverageKey, phase: EventPlanPhase): SessionTemplate {
     const template = ENRICHED_TEMPLATES.find(item => coverageKeysForTemplate(item, phase).includes(key));
@@ -225,5 +226,104 @@ describe('Phase 6.2c explicit weekly coverage', () => {
         expect(aerobicVolume.completedSessions).toBe(0);
         expect(coverageNeedTierForTemplate(stateAfterModifyWalk, { ...walkTemplate, durationMin: 30, isReadinessModifiedDose: true })).toBe(3);
         expect(coverageNeedTierForTemplate(stateAfterModifyWalk, { ...bikeTemplate, durationMin: 20, isReadinessModifiedDose: true })).toBe(3);
+    });
+});
+
+describe('athlete-relative aerobic_volume floor (#757)', () => {
+    const ESTABLISHED: AerobicVolumeFloor = { floorMin: 45, source: 'athlete_history', sampleCount: 8, medianMin: 60 };
+    const ride = ENRICHED_TEMPLATES_BY_ID.get('end_easy_01')!;
+    const walk = ENRICHED_TEMPLATES_BY_ID.get('end_walk_01')!;
+
+    function unmetAerobicState(aerobicVolumeFloor: AerobicVolumeFloor | null): CoverageState {
+        return {
+            asOfDate: '2026-09-24',
+            phase: 'general',
+            activeBlockId: 'block_general',
+            coverageSetId: 'evergreen_general',
+            descriptor: EVERGREEN_GENERAL_COVERAGE_SET,
+            aerobicVolumeFloor,
+            requirements: [{
+                id: 'coverage_block_general_aerobic_volume_0',
+                key: 'aerobic_volume',
+                label: 'Continuous aerobic volume',
+                requirement: 'required',
+                minimumSessions: 1,
+                targetSessions: 2,
+                completedSessions: 0,
+                projectedSessions: 0,
+                priority: 'must_have',
+                rollingWindowDays: 7,
+                windowStart: '2026-09-17',
+                windowEnd: '2026-09-30',
+                credits: [],
+            }],
+        };
+    }
+
+    it('denies a 30-min ride or walk exact credit for an established 60-min athlete, and credits 45 min', () => {
+        for (const workoutId of ['cycling_zone2_standard_01', 'walking_brisk_continuous_01']) {
+            expect(coverageKeysForExposure({ workoutId, durationMin: 30 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET, ESTABLISHED)).not.toContain('aerobic_volume');
+            expect(coverageKeysForExposure({ workoutId, durationMin: 45 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET, ESTABLISHED)).toContain('aerobic_volume');
+        }
+    });
+
+    it('keeps catalog-minimum behaviour for a new user with no history', () => {
+        const newUser = resolveAerobicVolumeFloor([], '2026-09-24');
+        for (const workoutId of ['cycling_zone2_standard_01', 'walking_brisk_continuous_01']) {
+            expect(coverageKeysForExposure({ workoutId, durationMin: 30 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET, newUser)).toContain('aerobic_volume');
+            expect(coverageKeysForExposure({ workoutId, durationMin: 29 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET, newUser)).not.toContain('aerobic_volume');
+        }
+    });
+
+    it('applies the floor to completed history in the weekly ledger', () => {
+        const planState = buildCyclingEventPlan(cyclingEvent());
+        if (planState.status !== 'AVAILABLE') throw new Error('cycling plan should be available');
+        const history = [
+            { date: '2026-09-01', workoutId: 'cycling_zone2_standard_01', durationMin: 35 },
+            { date: '2026-09-02', workoutId: 'cycling_zone2_standard_01', durationMin: 50 },
+        ];
+        const aerobic = (floor: AerobicVolumeFloor | null) => buildCoverageState(planState.data, '2026-09-03', history, undefined, floor)
+            .requirements.find(item => item.key === 'aerobic_volume')!;
+        expect(aerobic(null).completedSessions).toBe(2);
+        expect(aerobic(ESTABLISHED).completedSessions).toBe(1);
+    });
+
+    it('credits an uncapped planned ride whose prescribed range reaches the floor (review finding on #768)', () => {
+        const catalogState = unmetAerobicState(null);
+        const establishedState = unmetAerobicState(ESTABLISHED);
+        // end_easy_01 is authored 30-60 min: on an uncapped day its prescription reaches 45.
+        expect(ride.durationMin).toBe(30);
+        expect(ride.durationMax).toBeGreaterThanOrEqual(45);
+        expect(coverageNeedTierForTemplate(establishedState, ride)).toBe(coverageNeedTierForTemplate(catalogState, ride));
+        expect(coverageKeysForTemplate(ride, 'general', EVERGREEN_GENERAL_COVERAGE_SET, ESTABLISHED)).toContain('aerobic_volume');
+    });
+
+    it('credits projected picks by prescribed range but completed sessions by actual duration', () => {
+        const planState = buildCyclingEventPlan(cyclingEvent());
+        if (planState.status !== 'AVAILABLE') throw new Error('cycling plan should be available');
+        const aerobic = (entry: { durationMin: number; durationMax?: number; source?: 'projected' }) => buildCoverageState(
+            planState.data, '2026-09-03', [{ date: '2026-09-02', workoutId: 'cycling_zone2_standard_01', ...entry }], undefined, ESTABLISHED,
+        ).requirements.find(item => item.key === 'aerobic_volume')!;
+        expect(aerobic({ durationMin: 30, durationMax: 60, source: 'projected' }).projectedSessions).toBe(1);
+        expect(aerobic({ durationMin: 30, durationMax: 35, source: 'projected' }).projectedSessions).toBe(0);
+        expect(aerobic({ durationMin: 30 }).completedSessions).toBe(0);
+        // The catalog minimum still applies to the lower bound, exactly as before #757.
+        expect(aerobic({ durationMin: 20, durationMax: 60, source: 'projected' }).projectedSessions).toBe(0);
+    });
+
+    it('gives neither a capped ride nor a walk the aerobic coverage tier when the cap keeps both below the floor', () => {
+        const catalogState = unmetAerobicState(null);
+        const establishedState = unmetAerobicState(ESTABLISHED);
+        const cappedRide = { ...ride, durationMin: 30, durationMax: 35 };
+        const cappedWalk = { ...walk, durationMin: 30, durationMax: 35 };
+
+        // Catalog minimum: both earn the unmet-must-have tier, so the pre-#757 tie holds.
+        expect(coverageNeedTierForTemplate(catalogState, cappedRide)).toBe(coverageNeedTierForTemplate(catalogState, cappedWalk));
+        // Athlete floor 45: neither can claim the role, so neither wins on coverage tier and
+        // the ride is not displaced by a modality flip; the shortfall is reported by the packer.
+        const rideTier = coverageNeedTierForTemplate(establishedState, cappedRide);
+        expect(rideTier).toBe(coverageNeedTierForTemplate(establishedState, cappedWalk));
+        expect(rideTier).toBeGreaterThan(coverageNeedTierForTemplate(catalogState, cappedRide));
+        expect(coverageNeedTierForTemplate(establishedState, { ...ride, durationMin: 45 })).toBe(coverageNeedTierForTemplate(catalogState, cappedRide));
     });
 });

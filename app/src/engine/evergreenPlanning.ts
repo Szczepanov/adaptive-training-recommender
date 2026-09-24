@@ -6,16 +6,54 @@ import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import type { PhaseWeights } from './periodization';
 import { resolveAvailability } from './schedule';
 import { inferAthleteTrainingState, resolveEvidenceBackedStrategy } from './evergreenStrategy';
-import { resolveTrainingCapacity } from './trainingCapacity';
-import { EVERGREEN_PACKING_COVERAGE, packWeeklyDose, type WeeklyBudget } from './weeklyDosePacking';
+import { resolveTrainingCapacity, type ResolvedAvailabilityWindow } from './trainingCapacity';
+import { EVERGREEN_PACKING_COVERAGE, packWeeklyDose, type CoverageSetDescriptor, type PackingWarning, type WeeklyBudget } from './weeklyDosePacking';
 import { buildEvergreenPlanDefinition, type PlanDefinition } from './planSchedule';
 import { buildMicrocycleState } from './microcycle';
+import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
 
 export interface ResolvedEvergreenPlan {
     planDefinition: PlanDefinition;
     microcycle: MicrocycleState;
     budget: WeeklyBudget;
     knowledgeRefs: string[];
+}
+
+const AEROBIC_VOLUME_ROLE_ID = 'aerobic_volume';
+
+/**
+ * Issue #757: budget the `aerobic_volume` role at the athlete floor wherever some usable
+ * window can hold it. When no window can, the role keeps its catalog duration so aerobic
+ * work stays planned (the aerobic objective must not silently disappear), and an explicit
+ * shortfall states that capped sessions will not earn exact aerobic-volume coverage.
+ */
+export function aerobicPackingForFloor(
+    floor: AerobicVolumeFloor | null,
+    usableWindows: readonly ResolvedAvailabilityWindow[],
+): { descriptor: CoverageSetDescriptor; shortfall: PackingWarning | null } {
+    const role = EVERGREEN_PACKING_COVERAGE.roles.find(item => item.id === AEROBIC_VOLUME_ROLE_ID);
+    if (!floor || !role || floor.floorMin <= role.durationMinutes) {
+        return { descriptor: EVERGREEN_PACKING_COVERAGE, shortfall: null };
+    }
+    const longestWindow = Math.max(0, ...usableWindows.map(window => window.availableMinutes));
+    if (longestWindow >= floor.floorMin) {
+        return {
+            descriptor: {
+                ...EVERGREEN_PACKING_COVERAGE,
+                roles: EVERGREEN_PACKING_COVERAGE.roles.map(item =>
+                    item.id === AEROBIC_VOLUME_ROLE_ID ? { ...item, durationMinutes: floor.floorMin } : item),
+            },
+            shortfall: null,
+        };
+    }
+    return {
+        descriptor: EVERGREEN_PACKING_COVERAGE,
+        shortfall: {
+            code: 'minimum_dose_shortfall',
+            adaptation: 'aerobic_endurance',
+            message: `aerobic_endurance: the longest available window (${longestWindow} min) is below this athlete's ${floor.floorMin}-min aerobic-volume session floor; capped aerobic sessions stay planned but do not earn exact aerobic-volume coverage.`,
+        },
+    };
 }
 
 /** The sole bridge from durable evergreen inputs to an executable rolling plan. It is
@@ -37,6 +75,10 @@ export function resolveEvergreenPlan(
      * weekly packer receives `date` separately so this map cannot alter sibling dates in
      * the rolling horizon. */
     progressionOverrides: ReadonlyMap<string, number> = new Map(),
+    /** Issue #757: athlete-level floor. The `aerobic_volume` role is budgeted at the same
+     * duration the coverage ledger will demand, so an unreachable floor surfaces as an
+     * explicit packing shortfall instead of a silently dropped role. */
+    aerobicVolumeFloor: AerobicVolumeFloor | null = null,
 ): ResolvedEvergreenPlan | null {
     if (planningContext.mode !== 'evergreen' || !preferences) return null;
     const availability = Array.from({ length: Math.max(1, days) }, (_, index) => {
@@ -55,7 +97,11 @@ export function resolveEvergreenPlan(
             stateEvidence?.observedWindowDays ?? historySnapshot?.windowDays ?? 0,
         ),
     );
-    const budget = packWeeklyDose(strategy, capacity, EVERGREEN_PACKING_COVERAGE, progressionOverrides, date);
+    const aerobicPacking = aerobicPackingForFloor(aerobicVolumeFloor, capacity.usableWindows);
+    const packed = packWeeklyDose(strategy, capacity, aerobicPacking.descriptor, progressionOverrides, date);
+    const budget: WeeklyBudget = aerobicPacking.shortfall
+        ? { ...packed, shortfalls: [...packed.shortfalls, aerobicPacking.shortfall] }
+        : packed;
     const result = buildEvergreenPlanDefinition(strategy, capacity, budget, date);
     if (result.status !== 'AVAILABLE') return null;
     return {

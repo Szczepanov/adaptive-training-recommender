@@ -12,6 +12,7 @@ import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import { coverageSetFor, EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { resolveSequenceIntent, type SequenceIntentPolicy } from './sequenceIntent';
 import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS } from './rollingLoadBudget';
+import { AEROBIC_VOLUME_FLOOR_WINDOW_DAYS, CATALOG_AEROBIC_VOLUME_FLOOR, resolveAerobicVolumeFloor, type AerobicVolumeFloor } from './aerobicVolumeFloor';
 
 export type PlannedRecoveryReason =
   | 'scheduled_recovery'   // Prescribed microcycle rest day
@@ -43,6 +44,9 @@ export interface TrainingIntent {
     /** The short operational snapshot. Evergreen performance planning may attach a wider
      * `athleteStateEvidence` window, but that evidence is never replayed into `history`. */
     historySnapshot: TrainingHistorySnapshot | null;
+    /** Issue #757: the athlete-level `aerobic_volume` floor, resolved once from at least 28
+     * days of completed evidence so today, tomorrow and the forecast share one value. */
+    aerobicVolumeFloor: AerobicVolumeFloor;
     microcycle: MicrocycleState;
     /** Phase 5.6: a contributor objective dropped because it fell inadmissible during the
      *  taper authority's taper window (see periodization.ts resolveMultiEventObjectives).
@@ -241,6 +245,24 @@ export async function resolveTrainingIntent(
         };
     }
 
+    // Issue #757: the floor reuses evidence this resolution already holds and never adds a
+    // read. A caller-prepared snapshot fixes the history revision for every horizon of a
+    // refresh, so a rolling-load window fetched separately by one horizon (the week-ahead
+    // forecast) is ignored then; otherwise today and the forecast could disagree. Without
+    // evidence spanning the window, the floor fails closed to the catalog minimum.
+    const spansFloorWindow = (days: number | undefined): boolean => (days ?? 0) >= AEROBIC_VOLUME_FLOOR_WINDOW_DAYS;
+    const stateEvidence = historySnapshot?.athleteStateEvidence;
+    const aerobicFloorEvidence = stateEvidence && spansFloorWindow(stateEvidence.observedWindowDays)
+        ? stateEvidence.exposures
+        : spansFloorWindow(operationalSnapshot?.windowDays)
+            ? operationalHistory
+            : !preparedHistorySnapshot && spansFloorWindow(budgetSnapshot?.windowDays)
+                ? rollingLoadBudgetHistory
+                : null;
+    const aerobicVolumeFloor = aerobicFloorEvidence
+        ? resolveAerobicVolumeFloor(aerobicFloorEvidence, date)
+        : CATALOG_AEROBIC_VOLUME_FLOOR;
+
     const builtMicrocycle = buildMicrocycleState(
         periodization.phase,
         addDaysToLocalDateString(date, -windowDays),
@@ -272,7 +294,7 @@ export async function resolveTrainingIntent(
         date,
     ), date, authoredPlanBlocks, planDefinition);
     return {
-        planningContext, periodization, unresolvedObjectives, plannedDose, fatigue, history, rollingLoadBudgetHistory, performedTrainingFacts, historySnapshot, microcycle,
+        planningContext, periodization, unresolvedObjectives, plannedDose, fatigue, history, rollingLoadBudgetHistory, performedTrainingFacts, historySnapshot, aerobicVolumeFloor, microcycle,
         droppedContributorObjectives: multiEventResolution.droppedContributorObjectives,
         sequenceIntent: resolveSequenceIntent(periodization.phase),
     };

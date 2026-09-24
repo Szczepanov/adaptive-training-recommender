@@ -733,10 +733,13 @@ export async function evaluateTrainingWithIntent(
         preferences,
         isAdverseRecovery,
     );
+    // Issue #757: one athlete-level aerobic floor for the packer and coverage ranking, in
+    // evergreen and event modes alike.
+    const aerobicVolumeFloor = intent.aerobicVolumeFloor;
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, date, fixedActivities, 7, isAdverseRecovery, scheduleOverlays,
-        confirmedProgressionOverrides,
+        confirmedProgressionOverrides, aerobicVolumeFloor,
     );
     if (evergreen) {
         const unresolvedObjectives = getUnresolvedObjectives(evergreen.microcycle);
@@ -793,11 +796,14 @@ export async function evaluateTrainingWithIntent(
             resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, resolvedAvailability: availability, fatigueTier: mode, authoredPlanBlocks,
             healthPlanningPolicy,
             preferredModalityToday: readiness.subjective.preferredModalityToday,
+            aerobicVolumeFloor,
             ...(evergreen ? {
                 coverageState: buildCoverageState(
                     evergreen.planDefinition,
                     date,
                     resolveCoverageHistory(intent.performedTrainingFacts, intent.history),
+                    undefined,
+                    aerobicVolumeFloor,
                 ),
             } : {}),
         },

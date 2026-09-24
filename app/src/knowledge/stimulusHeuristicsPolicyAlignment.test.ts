@@ -26,6 +26,18 @@ import {
 } from '../engine/evergreenStrategy';
 import { LEGACY_SESSION_COUNT_TIE_BREAKER } from '../engine/weeklyDosePacking';
 import {
+    AEROBIC_VOLUME_CATALOG_MINIMUM_MIN,
+    AEROBIC_VOLUME_FLOOR_FRACTION,
+    AEROBIC_VOLUME_FLOOR_MIN_SAMPLES,
+    AEROBIC_VOLUME_FLOOR_MODALITIES,
+    AEROBIC_VOLUME_FLOOR_ROUNDING_MIN,
+    AEROBIC_VOLUME_FLOOR_WINDOW_DAYS,
+    aerobicVolumeFloorForWorkout,
+    resolveAerobicVolumeFloor,
+} from '../engine/aerobicVolumeFloor';
+import { coverageKeysForExposure } from '../engine/coverage';
+import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
+import {
     evaluateEnvelopes,
     evaluateReadinessAndSafetyEnvelope,
 } from '../engine/rules';
@@ -286,6 +298,37 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
             targetSessions: 3,
             maxSessions: 4,
         });
+    });
+
+    it('pins the athlete-relative aerobic-volume floor (#757) to production constants and behaviour', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.aerobicVolumeFloorPolicy);
+        expect(claim.statement).toContain('max(catalog minimum, 0.75 x median)');
+        expect(claim.statement).toContain('nearest 5 minutes');
+        expect(claim.statement).toContain('the upper bound of the prescribed range for a planned one');
+        expect(claim.statement).toContain('Cycling, Running, Walking and Swimming');
+        expect(claim.statement).toContain('30-minute catalog minimum in the preceding 28 days');
+        expect(claim.statement).toContain('fewer than 4 such sessions');
+        expect(claim.statement).toContain('not clamped to the daily time cap');
+        expect(claim.limitations.join(' ')).toContain('not a claim of dose adequacy');
+
+        expect(AEROBIC_VOLUME_FLOOR_FRACTION).toBe(0.75);
+        expect(AEROBIC_VOLUME_FLOOR_WINDOW_DAYS).toBe(28);
+        expect(AEROBIC_VOLUME_FLOOR_MIN_SAMPLES).toBe(4);
+        expect(AEROBIC_VOLUME_FLOOR_ROUNDING_MIN).toBe(5);
+        expect(AEROBIC_VOLUME_CATALOG_MINIMUM_MIN).toBe(30);
+        expect([...AEROBIC_VOLUME_FLOOR_MODALITIES]).toEqual(['Cycling', 'Running', 'Walking', 'Swimming']);
+
+        const rides = [1, 4, 7, 10].map(daysAgo => ({
+            date: `2026-09-${String(24 - daysAgo).padStart(2, '0')}`,
+            modality: 'Cycling' as const,
+            trainingRecordLike: { type: 'Cycling', duration_min: 60, training_effect: 2, intensity_tag: 'easy' },
+        }));
+        const floor = resolveAerobicVolumeFloor(rides, '2026-09-24');
+        expect(floor.floorMin).toBe(45);
+        expect(resolveAerobicVolumeFloor(rides.slice(1), '2026-09-24').floorMin).toBe(30);
+        // One athlete-level floor across modalities, clamped to each catalog maximum.
+        expect(aerobicVolumeFloorForWorkout('walking_brisk_continuous_01', floor)).toBe(45);
+        expect(coverageKeysForExposure({ workoutId: 'walking_brisk_continuous_01', durationMin: 30 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET, floor)).not.toContain('aerobic_volume');
     });
 
     it('pins the legacy session spacing tie breaker to production values including the 7+ clamp', () => {
