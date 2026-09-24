@@ -159,7 +159,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         id: 'readiness.physical_work_mode_gates', domain: 'readiness_recovery', title: 'Physical-work raw-strain readiness mode gates',
         currentRule: 'For performed physical work, raw strain is min(1, intensity 0.45/0.70/0.88 x duration 0.65/1.00/1.25), with omitted detail defaulting to moderate/medium. Raw strain >=0.65 forces modify; raw strain >=0.85 with fatigue >=6 or soreness >=6 forces recover. The gate uses raw strain before occupational-baseline discount, unlike fatigue.physical_work_strain_mapping.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
-        codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope', 'engine/occupationalLoad.ts:resolveOccupationalLoadContext'],
+        codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope', 'engine/occupationalLoad.ts:resolvePhysicalWorkRawStrain'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.physicalWorkReadinessModeGatesPolicy],
         coverageRationale: 'Registered as a distinct product-policy claim (`policy.readiness.physical_work_mode_gates_v1`) with alignment testing. These conservative raw-strain gates select mode independently of the baseline-discounted fatigue contribution.',
     },

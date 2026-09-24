@@ -1,9 +1,10 @@
 import type { KnowledgeClaim, KnowledgeSource } from './sportsKnowledge';
 
 /**
- * Registers the unlogged physical-work (occupational/manual-labour) strain model that
- * `occupationalLoad.ts` `resolveOccupationalLoadContext` and `fatigue.ts`
- * `computeInternalResponseStrain` apply to D-1 non-exercise work.
+ * Registers the product policies applied to D-1 unlogged physical work
+ * (occupational/manual labour). `occupationalLoad.ts` owns the shared raw-strain mapping;
+ * `fatigue.ts` applies its baseline discount and dimensional fusion, `rules.ts` applies
+ * readiness mode gates to the raw value, and `adapters.ts` applies area-specific guardrails.
  *
  * Per ADR-0033 these magnitudes, the baseline discount and the dimensional multipliers are
  * product calibration: there is no validated mapping from a three-level self-reported work

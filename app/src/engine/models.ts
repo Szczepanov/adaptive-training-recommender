@@ -266,7 +266,8 @@ export interface UserContext {
      * The trace is translated into versioned claim references and is never persisted itself. */
     injuryPolicyTrace?: InjuryPolicyTrace;
     /** Runtime-only trace of physical-work guardrails actually added by the context adapter.
-     * This distinguishes work policy from an identical guardrail supplied by injury policy. */
+     * This distinguishes work policy from an identical guardrail supplied by injury policy.
+     * Provenance-only: decision logic consumes constraints.impliedGuardrails, never this field. */
     physicalWorkGuardrailsApplied?: readonly GuardrailKey[];
     /** Optional only for legacy engine callers; composed recommendations always provide it. */
     trainingSettings?: TrainingSettings;
