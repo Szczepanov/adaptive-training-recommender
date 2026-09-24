@@ -60,3 +60,7 @@
 ## 2026-09-24 - Injectable sleep function for sync service backfill delay
 **Learning:** Hardcoded calls to `time.sleep()` in service loops block threads unconditionally and prevent callers in async or non-blocking contexts from using lightweight delays or mocking sleep during tests.
 **Action:** Expose an optional `sleep_fn: Callable[[float], None] | None` parameter on service initializers and loop methods (fallback to `time.sleep`), enabling async or custom sleep dependency injection without breaking default synchronous behavior or monkeypatched test helpers.
+
+## 2026-09-24 - Filter session_executions lookup by occurrenceId
+**Learning:** `findExecutionByOccurrenceId` in `SessionExecutionService` was fetching all documents from the `session_executions` collection and filtering in memory. Adding a Firestore `where('occurrenceId', '==', occurrenceId)` clause restricts document retrieval at the database level, preventing network/memory overhead that scales linearly with collection size.
+**Action:** Always verify Firestore collection reads in service lookup methods to ensure field equality filters are pushed down to queries via `where(...)` rather than loaded via full collection `getDocs(collection(...))`.

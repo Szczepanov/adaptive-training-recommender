@@ -517,7 +517,9 @@ export class SessionExecutionService {
      * runner creates its execution, allowing a completed test to return to metric capture after
      * a browser reload without keeping execution state only in React memory. */
     async findExecutionByOccurrenceId(userId: string, occurrenceId: string): Promise<SessionExecution | null> {
-        const snap = await getDocs(collection(this.db, 'users', userId, 'session_executions'));
+        const collRef = collection(this.db, 'users', userId, 'session_executions');
+        const q = query(collRef, where('occurrenceId', '==', occurrenceId));
+        const snap = await getDocs(q);
         const candidates: SessionExecution[] = [];
         for (const docSnap of snap.docs) {
             const parsed = parseSessionExecutionDocument(docSnap.data(), docSnap.ref.path);
