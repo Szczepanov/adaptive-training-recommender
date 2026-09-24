@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 from garmin_sync.config import load_settings
-from garmin_sync.garmin_client import GarminClientWrapper
+from garmin_sync.garmin_client import GarminClientConfig, GarminClientWrapper
 from garmin_sync.token_store import GcsTokenStore
 
 
@@ -42,10 +42,12 @@ def bootstrap(bucket_name: str | None = None, object_name: str = "garmin/garmin_
 
     print(f"Authenticating Garmin account ({settings.garmin_email})...")
     wrapper = GarminClientWrapper(
-        email=settings.garmin_email,
-        password=settings.garmin_password,
-        prompt_mfa=_mfa_prompt(),
-        allow_credential_login=True,
+        config=GarminClientConfig(
+            email=settings.garmin_email,
+            password=settings.garmin_password,
+            prompt_mfa=_mfa_prompt(),
+            allow_credential_login=True,
+        )
     )
     wrapper.login_with_tokens_or_credentials(local_file)
 
