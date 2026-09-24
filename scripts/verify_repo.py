@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from detect_ci_changes import get_changed_files, is_code_file
+from detect_ci_changes import get_worktree_changed_files, is_code_file
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "app"
@@ -179,13 +179,15 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
         base_sha = resolve_base_sha(args.base)
-        changed_files = get_changed_files(base_sha)
+        changed_files = get_worktree_changed_files(base_sha, cwd=ROOT)
         detected_mode = classify_paths(changed_files)
         mode: VerificationMode = detected_mode if args.mode == "auto" else args.mode
         steps = build_plan(mode, base_sha)
 
         print(f"[verify] base={base_sha}")
-        print(f"[verify] changed_files={len(changed_files)} detected={detected_mode} selected={mode}")
+        print(
+            f"[verify] changed_files={len(changed_files)} detected={detected_mode} selected={mode}"
+        )
         for path in changed_files:
             print(f"[verify] changed: {path}")
 

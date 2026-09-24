@@ -102,6 +102,36 @@ def get_changed_files(base_ref: str | None = None) -> list[str]:
         return []
 
 
+def get_worktree_changed_files(
+    base_sha: str, cwd: str | os.PathLike[str] | None = None
+) -> list[str]:
+    """List paths that differ between ``base_sha`` and the local working tree.
+
+    Unlike :func:`get_changed_files`, this is for local runs: it includes
+    committed, staged, unstaged and untracked (non-ignored) changes, and never
+    applies the CI-only "HEAD is a PR merge commit" shortcut. Renames are
+    reported as both the old and the new path. Raises ``RuntimeError`` when git
+    cannot produce the diff, so callers can fail safe instead of seeing "no
+    changes".
+    """
+    commands = (
+        ["git", "diff", "--name-only", "--no-renames", base_sha],
+        ["git", "ls-files", "--others", "--exclude-standard"],
+    )
+    paths: set[str] = set()
+    for command in commands:
+        completed = subprocess.run(command, cwd=cwd, check=False, capture_output=True, text=True)
+        if completed.returncode != 0:
+            detail = completed.stderr.strip() or "unknown error"
+            raise RuntimeError(f"{' '.join(command)} failed: {detail}")
+        paths.update(
+            line.strip().replace("\\", "/")
+            for line in completed.stdout.splitlines()
+            if line.strip()
+        )
+    return sorted(paths)
+
+
 def write_github_output(code_changed: bool, docs_only: bool) -> None:
     """Write outputs to GITHUB_OUTPUT file for GitHub Actions."""
     github_output = os.getenv("GITHUB_OUTPUT")

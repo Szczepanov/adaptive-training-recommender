@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import subprocess
+from pathlib import Path
+
+import pytest
+from detect_ci_changes import get_worktree_changed_files
 from verify_repo import build_plan, classify_paths
 
 
@@ -29,7 +34,9 @@ def test_code_contract_contains_ci_critical_local_gates() -> None:
     assert "policy-version drift" in names
     assert "production build" in names
 
-    semantic_diff = next(step for step in plan if step.name == "simulation semantic diff (advisory)")
+    semantic_diff = next(
+        step for step in plan if step.name == "simulation semantic diff (advisory)"
+    )
     assert semantic_diff.required is False
     assert semantic_diff.argv == ("npm", "--prefix", "app", "run", "simulate:diff")
 
@@ -41,3 +48,39 @@ def test_code_contract_avoids_external_registry_and_docker_gates() -> None:
     assert all("npm audit" not in command for command in commands)
     assert all("pip-audit" not in command for command in commands)
     assert all("docker" not in command for command in commands)
+
+
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def test_worktree_changes_include_uncommitted_and_untracked_code(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.email", "test@example.com")
+    _git(tmp_path, "config", "user.name", "Test")
+    (tmp_path / "README.md").write_text("base\n")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "tracked.py").write_text("x = 1\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "base")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+
+    (tmp_path / "README.md").write_text("committed docs change\n")
+    _git(tmp_path, "commit", "-qam", "docs")
+    (tmp_path / "src" / "tracked.py").write_text("x = 2\n")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "new_tool.py").write_text("y = 1\n")
+
+    changed = get_worktree_changed_files(base, cwd=tmp_path)
+
+    assert changed == ["README.md", "scripts/new_tool.py", "src/tracked.py"]
+    assert classify_paths(changed) == "code"
+
+
+def test_worktree_changes_fail_loudly_for_unknown_base(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-q")
+
+    with pytest.raises(RuntimeError):
+        get_worktree_changed_files("f" * 40, cwd=tmp_path)
