@@ -1,7 +1,7 @@
 # Hybrid tissue re-entry and weekly strength preservation
 
-**Date:** 2026-09-24  
-**Status:** Implemented on the feature branch for review  
+**Date:** 2026-09-24
+**Status:** Implemented on the feature branch for review
 **Scope:** Cycling-primary hybrid weekly planning after a short local tissue interruption
 
 ## Problem
