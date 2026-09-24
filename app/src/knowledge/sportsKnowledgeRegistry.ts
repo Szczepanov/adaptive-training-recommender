@@ -57,6 +57,11 @@ import {
     GOAL_FEASIBILITY_CLAIMS,
     GOAL_FEASIBILITY_SOURCES,
 } from './goalFeasibilityKnowledge.ts';
+import {
+    PERFORMANCE_GOAL_TRAINING_CLAIM_IDS,
+    PERFORMANCE_GOAL_TRAINING_CLAIMS,
+    PERFORMANCE_GOAL_TRAINING_SOURCES,
+} from './performanceGoalTrainingKnowledge.ts';
 
 /**
  * Canonical aggregate registry.
@@ -78,6 +83,7 @@ export const SPORTS_KNOWLEDGE_SOURCES: readonly KnowledgeSource[] = [
     ...OPTIMIZER_SCORING_SOURCES,
     ...STIMULUS_HEURISTICS_SOURCES,
     ...GOAL_FEASIBILITY_SOURCES,
+    ...PERFORMANCE_GOAL_TRAINING_SOURCES,
 ];
 
 export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
@@ -92,6 +98,7 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
     ...OPTIMIZER_SCORING_CLAIMS,
     ...STIMULUS_HEURISTICS_CLAIMS,
     ...GOAL_FEASIBILITY_CLAIMS,
+    ...PERFORMANCE_GOAL_TRAINING_CLAIMS,
 ];
 
 export const KNOWLEDGE_CLAIM_IDS = {
@@ -106,6 +113,7 @@ export const KNOWLEDGE_CLAIM_IDS = {
     ...OPTIMIZER_SCORING_CLAIM_IDS,
     ...STIMULUS_HEURISTICS_CLAIM_IDS,
     ...GOAL_FEASIBILITY_CLAIM_IDS,
+    ...PERFORMANCE_GOAL_TRAINING_CLAIM_IDS,
 } as const;
 
 export const SPORTS_KNOWLEDGE_SOURCES_BY_ID: ReadonlyMap<string, KnowledgeSource> = new Map(
