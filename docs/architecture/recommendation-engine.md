@@ -210,7 +210,10 @@ Physical-work knowledge lineage separates the baseline-discounted fatigue mappin
 raw-strain readiness mode gates. A performed work check-in emits both claim IDs. The context
 adapter also records which area-specific guardrails it actually added, so
 `readinessKnowledgeRefs` emits the physical-work guardrail claim only when that policy applied;
-an identical guardrail from injury policy does not acquire physical-work provenance.
+an identical guardrail from injury policy does not acquire physical-work provenance. The
+`physicalWorkGuardrailsApplied` trace is provenance-only: envelope and selection logic continue
+to consume `constraints.impliedGuardrails`, and policy-alignment coverage proves that removing
+the trace changes lineage only, not the recommendation decision.
 
 ### Wearable-free composition boundary
 
