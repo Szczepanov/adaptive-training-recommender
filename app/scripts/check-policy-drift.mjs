@@ -81,6 +81,10 @@ const decisionAffectingFiles = [
   'app/src/engine/microcycle.ts',
   'app/src/engine/periodization.ts',
   'app/src/engine/fatigue.ts',
+  // Occupational-load magnitudes and baseline discounts affect the live fatigue input.
+  'app/src/engine/occupationalLoad.ts',
+  // Claim selection changes the persisted recommendation audit's provenance contract.
+  'app/src/engine/knowledgeLineage.ts',
   'app/src/engine/planner.ts',
   'app/src/engine/rollingLoadBudget.ts',
   'app/src/engine/dose.ts',

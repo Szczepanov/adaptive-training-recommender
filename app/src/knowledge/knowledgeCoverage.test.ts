@@ -170,11 +170,12 @@ describe('engine knowledge coverage inventory', () => {
     });
 
     it('reports the post-symptom-support coverage and risk debt exactly (zero high-impact uncovered debt)', () => {
-        // Issue #675 added one partial/p1 item for the gran-fondo durability policy.
+        // Issue #675 added one partial/p1 item for the gran-fondo durability policy; the
+        // physical-work strain mapping, readiness gates and guardrails added three covered items.
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(67);
-        expect(summary.byCoverage).toEqual({ covered: 43, partial: 17, uncovered: 1, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 8, p1: 8, p2: 2, p3: 0, none: 49 });
+        expect(summary.total).toBe(70);
+        expect(summary.byCoverage).toEqual({ covered: 46, partial: 17, uncovered: 1, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 8, p1: 8, p2: 2, p3: 0, none: 52 });
         expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
     });

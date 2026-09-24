@@ -156,6 +156,22 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'SEP-C2 recalibrates the subjective classifier: motivation is decoupled from physical fatigue, unmeasured dimensions in partial check-ins participate dynamically without neutral-5 dilution, and clinical painFlag is decoupled from extreme fatigue. Direct action thresholds remain an explicit product heuristic rather than a universal constant; outcome-linked calibration remains P0 research debt.',
     },
     {
+        id: 'readiness.physical_work_mode_gates', domain: 'readiness_recovery', title: 'Physical-work raw-strain readiness mode gates',
+        currentRule: 'For performed physical work, raw strain is min(1, intensity 0.45/0.70/0.88 x duration 0.65/1.00/1.25), with omitted detail defaulting to moderate/medium. Raw strain >=0.65 forces modify; raw strain >=0.85 with fatigue >=6 or soreness >=6 forces recover. The gate uses raw strain before occupational-baseline discount, unlike fatigue.physical_work_strain_mapping.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
+        codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope', 'engine/occupationalLoad.ts:resolvePhysicalWorkRawStrain'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.physicalWorkReadinessModeGatesPolicy],
+        coverageRationale: 'Registered as a distinct product-policy claim (`policy.readiness.physical_work_mode_gates_v1`) with alignment testing. These conservative raw-strain gates select mode independently of the baseline-discounted fatigue contribution.',
+    },
+    {
+        id: 'safety.physical_work_guardrails', domain: 'injury_safety', title: 'Physical-work area-specific session guardrails',
+        currentRule: 'Performed hard or exhausting lower_back_spine work adds avoid_heavy_spinal_loading; performed exhausting upper_body or grip_forearms work adds avoid_overhead_pressing. The additions are unioned with injury guardrails; omitted intensity/areas, moderate work and unperformed work add none.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
+        codeRefs: ['engine/adapters.ts:mapContextFromGoalsAndTrainingSettings', 'engine/knowledgeLineage.ts:readinessKnowledgeRefs'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.physicalWorkGuardrailsPolicy],
+        coverageRationale: 'Registered as an explicit product-policy claim (`policy.safety.physical_work_guardrails_v1`) with alignment testing. The runtime trace distinguishes a work-added guardrail from the same key independently supplied by injury policy.',
+    },
+    {
         id: 'readiness.absolute_device_floors', domain: 'readiness_recovery', title: 'Absolute sleep-score and Body Battery floors',
         currentRule: 'Sleep score <50 adds 0.5 strain; Body Battery is penalized below 50 to a 0.3 cap at 25; Body Battery <=20 forces recover; envelope is Easy below Body Battery 30 or sleep score 55.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
@@ -241,6 +257,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         codeRefs: ['engine/fatigue.ts:estimateActivitySteps', 'engine/fatigue.ts:computeInternalResponseStrain'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.ambientStepSurgePolicy],
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.fatigue.ambient_step_surge_v1`) with alignment testing. Cadence deduction and ambient surge scaling protect against unrecorded ambulatory load.',
+    },
+    {
+        id: 'fatigue.physical_work_strain_mapping', domain: 'fatigue_load', title: 'Unlogged physical-work strain magnitude, baseline discount and dimensional mapping',
+        currentRule: 'Performed work strain is min(1, intensity 0.45/0.70/0.88 x duration 0.65/1.00/1.25), omitted detail defaulting to moderate/medium; an occupational baseline discounts min(raw, baseline strain x confidence x load-area overlap). Acute strain maps to systemic x0.60, upper-body x0.85 (no areas/upper_body/grip_forearms, else 0), lower-body x0.85 (no areas/legs_carrying, else 0), neuromuscular x0.75 (no areas/grip_forearms/lower_back_spine, else x0.40), impact-tissue x0.40 for legs_carrying at hard/exhausting only; each term is max-combined with other internal-response terms.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['engine/occupationalLoad.ts:INTENSITY', 'engine/occupationalLoad.ts:DURATION', 'engine/occupationalLoad.ts:resolveOccupationalLoadContext', 'engine/fatigue.ts:computeInternalResponseStrain'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.physicalWorkStrainMappingPolicy],
+        coverageRationale: 'Registered as an explicit product-policy claim (`policy.fatigue.physical_work_strain_mapping_v1`) with alignment testing. The magnitude table, soft baseline discount and load-area multipliers are product calibration for coarse self-report; the ambient-step co-occurrence flag in `resolveOccupationalLoadContext` is diagnostic only. The raw-work-strain modify/recover gates in `rules.ts` `evaluateReadinessAndSafetyEnvelope` are a separate readiness-mode family and are not owned by this item.',
     },
     {
         id: 'fatigue.max_fusion_policy', domain: 'fatigue_load', title: 'External/internal fatigue fusion policy',

@@ -469,6 +469,7 @@ export function mapContextFromGoalsAndTrainingSettings(
             ...injuryPolicy.trace,
             clinicalEnvelopeSources: resolveClinicalEnvelopeSources(todaysCheckin),
         },
+        physicalWorkGuardrailsApplied: physicalWorkGuardrails,
         trainingSettings,
         performanceGoalDemands: mapGoalsToPerformanceGoalDemands(goals),
     };

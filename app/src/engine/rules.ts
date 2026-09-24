@@ -55,6 +55,7 @@ import { applyPlanningOverlays } from './planningOverlays';
 import { candidateSelectionKnowledgeRefs, healthPlanningKnowledgeRefs, mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
 import { progressionDoseForTemplate } from './confirmedProgressionOverrides';
 import { resolveHealthPlanningPolicy } from './healthPlanningPolicy';
+import { resolvePhysicalWorkRawStrain } from './occupationalLoad';
 
 function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemplate | undefined {
     if (options.length === 0) return undefined;
@@ -302,16 +303,10 @@ export function evaluateReadinessAndSafetyEnvelope(
         (hrvStrain.acuteDeviation >= 1.0 && objective.hrv_delta !== null && objective.hrv_delta <= -15);
     const acuteSubjectiveModify = subjective.fatigue >= 8 || subjective.readiness <= 3 || subjective.stress >= 9 || (subjective.readiness <= 4 && subjective.fatigue >= 6);
 
-    const pw = subjective.physicalWork;
-    let physicalWorkModify = false;
-    let physicalWorkRecover = false;
-    if (pw?.performed) {
-        const baseIntensity = pw.intensity === 'exhausting' ? 0.88 : pw.intensity === 'hard' ? 0.70 : 0.45;
-        const durationFactor = pw.duration === 'extended' ? 1.25 : pw.duration === 'short' ? 0.65 : 1.0;
-        const workStrain = Math.min(1, baseIntensity * durationFactor);
-        if (workStrain >= 0.65) physicalWorkModify = true;
-        if (workStrain >= 0.85 && (subjective.fatigue >= 6 || subjective.soreness >= 6)) physicalWorkRecover = true;
-    }
+    const physicalWorkRawStrain = resolvePhysicalWorkRawStrain(subjective.physicalWork);
+    const physicalWorkModify = physicalWorkRawStrain >= 0.65;
+    const physicalWorkRecover = physicalWorkRawStrain >= 0.85
+        && (subjective.fatigue >= 6 || subjective.soreness >= 6);
 
     const recentHardSessionsCount = objective.last_3_days_hard_sessions_count || 0;
     const recentHardSessionsPenalty = recentHardSessionsCount >= 2 ? RECENT_HARD_SESSIONS_STRAIN : 0;
