@@ -92,6 +92,7 @@ function weekdayLabel(dateStr: string): string {
   return WEEKDAY_FORMATTER.format(new Date(dateStr + 'T00:00:00Z'));
 }
 
+/** Summarize exact primary-strength allocation outcomes without inferring credit from modality. */
 function strengthRoleSummary(plan: WeekAheadPlan): string | null {
   const strength = plan.allocationReport.outcomes.filter(outcome => outcome.occurrence.coverageKey === 'primary_strength');
   if (strength.length === 0) return null;
