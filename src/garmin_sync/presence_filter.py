@@ -26,6 +26,15 @@ from typing import Any
 from .canonical import METRIC_DAILY_RESTING_HEART_RATE_BPM
 
 
+@dataclass(frozen=True)
+class PresenceFilterConfig:
+    """Configuration threshold parameters for secondary-source co-presence validation."""
+
+    min_overlap_minutes: int = 60
+    max_rhr_delta_bpm: float = 10.0
+    max_unverified_rhr_delta_bpm: float = 14.0
+
+
 @dataclass
 class PresenceValidationVerdict:
     """Provisional quarantine/concordance verdict (PI0) -- intentionally NOT an identity verdict.
@@ -79,15 +88,16 @@ def validate_co_presence(
     garmin_snapshot: dict[str, Any] | None,
     eight_sleep_bundle: dict[str, Any] | None,
     athlete_rhr_28d_median: float | None = None,
-    min_overlap_minutes: int = 60,
-    max_rhr_delta_bpm: float = 10.0,
-    max_unverified_rhr_delta_bpm: float = 14.0,
+    config: PresenceFilterConfig | None = None,
 ) -> PresenceValidationVerdict:
     """Evaluate provisional co-presence concordance for the Eight Sleep payload.
 
     PROVISIONAL (PI0, ADR-0028) -- see module doc comment above. Do not present this output as a
     validated identity determination.
     """
+    if config is None:
+        config = PresenceFilterConfig()
+
     if not eight_sleep_bundle:
         return PresenceValidationVerdict(
             verifiedAthlete=True,
@@ -137,13 +147,13 @@ def validate_co_presence(
         overlap_mins = _calculate_session_overlap_minutes(
             garmin_start, garmin_end, eight_start, eight_end
         )
-        if overlap_mins < min_overlap_minutes:
+        if overlap_mins < config.min_overlap_minutes:
             return PresenceValidationVerdict(
                 verifiedAthlete=False,
                 concordanceStatus="DISCORDANT_SECONDARY",
                 reason=(
                     f"Sleep timing mismatch: Garmin and Eight Sleep sessions overlap for only "
-                    f"{overlap_mins} min (< {min_overlap_minutes} min threshold). Secondary record quarantined."
+                    f"{overlap_mins} min (< {config.min_overlap_minutes} min threshold). Secondary record quarantined."
                 ),
                 garminRhr=garmin_rhr,
                 eightSleepRhr=eight_rhr,
@@ -156,12 +166,12 @@ def validate_co_presence(
     # Step 2: Both sensors present -> Cross-sensor physiological boundary check
     if garmin_rhr is not None and eight_rhr is not None:
         delta = abs(garmin_rhr - eight_rhr)
-        if delta > max_rhr_delta_bpm:
+        if delta > config.max_rhr_delta_bpm:
             return PresenceValidationVerdict(
                 verifiedAthlete=False,
                 concordanceStatus="DISCORDANT_SECONDARY",
                 reason=(
-                    f"Cross-sensor physiological divergence ({delta:.1f} bpm > {max_rhr_delta_bpm:.1f} bpm limit). "
+                    f"Cross-sensor physiological divergence ({delta:.1f} bpm > {config.max_rhr_delta_bpm:.1f} bpm limit). "
                     f"Garmin={garmin_rhr:.1f} bpm vs EightSleep={eight_rhr:.1f} bpm. "
                     "Secondary record quarantined from baseline and fusion (D-MS-PREBASE)."
                 ),
@@ -174,7 +184,7 @@ def validate_co_presence(
         return PresenceValidationVerdict(
             verifiedAthlete=True,
             concordanceStatus="CONCORDANT",
-            reason=f"Cross-sensor RHR is concordant (delta = {delta:.1f} bpm <= {max_rhr_delta_bpm:.1f} bpm).",
+            reason=f"Cross-sensor RHR is concordant (delta = {delta:.1f} bpm <= {config.max_rhr_delta_bpm:.1f} bpm).",
             garminRhr=garmin_rhr,
             eightSleepRhr=eight_rhr,
             rhrDelta=delta,
@@ -185,7 +195,7 @@ def validate_co_presence(
     if eight_rhr is not None:
         if athlete_rhr_28d_median is not None:
             baseline_delta = abs(eight_rhr - athlete_rhr_28d_median)
-            if baseline_delta > max_unverified_rhr_delta_bpm:
+            if baseline_delta > config.max_unverified_rhr_delta_bpm:
                 return PresenceValidationVerdict(
                     verifiedAthlete=False,
                     concordanceStatus="DISCORDANT_SECONDARY",
