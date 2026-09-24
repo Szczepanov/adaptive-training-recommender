@@ -64,7 +64,11 @@ uv run python scripts/agent_eval.py validate-result /tmp/constructor-signature-c
 
 1. Read the case from `cases.json`.
 2. Create an isolated worktree at the case's `start_ref`.
-3. Install dependencies exactly as required by that historical revision.
+3. Install dependencies as required by that historical revision (for frontend implementation cases,
+   run `npm --prefix app ci --prefer-offline --no-audit` inside the worktree rather than
+   symlinking/junctioning `app/node_modules`, so Vite/Vitest worker isolation resolves a single
+   `@vitest/runner` instance; if evaluating `semantic_navigation` with Serena, activate Serena on
+   the isolated worktree directory first and restore the primary checkout afterward).
 4. Give the agent only the case `prompt` plus the normal repository instructions/tools being
    evaluated. Do not reveal the reference PR/solution.
 5. Let the agent work normally.
