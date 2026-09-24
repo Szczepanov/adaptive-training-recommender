@@ -1,11 +1,12 @@
 /** Increment whenever a change can alter a persisted recommendation decision. (Refactoring does not require a bump) */
 
-export const POLICY_VERSION = '2026-09-symptom-compatible-strength-weekly-support-v1';
+export const POLICY_VERSION = '2026-09-dsupport-incumbent-proof-order-v1';
 
 /** Historical versions are intentionally not re-executed by this build. Their compact
  * audits remain readable evidence, but replay is rejected explicitly because the old
  * decision function is not bundled alongside the current policy. */
 export const HISTORICAL_POLICY_VERSIONS = [
+    '2026-09-symptom-compatible-strength-weekly-support-v1',
     '2026-09-event-demand-taper-window-v1',
     '2026-09-post-rest-reentry-and-preferred-modality-strength-fallback-v1',
     '2026-09-post-rest-reentry-readiness-decay-v1',

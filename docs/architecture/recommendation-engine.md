@@ -858,7 +858,11 @@ The support check is fail-closed. It considers the bounded viability set even wh
 contains one ranked candidate, and distinguishes a proven degradation from an exhausted
 search budget. If no candidate proves preservation, the planner may use Rest only when Rest
 itself proves preservation; otherwise it returns an unresolved allocation outcome rather
-than falling through to the highest-ranked candidate. A required role that is infeasible
+than falling through to the highest-ranked candidate. The proof order is owned by
+`planner.ts` `classifyAllocationPreservation`: incumbent survival is checked first, so an
+occurrence the incumbent allocation already left `unresolved_search_budget` cannot veto a
+candidate that provably keeps every reserved role (issue #745); only a candidate that fails
+that proof fails closed on an unresolved incumbent. A required role that is infeasible
 because committed load consumed the rolling envelope is reported with the typed
 `rolling_load_budget` miss reason, while inability to prove a result within bounded search
 remains `unresolved_search_budget`. Anchor placement and `conservativeBias` do not bypass
