@@ -52,7 +52,6 @@ import { workoutForTemplate } from '../workouts/prescription';
 import { resolveEvergreenPlan } from './evergreenPlanning';
 import { isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { buildCoverageState, resolveCoverageHistory } from './coverage';
-import { resolveAerobicVolumeFloor } from './aerobicVolumeFloor';
 import { applyPlanningOverlays } from './planningOverlays';
 import { candidateSelectionKnowledgeRefs, healthPlanningKnowledgeRefs, mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
 import { progressionDoseForTemplate } from './confirmedProgressionOverrides';
@@ -736,7 +735,7 @@ export async function evaluateTrainingWithIntent(
     );
     // Issue #757: one athlete-level aerobic floor for the packer and coverage ranking, in
     // evergreen and event modes alike.
-    const aerobicVolumeFloor = resolveAerobicVolumeFloor(intent.rollingLoadBudgetHistory, date);
+    const aerobicVolumeFloor = intent.aerobicVolumeFloor;
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, date, fixedActivities, 7, isAdverseRecovery, scheduleOverlays,

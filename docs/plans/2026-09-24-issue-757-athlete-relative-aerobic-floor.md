@@ -57,10 +57,34 @@ model change. It stays a follow-up. D2 and D3 remove the concrete symptoms witho
   - It is clamped to each workout's catalog `maximumMin`, so a floor always stays
     attainable for that identity.
   - It never goes below that workout's own `minimumMin`.
-- **Evidence source.** The rule reads `TrainingIntent.rollingLoadBudgetHistory`, the
-  existing ≥ 28-day read-only evidence window. That window is available in evergreen and
-  event modes, so the change needs no new Firestore read. The pure helper takes the
-  exposures as an argument, so evaluators stay pure.
+- **Planned vs completed sessions (review of PR #768).** A completed session meets the
+  floor with its actual duration. A planned session (a ranked candidate or a projected
+  forecast pick) meets it with the upper bound of its prescribed range. The lower bound
+  must still reach the catalog minimum, as before.
+  - A 30–60 min Zone 2 ride on a free day therefore claims the role, while a ride capped
+    at 35 min cannot.
+  - The first implementation compared every candidate's lower bound, 30, with the floor,
+    45. That made the role unreachable for established athletes even on free days.
+  - The weekly role allocator (`weeklyAllocation.ts` `attachExactEligibleIdentities`)
+    applies the same floor.
+- **Evidence source (review of PR #768).** `trainingIntent.ts` `resolveTrainingIntent`
+  resolves `TrainingIntent.aerobicVolumeFloor` once, and every horizon uses it. The rule
+  **never adds a history read**. A caller-prepared snapshot fixes the history revision
+  for a dashboard refresh, and tests pin that contract.
+  - The floor reuses, in order:
+    1. the 28-day athlete-state evidence, which endurance/speed-power/sport-readiness
+       evergreen profiles already read;
+    2. an operational snapshot that spans 28 days;
+    3. the rolling-load window, only when the intent fetched it itself with no prepared
+       snapshot (simulation, replay).
+  - With none of these, it fails closed to the catalog minimum. This keeps today and the
+    week-ahead forecast on the same floor.
+  - **Known limitation.** The dashboard (`Home.tsx`, `PlanView.tsx`) prepares a 7-day
+    snapshot. In production, the athlete floor is therefore active today only for
+    evergreen profiles that already read athlete-state evidence. Event-mode and other
+    evergreen athletes keep the catalog minimum until the dashboard prepares a wider
+    snapshot. That change also affects the daily rolling-load budget, so it is a
+    separate follow-up.
 - **Forecast horizon.** The floor is resolved once, as of the decision date, and then held
   constant across the week-ahead projection. Projected sessions do not move the floor
   inside a horizon.

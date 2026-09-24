@@ -226,6 +226,8 @@ export interface RecentHistoryEntry {
     costProfile?: WorkoutCostProfile;
     occurrenceKey?: string;
     durationMin?: number;
+    /** Upper bound of a projected prescription (#757); absent on completed history. */
+    durationMax?: number;
     recoveryHours?: number;
     /** Forecast-only marker. Projected entries may carry effective-dose loads for state
      * fidelity, while legacy threshold policies remain authored-load based until those

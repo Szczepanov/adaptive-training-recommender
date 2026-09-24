@@ -73,7 +73,7 @@ import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedu
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
 import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry } from './coverage';
 import { resolveEvergreenPlan } from './evergreenPlanning';
-import { resolveAerobicVolumeFloor, type AerobicVolumeFloor } from './aerobicVolumeFloor';
+import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { isFreshSubjectiveWithAdverseWearables, isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { applyPlanningOverlays } from './planningOverlays';
 import {
@@ -1785,6 +1785,7 @@ export function generateWeekAheadPlan(
             costProfile: effectiveTemplate.costProfile ?? enrichedCostProfile(template.id),
             occurrenceKey: `recommendation:${date}`,
             durationMin: effectiveTemplate.durationMin,
+            durationMax: effectiveTemplate.durationMax,
             ...(isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
             recoveryHours: resolveRecoveryHoursForTemplate(template.id),
             type: template.title,
@@ -1908,6 +1909,7 @@ export function generateWeekAheadPlan(
             projectedEvaluation(addDaysToLocalDateString(todayDate, firstForecastOffset), []).optimizationContext.coverageState,
         ),
         ENRICHED_TEMPLATES,
+        sharedProjection.aerobicVolumeFloor,
     );
 
     let allocation = resolveWeeklyRoleReservations(
@@ -2271,7 +2273,7 @@ export async function generateWeekAheadPlanWithIntent(
     // (rules.ts's evaluateTrainingWithIntent) until the packer has a date-scoped resolver.
     // Issue #757: one athlete-level aerobic floor, resolved as of today, for both the packer
     // and every projected date's coverage state.
-    const aerobicVolumeFloor = resolveAerobicVolumeFloor(intent.rollingLoadBudgetHistory, todayDate);
+    const aerobicVolumeFloor = intent.aerobicVolumeFloor;
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, todayDate, options.fixedActivities ?? [], options.days ?? 7,

@@ -304,6 +304,7 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.aerobicVolumeFloorPolicy);
         expect(claim.statement).toContain('max(catalog minimum, 0.75 x median)');
         expect(claim.statement).toContain('nearest 5 minutes');
+        expect(claim.statement).toContain('the upper bound of the prescribed range for a planned one');
         expect(claim.statement).toContain('Cycling, Running, Walking and Swimming');
         expect(claim.statement).toContain('30-minute catalog minimum in the preceding 28 days');
         expect(claim.statement).toContain('fewer than 4 such sessions');

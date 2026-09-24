@@ -288,6 +288,29 @@ describe('athlete-relative aerobic_volume floor (#757)', () => {
         expect(aerobic(ESTABLISHED).completedSessions).toBe(1);
     });
 
+    it('credits an uncapped planned ride whose prescribed range reaches the floor (review finding on #768)', () => {
+        const catalogState = unmetAerobicState(null);
+        const establishedState = unmetAerobicState(ESTABLISHED);
+        // end_easy_01 is authored 30-60 min: on an uncapped day its prescription reaches 45.
+        expect(ride.durationMin).toBe(30);
+        expect(ride.durationMax).toBeGreaterThanOrEqual(45);
+        expect(coverageNeedTierForTemplate(establishedState, ride)).toBe(coverageNeedTierForTemplate(catalogState, ride));
+        expect(coverageKeysForTemplate(ride, 'general', EVERGREEN_GENERAL_COVERAGE_SET, ESTABLISHED)).toContain('aerobic_volume');
+    });
+
+    it('credits projected picks by prescribed range but completed sessions by actual duration', () => {
+        const planState = buildCyclingEventPlan(cyclingEvent());
+        if (planState.status !== 'AVAILABLE') throw new Error('cycling plan should be available');
+        const aerobic = (entry: { durationMin: number; durationMax?: number; source?: 'projected' }) => buildCoverageState(
+            planState.data, '2026-09-03', [{ date: '2026-09-02', workoutId: 'cycling_zone2_standard_01', ...entry }], undefined, ESTABLISHED,
+        ).requirements.find(item => item.key === 'aerobic_volume')!;
+        expect(aerobic({ durationMin: 30, durationMax: 60, source: 'projected' }).projectedSessions).toBe(1);
+        expect(aerobic({ durationMin: 30, durationMax: 35, source: 'projected' }).projectedSessions).toBe(0);
+        expect(aerobic({ durationMin: 30 }).completedSessions).toBe(0);
+        // The catalog minimum still applies to the lower bound, exactly as before #757.
+        expect(aerobic({ durationMin: 20, durationMax: 60, source: 'projected' }).projectedSessions).toBe(0);
+    });
+
     it('gives neither a capped ride nor a walk the aerobic coverage tier when the cap keeps both below the floor', () => {
         const catalogState = unmetAerobicState(null);
         const establishedState = unmetAerobicState(ESTABLISHED);

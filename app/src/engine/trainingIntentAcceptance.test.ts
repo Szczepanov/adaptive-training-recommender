@@ -92,6 +92,67 @@ describe('day-0 event-intent acceptance', () => {
         expect(intent.rollingLoadBudgetHistory?.[0].date).toBe('2026-07-03');
     });
 
+    it('resolves the athlete aerobic floor from evidence it already holds, never adding a history read (#757)', async () => {
+        const rides: CompletedExposure[] = [1, 4, 7, 10, 13, 16, 19, 22].map(daysAgo => {
+            const date = new Date('2026-08-07T00:00:00Z');
+            date.setUTCDate(date.getUTCDate() - daysAgo);
+            return {
+                occurrenceKey: `floor-ride-${daysAgo}`, date: date.toISOString().slice(0, 10), modality: 'Cycling',
+                costProfile: budgetHistoryCost,
+                trainingRecordLike: { type: 'Cycling Easy Endurance', duration_min: 60, training_effect: 2, intensity_tag: 'easy' },
+            };
+        });
+        const window = (throughDateExclusive: string, windowDays: number) => {
+            const start = new Date(`${throughDateExclusive}T00:00:00Z`);
+            start.setUTCDate(start.getUTCDate() - windowDays);
+            return rides.filter(exposure => exposure.date >= start.toISOString().slice(0, 10) && exposure.date < throughDateExclusive);
+        };
+        const snapshot = async (throughDateExclusive: string, windowDays: number): Promise<TrainingHistorySnapshot> => ({
+            throughDateExclusive, windowDays, completedEvents: [], exposures: window(throughDateExclusive, windowDays),
+            sourceStates: {
+                activities: { status: 'AVAILABLE', revision: 'a' },
+                recommendations: { status: 'AVAILABLE', revision: 'r' },
+                manualTraining: { status: 'MISSING' },
+            },
+            generatedAt: '', revision: `floor-${windowDays}`,
+        });
+        const provider: TrainingHistoryProvider = {
+            reconstruct: async (_userId, through, windowDays) => window(through, windowDays),
+            getSnapshot: async (_userId, through, windowDays) => snapshot(through, windowDays),
+        };
+        const legacyProvider: TrainingHistoryProvider = { reconstruct: provider.reconstruct };
+
+        let reads = 0;
+        const countingProvider: TrainingHistoryProvider = {
+            reconstruct: async (userId, through, windowDays) => { reads += 1; return provider.reconstruct(userId, through, windowDays); },
+            getSnapshot: async (userId, through, windowDays) => { reads += 1; return provider.getSnapshot!(userId, through, windowDays); },
+        };
+        const enduranceProfile: TrainingIntentProfile = { ...evergreenProfile, priorities: ['endurance'] };
+        const narrow = await snapshot('2026-08-07', 7);
+
+        // Self-resolving callers (simulation, replay) read the rolling-load window anyway.
+        const unprepared = await resolveTrainingIntent('u1', [], '2026-08-07', readiness(), 7, provider);
+        expect(unprepared.aerobicVolumeFloor).toMatchObject({ floorMin: 45, source: 'athlete_history', sampleCount: 8 });
+
+        // Dashboard callers prepare a 7-day snapshot. Endurance evergreen profiles already read
+        // the 28-day athlete-state window, and the floor reuses it without another read.
+        const daily = await resolveTrainingIntent('u1', [], '2026-08-07', readiness(), 7, countingProvider, narrow, [], enduranceProfile);
+        expect(daily.aerobicVolumeFloor).toMatchObject({ floorMin: 45, source: 'athlete_history' });
+        const readsForEndurance = reads;
+
+        // Without evidence spanning the window, the floor fails closed rather than adding a read.
+        reads = 0;
+        const eventDaily = await resolveTrainingIntent('u1', [], '2026-08-07', readiness(), 7, countingProvider, narrow);
+        expect(eventDaily.aerobicVolumeFloor).toMatchObject({ floorMin: 30, source: 'catalog_minimum' });
+        expect(reads).toBe(0);
+        expect(readsForEndurance).toBeLessThanOrEqual(1);
+        const legacy = await resolveTrainingIntent('u1', [], '2026-08-07', readiness(), 7, legacyProvider);
+        expect(legacy.aerobicVolumeFloor.source).toBe('catalog_minimum');
+
+        // The floor evidence never widens operational history.
+        expect(daily.history.length).toBeLessThanOrEqual(3);
+    });
+
     it('uses the resolved evergreen context to suppress event authority without changing profile-less event behavior', async () => {
         const legacy = await resolveTrainingIntent('u1', [roadRace], '2026-08-07', readiness(), 7, fixtureHistory);
         const evergreen = await resolveTrainingIntent('u1', [roadRace], '2026-08-07', readiness(), 7, fixtureHistory, undefined, [], evergreenProfile);

@@ -171,12 +171,14 @@ spin or easy jog) ahead of walking on `modify` days without falsely closing the 
 
 Exact `aerobic_volume` credit uses one athlete-level duration floor (#757):
 `aerobicVolumeFloor.ts` `resolveAerobicVolumeFloor` takes the median full-dose continuous
-aerobic session from the read-only rolling-load evidence window (last 28 days, at least 4
-sessions) and sets the floor to max(catalog minimum, 0.75 × median, rounded to 5 min).
-The orchestration entry points resolve it once and pass it to `buildCoverageState`, so the
-same floor applies to completed history and to ranked candidates in every modality. A
-30-minute walk therefore cannot claim the role for an athlete whose typical ride is 60
-minutes. When no usable window can reach the floor, `evergreenPlanning.ts`
+aerobic session over the last 28 days (at least 4 sessions) and sets the floor to
+max(catalog minimum, 0.75 × median, rounded to 5 min). `trainingIntent.ts`
+`resolveTrainingIntent` resolves it once from evidence it already holds, without adding a
+history read, and falls back to the catalog minimum when no evidence spans 28 days.
+`buildCoverageState` and `weeklyAllocation.ts` `attachExactEligibleIdentities` then apply
+the same floor in every modality: completed sessions by actual duration, planned sessions
+by the upper bound of their prescribed range. A 30-minute walk therefore cannot claim the
+role for an athlete whose typical ride is 60 minutes. When no usable window can reach the floor, `evergreenPlanning.ts`
 `aerobicPackingForFloor` keeps the aerobic role planned at its catalog duration and
 reports an explicit `minimum_dose_shortfall`. The floor admits coverage; it does not
 claim dose adequacy.

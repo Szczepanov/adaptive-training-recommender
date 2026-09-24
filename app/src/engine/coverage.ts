@@ -25,6 +25,10 @@ export interface ExposureIdentity {
     /** Exact completed or projected duration. Coverage that requires a real aerobic dose
      * fails closed when this evidence is unavailable or below the catalog minimum. */
     durationMin?: number;
+    /** Upper bound of a planned (candidate or projected) prescription. Completed exposures
+     * omit it: their `durationMin` is the actual duration. Issue #757 judges a planned
+     * session against the athlete floor by the range it prescribes. */
+    durationMax?: number;
     /** True when the exposure uses a readiness-limited (`modify`-tier) easier dose rather
      * than its full prescription. Readiness-modified doses preserve aerobic maintenance
      * without claiming exact weekly `aerobic_volume` role coverage. */
@@ -97,6 +101,7 @@ export type CoverageHistoryInput =
         templateId?: string;
         workoutId?: string;
         durationMin?: number;
+        durationMax?: number;
         isReadinessModifiedDose?: boolean;
         modality?: SessionTemplate['modality'] | string;
         category?: SessionTemplate['category'] | string;
@@ -183,6 +188,7 @@ export function coverageHistoryFromCompletedExposures(history: readonly Coverage
             ...(entry.templateId ? { templateId: entry.templateId } : {}),
             ...(entry.workoutId ? { workoutId: entry.workoutId } : {}),
             ...(durationMin !== undefined ? { durationMin } : {}),
+            ...('durationMax' in entry && typeof entry.durationMax === 'number' ? { durationMax: entry.durationMax } : {}),
             ...('isReadinessModifiedDose' in entry && entry.isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
             ...(entry.modality && entry.modality !== 'Unknown' ? { modality: entry.modality as SessionTemplate['modality'] } : {}),
             ...(entry.category ? { category: entry.category as SessionTemplate['category'] } : {}),
@@ -253,15 +259,20 @@ export function workoutIdForTemplateId(templateId: string | undefined): string |
     return workoutForTemplate(templateId)?.id;
 }
 
-/** Issue #757: without a resolved athlete floor this is the catalog minimum (new users,
- * legacy callers); with one, every aerobic identity must reach the athlete-level floor. */
+/** The lower bound must reach the catalog minimum, as before #757. Issue #757 adds the
+ * athlete-level floor: a completed session meets it with its actual duration, a planned
+ * one with the upper bound of its prescribed range (a capped day truncates that bound). */
 function hasRequiredAerobicDose(identity: ExposureIdentity, workoutId: string, floor?: AerobicVolumeFloor | null): boolean {
     if (identity.isReadinessModifiedDose) return false;
-    const requiredDuration = aerobicVolumeFloorForWorkout(workoutId, floor);
-    return typeof requiredDuration === 'number'
-        && typeof identity.durationMin === 'number'
-        && Number.isFinite(identity.durationMin)
-        && identity.durationMin >= requiredDuration;
+    const catalogMinimum = aerobicVolumeFloorForWorkout(workoutId, null);
+    const athleteFloor = aerobicVolumeFloorForWorkout(workoutId, floor);
+    const lower = identity.durationMin;
+    if (catalogMinimum === undefined || athleteFloor === undefined
+        || typeof lower !== 'number' || !Number.isFinite(lower) || lower < catalogMinimum) return false;
+    const reach = typeof identity.durationMax === 'number' && Number.isFinite(identity.durationMax)
+        ? Math.max(lower, identity.durationMax)
+        : lower;
+    return reach >= athleteFloor;
 }
 
 export function coverageKeysForExposure(
@@ -316,6 +327,7 @@ export function coverageKeysForTemplate(
         modality: template.modality,
         category: template.category,
         durationMin: template.durationMin,
+        durationMax: template.durationMax,
         ...(template.isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
     }, phase, descriptor, floor);
 }
