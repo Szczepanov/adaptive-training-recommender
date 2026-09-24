@@ -42,15 +42,51 @@ describe('forecast completed-credit aging (#746)', () => {
         expect(after.completedExposures).toBe(projectCompatibilityExposures(0.8, 2));
     });
 
-    it('never raises completed credit and follows the daily rolling window across plan-block dates', () => {
+    it('never raises an unclassified carried objective, preserving contributor-only daily semantics', () => {
         const lower = ageCompletedObjectiveCreditForForecastDate(
             microcycle({ completedCredit: 0.3 }), historical, '2026-08-16', '2026-08-14',
         ).objectives[0];
         expect(lower.completedCredit).toBe(0.3);
-        const acrossBlock = ageCompletedObjectiveCreditForForecastDate(
-            microcycle(), historical, '2026-08-16', '2026-08-14',
+    });
+
+    it('rebuilds governing objective credit from historical facts when the forecast definition changes', () => {
+        const rebuilt = ageCompletedObjectiveCreditForForecastDate(
+            microcycle({ completedCredit: 0, projectedCredit: 0, completedExposures: 0 }),
+            historical,
+            '2026-08-16',
+            '2026-08-14',
+            [],
+            new Set(['strength']),
         ).objectives[0];
-        expect(acrossBlock.completedCredit).toBe(0.8);
+        expect(rebuilt.completedCredit).toBe(0.8);
+        expect(rebuilt.completedExposures).toBe(projectCompatibilityExposures(0.8, 2));
+    });
+
+    it('drops stale carried projection credit when a governing objective definition no longer qualifies it', () => {
+        const stricter = microcycle({
+            completedCredit: 0.8,
+            projectedCredit: 0.8,
+            completedExposures: 2,
+            qualification: { minimumStimulus: { maxStrength: 0.95 } },
+        });
+        const priorPick = strengthExposure('2026-08-15');
+        const rebuilt = ageCompletedObjectiveCreditForForecastDate(
+            stricter,
+            historical,
+            '2026-08-16',
+            '2026-08-14',
+            [{
+                occurrenceKey: priorPick.occurrenceKey!,
+                date: priorPick.date,
+                stimulus: priorPick.stimulusProfile!,
+                modality: priorPick.modality,
+                category: priorPick.category,
+            }],
+            new Set(['strength']),
+        ).objectives[0];
+        expect(rebuilt.completedCredit).toBe(0);
+        expect(rebuilt.projectedCredit).toBe(0);
+        expect(rebuilt.completedExposures).toBe(0);
     });
 
     it('keeps future forecast picks out of actual completed credit', () => {
