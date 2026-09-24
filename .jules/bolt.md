@@ -56,3 +56,7 @@
 ## 2026-09-23 - [Concurrent batched reads in Firestore]
 **Learning:** Sequential calls to `db.get_all(chunk)` in loops across many batches cause cumulative network roundtrip delays (N+1 latency across chunks).
 **Action:** When fetching multiple large chunks (e.g. 400 documents) from Firestore in Python, use `concurrent.futures.ThreadPoolExecutor` to map `db.get_all` across the chunks concurrently and merge the results, eliminating sequential I/O bottlenecks.
+
+## 2026-09-24 - Injectable sleep function for sync service backfill delay
+**Learning:** Hardcoded calls to `time.sleep()` in service loops block threads unconditionally and prevent callers in async or non-blocking contexts from using lightweight delays or mocking sleep during tests.
+**Action:** Expose an optional `sleep_fn: Callable[[float], None] | None` parameter on service initializers and loop methods (fallback to `time.sleep`), enabling async or custom sleep dependency injection without breaking default synchronous behavior or monkeypatched test helpers.
