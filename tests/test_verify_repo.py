@@ -29,6 +29,10 @@ def test_code_contract_contains_ci_critical_local_gates() -> None:
     assert "policy-version drift" in names
     assert "production build" in names
 
+    semantic_diff = next(step for step in plan if step.name == "simulation semantic diff (advisory)")
+    assert semantic_diff.required is False
+    assert semantic_diff.argv == ("npm", "--prefix", "app", "run", "simulate:diff")
+
 
 def test_code_contract_avoids_external_registry_and_docker_gates() -> None:
     plan = build_plan("code", "c" * 40)
