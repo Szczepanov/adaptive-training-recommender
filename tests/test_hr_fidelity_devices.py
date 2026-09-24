@@ -56,13 +56,9 @@ def test_is_cycling_head_unit() -> None:
         is_cycling_head_unit(FitDeviceInventoryEntry(0, "garmin", "forerunner_965", None, "local"))
         is False
     )
+    assert is_cycling_head_unit(FitDeviceInventoryEntry(0, "garmin", None, None, "local")) is False
     assert (
-        is_cycling_head_unit(FitDeviceInventoryEntry(0, "garmin", None, None, "local"))
-        is False
-    )
-    assert (
-        is_cycling_head_unit(FitDeviceInventoryEntry(0, "garmin", 999999, None, "local"))
-        is False
+        is_cycling_head_unit(FitDeviceInventoryEntry(0, "garmin", 999999, None, "local")) is False
     )
 
 
