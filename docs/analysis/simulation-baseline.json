@@ -5485,22 +5485,22 @@
       "weeksSimulated": 4,
       "totalDays": 28,
       "categoryDistribution": {
-        "Rest": 8,
-        "Mobility/Recovery": 4,
-        "Easy Endurance": 12,
+        "Rest": 12,
+        "Easy Endurance": 11,
+        "Mobility/Recovery": 1,
         "Hard Endurance": 2,
         "Full-body Strength": 2
       },
       "modalityDistribution": {
-        "None": 8,
-        "Mobility": 4,
-        "Cycling": 14,
+        "None": 12,
+        "Cycling": 13,
+        "Mobility": 1,
         "Strength": 2
       },
-      "restOrRecoveryDayCount": 12,
-      "restOrRecoveryDayPct": 42.9,
-      "maxConsecutiveSameTemplateStreakWithinCall": 2,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
+      "restOrRecoveryDayCount": 13,
+      "restOrRecoveryDayPct": 46.4,
+      "maxConsecutiveSameTemplateStreakWithinCall": 3,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 3,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -5531,16 +5531,6 @@
       "objectiveCredits": [
         {
           "weekIndex": 0,
-          "date": "2026-08-09",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "mob_01",
-          "templateTitle": "Active Recovery & Mobility",
-          "modality": "Mobility",
-          "earnedCredit": 0.1
-        },
-        {
-          "weekIndex": 0,
           "date": "2026-08-10",
           "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Aerobic Base (Zone 2)",
@@ -5558,6 +5548,16 @@
           "templateTitle": "Outdoor Zone 2 Ride",
           "modality": "Cycling",
           "earnedCredit": 0.48
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-12",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "mob_travel_flow_01",
+          "templateTitle": "Hotel Room Mobility & Core Flow",
+          "modality": "Mobility",
+          "earnedCredit": 0.040000000000000036
         },
         {
           "weekIndex": 0,
@@ -5622,7 +5622,7 @@
       ],
       "utilityDiagnostics": {
         "fragileSelectionCount": 10,
-        "lowerBenefitSelectionCount": 0,
+        "lowerBenefitSelectionCount": 5,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
@@ -6120,12 +6120,9 @@
             {
               "date": "2026-08-09",
               "weekIndex": 0,
-              "collision": 0.32669470371236703,
-              "costMagnitude": 0.6,
-              "topDimensions": [
-                "lowerBody",
-                "impactTissue"
-              ]
+              "collision": 0,
+              "costMagnitude": 0,
+              "topDimensions": []
             },
             {
               "date": "2026-08-10",
@@ -6140,7 +6137,7 @@
             {
               "date": "2026-08-11",
               "weekIndex": 0,
-              "collision": 0.16079203746702184,
+              "collision": 0.14720443334521588,
               "costMagnitude": 0.6900000000000002,
               "topDimensions": [
                 "lowerBody",
@@ -6150,8 +6147,8 @@
             {
               "date": "2026-08-12",
               "weekIndex": 0,
-              "collision": 0.18283574903424674,
-              "costMagnitude": 0.6900000000000002,
+              "collision": 0.13784844287897785,
+              "costMagnitude": 0.6,
               "topDimensions": [
                 "lowerBody",
                 "systemic"
@@ -6160,11 +6157,11 @@
             {
               "date": "2026-08-13",
               "weekIndex": 0,
-              "collision": 0.1922358411943389,
+              "collision": 0.1506680764244518,
               "costMagnitude": 4,
               "topDimensions": [
-                "systemic",
-                "lowerBody"
+                "lowerBody",
+                "systemic"
               ]
             },
             {
@@ -6184,17 +6181,14 @@
             {
               "date": "2026-08-16",
               "weekIndex": 1,
-              "collision": 0.32669470371236703,
-              "costMagnitude": 0.6,
-              "topDimensions": [
-                "lowerBody",
-                "impactTissue"
-              ]
+              "collision": 0,
+              "costMagnitude": 0,
+              "topDimensions": []
             },
             {
               "date": "2026-08-17",
               "weekIndex": 1,
-              "collision": 0.2416452426657824,
+              "collision": 0.21249827453135173,
               "costMagnitude": 0.6900000000000002,
               "topDimensions": [
                 "lowerBody",
@@ -6204,7 +6198,7 @@
             {
               "date": "2026-08-18",
               "weekIndex": 1,
-              "collision": 0.24668937286142745,
+              "collision": 0.20755160809237816,
               "costMagnitude": 0.6900000000000002,
               "topDimensions": [
                 "lowerBody",
@@ -6214,7 +6208,7 @@
             {
               "date": "2026-08-19",
               "weekIndex": 1,
-              "collision": 0.2493831459363452,
+              "collision": 0.22374479698793784,
               "costMagnitude": 0.6900000000000002,
               "topDimensions": [
                 "lowerBody",
@@ -6224,7 +6218,7 @@
             {
               "date": "2026-08-20",
               "weekIndex": 1,
-              "collision": 0.20870124053559191,
+              "collision": 0.18932131440458005,
               "costMagnitude": 4.1,
               "topDimensions": [
                 "lowerBody",
@@ -6248,17 +6242,14 @@
             {
               "date": "2026-08-23",
               "weekIndex": 2,
-              "collision": 0.32669470371236703,
-              "costMagnitude": 0.6,
-              "topDimensions": [
-                "lowerBody",
-                "impactTissue"
-              ]
+              "collision": 0,
+              "costMagnitude": 0,
+              "topDimensions": []
             },
             {
               "date": "2026-08-24",
               "weekIndex": 2,
-              "collision": 0.2326498781918875,
+              "collision": 0.21249827453135173,
               "costMagnitude": 0.6900000000000002,
               "topDimensions": [
                 "lowerBody",
@@ -6268,7 +6259,7 @@
             {
               "date": "2026-08-25",
               "weekIndex": 2,
-              "collision": 0.23863492351942334,
+              "collision": 0.20172552717214762,
               "costMagnitude": 0.6900000000000002,
               "topDimensions": [
                 "lowerBody",
@@ -6278,7 +6269,7 @@
             {
               "date": "2026-08-26",
               "weekIndex": 2,
-              "collision": 0.24775271115373648,
+              "collision": 0.2216908327861845,
               "costMagnitude": 0.6900000000000002,
               "topDimensions": [
                 "lowerBody",
@@ -6288,7 +6279,7 @@
             {
               "date": "2026-08-27",
               "weekIndex": 2,
-              "collision": 0.2351472888860785,
+              "collision": 0.21831459342643106,
               "costMagnitude": 4,
               "topDimensions": [
                 "lowerBody",
@@ -6312,17 +6303,14 @@
             {
               "date": "2026-08-30",
               "weekIndex": 3,
-              "collision": 0.32669470371236703,
-              "costMagnitude": 0.6,
-              "topDimensions": [
-                "lowerBody",
-                "impactTissue"
-              ]
+              "collision": 0,
+              "costMagnitude": 0,
+              "topDimensions": []
             },
             {
               "date": "2026-08-31",
               "weekIndex": 3,
-              "collision": 0.2416452426657824,
+              "collision": 0.21249827453135173,
               "costMagnitude": 0.6900000000000002,
               "topDimensions": [
                 "lowerBody",
@@ -6332,7 +6320,7 @@
             {
               "date": "2026-09-01",
               "weekIndex": 3,
-              "collision": 0.24668937286142745,
+              "collision": 0.21157334722281285,
               "costMagnitude": 0.6900000000000002,
               "topDimensions": [
                 "lowerBody",
@@ -6342,7 +6330,7 @@
             {
               "date": "2026-09-02",
               "weekIndex": 3,
-              "collision": 0.2493831459363452,
+              "collision": 0.22643720655293254,
               "costMagnitude": 0.6900000000000002,
               "topDimensions": [
                 "lowerBody",
@@ -6352,7 +6340,7 @@
             {
               "date": "2026-09-03",
               "weekIndex": 3,
-              "collision": 0.20870124053559191,
+              "collision": 0.1898773447961683,
               "costMagnitude": 4.1,
               "topDimensions": [
                 "lowerBody",
@@ -6360,8 +6348,8 @@
               ]
             }
           ],
-          "meanCollision": 0.17507726867235168,
-          "maxCollision": 0.32669470371236703
+          "meanCollision": 0.11342680793627234,
+          "maxCollision": 0.22643720655293254
         },
         "adjacentCostOverlap": {
           "perPair": [
@@ -6369,22 +6357,6 @@
               "date": "2026-08-11",
               "previousDate": "2026-08-10",
               "overlap": 0.6228912597399697,
-              "lowerBodyOverlap": 0.12727922061357855,
-              "impactTissueOverlap": 0.042426406871192854,
-              "neuromuscularOverlap": 0.037797631496846194
-            },
-            {
-              "date": "2026-08-12",
-              "previousDate": "2026-08-11",
-              "overlap": 0.6228912597399697,
-              "lowerBodyOverlap": 0.12727922061357855,
-              "impactTissueOverlap": 0.042426406871192854,
-              "neuromuscularOverlap": 0.037797631496846194
-            },
-            {
-              "date": "2026-08-13",
-              "previousDate": "2026-08-12",
-              "overlap": 0.10744874230514481,
               "lowerBodyOverlap": 0.12727922061357855,
               "impactTissueOverlap": 0.042426406871192854,
               "neuromuscularOverlap": 0.037797631496846194
@@ -6465,7 +6437,7 @@
           "maxLowerBodyOverlap": 0.12727922061357855,
           "maxImpactTissueOverlap": 0.042426406871192854,
           "maxNeuromuscularOverlap": 0.037797631496846194,
-          "meanOverlap": 0.45064030375638936
+          "meanOverlap": 0.46773436430315574
         },
         "qualitySpacing": {
           "gapsDays": [
@@ -6487,7 +6459,7 @@
               "hardDayCount": 1,
               "maxHardStreak": 1,
               "recoveryAfterHighCollisionCount": 0,
-              "recoveryWhileFatigueLowAndWorkFeasibleCount": 1
+              "recoveryWhileFatigueLowAndWorkFeasibleCount": 2
             },
             {
               "weekIndex": 1,
@@ -6517,12 +6489,12 @@
           "utilityWinnerDifferentCount": 14,
           "utilityWinnerBlockedCount": 14,
           "utilityWinnerDifferentWithoutTierBlockCount": 0,
-          "meanBlockedUtilityGap": 0.054085928366797875,
-          "maxBlockedUtilityGap": 0.14081809170010207,
+          "meanBlockedUtilityGap": 0.1440800270277074,
+          "maxBlockedUtilityGap": 1.4050926622142907,
           "blockedByTier": {
-            "coverage": 7,
-            "recovery": 5,
-            "benefit": 2
+            "coverage": 1,
+            "recovery": 11,
+            "benefit": 3
           },
           "perDay": [
             {
@@ -6554,18 +6526,32 @@
               "selectedAdvancesRequiredRole": false
             },
             {
+              "date": "2026-08-09",
+              "weekIndex": 0,
+              "selectedTemplateId": "rest_01",
+              "bestUtilityTemplateId": "mob_01",
+              "selectedVsBestUtilityGap": 0.05585428897886871,
+              "tierBlocked": true,
+              "blockedByTier": {
+                "coverage": false,
+                "recovery": true,
+                "benefit": false
+              },
+              "selectedAdvancesRequiredRole": false
+            },
+            {
               "date": "2026-08-12",
               "weekIndex": 0,
-              "selectedTemplateId": "end_easy_01",
-              "bestUtilityTemplateId": "cycling_technical_01",
-              "selectedVsBestUtilityGap": 0.04885205177916929,
+              "selectedTemplateId": "mob_travel_flow_01",
+              "bestUtilityTemplateId": "end_easy_01",
+              "selectedVsBestUtilityGap": 1.4050926622142907,
               "tierBlocked": true,
               "blockedByTier": {
                 "coverage": true,
                 "recovery": false,
-                "benefit": false
+                "benefit": true
               },
-              "selectedAdvancesRequiredRole": true
+              "selectedAdvancesRequiredRole": false
             },
             {
               "date": "2026-08-15",
@@ -6582,39 +6568,25 @@
               "selectedAdvancesRequiredRole": false
             },
             {
-              "date": "2026-08-18",
+              "date": "2026-08-16",
               "weekIndex": 1,
-              "selectedTemplateId": "end_easy_04",
-              "bestUtilityTemplateId": "cycling_technical_01",
-              "selectedVsBestUtilityGap": 0.0428570922815904,
+              "selectedTemplateId": "rest_01",
+              "bestUtilityTemplateId": "mob_01",
+              "selectedVsBestUtilityGap": 0.036442087147884265,
               "tierBlocked": true,
               "blockedByTier": {
-                "coverage": true,
-                "recovery": false,
+                "coverage": false,
+                "recovery": true,
                 "benefit": false
               },
-              "selectedAdvancesRequiredRole": true
-            },
-            {
-              "date": "2026-08-19",
-              "weekIndex": 1,
-              "selectedTemplateId": "end_easy_01",
-              "bestUtilityTemplateId": "cycling_technical_01",
-              "selectedVsBestUtilityGap": 0.050519473411332005,
-              "tierBlocked": true,
-              "blockedByTier": {
-                "coverage": true,
-                "recovery": false,
-                "benefit": false
-              },
-              "selectedAdvancesRequiredRole": true
+              "selectedAdvancesRequiredRole": false
             },
             {
               "date": "2026-08-20",
               "weekIndex": 1,
               "selectedTemplateId": "str_full_01",
               "bestUtilityTemplateId": "str_full_03",
-              "selectedVsBestUtilityGap": 0.14081809170010207,
+              "selectedVsBestUtilityGap": 0.14042095806320642,
               "tierBlocked": true,
               "blockedByTier": {
                 "coverage": false,
@@ -6622,6 +6594,20 @@
                 "benefit": true
               },
               "selectedAdvancesRequiredRole": true
+            },
+            {
+              "date": "2026-08-21",
+              "weekIndex": 2,
+              "selectedTemplateId": "rest_01",
+              "bestUtilityTemplateId": "mob_01",
+              "selectedVsBestUtilityGap": 0.00922145689835107,
+              "tierBlocked": true,
+              "blockedByTier": {
+                "coverage": false,
+                "recovery": true,
+                "benefit": false
+              },
+              "selectedAdvancesRequiredRole": false
             },
             {
               "date": "2026-08-22",
@@ -6638,32 +6624,32 @@
               "selectedAdvancesRequiredRole": false
             },
             {
-              "date": "2026-08-25",
+              "date": "2026-08-23",
               "weekIndex": 2,
-              "selectedTemplateId": "end_easy_04",
-              "bestUtilityTemplateId": "cycling_technical_01",
-              "selectedVsBestUtilityGap": 0.041722523026641145,
+              "selectedTemplateId": "rest_01",
+              "bestUtilityTemplateId": "mob_01",
+              "selectedVsBestUtilityGap": 0.036442087147884265,
               "tierBlocked": true,
               "blockedByTier": {
-                "coverage": true,
-                "recovery": false,
+                "coverage": false,
+                "recovery": true,
                 "benefit": false
               },
-              "selectedAdvancesRequiredRole": true
+              "selectedAdvancesRequiredRole": false
             },
             {
-              "date": "2026-08-26",
-              "weekIndex": 2,
-              "selectedTemplateId": "end_easy_01",
-              "bestUtilityTemplateId": "cycling_technical_01",
-              "selectedVsBestUtilityGap": 0.05067815222860583,
+              "date": "2026-08-28",
+              "weekIndex": 3,
+              "selectedTemplateId": "rest_01",
+              "bestUtilityTemplateId": "mob_01",
+              "selectedVsBestUtilityGap": 0.00922145689835107,
               "tierBlocked": true,
               "blockedByTier": {
-                "coverage": true,
-                "recovery": false,
+                "coverage": false,
+                "recovery": true,
                 "benefit": false
               },
-              "selectedAdvancesRequiredRole": true
+              "selectedAdvancesRequiredRole": false
             },
             {
               "date": "2026-08-29",
@@ -6680,39 +6666,25 @@
               "selectedAdvancesRequiredRole": false
             },
             {
-              "date": "2026-09-01",
+              "date": "2026-08-30",
               "weekIndex": 3,
-              "selectedTemplateId": "end_easy_04",
-              "bestUtilityTemplateId": "cycling_technical_01",
-              "selectedVsBestUtilityGap": 0.0428570922815904,
+              "selectedTemplateId": "rest_01",
+              "bestUtilityTemplateId": "mob_01",
+              "selectedVsBestUtilityGap": 0.036442087147884265,
               "tierBlocked": true,
               "blockedByTier": {
-                "coverage": true,
-                "recovery": false,
+                "coverage": false,
+                "recovery": true,
                 "benefit": false
               },
-              "selectedAdvancesRequiredRole": true
-            },
-            {
-              "date": "2026-09-02",
-              "weekIndex": 3,
-              "selectedTemplateId": "end_easy_01",
-              "bestUtilityTemplateId": "cycling_technical_01",
-              "selectedVsBestUtilityGap": 0.050519473411332005,
-              "tierBlocked": true,
-              "blockedByTier": {
-                "coverage": true,
-                "recovery": false,
-                "benefit": false
-              },
-              "selectedAdvancesRequiredRole": true
+              "selectedAdvancesRequiredRole": false
             },
             {
               "date": "2026-09-03",
               "weekIndex": 3,
               "selectedTemplateId": "str_full_01",
               "bestUtilityTemplateId": "str_full_03",
-              "selectedVsBestUtilityGap": 0.14081809170010207,
+              "selectedVsBestUtilityGap": 0.14042233857647768,
               "tierBlocked": true,
               "blockedByTier": {
                 "coverage": false,
@@ -6732,7 +6704,7 @@
             "modify": 3,
             "recover": 1
           },
-          "restOrRecoveryDayCount": 3
+          "restOrRecoveryDayCount": 4
         },
         {
           "weekIndex": 1,
@@ -6771,18 +6743,18 @@
       "weeksSimulated": 2,
       "totalDays": 14,
       "categoryDistribution": {
-        "Rest": 3,
-        "Mobility/Recovery": 2,
+        "Rest": 4,
         "Easy Endurance": 5,
+        "Mobility/Recovery": 1,
         "Hard Endurance": 1,
         "Upper-body Strength": 1,
         "Full-body Strength": 1,
         "Moderate Endurance": 1
       },
       "modalityDistribution": {
-        "None": 3,
-        "Mobility": 2,
+        "None": 4,
         "Cycling": 7,
+        "Mobility": 1,
         "Strength": 2
       },
       "restOrRecoveryDayCount": 5,
@@ -6819,16 +6791,6 @@
       "objectiveCredits": [
         {
           "weekIndex": 0,
-          "date": "2026-08-09",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "mob_01",
-          "templateTitle": "Active Recovery & Mobility",
-          "modality": "Mobility",
-          "earnedCredit": 0.1
-        },
-        {
-          "weekIndex": 0,
           "date": "2026-08-10",
           "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Aerobic Base (Zone 2)",
@@ -6846,6 +6808,16 @@
           "templateTitle": "Zone 2 Spin",
           "modality": "Cycling",
           "earnedCredit": 0.48
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-12",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "mob_travel_flow_01",
+          "templateTitle": "Hotel Room Mobility & Core Flow",
+          "modality": "Mobility",
+          "earnedCredit": 0.040000000000000036
         },
         {
           "weekIndex": 0,
@@ -6869,7 +6841,7 @@
         },
         {
           "weekIndex": 1,
-          "date": "2026-08-15",
+          "date": "2026-08-14",
           "objectiveKey": "strength_maintenance",
           "objectiveTitle": "Strength & Neuromuscular Maintenance",
           "templateId": "str_upper_01",
@@ -6900,7 +6872,7 @@
       ],
       "utilityDiagnostics": {
         "fragileSelectionCount": 3,
-        "lowerBenefitSelectionCount": 3,
+        "lowerBenefitSelectionCount": 5,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
@@ -7202,12 +7174,9 @@
             {
               "date": "2026-08-09",
               "weekIndex": 0,
-              "collision": 0.32669470371236703,
-              "costMagnitude": 0.6,
-              "topDimensions": [
-                "lowerBody",
-                "impactTissue"
-              ]
+              "collision": 0,
+              "costMagnitude": 0,
+              "topDimensions": []
             },
             {
               "date": "2026-08-10",
@@ -7222,7 +7191,7 @@
             {
               "date": "2026-08-11",
               "weekIndex": 0,
-              "collision": 0.16079203746702184,
+              "collision": 0.14720443334521588,
               "costMagnitude": 0.6900000000000002,
               "topDimensions": [
                 "lowerBody",
@@ -7232,8 +7201,8 @@
             {
               "date": "2026-08-12",
               "weekIndex": 0,
-              "collision": 0.18283574903424674,
-              "costMagnitude": 0.6900000000000002,
+              "collision": 0.13784844287897785,
+              "costMagnitude": 0.6,
               "topDimensions": [
                 "lowerBody",
                 "systemic"
@@ -7242,37 +7211,37 @@
             {
               "date": "2026-08-13",
               "weekIndex": 0,
-              "collision": 0.1922358411943389,
+              "collision": 0.1506680764244518,
               "costMagnitude": 4,
               "topDimensions": [
-                "systemic",
-                "lowerBody"
+                "lowerBody",
+                "systemic"
               ]
             },
             {
               "date": "2026-08-14",
               "weekIndex": 1,
-              "collision": 0.5172935476122091,
-              "costMagnitude": 0.36,
+              "collision": 0.39345174535738026,
+              "costMagnitude": 1.575,
+              "topDimensions": [
+                "systemic",
+                "neuromuscular"
+              ]
+            },
+            {
+              "date": "2026-08-15",
+              "weekIndex": 1,
+              "collision": 0.5303829773795696,
+              "costMagnitude": 0.6900000000000002,
               "topDimensions": [
                 "systemic",
                 "lowerBody"
               ]
             },
             {
-              "date": "2026-08-15",
-              "weekIndex": 1,
-              "collision": 0.4507017602013875,
-              "costMagnitude": 1.575,
-              "topDimensions": [
-                "upperBody",
-                "neuromuscular"
-              ]
-            },
-            {
               "date": "2026-08-16",
               "weekIndex": 1,
-              "collision": 0.39129939002813713,
+              "collision": 0.4051441129913668,
               "costMagnitude": 1.1500000000000001,
               "topDimensions": [
                 "systemic",
@@ -7282,11 +7251,11 @@
             {
               "date": "2026-08-17",
               "weekIndex": 1,
-              "collision": 0.3977828333925815,
+              "collision": 0.37738130434693645,
               "costMagnitude": 2.35,
               "topDimensions": [
-                "systemic",
-                "lowerBody"
+                "lowerBody",
+                "systemic"
               ]
             },
             {
@@ -7299,7 +7268,7 @@
             {
               "date": "2026-08-19",
               "weekIndex": 1,
-              "collision": 0.3210374096525843,
+              "collision": 0.32529560902212984,
               "costMagnitude": 1.1500000000000001,
               "topDimensions": [
                 "lowerBody",
@@ -7309,7 +7278,7 @@
             {
               "date": "2026-08-20",
               "weekIndex": 1,
-              "collision": 0.3522836783750883,
+              "collision": 0.35354222674911573,
               "costMagnitude": 2.4,
               "topDimensions": [
                 "lowerBody",
@@ -7317,8 +7286,8 @@
               ]
             }
           ],
-          "meanCollision": 0.250389658942951,
-          "maxCollision": 0.5172935476122091
+          "meanCollision": 0.21667265735903543,
+          "maxCollision": 0.5303829773795696
         },
         "adjacentCostOverlap": {
           "perPair": [
@@ -7331,28 +7300,28 @@
               "neuromuscularOverlap": 0.037797631496846194
             },
             {
-              "date": "2026-08-12",
-              "previousDate": "2026-08-11",
-              "overlap": 0.6228912597399697,
-              "lowerBodyOverlap": 0.12727922061357855,
-              "impactTissueOverlap": 0.042426406871192854,
-              "neuromuscularOverlap": 0.037797631496846194
+              "date": "2026-08-14",
+              "previousDate": "2026-08-13",
+              "overlap": 0.31197770285927406,
+              "lowerBodyOverlap": 0,
+              "impactTissueOverlap": 0.07500000000000001,
+              "neuromuscularOverlap": 0.375
             },
             {
-              "date": "2026-08-13",
-              "previousDate": "2026-08-12",
-              "overlap": 0.10744874230514481,
-              "lowerBodyOverlap": 0.12727922061357855,
-              "impactTissueOverlap": 0.042426406871192854,
-              "neuromuscularOverlap": 0.037797631496846194
+              "date": "2026-08-15",
+              "previousDate": "2026-08-14",
+              "overlap": 0.31330161735225415,
+              "lowerBodyOverlap": 0,
+              "impactTissueOverlap": 0.05303300858899108,
+              "neuromuscularOverlap": 0.06
             },
             {
               "date": "2026-08-16",
               "previousDate": "2026-08-15",
-              "overlap": 0.28109107250215304,
-              "lowerBodyOverlap": 0,
-              "impactTissueOverlap": 0.05303300858899108,
-              "neuromuscularOverlap": 0.1
+              "overlap": 0.3737347558439819,
+              "lowerBodyOverlap": 0.12727922061357855,
+              "impactTissueOverlap": 0.042426406871192854,
+              "neuromuscularOverlap": 0.037797631496846194
             },
             {
               "date": "2026-08-17",
@@ -7372,9 +7341,9 @@
             }
           ],
           "maxLowerBodyOverlap": 0.21213203435596426,
-          "maxImpactTissueOverlap": 0.07071067811865477,
-          "maxNeuromuscularOverlap": 0.1,
-          "meanOverlap": 0.3729350316699056
+          "maxImpactTissueOverlap": 0.07500000000000001,
+          "maxNeuromuscularOverlap": 0.375,
+          "meanOverlap": 0.3708655319212793
         },
         "qualitySpacing": {
           "gapsDays": [
@@ -7395,7 +7364,7 @@
               "hardDayCount": 1,
               "maxHardStreak": 1,
               "recoveryAfterHighCollisionCount": 0,
-              "recoveryWhileFatigueLowAndWorkFeasibleCount": 1
+              "recoveryWhileFatigueLowAndWorkFeasibleCount": 2
             },
             {
               "weekIndex": 1,
@@ -7411,11 +7380,11 @@
           "utilityWinnerDifferentCount": 7,
           "utilityWinnerBlockedCount": 7,
           "utilityWinnerDifferentWithoutTierBlockCount": 0,
-          "meanBlockedUtilityGap": 0.32655608384085744,
-          "maxBlockedUtilityGap": 0.6322380053949886,
+          "meanBlockedUtilityGap": 0.35613479907645573,
+          "maxBlockedUtilityGap": 0.7994286672509309,
           "blockedByTier": {
-            "coverage": 4,
-            "recovery": 2,
+            "coverage": 2,
+            "recovery": 3,
             "benefit": 4
           },
           "perDay": [
@@ -7448,39 +7417,39 @@
               "selectedAdvancesRequiredRole": false
             },
             {
+              "date": "2026-08-09",
+              "weekIndex": 0,
+              "selectedTemplateId": "rest_01",
+              "bestUtilityTemplateId": "mob_01",
+              "selectedVsBestUtilityGap": 0.05585428897886871,
+              "tierBlocked": true,
+              "blockedByTier": {
+                "coverage": false,
+                "recovery": true,
+                "benefit": false
+              },
+              "selectedAdvancesRequiredRole": false
+            },
+            {
               "date": "2026-08-11",
               "weekIndex": 0,
               "selectedTemplateId": "end_easy_01",
               "bestUtilityTemplateId": "cycling_technical_01",
-              "selectedVsBestUtilityGap": 0.5081444720554152,
+              "selectedVsBestUtilityGap": 0.5694887925401636,
               "tierBlocked": true,
               "blockedByTier": {
-                "coverage": true,
+                "coverage": false,
                 "recovery": false,
                 "benefit": true
               },
-              "selectedAdvancesRequiredRole": true
+              "selectedAdvancesRequiredRole": false
             },
             {
               "date": "2026-08-12",
               "weekIndex": 0,
-              "selectedTemplateId": "end_easy_01",
+              "selectedTemplateId": "mob_travel_flow_01",
               "bestUtilityTemplateId": "cycling_technical_01",
-              "selectedVsBestUtilityGap": 0.5764046883830537,
-              "tierBlocked": true,
-              "blockedByTier": {
-                "coverage": true,
-                "recovery": false,
-                "benefit": false
-              },
-              "selectedAdvancesRequiredRole": true
-            },
-            {
-              "date": "2026-08-14",
-              "weekIndex": 1,
-              "selectedTemplateId": "mob_01",
-              "bestUtilityTemplateId": "end_easy_01",
-              "selectedVsBestUtilityGap": 0.47022543850769627,
+              "selectedVsBestUtilityGap": 0.7994286672509309,
               "tierBlocked": true,
               "blockedByTier": {
                 "coverage": true,
@@ -7490,11 +7459,11 @@
               "selectedAdvancesRequiredRole": false
             },
             {
-              "date": "2026-08-15",
+              "date": "2026-08-14",
               "weekIndex": 1,
               "selectedTemplateId": "str_upper_01",
               "bestUtilityTemplateId": "end_easy_01",
-              "selectedVsBestUtilityGap": 0.033278758773767514,
+              "selectedVsBestUtilityGap": 0.37328381303625957,
               "tierBlocked": true,
               "blockedByTier": {
                 "coverage": false,
@@ -7508,7 +7477,7 @@
               "weekIndex": 1,
               "selectedTemplateId": "end_easy_01",
               "bestUtilityTemplateId": "end_mod_02",
-              "selectedVsBestUtilityGap": 0.6322380053949886,
+              "selectedVsBestUtilityGap": 0.6292868079578867,
               "tierBlocked": true,
               "blockedByTier": {
                 "coverage": true,
@@ -7528,7 +7497,7 @@
             "modify": 3,
             "recover": 1
           },
-          "restOrRecoveryDayCount": 3
+          "restOrRecoveryDayCount": 4
         },
         {
           "weekIndex": 1,
@@ -7537,7 +7506,7 @@
             "modify": 0,
             "recover": 1
           },
-          "restOrRecoveryDayCount": 2
+          "restOrRecoveryDayCount": 1
         }
       ]
     },
@@ -17311,15 +17280,15 @@
       "categoryDistribution": {
         "Easy Endurance": 2,
         "Full-body Strength": 2,
-        "Mobility/Recovery": 1,
         "Hard Endurance": 1,
-        "Rest": 1
+        "Rest": 1,
+        "Mobility/Recovery": 1
       },
       "modalityDistribution": {
         "Cycling": 3,
         "Strength": 2,
-        "Mobility": 1,
-        "None": 1
+        "None": 1,
+        "Mobility": 1
       },
       "restOrRecoveryDayCount": 2,
       "restOrRecoveryDayPct": 28.6,
@@ -17378,10 +17347,10 @@
           "date": "2026-08-09",
           "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "mob_01",
-          "templateTitle": "Active Recovery & Mobility",
-          "modality": "Mobility",
-          "earnedCredit": 0.1
+          "templateId": "end_easy_01",
+          "templateTitle": "Zone 2 Spin",
+          "modality": "Cycling",
+          "earnedCredit": 0.53
         },
         {
           "weekIndex": 0,
@@ -17421,18 +17390,17 @@
           "templateId": "str_full_03",
           "templateTitle": "Reduced Full-body Strength Maintenance",
           "modality": "Strength",
-          "earnedCredit": 0.49
+          "earnedCredit": 0.51
         }
       ],
       "utilityDiagnostics": {
         "fragileSelectionCount": 2,
-        "lowerBenefitSelectionCount": 4,
-        "trainTierRestOrRecoveryCount": 1
+        "lowerBenefitSelectionCount": 3,
+        "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
         "Unresolved weekly objectives: race_specific_endurance 0/1.",
-        "Event-specific anchor missed in 1 nominated week(s).",
-        "Rest or mobility selected on 1 projected train-tier day(s)."
+        "Event-specific anchor missed in 1 nominated week(s)."
       ],
       "anchorWeeks": [
         {
@@ -17552,8 +17520,8 @@
             {
               "date": "2026-08-09",
               "weekIndex": 0,
-              "collision": 0.25407441204694337,
-              "costMagnitude": 0.6,
+              "collision": 0.2673691030000606,
+              "costMagnitude": 0.7666666666666666,
               "topDimensions": [
                 "lowerBody",
                 "systemic"
@@ -17562,11 +17530,11 @@
             {
               "date": "2026-08-10",
               "weekIndex": 0,
-              "collision": 0.22995278354487148,
+              "collision": 0.26532649429809335,
               "costMagnitude": 4,
               "topDimensions": [
-                "lowerBody",
-                "systemic"
+                "systemic",
+                "lowerBody"
               ]
             },
             {
@@ -17579,8 +17547,8 @@
             {
               "date": "2026-08-12",
               "weekIndex": 0,
-              "collision": 0.4139488775179586,
-              "costMagnitude": 1.1500000000000001,
+              "collision": 0.3601487290578439,
+              "costMagnitude": 0.36,
               "topDimensions": [
                 "lowerBody",
                 "systemic"
@@ -17589,15 +17557,15 @@
             {
               "date": "2026-08-13",
               "weekIndex": 0,
-              "collision": 0.35818114583265803,
-              "costMagnitude": 1.645,
+              "collision": 0.2837189955726659,
+              "costMagnitude": 2.35,
               "topDimensions": [
                 "lowerBody",
                 "systemic"
               ]
             }
           ],
-          "meanCollision": 0.26794867455311683,
+          "meanCollision": 0.2565781178368643,
           "maxCollision": 0.4354255319148936
         },
         "adjacentCostOverlap": {
@@ -17611,18 +17579,26 @@
               "neuromuscularOverlap": 0.06299605249474366
             },
             {
-              "date": "2026-08-13",
-              "previousDate": "2026-08-12",
-              "overlap": 0.4267824463449943,
-              "lowerBodyOverlap": 0.21213203435596426,
-              "impactTissueOverlap": 0.07071067811865477,
-              "neuromuscularOverlap": 0.06299605249474366
+              "date": "2026-08-09",
+              "previousDate": "2026-08-08",
+              "overlap": 0.5360639641516303,
+              "lowerBodyOverlap": 0.19999999999999998,
+              "impactTissueOverlap": 0.06666666666666667,
+              "neuromuscularOverlap": 0.06666666666666667
+            },
+            {
+              "date": "2026-08-10",
+              "previousDate": "2026-08-09",
+              "overlap": 0.1193874914501609,
+              "lowerBodyOverlap": 0.1414213562373095,
+              "impactTissueOverlap": 0.04714045207910317,
+              "neuromuscularOverlap": 0.04199736832982911
             }
           ],
           "maxLowerBodyOverlap": 0.21213203435596426,
           "maxImpactTissueOverlap": 0.07071067811865477,
-          "maxNeuromuscularOverlap": 0.06299605249474366,
-          "meanOverlap": 0.4267824463449943
+          "maxNeuromuscularOverlap": 0.06666666666666667,
+          "meanOverlap": 0.3607446339822618
         },
         "qualitySpacing": {
           "gapsDays": [
@@ -17643,21 +17619,21 @@
               "hardDayCount": 3,
               "maxHardStreak": 1,
               "recoveryAfterHighCollisionCount": 0,
-              "recoveryWhileFatigueLowAndWorkFeasibleCount": 1
+              "recoveryWhileFatigueLowAndWorkFeasibleCount": 0
             }
           ]
         },
         "opportunityCost": {
           "daysWithRankingAudit": 7,
-          "utilityWinnerDifferentCount": 6,
-          "utilityWinnerBlockedCount": 6,
+          "utilityWinnerDifferentCount": 5,
+          "utilityWinnerBlockedCount": 5,
           "utilityWinnerDifferentWithoutTierBlockCount": 0,
-          "meanBlockedUtilityGap": 0.4892502680219937,
-          "maxBlockedUtilityGap": 1.2497013579357739,
+          "meanBlockedUtilityGap": 0.5139211932451098,
+          "maxBlockedUtilityGap": 1.1373156058749108,
           "blockedByTier": {
-            "coverage": 5,
+            "coverage": 4,
             "recovery": 1,
-            "benefit": 5
+            "benefit": 4
           },
           "perDay": [
             {
@@ -17689,25 +17665,11 @@
               "selectedAdvancesRequiredRole": true
             },
             {
-              "date": "2026-08-09",
-              "weekIndex": 0,
-              "selectedTemplateId": "mob_01",
-              "bestUtilityTemplateId": "end_easy_01",
-              "selectedVsBestUtilityGap": 1.2497013579357739,
-              "tierBlocked": true,
-              "blockedByTier": {
-                "coverage": true,
-                "recovery": false,
-                "benefit": true
-              },
-              "selectedAdvancesRequiredRole": false
-            },
-            {
               "date": "2026-08-11",
               "weekIndex": 0,
               "selectedTemplateId": "rest_01",
               "bestUtilityTemplateId": "mob_01",
-              "selectedVsBestUtilityGap": 0.007686698575048452,
+              "selectedVsBestUtilityGap": 0.029528337782196303,
               "tierBlocked": true,
               "blockedByTier": {
                 "coverage": false,
@@ -17719,23 +17681,23 @@
             {
               "date": "2026-08-12",
               "weekIndex": 0,
-              "selectedTemplateId": "end_easy_01",
+              "selectedTemplateId": "mob_01",
               "bestUtilityTemplateId": "str_upper_01",
-              "selectedVsBestUtilityGap": 0.19705215504049534,
+              "selectedVsBestUtilityGap": 0.607317578088267,
               "tierBlocked": true,
               "blockedByTier": {
                 "coverage": true,
                 "recovery": false,
                 "benefit": true
               },
-              "selectedAdvancesRequiredRole": true
+              "selectedAdvancesRequiredRole": false
             },
             {
               "date": "2026-08-13",
               "weekIndex": 0,
               "selectedTemplateId": "str_full_03",
-              "bestUtilityTemplateId": "str_upper_01",
-              "selectedVsBestUtilityGap": 0.2015725992679278,
+              "bestUtilityTemplateId": "end_mod_02",
+              "selectedVsBestUtilityGap": 0.6532712530423684,
               "tierBlocked": true,
               "blockedByTier": {
                 "coverage": true,
@@ -18198,18 +18160,18 @@
       "weeksSimulated": 2,
       "totalDays": 14,
       "categoryDistribution": {
-        "Rest": 3,
-        "Mobility/Recovery": 2,
+        "Rest": 4,
         "Easy Endurance": 5,
+        "Mobility/Recovery": 1,
         "Hard Endurance": 1,
         "Upper-body Strength": 1,
         "Full-body Strength": 1,
         "Moderate Endurance": 1
       },
       "modalityDistribution": {
-        "None": 3,
-        "Mobility": 2,
+        "None": 4,
         "Cycling": 7,
+        "Mobility": 1,
         "Strength": 2
       },
       "restOrRecoveryDayCount": 5,
@@ -18246,16 +18208,6 @@
       "objectiveCredits": [
         {
           "weekIndex": 0,
-          "date": "2026-08-09",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "mob_01",
-          "templateTitle": "Active Recovery & Mobility",
-          "modality": "Mobility",
-          "earnedCredit": 0.1
-        },
-        {
-          "weekIndex": 0,
           "date": "2026-08-10",
           "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Aerobic Base (Zone 2)",
@@ -18273,6 +18225,16 @@
           "templateTitle": "Zone 2 Spin",
           "modality": "Cycling",
           "earnedCredit": 0.48
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-12",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "mob_travel_flow_01",
+          "templateTitle": "Hotel Room Mobility & Core Flow",
+          "modality": "Mobility",
+          "earnedCredit": 0.040000000000000036
         },
         {
           "weekIndex": 0,
@@ -18296,7 +18258,7 @@
         },
         {
           "weekIndex": 1,
-          "date": "2026-08-15",
+          "date": "2026-08-14",
           "objectiveKey": "strength_maintenance",
           "objectiveTitle": "Strength & Neuromuscular Maintenance",
           "templateId": "str_upper_01",
@@ -18327,7 +18289,7 @@
       ],
       "utilityDiagnostics": {
         "fragileSelectionCount": 3,
-        "lowerBenefitSelectionCount": 3,
+        "lowerBenefitSelectionCount": 5,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
@@ -18629,12 +18591,9 @@
             {
               "date": "2026-08-09",
               "weekIndex": 0,
-              "collision": 0.3364322333135608,
-              "costMagnitude": 0.6,
-              "topDimensions": [
-                "lowerBody",
-                "impactTissue"
-              ]
+              "collision": 0,
+              "costMagnitude": 0,
+              "topDimensions": []
             },
             {
               "date": "2026-08-10",
@@ -18649,7 +18608,7 @@
             {
               "date": "2026-08-11",
               "weekIndex": 0,
-              "collision": 0.1622375990580848,
+              "collision": 0.1503618441888534,
               "costMagnitude": 0.6900000000000002,
               "topDimensions": [
                 "lowerBody",
@@ -18659,8 +18618,8 @@
             {
               "date": "2026-08-12",
               "weekIndex": 0,
-              "collision": 0.18283574903424674,
-              "costMagnitude": 0.6900000000000002,
+              "collision": 0.13959384912824846,
+              "costMagnitude": 0.6,
               "topDimensions": [
                 "lowerBody",
                 "systemic"
@@ -18669,37 +18628,37 @@
             {
               "date": "2026-08-13",
               "weekIndex": 0,
-              "collision": 0.1922358411943389,
+              "collision": 0.1506680764244518,
               "costMagnitude": 4,
               "topDimensions": [
-                "systemic",
-                "lowerBody"
+                "lowerBody",
+                "systemic"
               ]
             },
             {
               "date": "2026-08-14",
               "weekIndex": 1,
-              "collision": 0.5172935476122091,
-              "costMagnitude": 0.36,
+              "collision": 0.39345174535738026,
+              "costMagnitude": 1.575,
+              "topDimensions": [
+                "systemic",
+                "neuromuscular"
+              ]
+            },
+            {
+              "date": "2026-08-15",
+              "weekIndex": 1,
+              "collision": 0.5303829773795696,
+              "costMagnitude": 0.6900000000000002,
               "topDimensions": [
                 "systemic",
                 "lowerBody"
               ]
             },
             {
-              "date": "2026-08-15",
-              "weekIndex": 1,
-              "collision": 0.4507017602013875,
-              "costMagnitude": 1.575,
-              "topDimensions": [
-                "upperBody",
-                "neuromuscular"
-              ]
-            },
-            {
               "date": "2026-08-16",
               "weekIndex": 1,
-              "collision": 0.39129939002813713,
+              "collision": 0.4051441129913668,
               "costMagnitude": 1.1500000000000001,
               "topDimensions": [
                 "systemic",
@@ -18709,11 +18668,11 @@
             {
               "date": "2026-08-17",
               "weekIndex": 1,
-              "collision": 0.3977828333925815,
+              "collision": 0.37738130434693645,
               "costMagnitude": 2.35,
               "topDimensions": [
-                "systemic",
-                "lowerBody"
+                "lowerBody",
+                "systemic"
               ]
             },
             {
@@ -18726,7 +18685,7 @@
             {
               "date": "2026-08-19",
               "weekIndex": 1,
-              "collision": 0.3210374096525843,
+              "collision": 0.32529560902212984,
               "costMagnitude": 1.1500000000000001,
               "topDimensions": [
                 "lowerBody",
@@ -18736,7 +18695,7 @@
             {
               "date": "2026-08-20",
               "weekIndex": 1,
-              "collision": 0.3522836783750883,
+              "collision": 0.35354222674911573,
               "costMagnitude": 2.4,
               "topDimensions": [
                 "lowerBody",
@@ -18744,8 +18703,8 @@
               ]
             }
           ],
-          "meanCollision": 0.25154645669201836,
-          "maxCollision": 0.5172935476122091
+          "meanCollision": 0.2173808641010064,
+          "maxCollision": 0.5303829773795696
         },
         "adjacentCostOverlap": {
           "perPair": [
@@ -18758,28 +18717,28 @@
               "neuromuscularOverlap": 0.037797631496846194
             },
             {
-              "date": "2026-08-12",
-              "previousDate": "2026-08-11",
-              "overlap": 0.6228912597399697,
-              "lowerBodyOverlap": 0.12727922061357855,
-              "impactTissueOverlap": 0.042426406871192854,
-              "neuromuscularOverlap": 0.037797631496846194
+              "date": "2026-08-14",
+              "previousDate": "2026-08-13",
+              "overlap": 0.31197770285927406,
+              "lowerBodyOverlap": 0,
+              "impactTissueOverlap": 0.07500000000000001,
+              "neuromuscularOverlap": 0.375
             },
             {
-              "date": "2026-08-13",
-              "previousDate": "2026-08-12",
-              "overlap": 0.10744874230514481,
-              "lowerBodyOverlap": 0.12727922061357855,
-              "impactTissueOverlap": 0.042426406871192854,
-              "neuromuscularOverlap": 0.037797631496846194
+              "date": "2026-08-15",
+              "previousDate": "2026-08-14",
+              "overlap": 0.31330161735225415,
+              "lowerBodyOverlap": 0,
+              "impactTissueOverlap": 0.05303300858899108,
+              "neuromuscularOverlap": 0.06
             },
             {
               "date": "2026-08-16",
               "previousDate": "2026-08-15",
-              "overlap": 0.28109107250215304,
-              "lowerBodyOverlap": 0,
-              "impactTissueOverlap": 0.05303300858899108,
-              "neuromuscularOverlap": 0.1
+              "overlap": 0.3737347558439819,
+              "lowerBodyOverlap": 0.12727922061357855,
+              "impactTissueOverlap": 0.042426406871192854,
+              "neuromuscularOverlap": 0.037797631496846194
             },
             {
               "date": "2026-08-17",
@@ -18799,9 +18758,9 @@
             }
           ],
           "maxLowerBodyOverlap": 0.21213203435596426,
-          "maxImpactTissueOverlap": 0.07071067811865477,
-          "maxNeuromuscularOverlap": 0.1,
-          "meanOverlap": 0.3729350316699056
+          "maxImpactTissueOverlap": 0.07500000000000001,
+          "maxNeuromuscularOverlap": 0.375,
+          "meanOverlap": 0.3708655319212793
         },
         "qualitySpacing": {
           "gapsDays": [
@@ -18822,7 +18781,7 @@
               "hardDayCount": 1,
               "maxHardStreak": 1,
               "recoveryAfterHighCollisionCount": 0,
-              "recoveryWhileFatigueLowAndWorkFeasibleCount": 1
+              "recoveryWhileFatigueLowAndWorkFeasibleCount": 2
             },
             {
               "weekIndex": 1,
@@ -18838,11 +18797,11 @@
           "utilityWinnerDifferentCount": 7,
           "utilityWinnerBlockedCount": 7,
           "utilityWinnerDifferentWithoutTierBlockCount": 0,
-          "meanBlockedUtilityGap": 0.32530677127947527,
-          "maxBlockedUtilityGap": 0.6322380053949886,
+          "meanBlockedUtilityGap": 0.3537171438658292,
+          "maxBlockedUtilityGap": 0.7938734487130188,
           "blockedByTier": {
-            "coverage": 4,
-            "recovery": 2,
+            "coverage": 2,
+            "recovery": 3,
             "benefit": 4
           },
           "perDay": [
@@ -18875,39 +18834,39 @@
               "selectedAdvancesRequiredRole": false
             },
             {
+              "date": "2026-08-09",
+              "weekIndex": 0,
+              "selectedTemplateId": "rest_01",
+              "bestUtilityTemplateId": "mob_01",
+              "selectedVsBestUtilityGap": 0.05538905522081696,
+              "tierBlocked": true,
+              "blockedByTier": {
+                "coverage": false,
+                "recovery": true,
+                "benefit": false
+              },
+              "selectedAdvancesRequiredRole": false
+            },
+            {
               "date": "2026-08-11",
               "weekIndex": 0,
               "selectedTemplateId": "end_easy_01",
               "bestUtilityTemplateId": "cycling_technical_01",
-              "selectedVsBestUtilityGap": 0.500239600688247,
+              "selectedVsBestUtilityGap": 0.5594259749242484,
               "tierBlocked": true,
               "blockedByTier": {
-                "coverage": true,
+                "coverage": false,
                 "recovery": false,
                 "benefit": true
               },
-              "selectedAdvancesRequiredRole": true
+              "selectedAdvancesRequiredRole": false
             },
             {
               "date": "2026-08-12",
               "weekIndex": 0,
-              "selectedTemplateId": "end_easy_01",
+              "selectedTemplateId": "mob_travel_flow_01",
               "bestUtilityTemplateId": "cycling_technical_01",
-              "selectedVsBestUtilityGap": 0.5764046883830537,
-              "tierBlocked": true,
-              "blockedByTier": {
-                "coverage": true,
-                "recovery": false,
-                "benefit": false
-              },
-              "selectedAdvancesRequiredRole": true
-            },
-            {
-              "date": "2026-08-14",
-              "weekIndex": 1,
-              "selectedTemplateId": "mob_01",
-              "bestUtilityTemplateId": "end_easy_01",
-              "selectedVsBestUtilityGap": 0.47022543850769627,
+              "selectedVsBestUtilityGap": 0.7938734487130188,
               "tierBlocked": true,
               "blockedByTier": {
                 "coverage": true,
@@ -18917,11 +18876,11 @@
               "selectedAdvancesRequiredRole": false
             },
             {
-              "date": "2026-08-15",
+              "date": "2026-08-14",
               "weekIndex": 1,
               "selectedTemplateId": "str_upper_01",
               "bestUtilityTemplateId": "end_easy_01",
-              "selectedVsBestUtilityGap": 0.033278758773767514,
+              "selectedVsBestUtilityGap": 0.37328381303625957,
               "tierBlocked": true,
               "blockedByTier": {
                 "coverage": false,
@@ -18935,7 +18894,7 @@
               "weekIndex": 1,
               "selectedTemplateId": "end_easy_01",
               "bestUtilityTemplateId": "end_mod_02",
-              "selectedVsBestUtilityGap": 0.6322380053949886,
+              "selectedVsBestUtilityGap": 0.6292868079578867,
               "tierBlocked": true,
               "blockedByTier": {
                 "coverage": true,
@@ -18955,7 +18914,7 @@
             "modify": 3,
             "recover": 1
           },
-          "restOrRecoveryDayCount": 3
+          "restOrRecoveryDayCount": 4
         },
         {
           "weekIndex": 1,
@@ -18964,7 +18923,7 @@
             "modify": 0,
             "recover": 1
           },
-          "restOrRecoveryDayCount": 2
+          "restOrRecoveryDayCount": 1
         }
       ]
     },
@@ -19497,7 +19456,7 @@
       ],
       "utilityDiagnostics": {
         "fragileSelectionCount": 3,
-        "lowerBenefitSelectionCount": 1,
+        "lowerBenefitSelectionCount": 2,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [],
@@ -28221,10 +28180,10 @@
       "trajectory": "stressed",
       "scenarioId": "cycling_criterium_stressed_A",
       "baselineScenarioId": "cycling_criterium_A",
-      "changedPlannedDays": 5,
-      "restOrRecoveryDayDelta": 5,
+      "changedPlannedDays": 6,
+      "restOrRecoveryDayDelta": 6,
       "raceSpecificExposureDelta": -3,
-      "summary": "stressed trajectory: 5 modality day(s) changed; Rest/Mobility delta +5; race-specific exposure delta -3."
+      "summary": "stressed trajectory: 6 modality day(s) changed; Rest/Mobility delta +6; race-specific exposure delta -3."
     }
   ]
 }

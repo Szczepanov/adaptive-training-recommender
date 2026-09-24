@@ -375,8 +375,9 @@ unchanged pending fresh, comparable external scoring (§10).
       validators pass.
 - [x] The aerobic-volume duration floor is recorded as a coverage item that links #757
       (Step 3.5).
-- [ ] `POLICY_VERSION` is bumped; the policy-drift check must be rerun against the committed change.
-- [ ] The gates in the next list pass, and their output is reported verbatim in the PR.
+- [x] `POLICY_VERSION` is bumped; the policy-drift check passed against the committed
+      engine change and `origin/main`.
+- [x] The gates in the next list pass; their exact outcomes are recorded in §10 for the PR.
 
 Gates, per CLAUDE.md §3 (engine/policy change):
 
@@ -487,8 +488,10 @@ is separately recorded as uncovered work for #757. `POLICY_VERSION` was bumped.
 and workout validators. `make simulate` passed all 39 scenarios with zero constraint
 violations; the reviewed deterministic baseline was refreshed. `npm run
 simulate:plan-judge` passed invariants for 96 cases across 18 families, and `npm run
-persona:build` generated 36 cases across 10 families. The policy-drift check is run after
-the code commit so it can compare committed changes with `origin/main`.
+persona:build` generated 36 cases across 10 families. The policy-drift check passed after
+the code commit: two engine files changed and `POLICY_VERSION` advanced from
+`2026-09-performance-goal-workout-coverage-v1` to
+`2026-09-time-cap-easy-endurance-truncation-v1`.
 `npm run visual:refresh` passed 76 desktop/mobile checks; the 390-pixel Plan forecast
 capture showed compact duration text without horizontal overflow. `WeekAheadStrip` renders
 the effective duration, not the longer dose label.
