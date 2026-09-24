@@ -132,6 +132,9 @@ describe('resolveTimeCapDoseAdjustment — Easy Endurance cap truncation (#744)'
         );
         expect(result.accepted.find(item => item.template.id === 'end_easy_01')?.coverageNeedTier).toBe(1);
         expect(result.accepted.find(item => item.template.id === 'end_walk_01')?.coverageNeedTier).toBe(1);
+        // This is the original #744 failure boundary: once capped cycling no longer loses
+        // coverage urgency to walking, the athlete's chronic cycling preference must win.
+        expect(result.accepted[0]?.template.id).toBe('end_easy_01');
     });
 });
 

@@ -139,6 +139,8 @@ describe('load + intensity + recovery product-claim alignment', () => {
         expect(claim.statement).toContain(`${RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST}`);
         expect(claim.statement).toContain('two projected rest days');
         expect(claim.statement).toContain('fresh subjective check-in');
+        expect(claim.statement).toContain('recovery-only dates use recover-tier');
+        expect(claim.statement).toContain('graduated re-entry dates use modify-tier');
         expect(RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST).toBeLessThan(RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST);
         expect(RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST).toBeLessThanOrEqual(0.5);
         expect(POST_REST_REENTRY_MAX_SYSTEMIC_COST).toBe(0.75);
