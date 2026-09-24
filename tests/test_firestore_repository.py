@@ -308,6 +308,90 @@ def test_is_fresh_incomplete_snapshot_short_cooldown(monkeypatch):
     )
 
 
+def test_is_fresh_snapshot_missing_or_no_timestamp():
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456")
+
+    # Snapshot is None
+    repo.get_snapshot = MagicMock(return_value=None)
+    assert repo.is_fresh("2026-08-19") is False
+
+    # Snapshot missing garminSyncedAt and updatedAt
+    repo.get_snapshot = MagicMock(return_value={"source": {}, "raw": {}})
+    assert repo.is_fresh("2026-08-19") is False
+
+
+def test_is_fresh_invalid_synced_at_timestamp():
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456")
+    doc_invalid_timestamp = {
+        "source": {"garminSyncedAt": "not-an-iso-timestamp"},
+        "raw": {},
+    }
+    repo.get_snapshot = MagicMock(return_value=doc_invalid_timestamp)
+    assert repo.is_fresh("2026-08-19") is False
+
+
+def test_is_fresh_updated_at_fallback_and_naive_timestamp(monkeypatch):
+    from datetime import datetime
+
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456")
+    # garminSyncedAt missing, falls back to updatedAt which is naive ISO format
+    doc_updated_at_fallback = {
+        "updatedAt": "2026-08-19T06:30:00",
+        "raw": {
+            "sleepScore": 85,
+            "restingHr": 48,
+            "hrvOvernightAvg": 62,
+            "respirationAvg": 14.5,
+            "bodyBatteryWake": 90,
+            "totalSteps": 10500,
+        },
+    }
+    repo.get_snapshot = MagicMock(return_value=doc_updated_at_fallback)
+
+    now_30m_later = datetime.fromisoformat("2026-08-19T07:00:00+00:00")
+    monkeypatch.setattr(
+        "garmin_sync.firestore_repository.datetime",
+        MagicMock(
+            now=MagicMock(return_value=now_30m_later),
+            fromisoformat=datetime.fromisoformat,
+        ),
+    )
+    assert repo.is_fresh("2026-08-19", staleness_minutes=60) is True
+
+
+def test_is_fresh_incomplete_snapshot_require_complete_false(monkeypatch):
+    from datetime import datetime
+
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456")
+    incomplete_doc = {
+        "source": {"garminSyncedAt": "2026-08-19T06:30:00+00:00"},
+        "raw": {
+            "sleepScore": None,
+            "restingHr": 48,
+        },
+    }
+    repo.get_snapshot = MagicMock(return_value=incomplete_doc)
+
+    # Synced 30 mins ago -> With require_complete=False, incomplete snapshot uses full staleness_minutes (60m)
+    now_30m_later = datetime.fromisoformat("2026-08-19T07:00:00+00:00")
+    monkeypatch.setattr(
+        "garmin_sync.firestore_repository.datetime",
+        MagicMock(
+            now=MagicMock(return_value=now_30m_later),
+            fromisoformat=datetime.fromisoformat,
+        ),
+    )
+    assert (
+        repo.is_fresh(
+            "2026-08-19",
+            staleness_minutes=60,
+            incomplete_staleness_minutes=5,
+            require_complete=False,
+        )
+        is True
+    )
+
+
 def test_save_health_observation_day_bundle_skips_when_hash_and_version_unchanged() -> None:
     repo, doc_ref = _mock_repo_with_existing_doc(
         existing_hash="sha256:abc", existing_normalizer_version=2, existing_rev=3
