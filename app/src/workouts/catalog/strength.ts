@@ -39,7 +39,7 @@ export const STRENGTH_WORKOUTS: WorkoutDefinition[] = [
       { id: 'reduced', targetDurationMin: 45, loadMultiplier: 0.7, rationale: 'Reduce lower-body sets and preserve upper-body and tissue work.', stepOverrides: [{ stepId: 'front_squat', sets: 2 }, { stepId: 'rdl', sets: 2 }, { stepId: 'power_clean', sets: 3 }] },
       { id: 'return_to_training', targetDurationMin: 18, loadMultiplier: 0.5, rationale: 'Use upper-dominant work and low-load tissue capacity.', stepOverrides: [{ stepId: 'full_warmup_clean_ramp', omit: true }, { stepId: 'power_clean', omit: true }, { stepId: 'front_squat', omit: true }, { stepId: 'rdl', sets: 2, target: { type: 'reps_in_reserve', min: 5, max: 6 } }, { stepId: 'bench', sets: 2 }, { stepId: 'pullup', sets: 2 }, { stepId: 'full_nordic', omit: true }, { stepId: 'full_heel_raise', omit: true }] }
     ],
-    regressions: ['strength_compact_power_01'], progressions: [],
+    regressions: ['strength_compact_power_01', 'strength_full_body_reentry_01'], progressions: [],
     substitutions: [{ exerciseId: 'front_squat', substituteExerciseId: 'rear_foot_elevated_split_squat', reason: 'Use a symptom-free unilateral alternative when equipment or squat tolerance requires it.' }],
     garmin: { exportable: false },
     tags: ['strength', 'low_grind', 'cycling_support'],
@@ -130,9 +130,54 @@ export const STRENGTH_WORKOUTS: WorkoutDefinition[] = [
       { id: 'reduced', targetDurationMin: 25, loadMultiplier: 0.7, rationale: 'Keep low-load movement with less volume.', stepOverrides: [{ stepId: 'low_squat', sets: 1 }, { stepId: 'low_bridge', sets: 1 }] },
       { id: 'return_to_training', targetDurationMin: 20, loadMultiplier: 0.5, rationale: 'Use only symptom-free lower-body and trunk patterns.', stepOverrides: [{ stepId: 'low_squat', sets: 1 }, { stepId: 'low_bridge', sets: 1 }, { stepId: 'low_deadbug', sets: 1 }] }
     ],
-    regressions: [], progressions: ['strength_bodyweight_full_body_01'], substitutions: [],
+    regressions: [], progressions: ['strength_bodyweight_full_body_01', 'strength_full_body_reentry_01'], substitutions: [],
     garmin: { exportable: false }, tags: ['bodyweight', 'low_load', 'trunk', 'symptom_compatible'],
     sourceNotes: ['Issue #736 shoulder/spinal guardrail-compatible maintenance option. Use only movements that remain comfortable.']
+  },
+  {
+    id: 'strength_full_body_reentry_01', version: 1, status: 'active',
+    name: 'Full-body Strength Re-entry (Spinal-sparing)',
+    description: 'Tolerance-proving full-body strength re-entry after lumbar flare-ups: non-grinding front/goblet squat, hip thrust and split squat in place of heavy RDL or explosive hinges, plus bench press, pull-ups, calf/soleus and anti-extension/lateral trunk work.',
+    modality: 'strength', category: 'full_body_strength', objectives: ['strength_maintenance', 'tissue_capacity'],
+    duration: { defaultMin: 50, minimumMin: 25, maximumMin: 55 },
+    loadProfile: { cardiovascular: 2, muscular: 3, mechanical: 2, eccentric: 2, coordination: 2, recoveryHours: 36 },
+    eligibility: { minimumReadiness: 5, maximumSoreness: 6, minimumDaysAfterHardLowerBody: 1, forbiddenPainFlags: ['knee_swelling', 'worsening_achilles_pain', 'acute_low_back_pain'] },
+    equipment: ['barbell', 'rack', 'bench', 'dumbbells', 'pullup_bar', 'bodyweight'], contraindicationTags: ['knee_swelling', 'acute_low_back_pain'], warmupKnowledgeClaimIds: ['strength.warmup.contextual_preparation', 'strength.warmup.specific_rehearsal'],
+    blocks: [
+      { id: 'warmup', name: 'Unguarded movement check and pattern rehearsal', role: 'warmup', steps: [
+        repsStep('reentry_warmup_squat', 'bodyweight_squat', 'Bodyweight squat', 5, { restAfterSec: 30, load: { kind: 'bodyweight' }, notes: ['5–8 min easy general movement first; confirm everything feels normal and unguarded.'] }),
+        repsStep('reentry_warmup_hinge', 'bodyweight_hip_hinge', 'Unloaded hip hinge', 5, { restAfterSec: 30, load: { kind: 'bodyweight' }, notes: ['Smooth range with no protective bracing.'] }),
+        repsStep('reentry_warmup_lunge', 'reverse_lunge', 'Unloaded reverse lunge', 6, { restAfterSec: 30, load: { kind: 'descriptive', display: 'Unloaded bodyweight' }, notes: ['A few easy alternating reps to confirm pelvis and lumbar comfort.'] })
+      ]},
+      { id: 'main', name: 'Spinal-sparing full-body loading', role: 'main', steps: [
+        repsStep('reentry_front_squat', 'front_squat', 'Front squat or goblet squat', 5, { sets: 3, restAfterSec: 150, target: { type: 'reps_in_reserve', min: 4, max: 5 }, notes: ['3 × 4–5 @ RPE 5–6 (~4 RIR). Prove loading is tolerated; stop lower-body loading if back reaches >2/10 or tightens progressively.'] }),
+        repsStep('reentry_hip_thrust', 'hip_thrust', 'Hip thrust or glute bridge', 8, { sets: 2, restAfterSec: 120, target: { type: 'reps_in_reserve', min: 4, max: 5 }, notes: ['2 × 6–8 in place of a meaningful RDL load today. Finish with ribs down and zero lumbar hyperextension.'] }),
+        repsStep('reentry_split_squat', 'split_squat', 'Split squat or step-up (per side)', 6, { sets: 2, restAfterSec: 90, target: { type: 'reps_in_reserve', min: 4, max: 5 }, notes: ['2 × 6/side at easy-moderate load; do not alter movement to protect the back.'] }),
+        repsStep('reentry_bench', 'bench_press', 'Bench press', 6, { sets: 3, restAfterSec: 120, target: { type: 'reps_in_reserve', min: 3, max: 5 }, notes: ['3 × 5–6 controlled reps with stable setup.'] }),
+        repsStep('reentry_pullup', 'pull_up', 'Pull-up', 6, { sets: 3, restAfterSec: 90, target: { type: 'reps_in_reserve', min: 3, max: 5 }, notes: ['3 × 5–7 controlled reps; no grinding.'] })
+      ]},
+      { id: 'accessory', name: 'Calf/soleus and trunk stability', role: 'accessory', steps: [
+        repsStep('reentry_calf', 'seated_calf_raise', 'Calf / soleus raise', 10, { sets: 2, restAfterSec: 60, target: { type: 'reps_in_reserve', min: 3, max: 5 }, notes: ['2 × 8–12 controlled tempo.'] }),
+        timeStep('reentry_trunk', 'side_plank', 'Side plank or bird-dog trunk work', 30, { sets: 2, restAfterSec: 45, notes: ['2 controlled sets; keep spine neutral and unguarded.'] })
+      ]}
+    ],
+    variants: [
+      { id: 'full', targetDurationMin: 50, loadMultiplier: 1, rationale: '45–55 min full-body re-entry dose proving axial and unilateral tolerance without heavy hinges.', stepOverrides: [] },
+      { id: 'reduced', targetDurationMin: 38, loadMultiplier: 0.75, rationale: 'Trim squat and upper-body working sets to 2 while keeping every pattern represented.', stepOverrides: [{ stepId: 'reentry_front_squat', sets: 2 }, { stepId: 'reentry_bench', sets: 2 }, { stepId: 'reentry_pullup', sets: 2 }] },
+      { id: 'return_to_training', targetDurationMin: 25, loadMultiplier: 0.5, rationale: 'Keep unloaded/light bridge, upper-body push/pull, and trunk stability if squat/split-squat tolerance is questionable.', stepOverrides: [{ stepId: 'reentry_front_squat', omit: true }, { stepId: 'reentry_split_squat', omit: true }, { stepId: 'reentry_hip_thrust', sets: 2, target: { type: 'reps_in_reserve', min: 5, max: 6 } }, { stepId: 'reentry_bench', sets: 2, target: { type: 'reps_in_reserve', min: 4, max: 6 } }, { stepId: 'reentry_pullup', sets: 2, target: { type: 'reps_in_reserve', min: 4, max: 6 } }] }
+    ],
+    regressions: ['strength_low_load_trunk_01', 'strength_upper_body_trunk_01'],
+    progressions: ['strength_full_body_maintenance_01'],
+    substitutions: [
+      { exerciseId: 'front_squat', substituteExerciseId: 'goblet_squat', reason: 'Use goblet squat when preferable for comfort, trunk uprightness, or equipment.' },
+      { exerciseId: 'hip_thrust', substituteExerciseId: 'glute_bridge', reason: 'Use bodyweight or lightly loaded glute bridge when a lower-load hip extension option is preferred.' },
+      { exerciseId: 'split_squat', substituteExerciseId: 'step_up', reason: 'Step-up is an equivalent unilateral knee/hip option.' },
+      { exerciseId: 'seated_calf_raise', substituteExerciseId: 'standing_calf_raise', reason: 'Standing calf raise can substitute when seated soleus setup is unavailable.' },
+      { exerciseId: 'side_plank', substituteExerciseId: 'bird_dog', reason: 'Bird-dog is an equivalent low-shear trunk stability option.' }
+    ],
+    garmin: { exportable: false },
+    tags: ['strength', 'reentry', 'spinal_sparing', 'low_grind', 'symptom_compatible'],
+    sourceNotes: ['Spinal-sparing full-body re-entry (45–55 min): omits heavy deadlift/RDL, loaded spinal flexion, grinding reps, and explosive hinge work. Stop lower-body loading if back pain exceeds 2/10, tightens progressively, or alters movement mechanics.']
   },
   {
     id: 'strength_bodyweight_full_body_01', version: 2, status: 'active',

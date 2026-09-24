@@ -20,7 +20,7 @@ describe('catalog workout recovery metadata audit (SKR3 W3)', () => {
     const declaringWorkouts = WORKOUTS.filter(
       workout => workout.eligibility.minimumDaysAfterHardLowerBody !== undefined
     );
-    expect(declaringWorkouts.length).toBe(23);
+    expect(declaringWorkouts.length).toBe(24);
     for (const workout of declaringWorkouts) {
       const minDays = workout.eligibility.minimumDaysAfterHardLowerBody;
       expect(Number.isInteger(minDays)).toBe(true);
@@ -44,12 +44,12 @@ describe('catalog workout recovery metadata audit (SKR3 W3)', () => {
       }
     }
 
-    // 20 declare 1 day (including the two PG6 direct-coverage workouts), 3 declare 2 days (explicitly matching the 48h boundary)
+    // 21 declare 1 day (including the two PG6 direct-coverage workouts and strength_full_body_reentry_01), 3 declare 2 days (explicitly matching the 48h boundary)
     expect(byModality.cycling.minDays1).toBe(9);
     expect(byModality.cycling.minDays2).toBe(1);
     expect(byModality.running.minDays1).toBe(5);
     expect(byModality.running.minDays2).toBe(0);
-    expect(byModality.strength.minDays1).toBe(5);
+    expect(byModality.strength.minDays1).toBe(6);
     expect(byModality.strength.minDays2).toBe(0);
     expect(byModality.field.minDays1).toBe(1);
     expect(byModality.field.minDays2).toBe(2);
