@@ -104,6 +104,13 @@ describe('Phase 6.2c explicit weekly coverage', () => {
             ['avoid_heavy_spinal_loading'],
         )).toBe(true);
         expect(supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback(state, fallback, [])).toBe(false);
+
+        state.requirements[0].completedSessions = 1;
+        expect(supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback(
+            state,
+            fallback,
+            ['avoid_heavy_spinal_loading'],
+        )).toBe(false);
     });
 
     it('maps exact authored workout identity, never overlapping stimulus', () => {
