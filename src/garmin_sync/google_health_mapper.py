@@ -62,6 +62,8 @@ def resolve_provider_from_package(package_name: str | None) -> str:
     if not package_name:
         return "unknown"
     cleaned = package_name.strip()
+    if not cleaned:
+        return "unknown"
     if cleaned in ORIGIN_PACKAGE_MAP:
         return ORIGIN_PACKAGE_MAP[cleaned]
     return f"unknown:{cleaned}"

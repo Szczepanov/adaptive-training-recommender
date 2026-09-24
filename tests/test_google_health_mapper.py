@@ -32,6 +32,10 @@ def test_resolve_provider_from_package():
     assert resolve_provider_from_package("com.google.android.apps.fitness") == "google_fit"
     assert resolve_provider_from_package("com.custom.app") == "unknown:com.custom.app"
     assert resolve_provider_from_package(None) == "unknown"
+    assert resolve_provider_from_package("") == "unknown"
+    assert resolve_provider_from_package("   ") == "unknown"
+    assert resolve_provider_from_package("  com.garmin.android.apps.connectmobile  ") == "garmin"
+    assert resolve_provider_from_package("  com.custom.app  ") == "unknown:com.custom.app"
 
 
 def test_mapper_normalizes_sleep_and_hrv():
