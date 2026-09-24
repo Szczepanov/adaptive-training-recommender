@@ -4,7 +4,8 @@
  * Isolated outside app/src/engine so the recommendation engine and adjudication layer
  * remain strictly free of static I/O and Firebase imports.
  */
-import type { SessionTemplate, NormalizedGarminActivity } from '../engine/models';
+import type { SessionTemplate, NormalizedGarminActivity, DailyRecommendation } from '../engine/models';
+import type { SessionExecution } from '../sessions/models';
 import type { CoverageSetDescriptor } from '../workouts/event-plan';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
@@ -15,6 +16,7 @@ import {
 import { performedTrainingOccurrenceRepository as repository } from './repository';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { activityService } from '../services/activityService';
+import { recommendationService } from '../services/recommendationService';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { addDaysToLocalDateString, getPreviousLocalDateString } from '../utils/localDate';
 import {
@@ -31,6 +33,28 @@ import {
 export interface GetPerformedTrainingFactsOptions {
     coverageSetDescriptor?: CoverageSetDescriptor;
     preloadedActivities?: readonly NormalizedGarminActivity[];
+}
+
+/**
+ * A structured execution carries no dose/readiness field of its own, so the modify-tier
+ * marker is recovered from the persisted daily recommendation it executed: a modify-tier
+ * day whose recommendation applied a tier-1 easier dose variation -- the same condition
+ * under which the optimizer marks `isReadinessModifiedDose` on the candidate. The execution
+ * must be that recommendation's primary session (bound prescription hash, or the template
+ * for records written before session bindings existed); any other structured session on
+ * that date keeps full credit.
+ */
+function isReadinessModifiedExecution(
+    execution: SessionExecution,
+    templateId: string | undefined,
+    recommendation: DailyRecommendation | undefined,
+): boolean {
+    if (!recommendation || recommendation.mode !== 'modify') return false;
+    const adjustment = recommendation.adjustment;
+    if (!adjustment || adjustment.direction !== 'easier' || adjustment.tier !== 1) return false;
+    const boundHash = recommendation.primarySession?.prescriptionHash;
+    if (boundHash && execution.prescriptionHash) return boundHash === execution.prescriptionHash;
+    return templateId !== undefined && templateId === recommendation.templateId;
 }
 
 /**
@@ -64,6 +88,18 @@ export async function getPerformedTrainingFactsInRange(
         const activitiesState = await activityService.getActivitiesInRange(userId, fromDateInclusive, toDateExclusive);
         const activities = activitiesState.status === 'AVAILABLE' ? activitiesState.data : [];
         activitiesById = new Map(activities.map(a => [a.activityId, a]));
+    }
+
+    // Only structured executions need the recommendation lookup. An unavailable read
+    // degrades to no readiness marker rather than failing the whole facts snapshot.
+    const recommendationsByDate = new Map<string, DailyRecommendation>();
+    let recommendationRevision: string | null = null;
+    if (activeOccurrences.some(o => o.sourceRefs.some(isStructuredExecutionRef))) {
+        const recommendationsState = await recommendationService.getRecommendationsInRange(userId, fromDateInclusive, toDateExclusive);
+        if (recommendationsState.status === 'AVAILABLE') {
+            for (const recommendation of recommendationsState.data) recommendationsByDate.set(recommendation.date, recommendation);
+            recommendationRevision = recommendationsState.revision;
+        }
     }
 
     const exposures: PerformedExposureFact[] = [];
@@ -134,6 +170,9 @@ export async function getPerformedTrainingFactsInRange(
                     ...(execution.completedAt ? { endedAt: execution.completedAt } : {}),
                     ...(durationMin !== undefined ? { durationMin } : {}),
                     isLegacyStrength,
+                    ...(isReadinessModifiedExecution(execution, templateId, recommendationsByDate.get(execution.date))
+                        ? { isReadinessModifiedDose: true }
+                        : {}),
                 };
             }
         }
@@ -167,7 +206,10 @@ export async function getPerformedTrainingFactsInRange(
     // Coverage credits are descriptor-scoped semantic facts. Include that scope in the
     // snapshot revision so evergreen/event interpretations of the same occurrences never
     // alias as one immutable fact revision in cache/audit/replay consumers.
-    const revision = `canonical-facts-v1:${descriptor.id}:${fromDateInclusive}:${toDateExclusive}:${occurrenceRevision}`;
+    // The readiness marker is derived from recommendation documents, so a recommendation
+    // revision change must also change the facts revision.
+    const revision = `canonical-facts-v1:${descriptor.id}:${fromDateInclusive}:${toDateExclusive}:${occurrenceRevision}`
+        + (recommendationRevision ? `:rec=${recommendationRevision}` : '');
 
     return {
         asOfDate: toDateExclusive,
