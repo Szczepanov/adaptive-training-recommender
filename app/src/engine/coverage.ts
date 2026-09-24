@@ -2,7 +2,7 @@ import type { CoverageSetDescriptor, CoverageSetId, EventPlanCoverageKey, EventP
 import { coverageSetFor, SEPTEMBER_CYCLING_EVENT_COVERAGE_SET } from '../workouts/event-plan';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { workoutForTemplate } from '../workouts/prescription';
-import type { ObjectivePriority, SessionTemplate } from './models';
+import type { GuardrailKey, ObjectivePriority, SessionTemplate } from './models';
 import type { PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CoverageCreditFact, PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
@@ -468,6 +468,28 @@ export function getUnfulfilledRequiredCoverage(state: CoverageState): WeeklyCove
 
 export function getUnfulfilledTargetCoverage(state: CoverageState): WeeklyCoverageRequirement[] {
     return state.requirements.filter(requirement => fulfilledSessions(requirement) < requirement.targetSessions);
+}
+
+const SYMPTOM_COMPATIBLE_STRENGTH_GUARDRAILS = new Set<GuardrailKey>([
+    'avoid_overhead_pressing',
+    'avoid_heavy_spinal_loading',
+]);
+
+/**
+ * A guardrail-safe strength fallback may preserve useful resistance exposure while the
+ * exact authored primary-strength role is temporarily unavailable. This is ranking support
+ * only: it deliberately does not return a coverage key, mutate the ledger, or claim that a
+ * reduced symptom-compatible session fulfilled the primary-strength requirement.
+ */
+export function supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback(
+    state: CoverageState,
+    template: SessionTemplate,
+    guardrails: readonly GuardrailKey[],
+): boolean {
+    if (template.guardrailFallbackRole !== 'shoulder_spinal_strength') return false;
+    if (!guardrails.some(guardrail => SYMPTOM_COMPATIBLE_STRENGTH_GUARDRAILS.has(guardrail))) return false;
+    const primaryStrength = state.requirements.find(requirement => requirement.key === 'primary_strength');
+    return Boolean(primaryStrength && isMinimumUnmet(primaryStrength));
 }
 
 /**
