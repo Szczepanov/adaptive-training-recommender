@@ -50,6 +50,7 @@ import {
     generateWeeklyObjectives,
     getUnresolvedObjectives,
     projectCompatibilityExposures,
+    updateMicrocycleProgress,
 } from './microcycle';
 import {
     type OptimizationContext,
@@ -170,6 +171,8 @@ export interface WeekAheadPlan {
 export interface WeekAheadPlanSeed {
     microcycle: MicrocycleState;
     fatigue: FatigueState;
+    /** Actual completed training before today. Forecast picks remain projected credit. */
+    completedExposures?: readonly CompletedExposure[];
     trailingHistory?: (RecentHistoryEntry | SessionHistoryEntry)[];
     /** Wider completed evidence used only to derive the individualized rolling load
      * envelope; it is deliberately excluded from operational fatigue and coverage. */
@@ -1169,9 +1172,12 @@ export function prepareWeekAheadPlanSeed(
     history: (RecentHistoryEntry | SessionHistoryEntry)[] = []
 ): WeekAheadPlanSeed {
     if ('objectives' in readinessOrMicrocycle && 'externalLoadFatigue' in eventsOrFatigue) {
+        const completed = history.filter(isCompletedExposure);
         return {
             microcycle: readinessOrMicrocycle as MicrocycleState,
             fatigue: eventsOrFatigue as FatigueState,
+            ...(completed.length > 0 && completed.length === history.length
+                ? { completedExposures: completed } : {}),
             trailingHistory: projectTrailingHistory(history),
         };
     }
@@ -1203,6 +1209,7 @@ export function prepareWeekAheadPlanSeed(
         });
         return {
             microcycle,
+            ...(lightweightHistory.length === 0 ? { completedExposures: completedHistory } : {}),
             fatigue: buildFatigueStateFromHistory(
                 completedHistory,
                 computeInternalResponseStrain(readiness),
@@ -1289,9 +1296,16 @@ export function reconcileObjectivesForDate(
     priorExposures: readonly ProjectionExposure[] = [],
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
     planDefinition?: PlanDefinition | null,
-): { microcycle: MicrocycleState; droppedContributorObjectives: DroppedContributorObjective[] } {
+): {
+    microcycle: MicrocycleState;
+    droppedContributorObjectives: DroppedContributorObjective[];
+    /** Objectives created by the governing daily objective generator. Historical
+     * completed training is authoritative for these definitions on this forecast date. */
+    historicalReplayObjectiveIds: readonly string[];
+} {
     const planDefinitionForDate = planDefinition ?? resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
     const skeleton = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent, planDefinitionForDate, date);
+    const historicalReplayObjectiveIds = skeleton.objectives.map(objective => objective.id);
     const fresh = resolveMultiEventObjectives(events, date, periodization, skeleton.objectives);
 
     const existingById = new Map(microcycle.objectives.map(objective => [objective.id, objective]));
@@ -1335,6 +1349,87 @@ export function reconcileObjectivesForDate(
     return {
         microcycle: { ...microcycle, objectives },
         droppedContributorObjectives: fresh.droppedContributorObjectives,
+        historicalReplayObjectiveIds,
+    };
+}
+
+/** Historical credit has the same rolling window on every forecast date as it does
+ * when that date is evaluated live. The active plan block selects objectives; it does
+ * not extend or clip the daily path's completed-training lookback. Projected picks
+ * retain their own credit throughout this seven-day forecast horizon. */
+export function ageCompletedObjectiveCreditForForecastDate(
+    microcycle: MicrocycleState,
+    completedExposures: readonly CompletedExposure[],
+    forecastDate: string,
+    todayDate: string,
+    priorProjectedExposures: readonly ProjectionExposure[] = [],
+    historicalReplayObjectiveIds: ReadonlySet<string> = new Set(),
+): MicrocycleState {
+    const windowStart = addDaysToLocalDateString(forecastDate, -7);
+    const historical = completedExposures.filter(exposure =>
+        exposure.date >= windowStart && exposure.date < todayDate,
+    );
+    const empty: MicrocycleState = {
+        ...microcycle,
+        objectives: microcycle.objectives.map(objective => ({
+            ...objective, completedCredit: 0, completedExposures: 0, projectedCredit: 0,
+        })),
+    };
+    const aged = historical.reduce((state, exposure) => exposure.stimulusProfile
+        ? creditObjectivesFromStimulus(
+            state, exposure.stimulusProfile, exposure.modality, exposure.category,
+            exposure.deliveredDose, exposure.stimulusConfidence ?? 'exact',
+        )
+        : updateMicrocycleProgress(state, exposure.trainingRecordLike), empty);
+    const agedById = new Map(aged.objectives.map(objective => [
+        objective.id, objective.completedCredit ?? objective.completedExposures,
+    ]));
+    const projectedBeforeDate = priorProjectedExposures.filter(exposure => exposure.date < forecastDate);
+    return {
+        ...microcycle,
+        objectives: microcycle.objectives.map(objective => {
+            const original = objective.completedCredit ?? objective.completedExposures;
+            const replayedHistoricalCredit = agedById.get(objective.id) ?? 0;
+            // Governing objectives are rebuilt by the daily path from the active
+            // definition plus completed history. Reproduce that exactly, including when
+            // a block transition changes the definition or introduces the objective.
+            // Contributor-only objectives are merged after daily historical crediting,
+            // so preserve the conservative never-raise behavior for those objectives.
+            const rebuildFromHistoricalFacts = historicalReplayObjectiveIds.has(objective.id);
+            const completedCredit = rebuildFromHistoricalFacts
+                ? replayedHistoricalCredit
+                : Math.min(original, replayedHistoricalCredit);
+            const requiredCredit = objective.requiredCredit ?? objective.targetExposures;
+            const seen = new Set<string>();
+            let replayedAvailableCredit = completedCredit;
+            for (const exposure of projectedBeforeDate) {
+                if (seen.has(exposure.occurrenceKey)) continue;
+                seen.add(exposure.occurrenceKey);
+                if (replayedAvailableCredit >= requiredCredit) break;
+                const credit = deriveObjectiveCreditFromProfile(objective, exposure.stimulus, {}, {
+                    modality: exposure.modality,
+                    category: exposure.category,
+                }, exposure.stimulusConfidence ?? 'exact');
+                if (credit.qualifies && credit.earnedCredit > 0) {
+                    replayedAvailableCredit = Math.min(requiredCredit, replayedAvailableCredit + credit.earnedCredit);
+                }
+            }
+            const replayedProjectedCredit = Math.max(0, replayedAvailableCredit - completedCredit);
+            const projectedCredit = Math.min(
+                Math.max(0, requiredCredit - completedCredit),
+                rebuildFromHistoricalFacts
+                    ? replayedProjectedCredit
+                    : Math.max(objective.projectedCredit ?? 0, replayedProjectedCredit),
+            );
+            return {
+                ...objective,
+                completedCredit,
+                projectedCredit,
+                completedExposures: projectCompatibilityExposures(
+                    completedCredit + projectedCredit, objective.targetExposures,
+                ),
+            };
+        }),
     };
 }
 
@@ -1612,6 +1707,16 @@ export function generateWeekAheadPlan(
         const tomorrowPeriodization = evaluatePeriodizationPhase(events, tomorrowDate);
         const tomorrowReconciled = reconcileObjectivesForDate(microcycle, events, tomorrowDate, todayDate, tomorrowPeriodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition);
         microcycle = tomorrowReconciled.microcycle;
+        if (seed.completedExposures) {
+            microcycle = ageCompletedObjectiveCreditForForecastDate(
+                microcycle,
+                seed.completedExposures,
+                tomorrowDate,
+                todayDate,
+                projectionExposures,
+                new Set(tomorrowReconciled.historicalReplayObjectiveIds),
+            );
+        }
         accumulateNewDrops(droppedContributorObjectives, currentlyDroppedPairs, tomorrowReconciled.droppedContributorObjectives);
         applyFixedActivityStimulus(tomorrowDate);
         const tomorrowCredits = creditingObjectivesFor(tomorrowRec.template, tomorrowRec.activeDose);
@@ -1794,6 +1899,16 @@ export function generateWeekAheadPlan(
         const priorObjectiveIds = new Set(microcycle.objectives.map(objective => objective.id));
         const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition);
         microcycle = reconciled.microcycle;
+        if (seed.completedExposures) {
+            microcycle = ageCompletedObjectiveCreditForForecastDate(
+                microcycle,
+                seed.completedExposures,
+                date,
+                todayDate,
+                projectionExposures,
+                new Set(reconciled.historicalReplayObjectiveIds),
+            );
+        }
         accumulateNewDrops(droppedContributorObjectives, currentlyDroppedPairs, reconciled.droppedContributorObjectives);
         applyFixedActivityStimulus(date);
 
@@ -2131,6 +2246,7 @@ export async function generateWeekAheadPlanWithIntent(
         {
             microcycle: evergreen?.microcycle ?? intent.microcycle,
             fatigue: intent.fatigue,
+            completedExposures: intent.history,
             trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
             rollingLoadBudgetHistory: trailingHistoryFromCompletedExposures(intent.rollingLoadBudgetHistory, todayDate),
             completedCoverageHistory: resolveCoverageHistory(intent.performedTrainingFacts, intent.history),

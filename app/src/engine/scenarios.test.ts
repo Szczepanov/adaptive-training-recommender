@@ -81,18 +81,20 @@ describe('cycling_gran_fondo_A -- baseline, already-covered sport', () => {
         expect(result.objectiveResolution.map(o => o.key)).not.toContain('surge_repeatability');
     });
 
-    it('does not credit duration-capped cycling durability work below its dose threshold', async () => {
+    it('credits only the race-specific ride whose effective durability stimulus clears the floor', async () => {
         const result = await getResult('cycling_gran_fondo_A');
         expect(result.objectiveResolution).toContainEqual(expect.objectContaining({
-            key: 'race_specific_endurance', timesGenerated: 4, timesResolved: 0,
+            key: 'race_specific_endurance', timesGenerated: 4, timesResolved: 1,
         }));
-        // The effective doses in this 60-minute legacy scenario remain below the
-        // Gran Fondo credit threshold; the 120-minute plan-judge case covers sustained
-        // durability separately without granting credit to these capped sessions.
+        // Only one ride retains enough effective stimulus after dose adjustment.
+        // The other 50-minute race-specific picks remain below the objective's
+        // aerobicEndurance/fatigueResistance qualification floor.
         const raceSpecificDecisions = result.decisionTraces.filter(d =>
             d.selected.category === 'Race-Specific Endurance' && d.selected.modality === 'Cycling'
         );
-        expect(raceSpecificDecisions.length).toBeGreaterThan(0);
+        expect(raceSpecificDecisions).toHaveLength(3);
+        expect(result.objectiveCredits.filter(credit => credit.objectiveKey === 'race_specific_endurance'))
+            .toEqual([expect.objectContaining({ date: '2026-08-16', earnedCredit: 0.72 })]);
     });
 });
 
@@ -118,10 +120,10 @@ describe('cycling_criterium_A -- qualification and anchor stress test', () => {
         // below remains the decision-bearing contract.
         expect(hits).toBeGreaterThanOrEqual(0);
         expect(hits).toBeLessThanOrEqual(nominated);
-        // ADR-0018 reserves the exact role before support work; active-dose history
-        // now determines the delivered load used by the rolling ledger.
-        expect(calendarBlockFulfilled).toBe(3);
-        expect(raceSpecificObjective).toMatchObject({ timesGenerated: 4, timesResolved: 4 });
+        // Exact authored coverage lands in all four weeks, while one rolling
+        // adaptation objective remains unresolved after prior credit ages out.
+        expect(calendarBlockFulfilled).toBe(4);
+        expect(raceSpecificObjective).toMatchObject({ timesGenerated: 4, timesResolved: 3 });
         expect(result.qualityWarnings.some(warning => warning.startsWith('Event-specific exposure occurred off the nominated anchor date'))).toBe(true);
     });
 

@@ -243,6 +243,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Evidence supports heterogeneous residual fatigue after strenuous work; the exact six exponential half-lives are explicitly registered as a compact product model rather than scientific recovery constants.',
     },
     {
+        id: 'forecast.next_day_branch_strain_carry', domain: 'fatigue_load', title: 'Next-day measured strain carry',
+        currentRule: 'Yellow and red next-day intent-aware branches take the element-wise maximum of their synthetic strain and today’s measured internal strain after 24 hours of registered dimensional decay; green and mandatory single-plan recovery do not carry it.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['engine/rules.ts:buildNextDayScenarios', 'engine/trainingIntent.ts:resolveTrainingIntent'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.nextDayInternalStrainCarryPolicy, KNOWLEDGE_CLAIM_IDS.fatigueDecayHalfLives],
+        coverageRationale: 'Explicit product forecast consistency policy using already registered dimensional half-lives.',
+    },
+    {
         id: 'fatigue.internal_response_model', domain: 'fatigue_load', title: 'Internal response strain normalization and fusion weights',
         currentRule: 'HRV drop saturates at 15 ms, RHR rise at 10 bpm, sleep strain is (75 - score)/50 below score 75 (unclamped), Body Battery depletion begins below 50 and saturates at 20; base systemic is 0.3 subjective fatigue +0.25 HRV +0.25 sleep +0.2 Body Battery, cardiovascular 0.5 RHR +0.5 HRV, upper-body soreness multiplier 0.7, neuromuscular 0.5 fatigue +0.5 inverse motivation. Non-diluted floors override the weighted sums: systemic 0.60 at fatigue >=8 (0.65 with readiness <=4 or stress >=8, or at readiness <=3 with stress >=8), systemic 0.60 at stress >=9, systemic and cardiovascular 0.80 on concordant HRV <=-10 ms, RHR >=+5 bpm and Body Battery <=35, and soreness >=8 replaces normalized soreness with a 0.88 lower-body/impact tissue floor. Ambient step-surge strain (fatigue.ambient_step_surge) and unlogged physical-work strain are combined on top and are not owned by this item.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
@@ -443,6 +451,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         codeRefs: ['engine/coverage.ts:supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback', 'engine/optimizer.ts:rankCandidates'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.symptomCompatibleStrengthSupportPolicy],
         coverageRationale: 'Registered as explicit product ranking policy rather than as a clinical or physiological-equivalence claim. Exact role identity remains governed by the coverage descriptor and ADR-0018 allocation contract.',
+    },
+    {
+        id: 'optimizer.residual_lower_body_strength_deferral', domain: 'optimizer_scoring', title: 'Residual lower-body primary-strength tier deferral',
+        currentRule: 'When combined lower-body fatigue is at least 0.6, heavy lower-body strength whose tier-0/1 urgency comes only from primary_strength loses that urgency and keeps any other authored coverage tier (tier 3 only when no other role applies); exact coverage and reservations are unchanged.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['engine/optimizer.ts:rankCandidates'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.residualLowerBodyStrengthDeferralPolicy],
+        coverageRationale: 'Explicit product ranking policy for deferring heavy lower-body strength without changing the exact weekly-role ledger.',
     },
     {
         id: 'optimizer.catalog_strength_adjacency', domain: 'optimizer_scoring', title: 'Automatic catalog adjacent-day strength exclusion',

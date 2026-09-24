@@ -1,10 +1,12 @@
-import type { DimensionalFatigue, EquipmentKey, RankingCounterfactual, Recommendation, SessionTemplate, UserContext, WorkoutCostProfile, WorkoutStimulusProfile } from '../models';
+import type { DimensionalFatigue, EquipmentKey, MicrocycleState, RankingCounterfactual, Recommendation, SessionTemplate, UserContext, WeeklyObjective, WorkoutCostProfile, WorkoutStimulusProfile } from '../models';
 import { evaluateNextDayPlanWithIntent, evaluateTrainingWithIntent } from '../rules';
 import { generateWeekAheadPlanWithIntent, resolveWeeklyAnchors, type WeekAheadDay } from '../planner';
 import { materializeEffectiveDose } from '../optimizer';
 import type { CompletedExposure, TrainingHistoryProvider } from '../trainingHistory';
 import type { TrainingHistorySnapshot } from '../trainingHistorySnapshot';
-import { evaluatePeriodizationPhase } from '../periodization';
+import { evaluatePeriodizationPhase, resolveMultiEventObjectives } from '../periodization';
+import { creditObjectivesFromStimulus, generateWeeklyObjectives, updateMicrocycleProgress } from '../microcycle';
+import { resolvePlanDefinitionForEvent } from '../planSchedule';
 import { resolvePlanningContext } from '../planningMode';
 import { addDaysToLocalDateString } from '../../utils/localDate';
 import { workoutForTemplate } from '../../workouts/prescription';
@@ -39,7 +41,7 @@ const ZERO_STIMULUS: WorkoutStimulusProfile = { aerobicEndurance: 0, thresholdPo
 const ZERO_FATIGUE: DimensionalFatigue = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
 
 export interface ObjectiveTally { key: string; timesGenerated: number; timesResolved: number; }
-export interface ObjectiveCredit { weekIndex: number; date: string; objectiveKey: string; objectiveTitle: string; templateId: string; templateTitle: string; modality: SessionTemplate['modality']; }
+export interface ObjectiveCredit { weekIndex: number; date: string; objectiveKey: string; objectiveTitle: string; templateId: string; templateTitle: string; modality: SessionTemplate['modality']; earnedCredit: number; }
 export interface UtilityDiagnosticsSummary { fragileSelectionCount: number; lowerBenefitSelectionCount: number; trainTierRestOrRecoveryCount: number; }
 export interface AnchorWeekResult {
     weekIndex: number; weekStartDate: string; eventSpecificAnchorDate: string | null; qualityAnchorDate: string | null;
@@ -463,6 +465,237 @@ export async function runScenario(
         currentDate = addDaysToLocalDateString(currentDate, 7);
     }
     return computeMetrics(scenario, weeklyDays, anchorWeeks, objectiveTallies, objectiveCredits, allocationReports, decisionTraces);
+}
+
+/** WP3.0 diagnostic. A pick parity comparison is observational: the aged-credit column
+ * does not feed a second planner run, so it cannot claim a counterfactual pick. */
+export interface ForecastDailyParityDay {
+    date: string;
+    weekIndex: number;
+    dayOffset: number;
+    forecastPick: string;
+    dailyPick: string;
+    pickMatches: boolean;
+    forecastObjectives: ScenarioDecisionTrace['activeObjectives'];
+    dailyObjectives: ScenarioDecisionTrace['activeObjectives'];
+    dailyObjectivesOnForecastHistory: ScenarioDecisionTrace['activeObjectives'];
+    /** Forecast traces for projected dates are recorded after the day's pick. */
+    currentPickCredits: Array<{ key: string; earnedCredit: number }>;
+    agedCompletedCredit: Array<{
+        key: string;
+        original: number;
+        aged: number | null;
+        windowStart: string | null;
+        windowEnd: string | null;
+    }>;
+}
+
+export interface ForecastDailyParityResult {
+    scenarioId: string;
+    days: ForecastDailyParityDay[];
+    comparedDays: number;
+    matchingPicks: number;
+    matchingObjectiveStates: number;
+    matchingCompletedCreditStates: number;
+    matchingAgedCompletedCreditStates: number;
+    matchingAvailableCreditStates: number;
+    matchingAgedAvailableCreditStates: number;
+    matchingForcedAvailableCreditStates: number;
+    matchingAgedForcedAvailableCreditStates: number;
+    changedCompletedCreditDays: number;
+    unclassifiedObjectiveDays: number;
+    /** No forecast re-ranking occurs in this diagnostic. */
+    agedPickParity: null;
+}
+
+function completedCreditForObjective(objective: WeeklyObjective, exposures: readonly CompletedExposure[]): number {
+    const empty = { ...objective, completedCredit: 0, completedExposures: 0, projectedCredit: 0 };
+    const state = exposures.reduce<MicrocycleState>((microcycle, exposure) => exposure.stimulusProfile
+        ? creditObjectivesFromStimulus(
+            microcycle, exposure.stimulusProfile, exposure.modality, exposure.category,
+            exposure.deliveredDose, exposure.stimulusConfidence ?? 'exact',
+        )
+        : updateMicrocycleProgress(microcycle, exposure.trainingRecordLike),
+    { windowStartDate: '', objectives: [empty] });
+    return state.objectives[0].completedCredit ?? state.objectives[0].completedExposures;
+}
+
+/** Mirror the daily intent path's rolling seven-day completion window. Plan-block
+ * bounds select the active objective, but daily credit does not clip history to them. */
+export function forecastAgedCompletedCredit(
+    objective: WeeklyObjective,
+    exposures: readonly CompletedExposure[],
+    forecastDate: string,
+    weekStart: string,
+    originalCredit: number,
+): number {
+    const rollingStart = addDaysToLocalDateString(forecastDate, -7);
+    const eligible = exposures.filter(exposure => exposure.date >= rollingStart && exposure.date < weekStart);
+    return Math.min(originalCredit, completedCreditForObjective(objective, eligible));
+}
+
+function traceAsExposure(trace: ScenarioDecisionTrace): CompletedExposure {
+    return {
+        occurrenceKey: `recommendation:${trace.date}`,
+        date: trace.date,
+        costProfile: trace.selected.projectedCost,
+        stimulusProfile: trace.selected.stimulusProfile ?? undefined,
+        stimulusConfidence: 'exact',
+        templateId: trace.selected.templateId,
+        modality: trace.selected.modality,
+        category: trace.selected.category,
+        trainingRecordLike: {
+            type: `${trace.selected.modality} ${trace.selected.category}`,
+            duration_min: trace.selected.durationMin ?? 0,
+            training_effect: 0,
+            intensity_tag: '',
+        },
+    };
+}
+
+/** Replays the same scenario one day at a time with performed=recommended. The weekly
+ * side is the existing runScenario harness. Daily readiness is sampled by calendar day,
+ * with an optional explicit trajectory for judge cases that provide one. */
+export async function runForecastDailyParityScenario(
+    scenario: AthleteScenario,
+    readinessForDay?: (date: string, dayIndex: number) => ReturnType<AthleteScenario['readinessForWeek']>,
+): Promise<ForecastDailyParityResult> {
+    const forecast = await runScenario(scenario);
+    const events = [...(scenario.events ?? (scenario.event ? [scenario.event] : []))];
+    const history: CompletedExposure[] = [...(scenario.initialHistory ?? [])];
+    const dailyTraces: ScenarioDecisionTrace[] = [];
+    const parityHistoryProvider = (entries: CompletedExposure[]): TrainingHistoryProvider => ({
+        reconstruct: async (_userId, throughDateExclusive, windowDays) => {
+            const start = addDaysToLocalDateString(throughDateExclusive, -windowDays);
+            return entries.filter(exposure => exposure.date >= start && exposure.date < throughDateExclusive);
+        },
+        getSnapshot: async (_userId, throughDateExclusive, windowDays): Promise<TrainingHistorySnapshot> => {
+            const start = addDaysToLocalDateString(throughDateExclusive, -windowDays);
+            return {
+                throughDateExclusive, windowDays, completedEvents: [],
+                exposures: entries.filter(exposure => exposure.date >= start && exposure.date < throughDateExclusive),
+                sourceStates: {
+                    activities: { status: 'AVAILABLE', revision: `sim-activities-${windowDays}` },
+                    recommendations: { status: 'AVAILABLE', revision: `sim-recommendations-${windowDays}` },
+                    manualTraining: { status: 'MISSING' },
+                },
+                generatedAt: new Date().toISOString(),
+                revision: `sim-history-${throughDateExclusive}-${windowDays}-${entries.length}`,
+            };
+        },
+    });
+    const provider = parityHistoryProvider(history);
+    let previousMode: Recommendation['mode'] | undefined;
+    for (let dayIndex = 0; dayIndex < scenario.weeks * 7; dayIndex += 1) {
+        const date = addDaysToLocalDateString(scenario.startDate, dayIndex);
+        const weekIndex = Math.floor(dayIndex / 7);
+        const readiness = readinessForDay?.(date, dayIndex)
+            ?? scenario.readinessForDate?.(date, weekIndex)
+            ?? scenario.readinessForWeek(weekIndex);
+        const recommendation = await evaluateTrainingWithIntent(
+            'sim-user', readiness, scenario.context, events, date, previousMode, provider,
+            null, scenario.fixedActivities ?? [], [], scenario.trainingIntentProfile ?? null,
+            scenario.preferences ?? null, 'max',
+        );
+        dailyTraces.push(traceFromRecommendation(weekIndex, date, recommendation));
+        history.push(toCompletedExposure(recommendationAsDay(date, recommendation, 'rolling_daily')));
+        previousMode = recommendation.mode;
+    }
+
+    // Teacher-forced replay: daily planning sees the forecast's prior picks as performed.
+    // This isolates objective-window semantics from the divergence in chosen workouts.
+    const forcedHistory: CompletedExposure[] = [...(scenario.initialHistory ?? [])];
+    const forcedProvider = parityHistoryProvider(forcedHistory);
+    const forcedTraces: ScenarioDecisionTrace[] = [];
+    for (let index = 0; index < forecast.decisionTraces.length; index += 1) {
+        const forecastTrace = forecast.decisionTraces[index];
+        const weekIndex = Math.floor(index / 7);
+        const readiness = readinessForDay?.(forecastTrace.date, index)
+            ?? scenario.readinessForDate?.(forecastTrace.date, weekIndex)
+            ?? scenario.readinessForWeek(weekIndex);
+        const recommendation = await evaluateTrainingWithIntent(
+            'sim-user', readiness, scenario.context, events, forecastTrace.date,
+            index > 0 ? forecast.decisionTraces[index - 1].mode : undefined,
+            forcedProvider, null, scenario.fixedActivities ?? [], [],
+            scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, 'max',
+        );
+        forcedTraces.push(traceFromRecommendation(weekIndex, forecastTrace.date, recommendation));
+        forcedHistory.push(traceAsExposure(forecastTrace));
+    }
+
+    const forecastHistory: CompletedExposure[] = [...(scenario.initialHistory ?? [])];
+    const pickCreditsByDate = new Map<string, Map<string, number>>();
+    forecast.objectiveCredits.forEach(credit => {
+        const byKey = pickCreditsByDate.get(credit.date) ?? new Map<string, number>();
+        byKey.set(credit.objectiveKey, (byKey.get(credit.objectiveKey) ?? 0) + credit.earnedCredit);
+        pickCreditsByDate.set(credit.date, byKey);
+    });
+    const days = forecast.decisionTraces.map((trace, index): ForecastDailyParityDay => {
+        const daily = dailyTraces[index];
+        const weekIndex = Math.floor(index / 7);
+        const dayOffset = index % 7;
+        const weekStart = addDaysToLocalDateString(scenario.startDate, weekIndex * 7);
+        const periodization = evaluatePeriodizationPhase(events, trace.date);
+        const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent);
+        const definitions = resolveMultiEventObjectives(
+            events, trace.date, periodization,
+            generateWeeklyObjectives(periodization.phase, weekStart, periodization.focusEvent, planDefinition, trace.date).objectives,
+        ).objectives;
+        const definitionsByKey = new Map<string, WeeklyObjective[]>();
+        definitions.forEach(objective => definitionsByKey.set(objective.key, [...(definitionsByKey.get(objective.key) ?? []), objective]));
+        const agedCompletedCredit = trace.activeObjectives.map(objective => {
+            const matching = definitionsByKey.get(objective.key) ?? [];
+            const definition = matching.length === 1 ? matching[0] : null;
+            if (!definition) return { key: objective.key, original: objective.completedCredit, aged: null, windowStart: null, windowEnd: null };
+            return {
+                key: objective.key, original: objective.completedCredit,
+                aged: dayOffset < 2 ? objective.completedCredit
+                    : forecastAgedCompletedCredit(definition, forecastHistory, trace.date, weekStart, objective.completedCredit),
+                windowStart: definition.windowStart ?? null, windowEnd: definition.windowEnd ?? null,
+            };
+        });
+        forecastHistory.push(traceAsExposure(trace));
+        return {
+            date: trace.date, weekIndex, dayOffset,
+            forecastPick: trace.selected.templateId, dailyPick: daily.selected.templateId,
+            pickMatches: trace.selected.templateId === daily.selected.templateId,
+            forecastObjectives: trace.activeObjectives, dailyObjectives: daily.activeObjectives,
+            dailyObjectivesOnForecastHistory: forcedTraces[index].activeObjectives,
+            currentPickCredits: [...(dayOffset >= 2 ? pickCreditsByDate.get(trace.date) ?? new Map() : new Map()).entries()]
+                .map(([key, earnedCredit]) => ({ key, earnedCredit })),
+            agedCompletedCredit,
+        };
+    });
+    const creditStateMatches = (day: ForecastDailyParityDay, aged: boolean, includeProjected: boolean, forced: boolean): boolean => {
+        const daily = new Map((forced ? day.dailyObjectivesOnForecastHistory : day.dailyObjectives).map(objective => [
+            objective.key, objective.completedCredit + (includeProjected ? objective.projectedCredit : 0),
+        ]));
+        const forecast = new Map(day.forecastObjectives.map(objective => [objective.key, objective]));
+        const currentPickCredit = new Map(day.currentPickCredits.map(credit => [credit.key, credit.earnedCredit]));
+        const forecastKeys = day.agedCompletedCredit.map(objective => objective.key);
+        if (forecastKeys.length !== daily.size || forecastKeys.some(key => !daily.has(key))) return false;
+        return day.agedCompletedCredit.every(objective => {
+            const credit = (aged ? objective.aged : objective.original);
+            const projected = includeProjected
+                ? (forecast.get(objective.key)?.projectedCredit ?? 0) - (currentPickCredit.get(objective.key) ?? 0)
+                : 0;
+            return credit !== null && Math.abs(credit + projected - daily.get(objective.key)!) < 1e-6;
+        });
+    };
+    return {
+        scenarioId: scenario.id, days, comparedDays: days.length,
+        matchingPicks: days.filter(day => day.pickMatches).length,
+        matchingObjectiveStates: days.filter(day => JSON.stringify(day.forecastObjectives) === JSON.stringify(day.dailyObjectives)).length,
+        matchingCompletedCreditStates: days.filter(day => creditStateMatches(day, false, false, false)).length,
+        matchingAgedCompletedCreditStates: days.filter(day => creditStateMatches(day, true, false, false)).length,
+        matchingAvailableCreditStates: days.filter(day => creditStateMatches(day, false, true, false)).length,
+        matchingAgedAvailableCreditStates: days.filter(day => creditStateMatches(day, true, true, false)).length,
+        matchingForcedAvailableCreditStates: days.filter(day => creditStateMatches(day, false, true, true)).length,
+        matchingAgedForcedAvailableCreditStates: days.filter(day => creditStateMatches(day, true, true, true)).length,
+        changedCompletedCreditDays: days.filter(day => day.agedCompletedCredit.some(objective => objective.aged !== null && objective.aged < objective.original)).length,
+        unclassifiedObjectiveDays: days.filter(day => day.agedCompletedCredit.some(objective => objective.aged === null)).length,
+        agedPickParity: null,
+    };
 }
 
 export interface SimulationReport { commit: string; capturedAt: string; engineVersion: string; policyVersion: string; scenarios: ScenarioResult[]; preferenceSensitivity: PreferenceSensitivityResult[]; readinessSensitivity: ReadinessSensitivityResult[]; }

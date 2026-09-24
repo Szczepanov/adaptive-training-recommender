@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildOptimizationContext, calculateStimulusBenefit, evaluateRecoveryConstraints, rankCandidates, rankCandidatesByUtility, resolveCapTruncatedPrescription, resolveTimeCapDoseAdjustment, type RecentHistoryEntry } from './optimizer';
+import { buildOptimizationContext, calculateStimulusBenefit, computeRankingCounterfactual, evaluateRecoveryConstraints, rankCandidates, rankCandidatesByUtility, RESIDUAL_LOWER_BODY_STRENGTH_DEFERRAL_THRESHOLD, resolveCapTruncatedPrescription, resolveTimeCapDoseAdjustment, type RecentHistoryEntry } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
 import { resolveHealthPlanningPolicy } from './healthPlanningPolicy';
 import type { FatigueState, SessionHistoryEntry, SessionTemplate, UserContext, UserPreferences, WeeklyObjective } from './models';
@@ -135,6 +135,78 @@ describe('resolveTimeCapDoseAdjustment — Easy Endurance cap truncation (#744)'
         // This is the original #744 failure boundary: once capped cycling no longer loses
         // coverage urgency to walking, the athlete's chronic cycling preference must win.
         expect(result.accepted[0]?.template.id).toBe('end_easy_01');
+    });
+});
+
+describe('residual lower-body primary-strength deferral (#746)', () => {
+    const full = ENRICHED_TEMPLATES.find(template => template.id === 'str_full_03')!;
+    const upper = ENRICHED_TEMPLATES.find(template => template.id === 'str_upper_01')!;
+    const coverageState: CoverageState = {
+        asOfDate: '2026-03-05', phase: 'general', activeBlockId: 'block_general',
+        coverageSetId: 'evergreen_general', descriptor: EVERGREEN_GENERAL_COVERAGE_SET,
+        requirements: [{
+            id: 'primary', key: 'primary_strength', label: 'Primary strength', requirement: 'required',
+            minimumSessions: 1, targetSessions: 1, completedSessions: 0, projectedSessions: 0,
+            priority: 'must_have', rollingWindowDays: 7, credits: [],
+        }],
+    };
+    const rankAt = (lowerBody: number) => rankCandidates(
+        [full, upper], [],
+        { ...DEFAULT_FATIGUE, combinedFatigue: { ...DEFAULT_FATIGUE.combinedFatigue, lowerBody } },
+        DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
+        { date: '2026-03-05', coverageState },
+    );
+
+    it('keeps primary strength urgent below 0.6, then defers only heavy lower-body strength at the boundary', () => {
+        const below = rankAt(RESIDUAL_LOWER_BODY_STRENGTH_DEFERRAL_THRESHOLD - 0.001);
+        const boundary = rankAt(RESIDUAL_LOWER_BODY_STRENGTH_DEFERRAL_THRESHOLD);
+        expect(below.accepted.find(item => item.template.id === full.id)?.coverageNeedTier).toBe(1);
+        const deferred = boundary.accepted.find(item => item.template.id === full.id)!;
+        expect(deferred.coverageNeedTier).toBe(3);
+        expect(deferred.rationale).toContain('Primary strength deferred: residual lower-body fatigue');
+        expect(boundary.accepted.find(item => item.template.id === upper.id)?.coverageNeedTier).toBe(3);
+        expect(computeRankingCounterfactual(boundary, deferred.template.id)?.coverageNeedTier).toBe(3);
+        expect(coverageState.requirements[0].completedSessions).toBe(0);
+    });
+
+    it('preserves another authored target tier when primary-strength urgency is deferred', () => {
+        const descriptor = {
+            ...EVERGREEN_GENERAL_COVERAGE_SET,
+            coverage: EVERGREEN_GENERAL_COVERAGE_SET.coverage.map(item => item.key === 'compact_strength'
+                ? { ...item, workoutIds: [...item.workoutIds, 'strength_full_body_maintenance_01'] }
+                : item),
+        };
+        const result = rankCandidates([full], [],
+            { ...DEFAULT_FATIGUE, combinedFatigue: { ...DEFAULT_FATIGUE.combinedFatigue, lowerBody: 0.9 } },
+            DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
+            {
+                date: '2026-03-05',
+                coverageState: {
+                    ...coverageState,
+                    descriptor,
+                    requirements: [
+                        ...coverageState.requirements,
+                        {
+                            id: 'compact', key: 'compact_strength', label: 'Compact support', requirement: 'optional',
+                            minimumSessions: 0, targetSessions: 1, completedSessions: 0, projectedSessions: 0,
+                            priority: 'nice_to_have', rollingWindowDays: 7, credits: [],
+                        },
+                    ],
+                },
+            },
+        );
+        expect(result.accepted[0].coverageNeedTier).toBe(2);
+        expect(result.accepted[0].rationale).toContain('Primary strength deferred');
+    });
+
+    it('does not defer full-body strength without primary-strength urgency', () => {
+        const result = rankCandidates([full], [],
+            { ...DEFAULT_FATIGUE, combinedFatigue: { ...DEFAULT_FATIGUE.combinedFatigue, lowerBody: 0.9 } },
+            DEFAULT_AVAILABILITY, [], DEFAULT_PREFERENCES,
+            { date: '2026-03-05', coverageState: { ...coverageState, requirements: [] } },
+        );
+        expect(result.accepted[0].coverageNeedTier).toBe(3);
+        expect(result.accepted[0].rationale).not.toContain('Primary strength deferred');
     });
 });
 

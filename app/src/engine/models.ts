@@ -1094,6 +1094,8 @@ export interface NextDayScenario {
     label: string;
     condition: string;
     readiness: DailyReadiness;
+    /** Today's measured internal strain after 24h decay; yellow/red branches only. */
+    carriedInternalStrain?: DimensionalFatigue;
 }
 
 export interface NextDayScenarioSet {

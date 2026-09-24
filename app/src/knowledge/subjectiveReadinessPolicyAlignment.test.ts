@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { mapCheckinToSubjectiveInput } from '../engine/adapters';
 import type { DailyReadiness, DailySubjectiveCheckin, EngineObjectiveInput, SubjectiveInput, UserContext } from '../engine/models';
-import { evaluateReadinessAndSafetyEnvelope } from '../engine/rules';
+import { buildNextDayScenarios, evaluateReadinessAndSafetyEnvelope, evaluateTraining } from '../engine/rules';
 import { canGenerateNormalRecommendation, getMinimumSafetyCheckinStatus } from '../engine/safetyCheckin';
 import { SUBJECTIVE_READINESS_POLICY_DESCRIPTOR } from './subjectiveReadinessKnowledge';
+import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from './sportsKnowledgeRegistry';
+import { computeInternalResponseStrain, decayFatigue } from '../engine/fatigue';
 
 function context(): UserContext {
     return {
@@ -48,6 +50,18 @@ function checkin(overrides: Partial<DailySubjectiveCheckin> = {}): DailySubjecti
 }
 
 describe('subjective readiness policy alignment', () => {
+    it('pins the yellow/red 24-hour strain carry to its registered policy and decay model', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.nextDayInternalStrainCarryPolicy);
+        const readiness: DailyReadiness = { subjective: subjective({ soreness: 8 }), objective: objective() };
+        const today = evaluateTraining(readiness, context(), '2026-09-10');
+        const branches = buildNextDayScenarios(readiness, context(), '2026-09-10', today).scenarios;
+        const expected = decayFatigue(computeInternalResponseStrain(readiness), 24);
+        expect(branches.yellow.carriedInternalStrain).toEqual(expected);
+        expect(branches.red.carriedInternalStrain).toEqual(expected);
+        expect(branches.green.carriedInternalStrain).toBeUndefined();
+        expect(claim.statement).toContain('24 hours');
+        expect(claim.statement).toContain('element-wise maximum');
+    });
     it('pins four physical dimensions, inversions, and strict composite thresholds with motivation decoupled', () => {
         expect(SUBJECTIVE_READINESS_POLICY_DESCRIPTOR.composite).toEqual({
             denominator: 4,

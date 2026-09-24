@@ -223,6 +223,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-20 Nutrition and Energy Ingestion Analysis**](./analysis/2026-09-20-nutrition-myfitnesspal-garmin-ingestion.md) — Investigates ingestion of dietary nutrition and daily energy expenditure telemetry, evaluating Garmin Connect APIs and Android Health Connect.
 * [**2026-09-21 Issue #706 review memo**](./analysis/2026-09-21-issue-706-review-memo.md) — Analysis of a reported anchor-day rolling-budget issue, confirming expected hard-gate behavior rather than an anchor-placement bug.
 * [**2026-09-23 UI/UX foundation review addendum**](./analysis/2026-09-23-ui-ux-foundation-review-addendum.md) — Follow-up documentation changes regarding session-execution architecture, visual review bundles, and documentation hub routing.
+* [**2026-09-24 Issue #746 forecast-credit parity spike**](./analysis/2026-09-24-issue-746-forecast-credit-parity.md) — Compares seven-day forecast credit aging with rolling-daily execution and records the judge-corpus footprint.
 
 ---
 

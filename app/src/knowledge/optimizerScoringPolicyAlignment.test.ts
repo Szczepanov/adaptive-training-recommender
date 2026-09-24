@@ -10,6 +10,7 @@ import {
     rankCandidates,
     resolveCapTruncatedPrescription,
     resolveTimeCapDoseAdjustment,
+    RESIDUAL_LOWER_BODY_STRENGTH_DEFERRAL_THRESHOLD,
     UNPREFERRED_MODALITY_MULTIPLIER,
     type OptimizationOptions,
 } from '../engine/optimizer';
@@ -209,6 +210,13 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(resolveCapTruncatedPrescription({ ...template, easierDose: { ...template.easierDose!, doseRatio: 0.8 } }, 35)?.doseRatio).toBe(0.8);
     });
 
+    it('pins residual lower-body primary-strength deferral to the registered 0.6 policy', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.residualLowerBodyStrengthDeferralPolicy);
+        expect(RESIDUAL_LOWER_BODY_STRENGTH_DEFERRAL_THRESHOLD).toBe(0.6);
+        expect(claim.statement).toContain('at least 0.6');
+        expect(claim.statement).toContain('tier 3');
+        expect(claim.statement).toContain('Exact coverage credit and weekly reservations remain unchanged');
+    });
     it('pins the unpreferred-modality demotion policy to candidate ranking', () => {
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.unpreferredModalityFallbackPolicy);
         expect(claim.statement).toContain('0.25');

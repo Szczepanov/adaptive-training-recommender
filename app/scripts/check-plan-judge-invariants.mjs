@@ -113,8 +113,14 @@ if (compactRaceSpecific) {
 }
 
 const travel = required('judge_mode_travel_overlay');
+for (const caseId of ['judge_concurrent_heavy_lower', 'judge_subj_soreness']) {
+  const item = required(caseId);
+  const day2 = item.plan?.[1];
+  fail(day2 && !['Full-body Strength', 'Lower-body Strength'].includes(day2.session?.category),
+    `${caseId}: D2 selected heavy lower-body strength.`);
+}
 fail(travel.input.authoredPlanBlocks == null, 'Travel case advertises an authored plan overlay that the canonical simulation path does not execute.');
-for (const day of travel.plan.slice(0, 3)) {
+for (const day of travel.plan) {
   fail((day.session.requiredEquipment ?? []).length === 0, `${day.date}: travel case selected equipment-dependent ${day.session.templateId}`);
   fail(['indoor', 'either'].includes(day.session.environment), `${day.date}: travel case selected non-indoor ${day.session.templateId}`);
   if (day.session.durationMin !== null) fail(day.session.durationMin <= 30, `${day.date}: travel case exceeded 30-minute travel capacity with ${day.session.templateId}`);
@@ -124,7 +130,19 @@ for (const day of travel.plan.slice(0, 3)) {
 // AI judge caught a real catalog gap that this checker previously missed (every travel
 // day silently collapsed to Rest/Mobility with no aerobic maintenance stimulus at all).
 fail(travel.plan.slice(0, 3).some((day) => !['Rest', 'Mobility/Recovery'].includes(day.session.category)),
-  'Travel case collapses every day in the 3-day window to Rest/Mobility with no equipment-free aerobic maintenance stimulus.');
+  'Travel case collapses the first three days to Rest/Mobility with no equipment-free aerobic maintenance stimulus.');
+const travelWeek2 = travel.plan.slice(7, 14);
+fail(travel.plan.length === 14 && travelWeek2.some((day) => day.session?.templateId === 'str_full_02'),
+  'Travel Week 2 must include bodyweight strength.');
+let travelSameTemplateStreak = 0;
+let travelLongestSameTemplateStreak = 0;
+for (let index = 0; index < travel.plan.length; index += 1) {
+  travelSameTemplateStreak = index > 0 && travel.plan[index].session?.templateId === travel.plan[index - 1].session?.templateId
+    ? travelSameTemplateStreak + 1 : 1;
+  travelLongestSameTemplateStreak = Math.max(travelLongestSameTemplateStreak, travelSameTemplateStreak);
+}
+fail(travelLongestSameTemplateStreak <= 4,
+  `Travel case repeats a template for ${travelLongestSameTemplateStreak} consecutive days (maximum 4).`);
 
 // Issue #677 originally used whole-horizon monotonicity as a diagnostic hypothesis for
 // conservativeBias. Mechanism A (reservation placement) was a real defect and remains

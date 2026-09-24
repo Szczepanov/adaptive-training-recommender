@@ -17,6 +17,7 @@ import type {
     UserPreferences,
     WorkoutCostProfile,
     WorkoutStimulusProfile,
+    DimensionalFatigue,
     FatigueState,
     EngineObjectiveInput,
     ExternalRestDirective,
@@ -44,7 +45,7 @@ import { fixedActivityOccurrenceKey } from './fixedActivityIdentity';
 import type { AnyExternalPlanSession as ExternalPlanSession } from '../sessions/externalPlanV2';
 import { applyFixedActivityStimulusCredit } from './planner';
 import { getUnresolvedObjectives } from './microcycle';
-import { applyCompletedSessionLoad, type FatigueFusionPolicy } from './fatigue';
+import { applyCompletedSessionLoad, computeInternalResponseStrain, decayFatigue, type FatigueFusionPolicy } from './fatigue';
 import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaseline, type SubjectiveBaselineMetric } from './subjectiveBaseline';
 import { resolveAvailability, scheduleOverlayCostProfileForDate } from './schedule';
 import { workoutForTemplate } from '../workouts/prescription';
@@ -662,10 +663,11 @@ export async function evaluateTrainingWithIntent(
     scheduleOverlays: readonly ScheduleOverlay[] = [],
     /** ADR-0037 D-DOSE: exact-workout duration authority derived for `date`. */
     confirmedProgressionOverrides: ReadonlyMap<string, number> = new Map(),
+    carriedInternalStrain?: DimensionalFatigue,
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode, subjectiveDriftPolicy, subjectiveDriftWeights);
     const { mode, envelopes, telemetry } = envelopeState;
-    let intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy);
+    let intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy, undefined, carriedInternalStrain);
 
     let externalEventAdvisory: {
         prescription: NonNullable<Recommendation['externalPrescription']>;
@@ -1143,12 +1145,13 @@ export function buildNextDayScenarios(
         subjective: { readiness: 2, sleepQuality: 3, fatigue: 9, soreness: 8, stress: 7, motivation: 3, timeAvailable: todayReadiness.subjective.timeAvailable, painFlag: false, alreadyTrainedToday: false, preferredModalityToday: null },
         objective: { ...todayReadiness.objective, sleep_score: 50, sleep_duration_min: 360, rhr_delta: 6, hrv_delta: -8, rhr_delta_28d: 6, hrv_delta_28d: -8, sleep_score_delta_7d: -20, sleep_score_delta_28d: -20, body_battery_wake: 42, last_3_days_hard_sessions_count: updatedHardCount, today_training: null },
     };
+    const carriedInternalStrain = decayFatigue(computeInternalResponseStrain(todayReadiness), 24);
     return {
         date: tomorrowDate, isSinglePlan: false,
         scenarios: {
             green: { tier: 'green', label: 'Optimal Readiness', condition: 'If tomorrow morning HRV is baseline/elevated, sleep score > 80, and fatigue is low.', readiness: greenReadiness },
-            yellow: { tier: 'yellow', label: 'Moderate Readiness', condition: 'If tomorrow sleep quality is average (60-75), HRV shows mild dip, or moderate soreness is present.', readiness: yellowReadiness },
-            red: { tier: 'red', label: 'Low Readiness / High Fatigue', condition: 'If tomorrow sleep score drops (< 60), HRV drops significantly, or elevated fatigue/soreness is reported.', readiness: redReadiness },
+            yellow: { tier: 'yellow', label: 'Moderate Readiness', condition: 'If tomorrow sleep quality is average (60-75), HRV shows mild dip, or moderate soreness is present.', readiness: yellowReadiness, carriedInternalStrain },
+            red: { tier: 'red', label: 'Low Readiness / High Fatigue', condition: 'If tomorrow sleep score drops (< 60), HRV drops significantly, or elevated fatigue/soreness is reported.', readiness: redReadiness, carriedInternalStrain },
         },
     };
 }
@@ -1342,7 +1345,7 @@ export async function evaluateNextDayPlanWithIntent(
         await evaluateTrainingWithIntent(
             userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, projectedProvider, null,
             fixedActivities, authoredPlanBlocks, trainingIntentProfile, preferences, fatigueFusionPolicy, null,
-            subjectiveDriftPolicy, subjectiveDriftWeights, null, false, scheduleOverlays,
+            subjectiveDriftPolicy, subjectiveDriftWeights, null, false, scheduleOverlays, new Map(), scenario.carriedInternalStrain,
         ),
     );
     const [green, yellow, red] = await Promise.all([

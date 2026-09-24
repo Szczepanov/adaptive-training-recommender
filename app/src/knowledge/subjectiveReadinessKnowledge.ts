@@ -6,6 +6,7 @@ export const SUBJECTIVE_READINESS_CLAIM_IDS = {
     exactCutpointLimits: 'readiness.subjective.exact_cutpoint_limits',
     modeThresholdsPolicyV1: 'policy.readiness.subjective_mode_thresholds_v1',
     modeThresholdsPolicy: 'policy.readiness.subjective_mode_thresholds_v2',
+    nextDayInternalStrainCarryPolicy: 'policy.forecast.next_day_internal_strain_carry_v1',
 } as const;
 
 const SAW_SUBJECTIVE_MONITORING_SOURCE = 'SAW-2016-SUBJECTIVE-MONITORING-REVIEW';
@@ -199,6 +200,15 @@ export const SUBJECTIVE_READINESS_SOURCES: readonly KnowledgeSource[] = [
 ];
 
 export const SUBJECTIVE_READINESS_CLAIMS: readonly KnowledgeClaim[] = [
+    {
+        id: SUBJECTIVE_READINESS_CLAIM_IDS.nextDayInternalStrainCarryPolicy,
+        statement: 'Product forecast policy v1: yellow and red next-day intent-aware branches retain today’s measured internal response strain after 24 hours of the registered dimension-specific decay, using the element-wise maximum with each synthetic branch strain. The green fully-recovered hypothetical and mandatory single-plan recovery path do not carry this strain.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
+        applicability: { contexts: ['next_day_forecast', 'training_monitoring'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['next_day_candidate_ranking'], horizon: 'acute' },
+        evidence: [{ sourceId: SUBJECTIVE_READINESS_PRODUCT_POLICY_V2_SOURCE, directness: 'direct' }],
+        limitations: ['This keeps the immediate next-day branches consistent with later forecast dates; it does not predict tomorrow’s measured readiness or add a new physiological decay constant.'],
+        reviewedOn: '2026-09-24', version: 1,
+    },
     {
         id: SUBJECTIVE_READINESS_CLAIM_IDS.contextualMonitoring,
         statement: 'Repeated athlete self-reports of fatigue, soreness and perceived sleep/well-being can contribute contextual information about recent training response, particularly when interpreted alongside training history and other signals; they do not independently establish medical cause, injury status, or suitability for a specific session.',

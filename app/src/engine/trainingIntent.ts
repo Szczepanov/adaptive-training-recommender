@@ -1,5 +1,5 @@
-import type { AuthoredPlanBlock, DailyReadiness, FatigueState, MicrocycleState, PlannedDose, TrainingIntentProfile, UserEvent, WeeklyObjective } from './models';
-import { computeInternalResponseStrain, buildFatigueStateFromHistory, type FatigueFusionPolicy } from './fatigue';
+import type { AuthoredPlanBlock, DailyReadiness, DimensionalFatigue, FatigueState, MicrocycleState, PlannedDose, TrainingIntentProfile, UserEvent, WeeklyObjective } from './models';
+import { computeInternalResponseStrain, buildFatigueStateFromHistory, combineFatigue, type FatigueFusionPolicy } from './fatigue';
 import { buildMicrocycleState, getUnresolvedObjectives } from './microcycle';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
@@ -157,6 +157,7 @@ export async function resolveTrainingIntent(
     trainingIntentProfile: TrainingIntentProfile | null = null,
     fatigueFusionPolicy: FatigueFusionPolicy = 'max',
     preparedRollingLoadBudgetSnapshot?: TrainingHistorySnapshot | null,
+    carriedInternalStrain?: DimensionalFatigue,
 ): Promise<TrainingIntent> {
     const eventPeriodization = evaluatePeriodizationPhase(events, date);
     const planningContext = resolvePlanningContext(trainingIntentProfile, eventPeriodization, date);
@@ -258,7 +259,11 @@ export async function resolveTrainingIntent(
     const multiEventResolution = resolveMultiEventObjectives(events, date, periodization, builtMicrocycle.objectives);
     const microcycle: MicrocycleState = { ...builtMicrocycle, objectives: multiEventResolution.objectives };
     const unresolvedObjectives = getUnresolvedObjectives(microcycle);
-    const fatigue = buildFatigueStateFromHistory(history, computeInternalResponseStrain(readiness), date, fatigueFusionPolicy);
+    const branchInternalStrain = computeInternalResponseStrain(readiness);
+    const internalStrain = carriedInternalStrain
+        ? combineFatigue(branchInternalStrain, carriedInternalStrain)
+        : branchInternalStrain;
+    const fatigue = buildFatigueStateFromHistory(history, internalStrain, date, fatigueFusionPolicy);
     const plannedDose = applyPlanningOverlays(resolvePlannedDoseForDate(
         periodization.phase,
         microcycle.objectives,
