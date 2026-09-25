@@ -407,6 +407,17 @@ The normative routing and versioning policy is
 
 ---
 
+## Shared agent skills
+
+Cross-agent workflow skills live in `.agents/skills/` (single source of truth):
+
+- `issue-to-pr` — GitHub issue number → plan → implementation → verification → linked PR.
+- `planner` — implementation planning.
+- `external-library-docs` — Context7-first third-party documentation lookup.
+
+Claude Code only discovers skills under `.claude/skills/`, so a Claude-visible skill there is a
+thin pointer to the `.agents/skills/` file. Edit the shared file, never the pointer.
+
 ## Code navigation with Serena
 
 The repository ships a [Serena](https://github.com/oraios/serena) project config in
