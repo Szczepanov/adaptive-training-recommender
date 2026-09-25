@@ -460,24 +460,24 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.conditionalHighIntensityPrior,
-        statement: 'For an athlete with sufficient and internally consistent recent training history, Evergreen may allocate one high-intensity session as a target and up to two in the weekly plan, modulated by periodization phase and block intent: withheld during Post-Event Recovery; capped at one session during Base, active taper, or maintain intent; and capped at two sessions during Build, Specificity, or develop intent. When active, high-intensity quality contributes to the weekly aerobic volume requirement by offsetting one easy aerobic volume session.',
+        statement: 'For an athlete with sufficient and internally consistent recent training history, Evergreen may allocate one high-intensity session as a target and up to two in the weekly plan. The generic prior is withheld during acute adverse recovery and Post-Event Recovery, but event-proximity Base/Build labels do not replace objective-owned mesocycle intent. When an eligible high-intensity occurrence is actually packed, the weekly packer may reserve capacity by crediting 40 minutes toward the aerobic allocation; if no quality occurrence is packed, the full aerobic requirement is restored.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
         applicability: { contexts: ['endurance', 'speed_power', 'sport_readiness'], sports: ['endurance', 'speed_power', 'sport_readiness'], populations: ['athletes_with_sufficient_consistent_recent_training_evidence'], outcomes: ['bounded_performance_oriented_high_intensity_exposure'], horizon: 'chronic' },
         evidence: [{ sourceId: EVERGREEN_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
         limitations: [
             'This is a conservative product prior, not a claim that one to two high-intensity sessions is universally optimal.',
             'The prior is withheld when recent training evidence is insufficient, limited, conflicting, or during post-event recovery.',
-            'Aerobic substitution is a programming allocation rule, not a claim of exact physiological dose equivalence.',
+            'The 40-minute aerobic credit is a product allocation heuristic, not a claim of exact physiological dose equivalence; the underlying WHO-backed requirement remains unchanged in strategy provenance.',
         ],
         reviewedOn: '2026-09-25', version: 2,
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition,
-        statement: 'Evergreen sustained quality is an optional exact-identity role containing controlled cycling threshold, controlled cycling tempo, and running tempo. Cycling tempo keeps its 40-minute default and permits an authored 30-minute easier dose for short windows when the evidence-backed quality prior is eligible. When a distinct usable schedule date remains within the athlete\'s explicit weekly maximum, the planner may prioritize one eligible cycling quality session there without displacing a required-role reservation or scheduling a double day; readiness, tissue, load, and spacing gates still apply. An optional capacity miss is reported only when every observed feasible forecast opportunity in the active plan block was occupied by an exact required-role reservation.',
+        statement: 'Evergreen sustained quality is an optional exact-identity role containing controlled cycling threshold, controlled cycling tempo, and running tempo. Cycling tempo keeps its 40-minute default and permits an authored 30-minute easier dose for short windows when the evidence-backed quality prior is eligible. The packer may provisionally reserve one slot for this role by applying the separately governed aerobic allocation credit, but only a packed quality occurrence makes that credit effective; otherwise the full aerobic requirement is repacked. Readiness, tissue, load, spacing, exact-role coverage and weekly capacity remain authoritative.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
         applicability: { contexts: ['endurance', 'balanced_performance', 'load_management'], sports: ['cycling', 'running'], populations: ['evergreen_mode_users_with_eligible_quality_prior'], outcomes: ['bounded_performance_oriented_quality_exposure'], horizon: 'both' },
         evidence: [{ sourceId: EVERGREEN_PRODUCT_POLICY_SOURCE, directness: 'direct', note: 'Issue #758 exact-workout set policy; the catalog minimum and safety gates remain separate authorities.' }],
-        limitations: ['The exact three-workout set and 30-minute fit are product policy, not a scientific claim that tempo is equivalent to threshold work.', 'The spare-date preference stays within declared weekly session capacity and does not guarantee a quality recommendation or override any safety gate.', 'The capacity explanation covers observed forecast opportunities only; absence of the explanation does not identify another cause.'], reviewedOn: '2026-09-25', version: 2,
+        limitations: ['The exact three-workout set and 30-minute fit are product policy, not a scientific claim that tempo is equivalent to threshold work.', 'The provisional capacity reservation does not guarantee a quality recommendation or override any safety gate.', 'The aerobic allocation credit is governed separately by the conditional-high-intensity product claim.'], reviewedOn: '2026-09-25', version: 3,
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.enduranceIntensityDistribution,
