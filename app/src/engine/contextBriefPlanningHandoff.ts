@@ -1,3 +1,4 @@
+import { renderRecommendationFeedbackLine } from './contextBriefFeedback';
 import type {
     AuthoredPlanBlock,
     DailyRecommendation,
@@ -602,21 +603,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         lines.push('- Manual physical work: none reported');
     }
 
-    if (yesterdayRecommendation?.adherence) {
-        const adh = yesterdayRecommendation.adherence;
-        const adhNote = adh.notes && adh.notes.trim().length > 0 ? ` — "${adh.notes.trim()}"` : '';
-        if (adh.followed === true) lines.push(`- Adherence: Followed as prescribed${adhNote}`);
-        else if (adh.skipped === true) lines.push(`- Adherence: Skipped entirely${adhNote}`);
-        else if (adh.followed === false) {
-            const act = adh.actualModality ?? 'other';
-            const dur = adh.actualDurationMin ? ` for ${adh.actualDurationMin} min` : '';
-            lines.push(`- Adherence: Did ${act}${dur} instead${adhNote}`);
-        } else {
-            lines.push('- Adherence: Not answered yet.');
-        }
-    } else {
-        lines.push('- Adherence: Not answered yet.');
-    }
+    lines.push(renderRecommendationFeedbackLine(yesterdayRecommendation ?? null));
 
     if (activeSnapshot) {
         const der = activeSnapshot.derived;

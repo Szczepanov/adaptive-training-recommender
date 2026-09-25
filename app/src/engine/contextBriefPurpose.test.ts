@@ -201,7 +201,7 @@ describe('planning export (#811)', () => {
             '## 3. Objective recovery',
             '## 4. Subjective reports',
             '## 5. Completed training',
-            '## 6. Plan adherence',
+            '## 6. Recommendation feedback',
         ].map(heading => text.indexOf(heading));
         expect(order.every(index => index >= 0)).toBe(true);
         expect([...order].sort((a, b) => a - b)).toEqual(order);

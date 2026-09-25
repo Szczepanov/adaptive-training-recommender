@@ -42,7 +42,7 @@ export const SECTION_TITLE = {
     objective: 'Objective recovery (wearable)',
     training: 'Completed training (recorded by the wearable)',
     subjective: 'Subjective reports (self-scored each morning, 1–10)',
-    adherence: 'Plan adherence',
+    adherence: 'Recommendation feedback (athlete responses — not plan execution)',
     intent: 'Goals & training intent',
     intentFirst: 'Current training intent & goals',
 } as const;
