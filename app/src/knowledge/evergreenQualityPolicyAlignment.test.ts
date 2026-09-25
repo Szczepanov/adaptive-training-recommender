@@ -76,4 +76,15 @@ describe('evergreen quality set policy alignment (ADR-0033, issue #758)', () => 
         expect(withheld?.budget.optionalRoles.some(role => role.coverageRoleId === 'sustained_quality')).toBe(false);
         expect(withheld?.knowledgeRefs).not.toContain(KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition);
     });
+
+    it('aligns conditionalHighIntensityPrior claim v2 with periodized caps and aerobic substitution', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.conditionalHighIntensityPrior);
+        expect(claim.version).toBe(2);
+        expect(claim.reviewedOn).toBe('2026-09-25');
+        expect(claim.statement).toContain('withheld during Post-Event Recovery');
+        expect(claim.statement).toContain('capped at one session during Base, active taper, or maintain intent');
+        expect(claim.statement).toContain('capped at two sessions during Build, Specificity, or develop intent');
+        expect(claim.statement).toContain('contributes to the weekly aerobic volume requirement by offsetting one easy aerobic volume session');
+        expect(claim.limitations.some(l => l.includes('Aerobic substitution is a programming allocation rule'))).toBe(true);
+    });
 });

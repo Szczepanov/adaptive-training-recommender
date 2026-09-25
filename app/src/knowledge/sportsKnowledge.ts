@@ -460,11 +460,16 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.conditionalHighIntensityPrior,
-        statement: 'For an athlete with sufficient and internally consistent recent training history, Evergreen may allocate one high-intensity session as a target and no more than two in the weekly plan.',
+        statement: 'For an athlete with sufficient and internally consistent recent training history, Evergreen may allocate one high-intensity session as a target and up to two in the weekly plan, modulated by periodization phase and block intent: withheld during Post-Event Recovery; capped at one session during Base, active taper, or maintain intent; and capped at two sessions during Build, Specificity, or develop intent. When active, high-intensity quality contributes to the weekly aerobic volume requirement by offsetting one easy aerobic volume session.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
         applicability: { contexts: ['endurance', 'speed_power', 'sport_readiness'], sports: ['endurance', 'speed_power', 'sport_readiness'], populations: ['athletes_with_sufficient_consistent_recent_training_evidence'], outcomes: ['bounded_performance_oriented_high_intensity_exposure'], horizon: 'chronic' },
         evidence: [{ sourceId: EVERGREEN_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
-        limitations: ['This is a conservative product prior, not a claim that one to two high-intensity sessions is universally optimal.', 'The prior is withheld when recent training evidence is insufficient, limited or conflicting.'], reviewedOn: '2026-08-30', version: 1,
+        limitations: [
+            'This is a conservative product prior, not a claim that one to two high-intensity sessions is universally optimal.',
+            'The prior is withheld when recent training evidence is insufficient, limited, conflicting, or during post-event recovery.',
+            'Aerobic substitution is a programming allocation rule, not a claim of exact physiological dose equivalence.',
+        ],
+        reviewedOn: '2026-09-25', version: 2,
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition,

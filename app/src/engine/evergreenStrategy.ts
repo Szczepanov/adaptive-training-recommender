@@ -1,5 +1,7 @@
 import type { CompletedExposure } from './trainingHistory';
 import type { DailyReadiness, TrainingIntentProfile, TrainingPriority } from './models';
+import type { PhaseWeights } from './periodization';
+import type { BlockIntent } from './blockIntent';
 import {
     getActiveKnowledgeClaim,
     KNOWLEDGE_CLAIM_IDS,
@@ -95,6 +97,8 @@ export interface AthleteTrainingState {
 export interface GoalOrEventContext {
     priorities: readonly TrainingPriority[];
     isAdverseRecovery?: boolean;
+    phase?: PhaseWeights | null;
+    blockIntent?: BlockIntent | null;
 }
 
 export function isSevereAdverseRecoveryReadiness(
@@ -262,13 +266,20 @@ export function inferAthleteTrainingState(
     };
 }
 
-/** Build the WHO-backed adult aerobic dose requirement without applying capacity constraints. */
-function aerobicRequirement(priority: AdaptationDoseRequirement['priority']): AdaptationDoseRequirement {
+/** Build the WHO-backed adult aerobic dose requirement without applying capacity constraints.
+ * When performance-oriented quality work is active, its substantial aerobic volume
+ * contributes towards the guideline target by offsetting one easy aerobic volume session (40 min). */
+function aerobicRequirement(
+    priority: AdaptationDoseRequirement['priority'],
+    qualityActive: boolean = false,
+): AdaptationDoseRequirement {
     const primaryClaimId = KNOWLEDGE_CLAIM_IDS.adultAerobicHealthVolume;
+    const floorValue = qualityActive ? 110 : 150;
+    const targetValue = qualityActive ? 110 : 150;
     return {
         adaptation: 'aerobic_endurance', priority,
-        floor: { dose: { unit: 'minutes', value: 150 }, semantics: 'guideline_recommended_minimum' },
-        target: { unit: 'minutes', minimum: 150, target: 150, maximum: 300 },
+        floor: { dose: { unit: 'minutes', value: floorValue }, semantics: 'guideline_recommended_minimum' },
+        target: { unit: 'minutes', minimum: floorValue, target: targetValue, maximum: 300 },
         substitutionPolicy: { equivalentModalitiesAllowed: true, permittedModalities: ['Walking', 'Running', 'Cycling', 'Other'] },
         knowledgeRefs: [primaryClaimId],
         evidence: evidenceProvenance(primaryClaimId, 'guideline_target', 'high'),
@@ -298,24 +309,40 @@ export function resolveEvidenceBackedStrategy(
     const priorities = new Set(goalOrEvent.priorities.length > 0 ? goalOrEvent.priorities : ['balanced_performance']);
     const requirements: AdaptationDoseRequirement[] = [];
     const healthOrBalanced = priorities.has('health') || priorities.has('balanced_performance');
+
+    const performancePriority = priorities.has('endurance') || priorities.has('speed_power') || priorities.has('sport_readiness');
+    const isRecoveryPhase = goalOrEvent.phase?.phaseName === 'Post-Event Recovery';
+    const canUseConditionalPrior = athleteState.inference.dataQuality === 'high'
+        && athleteState.trainingAgeProxy === 'established'
+        && !goalOrEvent.isAdverseRecovery
+        && !isRecoveryPhase;
+
+    const phaseCap = (goalOrEvent.phase?.phaseName === 'Base' || (goalOrEvent.phase?.phaseName === 'Peak/Taper' && goalOrEvent.phase?.taperActive)) ? 1 : 2;
+    const intentCap = goalOrEvent.blockIntent === 'maintain' ? 1 : 2;
+    const hardSessionCap = Math.min(phaseCap, intentCap);
+
+    const hasQualityPrior = performancePriority && canUseConditionalPrior;
+
     // WHO adult-health guidance recommends both aerobic volume and muscle-strengthening
     // frequency. If either adaptation is included by the health/balanced baseline, or is
     // explicitly selected by the athlete, keep its evidence-backed floor non-droppable.
     // Capacity may still produce an explicit shortfall; it must not silently erase a whole
     // guideline-backed adaptation by relegating it to opportunistic leftover sessions.
-    if (healthOrBalanced || priorities.has('endurance')) requirements.push(aerobicRequirement('required'));
-    if (healthOrBalanced || priorities.has('strength_muscle')) requirements.push(strengthRequirement('required'));
+    // When performance-intensity quality is active, its substantial aerobic stimulus
+    // contributes to the weekly aerobic volume target (reducing easy aerobic volume by 40 min).
+    if (healthOrBalanced || priorities.has('endurance')) {
+        requirements.push(aerobicRequirement('required', hasQualityPrior));
+    }
+    if (healthOrBalanced || priorities.has('strength_muscle')) {
+        requirements.push(strengthRequirement('required'));
+    }
 
-    const performancePriority = priorities.has('endurance') || priorities.has('speed_power') || priorities.has('sport_readiness');
-    const canUseConditionalPrior = athleteState.inference.dataQuality === 'high'
-        && athleteState.trainingAgeProxy === 'established'
-        && !goalOrEvent.isAdverseRecovery;
     const warnings: PolicyWarning[] = [];
-    if (performancePriority && canUseConditionalPrior) {
+    if (hasQualityPrior) {
         const primaryClaimId = KNOWLEDGE_CLAIM_IDS.conditionalHighIntensityPrior;
         requirements.push({
             adaptation: 'high_intensity', priority: 'optional', floor: null,
-            target: { unit: 'sessions', minimum: 0, target: 1, maximum: 2 },
+            target: { unit: 'sessions', minimum: 0, target: 1, maximum: hardSessionCap },
             substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Running', 'Cycling', 'Other'] },
             knowledgeRefs: [primaryClaimId],
             evidence: evidenceProvenance(primaryClaimId, 'conditional_prior', 'low'),
@@ -325,8 +352,10 @@ export function resolveEvidenceBackedStrategy(
             code: 'conditional_prior_withheld',
             message: goalOrEvent.isAdverseRecovery
                 ? 'Performance-intensity work is withheld during acute adverse recovery.'
-                : 'Performance-intensity work is withheld until sufficient, consistent recent training evidence is available.',
+                : isRecoveryPhase
+                    ? 'Performance-intensity work is withheld during post-event recovery.'
+                    : 'Performance-intensity work is withheld until sufficient, consistent recent training evidence is available.',
         });
     }
-    return { requirements, ...(canUseConditionalPrior ? { hardSessionCap: 2 } : {}), warnings };
+    return { requirements, ...(canUseConditionalPrior ? { hardSessionCap } : {}), warnings };
 }

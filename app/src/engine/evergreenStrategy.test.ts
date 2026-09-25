@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CompletedExposure } from './trainingHistory';
 import { inferAthleteTrainingState, isFreshSubjectiveWithAdverseWearables, resolveEvidenceBackedStrategy } from './evergreenStrategy';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledge';
+import { DEFAULT_BASE_DEMAND } from './periodization';
 
 const exposure = (duration: number): CompletedExposure => ({
     date: '2026-08-01', trainingRecordLike: { type: 'Cycling endurance', duration_min: duration, training_effect: 0, intensity_tag: '' },
@@ -79,16 +80,17 @@ describe('evergreen evidence-backed strategy', () => {
         });
     });
 
-    it('preserves Evergreen dose values while migrating provenance', () => {
+    it('preserves Evergreen dose values while migrating provenance and applying quality aerobic offset', () => {
         const established = inferAthleteTrainingState(Array.from({ length: 12 }, () => exposure(60)), 28);
         const strategy = resolveEvidenceBackedStrategy({ priorities: ['health', 'endurance'] }, established);
         const aerobic = strategy.requirements.find(requirement => requirement.adaptation === 'aerobic_endurance');
         const strength = strategy.requirements.find(requirement => requirement.adaptation === 'strength');
         const highIntensity = strategy.requirements.find(requirement => requirement.adaptation === 'high_intensity');
 
+        // When quality is active, easy aerobic volume is offset by 40 min (150 -> 110)
         expect(aerobic).toMatchObject({
-            floor: { dose: { unit: 'minutes', value: 150 } },
-            target: { unit: 'minutes', minimum: 150, target: 150, maximum: 300 },
+            floor: { dose: { unit: 'minutes', value: 110 } },
+            target: { unit: 'minutes', minimum: 110, target: 110, maximum: 300 },
         });
         expect(strength).toMatchObject({
             floor: { dose: { unit: 'sessions', value: 2 } },
@@ -104,6 +106,78 @@ describe('evergreen evidence-backed strategy', () => {
             },
         });
         expect(strategy.hardSessionCap).toBe(2);
+
+        // When quality is withheld, aerobic volume retains the full 150-min WHO guideline floor
+        const healthOnly = resolveEvidenceBackedStrategy({ priorities: ['health'] }, established);
+        const healthAerobic = healthOnly.requirements.find(r => r.adaptation === 'aerobic_endurance');
+        expect(healthAerobic).toMatchObject({
+            floor: { dose: { unit: 'minutes', value: 150 } },
+            target: { unit: 'minutes', minimum: 150, target: 150, maximum: 300 },
+        });
+    });
+
+    it('modulates quality frequency and hard session cap by macrocycle phase and mesocycle block intent', () => {
+        const established = inferAthleteTrainingState(Array.from({ length: 12 }, () => exposure(60)), 28);
+        // Base phase: cap = 1
+        const baseStrategy = resolveEvidenceBackedStrategy({
+            priorities: ['endurance'],
+            phase: { phaseName: 'Base', targetDemandVector: DEFAULT_BASE_DEMAND, volumeScale: 1.0, intensityScale: 0.8, taperActive: false },
+        }, established);
+        expect(baseStrategy.hardSessionCap).toBe(1);
+        expect(baseStrategy.requirements.find(r => r.adaptation === 'high_intensity')?.target.maximum).toBe(1);
+
+        // Build phase: cap = 2
+        const buildStrategy = resolveEvidenceBackedStrategy({
+            priorities: ['endurance'],
+            phase: { phaseName: 'Build', targetDemandVector: DEFAULT_BASE_DEMAND, volumeScale: 1.1, intensityScale: 1.0, taperActive: false },
+        }, established);
+        expect(buildStrategy.hardSessionCap).toBe(2);
+        expect(buildStrategy.requirements.find(r => r.adaptation === 'high_intensity')?.target.maximum).toBe(2);
+
+        // Specificity phase: cap = 2
+        const specificityStrategy = resolveEvidenceBackedStrategy({
+            priorities: ['endurance'],
+            phase: { phaseName: 'Specificity', targetDemandVector: DEFAULT_BASE_DEMAND, volumeScale: 1.0, intensityScale: 1.1, taperActive: false },
+        }, established);
+        expect(specificityStrategy.hardSessionCap).toBe(2);
+
+        // Peak/Taper with taperActive: cap = 1
+        const taperStrategy = resolveEvidenceBackedStrategy({
+            priorities: ['endurance'],
+            phase: { phaseName: 'Peak/Taper', targetDemandVector: DEFAULT_BASE_DEMAND, volumeScale: 0.7, intensityScale: 1.0, taperActive: true },
+        }, established);
+        expect(taperStrategy.hardSessionCap).toBe(1);
+        expect(taperStrategy.requirements.find(r => r.adaptation === 'high_intensity')?.target.maximum).toBe(1);
+
+        // Post-Event Recovery: quality withheld
+        const recoveryStrategy = resolveEvidenceBackedStrategy({
+            priorities: ['endurance'],
+            phase: { phaseName: 'Post-Event Recovery', targetDemandVector: DEFAULT_BASE_DEMAND, volumeScale: 0.5, intensityScale: 0.5, taperActive: false },
+        }, established);
+        expect(recoveryStrategy.requirements.some(r => r.adaptation === 'high_intensity')).toBe(false);
+        expect(recoveryStrategy.hardSessionCap).toBeUndefined();
+        expect(recoveryStrategy.warnings).toContainEqual(expect.objectContaining({
+            code: 'conditional_prior_withheld',
+            message: expect.stringContaining('post-event recovery'),
+        }));
+
+        // BlockIntent: maintain caps at 1 even during Build
+        const maintainBuildStrategy = resolveEvidenceBackedStrategy({
+            priorities: ['endurance'],
+            phase: { phaseName: 'Build', targetDemandVector: DEFAULT_BASE_DEMAND, volumeScale: 1.1, intensityScale: 1.0, taperActive: false },
+            blockIntent: 'maintain',
+        }, established);
+        expect(maintainBuildStrategy.hardSessionCap).toBe(1);
+        expect(maintainBuildStrategy.requirements.find(r => r.adaptation === 'high_intensity')?.target.maximum).toBe(1);
+
+        // BlockIntent: develop in Build gives cap 2
+        const developBuildStrategy = resolveEvidenceBackedStrategy({
+            priorities: ['endurance'],
+            phase: { phaseName: 'Build', targetDemandVector: DEFAULT_BASE_DEMAND, volumeScale: 1.1, intensityScale: 1.0, taperActive: false },
+            blockIntent: 'develop',
+        }, established);
+        expect(developBuildStrategy.hardSessionCap).toBe(2);
+        expect(developBuildStrategy.requirements.find(r => r.adaptation === 'high_intensity')?.target.maximum).toBe(2);
     });
 
     it('does not manufacture strength development for an endurance-only priority', () => {

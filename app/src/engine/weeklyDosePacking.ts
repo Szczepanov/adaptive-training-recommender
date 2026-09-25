@@ -91,8 +91,15 @@ function doseFor(role: CoverageRoleDescriptor, requirement: AdaptationDoseRequir
     return requirement.target.unit === 'minutes' ? role.durationMinutes : 1;
 }
 
-function desiredDose(requirement: AdaptationDoseRequirement): number {
-    return requirement.floor?.dose.value ?? requirement.target.target;
+function desiredDose(requirement: AdaptationDoseRequirement, strategy?: EvidenceBackedStrategy): number {
+    const base = requirement.floor?.dose.value ?? requirement.target.target;
+    if (requirement.adaptation === 'aerobic_endurance' && strategy) {
+        const quality = strategy.requirements.find(r => r.adaptation === 'high_intensity' && (r.target.target > 0 || r.target.maximum > 0));
+        if (quality && base > 110) {
+            return Math.max(110, base - 40);
+        }
+    }
+    return base;
 }
 
 function permittedWorkoutIds(role: CoverageRoleDescriptor, requirement: AdaptationDoseRequirement): string[] {
@@ -175,18 +182,23 @@ function placementTieBreakerPenalty(
     return Math.max(0, row.preferredSpacingDays - nearestSessionDays);
 }
 
-function warningFor(requirement: AdaptationDoseRequirement, delivered: number): PackingWarning | null {
+function warningFor(requirement: AdaptationDoseRequirement, delivered: number, strategy?: EvidenceBackedStrategy): PackingWarning | null {
     const floor = requirement.floor;
-    if (floor && delivered < floor.dose.value) {
+    const quality = strategy?.requirements.find(r => r.adaptation === 'high_intensity' && (r.target.target > 0 || r.target.maximum > 0));
+    const qualityOffset = (requirement.adaptation === 'aerobic_endurance' && quality) ? 40 : 0;
+    const effectiveFloor = floor ? Math.max(0, floor.dose.value - qualityOffset) : undefined;
+    const effectiveTarget = Math.max(0, requirement.target.target - qualityOffset);
+
+    if (floor && effectiveFloor !== undefined && delivered < effectiveFloor) {
         const code = floor.semantics === 'guideline_recommended_minimum'
             ? 'below_guideline_range'
             : floor.semantics === 'goal_required_minimum'
                 ? 'goal_requirement_shortfall'
                 : 'minimum_dose_shortfall';
-        return { code, adaptation: requirement.adaptation, message: `${requirement.adaptation} fits ${delivered} ${floor.dose.unit}; the stated floor is ${floor.dose.value} ${floor.dose.unit}.` };
+        return { code, adaptation: requirement.adaptation, message: `${requirement.adaptation} fits ${delivered} ${floor.dose.unit}; the stated floor is ${effectiveFloor} ${floor.dose.unit}.` };
     }
-    if (delivered < requirement.target.target) {
-        return { code: 'guideline_target_shortfall', adaptation: requirement.adaptation, message: `${requirement.adaptation} does not reach its ${requirement.target.target} ${requirement.target.unit} target.` };
+    if (delivered < effectiveTarget) {
+        return { code: 'guideline_target_shortfall', adaptation: requirement.adaptation, message: `${requirement.adaptation} does not reach its ${effectiveTarget} ${requirement.target.unit} target.` };
     }
     return null;
 }
@@ -232,7 +244,7 @@ export function packWeeklyDose(
         const delivered = packed
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
-        const remainingDose = Math.max(0, desiredDose(requirement) - delivered);
+        const remainingDose = Math.max(0, desiredDose(requirement, strategy) - delivered);
         if (remainingDose <= 0) return 0;
 
         const feasibleDoseBySlot = slots
@@ -273,7 +285,7 @@ export function packWeeklyDose(
         let delivered = packed
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
-        const requiredDose = desiredDose(requirement);
+        const requiredDose = desiredDose(requirement, strategy);
         // A priority tier's ceiling is shared. Allocate scarce room in proportion to the
         // remaining *feasible* session demand, while reserving one occurrence for every
         // later peer that can still use a window. Unlike a fixed even split, this also lets
@@ -345,7 +357,7 @@ export function packWeeklyDose(
             packed.push(occurrence);
             delivered += doseFor(assignment.role, requirement);
         }
-        const warning = warningFor(requirement, delivered);
+        const warning = warningFor(requirement, delivered, strategy);
         if (warning) shortfalls.push(warning);
     }
 

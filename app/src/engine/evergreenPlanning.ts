@@ -4,6 +4,7 @@ import type { PlanningContext } from './planningMode';
 import type { CompletedExposure } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import type { PhaseWeights } from './periodization';
+import type { BlockIntent } from './blockIntent';
 import { resolveAvailability } from './schedule';
 import { inferAthleteTrainingState, resolveEvidenceBackedStrategy } from './evergreenStrategy';
 import { resolveTrainingCapacity, type ResolvedAvailabilityWindow } from './trainingCapacity';
@@ -80,6 +81,8 @@ export function resolveEvergreenPlan(
      * duration the coverage ledger will demand, so an unreachable floor surfaces as an
      * explicit packing shortfall instead of a silently dropped role. */
     aerobicVolumeFloor: AerobicVolumeFloor | null = null,
+    /** Issue #758: mesocycle block intent ('develop' | 'maintain') to modulate quality volume. */
+    blockIntent?: BlockIntent | null,
 ): ResolvedEvergreenPlan | null {
     if (planningContext.mode !== 'evergreen' || !preferences) return null;
     const availability = Array.from({ length: Math.max(1, days) }, (_, index) => {
@@ -92,7 +95,7 @@ export function resolveEvergreenPlan(
     const capacity = resolveTrainingCapacity(planningContext.profile.weeklyCommitment, preferences, availability);
     const stateEvidence = historySnapshot?.athleteStateEvidence;
     const strategy = resolveEvidenceBackedStrategy(
-        { priorities: planningContext.profile.priorities, isAdverseRecovery },
+        { priorities: planningContext.profile.priorities, isAdverseRecovery, phase, blockIntent },
         inferAthleteTrainingState(
             stateEvidence?.exposures ?? history,
             stateEvidence?.observedWindowDays ?? historySnapshot?.windowDays ?? 0,

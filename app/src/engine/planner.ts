@@ -75,6 +75,7 @@ import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
 import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry } from './coverage';
 import { resolveEvergreenPlan } from './evergreenPlanning';
+import type { BlockIntent } from './blockIntent';
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { isFreshSubjectiveWithAdverseWearables, isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { applyPlanningOverlays } from './planningOverlays';
@@ -319,6 +320,8 @@ export interface WeekAheadOptions {
     fatigueFusionPolicy?: FatigueFusionPolicy;
     /** Event-free health planning prior resolved from the current training intent. */
     healthPlanningPolicy?: HealthPlanningPolicy | null;
+    /** Issue #758: mesocycle block intent ('develop' | 'maintain') to modulate quality volume. */
+    blockIntent?: BlockIntent | null;
 }
 
 const ZERO_COST: WorkoutCostProfile = {
@@ -2383,10 +2386,15 @@ export async function generateWeekAheadPlanWithIntent(
     // Issue #757: one athlete-level aerobic floor, resolved as of today, for both the packer
     // and every projected date's coverage state.
     const aerobicVolumeFloor = intent.aerobicVolumeFloor;
+    const hasPerformancePriority = intent.planningContext.profile.priorities.some(p =>
+        p === 'endurance' || p === 'speed_power' || p === 'sport_readiness'
+    );
+    const resolvedBlockIntent: BlockIntent = options.blockIntent ?? (hasPerformancePriority ? 'develop' : 'maintain');
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, todayDate, options.fixedActivities ?? [], options.days ?? 7,
         isAdverseRecovery, options.scheduleOverlays ?? [], new Map(), aerobicVolumeFloor,
+        resolvedBlockIntent,
     );
     return generateWeekAheadPlan(
         todayReadiness,

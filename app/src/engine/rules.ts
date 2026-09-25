@@ -50,6 +50,7 @@ import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaseline, type SubjectiveBa
 import { resolveAvailability, scheduleOverlayCostProfileForDate } from './schedule';
 import { workoutForTemplate } from '../workouts/prescription';
 import { resolveEvergreenPlan } from './evergreenPlanning';
+import type { BlockIntent } from './blockIntent';
 import { isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { buildCoverageState, resolveCoverageHistory } from './coverage';
 import { applyPlanningOverlays } from './planningOverlays';
@@ -736,10 +737,14 @@ export async function evaluateTrainingWithIntent(
     // Issue #757: one athlete-level aerobic floor for the packer and coverage ranking, in
     // evergreen and event modes alike.
     const aerobicVolumeFloor = intent.aerobicVolumeFloor;
+    const hasPerformancePriority = intent.planningContext.profile.priorities.some(p =>
+        p === 'endurance' || p === 'speed_power' || p === 'sport_readiness'
+    );
+    const resolvedBlockIntent: BlockIntent = hasPerformancePriority ? 'develop' : 'maintain';
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, date, fixedActivities, 7, isAdverseRecovery, scheduleOverlays,
-        confirmedProgressionOverrides, aerobicVolumeFloor,
+        confirmedProgressionOverrides, aerobicVolumeFloor, resolvedBlockIntent,
     );
     if (evergreen) {
         const unresolvedObjectives = getUnresolvedObjectives(evergreen.microcycle);
