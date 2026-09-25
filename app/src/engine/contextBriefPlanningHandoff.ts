@@ -37,6 +37,7 @@ import {
     type BriefRestDirective,
 } from './briefPlanAuthority';
 import { renderSensorEvidence } from './contextBriefSensorEvidence';
+import { renderRecoveryEvidenceSynthesis, synthesizeRecoveryEvidence } from './contextBriefRecoverySynthesis';
 
 export const UPCOMING_CONTEXT_DAYS = 7;
 export const RECOVERY_TIMELINE_DAYS = 7;
@@ -537,6 +538,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
 
     // 2. Overnight Recovery (Wearable)
     lines.push('', '## 2. Overnight Recovery (Wearable)', '');
+    lines.push(...renderRecoveryEvidenceSynthesis(synthesizeRecoveryEvidence({ asOfDate: targetDate, snapshots: input.snapshots, checkins: input.checkins })), '');
     if (activeSnapshot) {
         const raw = activeSnapshot.raw;
         const der = activeSnapshot.derived;
