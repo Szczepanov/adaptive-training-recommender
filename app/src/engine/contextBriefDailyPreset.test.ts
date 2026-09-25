@@ -39,6 +39,7 @@ function input(checkins: DailySubjectiveCheckin[]): ContextBriefInput {
         recommendations: [],
         trainingSettings: null,
         preferences: null,
+        recommendationsReadable: true,
         intentProfile: null,
     };
 }

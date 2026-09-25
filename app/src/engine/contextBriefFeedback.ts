@@ -36,14 +36,20 @@ function describeDifferent(a: Adherence): string {
 }
 
 /** Stated in both the section and the handoff so no reader can take a missing answer
- * (or a missing synced activity) as a skip. */
+ * (or a missing synced activity) as a skip. The "plan execution" note applies when
+ * feedback is absent because the read failed, making the truth unknown; when no
+ * recommendations are recorded, the absence is confirmed. */
 export const EXECUTION_NOT_RECONCILED_NOTE =
     'Plan execution (planned session vs performed activity) is not reconciled in this export: '
     + 'canonical planned-vs-performed reconciliation is shadow-only (ADR-0034, #646). '
     + 'An unanswered prompt is not a skip, and a missing activity is not proof of non-execution '
     + '(sync may be incomplete) — compare against the completed-training section yourself.';
 
-export function renderRecommendationFeedback(recommendations: readonly DailyRecommendation[], heading: string): string[] {
+export function renderRecommendationFeedback(
+    recommendations: readonly DailyRecommendation[],
+    heading: string,
+    recommendationsReadable: boolean = true,
+): string[] {
     const lines: string[] = [
         heading,
         '',
@@ -52,7 +58,11 @@ export function renderRecommendationFeedback(recommendations: readonly DailyReco
         '',
     ];
     if (recommendations.length === 0) {
-        lines.push('No app recommendations recorded in this window.', '', EXECUTION_NOT_RECONCILED_NOTE);
+        if (!recommendationsReadable) {
+            lines.push('Recommendation feedback unavailable (read failed) — unknown, not none.', '', EXECUTION_NOT_RECONCILED_NOTE);
+        } else {
+            lines.push('No app recommendations recorded in this window.', '', EXECUTION_NOT_RECONCILED_NOTE);
+        }
         return lines;
     }
     const answered = recommendations.filter(r => isAnswered(r.adherence));
@@ -79,10 +89,19 @@ export function renderRecommendationFeedback(recommendations: readonly DailyReco
 }
 
 /** One handoff line for yesterday's app recommendation. `null` means no app
- * recommendation was recorded — distinct from an unanswered prompt. */
-export function renderRecommendationFeedbackLine(recommendation: DailyRecommendation | null): string {
+ * recommendation was recorded — distinct from an unanswered prompt. When
+ * `recommendationsReadable` is false, the absence is unknown rather than confirmed. */
+export function renderRecommendationFeedbackLine(
+    recommendation: DailyRecommendation | null,
+    recommendationsReadable: boolean = true,
+): string {
     const label = '- Recommendation feedback (athlete response, not execution)';
-    if (!recommendation) return `${label}: no app recommendation recorded for yesterday.`;
+    if (!recommendation) {
+        if (!recommendationsReadable) {
+            return `${label}: unavailable (read failed) — unknown, not none.`;
+        }
+        return `${label}: no app recommendation recorded for yesterday.`;
+    }
     const a = recommendation.adherence;
     const note = noteSuffix(a);
     if (isSkip(a)) return `${label}: reported skipped${note}`;

@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "check": "npm run typecheck && npm run lint && npm run test && npm run validate:knowledge && npm run validate:knowledge-coverage && npm run validate:knowledge-freshness && npm run validate:workouts",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run test:perf && npm run validate:knowledge && npm run validate:knowledge-coverage && npm run validate:knowledge-freshness && npm run validate:workouts",
     "predev": "npm run check",
     "dev": "vite",
     "build": "npm run check && npm run build:bundle",
@@ -88,6 +88,7 @@
     "deploy:all": "npm run build && firebase deploy --project adaptive-training-recommender",
     "deploy:indexes": "firebase deploy --only firestore:indexes --project adaptive-training-recommender",
     "test": "vitest run",
+    "test:perf": "vitest run --config vitest.perf.config.ts",
     "emulators:exec:rules": "firebase --project demo-adaptive-training emulators:exec --only firestore",
     "test:rules": "npm run emulators:exec:rules -- \"npm run test:rules:emulator\"",
     "test:rules:emulator": "vitest run src/emulator --fileParallelism=false --maxWorkers=1",

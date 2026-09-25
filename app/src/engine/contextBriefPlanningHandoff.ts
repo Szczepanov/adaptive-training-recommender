@@ -577,6 +577,8 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
     lines.push('', `## 3. Yesterday's Closed-Loop Debrief (${yesterdayDate})`, '');
     if (yesterdayRecommendation) {
         lines.push(`- Prescribed: ${yesterdayRecommendation.templateTitle} (${yesterdayRecommendation.modality} · ${yesterdayRecommendation.mode})`);
+    } else if (!input.recommendationsReadable) {
+        lines.push('- Prescribed: unavailable (read failed) — unknown, not none.');
     } else {
         lines.push('- Prescribed: No app recommendation recorded for yesterday.');
     }
@@ -603,7 +605,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         lines.push('- Manual physical work: none reported');
     }
 
-    lines.push(renderRecommendationFeedbackLine(yesterdayRecommendation ?? null));
+    lines.push(renderRecommendationFeedbackLine(yesterdayRecommendation ?? null, input.recommendationsReadable));
 
     if (activeSnapshot) {
         const der = activeSnapshot.derived;

@@ -97,6 +97,7 @@ function input(overrides: Partial<ContextBriefInput> = {}): ContextBriefInput {
     return {
         asOfDate: AS_OF, windowDays: 14,
         snapshots: [], checkins: [], activities: [], recommendations: [],
+        recommendationsReadable: true,
         trainingSettings: settings, preferences: null, intentProfile: null,
         ...overrides,
     };
