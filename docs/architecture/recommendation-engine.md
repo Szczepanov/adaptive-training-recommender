@@ -143,7 +143,7 @@ decision authority. `POLICY_VERSION` is unaffected.
   shown as correlated context and never vote, so removing them cannot change the pattern.
 - Pattern: `CONVERGENT_ADVERSE` (2+ adverse, none reassuring), `CONVERGENT_REASSURING`
   (2+ reassuring, none adverse), `MIXED`, or `INSUFFICIENT` (fewer than two judged
-  families). A single adverse signal is labelled isolated.
+  families). A single adverse objective (wearable) signal is labelled isolated; an adverse athlete-reported family never is.
 - Each objective family is dated by `source.metricDates` (`hrv`/`restingHr`/`sleep`,
   falling back to the snapshot date, as `dataConfidence.ts` does); a provider D-1
   fallback is unavailable and printed with its true date. Respiration is listed as
