@@ -77,11 +77,11 @@ describe('Garmin power-zone evidence', () => {
         expect(candidate).toEqual(baseline);
     });
 
-    it('recognizes Garmin road-biking type keys only inside the enabled candidate', () => {
+    it('classifies Garmin road-biking type keys as Cycling with or without the candidate', () => {
         const roadRide = activity({ type: 'road_biking' });
         const baseline = reconcileCompletedTrainingEvents([roadRide], []);
         const candidate = reconcileCompletedTrainingEvents([roadRide], [], { garminStimulusPolicy: 'power_zones_direct_share_v1' });
-        expect(baseline[0].modality).toBe('Unknown');
+        expect(baseline[0].modality).toBe('Cycling');
         expect(candidate[0].modality).toBe('Cycling');
         expect(candidate[0].estimatedCost).toEqual(baseline[0].estimatedCost);
         expect(candidate[0].estimatedStimulus).not.toEqual(baseline[0].estimatedStimulus);

@@ -442,3 +442,9 @@ describe('performedTrainingFacts', () => {
         });
     });
 });
+
+describe('normalizeModality Garmin cycling typeKeys', () => {
+    it.each(['cycling', 'cyclocross', 'gravel_cycling', 'indoor_cycling', 'mountain_biking', 'road_biking', 'virtual_ride'] as const)('classifies %s as Cycling', (type) => {
+        expect(normalizeModality(type)).toBe('Cycling');
+    });
+});

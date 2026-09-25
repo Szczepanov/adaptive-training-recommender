@@ -18,6 +18,7 @@ import { getTemplateIdsForWorkoutId, getUniqueTemplateIdForWorkoutId } from './w
 import type { PerformedTrainingOccurrence } from '../training-occurrence/models';
 import { getLocalDateString } from '../utils/localDate';
 import { classifyGarminTier } from './completedTraining';
+import { isGarminCyclingActivityType } from './garminTelemetryEvidence';
 
 export type FactConfidence = 'exact' | 'high' | 'inferred' | 'unknown';
 
@@ -96,7 +97,7 @@ export function normalizeModality(raw: string | undefined): SessionTemplate['mod
     if (!raw) return 'Unknown';
     const lower = raw.toLowerCase();
     if (lower.includes('strength') || lower.includes('weight') || lower.includes('lift')) return 'Strength';
-    if (lower.includes('cycl') || lower.includes('bike') || lower.includes('biking')) return 'Cycling';
+    if (isGarminCyclingActivityType(lower) || lower.includes('cycl') || lower.includes('bike') || lower.includes('biking')) return 'Cycling';
     if (lower.includes('run')) return 'Running';
     if (lower.includes('swim')) return 'Swimming';
     if (lower.includes('walk')) return 'Walking';

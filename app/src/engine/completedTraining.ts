@@ -17,6 +17,7 @@ import type { DeliveredDose } from './models';
 import {
     derivePowerZoneStimulusCandidate,
     extractPowerZoneFeatures,
+    isGarminCyclingActivityType,
     isGarminCyclingPowerActivity,
     type GarminStimulusPolicy,
 } from './garminTelemetryEvidence';
@@ -100,7 +101,7 @@ export const DEFAULT_COST_BY_MODALITY: Record<CompletedModality, Record<Complete
 
 function modalityFromActivityType(type: string): CompletedModality {
     const normalized = type.toLowerCase();
-    if (normalized.includes('cycl') || normalized.includes('bike')) return 'Cycling';
+    if (isGarminCyclingActivityType(normalized) || normalized.includes('cycl') || normalized.includes('bike')) return 'Cycling';
     if (normalized.includes('run')) return 'Running';
     if (normalized.includes('swim')) return 'Swimming';
     if (normalized.includes('strength') || normalized.includes('weight') || normalized.includes('lift')) return 'Strength';
@@ -410,13 +411,12 @@ function candidateEventFromGarmin(
         && isGarminCyclingPowerActivity(activity.type)
         ? derivePowerZoneStimulusCandidate(extractPowerZoneFeatures(activity), trainingEffectStimulus)
         : null;
-    const effectiveModality = zoneCandidate && modality === 'Unknown' ? 'Cycling' : modality;
     return {
         id: `garmin:${activity.activityId}`,
         date: activity.date,
         durationMin: activity.durationMin,
         deliveredDose,
-        modality: effectiveModality,
+        modality,
         intensity,
         ...(costIntensity !== intensity ? { costIntensity } : {}),
         trainingEffect: Math.max(activity.trainingEffectAerobic ?? 0, activity.trainingEffectAnaerobic ?? 0) || null,
@@ -424,7 +424,7 @@ function candidateEventFromGarmin(
         estimatedStimulus: zoneCandidate ?? trainingEffectStimulus,
         exactTemplateMatch: false,
         sources: override ? ['garmin', 'manual'] : ['garmin'],
-        confidence: effectiveModality === 'Unknown' ? 'medium' : 'high',
+        confidence: modality === 'Unknown' ? 'medium' : 'high',
         evidenceTier,
         linkedActivityId: activity.activityId,
         linkedRecommendationDate: null,
