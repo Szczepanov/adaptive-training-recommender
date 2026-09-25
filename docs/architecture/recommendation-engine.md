@@ -125,6 +125,82 @@ issues identical reads for both.
 
 No purpose alters a recommendation, so `POLICY_VERSION` is unaffected.
 
+#### Training-response features (issue #814)
+
+The completed-training section of the planning and diagnostic exports carries a
+*Training-response features* subsection built by `contextBriefResponseSummary.ts`
+`deriveKeySessionSummaries` from pure derivations in `contextBriefResponseFeatures.ts`
+(cycling) and `contextBriefSessionResponse.ts` (strength, next day). They are
+**display-only**: only the brief telemetry renderer imports them, their constants have no
+recommendation authority (ADR-0033 display-only, so no claim or coverage item), and
+`POLICY_VERSION` is unaffected. Using them in policy would be a separately reviewed change.
+The morning export is rebuilt by `buildMorningCoachBrief`, so `ContextBriefService.build`
+does not derive them for `morning`.
+
+A session is a *key session* when at least one feature produced a value, or when it is a
+steady session with no comparable prior session (its rejection reasons are stated). In the
+planning export a key session's semantic summary replaces its one-line telemetry digest only
+when at least one feature produced a value; the diagnostic export keeps every lap and zone
+table and adds the summaries after them. Prior sessions are searched only in the activities
+`ContextBriefService.build` already fetched (from `activityStart`, at least the 28-day
+sensor-evidence horizon), and the output states that start date. Missing or incomparable
+evidence produces `insufficient_evidence` with a reason, never an estimate.
+
+Eligibility and formulas (the engine's #809 stimulus classification is reused, never
+re-derived; legacy records without a `stimulusDomain` are `unknown`):
+
+- **HR evidence** — every HR value goes through `activityHrFidelity.ts` `getHrUseAuthority`
+  (`INTERVAL_RESPONSE` for interval HR, `AEROBIC_DECOUPLING` for decoupling and efficiency),
+  with no verified lineage or segment context claimed, so the authority fails closed. A
+  measurement rated unreliable/low or a discordant summary withholds the HR value (and makes
+  the session ineligible for HR-based features); any other non-`ALLOWED`/`BOUNDED` status
+  keeps the value but labels it observational with the authority's status and reasons. These
+  are HR consumers in the sense of the HRF6 audit (`analysis/2026-08-29-hrf6-hr-consumer-lineage-audit.md`,
+  which is dated and not edited): interval-response and decoupling now have display-only
+  consumers routed through the authority.
+- **Interval repetition** — cycling sessions classified tempo/threshold/VO2/anaerobic, or any
+  cycling session carrying a device `fitWorkoutFingerprint` (`mixed`/`race` auto-laps are not
+  a protocol, so they need the fingerprint). Protocol structure is fixed first: the first lap
+  of at least `WORK_INTERVAL_MIN_SECONDS` whose average power is at least
+  `WORK_INTERVAL_POWER_RATIO` times the duration-weighted mean lap power sets the protocol
+  length, and every later lap within `REPEAT_DURATION_MAX_RATIO` of it is a protocol interval.
+  If any protocol-length lap misses the power bar (a possible collapse, or an equal-length
+  recovery), or any later work-power lap of at least `WORK_INTERVAL_MIN_SECONDS` is not
+  protocol-length (possibly a truncated interval), repeatability is not judged. Otherwise,
+  with at least two intervals, it reports
+  per-interval power (and HR per the authority), first→last change, spread, and a *late fade*
+  (last below first by more than `INTERVAL_FADE_PCT`) or *late collapse* (a second-half
+  interval below `INTERVAL_COLLAPSE_RATIO` of the first) label.
+- **Pw:HR decoupling** — steady cycling only: stimulus endurance/recovery, reported
+  variability index ≤ `STEADY_MAX_VARIABILITY_INDEX`, at least `DECOUPLING_MIN_DURATION_MIN`,
+  HR not withheld, laps with power and HR covering `DECOUPLING_MIN_LAP_COVERAGE` of the
+  session, and a lap layout whose halves each hold between `DECOUPLING_MIN_HALF_SHARE` and its
+  complement of lap time. Lap-average power ÷ HR, first vs second half. Interval and
+  variable-power sessions never get a drift value; stops inside a lap are not detected.
+- **Aerobic-efficiency comparison** — NP ÷ average HR against the most recent prior session
+  with the same activity type, the same steady stimulus, duration within
+  `COMPARABLE_DURATION_MAX_RATIO`, power and non-withheld HR. Power-zone low boundaries
+  identify the FTP definition in force: if both sessions report them and they differ, the
+  comparison is **rejected** (no normalization). Confidence is `low` if either side lacks
+  boundaries or either side's HR is only observational under the HR authority (currently
+  always, since no lineage/segment context is verified); otherwise `high` for the same device
+  structured workout, else `moderate`. Up to three rejected candidates are listed with reasons.
+- **Strength** — only when every working (non-rest) set carries an exercise name; per
+  exercise, top set (heaviest, then most reps) vs the most recent prior session with the same
+  exercise. No estimated 1RM: `workouts/oneRepMax.ts` needs near-failure effort evidence
+  that device sets lack.
+- **Next morning** — the check-in dated the day after the session vs the session-day morning
+  (soreness, fatigue, pain flag, count of other activities that day). Labelled observational.
+  A failed check-in read is reported as unavailable, and a stored record that failed
+  validation as unreadable (or "possibly unreadable" when such a record has no readable
+  date), never as a missing check-in.
+
+Known limitations: heat, terrain, cadence, fuelling and accumulated fatigue are not
+controlled; lap-average power is not NP; interval and decoupling features depend on the
+device's lap layout; running pace efficiency and structured-workout identity from the
+training-occurrence reconciliation (ADR-0034) are not yet used; comparisons cannot reach
+beyond the fetched lookback.
+
 #### Recovery evidence synthesis (issue #812)
 
 The recovery section of the planning/diagnostic brief, and section 2 of the morning brief,

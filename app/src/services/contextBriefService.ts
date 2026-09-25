@@ -326,6 +326,8 @@ export class ContextBriefService {
         // malformed historical record cannot silently turn a safety flag or readiness
         // score into neutral input in a brief that may be handed to an external planner.
         const checkins: DailySubjectiveCheckin[] = [];
+        const unreadableCheckinDates: string[] = [];
+        let undatedUnreadableCheckins = 0;
         if (checkinResult.status === 'fulfilled') {
             let invalidCheckins = 0;
             checkinResult.value.forEach((rawCheckin, index) => {
@@ -337,7 +339,11 @@ export class ContextBriefService {
                     rawDate,
                 );
                 if (parsed.status === 'AVAILABLE') checkins.push(parsed.data);
-                else invalidCheckins += 1;
+                else {
+                    invalidCheckins += 1;
+                    if (typeof rawCheckin?.date === 'string') unreadableCheckinDates.push(rawDate);
+                    else undatedUnreadableCheckins += 1;
+                }
             });
             if (invalidCheckins > 0) {
                 unavailableSources.push(`subjective check-ins (${invalidCheckins} invalid record(s) omitted)`);
@@ -572,6 +578,20 @@ export class ContextBriefService {
             buildContextBrief(input),
             windowActivities,
             purpose !== 'diagnostic',
+            // Issue #814: comparable prior sessions are searched in the full fetched
+            // activity range (activityStart, at least the 28-day sensor horizon), and
+            // next-day linkage uses the fetched check-ins. A failed read is passed as null
+            // and invalid records by date, so neither reads as "no check-in". The morning
+            // export is rebuilt by buildMorningCoachBrief and never shows this text, so
+            // the features are not derived for it.
+            purpose === 'morning' ? undefined : {
+                history: activities,
+                historyStart: activityStart,
+                checkins: checkinResult.status === 'fulfilled'
+                    ? { records: checkins, unreadableDates: unreadableCheckinDates, undatedUnreadable: undatedUnreadableCheckins }
+                    : null,
+                asOfDate: targetDate,
+            },
         );
         const text = enhanceContextBriefForPlanning(retrospectiveText, {
             asOfDate: targetDate,

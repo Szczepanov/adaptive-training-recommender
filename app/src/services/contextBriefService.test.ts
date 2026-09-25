@@ -269,6 +269,48 @@ describe('ContextBriefService', () => {
             expect(diagnostic.text).toContain('### Detailed activity telemetry');
             expect(diagnostic.text).toContain('| 50 |');
         });
+
+        describe('training-response features (#814)', () => {
+            const intervalRide = {
+                activityId: 'q1', date: '2026-08-13', type: 'road_biking', durationMin: 71,
+                trainingEffectAerobic: 3.5, trainingEffectAnaerobic: 1.5, averageHr: 145,
+                activityTrainingLoad: 120, intensityTag: 'hard', stimulusDomain: 'threshold',
+                laps: [
+                    { lapIndex: 1, durationSeconds: 900, averagePowerWatts: 150 },
+                    { lapIndex: 2, durationSeconds: 660, averagePowerWatts: 229 },
+                    { lapIndex: 3, durationSeconds: 300, averagePowerWatts: 120 },
+                    { lapIndex: 4, durationSeconds: 660, averagePowerWatts: 225 },
+                    { lapIndex: 5, durationSeconds: 1200, averagePowerWatts: 130 },
+                ],
+            };
+
+            it('reports an unreadable check-in history as unavailable, not as missing', async () => {
+                services.getActivitiesInRange.mockResolvedValue({ status: 'AVAILABLE', data: [intervalRide], revision: null });
+                services.getCheckinsInRange.mockRejectedValue(new Error('offline'));
+                const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+                expect(result.text).toContain('Next morning: check-in history unavailable');
+            });
+
+            it('reports an invalid next-morning record as unreadable, not as none recorded', async () => {
+                services.getActivitiesInRange.mockResolvedValue({ status: 'AVAILABLE', data: [intervalRide], revision: null });
+                services.getCheckinsInRange.mockResolvedValue([{ date: '2026-08-14', readiness: 'not-a-number' }]);
+                const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+                expect(result.text).toContain('Next morning: next-morning check-in unreadable');
+            });
+
+            it('reports the next-morning check-in as possibly unreadable when an invalid record has no date', async () => {
+                services.getActivitiesInRange.mockResolvedValue({ status: 'AVAILABLE', data: [intervalRide], revision: null });
+                services.getCheckinsInRange.mockResolvedValue([{ readiness: 'not-a-number' }]);
+                const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+                expect(result.text).toContain('Next morning: next-morning check-in possibly unreadable');
+            });
+
+            it('does not derive the features for the morning export', async () => {
+                services.getActivitiesInRange.mockResolvedValue({ status: 'AVAILABLE', data: [intervalRide], revision: null });
+                const result = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+                expect(result.text).not.toContain('Training-response features');
+            });
+        });
     });
 
     it('reads padded fixed-activity occupancy and resolves active imported sessions across the next seven days', async () => {

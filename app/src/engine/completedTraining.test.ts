@@ -335,3 +335,15 @@ describe('evidence hierarchy (Phase 5.5)', () => {
         expect(events[0].athleteFeedback.notes).toBe('Actually 5x1000m intervals on treadmill');
     });
 });
+
+describe('Garmin cycling typeKey modality', () => {
+    it.each(['cycling', 'cyclocross', 'gravel_cycling', 'indoor_cycling', 'mountain_biking', 'road_biking', 'virtual_ride'] as const)('classifies %s as Cycling', (type) => {
+        const [event] = reconcileCompletedTrainingEvents([activity({ type })], []);
+        expect(event.modality).toBe('Cycling');
+    });
+
+    it('matches typeKeys case- and whitespace-insensitively', () => {
+        const [event] = reconcileCompletedTrainingEvents([activity({ type: ' Road_Biking ' })], []);
+        expect(event.modality).toBe('Cycling');
+    });
+});

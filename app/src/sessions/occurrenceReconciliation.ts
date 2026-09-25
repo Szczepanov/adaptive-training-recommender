@@ -21,6 +21,7 @@
  */
 import type { NormalizedGarminActivity } from '../engine/models';
 import type { SessionExecution } from './models';
+import { isGarminCyclingActivityType } from '../engine/garminTelemetryEvidence';
 
 export interface ExecutionOccurrenceSummary {
     executionId: string;
@@ -81,6 +82,7 @@ const GARMIN_ACTIVITY_TYPE_KEYWORDS: Record<string, string[]> = {
  * independent production matchers disagreeing about Garmin modality vocabulary. */
 export function normalizedGarminModality(activityType: string): string | null {
     const normalized = activityType.toLowerCase();
+    if (isGarminCyclingActivityType(normalized)) return 'cycling';
     for (const [modality, keywords] of Object.entries(GARMIN_ACTIVITY_TYPE_KEYWORDS)) {
         if (keywords.some(keyword => normalized.includes(keyword))) return modality;
     }
