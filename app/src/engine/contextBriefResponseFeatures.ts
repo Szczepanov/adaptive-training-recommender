@@ -1,5 +1,6 @@
 import type { ActivityLapSummary, ActivityStimulusDomain, NormalizedGarminActivity } from './models';
 import { normalizeModality } from './performedTrainingFacts';
+import { getHrUseAuthority, type HrAuthorityReason, type HrUseCase } from './activityHrFidelity';
 
 /* Issue #814: conservative, display-only training-response features for the context brief.
  *
@@ -7,18 +8,17 @@ import { normalizeModality } from './performedTrainingFacts';
  * read from I/O or the clock. None of these features — nor any constant below — has
  * recommendation authority (ADR-0033 display-only); they describe recorded sessions for an
  * external reader. Missing or incomparable evidence yields `insufficient_evidence` with a
- * reason, never an estimate. The stimulus classification (`stimulusDomain`/`intensityTag`)
- * is the engine's own (#809) and is reused, never re-derived here. Formulas, eligibility
- * rules and limitations are documented in docs/architecture/recommendation-engine.md
- * (context brief, "Training-response features"). */
+ * reason, never an estimate. The stimulus classification (`stimulusDomain`) is the
+ * engine's own (#809) and HR usability is the HRF authority's (`getHrUseAuthority`); both
+ * are reused, never re-derived here. Formulas, eligibility rules and limitations are
+ * documented in docs/architecture/recommendation-engine.md ("Training-response features"). */
 
 /** A lap counts as a work interval only when it lasts at least this long… */
 export const WORK_INTERVAL_MIN_SECONDS = 120;
 /** …and its average power is at least this multiple of the session's duration-weighted
  * mean lap power. */
 export const WORK_INTERVAL_POWER_RATIO = 1.05;
-/** Work intervals must differ in duration by no more than this ratio to count as repeats
- * of one protocol. */
+/** Laps within this duration ratio of the first work lap are protocol-length laps. */
 export const REPEAT_DURATION_MAX_RATIO = 1.25;
 /** First→last work-interval drop beyond this percentage is labelled a late fade. */
 export const INTERVAL_FADE_PCT = 5;
@@ -30,11 +30,15 @@ export const STEADY_MAX_VARIABILITY_INDEX = 1.05;
 export const DECOUPLING_MIN_DURATION_MIN = 45;
 /** Laps must cover at least this share of the session for a decoupling split. */
 export const DECOUPLING_MIN_LAP_COVERAGE = 0.9;
+/** Each decoupling half must hold between this share and its complement of lap time. */
+export const DECOUPLING_MIN_HALF_SHARE = 0.4;
 /** Comparable steady sessions must be within this duration ratio of each other. */
 export const COMPARABLE_DURATION_MAX_RATIO = 1.25;
 
 const STEADY_DOMAINS: ReadonlySet<ActivityStimulusDomain> = new Set(['endurance', 'recovery']);
-const STRUCTURED_DOMAINS: ReadonlySet<ActivityStimulusDomain> = new Set(['tempo', 'threshold', 'vo2', 'anaerobic', 'mixed', 'race']);
+/* `mixed` and `race` are deliberately absent: their auto-laps are not a protocol, so they
+ * qualify for interval analysis only with a device structured-workout fingerprint. */
+const STRUCTURED_DOMAINS: ReadonlySet<ActivityStimulusDomain> = new Set(['tempo', 'threshold', 'vo2', 'anaerobic']);
 
 export type Insufficient = { state: 'insufficient_evidence'; reason: string };
 export type Confidence = 'high' | 'moderate' | 'low';
@@ -57,7 +61,7 @@ export type IntervalRepetition =
     | Insufficient;
 
 export type Decoupling =
-    | { state: 'available'; decouplingPct: number; hrNote: string | null }
+    | { state: 'available'; decouplingPct: number; hrNote: string | null; observational: boolean }
     | Insufficient;
 
 export type ThresholdProvenance = 'same' | 'changed' | 'unknown';
@@ -73,8 +77,11 @@ export type EfficiencyComparison =
         confidence: Confidence;
         basis: string;
         thresholdProvenance: ThresholdProvenance;
+        hrNote: string | null;
     }
-    | (Insufficient & { rejected: string[] });
+    /** `ineligible`: the session itself is not a steady power+HR session; `no_comparable`:
+     * it is, but no prior session passed the comparability contract. */
+    | (Insufficient & { kind: 'ineligible' | 'no_comparable'; rejected: string[] });
 
 function round(value: number, places: number): number {
     const factor = 10 ** places;
@@ -87,22 +94,33 @@ function stimulusDomainOf(activity: NormalizedGarminActivity): ActivityStimulusD
     return activity.stimulusDomain ?? 'unknown';
 }
 
-/** HR is withheld when the activity's own HR-measurement evidence says it is unusable;
- * absent evidence is "unknown", which keeps HR but caps confidence. */
-export function hrUsability(activity: NormalizedGarminActivity): 'usable' | 'unknown' | 'unusable' {
-    const measurement = activity.hrMeasurement;
-    if (!measurement) return 'unknown';
-    if (measurement.measurementConfidence === 'unreliable' || measurement.measurementConfidence === 'low') return 'unusable';
-    if (measurement.signalQuality === 'poor' || measurement.summaryCompatibility === 'discordant') return 'unusable';
-    if (measurement.measurementConfidence === 'unknown') return 'unknown';
-    return 'usable';
+/** HR evidence as decided by the HRF authority (`activityHrFidelity.ts`
+ * `getHrUseAuthority`, the HRF6 consumer rule). No verified segment or lineage context is
+ * claimed, so the authority fails closed. A trace rated unreliable/low or a discordant
+ * summary withholds the HR value; any other non-ALLOWED/BOUNDED status keeps the value but
+ * labels it observational with the authority's own status and reasons. */
+export interface HrEvidence {
+    withheld: boolean;
+    observational: boolean;
+    note: string | null;
 }
 
-function hrNoteFor(activity: NormalizedGarminActivity): string | null {
-    const usability = hrUsability(activity);
-    if (usability === 'unusable') return 'HR withheld: the activity\'s HR measurement was rated unreliable';
-    if (usability === 'unknown') return 'HR measurement provenance unknown';
-    return null;
+const WITHHOLDING_REASONS: ReadonlySet<HrAuthorityReason> = new Set([
+    'MEASUREMENT_UNRELIABLE',
+    'LOW_MEASUREMENT_CONFIDENCE',
+    'SUMMARY_LINEAGE_DISCORDANT',
+]);
+
+export function hrEvidence(activity: NormalizedGarminActivity, useCase: HrUseCase): HrEvidence {
+    const authority = getHrUseAuthority(activity, useCase);
+    const reasons = authority.reasons.join(', ') || 'no reason given';
+    if (authority.reasons.some(reason => WITHHOLDING_REASONS.has(reason))) {
+        return { withheld: true, observational: true, note: `HR withheld: HR authority ${authority.status} (${reasons})` };
+    }
+    if (authority.status === 'ALLOWED' || authority.status === 'BOUNDED') {
+        return { withheld: false, observational: false, note: null };
+    }
+    return { withheld: false, observational: true, note: `HR observational only: HR authority ${authority.status} (${reasons})` };
 }
 
 function weightedMeanPower(laps: readonly ActivityLapSummary[]): number | null {
@@ -116,31 +134,50 @@ function isCycling(activity: NormalizedGarminActivity): boolean {
     return normalizeModality(activity.type) === 'Cycling';
 }
 
+type ProtocolSelection = { state: 'selected'; laps: ActivityLapSummary[] } | Insufficient;
+
+/** Protocol structure first, power second: the first qualifying work lap fixes the protocol
+ * length and every later lap of that length is a protocol interval. A protocol-length lap
+ * below the power bar may be a collapsed interval or an equal-length recovery; that
+ * ambiguity is reported, never smoothed into "repeatable". */
+function selectProtocolLaps(activity: NormalizedGarminActivity): ProtocolSelection {
+    const laps = [...(activity.laps ?? [])].sort((a, b) => a.lapIndex - b.lapIndex);
+    const reference = weightedMeanPower(laps);
+    if (reference === null) return { state: 'insufficient_evidence', reason: 'no lap power recorded' };
+    const passesBar = (lap: ActivityLapSummary) => lap.averagePowerWatts !== undefined
+        && lap.averagePowerWatts >= reference * WORK_INTERVAL_POWER_RATIO;
+    const firstIndex = laps.findIndex(lap => lap.durationSeconds >= WORK_INTERVAL_MIN_SECONDS && passesBar(lap));
+    if (firstIndex === -1) return { state: 'insufficient_evidence', reason: 'no work interval detected in the laps' };
+    const protocolSeconds = laps[firstIndex].durationSeconds;
+    const protocol = laps.slice(firstIndex).filter(lap => lap.durationSeconds >= WORK_INTERVAL_MIN_SECONDS
+        && Math.max(lap.durationSeconds, protocolSeconds) / Math.min(lap.durationSeconds, protocolSeconds) <= REPEAT_DURATION_MAX_RATIO);
+    const failing = protocol.filter(lap => !passesBar(lap)).length;
+    if (failing > 0) {
+        return {
+            state: 'insufficient_evidence',
+            reason: `${failing} protocol-length lap(s) below the work-power bar (a possible late collapse or an equal-length recovery); repeatability not judged`,
+        };
+    }
+    if (protocol.length < 2) return { state: 'insufficient_evidence', reason: 'fewer than two work intervals detected in the laps' };
+    return { state: 'selected', laps: protocol };
+}
+
 /** Structured-interval repeatability from lap power. Eligible only for cycling sessions
- * the engine classified as a structured (non-steady) stimulus, or that carry a device
+ * the engine classified as a structured stimulus, or that carry a device
  * structured-workout fingerprint. */
 export function deriveIntervalRepetition(activity: NormalizedGarminActivity): IntervalRepetition {
     if (!isCycling(activity)) return { state: 'insufficient_evidence', reason: 'not a cycling session' };
     const domain = stimulusDomainOf(activity);
     if (!activity.fitWorkoutFingerprint && !STRUCTURED_DOMAINS.has(domain)) {
-        return { state: 'insufficient_evidence', reason: `stimulus classified ${domain}, not a structured interval session` };
+        return { state: 'insufficient_evidence', reason: `stimulus classified ${domain} without a structured-workout fingerprint` };
     }
-    const laps = [...(activity.laps ?? [])].sort((a, b) => a.lapIndex - b.lapIndex);
-    const reference = weightedMeanPower(laps);
-    if (reference === null) return { state: 'insufficient_evidence', reason: 'no lap power recorded' };
-    const work = laps.filter(lap => lap.averagePowerWatts !== undefined
-        && lap.durationSeconds >= WORK_INTERVAL_MIN_SECONDS
-        && (lap.averagePowerWatts as number) >= reference * WORK_INTERVAL_POWER_RATIO);
-    if (work.length < 2) return { state: 'insufficient_evidence', reason: 'fewer than two work intervals detected in the laps' };
-    const durations = work.map(lap => lap.durationSeconds);
-    if (Math.max(...durations) / Math.min(...durations) > REPEAT_DURATION_MAX_RATIO) {
-        return { state: 'insufficient_evidence', reason: 'work laps differ too much in duration to be repeats of one protocol' };
-    }
-    const hrUsable = hrUsability(activity) !== 'unusable';
-    const intervals: WorkInterval[] = work.map(lap => ({
+    const selection = selectProtocolLaps(activity);
+    if (selection.state !== 'selected') return selection;
+    const hr = hrEvidence(activity, 'INTERVAL_RESPONSE');
+    const intervals: WorkInterval[] = selection.laps.map(lap => ({
         durationSeconds: lap.durationSeconds,
         powerWatts: lap.averagePowerWatts as number,
-        ...(hrUsable && lap.averageHrBpm !== undefined ? { hrBpm: lap.averageHrBpm } : {}),
+        ...(!hr.withheld && lap.averageHrBpm !== undefined ? { hrBpm: lap.averageHrBpm } : {}),
     }));
     const powers = intervals.map(item => item.powerWatts);
     const first = powers[0];
@@ -157,7 +194,7 @@ export function deriveIntervalRepetition(activity: NormalizedGarminActivity): In
         firstToLastPct: round(firstToLastPct, 1),
         spreadPct: round(((Math.max(...powers) - Math.min(...powers)) / mean) * 100, 1),
         pattern,
-        hrNote: hrNoteFor(activity),
+        hrNote: hr.note,
     };
 }
 
@@ -171,12 +208,20 @@ function steadyIneligibility(activity: NormalizedGarminActivity): string[] {
     else if (activity.variabilityIndex > STEADY_MAX_VARIABILITY_INDEX) reasons.push(`variable power (VI ${round(activity.variabilityIndex, 2)})`);
     if (activity.normalizedPower === undefined) reasons.push('no power recorded');
     if (activity.averageHr === null) reasons.push('no HR recorded');
-    else if (hrUsability(activity) === 'unusable') reasons.push('HR measurement rated unreliable');
+    else if (hrEvidence(activity, 'AEROBIC_DECOUPLING').withheld) reasons.push('HR withheld by the HR authority');
     return reasons;
 }
 
+function halfEfficiency(items: readonly ActivityLapSummary[]): number {
+    const seconds = items.reduce((sum, lap) => sum + lap.durationSeconds, 0);
+    const power = items.reduce((sum, lap) => sum + (lap.averagePowerWatts as number) * lap.durationSeconds, 0) / seconds;
+    const hr = items.reduce((sum, lap) => sum + (lap.averageHrBpm as number) * lap.durationSeconds, 0) / seconds;
+    return power / hr;
+}
+
 /** Pw:HR decoupling from lap averages, first vs second half of recorded lap time. Only for
- * steady sessions: intervals, stops and variable power make a lap-based drift misleading. */
+ * steady sessions with balanced halves: intervals and variable power make a lap-based drift
+ * misleading. Stops inside a lap are not detected (laps carry no moving-time split). */
 export function deriveDecoupling(activity: NormalizedGarminActivity): Decoupling {
     const reasons = steadyIneligibility(activity).filter(reason => reason !== 'no power recorded');
     if (reasons.length > 0) return { state: 'insufficient_evidence', reason: reasons.join('; ') };
@@ -196,18 +241,14 @@ export function deriveDecoupling(activity: NormalizedGarminActivity): Decoupling
         halves[elapsed + lap.durationSeconds / 2 < covered / 2 ? 0 : 1].push(lap);
         elapsed += lap.durationSeconds;
     }
-    const efficiency = (items: readonly ActivityLapSummary[]) => {
-        const seconds = items.reduce((sum, lap) => sum + lap.durationSeconds, 0);
-        const power = items.reduce((sum, lap) => sum + (lap.averagePowerWatts as number) * lap.durationSeconds, 0) / seconds;
-        const hr = items.reduce((sum, lap) => sum + (lap.averageHrBpm as number) * lap.durationSeconds, 0) / seconds;
-        return power / hr;
-    };
-    if (halves[0].length === 0 || halves[1].length === 0) {
-        return { state: 'insufficient_evidence', reason: 'too few laps to split the session into halves' };
+    const firstShare = halves[0].reduce((sum, lap) => sum + lap.durationSeconds, 0) / covered;
+    if (firstShare < DECOUPLING_MIN_HALF_SHARE || firstShare > 1 - DECOUPLING_MIN_HALF_SHARE) {
+        return { state: 'insufficient_evidence', reason: 'lap layout cannot split the session into balanced halves' };
     }
-    const first = efficiency(halves[0]);
-    const second = efficiency(halves[1]);
-    return { state: 'available', decouplingPct: round(((first - second) / first) * 100, 1), hrNote: hrNoteFor(activity) };
+    const first = halfEfficiency(halves[0]);
+    const second = halfEfficiency(halves[1]);
+    const hr = hrEvidence(activity, 'AEROBIC_DECOUPLING');
+    return { state: 'available', decouplingPct: round(((first - second) / first) * 100, 1), hrNote: hr.note, observational: hr.observational };
 }
 
 /** Garmin's power-zone low boundaries are derived from the FTP in force when the session
@@ -240,13 +281,14 @@ function comparisonRejection(current: NormalizedGarminActivity, prior: Normalize
 }
 
 /** Aerobic efficiency (NP ÷ average HR) against the most recent comparable prior steady
- * session in `history`. Never compares across a changed threshold definition. */
+ * session in `history`. Never compares across a changed threshold definition; confidence
+ * is `low` whenever either session's HR is only observational under the HR authority. */
 export function deriveEfficiencyComparison(
     activity: NormalizedGarminActivity,
     history: readonly NormalizedGarminActivity[],
 ): EfficiencyComparison {
     const own = steadyIneligibility(activity);
-    if (own.length > 0) return { state: 'insufficient_evidence', reason: own.join('; '), rejected: [] };
+    if (own.length > 0) return { state: 'insufficient_evidence', kind: 'ineligible', reason: own.join('; '), rejected: [] };
     const priors = history
         .filter(item => item.activityId !== activity.activityId && item.date < activity.date)
         .sort((a, b) => b.date.localeCompare(a.date) || a.activityId.localeCompare(b.activityId));
@@ -262,10 +304,12 @@ export function deriveEfficiencyComparison(
         const provenance = thresholdProvenance(activity, prior);
         const sameWorkout = activity.fitWorkoutFingerprint !== undefined
             && activity.fitWorkoutFingerprint === prior.fitWorkoutFingerprint;
-        const hrKnown = hrUsability(activity) === 'usable' && hrUsability(prior) === 'usable';
-        const confidence: Confidence = provenance !== 'same'
+        const hrNow = hrEvidence(activity, 'AEROBIC_DECOUPLING');
+        const hrPrior = hrEvidence(prior, 'AEROBIC_DECOUPLING');
+        const observational = hrNow.observational || hrPrior.observational;
+        const confidence: Confidence = provenance !== 'same' || observational
             ? 'low'
-            : sameWorkout && hrKnown ? 'high' : 'moderate';
+            : sameWorkout ? 'high' : 'moderate';
         return {
             state: 'available',
             priorActivityId: prior.activityId,
@@ -276,7 +320,8 @@ export function deriveEfficiencyComparison(
             confidence,
             basis: sameWorkout ? 'same device structured workout' : 'matched steady protocol (type, stimulus, duration)',
             thresholdProvenance: provenance,
+            hrNote: hrNow.note ?? (hrPrior.note ? `prior session ${hrPrior.note}` : null),
         };
     }
-    return { state: 'insufficient_evidence', reason: 'no comparable prior steady session in the fetched history', rejected };
+    return { state: 'insufficient_evidence', kind: 'no_comparable', reason: 'no comparable prior steady session in the fetched history', rejected };
 }

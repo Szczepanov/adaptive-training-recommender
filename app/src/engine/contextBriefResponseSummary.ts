@@ -1,4 +1,4 @@
-import type { DailySubjectiveCheckin, NormalizedGarminActivity } from './models';
+import type { NormalizedGarminActivity } from './models';
 import {
     deriveDecoupling,
     deriveEfficiencyComparison,
@@ -12,6 +12,7 @@ import {
 import {
     deriveNextDayResponse,
     deriveStrengthProgression,
+    type CheckinHistory,
     type CheckinReading,
     type ExerciseTopSet,
     type NextDayResponse,
@@ -28,7 +29,7 @@ export interface ResponseContext {
     /** First date covered by `history`, stated in the output. */
     historyStart: string;
     /** `null` when check-in history could not be read. */
-    checkins: readonly DailySubjectiveCheckin[] | null;
+    checkins: CheckinHistory | null;
     asOfDate: string;
 }
 
@@ -50,13 +51,20 @@ function signedPct(value: number): string {
     return `${value > 0 ? '+' : ''}${fmt(value, 1)}%`;
 }
 
-function isKey(summary: Omit<KeySessionSummary, 'nextDay'>): boolean {
-    const steadyEligible = summary.efficiency.state === 'available' || summary.efficiency.rejected.length > 0
-        || summary.efficiency.reason.startsWith('no comparable');
+/** At least one feature produced a value. Only these sessions replace their compact
+ * telemetry digest line; a key session without any value keeps its digest. */
+export function hasAvailableFeature(summary: Omit<KeySessionSummary, 'nextDay'>): boolean {
     return summary.intervals.state === 'available'
         || summary.decoupling.state === 'available'
-        || steadyEligible
+        || summary.efficiency.state === 'available'
         || summary.strength.state === 'available';
+}
+
+/** Key: a feature is available, or the session is steady-eligible but had no comparable
+ * prior session (its rejection reasons are worth stating). */
+function isKey(summary: Omit<KeySessionSummary, 'nextDay'>): boolean {
+    return hasAvailableFeature(summary)
+        || (summary.efficiency.state === 'insufficient_evidence' && summary.efficiency.kind === 'no_comparable');
 }
 
 export function deriveKeySessionSummaries(
@@ -109,10 +117,10 @@ const PROVENANCE_TEXT = {
 function efficiencyLines(feature: EfficiencyComparison): string[] {
     if (feature.state === 'available') {
         return [
-            `- Aerobic efficiency (NP ÷ avg HR): ${fmt(feature.efficiencyFactor, 2)} vs ${fmt(feature.priorEfficiencyFactor, 2)} on ${feature.priorDate} (${signedPct(feature.changePct)}) · comparison confidence ${feature.confidence} (${feature.basis}; ${PROVENANCE_TEXT[feature.thresholdProvenance]}; heat, terrain and fatigue not controlled)`,
+            `- Aerobic efficiency (NP ÷ avg HR): ${fmt(feature.efficiencyFactor, 2)} vs ${fmt(feature.priorEfficiencyFactor, 2)} on ${feature.priorDate} (${signedPct(feature.changePct)}) · comparison confidence ${feature.confidence} (${feature.basis}; ${PROVENANCE_TEXT[feature.thresholdProvenance]}; heat, terrain and fatigue not controlled)${feature.hrNote ? ` · ${feature.hrNote}` : ''}`,
         ];
     }
-    if (!feature.reason.startsWith('no comparable')) return [];
+    if (feature.kind !== 'no_comparable') return [];
     const rejected = feature.rejected.slice(0, 3);
     const more = feature.rejected.length > rejected.length ? `; +${feature.rejected.length - rejected.length} more` : '';
     return [`- Aerobic efficiency: insufficient evidence — ${feature.reason}${rejected.length > 0 ? ` (rejected ${rejected.join('; ')}${more})` : ''}`];

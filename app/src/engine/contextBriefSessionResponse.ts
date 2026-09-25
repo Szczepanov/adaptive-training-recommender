@@ -104,20 +104,31 @@ function reading(checkin: DailySubjectiveCheckin): CheckinReading {
     return { soreness: checkin.soreness, fatigue: checkin.fatigue, painOrInjury: checkin.painOrInjury };
 }
 
+/** Check-ins as read for the brief: `unreadableDates` are dates whose stored record failed
+ * validation and was dropped — unreadable, which is not the same as "not recorded". */
+export interface CheckinHistory {
+    records: readonly DailySubjectiveCheckin[];
+    unreadableDates: readonly string[];
+}
+
 /** Observational link from a session to the following morning's check-in. `checkins`
  * `null` means the check-in history could not be read, which is not the same as "none". */
 export function deriveNextDayResponse(
     activity: NormalizedGarminActivity,
-    checkins: readonly DailySubjectiveCheckin[] | null,
+    checkins: CheckinHistory | null,
     sameWindowActivities: readonly NormalizedGarminActivity[],
     asOfDate: string,
 ): NextDayResponse {
     if (checkins === null) return { state: 'insufficient_evidence', reason: 'check-in history unavailable' };
     const nextDate = addDaysToLocalDateString(activity.date, 1);
     if (nextDate > asOfDate) return { state: 'insufficient_evidence', reason: 'next morning not yet reached' };
-    const next = checkins.find(checkin => checkin.date === nextDate);
-    if (!next) return { state: 'insufficient_evidence', reason: 'no next-morning check-in recorded' };
-    const sessionDay = checkins.find(checkin => checkin.date === activity.date);
+    const next = checkins.records.find(checkin => checkin.date === nextDate);
+    if (!next) {
+        return checkins.unreadableDates.includes(nextDate)
+            ? { state: 'insufficient_evidence', reason: 'next-morning check-in unreadable (invalid stored record)' }
+            : { state: 'insufficient_evidence', reason: 'no next-morning check-in recorded' };
+    }
+    const sessionDay = checkins.records.find(checkin => checkin.date === activity.date);
     return {
         state: 'available',
         sessionDay: sessionDay ? reading(sessionDay) : null,

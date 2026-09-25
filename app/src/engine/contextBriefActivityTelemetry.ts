@@ -1,6 +1,11 @@
 import type { ActivityLapSummary, ActivityZoneBucket, NormalizedGarminActivity } from './models';
 import { findSectionHeading, SECTION_TITLE } from './contextBrief';
-import { deriveKeySessionSummaries, renderKeySessionSummaries, type ResponseContext } from './contextBriefResponseSummary';
+import {
+    deriveKeySessionSummaries,
+    hasAvailableFeature,
+    renderKeySessionSummaries,
+    type ResponseContext,
+} from './contextBriefResponseSummary';
 
 const ACTIVITY_TYPE_LABELS: Record<string, string> = {
     road_biking: 'Road cycling',
@@ -196,12 +201,12 @@ export function injectActivityTelemetryIntoContextBrief(
     compact = false,
     response?: ResponseContext,
 ): string {
-    // Issue #814: key sessions get a semantic summary. In the compact (planning/morning)
-    // export it replaces that session's digest line; diagnostic keeps every raw table and
-    // adds the summaries after them.
+    // Issue #814: key sessions get a semantic summary. In the compact (planning) export it
+    // replaces that session's digest line only when at least one feature produced a value;
+    // diagnostic keeps every raw table and adds the summaries after them.
     const summaries = response ? deriveKeySessionSummaries(activities, response) : [];
     const summaryText = response ? renderKeySessionSummaries(summaries, response) : '';
-    const summarizedIds = new Set(summaries.map(summary => summary.activity.activityId));
+    const summarizedIds = new Set(summaries.filter(hasAvailableFeature).map(summary => summary.activity.activityId));
     const raw = compact ? renderCompactActivityTelemetry(activities, summarizedIds) : renderContextBriefActivityTelemetry(activities);
     const telemetry = [raw, summaryText].filter(Boolean).join('\n\n');
     if (!telemetry) return brief;
