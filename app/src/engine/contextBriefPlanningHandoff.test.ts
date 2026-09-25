@@ -206,6 +206,8 @@ function handoffInput(overrides: Partial<ContextBriefPlanningHandoffInput> = {})
         goals: [],
         upcomingFixedActivities: [fixedActivity()],
         upcomingPlanBlocks: [],
+        recommendationsReadable: true,
+        restDirectiveToday: null,
         upcomingExternalSessions: [{
             date: '2026-08-21',
             planId: 'p1',

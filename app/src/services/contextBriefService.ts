@@ -36,7 +36,8 @@ import { evaluatePeriodizationPhase, goalToUserEvent } from '../engine/periodiza
 import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
 import { isV2Session, type AnyExternalPlanSession } from '../sessions/externalPlanV2';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
-import { activeExternalPlanService, placedSessionForDate } from './activeExternalPlanService';
+import { activeExternalPlanService, externalRestContextForDate, placedSessionForDate } from './activeExternalPlanService';
+import type { BriefRestDirective } from '../engine/briefPlanAuthority';
 import { activityService } from './activityService';
 import { anthropometryService } from './anthropometryService';
 import { checkinService } from './checkinService';
@@ -404,6 +405,7 @@ export class ContextBriefService {
 
         const upcomingExternalSessions: UpcomingExternalPlanSession[] = [];
         let currentExternalSession: AnyExternalPlanSession | null = null;
+        let restDirectiveToday: BriefRestDirective | null = null;
         // Whether "no session placed today" can be asserted as a confirmed fact. Starts
         // false whenever occupancy itself is unreadable (the else branch below), and is
         // also cleared if today's own plan-state read specifically fails, so a resolved
@@ -436,6 +438,10 @@ export class ContextBriefService {
                 }
                 if (date === targetDate) {
                     currentExternalSession = placedSessionForDate(state.data, date)?.session ?? null;
+                    const rest = externalRestContextForDate(state.data, date);
+                    restDirectiveToday = rest
+                        ? { planId: rest.planId, revision: rest.revision, restDirectiveId: rest.directive.id }
+                        : null;
                 }
                 for (const placed of state.data.placed.filter(item =>
                     item.date === date && (item.status === 'planned' || item.status === 'moved'))) {
@@ -522,6 +528,8 @@ export class ContextBriefService {
             upcomingFixedActivities,
             upcomingPlanBlocks,
             upcomingExternalSessions,
+            recommendationsReadable: recommendationResult.status === 'fulfilled' && recommendationResult.value.status === 'AVAILABLE',
+            restDirectiveToday,
             unavailableSources,
             preset,
         });

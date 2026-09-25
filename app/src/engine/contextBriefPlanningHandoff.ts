@@ -15,7 +15,13 @@ import type {
 import { EVENT_PRESETS, resolveDemandProfile } from './eventPresets';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { formatActivityType, formatIntensityCell, round, signed, type BriefWindowPreset } from './contextBrief';
-import { renderBriefPlanAuthority, resolveBriefPlanAuthority, type BriefPlanAuthority } from './briefPlanAuthority';
+import {
+    renderBriefPlanAuthority,
+    resolveBriefPlanAuthority,
+    type BriefPlanAuthority,
+    type BriefPlanAuthorityOutcome,
+    type BriefRestDirective,
+} from './briefPlanAuthority';
 
 export const UPCOMING_CONTEXT_DAYS = 7;
 export const RECOVERY_TIMELINE_DAYS = 7;
@@ -62,6 +68,10 @@ export interface ContextBriefPlanningHandoffInput {
     upcomingFixedActivities: readonly FixedActivity[];
     upcomingPlanBlocks: readonly AuthoredPlanBlock[];
     upcomingExternalSessions: readonly UpcomingExternalPlanSession[];
+    /** False when the recommendation read failed; a missing recommendation is then unknown. */
+    recommendationsReadable: boolean;
+    /** Today's authored rest directive from the active imported plan, if any. */
+    restDirectiveToday: BriefRestDirective | null;
     unavailableSources: readonly string[];
     preset?: BriefWindowPreset;
 }
@@ -99,7 +109,8 @@ function resolveTodayAuthority(input: ContextBriefPlanningHandoffInput): { autho
         recommendationToday: recommendation,
         checkinToday: input.checkins.find(item => item.date === input.asOfDate) ?? null,
         fixedActivitiesToday: input.upcomingFixedActivities,
-        recommendationsReadable: !input.unavailableSources.some(source => source.startsWith('recommendations')),
+        recommendationsReadable: input.recommendationsReadable,
+        restDirectiveToday: input.restDirectiveToday,
     });
     return { authority, block: renderBriefPlanAuthority(authority, input.asOfDate, recommendation) };
 }
@@ -327,7 +338,7 @@ function renderPrescriptionStep(step: ExternalPrescriptionStep): string {
     return dose.length > 0 ? `${step.name}: ${dose.join(' · ')}` : step.name;
 }
 
-function renderImportedPrescriptions(sessions: readonly UpcomingExternalPlanSession[], asOfDate: string, todayOutcome: string): string[] {
+function renderImportedPrescriptions(sessions: readonly UpcomingExternalPlanSession[], asOfDate: string, todayOutcome: BriefPlanAuthorityOutcome): string[] {
     if (sessions.length === 0) return [];
     const lines: string[] = ['', 'Imported-session prescription detail:'];
     for (const session of sessions) {
@@ -343,7 +354,10 @@ function renderImportedPrescriptions(sessions: readonly UpcomingExternalPlanSess
     return lines;
 }
 
-const PRESCRIPTION_SAFE_OUTCOMES = new Set(['MATCH', 'EVENT_DAY', 'AUTHORED_UNADJUDICATED']);
+const PRESCRIPTION_SAFE_OUTCOMES: ReadonlySet<BriefPlanAuthorityOutcome> = new Set<BriefPlanAuthorityOutcome>(['MATCH', 'EVENT_DAY', 'AUTHORED_UNADJUDICATED']);
+/** Outcomes where today's recommendation IS the adjudicated imported session (synthetic
+ * shim), so it is the authoritative prescription, not mere engine context. */
+const RECOMMENDATION_IS_IMPORTED_SESSION: ReadonlySet<BriefPlanAuthorityOutcome> = new Set<BriefPlanAuthorityOutcome>(['MATCH', 'DOSE_MODIFIED']);
 
 function renderUpcoming(input: ContextBriefPlanningHandoffInput, today: TodayAuthority): string {
     const endDate = addDaysToLocalDateString(input.asOfDate, UPCOMING_CONTEXT_DAYS - 1);
@@ -660,7 +674,8 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
 
     // 4. Today's App Recommendation & Engine Stance
     lines.push('', '## 4. Today\'s App Recommendation & Engine Stance', '');
-    const recommendationIsAuthoritative = todayAuthority.authority.authoritative?.kind === 'app_recommendation';
+    const recommendationIsAuthoritative = todayAuthority.authority.authoritative?.kind === 'app_recommendation'
+        || RECOMMENDATION_IS_IMPORTED_SESSION.has(todayAuthority.authority.outcome);
     if (todayRecommendation && !recommendationIsAuthoritative) {
         lines.push(`> Not independently actionable: today's authority is ${todayAuthority.authority.outcome} (see *Resolved planning authority* above); this recommendation is shown as engine context only.`);
     }

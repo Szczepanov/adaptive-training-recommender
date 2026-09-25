@@ -70,6 +70,7 @@ export type BriefPlanConflictReason =
     | 'recommendation_bound_to_unplaced_session'
     | 'advisory_verdict_on_non_event_session'
     | 'recommendation_unreadable'
+    | 'recommendation_disagrees_with_rest_directive'
     | 'fallback_with_placed_session';
 
 export interface BriefPlanAuthority {
@@ -96,6 +97,9 @@ export interface BriefPlanAuthority {
     nonGoverningImportedSessionsToday: readonly BriefAuthoredSession[];
     /** True when the athlete explicitly overrode an authored rest directive (ADR-0035). */
     restOverriddenByAthlete: boolean;
+    /** True when today's recommendation could not be read and none is available, so its
+     * absence is unknown rather than "none recorded yet". */
+    recommendationUnknown: boolean;
     /** Fixed activities dated today: availability / load constraints, never a prescription. */
     fixedConstraintsToday: readonly FixedActivity[];
     /** Current-day check-in symptom flags. These outrank every authored or app session. */
@@ -116,6 +120,15 @@ export interface BriefPlanAuthorityInput {
     fixedActivitiesToday: readonly FixedActivity[];
     /** False when today's recommendation read failed, so a null recommendation is unknown. */
     recommendationsReadable: boolean;
+    /** The authored rest directive the active imported plan places on `asOfDate`, resolved by
+     * the caller via `activeExternalPlanService.ts` `externalRestContextForDate`. */
+    restDirectiveToday: BriefRestDirective | null;
+}
+
+export interface BriefRestDirective {
+    planId: string;
+    revision: number;
+    restDirectiveId: string;
 }
 
 const PRIORITY_RANK: Record<BriefAuthoredSession['priority'], number> = { key: 0, supporting: 1, optional: 2 };
@@ -148,7 +161,7 @@ function sameOccurrence(session: BriefAuthoredSession, recommendation: DailyReco
     return bound.revision === session.revision ? 'same' : 'other_revision';
 }
 
-type BaseFields = 'fixedConstraintsToday' | 'currentSymptomFlags' | 'recommendationPredatesCheckin' | 'nonGoverningImportedSessionsToday' | 'restOverriddenByAthlete';
+type BaseFields = 'fixedConstraintsToday' | 'currentSymptomFlags' | 'recommendationPredatesCheckin' | 'nonGoverningImportedSessionsToday' | 'restOverriddenByAthlete' | 'recommendationUnknown';
 
 function base(input: BriefPlanAuthorityInput): Pick<BriefPlanAuthority, BaseFields> {
     const checkin = input.checkinToday;
@@ -159,6 +172,7 @@ function base(input: BriefPlanAuthorityInput): Pick<BriefPlanAuthority, BaseFiel
         recommendationPredatesCheckin: Boolean(checkin && recommendation && recommendation.updatedAt < checkin.submittedAt),
         nonGoverningImportedSessionsToday: [],
         restOverriddenByAthlete: false,
+        recommendationUnknown: !input.recommendationsReadable && !recommendation,
     };
 }
 
@@ -221,7 +235,8 @@ export function resolveBriefPlanAuthority(input: BriefPlanAuthorityInput): Brief
     // implies the athlete chose that mode, so its sessions are never merely context.
     const governing = input.effectivePlanningMode === 'externally_planned' || input.externalFallback;
     const sessions = governing ? dated : [];
-    const nonGoverning = governing ? [] : dated;
+    // A recommendation bound to a listed session already names it; never list it twice.
+    const nonGoverning = governing ? [] : dated.filter(item => item.sessionId !== boundPlan?.sessionId || item.planId !== boundPlan?.planId);
 
     if (input.externalFallbackUncertain && sessions.length === 0) {
         return { ...base(input), ...noConflict, outcome: 'EXTERNAL_PLAN_UNREADABLE', authoritative: null, otherAuthoredSessionsToday: [] };
@@ -233,7 +248,17 @@ export function resolveBriefPlanAuthority(input: BriefPlanAuthorityInput): Brief
             // (moved / re-imported after the decision): the two facts disagree.
             return unresolved(input, 'recommendation_bound_to_unplaced_session', []);
         }
-        if (externalRest && !isExternalRestOverride(externalRest)) {
+        const restToday = governing ? input.restDirectiveToday : null;
+        if (governing && (restToday || externalRest) && recommendation) {
+            const agrees = Boolean(restToday && externalRest
+                && restToday.planId === externalRest.planId
+                && restToday.revision === externalRest.revision
+                && restToday.restDirectiveId === externalRest.restDirectiveId);
+            // The plan's current rest directive and the decision's rest provenance must name
+            // the same directive; otherwise one of them is stale (ADR-0035).
+            if (!agrees) return unresolved(input, 'recommendation_disagrees_with_rest_directive', []);
+        }
+        if (restToday && !(externalRest && isExternalRestOverride(externalRest))) {
             return { ...base(input), ...noConflict, outcome: 'AUTHORED_REST', authoritative: { kind: 'authored_rest' }, otherAuthoredSessionsToday: [] };
         }
         const authoritative = recommendation ? { kind: 'app_recommendation' as const, recommendation } : null;
@@ -289,6 +314,7 @@ const CONFLICT_DETAIL: Record<BriefPlanConflictReason, string> = {
     recommendation_bound_to_other_revision: 'today\'s app recommendation adjudicated a different revision of the imported plan than the one placed now',
     recommendation_bound_to_unplaced_session: 'today\'s app recommendation adjudicated an imported session that is no longer placed on this date (moved or re-imported after the decision)',
     advisory_verdict_on_non_event_session: 'the app returned an advisory-only verdict for a session that is not an event, which no rule turns into clearance',
+    recommendation_disagrees_with_rest_directive: 'today\'s app decision and the imported plan\'s current rest directive for this date do not name the same directive (one of them is stale)',
     recommendation_unreadable: 'today\'s app recommendation could not be read, so whether a safety/readiness gate changed the imported session is unknown',
     fallback_with_placed_session: 'the app ran in external-plan fallback, yet an imported session is visible on today\'s date',
 };
@@ -308,7 +334,9 @@ function authoritativeLine(authority: BriefPlanAuthority): string {
         if (authority.outcome === 'CONFLICT_UNRESOLVED' || authority.outcome === 'EXTERNAL_PLAN_UNREADABLE') {
             return '- Authoritative session today: **UNRESOLVED** — do not pick, merge or average sessions from elsewhere in this brief; ask the athlete which applies.';
         }
-        return '- Authoritative session today: none recorded yet.';
+        return authority.recommendationUnknown
+            ? '- Authoritative session today: **UNKNOWN** — today\'s app recommendation could not be read; do not assume there is none.'
+            : '- Authoritative session today: none recorded yet.';
     }
     if (target.kind === 'authored_rest') return '- Authoritative session today: **rest** (authored rest directive).';
     if (target.kind === 'app_recommendation') return `- Authoritative session today: **${describeRecommendation(target.recommendation)}** (app recommendation).`;

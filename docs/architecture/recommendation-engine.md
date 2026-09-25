@@ -92,7 +92,7 @@ prescription. Outcomes:
 | `NO_AUTHORED_SESSION` | no imported plan governs today; imported sessions placed while the effective mode is not `externally_planned` are listed as non-governing context (ADR-0017) | app recommendation |
 | `EXTERNAL_PLAN_UNREADABLE` | today's plan state could not be read | unknown (fails closed) |
 | `AUTHORED_UNADJUDICATED` | session placed, no app decision yet | imported session, not readiness-checked |
-| `CONFLICT_UNRESOLVED` | decision not bound to the placed occurrence, bound to another revision, bound to an imported session no longer placed today, advisory on a non-event, fallback with a visible session, or today's recommendation unreadable while a session is placed | none — the agent is told to ask |
+| `CONFLICT_UNRESOLVED` | decision not bound to the placed occurrence, bound to another revision, bound to an imported session no longer placed today, rest provenance that disagrees with the active plan's current rest directive for the date (`externalRestContextForDate`; missing, other revision or other directive, in either direction), advisory on a non-event, fallback with a visible session, or today's recommendation unreadable while a session is placed | none — the agent is told to ask |
 
 The block is rendered in section 0 of the planning handoff (ahead of `## 1. Constraints`
 and all telemetry) and at the top of the morning brief. Imported sessions later in the
