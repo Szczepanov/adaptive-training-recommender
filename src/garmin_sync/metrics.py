@@ -8,8 +8,7 @@ from zoneinfo import ZoneInfo
 # Legacy fallback thresholds now live in intensity_classification (issue #809); re-exported
 # here for existing importers.
 from .intensity_classification import (
-    HARD_SESSION_MIN_AVERAGE_HR,
-    HARD_SESSION_MIN_TRAINING_EFFECT,
+    legacy_intensity_tag,
 )
 from .models import BASELINE_COMPUTATION_VERSION, DerivedDeltas, DerivedMetrics
 
@@ -178,20 +177,8 @@ def classify_activity_intensity(
     adapter can call this shared domain rule after extracting its own training-effect
     and average-HR fields.
     """
-    te = training_effect or 0.0
-    avg_hr = average_hr or 0
-    hr_threshold = (
-        zone4_floor
-        if (zone4_floor is not None and zone4_floor > 0)
-        else HARD_SESSION_MIN_AVERAGE_HR
-    )
-    is_hard = te >= HARD_SESSION_MIN_TRAINING_EFFECT or avg_hr >= hr_threshold
-    if is_hard:
-        intensity_tag = "hard"
-    elif te < 2.0:
-        intensity_tag = "easy"
-    else:
-        intensity_tag = "moderate"
+    intensity_tag = legacy_intensity_tag(training_effect, average_hr, zone4_floor)
+    is_hard = intensity_tag == "hard"
     return is_hard, intensity_tag
 
 

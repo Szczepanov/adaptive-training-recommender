@@ -1991,6 +1991,9 @@ export interface CompletedTrainingEvent {
     deliveredDose?: DeliveredDose;
     modality: SessionTemplate['modality'] | 'Unknown';
     intensity: CompletedTrainingIntensity;
+    /** Issue #809: the dimension the default cost row was indexed by (session dose) when it
+     *  differs from the stimulus `intensity`. Absent means cost follows `intensity`. */
+    costIntensity?: CompletedTrainingIntensity;
     trainingEffect: number | null;
     estimatedCost: WorkoutCostProfile;
     estimatedStimulus: Partial<WorkoutStimulusProfile>;

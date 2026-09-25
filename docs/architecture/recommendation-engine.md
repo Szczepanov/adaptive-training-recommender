@@ -396,7 +396,14 @@ plus its catalog duration reference) by `sessionCost` (`low`→easy, `moderate`�
 charging a hard-row fatigue cost. Legacy records without `sessionCost` index both by
 `intensityTag`; an athlete `ActivityOverride.overriddenIntensity` overrides both. The
 context brief shows `intensityTag (stimulusDomain, cost …)` per activity and reports
-high-cost sessions separately from the "tagged hard" count. See
+high-cost sessions separately from the "tagged hard" count. The adherence merge
+(`mergeAdherenceIntoGarmin`) keeps the dose-indexed row via `CompletedTrainingEvent.costIntensity`.
+
+Deliberate consequence for spacing: `last3DaysHardSessionsCount` (readiness penalty) now
+counts only high-intensity stimulus, while the optimizer's rolling hard-density cap still
+reads completed-event `systemicCost`, so a long high-dose endurance ride still counts
+toward that cap through its cost. Session cost is Training-Effect-driven only; the legacy
+"average HR >= zone-4 floor" route affects the stimulus fallback tier, not the cost row. See
 `docs/architecture/ingestion-pipeline.md` for the classification hierarchy.
 
 ### Manual strength history (default-off)

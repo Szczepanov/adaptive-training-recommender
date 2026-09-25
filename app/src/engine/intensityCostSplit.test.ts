@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ActivityOverride, NormalizedGarminActivity } from './models';
+import type { ActivityOverride, DailyRecommendation, NormalizedGarminActivity } from './models';
 import { DEFAULT_COST_BY_MODALITY, DEFAULT_STIMULUS_BY_MODALITY, reconcileCompletedTrainingEvents } from './completedTraining';
 import { formatIntensityCell } from './contextBrief';
 
@@ -36,6 +36,20 @@ describe('stimulus vs session-cost split (#809)', () => {
         const [explicit] = reconcileCompletedTrainingEvents([ride({ intensityTag: 'hard', sessionCost: 'high' })], []);
         expect(event.intensity).toBe('hard');
         expect(event.estimatedCost).toEqual(explicit.estimatedCost);
+    });
+
+    it('keeps the dose-indexed cost when an adherence answer merges into the activity', () => {
+        const [alone] = reconcileCompletedTrainingEvents([ride()], []);
+        const answered: DailyRecommendation = {
+            userId: 'athlete', date: '2026-09-20', templateId: 'end_mod_02', templateTitle: 'Tempo Ride',
+            category: 'Moderate Endurance', modality: 'Cycling', mode: 'train', rationale: 'test', schemaVersion: 1,
+            createdAt: '', updatedAt: '',
+            adherence: { respondedAt: '2026-09-20T18:00:00Z', followed: false, actualModality: 'Cycling', actualDurationMin: 120, skipped: false, notes: null },
+        };
+        const [merged] = reconcileCompletedTrainingEvents([ride()], [answered]);
+        expect(merged.sources).toContain('adherence');
+        expect(merged.intensity).toBe('easy');
+        expect(merged.estimatedCost).toEqual(alone.estimatedCost);
     });
 
     it('lets an athlete reclassification take precedence over both dimensions', () => {

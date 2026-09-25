@@ -410,6 +410,7 @@ function candidateEventFromGarmin(
         deliveredDose,
         modality: effectiveModality,
         intensity,
+        ...(costIntensity !== intensity ? { costIntensity } : {}),
         trainingEffect: Math.max(activity.trainingEffectAerobic ?? 0, activity.trainingEffectAnaerobic ?? 0) || null,
         estimatedCost: scaleCostByDeliveredDose(baseCost, deliveredDose),
         estimatedStimulus: zoneCandidate ?? trainingEffectStimulus,
@@ -459,7 +460,8 @@ function mergeAdherenceIntoGarmin(
     recommendation: DailyRecommendation,
     candidate: NonNullable<ReturnType<typeof adherenceCandidate>>,
 ): CompletedTrainingEvent {
-    const intensity = event.intensity;
+    // Issue #809: the default cost row keeps following session dose, not stimulus.
+    const intensity = event.costIntensity ?? event.intensity;
     const baseCost = recommendation.adherence.followed && candidate.template?.costProfile
         ? candidate.template.costProfile
         : DEFAULT_COST_BY_MODALITY[event.modality][intensity];

@@ -303,14 +303,19 @@ provider-neutral evidence (Training Effect, average HR, activity-list `intensity
   measured intensity evidence exists). Zone data covering less than half the session is
   ignored. Athlete reclassification (`ActivityOverride`) sits above this hierarchy downstream.
 * `sessionCost` (`low | moderate | high | very_high | unknown`) is **total session dose**:
-  max Training Effect bands (duration bands when TE is absent; at least `high` for a race).
+  max Training Effect bands (`unknown` when TE is absent, so consumers fall back to the
+  stimulus tag rather than a sport-independent duration guess; at least `high` for a race).
   A 120-minute Z2 ride with aerobic TE 3.0 is therefore `easy`/`endurance` stimulus with
   `high` cost.
 
 `intensityClassificationVersion` (currently 2) marks records written with these semantics.
 Records without it keep their legacy TE-based `intensityTag` and are not reinterpreted;
-only a rebuild/backfill that re-runs ingestion rewrites them, versioned. Cycling telemetry
-detail still qualifies for an `easy` stimulus with `high`/`very_high` cost.
+only a rebuild/backfill that re-runs ingestion rewrites them, versioned. Cycling/running
+telemetry detail still qualifies for an `easy` stimulus with `moderate` or higher cost (the
+TE >= 2 population the legacy non-`easy` tag selected). The cut-points are registered as the
+product-calibration claim `policy.load_intensity.garmin_stimulus_cost_classification_v1`
+(coverage item `fatigue.garmin_stimulus_cost_classification`), pinned by
+`tests/test_intensity_classification.py`.
 
 Additional activity detail has separate paths:
 

@@ -466,9 +466,12 @@ def qualifies_for_activity_detail(activity: CanonicalActivity) -> bool:
             activity.type.lower() in _POWER_ACTIVITY_TYPES
             or _is_running_activity_type(activity.type)
         )
-        # Issue #809: a long aerobic ride is now "easy" stimulus but still a costly
-        # session; its telemetry stays worth fetching.
-        and (activity.intensity_tag != "easy" or activity.session_cost in ("high", "very_high"))
+        # Issue #809: an aerobic ride with TE >= 2 is now "easy" stimulus but at least a
+        # moderate-cost session -- the same population the legacy non-easy tag selected.
+        and (
+            activity.intensity_tag != "easy"
+            or activity.session_cost in ("moderate", "high", "very_high")
+        )
     )
 
 

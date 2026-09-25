@@ -70,12 +70,6 @@ MIN_ZONE_COVERAGE = 0.5
 COST_MODERATE_MIN_TE = 2.0
 COST_HIGH_MIN_TE = 3.0
 COST_VERY_HIGH_MIN_TE = 4.0
-# Duration bands (minutes) used only when Training Effect is absent.
-COST_MODERATE_MIN_DURATION = 45
-COST_HIGH_MIN_DURATION = 90
-COST_VERY_HIGH_MIN_DURATION = 150
-
-_COST_ORDER = ("low", "moderate", "high", "very_high")
 _POWER_SPORT_MARKERS = ("cycl", "bik", "ride", "spin")
 _STRENGTH_MARKERS = ("strength", "weight", "lift", "hiit", "crossfit")
 
@@ -188,12 +182,16 @@ def _hr_zone_stimulus(evidence: ActivityIntensityEvidence) -> str | None:
     return "endurance"
 
 
-def _fallback_tag(evidence: ActivityIntensityEvidence) -> str:
-    te = max(evidence.training_effect_aerobic or 0.0, evidence.training_effect_anaerobic or 0.0)
-    avg_hr = evidence.average_hr or 0
+def legacy_intensity_tag(
+    training_effect: float, average_hr: float | None, hard_hr_threshold: float | None = None
+) -> str:
+    """The pre-#809 rule (TE >= 3.0 or average HR >= threshold => hard); the
+    ``trainingEffectFallback`` tier only."""
+    te = training_effect or 0.0
+    avg_hr = average_hr or 0
     threshold = (
-        evidence.hard_hr_threshold
-        if evidence.hard_hr_threshold is not None and evidence.hard_hr_threshold > 0
+        hard_hr_threshold
+        if hard_hr_threshold is not None and hard_hr_threshold > 0
         else HARD_SESSION_MIN_AVERAGE_HR
     )
     if te >= HARD_SESSION_MIN_TRAINING_EFFECT or avg_hr >= threshold:
@@ -204,31 +202,24 @@ def _fallback_tag(evidence: ActivityIntensityEvidence) -> str:
 
 
 def classify_session_cost(evidence: ActivityIntensityEvidence) -> str:
-    """Total session dose. Training Effect first (it accumulates with duration), duration
-    bands otherwise. Never lower than ``high`` for a race."""
+    """Total session dose from the max Training Effect (it accumulates with duration).
+
+    Without Training Effect the dose is ``unknown`` rather than guessed from duration: a
+    sport-independent duration band would, for example, charge a long HR-less strength or
+    yoga session as a hard session. Downstream consumers then fall back to the stimulus tag.
+    A race is never below ``high``."""
     te = max(evidence.training_effect_aerobic or 0.0, evidence.training_effect_anaerobic or 0.0)
-    duration_min = (evidence.duration_seconds or 0) / 60
-    if te > 0:
-        if te >= COST_VERY_HIGH_MIN_TE:
-            cost = "very_high"
-        elif te >= COST_HIGH_MIN_TE:
-            cost = "high"
-        elif te >= COST_MODERATE_MIN_TE:
-            cost = "moderate"
-        else:
-            cost = "low"
-    elif duration_min > 0:
-        if duration_min >= COST_VERY_HIGH_MIN_DURATION:
-            cost = "very_high"
-        elif duration_min >= COST_HIGH_MIN_DURATION:
-            cost = "high"
-        elif duration_min >= COST_MODERATE_MIN_DURATION:
-            cost = "moderate"
-        else:
-            cost = "low"
+    if te >= COST_VERY_HIGH_MIN_TE:
+        cost = "very_high"
+    elif te >= COST_HIGH_MIN_TE:
+        cost = "high"
+    elif te >= COST_MODERATE_MIN_TE:
+        cost = "moderate"
+    elif te > 0:
+        cost = "low"
     else:
         cost = "unknown"
-    if evidence.is_race and (cost == "unknown" or _COST_ORDER.index(cost) < 2):
+    if evidence.is_race and cost in ("unknown", "low", "moderate"):
         cost = "high"
     return cost
 
@@ -245,7 +236,11 @@ def _stimulus(evidence: ActivityIntensityEvidence) -> tuple[str, str, str]:
     hr_domain = _hr_zone_stimulus(evidence)
     if hr_domain is not None:
         return _TAG_BY_DOMAIN[hr_domain], hr_domain, "hrZoneDistribution"
-    tag = _fallback_tag(evidence)
+    tag = legacy_intensity_tag(
+        max(evidence.training_effect_aerobic or 0.0, evidence.training_effect_anaerobic or 0.0),
+        evidence.average_hr,
+        evidence.hard_hr_threshold,
+    )
     domain = "strength" if _is_strength(evidence.activity_type) else "unknown"
     return tag, domain, "trainingEffectFallback"
 

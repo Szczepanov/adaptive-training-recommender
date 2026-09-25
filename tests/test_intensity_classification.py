@@ -1,5 +1,8 @@
 """Issue #809: stimulus intensity is decoupled from accumulated Training Effect (dose)."""
 
+from pathlib import Path
+
+from garmin_sync import intensity_classification as ic
 from garmin_sync.garmin_provider import _canonicalize_activity, qualifies_for_activity_detail
 from garmin_sync.intensity_classification import (
     INTENSITY_CLASSIFICATION_VERSION,
@@ -79,18 +82,18 @@ def test_long_z2_ride_costs_more_than_short_easy_ride_without_becoming_hard() ->
     assert _COST_RANK[long_ride.session_cost] > _COST_RANK[short_ride.session_cost]
 
 
-def test_duration_drives_cost_when_training_effect_absent() -> None:
-    long_ride = classify_activity(
+def test_cost_is_unknown_without_training_effect_instead_of_duration_guess() -> None:
+    long_strength = classify_activity(
         _evidence(
-            training_effect_aerobic=0.0, training_effect_anaerobic=0.0, duration_seconds=160 * 60
+            activity_type="strength_training",
+            training_effect_aerobic=0.0,
+            training_effect_anaerobic=0.0,
+            average_hr=None,
+            duration_seconds=95 * 60,
         )
     )
-    short_ride = classify_activity(
-        _evidence(
-            training_effect_aerobic=0.0, training_effect_anaerobic=0.0, duration_seconds=30 * 60
-        )
-    )
-    assert (long_ride.session_cost, short_ride.session_cost) == ("very_high", "low")
+    assert long_strength.session_cost == "unknown"
+    assert long_strength.intensity_tag == "easy"
 
 
 def test_anaerobic_intervals_with_modest_aerobic_te_stay_hard() -> None:
@@ -188,3 +191,44 @@ def test_provider_boundary_extracts_summary_evidence_and_persists_provenance() -
     assert payload["sessionCost"] == "high"
     assert payload["intensityEvidence"] == "powerIntensityFactor"
     assert payload["intensityClassificationVersion"] == INTENSITY_CLASSIFICATION_VERSION
+
+
+def test_policy_alignment_with_registered_knowledge_claim() -> None:
+    """ADR-0033: the classifier constants match the registered claim
+    policy.load_intensity.garmin_stimulus_cost_classification_v1. Changing a value here
+    requires updating the claim statement in app/src/knowledge/sportsKnowledge.ts."""
+    assert (ic.IF_ENDURANCE_MIN, ic.IF_TEMPO_MIN, ic.IF_THRESHOLD_MIN, ic.IF_VO2_MIN) == (
+        0.56,
+        0.76,
+        0.91,
+        1.06,
+    )
+    assert (ic.POWER_HIGH_ZONE_HARD_SHARE, ic.POWER_HIGH_ZONE_START) == (0.10, 5)
+    assert (ic.HR_Z5_HARD_SHARE, ic.HR_Z4_PLUS_HARD_SHARE, ic.HR_Z3_PLUS_MODERATE_SHARE) == (
+        0.10,
+        0.30,
+        0.30,
+    )
+    assert ic.MIN_ZONE_COVERAGE == 0.5
+    assert ic.ANAEROBIC_HARD_MIN_TRAINING_EFFECT == 3.0
+    assert (ic.COST_MODERATE_MIN_TE, ic.COST_HIGH_MIN_TE, ic.COST_VERY_HIGH_MIN_TE) == (
+        2.0,
+        3.0,
+        4.0,
+    )
+    assert (ic.HARD_SESSION_MIN_TRAINING_EFFECT, ic.HARD_SESSION_MIN_AVERAGE_HR) == (3.0, 145)
+
+    source = (
+        Path(__file__).resolve().parents[1] / "app" / "src" / "knowledge" / "sportsKnowledge.ts"
+    ).read_text(encoding="utf-8")
+    claim_start = source.index("id: KNOWLEDGE_CLAIM_IDS.garminStimulusCostClassification")
+    statement = source[claim_start : source.index("claimType", claim_start)]
+    for fragment in (
+        "anaerobic Training Effect >=3.0",
+        "<0.56 recovery, <0.76 endurance, <0.91 tempo, <1.06 threshold",
+        ">=10% power time in zone 5+",
+        "zone 5 >=10% or zones 4-5 >=30% hard, zones 3-5 >=30% moderate",
+        ">=50% of the session",
+        "<2 low, <3 moderate, <4 high",
+    ):
+        assert fragment in statement, fragment

@@ -411,6 +411,7 @@ export const KNOWLEDGE_CLAIM_IDS = {
     hardLowerBodySpacing: 'policy.load_recovery.hard_lower_body_spacing_v1',
     strengthEnduranceAdjacency: 'policy.load_recovery.strength_endurance_adjacency_v1',
     recentHardReadinessPenalty: 'policy.load_recovery.recent_hard_readiness_penalty_v1',
+    garminStimulusCostClassification: 'policy.load_intensity.garmin_stimulus_cost_classification_v1',
     severeAdverseRecoveryReentry: 'policy.load_recovery.severe_adverse_recovery_reentry_v1',
     fatigueDecayHalfLives: 'policy.load_recovery.fatigue_decay_half_lives_v1',
     readinessPhysiologicalStrainModel: 'policy.readiness.physiological_strain_model_v1',
@@ -571,6 +572,15 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
         applicability: { contexts: ['recommendation_engine', 'daily_readiness'], sports: ['all_supported_sports'], populations: ['product_users'], outcomes: ['daily_training_mode'], horizon: 'acute' },
         evidence: [{ sourceId: LOAD_INTENSITY_RECOVERY_PRODUCT_POLICY_SOURCE, directness: 'direct' }], limitations: ['The three-day window, count of two and +1.0 score contribution are product calibration values and are not validated universal physiological thresholds.'], reviewedOn: '2026-08-30', version: 1,
+    },
+    {
+        id: KNOWLEDGE_CLAIM_IDS.garminStimulusCostClassification,
+        statement: 'The product classifies a completed Garmin activity on two separate dimensions. Stimulus intensity ("hard" = high-intensity stimulus) uses the first applicable evidence tier: race event; anaerobic Training Effect >=3.0; cycling intensity factor bands (<0.56 recovery, <0.76 endurance, <0.91 tempo, <1.06 threshold, otherwise VO2) with >=10% power time in zone 5+ treated as VO2 intervals; HR time-in-zone shares (zone 5 >=10% or zones 4-5 >=30% hard, zones 3-5 >=30% moderate; never for strength; zone data must cover >=50% of the session); otherwise the legacy Training Effect >=3.0 or average HR >= hard-HR threshold fallback. Session cost is banded on max Training Effect (<2 low, <3 moderate, <4 high, otherwise very_high; unknown without Training Effect; a race is at least high) and indexes the completed-training cost row (low easy, moderate moderate, high/very_high hard).',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
+        applicability: { contexts: ['recommendation_engine', 'garmin_ingestion', 'completed_training'], sports: ['all_supported_sports'], populations: ['product_users'], outcomes: ['hard_session_count', 'completed_training_cost'], horizon: 'acute' },
+        evidence: [{ sourceId: LOAD_INTENSITY_RECOVERY_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['The intensity-factor bands follow the conventional Coggan power-zone boundaries but depend on an accurate FTP; the zone-share and coverage cut-points are product calibration.', 'Training Effect is a proprietary accumulated-dose estimate, used here as session dose rather than as proof of exercise intensity.', 'HR time-in-zone depends on the configured athlete zones and is not used for strength, where HR does not describe the stimulus.'],
+        reviewedOn: '2026-09-25', version: 1,
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.severeAdverseRecoveryReentry,
