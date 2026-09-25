@@ -94,6 +94,7 @@ Full statements, with rationale and the checks that enforce them, are in
 * `npm ci` — install dependencies
 * `npm run check` — the frontend gate: `tsc -b`, `eslint`, `vitest run`, knowledge validation, knowledge-coverage validation, knowledge-freshness reporting, workout catalog validation
 * `npm test` — `vitest run` only; the fast inner loop (`npm run test:watch`, `npm run test:coverage`)
+* `npm run test:perf` — wall-clock latency gates (`*.perf.test.ts`, `vitest.perf.config.ts`), run in a single worker; excluded from `npm test` because sibling workers preempt them. Part of `npm run check` / `make check`
 * `npm run test:rules` — Firestore security-rule suite inside the Firebase emulator (needs Java)
 * `npm run test:e2e` — Playwright browser E2E suite inside the Auth + Firestore emulators (`playwright.e2e.config.ts`; `npm run e2e:serve` serves the E2E app at `http://127.0.0.1:4173`)
 * `npm run emulators:exec:rules -- "<cmd>"` / `npm run emulators:exec:e2e -- "<cmd>"` — run a command inside the same emulators `test:rules` / `test:e2e` use; CI shards with e.g. `npm run emulators:exec:rules -- "npm run test:rules:emulator -- --shard=1/2"` (`test:e2e:emulator` is the Playwright counterpart)
@@ -120,7 +121,7 @@ fails the PR if any required job on that path fails.
 | Docs-only | Documentation & security hygiene | repository-hygiene `pre-commit` checks (the CI job skips the code-only uv-lock/Ruff/mypy/ESLint hooks) |
 | Code | Python test suite | `uv lock --check`, repository-hygiene `pre-commit`, `ruff check`, `ruff format --check`, `mypy` (`src/garmin_sync` + `scripts/`), `pytest` with coverage, `uvx pip-audit` |
 | Code | Frontend hygiene & static gates | `npm audit --audit-level=high`, `typecheck`, `lint`, `validate:knowledge`, `validate:knowledge-coverage`, `validate:knowledge-freshness` (reports only, non-blocking), `validate:workouts`, policy-version drift vs the PR base, `build:bundle` |
-| Code | Frontend unit tests, Firestore rules & browser E2E | `npm run test:coverage`, `npm run test:rules`, `npm run test:e2e` (emulators + Java + Chromium), run as parallel jobs; the rules and E2E suites are each split into two `--shard` jobs with their own emulator, and one aggregate check passes only when every job and shard passes |
+| Code | Frontend unit tests, Firestore rules & browser E2E | `npm run test:coverage` then `npm run test:perf`, `npm run test:rules`, `npm run test:e2e` (emulators + Java + Chromium), run as parallel jobs; the rules and E2E suites are each split into two `--shard` jobs with their own emulator, and one aggregate check passes only when every job and shard passes |
 | Code | Engine simulations & AI gates | `simulate:scenarios` plus committed-baseline `git diff --exit-code`, `simulate:plan-judge`, persona corpus build; `simulate:diff` is advisory (`continue-on-error`) |
 | Code | Docker build & compose smoke | root image build, Compose config/build/up, smoke checks |
 

@@ -135,6 +135,7 @@ format-frontend:
 ## Run frontend unit and scenario test suite with vitest
 test-frontend:
 	npm --prefix app run test
+	npm --prefix app run test:perf
 
 ## Run Firestore security-rule tests against the emulator (needs Java; not part of `check`
 ## since it's slower to spin up than the rest of the frontend gate)

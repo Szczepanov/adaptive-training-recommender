@@ -254,6 +254,10 @@ jobs:
       - name: Run frontend test suite with coverage
         run: npm run test:coverage
 
+      - name: Run isolated latency gates
+        # Wall-clock budgets (*.perf.test.ts) are excluded from the parallel suite above.
+        run: npm run test:perf
+
       - name: Upload frontend coverage report
         if: always()
         uses: actions/upload-artifact@v7
