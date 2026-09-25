@@ -65,6 +65,39 @@ cannot import `externalSession.ts`, and `externalArchitecture.test.ts` enforces 
 boundary and the absence of any runtime import from `optimizer.ts`/`planner.ts` into
 adjudication.
 
+#### Context-brief handoff: one resolved authority per date (issue #810)
+
+The exported context brief (`contextBriefPlanningHandoff.ts`) must not hand an external
+agent the app recommendation and today's imported session as two independently actionable
+instructions. `briefPlanAuthority.ts` `resolveBriefPlanAuthority` reconciles them into one
+typed outcome. It is **not** a second resolver: it consumes the persisted adjudication
+(`engineVerdict`, falling back to the legacy mode mapping as `shadowLog.ts` does) and the
+replay provenance `recommendationAudit.externalPlan`/`externalRest`, plus the planning
+mode and fallback already resolved by `resolvePlanningContext`. It cannot change a
+recommendation, so `POLICY_VERSION` is unaffected.
+
+Authority order rendered in the brief: current symptoms and safety > the engine's
+readiness/safety adjudication > the imported (authored) session > the app's own generated
+recommendation. Fixed activities are listed as availability/load constraints, never as the
+prescription. Outcomes:
+
+| Outcome | Meaning | Authoritative today |
+|---|---|---|
+| `MATCH` | `proceed` verdict bound to the exact placed occurrence (plan, revision, session) | imported session |
+| `DOSE_MODIFIED` | `scale` verdict on that occurrence; engine rationale recorded as the override | imported session at reduced dose |
+| `SESSION_REPLACED_BY_GATE` | `defer`/`skip`; engine rationale and displaced occurrence recorded | app recommendation |
+| `EVENT_DAY` | `isEvent` session (D-EVENT: advice, not permission) | imported event |
+| `AUTHORED_REST` | audit carries an authored rest directive (ADR-0035) | rest |
+| `EXTERNAL_PLAN_FALLBACK` | confirmed D-EXT fallback | app recommendation, labelled |
+| `NO_AUTHORED_SESSION` | no imported plan governs today | app recommendation |
+| `EXTERNAL_PLAN_UNREADABLE` | today's plan state could not be read | unknown (fails closed) |
+| `AUTHORED_UNADJUDICATED` | session placed, no app decision yet | imported session, not readiness-checked |
+| `CONFLICT_UNRESOLVED` | decision not bound to the placed occurrence, bound to another revision, advisory on a non-event, fallback with a visible session, or session placed outside `externally_planned` mode | none — the agent is told to ask |
+
+The block is rendered in section 0 of the planning handoff (ahead of `## 1. Constraints`
+and all telemetry) and at the top of the morning brief. Imported sessions later in the
+7-day horizon are annotated as keeping their authored authority on their own dates.
+
 ### Authored occurrence authority (`authoredSessionGates.ts`, ADR-0023)
 
 An active `replace_recommendation` occurrence is resolved at the `Home.tsx` composition

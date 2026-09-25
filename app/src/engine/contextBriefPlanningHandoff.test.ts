@@ -267,8 +267,9 @@ describe('enhanceContextBriefForPlanning', () => {
         expect(text).toContain('Effective planning mode today: externally_planned');
         expect(text).toContain('Garmin sync timestamp 2026-08-20T05:20:00Z');
         expect(text).toContain('activities through 2026-08-20');
-        expect(text).toContain('App recommendation for 2026-08-20: train — Zone 2 ride (Cycling)');
-        expect(text).toContain('not as authority over current symptoms or tissue response');
+        expect(text).toContain('### Resolved planning authority for 2026-08-20');
+        expect(text).toContain('Authoritative session today: **Zone 2 ride (Cycling · train)** (app recommendation)');
+        expect(text).toContain('Authority order: current symptoms and safety >');
     });
 
     it('explains an authority-resolved external fallback instead of pretending the persisted mode is effective', () => {
