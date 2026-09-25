@@ -116,6 +116,13 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'The weekly target/cap is explicitly registered as a conservative product prior. Qualification thresholds are inventoried separately.',
     },
     {
+        id: 'evergreen.quality_set_composition', domain: 'evergreen_dose', title: 'Optional evergreen quality workout set',
+        currentRule: 'The optional sustained_quality role permits controlled cycling threshold, controlled cycling tempo (40-minute default, authored 30-minute easier dose), and running tempo exact identities when an eligible quality strategy is packed; all ordinary safety, time, spacing, and load gates still apply. A capacity miss is reported only when every observed feasible forecast date in the active plan block has a fulfilled exact required-role reservation.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['workouts/event-plan.ts:EVERGREEN_SESSION_COVERAGE', 'engine/templates.ts:TEMPLATES', 'engine/eligibility.ts:evaluateTemplateEligibility', 'engine/optimizer.ts:rankCandidates', 'engine/planner.ts:generateWeekAheadPlan'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition],
+        coverageRationale: 'Registered as an explicit exact-identity product-policy claim for issue #758, separate from the conditional weekly high-intensity prior and from catalog eligibility.',
+    },
+    {
         id: 'evergreen.default_weekly_commitment', domain: 'evergreen_dose', title: 'Unsaved-profile weekly commitment default',
         currentRule: 'An athlete without a saved intent profile receives min/target/max session counts of 2/3/4.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',

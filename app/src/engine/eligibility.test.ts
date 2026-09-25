@@ -169,6 +169,21 @@ describe('training-settings eligibility', () => {
         expect(eligible.easierDose?.doseRatio).toBeCloseTo(0.7 * (30 / 45), 6);
     });
 
+    it('admits the authored 30-minute tempo variation under a 35-minute cap without changing its 40-minute default', () => {
+        const tempo = TEMPLATES_BY_ID.get('end_mod_02')!;
+        const ctx = context(settings({ defaults: { weekdayMaxMinutes: 35, weekendMaxMinutes: 35, environment: 'either' } }));
+        expect(tempo.durationMin).toBe(40);
+        expect(tempo.allowsShortTimeCapDose).toBe(true);
+        expect(tempo.easierDose).toMatchObject({ durationMin: 30, durationMax: 30 });
+        expect(evaluateTemplateEligibility(tempo, ctx, 35, '2026-08-07').eligible).toBe(true);
+        expect(eligibleTemplates([tempo], ctx, 35, '2026-08-07')[0]?.easierDose)
+            .toMatchObject({ durationMin: 30, durationMax: 30 });
+        expect(evaluateTemplateEligibility(tempo, ctx, 29, '2026-08-07').reasons).toContain('time_limit');
+        const nonOptedIn = TEMPLATES_BY_ID.get('end_hard_03')!;
+        expect(nonOptedIn.easierDose?.durationMin).toBeLessThan(nonOptedIn.durationMin);
+        expect(evaluateTemplateEligibility(nonOptedIn, ctx, 30, '2026-08-07').reasons).toContain('time_limit');
+    });
+
     it('excludes a whole restricted category even when a template carries no matching safetyTag', () => {
         // Every current Upper-body Strength template now carries avoid_overhead_pressing
         // (issue #680 fixed the gap where str_upper_pull_01 had safetyTags: []), so this

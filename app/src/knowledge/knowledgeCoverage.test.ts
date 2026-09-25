@@ -190,16 +190,17 @@ describe('engine knowledge coverage inventory', () => {
         });
     });
 
-    it('reports coverage and risk debt after the #746 and #756 strength, forecast, and modify-tier policies', () => {
+    it('reports coverage and risk debt after the #758 and #809 policies', () => {
         // Issue #675 added one partial/p1 item; #762 added three covered items;
         // #744 added one covered optimizer policy and one uncovered/p1 aerobic floor;
         // #746 WP1 and WP2 each add one covered product-policy item with no research debt;
         // #756 adds one covered readiness-modified aerobic coverage item with no research debt;
+        // #758 adds one covered exact evergreen quality-set policy with no research debt.
         // #809 adds one covered Garmin stimulus/session-cost classification item.
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(76);
-        expect(summary.byCoverage).toEqual({ covered: 52, partial: 17, uncovered: 1, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 8, p1: 8, p2: 2, p3: 0, none: 58 });
+        expect(summary.total).toBe(77);
+        expect(summary.byCoverage).toEqual({ covered: 53, partial: 17, uncovered: 1, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 8, p1: 8, p2: 2, p3: 0, none: 59 });
         expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
     });

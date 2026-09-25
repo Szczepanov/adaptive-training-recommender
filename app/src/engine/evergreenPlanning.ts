@@ -11,6 +11,7 @@ import { EVERGREEN_PACKING_COVERAGE, packWeeklyDose, type CoverageSetDescriptor,
 import { buildEvergreenPlanDefinition, type PlanDefinition } from './planSchedule';
 import { buildMicrocycleState } from './microcycle';
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
+import { KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
 
 export interface ResolvedEvergreenPlan {
     planDefinition: PlanDefinition;
@@ -104,10 +105,15 @@ export function resolveEvergreenPlan(
         : packed;
     const result = buildEvergreenPlanDefinition(strategy, capacity, budget, date);
     if (result.status !== 'AVAILABLE') return null;
+    const qualityRolePacked = [...budget.requiredRoles, ...budget.targetRoles, ...budget.optionalRoles]
+        .some(role => role.coverageRoleId === 'sustained_quality');
     return {
         planDefinition: result.data,
         microcycle: buildMicrocycleState(phase, addDaysToLocalDateString(date, -7), [...history], null, result.data, date),
         budget,
-        knowledgeRefs: [...new Set(strategy.requirements.flatMap(requirement => requirement.knowledgeRefs))].sort(),
+        knowledgeRefs: [...new Set([
+            ...strategy.requirements.flatMap(requirement => requirement.knowledgeRefs),
+            ...(qualityRolePacked ? [KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition] : []),
+        ])].sort(),
     };
 }

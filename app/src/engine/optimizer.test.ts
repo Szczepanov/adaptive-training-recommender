@@ -89,9 +89,10 @@ describe('resolveTimeCapDoseAdjustment — Easy Endurance cap truncation (#744)'
         },
     );
 
-    it('does not truncate an out-of-scope moderate ride at a 35-minute cap', () => {
+    it('uses the authored 30-minute moderate easier dose without truncating its 40-minute base', () => {
         expect(resolveCapTruncatedPrescription(template('end_mod_02'), 35)).toBeNull();
-        expect(resolveTimeCapDoseAdjustment(template('end_mod_02'), 35, false)).toBeNull();
+        expect(resolveTimeCapDoseAdjustment(template('end_mod_02'), 35, false)?.activeDose)
+            .toEqual(template('end_mod_02').easierDose);
     });
 
     it('keeps every eligible Easy Endurance truncated ratio at least as high as its easier dose', () => {

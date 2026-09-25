@@ -294,10 +294,11 @@ export const TEMPLATES: SessionTemplate[] = [
         environment: 'indoor', safetyTags: [],
         systemicCost: 0.7,
         objectiveTransferable: true,
+        allowsShortTimeCapDose: true,
         easierDose: {
             label: "30 min Short Tempo Ride",
-            durationMin: 25,
-            durationMax: 40,
+            durationMin: 30,
+            durationMax: 30,
             doseRatio: 0.75,
             prescriptionSummary: "Shorter 30 min Zone 3 tempo ride."
         },
