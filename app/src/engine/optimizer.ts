@@ -125,15 +125,20 @@ export function materializeEffectiveDose(template: SessionTemplate, activeDose: 
     };
 }
 
-/** Shorten a train-tier easy-endurance prescription only when its authored minimum fits
- * the cap and its readiness dose would fall below that minimum. Modify-tier callers
- * retain the readiness dose by skipping this helper. */
+/** Shorten a train-tier easy-endurance prescription when its authored minimum fits the
+ * cap and its readiness dose would either fall below that minimum or (for non-walking
+ * easy endurance such as `end_easy_02`) cap out below the available time window.
+ * Modify-tier callers retain the readiness dose by skipping this helper. */
 export function resolveCapTruncatedPrescription(template: SessionTemplate, maxTimeMinutes: number): DoseVariation | null {
+    const easierDoseMax = template.easierDose?.durationMax ?? template.easierDose?.durationMin;
     if (!CAP_TRUNCATION_CATEGORIES.includes(template.category)
         || template.durationMax <= maxTimeMinutes
         || template.durationMin > maxTimeMinutes
         || !template.easierDose
-        || template.easierDose.durationMin >= template.durationMin) return null;
+        || (template.easierDose.durationMin >= template.durationMin
+            && (template.modality === 'Walking'
+                || easierDoseMax === undefined
+                || easierDoseMax >= maxTimeMinutes))) return null;
 
     const baseMidpoint = (template.durationMin + template.durationMax) / 2;
     const cappedMidpoint = (template.durationMin + maxTimeMinutes) / 2;

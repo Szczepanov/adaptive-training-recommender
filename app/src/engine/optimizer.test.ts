@@ -100,7 +100,13 @@ describe('resolveTimeCapDoseAdjustment — Easy Endurance cap truncation (#744)'
         for (const item of ENRICHED_TEMPLATES.filter(candidate => candidate.category === 'Easy Endurance')) {
             for (let cap = item.durationMin; cap < item.durationMax; cap++) {
                 const dose = resolveCapTruncatedPrescription(item, cap);
-                if (!item.easierDose || item.easierDose.durationMin >= item.durationMin) {
+                const easierDoseMax = item.easierDose?.durationMax ?? item.easierDose?.durationMin ?? Infinity;
+                const expectsTruncation = Boolean(
+                    item.easierDose
+                    && (item.easierDose.durationMin < item.durationMin
+                        || (item.modality !== 'Walking' && easierDoseMax < cap)),
+                );
+                if (!expectsTruncation) {
                     expect(dose).toBeNull();
                     continue;
                 }
@@ -108,7 +114,7 @@ describe('resolveTimeCapDoseAdjustment — Easy Endurance cap truncation (#744)'
                 checked += 1;
                 expect(dose!.durationMin).toBe(item.durationMin);
                 expect(dose!.durationMax).toBeLessThanOrEqual(cap);
-                expect(dose!.doseRatio).toBeGreaterThanOrEqual(item.easierDose.doseRatio);
+                expect(dose!.doseRatio).toBeGreaterThanOrEqual(item.easierDose!.doseRatio);
             }
         }
         expect(checked).toBeGreaterThan(0);
@@ -949,5 +955,18 @@ describe('optimizer — post-event recovery window constraints', () => {
             focusEvent: focusEventA,
         });
         expect(reasonsStrength).not.toContain('POST_EVENT_RECOVERY_WINDOW');
+    });
+
+    it('truncates end_easy_02 within its 30-60 min standard prescription under a 45-min cap while keeping the fixed 30-min easierDose on modify days', () => {
+        const easyRun = ENRICHED_TEMPLATES.find(t => t.id === 'end_easy_02')!;
+        const trainAdjustment = resolveTimeCapDoseAdjustment(easyRun, 45, false);
+        expect(trainAdjustment?.activeDose).toMatchObject({
+            label: '30-45 min Light Base Run',
+            durationMin: 30,
+            durationMax: 45,
+        });
+
+        const modifyAdjustment = resolveTimeCapDoseAdjustment(easyRun, 45, true);
+        expect(modifyAdjustment?.activeDose).toEqual(easyRun.easierDose);
     });
 });

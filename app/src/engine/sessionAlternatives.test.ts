@@ -187,8 +187,15 @@ describe('stimulus-matched alternative application', () => {
         const applied = applyStimulusMatchedAlternative(base, 'end_easy_02', baseContext(), 35, DATE);
 
         expect(applied?.template.id).toBe('end_easy_02');
-        expect(applied?.activeDose?.label).toBe('30 min Easy Base Run');
+        expect(applied?.activeDose?.label).toBe('30-35 min Light Base Run');
         expect(applied?.activeDose?.label).not.toContain('Ride');
         expect(applied?.adjustment?.originalTemplateId).toBe('end_easy_02');
+
+        const modifyBase = recommendation('end_easy_01', {
+            mode: 'modify',
+            activeDose: template('end_easy_01').easierDose,
+        });
+        const appliedModify = applyStimulusMatchedAlternative(modifyBase, 'end_easy_02', baseContext(), 35, DATE);
+        expect(appliedModify?.activeDose?.label).toBe('30 min Easy Base Run');
     });
 });

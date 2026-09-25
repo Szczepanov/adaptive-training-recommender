@@ -10,6 +10,7 @@ import {
     supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback,
     getUnfulfilledRequiredCoverage,
     getUnfulfilledTargetCoverage,
+    type CoverageHistoryEntry,
     type CoverageState,
 } from './coverage';
 import type { SessionTemplate, UserEvent } from './models';
@@ -306,7 +307,7 @@ describe('athlete-relative aerobic_volume floor (#757)', () => {
         expect(coverageKeysForTemplate({ ...run, durationMax: 45 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET, highFloor)).not.toContain('aerobic_volume');
     });
 
-    it('credits projected picks by prescribed range but completed sessions by actual duration', () => {
+    it('credits projected picks by prescribed range (with standard-template ceiling) but completed sessions by actual duration', () => {
         const planState = buildCyclingEventPlan(cyclingEvent());
         if (planState.status !== 'AVAILABLE') throw new Error('cycling plan should be available');
         const aerobic = (entry: { durationMin: number; durationMax?: number; source?: 'projected' }) => buildCoverageState(
@@ -317,6 +318,55 @@ describe('athlete-relative aerobic_volume floor (#757)', () => {
         expect(aerobic({ durationMin: 30 }).completedSessions).toBe(0);
         // The catalog minimum still applies to the lower bound, exactly as before #757.
         expect(aerobic({ durationMin: 20, durationMax: 60, source: 'projected' }).projectedSessions).toBe(0);
+
+        // At a 70-minute athlete floor, projected end_easy_02 (30-60 min) applies the standard
+        // template ceiling (60) in both legacy and canonical coverage-state paths, while a
+        // completed 60-minute exposure remains governed by its actual duration.
+        const highFloor: AerobicVolumeFloor = { floorMin: 70, source: 'athlete_history', sampleCount: 8, medianMin: 95 };
+        const evergreenPlan = {
+            ...planState.data,
+            coverageSetId: EVERGREEN_GENERAL_COVERAGE_SET.id,
+            blocks: planState.data.blocks.map(block => ({ ...block, phase: 'general' as const })),
+        };
+        const runAerobic = (entry: CoverageHistoryEntry) => buildCoverageState(
+            evergreenPlan, '2026-09-03', [entry], EVERGREEN_GENERAL_COVERAGE_SET, highFloor,
+        ).requirements.find(item => item.key === 'aerobic_volume')!;
+
+        expect(runAerobic({
+            date: '2026-09-02',
+            templateId: 'end_easy_02',
+            workoutId: 'running_easy_continuous_01',
+            durationMin: 30,
+            durationMax: 60,
+            source: 'projected',
+        }).projectedSessions).toBe(1);
+        expect(runAerobic({
+            date: '2026-09-02',
+            templateId: 'end_easy_02',
+            workoutId: 'running_easy_continuous_01',
+            durationMin: 30,
+            durationMax: 60,
+            source: 'projected',
+            canonicalCoverageCredits: [{
+                coverageSetId: EVERGREEN_GENERAL_COVERAGE_SET.id,
+                coverageKey: 'aerobic_volume',
+                creditKind: 'exact',
+            }],
+        }).projectedSessions).toBe(1);
+        expect(runAerobic({
+            date: '2026-09-02',
+            templateId: 'end_easy_02',
+            workoutId: 'running_easy_continuous_01',
+            durationMin: 60,
+            source: 'completed',
+        }).completedSessions).toBe(0);
+        expect(runAerobic({
+            date: '2026-09-02',
+            templateId: 'end_easy_02',
+            workoutId: 'running_easy_continuous_01',
+            durationMin: 70,
+            source: 'completed',
+        }).completedSessions).toBe(1);
     });
 
     it('gives neither a capped ride nor a walk the aerobic coverage tier when the cap keeps both below the floor', () => {

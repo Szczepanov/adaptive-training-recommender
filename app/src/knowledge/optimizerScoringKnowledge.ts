@@ -69,12 +69,12 @@ export const OPTIMIZER_SCORING_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.timeCapEasyEnduranceTruncationPolicy,
-        statement: 'Product candidate-selection policy v1: on a non-modify day, a time cap truncates an Easy Endurance template within its authored prescription when durationMax exceeds the cap, durationMin fits the cap, and the authored easierDose starts below durationMin. The active dose keeps the authored durationMin, sets durationMax to the cap, and uses max(easierDose.doseRatio, midpoint(durationMin, cap) / midpoint(durationMin, durationMax)) as its doseRatio. Modify-tier days retain the authored easierDose. This is duration-feasible; not a claim of dose adequacy: a 30–35 min Zone 2 ride can earn one weekly aerobic-volume coverage session while objective credit remains scaled by delivered dose.',
+        statement: 'Product candidate-selection policy v1: on a non-modify day, a time cap truncates an Easy Endurance template within its authored prescription when durationMax exceeds the cap, durationMin fits the cap, and the authored easierDose either starts below durationMin or caps out below the available time window. The active dose keeps the authored durationMin, sets durationMax to the cap, and uses max(easierDose.doseRatio, midpoint(durationMin, cap) / midpoint(durationMin, durationMax)) as its doseRatio. Modify-tier days retain the authored easierDose. This is duration-feasible; not a claim of dose adequacy: a 30–35 min Zone 2 ride or 30–45 min Easy Base Run can earn one weekly aerobic-volume coverage session when the capped upper bound satisfies the active aerobic-volume floor, while objective credit remains scaled by delivered dose.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'low',
         applicability: { contexts: ['candidate_selection', 'time_cap_dosing'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['time_capped_candidate_dose'], horizon: 'acute' },
         evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
         limitations: ['This is a product duration-feasibility rule, not a physiological dose-equivalence or aerobic-adequacy claim. The midpoint ratio is calibration rather than a measured stimulus relation; modify-tier dosing remains unchanged.'],
-        reviewedOn: '2026-09-24', version: 1,
+        reviewedOn: '2026-09-25', version: 1,
     },
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.preferredModalityTodayTieBreakPolicy,
