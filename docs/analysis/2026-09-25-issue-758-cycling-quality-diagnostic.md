@@ -58,11 +58,11 @@ PR #835 resolves that capacity conflict without weakening the evidence contract:
 
 - `resolveEvidenceBackedStrategy` keeps the WHO-backed aerobic requirement at its full
   150-minute minimum. Quality is never pre-credited into strategy provenance.
-- `packWeeklyDose` may provisionally substitute one aerobic-volume reservation while it
-  attempts to place an eligible high-intensity occurrence. The credited minute value comes
-  from that aerobic role's current packed dose, including the athlete-relative floor from
-  #757. This is an explicit product heuristic with ADR-0033 lineage, not a physiological
-  equivalence claim.
+- `packWeeklyDose` may provisionally substitute up to one aerobic-volume reservation while
+  it attempts to place an eligible high-intensity occurrence. The credited minute value
+  follows that aerobic role's current packed dose, including the athlete-relative floor from
+  #757, but is bounded so at least one full aerobic occurrence remains. This is an explicit
+  product heuristic with ADR-0033 lineage, not a physiological equivalence claim.
 - The substitution becomes effective only when quality is actually packed. If quality
   cannot be packed, the packer reruns against the full aerobic requirement; warning logic
   uses the same single reservation credit and cannot subtract it twice.
