@@ -177,7 +177,7 @@ export function renderCompactActivityTelemetry(
         const hrZone = activity.hrInZones?.length ? dominantZone(activity.hrInZones) : null;
         if (hrZone) parts.push(`most time in HR ${hrZone}`);
         if (activity.laps?.length) parts.push(lapDigest(activity.laps));
-        lines.push(`- ${activity.date} — ${formatActivityType(activity.type)} — ${activity.intensityTag}: ${parts.join(' · ')}`);
+        lines.push(`- ${activity.date} — ${formatActivityType(activity.type)} — ${activity.intensityTag}: ${parts.length > 0 ? parts.join(' · ') : 'no usable power, zone or lap detail reported'}`);
     }
     return lines.join('\n');
 }

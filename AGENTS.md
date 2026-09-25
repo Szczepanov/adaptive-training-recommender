@@ -276,6 +276,8 @@ app/src/engine/
   sessionChoiceEligibility.ts # Gates select_alternative choice options against resolved injury restrictions (D-MCHOICE)
   contextBriefActivityTelemetry.ts # Per-activity telemetry: full tables (diagnostic) or bounded digest (planning)
   contextBriefPlanningHandoff.ts # Upcoming external-plan/recovery-timeline context for planning handoff
+  contextBriefPurpose.ts # Export purposes (morning/planning/diagnostic), section titles, goal/use-instruction renderers
+  contextBriefRecovery.ts # Objective wearable + body-composition sections of the context brief
   briefPlanAuthority.ts # Reconciles persisted verdict + imported occurrence into one brief authority outcome (#810)
   trainingSettingsSchema.ts # Persisted TrainingSettings schema version gate (current v3, supports v2)
   strengthSessionLifecycle.ts # Strength session state machine (new/in_progress/... transitions)

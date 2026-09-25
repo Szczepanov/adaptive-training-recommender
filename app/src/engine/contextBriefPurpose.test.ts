@@ -202,24 +202,60 @@ describe('planning export (#811)', () => {
         expect(Math.abs(huge.length - small.length)).toBeLessThan(40);
     });
 
-    it('puts authority state, current intent and authoritative upcoming sessions before telemetry', () => {
+    it('puts authority state and current intent before load telemetry, and commitments before compact goals', () => {
         const text = exportFor('planning', 100);
         const authority = text.indexOf('## 0. Planning handoff & data currency');
         const intent = text.indexOf('## 2. Current training intent & goals');
-        const upcoming = text.indexOf('Threshold quality');
         const telemetry = text.indexOf('### Key-session telemetry (compact)');
+        const commitments = text.indexOf('## 7. Existing commitments');
+        const upcomingSession = text.indexOf('Threshold quality', commitments);
+        const goals = text.indexOf('### Longer-term goals (compact)');
         expect(authority).toBeGreaterThanOrEqual(0);
         expect(authority).toBeLessThan(intent);
         expect(intent).toBeLessThan(telemetry);
-        expect(upcoming).toBeGreaterThanOrEqual(0);
-        expect(text.indexOf('## 7. Existing commitments')).toBeLessThan(text.indexOf('### Longer-term goals (compact)'));
+        expect(upcomingSession).toBeGreaterThan(commitments);
+        expect(upcomingSession).toBeLessThan(goals);
+        expect(text).not.toContain('### Detailed activity telemetry');
     });
 
-    it('compresses goals: no demand vector, still keeps event identity', () => {
-        const text = exportFor('planning', 3);
+    it('keeps section 2 when no goals or intent exist, so numbering has no gap', () => {
+        const text = buildContextBrief({ ...briefInput('planning', []), goals: [], intentProfile: null });
+        expect(text).toContain('## 2. Current training intent & goals\n\nNo active goals or training intent profile recorded.');
+    });
+
+    it('never emits an empty digest when zone buckets carry no time', () => {
+        const bare: NormalizedGarminActivity = {
+            ...ride(0),
+            normalizedPower: undefined,
+            intensityFactor: undefined,
+            laps: [],
+            powerInZones: [{ zoneNumber: 1, secondsInZone: 0 }],
+            hrInZones: [],
+        };
+        const text = injectActivityTelemetryIntoContextBrief(buildContextBrief(briefInput('planning', [bare])), [bare], true);
+        expect(text).toContain('hard: no usable power, zone or lap detail reported');
+    });
+
+    it('compresses goals: drops only the demand vector, keeps target, timing and description', () => {
+        const ftpGoal = {
+            id: 'g2', title: 'FTP build', status: 'active', priority: 'secondary',
+            targetMetric: 'FTP', targetValue: 300, targetUnit: 'W',
+            timing: { earliestDate: '2026-11-01', latestDate: '2026-11-15', planningDate: '2026-11-08' },
+        } as unknown as UserGoal;
+        const text = exportFor('planning', 3, { goals: [GOAL, ftpGoal] });
         expect(text).toContain('### Longer-term goals (compact)');
         expect(text).toContain('event: Road race');
+        expect(text).toContain('target: FTP 300 W');
+        expect(text).toContain('planning date 2026-11-08');
+        expect(text).toContain('description: Hilly course, attacks on the climbs');
         expect(text).not.toContain('demand 0–1');
+    });
+
+    it('does not instruct the planner to use observability that planning omits', () => {
+        const text = exportFor('planning', 3);
+        expect(text).not.toContain('respiration robust statistics');
+        expect(text).toContain('Candidate median/MAD baselines are deliberately absent');
+        expect(exportFor('diagnostic', 3)).toContain('respiration robust statistics');
     });
 
     it('keeps missing-data honesty and the importable schedule contract', () => {

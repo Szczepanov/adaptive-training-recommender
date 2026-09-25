@@ -115,7 +115,9 @@ issues identical reads for both.
   telemetry digest per activity, adherence, upcoming commitments, compact long-term goals,
   handoff contract). Candidate median/MAD baselines and the respiration candidate are
   omitted with a pointer to the diagnostic export; vendor composites are grouped as
-  secondary context; event demand vectors are omitted. Lap count does not change its size.
+  secondary context; goals keep target, timing and description but omit the event demand
+  vector; the handoff instructions do not reference the omitted fields. Lap count does not
+  change its size.
 - `diagnostic` — the full data-source-ordered brief with per-lap/per-zone telemetry,
   every observation-only candidate baseline and full goal demand vectors. It states that
   none of this detail has recommendation authority. It is also the pure builder's default

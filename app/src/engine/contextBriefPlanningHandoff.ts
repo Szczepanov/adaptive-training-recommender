@@ -12,19 +12,23 @@ import type {
     UserGoal,
     UserPreferences,
 } from './models';
-import { EVENT_PRESETS, resolveDemandProfile } from './eventPresets';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import {
-    briefPurposeFor,
-    findSectionHeading,
     formatActivityType,
     formatIntensityCell,
     round,
-    SECTION_TITLE,
     signed,
+} from './contextBrief';
+import {
+    briefPurposeFor,
+    findSectionHeading,
+    renderCompactGoalSpecifics,
+    renderGoalSpecifics,
+    renderUseInstructions,
+    SECTION_TITLE,
     type BriefPurpose,
     type BriefWindowPreset,
-} from './contextBrief';
+} from './contextBriefPurpose';
 import {
     renderBriefPlanAuthority,
     resolveBriefPlanAuthority,
@@ -309,67 +313,6 @@ function renderRecoveryTimeline(input: ContextBriefPlanningHandoffInput): string
     return lines.join('\n');
 }
 
-/** Planning-mode goal digest (issue #811): identity, event type and timing only. The
- * 0–1 demand vector and free-text description are diagnostic detail an external planner
- * can ask for; they are not needed to lay out a block around the event date. */
-function renderCompactGoalSpecifics(goals: readonly UserGoal[]): string {
-    const lines: string[] = [];
-    for (const goal of goals.filter(item => item.status === 'active')) {
-        const details: string[] = [];
-        if (goal.targetOutcome) details.push(`success: ${compactText(goal.targetOutcome)}`);
-        if (goal.eventCategory) {
-            const preset = EVENT_PRESETS[goal.eventCategory].find(item => item.id === goal.eventPreset)
-                ?? EVENT_PRESETS[goal.eventCategory][0];
-            details.push(`event: ${preset.label}`);
-        }
-        if (goal.timing) {
-            details.push(goal.timing.confirmedDate
-                ? `confirmed ${goal.timing.confirmedDate}`
-                : `window ${goal.timing.earliestDate}–${goal.timing.latestDate}`);
-        }
-        if (details.length > 0) lines.push(`- **${goal.title}** — ${details.join(' · ')}`);
-    }
-    if (lines.length === 0) return '';
-    return [
-        '### Longer-term goals (compact)',
-        '',
-        'Event demand profiles are omitted in the planning export; ask for them only if the question needs them.',
-        ...lines,
-    ].join('\n');
-}
-
-function renderGoalSpecifics(goals: readonly UserGoal[]): string {
-    const lines: string[] = [];
-    for (const goal of goals.filter(item => item.status === 'active')) {
-        const details: string[] = [];
-        if (goal.targetOutcome) details.push(`success: ${compactText(goal.targetOutcome)}`);
-        if (goal.targetMetric && goal.targetValue !== null && goal.targetValue !== undefined) {
-            details.push(`target: ${goal.targetMetric} ${goal.targetValue}${goal.targetUnit ? ` ${goal.targetUnit}` : ''}`);
-        }
-        if (goal.eventCategory) {
-            const preset = EVENT_PRESETS[goal.eventCategory].find(item => item.id === goal.eventPreset)
-                ?? EVENT_PRESETS[goal.eventCategory][0];
-            const demand = resolveDemandProfile(goal.eventCategory, goal.eventPreset);
-            details.push(`event: ${preset.label} (${goal.eventCategory}, preset ${preset.id})`);
-            details.push(
-                `demand 0–1: endurance ${demand.aerobicEndurance} · threshold ${demand.thresholdPower} · `
-                + `VO2 ${demand.vo2MaxPower} · repeated surges ${demand.repeatedSurges} · sprint ${demand.sprintPower} · `
-                + `fatigue resistance ${demand.fatigueResistance} · neuromuscular ${demand.neuromuscular}`,
-            );
-        }
-        if (goal.timing) {
-            const timing = goal.timing.confirmedDate
-                ? `confirmed ${goal.timing.confirmedDate}`
-                : `window ${goal.timing.earliestDate}–${goal.timing.latestDate}, planning date ${goal.timing.planningDate}`;
-            details.push(`timing: ${timing}`);
-        }
-        if (goal.description) details.push(`description: ${compactText(goal.description)}`);
-        if (details.length > 0) lines.push(`- **${goal.title}** — ${details.join(' · ')}`);
-    }
-    if (lines.length === 0) return '';
-    return ['### Goal specifics relevant to planning', '', ...lines].join('\n');
-}
-
 function renderPrescriptionStep(step: ExternalPrescriptionStep): string {
     const dose: string[] = [];
     if (step.sets !== undefined) dose.push(`${step.sets} set${step.sets === 1 ? '' : 's'}`);
@@ -480,35 +423,6 @@ function renderUpcoming(input: ContextBriefPlanningHandoffInput, today: TodayAut
     }
     lines.push(...renderImportedPrescriptions(visibleExternalSessions, input.asOfDate, todayOutcome));
     return lines.join('\n');
-}
-
-function renderUseInstructions(): string {
-    return [
-        '## 8. How to use this handoff',
-        '',
-        '- Treat the brief as **state/context**, not as a request to automatically create a plan. Answer the user\'s actual question first.',
-        '- For **today**, current illness/pain/tissue response and current-day availability outrank favorable wearable metrics. A green wearable day does not justify overriding a local warning signal.',
-        '- **Day 1 of a new block is not a blank slate.** Cross-check it against the most recent rows in the completed-training table before finalizing it — a session scheduled for today or tomorrow that duplicates one already completed the day of or immediately before the brief\'s date needs an explicit adjustment (lower end of the range, different modality, or rest), not a repeat of the same slot.',
-        '- For **future days**, preserve the intended purpose and hard/easy spacing of key sessions. Do not pre-emptively downgrade a future quality day merely because the preceding planned work may create normal fatigue; reassess that day when current data exists.',
-        '- Favorable recovery metrics may support proceeding with the intended dose, but are not a reason by themselves to add volume or intensity beyond the plan.',
-        '- Treat respiration robust statistics and the observation-only median/MAD fields as context for pattern recognition, not independent additive penalties.',
-        '- For **today**, follow the *Resolved planning authority* block in section 0. It already reconciles the app recommendation with the imported plan; do not re-decide between them, merge them, or invent a compromise dose. If it says UNRESOLVED or UNKNOWN, say so and ask the athlete instead of choosing.',
-        '- Respect fixed activities, travel scaling blocks and imported-plan sessions above. Imported sessions on later dates keep their authored authority on those dates. If a change is warranted, explain which constraint or new evidence justifies it.',
-        '- Honor recorded sensor capabilities. If a sensor is unknown or unavailable, do not make the session depend solely on that sensor; provide an executable RPE/HR/feel alternative as appropriate.',
-        '- Prefer dated/current records when information conflicts. Explicitly call out missing or stale data instead of assuming normality.',
-        '',
-        '### If the user asks for an importable schedule',
-        '',
-        'Use this exact day-block format so it remains compatible with 1-click plan import:',
-        '```markdown',
-        '### Day YYYY-MM-DD: <Session Name>',
-        '- Modality: <Cycling | Running | Strength | Mobility | Field | Cross Training>',
-        '- Duration: <minutes> min',
-        '- Intensity: <easy | moderate | hard>',
-        '- Objectives: <zone2 aerobic | threshold quality | surge repeatability | vo2 max | strength maintenance | strength development | race specific endurance> (or omit if recovery)',
-        '- Description: <Interval structure, target power/HR zones, or workout instructions>',
-        '```',
-    ].join('\n');
 }
 
 function renderMorningCoachInstructions(): string[] {
@@ -844,7 +758,7 @@ export function enhanceContextBriefForPlanning(
     const goalDetail = goalSpecifics ? `\n\n${goalSpecifics}` : '';
     if (purpose === 'planning') {
         // Authoritative upcoming commitments precede the compressed long-term goals.
-        return `${withTimeline.trimEnd()}\n\n${renderUpcoming(input, today)}${goalDetail}\n\n${renderUseInstructions()}\n`;
+        return `${withTimeline.trimEnd()}\n\n${renderUpcoming(input, today)}${goalDetail}\n\n${renderUseInstructions(purpose)}\n`;
     }
-    return `${withTimeline.trimEnd()}${goalDetail}\n\n${renderUpcoming(input, today)}\n\n${renderUseInstructions()}\n`;
+    return `${withTimeline.trimEnd()}${goalDetail}\n\n${renderUpcoming(input, today)}\n\n${renderUseInstructions(purpose)}\n`;
 }

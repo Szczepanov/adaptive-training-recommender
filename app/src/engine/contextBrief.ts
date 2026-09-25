@@ -10,6 +10,18 @@ import type {
 } from './models';
 import { deriveEventPriority } from './periodization';
 import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
+import { mean, renderBodyComposition, renderObjective, round, signed } from './contextBriefRecovery';
+import { SECTION_TITLE, type BriefPurpose, type BriefWindowPreset } from './contextBriefPurpose';
+
+// Re-exported so existing importers keep one entry point for the brief.
+export { round, signed } from './contextBriefRecovery';
+export {
+    briefPurposeFor,
+    findSectionHeading,
+    SECTION_TITLE,
+    type BriefPurpose,
+    type BriefWindowPreset,
+} from './contextBriefPurpose';
 
 /** Everything the brief renders, already fetched. This module performs no I/O so the
  * output is a pure function of its input and can be asserted exactly in tests. */
@@ -107,28 +119,7 @@ function sparseBelowDays(baselineDays: number): number {
     return Math.ceil(baselineDays * SUBJECTIVE_BASELINE_SPARSE_RATIO);
 }
 
-/** Section titles shared by both orders; numbering is applied per purpose. Other modules
- * locate sections by title (see `findSectionHeading`), never by number. */
-export const SECTION_TITLE = {
-    objective: 'Objective recovery (wearable)',
-    training: 'Completed training (recorded by the wearable)',
-    subjective: 'Subjective reports (self-scored each morning, 1–10)',
-    adherence: 'Plan adherence',
-    intent: 'Goals & training intent',
-    intentFirst: 'Current training intent & goals',
-} as const;
-
-/** Index of the `\n## <n>. <titlePrefix>` heading, whatever its number, or -1. */
-export function findSectionHeading(text: string, titlePrefix: string): number {
-    const pattern = /\n## \d+\. /g;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(text)) !== null) {
-        if (text.startsWith(titlePrefix, match.index + match[0].length)) return match.index;
-    }
-    return -1;
-}
-
-const EQUIPMENT_LABEL:Record<string, string> = {
+const EQUIPMENT_LABEL: Record<string, string> = {
     free_weights: 'free weights',
     cable_machine: 'cable machine',
     treadmill: 'treadmill',
@@ -142,62 +133,6 @@ const GUARDRAIL_LABEL: Record<string, string> = {
     avoid_overhead_pressing: 'no overhead pressing',
     avoid_heavy_spinal_loading: 'no heavy spinal loading',
 };
-
-function mean(values: readonly (number | null | undefined)[]): number | null {
-    const present = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
-    if (present.length === 0) return null;
-    return present.reduce((sum, value) => sum + value, 0) / present.length;
-}
-
-export function round(value: number | null | undefined, places = 1): string {
-    if (value === null || value === undefined || !Number.isFinite(value)) return '—';
-    const factor = 10 ** places;
-    return String(Math.round(value * factor) / factor);
-}
-
-export function signed(value: number | null | undefined, places = 1): string {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
-    const rounded = Math.round(value * 10 ** places) / 10 ** places;
-    return rounded > 0 ? `+${rounded}` : String(rounded);
-}
-
-/** Renders a metric as "current (7d avg, 28d avg) — Δ vs 7d, Δ vs 28d", collapsing to a
- * dash per component so a partially-synced day still produces a readable line. */
-function metricLine(
-    label: string,
-    unit: string,
-    current: number | null,
-    avg7d: number | null,
-    avg28d: number | null,
-    deltaVs7d: number | null,
-    deltaVs28d: number | null,
-): string {
-    const baselines = `7d ${round(avg7d)}, 28d ${round(avg28d)}`;
-    const deltas = `${signed(deltaVs7d)} vs 7d, ${signed(deltaVs28d)} vs 28d`;
-    return `- ${label}: ${round(current)} ${unit} (${baselines}) — ${deltas}`;
-}
-
-/** Observation-only robust baseline renderer. Keeping this separate from metricLine makes
- * the estimator semantics explicit in the exported text instead of letting an external AI
- * mistake median/MAD candidate statistics for the live mean/stdev engine inputs. */
-function candidateBaselineLine(
-    label: string,
-    unit: string,
-    current: number | null | undefined,
-    median7d: number | null | undefined,
-    median28d: number | null | undefined,
-    mad28d: number | null | undefined,
-    deltaVs7dMedian: number | null | undefined,
-    deltaVs28dMedian: number | null | undefined,
-): string {
-    const currentValue = typeof current === 'number' && Number.isFinite(current) ? current : null;
-    const median7 = typeof median7d === 'number' && Number.isFinite(median7d) ? median7d : null;
-    const median28 = typeof median28d === 'number' && Number.isFinite(median28d) ? median28d : null;
-    const mad28 = typeof mad28d === 'number' && Number.isFinite(mad28d) ? mad28d : null;
-    const baselines = `7d median ${round(median7)}, 28d median ${round(median28)}, 28d MAD ${round(mad28)}`;
-    const deltas = `${signed(deltaVs7dMedian)} vs 7d median, ${signed(deltaVs28dMedian)} vs 28d median`;
-    return `- ${label}: ${round(currentValue)} ${unit} (${baselines}) — ${deltas}`;
-}
 
 function withinWindow(date: string, startDate: string, asOfDate: string): boolean {
     return date >= startDate && date <= asOfDate;
@@ -252,187 +187,6 @@ function renderConstraints(settings: TrainingSettings | null, preferences: UserP
         if (preferences.avoidedModalities.length > 0) lines.push(`- Modalities to avoid: ${preferences.avoidedModalities.join(', ')}`);
         if (preferences.preferredModalities.length > 0) lines.push(`- Preferred modalities: ${preferences.preferredModalities.join(', ')}`);
     }
-    return lines;
-}
-
-function renderObjective(snapshots: readonly DailyRecoverySnapshot[], windowDays: number, heading: string, compact: boolean): string[] {
-    const lines: string[] = [heading, ''];
-    if (snapshots.length === 0) {
-        lines.push('No wearable data in this window.');
-        return lines;
-    }
-    const latest = snapshots[snapshots.length - 1];
-    const { raw, derived, dataQuality } = latest;
-    const baselineVersion = derived.baselineComputationVersion ?? 0;
-
-    lines.push(`Most recent reading — ${latest.date}:`);
-    lines.push(metricLine('HRV (overnight avg)', 'ms', raw.hrvOvernightAvg, derived.hrv7dAvg, derived.hrv28dAvg, derived.deltas.hrvVs7d, derived.deltas.hrvVs28d));
-    lines.push(metricLine('Resting HR', 'bpm', raw.restingHr, derived.restingHr7dAvg, derived.restingHr28dAvg, derived.deltas.restingHrVs7d, derived.deltas.restingHrVs28d));
-    lines.push(metricLine('Sleep score', 'pts', raw.sleepScore, derived.sleepScore7dAvg, derived.sleepScore28dAvg, derived.deltas.sleepScoreVs7d, derived.deltas.sleepScoreVs28d));
-    if (raw.totalSteps !== null) {
-        lines.push(metricLine('Steps (yesterday D-1)', 'steps', raw.totalSteps, derived.steps7dAvg ?? null, derived.steps28dAvg ?? null, derived.deltas.stepsVs7d ?? null, derived.deltas.stepsVs28d ?? null));
-    }
-    if (baselineVersion >= 3 && !compact) {
-        lines.push(candidateBaselineLine(
-            'Respiration robust baseline', 'br/min', raw.respirationAvg,
-            derived.respiration7dAvg, derived.respiration28dAvg, derived.respiration28dMad,
-            derived.deltas.respirationVs7d, derived.deltas.respirationVs28d,
-        ));
-    } else if (raw.respirationAvg !== null && !compact) {
-        lines.push(`- Respiration: ${round(raw.respirationAvg)} br/min (legacy pre-v3 baseline fields use mean; robust median/MAD unavailable)`);
-    }
-    // Vendor composites overlap upstream with HRV/sleep/stress/load. In planning mode they
-    // sit under one explicitly secondary label instead of reading as independent baseline
-    // families; their candidate median/MAD variants are diagnostic-only.
-    if (compact) {
-        lines.push('');
-        lines.push('Secondary device composites (context only; correlated with the metrics above, not independent evidence):');
-    }
-    if (raw.bodyBatteryWake !== null) lines.push(`- Body battery on waking: ${raw.bodyBatteryWake}`);
-    if (raw.stress?.avg != null || raw.stress?.max != null) {
-        lines.push(`- Device stress: avg ${raw.stress?.avg ?? '—'} · max ${raw.stress?.max ?? '—'}`);
-    }
-    if (raw.hrvStatus) lines.push(`- HRV status (device): ${raw.hrvStatus}`);
-    if (raw.trainingReadiness?.score != null) {
-        lines.push(`- Device training readiness: ${raw.trainingReadiness.score}${raw.trainingReadiness.level ? ` (${raw.trainingReadiness.level})` : ''}`);
-    }
-
-    const status = raw.trainingStatus;
-    if (status) {
-        const statusParts: string[] = [];
-        if (status.statusPhrase) statusParts.push(status.statusPhrase);
-        if (status.acuteTrainingLoad != null) statusParts.push(`acute load ${status.acuteTrainingLoad}`);
-        if (status.acwrStatus) statusParts.push(`acute:chronic ${status.acwrStatus}`);
-        if (status.vo2MaxCycling != null) statusParts.push(`VO2max cycling ${status.vo2MaxCycling}`);
-        if (status.vo2MaxRunning != null) statusParts.push(`VO2max running ${status.vo2MaxRunning}`);
-        if (statusParts.length > 0) lines.push(`- Device training status: ${statusParts.join(' · ')}`);
-    }
-
-    if (baselineVersion >= 3 && !compact) {
-        lines.push('');
-        lines.push('> Respiration robust baseline is exported for context, but production respiration strain scoring is currently OFF by default. Do not treat it as an additional live readiness penalty.');
-    }
-
-    if (baselineVersion >= 3 && compact) {
-        lines.push('');
-        lines.push('> Planning export: observation-only candidate baselines (median/MAD) and the respiration candidate '
-            + '(production respiration scoring is off) are omitted. They carry no recommendation authority; '
-            + 'use the diagnostic export to inspect them.');
-    }
-
-    if (baselineVersion >= 4 && !compact) {
-        lines.push('');
-        lines.push('Observation-only candidate baselines (not independent engine inputs):');
-        lines.push('These median/MAD summaries are exported for inspection and future calibration. They do not replace the live mean/stdev paths and must not be stacked as extra strain votes.');
-        lines.push(candidateBaselineLine(
-            'Sleep score candidate', 'pts', raw.sleepScore,
-            derived.sleepScore7dMedian, derived.sleepScore28dMedian, derived.sleepScore28dMad,
-            derived.deltas.sleepScoreVs7dMedian, derived.deltas.sleepScoreVs28dMedian,
-        ));
-        lines.push(candidateBaselineLine(
-            'Resting HR candidate', 'bpm', raw.restingHr,
-            derived.restingHr7dMedian, derived.restingHr28dMedian, derived.restingHr28dMad,
-            derived.deltas.restingHrVs7dMedian, derived.deltas.restingHrVs28dMedian,
-        ));
-        lines.push(candidateBaselineLine(
-            'HRV candidate', 'ms', raw.hrvOvernightAvg,
-            derived.hrv7dMedian, derived.hrv28dMedian, derived.hrv28dMad,
-            derived.deltas.hrvVs7dMedian, derived.deltas.hrvVs28dMedian,
-        ));
-        lines.push(candidateBaselineLine(
-            'Steps candidate (yesterday D-1)', 'steps', raw.totalSteps,
-            derived.steps7dMedian, derived.steps28dMedian, derived.steps28dMad,
-            derived.deltas.stepsVs7dMedian, derived.deltas.stepsVs28dMedian,
-        ));
-    }
-
-    if (baselineVersion >= 5 && !compact) {
-        lines.push(candidateBaselineLine(
-            'Body Battery wake candidate', 'pts', raw.bodyBatteryWake,
-            derived.bodyBatteryWake7dMedian, derived.bodyBatteryWake28dMedian, derived.bodyBatteryWake28dMad,
-            derived.deltas.bodyBatteryWakeVs7dMedian, derived.deltas.bodyBatteryWakeVs28dMedian,
-        ));
-        lines.push(candidateBaselineLine(
-            'Stress avg candidate', 'pts', raw.stress?.avg,
-            derived.stressAvg7dMedian, derived.stressAvg28dMedian, derived.stressAvg28dMad,
-            derived.deltas.stressAvgVs7dMedian, derived.deltas.stressAvgVs28dMedian,
-        ));
-        lines.push(candidateBaselineLine(
-            'Stress max candidate', 'pts', raw.stress?.max,
-            derived.stressMax7dMedian, derived.stressMax28dMedian, derived.stressMax28dMad,
-            derived.deltas.stressMaxVs7dMedian, derived.deltas.stressMaxVs28dMedian,
-        ));
-        lines.push(candidateBaselineLine(
-            'Training Readiness score candidate', 'pts', raw.trainingReadiness?.score,
-            derived.trainingReadinessScore7dMedian, derived.trainingReadinessScore28dMedian, derived.trainingReadinessScore28dMad,
-            derived.deltas.trainingReadinessScoreVs7dMedian, derived.deltas.trainingReadinessScoreVs28dMedian,
-        ));
-        lines.push('');
-        lines.push('> Correlation caution: Body Battery, stress and Training Readiness overlap upstream with HRV, sleep, stress and load physiology. Treat them as correlated observations, not independent additive evidence.');
-    }
-
-    lines.push('');
-    lines.push(`Window averages (${snapshots.length} of ${windowDays} days have data):`);
-    lines.push(`- HRV ${round(mean(snapshots.map(s => s.raw.hrvOvernightAvg)))} ms · resting HR ${round(mean(snapshots.map(s => s.raw.restingHr)))} bpm · sleep score ${round(mean(snapshots.map(s => s.raw.sleepScore)))}`);
-
-    if (!dataQuality.baseline28dReady) {
-        lines.push('');
-        lines.push('> Caution: the 28-day baseline is not yet mature, so the "vs 28d" deltas above are computed from partial history and should be weighted lightly.');
-    }
-    return lines;
-}
-
-/** Ownership: ADR-0039 (body-composition and fueling observations). Zero recommendation
- * authority in the engine — see the isolation note on `ContextBriefInput.bodyComposition`.
- * Placed alongside wearable recovery rather than as its own numbered section so it does
- * not collide with the "## 7"/"## 8" handoff sections `contextBriefPlanningHandoff.ts`
- * appends for the full-preset pipeline. */
-function renderBodyComposition(input: BodyCompositionBriefInput | undefined, compact: boolean): string[] {
-    if (!input) return [];
-    const { bodyMass, circumferences, bodyFatPct } = input;
-    if (!bodyMass && circumferences.length === 0 && !bodyFatPct) return [];
-
-    const lines: string[] = [
-        '### Body composition & fueling (observation only)',
-        '',
-        'Athlete-authored home anthropometry and device body-composition estimates. Zero '
-        + 'recommendation authority in this app\'s engine — exported for context only, not '
-        + 'an independent readiness or training-load input.',
-        '',
-    ];
-
-    if (bodyMass) {
-        const sourceLabel = bodyMass.source === 'provider' ? 'device-estimated' : 'manually logged';
-        lines.push(`- Body mass (${sourceLabel}): latest ${round(bodyMass.latestKg, 2)} kg${bodyMass.latestDate ? ` (${bodyMass.latestDate})` : ''}`);
-        if (bodyMass.current7dMeanKg !== null && bodyMass.prior7dMeanKg !== null) {
-            lines.push(
-                `  - 7d mean ${round(bodyMass.current7dMeanKg, 2)} kg vs prior 7d ${round(bodyMass.prior7dMeanKg, 2)} kg `
-                + `— ${signed(bodyMass.weekOverWeekKg, 2)} kg (${signed(bodyMass.weekOverWeekPercent)}%)`,
-            );
-        } else {
-            lines.push('  - Not enough recorded days yet for a week-over-week trend (needs 4+ of 7 days on both sides).');
-        }
-    }
-
-    if (bodyFatPct) {
-        const trend = bodyFatPct.mean7dPct !== null
-            ? `7d mean ${round(bodyFatPct.mean7dPct)}%`
-            : `7d mean insufficient data (${bodyFatPct.recordedDays7d}/7 days recorded, 4+ required)`;
-        lines.push(
-            `- Body fat % (${compact ? 'low-authority device estimate; read the trend, not the absolute value' : 'device estimate'}): latest ${round(bodyFatPct.latestPct)}%`
-            + `${bodyFatPct.latestDate ? ` (${bodyFatPct.latestDate})` : ''} · ${trend}`,
-        );
-    }
-
-    if (circumferences.length > 0) {
-        lines.push('- Tape circumferences (protocol-aware, athlete-authored):');
-        for (const c of circumferences) {
-            const deltaStr = c.deltaCm === null ? 'no prior reading yet' : `${signed(c.deltaCm)} cm vs previous reading`;
-            const warning = c.repeatabilityWarning ? ' — repeatability tolerance exceeded on the latest reading, treat with caution' : '';
-            lines.push(`  - ${c.label}: ${round(c.latestCm, 1)} cm${c.latestDate ? ` (${c.latestDate})` : ''} — ${deltaStr}${warning}`);
-        }
-    }
-
     return lines;
 }
 
@@ -907,10 +661,15 @@ export function buildContextBrief(input: ContextBriefInput): string {
     const planningOrder = purpose !== 'diagnostic';
     const n = (planning: number, diagnostic: number): number => (planningOrder ? planning : diagnostic);
     const constraints = renderConstraints(input.trainingSettings, input.preferences, asOfDate);
-    const intent = renderGoalsAndIntent(
+    const renderedIntent = renderGoalsAndIntent(
         input.goals, input.intentProfile, asOfDate,
         planningOrder ? `## 2. ${SECTION_TITLE.intentFirst}` : `## 6. ${SECTION_TITLE.intent}`,
     );
+    // Planning numbers sections 1-6 contiguously, so section 2 is always present there and
+    // states the absence rather than leaving a numbering gap.
+    const intent = planningOrder && renderedIntent.length === 0
+        ? [`## 2. ${SECTION_TITLE.intentFirst}`, '', 'No active goals or training intent profile recorded.']
+        : renderedIntent;
     const objective = renderObjective(snapshots, windowDays, `## ${n(3, 2)}. ${SECTION_TITLE.objective}`, planningOrder);
     const bodyComposition = renderBodyComposition(input.bodyComposition, planningOrder);
     const training = renderTraining(activities, asOfDate, windowDays, `## ${n(5, 3)}. ${SECTION_TITLE.training}`);
@@ -971,37 +730,6 @@ export function defaultBriefWindowDays(): number {
 /** Exported for the service layer so the fetch range and the render range cannot drift. */
 export function briefWindowStart(asOfDate: string, windowDays: number): string {
     return addDaysToLocalDateString(asOfDate, -(windowDays - 1));
-}
-
-/**
- * `daily` is today + yesterday only — a point reading for the everyday paste-into-chat
- * loop, so it does not re-send retrospective detail (completed-training rows, per-lap
- * telemetry) an external planning agent already saw the day before. `full` is the
- * original two-week lookback, useful when actually designing a new block. Sections that
- * are already fixed-horizon regardless of window (the 7-day recovery timeline, the
- * 28-day subjective baseline, the 7-day commitments handoff) are unaffected by this
- * choice — see contextBriefService.ts's `contextDays`.
- */
-export type BriefWindowPreset = 'daily' | 'full' | 'diagnostic';
-
-/**
- * Issue #811: the consumer intent an export serves, independent of its lookback length.
- * - `morning`: current-day closed-loop coaching (`buildMorningCoachBrief`).
- * - `planning`: compact multi-day/block design context, ordered by decision authority.
- * - `diagnostic`: forensic per-activity telemetry and experimental observability.
- * No purpose changes what the engine recommends; the brief is a read-only export.
- */
-export type BriefPurpose = 'morning' | 'planning' | 'diagnostic';
-
-const PURPOSE_BY_PRESET: Readonly<Record<BriefWindowPreset, BriefPurpose>> = {
-    daily: 'morning',
-    full: 'planning',
-    diagnostic: 'diagnostic',
-};
-
-/** The existing UI preset names stay for compatibility; each maps to exactly one purpose. */
-export function briefPurposeFor(preset: BriefWindowPreset): BriefPurpose {
-    return PURPOSE_BY_PRESET[preset];
 }
 
 /** Retrospective detail window for the `daily` preset: today and D-1. `diagnostic` reuses
