@@ -261,9 +261,19 @@ function packWeeklyDoseAttempt(
             .map(candidate => doseFor(candidate.role, aerobicRequirementForCredit))
             .filter(dose => Number.isFinite(dose) && dose > 0)
         : [];
-    const reservedQualityAerobicCreditMinutes = aerobicCandidateDoses.length > 0
+    const aerobicBaseDose = aerobicRequirementForCredit
+        ? (aerobicRequirementForCredit.floor?.dose.value ?? aerobicRequirementForCredit.target.target)
+        : 0;
+    const smallestAerobicOccurrenceDose = aerobicCandidateDoses.length > 0
         ? Math.min(...aerobicCandidateDoses)
         : 0;
+    // Substitute no more than one occurrence and never let that substitution erase the
+    // last full aerobic-volume occurrence. This matters when an athlete-relative floor is
+    // itself close to or above the weekly public-health minimum.
+    const reservedQualityAerobicCreditMinutes = Math.min(
+        smallestAerobicOccurrenceDose,
+        Math.max(0, aerobicBaseDose - smallestAerobicOccurrenceDose),
+    );
 
     /** Estimate how many of the *remaining feasible windows* a requirement can still use.
      * This feeds only fair-share reservation; it must not reserve capacity for a later peer
@@ -436,10 +446,11 @@ function packWeeklyDoseAttempt(
 }
 
 /** Convert strategy requirements into exact weekly roles. The first pass may provisionally
- * substitute one exact aerobic-volume occurrence with the optional quality role. The
- * substitution's minute credit equals that aerobic role's current packed dose, which makes
- * athlete-relative floors participate in the same slot arithmetic. The credit becomes
- * effective only when high intensity is actually packed; otherwise the whole pack is
+ * substitute up to one exact aerobic-volume occurrence with the optional quality role.
+ * The credit follows that aerobic role's current packed dose but is bounded so at least one
+ * full aerobic-volume occurrence remains. Athlete-relative floors therefore participate in
+ * the same slot arithmetic without allowing quality to erase the whole aerobic floor. The
+ * credit becomes effective only when high intensity is actually packed; otherwise the whole pack is
  * recomputed against the unmodified aerobic requirement. */
 export function packWeeklyDose(
     strategy: EvidenceBackedStrategy,
