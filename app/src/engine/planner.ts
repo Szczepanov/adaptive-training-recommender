@@ -71,6 +71,7 @@ import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
 import { prepareTrainingHistorySnapshot, resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
+import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
 import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry } from './coverage';
 import { resolveEvergreenPlan } from './evergreenPlanning';
@@ -312,6 +313,8 @@ export interface WeekAheadOptions {
     authoredPlanBlocks?: readonly AuthoredPlanBlock[];
     scheduleOverlays?: readonly ScheduleOverlay[];
     planDefinition?: PlanDefinition | null;
+    /** Evergreen session windows and weekly ceiling for optional-role placement. */
+    evergreenCapacity?: ResolvedTrainingCapacity;
     /** Simulation-only fatigue comparison. Live callers use the default `max`. */
     fatigueFusionPolicy?: FatigueFusionPolicy;
     /** Event-free health planning prior resolved from the current training intent. */
@@ -1582,6 +1585,7 @@ export function generateWeekAheadPlan(
     const authoredPlanBlocks = options.authoredPlanBlocks ?? [];
     const scheduleOverlays = options.scheduleOverlays ?? [];
     const suppliedPlanDefinition = options.planDefinition ?? null;
+    const evergreenCapacity = options.evergreenCapacity;
     const optionalQualityObjective = suppliedPlanDefinition?.coverageSetId === EVERGREEN_GENERAL_COVERAGE_SET.id
         ? suppliedPlanDefinition.objectives.find(objective => objective.coverageKey === 'sustained_quality'
             && objective.coverageMinimumSessions === 0
@@ -2038,8 +2042,39 @@ export function generateWeekAheadPlan(
         }
         if (reservation && exactReserved.length > 0) rankingCandidates = exactReserved;
 
+        const plannedExerciseSessionCount = [
+            { date: todayDate, template: todayRec.template },
+            ...resultDays.map(day => ({ date: day.date, template: day.template })),
+        ].filter(day => optionalQualityBlock
+            && day.date >= optionalQualityBlock.startDate
+            && day.date <= optionalQualityBlock.endDate
+            && day.template.category !== 'Rest'
+            && day.template.category !== 'Mobility/Recovery').length;
+        const fixedExerciseSessionCount = fixedActivities.filter(activity => activity.date
+            && optionalQualityBlock
+            && activity.date >= optionalQualityBlock.startDate
+            && activity.date <= optionalQualityBlock.endDate
+            && (activity.expectedCost || activity.expectedStimulus)).length;
+        const futureRequiredExerciseDates = [...new Set([...allocation.reservationsByDate.keys()]
+            .filter(reservedDate => reservedDate > date
+                && optionalQualityBlock
+                && reservedDate >= optionalQualityBlock.startDate
+                && reservedDate <= optionalQualityBlock.endDate))];
+        const hasFixedTraining = getFixedActivitiesForDate(date).some(activity =>
+            Boolean(activity.expectedCost || activity.expectedStimulus));
+        const capacityOccupiedSessionCount = plannedExerciseSessionCount
+            + fixedExerciseSessionCount
+            + futureRequiredExerciseDates.length;
+        if (evergreenCapacity && optionalQualityBlock
+            && date <= optionalQualityBlock.endDate
+            && !reservation
+            && capacityOccupiedSessionCount >= evergreenCapacity.maxSessions) {
+            rankingCandidates = rankingCandidates.filter(template =>
+                template.category === 'Rest' || template.category === 'Mobility/Recovery');
+        }
+
         const rankingResult = evaluation.rank(rankingCandidates);
-        const ranked = rankingResult.accepted;
+        let ranked = rankingResult.accepted;
 
         // ⚡ Bolt: optimized O(N) array scan to O(1) Map lookup
         const restFallback: SessionTemplate = ENRICHED_TEMPLATES_BY_ID.get('rest_01') ?? {
@@ -2111,6 +2146,27 @@ export function generateWeekAheadPlan(
                 },
             });
         };
+        const qualityWindow = evergreenCapacity?.usableWindows.find(window => window.date === date);
+        const qualityAlreadySelected = [
+            { date: todayDate, template: todayRec.template },
+            ...resultDays.map(day => ({ date: day.date, template: day.template })),
+        ].some(day => optionalQualityBlock
+            && day.date >= optionalQualityBlock.startDate
+            && day.date <= optionalQualityBlock.endDate
+            && qualityWorkoutIds.has(workoutIdForTemplateId(day.template.id) ?? ''));
+        const canPlaceOptionalQuality = Boolean(optionalQualityBlock
+            && date >= optionalQualityBlock.startDate
+            && date <= optionalQualityBlock.endDate
+            && qualityWindow
+            && !reservation
+            && !hasFixedTraining
+            && !qualityAlreadySelected
+            && capacityOccupiedSessionCount < (evergreenCapacity?.maxSessions ?? 0));
+        if (canPlaceOptionalQuality) {
+            const qualityFirst = ranked.filter(candidate => candidate.template.modality === 'Cycling'
+                && qualityWorkoutIds.has(workoutIdForTemplateId(candidate.template.id) ?? ''));
+            if (qualityFirst.length > 0) ranked = [...qualityFirst, ...ranked.filter(candidate => !qualityFirst.includes(candidate))];
+        }
         const viabilityApplies = shouldProtectWeeklyAllocation(
             effectiveFatigueTier,
             allocation.fulfilledCount,
@@ -2355,6 +2411,7 @@ export async function generateWeekAheadPlanWithIntent(
             healthPlanningPolicy,
             events: intent.planningContext.mode === 'event_directed' ? events : [],
             ...(evergreen ? { planDefinition: evergreen.planDefinition } : {}),
+            ...(evergreen ? { evergreenCapacity: evergreen.budget.capacity } : {}),
         },
     );
 }

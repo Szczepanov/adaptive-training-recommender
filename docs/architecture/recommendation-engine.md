@@ -265,14 +265,16 @@ include controlled cycling threshold, controlled cycling tempo, and running temp
 `cycling_tempo_surges_01` provides a 30-minute cycling minimum for short windows;
 the catalog's 30-minute return-to-training variant remains available. Its
 planner template retains the 40-minute default and admits the authored 30-minute
-easier dose when a shorter time cap requires it. Session-count,
-time, spacing, rolling-load, readiness, and tissue gates still govern packing and
-daily selection. The forecast reports `capacity_exhausted_by_required_roles` for
+easier dose when a shorter time cap requires it. If a distinct usable schedule date
+remains within the athlete's declared `maxSessions`, the planner may prioritize one
+eligible cycling quality session on that date. It does not displace a required-role
+reservation or create a double day; time, spacing, rolling-load, readiness, and tissue
+gates remain in force. The forecast reports `capacity_exhausted_by_required_roles` for
 an unselected optional quality target only when every observed feasible quality
 date within its active plan block was occupied by an exact required-role
 reservation; it includes those dates in `observedBlockedDates`. It does not
 reserve a quality slot or displace a required
-role. This exact workout set and explanation are registered as product policy under
+role. This exact workout set and spare-date preference are registered as product policy under
 `policy.evergreen.quality_set_composition_v1` (ADR-0033).
 The legacy 2-to-6-session table is only an equal-dose placement
 tie-breaker; it does not set a physiological requirement or hide a capacity shortfall.

@@ -104,6 +104,88 @@ describe('issue #758 evergreen cycling quality', () => {
         )).toBe(true);
     });
 
+    it('uses an otherwise-free training day for quality without exceeding maxSessions or moving required roles', async () => {
+        const base = caseFor('persona_cycling_hybrid_baseline');
+        const scenario = {
+            ...base,
+            weeks: 1,
+            trainingIntentProfile: {
+                ...base.trainingIntentProfile,
+                weeklyCommitment: { minSessions: 4, targetSessions: 5, maxSessions: 6 },
+            },
+        };
+        const plans = [];
+        const result = await runScenario(scenario, async (...args) => {
+            args[8] = { ...args[8], days: 7 };
+            const plan = await generateWeekAheadPlanWithIntent(...args);
+            plans.push(plan);
+            return plan;
+        });
+        const selectedQuality = cyclingQuality(result);
+        expect(selectedQuality).toHaveLength(1);
+        const requiredReservationDates = new Set(plans[0].allocationReport.outcomes
+            .filter(outcome => outcome.status === 'fulfilled')
+            .map(outcome => outcome.reservation.assignedDate));
+        expect(selectedQuality.every(trace => !requiredReservationDates.has(trace.date))).toBe(true);
+        expect(plans[0].allocationReport.optionalMisses ?? []).toHaveLength(0);
+        const qualityBlockEnd = addDaysToLocalDateString(scenario.startDate, 6);
+        const exerciseDates = new Set(result.decisionTraces.filter(trace =>
+            trace.date >= scenario.startDate
+            && trace.date <= qualityBlockEnd
+            && !['Rest', 'Mobility/Recovery'].includes(trace.selected.category),
+        ).map(trace => trace.date));
+        expect(exerciseDates.size).toBeLessThanOrEqual(scenario.trainingIntentProfile.weeklyCommitment.maxSessions);
+    });
+
+    it('does not place optional cycling quality on a stimulus-only fixed-activity date', async () => {
+        const base = caseFor('persona_cycling_hybrid_baseline');
+        const controlScenario = {
+            ...base,
+            weeks: 1,
+            trainingIntentProfile: {
+                ...base.trainingIntentProfile,
+                weeklyCommitment: { minSessions: 4, targetSessions: 5, maxSessions: 6 },
+            },
+        };
+        const run = scenario => runScenario(scenario, async (...args) => {
+            args[8] = { ...args[8], days: 7 };
+            return generateWeekAheadPlanWithIntent(...args);
+        });
+        const control = await run(controlScenario);
+        const controlQuality = cyclingQuality(control);
+        expect(controlQuality).toHaveLength(1);
+        const fixedDate = controlQuality[0].date;
+        const scenario = {
+            ...controlScenario,
+            fixedActivities: ['stimulus-only-booking', 'second-stimulus-only-booking'].map(id => ({
+                id,
+                userId: 'test-athlete',
+                title: 'Booked training session',
+                date: fixedDate,
+                durationMin: 30,
+                expectedStimulus: { aerobicEndurance: 0.4 },
+                fixed: true,
+                isCompleted: false,
+                environment: 'indoor',
+                equipment: ['indoor_bike'],
+                createdAt: '2026-08-31T00:00:00.000Z',
+                updatedAt: '2026-08-31T00:00:00.000Z',
+            })),
+        };
+        const result = await run(scenario);
+        const selectedQuality = cyclingQuality(result);
+        expect(selectedQuality).toHaveLength(1);
+        expect(selectedQuality.every(trace => trace.date !== fixedDate)).toBe(true);
+        const qualityBlockEnd = addDaysToLocalDateString(scenario.startDate, 6);
+        const recommendedExerciseSessions = result.decisionTraces.filter(trace =>
+            trace.date >= scenario.startDate
+            && trace.date <= qualityBlockEnd
+            && !['Rest', 'Mobility/Recovery'].includes(trace.selected.category),
+        ).length;
+        expect(recommendedExerciseSessions + scenario.fixedActivities.length)
+            .toBeLessThanOrEqual(scenario.trainingIntentProfile.weeklyCommitment.maxSessions);
+    });
+
     it('admits the authored cycling tempo variant within a 35-minute cap without falsely reporting capacity exhaustion', async () => {
         const scenario = caseFor('persona_cycling_hybrid_low_time');
         const tempo = ENRICHED_TEMPLATES_BY_ID.get('end_mod_02');
