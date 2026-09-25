@@ -77,6 +77,8 @@ export function HealthAnomalyShadowTrace({ revision, decisionInput }: HealthAnom
           <h4>Recent recovery context</h4>
           <div className="data-item"><span className="data-label">Hard sessions last 3d:</span><span className="data-value">{recovery?.raw.last3DaysHardSessionsCount ?? 'N/A'}</span></div>
           <div className="data-item"><span className="data-label">Yesterday hard activities:</span><span className="data-value">{recovery?.raw.yesterdayTraining?.hardActivityCount ?? 'N/A'}</span></div>
+          <div className="data-item"><span className="data-label">High-cost sessions last 3d:</span><span className="data-value">{recovery?.raw.last3DaysHighCostSessionsCount ?? 'N/A'}</span></div>
+          <div className="data-item"><span className="data-label">Yesterday high-cost activities:</span><span className="data-value">{recovery?.raw.yesterdayTraining?.highCostActivityCount ?? 'N/A'}</span></div>
           <div className="data-item"><span className="data-label">Sleep score:</span><span className="data-value">{recovery?.raw.sleepScore ?? 'N/A'}</span></div>
           <div className="data-item"><span className="data-label">Sleep duration:</span><span className="data-value">{recovery?.raw.sleepDurationSec != null ? `${Math.round(recovery.raw.sleepDurationSec / 60)} min` : 'N/A'}</span></div>
           <div className="data-item"><span className="data-label">Garmin stress avg / max:</span><span className="data-value">{recovery?.raw.stress?.avg ?? 'N/A'} / {recovery?.raw.stress?.max ?? 'N/A'}</span></div>

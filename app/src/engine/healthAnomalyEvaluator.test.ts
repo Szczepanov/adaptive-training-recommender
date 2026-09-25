@@ -184,8 +184,9 @@ describe('evaluatePhysiologicalAnomaly HA3', () => {
         });
         const result = evaluate(featureSet(3, 0, 0), { recoverySnapshot: longEasy, last3DaysHardSessionsCount: 0, last3DaysHighCostSessionsCount: 1 });
         expect(result.state).toBe('explained_recovery_strain');
+        expect(result.explanations).toContainEqual(expect.objectContaining({ kind: 'hard_training', strength: 'strong', evidence: ['YESTERDAY_HIGH_COST_SESSION'] }));
         const onlyWithin3d = evaluate(featureSet(3, 0, 0), { recoverySnapshot: snapshot(), last3DaysHardSessionsCount: 0, last3DaysHighCostSessionsCount: 1 });
-        expect(onlyWithin3d.explanations).toContainEqual(expect.objectContaining({ kind: 'hard_training', evidence: ['HARD_SESSION_WITHIN_3D'] }));
+        expect(onlyWithin3d.explanations).toContainEqual(expect.objectContaining({ kind: 'hard_training', evidence: ['HIGH_COST_SESSION_WITHIN_3D'] }));
     });
 
     it('explains RHR-up + HRV-down after prior hard training when respiration is normal', () => {

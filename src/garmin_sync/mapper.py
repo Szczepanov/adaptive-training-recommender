@@ -340,6 +340,17 @@ def _build_raw_metrics(
         if act.date and three_days_ago_iso <= act.date <= yesterday_iso and _is_high_cost(act)
     )
 
+    window_versions = [
+        act.intensity_classification_version
+        for act in canonical_activities
+        if act.date and three_days_ago_iso <= act.date <= yesterday_iso
+    ]
+    window_version = (
+        min(v for v in window_versions if v is not None)
+        if window_versions and all(v is not None for v in window_versions)
+        else None
+    )
+
     y_train = _build_training_summary(canonical_activities, yesterday_iso)
     today_train = _build_training_summary(canonical_activities, target_date_iso)
 
@@ -423,6 +434,7 @@ def _build_raw_metrics(
         totalSteps=canonical.steps_count,
         last3DaysHardSessionsCount=hard_sessions_count,
         last3DaysHighCostSessionsCount=high_cost_sessions_count,
+        last3DaysIntensityClassificationVersion=window_version,
         yesterdayTraining=y_train,
         todayTraining=today_train,
         stress=stress_summary,

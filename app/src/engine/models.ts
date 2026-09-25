@@ -1187,6 +1187,8 @@ export interface DailyRecoverySnapshot {
         last3DaysHardSessionsCount: number;
         /** Issue #809: D-1..D-3 sessions with high/very_high session cost (dose). */
         last3DaysHighCostSessionsCount?: number;
+        /** Lowest classification version over the D-1..D-3 window; null if any is legacy. */
+        last3DaysIntensityClassificationVersion?: number | null;
         yesterdayTraining: RawActivitySummary | null;
         /** Same-day activity synced from Garmin for `date` itself. Only populated if a
          * sync ran after the activity was uploaded -- absent doesn't mean "didn't train",

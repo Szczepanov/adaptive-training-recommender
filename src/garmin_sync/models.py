@@ -209,6 +209,9 @@ class RawMetrics:
     last3DaysHardSessionsCount: int = 0
     # Issue #809: D-1..D-3 sessions with high/very_high session cost (dose).
     last3DaysHighCostSessionsCount: int = 0
+    # Lowest intensity classification version over the D-1..D-3 window activities; None
+    # if any is legacy (or the window is empty) -- stamps last3Days* count semantics.
+    last3DaysIntensityClassificationVersion: int | None = None
     yesterdayTraining: YesterdayTraining | None = None
     # Same-day activity synced from Garmin for `date` itself. Reuses the YesterdayTraining
     # shape (it's just "activity summary for one specific day"). Only populated if a sync

@@ -256,3 +256,33 @@ def test_snapshot_summaries_carry_cost_counts_and_classification_version() -> No
     assert summary.intensityClassificationVersion == INTENSITY_CLASSIFICATION_VERSION
     assert summary.primaryActivity is not None
     assert summary.primaryActivity.sessionCost == "very_high"
+
+
+def test_raw_metrics_stamp_three_day_window_classification_version() -> None:
+    from dataclasses import replace
+
+    from garmin_sync.canonical import CanonicalDailyMetrics
+    from garmin_sync.mapper import _build_raw_metrics
+
+    base = {
+        "startTimeLocal": "2026-09-19 08:00:00",
+        "duration": 3600.0,
+        "aerobicTrainingEffect": 3.2,
+        "averageHR": 120,
+        "activityType": {"typeKey": "running"},
+    }
+    classified = _canonicalize_activity({**base, "activityId": 1})
+    legacy = replace(
+        _canonicalize_activity({**base, "activityId": 2}), intensity_classification_version=None
+    )
+
+    def raw(acts: list) -> object:
+        return _build_raw_metrics(
+            CanonicalDailyMetrics(date="2026-09-21"), acts, "2026-09-21", "2026-09-20", "2026-09-18"
+        )
+
+    stamped = raw([classified])
+    assert stamped.last3DaysIntensityClassificationVersion == INTENSITY_CLASSIFICATION_VERSION
+    assert stamped.last3DaysHighCostSessionsCount == 1
+    assert raw([classified, legacy]).last3DaysIntensityClassificationVersion is None
+    assert raw([]).last3DaysIntensityClassificationVersion is None

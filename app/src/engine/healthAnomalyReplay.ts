@@ -45,6 +45,9 @@ export interface HealthAnomalyReplayRow {
         last3DaysHardSessionsCount: number;
         yesterdayHardActivityCount: number | null;
         todayHardActivityCount: number | null;
+        /** Issue #809: dose-driven counterparts of the stimulus-only hard counts. */
+        last3DaysHighCostSessionsCount: number;
+        yesterdayHighCostActivityCount: number | null;
     };
     sleepStressContext: {
         sleepScore: number | null;
@@ -269,6 +272,8 @@ export function runHealthAnomalyReplay(
                 last3DaysHardSessionsCount: day.recoverySnapshot?.raw.last3DaysHardSessionsCount ?? 0,
                 yesterdayHardActivityCount: day.recoverySnapshot?.raw.yesterdayTraining?.hardActivityCount ?? null,
                 todayHardActivityCount: day.recoverySnapshot?.raw.todayTraining?.hardActivityCount ?? null,
+                last3DaysHighCostSessionsCount: day.recoverySnapshot?.raw.last3DaysHighCostSessionsCount ?? 0,
+                yesterdayHighCostActivityCount: day.recoverySnapshot?.raw.yesterdayTraining?.highCostActivityCount ?? null,
             },
             sleepStressContext: {
                 sleepScore: day.recoverySnapshot?.raw.sleepScore ?? null,

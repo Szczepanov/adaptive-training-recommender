@@ -315,9 +315,12 @@ Snapshot training summaries are versioned the same way instead of bumping
 when any activity is legacy), so `hardActivityCount` and `primaryActivity.intensityTag`
 mean *stimulus-only* "hard" exactly when that stamp is >= 2. Dose is carried separately in
 `highCostActivityCount`, `primaryActivity.sessionCost` and
-`raw.last3DaysHighCostSessionsCount` (D-1..D-3, high/very_high cost). The health-anomaly
-explainer treats high-cost sessions as prior hard training, so a long easy ride still
-explains next-day RHR/HRV strain; the readiness penalty (`last3DaysHardSessionsCount`)
+`raw.last3DaysHighCostSessionsCount` (D-1..D-3, high/very_high cost), and
+`raw.last3DaysIntensityClassificationVersion` stamps the three-day window the same way
+(lowest version over D-1..D-3 activities; null if any is legacy or the window is empty).
+The health-anomaly explainer treats high-cost sessions as prior hard training under their
+own evidence codes (`YESTERDAY_HIGH_COST_SESSION`, `HIGH_COST_SESSION_WITHIN_3D`), so a long
+easy ride still explains next-day RHR/HRV strain; the readiness penalty (`last3DaysHardSessionsCount`)
 stays stimulus-only.
 Records without it keep their legacy TE-based `intensityTag` and are not reinterpreted;
 only a rebuild/backfill that re-runs ingestion rewrites them, versioned. Cycling/running
