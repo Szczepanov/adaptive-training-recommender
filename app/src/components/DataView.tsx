@@ -21,7 +21,7 @@ import { linkCompletedWorkoutSources, unlinkCompletedWorkoutSource } from './com
 import { BodyCompositionPanel } from './anthropometry/BodyCompositionPanel';
 import { NutritionPanel } from './nutrition/NutritionPanel';
 import { configuredActivitiesReadModelPolicy } from '../training-occurrence/activitiesReadModelPolicy';
-import { getCompletedWorkoutsInRange } from '../training-occurrence/activitiesReadModelService';
+import { loadCanonicalActivitiesWindow } from '../training-occurrence/canonicalActivitiesWindow';
 import type { CompletedWorkoutView } from '../training-occurrence/completedWorkoutView';
 import { SCREEN_LABELS } from '../types/navigation';
 import './DataView.css';
@@ -160,7 +160,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
     let cancelled = false;
     const startInclusive = addDaysToLocalDateString(briefDate, -6);
     const throughExclusive = addDaysToLocalDateString(briefDate, 1);
-    getCompletedWorkoutsInRange(userId, startInclusive, throughExclusive).then((workouts) => {
+    loadCanonicalActivitiesWindow(userId, startInclusive, throughExclusive).then((workouts) => {
       if (!cancelled) setCanonicalWorkoutWindow({ userId, asOfDate: briefDate, workouts });
     }).catch(err => {
       console.warn('[training-occurrence] canonical activities read failed', err);
