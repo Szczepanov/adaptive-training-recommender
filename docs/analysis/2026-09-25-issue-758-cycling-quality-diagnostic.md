@@ -58,12 +58,14 @@ PR #835 resolves that capacity conflict without weakening the evidence contract:
 
 - `resolveEvidenceBackedStrategy` keeps the WHO-backed aerobic requirement at its full
   150-minute minimum. Quality is never pre-credited into strategy provenance.
-- `packWeeklyDose` may provisionally reserve 40 minutes of aerobic allocation while it
-  attempts to place an eligible high-intensity occurrence. The 40-minute value is an
-  explicit product heuristic with ADR-0033 lineage, not a physiological equivalence claim.
-- The credit becomes effective only when quality is actually packed. If quality cannot be
-  packed, the packer reruns against the full aerobic requirement; warning logic uses the
-  same single credit and cannot subtract it twice.
+- `packWeeklyDose` may provisionally substitute one aerobic-volume reservation while it
+  attempts to place an eligible high-intensity occurrence. The credited minute value comes
+  from that aerobic role's current packed dose, including the athlete-relative floor from
+  #757. This is an explicit product heuristic with ADR-0033 lineage, not a physiological
+  equivalence claim.
+- The substitution becomes effective only when quality is actually packed. If quality
+  cannot be packed, the packer reruns against the full aerobic requirement; warning logic
+  uses the same single reservation credit and cannot subtract it twice.
 - The normal-recovery cycling-primary baseline now has capacity for cycling quality over
   the 14-day acceptance window. The 35-minute case retains its authored cap-fitting
   cycling tempo dose. Adverse-recovery and local-tissue-conflict cases remain quality-free.
