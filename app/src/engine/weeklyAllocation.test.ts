@@ -268,6 +268,39 @@ describe('ADR-0018 stateful reservation search', () => {
 });
 
 describe('ADR-0018 D-BOUND search budget', () => {
+    it('keeps a later feasible date when the first date has more than four exact templates', () => {
+        const blocker = occurrence('sustained_quality', 0, ['blocker'], '2026-08-20');
+        const target = occurrence('aerobic_volume', 0, ['f', 'e', 'd', 'c', 'b', 'a']);
+        const dates = ['2026-08-11', '2026-08-12'];
+        const acceptedByDate = {
+            '2026-08-11': ['d', 'c', 'b', 'a', 'blocker'],
+            '2026-08-12': ['f', 'e'],
+        };
+        const run = (eligibleTemplateIds: string[], accepted: Record<string, string[]>) =>
+            resolveWeeklyRoleReservations(
+                [blocker, { ...target, eligibleTemplateIds }],
+                stubEvaluator({ acceptedByDate: accepted }, dates),
+            );
+
+        const first = run(target.eligibleTemplateIds, acceptedByDate);
+        const reordered = run([...target.eligibleTemplateIds].reverse(), {
+            '2026-08-11': [...acceptedByDate['2026-08-11']].reverse(),
+            '2026-08-12': [...acceptedByDate['2026-08-12']].reverse(),
+        });
+
+        for (const result of [first, reordered]) {
+            expect(result.fulfilledCount).toBe(2);
+            expect(result.outcomes.some(outcome => outcome.status === 'missed')).toBe(false);
+            expect(result.reservationsByDate.get('2026-08-11')).toMatchObject({
+                occurrence: { id: blocker.id }, templateId: 'blocker',
+            });
+            expect(result.reservationsByDate.get('2026-08-12')).toMatchObject({
+                occurrence: { id: target.id }, templateId: 'e',
+            });
+        }
+        expect(first.transitionsUsed).toBe(reordered.transitionsUsed);
+    });
+
     it('returns a deterministic best-known partial result and never a false miss on exhaustion', () => {
         const occurrences = Array.from({ length: 6 }, (_, index) => occurrence('aerobic_volume', index, ['zone2']));
         const rules: StubRules = { acceptedByDate: Object.fromEntries(DATES.map(date => [date, ['zone2']])) };

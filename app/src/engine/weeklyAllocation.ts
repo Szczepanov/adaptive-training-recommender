@@ -397,9 +397,20 @@ export function resolveWeeklyRoleReservations(
             }
         }
         all.sort((left, right) => left.date.localeCompare(right.date) || left.templateId.localeCompare(right.templateId));
+        // Preserve a possible date for each occurrence before spending the bounded
+        // candidate budget on alternatives for dates already represented. The sorted
+        // root order makes both passes deterministic, even if input template ids vary.
+        const firstByDate = new Map<string, AllocationAssignment>();
+        for (const candidate of all) {
+            if (!firstByDate.has(candidate.date)) firstByDate.set(candidate.date, candidate);
+        }
+        const dateDiverseCandidates = [
+            ...firstByDate.values(),
+            ...all.filter(candidate => firstByDate.get(candidate.date) !== candidate),
+        ];
         return {
             occurrence,
-            candidates: all.slice(0, budget.maxCandidatesPerOccurrence),
+            candidates: dateDiverseCandidates.slice(0, budget.maxCandidatesPerOccurrence),
             truncated: all.length > budget.maxCandidatesPerOccurrence || datesTruncated,
             blockers,
             sawDateConflict: false,
@@ -427,10 +438,11 @@ export function resolveWeeklyRoleReservations(
         if (remaining.length === 0 || budgetExhausted) return;
         if (depth >= budget.maxOccurrences) return;
         // Prune any branch that cannot *beat* the incumbent. Ties are pruned rather than
-        // explored because the traversal order is itself ADR-0018's stable tie-break order
-        // (deadline, constrainedness, coverage key, template id, date) and an equal
-        // cardinality never replaces the incumbent -- so an equal branch could only
-        // reproduce the solution already held.
+        // explored because traversal is deterministic: occurrences use the canonical
+        // deadline/key/id order with dynamic constrainedness, while each occurrence's
+        // candidates use ADR-0018's date-diverse date/template order. Equal cardinality
+        // never replaces the incumbent, so an equal branch could only produce a different
+        // deterministic tie, not improve the primary maximum-cardinality objective.
         if (placed.size + remaining.length <= bestByOccurrence.size) return;
 
         const usedDates = new Set(assignments.map(item => item.date));

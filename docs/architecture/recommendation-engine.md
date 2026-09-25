@@ -910,15 +910,28 @@ dose, injury and spacing for one forecast date. The greedy day loop and the allo
 call it, so the allocator is not a second rules engine: it never re-implements
 `PROJECTED_FATIGUE_*` filtering or `rankCandidates` acceptance.
 
+**Occurrence derivation follows the live forecast state.** Required-role occurrences are
+not a static expansion of the event-plan coverage set. The planner first applies the
+confirmed/provisional seed selections and any projected coverage already accumulated in the
+current strip, then `deriveRequiredRoleOccurrences` creates only the remaining minimum roles
+where `minimumSessions > completedSessions + projectedSessions`. Consequently two scenarios
+with the same event and empty initial history can legitimately expose different remaining
+occurrences after their readiness/re-entry paths select different seed or earlier projected
+sessions. This distinction is coverage-ledger state, not hidden fixture history and not an
+allocator candidate-search decision.
+
 **Bounded stateful search.** `resolveWeeklyRoleReservations` is a deterministic
 backtracking search over required role occurrences only. It enumerates exact eligible
 date/template candidates from the least-loaded (root) state, then re-proves every tentative
 assignment against the *actual* projected fatigue/history transition of the assignments
 accumulated so far -- so two dates that are individually feasible but conflict after the
 first pick cannot both be reserved. Its one `WeeklyAllocationSearchBudget` is seven dates,
-14 occurrences, four canonically ordered candidates per occurrence and 1,024
-state-transition nodes. Reaching a cap returns the best-known jointly feasible partial
-allocation and marks the remainder `unresolved_search_budget` -- never a safety miss.
+14 occurrences, four exact date/template candidates per occurrence and 1,024
+state-transition nodes. Within each occurrence, it keeps the first candidate from each
+eligible date in date/template order, then fills spare slots with same-date alternatives.
+If more than four dates are eligible, the earliest four are kept. Reaching a cap returns
+the best-known jointly feasible partial allocation and marks the remainder
+`unresolved_search_budget` -- never a safety miss.
 Wall-clock time is not a semantic cut-off; p95 ≤50 ms / p99 ≤100 ms on the live-sized
 fixture is an operational gate only.
 
