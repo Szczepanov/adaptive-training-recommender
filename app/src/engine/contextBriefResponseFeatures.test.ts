@@ -103,6 +103,19 @@ describe('interval repetition (#814)', () => {
         expect(text).not.toContain('2 × 11 min');
     });
 
+    it('refuses to judge when a later work lap is off-protocol (possibly truncated)', () => {
+        const laps = [lap(1, 15, 150, 120), lap(2, 11, 250, 154), lap(3, 5, 120, 125), lap(4, 11, 245, 152), lap(5, 5, 120, 126), lap(6, 4, 190, 150), lap(7, 20, 130, 128)];
+        const feature = deriveIntervalRepetition(ride({ stimulusDomain: 'threshold', laps }));
+        expect(feature).toEqual({ state: 'insufficient_evidence', reason: 'off-protocol work lap (possibly a truncated interval); repeatability not judged' });
+    });
+
+    it('describes a repeatable set without asserting the absence of collapse', () => {
+        const context = { history: [intervalRide([229, 225, 237])], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20' };
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries(context.history, context), context);
+        expect(text).toContain('Response: repeatable across the 3 protocol-length intervals');
+        expect(text).not.toContain('no late power collapse');
+    });
+
     it('refuses to judge when a protocol-length interval falls below the work-power bar', () => {
         // 13-min cooldown (protocol-length) and 185 W both sit under the work-power bar.
         const laps = [lap(1, 15, 150, 120), lap(2, 11, 250, 154), lap(3, 5, 120, 125), lap(4, 11, 245, 152), lap(5, 5, 120, 126), lap(6, 11, 185, 150), lap(7, 13, 130, 128)];
@@ -278,6 +291,8 @@ describe('next-day response (#814)', () => {
         expect(deriveNextDayResponse(session, NO_CHECKINS, [], '2026-09-20')).toEqual({ state: 'insufficient_evidence', reason: 'no next-morning check-in recorded' });
         expect(deriveNextDayResponse(session, { records: [], unreadableDates: ['2026-09-19'] }, [], '2026-09-20'))
             .toEqual({ state: 'insufficient_evidence', reason: 'next-morning check-in unreadable (invalid stored record)' });
+        expect(deriveNextDayResponse(session, { records: [], unreadableDates: [], undatedUnreadable: 1 }, [], '2026-09-20'))
+            .toEqual({ state: 'insufficient_evidence', reason: 'next-morning check-in possibly unreadable (an invalid stored record has no readable date)' });
         expect(deriveNextDayResponse(session, NO_CHECKINS, [], '2026-09-18')).toEqual({ state: 'insufficient_evidence', reason: 'next morning not yet reached' });
     });
 });

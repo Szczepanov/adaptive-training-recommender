@@ -265,6 +265,13 @@ describe('ContextBriefService', () => {
                 expect(result.text).toContain('Next morning: next-morning check-in unreadable');
             });
 
+            it('reports the next-morning check-in as possibly unreadable when an invalid record has no date', async () => {
+                services.getActivitiesInRange.mockResolvedValue({ status: 'AVAILABLE', data: [intervalRide], revision: null });
+                services.getCheckinsInRange.mockResolvedValue([{ readiness: 'not-a-number' }]);
+                const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+                expect(result.text).toContain('Next morning: next-morning check-in possibly unreadable');
+            });
+
             it('does not derive the features for the morning export', async () => {
                 services.getActivitiesInRange.mockResolvedValue({ status: 'AVAILABLE', data: [intervalRide], revision: null });
                 const result = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');

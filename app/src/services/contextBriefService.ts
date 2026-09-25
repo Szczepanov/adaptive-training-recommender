@@ -320,6 +320,7 @@ export class ContextBriefService {
         // score into neutral input in a brief that may be handed to an external planner.
         const checkins: DailySubjectiveCheckin[] = [];
         const unreadableCheckinDates: string[] = [];
+        let undatedUnreadableCheckins = 0;
         if (checkinResult.status === 'fulfilled') {
             let invalidCheckins = 0;
             checkinResult.value.forEach((rawCheckin, index) => {
@@ -333,7 +334,8 @@ export class ContextBriefService {
                 if (parsed.status === 'AVAILABLE') checkins.push(parsed.data);
                 else {
                     invalidCheckins += 1;
-                    unreadableCheckinDates.push(rawDate);
+                    if (typeof rawCheckin?.date === 'string') unreadableCheckinDates.push(rawDate);
+                    else undatedUnreadableCheckins += 1;
                 }
             });
             if (invalidCheckins > 0) {
@@ -543,7 +545,7 @@ export class ContextBriefService {
                 history: activities,
                 historyStart: activityStart,
                 checkins: checkinResult.status === 'fulfilled'
-                    ? { records: checkins, unreadableDates: unreadableCheckinDates }
+                    ? { records: checkins, unreadableDates: unreadableCheckinDates, undatedUnreadable: undatedUnreadableCheckins }
                     : null,
                 asOfDate: targetDate,
             },

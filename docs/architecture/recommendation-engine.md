@@ -165,7 +165,9 @@ re-derived; legacy records without a `stimulusDomain` are `unknown`):
   `WORK_INTERVAL_POWER_RATIO` times the duration-weighted mean lap power sets the protocol
   length, and every later lap within `REPEAT_DURATION_MAX_RATIO` of it is a protocol interval.
   If any protocol-length lap misses the power bar (a possible collapse, or an equal-length
-  recovery), repeatability is not judged. Otherwise, with at least two intervals, it reports
+  recovery), or any later work-power lap of at least `WORK_INTERVAL_MIN_SECONDS` is not
+  protocol-length (possibly a truncated interval), repeatability is not judged. Otherwise,
+  with at least two intervals, it reports
   per-interval power (and HR per the authority), first→last change, spread, and a *late fade*
   (last below first by more than `INTERVAL_FADE_PCT`) or *late collapse* (a second-half
   interval below `INTERVAL_COLLAPSE_RATIO` of the first) label.
@@ -190,7 +192,8 @@ re-derived; legacy records without a `stimulusDomain` are `unknown`):
 - **Next morning** — the check-in dated the day after the session vs the session-day morning
   (soreness, fatigue, pain flag, count of other activities that day). Labelled observational.
   A failed check-in read is reported as unavailable, and a stored record that failed
-  validation as unreadable, never as a missing check-in.
+  validation as unreadable (or "possibly unreadable" when such a record has no readable
+  date), never as a missing check-in.
 
 Known limitations: heat, terrain, cadence, fuelling and accumulated fatigue are not
 controlled; lap-average power is not NP; interval and decoupling features depend on the

@@ -109,6 +109,8 @@ function reading(checkin: DailySubjectiveCheckin): CheckinReading {
 export interface CheckinHistory {
     records: readonly DailySubjectiveCheckin[];
     unreadableDates: readonly string[];
+    /** Invalid records whose date itself could not be read; any of them may be the one. */
+    undatedUnreadable?: number;
 }
 
 /** Observational link from a session to the following morning's check-in. `checkins`
@@ -124,8 +126,11 @@ export function deriveNextDayResponse(
     if (nextDate > asOfDate) return { state: 'insufficient_evidence', reason: 'next morning not yet reached' };
     const next = checkins.records.find(checkin => checkin.date === nextDate);
     if (!next) {
-        return checkins.unreadableDates.includes(nextDate)
-            ? { state: 'insufficient_evidence', reason: 'next-morning check-in unreadable (invalid stored record)' }
+        if (checkins.unreadableDates.includes(nextDate)) {
+            return { state: 'insufficient_evidence', reason: 'next-morning check-in unreadable (invalid stored record)' };
+        }
+        return (checkins.undatedUnreadable ?? 0) > 0
+            ? { state: 'insufficient_evidence', reason: 'next-morning check-in possibly unreadable (an invalid stored record has no readable date)' }
             : { state: 'insufficient_evidence', reason: 'no next-morning check-in recorded' };
     }
     const sessionDay = checkins.records.find(checkin => checkin.date === activity.date);

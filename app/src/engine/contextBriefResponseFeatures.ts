@@ -149,8 +149,15 @@ function selectProtocolLaps(activity: NormalizedGarminActivity): ProtocolSelecti
     const firstIndex = laps.findIndex(lap => lap.durationSeconds >= WORK_INTERVAL_MIN_SECONDS && passesBar(lap));
     if (firstIndex === -1) return { state: 'insufficient_evidence', reason: 'no work interval detected in the laps' };
     const protocolSeconds = laps[firstIndex].durationSeconds;
-    const protocol = laps.slice(firstIndex).filter(lap => lap.durationSeconds >= WORK_INTERVAL_MIN_SECONDS
-        && Math.max(lap.durationSeconds, protocolSeconds) / Math.min(lap.durationSeconds, protocolSeconds) <= REPEAT_DURATION_MAX_RATIO);
+    const isProtocolLength = (lap: ActivityLapSummary) => lap.durationSeconds >= WORK_INTERVAL_MIN_SECONDS
+        && Math.max(lap.durationSeconds, protocolSeconds) / Math.min(lap.durationSeconds, protocolSeconds) <= REPEAT_DURATION_MAX_RATIO;
+    const later = laps.slice(firstIndex);
+    // A later work-power lap that is not protocol-length may be a truncated interval;
+    // dropping it could hide a collapse, so the set is not judged.
+    if (later.some(lap => !isProtocolLength(lap) && lap.durationSeconds >= WORK_INTERVAL_MIN_SECONDS && passesBar(lap))) {
+        return { state: 'insufficient_evidence', reason: 'off-protocol work lap (possibly a truncated interval); repeatability not judged' };
+    }
+    const protocol = later.filter(isProtocolLength);
     const failing = protocol.filter(lap => !passesBar(lap)).length;
     if (failing > 0) {
         return {

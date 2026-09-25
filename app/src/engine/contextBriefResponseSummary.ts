@@ -88,7 +88,7 @@ export function deriveKeySessionSummaries(
 }
 
 const PATTERN_TEXT = {
-    repeatable: 'repeatable; no late power collapse',
+    repeatable: 'repeatable across the {n} protocol-length intervals',
     late_fade: `late fade (last work interval more than ${INTERVAL_FADE_PCT}% below the first)`,
     late_collapse: `late collapse (a second-half work interval below ${Math.round(INTERVAL_COLLAPSE_RATIO * 100)}% of the first)`,
 } as const;
@@ -104,7 +104,7 @@ function intervalLines(feature: IntervalRepetition): string[] {
     }
     if (feature.hrNote) lines.push(`- HR note: ${feature.hrNote}`);
     lines.push(`- First→last work interval: ${signedPct(feature.firstToLastPct)} · spread ${fmt(feature.spreadPct, 1)}% of mean`);
-    lines.push(`- Response: ${PATTERN_TEXT[feature.pattern]}`);
+    lines.push(`- Response: ${PATTERN_TEXT[feature.pattern].replace('{n}', String(feature.intervals.length))}`);
     return lines;
 }
 
