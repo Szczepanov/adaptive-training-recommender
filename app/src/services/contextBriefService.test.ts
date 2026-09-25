@@ -451,13 +451,21 @@ describe('ContextBriefService', () => {
 
         const result = await new ContextBriefService().build('u1', AS_OF, 14);
 
-        // Check planning & diagnostic briefs contain "unknown, not none"
         expect(result.text).toContain('Recommendation feedback unavailable (read failed)');
         expect(result.text).toContain('unknown, not none');
         expect(result.text).not.toContain('No app recommendations recorded in this window');
 
         // Check the unavailable sources list includes recommendations
         expect(result.unavailableSources).toContain('recommendations and feedback');
+    });
+
+    it('marks yesterday\'s recommendation feedback as unknown in the morning brief when the read fails', async () => {
+        services.getRecommendationsInRange.mockResolvedValue({ status: 'UNAVAILABLE', data: [] });
+
+        const result = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+
+        expect(result.text).toContain('unavailable (read failed) — unknown, not none');
+        expect(result.text).not.toContain('no app recommendation recorded for yesterday');
     });
 
     describe('body composition (anthropometry)', () => {
