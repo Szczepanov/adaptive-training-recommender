@@ -16,11 +16,15 @@ A production run promotes one Git SHA in dependency order:
 1. **CI release gate** — the full CI Pipeline: Python 3.14 tests, frontend hygiene & static
    gates, frontend unit tests and Firestore rules emulator suite, engine simulations and AI judge
    corpus gates, and the Docker Compose full-stack smoke suite. Every push to `main` already runs
-   this suite on the same SHA, so the release reuses that post-merge run when it succeeded
-   (`scripts/find_main_ci_evidence.py`, waiting up to 20 minutes for one still in progress).
-   When it is missing, failed or still running past that budget, the release runs the full
-   suite itself. A release is therefore never less validated than the SHA's own CI, and a flaky
-   test cannot block a SHA that has already passed.
+   this suite on the same SHA, so the release reuses that post-merge run when it succeeded and
+   started less than 24 hours ago (`scripts/find_main_ci_evidence.py`, waiting up to 20 minutes
+   for one still in progress). When it is missing, failed, older than that, or still running past
+   the wait budget, the release runs the full suite itself. The age bound exists because some
+   gates depend on time rather than on the tree: `npm audit` and `pip-audit` query live advisory
+   databases and the Docker smoke test builds on a floating base image, so a reused run can miss
+   an advisory or base-image break published within the last 24 hours. In exchange, a flaky test
+   cannot block a SHA that has already passed. If the evidence lookup itself errors, the release
+   falls back to the full suite rather than failing.
 2. **Backend services** — build and push the SHA-tagged image, deploy `garmin-account-link`,
    `anthropometry-write-api`, the three Cloud Run Jobs and their Scheduler jobs, then verify
    service health. The optional live `garmin-sync` execution remains opt-in because it calls

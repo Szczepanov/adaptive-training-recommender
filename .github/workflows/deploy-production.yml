@@ -57,10 +57,11 @@ jobs:
           fi
 
   # Every push to main already runs the full CI Pipeline on the same SHA (a non-pull_request
-  # event runs every ci.yml job). Re-running it here on an identical tree can only surface
-  # flaky tests, not new defects, so reuse that run's success when it exists. When it is
-  # missing, failed, or still running past the wait budget, fall back to calling ci.yml
-  # below, so a release is never less validated than before.
+  # event runs every ci.yml job). Re-running it here on an identical tree mostly re-rolls
+  # flaky tests, so reuse that run's success when it exists. It is not fully redundant:
+  # npm audit / pip-audit read live advisory databases and the Docker smoke test builds on a
+  # floating base image, so evidence is reused only while it is under 24 hours old. When it is
+  # missing, failed, stale, or still running past the wait budget, fall back to calling ci.yml.
   ci-evidence:
     name: Find post-merge CI for this SHA
     needs: preflight
@@ -80,7 +81,9 @@ jobs:
         id: find
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/find_main_ci_evidence.py --wait-seconds 1200 --poll-seconds 30
+        run: >-
+          python3 scripts/find_main_ci_evidence.py
+          --wait-seconds 1200 --poll-seconds 30 --max-age-hours 24
 
   validate:
     name: Full CI release gate
