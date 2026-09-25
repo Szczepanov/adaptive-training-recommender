@@ -1,6 +1,6 @@
 import type { AdaptationDoseRequirement, AdaptationKey, EvidenceBackedStrategy } from './evergreenStrategy';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
-import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
+import { EVERGREEN_GENERAL_COVERAGE_SET, EVERGREEN_COVERAGE_BY_KEY } from '../workouts/event-plan';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { getDayDiff } from '../utils/localDate';
 import { progressionOverrideKey } from './progressionOverrideKey';
@@ -38,8 +38,6 @@ function minimumDuration(workoutIds: readonly string[]): number {
 
 /** Exact adapter from the evergreen programming descriptor to the dose packer's
  * adaptation roles. Walk-run is intentionally excluded from aerobic-volume credit. */
-// ⚡ Bolt: Pre-compute a Map to avoid O(N) redundant scans on initialization.
-const EVERGREEN_COVERAGE_BY_KEY = new Map(EVERGREEN_GENERAL_COVERAGE_SET.coverage.map(item => [item.key, item]));
 
 export const EVERGREEN_PACKING_COVERAGE: CoverageSetDescriptor = {
     id: EVERGREEN_GENERAL_COVERAGE_SET.id,
