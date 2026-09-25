@@ -917,6 +917,9 @@ export interface SessionTemplate {
     /** Specialized automatic catalog content may require explicit opt-in for its modality.
      * This is catalog-admission metadata, not a safety restriction or generic preference rule. */
     requiresExplicitModalityPreference?: boolean;
+    /** Permit the authored easier dose to satisfy a shorter daily time cap while the
+     * default duration remains the historical planning/reference dose. */
+    allowsShortTimeCapDose?: boolean;
     easierDose?: DoseVariation;
     harderDose?: DoseVariation;
     stimulusProfile?: WorkoutStimulusProfile;

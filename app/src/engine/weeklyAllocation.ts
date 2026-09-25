@@ -64,6 +64,13 @@ export interface WeeklyRoleAllocationOutcome {
 
 export interface WeeklyRoleAllocationReport {
     outcomes: WeeklyRoleAllocationOutcome[];
+    /** Optional roles are never reserved. Report this only when every observed feasible
+     * forecast opportunity was occupied by an exact required-role reservation. */
+    optionalMisses?: Array<{
+        coverageKey: PlanCoverageKey;
+        reason: 'capacity_exhausted_by_required_roles';
+        observedBlockedDates: string[];
+    }>;
 }
 
 export interface WeeklyAllocationSearchBudget {

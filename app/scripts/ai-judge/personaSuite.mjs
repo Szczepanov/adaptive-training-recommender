@@ -232,7 +232,7 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
       trainingRecordLike: {
         ...exposure.trainingRecordLike,
         type: isQuality ? 'Cycling tempo endurance' : 'Cycling aerobic endurance',
-        duration_min: 60,
+        duration_min: 65,
         training_effect: isQuality ? 3 : 2,
         intensity_tag: isQuality ? 'moderate' : 'easy',
       },

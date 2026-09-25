@@ -146,10 +146,10 @@ export function resolveCapTruncatedPrescription(template: SessionTemplate, maxTi
     };
 }
 
-/** Eligibility only requires a template's durationMin to fit the day's time cap (see
- * eligibleTemplates/resolveMaximumSessionMinutes in eligibility.ts), so a wide-range
- * template can remain eligible on a capped day even though its authored durationMax does
- * not fit -- eligibleTemplates decorates such a template with a cap-safe easierDose, but
+/** Eligibility accepts a template's default minimum or an explicitly opted-in authored
+ * easier dose within the day's time cap (see eligibleTemplates in eligibility.ts), so a
+ * wide-range template can remain eligible even though its authored durationMax does not
+ * fit -- eligibleTemplates decorates such a template with a cap-safe easierDose, but
  * nothing applies it unless asked. Call this wherever a candidate is actually picked for a
  * date (today, tomorrow, or a forecast day alike) so the recommendation never advertises a
  * duration beyond a constraint the athlete was told is a hard cap, and so a fatigue-driven
@@ -1116,7 +1116,13 @@ export function rankCandidates(
         if (!template) return;
         const excludedReasons: string[] = [];
 
-        if ((template.durationMin ?? 0) > availability.maxTimeMinutes) excludedReasons.push('TIME_BUDGET_EXCEEDED');
+        const activeDoseAdjustment = resolveTimeCapDoseAdjustment(template, availability.maxTimeMinutes, options.fatigueTier === 'modify');
+        // Only opted-in catalog templates may use an authored easier dose below their
+        // default minimum to enter a shorter window.
+        const minimumForTimeBudget = template.allowsShortTimeCapDose
+            ? activeDoseAdjustment?.activeDose.durationMin ?? template.durationMin
+            : template.durationMin;
+        if ((minimumForTimeBudget ?? 0) > availability.maxTimeMinutes) excludedReasons.push('TIME_BUDGET_EXCEEDED');
         for (const req of template.requiredEquipment ?? []) {
             if (!availability.availableEquipment.includes(req)) {
                 excludedReasons.push('MISSING_REQUIRED_EQUIPMENT');
@@ -1142,7 +1148,6 @@ export function rankCandidates(
             excludedReasons.push('CONSECUTIVE_STRENGTH_DAYS');
         }
 
-        const activeDoseAdjustment = resolveTimeCapDoseAdjustment(template, availability.maxTimeMinutes, options.fatigueTier === 'modify');
         const isReadinessModifiedDose = Boolean(activeDoseAdjustment && options.fatigueTier === 'modify');
         const effectiveCandidate = activeDoseAdjustment
             ? {

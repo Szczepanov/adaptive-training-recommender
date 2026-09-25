@@ -111,7 +111,16 @@ export function evaluateTemplateEligibility<T extends GateableSession>(
     date: string,
 ): SessionEligibility<T> {
     const reasons: EligibilityReason[] = [];
-    if (template.durationMin > resolveMaximumSessionMinutes(context, checkinMinutes, date)) reasons.push('time_limit');
+    const maxMinutes = resolveMaximumSessionMinutes(context, checkinMinutes, date);
+    const authoredShortDose = isSessionTemplate(template) && template.allowsShortTimeCapDose
+        ? template.easierDose
+        : undefined;
+    const authoredShortDoseFits = authoredShortDose !== undefined
+        && Number.isFinite(authoredShortDose.durationMin)
+        && authoredShortDose.durationMin >= 0
+        && authoredShortDose.durationMin <= maxMinutes
+        && authoredShortDose.durationMax >= authoredShortDose.durationMin;
+    if (template.durationMin > maxMinutes && !authoredShortDoseFits) reasons.push('time_limit');
     if (!template.requiredEquipment.every(item => hasEquipment(context.trainingSettings, context, item))) reasons.push('equipment');
 
     const settings = context.trainingSettings;
@@ -160,8 +169,8 @@ function isSessionTemplate(template: GateableSession): template is SessionTempla
 }
 
 /**
- * Eligibility is intentionally based on the authored minimum duration: wide-range sessions
- * remain valid when their minimum fits the day. Downstream recommendation logic, however,
+ * Eligibility uses the authored base minimum, or an opted-in shorter authored easier
+ * dose when it fits the day. Downstream recommendation logic, however,
  * needs a concrete dose whose *maximum* also respects the same hard cap. Attach a cap-safe
  * easier variation to eligible catalog templates so every ranking path has one available.
  *

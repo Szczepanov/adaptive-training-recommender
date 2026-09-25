@@ -197,6 +197,9 @@ describe('active persona AI-judge suite', () => {
       const strengthHistory = definition.scenario.initialHistory.filter((exposure) => exposure.modality === 'Strength');
       expect(cyclingHistory).toHaveLength(8);
       expect(strengthHistory).toHaveLength(4);
+      expect(cyclingHistory.every((exposure) => exposure.trainingRecordLike.duration_min === 65)).toBe(true);
+      expect(definition.scenario.initialHistory.reduce((minutes, exposure) =>
+        minutes + exposure.trainingRecordLike.duration_min, 0)).toBe(720);
       expect(cyclingHistory.length).toBeGreaterThan(strengthHistory.length);
       expect(strengthHistory.every((exposure) => exposure.category === 'Full-body Strength')).toBe(true);
       expect(definition.scenario.event).toBeNull();

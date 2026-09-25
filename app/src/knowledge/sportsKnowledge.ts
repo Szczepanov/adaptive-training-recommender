@@ -397,6 +397,7 @@ export const KNOWLEDGE_CLAIM_IDS = {
     adultStrengthDefaultUpperTarget: 'health.adults.strength.default_upper_target',
     healthAdherenceModalityIntensityPrior: 'health.adherence.modality_intensity_prior_v1',
     conditionalHighIntensityPrior: 'performance.high_intensity.conditional_weekly_prior',
+    evergreenQualitySetComposition: 'policy.evergreen.quality_set_composition_v1',
     enduranceIntensityDistribution: 'performance.endurance.intensity_distribution.low_intensity_majority',
     trainingStressRecoveryBalance: 'recovery.training.stress_recovery_balance',
     strenuousLowerBodyResidualFatigue: 'recovery.lower_body.strenuous_work.residual_impairment',
@@ -463,6 +464,14 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
         applicability: { contexts: ['endurance', 'speed_power', 'sport_readiness'], sports: ['endurance', 'speed_power', 'sport_readiness'], populations: ['athletes_with_sufficient_consistent_recent_training_evidence'], outcomes: ['bounded_performance_oriented_high_intensity_exposure'], horizon: 'chronic' },
         evidence: [{ sourceId: EVERGREEN_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
         limitations: ['This is a conservative product prior, not a claim that one to two high-intensity sessions is universally optimal.', 'The prior is withheld when recent training evidence is insufficient, limited or conflicting.'], reviewedOn: '2026-08-30', version: 1,
+    },
+    {
+        id: KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition,
+        statement: 'Evergreen sustained quality is an optional exact-identity role containing controlled cycling threshold, controlled cycling tempo, and running tempo. Cycling tempo keeps its 40-minute default and permits an authored 30-minute easier dose for short windows when the evidence-backed quality prior is eligible; ordinary packing, readiness, tissue, load, and spacing gates still decide whether it is scheduled. An optional capacity miss is reported only when every observed feasible forecast opportunity in the active plan block was occupied by an exact required-role reservation.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
+        applicability: { contexts: ['endurance', 'balanced_performance', 'load_management'], sports: ['cycling', 'running'], populations: ['evergreen_mode_users_with_eligible_quality_prior'], outcomes: ['bounded_performance_oriented_quality_exposure'], horizon: 'both' },
+        evidence: [{ sourceId: EVERGREEN_PRODUCT_POLICY_SOURCE, directness: 'direct', note: 'Issue #758 exact-workout set policy; the catalog minimum and safety gates remain separate authorities.' }],
+        limitations: ['The exact three-workout set and 30-minute fit are product policy, not a scientific claim that tempo is equivalent to threshold work.', 'Optional role membership does not guarantee a quality recommendation or override any safety gate.', 'The capacity explanation covers observed forecast opportunities only; absence of the explanation does not identify another cause.'], reviewedOn: '2026-09-25', version: 1,
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.enduranceIntensityDistribution,

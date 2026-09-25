@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-25
 **Cases:** `persona_cycling_hybrid_baseline` and `persona_cycling_hybrid_low_time` from `app/scripts/ai-judge/personaSuite.mjs`
-**Method:** `app/src/engine/issue758CyclingQualityDiagnostic.test.mjs` runs the real two-week persona simulation. At each weekly planning date it reads the same synthetic history, strategy, exact evergreen packing descriptor, and the actual six-day packing horizon (`options.days = 6`). The simulation separately records seven daily selections per week, including Sunday, which is outside that week's packing horizon. No live data or API is used. This records behavior before issue #758's proposed policy/catalog change.
+**Method:** `app/src/engine/issue758CyclingQualityDiagnostic.test.mjs` reconstructs the original synthetic 680-minute history by restoring all eight cycling exposures to 60 minutes, and uses the original two-identity evergreen quality descriptor for candidate analysis. It then runs the current planner in the real two-week persona simulation. At each weekly planning date it reads the reconstructed history, strategy, and the actual six-day packing horizon (`options.days = 6`). The simulation separately records seven daily selections per week, including Sunday, which is outside that week's packing horizon. No live data or API is used. The historical inputs and pre-ranking gate evidence remain reproducible; planner and template behavior reflect the current build.
 
 ## Observed gates
 
@@ -15,7 +15,7 @@
 
 `inferAthleteTrainingState` requires at least 12 sessions **and 720 minutes** in the observed 28 days for the `established` proxy. The persona has eight 60-minute rides and four 50-minute strength sessions, so it misses that duration condition by 40 minutes. Its two historical tempo rides are labeled `Cycling tempo endurance`; this classifier does not count them as `highIntensitySessions`, but that count is not the direct strategy gate. `resolveEvidenceBackedStrategy` consequently withholds its conditional optional quality requirement and the accompanying two-session hard cap. The packer receives no quality requirement and creates no quality occurrence in either week. Both simulation allocation reports have zero quality outcomes.
 
-The evergreen `sustained_quality` descriptor currently contains `cycling_controlled_threshold_4x8_01` (catalog minimum 45 min) and `running_tempo_01` (30 min). Its descriptor duration is 30 min because it uses the minimum across both sports. The existing `cycling_tempo_surges_01` has a 30-minute catalog minimum but is outside this descriptor. The persona prefers cycling and deprioritizes running.
+The reconstructed pre-change evergreen `sustained_quality` descriptor contains `cycling_controlled_threshold_4x8_01` (catalog minimum 45 min) and `running_tempo_01` (30 min). Its descriptor duration is 30 min because it uses the minimum across both sports. The existing `cycling_tempo_surges_01` has a 30-minute catalog minimum but was outside this descriptor. The persona prefers cycling and deprioritizes running.
 
 ## Daily candidate matrix
 
@@ -43,6 +43,23 @@ The simulation's separate daily trace also contains Sunday selections. Those dat
 | 2026-09-06 | `str_upper_01` | `str_full_02` |
 | 2026-09-13 | `end_easy_01` | `end_easy_01` |
 
-The first blocker applies even in the 90–120-minute case. Adding a 30-minute cycling workout to the descriptor alone would leave this persona without the optional quality role. A policy/fixture decision is therefore needed alongside the catalog change. The existing safety, spacing, and rolling-load gates still need verification once a role is actually generated.
+The first blocker applies even in the 90–120-minute frozen case. Adding a 30-minute cycling workout to the descriptor alone would have left this 680-minute persona without the optional quality role. The current synthetic persona instead supplies 720 observed minutes while production qualification remains unchanged. The existing safety, spacing, and rolling-load gates still govern any role that is generated.
 
 **Focused command:** `cd app && npx vitest run src/engine/issue758CyclingQualityDiagnostic.test.mjs --reporter=verbose` — 2 tests passed. The test prints the machine-readable per-day observations used for this table.
+
+## Implemented safe scope
+
+The evergreen optional `sustained_quality` set now includes the existing
+`cycling_tempo_surges_01` identity. Its 30-minute authored easier dose may enter a
+35-minute window, while `end_mod_02` keeps its 40-minute default for ordinary
+recommendations and training-history accounting. The low-time persona now selects a
+cap-fitting cycling quality session. The normal-recovery established-history case
+still selects no quality because every observed feasible date in its active quality
+block is occupied by a fulfilled required-role reservation; its allocation report
+records `capacity_exhausted_by_required_roles`. Required aerobic/strength reservations
+and all recovery, tissue, spacing, and rolling-load gates remain authoritative.
+
+This implements the conservative GPT-6-Sol recommendation but leaves the issue's
+baseline criterion of at least one quality session unresolved. Achieving that requires
+a separate product choice to add session capacity or let an optional quality role
+displace/report a required occurrence; this change makes neither choice.

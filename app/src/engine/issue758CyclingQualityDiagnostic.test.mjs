@@ -12,7 +12,14 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 
 const CASE_IDS = ['persona_cycling_hybrid_baseline', 'persona_cycling_hybrid_low_time'];
 const family = buildPersonaFamilies().find(item => item.familyId === 'persona_cycling_primary_hybrid');
-const qualityRole = EVERGREEN_PACKING_COVERAGE.roles.find(role => role.id === 'sustained_quality');
+const qualityRole = {
+    ...EVERGREEN_PACKING_COVERAGE.roles.find(role => role.id === 'sustained_quality'),
+    exactWorkoutIds: ['cycling_controlled_threshold_4x8_01', 'running_tempo_01'],
+};
+const frozenPackingCoverage = {
+    ...EVERGREEN_PACKING_COVERAGE,
+    roles: EVERGREEN_PACKING_COVERAGE.roles.map(role => role.id === 'sustained_quality' ? qualityRole : role),
+};
 
 /** Diagnose source-of-truth gates before the forecast ranks daily templates. */
 function describeCandidate(window, workoutId, strategy, packedRole) {
@@ -27,8 +34,14 @@ function describeCandidate(window, workoutId, strategy, packedRole) {
 
 describe('issue #758 cycling quality diagnostic', () => {
     for (const caseId of CASE_IDS) {
-        it(`traces both forecast weeks from the actual ${caseId} fixture`, async () => {
-            const scenario = family?.cases.find(item => item.scenario.id === caseId)?.scenario;
+        it(`runs the current planner against reconstructed pre-change ${caseId} history and quality descriptor`, async () => {
+            const currentScenario = family?.cases.find(item => item.scenario.id === caseId)?.scenario;
+            const scenario = currentScenario && {
+                ...currentScenario,
+                initialHistory: currentScenario.initialHistory.map(item => item.modality === 'Cycling'
+                    ? { ...item, trainingRecordLike: { ...item.trainingRecordLike, duration_min: 60 } }
+                    : item),
+            };
             expect(scenario).toBeDefined();
             expect(scenario.initialHistory).toHaveLength(12);
             expect(scenario.initialHistory.reduce((sum, item) => sum + item.trainingRecordLike.duration_min, 0)).toBe(680);
@@ -46,7 +59,7 @@ describe('issue #758 cycling quality diagnostic', () => {
                     return { date, maxTimeMinutes: resolveAvailability(date, null, [], context).maxTimeMinutes };
                 });
                 const capacity = resolveTrainingCapacity(scenario.trainingIntentProfile.weeklyCommitment, preferences, availability);
-                const packed = packWeeklyDose(strategy, capacity, EVERGREEN_PACKING_COVERAGE);
+                const packed = packWeeklyDose(strategy, capacity, frozenPackingCoverage);
                 const packedQuality = packed.optionalRoles.filter(role => role.coverageRoleId === 'sustained_quality');
                 weeks.push({
                     startDate,
