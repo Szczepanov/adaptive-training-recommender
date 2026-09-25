@@ -34,7 +34,7 @@ from .canonical import (
 from .dates import get_date_string, local_today, n_days_ago, parse_garmin_gmt_timestamp
 from .fit_activity import FitActivityEvidence, decode_activity_original
 from .garmin_client import GarminClientWrapper
-from .metrics import classify_activity_intensity
+from .intensity_classification import ActivityIntensityEvidence, classify_activity
 from .provider import (
     ProviderActivitiesResult,
     ProviderActivityDetailResult,
@@ -466,7 +466,9 @@ def qualifies_for_activity_detail(activity: CanonicalActivity) -> bool:
             activity.type.lower() in _POWER_ACTIVITY_TYPES
             or _is_running_activity_type(activity.type)
         )
-        and activity.intensity_tag != "easy"
+        # Issue #809: a long aerobic ride is now "easy" stimulus but still a costly
+        # session; its telemetry stays worth fetching.
+        and (activity.intensity_tag != "easy" or activity.session_cost in ("high", "very_high"))
     )
 
 
@@ -1384,6 +1386,21 @@ def extract_running_dynamics(act: dict[str, Any]) -> CanonicalRunningDynamics | 
     return None
 
 
+def _summary_zone_seconds(act: dict[str, Any], prefix: str, zone_count: int) -> list[float] | None:
+    """Extract ``<prefix>1..N`` time-in-zone seconds from an activity-list summary."""
+    values = [_non_negative_number(act.get(f"{prefix}{zone}")) for zone in range(1, zone_count + 1)]
+    if all(value is None for value in values):
+        return None
+    return [value or 0.0 for value in values]
+
+
+def _is_race_event(act: dict[str, Any]) -> bool:
+    event_type = act.get("eventType")
+    if isinstance(event_type, dict):
+        return str(event_type.get("typeKey") or "").lower() == "race"
+    return False
+
+
 def _canonicalize_activity(
     act: dict[str, Any], zone4_floor: int | None = None
 ) -> CanonicalActivity:
@@ -1398,15 +1415,25 @@ def _canonicalize_activity(
             avg_hr = None
     raw_max_hr = _non_negative_number(act.get("maxHR") or act.get("maxHeartRate"))
     max_hr = raw_max_hr if raw_max_hr else None
-    # Use whichever training effect is higher: an interval/strength session can be a hard
-    # stimulus through anaerobic load alone even when its aerobic TE stays moderate, and
-    # only consulting aerobic TE (as the pre-canonical-layer code did) would silently
-    # under-count those sessions as "hard" for last3DaysHardSessionsCount purposes. See
-    # tests/test_garmin_provider.py for the discriminating case this covers.
-    _, intensity_tag = classify_activity_intensity(
-        max(te_aero, te_anaero), avg_hr, zone4_floor=zone4_floor
-    )
     duration_sec = act.get("duration", 0)
+    # Issue #809: stimulus intensity and session cost are classified separately from
+    # provider-neutral evidence. Anaerobic TE still promotes interval sessions to "hard"
+    # (see tests/test_garmin_provider.py), but aerobic TE alone no longer proves intensity
+    # when measured power/HR-zone evidence says the work was aerobic.
+    classification = classify_activity(
+        ActivityIntensityEvidence(
+            activity_type=_activity_type_key(act),
+            duration_seconds=float(duration_sec or 0),
+            training_effect_aerobic=te_aero,
+            training_effect_anaerobic=te_anaero,
+            average_hr=avg_hr,
+            hard_hr_threshold=zone4_floor,
+            intensity_factor=_non_negative_number(act.get("intensityFactor")),
+            hr_zone_seconds=_summary_zone_seconds(act, "hrTimeInZone_", 5),
+            power_zone_seconds=_summary_zone_seconds(act, "powerTimeInZone_", 7),
+            is_race=_is_race_event(act),
+        )
+    )
 
     raw_activity_id = act.get("activityId")
     activity_type = _activity_type_key(act)
@@ -1452,7 +1479,11 @@ def _canonicalize_activity(
         average_hr=avg_hr,
         max_hr=max_hr,
         training_load=act.get("activityTrainingLoad"),
-        intensity_tag=intensity_tag,
+        intensity_tag=classification.intensity_tag,
+        stimulus_domain=classification.stimulus_domain,
+        session_cost=classification.session_cost,
+        intensity_evidence=classification.intensity_evidence,
+        intensity_classification_version=classification.classification_version,
         running_dynamics=extract_running_dynamics(act),
         primary_benefit=primary_benefit_str,
         epoc=epoc_val,

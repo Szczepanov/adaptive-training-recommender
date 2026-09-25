@@ -5,11 +5,13 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
+# Legacy fallback thresholds now live in intensity_classification (issue #809); re-exported
+# here for existing importers.
+from .intensity_classification import (
+    HARD_SESSION_MIN_AVERAGE_HR,
+    HARD_SESSION_MIN_TRAINING_EFFECT,
+)
 from .models import BASELINE_COMPUTATION_VERSION, DerivedDeltas, DerivedMetrics
-
-# Domain intensity thresholds (temporary heuristics)
-HARD_SESSION_MIN_TRAINING_EFFECT = 3.0
-HARD_SESSION_MIN_AVERAGE_HR = 145
 
 
 def calculate_average(values: Sequence[float | int | None], min_required: int) -> float | None:
@@ -163,6 +165,11 @@ def classify_activity_intensity(
     zone4_floor: int | float | None = None,
 ) -> tuple[bool, str]:
     """
+    Legacy Training-Effect/average-HR rule. Since issue #809 this is only the
+    ``trainingEffectFallback`` tier of ``intensity_classification.classify_activity``,
+    used when no measured intensity evidence exists; do not call it directly for new
+    classification paths.
+
     Classify activity intensity based on Training Effect or Average HR.
     Rule: training_effect >= 3.0 OR average_hr >= threshold -> Hard
     Where threshold is zone4_floor (if provided and > 0) or HARD_SESSION_MIN_AVERAGE_HR (145).

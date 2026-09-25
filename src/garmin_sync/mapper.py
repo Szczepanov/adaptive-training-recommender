@@ -70,6 +70,17 @@ def normalize_activity(
         **({"maxHr": activity.max_hr} if activity.max_hr is not None else {}),
         "activityTrainingLoad": activity.training_load,
         "intensityTag": activity.intensity_tag,
+        # Issue #809: stimulus vs session-cost split with explicit provenance/version.
+        **(
+            {
+                "stimulusDomain": activity.stimulus_domain,
+                "sessionCost": activity.session_cost,
+                "intensityEvidence": activity.intensity_evidence,
+                "intensityClassificationVersion": activity.intensity_classification_version,
+            }
+            if activity.intensity_classification_version is not None
+            else {}
+        ),
         **(
             {"primaryBenefit": activity.primary_benefit}
             if activity.primary_benefit is not None
