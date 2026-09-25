@@ -41,6 +41,9 @@ import { isV2Session, type AnyExternalPlanSession } from '../sessions/externalPl
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import { activeExternalPlanService, externalRestContextForDate, placedSessionForDate } from './activeExternalPlanService';
 import type { BriefRestDirective } from '../engine/briefPlanAuthority';
+import { activityOverrideService } from './activityOverrideService';
+import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
+import type { PerformedExposureFact } from '../engine/performedTrainingFacts';
 import { activityService } from './activityService';
 import { anthropometryService } from './anthropometryService';
 import { checkinService } from './checkinService';
@@ -262,6 +265,7 @@ export class ContextBriefService {
             planBlockResult,
             anthropometryResult,
             bodyCompositionSnapshotResult,
+            overrideResult,
         ] = await Promise.allSettled([
             // getRecoverySnapshotByDate collapses UNAVAILABLE and MISSING to null, so a
             // read outage would be indistinguishable from "no data that day" and the
@@ -299,6 +303,9 @@ export class ContextBriefService {
             // provider reading 8-60 days old invisible to body composition and silently
             // fall back to manual data (or omit the reading entirely).
             recoverySnapshotService.getRecoverySnapshotsInRangeState(userId, anthropometryStart, throughExclusive),
+            // Issue #813: exposure-ledger inputs, bounded to the render window and not read at
+            // all for the morning brief, which does not render the ledgers.
+            purpose === 'morning' ? Promise.resolve(null) : activityOverrideService.getOverridesSinceState(userId, startDate),
         ] as const);
 
         const snapshots: DailyRecoverySnapshot[] = [];
@@ -432,6 +439,7 @@ export class ContextBriefService {
         // `externalFallback: true` downstream is never presented as certain when the day
         // that mattered most could not actually be read.
         let externalScheduleTodayConfirmed = fixedActivitiesReadable;
+        let planScheduleFullyRead = fixedActivitiesReadable;
         if (fixedActivitiesReadable) {
             // Resolve the active plan independently for each future date so plan revision
             // effective-from boundaries and overlapping re-imports are respected. Use the
@@ -486,6 +494,7 @@ export class ContextBriefService {
                 }
             }
             if (unreadablePlanDays > 0) {
+                planScheduleFullyRead = false;
                 unavailableSources.push(`external plan schedule (${unreadablePlanDays} day(s) unreadable)`);
             }
         } else {
@@ -512,6 +521,22 @@ export class ContextBriefService {
         // not negative.
         const externalFallbackUncertain = planningContext.externalFallback && !externalScheduleTodayConfirmed;
 
+        // Issue #813: canonical performed facts (ADR-0034) drive live coverage credit, including
+        // in-app structured executions with no Garmin record. Hydration reuses the activities
+        // already read above. Readability is carried separately (`activitiesReadable`): the
+        // facts service itself cannot tell an unreadable activity read from none.
+        let performedFacts: PerformedExposureFact[] | null = null;
+        if (purpose !== 'morning') {
+            try {
+                performedFacts = (await getPerformedTrainingFactsInRange(userId, startDate, throughExclusive, {
+                    preloadedActivities: activities.filter(activity => activity.date >= startDate && activity.date <= targetDate),
+                })).exposures;
+            } catch (error) {
+                console.warn('Context brief: performed-training facts unreadable', error);
+                unavailableSources.push('canonical performed-training facts');
+            }
+        }
+
         const input: ContextBriefInput = {
             asOfDate: targetDate,
             windowDays,
@@ -527,6 +552,22 @@ export class ContextBriefService {
             goals,
             bodyComposition,
             purpose,
+            exposureLedger: {
+                activitiesReadable: activityResult.status === 'fulfilled' && activityResult.value.status === 'AVAILABLE',
+                recommendationsReadable: recommendationResult.status === 'fulfilled' && recommendationResult.value.status === 'AVAILABLE',
+                activityOverrides: overrideResult.status === 'fulfilled' && overrideResult.value?.status === 'AVAILABLE'
+                    ? overrideResult.value.data
+                    : null,
+                // Readability is carried separately: the facts service itself turns an
+                // unreadable activity read into [], so `activitiesReadable` stays authoritative.
+                performedFacts,
+                // Planned status is only as complete as the plan reads that produced it.
+                plannedSessions: planScheduleFullyRead
+                    ? upcomingExternalSessions.map(session => ({
+                        date: session.date, modality: session.modality, intensity: session.intensity, title: session.title,
+                    }))
+                    : null,
+            },
         };
         // `activities` was fetched over contextDays (>= windowDays) to feed the fixed
         // 7-day recovery timeline below; the detailed telemetry appendix must not inherit

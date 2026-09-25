@@ -14,6 +14,7 @@ import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 import { mean, renderBodyComposition, renderObjective, round, signed } from './contextBriefRecovery';
 import { SECTION_TITLE, type BriefPurpose, type BriefWindowPreset } from './contextBriefPurpose';
 import { renderRecoveryEvidenceSynthesis, synthesizeRecoveryEvidence } from './contextBriefRecoverySynthesis';
+import { deriveExposureLedger, renderExposureLedger, type ExposureLedgerInput } from './contextBriefExposureLedger';
 
 // Re-exported so existing importers keep one entry point for the brief.
 export { round, signed } from './contextBriefRecovery';
@@ -58,6 +59,11 @@ export interface ContextBriefInput {
      * decision authority and omits forensic/experimental detail. `morning` is rendered by
      * `buildMorningCoachBrief` instead; passed here it behaves like `planning`. */
     purpose?: BriefPurpose;
+    /** Issue #813: source readability and non-window inputs for the read-only stressor and
+     * capability-exposure ledgers. Omitted = the ledgers are not rendered. Completed sessions
+     * and recommendations come from this input's own windowed arrays. */
+    exposureLedger?: Pick<ExposureLedgerInput,
+        'activitiesReadable' | 'recommendationsReadable' | 'activityOverrides' | 'performedFacts' | 'plannedSessions'>;
 }
 
 /** See the isolation note on `ContextBriefInput.bodyComposition` above: intentionally not
@@ -652,7 +658,19 @@ export function buildContextBrief(input: ContextBriefInput): string {
     const synthesis = renderRecoveryEvidenceSynthesis(synthesizeRecoveryEvidence({ asOfDate, snapshots, checkins }));
     const objective = [...objectiveLines.slice(0, 2), ...synthesis, '', ...objectiveLines.slice(2)];
     const bodyComposition = renderBodyComposition(input.bodyComposition, planningOrder);
-    const training = renderTraining(activities, asOfDate, windowDays, `## ${n(5, 3)}. ${SECTION_TITLE.training}`);
+    const trainingTable = renderTraining(activities, asOfDate, windowDays, `## ${n(5, 3)}. ${SECTION_TITLE.training}`);
+    const ledgerLines = input.exposureLedger
+        ? renderExposureLedger(deriveExposureLedger({
+            ...input.exposureLedger,
+            asOfDate,
+            lookbackStart: startDate,
+            activities,
+            recommendations,
+            trainingSettings: input.trainingSettings,
+            preferences: input.preferences,
+        }), startDate, asOfDate)
+        : [];
+    const training = [...trainingTable, ...ledgerLines];
     const subjective = renderSubjective(
         checkins, baselineCheckins, windowDays, baselineDays, { morning: hungerMorning, other: hungerOther },
         `## 4. ${SECTION_TITLE.subjective}`,

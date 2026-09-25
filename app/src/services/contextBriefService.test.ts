@@ -17,6 +17,8 @@ const services = vi.hoisted(() => ({
     getPlanBlocksInRangeState: vi.fn(),
     getActivePlanState: vi.fn(),
     getEntriesInRange: vi.fn(),
+    getOverridesSinceState: vi.fn(),
+    getPerformedTrainingFactsInRange: vi.fn(),
 }));
 
 vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: {
@@ -24,6 +26,12 @@ vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: {
     getRecoverySnapshotsInRangeState: services.getRecoverySnapshotsInRangeState,
 } }));
 vi.mock('./checkinService', () => ({ checkinService: { getCheckinsInRange: services.getCheckinsInRange } }));
+vi.mock('./activityOverrideService', () => ({ activityOverrideService: {
+    getOverridesSinceState: services.getOverridesSinceState,
+} }));
+vi.mock('../training-occurrence/performedTrainingFactsService', () => ({
+    getPerformedTrainingFactsInRange: services.getPerformedTrainingFactsInRange,
+}));
 vi.mock('./activityService', () => ({ activityService: { getActivitiesInRange: services.getActivitiesInRange } }));
 vi.mock('./recommendationService', () => ({ recommendationService: { getRecommendationsInRange: services.getRecommendationsInRange } }));
 vi.mock('./trainingSettingsService', () => ({ trainingSettingsService: {
@@ -93,6 +101,31 @@ describe('ContextBriefService', () => {
         services.getActivePlanState.mockResolvedValue({ status: 'MISSING' });
         services.getEntriesInRange.mockResolvedValue([]);
         services.getRecoverySnapshotsInRangeState.mockResolvedValue({ status: 'MISSING' });
+        services.getOverridesSinceState.mockResolvedValue({ status: 'AVAILABLE', data: {}, revision: null });
+        services.getPerformedTrainingFactsInRange.mockResolvedValue({ asOfDate: '', windowDays: 0, revision: 'r', exposures: [], coverageCredits: [] });
+    });
+
+    it('renders the #813 exposure ledgers and says when reclassifications or activities were unreadable', async () => {
+        services.getOverridesSinceState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+        services.getActivitiesInRange.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+        const result = await new ContextBriefService().build('u1', AS_OF, 14);
+        expect(result.text).toContain('### Recent meaningful stressors');
+        expect(result.text).toContain('### Physical-capability exposure');
+        expect(result.text).toContain('Athlete reclassifications were unreadable');
+        expect(result.text).toContain('completed exposures are unknown, not absent');
+    });
+
+    it('reports unreadable performed facts and skips ledger-only reads for the morning brief', async () => {
+        services.getPerformedTrainingFactsInRange.mockRejectedValue(new Error('down'));
+        const full = await new ContextBriefService().build('u1', AS_OF, 14);
+        expect(services.getOverridesSinceState).toHaveBeenCalledWith('u1', '2026-08-02');
+        expect(full.text).toContain('Canonical performed-training facts were unreadable');
+        expect(full.unavailableSources).toContain('canonical performed-training facts');
+        services.getOverridesSinceState.mockClear();
+        services.getPerformedTrainingFactsInRange.mockClear();
+        await new ContextBriefService().build('u1', AS_OF, 2);
+        expect(services.getOverridesSinceState).not.toHaveBeenCalled();
+        expect(services.getPerformedTrainingFactsInRange).not.toHaveBeenCalled();
     });
 
     it('reads check-ins over a date range covering the full baseline, inclusive of asOfDate', async () => {
