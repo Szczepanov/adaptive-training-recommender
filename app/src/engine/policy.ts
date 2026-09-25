@@ -1,11 +1,12 @@
 /** Increment whenever a change can alter a persisted recommendation decision. (Refactoring does not require a bump) */
 
-export const POLICY_VERSION = '2026-09-pre-compute-map-for-static-array-lookup-v1';
+export const POLICY_VERSION = '2026-09-perf-engine-and-ui-lookup-optimizations-v1';
 
 /** Historical versions are intentionally not re-executed by this build. Their compact
  * audits remain readable evidence, but replay is rejected explicitly because the old
  * decision function is not bundled alongside the current policy. */
 export const HISTORICAL_POLICY_VERSIONS = [
+    '2026-09-pre-compute-map-for-static-array-lookup-v1',
     '2026-09-weekly-allocation-date-diversity-v1',
     '2026-09-athlete-relative-aerobic-floor-v1',
     '2026-09-modify-tier-aerobic-coverage-specificity-v1',
