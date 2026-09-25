@@ -663,5 +663,14 @@ describe('enhanceContextBriefForPlanning', () => {
             }));
             expect(withoutHunger).not.toContain('Appetite');
         });
+
+        it('notes external plan authority when yesterday had no in-app recommendation', () => {
+            const text = enhanceContextBriefForPlanning(BASE, handoffInput({
+                preset: 'daily',
+                effectivePlanningMode: 'externally_planned',
+                recommendations: [],
+            }));
+            expect(text).toContain('Recommendation feedback (athlete response, not execution): no app recommendation recorded for yesterday (external plan governs).');
+        });
     });
 });

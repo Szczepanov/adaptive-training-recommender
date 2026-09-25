@@ -605,7 +605,11 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         lines.push('- Manual physical work: none reported');
     }
 
-    lines.push(renderRecommendationFeedbackLine(yesterdayRecommendation ?? null, input.recommendationsReadable));
+    lines.push(renderRecommendationFeedbackLine(
+        yesterdayRecommendation ?? null,
+        input.recommendationsReadable,
+        input.effectivePlanningMode === 'externally_planned',
+    ));
 
     if (activeSnapshot) {
         const der = activeSnapshot.derived;

@@ -552,6 +552,8 @@ export class ContextBriefService {
             goals,
             bodyComposition,
             purpose,
+            effectivePlanningMode: planningContext.mode,
+            isExternalPlanAuthority: planningContext.mode === 'externally_planned' || planningContext.externalFallback,
             exposureLedger: {
                 activitiesReadable: activityResult.status === 'fulfilled' && activityResult.value.status === 'AVAILABLE',
                 recommendationsReadable: recommendationResult.status === 'fulfilled' && recommendationResult.value.status === 'AVAILABLE',

@@ -40,23 +40,44 @@ function describeDifferent(a: Adherence): string {
  * feedback is absent because the read failed, making the truth unknown; when no
  * recommendations are recorded, the absence is confirmed. */
 export const EXECUTION_NOT_RECONCILED_NOTE =
-    'Plan execution (planned session vs performed activity) is not reconciled in this export: '
-    + 'canonical planned-vs-performed reconciliation is shadow-only (ADR-0034, #646). '
-    + 'An unanswered prompt is not a skip, and a missing activity is not proof of non-execution '
+    'Plan execution reconciliation: unavailable (canonical planned-vs-performed reconciliation is shadow-only; ADR-0034 TO4/TO5, #646). '
+    + 'Observed execution is not reconciled against planned sessions in this export: '
+    + 'an unanswered prompt is not a skip, and a missing activity is not proof of non-execution '
     + '(sync may be incomplete) — compare against the completed-training section yourself.';
+
+export interface RecommendationFeedbackOptions {
+    /** True when the recommendation read succeeded; false when it failed. Defaults to true. */
+    recommendationsReadable?: boolean;
+    /** True when an imported/external plan is the active planning authority. Defaults to false. */
+    isExternalPlanAuthority?: boolean;
+}
 
 export function renderRecommendationFeedback(
     recommendations: readonly DailyRecommendation[],
     heading: string,
-    recommendationsReadable: boolean = true,
+    optionsOrReadable: boolean | RecommendationFeedbackOptions = true,
+    maybeIsExternalPlanAuthority: boolean = false,
 ): string[] {
+    const options: RecommendationFeedbackOptions = typeof optionsOrReadable === 'boolean'
+        ? { recommendationsReadable: optionsOrReadable, isExternalPlanAuthority: maybeIsExternalPlanAuthority }
+        : optionsOrReadable;
+    const recommendationsReadable = options.recommendationsReadable ?? true;
+    const isExternalPlanAuthority = options.isExternalPlanAuthority ?? false;
+
     const lines: string[] = [
         heading,
         '',
         'Athlete answers to the app\'s adherence prompt for **app recommendations only** — feedback '
         + 'completion, not execution. Imported/external-plan sessions are not counted here.',
-        '',
     ];
+    if (isExternalPlanAuthority) {
+        lines.push(
+            '',
+            'Planning authority note: An imported/external plan is the active planning authority for this athlete. '
+            + 'The feedback below reflects responses to in-app recommendation prompts only, not compliance with the external plan.',
+        );
+    }
+    lines.push('');
     if (recommendations.length === 0) {
         if (!recommendationsReadable) {
             lines.push('Recommendation feedback unavailable (read failed) — unknown, not none.', '', EXECUTION_NOT_RECONCILED_NOTE);
@@ -94,11 +115,15 @@ export function renderRecommendationFeedback(
 export function renderRecommendationFeedbackLine(
     recommendation: DailyRecommendation | null,
     recommendationsReadable: boolean = true,
+    isExternalPlanAuthority: boolean = false,
 ): string {
     const label = '- Recommendation feedback (athlete response, not execution)';
     if (!recommendation) {
         if (!recommendationsReadable) {
             return `${label}: unavailable (read failed) — unknown, not none.`;
+        }
+        if (isExternalPlanAuthority) {
+            return `${label}: no app recommendation recorded for yesterday (external plan governs).`;
         }
         return `${label}: no app recommendation recorded for yesterday.`;
     }
