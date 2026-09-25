@@ -81,6 +81,11 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     // ⚡ Bolt: Memoize step array filters to prevent redundant O(N) operations on every form state change (e.g. typing in notes)
     const missingRequiredSteps = useMemo(() => steps.filter(s => s.isPlanned && !s.optional && !s.isComplete), [steps]);
     const completedExercisesCount = useMemo(() => steps.filter(s => s.loggedSetsCount > 0).length, [steps]);
+    const reportedRegionIds = useMemo(() => new Set(tissueFeedback.map(item => item.region)), [tissueFeedback]);
+    const availableRegions = useMemo(
+        () => COMMON_REGIONS.filter(r => !reportedRegionIds.has(r.id)),
+        [reportedRegionIds],
+    );
     const abandoningAssessment = recordKind === 'AssessmentAttempt';
 
     const handleConfirmComplete = async () => {
@@ -221,7 +226,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                                     className="select-input"
                                 >
                                     <option value="">No joint/tissue issues</option>
-                                    {COMMON_REGIONS.filter(r => !tissueFeedback.some(item => item.region === r.id)).map(r => (
+                                    {availableRegions.map(r => (
                                         <option key={r.id} value={r.id}>{r.label}</option>
                                     ))}
                                 </select>
