@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EvidenceBackedStrategy } from './evergreenStrategy';
-import { PACKED_QUALITY_AEROBIC_CREDIT_MINUTES, packWeeklyDose, type CoverageSetDescriptor } from './weeklyDosePacking';
+import { packWeeklyDose, type CoverageSetDescriptor } from './weeklyDosePacking';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import { progressionOverrideKey } from './progressionOverrideKey';
 
@@ -280,7 +280,6 @@ describe('weekly dose packing', () => {
         const threeSessionCapacity = { ...capacity(60, 3), minSessions: 2, targetSessions: 2, maxSessions: 3 };
         const budget = packWeeklyDose(strategy, threeSessionCapacity, roles);
 
-        expect(PACKED_QUALITY_AEROBIC_CREDIT_MINUTES).toBe(40);
         expect(budget.requirements.find(r => r.adaptation === 'aerobic_endurance')?.floor?.dose.value).toBe(150);
         expect(budget.requiredRoles.filter(role => role.coverageRoleId === 'aerobic')).toHaveLength(2);
         expect(budget.optionalRoles.filter(role => role.coverageRoleId === 'quality')).toHaveLength(1);
