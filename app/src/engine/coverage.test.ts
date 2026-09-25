@@ -288,14 +288,22 @@ describe('athlete-relative aerobic_volume floor (#757)', () => {
         expect(aerobic(ESTABLISHED).completedSessions).toBe(1);
     });
 
-    it('credits an uncapped planned ride whose prescribed range reaches the floor (review finding on #768)', () => {
+    it('credits an uncapped planned ride or base run whose prescribed range reaches the floor (#768, #798)', () => {
         const catalogState = unmetAerobicState(null);
         const establishedState = unmetAerobicState(ESTABLISHED);
-        // end_easy_01 is authored 30-60 min: on an uncapped day its prescription reaches 45.
-        expect(ride.durationMin).toBe(30);
-        expect(ride.durationMax).toBeGreaterThanOrEqual(45);
-        expect(coverageNeedTierForTemplate(establishedState, ride)).toBe(coverageNeedTierForTemplate(catalogState, ride));
-        expect(coverageKeysForTemplate(ride, 'general', EVERGREEN_GENERAL_COVERAGE_SET, ESTABLISHED)).toContain('aerobic_volume');
+        const run = ENRICHED_TEMPLATES_BY_ID.get('end_easy_02')!;
+        // end_easy_01 and end_easy_02 are authored 30-60 min: on an uncapped day their prescriptions reach 45.
+        for (const candidate of [ride, run]) {
+            expect(candidate.durationMin).toBe(30);
+            expect(candidate.durationMax).toBeGreaterThanOrEqual(45);
+            expect(coverageNeedTierForTemplate(establishedState, candidate)).toBe(coverageNeedTierForTemplate(catalogState, candidate));
+            expect(coverageKeysForTemplate(candidate, 'general', EVERGREEN_GENERAL_COVERAGE_SET, ESTABLISHED)).toContain('aerobic_volume');
+        }
+        // Even if the athlete floor reaches the workout harderDose catalog maximum (70), a planned
+        // standard template is clamped to its own uncapped durationMax (60) unless time-capped below 60.
+        const highFloor: AerobicVolumeFloor = { floorMin: 70, source: 'athlete_history', sampleCount: 8, medianMin: 95 };
+        expect(coverageKeysForTemplate(run, 'general', EVERGREEN_GENERAL_COVERAGE_SET, highFloor)).toContain('aerobic_volume');
+        expect(coverageKeysForTemplate({ ...run, durationMax: 45 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET, highFloor)).not.toContain('aerobic_volume');
     });
 
     it('credits projected picks by prescribed range but completed sessions by actual duration', () => {

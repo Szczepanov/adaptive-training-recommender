@@ -60,12 +60,12 @@ export const OPTIMIZER_SCORING_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.unpreferredModalityFallbackPolicy,
-        statement: 'Product candidate-selection policy v2: when at least one preferred non-recovery training candidate clears hard gates, another non-preferred, non-recovery, non-event-matching candidate remains eligible but its benefit and utility are multiplied by 0.25 unless it qualifies for an unresolved weekly objective that is not already advanced by any eligible preferred training candidate and contributes positive stimulus on a positive target axis.',
+        statement: 'Product candidate-selection policy v2: when at least one preferred non-recovery training candidate clears hard gates, another non-preferred, non-recovery, non-event-matching candidate remains eligible but its benefit and utility are multiplied by 0.25 and it is deferred behind non-deferred candidates within the same coverage and recovery-preference tier unless it qualifies for an unresolved weekly objective that is not already advanced by any eligible preferred training candidate and contributes positive stimulus on a positive target axis.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'low',
         applicability: { contexts: ['candidate_selection', 'modality_preference'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['preferred_modality_ranking'], horizon: 'acute' },
         evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
-        limitations: ['The 0.25 multiplier is product calibration, not a measured physiological effect size. Hard safety/feasibility gates, explicit event demand, and genuinely unresolved programming objectives lacking a preferred-modality alternative remain authoritative.'],
-        reviewedOn: '2026-09-24', version: 2,
+        limitations: ['The 0.25 multiplier and same-tier deferral order are product calibration, not a measured physiological effect size. Hard safety/feasibility gates, explicit event demand, and genuinely unresolved programming objectives lacking a preferred-modality alternative remain authoritative.'],
+        reviewedOn: '2026-09-25', version: 2,
     },
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.timeCapEasyEnduranceTruncationPolicy,

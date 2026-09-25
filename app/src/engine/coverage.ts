@@ -7,6 +7,7 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CoverageCreditFact, PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import type { CompletedExposure } from './trainingHistory';
 import { aerobicVolumeFloorForWorkout, type AerobicVolumeFloor } from './aerobicVolumeFloor';
+import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 
 /**
  * Phase 6.2c / ADR-0016: physiological stimulus credit and programming-role coverage
@@ -261,14 +262,25 @@ export function workoutIdForTemplateId(templateId: string | undefined): string |
 
 /** The lower bound must reach the catalog minimum, as before #757. Issue #757 adds the
  * athlete-level floor: a completed session meets it with its actual duration, a planned
- * one with the upper bound of its prescribed range (a capped day truncates that bound). */
-function hasRequiredAerobicDose(identity: ExposureIdentity, workoutId: string, floor?: AerobicVolumeFloor | null): boolean {
+ * one with the upper bound of its prescribed range (a capped day truncates that bound).
+ * When evaluating a planned SessionTemplate, the required floor is also bounded by the
+ * template's own uncapped standard durationMax so a workout's harderDose catalog ceiling
+ * never disqualifies the standard prescription. */
+function hasRequiredAerobicDose(
+    identity: ExposureIdentity,
+    workoutId: string,
+    floor?: AerobicVolumeFloor | null,
+    templateCeilingMin?: number,
+): boolean {
     if (identity.isReadinessModifiedDose) return false;
     const catalogMinimum = aerobicVolumeFloorForWorkout(workoutId, null);
-    const athleteFloor = aerobicVolumeFloorForWorkout(workoutId, floor);
+    const rawAthleteFloor = aerobicVolumeFloorForWorkout(workoutId, floor);
     const lower = identity.durationMin;
-    if (catalogMinimum === undefined || athleteFloor === undefined
+    if (catalogMinimum === undefined || rawAthleteFloor === undefined
         || typeof lower !== 'number' || !Number.isFinite(lower) || lower < catalogMinimum) return false;
+    const athleteFloor = templateCeilingMin !== undefined
+        ? Math.max(catalogMinimum, Math.min(rawAthleteFloor, templateCeilingMin))
+        : rawAthleteFloor;
     const reach = typeof identity.durationMax === 'number' && Number.isFinite(identity.durationMax)
         ? Math.max(lower, identity.durationMax)
         : lower;
@@ -280,13 +292,14 @@ export function coverageKeysForExposure(
     phase: PlanPhase | null,
     descriptor: CoverageSetDescriptor = SEPTEMBER_CYCLING_EVENT_COVERAGE_SET,
     floor?: AerobicVolumeFloor | null,
+    templateCeilingMin?: number,
 ): PlanCoverageKey[] {
     if (!phase) return [];
     const workoutId = identity.workoutId ?? workoutIdForTemplateId(identity.templateId);
     if (!workoutId) return [];
     return descriptor.coverage
         .filter(item => item.phases.includes(phase) && item.workoutIds.includes(workoutId))
-        .filter(item => item.key !== 'aerobic_volume' || hasRequiredAerobicDose(identity, workoutId, floor))
+        .filter(item => item.key !== 'aerobic_volume' || hasRequiredAerobicDose(identity, workoutId, floor, templateCeilingMin))
         .map(item => item.key);
 }
 
@@ -322,6 +335,7 @@ export function coverageKeysForTemplate(
     descriptor: CoverageSetDescriptor = SEPTEMBER_CYCLING_EVENT_COVERAGE_SET,
     floor?: AerobicVolumeFloor | null,
 ): PlanCoverageKey[] {
+    const uncappedTemplateCeiling = ENRICHED_TEMPLATES_BY_ID.get(template.id)?.durationMax ?? template.durationMax;
     return coverageKeysForExposure({
         templateId: template.id,
         modality: template.modality,
@@ -329,7 +343,7 @@ export function coverageKeysForTemplate(
         durationMin: template.durationMin,
         durationMax: template.durationMax,
         ...(template.isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
-    }, phase, descriptor, floor);
+    }, phase, descriptor, floor, uncappedTemplateCeiling);
 }
 
 function laterDate(left: string, right: string): string {

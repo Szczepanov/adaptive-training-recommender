@@ -334,6 +334,7 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(supportClaim.statement).toContain('coverage tier 3');
         const fallbackClaim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.unpreferredModalityFallbackPolicy);
         expect(fallbackClaim.statement).toContain('not already advanced by any eligible preferred training candidate');
+        expect(fallbackClaim.statement).toContain('deferred behind non-deferred candidates within the same coverage and recovery-preference tier');
 
         const bikeEasy = mockTemplate({
             id: 'end_easy_01',

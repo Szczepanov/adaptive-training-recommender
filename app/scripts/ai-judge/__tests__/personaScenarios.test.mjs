@@ -354,4 +354,55 @@ describe('active persona AI-judge suite', () => {
       }
     }
   });
+
+  it('preserves established easy-run volume without replacing it with walks or concentrating tempo (#798)', async () => {
+    const establishedFamily = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_established_history');
+    expect(establishedFamily).toBeDefined();
+
+    const countByTemplate = (traces, templateId) =>
+      traces.filter((trace) => trace.selected?.templateId === templateId).length;
+    const countQualityEndurance = (traces) =>
+      traces.filter((trace) => ['Moderate Endurance', 'Hard Endurance'].includes(trace.selected?.category)).length;
+
+    const resultsById = new Map();
+    for (const definition of establishedFamily.cases) {
+      resultsById.set(definition.scenario.id, await runScenario(definition.scenario));
+    }
+
+    const baselineTraces = resultsById.get('persona_established_history_baseline').decisionTraces;
+    const lowMotivationTraces = resultsById.get('persona_established_history_low_motivation_only').decisionTraces;
+    const adverseTraces = resultsById.get('persona_established_history_adverse_recovery').decisionTraces;
+    const recentHardTraces = resultsById.get('persona_established_history_recent_hard_load').decisionTraces;
+
+    for (const [caseId, traces] of [
+      ['persona_established_history_baseline', baselineTraces],
+      ['persona_established_history_low_motivation_only', lowMotivationTraces],
+    ]) {
+      expect(countByTemplate(traces, 'end_easy_02'), caseId).toBeGreaterThanOrEqual(5);
+      expect(countByTemplate(traces, 'end_walk_01'), caseId).toBe(0);
+      expect(countByTemplate(traces, 'end_mod_01'), caseId).toBeLessThanOrEqual(2);
+      expect(countQualityEndurance(traces.slice(0, 7)), `${caseId} week 1`).toBeLessThanOrEqual(1);
+      expect(countQualityEndurance(traces.slice(7, 14)), `${caseId} week 2`).toBeLessThanOrEqual(1);
+    }
+
+    expect(adverseTraces[0].mode).toBe('recover');
+    expect(['Rest', 'Mobility/Recovery']).toContain(adverseTraces[0].selected.category);
+    expect(countByTemplate(adverseTraces, 'end_easy_02')).toBeGreaterThanOrEqual(4);
+    expect(countByTemplate(adverseTraces, 'end_walk_01')).toBe(0);
+    const firstRunTrace = adverseTraces.find((trace) => trace.selected?.templateId === 'end_easy_02');
+    expect(firstRunTrace?.mode).toBe('modify');
+    expect(firstRunTrace?.selected?.durationMax).toBeLessThanOrEqual(30);
+    expect(countQualityEndurance(adverseTraces)).toBeLessThanOrEqual(countQualityEndurance(baselineTraces));
+    expect(countByTemplate(adverseTraces, 'end_mod_01')).toBe(0);
+
+    expect(countByTemplate(recentHardTraces, 'end_easy_02')).toBeGreaterThanOrEqual(4);
+    expect(countByTemplate(recentHardTraces, 'end_walk_01')).toBe(0);
+    expect(countQualityEndurance(recentHardTraces)).toBeLessThan(countQualityEndurance(baselineTraces));
+
+    const walkingBaseline = buildPersonaFamilies()
+      .find((candidate) => candidate.familyId === 'persona_walking_preferred')
+      .cases.find((definition) => definition.scenario.id === 'persona_walking_baseline');
+    const walkingResult = await runScenario(walkingBaseline.scenario);
+    expect(countByTemplate(walkingResult.decisionTraces, 'end_walk_01')).toBeGreaterThanOrEqual(4);
+  });
 });

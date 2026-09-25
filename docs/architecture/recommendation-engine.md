@@ -1014,10 +1014,17 @@ modality is a hard exclude on Path A and a 0.2× soft penalty on Path B — a de
 distinction, since taste must never masquerade as injury/safety authority
 ([ADR-0007](../adr/0007-adaptive-multisport-engine-architecture.md) §6).
 
-Path B also demotes a non-preferred training candidate when at least one preferred training
-candidate passes the same hard gates, unless the candidate strictly advances an unresolved
-weekly objective (its qualification passes and it contributes positive stimulus on a positive
-target axis). Rest and Mobility/Recovery remain available.
+Path B also demotes a non-preferred training candidate (`UNPREFERRED_MODALITY_MULTIPLIER`)
+and defers it behind non-deferred candidates within the same coverage and recovery-preference
+tier when at least one preferred training candidate passes the same hard gates, unless the
+candidate strictly advances an unresolved weekly objective that no eligible preferred
+training candidate advances (its qualification passes and it contributes positive stimulus
+on a positive target axis). Rest and Mobility/Recovery remain available. When `coverage.ts`
+`coverageKeysForTemplate` evaluates `aerobic_volume` dose eligibility against the
+athlete-relative floor (`aerobicVolumeFloor.ts`), the required floor is bounded by the
+template's own uncapped standard `durationMax` (`end_easy_01`, `end_easy_02`, `end_easy_04`,
+and `end_walk_01` all prescribe `30–60` min) so a workout's `harderDose` catalog ceiling
+never strips `aerobic_volume` role credit from the standard prescription.
 Specialized automatic catalog content may separately declare
 `requiresExplicitModalityPreference`; that is a catalog-admission opt-in, not a safety
 restriction or a general permission system for ordinary modalities. Current Field
