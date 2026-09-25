@@ -67,7 +67,7 @@ function manualRevisionOf(state: DataState<StrengthSession[]>): string {
 
 function exposureWithExactIdentity(
     event: CompletedTrainingEvent,
-    recommendations: readonly DailyRecommendation[],
+    recommendationsByDate: ReadonlyMap<string, DailyRecommendation>,
 ): CompletedExposure {
     // When a real event reconciles to a daily recommendation, reuse the exact same
     // occurrence key the projection path used. That makes the transition
@@ -77,7 +77,7 @@ function exposureWithExactIdentity(
         : `completed:${event.id}`;
     const exposure: CompletedExposure = { ...completedEventToExposure(event), occurrenceKey };
     if (!event.exactTemplateMatch || !event.linkedRecommendationDate) return exposure;
-    const recommendation = recommendations.find(item => item.date === event.linkedRecommendationDate);
+    const recommendation = recommendationsByDate.get(event.linkedRecommendationDate);
     if (!recommendation) return exposure;
     const workoutId = workoutForTemplate(recommendation.templateId)?.id;
     return {
@@ -107,7 +107,8 @@ export function buildTrainingHistorySnapshot(
     const recommendationRecords = requireAvailable('recommendations', recommendations);
     const completedEvents = reconcileCompletedTrainingEvents(activityRecords, recommendationRecords);
     completedEvents.sort((a, b) => a.date.localeCompare(b.date));
-    const exposures = completedEvents.map(event => exposureWithExactIdentity(event, recommendationRecords));
+    const recommendationsByDate = new Map(recommendationRecords.map(rec => [rec.date, rec]));
+    const exposures = completedEvents.map(event => exposureWithExactIdentity(event, recommendationsByDate));
 
     let manualTrainingSourceState: DataStateSummary = { status: 'MISSING' };
     if (manualTrainingPolicy !== 'off') {

@@ -358,11 +358,26 @@ export function packWeeklyDose(
         adaptations: occurrence.adaptations,
         priority: occurrence.priority,
     });
+
+    const requiredRoles: PackedRoleOccurrence[] = [];
+    const targetRoles: PackedRoleOccurrence[] = [];
+    const optionalRoles: PackedRoleOccurrence[] = [];
+    for (const role of packed) {
+        const occurrence = withoutDescriptor(role);
+        if (role.priority === 'required') {
+            requiredRoles.push(occurrence);
+        } else if (role.priority === 'target') {
+            targetRoles.push(occurrence);
+        } else if (role.priority === 'optional') {
+            optionalRoles.push(occurrence);
+        }
+    }
+
     return {
         capacity, requirements,
-        requiredRoles: packed.filter(role => role.priority === 'required').map(withoutDescriptor),
-        targetRoles: packed.filter(role => role.priority === 'target').map(withoutDescriptor),
-        optionalRoles: packed.filter(role => role.priority === 'optional').map(withoutDescriptor),
+        requiredRoles,
+        targetRoles,
+        optionalRoles,
         shortfalls,
     };
 }

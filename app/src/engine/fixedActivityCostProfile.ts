@@ -23,16 +23,16 @@ export const ZERO_COST_PROFILE: WorkoutCostProfile = {
  * callers pass an already-scoped list, matching each call site's own pre-existing
  * date/completion filtering contract exactly. */
 export function sumFixedActivityCostProfiles(activities: readonly FixedActivity[]): WorkoutCostProfile {
-    return activities.reduce((sum, activity) => {
+    const total: WorkoutCostProfile = { ...ZERO_COST_PROFILE };
+    for (const activity of activities) {
         const cost = activity.expectedCost;
-        if (!cost) return sum;
-        return {
-            systemic: sum.systemic + (cost.systemic ?? 0),
-            cardiovascular: sum.cardiovascular + (cost.cardiovascular ?? 0),
-            lowerBody: sum.lowerBody + (cost.lowerBody ?? 0),
-            upperBody: sum.upperBody + (cost.upperBody ?? 0),
-            impactTissue: sum.impactTissue + (cost.impactTissue ?? 0),
-            neuromuscular: sum.neuromuscular + (cost.neuromuscular ?? 0),
-        };
-    }, ZERO_COST_PROFILE);
+        if (!cost) continue;
+        total.systemic += cost.systemic ?? 0;
+        total.cardiovascular += cost.cardiovascular ?? 0;
+        total.lowerBody += cost.lowerBody ?? 0;
+        total.upperBody += cost.upperBody ?? 0;
+        total.impactTissue += cost.impactTissue ?? 0;
+        total.neuromuscular += cost.neuromuscular ?? 0;
+    }
+    return total;
 }
