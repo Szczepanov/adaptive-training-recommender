@@ -26,6 +26,7 @@ import {
     type RawProviderWeightRecord,
 } from '../anthropometry/trends';
 import { injectActivityTelemetryIntoContextBrief } from '../engine/contextBriefActivityTelemetry';
+import { SENSOR_OBSERVATION_HORIZON_DAYS } from '../engine/contextBriefSensorEvidence';
 import {
     enhanceContextBriefForPlanning,
     RECOVERY_TIMELINE_DAYS,
@@ -215,6 +216,11 @@ export class ContextBriefService {
         // here does not widen what the retrospective sections show.
         const contextDays = Math.max(windowDays, RECOVERY_TIMELINE_DAYS);
         const contextStart = briefWindowStart(targetDate, contextDays);
+        // Issue #816: activities reach back over the sensor-evidence horizon too, so the
+        // observed-telemetry block's 28-day/stale labels describe data actually fetched.
+        // Every other consumer slices activities to its own window (buildContextBrief
+        // `filterRange`, the telemetry appendix `windowActivities`, the dated handoff views).
+        const activityStart = [contextStart, briefWindowStart(targetDate, SENSOR_OBSERVATION_HORIZON_DAYS)].sort()[0];
         // Activity and recommendation range queries are end-exclusive; the brief window
         // is inclusive of targetDate, so the fetch reaches one day further.
         const throughExclusive = addDaysToLocalDateString(targetDate, 1);
@@ -267,7 +273,7 @@ export class ContextBriefService {
             // Widened to contextStart (see contextDays above) so the recovery timeline
             // always has real activity flags; recommendations stay at windowDays since
             // only the render-window adherence section and the current-day row use them.
-            activityService.getActivitiesInRange(userId, contextStart, throughExclusive),
+            activityService.getActivitiesInRange(userId, activityStart, throughExclusive),
             recommendationService.getRecommendationsInRange(userId, startDate, throughExclusive),
             // peek, not get: the brief is read-only and must not create a settings
             // profile as a side effect of being looked at (DataView presents it as

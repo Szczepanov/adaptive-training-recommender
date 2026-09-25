@@ -130,12 +130,16 @@ No purpose alters a recommendation, so `POLICY_VERSION` is unaffected.
 Section 0 of every planning/diagnostic handoff exports sensors as two separate facts
 (`contextBriefSensorEvidence.ts` `renderSensorEvidence`):
 
-- **Configured capability** — `TrainingSettings.capabilities`, the only authority on
+- **Configured capability** — resolved per sensor exactly as prescriptions do
+  (`workouts/deviceCapabilities.ts` `resolveDeviceCapabilities`: `TrainingSettings.capabilities`
+  first, then the Preferences-UI `performanceProfile.capabilities`), the only authority on
   guaranteed future availability. An explicit `false` stays unavailable even when
   historical activities contain the signal; unreadable settings are stated as such.
 - **Observed recent telemetry** — a read-only summary over canonical
   `NormalizedGarminActivity` fields in a bounded recent horizon (count and latest date per
-  channel; cycling power distinguished from running power; HR with external-strap
+  channel; `ContextBriefService.build` fetches activities over at least that horizon; zone
+  arrays count only with recorded seconds; cycling power (`isGarminCyclingPowerActivity`)
+  distinguished from running power, which is read only from running dynamics; HR with external-strap
   provenance when present; observations past a staleness cutoff are marked `STALE`).
   Cadence is reported as not observable because canonical activities do not carry it. No
   activities in the horizon is reported as unavailable provenance, not as "no sensor".

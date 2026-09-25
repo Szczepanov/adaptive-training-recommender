@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { NormalizedGarminActivity, TrainingSettings } from './models';
+import type { NormalizedGarminActivity, TrainingSettings, UserPreferences } from './models';
 import { renderSensorEvidence, summarizeSensorEvidence } from './contextBriefSensorEvidence';
 
 const AS_OF = '2026-09-25';
@@ -27,7 +27,7 @@ function settings(powerMeter: boolean | undefined, heartRateMonitor?: boolean): 
 }
 
 function powerLine(s: TrainingSettings | null, acts: NormalizedGarminActivity[]): string {
-    return renderSensorEvidence(s, acts, AS_OF).find(line => line.includes('Power meter:')) ?? '';
+    return renderSensorEvidence(s, null, acts, AS_OF).find(line => line.includes('Power meter:')) ?? '';
 }
 
 describe('renderSensorEvidence (#816)', () => {
@@ -55,29 +55,29 @@ describe('renderSensorEvidence (#816)', () => {
 
     it('applies the same distinction to HR and keeps wrist HR from overriding a configured "no" monitor', () => {
         const acts = [activity({ averageHr: 130 })];
-        const hrLine = renderSensorEvidence(settings(undefined, false), acts, AS_OF).find(l => l.includes('Heart-rate monitor:')) ?? '';
+        const hrLine = renderSensorEvidence(settings(undefined, false), null, acts, AS_OF).find(l => l.includes('Heart-rate monitor:')) ?? '';
         expect(hrLine).toContain('configured unavailable (authoritative); recent HR observed on 1 activity');
         expect(hrLine).not.toContain('override');
 
         const strap = [activity({ averageHr: 130, hrMeasurement: { externalHrSensorPresent: true } as NormalizedGarminActivity['hrMeasurement'] })];
-        const strapLine = renderSensorEvidence(settings(undefined, false), strap, AS_OF).find(l => l.includes('Heart-rate monitor:')) ?? '';
+        const strapLine = renderSensorEvidence(settings(undefined, false), null, strap, AS_OF).find(l => l.includes('Heart-rate monitor:')) ?? '';
         expect(strapLine).toContain('external HR sensor confirmed on 1');
         expect(strapLine).toContain('historical data does not override');
     });
 
     it('reports cadence honestly as not observable from canonical fields', () => {
-        const line = renderSensorEvidence(settings(undefined), observed, AS_OF).find(l => l.includes('Cadence:')) ?? '';
+        const line = renderSensorEvidence(settings(undefined), null, observed, AS_OF).find(l => l.includes('Cadence:')) ?? '';
         expect(line).toContain('configuration unknown; not observable');
     });
 
     it('says provenance is unavailable when no activity is in the window, and when settings are unreadable', () => {
-        const lines = renderSensorEvidence(null, [], AS_OF).join('\n');
-        expect(lines).toContain('configuration unavailable (training settings not readable)');
+        const lines = renderSensorEvidence(null, null, [], AS_OF).join('\n');
+        expect(lines).toContain('configuration unavailable (training settings and preferences not readable)');
         expect(lines).toContain('telemetry provenance is unavailable');
     });
 
     it('keeps the non-sensor fallback rule', () => {
-        expect(renderSensorEvidence(settings(true), observed, AS_OF).join('\n')).toContain('Do not assume permanent availability from observation alone');
+        expect(renderSensorEvidence(settings(true), null, observed, AS_OF).join('\n')).toContain('Do not assume permanent availability from observation alone');
     });
 
     it('bounds the horizon, ignores non-cycling power for cycling and counts running power separately', () => {
@@ -90,5 +90,24 @@ describe('renderSensorEvidence (#816)', () => {
         expect(summary.activitiesInHorizon).toBe(2);
         expect(summary.cyclingPower.count).toBe(0);
         expect(summary.runningPower.count).toBe(1);
+    });
+
+    it('resolves a preference-sourced "no" power meter like prescriptions do, and observed power does not override it', () => {
+        const prefs = { performanceProfile: { capabilities: { powerMeter: false } } } as UserPreferences;
+        const line = renderSensorEvidence(settings(undefined), prefs, observed, AS_OF).find(l => l.includes('Power meter:')) ?? '';
+        expect(line).toContain('configured unavailable (authoritative)');
+        expect(line).toContain('historical data does not override');
+        const settingsWin = renderSensorEvidence(settings(true), prefs, observed, AS_OF).find(l => l.includes('Power meter:')) ?? '';
+        expect(settingsWin).toContain('configured available');
+        const prefsOnly = renderSensorEvidence(null, prefs, observed, AS_OF).find(l => l.includes('Power meter:')) ?? '';
+        expect(prefsOnly).toContain('configured unavailable (authoritative)');
+    });
+
+    it('ignores zone arrays with no recorded seconds', () => {
+        const zero = [{ zoneNumber: 1, secondsInZone: 0 }];
+        const acts = [activity({ powerInZones: zero, hrInZones: zero } as Partial<NormalizedGarminActivity>)];
+        const summary = summarizeSensorEvidence(acts, AS_OF);
+        expect(summary.cyclingPower.count).toBe(0);
+        expect(summary.heartRate.count).toBe(0);
     });
 });

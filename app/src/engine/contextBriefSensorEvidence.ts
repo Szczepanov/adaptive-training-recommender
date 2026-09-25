@@ -1,4 +1,6 @@
-import type { NormalizedGarminActivity, TrainingSettings } from './models';
+import type { ActivityZoneBucket, NormalizedGarminActivity, TrainingSettings, UserPreferences } from './models';
+import { isGarminCyclingPowerActivity } from './garminTelemetryEvidence';
+import { resolveDeviceCapabilities } from '../workouts/deviceCapabilities';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
 /**
@@ -17,13 +19,9 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 
 /** Observations older than this many days before the planning date are reported as stale. */
 export const SENSOR_OBSERVATION_STALE_DAYS = 14;
-/** Only activities within this many days of the planning date are counted as "recent". */
+/** Only activities within this many days of the planning date are counted as "recent".
+ * `ContextBriefService.build` fetches activities at least this far back so the label is true. */
 export const SENSOR_OBSERVATION_HORIZON_DAYS = 28;
-
-const CYCLING_TYPES = new Set([
-    'cycling', 'road_biking', 'virtual_ride', 'gravel_cycling', 'mountain_biking',
-    'cyclocross', 'indoor_cycling',
-]);
 
 type Configured = boolean | undefined;
 
@@ -41,13 +39,20 @@ export interface SensorEvidenceSummary {
     externalHrSensor: SensorChannelObservation;
 }
 
+function hasZoneTime(buckets: readonly ActivityZoneBucket[] | undefined): boolean {
+    return (buckets ?? []).reduce((sum, bucket) => sum + bucket.secondsInZone, 0) > 0;
+}
+
 function hasCyclingPower(activity: NormalizedGarminActivity): boolean {
-    if (!CYCLING_TYPES.has(activity.type)) return false;
+    if (!isGarminCyclingPowerActivity(activity.type)) return false;
     return activity.normalizedPower !== undefined
-        || (activity.powerInZones?.length ?? 0) > 0
+        || hasZoneTime(activity.powerInZones)
         || (activity.laps ?? []).some(lap => lap.averagePowerWatts !== undefined);
 }
 
+/** Running power is read only from running dynamics. `normalizedPower` on a non-cycling
+ * activity is deliberately ignored: ingestion computes it on the cycling power path, so it
+ * is not evidence of a running power source. */
 function hasRunningPower(activity: NormalizedGarminActivity): boolean {
     const dynamics = activity.runningDynamics;
     return typeof dynamics?.avgRunningPowerWatts === 'number';
@@ -55,7 +60,7 @@ function hasRunningPower(activity: NormalizedGarminActivity): boolean {
 
 function hasHeartRate(activity: NormalizedGarminActivity): boolean {
     return typeof activity.averageHr === 'number'
-        || (activity.hrInZones?.length ?? 0) > 0
+        || hasZoneTime(activity.hrInZones)
         || (activity.laps ?? []).some(lap => lap.averageHrBpm !== undefined);
 }
 
@@ -86,7 +91,7 @@ export function summarizeSensorEvidence(
 }
 
 function configuredText(value: Configured, settingsReadable: boolean): string {
-    if (!settingsReadable) return 'configuration unavailable (training settings not readable)';
+    if (!settingsReadable) return 'configuration unavailable (training settings and preferences not readable)';
     if (value === true) return 'configured available';
     if (value === false) return 'configured unavailable (authoritative)';
     return 'configuration unknown';
@@ -111,11 +116,13 @@ function overrideNote(value: Configured, settingsReadable: boolean, observed: bo
 /** Renders the "Configured sensors vs observed recent telemetry" block for section 0. */
 export function renderSensorEvidence(
     trainingSettings: TrainingSettings | null,
+    preferences: UserPreferences | null,
     activities: readonly NormalizedGarminActivity[],
     asOfDate: string,
 ): string[] {
-    const readable = trainingSettings !== null;
-    const caps = trainingSettings?.capabilities;
+    // Settings first, then the Preferences-UI profile -- the same resolution prescriptions use.
+    const readable = trainingSettings !== null || preferences !== null;
+    const caps = resolveDeviceCapabilities(trainingSettings, preferences?.performanceProfile);
     const summary = summarizeSensorEvidence(activities, asOfDate);
     const n = summary.activitiesInHorizon;
     const powerObserved = summary.cyclingPower.count + summary.runningPower.count > 0;

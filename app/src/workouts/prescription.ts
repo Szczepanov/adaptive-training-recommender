@@ -1,5 +1,6 @@
 import type { PlannedDose, Recommendation, TrainingSettings } from '../engine/models.ts';
 import { EXERCISES } from './exercises.ts';
+import { resolveDeviceCapabilities } from './deviceCapabilities.ts';
 import { WORKOUTS, WORKOUTS_BY_ID } from './catalog.ts';
 import type {
   AthletePerformanceProfile,
@@ -120,9 +121,11 @@ function resolveStructuredTargets(
   const stepStopConditions: string[] = [];
 
   // Determine tri-state device capabilities
-  const powerMeterAvailable = trainingSettings?.capabilities?.powerMeter ?? profile?.capabilities?.powerMeter;
-  const hrMonitorAvailable = trainingSettings?.capabilities?.heartRateMonitor ?? profile?.capabilities?.heartRateMonitor;
-  const cadenceAvailable = trainingSettings?.capabilities?.cadenceData ?? profile?.capabilities?.cadenceData;
+  const {
+    powerMeter: powerMeterAvailable,
+    heartRateMonitor: hrMonitorAvailable,
+    cadenceData: cadenceAvailable,
+  } = resolveDeviceCapabilities(trainingSettings, profile);
 
   const cyclingFtp = profile?.cycling?.ftpWatts ?? profile?.ftpWatts;
   const cyclingFtpStale = isStale(profile?.cycling?.measuredAt ?? profile?.measuredAt);

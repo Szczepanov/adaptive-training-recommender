@@ -161,7 +161,7 @@ function renderDataHandoff(input: ContextBriefPlanningHandoffInput, today: Today
         `- Effective planning mode today: ${modeDetail}.`,
     ];
 
-    lines.push(...renderSensorEvidence(input.trainingSettings, input.activities, input.asOfDate));
+    lines.push(...renderSensorEvidence(input.trainingSettings, input.preferences, input.activities, input.asOfDate));
     if (input.preferences) {
         const margin = input.preferences.extraRecoveryMargin === undefined
             ? 'not set'
