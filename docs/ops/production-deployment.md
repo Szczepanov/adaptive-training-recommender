@@ -13,9 +13,14 @@ a merge to `main` must not silently turn that acknowledgement into an unattended
 
 A production run promotes one Git SHA in dependency order:
 
-1. **Full CI release gate** — validated in parallel across five dedicated jobs: Python 3.14
-   tests, frontend hygiene & static gates, frontend unit tests and Firestore rules emulator
-   suite, engine simulations and AI judge corpus gates, and the Docker Compose full-stack smoke suite.
+1. **CI release gate** — the full CI Pipeline: Python 3.14 tests, frontend hygiene & static
+   gates, frontend unit tests and Firestore rules emulator suite, engine simulations and AI judge
+   corpus gates, and the Docker Compose full-stack smoke suite. Every push to `main` already runs
+   this suite on the same SHA, so the release reuses that post-merge run when it succeeded
+   (`scripts/find_main_ci_evidence.py`, waiting up to 20 minutes for one still in progress).
+   When it is missing, failed or still running past that budget, the release runs the full
+   suite itself. A release is therefore never less validated than the SHA's own CI, and a flaky
+   test cannot block a SHA that has already passed.
 2. **Backend services** — build and push the SHA-tagged image, deploy `garmin-account-link`,
    `anthropometry-write-api`, the three Cloud Run Jobs and their Scheduler jobs, then verify
    service health. The optional live `garmin-sync` execution remains opt-in because it calls
