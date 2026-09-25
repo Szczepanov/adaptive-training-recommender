@@ -194,6 +194,42 @@ describe('ContextBriefService', () => {
         });
     });
 
+    describe('export purpose (#811)', () => {
+        const telemetryRide = {
+            activityId: 'a1', date: AS_OF, type: 'cycling', durationMin: 60,
+            trainingEffectAerobic: 3, trainingEffectAnaerobic: 0.4, averageHr: 140,
+            activityTrainingLoad: 100, intensityTag: 'moderate',
+            laps: Array.from({ length: 50 }, (_, i) => ({ lapIndex: i + 1, durationSeconds: 60, averagePowerWatts: 200 + i })),
+        };
+
+        async function callsFor(preset: 'full' | 'diagnostic'): Promise<unknown[][][]> {
+            vi.clearAllMocks();
+            await new ContextBriefService().build('u1', AS_OF, 14, preset);
+            return Object.values(services).map(mock => mock.mock.calls);
+        }
+
+        it('reports the purpose each compatible preset maps to', async () => {
+            const service = new ContextBriefService();
+            expect((await service.build('u1', AS_OF, 2, 'daily')).purpose).toBe('morning');
+            expect((await service.build('u1', AS_OF, 14, 'full')).purpose).toBe('planning');
+            expect((await service.build('u1', AS_OF, 14, 'diagnostic')).purpose).toBe('diagnostic');
+        });
+
+        it('diagnostic reads exactly the same sources and ranges as planning', async () => {
+            expect(await callsFor('diagnostic')).toEqual(await callsFor('full'));
+        });
+
+        it('planning summarizes laps while diagnostic keeps the per-lap table', async () => {
+            services.getActivitiesInRange.mockResolvedValue({ status: 'AVAILABLE', data: [telemetryRide], revision: null });
+            const planning = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+            const diagnostic = await new ContextBriefService().build('u1', AS_OF, 14, 'diagnostic');
+            expect(planning.text).toContain('50 laps');
+            expect(planning.text).not.toContain('| Lap | Duration |');
+            expect(diagnostic.text).toContain('### Detailed activity telemetry');
+            expect(diagnostic.text).toContain('| 50 |');
+        });
+    });
+
     it('reads padded fixed-activity occupancy and resolves active imported sessions across the next seven days', async () => {
         await new ContextBriefService().build('u1', AS_OF, 14);
 

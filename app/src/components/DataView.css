@@ -206,6 +206,8 @@
 
 .brief-preset-toggle {
   display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 4px;
   padding: 3px;
   border-radius: 8px;
@@ -214,6 +216,7 @@
 }
 
 .brief-preset-toggle button {
+  min-height: var(--touch-target-min, 44px);
   background: none;
   border: none;
   padding: 0.4rem 0.75rem;

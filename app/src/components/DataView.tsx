@@ -4,8 +4,10 @@ import type { DailyDecisionInput, NormalizedGarminActivity, ActivityOverride } f
 import { activityService } from '../services/activityService';
 import { activityOverrideService } from '../services/activityOverrideService';
 import { recommendationService } from '../services/recommendationService';
-import { contextBriefService, type ContextBriefResult } from '../services/contextBriefService';
+import { type ContextBriefResult } from '../services/contextBriefService';
 import { briefWindowDaysFor, type BriefWindowPreset } from '../engine/contextBrief';
+import { BriefPresetToggle } from './BriefPresetToggle';
+import { buildBriefForPreset, loadStoredBriefPreset, persistBriefPreset } from './briefPreset';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import {
   downloadActivitiesJsonFile,
@@ -47,29 +49,6 @@ function describeSourceState(status: 'MISSING' | 'INVALID' | 'UNAVAILABLE'): str
   if (status === 'MISSING') return 'No record exists for this date yet.';
   if (status === 'INVALID') return 'The stored record is malformed and needs repair.';
   return 'The data source is temporarily unavailable. Retry the dashboard refresh.';
-}
-
-const BRIEF_PRESET_STORAGE_KEY = 'adaptive-training:context-brief:preset';
-
-/** Defaults new/incognito athletes to `daily` -- the everyday paste-into-chat loop this
- * preset exists for -- while a returning athlete's explicit choice of `full` persists
- * across sessions. Storage can be disabled; failure to read must never block the tab. */
-function loadStoredBriefPreset(): BriefWindowPreset {
-  if (typeof window === 'undefined') return 'daily';
-  try {
-    return window.localStorage.getItem(BRIEF_PRESET_STORAGE_KEY) === 'full' ? 'full' : 'daily';
-  } catch {
-    return 'daily';
-  }
-}
-
-function persistBriefPreset(preset: BriefWindowPreset): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(BRIEF_PRESET_STORAGE_KEY, preset);
-  } catch {
-    // Preference remains usable for the current page instance even if it can't persist.
-  }
 }
 
 function formatCandidateNumber(value: number | null | undefined): string {
@@ -203,7 +182,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
     // the brief here -- the `brief` screen builds it.
     if (onNavigateToBrief || activeTab !== 'brief' || !briefDate || (brief?.asOfDate === briefDate && brief.preset === briefPreset)) return;
     let cancelled = false;
-    contextBriefService.build(userId, briefDate, briefWindowDaysFor(briefPreset), briefPreset)
+    buildBriefForPreset(userId, briefDate, briefPreset)
       .then(result => { if (!cancelled) { setBrief(result); setBriefError(null); } })
       .catch(() => {
         if (cancelled) return;
@@ -891,7 +870,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
           <h3>Context brief</h3>
           <p className="brief-intro">
             Export for AI lives in one place now — open {SCREEN_LABELS.brief} for the
-            canonical daily (2-day) or full (14-day) brief with char and token counts.
+            canonical daily (2-day), planning (14-day) or diagnostic (14-day) brief with char and token counts.
             {' '}Read-only: generating it changes nothing.
           </p>
           <div className="brief-actions">
@@ -909,25 +888,12 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
         <p className="brief-intro">
           {briefPreset === 'daily'
             ? "High-signal briefing for your daily chat with an external AI coach — includes yesterday's closed loop, today's recovery, and today's full session prescription."
-            : `Comprehensive 14-day retrospective — constraints, baselines, full training history, and 1-click plan import schema for designing a new block.`}
+            : briefPreset === 'full'
+              ? `Compact ${briefWindowDaysFor('full')}-day planning context, ordered by decision authority — constraints, current intent, recovery trend, load summary, upcoming commitments and the 1-click plan import schema.`
+              : `Full ${briefWindowDaysFor('diagnostic')}-day forensic export — per-lap and per-zone activity telemetry plus observation-only candidate baselines, for debugging ingestion or analysing a workout. Not needed for planning.`}
           {' '}Read-only: generating it changes nothing.
         </p>
-        <div className="brief-preset-toggle" role="group" aria-label="Context brief window">
-          <button
-            type="button"
-            className={briefPreset === 'daily' ? 'active' : ''}
-            onClick={() => selectBriefPreset('daily')}
-          >
-            ☀️ Morning Coach (Daily)
-          </button>
-          <button
-            type="button"
-            className={briefPreset === 'full' ? 'active' : ''}
-            onClick={() => selectBriefPreset('full')}
-          >
-            📋 Block Planning ({briefWindowDaysFor('full')} days)
-          </button>
-        </div>
+        <BriefPresetToggle preset={briefPreset} onSelect={selectBriefPreset} />
         {visibleBriefError && <p className="data-state-notice">{visibleBriefError}</p>}
         {!brief && !visibleBriefError && <p>Assembling...</p>}
         {brief && (
