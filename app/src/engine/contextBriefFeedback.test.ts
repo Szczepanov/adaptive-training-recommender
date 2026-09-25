@@ -61,6 +61,16 @@ describe('renderRecommendationFeedback (#815)', () => {
         expect(EXECUTION_NOT_RECONCILED_NOTE).toContain('#646');
         expect(EXECUTION_NOT_RECONCILED_NOTE).toContain('a missing activity is not proof of non-execution');
     });
+
+    it('renders unreadable recommendations with an unknown message when the read failed', () => {
+        const unreadable = (recs: readonly DailyRecommendation[]): string =>
+            renderRecommendationFeedback(recs, '## 6. Recommendation feedback', false).join('\n');
+        const text = unreadable([]);
+        expect(text).toContain('Recommendation feedback unavailable (read failed)');
+        expect(text).toContain('unknown, not none');
+        expect(text).toContain(EXECUTION_NOT_RECONCILED_NOTE);
+        expect(text).not.toContain('No app recommendations recorded in this window.');
+    });
 });
 
 describe('renderRecommendationFeedbackLine (#815)', () => {
@@ -74,5 +84,11 @@ describe('renderRecommendationFeedbackLine (#815)', () => {
         expect(renderRecommendationFeedbackLine(rec(day(0), { followed: false, skipped: true }))).toBe(`${label}: reported skipped`);
         expect(renderRecommendationFeedbackLine(rec(day(0), { followed: false, actualModality: 'Mobility' })))
             .toBe(`${label}: reported doing Mobility instead`);
+    });
+    it('reports unreadable recommendations as unknown when the read failed', () => {
+        expect(renderRecommendationFeedbackLine(null, false))
+            .toContain('unavailable (read failed)');
+        expect(renderRecommendationFeedbackLine(null, false))
+            .toContain('unknown, not none');
     });
 });

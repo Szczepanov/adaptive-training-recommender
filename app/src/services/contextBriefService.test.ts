@@ -446,6 +446,20 @@ describe('ContextBriefService', () => {
         expect(result.text).toContain('DATA INCOMPLETE');
     });
 
+    it('marks recommendations as unreadable when the read fails, showing "unknown, not none"', async () => {
+        services.getRecommendationsInRange.mockResolvedValue({ status: 'UNAVAILABLE', data: [] });
+
+        const result = await new ContextBriefService().build('u1', AS_OF, 14);
+
+        // Check planning & diagnostic briefs contain "unknown, not none"
+        expect(result.text).toContain('Recommendation feedback unavailable (read failed)');
+        expect(result.text).toContain('unknown, not none');
+        expect(result.text).not.toContain('No app recommendations recorded in this window');
+
+        // Check the unavailable sources list includes recommendations
+        expect(result.unavailableSources).toContain('recommendations and feedback');
+    });
+
     describe('body composition (anthropometry)', () => {
         it('reads anthropometry entries over a wider lookback than the subjective baseline', async () => {
             await new ContextBriefService().build('u1', AS_OF, 14);

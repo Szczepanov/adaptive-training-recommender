@@ -603,7 +603,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         lines.push('- Manual physical work: none reported');
     }
 
-    lines.push(renderRecommendationFeedbackLine(yesterdayRecommendation ?? null));
+    lines.push(renderRecommendationFeedbackLine(yesterdayRecommendation ?? null, input.recommendationsReadable));
 
     if (activeSnapshot) {
         const der = activeSnapshot.derived;
