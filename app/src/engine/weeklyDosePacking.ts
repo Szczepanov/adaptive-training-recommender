@@ -87,17 +87,23 @@ interface EligibleCandidate {
 
 const NO_DURATION_OVERRIDES: ReadonlyMap<string, number> = new Map();
 
+/** Product-policy credit used only after a real high-intensity occurrence is packed.
+ * It reserves room for quality without rewriting the underlying WHO-backed 150-minute
+ * aerobic requirement. If quality cannot be packed, the packer reruns without this credit. */
+export const PACKED_QUALITY_AEROBIC_CREDIT_MINUTES = 40;
+
 function doseFor(role: CoverageRoleDescriptor, requirement: AdaptationDoseRequirement): number {
     return requirement.target.unit === 'minutes' ? role.durationMinutes : 1;
 }
 
-function desiredDose(requirement: AdaptationDoseRequirement, strategy?: EvidenceBackedStrategy): number {
+function desiredDose(requirement: AdaptationDoseRequirement, reservePackedQualityCredit: boolean): number {
     const base = requirement.floor?.dose.value ?? requirement.target.target;
-    if (requirement.adaptation === 'aerobic_endurance' && strategy) {
-        const quality = strategy.requirements.find(r => r.adaptation === 'high_intensity' && (r.target.target > 0 || r.target.maximum > 0));
-        if (quality && base > 110) {
-            return Math.max(110, base - 40);
-        }
+    if (
+        reservePackedQualityCredit
+        && requirement.adaptation === 'aerobic_endurance'
+        && requirement.target.unit === 'minutes'
+    ) {
+        return Math.max(0, base - PACKED_QUALITY_AEROBIC_CREDIT_MINUTES);
     }
     return base;
 }
@@ -182,23 +188,38 @@ function placementTieBreakerPenalty(
     return Math.max(0, row.preferredSpacingDays - nearestSessionDays);
 }
 
-function warningFor(requirement: AdaptationDoseRequirement, delivered: number, strategy?: EvidenceBackedStrategy): PackingWarning | null {
+function warningFor(
+    requirement: AdaptationDoseRequirement,
+    delivered: number,
+    packedQualityCreditApplied: boolean,
+): PackingWarning | null {
     const floor = requirement.floor;
-    const quality = strategy?.requirements.find(r => r.adaptation === 'high_intensity' && (r.target.target > 0 || r.target.maximum > 0));
-    const qualityOffset = (requirement.adaptation === 'aerobic_endurance' && quality) ? 40 : 0;
-    const effectiveFloor = floor ? Math.max(0, floor.dose.value - qualityOffset) : undefined;
-    const effectiveTarget = Math.max(0, requirement.target.target - qualityOffset);
+    const qualityCredit = packedQualityCreditApplied
+        && requirement.adaptation === 'aerobic_endurance'
+        && requirement.target.unit === 'minutes'
+        ? PACKED_QUALITY_AEROBIC_CREDIT_MINUTES
+        : 0;
+    const creditedDelivered = delivered + qualityCredit;
 
-    if (floor && effectiveFloor !== undefined && delivered < effectiveFloor) {
+    if (floor && creditedDelivered < floor.dose.value) {
         const code = floor.semantics === 'guideline_recommended_minimum'
             ? 'below_guideline_range'
             : floor.semantics === 'goal_required_minimum'
                 ? 'goal_requirement_shortfall'
                 : 'minimum_dose_shortfall';
-        return { code, adaptation: requirement.adaptation, message: `${requirement.adaptation} fits ${delivered} ${floor.dose.unit}; the stated floor is ${effectiveFloor} ${floor.dose.unit}.` };
+        const creditNote = qualityCredit > 0 ? ` plus ${qualityCredit} minutes of packed-quality allocation credit` : '';
+        return {
+            code,
+            adaptation: requirement.adaptation,
+            message: `${requirement.adaptation} fits ${delivered} ${floor.dose.unit}${creditNote}; the stated floor remains ${floor.dose.value} ${floor.dose.unit}.`,
+        };
     }
-    if (delivered < effectiveTarget) {
-        return { code: 'guideline_target_shortfall', adaptation: requirement.adaptation, message: `${requirement.adaptation} does not reach its ${effectiveTarget} ${requirement.target.unit} target.` };
+    if (creditedDelivered < requirement.target.target) {
+        return {
+            code: 'guideline_target_shortfall',
+            adaptation: requirement.adaptation,
+            message: `${requirement.adaptation} does not reach its ${requirement.target.target} ${requirement.target.unit} target after any packed-quality allocation credit.`,
+        };
     }
     return null;
 }
@@ -216,16 +237,18 @@ function warningFor(requirement: AdaptationDoseRequirement, delivered: number, s
  * packing horizon; production callers must supply it when their map was derived for one
  * active date. Omitting it preserves the legacy injected whole-horizon behavior used by
  * deterministic unit tests. Requirement floors/targets are never changed. */
-export function packWeeklyDose(
+function packWeeklyDoseAttempt(
     strategy: EvidenceBackedStrategy,
     capacity: ResolvedTrainingCapacity,
     coverage: CoverageSetDescriptor,
-    durationOverridesByRoleId: ReadonlyMap<string, number> = new Map(),
-    overrideEffectiveDate?: string,
+    durationOverridesByRoleId: ReadonlyMap<string, number>,
+    overrideEffectiveDate: string | undefined,
+    reservePackedQualityCredit: boolean,
 ): WeeklyBudget {
     const slots = capacity.usableWindows.map(window => ({ ...window, used: false }));
     const packed: MutableOccurrence[] = [];
     const shortfalls: PackingWarning[] = [];
+    const structuralShortfallAdaptations = new Set<AdaptationKey>();
     const sessionLimit = (priority: AdaptationDoseRequirement['priority']) =>
         priority === 'required' ? capacity.minSessions : priority === 'target' ? capacity.targetSessions : capacity.maxSessions;
 
@@ -244,7 +267,7 @@ export function packWeeklyDose(
         const delivered = packed
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
-        const remainingDose = Math.max(0, desiredDose(requirement, strategy) - delivered);
+        const remainingDose = Math.max(0, desiredDose(requirement, reservePackedQualityCredit) - delivered);
         if (remainingDose <= 0) return 0;
 
         const feasibleDoseBySlot = slots
@@ -280,12 +303,13 @@ export function packWeeklyDose(
             shortfalls.push({ code, adaptation: requirement.adaptation, message: code === 'goal_constraint_conflict'
                 ? `The available exact roles cannot satisfy ${requirement.adaptation} within its permitted modalities.`
                 : `No exact authored role can satisfy ${requirement.adaptation}.` });
+            structuralShortfallAdaptations.add(requirement.adaptation);
             continue;
         }
         let delivered = packed
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
-        const requiredDose = desiredDose(requirement, strategy);
+        const requiredDose = desiredDose(requirement, reservePackedQualityCredit);
         // A priority tier's ceiling is shared. Allocate scarce room in proportion to the
         // remaining *feasible* session demand, while reserving one occurrence for every
         // later peer that can still use a window. Unlike a fixed even split, this also lets
@@ -357,7 +381,15 @@ export function packWeeklyDose(
             packed.push(occurrence);
             delivered += doseFor(assignment.role, requirement);
         }
-        const warning = warningFor(requirement, delivered, strategy);
+    }
+
+    const packedQuality = packed.some(occurrence => occurrence.adaptations.includes('high_intensity'));
+    for (const requirement of requirements) {
+        if (structuralShortfallAdaptations.has(requirement.adaptation)) continue;
+        const delivered = packed
+            .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
+            .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
+        const warning = warningFor(requirement, delivered, packedQuality);
         if (warning) shortfalls.push(warning);
     }
 
@@ -392,4 +424,41 @@ export function packWeeklyDose(
         optionalRoles,
         shortfalls,
     };
+}
+
+/** Convert strategy requirements into exact weekly roles. A quality-aerobic credit is
+ * provisional on the first pass only to preserve a slot for the optional quality role.
+ * The credit becomes effective only when that high-intensity role is actually packed.
+ * Otherwise the whole pack is recomputed against the unmodified aerobic requirement. */
+export function packWeeklyDose(
+    strategy: EvidenceBackedStrategy,
+    capacity: ResolvedTrainingCapacity,
+    coverage: CoverageSetDescriptor,
+    durationOverridesByRoleId: ReadonlyMap<string, number> = new Map(),
+    overrideEffectiveDate?: string,
+): WeeklyBudget {
+    const qualityPriorActive = strategy.requirements.some(requirement =>
+        requirement.adaptation === 'high_intensity'
+        && (requirement.target.target > 0 || requirement.target.maximum > 0),
+    );
+    const provisional = packWeeklyDoseAttempt(
+        strategy,
+        capacity,
+        coverage,
+        durationOverridesByRoleId,
+        overrideEffectiveDate,
+        qualityPriorActive,
+    );
+    const qualityPacked = [...provisional.requiredRoles, ...provisional.targetRoles, ...provisional.optionalRoles]
+        .some(role => role.adaptations.includes('high_intensity'));
+    if (!qualityPriorActive || qualityPacked) return provisional;
+
+    return packWeeklyDoseAttempt(
+        strategy,
+        capacity,
+        coverage,
+        durationOverridesByRoleId,
+        overrideEffectiveDate,
+        false,
+    );
 }
