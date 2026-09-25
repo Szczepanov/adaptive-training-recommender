@@ -460,14 +460,14 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: KNOWLEDGE_CLAIM_IDS.conditionalHighIntensityPrior,
-        statement: 'For an athlete with sufficient and internally consistent recent training history, Evergreen may allocate one high-intensity session as a target and up to two in the weekly plan. The generic prior is withheld during acute adverse recovery and Post-Event Recovery, but event-proximity Base/Build labels do not replace objective-owned mesocycle intent. When an eligible high-intensity occurrence is actually packed, the weekly packer may reserve capacity by substituting one aerobic-volume reservation and crediting that reservation's current packed dose; if no quality occurrence is packed, the full aerobic requirement is restored.',
+        statement: 'For an athlete with sufficient and internally consistent recent training history, Evergreen may allocate one high-intensity session as a target and up to two in the weekly plan. The generic prior is withheld during acute adverse recovery and Post-Event Recovery, but event-proximity Base/Build labels do not replace objective-owned mesocycle intent. When an eligible high-intensity occurrence is actually packed, the weekly packer may reserve capacity by substituting up to one aerobic-volume reservation; the credit follows that role's current packed dose but is bounded so at least one full aerobic-volume occurrence remains. If no quality occurrence is packed, the full aerobic requirement is restored.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
         applicability: { contexts: ['endurance', 'speed_power', 'sport_readiness'], sports: ['endurance', 'speed_power', 'sport_readiness'], populations: ['athletes_with_sufficient_consistent_recent_training_evidence'], outcomes: ['bounded_performance_oriented_high_intensity_exposure'], horizon: 'chronic' },
         evidence: [{ sourceId: EVERGREEN_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
         limitations: [
             'This is a conservative product prior, not a claim that one to two high-intensity sessions is universally optimal.',
             'The prior is withheld when recent training evidence is insufficient, limited, conflicting, or during post-event recovery.',
-            'The one-reservation aerobic credit is a product allocation heuristic whose minute value follows the current aerobic packing role, not a claim of exact physiological dose equivalence; the underlying WHO-backed requirement remains unchanged in strategy provenance.',
+            'The bounded one-reservation aerobic credit is a product allocation heuristic whose minute value follows the current aerobic packing role while preserving at least one full aerobic occurrence; it is not a claim of exact physiological dose equivalence, and the underlying WHO-backed requirement remains unchanged in strategy provenance.',
         ],
         reviewedOn: '2026-09-25', version: 2,
     },
