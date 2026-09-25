@@ -84,8 +84,8 @@ describe('evergreen quality set policy alignment (ADR-0033, issue #758)', () => 
         expect(claim.statement).toContain('up to two in the weekly plan');
         expect(claim.statement).toContain('withheld during acute adverse recovery and Post-Event Recovery');
         expect(claim.statement).toContain('Base/Build labels do not replace objective-owned mesocycle intent');
-        expect(claim.statement).toContain('substituting one aerobic-volume reservation');
-        expect(claim.statement).toContain("crediting that reservation's current packed dose");
-        expect(claim.limitations.some(l => l.includes('one-reservation aerobic credit is a product allocation heuristic'))).toBe(true);
+        expect(claim.statement).toContain('substituting up to one aerobic-volume reservation');
+        expect(claim.statement).toContain('bounded so at least one full aerobic-volume occurrence remains');
+        expect(claim.limitations.some(l => l.includes('bounded one-reservation aerobic credit is a product allocation heuristic'))).toBe(true);
     });
 });
