@@ -176,6 +176,21 @@ describe('planning export (#811)', () => {
         // Vendor composites stay, but only as clearly secondary context.
         expect(planning).toContain('Secondary device composites');
         expect(planning).toContain('- Body battery on waking: 70');
+
+        const withoutComposites = snapshot();
+        withoutComposites.raw = {
+            ...withoutComposites.raw,
+            bodyBatteryWake: null,
+            stress: { avg: null, max: null },
+            hrvStatus: null,
+            trainingReadiness: null,
+            trainingStatus: null,
+        };
+        const planningWithoutComposites = buildContextBrief({
+            ...briefInput('planning', []),
+            snapshots: [withoutComposites],
+        });
+        expect(planningWithoutComposites).not.toContain('Secondary device composites');
     });
 
     it('orders sections by decision authority: constraints, intent, recovery, load, execution', () => {

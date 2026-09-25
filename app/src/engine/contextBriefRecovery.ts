@@ -89,17 +89,14 @@ export function renderObjective(snapshots: readonly DailyRecoverySnapshot[], win
     // Vendor composites overlap upstream with HRV/sleep/stress/load. In planning mode they
     // sit under one explicitly secondary label instead of reading as independent baseline
     // families; their candidate median/MAD variants are diagnostic-only.
-    if (compact) {
-        lines.push('');
-        lines.push('Secondary device composites (context only; correlated with the metrics above, not independent evidence):');
-    }
-    if (raw.bodyBatteryWake !== null) lines.push(`- Body battery on waking: ${raw.bodyBatteryWake}`);
+    const composites: string[] = [];
+    if (raw.bodyBatteryWake !== null) composites.push(`- Body battery on waking: ${raw.bodyBatteryWake}`);
     if (raw.stress?.avg != null || raw.stress?.max != null) {
-        lines.push(`- Device stress: avg ${raw.stress?.avg ?? '—'} · max ${raw.stress?.max ?? '—'}`);
+        composites.push(`- Device stress: avg ${raw.stress?.avg ?? '—'} · max ${raw.stress?.max ?? '—'}`);
     }
-    if (raw.hrvStatus) lines.push(`- HRV status (device): ${raw.hrvStatus}`);
+    if (raw.hrvStatus) composites.push(`- HRV status (device): ${raw.hrvStatus}`);
     if (raw.trainingReadiness?.score != null) {
-        lines.push(`- Device training readiness: ${raw.trainingReadiness.score}${raw.trainingReadiness.level ? ` (${raw.trainingReadiness.level})` : ''}`);
+        composites.push(`- Device training readiness: ${raw.trainingReadiness.score}${raw.trainingReadiness.level ? ` (${raw.trainingReadiness.level})` : ''}`);
     }
 
     const status = raw.trainingStatus;
@@ -110,8 +107,12 @@ export function renderObjective(snapshots: readonly DailyRecoverySnapshot[], win
         if (status.acwrStatus) statusParts.push(`acute:chronic ${status.acwrStatus}`);
         if (status.vo2MaxCycling != null) statusParts.push(`VO2max cycling ${status.vo2MaxCycling}`);
         if (status.vo2MaxRunning != null) statusParts.push(`VO2max running ${status.vo2MaxRunning}`);
-        if (statusParts.length > 0) lines.push(`- Device training status: ${statusParts.join(' · ')}`);
+        if (statusParts.length > 0) composites.push(`- Device training status: ${statusParts.join(' · ')}`);
     }
+    if (compact && composites.length > 0) {
+        lines.push('', 'Secondary device composites (context only; correlated with the metrics above, not independent evidence):');
+    }
+    lines.push(...composites);
 
     if (baselineVersion >= 3 && !compact) {
         lines.push('');
