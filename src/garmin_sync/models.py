@@ -91,7 +91,10 @@ class PrimaryActivity:
     type: str
     durationMin: int | None
     trainingEffect: float
-    intensityTag: str  # "hard" or "moderate/easy"
+    # Stimulus intensity only (issue #809); see intensityClassificationVersion below.
+    intensityTag: str
+    # Issue #809 session dose; None on activities classified before the split.
+    sessionCost: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -101,8 +104,14 @@ class PrimaryActivity:
 class YesterdayTraining:
     activityCount: int
     totalDurationMin: int
+    # High-intensity *stimulus* sessions only when intensityClassificationVersion >= 2
+    # (issue #809); legacy TE/avg-HR "hard" when the version is absent.
     hardActivityCount: int
     primaryActivity: PrimaryActivity | None = None
+    # Issue #809: sessions with high/very_high session cost (dose), independent of stimulus.
+    highCostActivityCount: int = 0
+    # Lowest classification version among the day's activities; None if any is legacy.
+    intensityClassificationVersion: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -198,6 +207,8 @@ class RawMetrics:
     bodyBatteryChange: int | float | None = None
     totalSteps: int | None = None
     last3DaysHardSessionsCount: int = 0
+    # Issue #809: D-1..D-3 sessions with high/very_high session cost (dose).
+    last3DaysHighCostSessionsCount: int = 0
     yesterdayTraining: YesterdayTraining | None = None
     # Same-day activity synced from Garmin for `date` itself. Reuses the YesterdayTraining
     # shape (it's just "activity summary for one specific day"). Only populated if a sync

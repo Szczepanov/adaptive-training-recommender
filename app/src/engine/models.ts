@@ -1126,13 +1126,20 @@ export interface NextDayPotentialPlan {
 export interface RawActivitySummary {
     activityCount?: number;
     totalDurationMin?: number;
+    /** High-intensity stimulus sessions (issue #809 semantics when
+     * `intensityClassificationVersion` >= 2; legacy TE/avg-HR "hard" otherwise). */
     hardActivityCount?: number;
+    /** Issue #809: sessions with high/very_high session cost (dose), independent of stimulus. */
+    highCostActivityCount?: number;
+    /** Lowest classification version among the day's activities; absent if any is legacy. */
+    intensityClassificationVersion?: number | null;
     primaryActivity?: {
         activityId: number | string;
         type: string;
         durationMin: number | null;
         trainingEffect: number;
         intensityTag: string;
+        sessionCost?: ActivitySessionCost | null;
     } | null;
 }
 
@@ -1178,6 +1185,8 @@ export interface DailyRecoverySnapshot {
         bodyBatteryDrained?: number | null;
         totalSteps: number | null;
         last3DaysHardSessionsCount: number;
+        /** Issue #809: D-1..D-3 sessions with high/very_high session cost (dose). */
+        last3DaysHighCostSessionsCount?: number;
         yesterdayTraining: RawActivitySummary | null;
         /** Same-day activity synced from Garmin for `date` itself. Only populated if a
          * sync ran after the activity was uploaded -- absent doesn't mean "didn't train",

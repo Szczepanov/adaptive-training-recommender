@@ -127,14 +127,22 @@ function intensityFromGarmin(activity: NormalizedGarminActivity): CompletedTrain
  * high `sessionCost`, still carries a hard-row fatigue cost. Records without
  * `sessionCost` (legacy classification) keep indexing cost by their intensity tag.
  */
-function costIntensityFromGarmin(activity: NormalizedGarminActivity, stimulusIntensity: CompletedTrainingIntensity): CompletedTrainingIntensity {
-    switch (activity.sessionCost) {
-        case 'low': return 'easy';
-        case 'moderate': return 'moderate';
-        case 'high':
-        case 'very_high': return 'hard';
-        default: return stimulusIntensity;
-    }
+export const SESSION_COST_ROW: Record<'low' | 'moderate' | 'high' | 'very_high', CompletedTrainingIntensity> = {
+    low: 'easy',
+    moderate: 'moderate',
+    high: 'hard',
+    very_high: 'hard',
+};
+const COST_ROW_RANK: Record<CompletedTrainingIntensity, number> = { unknown: -1, easy: 0, moderate: 1, hard: 2 };
+
+/** Dose can only raise the cost row, never lower it below the stimulus row: a measured
+ * hard stimulus with Training Effect < 3 keeps its pre-#809 hard cost (registered claim
+ * `garminStimulusCostClassification`). */
+export function costIntensityFromGarmin(activity: NormalizedGarminActivity, stimulusIntensity: CompletedTrainingIntensity): CompletedTrainingIntensity {
+    const cost = activity.sessionCost;
+    if (cost === undefined || cost === 'unknown') return stimulusIntensity;
+    const doseRow = SESSION_COST_ROW[cost];
+    return COST_ROW_RANK[doseRow] > COST_ROW_RANK[stimulusIntensity] ? doseRow : stimulusIntensity;
 }
 
 // --- Evidence hierarchy (Phase 5.5) ---

@@ -207,11 +207,18 @@ export function isAdverseCoreSignalEvidence(evidence: CoreSignalEvidence): boole
     return evidence.direction === 'high';
 }
 
+/** Issue #809: "hard" is stimulus intensity only, so a long aerobic session with a
+ * high/very_high session cost must also count as prior hard training for explaining
+ * next-day RHR/HRV strain. */
 function hasPriorHardTraining(snapshot: HealthAnomalyInput['recoverySnapshot']): boolean {
     const yesterday = snapshot?.raw.yesterdayTraining;
+    const primaryCost = yesterday?.primaryActivity?.sessionCost;
     return !!yesterday && (
         (yesterday.hardActivityCount ?? 0) > 0
         || yesterday.primaryActivity?.intensityTag === 'hard'
+        || (yesterday.highCostActivityCount ?? 0) > 0
+        || primaryCost === 'high'
+        || primaryCost === 'very_high'
     );
 }
 
@@ -238,7 +245,7 @@ function resolveExplanations(input: HealthAnomalyInput): ContextExplanation[] {
     if (priorHardTraining) {
         addExplanation(explanations, 'hard_training', 'strong', ['rhr', 'hrv'], ['YESTERDAY_HARD_SESSION']);
         addExplanation(explanations, 'hard_training', 'weak', ['respiration'], ['YESTERDAY_HARD_SESSION']);
-    } else if (input.last3DaysHardSessionsCount > 0) {
+    } else if (input.last3DaysHardSessionsCount > 0 || (input.last3DaysHighCostSessionsCount ?? 0) > 0) {
         addExplanation(explanations, 'hard_training', 'moderate', ['rhr', 'hrv'], ['HARD_SESSION_WITHIN_3D']);
     }
 

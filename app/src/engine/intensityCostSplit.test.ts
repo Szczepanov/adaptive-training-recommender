@@ -65,6 +65,15 @@ describe('stimulus vs session-cost split (#809)', () => {
         expect(event.estimatedCost).toEqual(moderateRide.estimatedCost);
     });
 
+    it('never lowers a measured hard stimulus below the hard cost row when Training Effect is below 3', () => {
+        const intervals = ride({ activityId: 'vo2', durationMin: 45, trainingEffectAerobic: 2.6, intensityTag: 'hard', stimulusDomain: 'vo2', sessionCost: 'moderate' });
+        const legacyHard = ride({ activityId: 'legacy', durationMin: 45, trainingEffectAerobic: 2.6, intensityTag: 'hard', stimulusDomain: undefined, sessionCost: undefined, intensityClassificationVersion: undefined });
+        const [measured] = reconcileCompletedTrainingEvents([intervals], []);
+        const [legacy] = reconcileCompletedTrainingEvents([legacyHard], []);
+        expect(measured.estimatedCost).toEqual(legacy.estimatedCost);
+        expect(measured.costIntensity).toBeUndefined();
+    });
+
     it('renders stimulus and cost separately in the context brief intensity cell', () => {
         expect(formatIntensityCell(ride())).toBe('easy (endurance, cost high)');
         expect(formatIntensityCell(ride({ intensityTag: 'hard', stimulusDomain: 'vo2', sessionCost: 'very_high' }))).toBe('hard (vo2, cost very high)');

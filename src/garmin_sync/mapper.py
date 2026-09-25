@@ -223,6 +223,10 @@ def normalize_activity(
     return payload
 
 
+def _is_high_cost(activity: CanonicalActivity) -> bool:
+    return activity.session_cost in ("high", "very_high")
+
+
 def _build_training_summary(
     activities: list[CanonicalActivity], date_iso: str
 ) -> YesterdayTraining | None:
@@ -234,6 +238,11 @@ def _build_training_summary(
         return None
 
     hard_count = sum(1 for act in day_acts if act.intensity_tag == "hard")
+    high_cost_count = sum(1 for act in day_acts if _is_high_cost(act))
+    versions = [act.intensity_classification_version for act in day_acts]
+    classification_version = (
+        min(v for v in versions if v is not None) if all(v is not None for v in versions) else None
+    )
     total_dur_sec = sum(act.duration_seconds for act in day_acts)
 
     def primary_sort_key(act: CanonicalActivity) -> tuple[float, float, int, str]:
@@ -253,6 +262,7 @@ def _build_training_summary(
         durationMin=best_act.duration_min,
         trainingEffect=te_best,
         intensityTag=best_act.intensity_tag,
+        sessionCost=best_act.session_cost,
     )
 
     return YesterdayTraining(
@@ -260,6 +270,8 @@ def _build_training_summary(
         totalDurationMin=round(total_dur_sec / 60),
         hardActivityCount=hard_count,
         primaryActivity=primary_act,
+        highCostActivityCount=high_cost_count,
+        intensityClassificationVersion=classification_version,
     )
 
 
@@ -320,6 +332,12 @@ def _build_raw_metrics(
         if act.date
         and three_days_ago_iso <= act.date <= yesterday_iso
         and act.intensity_tag == "hard"
+    )
+
+    high_cost_sessions_count = sum(
+        1
+        for act in canonical_activities
+        if act.date and three_days_ago_iso <= act.date <= yesterday_iso and _is_high_cost(act)
     )
 
     y_train = _build_training_summary(canonical_activities, yesterday_iso)
@@ -404,6 +422,7 @@ def _build_raw_metrics(
         else None,
         totalSteps=canonical.steps_count,
         last3DaysHardSessionsCount=hard_sessions_count,
+        last3DaysHighCostSessionsCount=high_cost_sessions_count,
         yesterdayTraining=y_train,
         todayTraining=today_train,
         stress=stress_summary,

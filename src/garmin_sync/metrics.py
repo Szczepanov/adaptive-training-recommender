@@ -5,8 +5,8 @@ from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-# Legacy fallback thresholds now live in intensity_classification (issue #809); re-exported
-# here for existing importers.
+# Legacy fallback thresholds and rule live in intensity_classification (issue #809);
+# classify_activity_intensity below delegates to legacy_intensity_tag.
 from .intensity_classification import (
     legacy_intensity_tag,
 )

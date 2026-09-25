@@ -281,6 +281,8 @@ export interface HealthAnomalyInput {
     supportingSignals: SupportingSignalEvidence[];
     dataQuality: CoreSignalDataQuality[];
     last3DaysHardSessionsCount: number;
+    /** Issue #809: prior high-dose sessions also explain next-day RHR/HRV strain. */
+    last3DaysHighCostSessionsCount?: number;
     structuredContext?: HealthAnomalyStructuredContext | null;
     persistence: HealthAnomalyPersistenceInput;
 }

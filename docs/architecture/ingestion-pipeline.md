@@ -309,6 +309,16 @@ provider-neutral evidence (Training Effect, average HR, activity-list `intensity
   `high` cost.
 
 `intensityClassificationVersion` (currently 2) marks records written with these semantics.
+Snapshot training summaries are versioned the same way instead of bumping
+`sourceSchemaVersion`: `yesterdayTraining`/`todayTraining` carry
+`intensityClassificationVersion` (lowest version among the day's activities; absent/null
+when any activity is legacy), so `hardActivityCount` and `primaryActivity.intensityTag`
+mean *stimulus-only* "hard" exactly when that stamp is >= 2. Dose is carried separately in
+`highCostActivityCount`, `primaryActivity.sessionCost` and
+`raw.last3DaysHighCostSessionsCount` (D-1..D-3, high/very_high cost). The health-anomaly
+explainer treats high-cost sessions as prior hard training, so a long easy ride still
+explains next-day RHR/HRV strain; the readiness penalty (`last3DaysHardSessionsCount`)
+stays stimulus-only.
 Records without it keep their legacy TE-based `intensityTag` and are not reinterpreted;
 only a rebuild/backfill that re-runs ingestion rewrites them, versioned. Cycling/running
 telemetry detail still qualifies for an `easy` stimulus with `moderate` or higher cost (the

@@ -237,6 +237,7 @@ export function runHealthAnomalyReplay(
                 supportingSignals: [],
                 dataQuality: features?.coreSignals.map(signal => signal.dataQuality) ?? [],
                 last3DaysHardSessionsCount: day.recoverySnapshot?.raw.last3DaysHardSessionsCount ?? 0,
+                last3DaysHighCostSessionsCount: day.recoverySnapshot?.raw.last3DaysHighCostSessionsCount ?? 0,
                 structuredContext: {
                     authoredTravelActive: day.authoredTravelActive ?? null,
                     authoredTravelRevision: null,

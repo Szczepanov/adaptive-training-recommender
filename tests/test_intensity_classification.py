@@ -232,3 +232,27 @@ def test_policy_alignment_with_registered_knowledge_claim() -> None:
         "<2 low, <3 moderate, <4 high",
     ):
         assert fragment in statement, fragment
+
+
+def test_snapshot_summaries_carry_cost_counts_and_classification_version() -> None:
+    from garmin_sync.mapper import _build_training_summary
+
+    long_easy = _canonicalize_activity(
+        {
+            "activityId": 7,
+            "startTimeLocal": "2026-09-20 08:00:00",
+            "duration": 4 * 3600.0,
+            "aerobicTrainingEffect": 4.3,
+            "anaerobicTrainingEffect": 0.2,
+            "averageHR": 120,
+            "intensityFactor": 0.62,
+            "activityType": {"typeKey": "road_biking"},
+        }
+    )
+    summary = _build_training_summary([long_easy], "2026-09-20")
+    assert summary is not None
+    assert summary.hardActivityCount == 0
+    assert summary.highCostActivityCount == 1
+    assert summary.intensityClassificationVersion == INTENSITY_CLASSIFICATION_VERSION
+    assert summary.primaryActivity is not None
+    assert summary.primaryActivity.sessionCost == "very_high"
