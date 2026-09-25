@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -131,13 +132,26 @@ def build_plan(mode: VerificationMode, base_sha: str) -> list[VerificationStep]:
     ]
 
 
+def resolve_argv(argv: tuple[str, ...]) -> tuple[str, ...]:
+    """Resolve the executable to a full path so Windows can spawn npm.cmd-style shims.
+
+    CreateProcess does not apply PATHEXT, so a bare ``npm`` fails on Windows even though a
+    shell finds ``npm.cmd``. ``shutil.which`` applies PATHEXT there and returns the same binary
+    a POSIX shell would. An unresolvable name is left as-is so the spawn error still names it.
+    """
+    if not argv:
+        return argv
+    resolved = shutil.which(argv[0])
+    return (resolved, *argv[1:]) if resolved else argv
+
+
 def run_plan(steps: list[VerificationStep]) -> int:
     """Run each step in order and stop on the first failure."""
     for index, step in enumerate(steps, start=1):
         command = " ".join(step.argv)
         relative_cwd = step.cwd.relative_to(ROOT) if step.cwd != ROOT else Path(".")
         print(f"[verify {index}/{len(steps)}] {step.name}: {command} (cwd={relative_cwd})")
-        completed = subprocess.run(step.argv, cwd=step.cwd, check=False)
+        completed = subprocess.run(resolve_argv(step.argv), cwd=step.cwd, check=False)
         if completed.returncode != 0:
             if not step.required:
                 print(

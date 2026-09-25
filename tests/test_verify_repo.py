@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from detect_ci_changes import get_worktree_changed_files
-from verify_repo import build_plan, classify_paths
+from verify_repo import build_plan, classify_paths, resolve_argv
 
 
 def test_docs_only_diff_uses_hygiene_contract() -> None:
@@ -94,3 +94,31 @@ def test_worktree_changes_fail_loudly_for_unknown_base(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError):
         get_worktree_changed_files("f" * 40, cwd=tmp_path)
+
+
+def test_resolve_argv_uses_the_path_resolved_executable(monkeypatch: pytest.MonkeyPatch) -> None:
+    resolved = {"npm": "C:/Program Files/nodejs/npm.CMD"}
+    monkeypatch.setattr("verify_repo.shutil.which", resolved.get)
+
+    assert resolve_argv(("npm", "--prefix", "app", "run", "test:e2e")) == (
+        "C:/Program Files/nodejs/npm.CMD",
+        "--prefix",
+        "app",
+        "run",
+        "test:e2e",
+    )
+
+
+def test_resolve_argv_keeps_unresolvable_or_empty_argv(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("verify_repo.shutil.which", lambda _name: None)
+
+    assert resolve_argv(("missing-tool", "--flag")) == ("missing-tool", "--flag")
+    assert resolve_argv(()) == ()
+
+
+def test_resolve_argv_finds_every_real_plan_executable() -> None:
+    executables = {step.argv[0] for step in build_plan("code", "c" * 40)}
+
+    for executable in executables:
+        resolved = resolve_argv((executable,))[0]
+        assert Path(resolved).is_absolute(), f"{executable} not found on PATH"
