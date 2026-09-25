@@ -5,7 +5,7 @@ import { evaluatePeriodizationPhase } from '../engine/periodization';
 import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
 import type { CompletedExposure } from '../engine/trainingHistory';
 import type { TrainingIntentProfile, UserContext, UserPreferences } from '../engine/models';
-import { EVERGREEN_PACKING_COVERAGE } from '../engine/weeklyDosePacking';
+import { EVERGREEN_PACKING_COVERAGE, PACKED_QUALITY_AEROBIC_CREDIT_MINUTES } from '../engine/weeklyDosePacking';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { ENGINE_KNOWLEDGE_COVERAGE } from './knowledgeCoverage';
@@ -57,7 +57,7 @@ function resolve(isAdverseRecovery = false) {
 describe('evergreen quality set policy alignment (ADR-0033, issue #758)', () => {
     it('registers the exact optional role as a product-policy claim and coverage item', () => {
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition);
-        expect(claim).toMatchObject({ claimType: 'heuristic', maturity: 'heuristic', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional' });
+        expect(claim).toMatchObject({ claimType: 'heuristic', maturity: 'heuristic', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', version: 3 });
         const coverage = ENGINE_KNOWLEDGE_COVERAGE.find(item => item.id === 'evergreen.quality_set_composition');
         expect(coverage).toMatchObject({ classification: 'product_heuristic', coverage: 'covered', knowledgeRefs: [claim.id] });
         const role = EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'sustained_quality');
@@ -77,14 +77,15 @@ describe('evergreen quality set policy alignment (ADR-0033, issue #758)', () => 
         expect(withheld?.knowledgeRefs).not.toContain(KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition);
     });
 
-    it('aligns conditionalHighIntensityPrior claim v2 with periodized caps and aerobic substitution', () => {
+    it('aligns conditionalHighIntensityPrior claim v2 with recovery gating and transactional aerobic credit', () => {
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.conditionalHighIntensityPrior);
         expect(claim.version).toBe(2);
         expect(claim.reviewedOn).toBe('2026-09-25');
-        expect(claim.statement).toContain('withheld during Post-Event Recovery');
-        expect(claim.statement).toContain('capped at one session during Base, active taper, or maintain intent');
-        expect(claim.statement).toContain('capped at two sessions during Build, Specificity, or develop intent');
-        expect(claim.statement).toContain('contributes to the weekly aerobic volume requirement by offsetting one easy aerobic volume session');
-        expect(claim.limitations.some(l => l.includes('Aerobic substitution is a programming allocation rule'))).toBe(true);
+        expect(claim.statement).toContain('up to two in the weekly plan');
+        expect(claim.statement).toContain('withheld during acute adverse recovery and Post-Event Recovery');
+        expect(claim.statement).toContain('Base/Build labels do not replace objective-owned mesocycle intent');
+        expect(claim.statement).toContain('crediting 40 minutes toward the aerobic allocation');
+        expect(PACKED_QUALITY_AEROBIC_CREDIT_MINUTES).toBe(40);
+        expect(claim.limitations.some(l => l.includes('40-minute aerobic credit is a product allocation heuristic'))).toBe(true);
     });
 });
