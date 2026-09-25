@@ -12,6 +12,7 @@ import { deriveEventPriority } from './periodization';
 import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 import { mean, renderBodyComposition, renderObjective, round, signed } from './contextBriefRecovery';
 import { SECTION_TITLE, type BriefPurpose, type BriefWindowPreset } from './contextBriefPurpose';
+import { renderRecoveryEvidenceSynthesis, synthesizeRecoveryEvidence } from './contextBriefRecoverySynthesis';
 
 // Re-exported so existing importers keep one entry point for the brief.
 export { round, signed } from './contextBriefRecovery';
@@ -670,7 +671,12 @@ export function buildContextBrief(input: ContextBriefInput): string {
     const intent = planningOrder && renderedIntent.length === 0
         ? [`## 2. ${SECTION_TITLE.intentFirst}`, '', 'No active goals or training intent profile recorded.']
         : renderedIntent;
-    const objective = renderObjective(snapshots, windowDays, `## ${n(3, 2)}. ${SECTION_TITLE.objective}`, planningOrder);
+    const objectiveLines = renderObjective(snapshots, windowDays, `## ${n(3, 2)}. ${SECTION_TITLE.objective}`, planningOrder);
+    // Issue #812: the explanatory synthesis leads the recovery section so core evidence and
+    // its interpretation precede secondary vendor observations. Reads only the as-of-date
+    // check-in and the newest in-window snapshot already fetched above.
+    const synthesis = renderRecoveryEvidenceSynthesis(synthesizeRecoveryEvidence({ asOfDate, snapshots, checkins }));
+    const objective = [...objectiveLines.slice(0, 2), ...synthesis, '', ...objectiveLines.slice(2)];
     const bodyComposition = renderBodyComposition(input.bodyComposition, planningOrder);
     const training = renderTraining(activities, asOfDate, windowDays, `## ${n(5, 3)}. ${SECTION_TITLE.training}`);
     const subjective = renderSubjective(

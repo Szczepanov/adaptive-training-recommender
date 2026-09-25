@@ -278,6 +278,7 @@ app/src/engine/
   contextBriefPlanningHandoff.ts # Upcoming external-plan/recovery-timeline context for planning handoff
   contextBriefPurpose.ts # Export purposes (morning/planning/diagnostic), section titles, goal/use-instruction renderers
   contextBriefRecovery.ts # Objective wearable + body-composition sections of the context brief
+  contextBriefRecoverySynthesis.ts # Explanatory multisignal recovery synthesis for the brief; no decision authority (#812)
   briefPlanAuthority.ts # Reconciles persisted verdict + imported occurrence into one brief authority outcome (#810)
   trainingSettingsSchema.ts # Persisted TrainingSettings schema version gate (current v3, supports v2)
   strengthSessionLifecycle.ts # Strength session state machine (new/in_progress/... transitions)

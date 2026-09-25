@@ -125,6 +125,35 @@ issues identical reads for both.
 
 No purpose alters a recommendation, so `POLICY_VERSION` is unaffected.
 
+#### Recovery evidence synthesis (issue #812)
+
+The recovery section of the planning/diagnostic brief, and section 2 of the morning brief,
+open with a deterministic synthesis (`contextBriefRecoverySynthesis.ts`
+`synthesizeRecoveryEvidence` / `renderRecoveryEvidenceSynthesis`). It is **explanatory
+observability support, not a readiness authority**: no engine module imports it, it
+produces no score, and `rules.ts` `evaluateReadinessAndSafetyEnvelope` remains the sole
+decision authority. `POLICY_VERSION` is unaffected.
+
+- Evidence is grouped into four independent families that each cast at most one vote:
+  athlete-reported state (listed first), HRV, resting HR and sleep score. Objective
+  families compare the as-of-date snapshot's 7-day delta with the athlete's 28-day
+  variability, floored exactly like the live engine; within the band reads as "at
+  baseline".
+- Vendor composites (Body Battery, device stress, Training Readiness, HRV status) are
+  shown as correlated context and never vote, so removing them cannot change the pattern.
+- Pattern: `CONVERGENT_ADVERSE` (2+ adverse, none reassuring), `CONVERGENT_REASSURING`
+  (2+ reassuring, none adverse), `MIXED`, or `INSUFFICIENT` (fewer than two judged
+  families). A single adverse signal is labelled isolated.
+- A stale (not the as-of date) or missing snapshot, an immature baseline, implausible
+  values (`dataConfidence.ts` `PHYSIOLOGICAL_BOUNDS`) or a missing check-in make the
+  family unavailable and are stated — never read as normal recovery.
+- Pain, illness, red flags and non-normal tissue response render first as dominant safety
+  facts that override the synthesis. Reassuring evidence is explicitly stated never to
+  justify raising volume or intensity above authored intent.
+- The subjective adverse band mirrors the `rules.ts` subjective triggers that move a day
+  off `train`; `contextBriefRecoverySynthesis.test.ts` pins that parity against the live
+  evaluator. Its other bands are display constants without decision authority (ADR-0033).
+
 #### Configured sensors vs observed telemetry (issue #816)
 
 Section 0 of every planning/diagnostic handoff exports sensors as two separate facts
