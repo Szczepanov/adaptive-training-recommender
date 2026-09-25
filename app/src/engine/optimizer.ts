@@ -125,15 +125,20 @@ export function materializeEffectiveDose(template: SessionTemplate, activeDose: 
     };
 }
 
-/** Shorten a train-tier easy-endurance prescription only when its authored minimum fits
- * the cap and its readiness dose would fall below that minimum. Modify-tier callers
- * retain the readiness dose by skipping this helper. */
+/** Shorten a train-tier easy-endurance prescription when its authored minimum fits the
+ * cap and its readiness dose would either fall below that minimum or (for non-walking
+ * easy endurance such as `end_easy_02`) cap out below the available time window.
+ * Modify-tier callers retain the readiness dose by skipping this helper. */
 export function resolveCapTruncatedPrescription(template: SessionTemplate, maxTimeMinutes: number): DoseVariation | null {
+    const easierDoseMax = template.easierDose?.durationMax ?? template.easierDose?.durationMin;
     if (!CAP_TRUNCATION_CATEGORIES.includes(template.category)
         || template.durationMax <= maxTimeMinutes
         || template.durationMin > maxTimeMinutes
         || !template.easierDose
-        || template.easierDose.durationMin >= template.durationMin) return null;
+        || (template.easierDose.durationMin >= template.durationMin
+            && (template.modality === 'Walking'
+                || easierDoseMax === undefined
+                || easierDoseMax >= maxTimeMinutes))) return null;
 
     const baseMidpoint = (template.durationMin + template.durationMax) / 2;
     const cappedMidpoint = (template.durationMin + maxTimeMinutes) / 2;
@@ -1475,6 +1480,7 @@ export function rankCandidates(
         all.push(item);
     });
 
+    const deferredNonPreferredCandidates = new Set<RankedCandidate>();
     const hasEligiblePreferredTraining = accepted.some(candidate =>
         isPreferred(candidate.template)
         && candidate.template.category !== 'Rest'
@@ -1522,6 +1528,7 @@ export function rankCandidates(
             const benefitBeforeFallbackDemotion = candidate.benefitScore;
             candidate.benefitScore *= UNPREFERRED_MODALITY_MULTIPLIER;
             candidate.utilityScore *= UNPREFERRED_MODALITY_MULTIPLIER;
+            deferredNonPreferredCandidates.add(candidate);
             candidate.rationale = candidate.rationale.replace(
                 `Benefit score: ${benefitBeforeFallbackDemotion.toFixed(2)}`,
                 `Benefit score: ${candidate.benefitScore.toFixed(2)}`,
@@ -1545,6 +1552,8 @@ export function rankCandidates(
         if (coverageDiff !== 0) return coverageDiff;
         const recoveryPreferenceDiff = a.recoveryPreferenceTier - b.recoveryPreferenceTier;
         if (recoveryPreferenceDiff !== 0) return recoveryPreferenceDiff;
+        const deferredDiff = Number(deferredNonPreferredCandidates.has(a)) - Number(deferredNonPreferredCandidates.has(b));
+        if (deferredDiff !== 0) return deferredDiff;
         const tierDiff = getBenefitTier(a) - getBenefitTier(b);
         if (tierDiff !== 0) return tierDiff;
         if (honorPreferredToday) {
@@ -1561,6 +1570,7 @@ export function rankCandidates(
         const nearEquivalents = accepted.filter(c =>
             c.coverageNeedTier === topCandidate.coverageNeedTier &&
             c.recoveryPreferenceTier === topCandidate.recoveryPreferenceTier &&
+            deferredNonPreferredCandidates.has(c) === deferredNonPreferredCandidates.has(topCandidate) &&
             getBenefitTier(c) === topBenefitTier &&
             (!honorPreferredToday || matchesPreferredModality(c.template.modality, preferredToday!)
                 === matchesPreferredModality(topCandidate.template.modality, preferredToday!)) &&

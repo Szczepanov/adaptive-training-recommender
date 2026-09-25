@@ -7,6 +7,8 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CoverageCreditFact, PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import type { CompletedExposure } from './trainingHistory';
 import { aerobicVolumeFloorForWorkout, type AerobicVolumeFloor } from './aerobicVolumeFloor';
+import { ENRICHED_TEMPLATES_BY_ID } from './templates';
+import { WORKOUTS_BY_ID } from '../workouts/catalog';
 
 /**
  * Phase 6.2c / ADR-0016: physiological stimulus credit and programming-role coverage
@@ -174,6 +176,7 @@ export function coverageHistoryFromFacts(performedFacts: CoveragePerformedFacts)
     });
 }
 
+/** Convert completed or projected exposure history inputs into normalized coverage history entries. */
 export function coverageHistoryFromCompletedExposures(history: readonly CoverageHistoryInput[]): CoverageHistoryEntry[] {
     return history.flatMap(entry => {
         if (!entry.date) return [];
@@ -254,42 +257,87 @@ export function authoredSessionIdentityFor(coverageSetId: string, key: EventPlan
     return `${coverageSetId}:${key}`;
 }
 
+/** Resolve the catalog workout id associated with a session template id. */
 export function workoutIdForTemplateId(templateId: string | undefined): string | undefined {
     if (!templateId) return undefined;
     return workoutForTemplate(templateId)?.id;
 }
 
+/** Resolve the uncapped standard-template duration ceiling for planned or projected
+ * exposures (`source` is `'projected'` or `'fixed_activity'`, or `durationMax` is
+ * present), while returning `undefined` for completed exposures so completed sessions
+ * remain governed by their actual duration against the athlete floor. */
+function standardTemplateCeilingFor(
+    identity: ExposureIdentity & { source?: CoverageCreditSource },
+    workoutId: string,
+): number | undefined {
+    const isCompletedExposure = identity.source === 'completed'
+        || (identity.source === undefined && identity.durationMax === undefined);
+    if (isCompletedExposure) return undefined;
+
+    if (identity.templateId) {
+        const directCeiling = ENRICHED_TEMPLATES_BY_ID.get(identity.templateId)?.durationMax;
+        if (directCeiling !== undefined) return directCeiling;
+    }
+
+    const engineTemplateIds = WORKOUTS_BY_ID.get(workoutId)?.engineTemplateIds ?? [];
+    let maxTemplateCeiling: number | undefined;
+    for (const templateId of engineTemplateIds) {
+        const templateMax = ENRICHED_TEMPLATES_BY_ID.get(templateId)?.durationMax;
+        if (templateMax !== undefined && (maxTemplateCeiling === undefined || templateMax > maxTemplateCeiling)) {
+            maxTemplateCeiling = templateMax;
+        }
+    }
+    return maxTemplateCeiling;
+}
+
 /** The lower bound must reach the catalog minimum, as before #757. Issue #757 adds the
  * athlete-level floor: a completed session meets it with its actual duration, a planned
- * one with the upper bound of its prescribed range (a capped day truncates that bound). */
-function hasRequiredAerobicDose(identity: ExposureIdentity, workoutId: string, floor?: AerobicVolumeFloor | null): boolean {
+ * one with the upper bound of its prescribed range (a capped day truncates that bound).
+ * When evaluating a planned SessionTemplate or projected exposure, the required floor is
+ * also bounded by the template's own uncapped standard durationMax so a workout's
+ * harderDose catalog ceiling never disqualifies the standard prescription. */
+function hasRequiredAerobicDose(
+    identity: ExposureIdentity & { source?: CoverageCreditSource },
+    workoutId: string,
+    floor?: AerobicVolumeFloor | null,
+    templateCeilingMin?: number,
+): boolean {
     if (identity.isReadinessModifiedDose) return false;
     const catalogMinimum = aerobicVolumeFloorForWorkout(workoutId, null);
-    const athleteFloor = aerobicVolumeFloorForWorkout(workoutId, floor);
+    const rawAthleteFloor = aerobicVolumeFloorForWorkout(workoutId, floor);
     const lower = identity.durationMin;
-    if (catalogMinimum === undefined || athleteFloor === undefined
+    if (catalogMinimum === undefined || rawAthleteFloor === undefined
         || typeof lower !== 'number' || !Number.isFinite(lower) || lower < catalogMinimum) return false;
+    const effectiveCeiling = templateCeilingMin ?? standardTemplateCeilingFor(identity, workoutId);
+    const athleteFloor = effectiveCeiling !== undefined
+        ? Math.max(catalogMinimum, Math.min(rawAthleteFloor, effectiveCeiling))
+        : rawAthleteFloor;
     const reach = typeof identity.durationMax === 'number' && Number.isFinite(identity.durationMax)
         ? Math.max(lower, identity.durationMax)
         : lower;
     return reach >= athleteFloor;
 }
 
+/** Return all authored plan coverage keys satisfied by an exposure in the given phase. */
 export function coverageKeysForExposure(
-    identity: ExposureIdentity,
+    identity: ExposureIdentity & { source?: CoverageCreditSource },
     phase: PlanPhase | null,
     descriptor: CoverageSetDescriptor = SEPTEMBER_CYCLING_EVENT_COVERAGE_SET,
     floor?: AerobicVolumeFloor | null,
+    templateCeilingMin?: number,
 ): PlanCoverageKey[] {
     if (!phase) return [];
     const workoutId = identity.workoutId ?? workoutIdForTemplateId(identity.templateId);
     if (!workoutId) return [];
     return descriptor.coverage
         .filter(item => item.phases.includes(phase) && item.workoutIds.includes(workoutId))
-        .filter(item => item.key !== 'aerobic_volume' || hasRequiredAerobicDose(identity, workoutId, floor))
+        .filter(item => item.key !== 'aerobic_volume' || hasRequiredAerobicDose(identity, workoutId, floor, templateCeilingMin))
         .map(item => item.key);
 }
 
+/** Resolve coverage keys from an exposure's canonical coverage-credit ledger when present,
+ * enforcing phase and dose-floor eligibility for `aerobic_volume`. */
 function canonicalCoverageKeysForExposure(
     exposure: CoverageHistoryEntry,
     phase: PlanPhase,
@@ -316,12 +364,14 @@ function canonicalCoverageKeysForExposure(
     return keys;
 }
 
+/** Return all authored plan coverage keys satisfied by a candidate session template. */
 export function coverageKeysForTemplate(
     template: SessionTemplate & { isReadinessModifiedDose?: boolean },
     phase: PlanPhase | null,
     descriptor: CoverageSetDescriptor = SEPTEMBER_CYCLING_EVENT_COVERAGE_SET,
     floor?: AerobicVolumeFloor | null,
 ): PlanCoverageKey[] {
+    const uncappedTemplateCeiling = ENRICHED_TEMPLATES_BY_ID.get(template.id)?.durationMax ?? template.durationMax;
     return coverageKeysForExposure({
         templateId: template.id,
         modality: template.modality,
@@ -329,7 +379,7 @@ export function coverageKeysForTemplate(
         durationMin: template.durationMin,
         durationMax: template.durationMax,
         ...(template.isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
-    }, phase, descriptor, floor);
+    }, phase, descriptor, floor, uncappedTemplateCeiling);
 }
 
 function laterDate(left: string, right: string): string {

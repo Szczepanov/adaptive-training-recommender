@@ -179,7 +179,7 @@ export const TEMPLATES: SessionTemplate[] = [
         category: "Easy Endurance",
         modality: "Running",
         durationMin: 30,
-        durationMax: 40,
+        durationMax: 60,
         title: "Light Base Run",
         description: "Very easy jog. Stop and walk if HR drifts above Zone 2.",
         requiredEquipment: [],
@@ -194,11 +194,11 @@ export const TEMPLATES: SessionTemplate[] = [
             prescriptionSummary: "30 min continuous conversational base run."
         },
         harderDose: {
-            label: "50 min Aerobic Base Run",
-            durationMin: 45,
-            durationMax: 60,
+            label: "65 min Aerobic Base Run",
+            durationMin: 60,
+            durationMax: 70,
             doseRatio: 1.4,
-            prescriptionSummary: "Extended 50 min Zone 2 base run."
+            prescriptionSummary: "Extended 65 min Zone 2 base run."
         }
     },
     {

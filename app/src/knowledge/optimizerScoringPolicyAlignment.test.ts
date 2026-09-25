@@ -206,7 +206,12 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(resolveTimeCapDoseAdjustment(template, 35, true)?.activeDose).toEqual(template.easierDose);
         expect(resolveCapTruncatedPrescription({ ...template, category: 'Moderate Endurance' }, 35)).toBeNull();
         expect(resolveCapTruncatedPrescription(template, 25)).toBeNull();
-        expect(resolveCapTruncatedPrescription({ ...template, easierDose: { ...template.easierDose!, durationMin: 30 } }, 35)).toBeNull();
+        expect(resolveCapTruncatedPrescription({ ...template, easierDose: { ...template.easierDose!, durationMin: 30, durationMax: 35 } }, 35)).toBeNull();
+        expect(resolveCapTruncatedPrescription({ ...template, easierDose: { ...template.easierDose!, durationMin: 30, durationMax: 30 } }, 30)).toBeNull();
+        expect(resolveCapTruncatedPrescription({ ...template, easierDose: { ...template.easierDose!, durationMin: 30, durationMax: 30 } }, 45)).toMatchObject({
+            durationMin: 30,
+            durationMax: 45,
+        });
         expect(resolveCapTruncatedPrescription({ ...template, easierDose: { ...template.easierDose!, doseRatio: 0.8 } }, 35)?.doseRatio).toBe(0.8);
     });
 
@@ -334,6 +339,7 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(supportClaim.statement).toContain('coverage tier 3');
         const fallbackClaim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.unpreferredModalityFallbackPolicy);
         expect(fallbackClaim.statement).toContain('not already advanced by any eligible preferred training candidate');
+        expect(fallbackClaim.statement).toContain('deferred behind non-deferred candidates within the same coverage and recovery-preference tier');
 
         const bikeEasy = mockTemplate({
             id: 'end_easy_01',
