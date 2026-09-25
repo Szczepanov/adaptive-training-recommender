@@ -910,6 +910,16 @@ dose, injury and spacing for one forecast date. The greedy day loop and the allo
 call it, so the allocator is not a second rules engine: it never re-implements
 `PROJECTED_FATIGUE_*` filtering or `rankCandidates` acceptance.
 
+**Occurrence derivation follows the live forecast state.** Required-role occurrences are
+not a static expansion of the event-plan coverage set. The planner first applies the
+confirmed/provisional seed selections and any projected coverage already accumulated in the
+current strip, then `deriveRequiredRoleOccurrences` creates only the remaining minimum roles
+where `minimumSessions > completedSessions + projectedSessions`. Consequently two scenarios
+with the same event and empty initial history can legitimately expose different remaining
+occurrences after their readiness/re-entry paths select different seed or earlier projected
+sessions. This distinction is coverage-ledger state, not hidden fixture history and not an
+allocator candidate-search decision.
+
 **Bounded stateful search.** `resolveWeeklyRoleReservations` is a deterministic
 backtracking search over required role occurrences only. It enumerates exact eligible
 date/template candidates from the least-loaded (root) state, then re-proves every tentative

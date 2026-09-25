@@ -438,10 +438,11 @@ export function resolveWeeklyRoleReservations(
         if (remaining.length === 0 || budgetExhausted) return;
         if (depth >= budget.maxOccurrences) return;
         // Prune any branch that cannot *beat* the incumbent. Ties are pruned rather than
-        // explored because the traversal order is itself ADR-0018's stable tie-break order
-        // (deadline, constrainedness, coverage key, template id, date) and an equal
-        // cardinality never replaces the incumbent -- so an equal branch could only
-        // reproduce the solution already held.
+        // explored because traversal is deterministic: occurrences use the canonical
+        // deadline/key/id order with dynamic constrainedness, while each occurrence's
+        // candidates use ADR-0018's date-diverse date/template order. Equal cardinality
+        // never replaces the incumbent, so an equal branch could only produce a different
+        // deterministic tie, not improve the primary maximum-cardinality objective.
         if (placed.size + remaining.length <= bestByOccurrence.size) return;
 
         const usedDates = new Set(assignments.map(item => item.date));
