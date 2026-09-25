@@ -1,5 +1,11 @@
 import type { ActivityLapSummary, ActivityZoneBucket, NormalizedGarminActivity } from './models';
 import { findSectionHeading, SECTION_TITLE } from './contextBrief';
+import {
+    deriveKeySessionSummaries,
+    hasAvailableFeature,
+    renderKeySessionSummaries,
+    type ResponseContext,
+} from './contextBriefResponseSummary';
 
 const ACTIVITY_TYPE_LABELS: Record<string, string> = {
     road_biking: 'Road cycling',
@@ -156,16 +162,19 @@ function lapDigest(laps: readonly ActivityLapSummary[]): string {
  */
 export function renderCompactActivityTelemetry(
     activities: readonly NormalizedGarminActivity[],
+    summarizedIds: ReadonlySet<string> = new Set(),
 ): string {
     const detailed = activities
-        .filter(hasDetailedTelemetry)
+        .filter(activity => hasDetailedTelemetry(activity) && !summarizedIds.has(activity.activityId))
         .sort((a, b) => a.date.localeCompare(b.date) || a.activityId.localeCompare(b.activityId));
     if (detailed.length === 0) return '';
 
     const lines: string[] = [
         '### Key-session telemetry (compact)',
         '',
-        'One line per activity with Garmin detail telemetry. Per-lap and per-zone tables are in the diagnostic export.',
+        summarizedIds.size > 0
+            ? 'One line per activity with Garmin detail telemetry that has no semantic summary below. Per-lap and per-zone tables are in the diagnostic export.'
+            : 'One line per activity with Garmin detail telemetry. Per-lap and per-zone tables are in the diagnostic export.',
     ];
     for (const activity of detailed) {
         const parts: string[] = [];
@@ -190,8 +199,16 @@ export function injectActivityTelemetryIntoContextBrief(
     brief: string,
     activities: readonly NormalizedGarminActivity[],
     compact = false,
+    response?: ResponseContext,
 ): string {
-    const telemetry = compact ? renderCompactActivityTelemetry(activities) : renderContextBriefActivityTelemetry(activities);
+    // Issue #814: key sessions get a semantic summary. In the compact (planning) export it
+    // replaces that session's digest line only when at least one feature produced a value;
+    // diagnostic keeps every raw table and adds the summaries after them.
+    const summaries = response ? deriveKeySessionSummaries(activities, response) : [];
+    const summaryText = response ? renderKeySessionSummaries(summaries, response) : '';
+    const summarizedIds = new Set(summaries.filter(hasAvailableFeature).map(summary => summary.activity.activityId));
+    const raw = compact ? renderCompactActivityTelemetry(activities, summarizedIds) : renderContextBriefActivityTelemetry(activities);
+    const telemetry = [raw, summaryText].filter(Boolean).join('\n\n');
     if (!telemetry) return brief;
 
     const trainingIndex = findSectionHeading(brief, SECTION_TITLE.training);
