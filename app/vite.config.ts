@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { loadEnv } from 'vite';
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -181,6 +181,9 @@ export default defineConfig({
   test: {
     hookTimeout: 30000,
     testTimeout: 15000,
+    // Wall-clock latency gates (`*.perf.test.ts`) are preempted by sibling workers in the
+    // parallel suite; they run on their own via `npm run test:perf` (vitest.perf.config.ts).
+    exclude: [...configDefaults.exclude, '**/*.perf.test.ts'],
     // Persists transformed modules under node_modules/.vitest-cache (already gitignored)
     // so repeat `vitest run` invocations skip re-transforming the whole module graph.
     fsModuleCache: true,
