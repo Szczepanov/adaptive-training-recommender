@@ -184,7 +184,7 @@ describe('exposure ledger (#813)', () => {
 
     it('is rendered inside the completed-training section only when the service supplies ledger inputs', () => {
         const base = {
-            asOfDate: AS_OF, windowDays: 14, snapshots: [], checkins: [], activities: mixedWeek, recommendations: [],
+            asOfDate: AS_OF, windowDays: 14, snapshots: [], checkins: [], activities: mixedWeek, recommendations: [], recommendationsReadable: true,
             trainingSettings: settings(), preferences: null, intentProfile: null, purpose: 'planning' as const,
         };
         expect(buildContextBrief(base)).not.toContain('Recent meaningful stressors');
