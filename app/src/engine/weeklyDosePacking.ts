@@ -87,23 +87,22 @@ interface EligibleCandidate {
 
 const NO_DURATION_OVERRIDES: ReadonlyMap<string, number> = new Map();
 
-/** Product-policy credit used only after a real high-intensity occurrence is packed.
- * It reserves room for quality without rewriting the underlying WHO-backed 150-minute
- * aerobic requirement. If quality cannot be packed, the packer reruns without this credit. */
-export const PACKED_QUALITY_AEROBIC_CREDIT_MINUTES = 40;
-
+/** Product-policy substitution reserves one aerobic-volume occurrence for an eligible
+ * quality occurrence. The credited minutes are therefore derived from the exact aerobic
+ * role currently being packed (including an athlete-relative floor), not from a fixed
+ * physiological-equivalence constant. If quality cannot be packed, the packer reruns
+ * without any substitution. */
 function doseFor(role: CoverageRoleDescriptor, requirement: AdaptationDoseRequirement): number {
     return requirement.target.unit === 'minutes' ? role.durationMinutes : 1;
 }
 
-function desiredDose(requirement: AdaptationDoseRequirement, reservePackedQualityCredit: boolean): number {
+function desiredDose(
+    requirement: AdaptationDoseRequirement,
+    reservedQualityAerobicCreditMinutes: number,
+): number {
     const base = requirement.floor?.dose.value ?? requirement.target.target;
-    if (
-        reservePackedQualityCredit
-        && requirement.adaptation === 'aerobic_endurance'
-        && requirement.target.unit === 'minutes'
-    ) {
-        return Math.max(0, base - PACKED_QUALITY_AEROBIC_CREDIT_MINUTES);
+    if (requirement.adaptation === 'aerobic_endurance' && requirement.target.unit === 'minutes') {
+        return Math.max(0, base - reservedQualityAerobicCreditMinutes);
     }
     return base;
 }
@@ -191,13 +190,12 @@ function placementTieBreakerPenalty(
 function warningFor(
     requirement: AdaptationDoseRequirement,
     delivered: number,
-    packedQualityCreditApplied: boolean,
+    packedQualityCreditMinutes: number,
 ): PackingWarning | null {
     const floor = requirement.floor;
-    const qualityCredit = packedQualityCreditApplied
-        && requirement.adaptation === 'aerobic_endurance'
+    const qualityCredit = requirement.adaptation === 'aerobic_endurance'
         && requirement.target.unit === 'minutes'
-        ? PACKED_QUALITY_AEROBIC_CREDIT_MINUTES
+        ? packedQualityCreditMinutes
         : 0;
     const creditedDelivered = delivered + qualityCredit;
 
@@ -243,7 +241,7 @@ function packWeeklyDoseAttempt(
     coverage: CoverageSetDescriptor,
     durationOverridesByRoleId: ReadonlyMap<string, number>,
     overrideEffectiveDate: string | undefined,
-    reservePackedQualityCredit: boolean,
+    reservePackedQualitySlot: boolean,
 ): WeeklyBudget {
     const slots = capacity.usableWindows.map(window => ({ ...window, used: false }));
     const packed: MutableOccurrence[] = [];
@@ -256,6 +254,16 @@ function packWeeklyDoseAttempt(
         const rank = { required: 0, target: 1, optional: 2 } as const;
         return rank[left.priority] - rank[right.priority];
     });
+    const aerobicRequirementForCredit = requirements.find(requirement =>
+        requirement.adaptation === 'aerobic_endurance' && requirement.target.unit === 'minutes');
+    const aerobicCandidateDoses = reservePackedQualitySlot && aerobicRequirementForCredit
+        ? eligibleCandidates(coverage.roles, aerobicRequirementForCredit, NO_DURATION_OVERRIDES)
+            .map(candidate => doseFor(candidate.role, aerobicRequirementForCredit))
+            .filter(dose => Number.isFinite(dose) && dose > 0)
+        : [];
+    const reservedQualityAerobicCreditMinutes = aerobicCandidateDoses.length > 0
+        ? Math.min(...aerobicCandidateDoses)
+        : 0;
 
     /** Estimate how many of the *remaining feasible windows* a requirement can still use.
      * This feeds only fair-share reservation; it must not reserve capacity for a later peer
@@ -267,7 +275,7 @@ function packWeeklyDoseAttempt(
         const delivered = packed
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
-        const remainingDose = Math.max(0, desiredDose(requirement, reservePackedQualityCredit) - delivered);
+        const remainingDose = Math.max(0, desiredDose(requirement, reservedQualityAerobicCreditMinutes) - delivered);
         if (remainingDose <= 0) return 0;
 
         const feasibleDoseBySlot = slots
@@ -309,7 +317,7 @@ function packWeeklyDoseAttempt(
         let delivered = packed
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
-        const requiredDose = desiredDose(requirement, reservePackedQualityCredit);
+        const requiredDose = desiredDose(requirement, reservedQualityAerobicCreditMinutes);
         // A priority tier's ceiling is shared. Allocate scarce room in proportion to the
         // remaining *feasible* session demand, while reserving one occurrence for every
         // later peer that can still use a window. Unlike a fixed even split, this also lets
@@ -384,12 +392,13 @@ function packWeeklyDoseAttempt(
     }
 
     const packedQuality = packed.some(occurrence => occurrence.adaptations.includes('high_intensity'));
+    const packedQualityAerobicCreditMinutes = packedQuality ? reservedQualityAerobicCreditMinutes : 0;
     for (const requirement of requirements) {
         if (structuralShortfallAdaptations.has(requirement.adaptation)) continue;
         const delivered = packed
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
-        const warning = warningFor(requirement, delivered, packedQuality);
+        const warning = warningFor(requirement, delivered, packedQualityAerobicCreditMinutes);
         if (warning) shortfalls.push(warning);
     }
 
@@ -426,10 +435,12 @@ function packWeeklyDoseAttempt(
     };
 }
 
-/** Convert strategy requirements into exact weekly roles. A quality-aerobic credit is
- * provisional on the first pass only to preserve a slot for the optional quality role.
- * The credit becomes effective only when that high-intensity role is actually packed.
- * Otherwise the whole pack is recomputed against the unmodified aerobic requirement. */
+/** Convert strategy requirements into exact weekly roles. The first pass may provisionally
+ * substitute one exact aerobic-volume occurrence with the optional quality role. The
+ * substitution's minute credit equals that aerobic role's current packed dose, which makes
+ * athlete-relative floors participate in the same slot arithmetic. The credit becomes
+ * effective only when high intensity is actually packed; otherwise the whole pack is
+ * recomputed against the unmodified aerobic requirement. */
 export function packWeeklyDose(
     strategy: EvidenceBackedStrategy,
     capacity: ResolvedTrainingCapacity,
