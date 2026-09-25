@@ -107,6 +107,7 @@ function briefInput(purpose: BriefPurpose | undefined, activities: NormalizedGar
         trainingSettings: null,
         preferences: null,
         intentProfile: PROFILE,
+        recommendationsReadable: true,
         goals: [GOAL],
         ...(purpose ? { purpose } : {}),
     };

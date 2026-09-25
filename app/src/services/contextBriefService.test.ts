@@ -488,6 +488,29 @@ describe('ContextBriefService', () => {
         expect(result.text).toContain('DATA INCOMPLETE');
     });
 
+    it('marks recommendations as unreadable when the read fails, showing "unknown, not none"', async () => {
+        services.getRecommendationsInRange.mockResolvedValue({ status: 'UNAVAILABLE', data: [] });
+
+        const result = await new ContextBriefService().build('u1', AS_OF, 14);
+
+        expect(result.text).toContain('Recommendation feedback unavailable (read failed)');
+        expect(result.text).toContain('unknown, not none');
+        expect(result.text).not.toContain('No app recommendations recorded in this window');
+
+        // Check the unavailable sources list includes recommendations
+        expect(result.unavailableSources).toContain('recommendations and feedback');
+    });
+
+    it('marks yesterday\'s recommendation feedback as unknown in the morning brief when the read fails', async () => {
+        services.getRecommendationsInRange.mockResolvedValue({ status: 'UNAVAILABLE', data: [] });
+
+        const result = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+
+        expect(result.text).toContain('- Prescribed: unavailable (read failed) — unknown, not none.');
+        expect(result.text).toContain('- Recommendation feedback (athlete response, not execution): unavailable (read failed) — unknown, not none.');
+        expect(result.text).not.toMatch(/no app recommendation recorded for yesterday/i);
+    });
+
     describe('body composition (anthropometry)', () => {
         it('reads anthropometry entries over a wider lookback than the subjective baseline', async () => {
             await new ContextBriefService().build('u1', AS_OF, 14);

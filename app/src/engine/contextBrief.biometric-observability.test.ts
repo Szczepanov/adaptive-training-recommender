@@ -109,6 +109,7 @@ function brief(snapshot: DailyRecoverySnapshot): string {
         activities: [],
         recommendations: [],
         trainingSettings: null,
+        recommendationsReadable: true,
         preferences: null,
         intentProfile: null,
     };

@@ -52,6 +52,7 @@ describe('context brief subjective baseline coverage', () => {
             trainingSettings: null,
             preferences: null,
             intentProfile: null,
+            recommendationsReadable: true,
         };
 
         const text = buildContextBrief(input);
