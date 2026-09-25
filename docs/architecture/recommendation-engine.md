@@ -301,21 +301,41 @@ read-only ledgers (`contextBriefExposureLedger.ts` `deriveExposureLedger` /
 
 The section formerly titled "Plan adherence" is now **Recommendation feedback**
 (`contextBriefFeedback.ts` `renderRecommendationFeedback`; the morning brief's one-line
-counterpart is `renderRecommendationFeedbackLine`). It reports only athlete answers to the
-app's adherence prompt (`DailyRecommendation.adherence`) for **app recommendations**:
-feedback completion (`answered/total`), and athlete-reported followed / different / skipped.
+counterpart is `renderRecommendationFeedbackLine`). It separates athlete feedback collection
+from observed plan execution.
+
+##### Slice A — Recommendation feedback completion
+
+Reports athlete answers to the app's adherence prompt (`DailyRecommendation.adherence`) for
+**app recommendations**: feedback completion (`answered/total`), and athlete-reported
+followed / different / skipped.
 
 - An unanswered prompt is "unknown, not skipped"; only an explicit `adherence.skipped`
   is a skip, and it stays one regardless of activity data. A skip is never also counted as
-  followed. "No app recommendation recorded" is distinct from "not answered".
-- Imported/external-plan sessions are not counted in these figures.
-- **Plan execution is not reconciled in the export.** ADR-0034's canonical
-  `PerformedTrainingOccurrence` reconciles performed sources with each other; planned-vs-performed
-  history diff and FIT workout-identity scoring (TO4/TO5, #646) are shadow-only. The brief
-  therefore states the gap — a missing synced activity is not proof of non-execution — and
-  refers the reader to the completed-training section instead of inferring execution from
-  feedback or telemetry. When #646 grants live authority, execution states should come from
-  that canonical model rather than a brief-local matcher.
+  followed. "No app recommendation recorded" is distinct from "not answered". Unanswered
+  is never presented as non-compliance.
+- Imported/external-plan sessions are not counted in these feedback figures.
+- When an imported/external plan is the active planning authority (`effectivePlanningMode === 'externally_planned'`),
+  the section explicitly prints a planning authority note stating that external planning governs
+  and that the reported feedback reflects responses to in-app suggestions only, not compliance
+  with the external plan.
+
+##### Slice B — Plan execution / occurrence reconciliation
+
+Per `docs/plans/README.md` and issue #646, ADR-0034's canonical `PerformedTrainingOccurrence`
+domain (TO1), gated Activities read model (TO2), and weekly coverage credit (TO3) are delivered,
+while planned-vs-performed history diffs (TO4) and FIT workout-identity decoding (TO5) remain
+**shadow-only** with no live recommendation authority.
+
+- The context brief does not shortcut the TO4/TO5 rollout. Where live reconciliation is not
+  active, plan execution reconciliation is explicitly rendered as **unavailable**
+  (`EXECUTION_NOT_RECONCILED_NOTE`).
+- Canonical reconciliation states (`matched_exact`, `matched_inferred`, `different_activity`,
+  `explicitly_skipped`, `no_activity_observed_yet`, `unresolved`, `data_unavailable`) will be
+  emitted only when #646 declares live authority.
+- The brief states the gap directly: missing activity telemetry is not proof of non-execution
+  (sync may be incomplete or pending), and unanswered prompts are not skips. Readers are
+  directed to inspect the completed-training section directly.
 
 Presentation only — `POLICY_VERSION` is unaffected.
 

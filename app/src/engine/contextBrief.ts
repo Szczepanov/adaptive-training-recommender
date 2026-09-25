@@ -4,6 +4,7 @@ import type {
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
     NormalizedGarminActivity,
+    PlanningMode,
     TrainingIntentProfile,
     TrainingSettings,
     UserGoal,
@@ -64,6 +65,12 @@ export interface ContextBriefInput {
      * and recommendations come from this input's own windowed arrays. */
     exposureLedger?: Pick<ExposureLedgerInput,
         'activitiesReadable' | 'recommendationsReadable' | 'activityOverrides' | 'performedFacts' | 'plannedSessions'>;
+    /** Effective planning mode resolved by planningMode.ts (ADR-0017). When 'externally_planned',
+     * or when `isExternalPlanAuthority` is true, the recommendation feedback section notes that
+     * an imported/external plan is the planning authority. */
+    effectivePlanningMode?: PlanningMode;
+    /** Explicit override or convenience flag for whether an imported/external plan is the planning authority. */
+    isExternalPlanAuthority?: boolean;
 }
 
 /** See the isolation note on `ContextBriefInput.bodyComposition` above: intentionally not
@@ -675,7 +682,16 @@ export function buildContextBrief(input: ContextBriefInput): string {
         checkins, baselineCheckins, windowDays, baselineDays, { morning: hungerMorning, other: hungerOther },
         `## 4. ${SECTION_TITLE.subjective}`,
     );
-    const adherence = renderRecommendationFeedback(recommendations, `## ${n(6, 5)}. ${SECTION_TITLE.adherence}`, input.recommendationsReadable);
+    const isExternalPlanAuthority = input.isExternalPlanAuthority
+        ?? (input.effectivePlanningMode === 'externally_planned');
+    const adherence = renderRecommendationFeedback(
+        recommendations,
+        `## ${n(6, 5)}. ${SECTION_TITLE.adherence}`,
+        {
+            recommendationsReadable: input.recommendationsReadable,
+            isExternalPlanAuthority,
+        },
+    );
     const body: string[][] = planningOrder
         ? [constraints, intent, objective, bodyComposition, subjective, training, adherence]
         : [constraints, objective, bodyComposition, training, subjective, adherence, intent];

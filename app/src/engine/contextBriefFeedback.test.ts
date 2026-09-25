@@ -71,6 +71,37 @@ describe('renderRecommendationFeedback (#815)', () => {
         expect(text).toContain(EXECUTION_NOT_RECONCILED_NOTE);
         expect(text).not.toContain('No app recommendations recorded in this window.');
     });
+
+    it('notes when an imported/external plan is the planning authority', () => {
+        const withExternalAuthority = renderRecommendationFeedback(
+            [rec(day(0), { followed: true })],
+            '## 6. Recommendation feedback',
+            { recommendationsReadable: true, isExternalPlanAuthority: true },
+        ).join('\n');
+        expect(withExternalAuthority).toContain('Planning authority note: An imported/external plan is the active planning authority for this athlete.');
+        expect(withExternalAuthority).toContain('The feedback below reflects responses to in-app recommendation prompts only, not compliance with the external plan.');
+        expect(withExternalAuthority).toContain('Feedback completion: 1/1 prompts answered · 0 unanswered (unknown, not skipped).');
+
+        const emptyWithExternalAuthority = renderRecommendationFeedback(
+            [],
+            '## 6. Recommendation feedback',
+            { recommendationsReadable: true, isExternalPlanAuthority: true },
+        ).join('\n');
+        expect(emptyWithExternalAuthority).toContain('Planning authority note: An imported/external plan is the active planning authority for this athlete.');
+        expect(emptyWithExternalAuthority).toContain('No app recommendations recorded in this window.');
+
+        const appAuthority = renderRecommendationFeedback(
+            [rec(day(0))],
+            '## 6. Recommendation feedback',
+            { recommendationsReadable: true, isExternalPlanAuthority: false },
+        ).join('\n');
+        expect(appAuthority).not.toContain('Planning authority note:');
+    });
+
+    it('explicitly renders execution reconciliation as unavailable due to shadow-only status (#646)', () => {
+        expect(EXECUTION_NOT_RECONCILED_NOTE).toContain('Plan execution reconciliation: unavailable');
+        expect(EXECUTION_NOT_RECONCILED_NOTE).toContain('canonical planned-vs-performed reconciliation is shadow-only; ADR-0034 TO4/TO5, #646');
+    });
 });
 
 describe('renderRecommendationFeedbackLine (#815)', () => {
@@ -78,6 +109,9 @@ describe('renderRecommendationFeedbackLine (#815)', () => {
     it('distinguishes no recommendation from an unanswered prompt', () => {
         expect(renderRecommendationFeedbackLine(null)).toBe(`${label}: no app recommendation recorded for yesterday.`);
         expect(renderRecommendationFeedbackLine(rec(day(0)))).toBe(`${label}: not answered yet — unknown, not a skip.`);
+    });
+    it('notes external plan authority when no recommendation was recorded', () => {
+        expect(renderRecommendationFeedbackLine(null, true, true)).toBe(`${label}: no app recommendation recorded for yesterday (external plan governs).`);
     });
     it('renders each explicit response', () => {
         expect(renderRecommendationFeedbackLine(rec(day(0), { followed: true }))).toBe(`${label}: reported followed as prescribed`);

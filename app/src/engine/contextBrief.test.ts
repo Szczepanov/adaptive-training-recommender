@@ -635,4 +635,14 @@ describe('buildContextBrief', () => {
     it('tells the planner that daily readiness adjustment happens separately', () => {
         expect(buildContextBrief(input())).toContain('plan the intended block rather than pre-emptively reducing it');
     });
+
+    it('notes when an external plan is the planning authority in the recommendation feedback section (#815)', () => {
+        const text = buildContextBrief(input({
+            effectivePlanningMode: 'externally_planned',
+            recommendations: [recommendation('2026-08-15', { followed: true })],
+        }));
+        expect(text).toContain('Planning authority note: An imported/external plan is the active planning authority for this athlete.');
+        expect(text).toContain('The feedback below reflects responses to in-app recommendation prompts only, not compliance with the external plan.');
+        expect(text).toContain('Plan execution reconciliation: unavailable');
+    });
 });

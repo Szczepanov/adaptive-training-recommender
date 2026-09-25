@@ -594,4 +594,23 @@ describe('ContextBriefService', () => {
         expect(services.peekTrainingSettingsState).toHaveBeenCalledWith('u1');
         expect(services.getTrainingSettingsState).not.toHaveBeenCalled();
     });
+
+    it('notes external plan authority in recommendation feedback when profile mode is externally_planned (#815)', async () => {
+        services.getProfileState.mockResolvedValue({
+            status: 'AVAILABLE',
+            data: {
+                userId: 'u1',
+                planningMode: 'externally_planned',
+                priorities: ['balanced_performance'],
+                weeklyCommitment: { minSessions: 2, targetSessions: 3, maxSessions: 4 },
+                organizationPreference: 'auto',
+                schemaVersion: 1,
+                createdAt: '',
+                updatedAt: '',
+            },
+        });
+        const result = await new ContextBriefService().build('u1', AS_OF, 14);
+        expect(result.text).toContain('Planning authority note: An imported/external plan is the active planning authority for this athlete.');
+        expect(result.text).toContain('The feedback below reflects responses to in-app recommendation prompts only, not compliance with the external plan.');
+    });
 });
