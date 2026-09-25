@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, deleteDoc, where } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { ActivityOverride } from '../engine/models';
 import type { DataState } from '../engine/dataState';
@@ -42,11 +42,12 @@ export class ActivityOverrideService {
         }
     }
 
-    /** Like `getAllOverrides`, but a failed read is reported as UNAVAILABLE instead of being
-     * collapsed into "no overrides", so read-only exports can say the source is unknown. */
-    async getAllOverridesState(userId: string): Promise<DataState<Record<string, ActivityOverride>>> {
+    /** Overrides for activities dated on/after `fromDate` (Warsaw calendar date). Unlike
+     * `getAllOverrides`, a failed read is reported as UNAVAILABLE instead of being collapsed
+     * into "no overrides", so read-only exports can say the source is unknown. */
+    async getOverridesSinceState(userId: string, fromDate: string): Promise<DataState<Record<string, ActivityOverride>>> {
         try {
-            const snap = await getDocs(this.getCollectionRef(userId));
+            const snap = await getDocs(query(this.getCollectionRef(userId), where('date', '>=', fromDate)));
             const overrides: Record<string, ActivityOverride> = {};
             snap.forEach((docSnap) => {
                 const data = docSnap.data() as ActivityOverride;

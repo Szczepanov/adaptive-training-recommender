@@ -9,6 +9,7 @@ import {
 } from './contextBriefExposureLedger';
 import { reconcileCompletedTrainingEvents } from './completedTraining';
 import { buildContextBrief } from './contextBrief';
+import type { PerformedExposureFact } from './performedTrainingFacts';
 
 const AS_OF = '2026-09-24';
 const START = '2026-09-11';
@@ -48,7 +49,7 @@ function settings(overrides: Partial<TrainingSettings> = {}): TrainingSettings {
 function input(overrides: Partial<ExposureLedgerInput> = {}): ExposureLedgerInput {
     return {
         asOfDate: AS_OF, lookbackStart: START, activities: [], recommendations: [],
-        activitiesReadable: true, recommendationsReadable: true, activityOverrides: {}, plannedSessions: [],
+        activitiesReadable: true, recommendationsReadable: true, activityOverrides: {}, performedFacts: [], plannedSessions: [],
         trainingSettings: settings(), preferences: null, ...overrides,
     };
 }
@@ -153,6 +154,7 @@ describe('exposure ledger (#813)', () => {
         expect(running.status).toBe('confirmed');
         expect(running.lastConfirmedProvenance).toContain('athlete reclassified other/moderate → Running/easy');
         expect(running.lastConfirmedProvenance).toContain('display only');
+        expect(ledger.stressors[0].provenance).toContain('engine records Unknown/easy, cost row easy');
     });
 
     it('keeps unknown data unknown when sources are unreadable or history is missing', () => {
@@ -162,7 +164,7 @@ describe('exposure ledger (#813)', () => {
         expect(empty.capabilities.every(entry => entry.status === 'unknown')).toBe(true);
 
         const unreadable = deriveExposureLedger(input({
-            activities: mixedWeek, activitiesReadable: false, activityOverrides: null, plannedSessions: null, trainingSettings: null,
+            activities: [], activitiesReadable: false, activityOverrides: null, performedFacts: null, plannedSessions: null, trainingSettings: null,
         }));
         expect(unreadable.capabilities.every(entry => entry.lastConfirmed === null)).toBe(true);
         expect(unreadable.notes.join(' ')).toMatch(/unknown, not absent/);
@@ -188,11 +190,44 @@ describe('exposure ledger (#813)', () => {
         expect(buildContextBrief(base)).not.toContain('Recent meaningful stressors');
         const brief = buildContextBrief({
             ...base,
-            exposureLedger: { activitiesReadable: true, recommendationsReadable: true, activityOverrides: {}, plannedSessions: [] },
+            exposureLedger: { activitiesReadable: true, recommendationsReadable: true, activityOverrides: {}, performedFacts: [], plannedSessions: [] },
         });
         const trainingAt = brief.indexOf('Completed training');
         const ledgerAt = brief.indexOf('### Recent meaningful stressors (2026-09-11 → 2026-09-24)');
         expect(ledgerAt).toBeGreaterThan(trainingAt);
         expect(brief.indexOf('### Physical-capability exposure')).toBeGreaterThan(ledgerAt);
+    });
+
+    it('confirms strength from a canonical structured execution with no Garmin record or adherence answer', () => {
+        const fact: PerformedExposureFact = {
+            performedOccurrenceId: 'occ-1', localDate: '2026-09-23', modality: 'Strength', category: 'Lower-body Strength',
+            confidence: 'exact', sourceKinds: ['structured_execution'], evidenceTier: 'completedStructuredWorkout',
+        };
+        const ledger = deriveExposureLedger(input({ performedFacts: [fact] }));
+        const strength = cap(ledger.capabilities, 'strength');
+        expect(strength.status).toBe('confirmed');
+        expect(strength.lastConfirmed).toBe('2026-09-23');
+        expect(strength.lastConfirmedProvenance).toBe('canonical performed occurrence (structured_execution; exact; Lower-body Strength)');
+        expect(ledger.stressors.map(s => s.family)).toEqual(['strength — Lower-body Strength']);
+        expect(ledger.stressors[0].confidence).toBe('exact');
+        // A provider-backed fact duplicates the Garmin row and must not add a second stressor.
+        const garminFact = { ...fact, sourceKinds: ['provider_activity' as const] };
+        const withGarmin = deriveExposureLedger(input({ activities: [mixedWeek[4]], performedFacts: [garminFact] }));
+        expect(withGarmin.stressors.length).toBe(1);
+    });
+
+    it('lists a tempo ride as a stressor because it confirms cycling quality', () => {
+        const tempo = activity({ activityId: 'tempo', intensityTag: 'moderate', stimulusDomain: 'tempo', sessionCost: 'moderate' });
+        const ledger = deriveExposureLedger(input({ activities: [tempo] }));
+        expect(cap(ledger.capabilities, 'cycling_quality').status).toBe('confirmed');
+        expect(ledger.stressors.map(s => s.family)).toEqual(['cycling quality']);
+    });
+
+    it('says stressors are unknown, not none, when activities are unreadable, yet keeps confirmed adherence', () => {
+        const unreadable = deriveExposureLedger(input({ activitiesReadable: false }));
+        expect(renderExposureLedger(unreadable, START, AS_OF).join(' ')).toContain('Completed stressors unknown (activities unreadable).');
+        const followed = recommendation({ adherence: { respondedAt: 'x', followed: true, actualModality: null, actualDurationMin: 45, skipped: false, notes: null } });
+        const withAdherence = deriveExposureLedger(input({ activitiesReadable: false, recommendations: [followed] }));
+        expect(cap(withAdherence.capabilities, 'strength').status).toBe('confirmed');
     });
 });

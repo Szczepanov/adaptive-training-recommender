@@ -195,12 +195,16 @@ read-only ledgers (`contextBriefExposureLedger.ts` `deriveExposureLedger` /
 
 - **Ownership.** Exposure *policy* (cadence, max-gap, dose thresholds, weekly allocation)
   belongs to the engine and the knowledge registry; the ledger owns presentation only.
-  Completed sessions come from `completedTraining.ts` `reconcileCompletedTrainingEvents`
-  — the reconciliation that feeds live training history — so modality, stimulus
-  intensity, the #809 cost row, the six-dimensional cost vector (shown split into
-  systemic/cardiovascular vs lower-body/impact/neuromuscular) and the evidence tier are the
-  engine's own values. Unanswered or skipped recommendations and imported future sessions
-  never count as completed; imported sessions can only make a capability `planned`.
+  Two completed-training sources are read, never re-derived: `completedTraining.ts`
+  `reconcileCompletedTrainingEvents` (Garmin + answered adherence, as
+  `buildTrainingHistorySnapshot` uses it) supplies modality, stimulus intensity, the #809
+  cost row, the six-dimensional cost vector (shown split into systemic/cardiovascular vs
+  lower-body/impact/neuromuscular) and the evidence tier; ADR-0034 canonical performed
+  facts (`getPerformedTrainingFactsInRange`, which drive live weekly coverage credit)
+  confirm capabilities with their own provenance, including in-app structured executions
+  with no Garmin record or adherence answer. Unanswered or skipped recommendations and
+  imported future sessions never count as completed; imported sessions in the next 7 days
+  can only make a capability `planned`.
 - **Status vocabulary.** `confirmed`, `planned`, `unknown`, `deliberately_suspended`
   (current settings guardrails, unexpired injuries via `resolveInjuryRestrictions`, and
   hard modality exclusions — the same sources section 1 prints) and `overdue`, which is
@@ -209,8 +213,12 @@ read-only ledgers (`contextBriefExposureLedger.ts` `deriveExposureLedger` /
   aerobic anchor #806, hamstring/calf/grip) are `unknown` and are to be switched to those
   models' outputs as they land, not re-derived here. Unreadable activities, adherence,
   overrides, plan schedule or settings are stated as unknown, never as absence.
-- **Athlete reclassification** (`activity_overrides`) is applied with explicit provenance
-  and labelled display-only, because the engine's training history does not consume it.
+- **Athlete reclassification** (`activity_overrides`, read for the render window only) is
+  applied with explicit provenance and labelled display-only; each such row also prints the
+  engine-recorded modality/intensity and cost row, because the engine's training history
+  does not consume overrides.
+- **Deferred.** Taper/event-specific suppression is not yet represented, and the
+  #802–#806 capability families remain `unknown` until their canonical models land.
   Presentation only — `POLICY_VERSION` is unaffected.
 
 #### Recommendation feedback vs plan execution (issue #815)

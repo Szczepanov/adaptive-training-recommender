@@ -60,7 +60,7 @@ export interface ContextBriefInput {
      * capability-exposure ledgers. Omitted = the ledgers are not rendered. Completed sessions
      * and recommendations come from this input's own windowed arrays. */
     exposureLedger?: Pick<ExposureLedgerInput,
-        'activitiesReadable' | 'recommendationsReadable' | 'activityOverrides' | 'plannedSessions'>;
+        'activitiesReadable' | 'recommendationsReadable' | 'activityOverrides' | 'performedFacts' | 'plannedSessions'>;
 }
 
 /** See the isolation note on `ContextBriefInput.bodyComposition` above: intentionally not
