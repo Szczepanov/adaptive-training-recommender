@@ -83,22 +83,31 @@ interface ObjectiveSpec {
     bounds: { min: number; max: number };
 }
 
-function classifyObjective(spec: ObjectiveSpec, snapshotDate: string, implausible: string[]): FamilyEvidence {
+interface ObjectiveResult { evidence: FamilyEvidence; implausible: boolean }
+
+/** Pure. `metricDate` is the date the metric actually describes: the Garmin provider can
+ * fall back to D-1 sleep/RHR when today's is not ready (`source.metricDates`), read the same
+ * way `dataConfidence.ts` `evaluateDataConfidence` reads it. */
+function classifyObjective(spec: ObjectiveSpec, metricDate: string, asOfDate: string): ObjectiveResult {
     const base = { family: spec.family, label: spec.label, kind: 'measured_core' as const };
-    if (!isNum(spec.current)) return { ...base, state: 'unavailable', detail: `not recorded on ${snapshotDate}` };
+    const out = (state: FamilyState, detail: string, implausible = false): ObjectiveResult =>
+        ({ evidence: { ...base, state, detail }, implausible });
+    if (!isNum(spec.current)) return out('unavailable', `not recorded (metric date ${metricDate})`);
+    if (metricDate !== asOfDate) {
+        return out('unavailable', `${round(spec.current)} ${spec.unit} is dated ${metricDate}, not ${asOfDate} (provider fallback) — stale, not read as current recovery`);
+    }
     if (!plausible(spec.current, spec.bounds)) {
-        implausible.push(spec.label);
-        return { ...base, state: 'unavailable', detail: `${round(spec.current)} ${spec.unit} is outside the plausible range; ignored` };
+        return out('unavailable', `${round(spec.current)} ${spec.unit} is outside the plausible range; ignored`, true);
     }
     if (spec.family === 'sleep' && spec.current < SLEEP_SCORE_ABSOLUTE_FLOOR) {
-        return { ...base, state: 'adverse', detail: `${round(spec.current)} ${spec.unit} on ${snapshotDate}, below the absolute floor of ${SLEEP_SCORE_ABSOLUTE_FLOOR}` };
+        return out('adverse', `${round(spec.current)} ${spec.unit} on ${metricDate}, below the absolute floor of ${SLEEP_SCORE_ABSOLUTE_FLOOR}`);
     }
-    if (!isNum(spec.delta7d)) return { ...base, state: 'unavailable', detail: `${round(spec.current)} ${spec.unit} on ${snapshotDate}; no 7d baseline delta` };
+    if (!isNum(spec.delta7d)) return out('unavailable', `${round(spec.current)} ${spec.unit} on ${metricDate}; no 7d baseline delta`);
     const band = Math.max(isNum(spec.sd28d) ? spec.sd28d : spec.sdFloor, spec.sdFloor);
-    const where = `${round(spec.current)} ${spec.unit} on ${snapshotDate}, ${signed(spec.delta7d)} vs 7d (usual variation ±${round(band)})`;
-    if (Math.abs(spec.delta7d) < band) return { ...base, state: 'reassuring', detail: `${where} — at baseline` };
+    const where = `${round(spec.current)} ${spec.unit} on ${metricDate}, ${signed(spec.delta7d)} vs 7d (usual variation ±${round(band)})`;
+    if (Math.abs(spec.delta7d) < band) return out('reassuring', `${where} — at baseline`);
     const adverse = spec.adverseSign * spec.delta7d > 0;
-    return { ...base, state: adverse ? 'adverse' : 'reassuring', detail: `${where} — ${adverse ? 'adverse' : 'favorable'} vs baseline` };
+    return out(adverse ? 'adverse' : 'reassuring', `${where} — ${adverse ? 'adverse' : 'favorable'} vs baseline`);
 }
 
 /** Mirrors the subjective triggers of `rules.ts` `evaluateReadinessAndSafetyEnvelope` that
@@ -155,6 +164,7 @@ function vendorContextFor(snapshot: DailyRecoverySnapshot): string[] {
     if (isNum(raw.stress?.avg)) out.push(`device stress avg ${raw.stress?.avg}`);
     if (isNum(raw.trainingReadiness?.score)) out.push(`Training Readiness ${raw.trainingReadiness?.score}`);
     if (raw.hrvStatus) out.push(`HRV status ${raw.hrvStatus}`);
+    if (isNum(raw.respirationAvg)) out.push(`respiration ${round(raw.respirationAvg)} br/min (production respiration strain scoring is off)`);
     return out;
 }
 
@@ -164,20 +174,23 @@ function baselineMaturity(snapshot: DailyRecoverySnapshot): RecoveryDataConfiden
     return 'immature';
 }
 
-function objectiveFamilies(snapshot: DailyRecoverySnapshot | undefined, asOfDate: string, confidence: RecoveryDataConfidence): FamilyEvidence[] {
+type BaseConfidence = Omit<RecoveryDataConfidence, 'implausible'>;
+
+function objectiveFamilies(snapshot: DailyRecoverySnapshot | undefined, asOfDate: string, confidence: BaseConfidence): ObjectiveResult[] {
     const specs: Array<Pick<FamilyEvidence, 'family' | 'label'>> = [
         { family: 'hrv', label: 'HRV (overnight)' }, { family: 'rhr', label: 'Resting HR' }, { family: 'sleep', label: 'Sleep score' },
     ];
-    const blocked = (detail: string): FamilyEvidence[] => specs.map(s => ({ ...s, kind: 'measured_core', state: 'unavailable', detail }));
+    const blocked = (detail: string): ObjectiveResult[] =>
+        specs.map(s => ({ evidence: { ...s, kind: 'measured_core', state: 'unavailable', detail }, implausible: false }));
     if (!snapshot) return blocked('no wearable snapshot in the exported window — missing, not normal');
     if (confidence.wearable === 'stale') return blocked(`latest snapshot is ${snapshot.date}, not ${asOfDate} — stale, not read as current recovery`);
     if (confidence.baseline === 'immature') return blocked('personal baseline not yet mature (<7 days) — deviations cannot be judged');
     const { raw, derived } = snapshot;
-    const implausible = confidence.implausible;
+    const dates = snapshot.source?.metricDates;
     return [
-        classifyObjective({ family: 'hrv', label: 'HRV (overnight)', unit: 'ms', current: raw.hrvOvernightAvg, delta7d: derived.deltas.hrvVs7d, sd28d: derived.hrv28dStdev, sdFloor: HRV_SD_FLOOR_MS, adverseSign: -1, bounds: PHYSIOLOGICAL_BOUNDS.hrv }, snapshot.date, implausible),
-        classifyObjective({ family: 'rhr', label: 'Resting HR', unit: 'bpm', current: raw.restingHr, delta7d: derived.deltas.restingHrVs7d, sd28d: derived.restingHr28dStdev, sdFloor: RHR_SD_FLOOR_BPM, adverseSign: 1, bounds: PHYSIOLOGICAL_BOUNDS.rhr }, snapshot.date, implausible),
-        classifyObjective({ family: 'sleep', label: 'Sleep score', unit: 'pts', current: raw.sleepScore, delta7d: derived.deltas.sleepScoreVs7d, sd28d: derived.sleepScore28dStdev, sdFloor: SLEEP_SD_FLOOR_PTS, adverseSign: -1, bounds: PHYSIOLOGICAL_BOUNDS.sleepScore }, snapshot.date, implausible),
+        classifyObjective({ family: 'hrv', label: 'HRV (overnight)', unit: 'ms', current: raw.hrvOvernightAvg, delta7d: derived.deltas.hrvVs7d, sd28d: derived.hrv28dStdev, sdFloor: HRV_SD_FLOOR_MS, adverseSign: -1, bounds: PHYSIOLOGICAL_BOUNDS.hrv }, dates?.hrv ?? snapshot.date, asOfDate),
+        classifyObjective({ family: 'rhr', label: 'Resting HR', unit: 'bpm', current: raw.restingHr, delta7d: derived.deltas.restingHrVs7d, sd28d: derived.restingHr28dStdev, sdFloor: RHR_SD_FLOOR_BPM, adverseSign: 1, bounds: PHYSIOLOGICAL_BOUNDS.rhr }, dates?.restingHr ?? snapshot.date, asOfDate),
+        classifyObjective({ family: 'sleep', label: 'Sleep score', unit: 'pts', current: raw.sleepScore, delta7d: derived.deltas.sleepScoreVs7d, sd28d: derived.sleepScore28dStdev, sdFloor: SLEEP_SD_FLOOR_PTS, adverseSign: -1, bounds: PHYSIOLOGICAL_BOUNDS.sleepScore }, dates?.sleep ?? snapshot.date, asOfDate),
     ];
 }
 
@@ -194,7 +207,11 @@ function patternFor(families: readonly FamilyEvidence[]): RecoveryPattern {
 function uncertaintyFor(families: readonly FamilyEvidence[], confidence: RecoveryDataConfidence): string[] {
     const out: string[] = [];
     const adverse = families.filter(f => f.state === 'adverse');
-    if (adverse.length === 1) out.push(`one isolated adverse signal (${adverse[0].label}) — not a multi-signal cluster`);
+    // The subjective family is adverse only when it meets a live engine trigger, so it is
+    // never described as an isolated outlier.
+    if (adverse.length === 1 && adverse[0].family !== 'subjective') {
+        out.push(`one isolated adverse objective signal (${adverse[0].label}) — not a multi-signal cluster`);
+    }
     if (confidence.wearable === 'missing') out.push('no wearable data — objective recovery unknown');
     if (confidence.wearable === 'stale') out.push(`wearable data stale (latest ${confidence.wearableDate})`);
     if (confidence.baseline === 'immature') out.push('personal baseline immature');
@@ -203,18 +220,26 @@ function uncertaintyFor(families: readonly FamilyEvidence[], confidence: Recover
     if (confidence.implausible.length > 0) out.push(`implausible values ignored: ${confidence.implausible.join(', ')}`);
     const unavailableCore = families.filter(f => f.kind === 'measured_core' && f.state === 'unavailable').length;
     if (confidence.wearable === 'current' && confidence.baseline !== 'immature' && unavailableCore > 0) {
-        out.push(`${unavailableCore} of 3 core wearable signals unavailable`);
+        out.push(`${unavailableCore} of 3 core wearable signals unavailable for ${confidence.wearableDate} (missing, fallback-dated or implausible)`);
     }
     return out;
 }
 
-function implicationsFor(pattern: RecoveryPattern, safetyFacts: readonly string[]): string[] {
+const ENGINE_DECIDES = "the engine's readiness/safety evaluation decides today's response";
+
+function implicationsFor(pattern: RecoveryPattern, families: readonly FamilyEvidence[], safetyFacts: readonly string[]): string[] {
     const out: string[] = [];
+    const adverse = families.filter(f => f.state === 'adverse');
     if (safetyFacts.length > 0) out.push('current safety facts (pain, illness, tissue response, red flags) override this synthesis');
-    if (pattern === 'CONVERGENT_ADVERSE') out.push('independent core signals agree on reduced recovery; the engine\'s readiness/safety evaluation decides the response');
-    if (pattern === 'MIXED') out.push('no multi-signal adverse cluster supports an automatic downgrade; a single adverse signal alone does not justify redesigning future training');
+    if (adverse.length >= 2) {
+        out.push(`${adverse.length} independent families are adverse (${adverse.map(f => f.label).join(', ')}); ${ENGINE_DECIDES}`);
+    } else if (adverse.length === 1 && adverse[0].family === 'subjective') {
+        out.push(`athlete-reported state meets the engine's own subjective triggers; ${ENGINE_DECIDES}`);
+    } else if (adverse.length === 1) {
+        out.push(`one adverse objective signal (${adverse[0].label}) is not a multi-signal cluster and alone does not justify redesigning future training; ${ENGINE_DECIDES}`);
+    }
     if (pattern === 'INSUFFICIENT') out.push('evidence is insufficient to characterize recovery; do not read missing or stale data as normal recovery');
-    if (pattern === 'CONVERGENT_REASSURING' || pattern === 'MIXED') out.push('reassuring evidence never justifies raising volume or intensity above authored intent');
+    if (families.some(f => f.state === 'reassuring')) out.push('reassuring evidence never justifies raising volume or intensity above authored intent');
     out.push('explanatory only — not a readiness score; recommendations are unchanged by this summary');
     return out;
 }
@@ -228,14 +253,18 @@ export function synthesizeRecoveryEvidence(input: {
     const eligible = input.snapshots.filter(s => s.date <= asOfDate);
     const latest = eligible.reduce<DailyRecoverySnapshot | undefined>((best, s) => (!best || s.date > best.date ? s : best), undefined);
     const checkin = input.checkins.find(c => c.date === asOfDate);
-    const confidence: RecoveryDataConfidence = {
+    const base: BaseConfidence = {
         wearable: !latest ? 'missing' : latest.date === asOfDate ? 'current' : 'stale',
         wearableDate: latest?.date ?? null,
         baseline: latest ? baselineMaturity(latest) : 'unknown',
         subjective: checkin ? 'present' : 'missing',
-        implausible: [],
     };
-    const families = [classifySubjective(checkin, asOfDate), ...objectiveFamilies(latest, asOfDate, confidence)];
+    const objective = objectiveFamilies(latest, asOfDate, base);
+    const confidence: RecoveryDataConfidence = {
+        ...base,
+        implausible: objective.filter(r => r.implausible).map(r => r.evidence.label),
+    };
+    const families = [classifySubjective(checkin, asOfDate), ...objective.map(r => r.evidence)];
     const pattern = patternFor(families);
     const safetyFacts = safetyFactsFor(checkin);
     return {
@@ -243,10 +272,10 @@ export function synthesizeRecoveryEvidence(input: {
         pattern,
         families,
         safetyFacts,
-        vendorContext: latest && confidence.wearable === 'current' ? vendorContextFor(latest) : [],
+        vendorContext: latest && base.wearable === 'current' ? vendorContextFor(latest) : [],
         confidence,
         uncertainty: uncertaintyFor(families, confidence),
-        implications: implicationsFor(pattern, safetyFacts),
+        implications: implicationsFor(pattern, families, safetyFacts),
     };
 }
 
@@ -273,7 +302,7 @@ export function renderRecoveryEvidenceSynthesis(s: RecoveryEvidenceSynthesis): s
     if (other.length > 0) lines.push('- Neutral / unavailable:', ...bullet(other));
     lines.push('- Conflicts / uncertainty:', ...bullet(s.uncertainty));
     lines.push(`- Data confidence (observability only): wearable ${c.wearable}${c.wearableDate ? ` (latest ${c.wearableDate})` : ''} · ${BASELINE_LABEL[c.baseline]} · check-in ${c.subjective}`);
-    if (s.vendorContext.length > 0) lines.push(`- Vendor composites (correlated with the core signals; context only, not counted): ${s.vendorContext.join(' · ')}`);
+    if (s.vendorContext.length > 0) lines.push(`- Vendor composites and respiration (correlated or production-off; context only, not counted): ${s.vendorContext.join(' · ')}`);
     lines.push('- Decision implication:', ...bullet(s.implications));
     return lines;
 }

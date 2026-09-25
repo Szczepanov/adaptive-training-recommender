@@ -144,6 +144,14 @@ decision authority. `POLICY_VERSION` is unaffected.
 - Pattern: `CONVERGENT_ADVERSE` (2+ adverse, none reassuring), `CONVERGENT_REASSURING`
   (2+ reassuring, none adverse), `MIXED`, or `INSUFFICIENT` (fewer than two judged
   families). A single adverse signal is labelled isolated.
+- Each objective family is dated by `source.metricDates` (`hrv`/`restingHr`/`sleep`,
+  falling back to the snapshot date, as `dataConfidence.ts` does); a provider D-1
+  fallback is unavailable and printed with its true date. Respiration is listed as
+  non-voting context (production respiration scoring is off).
+- Implications depend on which families are adverse: two or more are named; an adverse
+  athlete-reported family meets the engine's own subjective triggers and is never called
+  isolated; only a single adverse objective signal is described as isolated. In every
+  case the text defers to the engine's readiness/safety evaluation.
 - A stale (not the as-of date) or missing snapshot, an immature baseline, implausible
   values (`dataConfidence.ts` `PHYSIOLOGICAL_BOUNDS`) or a missing check-in make the
   family unavailable and are stated — never read as normal recovery.
@@ -151,7 +159,8 @@ decision authority. `POLICY_VERSION` is unaffected.
   facts that override the synthesis. Reassuring evidence is explicitly stated never to
   justify raising volume or intensity above authored intent.
 - The subjective adverse band mirrors the `rules.ts` subjective triggers that move a day
-  off `train`; `contextBriefRecoverySynthesis.test.ts` pins that parity against the live
+  off `train`, and the copied HRV/RHR/sleep variability floors and sleep floor 50 mirror
+  `rules.ts`; `contextBriefRecoverySynthesis.test.ts` pins both behaviourally against the live
   evaluator. Its other bands are display constants without decision authority (ADR-0033).
 
 #### Configured sensors vs observed telemetry (issue #816)
