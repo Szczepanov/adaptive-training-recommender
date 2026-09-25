@@ -112,7 +112,7 @@ issues identical reads for both.
 - `morning` — `buildMorningCoachBrief`: today's closed loop only; no multi-day plan.
 - `planning` — sections in decision-authority order (section 0 authority/data currency,
   constraints, current intent & goals, recovery, completed load with a bounded one-line
-  telemetry digest per activity, adherence, upcoming commitments, compact long-term goals,
+  telemetry digest per activity, recommendation feedback, upcoming commitments, compact long-term goals,
   handoff contract). Candidate median/MAD baselines and the respiration candidate are
   omitted with a pointer to the diagnostic export; vendor composites are grouped as
   secondary context; goals keep target, timing and description but omit the event demand
@@ -186,6 +186,28 @@ Observation is evidence, not ownership: it never writes back to settings and nev
 promotes an unknown/unavailable configuration. The handoff keeps requiring an executable
 RPE/feel/HR fallback whenever a sensor is not configured available. Presentation only —
 `POLICY_VERSION` is unaffected.
+
+#### Recommendation feedback vs plan execution (issue #815)
+
+The section formerly titled "Plan adherence" is now **Recommendation feedback**
+(`contextBriefFeedback.ts` `renderRecommendationFeedback`; the morning brief's one-line
+counterpart is `renderRecommendationFeedbackLine`). It reports only athlete answers to the
+app's adherence prompt (`DailyRecommendation.adherence`) for **app recommendations**:
+feedback completion (`answered/total`), and athlete-reported followed / different / skipped.
+
+- An unanswered prompt is "unknown, not skipped"; only an explicit `adherence.skipped`
+  is a skip, and it stays one regardless of activity data. A skip is never also counted as
+  followed. "No app recommendation recorded" is distinct from "not answered".
+- Imported/external-plan sessions are not counted in these figures.
+- **Plan execution is not reconciled in the export.** ADR-0034's canonical
+  `PerformedTrainingOccurrence` reconciles performed sources with each other; planned-vs-performed
+  history diff and FIT workout-identity scoring (TO4/TO5, #646) are shadow-only. The brief
+  therefore states the gap — a missing synced activity is not proof of non-execution — and
+  refers the reader to the completed-training section instead of inferring execution from
+  feedback or telemetry. When #646 grants live authority, execution states should come from
+  that canonical model rather than a brief-local matcher.
+
+Presentation only — `POLICY_VERSION` is unaffected.
 
 ### Authored occurrence authority (`authoredSessionGates.ts`, ADR-0023)
 

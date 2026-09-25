@@ -1,3 +1,4 @@
+import { renderRecommendationFeedback } from './contextBriefFeedback';
 import type {
     DailyRecommendation,
     DailyRecoverySnapshot,
@@ -558,36 +559,6 @@ function renderSubjective(
     return lines;
 }
 
-function renderAdherence(recommendations: readonly DailyRecommendation[], heading: string): string[] {
-    const lines: string[] = [heading, ''];
-    if (recommendations.length === 0) {
-        lines.push('No recommendations recorded in this window.');
-        return lines;
-    }
-    const answered = recommendations.filter(r => r.adherence.followed !== null || r.adherence.skipped);
-    const followed = recommendations.filter(r => r.adherence.followed === true);
-    const different = recommendations.filter(r => r.adherence.followed === false && !r.adherence.skipped);
-    const skipped = recommendations.filter(r => r.adherence.skipped);
-
-    lines.push(`${recommendations.length} recommendations · ${answered.length} answered · ${recommendations.length - answered.length} unanswered.`);
-    lines.push(`- Followed as prescribed: ${followed.length}`);
-    lines.push(`- Did something different: ${different.length}`);
-    lines.push(`- Skipped entirely: ${skipped.length}`);
-
-    if (different.length > 0 || skipped.length > 0) {
-        lines.push('');
-        lines.push('Deviations:');
-        for (const rec of [...different, ...skipped].sort((a, b) => a.date.localeCompare(b.date))) {
-            const what = rec.adherence.skipped
-                ? 'skipped'
-                : `did ${rec.adherence.actualModality ?? 'something else'}${rec.adherence.actualDurationMin ? ` for ${rec.adherence.actualDurationMin} min` : ''}`;
-            const note = rec.adherence.notes ? ` — "${rec.adherence.notes.trim()}"` : '';
-            lines.push(`- ${rec.date}: prescribed ${rec.templateTitle} (${rec.mode}), ${what}${note}`);
-        }
-    }
-    return lines;
-}
-
 function renderGoalsAndIntent(goals: readonly UserGoal[] | undefined, profile: TrainingIntentProfile | null, asOfDate: string, heading: string): string[] {
     const activeGoals = (goals ?? []).filter(g => g.status === 'active');
     if (activeGoals.length === 0 && !profile) return [];
@@ -683,7 +654,7 @@ export function buildContextBrief(input: ContextBriefInput): string {
         checkins, baselineCheckins, windowDays, baselineDays, { morning: hungerMorning, other: hungerOther },
         `## 4. ${SECTION_TITLE.subjective}`,
     );
-    const adherence = renderAdherence(recommendations, `## ${n(6, 5)}. ${SECTION_TITLE.adherence}`);
+    const adherence = renderRecommendationFeedback(recommendations, `## ${n(6, 5)}. ${SECTION_TITLE.adherence}`);
     const body: string[][] = planningOrder
         ? [constraints, intent, objective, bodyComposition, subjective, training, adherence]
         : [constraints, objective, bodyComposition, training, subjective, adherence, intent];

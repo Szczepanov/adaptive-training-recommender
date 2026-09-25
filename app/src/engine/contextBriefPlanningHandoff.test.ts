@@ -35,7 +35,7 @@ No recorded sessions in this window.
 
 No check-ins in this window.
 
-## 5. Plan adherence
+## 5. Recommendation feedback (athlete responses — not plan execution)
 
 No recommendations recorded in this window.
 
@@ -621,7 +621,7 @@ describe('enhanceContextBriefForPlanning', () => {
             expect(text).toContain('Recorded training: Road cycling · 65 min · Load 85 · Aerobic TE 2.9 · Avg HR 135 bpm · moderate');
             expect(text).toContain('Power summary: normalized power 195 W · IF 0.75');
             expect(text).toContain('Manual physical work: 1–3 hrs · hard effort · strain: lower back/spine, grip/forearms — "heavy yard work and soil moving"');
-            expect(text).toContain('Adherence: Followed as prescribed — "Good steady rhythm on the road"');
+            expect(text).toContain('Recommendation feedback (athlete response, not execution): reported followed as prescribed — "Good steady rhythm on the road"');
 
             // Today's Recommendation & Engine Stance
             expect(text).toContain('Mode: MODIFY');
