@@ -12,15 +12,20 @@ import type {
 import { renderRecoveryEvidenceSynthesis, synthesizeRecoveryEvidence, type EvidenceFamily } from './contextBriefRecoverySynthesis';
 import { evaluateReadinessAndSafetyEnvelope } from './rules';
 import { buildContextBrief } from './contextBrief';
+import { buildMorningCoachBrief, type ContextBriefPlanningHandoffInput } from './contextBriefPlanningHandoff';
 
 const AS_OF = '2026-09-25';
 
 type Core = { hrvDelta?: number; rhrDelta?: number; sleepDelta?: number; sleepScore?: number };
 
-function snapshot(date: string, core: Core = {}, raw: Partial<DailyRecoverySnapshot['raw']> = {}, quality: Partial<DailyRecoverySnapshot['dataQuality']> = {}): DailyRecoverySnapshot {
+function snapshot(
+    date: string, core: Core = {}, raw: Partial<DailyRecoverySnapshot['raw']> = {},
+    quality: Partial<DailyRecoverySnapshot['dataQuality']> = {},
+    metricDates?: DailyRecoverySnapshot['source']['metricDates'],
+): DailyRecoverySnapshot {
     return {
         userId: 'u1', date,
-        source: { garminSyncedAt: `${date}T06:15:00Z`, sourceSchemaVersion: 3 },
+        source: { garminSyncedAt: `${date}T06:15:00Z`, sourceSchemaVersion: 3, ...(metricDates ? { metricDates } : {}) },
         raw: {
             sleepScore: core.sleepScore ?? 78, sleepDurationSec: 27000, restingHr: 48, hrvOvernightAvg: 62,
             hrvStatus: 'balanced', respirationAvg: 13, bodyBatteryWake: 80, bodyBatteryChange: 40,
@@ -75,8 +80,8 @@ describe('synthesizeRecoveryEvidence (#812)', () => {
         expect(stateOf(s, 'hrv')).toBe('reassuring');
         expect(stateOf(s, 'rhr')).toBe('reassuring');
         expect(stateOf(s, 'subjective')).toBe('reassuring');
-        expect(s.uncertainty.join(' ')).toContain('one isolated adverse signal (Sleep score)');
-        expect(s.implications.join(' ')).toContain('no multi-signal adverse cluster supports an automatic downgrade');
+        expect(s.uncertainty.join(' ')).toContain('one isolated adverse objective signal (Sleep score)');
+        expect(s.implications.join(' ')).toContain('is not a multi-signal cluster and alone does not justify redesigning future training');
     });
 
     it('concordant poor sleep, suppressed HRV, elevated RHR and high fatigue converge adverse', () => {
@@ -205,6 +210,7 @@ describe('subjective adverse band mirrors rules.ts (#812 parity)', () => {
         ['fatigue 7 alone', { fatigue: 7 }, { fatigue: 7 }, false],
         ['soreness 6 alone', { soreness: 6 }, { soreness: 6 }, false],
         ['mental stress 8 alone', { mentalStress: 8 }, { stress: 8 }, false],
+        ['physical load > 5', { readiness: 5, sleepQuality: 4, fatigue: 5, soreness: 5 }, { readiness: 5, sleepQuality: 4, fatigue: 5, soreness: 5 }, true],
     ];
 
     it.each(cases)('%s', (_label, briefValues, engineValues, adverse) => {
@@ -216,7 +222,114 @@ describe('subjective adverse band mirrors rules.ts (#812 parity)', () => {
     });
 });
 
+describe('review fixes (#812)', () => {
+    it('a D-1 sleep fallback (metricDates.sleep) is unavailable and prints its true date', () => {
+        const s = synth([snapshot(AS_OF, { sleepScore: 40 }, {}, {}, { sleep: '2026-09-24' })], [checkin()]);
+        expect(stateOf(s, 'sleep')).toBe('unavailable');
+        expect(s.families.find(f => f.family === 'sleep')?.detail).toContain('dated 2026-09-24, not 2026-09-25');
+        expect(s.uncertainty.join(' ')).toContain('1 of 3 core wearable signals unavailable');
+    });
+
+    it('a D-1 resting-HR fallback is unavailable and not read as current', () => {
+        const s = synth([snapshot(AS_OF, { rhrDelta: 10 }, {}, {}, { restingHr: '2026-09-24', hrv: AS_OF, sleep: AS_OF })], [checkin()]);
+        expect(stateOf(s, 'rhr')).toBe('unavailable');
+        expect(stateOf(s, 'hrv')).toBe('reassuring');
+        expect(s.families.find(f => f.family === 'rhr')?.detail).toContain('dated 2026-09-24');
+    });
+
+    it('MIXED with two adverse families names them and defers to the engine, with no downgrade denial', () => {
+        const s = synth([snapshot(AS_OF, { hrvDelta: -15, rhrDelta: 6 })], [checkin()]);
+        expect(s.pattern).toBe('MIXED');
+        const text = s.implications.join(' ');
+        expect(text).toContain('2 independent families are adverse (HRV (overnight), Resting HR)');
+        expect(text).toContain('readiness/safety evaluation decides');
+        expect(text).not.toMatch(/downgrade|isolated|single adverse/);
+        expect(s.uncertainty.join(' ')).not.toContain('isolated');
+    });
+
+    it('fatigue 8 alone is an engine trigger, never labelled isolated', () => {
+        const s = synth([snapshot(AS_OF)], [checkin({ fatigue: 8 })]);
+        expect(stateOf(s, 'subjective')).toBe('adverse');
+        expect(s.uncertainty.join(' ')).not.toContain('isolated');
+        expect(s.implications.join(' ')).toContain('meets the engine\'s own subjective triggers');
+    });
+
+    it('zero adverse families produce no adverse-signal wording', () => {
+        const s = synth([snapshot(AS_OF)], [checkin()]);
+        expect([...s.implications, ...s.uncertainty].join(' ')).not.toMatch(/adverse|isolated/);
+    });
+
+    it('lists respiration as non-voting context', () => {
+        expect(synth([snapshot(AS_OF)], [checkin()]).vendorContext.join(' ')).toContain('respiration 13 br/min');
+    });
+
+    it('the physical-load > 5 trigger alone makes the subjective family adverse', () => {
+        const values = { readiness: 5, sleepQuality: 4, fatigue: 5, soreness: 5, mentalStress: 2 };
+        expect(stateOf(synth([snapshot(AS_OF)], [checkin(values)]), 'subjective')).toBe('adverse');
+    });
+});
+
+describe('objective floors mirror rules.ts (#812 parity)', () => {
+    const neutral: EngineObjectiveInput = {
+        total_steps: 8000, sleep_score: 85, sleep_duration_min: 460, rhr: 48, rhr_7d_avg: 48, rhr_delta: 0,
+        hrv_weekly_avg: 60, hrv_last_night: 60, hrv_delta: 0, respiration: 13, body_battery_wake: 85,
+        last_3_days_hard_sessions_count: 0, yesterday_training: null, today_training: null,
+        sleep_score_delta_7d: 0, rhr_delta_28d: 0, hrv_delta_28d: 0, sleep_score_delta_28d: 0,
+        hrv_stdev_28d: null, rhr_stdev_28d: null, sleep_score_stdev_28d: null,
+    };
+    const ctx: UserContext = {
+        goals: { shortTerm: '', midTerm: '', longTerm: '' },
+        constraints: { hasCableMachine: false, hasFreeWeights: true, hasTreadmill: false, hasIndoorBike: true, restrictedModalities: [], maxTimeMinutes: 180 },
+        preferences: { avoidedModalities: [], deprioritizedModalities: [], preferredModalities: [], conservativeBias: false },
+    };
+    const engine = (o: Partial<EngineObjectiveInput>) => evaluateReadinessAndSafetyEnvelope({
+        subjective: { readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2, motivation: 8, timeAvailable: 150, painFlag: false, alreadyTrainedToday: false, preferredModalityToday: null },
+        objective: { ...neutral, ...o },
+    }, ctx, AS_OF).telemetry;
+    const noSd = (s: DailyRecoverySnapshot): DailyRecoverySnapshot =>
+        ({ ...s, derived: { ...s.derived, hrv28dStdev: null, restingHr28dStdev: null, sleepScore28dStdev: null } });
+    type Key = 'hrv' | 'rhr' | 'sleep';
+    // 7d and 28d deltas are set equal so the engine's multi-day drift term is zero.
+    const engineDelta = (key: Key, d: number): Partial<EngineObjectiveInput> =>
+        key === 'hrv' ? { hrv_delta: d, hrv_delta_28d: d }
+            : key === 'rhr' ? { rhr_delta: d, rhr_delta_28d: d }
+                : { sleep_score_delta_7d: d, sleep_score_delta_28d: d };
+    const briefDelta = (key: Key, d: number): Core =>
+        key === 'hrv' ? { hrvDelta: d } : key === 'rhr' ? { rhrDelta: d } : { sleepDelta: d };
+
+    const cases: Array<[Key, number, number, -1 | 1]> = [['hrv', 3, 0.5, -1], ['rhr', 1.5, 0.3, 1], ['sleep', 4, 0.2, -1]];
+
+    it.each(cases)('%s: a floor-sized adverse delta (stdev null) is one engine z-unit and adverse in the brief', (key, floor, weight, sign) => {
+        const at = sign * floor;
+        const inside = sign * floor * 0.9;
+        expect(engine(engineDelta(key, at)).metricStrain.acuteDeviation).toBeCloseTo(weight, 2);
+        expect(engine(engineDelta(key, inside)).metricStrain.acuteDeviation).toBeLessThan(weight);
+        expect(stateOf(synth([noSd(snapshot(AS_OF, briefDelta(key, at)))], [checkin()]), key)).toBe('adverse');
+        expect(stateOf(synth([noSd(snapshot(AS_OF, briefDelta(key, inside)))], [checkin()]), key)).toBe('reassuring');
+    });
+
+    it('sleep absolute floor 50: engine penalty at 49, none at 50; brief adverse only at 49', () => {
+        expect(engine({ sleep_score: 49 }).contextPenalties.sleepFloorPenalty).toBe(0.5);
+        expect(engine({ sleep_score: 50 }).contextPenalties.sleepFloorPenalty).toBe(0);
+        expect(stateOf(synth([snapshot(AS_OF, { sleepScore: 49 })], [checkin()]), 'sleep')).toBe('adverse');
+        expect(stateOf(synth([snapshot(AS_OF, { sleepScore: 50 })], [checkin()]), 'sleep')).toBe('reassuring');
+    });
+});
+
 describe('context brief integration (#812)', () => {
+    it('places the synthesis in the morning brief before the vendor composites', () => {
+        const input = {
+            asOfDate: AS_OF, snapshots: [poorNight], checkins: [checkin()], activities: [], recommendations: [],
+            trainingSettings: null, preferences: null, effectivePlanningMode: 'externally_planned', externalFallback: false,
+            externalFallbackUncertain: false, eventStrategy: null, goals: [], upcomingFixedActivities: [], upcomingPlanBlocks: [],
+            upcomingExternalSessions: [], recommendationsReadable: true, restDirectiveToday: null, unavailableSources: [], purpose: 'morning',
+        } as ContextBriefPlanningHandoffInput;
+        const text = buildMorningCoachBrief(input);
+        const at = text.indexOf('### Recovery evidence synthesis');
+        expect(at).toBeGreaterThan(text.indexOf('## 2. Overnight Recovery'));
+        expect(at).toBeLessThan(text.indexOf('Body battery on waking'));
+    });
+
     it('places the synthesis ahead of secondary vendor composites in planning and diagnostic exports', () => {
         for (const purpose of ['planning', 'diagnostic'] as const) {
             const text = buildContextBrief({
