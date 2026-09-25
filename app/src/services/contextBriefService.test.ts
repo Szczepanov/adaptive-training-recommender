@@ -464,8 +464,9 @@ describe('ContextBriefService', () => {
 
         const result = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
 
-        expect(result.text).toContain('unavailable (read failed) — unknown, not none');
-        expect(result.text).not.toContain('no app recommendation recorded for yesterday');
+        expect(result.text).toContain('- Prescribed: unavailable (read failed) — unknown, not none.');
+        expect(result.text).toContain('- Recommendation feedback (athlete response, not execution): unavailable (read failed) — unknown, not none.');
+        expect(result.text).not.toMatch(/no app recommendation recorded for yesterday/i);
     });
 
     describe('body composition (anthropometry)', () => {
