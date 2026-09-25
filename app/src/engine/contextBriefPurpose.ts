@@ -138,7 +138,7 @@ export function renderUseInstructions(purpose: BriefPurpose): string {
         observabilityLine,
         '- For **today**, follow the *Resolved planning authority* block in section 0. It already reconciles the app recommendation with the imported plan; do not re-decide between them, merge them, or invent a compromise dose. If it says UNRESOLVED or UNKNOWN, say so and ask the athlete instead of choosing.',
         '- Respect fixed activities, travel scaling blocks and imported-plan sessions above. Imported sessions on later dates keep their authored authority on those dates. If a change is warranted, explain which constraint or new evidence justifies it.',
-        '- Honor recorded sensor capabilities. If a sensor is unknown or unavailable, do not make the session depend solely on that sensor; provide an executable RPE/HR/feel alternative as appropriate.',
+        '- Honor configured sensor capabilities; observed recent telemetry (section 0) shows what recent activities contained, not guaranteed future availability. If a sensor is not configured available, do not make the session depend solely on that sensor; provide an executable RPE/HR/feel alternative as appropriate. Never treat a sensor configured unavailable as available because it once appeared in historical data.',
         '- Prefer dated/current records when information conflicts. Explicitly call out missing or stale data instead of assuming normality.',
         '',
         '### If the user asks for an importable schedule',

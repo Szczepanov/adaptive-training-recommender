@@ -117,14 +117,22 @@ describe('ContextBriefService', () => {
 
         it('widens the activity fetch the same way, but keeps recommendations scoped to the render window', async () => {
             await new ContextBriefService().build('u1', AS_OF, 2);
-            expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-08-09', '2026-08-16');
+            // #816: activities reach back over the 28-day sensor-evidence horizon (2026-07-19).
+            expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-07-19', '2026-08-16');
             expect(services.getRecommendationsInRange).toHaveBeenCalledWith('u1', '2026-08-14', '2026-08-16');
         });
 
         it('does not widen the fetch for the full 14-day window, since it already exceeds the timeline horizon', async () => {
             await new ContextBriefService().build('u1', AS_OF, 14);
             expect(services.getRecoverySnapshotState).toHaveBeenCalledTimes(14);
-            expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-08-02', '2026-08-16');
+            expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-07-19', '2026-08-16');
+        });
+
+        it('pins the activity fetch to the 28-day sensor-evidence horizon and keeps a longer window (#816)', async () => {
+            await new ContextBriefService().build('u1', AS_OF, 28);
+            expect(services.getActivitiesInRange).toHaveBeenLastCalledWith('u1', '2026-07-19', '2026-08-16');
+            await new ContextBriefService().build('u1', AS_OF, 42);
+            expect(services.getActivitiesInRange).toHaveBeenLastCalledWith('u1', '2026-07-05', '2026-08-16');
         });
 
         it('keeps an activity outside the render window in the fixed recovery timeline, but excludes its detail telemetry from the retrospective appendix', async () => {
