@@ -1,6 +1,6 @@
 import type { AdaptationDoseRequirement, AdaptationKey, EvidenceBackedStrategy } from './evergreenStrategy';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
-import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
+import { EVERGREEN_GENERAL_COVERAGE_SET, EVERGREEN_COVERAGE_BY_KEY } from '../workouts/event-plan';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { getDayDiff } from '../utils/localDate';
 import { progressionOverrideKey } from './progressionOverrideKey';
@@ -38,12 +38,13 @@ function minimumDuration(workoutIds: readonly string[]): number {
 
 /** Exact adapter from the evergreen programming descriptor to the dose packer's
  * adaptation roles. Walk-run is intentionally excluded from aerobic-volume credit. */
+
 export const EVERGREEN_PACKING_COVERAGE: CoverageSetDescriptor = {
     id: EVERGREEN_GENERAL_COVERAGE_SET.id,
     roles: [
-        { id: 'aerobic_volume', adaptations: ['aerobic_endurance'], exactWorkoutIds: EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'aerobic_volume')!.workoutIds, durationMinutes: minimumDuration(EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'aerobic_volume')!.workoutIds) },
-        { id: 'primary_strength', adaptations: ['strength'], exactWorkoutIds: EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'primary_strength')!.workoutIds, durationMinutes: minimumDuration(EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'primary_strength')!.workoutIds) },
-        { id: 'sustained_quality', adaptations: ['high_intensity'], exactWorkoutIds: EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'sustained_quality')!.workoutIds, durationMinutes: minimumDuration(EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'sustained_quality')!.workoutIds) },
+        { id: 'aerobic_volume', adaptations: ['aerobic_endurance'], exactWorkoutIds: EVERGREEN_COVERAGE_BY_KEY.get('aerobic_volume')!.workoutIds, durationMinutes: minimumDuration(EVERGREEN_COVERAGE_BY_KEY.get('aerobic_volume')!.workoutIds) },
+        { id: 'primary_strength', adaptations: ['strength'], exactWorkoutIds: EVERGREEN_COVERAGE_BY_KEY.get('primary_strength')!.workoutIds, durationMinutes: minimumDuration(EVERGREEN_COVERAGE_BY_KEY.get('primary_strength')!.workoutIds) },
+        { id: 'sustained_quality', adaptations: ['high_intensity'], exactWorkoutIds: EVERGREEN_COVERAGE_BY_KEY.get('sustained_quality')!.workoutIds, durationMinutes: minimumDuration(EVERGREEN_COVERAGE_BY_KEY.get('sustained_quality')!.workoutIds) },
     ],
 };
 
