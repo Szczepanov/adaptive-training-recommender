@@ -4,12 +4,14 @@ import type {
     ExternalPlanSession as LegacyExternalPlanSession,
 } from '../engine/models';
 import {
+    briefPurposeFor,
     briefWindowDaysFor,
     briefWindowStart,
     buildContextBrief,
     defaultBriefWindowDays,
     SUBJECTIVE_BASELINE_DAYS,
     type BodyCompositionBriefInput,
+    type BriefPurpose,
     type BriefWindowPreset,
     type ContextBriefInput,
 } from '../engine/contextBrief';
@@ -60,6 +62,8 @@ export interface ContextBriefResult {
      * choice without re-deriving it from windowDays (which `build`'s caller could in
      * principle pass as an arbitrary number outside either preset). */
     preset: BriefWindowPreset;
+    /** Issue #811: the consumer intent the preset maps to (morning / planning / diagnostic). */
+    purpose: BriefPurpose;
     /** Sources that could not be read. The brief still renders; it says what is missing
      * rather than presenting a partial window as complete. */
     unavailableSources: string[];
@@ -194,6 +198,9 @@ export class ContextBriefService {
         preset: BriefWindowPreset = windowDays <= briefWindowDaysFor('daily') ? 'daily' : 'full',
     ): Promise<ContextBriefResult> {
         const targetDate = asOfDate ?? getLocalDateString();
+        // Purpose selects what is rendered, never what is fetched: every read below
+        // depends only on windowDays, so diagnostic cannot widen a data read.
+        const purpose = briefPurposeFor(preset);
         const startDate = briefWindowStart(targetDate, windowDays);
         // Strictly longer than the window, so there is always prior history to compare
         // against even when the caller asks for a long window.
@@ -505,13 +512,18 @@ export class ContextBriefService {
             intentProfile,
             goals,
             bodyComposition,
+            purpose,
         };
         // `activities` was fetched over contextDays (>= windowDays) to feed the fixed
         // 7-day recovery timeline below; the detailed telemetry appendix must not inherit
         // that wider range or a `daily` export would silently regain the per-lap detail
         // W1 exists to drop. Slice explicitly back down to the render window.
         const windowActivities = activities.filter(activity => activity.date >= startDate && activity.date <= targetDate);
-        const retrospectiveText = injectActivityTelemetryIntoContextBrief(buildContextBrief(input), windowActivities);
+        const retrospectiveText = injectActivityTelemetryIntoContextBrief(
+            buildContextBrief(input),
+            windowActivities,
+            purpose !== 'diagnostic',
+        );
         const text = enhanceContextBriefForPlanning(retrospectiveText, {
             asOfDate: targetDate,
             snapshots,
@@ -532,6 +544,7 @@ export class ContextBriefService {
             restDirectiveToday,
             unavailableSources,
             preset,
+            purpose,
         });
 
         return {
@@ -540,6 +553,7 @@ export class ContextBriefService {
             asOfDate: targetDate,
             windowDays,
             preset,
+            purpose,
             unavailableSources,
         };
     }

@@ -57,7 +57,8 @@ const BRIEF_PRESET_STORAGE_KEY = 'adaptive-training:context-brief:preset';
 function loadStoredBriefPreset(): BriefWindowPreset {
   if (typeof window === 'undefined') return 'daily';
   try {
-    return window.localStorage.getItem(BRIEF_PRESET_STORAGE_KEY) === 'full' ? 'full' : 'daily';
+    const stored = window.localStorage.getItem(BRIEF_PRESET_STORAGE_KEY);
+    return stored === 'full' || stored === 'diagnostic' ? stored : 'daily';
   } catch {
     return 'daily';
   }
@@ -891,7 +892,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
           <h3>Context brief</h3>
           <p className="brief-intro">
             Export for AI lives in one place now — open {SCREEN_LABELS.brief} for the
-            canonical daily (2-day) or full (14-day) brief with char and token counts.
+            canonical daily (2-day), planning (14-day) or diagnostic (14-day) brief with char and token counts.
             {' '}Read-only: generating it changes nothing.
           </p>
           <div className="brief-actions">
@@ -909,7 +910,9 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
         <p className="brief-intro">
           {briefPreset === 'daily'
             ? "High-signal briefing for your daily chat with an external AI coach — includes yesterday's closed loop, today's recovery, and today's full session prescription."
-            : `Comprehensive 14-day retrospective — constraints, baselines, full training history, and 1-click plan import schema for designing a new block.`}
+            : briefPreset === 'full'
+              ? `Compact ${briefWindowDaysFor('full')}-day planning context, ordered by decision authority — constraints, current intent, recovery trend, load summary, upcoming commitments and the 1-click plan import schema.`
+              : `Full ${briefWindowDaysFor('diagnostic')}-day forensic export — per-lap and per-zone activity telemetry plus observation-only candidate baselines, for debugging ingestion or analysing a workout. Not needed for planning.`}
           {' '}Read-only: generating it changes nothing.
         </p>
         <div className="brief-preset-toggle" role="group" aria-label="Context brief window">
@@ -926,6 +929,13 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
             onClick={() => selectBriefPreset('full')}
           >
             📋 Block Planning ({briefWindowDaysFor('full')} days)
+          </button>
+          <button
+            type="button"
+            className={briefPreset === 'diagnostic' ? 'active' : ''}
+            onClick={() => selectBriefPreset('diagnostic')}
+          >
+            🔬 Diagnostic ({briefWindowDaysFor('diagnostic')} days)
           </button>
         </div>
         {visibleBriefError && <p className="data-state-notice">{visibleBriefError}</p>}

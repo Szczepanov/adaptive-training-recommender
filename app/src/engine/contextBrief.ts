@@ -35,6 +35,12 @@ export interface ContextBriefInput {
      * all (enforced by `anthropometry/engineIsolation.test.ts`), so this is a plain,
      * already-summarized shape rather than raw `AnthropometryEntry[]`. */
     bodyComposition?: BodyCompositionBriefInput;
+    /** Issue #811: what the export is for. Defaults to `diagnostic` — the complete,
+     * legacy section order with every observation-only candidate — so a caller that does
+     * not state a purpose never silently loses evidence. `planning` reorders sections by
+     * decision authority and omits forensic/experimental detail. `morning` is rendered by
+     * `buildMorningCoachBrief` instead; passed here it behaves like `planning`. */
+    purpose?: BriefPurpose;
 }
 
 /** See the isolation note on `ContextBriefInput.bodyComposition` above: intentionally not
@@ -101,7 +107,28 @@ function sparseBelowDays(baselineDays: number): number {
     return Math.ceil(baselineDays * SUBJECTIVE_BASELINE_SPARSE_RATIO);
 }
 
-const EQUIPMENT_LABEL: Record<string, string> = {
+/** Section titles shared by both orders; numbering is applied per purpose. Other modules
+ * locate sections by title (see `findSectionHeading`), never by number. */
+export const SECTION_TITLE = {
+    objective: 'Objective recovery (wearable)',
+    training: 'Completed training (recorded by the wearable)',
+    subjective: 'Subjective reports (self-scored each morning, 1–10)',
+    adherence: 'Plan adherence',
+    intent: 'Goals & training intent',
+    intentFirst: 'Current training intent & goals',
+} as const;
+
+/** Index of the `\n## <n>. <titlePrefix>` heading, whatever its number, or -1. */
+export function findSectionHeading(text: string, titlePrefix: string): number {
+    const pattern = /\n## \d+\. /g;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(text)) !== null) {
+        if (text.startsWith(titlePrefix, match.index + match[0].length)) return match.index;
+    }
+    return -1;
+}
+
+const EQUIPMENT_LABEL:Record<string, string> = {
     free_weights: 'free weights',
     cable_machine: 'cable machine',
     treadmill: 'treadmill',
@@ -228,8 +255,8 @@ function renderConstraints(settings: TrainingSettings | null, preferences: UserP
     return lines;
 }
 
-function renderObjective(snapshots: readonly DailyRecoverySnapshot[], windowDays: number): string[] {
-    const lines: string[] = ['## 2. Objective recovery (wearable)', ''];
+function renderObjective(snapshots: readonly DailyRecoverySnapshot[], windowDays: number, heading: string, compact: boolean): string[] {
+    const lines: string[] = [heading, ''];
     if (snapshots.length === 0) {
         lines.push('No wearable data in this window.');
         return lines;
@@ -245,14 +272,21 @@ function renderObjective(snapshots: readonly DailyRecoverySnapshot[], windowDays
     if (raw.totalSteps !== null) {
         lines.push(metricLine('Steps (yesterday D-1)', 'steps', raw.totalSteps, derived.steps7dAvg ?? null, derived.steps28dAvg ?? null, derived.deltas.stepsVs7d ?? null, derived.deltas.stepsVs28d ?? null));
     }
-    if (baselineVersion >= 3) {
+    if (baselineVersion >= 3 && !compact) {
         lines.push(candidateBaselineLine(
             'Respiration robust baseline', 'br/min', raw.respirationAvg,
             derived.respiration7dAvg, derived.respiration28dAvg, derived.respiration28dMad,
             derived.deltas.respirationVs7d, derived.deltas.respirationVs28d,
         ));
-    } else if (raw.respirationAvg !== null) {
+    } else if (raw.respirationAvg !== null && !compact) {
         lines.push(`- Respiration: ${round(raw.respirationAvg)} br/min (legacy pre-v3 baseline fields use mean; robust median/MAD unavailable)`);
+    }
+    // Vendor composites overlap upstream with HRV/sleep/stress/load. In planning mode they
+    // sit under one explicitly secondary label instead of reading as independent baseline
+    // families; their candidate median/MAD variants are diagnostic-only.
+    if (compact) {
+        lines.push('');
+        lines.push('Secondary device composites (context only; correlated with the metrics above, not independent evidence):');
     }
     if (raw.bodyBatteryWake !== null) lines.push(`- Body battery on waking: ${raw.bodyBatteryWake}`);
     if (raw.stress?.avg != null || raw.stress?.max != null) {
@@ -274,12 +308,19 @@ function renderObjective(snapshots: readonly DailyRecoverySnapshot[], windowDays
         if (statusParts.length > 0) lines.push(`- Device training status: ${statusParts.join(' · ')}`);
     }
 
-    if (baselineVersion >= 3) {
+    if (baselineVersion >= 3 && !compact) {
         lines.push('');
         lines.push('> Respiration robust baseline is exported for context, but production respiration strain scoring is currently OFF by default. Do not treat it as an additional live readiness penalty.');
     }
 
-    if (baselineVersion >= 4) {
+    if (baselineVersion >= 3 && compact) {
+        lines.push('');
+        lines.push('> Planning export: observation-only candidate baselines (median/MAD) and the respiration candidate '
+            + '(production respiration scoring is off) are omitted. They carry no recommendation authority; '
+            + 'use the diagnostic export to inspect them.');
+    }
+
+    if (baselineVersion >= 4 && !compact) {
         lines.push('');
         lines.push('Observation-only candidate baselines (not independent engine inputs):');
         lines.push('These median/MAD summaries are exported for inspection and future calibration. They do not replace the live mean/stdev paths and must not be stacked as extra strain votes.');
@@ -305,7 +346,7 @@ function renderObjective(snapshots: readonly DailyRecoverySnapshot[], windowDays
         ));
     }
 
-    if (baselineVersion >= 5) {
+    if (baselineVersion >= 5 && !compact) {
         lines.push(candidateBaselineLine(
             'Body Battery wake candidate', 'pts', raw.bodyBatteryWake,
             derived.bodyBatteryWake7dMedian, derived.bodyBatteryWake28dMedian, derived.bodyBatteryWake28dMad,
@@ -346,7 +387,7 @@ function renderObjective(snapshots: readonly DailyRecoverySnapshot[], windowDays
  * Placed alongside wearable recovery rather than as its own numbered section so it does
  * not collide with the "## 7"/"## 8" handoff sections `contextBriefPlanningHandoff.ts`
  * appends for the full-preset pipeline. */
-function renderBodyComposition(input: BodyCompositionBriefInput | undefined): string[] {
+function renderBodyComposition(input: BodyCompositionBriefInput | undefined, compact: boolean): string[] {
     if (!input) return [];
     const { bodyMass, circumferences, bodyFatPct } = input;
     if (!bodyMass && circumferences.length === 0 && !bodyFatPct) return [];
@@ -378,7 +419,7 @@ function renderBodyComposition(input: BodyCompositionBriefInput | undefined): st
             ? `7d mean ${round(bodyFatPct.mean7dPct)}%`
             : `7d mean insufficient data (${bodyFatPct.recordedDays7d}/7 days recorded, 4+ required)`;
         lines.push(
-            `- Body fat % (device estimate): latest ${round(bodyFatPct.latestPct)}%`
+            `- Body fat % (${compact ? 'low-authority device estimate; read the trend, not the absolute value' : 'device estimate'}): latest ${round(bodyFatPct.latestPct)}%`
             + `${bodyFatPct.latestDate ? ` (${bodyFatPct.latestDate})` : ''} · ${trend}`,
         );
     }
@@ -433,8 +474,8 @@ export function formatActivityType(typeKey: string): string {
     return typeKey.replace(/_/g, ' ');
 }
 
-function renderTraining(activities: readonly NormalizedGarminActivity[], asOfDate: string, windowDays: number): string[] {
-    const lines: string[] = ['## 3. Completed training (recorded by the wearable)', ''];
+function renderTraining(activities: readonly NormalizedGarminActivity[], asOfDate: string, windowDays: number, heading: string): string[] {
+    const lines: string[] = [heading, ''];
     if (activities.length === 0) {
         lines.push('No recorded sessions in this window.');
         return lines;
@@ -668,8 +709,9 @@ function renderSubjective(
     windowDays: number,
     baselineDays: number,
     hunger: { morning: HungerWindowSummary; other: HungerWindowSummary },
+    heading: string,
 ): string[] {
-    const lines: string[] = ['## 4. Subjective reports (self-scored each morning, 1–10)', ''];
+    const lines: string[] = [heading, ''];
     if (checkins.length === 0) {
         lines.push('No check-ins in this window.');
         // Hunger is computed from `baselineDays` history, not `checkins` (the visible
@@ -761,8 +803,8 @@ function renderSubjective(
     return lines;
 }
 
-function renderAdherence(recommendations: readonly DailyRecommendation[]): string[] {
-    const lines: string[] = ['## 5. Plan adherence', ''];
+function renderAdherence(recommendations: readonly DailyRecommendation[], heading: string): string[] {
+    const lines: string[] = [heading, ''];
     if (recommendations.length === 0) {
         lines.push('No recommendations recorded in this window.');
         return lines;
@@ -791,10 +833,10 @@ function renderAdherence(recommendations: readonly DailyRecommendation[]): strin
     return lines;
 }
 
-function renderGoalsAndIntent(goals: readonly UserGoal[] | undefined, profile: TrainingIntentProfile | null, asOfDate: string): string[] {
+function renderGoalsAndIntent(goals: readonly UserGoal[] | undefined, profile: TrainingIntentProfile | null, asOfDate: string, heading: string): string[] {
     const activeGoals = (goals ?? []).filter(g => g.status === 'active');
     if (activeGoals.length === 0 && !profile) return [];
-    const lines: string[] = ['## 6. Goals & training intent', ''];
+    const lines: string[] = [heading, ''];
     if (activeGoals.length > 0) {
         lines.push('Target events & goals:');
         for (const goal of activeGoals) {
@@ -858,21 +900,44 @@ export function buildContextBrief(input: ContextBriefInput): string {
             + 'The recovery timeline and subjective baseline further below cover longer history and are not limited to this window.']
         : [];
 
+    // Issue #811: planning order follows decision authority — constraints, current intent,
+    // recovery evidence, completed load, execution. Diagnostic keeps the original
+    // data-source order so existing forensic workflows read unchanged.
+    const purpose = input.purpose ?? 'diagnostic';
+    const planningOrder = purpose !== 'diagnostic';
+    const n = (planning: number, diagnostic: number): number => (planningOrder ? planning : diagnostic);
+    const constraints = renderConstraints(input.trainingSettings, input.preferences, asOfDate);
+    const intent = renderGoalsAndIntent(
+        input.goals, input.intentProfile, asOfDate,
+        planningOrder ? `## 2. ${SECTION_TITLE.intentFirst}` : `## 6. ${SECTION_TITLE.intent}`,
+    );
+    const objective = renderObjective(snapshots, windowDays, `## ${n(3, 2)}. ${SECTION_TITLE.objective}`, planningOrder);
+    const bodyComposition = renderBodyComposition(input.bodyComposition, planningOrder);
+    const training = renderTraining(activities, asOfDate, windowDays, `## ${n(5, 3)}. ${SECTION_TITLE.training}`);
+    const subjective = renderSubjective(
+        checkins, baselineCheckins, windowDays, baselineDays, { morning: hungerMorning, other: hungerOther },
+        `## 4. ${SECTION_TITLE.subjective}`,
+    );
+    const adherence = renderAdherence(recommendations, `## ${n(6, 5)}. ${SECTION_TITLE.adherence}`);
+    const body: string[][] = planningOrder
+        ? [constraints, intent, objective, bodyComposition, subjective, training, adherence]
+        : [constraints, objective, bodyComposition, training, subjective, adherence, intent];
+    const purposeNote = planningOrder
+        ? ['Export purpose: planning — sections are ordered by decision authority; forensic telemetry and '
+            + 'experimental candidate baselines are summarized or omitted (request the diagnostic export for them).']
+        : ['Export purpose: diagnostic — full forensic telemetry and observation-only candidate baselines. '
+            + 'None of that detail has recommendation authority; it does not change what the app recommends.'];
+
     const sections: string[][] = [
         [
             '# Training context brief',
             '',
             `Window: ${startDate} → ${asOfDate} (${windowDays} days). All dates are Europe/Warsaw calendar dates.`,
             'Blank values ("—") mean not measured, not zero. This brief contains no raw device payloads.',
+            ...purposeNote,
             ...scopeNote,
         ],
-        renderConstraints(input.trainingSettings, input.preferences, asOfDate),
-        renderObjective(snapshots, windowDays),
-        renderBodyComposition(input.bodyComposition),
-        renderTraining(activities, asOfDate, windowDays),
-        renderSubjective(checkins, baselineCheckins, windowDays, baselineDays, { morning: hungerMorning, other: hungerOther }),
-        renderAdherence(recommendations),
-        renderGoalsAndIntent(input.goals, input.intentProfile, asOfDate),
+        ...body,
         [
             '## Requested output',
             '',
@@ -917,9 +982,31 @@ export function briefWindowStart(asOfDate: string, windowDays: number): string {
  * 28-day subjective baseline, the 7-day commitments handoff) are unaffected by this
  * choice — see contextBriefService.ts's `contextDays`.
  */
-export type BriefWindowPreset = 'daily' | 'full';
+export type BriefWindowPreset = 'daily' | 'full' | 'diagnostic';
 
-/** Retrospective detail window for the `daily` preset: today and D-1. */
+/**
+ * Issue #811: the consumer intent an export serves, independent of its lookback length.
+ * - `morning`: current-day closed-loop coaching (`buildMorningCoachBrief`).
+ * - `planning`: compact multi-day/block design context, ordered by decision authority.
+ * - `diagnostic`: forensic per-activity telemetry and experimental observability.
+ * No purpose changes what the engine recommends; the brief is a read-only export.
+ */
+export type BriefPurpose = 'morning' | 'planning' | 'diagnostic';
+
+const PURPOSE_BY_PRESET: Readonly<Record<BriefWindowPreset, BriefPurpose>> = {
+    daily: 'morning',
+    full: 'planning',
+    diagnostic: 'diagnostic',
+};
+
+/** The existing UI preset names stay for compatibility; each maps to exactly one purpose. */
+export function briefPurposeFor(preset: BriefWindowPreset): BriefPurpose {
+    return PURPOSE_BY_PRESET[preset];
+}
+
+/** Retrospective detail window for the `daily` preset: today and D-1. `diagnostic` reuses
+ * the `full` lookback: it changes what is expanded, not how far back data is fetched, so
+ * choosing it can never widen a data read. */
 export const DAILY_BRIEF_WINDOW_DAYS = 2;
 
 export function briefWindowDaysFor(preset: BriefWindowPreset): number {

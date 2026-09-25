@@ -14,7 +14,17 @@ import type {
 } from './models';
 import { EVENT_PRESETS, resolveDemandProfile } from './eventPresets';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import { formatActivityType, formatIntensityCell, round, signed, type BriefWindowPreset } from './contextBrief';
+import {
+    briefPurposeFor,
+    findSectionHeading,
+    formatActivityType,
+    formatIntensityCell,
+    round,
+    SECTION_TITLE,
+    signed,
+    type BriefPurpose,
+    type BriefWindowPreset,
+} from './contextBrief';
 import {
     renderBriefPlanAuthority,
     resolveBriefPlanAuthority,
@@ -74,6 +84,14 @@ export interface ContextBriefPlanningHandoffInput {
     restDirectiveToday: BriefRestDirective | null;
     unavailableSources: readonly string[];
     preset?: BriefWindowPreset;
+    /** Issue #811. When absent it is derived from `preset`; an absent preset keeps the
+     * legacy full-detail rendering (`diagnostic`). */
+    purpose?: BriefPurpose;
+}
+
+function resolvePurpose(input: ContextBriefPlanningHandoffInput): BriefPurpose {
+    if (input.purpose) return input.purpose;
+    return input.preset ? briefPurposeFor(input.preset) : 'diagnostic';
 }
 
 function latestByDate<T extends { date: string }>(items: readonly T[]): T | null {
@@ -289,6 +307,35 @@ function renderRecoveryTimeline(input: ContextBriefPlanningHandoffInput): string
     }
 
     return lines.join('\n');
+}
+
+/** Planning-mode goal digest (issue #811): identity, event type and timing only. The
+ * 0–1 demand vector and free-text description are diagnostic detail an external planner
+ * can ask for; they are not needed to lay out a block around the event date. */
+function renderCompactGoalSpecifics(goals: readonly UserGoal[]): string {
+    const lines: string[] = [];
+    for (const goal of goals.filter(item => item.status === 'active')) {
+        const details: string[] = [];
+        if (goal.targetOutcome) details.push(`success: ${compactText(goal.targetOutcome)}`);
+        if (goal.eventCategory) {
+            const preset = EVENT_PRESETS[goal.eventCategory].find(item => item.id === goal.eventPreset)
+                ?? EVENT_PRESETS[goal.eventCategory][0];
+            details.push(`event: ${preset.label}`);
+        }
+        if (goal.timing) {
+            details.push(goal.timing.confirmedDate
+                ? `confirmed ${goal.timing.confirmedDate}`
+                : `window ${goal.timing.earliestDate}–${goal.timing.latestDate}`);
+        }
+        if (details.length > 0) lines.push(`- **${goal.title}** — ${details.join(' · ')}`);
+    }
+    if (lines.length === 0) return '';
+    return [
+        '### Longer-term goals (compact)',
+        '',
+        'Event demand profiles are omitted in the planning export; ask for them only if the question needs them.',
+        ...lines,
+    ].join('\n');
 }
 
 function renderGoalSpecifics(goals: readonly UserGoal[]): string {
@@ -769,7 +816,8 @@ export function enhanceContextBriefForPlanning(
     baseBrief: string,
     input: ContextBriefPlanningHandoffInput,
 ): string {
-    if (input.preset === 'daily') {
+    const purpose = resolvePurpose(input);
+    if (purpose === 'morning') {
         return buildMorningCoachBrief(input);
     }
 
@@ -786,13 +834,17 @@ export function enhanceContextBriefForPlanning(
         : `${handoff}\n\n${retrospective}`;
 
     const timeline = renderRecoveryTimeline(input);
-    const trainingMarker = '\n## 3. Completed training';
-    const trainingIndex = withHandoff.indexOf(trainingMarker);
+    // Located by title, not number: planning and diagnostic number this section differently.
+    const trainingIndex = findSectionHeading(withHandoff, SECTION_TITLE.training);
     const withTimeline = timeline && trainingIndex >= 0
         ? `${withHandoff.slice(0, trainingIndex)}\n\n${timeline}${withHandoff.slice(trainingIndex)}`
         : timeline ? `${withHandoff}\n\n${timeline}` : withHandoff;
 
-    const goalSpecifics = renderGoalSpecifics(input.goals);
+    const goalSpecifics = purpose === 'planning' ? renderCompactGoalSpecifics(input.goals) : renderGoalSpecifics(input.goals);
     const goalDetail = goalSpecifics ? `\n\n${goalSpecifics}` : '';
+    if (purpose === 'planning') {
+        // Authoritative upcoming commitments precede the compressed long-term goals.
+        return `${withTimeline.trimEnd()}\n\n${renderUpcoming(input, today)}${goalDetail}\n\n${renderUseInstructions()}\n`;
+    }
     return `${withTimeline.trimEnd()}${goalDetail}\n\n${renderUpcoming(input, today)}\n\n${renderUseInstructions()}\n`;
 }

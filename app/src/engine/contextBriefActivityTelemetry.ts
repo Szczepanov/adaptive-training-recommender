@@ -1,4 +1,5 @@
 import type { ActivityLapSummary, ActivityZoneBucket, NormalizedGarminActivity } from './models';
+import { findSectionHeading, SECTION_TITLE } from './contextBrief';
 
 const ACTIVITY_TYPE_LABELS: Record<string, string> = {
     road_biking: 'Road cycling',
@@ -121,17 +122,88 @@ export function renderContextBriefActivityTelemetry(
     return lines.join('\n');
 }
 
-/** Insert detailed activity telemetry as a subsection of completed training (section 3).
- * The fallback append keeps the handoff useful if the parent brief heading ever changes. */
+/** Share of time in the zone with the most seconds, as "Z<n> <pct>%". */
+function dominantZone(buckets: readonly ActivityZoneBucket[]): string | null {
+    const total = buckets.reduce((sum, bucket) => sum + bucket.secondsInZone, 0);
+    if (total <= 0) return null;
+    const top = [...buckets].sort((a, b) => b.secondsInZone - a.secondsInZone || a.zoneNumber - b.zoneNumber)[0];
+    return `Z${top.zoneNumber} ${formatNumber((top.secondsInZone / total) * 100, 0)}%`;
+}
+
+/** Constant-size lap digest: count, total time and the highest-power (else highest-HR) lap.
+ * Deliberately never lists laps, so a 100-lap activity costs the same as a 3-lap one. */
+function lapDigest(laps: readonly ActivityLapSummary[]): string {
+    const totalSeconds = laps.reduce((sum, lap) => sum + lap.durationSeconds, 0);
+    const byPower = laps.filter(lap => lap.averagePowerWatts !== undefined);
+    const byHr = laps.filter(lap => lap.averageHrBpm !== undefined);
+    const pickMax = (items: readonly ActivityLapSummary[], read: (lap: ActivityLapSummary) => number) =>
+        items.reduce((best, lap) => (read(lap) > read(best) || (read(lap) === read(best) && lap.lapIndex < best.lapIndex) ? lap : best));
+    let peak = '';
+    if (byPower.length > 0) {
+        const lap = pickMax(byPower, item => item.averagePowerWatts as number);
+        peak = ` · strongest lap ${formatNumber(lap.averagePowerWatts as number, 0)} W for ${formatDuration(lap.durationSeconds)}`;
+    } else if (byHr.length > 0) {
+        const lap = pickMax(byHr, item => item.averageHrBpm as number);
+        peak = ` · highest-HR lap ${formatNumber(lap.averageHrBpm as number, 0)} bpm for ${formatDuration(lap.durationSeconds)}`;
+    }
+    return `${laps.length} laps (${formatDuration(totalSeconds)})${peak}`;
+}
+
+/**
+ * Issue #811 planning-mode digest: one bounded line per detailed activity (power summary,
+ * dominant zones, a constant-size lap digest) instead of full zone and lap tables. Output
+ * grows with the number of detailed activities in the window, never with lap count.
+ */
+export function renderCompactActivityTelemetry(
+    activities: readonly NormalizedGarminActivity[],
+): string {
+    const detailed = activities
+        .filter(hasDetailedTelemetry)
+        .sort((a, b) => a.date.localeCompare(b.date) || a.activityId.localeCompare(b.activityId));
+    if (detailed.length === 0) return '';
+
+    const lines: string[] = [
+        '### Key-session telemetry (compact)',
+        '',
+        'One line per activity with Garmin detail telemetry. Per-lap and per-zone tables are in the diagnostic export.',
+    ];
+    for (const activity of detailed) {
+        const parts: string[] = [];
+        if (activity.normalizedPower !== undefined) parts.push(`NP ${formatNumber(activity.normalizedPower, 0)} W`);
+        if (activity.intensityFactor !== undefined) parts.push(`IF ${formatNumber(activity.intensityFactor, 2)}`);
+        if (activity.variabilityIndex !== undefined) parts.push(`VI ${formatNumber(activity.variabilityIndex, 2)}`);
+        const powerZone = activity.powerInZones?.length ? dominantZone(activity.powerInZones) : null;
+        if (powerZone) parts.push(`most time in power ${powerZone}`);
+        const hrZone = activity.hrInZones?.length ? dominantZone(activity.hrInZones) : null;
+        if (hrZone) parts.push(`most time in HR ${hrZone}`);
+        if (activity.laps?.length) parts.push(lapDigest(activity.laps));
+        lines.push(`- ${activity.date} — ${formatActivityType(activity.type)} — ${activity.intensityTag}: ${parts.join(' · ')}`);
+    }
+    return lines.join('\n');
+}
+
+/** Insert activity telemetry as a subsection at the end of the completed-training section,
+ * located by title so it works in either section order. `compact` selects the bounded
+ * planning digest over the full diagnostic tables. The fallback append keeps the handoff
+ * useful if the parent brief heading ever changes. */
 export function injectActivityTelemetryIntoContextBrief(
     brief: string,
     activities: readonly NormalizedGarminActivity[],
+    compact = false,
 ): string {
-    const telemetry = renderContextBriefActivityTelemetry(activities);
+    const telemetry = compact ? renderCompactActivityTelemetry(activities) : renderContextBriefActivityTelemetry(activities);
     if (!telemetry) return brief;
 
-    const nextSectionMarker = '\n## 4. Subjective';
-    const markerIndex = brief.indexOf(nextSectionMarker);
+    const trainingIndex = findSectionHeading(brief, SECTION_TITLE.training);
+    if (trainingIndex === -1) return `${brief.trimEnd()}\n\n${telemetry}\n`;
+    const following = [/\n## \d+\. /g, /\n## Requested output/g]
+        .map(pattern => {
+            pattern.lastIndex = trainingIndex + 1;
+            const match = pattern.exec(brief);
+            return match ? match.index : -1;
+        })
+        .filter(index => index !== -1);
+    const markerIndex = following.length > 0 ? Math.min(...following) : -1;
     if (markerIndex === -1) return `${brief.trimEnd()}\n\n${telemetry}\n`;
 
     return `${brief.slice(0, markerIndex)}\n\n${telemetry}\n${brief.slice(markerIndex)}`;

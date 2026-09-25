@@ -196,3 +196,23 @@ day count.
 ```bash
 cd app && npm run check
 ```
+
+## Follow-up: purpose-driven export modes (issue #811)
+
+Window length turned out not to be the same thing as export purpose: the 14-day `full`
+brief mixed planning state with forensic telemetry and experimental observability. The
+presets now map to explicit purposes (`contextBrief.ts` `BriefPurpose`, `briefPurposeFor`):
+`daily` → `morning`, `full` → `planning`, and a new `diagnostic` preset (same 14-day
+lookback, so no wider fetch) → `diagnostic`.
+
+* `planning` orders sections by decision authority, replaces the uncapped lap/zone tables
+  with a bounded one-line digest per detailed activity
+  (`contextBriefActivityTelemetry.ts` `renderCompactActivityTelemetry`), omits the
+  median/MAD candidate baselines and the respiration candidate, groups vendor composites as
+  secondary context, and compresses long-term goals (no demand vectors).
+* `diagnostic` keeps everything the `full` brief exported before this change.
+* `morning` is unchanged.
+
+Current behaviour is described in `docs/architecture/recommendation-engine.md`
+("Context-brief export purposes"). Tests: `contextBriefPurpose.test.ts` and the
+"export purpose (#811)" block in `contextBriefService.test.ts`.

@@ -101,6 +101,28 @@ authored prescription steps are withheld unless the outcome is `MATCH`, `EVENT_D
 `AUTHORED_UNADJUDICATED`; `DOSE_MODIFIED` states the persisted execution dose. The primary
 session on a multi-session day follows `placedSessionForDate` ordering (priority, then id).
 
+#### Context-brief export purposes (issue #811)
+
+The brief is exported for one of three explicit purposes (`contextBrief.ts` `BriefPurpose`);
+the UI presets map onto them through `briefPurposeFor` (`daily` → `morning`, `full` →
+`planning`, `diagnostic` → `diagnostic`). Purpose selects what is rendered, never what is
+fetched: `planning` and `diagnostic` share the same lookback and `ContextBriefService.build`
+issues identical reads for both.
+
+- `morning` — `buildMorningCoachBrief`: today's closed loop only; no multi-day plan.
+- `planning` — sections in decision-authority order (section 0 authority/data currency,
+  constraints, current intent & goals, recovery, completed load with a bounded one-line
+  telemetry digest per activity, adherence, upcoming commitments, compact long-term goals,
+  handoff contract). Candidate median/MAD baselines and the respiration candidate are
+  omitted with a pointer to the diagnostic export; vendor composites are grouped as
+  secondary context; event demand vectors are omitted. Lap count does not change its size.
+- `diagnostic` — the full data-source-ordered brief with per-lap/per-zone telemetry,
+  every observation-only candidate baseline and full goal demand vectors. It states that
+  none of this detail has recommendation authority. It is also the pure builder's default
+  so a caller that names no purpose never silently loses evidence.
+
+No purpose alters a recommendation, so `POLICY_VERSION` is unaffected.
+
 ### Authored occurrence authority (`authoredSessionGates.ts`, ADR-0023)
 
 An active `replace_recommendation` occurrence is resolved at the `Home.tsx` composition
