@@ -49,6 +49,9 @@ export interface ContextBriefInput {
      * all (enforced by `anthropometry/engineIsolation.test.ts`), so this is a plain,
      * already-summarized shape rather than raw `AnthropometryEntry[]`. */
     bodyComposition?: BodyCompositionBriefInput;
+    /** True when the recommendation read succeeded; false when it failed. When false,
+     * recommendation feedback renderers show "unknown, not none" rather than asserting absence. */
+    recommendationsReadable: boolean;
     /** Issue #811: what the export is for. Defaults to `diagnostic` — the complete,
      * legacy section order with every observation-only candidate — so a caller that does
      * not state a purpose never silently loses evidence. `planning` reorders sections by
@@ -654,7 +657,7 @@ export function buildContextBrief(input: ContextBriefInput): string {
         checkins, baselineCheckins, windowDays, baselineDays, { morning: hungerMorning, other: hungerOther },
         `## 4. ${SECTION_TITLE.subjective}`,
     );
-    const adherence = renderRecommendationFeedback(recommendations, `## ${n(6, 5)}. ${SECTION_TITLE.adherence}`);
+    const adherence = renderRecommendationFeedback(recommendations, `## ${n(6, 5)}. ${SECTION_TITLE.adherence}`, input.recommendationsReadable);
     const body: string[][] = planningOrder
         ? [constraints, intent, objective, bodyComposition, subjective, training, adherence]
         : [constraints, objective, bodyComposition, training, subjective, adherence, intent];

@@ -37,7 +37,7 @@ No check-ins in this window.
 
 ## 5. Recommendation feedback (athlete responses — not plan execution)
 
-No recommendations recorded in this window.
+No app recommendations recorded in this window.
 
 ## 6. Goals & training intent
 

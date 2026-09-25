@@ -89,7 +89,7 @@ export class ShadowLogService {
         if (recommendationResult.status === 'fulfilled' && recommendationResult.value.status === 'AVAILABLE') {
             for (const recommendation of recommendationResult.value.data) recommendationByDate.set(recommendation.date, recommendation);
         } else {
-            unavailableSources.push('recommendations and adherence');
+            unavailableSources.push('recommendations and feedback');
         }
 
         const journalByDate = new Map<string, DecisionJournalEntry>();
