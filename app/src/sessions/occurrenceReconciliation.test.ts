@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     matchExecutionsToGarminActivities,
+    normalizedGarminModality,
     sessionExecutionOccurrenceKey,
     summarizeExecutionForReconciliation,
     type ExecutionOccurrenceSummary,
@@ -96,5 +97,11 @@ describe('matchExecutionsToGarminActivities', () => {
             [activity()],
         );
         expect(matches).toHaveLength(1);
+    });
+});
+
+describe('normalizedGarminModality Garmin cycling typeKeys', () => {
+    it.each(['cycling', 'cyclocross', 'gravel_cycling', 'indoor_cycling', 'mountain_biking', 'road_biking', 'virtual_ride'] as const)('classifies %s as cycling', (type) => {
+        expect(normalizedGarminModality(type)).toBe('cycling');
     });
 });

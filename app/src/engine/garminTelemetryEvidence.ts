@@ -51,10 +51,17 @@ function rounded(value: number, decimals = 6): number {
     return Math.round(value * factor) / factor;
 }
 
+/** Canonical Garmin cycling typeKey vocabulary (e.g. `road_biking`, `virtual_ride`). Every
+ * modality classifier must accept these explicitly: substring matching on "cycl"/"bike"
+ * misses `road_biking`, `mountain_biking` and `virtual_ride`. */
+export function isGarminCyclingActivityType(type: string): boolean {
+    return GARMIN_CYCLING_POWER_TYPES.has(type.trim().toLowerCase());
+}
+
 /** Mirrors the accepted ingestion gate's explicit Garmin cycling-type vocabulary. It is
  * used only by the default-off candidate; the production TE classifier is unchanged. */
 export function isGarminCyclingPowerActivity(type: string): boolean {
-    return GARMIN_CYCLING_POWER_TYPES.has(type.trim().toLowerCase());
+    return isGarminCyclingActivityType(type);
 }
 
 /** Pure, privacy-preserving evidence extraction. Activity IDs and dates are deliberately
