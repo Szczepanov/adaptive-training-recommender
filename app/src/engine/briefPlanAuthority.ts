@@ -24,6 +24,7 @@ import type {
     ShadowVerdict,
 } from './models';
 import { resolveEngineShadowVerdict } from './shadowAgreement';
+import { isExternalRestOverride } from './externalRestProvenance';
 
 /** The subset of an exported imported-session row this resolver needs. */
 export interface BriefAuthoredSession {
@@ -66,7 +67,9 @@ export type BriefPlanAuthorityOutcome =
 export type BriefPlanConflictReason =
     | 'recommendation_not_bound_to_placed_session'
     | 'recommendation_bound_to_other_revision'
-    | 'imported_session_outside_externally_planned_mode'
+    | 'recommendation_bound_to_unplaced_session'
+    | 'advisory_verdict_on_non_event_session'
+    | 'recommendation_unreadable'
     | 'fallback_with_placed_session';
 
 export interface BriefPlanAuthority {
@@ -87,6 +90,12 @@ export interface BriefPlanAuthority {
     /** Imported sessions placed today other than the authoritative one (double days). They
      * keep their authored authority; today's decision did not adjudicate them. */
     otherAuthoredSessionsToday: readonly BriefAuthoredSession[];
+    /** Imported sessions dated today that do NOT govern it because the athlete's effective
+     * planning mode is not `externally_planned` (ADR-0017: planningMode.ts is the sole
+     * authority). Rendered as context only. */
+    nonGoverningImportedSessionsToday: readonly BriefAuthoredSession[];
+    /** True when the athlete explicitly overrode an authored rest directive (ADR-0035). */
+    restOverriddenByAthlete: boolean;
     /** Fixed activities dated today: availability / load constraints, never a prescription. */
     fixedConstraintsToday: readonly FixedActivity[];
     /** Current-day check-in symptom flags. These outrank every authored or app session. */
@@ -105,6 +114,16 @@ export interface BriefPlanAuthorityInput {
     recommendationToday: DailyRecommendation | null;
     checkinToday: DailySubjectiveCheckin | null;
     fixedActivitiesToday: readonly FixedActivity[];
+    /** False when today's recommendation read failed, so a null recommendation is unknown. */
+    recommendationsReadable: boolean;
+}
+
+const PRIORITY_RANK: Record<BriefAuthoredSession['priority'], number> = { key: 0, supporting: 1, optional: 2 };
+
+/** Same primary ordering as `activeExternalPlanService.ts` `placedSessionForDate`:
+ * priority, then session id. */
+function byPrimaryOrder(left: BriefAuthoredSession, right: BriefAuthoredSession): number {
+    return PRIORITY_RANK[left.priority] - PRIORITY_RANK[right.priority] || left.sessionId.localeCompare(right.sessionId);
 }
 
 type PersistedWithVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
@@ -129,13 +148,17 @@ function sameOccurrence(session: BriefAuthoredSession, recommendation: DailyReco
     return bound.revision === session.revision ? 'same' : 'other_revision';
 }
 
-function base(input: BriefPlanAuthorityInput): Omit<BriefPlanAuthority, 'outcome' | 'authoritative' | 'verdict' | 'override' | 'conflictReason' | 'otherAuthoredSessionsToday'> {
+type BaseFields = 'fixedConstraintsToday' | 'currentSymptomFlags' | 'recommendationPredatesCheckin' | 'nonGoverningImportedSessionsToday' | 'restOverriddenByAthlete';
+
+function base(input: BriefPlanAuthorityInput): Pick<BriefPlanAuthority, BaseFields> {
     const checkin = input.checkinToday;
     const recommendation = input.recommendationToday;
     return {
         fixedConstraintsToday: input.fixedActivitiesToday.filter(item => item.date === input.asOfDate && !item.isCompleted),
         currentSymptomFlags: symptomFlags(checkin),
         recommendationPredatesCheckin: Boolean(checkin && recommendation && recommendation.updatedAt < checkin.submittedAt),
+        nonGoverningImportedSessionsToday: [],
+        restOverriddenByAthlete: false,
     };
 }
 
@@ -177,7 +200,7 @@ function adjudicatedOutcome(
         default:
             // `advisory` is reserved for events (D-EVENT); on a non-event session it is a
             // fact the rules do not reconcile, so it must not be presented as clearance.
-            return unresolved(input, 'recommendation_not_bound_to_placed_session', others);
+            return unresolved(input, 'advisory_verdict_on_non_event_session', others);
     }
 }
 
@@ -189,32 +212,44 @@ function adjudicatedOutcome(
  */
 export function resolveBriefPlanAuthority(input: BriefPlanAuthorityInput): BriefPlanAuthority {
     const recommendation = input.recommendationToday;
-    const sessions = input.importedSessionsToday.filter(item => item.date === input.asOfDate);
+    const dated = input.importedSessionsToday.filter(item => item.date === input.asOfDate).sort(byPrimaryOrder);
     const noConflict = { verdict: null, override: null, conflictReason: null } as const;
+    const externalRest = recommendation?.recommendationAudit?.externalRest;
+    const boundPlan = recommendation?.recommendationAudit?.externalPlan;
+
+    // ADR-0017 / D-EXT: imported sessions govern only in externally-planned mode. Fallback
+    // implies the athlete chose that mode, so its sessions are never merely context.
+    const governing = input.effectivePlanningMode === 'externally_planned' || input.externalFallback;
+    const sessions = governing ? dated : [];
+    const nonGoverning = governing ? [] : dated;
 
     if (input.externalFallbackUncertain && sessions.length === 0) {
         return { ...base(input), ...noConflict, outcome: 'EXTERNAL_PLAN_UNREADABLE', authoritative: null, otherAuthoredSessionsToday: [] };
     }
 
-    if (recommendation?.recommendationAudit?.externalRest && sessions.length === 0) {
-        return { ...base(input), ...noConflict, outcome: 'AUTHORED_REST', authoritative: { kind: 'authored_rest' }, otherAuthoredSessionsToday: [] };
-    }
-
     if (sessions.length === 0) {
+        if (boundPlan && governing) {
+            // The decision adjudicated an imported session that is no longer placed today
+            // (moved / re-imported after the decision): the two facts disagree.
+            return unresolved(input, 'recommendation_bound_to_unplaced_session', []);
+        }
+        if (externalRest && !isExternalRestOverride(externalRest)) {
+            return { ...base(input), ...noConflict, outcome: 'AUTHORED_REST', authoritative: { kind: 'authored_rest' }, otherAuthoredSessionsToday: [] };
+        }
         const authoritative = recommendation ? { kind: 'app_recommendation' as const, recommendation } : null;
         return {
             ...base(input), ...noConflict,
             outcome: input.externalFallback ? 'EXTERNAL_PLAN_FALLBACK' : 'NO_AUTHORED_SESSION',
             authoritative, otherAuthoredSessionsToday: [],
+            nonGoverningImportedSessionsToday: nonGoverning,
+            restOverriddenByAthlete: Boolean(externalRest && isExternalRestOverride(externalRest)),
         };
     }
 
     if (input.externalFallback) return unresolved(input, 'fallback_with_placed_session', sessions);
-    if (input.effectivePlanningMode !== 'externally_planned') {
-        return unresolved(input, 'imported_session_outside_externally_planned_mode', sessions);
-    }
 
     if (!recommendation) {
+        if (!input.recommendationsReadable) return unresolved(input, 'recommendation_unreadable', sessions);
         const [first, ...others] = sessions;
         return {
             ...base(input), ...noConflict, outcome: 'AUTHORED_UNADJUDICATED',
@@ -252,7 +287,9 @@ const OUTCOME_HEADLINE: Record<BriefPlanAuthorityOutcome, string> = {
 const CONFLICT_DETAIL: Record<BriefPlanConflictReason, string> = {
     recommendation_not_bound_to_placed_session: 'today\'s app recommendation was not made by adjudicating the imported session placed today',
     recommendation_bound_to_other_revision: 'today\'s app recommendation adjudicated a different revision of the imported plan than the one placed now',
-    imported_session_outside_externally_planned_mode: 'an imported session is placed today but the athlete\'s planning mode is not externally planned, so the app did not adjudicate it',
+    recommendation_bound_to_unplaced_session: 'today\'s app recommendation adjudicated an imported session that is no longer placed on this date (moved or re-imported after the decision)',
+    advisory_verdict_on_non_event_session: 'the app returned an advisory-only verdict for a session that is not an event, which no rule turns into clearance',
+    recommendation_unreadable: 'today\'s app recommendation could not be read, so whether a safety/readiness gate changed the imported session is unknown',
     fallback_with_placed_session: 'the app ran in external-plan fallback, yet an imported session is visible on today\'s date',
 };
 
@@ -268,15 +305,17 @@ function describeRecommendation(recommendation: DailyRecommendation): string {
 function authoritativeLine(authority: BriefPlanAuthority): string {
     const target = authority.authoritative;
     if (!target) {
-        return authority.outcome === 'AUTHORED_UNADJUDICATED' || authority.outcome === 'EXTERNAL_PLAN_UNREADABLE' || authority.outcome === 'CONFLICT_UNRESOLVED'
-            ? '- Authoritative session today: **UNRESOLVED** — do not pick, merge or average the candidates below; ask the athlete which applies.'
-            : '- Authoritative session today: none recorded yet.';
+        if (authority.outcome === 'CONFLICT_UNRESOLVED' || authority.outcome === 'EXTERNAL_PLAN_UNREADABLE') {
+            return '- Authoritative session today: **UNRESOLVED** — do not pick, merge or average sessions from elsewhere in this brief; ask the athlete which applies.';
+        }
+        return '- Authoritative session today: none recorded yet.';
     }
     if (target.kind === 'authored_rest') return '- Authoritative session today: **rest** (authored rest directive).';
     if (target.kind === 'app_recommendation') return `- Authoritative session today: **${describeRecommendation(target.recommendation)}** (app recommendation).`;
     const suffix = authority.outcome === 'DOSE_MODIFIED'
         ? ' — at the app\'s reduced dose, not the authored dose'
         : authority.outcome === 'AUTHORED_UNADJUDICATED' ? ' — authored, not yet readiness-checked by the app' : '';
+    // DOSE_MODIFIED: the reduced dose is stated from the persisted audit below, if present.
     return `- Authoritative session today: **${describeSession(target.session)}** (imported plan)${suffix}.`;
 }
 
@@ -298,9 +337,22 @@ export function renderBriefPlanAuthority(authority: BriefPlanAuthority, asOfDate
         const displaced = recommendation?.recommendationAudit?.externalPlan;
         if (displaced) lines.push(`- Displaced imported session: plan ${displaced.planId} revision ${displaced.revision}, session ${displaced.sessionId}. Its authored revision is unchanged.`);
     }
+    const executionDose = recommendation?.recommendationAudit?.executionDose;
+    if (authority.outcome === 'DOSE_MODIFIED' && executionDose) {
+        lines.push(`- Reduced dose (app execution dose): volume ×${executionDose.volume} · intensity ×${executionDose.intensity} of the authored session.`);
+    }
+    if (authority.restOverriddenByAthlete) {
+        lines.push('- The athlete explicitly overrode today\'s authored rest directive; the app recommendation ran through the normal safety/readiness gates.');
+    }
+    for (const context of authority.nonGoverningImportedSessionsToday) {
+        lines.push(`- Imported-plan context (not governing: planning mode is not externally planned): ${describeSession(context)}.`);
+    }
     if (authority.override) lines.push(`- Override source: app readiness/safety adjudication (verdict \`${authority.verdict}\`) — "${authority.override.reason}"`);
     for (const other of authority.otherAuthoredSessionsToday) {
-        lines.push(`- Also placed today (authored authority, not covered by today's app decision): ${describeSession(other)}.`);
+        const label = authority.outcome === 'SESSION_REPLACED_BY_GATE'
+            ? 'Also placed today (UNRESOLVED: today\'s readiness/safety gate closed the primary session; do not substitute this one without asking)'
+            : 'Also placed today (authored authority, not covered by today\'s app decision)';
+        lines.push(`- ${label}: ${describeSession(other)}.`);
     }
     for (const fixed of authority.fixedConstraintsToday) {
         lines.push(`- Constraint (not a prescription): fixed activity ${fixed.title} · ${fixed.durationMin} min · ${fixed.fixed ? 'fixed' : 'movable'}.`);

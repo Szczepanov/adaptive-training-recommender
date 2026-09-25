@@ -197,7 +197,9 @@ function handoffInput(overrides: Partial<ContextBriefPlanningHandoffInput> = {})
         recommendations: [recommendation()],
         trainingSettings: null,
         preferences: null,
-        effectivePlanningMode: 'externally_planned',
+        // Coherent default: no session is placed today and no fallback, so the effective
+        // mode is the athlete's underlying mode, not externally_planned (ADR-0019 D-EXT).
+        effectivePlanningMode: 'evergreen',
         externalFallback: false,
         externalFallbackUncertain: false,
         eventStrategy: null,
@@ -261,10 +263,10 @@ describe('enhanceContextBriefForPlanning', () => {
         expect(text).toContain('means "unknown", not "none"');
     });
 
-    it('exports data freshness, resolved planning mode and the app recommendation without making it authoritative', () => {
+    it('exports data freshness, resolved planning mode and one resolved authority for the app recommendation', () => {
         const text = enhanceContextBriefForPlanning(BASE, handoffInput());
 
-        expect(text).toContain('Effective planning mode today: externally_planned');
+        expect(text).toContain('Effective planning mode today: evergreen');
         expect(text).toContain('Garmin sync timestamp 2026-08-20T05:20:00Z');
         expect(text).toContain('activities through 2026-08-20');
         expect(text).toContain('### Resolved planning authority for 2026-08-20');

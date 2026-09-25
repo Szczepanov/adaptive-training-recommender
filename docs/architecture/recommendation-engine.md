@@ -87,16 +87,19 @@ prescription. Outcomes:
 | `DOSE_MODIFIED` | `scale` verdict on that occurrence; engine rationale recorded as the override | imported session at reduced dose |
 | `SESSION_REPLACED_BY_GATE` | `defer`/`skip`; engine rationale and displaced occurrence recorded | app recommendation |
 | `EVENT_DAY` | `isEvent` session (D-EVENT: advice, not permission) | imported event |
-| `AUTHORED_REST` | audit carries an authored rest directive (ADR-0035) | rest |
+| `AUTHORED_REST` | audit carries an authored rest directive that the athlete did not override (ADR-0035); an override (`isExternalRestOverride`) is reported as the app recommendation with the override stated | rest |
 | `EXTERNAL_PLAN_FALLBACK` | confirmed D-EXT fallback | app recommendation, labelled |
-| `NO_AUTHORED_SESSION` | no imported plan governs today | app recommendation |
+| `NO_AUTHORED_SESSION` | no imported plan governs today; imported sessions placed while the effective mode is not `externally_planned` are listed as non-governing context (ADR-0017) | app recommendation |
 | `EXTERNAL_PLAN_UNREADABLE` | today's plan state could not be read | unknown (fails closed) |
 | `AUTHORED_UNADJUDICATED` | session placed, no app decision yet | imported session, not readiness-checked |
-| `CONFLICT_UNRESOLVED` | decision not bound to the placed occurrence, bound to another revision, advisory on a non-event, fallback with a visible session, or session placed outside `externally_planned` mode | none — the agent is told to ask |
+| `CONFLICT_UNRESOLVED` | decision not bound to the placed occurrence, bound to another revision, bound to an imported session no longer placed today, advisory on a non-event, fallback with a visible session, or today's recommendation unreadable while a session is placed | none — the agent is told to ask |
 
 The block is rendered in section 0 of the planning handoff (ahead of `## 1. Constraints`
 and all telemetry) and at the top of the morning brief. Imported sessions later in the
-7-day horizon are annotated as keeping their authored authority on their own dates.
+7-day horizon are annotated as keeping their authored authority on their own dates. Today's
+authored prescription steps are withheld unless the outcome is `MATCH`, `EVENT_DAY` or
+`AUTHORED_UNADJUDICATED`; `DOSE_MODIFIED` states the persisted execution dose. The primary
+session on a multi-session day follows `placedSessionForDate` ordering (priority, then id).
 
 ### Authored occurrence authority (`authoredSessionGates.ts`, ADR-0023)
 

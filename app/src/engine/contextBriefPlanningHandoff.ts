@@ -99,6 +99,7 @@ function resolveTodayAuthority(input: ContextBriefPlanningHandoffInput): { autho
         recommendationToday: recommendation,
         checkinToday: input.checkins.find(item => item.date === input.asOfDate) ?? null,
         fixedActivitiesToday: input.upcomingFixedActivities,
+        recommendationsReadable: !input.unavailableSources.some(source => source.startsWith('recommendations')),
     });
     return { authority, block: renderBriefPlanAuthority(authority, input.asOfDate, recommendation) };
 }
@@ -109,7 +110,9 @@ function yesNoUnknown(value: boolean | undefined): string {
     return 'unknown';
 }
 
-function renderDataHandoff(input: ContextBriefPlanningHandoffInput): string {
+type TodayAuthority = ReturnType<typeof resolveTodayAuthority>;
+
+function renderDataHandoff(input: ContextBriefPlanningHandoffInput, today: TodayAuthority): string {
     const latestSnapshot = latestByDate(input.snapshots);
     const latestCheckin = latestByDate(input.checkins);
     const currentCheckin = input.checkins.find(item => item.date === input.asOfDate) ?? null;
@@ -194,7 +197,7 @@ function renderDataHandoff(input: ContextBriefPlanningHandoffInput): string {
 
     // The resolved authority block precedes all descriptive telemetry: this handoff is
     // spliced in ahead of `## 1. Constraints`.
-    lines.push('', resolveTodayAuthority(input).block);
+    lines.push('', today.block);
 
     return lines.join('\n');
 }
@@ -324,10 +327,14 @@ function renderPrescriptionStep(step: ExternalPrescriptionStep): string {
     return dose.length > 0 ? `${step.name}: ${dose.join(' · ')}` : step.name;
 }
 
-function renderImportedPrescriptions(sessions: readonly UpcomingExternalPlanSession[]): string[] {
+function renderImportedPrescriptions(sessions: readonly UpcomingExternalPlanSession[], asOfDate: string, todayOutcome: string): string[] {
     if (sessions.length === 0) return [];
     const lines: string[] = ['', 'Imported-session prescription detail:'];
     for (const session of sessions) {
+        if (session.date === asOfDate && !PRESCRIPTION_SAFE_OUTCOMES.has(todayOutcome)) {
+            lines.push(`- **${session.date} — ${session.title}:** authored steps withheld for today (${todayOutcome}); follow the resolved planning authority block, not the authored dose.`);
+            continue;
+        }
         lines.push(`- **${session.date} — ${session.title}:** ${compactText(session.prescription.summary)}`);
         for (const step of session.prescription.steps ?? []) {
             lines.push(`  - ${renderPrescriptionStep(step)}`);
@@ -336,7 +343,9 @@ function renderImportedPrescriptions(sessions: readonly UpcomingExternalPlanSess
     return lines;
 }
 
-function renderUpcoming(input: ContextBriefPlanningHandoffInput): string {
+const PRESCRIPTION_SAFE_OUTCOMES = new Set(['MATCH', 'EVENT_DAY', 'AUTHORED_UNADJUDICATED']);
+
+function renderUpcoming(input: ContextBriefPlanningHandoffInput, today: TodayAuthority): string {
     const endDate = addDaysToLocalDateString(input.asOfDate, UPCOMING_CONTEXT_DAYS - 1);
     const fixed = input.upcomingFixedActivities
         .filter(item => !item.isCompleted && item.date >= input.asOfDate && item.date <= endDate)
@@ -371,7 +380,7 @@ function renderUpcoming(input: ContextBriefPlanningHandoffInput): string {
         });
     const visibleExternalSessions = input.upcomingExternalSessions
         .filter(item => item.date >= input.asOfDate && item.date <= endDate);
-    const todayOutcome = resolveTodayAuthority(input).authority.outcome;
+    const todayOutcome = today.authority.outcome;
     const external = visibleExternalSessions.map(item => ({
         date: item.date,
         source: `Imported plan: ${item.planTitle}`,
@@ -408,7 +417,7 @@ function renderUpcoming(input: ContextBriefPlanningHandoffInput): string {
     for (const row of rows) {
         lines.push(`| ${row.date} | ${row.source} | ${row.title} | ${row.dose} | ${row.authority} | ${row.notes || '—'} |`);
     }
-    lines.push(...renderImportedPrescriptions(visibleExternalSessions));
+    lines.push(...renderImportedPrescriptions(visibleExternalSessions, input.asOfDate, todayOutcome));
     return lines.join('\n');
 }
 
@@ -651,8 +660,9 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
 
     // 4. Today's App Recommendation & Engine Stance
     lines.push('', '## 4. Today\'s App Recommendation & Engine Stance', '');
-    if (todayRecommendation && todayAuthority.authority.outcome === 'CONFLICT_UNRESOLVED') {
-        lines.push('> Not independently actionable: this recommendation is unreconciled with today\'s imported plan (see *Resolved planning authority* above).');
+    const recommendationIsAuthoritative = todayAuthority.authority.authoritative?.kind === 'app_recommendation';
+    if (todayRecommendation && !recommendationIsAuthoritative) {
+        lines.push(`> Not independently actionable: today's authority is ${todayAuthority.authority.outcome} (see *Resolved planning authority* above); this recommendation is shown as engine context only.`);
     }
     if (todayRecommendation) {
         lines.push(`- Mode: ${todayRecommendation.mode.toUpperCase()}`);
@@ -754,9 +764,11 @@ export function enhanceContextBriefForPlanning(
 
     const constraintMarker = '\n## 1. Constraints';
     const constraintIndex = retrospective.indexOf(constraintMarker);
+    const today = resolveTodayAuthority(input);
+    const handoff = renderDataHandoff(input, today);
     const withHandoff = constraintIndex >= 0
-        ? `${retrospective.slice(0, constraintIndex)}\n\n${renderDataHandoff(input)}${retrospective.slice(constraintIndex)}`
-        : `${renderDataHandoff(input)}\n\n${retrospective}`;
+        ? `${retrospective.slice(0, constraintIndex)}\n\n${handoff}${retrospective.slice(constraintIndex)}`
+        : `${handoff}\n\n${retrospective}`;
 
     const timeline = renderRecoveryTimeline(input);
     const trainingMarker = '\n## 3. Completed training';
@@ -767,5 +779,5 @@ export function enhanceContextBriefForPlanning(
 
     const goalSpecifics = renderGoalSpecifics(input.goals);
     const goalDetail = goalSpecifics ? `\n\n${goalSpecifics}` : '';
-    return `${withTimeline.trimEnd()}${goalDetail}\n\n${renderUpcoming(input)}\n\n${renderUseInstructions()}\n`;
+    return `${withTimeline.trimEnd()}${goalDetail}\n\n${renderUpcoming(input, today)}\n\n${renderUseInstructions()}\n`;
 }

@@ -65,6 +65,7 @@ function input(overrides: Partial<BriefPlanAuthorityInput> = {}): BriefPlanAutho
     return {
         asOfDate: AS_OF, effectivePlanningMode: 'externally_planned', externalFallback: false, externalFallbackUncertain: false,
         importedSessionsToday: [session()], recommendationToday: null, checkinToday: null, fixedActivitiesToday: [],
+        recommendationsReadable: true,
         ...overrides,
     };
 }
@@ -119,10 +120,57 @@ describe('resolveBriefPlanAuthority (#810)', () => {
         expect(result.conflictReason).toBe('recommendation_bound_to_other_revision');
     });
 
-    it('does not treat a placed session outside externally-planned mode as silently authoritative', () => {
-        const result = resolveBriefPlanAuthority(input({ effectivePlanningMode: 'evergreen', recommendationToday: rec() }));
+    it('lets the effective planning mode govern: an imported session outside externally-planned mode is context only', () => {
+        const recommendation = rec();
+        const result = resolveBriefPlanAuthority(input({ effectivePlanningMode: 'evergreen', recommendationToday: recommendation }));
+        expect(result.outcome).toBe('NO_AUTHORED_SESSION');
+        expect(result.authoritative).toEqual({ kind: 'app_recommendation', recommendation });
+        expect(result.nonGoverningImportedSessionsToday.map(item => item.sessionId)).toEqual(['long-anchor']);
+        expect(renderBriefPlanAuthority(result, AS_OF, recommendation)).toContain('Imported-plan context (not governing');
+    });
+
+    it('treats an athlete-overridden authored rest as an app recommendation, not rest', () => {
+        const recommendation = rec({ recommendationAudit: audit(undefined, { externalRest: { planId: 'p1', revision: 2, contentHash: 'h', restDirectiveId: 'r1', date: AS_OF, overridden: true } as RecommendationAudit['externalRest'] }) });
+        const result = resolveBriefPlanAuthority(input({ importedSessionsToday: [], externalFallback: true, effectivePlanningMode: 'evergreen', recommendationToday: recommendation }));
+        expect(result.outcome).toBe('EXTERNAL_PLAN_FALLBACK');
+        expect(result.authoritative).toEqual({ kind: 'app_recommendation', recommendation });
+        expect(result.restOverriddenByAthlete).toBe(true);
+        expect(renderBriefPlanAuthority(result, AS_OF, recommendation)).toContain('explicitly overrode today\'s authored rest directive');
+    });
+
+    it('fails closed when the decision adjudicated an imported session that is no longer placed today', () => {
+        const result = resolveBriefPlanAuthority(input({
+            importedSessionsToday: [], externalFallback: true, effectivePlanningMode: 'evergreen',
+            recommendationToday: rec({ engineVerdict: 'proceed', recommendationAudit: audit(BOUND) }),
+        }));
         expect(result.outcome).toBe('CONFLICT_UNRESOLVED');
-        expect(result.conflictReason).toBe('imported_session_outside_externally_planned_mode');
+        expect(result.conflictReason).toBe('recommendation_bound_to_unplaced_session');
+        expect(result.authoritative).toBeNull();
+    });
+
+    it('does not claim a session is unadjudicated when the recommendation read failed', () => {
+        const result = resolveBriefPlanAuthority(input({ recommendationsReadable: false }));
+        expect(result.outcome).toBe('CONFLICT_UNRESOLVED');
+        expect(result.conflictReason).toBe('recommendation_unreadable');
+    });
+
+    it('maps a skip verdict and a legacy modify-mode decision through the persisted-verdict rule', () => {
+        expect(resolveBriefPlanAuthority(input({ recommendationToday: rec({ engineVerdict: 'skip', mode: 'recover', recommendationAudit: audit(BOUND) }) })).outcome)
+            .toBe('SESSION_REPLACED_BY_GATE');
+        expect(resolveBriefPlanAuthority(input({ recommendationToday: rec({ mode: 'modify', recommendationAudit: audit(BOUND) }) })).outcome)
+            .toBe('DOSE_MODIFIED');
+    });
+
+    it('states the persisted reduced dose for DOSE_MODIFIED', () => {
+        const recommendation = rec({ engineVerdict: 'scale', recommendationAudit: audit(BOUND, { executionDose: { volume: 0.7, intensity: 1 } }) });
+        const text = renderBriefPlanAuthority(resolveBriefPlanAuthority(input({ recommendationToday: recommendation })), AS_OF, recommendation);
+        expect(text).toContain('volume ×0.7 · intensity ×1');
+    });
+
+    it('marks remaining same-day sessions unresolved after a gate closed the day', () => {
+        const recommendation = rec({ engineVerdict: 'defer', mode: 'recover', recommendationAudit: audit(BOUND) });
+        const result = resolveBriefPlanAuthority(input({ importedSessionsToday: [session(), session({ sessionId: 'z-strength', priority: 'supporting', title: 'Strength' })], recommendationToday: recommendation }));
+        expect(renderBriefPlanAuthority(result, AS_OF, recommendation)).toContain('Also placed today (UNRESOLVED');
     });
 
     it('labels a confirmed external fallback with the app recommendation standing in', () => {
@@ -170,6 +218,7 @@ describe('resolveBriefPlanAuthority (#810)', () => {
     it('does not present an advisory verdict on a non-event session as clearance', () => {
         const result = resolveBriefPlanAuthority(input({ recommendationToday: rec({ engineVerdict: 'advisory', recommendationAudit: audit(BOUND) }) }));
         expect(result.outcome).toBe('CONFLICT_UNRESOLVED');
+        expect(result.conflictReason).toBe('advisory_verdict_on_non_event_session');
     });
 
     it('reports an authored rest directive as the authority', () => {
@@ -191,11 +240,16 @@ describe('resolveBriefPlanAuthority (#810)', () => {
 
     it('lists other same-day authored sessions the decision did not cover', () => {
         const result = resolveBriefPlanAuthority(input({
-            importedSessionsToday: [session(), session({ sessionId: 'strength', title: 'Strength' })],
+            importedSessionsToday: [session({ sessionId: 'strength', title: 'Strength', priority: 'supporting' }), session()],
             recommendationToday: rec({ engineVerdict: 'proceed', recommendationAudit: audit(BOUND) }),
         }));
         expect(result.outcome).toBe('MATCH');
         expect(result.otherAuthoredSessionsToday.map(item => item.sessionId)).toEqual(['strength']);
+    });
+
+    it('names the key session first when none has been adjudicated (placedSessionForDate order)', () => {
+        const result = resolveBriefPlanAuthority(input({ importedSessionsToday: [session({ sessionId: 'a-opt', priority: 'optional' }), session()] }));
+        expect(result.authoritative).toEqual({ kind: 'imported_session', session: expect.objectContaining({ sessionId: 'long-anchor' }) });
     });
 
     it('is deterministic for identical input', () => {
@@ -243,5 +297,18 @@ describe('context brief resolved authority block (#810)', () => {
         expect(block).toBeGreaterThan(-1);
         expect(block).toBeLessThan(text.indexOf('## 1. Today'));
         expect(text).toContain('Not independently actionable');
+    });
+
+    it('also caveats the morning recommendation when today\'s imported plan is unreadable', () => {
+        const text = enhanceContextBriefForPlanning(BASE, briefInput({
+            preset: 'daily', upcomingExternalSessions: [], externalFallback: true, externalFallbackUncertain: true, effectivePlanningMode: 'evergreen',
+        }));
+        expect(text).toContain('EXTERNAL_PLAN_UNREADABLE');
+        expect(text).toContain('Not independently actionable: today\'s authority is EXTERNAL_PLAN_UNREADABLE');
+    });
+
+    it('withholds today\'s authored steps when the authored dose is not what applies', () => {
+        const text = enhanceContextBriefForPlanning(BASE, briefInput());
+        expect(text).toContain('authored steps withheld for today (CONFLICT_UNRESOLVED)');
     });
 });
