@@ -529,6 +529,16 @@ export class ContextBriefService {
             buildContextBrief(input),
             windowActivities,
             purpose !== 'diagnostic',
+            // Issue #814: comparable prior sessions are searched in the full fetched
+            // activity range (activityStart, at least the 28-day sensor horizon), and
+            // next-day linkage uses the fetched check-ins; an unreadable check-in read
+            // is passed as null so it is reported as unavailable, not as "no check-in".
+            {
+                history: activities,
+                historyStart: activityStart,
+                checkins: checkinResult.status === 'fulfilled' ? checkins : null,
+                asOfDate: targetDate,
+            },
         );
         const text = enhanceContextBriefForPlanning(retrospectiveText, {
             asOfDate: targetDate,

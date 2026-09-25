@@ -125,6 +125,60 @@ issues identical reads for both.
 
 No purpose alters a recommendation, so `POLICY_VERSION` is unaffected.
 
+#### Training-response features (issue #814)
+
+The completed-training section carries a *Training-response features* subsection built by
+`contextBriefResponseSummary.ts` `deriveKeySessionSummaries` from pure derivations in
+`contextBriefResponseFeatures.ts` (cycling) and `contextBriefSessionResponse.ts` (strength,
+next day). They are **display-only**: only the brief telemetry renderer imports them, their constants have no
+recommendation authority (ADR-0033 display-only, so no claim or coverage item), and
+`POLICY_VERSION` is unaffected. Using them in policy would be a separately reviewed change.
+
+A session is a *key session* when at least one feature is eligible for it. In the
+planning/morning export its semantic summary replaces its one-line telemetry digest; the
+diagnostic export keeps every lap and zone table and adds the summaries after them. Prior
+sessions are searched only in the activities `ContextBriefService.build` already fetched
+(from `activityStart`, at least the 28-day sensor-evidence horizon), and the output states
+that start date. Missing or incomparable evidence produces `insufficient_evidence` with a
+reason, never an estimate.
+
+Eligibility and formulas (engine stimulus classification from #809 is reused, never
+re-derived; legacy records without a `stimulusDomain` are `unknown`):
+
+- **Interval repetition** — cycling sessions classified tempo/threshold/VO2/anaerobic/mixed/race,
+  or carrying a device `fitWorkoutFingerprint`. Work intervals are laps of at least
+  `WORK_INTERVAL_MIN_SECONDS` whose average power is at least `WORK_INTERVAL_POWER_RATIO`
+  times the duration-weighted mean lap power; at least two, with durations within
+  `REPEAT_DURATION_MAX_RATIO`. Reports per-interval power (and HR unless the activity's HR
+  measurement is rated unreliable), first→last change, spread, and a *late fade*
+  (last below first by more than `INTERVAL_FADE_PCT`) or *late collapse* (a second-half
+  interval below `INTERVAL_COLLAPSE_RATIO` of the first) label.
+- **Pw:HR decoupling** — steady cycling only: stimulus endurance/recovery, reported
+  variability index ≤ `STEADY_MAX_VARIABILITY_INDEX`, at least `DECOUPLING_MIN_DURATION_MIN`,
+  usable HR, and laps with power and HR covering `DECOUPLING_MIN_LAP_COVERAGE` of the session.
+  Lap-average power ÷ HR, first vs second half of lap time. Intervals, stops or variable
+  power never get a drift value.
+- **Aerobic-efficiency comparison** — NP ÷ average HR against the most recent prior session
+  with the same activity type, the same steady stimulus, duration within
+  `COMPARABLE_DURATION_MAX_RATIO`, power and usable HR. Power-zone low boundaries identify the
+  FTP definition in force: if both sessions report them and they differ, the comparison is
+  **rejected** (no normalization); if either lacks them, confidence is `low`. Otherwise
+  confidence is `high` only for the same device structured workout with HR measurement rated
+  usable, else `moderate`. Up to three rejected candidates are listed with reasons.
+- **Strength** — only when every working (non-rest) set carries an exercise name; per
+  exercise, top set (heaviest, then most reps) vs the most recent prior session with the same
+  exercise. No estimated 1RM: `workouts/oneRepMax.ts` needs near-failure effort evidence
+  that device sets lack.
+- **Next morning** — the check-in dated the day after the session vs the session-day morning
+  (soreness, fatigue, pain flag, count of other activities that day). Labelled observational;
+  an unreadable check-in history is reported as unavailable, not as a missing check-in.
+
+Known limitations: heat, terrain, cadence, fuelling and accumulated fatigue are not
+controlled; lap-average power is not NP; decoupling depends on the device's lap layout;
+running pace efficiency and structured-workout identity from the training-occurrence
+reconciliation (ADR-0034) are not yet used; comparisons cannot reach beyond the fetched
+lookback.
+
 #### Recovery evidence synthesis (issue #812)
 
 The recovery section of the planning/diagnostic brief, and section 2 of the morning brief,
