@@ -99,6 +99,7 @@ export function installVisualServices(fixture: VisualFixture): void {
   garminSyncRequestService.requestSync = async () => new Date().toISOString();
   activityOverrideService.getAllOverrides = async () => ({});
   activityOverrideService.getOverride = async () => null;
+  activityOverrideService.getAllOverridesState = async () => ({ status: 'AVAILABLE', data: {}, revision: null });
   activityOverrideService.saveOverride = async () => true;
   activityOverrideService.deleteOverride = async () => true;
   activityService.getActivitiesInRange = async () => ({

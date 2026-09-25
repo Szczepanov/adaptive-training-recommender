@@ -1,6 +1,7 @@
 import { collection, doc, getDoc, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { ActivityOverride } from '../engine/models';
+import type { DataState } from '../engine/dataState';
 
 export class ActivityOverrideService {
     private readonly collectionName = 'activity_overrides';
@@ -38,6 +39,23 @@ export class ActivityOverrideService {
         } catch (error) {
             console.warn('Failed to read all activity overrides:', error);
             return {};
+        }
+    }
+
+    /** Like `getAllOverrides`, but a failed read is reported as UNAVAILABLE instead of being
+     * collapsed into "no overrides", so read-only exports can say the source is unknown. */
+    async getAllOverridesState(userId: string): Promise<DataState<Record<string, ActivityOverride>>> {
+        try {
+            const snap = await getDocs(this.getCollectionRef(userId));
+            const overrides: Record<string, ActivityOverride> = {};
+            snap.forEach((docSnap) => {
+                const data = docSnap.data() as ActivityOverride;
+                if (data && data.activityId) overrides[data.activityId] = data;
+            });
+            return { status: 'AVAILABLE', data: overrides, revision: null };
+        } catch (error) {
+            console.warn('Failed to read activity overrides:', error);
+            return { status: 'UNAVAILABLE', operation: 'read activity overrides', retryable: true };
         }
     }
 

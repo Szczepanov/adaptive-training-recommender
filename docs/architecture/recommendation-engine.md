@@ -187,6 +187,32 @@ promotes an unknown/unavailable configuration. The handoff keeps requiring an ex
 RPE/feel/HR fallback whenever a sensor is not configured available. Presentation only —
 `POLICY_VERSION` is unaffected.
 
+#### Stressor and physical-capability exposure ledgers (issue #813)
+
+Inside the completed-training section, `planning` and `diagnostic` exports append two
+read-only ledgers (`contextBriefExposureLedger.ts` `deriveExposureLedger` /
+`renderExposureLedger`) over the same render window and the same already-fetched arrays.
+
+- **Ownership.** Exposure *policy* (cadence, max-gap, dose thresholds, weekly allocation)
+  belongs to the engine and the knowledge registry; the ledger owns presentation only.
+  Completed sessions come from `completedTraining.ts` `reconcileCompletedTrainingEvents`
+  — the reconciliation that feeds live training history — so modality, stimulus
+  intensity, the #809 cost row, the six-dimensional cost vector (shown split into
+  systemic/cardiovascular vs lower-body/impact/neuromuscular) and the evidence tier are the
+  engine's own values. Unanswered or skipped recommendations and imported future sessions
+  never count as completed; imported sessions can only make a capability `planned`.
+- **Status vocabulary.** `confirmed`, `planned`, `unknown`, `deliberately_suspended`
+  (current settings guardrails, unexpired injuries via `resolveInjuryRestrictions`, and
+  hard modality exclusions — the same sources section 1 prints) and `overdue`, which is
+  never emitted because no authoritative cadence/max-gap policy exists yet. Families
+  without a canonical model (power #802, unilateral #803, impact/jump #804, COD #805, long
+  aerobic anchor #806, hamstring/calf/grip) are `unknown` and are to be switched to those
+  models' outputs as they land, not re-derived here. Unreadable activities, adherence,
+  overrides, plan schedule or settings are stated as unknown, never as absence.
+- **Athlete reclassification** (`activity_overrides`) is applied with explicit provenance
+  and labelled display-only, because the engine's training history does not consume it.
+  Presentation only — `POLICY_VERSION` is unaffected.
+
 #### Recommendation feedback vs plan execution (issue #815)
 
 The section formerly titled "Plan adherence" is now **Recommendation feedback**

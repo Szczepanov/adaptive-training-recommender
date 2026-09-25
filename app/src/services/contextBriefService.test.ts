@@ -17,6 +17,7 @@ const services = vi.hoisted(() => ({
     getPlanBlocksInRangeState: vi.fn(),
     getActivePlanState: vi.fn(),
     getEntriesInRange: vi.fn(),
+    getAllOverridesState: vi.fn(),
 }));
 
 vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: {
@@ -24,6 +25,9 @@ vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: {
     getRecoverySnapshotsInRangeState: services.getRecoverySnapshotsInRangeState,
 } }));
 vi.mock('./checkinService', () => ({ checkinService: { getCheckinsInRange: services.getCheckinsInRange } }));
+vi.mock('./activityOverrideService', () => ({ activityOverrideService: {
+    getAllOverridesState: services.getAllOverridesState,
+} }));
 vi.mock('./activityService', () => ({ activityService: { getActivitiesInRange: services.getActivitiesInRange } }));
 vi.mock('./recommendationService', () => ({ recommendationService: { getRecommendationsInRange: services.getRecommendationsInRange } }));
 vi.mock('./trainingSettingsService', () => ({ trainingSettingsService: {
@@ -93,6 +97,17 @@ describe('ContextBriefService', () => {
         services.getActivePlanState.mockResolvedValue({ status: 'MISSING' });
         services.getEntriesInRange.mockResolvedValue([]);
         services.getRecoverySnapshotsInRangeState.mockResolvedValue({ status: 'MISSING' });
+        services.getAllOverridesState.mockResolvedValue({ status: 'AVAILABLE', data: {}, revision: null });
+    });
+
+    it('renders the #813 exposure ledgers and says when reclassifications or activities were unreadable', async () => {
+        services.getAllOverridesState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+        services.getActivitiesInRange.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+        const result = await new ContextBriefService().build('u1', AS_OF, 14);
+        expect(result.text).toContain('### Recent meaningful stressors');
+        expect(result.text).toContain('### Physical-capability exposure');
+        expect(result.text).toContain('Athlete reclassifications were unreadable');
+        expect(result.text).toContain('completed exposures are unknown, not absent');
     });
 
     it('reads check-ins over a date range covering the full baseline, inclusive of asOfDate', async () => {
