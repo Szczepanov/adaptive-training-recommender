@@ -235,6 +235,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.readiness.plan_tier_cost_ceilings_v1`) with alignment testing. Binds discrete readiness tier states to continuous catalog systemic cost caps.',
     },
     {
+        id: 'fatigue.garmin_stimulus_cost_classification', domain: 'fatigue_load', title: 'Garmin stimulus intensity vs session cost classification',
+        currentRule: 'Garmin activities are tagged hard only on high-intensity stimulus evidence (race, anaerobic TE, cycling IF/zone-5+ share, HR-zone shares, legacy TE/HR fallback); a separate Training-Effect-banded session cost indexes the completed-training cost row, floored at the stimulus row (dose only raises cost), and high/very_high cost also counts as prior hard training in health-anomaly explanations under its own evidence codes.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['../../src/garmin_sync/intensity_classification.py:classify_activity', 'engine/completedTraining.ts:costIntensityFromGarmin', 'engine/completedTraining.ts:SESSION_COST_ROW', 'engine/healthAnomaly.ts:hasPriorHardTraining'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.garminStimulusCostClassification],
+        coverageRationale: 'Issue #809 separated exercise intensity from accumulated dose so a long aerobic session no longer counts as a hard session while still carrying its fatigue cost; the zone/IF/TE cut-points are registered as product calibration, not validated physiological thresholds.',
+    },
+    {
         id: 'fatigue.dimension_half_lives', domain: 'fatigue_load', title: 'Dimensional fatigue decay half-lives',
         currentRule: 'Exponential half-lives are systemic 36h, cardiovascular 24h, lower-body 48h, upper-body 36h, impact tissue 48h and neuromuscular 36h.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',

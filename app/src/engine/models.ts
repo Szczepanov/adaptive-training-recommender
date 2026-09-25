@@ -1126,13 +1126,20 @@ export interface NextDayPotentialPlan {
 export interface RawActivitySummary {
     activityCount?: number;
     totalDurationMin?: number;
+    /** High-intensity stimulus sessions (issue #809 semantics when
+     * `intensityClassificationVersion` >= 2; legacy TE/avg-HR "hard" otherwise). */
     hardActivityCount?: number;
+    /** Issue #809: sessions with high/very_high session cost (dose), independent of stimulus. */
+    highCostActivityCount?: number;
+    /** Lowest classification version among the day's activities; absent if any is legacy. */
+    intensityClassificationVersion?: number | null;
     primaryActivity?: {
         activityId: number | string;
         type: string;
         durationMin: number | null;
         trainingEffect: number;
         intensityTag: string;
+        sessionCost?: ActivitySessionCost | null;
     } | null;
 }
 
@@ -1178,6 +1185,10 @@ export interface DailyRecoverySnapshot {
         bodyBatteryDrained?: number | null;
         totalSteps: number | null;
         last3DaysHardSessionsCount: number;
+        /** Issue #809: D-1..D-3 sessions with high/very_high session cost (dose). */
+        last3DaysHighCostSessionsCount?: number;
+        /** Lowest classification version over the D-1..D-3 window; null if any is legacy. */
+        last3DaysIntensityClassificationVersion?: number | null;
         yesterdayTraining: RawActivitySummary | null;
         /** Same-day activity synced from Garmin for `date` itself. Only populated if a
          * sync ran after the activity was uploaded -- absent doesn't mean "didn't train",
@@ -1878,6 +1889,10 @@ export interface ActivityExerciseSet {
     restDurationSeconds?: number;
 }
 
+export type ActivityStimulusDomain =
+    'recovery' | 'endurance' | 'tempo' | 'threshold' | 'vo2' | 'anaerobic' | 'mixed' | 'race' | 'strength' | 'unknown';
+export type ActivitySessionCost = 'low' | 'moderate' | 'high' | 'very_high' | 'unknown';
+
 export interface NormalizedGarminActivity {
     activityId: string;
     date: string;
@@ -1895,7 +1910,20 @@ export interface NormalizedGarminActivity {
     /** Peak activity HR as the provider reported it. Display only -- no decision authority. */
     maxHr?: number;
     activityTrainingLoad: number | null;
+    /** Stimulus (exercise) intensity: easy | moderate | hard. From
+     * `intensityClassificationVersion` 2 (issue #809) this is decoupled from session dose --
+     * "hard" means a high-intensity stimulus, never merely a long/costly session. Records
+     * without a version carry the legacy TE/average-HR semantics and are not reinterpreted. */
     intensityTag: string;
+    /** Issue #809: physiological domain that dominated the work (recovery, endurance, tempo,
+     * threshold, vo2, anaerobic, mixed, race, strength, unknown). */
+    stimulusDomain?: ActivityStimulusDomain;
+    /** Issue #809: total session dose (low | moderate | high | very_high | unknown); can rise
+     * with duration while the stimulus stays aerobic. */
+    sessionCost?: ActivitySessionCost;
+    /** Issue #809: which evidence tier decided the stimulus (provenance). */
+    intensityEvidence?: string;
+    intensityClassificationVersion?: number;
     primaryBenefit?: string | null;
     epoc?: number | null;
     recoveryTimeHours?: number | null;
@@ -1974,6 +2002,9 @@ export interface CompletedTrainingEvent {
     deliveredDose?: DeliveredDose;
     modality: SessionTemplate['modality'] | 'Unknown';
     intensity: CompletedTrainingIntensity;
+    /** Issue #809: the dimension the default cost row was indexed by (session dose) when it
+     *  differs from the stimulus `intensity`. Absent means cost follows `intensity`. */
+    costIntensity?: CompletedTrainingIntensity;
     trainingEffect: number | null;
     estimatedCost: WorkoutCostProfile;
     estimatedStimulus: Partial<WorkoutStimulusProfile>;

@@ -14,7 +14,7 @@ import type {
 } from './models';
 import { EVENT_PRESETS, resolveDemandProfile } from './eventPresets';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import { formatActivityType, round, signed, type BriefWindowPreset } from './contextBrief';
+import { formatActivityType, formatIntensityCell, round, signed, type BriefWindowPreset } from './contextBrief';
 
 export const UPCOMING_CONTEXT_DAYS = 7;
 export const RECOVERY_TIMELINE_DAYS = 7;
@@ -587,7 +587,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
             const loadStr = act.activityTrainingLoad != null ? ` · Load ${round(act.activityTrainingLoad, 1)}` : '';
             const teStr = act.trainingEffectAerobic != null ? ` · Aerobic TE ${round(act.trainingEffectAerobic, 1)}` : '';
             const hrStr = act.averageHr != null ? ` · Avg HR ${act.averageHr} bpm` : '';
-            lines.push(`- Recorded training: ${typeLabel} · ${act.durationMin ?? '—'} min${loadStr}${teStr}${hrStr} · ${act.intensityTag}`);
+            lines.push(`- Recorded training: ${typeLabel} · ${act.durationMin ?? '—'} min${loadStr}${teStr}${hrStr} · ${formatIntensityCell(act)}`);
             const pSum: string[] = [];
             if (act.normalizedPower != null) pSum.push(`normalized power ${Math.round(act.normalizedPower)} W`);
             if (act.intensityFactor != null) pSum.push(`IF ${round(act.intensityFactor, 2)}`);

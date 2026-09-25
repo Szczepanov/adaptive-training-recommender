@@ -386,6 +386,28 @@ category-scoped objective is rejected (not silently skipped) when the evidence's
 modality/category is unknown, rather than the previous behavior where an absent
 `context.modality`/`context.category` bypassed the restriction entirely.
 
+### Stimulus intensity vs session cost for Garmin activities (issue #809)
+
+`candidateEventFromGarmin` indexes the two default tables by different dimensions: the
+stimulus profile (`DEFAULT_STIMULUS_BY_MODALITY`) and `CompletedTrainingEvent.intensity`
+by `intensityTag` (stimulus intensity), and the cost profile (`DEFAULT_COST_BY_MODALITY`,
+plus its catalog duration reference) by `sessionCost` (`low`→easy, `moderate`→moderate,
+`high`/`very_high`→hard). The dose row can only raise the cost row above the stimulus row,
+never lower it (`costIntensityFromGarmin`), so a measured hard stimulus with Training Effect
+below 3 keeps its pre-split hard cost. A long endurance ride thus credits aerobic stimulus while still
+charging a hard-row fatigue cost. Legacy records without `sessionCost` index both by
+`intensityTag`; an athlete `ActivityOverride.overriddenIntensity` overrides both. The
+context brief shows `intensityTag (stimulusDomain, cost …)` per activity and reports
+high-cost sessions separately from the "tagged hard" count. The adherence merge
+(`mergeAdherenceIntoGarmin`) keeps the dose-indexed row via `CompletedTrainingEvent.costIntensity`.
+
+Deliberate consequence for spacing: `last3DaysHardSessionsCount` (readiness penalty) now
+counts only high-intensity stimulus, while the optimizer's rolling hard-density cap still
+reads completed-event `systemicCost`, so a long high-dose endurance ride still counts
+toward that cap through its cost. Session cost is Training-Effect-driven only; the legacy
+"average HR >= zone-4 floor" route affects the stimulus fallback tier, not the cost row. See
+`docs/architecture/ingestion-pipeline.md` for the classification hierarchy.
+
 ### Manual strength history (default-off)
 
 `strength_sessions` is wired as the third `TrainingHistorySnapshot` source behind

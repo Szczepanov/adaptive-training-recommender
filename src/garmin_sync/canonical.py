@@ -567,7 +567,14 @@ class CanonicalActivity:
     training_effect_anaerobic: float
     average_hr: float | None
     training_load: float | None
+    # Stimulus intensity only (easy | moderate | hard), issue #809 -- not session cost.
     intensity_tag: str
+    # Issue #809 split: physiological domain, total session dose, and which evidence tier
+    # decided the stimulus. None on records built before the split (legacy semantics).
+    stimulus_domain: str | None = None
+    session_cost: str | None = None
+    intensity_evidence: str | None = None
+    intensity_classification_version: int | None = None
     running_dynamics: CanonicalRunningDynamics | None = None
     primary_benefit: str | None = None
     epoc: float | None = None

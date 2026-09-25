@@ -174,6 +174,21 @@ describe('evaluatePhysiologicalAnomaly HA3', () => {
         expect(result.persistenceDays).toBe(1);
     });
 
+    it('explains high RHR after a long easy-stimulus ride with very_high session cost (#809)', () => {
+        const longEasy = snapshot({
+            yesterdayTraining: {
+                hardActivityCount: 0, highCostActivityCount: 1, intensityClassificationVersion: 2,
+                primaryActivity: { activityId: 1, type: 'cycling', durationMin: 240, trainingEffect: 4.3, intensityTag: 'easy', sessionCost: 'very_high' },
+            },
+            last3DaysHighCostSessionsCount: 1,
+        });
+        const result = evaluate(featureSet(3, 0, 0), { recoverySnapshot: longEasy, last3DaysHardSessionsCount: 0, last3DaysHighCostSessionsCount: 1 });
+        expect(result.state).toBe('explained_recovery_strain');
+        expect(result.explanations).toContainEqual(expect.objectContaining({ kind: 'hard_training', strength: 'strong', evidence: ['YESTERDAY_HIGH_COST_SESSION'] }));
+        const onlyWithin3d = evaluate(featureSet(3, 0, 0), { recoverySnapshot: snapshot(), last3DaysHardSessionsCount: 0, last3DaysHighCostSessionsCount: 1 });
+        expect(onlyWithin3d.explanations).toContainEqual(expect.objectContaining({ kind: 'hard_training', evidence: ['HIGH_COST_SESSION_WITHIN_3D'] }));
+    });
+
     it('explains RHR-up + HRV-down after prior hard training when respiration is normal', () => {
         const hard = snapshot({
             yesterdayTraining: { hardActivityCount: 1, primaryActivity: { activityId: 1, type: 'cycling', durationMin: 60, trainingEffect: 4, intensityTag: 'hard' } },
