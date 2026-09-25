@@ -229,6 +229,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-24 Issue #746 forecast-credit parity spike**](./analysis/2026-09-24-issue-746-forecast-credit-parity.md) — Compares seven-day forecast credit aging with rolling-daily execution and records the judge-corpus footprint.
 * [**2026-09-24 Serena agent-tooling adoption review**](./analysis/2026-09-24-serena-agent-tooling-adoption-review.md) — Audits why the committed Serena setup is underused, adds semantic-navigation/worktree guidance, and records client-specific rollout plus measurement recommendations.
 * [**2026-09-24 Workout library coverage audit**](./analysis/2026-09-24-workout-library-coverage-audit.md) — Audit of the active canonical workout catalog for missing specific executable coverage, leading to the addition of a direct-practice workout for deadlifts and a maximal short-sprint workout for cycling.
+* [**2026-09-25 Issue #758 cycling quality baseline diagnostic**](./analysis/2026-09-25-issue-758-cycling-quality-diagnostic.md) — Issue #758 root-cause findings for the cycling quality baseline diagnostic.
 
 ---
 
