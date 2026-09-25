@@ -86,6 +86,9 @@ const decisionAffectingFiles = [
   // Claim selection changes the persisted recommendation audit's provenance contract.
   'app/src/engine/knowledgeLineage.ts',
   'app/src/engine/planner.ts',
+  // Weekly allocation reservations and exact-candidate ordering can change which
+  // sessions enter a persisted recommendation, even when planner.ts is unchanged.
+  'app/src/engine/weeklyAllocation.ts',
   'app/src/engine/rollingLoadBudget.ts',
   'app/src/engine/dose.ts',
   // Completed evidence changes future objective state and fatigue replay. A selectable

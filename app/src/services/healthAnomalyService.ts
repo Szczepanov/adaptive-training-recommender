@@ -119,6 +119,7 @@ export class HealthAnomalyService {
             supportingSignals: [],
             dataQuality: features?.coreSignals.map(signal => signal.dataQuality) ?? [],
             last3DaysHardSessionsCount: snapshot?.raw.last3DaysHardSessionsCount ?? 0,
+            last3DaysHighCostSessionsCount: snapshot?.raw.last3DaysHighCostSessionsCount ?? 0,
             structuredContext: {
                 authoredTravelActive,
                 authoredTravelRevision: travelState.status === 'AVAILABLE' ? travelState.revision ?? null : null,

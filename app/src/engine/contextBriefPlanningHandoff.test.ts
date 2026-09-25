@@ -35,7 +35,7 @@ No recorded sessions in this window.
 
 No check-ins in this window.
 
-## 5. Plan adherence
+## 5. Recommendation feedback (athlete responses — not plan execution)
 
 No recommendations recorded in this window.
 
@@ -197,13 +197,17 @@ function handoffInput(overrides: Partial<ContextBriefPlanningHandoffInput> = {})
         recommendations: [recommendation()],
         trainingSettings: null,
         preferences: null,
-        effectivePlanningMode: 'externally_planned',
+        // Coherent default: no session is placed today and no fallback, so the effective
+        // mode is the athlete's underlying mode, not externally_planned (ADR-0019 D-EXT).
+        effectivePlanningMode: 'evergreen',
         externalFallback: false,
         externalFallbackUncertain: false,
         eventStrategy: null,
         goals: [],
         upcomingFixedActivities: [fixedActivity()],
         upcomingPlanBlocks: [],
+        recommendationsReadable: true,
+        restDirectiveToday: null,
         upcomingExternalSessions: [{
             date: '2026-08-21',
             planId: 'p1',
@@ -261,14 +265,15 @@ describe('enhanceContextBriefForPlanning', () => {
         expect(text).toContain('means "unknown", not "none"');
     });
 
-    it('exports data freshness, resolved planning mode and the app recommendation without making it authoritative', () => {
+    it('exports data freshness, resolved planning mode and one resolved authority for the app recommendation', () => {
         const text = enhanceContextBriefForPlanning(BASE, handoffInput());
 
-        expect(text).toContain('Effective planning mode today: externally_planned');
+        expect(text).toContain('Effective planning mode today: evergreen');
         expect(text).toContain('Garmin sync timestamp 2026-08-20T05:20:00Z');
         expect(text).toContain('activities through 2026-08-20');
-        expect(text).toContain('App recommendation for 2026-08-20: train — Zone 2 ride (Cycling)');
-        expect(text).toContain('not as authority over current symptoms or tissue response');
+        expect(text).toContain('### Resolved planning authority for 2026-08-20');
+        expect(text).toContain('Authoritative session today: **Zone 2 ride (Cycling · train)** (app recommendation)');
+        expect(text).toContain('Authority order: current symptoms and safety >');
     });
 
     it('explains an authority-resolved external fallback instead of pretending the persisted mode is effective', () => {
@@ -293,9 +298,11 @@ describe('enhanceContextBriefForPlanning', () => {
         } as UserPreferences;
         const text = enhanceContextBriefForPlanning(BASE, handoffInput({ trainingSettings, preferences }));
 
-        expect(text).toContain('Sensor capabilities: power meter yes · heart-rate monitor yes · cadence data no');
+        expect(text).toContain('Power meter: configured available;');
+        expect(text).toContain('Heart-rate monitor: configured available;');
+        expect(text).toContain('Cadence: configured unavailable (authoritative);');
         expect(text).toContain('Planning preferences: recovery style active · preferred time morning · conservative bias on · extra recovery margin off');
-        expect(text).toContain('If a sensor is unknown or unavailable');
+        expect(text).toContain('If a sensor is not configured available');
     });
 
     it('adds a seven-day cross-signal timeline rather than only window averages', () => {
@@ -614,7 +621,7 @@ describe('enhanceContextBriefForPlanning', () => {
             expect(text).toContain('Recorded training: Road cycling · 65 min · Load 85 · Aerobic TE 2.9 · Avg HR 135 bpm · moderate');
             expect(text).toContain('Power summary: normalized power 195 W · IF 0.75');
             expect(text).toContain('Manual physical work: 1–3 hrs · hard effort · strain: lower back/spine, grip/forearms — "heavy yard work and soil moving"');
-            expect(text).toContain('Adherence: Followed as prescribed — "Good steady rhythm on the road"');
+            expect(text).toContain('Recommendation feedback (athlete response, not execution): reported followed as prescribed — "Good steady rhythm on the road"');
 
             // Today's Recommendation & Engine Stance
             expect(text).toContain('Mode: MODIFY');

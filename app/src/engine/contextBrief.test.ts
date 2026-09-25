@@ -563,12 +563,12 @@ describe('buildContextBrief', () => {
                 recommendation('2026-08-13'),
             ],
         }));
-        expect(text).toContain('4 recommendations · 3 answered · 1 unanswered.');
-        expect(text).toContain('- Followed as prescribed: 1');
-        expect(text).toContain('- Did something different: 1');
-        expect(text).toContain('- Skipped entirely: 1');
-        expect(text).toContain('2026-08-11: prescribed Threshold intervals (train), skipped — "work"');
-        expect(text).toContain('2026-08-12: prescribed Threshold intervals (train), did Running for 30 min');
+        expect(text).toContain('Feedback completion: 3/4 prompts answered · 1 unanswered (unknown, not skipped).');
+        expect(text).toContain('- Athlete reported followed as prescribed: 1');
+        expect(text).toContain('- Athlete reported doing something different: 1');
+        expect(text).toContain('- Athlete reported skipping: 1');
+        expect(text).toContain('2026-08-11: prescribed Threshold intervals (train), reported skipped — "work"');
+        expect(text).toContain('2026-08-12: prescribed Threshold intervals (train), reported doing Running for 30 min');
     });
 
     it('formats activity names cleanly and reports discipline volume breakdown', () => {
@@ -617,7 +617,7 @@ describe('buildContextBrief', () => {
         expect(text).toContain('No wearable data in this window.');
         expect(text).toContain('No recorded sessions in this window.');
         expect(text).toContain('No check-ins in this window.');
-        expect(text).toContain('No recommendations recorded in this window.');
+        expect(text).toContain('No app recommendations recorded in this window.');
     });
 
     it('carries no user identifier into the rendered brief', () => {

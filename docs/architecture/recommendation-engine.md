@@ -65,6 +65,150 @@ cannot import `externalSession.ts`, and `externalArchitecture.test.ts` enforces 
 boundary and the absence of any runtime import from `optimizer.ts`/`planner.ts` into
 adjudication.
 
+#### Context-brief handoff: one resolved authority per date (issue #810)
+
+The exported context brief (`contextBriefPlanningHandoff.ts`) must not hand an external
+agent the app recommendation and today's imported session as two independently actionable
+instructions. `briefPlanAuthority.ts` `resolveBriefPlanAuthority` reconciles them into one
+typed outcome. It is **not** a second resolver: it consumes the persisted adjudication
+(`engineVerdict`, falling back to the legacy mode mapping as `shadowLog.ts` does) and the
+replay provenance `recommendationAudit.externalPlan`/`externalRest`, plus the planning
+mode and fallback already resolved by `resolvePlanningContext`. It cannot change a
+recommendation, so `POLICY_VERSION` is unaffected.
+
+Authority order rendered in the brief: current symptoms and safety > the engine's
+readiness/safety adjudication > the imported (authored) session > the app's own generated
+recommendation. Fixed activities are listed as availability/load constraints, never as the
+prescription. Outcomes:
+
+| Outcome | Meaning | Authoritative today |
+|---|---|---|
+| `MATCH` | `proceed` verdict bound to the exact placed occurrence (plan, revision, session) | imported session |
+| `DOSE_MODIFIED` | `scale` verdict on that occurrence; engine rationale recorded as the override | imported session at reduced dose |
+| `SESSION_REPLACED_BY_GATE` | `defer`/`skip`; engine rationale and displaced occurrence recorded | app recommendation |
+| `EVENT_DAY` | `isEvent` session (D-EVENT: advice, not permission) | imported event |
+| `AUTHORED_REST` | audit carries an authored rest directive that the athlete did not override (ADR-0035); an override (`isExternalRestOverride`) is reported as the app recommendation with the override stated | rest |
+| `EXTERNAL_PLAN_FALLBACK` | confirmed D-EXT fallback | app recommendation, labelled |
+| `NO_AUTHORED_SESSION` | no imported plan governs today; imported sessions placed while the effective mode is not `externally_planned` are listed as non-governing context (ADR-0017) | app recommendation |
+| `EXTERNAL_PLAN_UNREADABLE` | today's plan state could not be read | unknown (fails closed) |
+| `AUTHORED_UNADJUDICATED` | session placed, no app decision yet | imported session, not readiness-checked |
+| `CONFLICT_UNRESOLVED` | decision not bound to the placed occurrence, bound to another revision, bound to an imported session no longer placed today, rest provenance that disagrees with the active plan's current rest directive for the date (`externalRestContextForDate`; missing, other revision or other directive, in either direction), advisory on a non-event, fallback with a visible session, or today's recommendation unreadable while a session is placed | none — the agent is told to ask |
+
+The block is rendered in section 0 of the planning handoff (ahead of `## 1. Constraints`
+and all telemetry) and at the top of the morning brief. Imported sessions later in the
+7-day horizon are annotated as keeping their authored authority on their own dates. Today's
+authored prescription steps are withheld unless the outcome is `MATCH`, `EVENT_DAY` or
+`AUTHORED_UNADJUDICATED`; `DOSE_MODIFIED` states the persisted execution dose. The primary
+session on a multi-session day follows `placedSessionForDate` ordering (priority, then id).
+
+#### Context-brief export purposes (issue #811)
+
+The brief is exported for one of three explicit purposes (`contextBrief.ts` `BriefPurpose`);
+the UI presets map onto them through `briefPurposeFor` (`daily` → `morning`, `full` →
+`planning`, `diagnostic` → `diagnostic`). Purpose selects what is rendered, never what is
+fetched: `planning` and `diagnostic` share the same lookback and `ContextBriefService.build`
+issues identical reads for both.
+
+- `morning` — `buildMorningCoachBrief`: today's closed loop only; no multi-day plan.
+- `planning` — sections in decision-authority order (section 0 authority/data currency,
+  constraints, current intent & goals, recovery, completed load with a bounded one-line
+  telemetry digest per activity, recommendation feedback, upcoming commitments, compact long-term goals,
+  handoff contract). Candidate median/MAD baselines and the respiration candidate are
+  omitted with a pointer to the diagnostic export; vendor composites are grouped as
+  secondary context; goals keep target, timing and description but omit the event demand
+  vector; the handoff instructions do not reference the omitted fields. Lap count does not
+  change its size.
+- `diagnostic` — the full data-source-ordered brief with per-lap/per-zone telemetry,
+  every observation-only candidate baseline and full goal demand vectors. It states that
+  none of this detail has recommendation authority. It is also the pure builder's default
+  so a caller that names no purpose never silently loses evidence.
+
+No purpose alters a recommendation, so `POLICY_VERSION` is unaffected.
+
+#### Recovery evidence synthesis (issue #812)
+
+The recovery section of the planning/diagnostic brief, and section 2 of the morning brief,
+open with a deterministic synthesis (`contextBriefRecoverySynthesis.ts`
+`synthesizeRecoveryEvidence` / `renderRecoveryEvidenceSynthesis`). It is **explanatory
+observability support, not a readiness authority**: no engine module imports it, it
+produces no score, and `rules.ts` `evaluateReadinessAndSafetyEnvelope` remains the sole
+decision authority. `POLICY_VERSION` is unaffected.
+
+- Evidence is grouped into four independent families that each cast at most one vote:
+  athlete-reported state (listed first), HRV, resting HR and sleep score. Objective
+  families compare the as-of-date snapshot's 7-day delta with the athlete's 28-day
+  variability, floored exactly like the live engine; within the band reads as "at
+  baseline".
+- Vendor composites (Body Battery, device stress, Training Readiness, HRV status) are
+  shown as correlated context and never vote, so removing them cannot change the pattern.
+- Pattern: `CONVERGENT_ADVERSE` (2+ adverse, none reassuring), `CONVERGENT_REASSURING`
+  (2+ reassuring, none adverse), `MIXED`, or `INSUFFICIENT` (fewer than two judged
+  families). A single adverse objective (wearable) signal is labelled isolated; an adverse athlete-reported family never is.
+- Each objective family is dated by `source.metricDates` (`hrv`/`restingHr`/`sleep`,
+  falling back to the snapshot date, as `dataConfidence.ts` does); a provider D-1
+  fallback is unavailable and printed with its true date. Respiration is listed as
+  non-voting context (production respiration scoring is off).
+- Implications depend on which families are adverse: two or more are named; an adverse
+  athlete-reported family meets the engine's own subjective triggers and is never called
+  isolated; only a single adverse objective signal is described as isolated. In every
+  case the text defers to the engine's readiness/safety evaluation.
+- A stale (not the as-of date) or missing snapshot, an immature baseline, implausible
+  values (`dataConfidence.ts` `PHYSIOLOGICAL_BOUNDS`) or a missing check-in make the
+  family unavailable and are stated — never read as normal recovery.
+- Pain, illness, red flags and non-normal tissue response render first as dominant safety
+  facts that override the synthesis. Reassuring evidence is explicitly stated never to
+  justify raising volume or intensity above authored intent.
+- The subjective adverse band mirrors the `rules.ts` subjective triggers that move a day
+  off `train`, and the copied HRV/RHR/sleep variability floors and sleep floor 50 mirror
+  `rules.ts`; `contextBriefRecoverySynthesis.test.ts` pins both behaviourally against the live
+  evaluator. Its other bands are display constants without decision authority (ADR-0033).
+
+#### Configured sensors vs observed telemetry (issue #816)
+
+Section 0 of every planning/diagnostic handoff exports sensors as two separate facts
+(`contextBriefSensorEvidence.ts` `renderSensorEvidence`):
+
+- **Configured capability** — resolved per sensor exactly as prescriptions do
+  (`workouts/deviceCapabilities.ts` `resolveDeviceCapabilities`: `TrainingSettings.capabilities`
+  first, then the Preferences-UI `performanceProfile.capabilities`), the only authority on
+  guaranteed future availability. An explicit `false` stays unavailable even when
+  historical activities contain the signal; unreadable settings are stated as such.
+- **Observed recent telemetry** — a read-only summary over canonical
+  `NormalizedGarminActivity` fields in a bounded recent horizon (count and latest date per
+  channel; `ContextBriefService.build` fetches activities over at least that horizon; zone
+  arrays count only with recorded seconds; cycling power (`isGarminCyclingPowerActivity`)
+  distinguished from running power, which is read only from running dynamics; HR with external-strap
+  provenance when present; observations past a staleness cutoff are marked `STALE`).
+  Cadence is reported as not observable because canonical activities do not carry it. No
+  activities in the horizon is reported as unavailable provenance, not as "no sensor".
+
+Observation is evidence, not ownership: it never writes back to settings and never
+promotes an unknown/unavailable configuration. The handoff keeps requiring an executable
+RPE/feel/HR fallback whenever a sensor is not configured available. Presentation only —
+`POLICY_VERSION` is unaffected.
+
+#### Recommendation feedback vs plan execution (issue #815)
+
+The section formerly titled "Plan adherence" is now **Recommendation feedback**
+(`contextBriefFeedback.ts` `renderRecommendationFeedback`; the morning brief's one-line
+counterpart is `renderRecommendationFeedbackLine`). It reports only athlete answers to the
+app's adherence prompt (`DailyRecommendation.adherence`) for **app recommendations**:
+feedback completion (`answered/total`), and athlete-reported followed / different / skipped.
+
+- An unanswered prompt is "unknown, not skipped"; only an explicit `adherence.skipped`
+  is a skip, and it stays one regardless of activity data. A skip is never also counted as
+  followed. "No app recommendation recorded" is distinct from "not answered".
+- Imported/external-plan sessions are not counted in these figures.
+- **Plan execution is not reconciled in the export.** ADR-0034's canonical
+  `PerformedTrainingOccurrence` reconciles performed sources with each other; planned-vs-performed
+  history diff and FIT workout-identity scoring (TO4/TO5, #646) are shadow-only. The brief
+  therefore states the gap — a missing synced activity is not proof of non-execution — and
+  refers the reader to the completed-training section instead of inferring execution from
+  feedback or telemetry. When #646 grants live authority, execution states should come from
+  that canonical model rather than a brief-local matcher.
+
+Presentation only — `POLICY_VERSION` is unaffected.
+
 ### Authored occurrence authority (`authoredSessionGates.ts`, ADR-0023)
 
 An active `replace_recommendation` occurrence is resolved at the `Home.tsx` composition
@@ -400,6 +544,28 @@ because `deriveObjectiveCreditFromProfile` now **fails closed**: a modality- or
 category-scoped objective is rejected (not silently skipped) when the evidence's
 modality/category is unknown, rather than the previous behavior where an absent
 `context.modality`/`context.category` bypassed the restriction entirely.
+
+### Stimulus intensity vs session cost for Garmin activities (issue #809)
+
+`candidateEventFromGarmin` indexes the two default tables by different dimensions: the
+stimulus profile (`DEFAULT_STIMULUS_BY_MODALITY`) and `CompletedTrainingEvent.intensity`
+by `intensityTag` (stimulus intensity), and the cost profile (`DEFAULT_COST_BY_MODALITY`,
+plus its catalog duration reference) by `sessionCost` (`low`→easy, `moderate`→moderate,
+`high`/`very_high`→hard). The dose row can only raise the cost row above the stimulus row,
+never lower it (`costIntensityFromGarmin`), so a measured hard stimulus with Training Effect
+below 3 keeps its pre-split hard cost. A long endurance ride thus credits aerobic stimulus while still
+charging a hard-row fatigue cost. Legacy records without `sessionCost` index both by
+`intensityTag`; an athlete `ActivityOverride.overriddenIntensity` overrides both. The
+context brief shows `intensityTag (stimulusDomain, cost …)` per activity and reports
+high-cost sessions separately from the "tagged hard" count. The adherence merge
+(`mergeAdherenceIntoGarmin`) keeps the dose-indexed row via `CompletedTrainingEvent.costIntensity`.
+
+Deliberate consequence for spacing: `last3DaysHardSessionsCount` (readiness penalty) now
+counts only high-intensity stimulus, while the optimizer's rolling hard-density cap still
+reads completed-event `systemicCost`, so a long high-dose endurance ride still counts
+toward that cap through its cost. Session cost is Training-Effect-driven only; the legacy
+"average HR >= zone-4 floor" route affects the stimulus fallback tier, not the cost row. See
+`docs/architecture/ingestion-pipeline.md` for the classification hierarchy.
 
 ### Manual strength history (default-off)
 
@@ -925,15 +1091,28 @@ dose, injury and spacing for one forecast date. The greedy day loop and the allo
 call it, so the allocator is not a second rules engine: it never re-implements
 `PROJECTED_FATIGUE_*` filtering or `rankCandidates` acceptance.
 
+**Occurrence derivation follows the live forecast state.** Required-role occurrences are
+not a static expansion of the event-plan coverage set. The planner first applies the
+confirmed/provisional seed selections and any projected coverage already accumulated in the
+current strip, then `deriveRequiredRoleOccurrences` creates only the remaining minimum roles
+where `minimumSessions > completedSessions + projectedSessions`. Consequently two scenarios
+with the same event and empty initial history can legitimately expose different remaining
+occurrences after their readiness/re-entry paths select different seed or earlier projected
+sessions. This distinction is coverage-ledger state, not hidden fixture history and not an
+allocator candidate-search decision.
+
 **Bounded stateful search.** `resolveWeeklyRoleReservations` is a deterministic
 backtracking search over required role occurrences only. It enumerates exact eligible
 date/template candidates from the least-loaded (root) state, then re-proves every tentative
 assignment against the *actual* projected fatigue/history transition of the assignments
 accumulated so far -- so two dates that are individually feasible but conflict after the
 first pick cannot both be reserved. Its one `WeeklyAllocationSearchBudget` is seven dates,
-14 occurrences, four canonically ordered candidates per occurrence and 1,024
-state-transition nodes. Reaching a cap returns the best-known jointly feasible partial
-allocation and marks the remainder `unresolved_search_budget` -- never a safety miss.
+14 occurrences, four exact date/template candidates per occurrence and 1,024
+state-transition nodes. Within each occurrence, it keeps the first candidate from each
+eligible date in date/template order, then fills spare slots with same-date alternatives.
+If more than four dates are eligible, the earliest four are kept. Reaching a cap returns
+the best-known jointly feasible partial allocation and marks the remainder
+`unresolved_search_budget` -- never a safety miss.
 Wall-clock time is not a semantic cut-off; p95 ≤50 ms / p99 ≤100 ms on the live-sized
 fixture is an operational gate only.
 

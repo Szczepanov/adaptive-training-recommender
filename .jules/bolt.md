@@ -68,3 +68,7 @@
 ## 2026-09-24 - Targeted Firestore filtering for single-entity prior revision lookups
 **Learning:** Fetching all documents for a partition (e.g. `getOccurrencesForDate`) to locate a single matching entity (e.g. prior revision of an external plan session) forces Firestore to transmit and parse irrelevant documents. Constructing a targeted query with exact equality constraints (`date`, `state`, `externalPlanRef.planId`, `externalPlanRef.sessionId`) reduces network payload and document parsing overhead by over 60%.
 **Action:** Use specific Firestore `where()` clauses for known schema fields when searching for specific sub-entities rather than fetching whole daily collections.
+
+## 2026-09-25 - Avoid O(N) array scans during static object initialization
+**Learning:** Initializing static objects (like `EVERGREEN_PACKING_COVERAGE`) by repeatedly calling `.find()` on the same configuration array (`EVERGREEN_GENERAL_COVERAGE_SET.coverage`) incurs redundant O(N) operations at import time.
+**Action:** When extracting multiple values from a small or static array to build a new data structure at module level, construct a temporary O(1) `Map` (`new Map(array.map(item => [item.key, item]))`) and use `.get()` instead of calling `.find()` repeatedly.

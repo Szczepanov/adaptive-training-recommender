@@ -117,14 +117,22 @@ describe('ContextBriefService', () => {
 
         it('widens the activity fetch the same way, but keeps recommendations scoped to the render window', async () => {
             await new ContextBriefService().build('u1', AS_OF, 2);
-            expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-08-09', '2026-08-16');
+            // #816: activities reach back over the 28-day sensor-evidence horizon (2026-07-19).
+            expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-07-19', '2026-08-16');
             expect(services.getRecommendationsInRange).toHaveBeenCalledWith('u1', '2026-08-14', '2026-08-16');
         });
 
         it('does not widen the fetch for the full 14-day window, since it already exceeds the timeline horizon', async () => {
             await new ContextBriefService().build('u1', AS_OF, 14);
             expect(services.getRecoverySnapshotState).toHaveBeenCalledTimes(14);
-            expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-08-02', '2026-08-16');
+            expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-07-19', '2026-08-16');
+        });
+
+        it('pins the activity fetch to the 28-day sensor-evidence horizon and keeps a longer window (#816)', async () => {
+            await new ContextBriefService().build('u1', AS_OF, 28);
+            expect(services.getActivitiesInRange).toHaveBeenLastCalledWith('u1', '2026-07-19', '2026-08-16');
+            await new ContextBriefService().build('u1', AS_OF, 42);
+            expect(services.getActivitiesInRange).toHaveBeenLastCalledWith('u1', '2026-07-05', '2026-08-16');
         });
 
         it('keeps an activity outside the render window in the fixed recovery timeline, but excludes its detail telemetry from the retrospective appendix', async () => {
@@ -191,6 +199,42 @@ describe('ContextBriefService', () => {
             const full = await new ContextBriefService().build('u1', AS_OF, 14);
             expect(daily.preset).toBe('daily');
             expect(full.preset).toBe('full');
+        });
+    });
+
+    describe('export purpose (#811)', () => {
+        const telemetryRide = {
+            activityId: 'a1', date: AS_OF, type: 'cycling', durationMin: 60,
+            trainingEffectAerobic: 3, trainingEffectAnaerobic: 0.4, averageHr: 140,
+            activityTrainingLoad: 100, intensityTag: 'moderate',
+            laps: Array.from({ length: 50 }, (_, i) => ({ lapIndex: i + 1, durationSeconds: 60, averagePowerWatts: 200 + i })),
+        };
+
+        async function callsFor(preset: 'full' | 'diagnostic'): Promise<unknown[][][]> {
+            vi.clearAllMocks();
+            await new ContextBriefService().build('u1', AS_OF, 14, preset);
+            return Object.values(services).map(mock => mock.mock.calls);
+        }
+
+        it('reports the purpose each compatible preset maps to', async () => {
+            const service = new ContextBriefService();
+            expect((await service.build('u1', AS_OF, 2, 'daily')).purpose).toBe('morning');
+            expect((await service.build('u1', AS_OF, 14, 'full')).purpose).toBe('planning');
+            expect((await service.build('u1', AS_OF, 14, 'diagnostic')).purpose).toBe('diagnostic');
+        });
+
+        it('diagnostic reads exactly the same sources and ranges as planning', async () => {
+            expect(await callsFor('diagnostic')).toEqual(await callsFor('full'));
+        });
+
+        it('planning summarizes laps while diagnostic keeps the per-lap table', async () => {
+            services.getActivitiesInRange.mockResolvedValue({ status: 'AVAILABLE', data: [telemetryRide], revision: null });
+            const planning = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+            const diagnostic = await new ContextBriefService().build('u1', AS_OF, 14, 'diagnostic');
+            expect(planning.text).toContain('50 laps');
+            expect(planning.text).not.toContain('| Lap | Duration |');
+            expect(diagnostic.text).toContain('### Detailed activity telemetry');
+            expect(diagnostic.text).toContain('| 50 |');
         });
     });
 

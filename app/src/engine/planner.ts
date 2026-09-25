@@ -1533,14 +1533,20 @@ function accumulateNewDrops(
     freshDrops: DroppedContributorObjective[],
 ): void {
     const dropKey = (d: DroppedContributorObjective) => `${d.eventId}:${d.objectiveKey}`;
-    const freshKeys = new Set(freshDrops.map(dropKey));
+    const nextDropped = new Set<string>();
 
-    freshDrops.forEach(drop => {
-        if (!currentlyDropped.has(dropKey(drop))) accumulated.push(drop);
-    });
+    for (const drop of freshDrops) {
+        const key = dropKey(drop);
+        nextDropped.add(key);
+        if (!currentlyDropped.has(key)) {
+            accumulated.push(drop);
+        }
+    }
 
     currentlyDropped.clear();
-    freshKeys.forEach(key => currentlyDropped.add(key));
+    for (const key of nextDropped) {
+        currentlyDropped.add(key);
+    }
 }
 
 export function generateWeekAheadPlan(

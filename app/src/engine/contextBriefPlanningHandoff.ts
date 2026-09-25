@@ -1,3 +1,4 @@
+import { renderRecommendationFeedbackLine } from './contextBriefFeedback';
 import type {
     AuthoredPlanBlock,
     DailyRecommendation,
@@ -12,9 +13,32 @@ import type {
     UserGoal,
     UserPreferences,
 } from './models';
-import { EVENT_PRESETS, resolveDemandProfile } from './eventPresets';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import { formatActivityType, round, signed, type BriefWindowPreset } from './contextBrief';
+import {
+    formatActivityType,
+    formatIntensityCell,
+    round,
+    signed,
+} from './contextBrief';
+import {
+    briefPurposeFor,
+    findSectionHeading,
+    renderCompactGoalSpecifics,
+    renderGoalSpecifics,
+    renderUseInstructions,
+    SECTION_TITLE,
+    type BriefPurpose,
+    type BriefWindowPreset,
+} from './contextBriefPurpose';
+import {
+    renderBriefPlanAuthority,
+    resolveBriefPlanAuthority,
+    type BriefPlanAuthority,
+    type BriefPlanAuthorityOutcome,
+    type BriefRestDirective,
+} from './briefPlanAuthority';
+import { renderSensorEvidence } from './contextBriefSensorEvidence';
+import { renderRecoveryEvidenceSynthesis, synthesizeRecoveryEvidence } from './contextBriefRecoverySynthesis';
 
 export const UPCOMING_CONTEXT_DAYS = 7;
 export const RECOVERY_TIMELINE_DAYS = 7;
@@ -61,8 +85,20 @@ export interface ContextBriefPlanningHandoffInput {
     upcomingFixedActivities: readonly FixedActivity[];
     upcomingPlanBlocks: readonly AuthoredPlanBlock[];
     upcomingExternalSessions: readonly UpcomingExternalPlanSession[];
+    /** False when the recommendation read failed; a missing recommendation is then unknown. */
+    recommendationsReadable: boolean;
+    /** Today's authored rest directive from the active imported plan, if any. */
+    restDirectiveToday: BriefRestDirective | null;
     unavailableSources: readonly string[];
     preset?: BriefWindowPreset;
+    /** Issue #811. When absent it is derived from `preset`; an absent preset keeps the
+     * legacy full-detail rendering (`diagnostic`). */
+    purpose?: BriefPurpose;
+}
+
+function resolvePurpose(input: ContextBriefPlanningHandoffInput): BriefPurpose {
+    if (input.purpose) return input.purpose;
+    return input.preset ? briefPurposeFor(input.preset) : 'diagnostic';
 }
 
 function latestByDate<T extends { date: string }>(items: readonly T[]): T | null {
@@ -78,21 +114,39 @@ function compactText(value: string): string {
     return value.replace(/\s+/g, ' ').trim();
 }
 
-function yesNoUnknown(value: boolean | undefined): string {
-    if (value === true) return 'yes';
-    if (value === false) return 'no';
-    return 'unknown';
+function latestRecommendationFor(recommendations: readonly DailyRecommendation[], date: string): DailyRecommendation | null {
+    return [...recommendations]
+        .filter(item => item.date === date)
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null;
 }
 
-function renderDataHandoff(input: ContextBriefPlanningHandoffInput): string {
+/** Issue #810: one reconciled authority statement for the planning date, consumed by both
+ * the planning handoff and the morning brief so neither exports two independently
+ * actionable sessions for the same day. */
+function resolveTodayAuthority(input: ContextBriefPlanningHandoffInput): { authority: BriefPlanAuthority; block: string } {
+    const recommendation = latestRecommendationFor(input.recommendations, input.asOfDate);
+    const authority = resolveBriefPlanAuthority({
+        asOfDate: input.asOfDate,
+        effectivePlanningMode: input.effectivePlanningMode,
+        externalFallback: input.externalFallback,
+        externalFallbackUncertain: input.externalFallbackUncertain,
+        importedSessionsToday: input.upcomingExternalSessions.filter(item => item.date === input.asOfDate),
+        recommendationToday: recommendation,
+        checkinToday: input.checkins.find(item => item.date === input.asOfDate) ?? null,
+        fixedActivitiesToday: input.upcomingFixedActivities,
+        recommendationsReadable: input.recommendationsReadable,
+        restDirectiveToday: input.restDirectiveToday,
+    });
+    return { authority, block: renderBriefPlanAuthority(authority, input.asOfDate, recommendation) };
+}
+
+type TodayAuthority = ReturnType<typeof resolveTodayAuthority>;
+
+function renderDataHandoff(input: ContextBriefPlanningHandoffInput, today: TodayAuthority): string {
     const latestSnapshot = latestByDate(input.snapshots);
     const latestCheckin = latestByDate(input.checkins);
     const currentCheckin = input.checkins.find(item => item.date === input.asOfDate) ?? null;
     const todayActivities = input.activities.filter(item => item.date === input.asOfDate);
-    const todayRecommendation = [...input.recommendations]
-        .filter(item => item.date === input.asOfDate)
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null;
-
     const modeDetail = input.externalFallback
         ? (input.externalFallbackUncertain
             ? `${input.effectivePlanningMode} (external-plan fallback today: UNCONFIRMED — today's external plan schedule could not be read, so this may reflect an unreadable session rather than a confirmed absence)`
@@ -109,14 +163,7 @@ function renderDataHandoff(input: ContextBriefPlanningHandoffInput): string {
         `- Effective planning mode today: ${modeDetail}.`,
     ];
 
-    if (input.trainingSettings) {
-        const capabilities = input.trainingSettings.capabilities;
-        lines.push(
-            `- Sensor capabilities: power meter ${yesNoUnknown(capabilities?.powerMeter)} · `
-            + `heart-rate monitor ${yesNoUnknown(capabilities?.heartRateMonitor)} · `
-            + `cadence data ${yesNoUnknown(capabilities?.cadenceData)}.`,
-        );
-    }
+    lines.push(...renderSensorEvidence(input.trainingSettings, input.preferences, input.activities, input.asOfDate));
     if (input.preferences) {
         const margin = input.preferences.extraRecoveryMargin === undefined
             ? 'not set'
@@ -166,14 +213,14 @@ function renderDataHandoff(input: ContextBriefPlanningHandoffInput): string {
         lines.push('- No activity record is currently dated to the planning date. Same-day Garmin activity can lag until a post-session sync, so this is not proof that no training occurred.');
     }
 
-    if (todayRecommendation) {
-        lines.push(`- App recommendation for ${input.asOfDate}: ${todayRecommendation.mode} — ${todayRecommendation.templateTitle} (${todayRecommendation.modality}). Treat this as one planning input, not as authority over current symptoms or tissue response.`);
-    }
-
     if (input.unavailableSources.length > 0) {
         lines.push('');
         lines.push(`> **DATA INCOMPLETE:** could not reliably read: ${input.unavailableSources.join('; ')}. Absence from the affected sections means "unknown", not "none". Do not fill those gaps with assumptions.`);
     }
+
+    // The resolved authority block precedes all descriptive telemetry: this handoff is
+    // spliced in ahead of `## 1. Constraints`.
+    lines.push('', today.block);
 
     return lines.join('\n');
 }
@@ -256,38 +303,6 @@ function renderRecoveryTimeline(input: ContextBriefPlanningHandoffInput): string
     return lines.join('\n');
 }
 
-function renderGoalSpecifics(goals: readonly UserGoal[]): string {
-    const lines: string[] = [];
-    for (const goal of goals.filter(item => item.status === 'active')) {
-        const details: string[] = [];
-        if (goal.targetOutcome) details.push(`success: ${compactText(goal.targetOutcome)}`);
-        if (goal.targetMetric && goal.targetValue !== null && goal.targetValue !== undefined) {
-            details.push(`target: ${goal.targetMetric} ${goal.targetValue}${goal.targetUnit ? ` ${goal.targetUnit}` : ''}`);
-        }
-        if (goal.eventCategory) {
-            const preset = EVENT_PRESETS[goal.eventCategory].find(item => item.id === goal.eventPreset)
-                ?? EVENT_PRESETS[goal.eventCategory][0];
-            const demand = resolveDemandProfile(goal.eventCategory, goal.eventPreset);
-            details.push(`event: ${preset.label} (${goal.eventCategory}, preset ${preset.id})`);
-            details.push(
-                `demand 0–1: endurance ${demand.aerobicEndurance} · threshold ${demand.thresholdPower} · `
-                + `VO2 ${demand.vo2MaxPower} · repeated surges ${demand.repeatedSurges} · sprint ${demand.sprintPower} · `
-                + `fatigue resistance ${demand.fatigueResistance} · neuromuscular ${demand.neuromuscular}`,
-            );
-        }
-        if (goal.timing) {
-            const timing = goal.timing.confirmedDate
-                ? `confirmed ${goal.timing.confirmedDate}`
-                : `window ${goal.timing.earliestDate}–${goal.timing.latestDate}, planning date ${goal.timing.planningDate}`;
-            details.push(`timing: ${timing}`);
-        }
-        if (goal.description) details.push(`description: ${compactText(goal.description)}`);
-        if (details.length > 0) lines.push(`- **${goal.title}** — ${details.join(' · ')}`);
-    }
-    if (lines.length === 0) return '';
-    return ['### Goal specifics relevant to planning', '', ...lines].join('\n');
-}
-
 function renderPrescriptionStep(step: ExternalPrescriptionStep): string {
     const dose: string[] = [];
     if (step.sets !== undefined) dose.push(`${step.sets} set${step.sets === 1 ? '' : 's'}`);
@@ -303,10 +318,14 @@ function renderPrescriptionStep(step: ExternalPrescriptionStep): string {
     return dose.length > 0 ? `${step.name}: ${dose.join(' · ')}` : step.name;
 }
 
-function renderImportedPrescriptions(sessions: readonly UpcomingExternalPlanSession[]): string[] {
+function renderImportedPrescriptions(sessions: readonly UpcomingExternalPlanSession[], asOfDate: string, todayOutcome: BriefPlanAuthorityOutcome): string[] {
     if (sessions.length === 0) return [];
     const lines: string[] = ['', 'Imported-session prescription detail:'];
     for (const session of sessions) {
+        if (session.date === asOfDate && !PRESCRIPTION_SAFE_OUTCOMES.has(todayOutcome)) {
+            lines.push(`- **${session.date} — ${session.title}:** authored steps withheld for today (${todayOutcome}); follow the resolved planning authority block, not the authored dose.`);
+            continue;
+        }
         lines.push(`- **${session.date} — ${session.title}:** ${compactText(session.prescription.summary)}`);
         for (const step of session.prescription.steps ?? []) {
             lines.push(`  - ${renderPrescriptionStep(step)}`);
@@ -315,7 +334,12 @@ function renderImportedPrescriptions(sessions: readonly UpcomingExternalPlanSess
     return lines;
 }
 
-function renderUpcoming(input: ContextBriefPlanningHandoffInput): string {
+const PRESCRIPTION_SAFE_OUTCOMES: ReadonlySet<BriefPlanAuthorityOutcome> = new Set<BriefPlanAuthorityOutcome>(['MATCH', 'EVENT_DAY', 'AUTHORED_UNADJUDICATED']);
+/** Outcomes where today's recommendation IS the adjudicated imported session (synthetic
+ * shim), so it is the authoritative prescription, not mere engine context. */
+const RECOMMENDATION_IS_IMPORTED_SESSION: ReadonlySet<BriefPlanAuthorityOutcome> = new Set<BriefPlanAuthorityOutcome>(['MATCH', 'DOSE_MODIFIED']);
+
+function renderUpcoming(input: ContextBriefPlanningHandoffInput, today: TodayAuthority): string {
     const endDate = addDaysToLocalDateString(input.asOfDate, UPCOMING_CONTEXT_DAYS - 1);
     const fixed = input.upcomingFixedActivities
         .filter(item => !item.isCompleted && item.date >= input.asOfDate && item.date <= endDate)
@@ -350,13 +374,16 @@ function renderUpcoming(input: ContextBriefPlanningHandoffInput): string {
         });
     const visibleExternalSessions = input.upcomingExternalSessions
         .filter(item => item.date >= input.asOfDate && item.date <= endDate);
+    const todayOutcome = today.authority.outcome;
     const external = visibleExternalSessions.map(item => ({
         date: item.date,
         source: `Imported plan: ${item.planTitle}`,
         title: item.title,
         dose: `${item.durationMin}${item.durationMax !== item.durationMin ? `–${item.durationMax}` : ''} min · ${item.intensity}`,
         authority: `${item.priority} · ${item.flexibility}${item.moved ? ' · moved' : ''}${item.isEvent ? ' · EVENT' : ''}`,
-        notes: `revision ${item.revision}`,
+        notes: item.date === input.asOfDate
+            ? `revision ${item.revision} · today: see resolved planning authority (${todayOutcome})`
+            : `revision ${item.revision} · authored authority on its date, subject to that day's readiness/safety check`,
     }));
     const rows = [...fixed, ...travel, ...external].sort((a, b) => a.date.localeCompare(b.date) || a.source.localeCompare(b.source));
 
@@ -384,36 +411,8 @@ function renderUpcoming(input: ContextBriefPlanningHandoffInput): string {
     for (const row of rows) {
         lines.push(`| ${row.date} | ${row.source} | ${row.title} | ${row.dose} | ${row.authority} | ${row.notes || '—'} |`);
     }
-    lines.push(...renderImportedPrescriptions(visibleExternalSessions));
+    lines.push(...renderImportedPrescriptions(visibleExternalSessions, input.asOfDate, todayOutcome));
     return lines.join('\n');
-}
-
-function renderUseInstructions(): string {
-    return [
-        '## 8. How to use this handoff',
-        '',
-        '- Treat the brief as **state/context**, not as a request to automatically create a plan. Answer the user\'s actual question first.',
-        '- For **today**, current illness/pain/tissue response and current-day availability outrank favorable wearable metrics. A green wearable day does not justify overriding a local warning signal.',
-        '- **Day 1 of a new block is not a blank slate.** Cross-check it against the most recent rows in the completed-training table before finalizing it — a session scheduled for today or tomorrow that duplicates one already completed the day of or immediately before the brief\'s date needs an explicit adjustment (lower end of the range, different modality, or rest), not a repeat of the same slot.',
-        '- For **future days**, preserve the intended purpose and hard/easy spacing of key sessions. Do not pre-emptively downgrade a future quality day merely because the preceding planned work may create normal fatigue; reassess that day when current data exists.',
-        '- Favorable recovery metrics may support proceeding with the intended dose, but are not a reason by themselves to add volume or intensity beyond the plan.',
-        '- Treat respiration robust statistics and the observation-only median/MAD fields as context for pattern recognition, not independent additive penalties.',
-        '- Respect fixed activities, travel scaling blocks and imported-plan sessions above. If a change is warranted, explain which constraint or new evidence justifies it.',
-        '- Honor recorded sensor capabilities. If a sensor is unknown or unavailable, do not make the session depend solely on that sensor; provide an executable RPE/HR/feel alternative as appropriate.',
-        '- Prefer dated/current records when information conflicts. Explicitly call out missing or stale data instead of assuming normality.',
-        '',
-        '### If the user asks for an importable schedule',
-        '',
-        'Use this exact day-block format so it remains compatible with 1-click plan import:',
-        '```markdown',
-        '### Day YYYY-MM-DD: <Session Name>',
-        '- Modality: <Cycling | Running | Strength | Mobility | Field | Cross Training>',
-        '- Duration: <minutes> min',
-        '- Intensity: <easy | moderate | hard>',
-        '- Objectives: <zone2 aerobic | threshold quality | surge repeatability | vo2 max | strength maintenance | strength development | race specific endurance> (or omit if recovery)',
-        '- Description: <Interval structure, target power/HR zones, or workout instructions>',
-        '```',
-    ].join('\n');
 }
 
 function renderMorningCoachInstructions(): string[] {
@@ -422,6 +421,7 @@ function renderMorningCoachInstructions(): string[] {
         '',
         '- Treat this brief as state/context for your ongoing morning conversation. Answer the athlete\'s actual question first.',
         '- Acknowledge today\'s recovery metrics, check-in scores, and yesterday\'s debrief (flagging any notable strain deltas, soreness, or fatigue from manual labor).',
+        '- Today\'s authoritative session is the one named in *Resolved planning authority*; do not choose between, or merge, the app recommendation and an imported session. If it is UNRESOLVED or UNKNOWN, ask the athlete.',
         '- Review today\'s recommended session against how the athlete feels, their available time, and any sore areas. Confirm or suggest practical fine-tuning (e.g. cadence emphasis, intensity ceiling).',
         '- Provide concrete execution guidance (power/HR zones, warmup emphasis for reported aches).',
         '- Keep tomorrow\'s planned session in mind so today appropriately sets up the week.',
@@ -451,12 +451,9 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
 
     const todayCheckin = input.checkins.find(c => c.date === targetDate);
     const yesterdayActivities = input.activities.filter(a => a.date === yesterdayDate);
-    const todayRecommendation = [...input.recommendations]
-        .filter(r => r.date === targetDate)
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null;
-    const yesterdayRecommendation = [...input.recommendations]
-        .filter(r => r.date === yesterdayDate)
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null;
+    const todayRecommendation = latestRecommendationFor(input.recommendations, targetDate);
+    const yesterdayRecommendation = latestRecommendationFor(input.recommendations, yesterdayDate);
+    const todayAuthority = resolveTodayAuthority(input);
 
     const settings = input.trainingSettings;
 
@@ -470,6 +467,8 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
     if (input.unavailableSources.length > 0) {
         lines.push('', `> **DATA INCOMPLETE:** could not reliably read: ${input.unavailableSources.join('; ')}. Absence from affected sections means "unknown", not "none".`);
     }
+
+    lines.push('', todayAuthority.block);
 
     // 1. Today's Status & Check-in
     lines.push('', '## 1. Today\'s Status & Check-in', '');
@@ -540,6 +539,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
 
     // 2. Overnight Recovery (Wearable)
     lines.push('', '## 2. Overnight Recovery (Wearable)', '');
+    lines.push(...renderRecoveryEvidenceSynthesis(synthesizeRecoveryEvidence({ asOfDate: targetDate, snapshots: input.snapshots, checkins: input.checkins })), '');
     if (activeSnapshot) {
         const raw = activeSnapshot.raw;
         const der = activeSnapshot.derived;
@@ -587,7 +587,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
             const loadStr = act.activityTrainingLoad != null ? ` · Load ${round(act.activityTrainingLoad, 1)}` : '';
             const teStr = act.trainingEffectAerobic != null ? ` · Aerobic TE ${round(act.trainingEffectAerobic, 1)}` : '';
             const hrStr = act.averageHr != null ? ` · Avg HR ${act.averageHr} bpm` : '';
-            lines.push(`- Recorded training: ${typeLabel} · ${act.durationMin ?? '—'} min${loadStr}${teStr}${hrStr} · ${act.intensityTag}`);
+            lines.push(`- Recorded training: ${typeLabel} · ${act.durationMin ?? '—'} min${loadStr}${teStr}${hrStr} · ${formatIntensityCell(act)}`);
             const pSum: string[] = [];
             if (act.normalizedPower != null) pSum.push(`normalized power ${Math.round(act.normalizedPower)} W`);
             if (act.intensityFactor != null) pSum.push(`IF ${round(act.intensityFactor, 2)}`);
@@ -603,21 +603,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         lines.push('- Manual physical work: none reported');
     }
 
-    if (yesterdayRecommendation?.adherence) {
-        const adh = yesterdayRecommendation.adherence;
-        const adhNote = adh.notes && adh.notes.trim().length > 0 ? ` — "${adh.notes.trim()}"` : '';
-        if (adh.followed === true) lines.push(`- Adherence: Followed as prescribed${adhNote}`);
-        else if (adh.skipped === true) lines.push(`- Adherence: Skipped entirely${adhNote}`);
-        else if (adh.followed === false) {
-            const act = adh.actualModality ?? 'other';
-            const dur = adh.actualDurationMin ? ` for ${adh.actualDurationMin} min` : '';
-            lines.push(`- Adherence: Did ${act}${dur} instead${adhNote}`);
-        } else {
-            lines.push('- Adherence: Not answered yet.');
-        }
-    } else {
-        lines.push('- Adherence: Not answered yet.');
-    }
+    lines.push(renderRecommendationFeedbackLine(yesterdayRecommendation ?? null));
 
     if (activeSnapshot) {
         const der = activeSnapshot.derived;
@@ -626,6 +612,11 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
 
     // 4. Today's App Recommendation & Engine Stance
     lines.push('', '## 4. Today\'s App Recommendation & Engine Stance', '');
+    const recommendationIsAuthoritative = todayAuthority.authority.authoritative?.kind === 'app_recommendation'
+        || RECOMMENDATION_IS_IMPORTED_SESSION.has(todayAuthority.authority.outcome);
+    if (todayRecommendation && !recommendationIsAuthoritative) {
+        lines.push(`> Not independently actionable: today's authority is ${todayAuthority.authority.outcome} (see *Resolved planning authority* above); this recommendation is shown as engine context only.`);
+    }
     if (todayRecommendation) {
         lines.push(`- Mode: ${todayRecommendation.mode.toUpperCase()}`);
         lines.push(`- Recommended workout: ${todayRecommendation.templateTitle} (${todayRecommendation.modality} · ${todayRecommendation.category})`);
@@ -716,7 +707,8 @@ export function enhanceContextBriefForPlanning(
     baseBrief: string,
     input: ContextBriefPlanningHandoffInput,
 ): string {
-    if (input.preset === 'daily') {
+    const purpose = resolvePurpose(input);
+    if (purpose === 'morning') {
         return buildMorningCoachBrief(input);
     }
 
@@ -726,18 +718,24 @@ export function enhanceContextBriefForPlanning(
 
     const constraintMarker = '\n## 1. Constraints';
     const constraintIndex = retrospective.indexOf(constraintMarker);
+    const today = resolveTodayAuthority(input);
+    const handoff = renderDataHandoff(input, today);
     const withHandoff = constraintIndex >= 0
-        ? `${retrospective.slice(0, constraintIndex)}\n\n${renderDataHandoff(input)}${retrospective.slice(constraintIndex)}`
-        : `${renderDataHandoff(input)}\n\n${retrospective}`;
+        ? `${retrospective.slice(0, constraintIndex)}\n\n${handoff}${retrospective.slice(constraintIndex)}`
+        : `${handoff}\n\n${retrospective}`;
 
     const timeline = renderRecoveryTimeline(input);
-    const trainingMarker = '\n## 3. Completed training';
-    const trainingIndex = withHandoff.indexOf(trainingMarker);
+    // Located by title, not number: planning and diagnostic number this section differently.
+    const trainingIndex = findSectionHeading(withHandoff, SECTION_TITLE.training);
     const withTimeline = timeline && trainingIndex >= 0
         ? `${withHandoff.slice(0, trainingIndex)}\n\n${timeline}${withHandoff.slice(trainingIndex)}`
         : timeline ? `${withHandoff}\n\n${timeline}` : withHandoff;
 
-    const goalSpecifics = renderGoalSpecifics(input.goals);
+    const goalSpecifics = purpose === 'planning' ? renderCompactGoalSpecifics(input.goals) : renderGoalSpecifics(input.goals);
     const goalDetail = goalSpecifics ? `\n\n${goalSpecifics}` : '';
-    return `${withTimeline.trimEnd()}${goalDetail}\n\n${renderUpcoming(input)}\n\n${renderUseInstructions()}\n`;
+    if (purpose === 'planning') {
+        // Authoritative upcoming commitments precede the compressed long-term goals.
+        return `${withTimeline.trimEnd()}\n\n${renderUpcoming(input, today)}${goalDetail}\n\n${renderUseInstructions(purpose)}\n`;
+    }
+    return `${withTimeline.trimEnd()}${goalDetail}\n\n${renderUpcoming(input, today)}\n\n${renderUseInstructions(purpose)}\n`;
 }

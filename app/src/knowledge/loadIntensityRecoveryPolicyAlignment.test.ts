@@ -13,6 +13,8 @@ import {
     POST_REST_REENTRY_MAX_SYSTEMIC_COST,
 } from '../engine/planner';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from './sportsKnowledge';
+import { costIntensityFromGarmin, SESSION_COST_ROW } from '../engine/completedTraining';
+import type { NormalizedGarminActivity } from '../engine/models';
 import {
     getActiveKnowledgeClaim as getActiveRegistryKnowledgeClaim,
     KNOWLEDGE_CLAIM_IDS as REGISTRY_KNOWLEDGE_CLAIM_IDS,
@@ -239,5 +241,22 @@ describe('load + intensity + recovery product-claim alignment', () => {
         const strengthMeetAEvent: UserEvent = { ...triathlonAEvent, id: 'evt-meet-a', category: 'strength_meet' };
         expect(evaluateRecoveryConstraints(heavyStrength, targetDate, [priorLightStrength], { focusEvent: strengthMeetAEvent }))
             .not.toContain('TAPER_NONESSENTIAL_STRENGTH_RESTRICTION');
+    });
+
+    it('pins the Garmin session-cost to cost-row mapping and stimulus floor to its claim (#809)', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.garminStimulusCostClassification);
+        expect(SESSION_COST_ROW).toEqual({ low: 'easy', moderate: 'moderate', high: 'hard', very_high: 'hard' });
+        for (const [cost, row] of Object.entries(SESSION_COST_ROW)) {
+            expect(claim.statement).toContain(`${cost} ${row}`);
+        }
+        expect(claim.statement).toContain('never lower it below the stimulus row');
+        const activity = (sessionCost: NormalizedGarminActivity['sessionCost']): NormalizedGarminActivity => ({
+            activityId: 'a', date: '2026-09-20', type: 'cycling', durationMin: 60, trainingEffectAerobic: 2,
+            trainingEffectAnaerobic: 0, averageHr: null, activityTrainingLoad: null, intensityTag: 'hard', sessionCost,
+        });
+        expect(costIntensityFromGarmin(activity('low'), 'hard')).toBe('hard');
+        expect(costIntensityFromGarmin(activity('high'), 'easy')).toBe('hard');
+        expect(costIntensityFromGarmin(activity('moderate'), 'easy')).toBe('moderate');
+        expect(costIntensityFromGarmin(activity('unknown'), 'moderate')).toBe('moderate');
     });
 });

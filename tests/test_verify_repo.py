@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -48,6 +49,15 @@ def test_code_contract_avoids_external_registry_and_docker_gates() -> None:
     assert all("npm audit" not in command for command in commands)
     assert all("pip-audit" not in command for command in commands)
     assert all("docker" not in command for command in commands)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_from_hook_git_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Git hooks (e.g. pre-push) export GIT_DIR/GIT_INDEX_FILE. Inherited, they point
+    # the tmp_path fixture repos below at the real repository: `git init` there sets
+    # core.bare=true and `git config user.*` overwrites the real identity.
+    for key in [key for key in os.environ if key.startswith("GIT_")]:
+        monkeypatch.delenv(key)
 
 
 def _git(repo: Path, *args: str) -> str:

@@ -1,4 +1,4 @@
-import type { DailyRecommendation, HrMeasurement, NormalizedGarminActivity, RunningDynamics, ShadowVerdict } from '../../engine/models';
+import type { ActivitySessionCost, ActivityStimulusDomain, DailyRecommendation, HrMeasurement, NormalizedGarminActivity, RunningDynamics, ShadowVerdict } from '../../engine/models';
 import { SHADOW_VERDICTS } from '../../engine/models';
 import type { DataIssue, DataState } from '../../engine/dataState';
 import { validateRecommendation, isValidDate } from '../../engine/validation';
@@ -238,6 +238,15 @@ function parseHrMeasurement(value: unknown): HrMeasurement | undefined {
     };
 }
 
+const STIMULUS_DOMAINS: readonly ActivityStimulusDomain[] = ['recovery', 'endurance', 'tempo', 'threshold', 'vo2', 'anaerobic', 'mixed', 'race', 'strength', 'unknown'];
+const SESSION_COSTS: readonly ActivitySessionCost[] = ['low', 'moderate', 'high', 'very_high', 'unknown'];
+
+/** Issue #809 classification fields are optional and additive: an unrecognised value is
+ * dropped (legacy semantics apply) rather than failing the whole activity document. */
+function parseEnumValue<T extends string>(value: unknown, allowed: readonly T[]): T | undefined {
+    return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? value as T : undefined;
+}
+
 function parseOptionalString(value: unknown): string | null | undefined {
     if (value === undefined) return undefined;
     if (value === null) return null;
@@ -294,6 +303,10 @@ export function parseNormalizedGarminActivity(
     const maxHr = optionalNonNegativeNumber(raw.maxHr);
     const exerciseSets = parseExerciseSets(raw.exerciseSets);
     const hrMeasurement = parseHrMeasurement(raw.hrMeasurement);
+    const stimulusDomain = parseEnumValue(raw.stimulusDomain, STIMULUS_DOMAINS);
+    const sessionCost = parseEnumValue(raw.sessionCost, SESSION_COSTS);
+    const intensityEvidence = parseOptionalString(raw.intensityEvidence) ?? undefined;
+    const intensityClassificationVersion = optionalNonNegativeNumber(raw.intensityClassificationVersion);
 
     return {
         status: 'AVAILABLE',
@@ -311,6 +324,10 @@ export function parseNormalizedGarminActivity(
             ...(maxHr !== undefined && maxHr !== null && maxHr > 0 ? { maxHr } : {}),
             activityTrainingLoad: activityTrainingLoad ?? null,
             intensityTag: raw.intensityTag,
+            ...(stimulusDomain !== undefined ? { stimulusDomain } : {}),
+            ...(sessionCost !== undefined ? { sessionCost } : {}),
+            ...(intensityEvidence !== undefined ? { intensityEvidence } : {}),
+            ...(intensityClassificationVersion !== undefined && intensityClassificationVersion !== null ? { intensityClassificationVersion } : {}),
             ...(primaryBenefit !== undefined ? { primaryBenefit } : {}),
             ...(trainingEffectLabel !== undefined ? { trainingEffectLabel } : {}),
             ...(epoc !== undefined ? { epoc } : {}),

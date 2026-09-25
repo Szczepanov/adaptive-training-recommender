@@ -4,12 +4,14 @@ import type {
     ExternalPlanSession as LegacyExternalPlanSession,
 } from '../engine/models';
 import {
+    briefPurposeFor,
     briefWindowDaysFor,
     briefWindowStart,
     buildContextBrief,
     defaultBriefWindowDays,
     SUBJECTIVE_BASELINE_DAYS,
     type BodyCompositionBriefInput,
+    type BriefPurpose,
     type BriefWindowPreset,
     type ContextBriefInput,
 } from '../engine/contextBrief';
@@ -24,6 +26,7 @@ import {
     type RawProviderWeightRecord,
 } from '../anthropometry/trends';
 import { injectActivityTelemetryIntoContextBrief } from '../engine/contextBriefActivityTelemetry';
+import { SENSOR_OBSERVATION_HORIZON_DAYS } from '../engine/contextBriefSensorEvidence';
 import {
     enhanceContextBriefForPlanning,
     RECOVERY_TIMELINE_DAYS,
@@ -36,7 +39,8 @@ import { evaluatePeriodizationPhase, goalToUserEvent } from '../engine/periodiza
 import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
 import { isV2Session, type AnyExternalPlanSession } from '../sessions/externalPlanV2';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
-import { activeExternalPlanService, placedSessionForDate } from './activeExternalPlanService';
+import { activeExternalPlanService, externalRestContextForDate, placedSessionForDate } from './activeExternalPlanService';
+import type { BriefRestDirective } from '../engine/briefPlanAuthority';
 import { activityService } from './activityService';
 import { anthropometryService } from './anthropometryService';
 import { checkinService } from './checkinService';
@@ -59,6 +63,8 @@ export interface ContextBriefResult {
      * choice without re-deriving it from windowDays (which `build`'s caller could in
      * principle pass as an arbitrary number outside either preset). */
     preset: BriefWindowPreset;
+    /** Issue #811: the consumer intent the preset maps to (morning / planning / diagnostic). */
+    purpose: BriefPurpose;
     /** Sources that could not be read. The brief still renders; it says what is missing
      * rather than presenting a partial window as complete. */
     unavailableSources: string[];
@@ -193,6 +199,9 @@ export class ContextBriefService {
         preset: BriefWindowPreset = windowDays <= briefWindowDaysFor('daily') ? 'daily' : 'full',
     ): Promise<ContextBriefResult> {
         const targetDate = asOfDate ?? getLocalDateString();
+        // Purpose selects what is rendered, never what is fetched: every read below
+        // depends only on windowDays, so diagnostic cannot widen a data read.
+        const purpose = briefPurposeFor(preset);
         const startDate = briefWindowStart(targetDate, windowDays);
         // Strictly longer than the window, so there is always prior history to compare
         // against even when the caller asks for a long window.
@@ -207,6 +216,11 @@ export class ContextBriefService {
         // here does not widen what the retrospective sections show.
         const contextDays = Math.max(windowDays, RECOVERY_TIMELINE_DAYS);
         const contextStart = briefWindowStart(targetDate, contextDays);
+        // Issue #816: activities reach back over the sensor-evidence horizon too, so the
+        // observed-telemetry block's 28-day/stale labels describe data actually fetched.
+        // Every other consumer slices activities to its own window (buildContextBrief
+        // `filterRange`, the telemetry appendix `windowActivities`, the dated handoff views).
+        const activityStart = [contextStart, briefWindowStart(targetDate, SENSOR_OBSERVATION_HORIZON_DAYS)].sort()[0];
         // Activity and recommendation range queries are end-exclusive; the brief window
         // is inclusive of targetDate, so the fetch reaches one day further.
         const throughExclusive = addDaysToLocalDateString(targetDate, 1);
@@ -259,7 +273,7 @@ export class ContextBriefService {
             // Widened to contextStart (see contextDays above) so the recovery timeline
             // always has real activity flags; recommendations stay at windowDays since
             // only the render-window adherence section and the current-day row use them.
-            activityService.getActivitiesInRange(userId, contextStart, throughExclusive),
+            activityService.getActivitiesInRange(userId, activityStart, throughExclusive),
             recommendationService.getRecommendationsInRange(userId, startDate, throughExclusive),
             // peek, not get: the brief is read-only and must not create a settings
             // profile as a side effect of being looked at (DataView presents it as
@@ -404,6 +418,7 @@ export class ContextBriefService {
 
         const upcomingExternalSessions: UpcomingExternalPlanSession[] = [];
         let currentExternalSession: AnyExternalPlanSession | null = null;
+        let restDirectiveToday: BriefRestDirective | null = null;
         // Whether "no session placed today" can be asserted as a confirmed fact. Starts
         // false whenever occupancy itself is unreadable (the else branch below), and is
         // also cleared if today's own plan-state read specifically fails, so a resolved
@@ -436,6 +451,10 @@ export class ContextBriefService {
                 }
                 if (date === targetDate) {
                     currentExternalSession = placedSessionForDate(state.data, date)?.session ?? null;
+                    const rest = externalRestContextForDate(state.data, date);
+                    restDirectiveToday = rest
+                        ? { planId: rest.planId, revision: rest.revision, restDirectiveId: rest.directive.id }
+                        : null;
                 }
                 for (const placed of state.data.placed.filter(item =>
                     item.date === date && (item.status === 'planned' || item.status === 'moved'))) {
@@ -499,13 +518,18 @@ export class ContextBriefService {
             intentProfile,
             goals,
             bodyComposition,
+            purpose,
         };
         // `activities` was fetched over contextDays (>= windowDays) to feed the fixed
         // 7-day recovery timeline below; the detailed telemetry appendix must not inherit
         // that wider range or a `daily` export would silently regain the per-lap detail
         // W1 exists to drop. Slice explicitly back down to the render window.
         const windowActivities = activities.filter(activity => activity.date >= startDate && activity.date <= targetDate);
-        const retrospectiveText = injectActivityTelemetryIntoContextBrief(buildContextBrief(input), windowActivities);
+        const retrospectiveText = injectActivityTelemetryIntoContextBrief(
+            buildContextBrief(input),
+            windowActivities,
+            purpose !== 'diagnostic',
+        );
         const text = enhanceContextBriefForPlanning(retrospectiveText, {
             asOfDate: targetDate,
             snapshots,
@@ -522,8 +546,11 @@ export class ContextBriefService {
             upcomingFixedActivities,
             upcomingPlanBlocks,
             upcomingExternalSessions,
+            recommendationsReadable: recommendationResult.status === 'fulfilled' && recommendationResult.value.status === 'AVAILABLE',
+            restDirectiveToday,
             unavailableSources,
             preset,
+            purpose,
         });
 
         return {
@@ -532,6 +559,7 @@ export class ContextBriefService {
             asOfDate: targetDate,
             windowDays,
             preset,
+            purpose,
             unavailableSources,
         };
     }

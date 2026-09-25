@@ -135,6 +135,8 @@ export const EVERGREEN_GENERAL_COVERAGE_SET: CoverageSetDescriptor = {
   phases: ['general'],
 };
 
+export const EVERGREEN_COVERAGE_BY_KEY: Map<string, PlanSessionCoverage> = new Map(EVERGREEN_GENERAL_COVERAGE_SET.coverage.map(item => [item.key, item]));
+
 /** Registry authority for coverage lookup. Its single entry is intentionally not a
  * behavioural change; Phase 7.5 adds the peer evergreen descriptor. */
 export const COVERAGE_SETS: Record<CoverageSetId, CoverageSetDescriptor> = {

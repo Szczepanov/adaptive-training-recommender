@@ -231,7 +231,7 @@ app/src/engine/
   taperPolicy.ts       # Event taper window resolution
   safetyCheckin.ts     # Minimum-safety check-in gate & provisional recommendation
   composer.ts          # Decision composer combining readiness, context brief, and intent
-  contextBrief.ts      # Recovery context brief and trend indicators; daily (2d) / full (14d) window presets
+  contextBrief.ts      # Recovery context brief; daily (2d, morning) / full (14d, planning) / diagnostic (14d) purposes
   healthAnomaly.ts     # Pure physiological anomaly & possible-illness evaluator (ADR-0025)
   healthAnomalyFeatures.ts # Anomaly-grade baseline feature mappings (RHR/HRV/respiration)
   healthAnomalyOutcome.ts  # Prospective outcome follow-up label resolver
@@ -274,8 +274,12 @@ app/src/engine/
   firestoreTrainingHistory.ts # Firestore-backed TrainingHistoryProvider implementation
   microcycleHistory.ts  # @deprecated -- import the TrainingHistoryProvider boundary from trainingHistory.ts instead
   sessionChoiceEligibility.ts # Gates select_alternative choice options against resolved injury restrictions (D-MCHOICE)
-  contextBriefActivityTelemetry.ts # Renders/injects per-activity telemetry into the context brief
+  contextBriefActivityTelemetry.ts # Per-activity telemetry: full tables (diagnostic) or bounded digest (planning)
   contextBriefPlanningHandoff.ts # Upcoming external-plan/recovery-timeline context for planning handoff
+  contextBriefPurpose.ts # Export purposes (morning/planning/diagnostic), section titles, goal/use-instruction renderers
+  contextBriefRecovery.ts # Objective wearable + body-composition sections of the context brief
+  contextBriefRecoverySynthesis.ts # Explanatory multisignal recovery synthesis for the brief; no decision authority (#812)
+  briefPlanAuthority.ts # Reconciles persisted verdict + imported occurrence into one brief authority outcome (#810)
   trainingSettingsSchema.ts # Persisted TrainingSettings schema version gate (current v3, supports v2)
   strengthSessionLifecycle.ts # Strength session state machine (new/in_progress/... transitions)
   strengthSessionValidation.ts # Shared persisted/UI bounds for ADR-0021 strength-session data
@@ -406,6 +410,17 @@ The normative routing and versioning policy is
 [`docs/standards/agent-tooling.md`](./docs/standards/agent-tooling.md).
 
 ---
+
+## Shared agent skills
+
+Cross-agent workflow skills live in `.agents/skills/` (single source of truth):
+
+- `issue-to-pr` — GitHub issue number → plan → implementation → verification → linked PR.
+- `planner` — implementation planning.
+- `external-library-docs` — Context7-first third-party documentation lookup.
+
+Claude Code only discovers skills under `.claude/skills/`, so a Claude-visible skill there is a
+thin pointer to the `.agents/skills/` file. Edit the shared file, never the pointer.
 
 ## Code navigation with Serena
 

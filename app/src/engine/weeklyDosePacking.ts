@@ -1,6 +1,6 @@
 import type { AdaptationDoseRequirement, AdaptationKey, EvidenceBackedStrategy } from './evergreenStrategy';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
-import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
+import { EVERGREEN_GENERAL_COVERAGE_SET, EVERGREEN_COVERAGE_BY_KEY } from '../workouts/event-plan';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { getDayDiff } from '../utils/localDate';
 import { progressionOverrideKey } from './progressionOverrideKey';
@@ -38,12 +38,13 @@ function minimumDuration(workoutIds: readonly string[]): number {
 
 /** Exact adapter from the evergreen programming descriptor to the dose packer's
  * adaptation roles. Walk-run is intentionally excluded from aerobic-volume credit. */
+
 export const EVERGREEN_PACKING_COVERAGE: CoverageSetDescriptor = {
     id: EVERGREEN_GENERAL_COVERAGE_SET.id,
     roles: [
-        { id: 'aerobic_volume', adaptations: ['aerobic_endurance'], exactWorkoutIds: EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'aerobic_volume')!.workoutIds, durationMinutes: minimumDuration(EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'aerobic_volume')!.workoutIds) },
-        { id: 'primary_strength', adaptations: ['strength'], exactWorkoutIds: EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'primary_strength')!.workoutIds, durationMinutes: minimumDuration(EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'primary_strength')!.workoutIds) },
-        { id: 'sustained_quality', adaptations: ['high_intensity'], exactWorkoutIds: EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'sustained_quality')!.workoutIds, durationMinutes: minimumDuration(EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(item => item.key === 'sustained_quality')!.workoutIds) },
+        { id: 'aerobic_volume', adaptations: ['aerobic_endurance'], exactWorkoutIds: EVERGREEN_COVERAGE_BY_KEY.get('aerobic_volume')!.workoutIds, durationMinutes: minimumDuration(EVERGREEN_COVERAGE_BY_KEY.get('aerobic_volume')!.workoutIds) },
+        { id: 'primary_strength', adaptations: ['strength'], exactWorkoutIds: EVERGREEN_COVERAGE_BY_KEY.get('primary_strength')!.workoutIds, durationMinutes: minimumDuration(EVERGREEN_COVERAGE_BY_KEY.get('primary_strength')!.workoutIds) },
+        { id: 'sustained_quality', adaptations: ['high_intensity'], exactWorkoutIds: EVERGREEN_COVERAGE_BY_KEY.get('sustained_quality')!.workoutIds, durationMinutes: minimumDuration(EVERGREEN_COVERAGE_BY_KEY.get('sustained_quality')!.workoutIds) },
     ],
 };
 
@@ -357,11 +358,26 @@ export function packWeeklyDose(
         adaptations: occurrence.adaptations,
         priority: occurrence.priority,
     });
+
+    const requiredRoles: PackedRoleOccurrence[] = [];
+    const targetRoles: PackedRoleOccurrence[] = [];
+    const optionalRoles: PackedRoleOccurrence[] = [];
+    for (const role of packed) {
+        const occurrence = withoutDescriptor(role);
+        if (role.priority === 'required') {
+            requiredRoles.push(occurrence);
+        } else if (role.priority === 'target') {
+            targetRoles.push(occurrence);
+        } else if (role.priority === 'optional') {
+            optionalRoles.push(occurrence);
+        }
+    }
+
     return {
         capacity, requirements,
-        requiredRoles: packed.filter(role => role.priority === 'required').map(withoutDescriptor),
-        targetRoles: packed.filter(role => role.priority === 'target').map(withoutDescriptor),
-        optionalRoles: packed.filter(role => role.priority === 'optional').map(withoutDescriptor),
+        requiredRoles,
+        targetRoles,
+        optionalRoles,
         shortfalls,
     };
 }

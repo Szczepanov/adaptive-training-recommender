@@ -207,12 +207,33 @@ export function isAdverseCoreSignalEvidence(evidence: CoreSignalEvidence): boole
     return evidence.direction === 'high';
 }
 
-function hasPriorHardTraining(snapshot: HealthAnomalyInput['recoverySnapshot']): boolean {
+/** Yesterday's high-intensity stimulus session (issue #809: "hard" = stimulus only). */
+function hasPriorHardStimulus(snapshot: HealthAnomalyInput['recoverySnapshot']): boolean {
     const yesterday = snapshot?.raw.yesterdayTraining;
     return !!yesterday && (
         (yesterday.hardActivityCount ?? 0) > 0
         || yesterday.primaryActivity?.intensityTag === 'hard'
     );
+}
+
+/** Issue #809: a long aerobic session with high/very_high session cost is prior hard
+ * *training* for explaining next-day RHR/HRV strain, reported under its own evidence code. */
+function hasPriorHighCostSession(snapshot: HealthAnomalyInput['recoverySnapshot']): boolean {
+    const yesterday = snapshot?.raw.yesterdayTraining;
+    const primaryCost = yesterday?.primaryActivity?.sessionCost;
+    return !!yesterday && (
+        (yesterday.highCostActivityCount ?? 0) > 0
+        || primaryCost === 'high'
+        || primaryCost === 'very_high'
+    );
+}
+
+/** Evidence codes for prior hard training: stimulus and dose stay distinguishable. */
+export function hasPriorHardTraining(snapshot: HealthAnomalyInput['recoverySnapshot']): string[] {
+    return [
+        ...(hasPriorHardStimulus(snapshot) ? ['YESTERDAY_HARD_SESSION'] : []),
+        ...(hasPriorHighCostSession(snapshot) ? ['YESTERDAY_HIGH_COST_SESSION'] : []),
+    ];
 }
 
 function addExplanation(
@@ -230,16 +251,21 @@ function resolveExplanations(input: HealthAnomalyInput): ContextExplanation[] {
     const snapshot = input.recoverySnapshot;
     const checkin = input.subjectiveCheckin;
     const health = checkin?.healthContext;
-    const priorHardTraining = hasPriorHardTraining(snapshot);
+    const priorHardEvidence = hasPriorHardTraining(snapshot);
 
     // Morning RHR/HRV/respiration precede any activity performed later today. `todayTraining`
-    // is therefore never explanatory. The backend defines last3DaysHardSessionsCount as D-1
-    // through D-3 only, so that aggregate is causally safe for a weaker prior-load context.
-    if (priorHardTraining) {
-        addExplanation(explanations, 'hard_training', 'strong', ['rhr', 'hrv'], ['YESTERDAY_HARD_SESSION']);
-        addExplanation(explanations, 'hard_training', 'weak', ['respiration'], ['YESTERDAY_HARD_SESSION']);
-    } else if (input.last3DaysHardSessionsCount > 0) {
-        addExplanation(explanations, 'hard_training', 'moderate', ['rhr', 'hrv'], ['HARD_SESSION_WITHIN_3D']);
+    // is therefore never explanatory. The backend defines last3DaysHardSessionsCount (and
+    // last3DaysHighCostSessionsCount) as D-1 through D-3 only, so those aggregates are
+    // causally safe for a weaker prior-load context.
+    const windowEvidence = [
+        ...(input.last3DaysHardSessionsCount > 0 ? ['HARD_SESSION_WITHIN_3D'] : []),
+        ...((input.last3DaysHighCostSessionsCount ?? 0) > 0 ? ['HIGH_COST_SESSION_WITHIN_3D'] : []),
+    ];
+    if (priorHardEvidence.length > 0) {
+        addExplanation(explanations, 'hard_training', 'strong', ['rhr', 'hrv'], priorHardEvidence);
+        addExplanation(explanations, 'hard_training', 'weak', ['respiration'], priorHardEvidence);
+    } else if (windowEvidence.length > 0) {
+        addExplanation(explanations, 'hard_training', 'moderate', ['rhr', 'hrv'], windowEvidence);
     }
 
     const objectivePoorSleep = (snapshot?.raw.sleepScore ?? 100) < 60

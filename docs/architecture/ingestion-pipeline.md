@@ -287,6 +287,49 @@ it (`maxHr`, display only), activity training load,
 intensity tag, primary-benefit/training-effect descriptors, EPOC when present, and recovery
 hours when present.
 
+**Stimulus intensity vs session cost (issue #809).** `garmin_provider.py` extracts
+provider-neutral evidence (Training Effect, average HR, activity-list `intensityFactor`,
+`hrTimeInZone_N`/`powerTimeInZone_N`, race `eventType`) and
+`intensity_classification.py` `classify_activity` classifies two separate dimensions:
+
+* `intensityTag` (`easy | moderate | hard`) and `stimulusDomain` (`recovery`, `endurance`,
+  `tempo`, `threshold`, `vo2`, `anaerobic`, `mixed`, `race`, `strength`, `unknown`) describe
+  **exercise intensity only**. `hard` means a high-intensity stimulus; it drives
+  `hardActivityCount` and `last3DaysHardSessionsCount`. The first applicable evidence tier
+  wins and is recorded in `intensityEvidence`: `race` → `anaerobicTrainingEffect`
+  (anaerobic TE ≥ 3.0) → `powerIntensityFactor` (cycling IF bands plus zone-5+ power share)
+  → `hrZoneDistribution` (never for strength) → `trainingEffectFallback` (the legacy
+  aerobic/anaerobic TE ≥ 3.0 or average HR ≥ hard-HR threshold rule, used only when no
+  measured intensity evidence exists). Zone data covering less than half the session is
+  ignored. Athlete reclassification (`ActivityOverride`) sits above this hierarchy downstream.
+* `sessionCost` (`low | moderate | high | very_high | unknown`) is **total session dose**:
+  max Training Effect bands (`unknown` when TE is absent, so consumers fall back to the
+  stimulus tag rather than a sport-independent duration guess; at least `high` for a race).
+  A 120-minute Z2 ride with aerobic TE 3.0 is therefore `easy`/`endurance` stimulus with
+  `high` cost.
+
+`intensityClassificationVersion` (currently 2) marks records written with these semantics.
+Snapshot training summaries are versioned the same way instead of bumping
+`sourceSchemaVersion`: `yesterdayTraining`/`todayTraining` carry
+`intensityClassificationVersion` (lowest version among the day's activities; absent/null
+when any activity is legacy), so `hardActivityCount` and `primaryActivity.intensityTag`
+mean *stimulus-only* "hard" exactly when that stamp is >= 2. Dose is carried separately in
+`highCostActivityCount`, `primaryActivity.sessionCost` and
+`raw.last3DaysHighCostSessionsCount` (D-1..D-3, high/very_high cost), and
+`raw.last3DaysIntensityClassificationVersion` stamps the three-day window the same way
+(lowest version over D-1..D-3 activities; null if any is legacy or the window is empty).
+The health-anomaly explainer treats high-cost sessions as prior hard training under their
+own evidence codes (`YESTERDAY_HIGH_COST_SESSION`, `HIGH_COST_SESSION_WITHIN_3D`), so a long
+easy ride still explains next-day RHR/HRV strain; the readiness penalty (`last3DaysHardSessionsCount`)
+stays stimulus-only.
+Records without it keep their legacy TE-based `intensityTag` and are not reinterpreted;
+only a rebuild/backfill that re-runs ingestion rewrites them, versioned. Cycling/running
+telemetry detail still qualifies for an `easy` stimulus with `moderate` or higher cost (the
+TE >= 2 population the legacy non-`easy` tag selected). The cut-points are registered as the
+product-calibration claim `policy.load_intensity.garmin_stimulus_cost_classification_v1`
+(coverage item `fatigue.garmin_stimulus_cost_classification`), pinned by
+`tests/test_intensity_classification.py`.
+
 Additional activity detail has separate paths:
 
 * **Strength / fitness-equipment activities** — target-date live sync fetches Garmin exercise
