@@ -130,7 +130,7 @@ describe('ShadowLogService', () => {
     it('reports a failed recommendation range read', async () => {
         services.getRecommendationsInRange.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
         const result = await new ShadowLogService().build('u1', START, END);
-        expect(result.unavailableSources).toContain('recommendations and adherence');
+        expect(result.unavailableSources).toContain('recommendations and feedback');
     });
 
     it('reports a failed journal range read rather than silently returning an empty log', async () => {

@@ -350,7 +350,7 @@ describe('context brief resolved authority block (#810)', () => {
     it('uses the explicit recommendationsReadable flag, not source-label text', () => {
         const unreadable = enhanceContextBriefForPlanning(BASE, briefInput({ recommendations: [], recommendationsReadable: false, unavailableSources: [] }));
         expect(unreadable).toContain('recommendation could not be read');
-        const readable = enhanceContextBriefForPlanning(BASE, briefInput({ recommendations: [], unavailableSources: ['recommendations and adherence'] }));
+        const readable = enhanceContextBriefForPlanning(BASE, briefInput({ recommendations: [], unavailableSources: ['recommendations and feedback'] }));
         expect(readable).toContain('AUTHORED_UNADJUDICATED');
     });
 

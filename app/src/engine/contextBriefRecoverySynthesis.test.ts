@@ -334,7 +334,7 @@ describe('context brief integration (#812)', () => {
         for (const purpose of ['planning', 'diagnostic'] as const) {
             const text = buildContextBrief({
                 asOfDate: AS_OF, windowDays: 14, snapshots: [poorNight], checkins: [checkin()],
-                activities: [], recommendations: [], trainingSettings: null, preferences: null, intentProfile: null, purpose,
+                activities: [], recommendations: [], recommendationsReadable: true, trainingSettings: null, preferences: null, intentProfile: null, purpose,
             });
             const synthesisAt = text.indexOf('### Recovery evidence synthesis');
             expect(synthesisAt).toBeGreaterThan(-1);

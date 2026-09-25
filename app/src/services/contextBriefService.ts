@@ -346,11 +346,12 @@ export class ContextBriefService {
             unavailableSources.push('recorded activities');
         }
 
+        const recommendationsReadable = recommendationResult.status === 'fulfilled' && recommendationResult.value.status === 'AVAILABLE';
         const recommendations = recommendationResult.status === 'fulfilled' && recommendationResult.value.status === 'AVAILABLE'
             ? recommendationResult.value.data
             : [];
-        if (recommendationResult.status !== 'fulfilled' || recommendationResult.value.status !== 'AVAILABLE') {
-            unavailableSources.push('recommendations and adherence');
+        if (!recommendationsReadable) {
+            unavailableSources.push('recommendations and feedback');
         }
 
         const trainingSettings = settingsResult.status === 'fulfilled' && settingsResult.value.status === 'AVAILABLE'
@@ -513,6 +514,7 @@ export class ContextBriefService {
             checkins,
             activities,
             recommendations,
+            recommendationsReadable,
             trainingSettings,
             preferences,
             intentProfile,
