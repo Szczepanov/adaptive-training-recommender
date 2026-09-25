@@ -121,6 +121,22 @@ function intensityFromGarmin(activity: NormalizedGarminActivity): CompletedTrain
     return trainingEffect > 0 ? 'easy' : 'unknown';
 }
 
+/**
+ * Issue #809: the cost row is indexed by total session dose, not by stimulus intensity.
+ * A long aerobic ride keeps its endurance stimulus (`intensityTag` "easy") but, with a
+ * high `sessionCost`, still carries a hard-row fatigue cost. Records without
+ * `sessionCost` (legacy classification) keep indexing cost by their intensity tag.
+ */
+function costIntensityFromGarmin(activity: NormalizedGarminActivity, stimulusIntensity: CompletedTrainingIntensity): CompletedTrainingIntensity {
+    switch (activity.sessionCost) {
+        case 'low': return 'easy';
+        case 'moderate': return 'moderate';
+        case 'high':
+        case 'very_high': return 'hard';
+        default: return stimulusIntensity;
+    }
+}
+
 // --- Evidence hierarchy (Phase 5.5) ---
 // docs/plans/phase-5-sequence-planning.md 5.5: generalises the coarse modality x
 // intensity inference below into a named, ordered hierarchy so every inferred profile
@@ -358,9 +374,11 @@ function candidateEventFromGarmin(
     const rawIntensity = intensityFromGarmin(activity);
     const modality = override?.overriddenModality ?? rawModality;
     const intensity = override?.overriddenIntensity ?? rawIntensity;
-    const baseCost = DEFAULT_COST_BY_MODALITY[modality][intensity];
+    // Athlete reclassification keeps precedence over both dimensions (explicit provenance).
+    const costIntensity = override?.overriddenIntensity ?? costIntensityFromGarmin(activity, rawIntensity);
+    const baseCost = DEFAULT_COST_BY_MODALITY[modality][costIntensity];
     const deliveredDose: DeliveredDose = {
-        plannedDurationMin: catalogReferenceDurationMin(modality, intensity),
+        plannedDurationMin: catalogReferenceDurationMin(modality, costIntensity),
         completedDurationMin: activity.durationMin ?? undefined,
     };
     const evidenceTier: EvidenceTier = override

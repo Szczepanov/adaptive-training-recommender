@@ -1878,6 +1878,10 @@ export interface ActivityExerciseSet {
     restDurationSeconds?: number;
 }
 
+export type ActivityStimulusDomain =
+    'recovery' | 'endurance' | 'tempo' | 'threshold' | 'vo2' | 'anaerobic' | 'mixed' | 'race' | 'strength' | 'unknown';
+export type ActivitySessionCost = 'low' | 'moderate' | 'high' | 'very_high' | 'unknown';
+
 export interface NormalizedGarminActivity {
     activityId: string;
     date: string;
@@ -1895,7 +1899,20 @@ export interface NormalizedGarminActivity {
     /** Peak activity HR as the provider reported it. Display only -- no decision authority. */
     maxHr?: number;
     activityTrainingLoad: number | null;
+    /** Stimulus (exercise) intensity: easy | moderate | hard. From
+     * `intensityClassificationVersion` 2 (issue #809) this is decoupled from session dose --
+     * "hard" means a high-intensity stimulus, never merely a long/costly session. Records
+     * without a version carry the legacy TE/average-HR semantics and are not reinterpreted. */
     intensityTag: string;
+    /** Issue #809: physiological domain that dominated the work (recovery, endurance, tempo,
+     * threshold, vo2, anaerobic, mixed, race, strength, unknown). */
+    stimulusDomain?: ActivityStimulusDomain;
+    /** Issue #809: total session dose (low | moderate | high | very_high | unknown); can rise
+     * with duration while the stimulus stays aerobic. */
+    sessionCost?: ActivitySessionCost;
+    /** Issue #809: which evidence tier decided the stimulus (provenance). */
+    intensityEvidence?: string;
+    intensityClassificationVersion?: number;
     primaryBenefit?: string | null;
     epoc?: number | null;
     recoveryTimeHours?: number | null;

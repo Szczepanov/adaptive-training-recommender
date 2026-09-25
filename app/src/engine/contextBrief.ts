@@ -418,6 +418,16 @@ const ACTIVITY_TYPE_LABELS: Record<string, string> = {
     mobility: 'Mobility',
 };
 
+/** Issue #809: shows stimulus intensity and, when classified, domain and session cost
+ * separately so an external reader never mistakes dose for intensity. */
+export function formatIntensityCell(activity: NormalizedGarminActivity): string {
+    const details = [
+        activity.stimulusDomain && activity.stimulusDomain !== 'unknown' ? activity.stimulusDomain : null,
+        activity.sessionCost && activity.sessionCost !== 'unknown' ? `cost ${activity.sessionCost.replace('_', ' ')}` : null,
+    ].filter((detail): detail is string => detail !== null);
+    return details.length > 0 ? `${activity.intensityTag} (${details.join(', ')})` : activity.intensityTag;
+}
+
 export function formatActivityType(typeKey: string): string {
     if (ACTIVITY_TYPE_LABELS[typeKey]) return ACTIVITY_TYPE_LABELS[typeKey];
     return typeKey.replace(/_/g, ' ');
@@ -434,13 +444,17 @@ function renderTraining(activities: readonly NormalizedGarminActivity[], asOfDat
     lines.push('|---|---|---|---|---|---|---|---|');
     for (const activity of activities) {
         const typeLabel = formatActivityType(activity.type);
-        lines.push(`| ${activity.date} | ${typeLabel} | ${activity.durationMin ?? '—'} | ${round(activity.activityTrainingLoad, 1)} | ${round(activity.trainingEffectAerobic, 1)} | ${round(activity.trainingEffectAnaerobic, 1)} | ${activity.averageHr ?? '—'} | ${activity.intensityTag} |`);
+        lines.push(`| ${activity.date} | ${typeLabel} | ${activity.durationMin ?? '—'} | ${round(activity.activityTrainingLoad, 1)} | ${round(activity.trainingEffectAerobic, 1)} | ${round(activity.trainingEffectAnaerobic, 1)} | ${activity.averageHr ?? '—'} | ${formatIntensityCell(activity)} |`);
     }
 
     const totalMinutes = activities.reduce((sum, activity) => sum + (activity.durationMin ?? 0), 0);
     const hardCount = activities.filter(activity => activity.intensityTag === 'hard').length;
+    const highCostCount = activities.filter(activity => activity.sessionCost === 'high' || activity.sessionCost === 'very_high').length;
     lines.push('');
-    lines.push(`Totals: ${activities.length} sessions · ${totalMinutes} min · ${hardCount} tagged hard.`);
+    // Issue #809: "tagged hard" counts high-intensity stimulus only; costly aerobic sessions
+    // are reported separately so dose is not read as intensity.
+    const costSuffix = highCostCount > 0 ? ` · ${highCostCount} high session cost` : '';
+    lines.push(`Totals: ${activities.length} sessions · ${totalMinutes} min · ${hardCount} tagged hard${costSuffix}.`);
 
     const modalityMinutes: Record<string, { sessions: number; minutes: number }> = {};
     for (const act of activities) {

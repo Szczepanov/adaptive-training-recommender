@@ -55,6 +55,23 @@ describe('training-history persistence parsers', () => {
         });
     });
 
+    it('passes through the #809 stimulus/cost classification and drops unknown enum values', () => {
+        const parsed = parseNormalizedGarminActivity({
+            ...activity, intensityTag: 'easy', stimulusDomain: 'endurance', sessionCost: 'high',
+            intensityEvidence: 'powerIntensityFactor', intensityClassificationVersion: 2,
+        }, 'users/u1/activities/a-1', 'a-1');
+        expect(parsed).toMatchObject({
+            status: 'AVAILABLE',
+            data: { intensityTag: 'easy', stimulusDomain: 'endurance', sessionCost: 'high', intensityEvidence: 'powerIntensityFactor', intensityClassificationVersion: 2 },
+        });
+        const unknown = parseNormalizedGarminActivity({ ...activity, stimulusDomain: 'sprint', sessionCost: 'huge' }, 'users/u1/activities/a-1', 'a-1');
+        expect(unknown.status).toBe('AVAILABLE');
+        if (unknown.status === 'AVAILABLE') {
+            expect(unknown.data.stimulusDomain).toBeUndefined();
+            expect(unknown.data.sessionCost).toBeUndefined();
+        }
+    });
+
     it('omits startedAt/endedAt/fitWorkoutFingerprint rather than defaulting them when absent', () => {
         const parsed = parseNormalizedGarminActivity(activity, 'users/u1/activities/a-1', 'a-1');
         expect(parsed.status).toBe('AVAILABLE');

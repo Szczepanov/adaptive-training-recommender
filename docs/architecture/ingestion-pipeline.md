@@ -287,6 +287,31 @@ it (`maxHr`, display only), activity training load,
 intensity tag, primary-benefit/training-effect descriptors, EPOC when present, and recovery
 hours when present.
 
+**Stimulus intensity vs session cost (issue #809).** `garmin_provider.py` extracts
+provider-neutral evidence (Training Effect, average HR, activity-list `intensityFactor`,
+`hrTimeInZone_N`/`powerTimeInZone_N`, race `eventType`) and
+`intensity_classification.py` `classify_activity` classifies two separate dimensions:
+
+* `intensityTag` (`easy | moderate | hard`) and `stimulusDomain` (`recovery`, `endurance`,
+  `tempo`, `threshold`, `vo2`, `anaerobic`, `mixed`, `race`, `strength`, `unknown`) describe
+  **exercise intensity only**. `hard` means a high-intensity stimulus; it drives
+  `hardActivityCount` and `last3DaysHardSessionsCount`. The first applicable evidence tier
+  wins and is recorded in `intensityEvidence`: `race` → `anaerobicTrainingEffect`
+  (anaerobic TE ≥ 3.0) → `powerIntensityFactor` (cycling IF bands plus zone-5+ power share)
+  → `hrZoneDistribution` (never for strength) → `trainingEffectFallback` (the legacy
+  aerobic/anaerobic TE ≥ 3.0 or average HR ≥ hard-HR threshold rule, used only when no
+  measured intensity evidence exists). Zone data covering less than half the session is
+  ignored. Athlete reclassification (`ActivityOverride`) sits above this hierarchy downstream.
+* `sessionCost` (`low | moderate | high | very_high | unknown`) is **total session dose**:
+  max Training Effect bands (duration bands when TE is absent; at least `high` for a race).
+  A 120-minute Z2 ride with aerobic TE 3.0 is therefore `easy`/`endurance` stimulus with
+  `high` cost.
+
+`intensityClassificationVersion` (currently 2) marks records written with these semantics.
+Records without it keep their legacy TE-based `intensityTag` and are not reinterpreted;
+only a rebuild/backfill that re-runs ingestion rewrites them, versioned. Cycling telemetry
+detail still qualifies for an `easy` stimulus with `high`/`very_high` cost.
+
 Additional activity detail has separate paths:
 
 * **Strength / fitness-equipment activities** — target-date live sync fetches Garmin exercise
