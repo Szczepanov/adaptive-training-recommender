@@ -916,9 +916,12 @@ date/template candidates from the least-loaded (root) state, then re-proves ever
 assignment against the *actual* projected fatigue/history transition of the assignments
 accumulated so far -- so two dates that are individually feasible but conflict after the
 first pick cannot both be reserved. Its one `WeeklyAllocationSearchBudget` is seven dates,
-14 occurrences, four canonically ordered candidates per occurrence and 1,024
-state-transition nodes. Reaching a cap returns the best-known jointly feasible partial
-allocation and marks the remainder `unresolved_search_budget` -- never a safety miss.
+14 occurrences, four exact date/template candidates per occurrence and 1,024
+state-transition nodes. Within each occurrence, it keeps the first candidate from each
+eligible date in date/template order, then fills spare slots with same-date alternatives.
+If more than four dates are eligible, the earliest four are kept. Reaching a cap returns
+the best-known jointly feasible partial allocation and marks the remainder
+`unresolved_search_budget` -- never a safety miss.
 Wall-clock time is not a semantic cut-off; p95 ≤50 ms / p99 ≤100 ms on the live-sized
 fixture is an operational gate only.
 

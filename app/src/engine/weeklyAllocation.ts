@@ -397,9 +397,20 @@ export function resolveWeeklyRoleReservations(
             }
         }
         all.sort((left, right) => left.date.localeCompare(right.date) || left.templateId.localeCompare(right.templateId));
+        // Preserve a possible date for each occurrence before spending the bounded
+        // candidate budget on alternatives for dates already represented. The sorted
+        // root order makes both passes deterministic, even if input template ids vary.
+        const firstByDate = new Map<string, AllocationAssignment>();
+        for (const candidate of all) {
+            if (!firstByDate.has(candidate.date)) firstByDate.set(candidate.date, candidate);
+        }
+        const dateDiverseCandidates = [
+            ...firstByDate.values(),
+            ...all.filter(candidate => firstByDate.get(candidate.date) !== candidate),
+        ];
         return {
             occurrence,
-            candidates: all.slice(0, budget.maxCandidatesPerOccurrence),
+            candidates: dateDiverseCandidates.slice(0, budget.maxCandidatesPerOccurrence),
             truncated: all.length > budget.maxCandidatesPerOccurrence || datesTruncated,
             blockers,
             sawDateConflict: false,

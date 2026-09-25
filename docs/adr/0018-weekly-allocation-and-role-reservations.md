@@ -61,18 +61,23 @@ leave a role impossible; it is reported, never retroactively changed.
 
 The reservation horizon is the next seven local dates. A search examines at most 14
 required occurrences (the current profile maximum), at most seven dates and four
-canonically sorted exact template/workout candidates per occurrence, and at most 1,024
+exact date/template candidates per occurrence, and at most 1,024
 state-transition nodes. Depth is bounded by the examined occurrence count. A node is
 counted immediately before applying one candidate's projected-state transition, including
 failed transitions; root construction and deterministic sorting do not consume a node.
 
 The same `WeeklyAllocationSearchBudget` applies to every D-SUPPORT viability check. Search
 prunes only a branch whose current fulfilled count plus remaining occurrence count cannot
-exceed the best known count; equality is retained until stable tie-breaks are decided.
-Candidates are sorted by deadline, constrainedness, coverage key, template/workout id, and
-date before the first cap is applied, so truncation is reproducible. A candidate set larger
-than the four-per-occurrence cap is itself budget exhaustion for every unexamined branch;
-the planner must not call the remaining occurrence infeasible.
+exceed the best known count; equal-cardinality branches are pruned because stable traversal
+order keeps the first such result.
+Occurrences are ordered by deadline, coverage key, ordinal, and stable occurrence id;
+search chooses the most constrained remaining occurrence first. For each occurrence, root
+date/template candidates are sorted by date then template id. The cap retains the first
+exact candidate on each date in that order, then fills remaining slots with same-date
+alternatives in the same order. When more than four dates are eligible, only the first four
+dates fit the cap. A candidate set larger than the four-per-occurrence cap leaves an
+unplaced occurrence unresolved because its omitted candidates were not proved infeasible;
+the planner must not call that occurrence infeasible.
 
 On a node, depth, date/candidate, or occurrence cap, return the deterministic best jointly
 feasible partial allocation found so far and mark each unproven remainder
