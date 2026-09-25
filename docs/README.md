@@ -225,8 +225,10 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-20 Nutrition and Energy Ingestion Analysis**](./analysis/2026-09-20-nutrition-myfitnesspal-garmin-ingestion.md) — Investigates ingestion of dietary nutrition and daily energy expenditure telemetry, evaluating Garmin Connect APIs and Android Health Connect.
 * [**2026-09-21 Issue #706 review memo**](./analysis/2026-09-21-issue-706-review-memo.md) — Analysis of a reported anchor-day rolling-budget issue, confirming expected hard-gate behavior rather than an anchor-placement bug.
 * [**2026-09-23 UI/UX foundation review addendum**](./analysis/2026-09-23-ui-ux-foundation-review-addendum.md) — Follow-up documentation changes regarding session-execution architecture, visual review bundles, and documentation hub routing.
+* [**2026-09-24 Hybrid tissue re-entry and weekly strength preservation**](./analysis/2026-09-24-hybrid-tissue-reentry-strength-preservation.md) — Analyzes cycling-primary hybrid weekly planning after a short local tissue interruption, ensuring reduced symptom-compatible sessions are not treated as normal full-body strength role.
 * [**2026-09-24 Issue #746 forecast-credit parity spike**](./analysis/2026-09-24-issue-746-forecast-credit-parity.md) — Compares seven-day forecast credit aging with rolling-daily execution and records the judge-corpus footprint.
 * [**2026-09-24 Serena agent-tooling adoption review**](./analysis/2026-09-24-serena-agent-tooling-adoption-review.md) — Audits why the committed Serena setup is underused, adds semantic-navigation/worktree guidance, and records client-specific rollout plus measurement recommendations.
+* [**2026-09-24 Workout library coverage audit**](./analysis/2026-09-24-workout-library-coverage-audit.md) — Audit of the active canonical workout catalog for missing specific executable coverage, leading to the addition of a direct-practice workout for deadlifts and a maximal short-sprint workout for cycling.
 
 ---
 
