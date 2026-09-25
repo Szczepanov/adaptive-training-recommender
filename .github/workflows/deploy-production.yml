@@ -1,7 +1,7 @@
 name: Deploy Production E2E
 
 # One production release = one Git SHA, validated once and promoted in dependency order:
-#   CI -> Garmin backend/jobs/schedulers -> Firestore indexes -> Firestore rules -> Hosting.
+#   CI (reused from main's post-merge run when it passed) -> Garmin backend/jobs/schedulers -> Firestore indexes -> Firestore rules -> Hosting.
 #
 # This intentionally remains workflow_dispatch rather than deploying every main push. Rules
 # drift is a production safety gate that sometimes requires an explicit human acknowledgement;
@@ -56,16 +56,75 @@ jobs:
             exit 1
           fi
 
+  # Every push to main already runs the full CI Pipeline on the same SHA (a non-pull_request
+  # event runs every ci.yml job). Re-running it here on an identical tree mostly re-rolls
+  # flaky tests, so reuse that run's success when it exists. It is not fully redundant:
+  # npm audit / pip-audit read live advisory databases and the Docker smoke test builds on a
+  # floating base image, so evidence is reused only while it is under 24 hours old. When it is
+  # missing, failed, stale, or still running past the wait budget, fall back to calling ci.yml.
+  ci-evidence:
+    name: Find post-merge CI for this SHA
+    needs: preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      validated: ${{ steps.find.outputs.validated }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Look for a successful main push run of ci.yml
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          python3 scripts/find_main_ci_evidence.py
+          --wait-seconds 1200 --poll-seconds 30 --max-age-hours 24
+
   validate:
     name: Full CI release gate
-    needs: preflight
+    needs: ci-evidence
+    if: needs.ci-evidence.outputs.validated != 'true'
     uses: ./.github/workflows/ci.yml
     secrets:
       VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
 
+  # Single join point for the two validation paths. Explicit result checks are required
+  # because validate is skipped on the reuse path, and a skipped ancestor would otherwise
+  # skip every default-conditioned job downstream -- which is also why each deploy job below
+  # gates on its direct predecessor's result instead of the implicit success().
+  release-gate:
+    name: CI release gate
+    needs: [ci-evidence, validate]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require reused or fresh CI success
+        env:
+          EVIDENCE_RESULT: ${{ needs.ci-evidence.result }}
+          VALIDATED: ${{ needs.ci-evidence.outputs.validated }}
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+        run: |
+          echo "ci-evidence: ${EVIDENCE_RESULT} (validated=${VALIDATED}); validate: ${VALIDATE_RESULT}"
+          if [ "${EVIDENCE_RESULT}" != "success" ]; then
+            echo "CI evidence lookup did not succeed." >&2
+            exit 1
+          fi
+          if [ "${VALIDATED}" = "true" ] || [ "${VALIDATE_RESULT}" = "success" ]; then
+            exit 0
+          fi
+          echo "Neither a reused post-merge CI run nor the release CI run succeeded." >&2
+          exit 1
+
   deploy-garmin:
     name: Deploy Garmin backend
-    needs: validate
+    needs: release-gate
+    if: ${{ !cancelled() && needs.release-gate.result == 'success' }}
     permissions:
       contents: read
       id-token: write
@@ -97,6 +156,7 @@ jobs:
   deploy-indexes:
     name: Deploy Firestore indexes
     needs: deploy-garmin
+    if: ${{ !cancelled() && needs.deploy-garmin.result == 'success' }}
     permissions:
       contents: read
       id-token: write
@@ -111,6 +171,7 @@ jobs:
   deploy-rules:
     name: Deploy Firestore rules
     needs: deploy-indexes
+    if: ${{ !cancelled() && needs.deploy-indexes.result == 'success' }}
     permissions:
       contents: read
       id-token: write
@@ -128,6 +189,7 @@ jobs:
   deploy-hosting:
     name: Deploy frontend last
     needs: deploy-rules
+    if: ${{ !cancelled() && needs.deploy-rules.result == 'success' }}
     permissions:
       contents: read
       id-token: write
@@ -154,6 +216,7 @@ jobs:
   release-summary:
     name: Release summary
     needs: deploy-hosting
+    if: ${{ !cancelled() && needs.deploy-hosting.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
