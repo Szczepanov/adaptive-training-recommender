@@ -125,6 +125,26 @@ issues identical reads for both.
 
 No purpose alters a recommendation, so `POLICY_VERSION` is unaffected.
 
+#### Configured sensors vs observed telemetry (issue #816)
+
+Section 0 of every planning/diagnostic handoff exports sensors as two separate facts
+(`contextBriefSensorEvidence.ts` `renderSensorEvidence`):
+
+- **Configured capability** — `TrainingSettings.capabilities`, the only authority on
+  guaranteed future availability. An explicit `false` stays unavailable even when
+  historical activities contain the signal; unreadable settings are stated as such.
+- **Observed recent telemetry** — a read-only summary over canonical
+  `NormalizedGarminActivity` fields in a bounded recent horizon (count and latest date per
+  channel; cycling power distinguished from running power; HR with external-strap
+  provenance when present; observations past a staleness cutoff are marked `STALE`).
+  Cadence is reported as not observable because canonical activities do not carry it. No
+  activities in the horizon is reported as unavailable provenance, not as "no sensor".
+
+Observation is evidence, not ownership: it never writes back to settings and never
+promotes an unknown/unavailable configuration. The handoff keeps requiring an executable
+RPE/feel/HR fallback whenever a sensor is not configured available. Presentation only —
+`POLICY_VERSION` is unaffected.
+
 ### Authored occurrence authority (`authoredSessionGates.ts`, ADR-0023)
 
 An active `replace_recommendation` occurrence is resolved at the `Home.tsx` composition

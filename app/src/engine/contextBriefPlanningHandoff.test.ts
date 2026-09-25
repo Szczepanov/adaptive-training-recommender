@@ -298,9 +298,11 @@ describe('enhanceContextBriefForPlanning', () => {
         } as UserPreferences;
         const text = enhanceContextBriefForPlanning(BASE, handoffInput({ trainingSettings, preferences }));
 
-        expect(text).toContain('Sensor capabilities: power meter yes · heart-rate monitor yes · cadence data no');
+        expect(text).toContain('Power meter: configured available;');
+        expect(text).toContain('Heart-rate monitor: configured available;');
+        expect(text).toContain('Cadence: configured unavailable (authoritative);');
         expect(text).toContain('Planning preferences: recovery style active · preferred time morning · conservative bias on · extra recovery margin off');
-        expect(text).toContain('If a sensor is unknown or unavailable');
+        expect(text).toContain('If a sensor is not configured available');
     });
 
     it('adds a seven-day cross-signal timeline rather than only window averages', () => {

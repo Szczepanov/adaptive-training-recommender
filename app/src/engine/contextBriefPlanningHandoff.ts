@@ -36,6 +36,7 @@ import {
     type BriefPlanAuthorityOutcome,
     type BriefRestDirective,
 } from './briefPlanAuthority';
+import { renderSensorEvidence } from './contextBriefSensorEvidence';
 
 export const UPCOMING_CONTEXT_DAYS = 7;
 export const RECOVERY_TIMELINE_DAYS = 7;
@@ -137,12 +138,6 @@ function resolveTodayAuthority(input: ContextBriefPlanningHandoffInput): { autho
     return { authority, block: renderBriefPlanAuthority(authority, input.asOfDate, recommendation) };
 }
 
-function yesNoUnknown(value: boolean | undefined): string {
-    if (value === true) return 'yes';
-    if (value === false) return 'no';
-    return 'unknown';
-}
-
 type TodayAuthority = ReturnType<typeof resolveTodayAuthority>;
 
 function renderDataHandoff(input: ContextBriefPlanningHandoffInput, today: TodayAuthority): string {
@@ -166,14 +161,7 @@ function renderDataHandoff(input: ContextBriefPlanningHandoffInput, today: Today
         `- Effective planning mode today: ${modeDetail}.`,
     ];
 
-    if (input.trainingSettings) {
-        const capabilities = input.trainingSettings.capabilities;
-        lines.push(
-            `- Sensor capabilities: power meter ${yesNoUnknown(capabilities?.powerMeter)} · `
-            + `heart-rate monitor ${yesNoUnknown(capabilities?.heartRateMonitor)} · `
-            + `cadence data ${yesNoUnknown(capabilities?.cadenceData)}.`,
-        );
-    }
+    lines.push(...renderSensorEvidence(input.trainingSettings, input.activities, input.asOfDate));
     if (input.preferences) {
         const margin = input.preferences.extraRecoveryMargin === undefined
             ? 'not set'
