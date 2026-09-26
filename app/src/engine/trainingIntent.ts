@@ -12,8 +12,7 @@ import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import { coverageSetFor, EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { resolveSequenceIntent, type SequenceIntentPolicy } from './sequenceIntent';
 import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS } from './rollingLoadBudget';
-import { isPriorityAOlympicTriathlon } from './taperPlanBudget';
-import { resolveEventTaper } from './taperPolicy';
+import { resolvePriorityAOlympicTriathlonTaper } from './taperPlanBudget';
 import { AEROBIC_VOLUME_FLOOR_WINDOW_DAYS, CATALOG_AEROBIC_VOLUME_FLOOR, resolveAerobicVolumeFloor, type AerobicVolumeFloor } from './aerobicVolumeFloor';
 
 export type PlannedRecoveryReason =
@@ -203,9 +202,9 @@ export async function resolveTrainingIntent(
         ?? (!preparedHistorySnapshot && provider.getSnapshot
             ? await prepareTrainingHistorySnapshot(userId, date, ROLLING_LOAD_BUDGET_LOOKBACK_DAYS, historyProvider)
             : null);
-    const olympicTaper = periodization.focusEvent && isPriorityAOlympicTriathlon(periodization.focusEvent)
-        ? resolveEventTaper(periodization.focusEvent) : null;
-    const needsOlympicTaperReference = Boolean(olympicTaper && date >= olympicTaper.startDate && date <= olympicTaper.endDate);
+    const needsOlympicTaperReference = resolvePriorityAOlympicTriathlonTaper(
+        periodization.focusEvent, date,
+    ) !== null;
     // The ordinary operational read is only seven days. When a provider has no snapshot
     // API (including the projected next-day provider), reconstruct the wider evidence
     // solely for the taper budget; do not widen fatigue, objective, or coverage history.
