@@ -9,6 +9,7 @@ import { createEmptyFatigue } from './fatigue';
 import {
     classifyAllocationPreservation,
     incumbentAssignmentsRemainingAfterSelection,
+    remainingAllocationInputsAfterSelection,
     evaluateProjectedDate,
     generateWeekAheadPlan,
     projectedDateOutcomeFrom,
@@ -21,6 +22,7 @@ import {
 import { rankCandidates } from './optimizer';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { TODAY, context, liveSizedWeek, preferences, readiness } from './weeklyAllocationPlanner.fixtures';
+import type { RequiredRoleOccurrence } from './weeklyAllocation';
 
 /**
  * Phase 7A.2/7A.4 planner-level coverage: the allocator and the greedy loop must share one
@@ -237,6 +239,49 @@ describe('D-SUPPORT fail-closed selection', () => {
         )).toEqual([
             { date: '2026-08-14', templateId: 'still-required-template' },
         ]);
+    });
+
+    it('releases soft anchor dates after the current candidate fulfils their owning primary roles', () => {
+        const occurrence = (
+            id: string,
+            coverageKey: RequiredRoleOccurrence['coverageKey'],
+            reservationTier?: 'support',
+        ): RequiredRoleOccurrence => ({
+            id,
+            coverageSetId: 'september_cycling_event',
+            coverageKey,
+            authoredSessionIdentity: `september_cycling_event:${coverageKey}`,
+            phase: 'build',
+            windowStart: '2026-08-10',
+            windowEnd: '2026-08-16',
+            ordinal: 0,
+            label: coverageKey,
+            eligibleTemplateIds: [],
+            eligibleWorkoutIds: [],
+            ...(reservationTier ? { reservationTier } : {}),
+        });
+        const quality = occurrence('quality-role', 'sustained_quality');
+        const eventSpecific = occurrence('event-role', 'outdoor_event_specific');
+        const support = occurrence('support-role', 'compact_strength', 'support');
+        const anchors = {
+            qualityAnchorDate: '2026-08-12',
+            eventSpecificAnchorDate: '2026-08-14',
+        };
+
+        const before = remainingAllocationInputsAfterSelection(
+            [quality, eventSpecific, support],
+            new Set(),
+            anchors,
+        );
+        expect([...before.supportExcludedDates].sort()).toEqual(['2026-08-12', '2026-08-14']);
+
+        const after = remainingAllocationInputsAfterSelection(
+            [quality, eventSpecific, support],
+            new Set([quality.id, eventSpecific.id]),
+            anchors,
+        );
+        expect(after.occurrences.map(item => item.id)).toEqual([support.id]);
+        expect([...after.supportExcludedDates]).toEqual([]);
     });
 
     // Issue #745: an unresolved occurrence elsewhere in the allocation must not veto a

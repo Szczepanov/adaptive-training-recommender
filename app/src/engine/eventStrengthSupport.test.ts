@@ -40,7 +40,7 @@ describe('cycling hybrid event strength support (#801)', () => {
             'hybrid-athlete', [event], date, readiness, 7, historyProvider,
             undefined, [], profile(['endurance', 'strength_muscle']),
         );
-        const plan = intent.planDefinition;
+        const plan = resolvePlanDefinitionForEvent(event, [], intent.eventStrengthSupportSessions);
         if (!plan) throw new Error('event plan unavailable');
         const coverage = buildCoverageState(plan, date);
         const strength = coverage.requirements.filter(item =>

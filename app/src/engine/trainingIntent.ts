@@ -48,8 +48,6 @@ export interface TrainingIntent {
      * which is durable athlete input rather than a computed decision result. */
     planningContext: PlanningContext;
     periodization: PeriodizationResult;
-    /** Athlete-aware authored event roles, shared with daily and forecast coverage. */
-    planDefinition?: PlanDefinition | null;
     /** Issue #801: durable-intent support-role count threaded to every event-plan build. */
     eventStrengthSupportSessions: number;
     unresolvedObjectives: WeeklyObjective[];
@@ -330,7 +328,7 @@ export async function resolveTrainingIntent(
         date,
     ), date, authoredPlanBlocks, planDefinition);
     return {
-        planningContext, periodization, planDefinition, eventStrengthSupportSessions: strengthSupportSessions, unresolvedObjectives, plannedDose, fatigue, history, rollingLoadBudgetHistory, performedTrainingFacts, historySnapshot, aerobicVolumeFloor, microcycle,
+        planningContext, periodization, eventStrengthSupportSessions: strengthSupportSessions, unresolvedObjectives, plannedDose, fatigue, history, rollingLoadBudgetHistory, performedTrainingFacts, historySnapshot, aerobicVolumeFloor, microcycle,
         droppedContributorObjectives: multiEventResolution.droppedContributorObjectives,
         sequenceIntent: resolveSequenceIntent(periodization.phase),
     };

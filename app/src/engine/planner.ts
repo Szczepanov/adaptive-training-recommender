@@ -575,6 +575,36 @@ export interface WeeklyAnchors {
     qualityAnchorDate: string | null;
 }
 
+/** Issue #801: soft cycling anchors are protected from support work only while the
+ * corresponding primary role is still pending. Once a candidate fulfils that role, its
+ * anchor becomes ordinary available capacity for the bounded reallocation proof. */
+export function supportExcludedDatesForPendingOccurrences(
+    anchors: WeeklyAnchors,
+    pending: readonly RequiredRoleOccurrence[],
+): ReadonlySet<string> {
+    return new Set([
+        ...(anchors.eventSpecificAnchorDate && pending.some(item => item.coverageKey === 'outdoor_event_specific')
+            ? [anchors.eventSpecificAnchorDate] : []),
+        ...(anchors.qualityAnchorDate && pending.some(item => item.coverageKey === 'sustained_quality')
+            ? [anchors.qualityAnchorDate] : []),
+    ]);
+}
+
+/** Apply a candidate's exact-role discharge before deriving support-only anchor exclusions.
+ * Keeping these two operations together prevents a stale pre-selection anchor from making a
+ * valid candidate look allocation-degrading. */
+export function remainingAllocationInputsAfterSelection(
+    pending: readonly RequiredRoleOccurrence[],
+    selfFulfilledOccurrenceIds: ReadonlySet<string>,
+    anchors: WeeklyAnchors,
+): { occurrences: RequiredRoleOccurrence[]; supportExcludedDates: ReadonlySet<string> } {
+    const occurrences = pending.filter(occurrence => !selfFulfilledOccurrenceIds.has(occurrence.id));
+    return {
+        occurrences,
+        supportExcludedDates: supportExcludedDatesForPendingOccurrences(anchors, occurrences),
+    };
+}
+
 const QUALITY_ANCHOR_MIN_GAP_DAYS = 2;
 
 export function realizedSessionRole(
@@ -1969,18 +1999,10 @@ export function generateWeekAheadPlan(
         sharedProjection.aerobicVolumeFloor,
     );
 
-    // Issue #801: support roles never take a weekly quality/event-specific anchor date while
-    // the role that anchor exists for is still pending; once it is settled the date is free.
-    const supportExcludedDatesFor = (pending: readonly RequiredRoleOccurrence[]): ReadonlySet<string> => new Set([
-        ...(anchors.eventSpecificAnchorDate && pending.some(item => item.coverageKey === 'outdoor_event_specific')
-            ? [anchors.eventSpecificAnchorDate] : []),
-        ...(anchors.qualityAnchorDate && pending.some(item => item.coverageKey === 'sustained_quality')
-            ? [anchors.qualityAnchorDate] : []),
-    ]);
     let allocation = resolveWeeklyRoleReservations(
         allocationOccurrences,
         allocationEvaluator(forecastDatesFrom(firstForecastOffset)),
-        { unavailableDates: seedDates, supportExcludedDates: supportExcludedDatesFor(allocationOccurrences) },
+        { unavailableDates: seedDates, supportExcludedDates: supportExcludedDatesForPendingOccurrences(anchors, allocationOccurrences) },
     );
     const nominatedDates = new Map<string, string | null>(
         allocation.outcomes.map(outcome => [outcome.occurrence.id, outcome.reservation.assignedDate]),
@@ -2013,7 +2035,7 @@ export function generateWeekAheadPlan(
         allocation = resolveWeeklyRoleReservations(
             pendingOccurrences,
             allocationEvaluator(forecastDatesFrom(offset)),
-            { nominatedDates, supportExcludedDates: supportExcludedDatesFor(pendingOccurrences) },
+            { nominatedDates, supportExcludedDates: supportExcludedDatesForPendingOccurrences(anchors, pendingOccurrences) },
         );
         allocation.outcomes.forEach(outcome => {
             if (!nominatedDates.get(outcome.occurrence.id) && outcome.reservation.assignedDate) {
@@ -2170,10 +2192,15 @@ export function generateWeekAheadPlan(
                 incumbentSurvives: () => allocationSurvives(incumbentAssignments, evaluator),
                 incumbentAllocationUnresolved: primaryAllocationUnresolved(allocation),
                 reallocate: () => {
+                    const remaining = remainingAllocationInputsAfterSelection(
+                        pendingOccurrences,
+                        selfFulfilledIds,
+                        anchors,
+                    );
                     const after = resolveWeeklyRoleReservations(
-                        pendingOccurrences.filter(occurrence => !selfFulfilledIds.has(occurrence.id)),
+                        remaining.occurrences,
                         evaluator,
-                        { nominatedDates, supportExcludedDates: supportExcludedDatesFor(pendingOccurrences) },
+                        { nominatedDates, supportExcludedDates: remaining.supportExcludedDates },
                     );
                     if (primaryAllocationUnresolved(after)) {
                         return 'unresolved_search_budget';
