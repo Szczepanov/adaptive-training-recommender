@@ -220,13 +220,14 @@ export function attachExactEligibleIdentities(
     aerobicVolumeFloor: AerobicVolumeFloor | null = null,
 ): RequiredRoleOccurrence[] {
     return occurrences.map(occurrence => {
+        const candidateWorkoutAllowList = occurrence.candidateWorkoutAllowList;
         const eligibleTemplateIds = templates
             .filter(template => coverageKeysForTemplate(template, occurrence.phase, coverageSetFor(occurrence.coverageSetId), aerobicVolumeFloor).includes(occurrence.coverageKey))
-            .filter(template => occurrence.candidateWorkoutAllowList === undefined
-                || (() => {
-                    const workoutId = workoutIdForTemplateId(template.id);
-                    return workoutId !== undefined && occurrence.candidateWorkoutAllowList.includes(workoutId);
-                })())
+            .filter(template => {
+                if (candidateWorkoutAllowList === undefined) return true;
+                const workoutId = workoutIdForTemplateId(template.id);
+                return workoutId !== undefined && candidateWorkoutAllowList.includes(workoutId);
+            })
             .map(template => template.id)
             .sort();
         return {
