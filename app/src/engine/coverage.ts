@@ -276,17 +276,15 @@ export function workoutIdForTemplateId(templateId: string | undefined): string |
     return workoutForTemplate(templateId)?.id;
 }
 
-/** Resolve the uncapped standard-template duration ceiling for planned or projected
- * exposures (`source` is `'projected'` or `'fixed_activity'`, or `durationMax` is
- * present), while returning `undefined` for completed exposures so completed sessions
- * remain governed by their actual duration against the athlete floor. */
+/** Resolve the uncapped standard-template duration ceiling only for explicitly planned
+ * exposures. A legacy completed record may still carry the original prescription's
+ * `durationMax`; that field alone must never convert performed history back into a plan. */
 function standardTemplateCeilingFor(
     identity: ExposureIdentity & { source?: CoverageCreditSource },
     workoutId: string,
 ): number | undefined {
-    const isCompletedExposure = identity.source === 'completed'
-        || (identity.source === undefined && identity.durationMax === undefined);
-    if (isCompletedExposure) return undefined;
+    const isPlannedExposure = identity.source === 'projected' || identity.source === 'fixed_activity';
+    if (!isPlannedExposure) return undefined;
 
     if (identity.templateId) {
         const directCeiling = ENRICHED_TEMPLATES_BY_ID.get(identity.templateId)?.durationMax;
