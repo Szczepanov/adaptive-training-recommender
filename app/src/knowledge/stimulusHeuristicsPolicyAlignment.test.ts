@@ -345,6 +345,7 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
         expect(claim.statement).toContain('only when that selected target exceeds the 150-minute public-health minimum');
         expect(claim.statement).toContain('allocator-executable standard engine-template ceiling');
         expect(claim.statement).toContain('Quality-session minutes are not converted to low-intensity minutes');
+        expect(claim.statement).toContain('reserves the full feasible remaining demand of later co-required required adaptations');
         expect(claim.limitations.join(' ')).toContain('not proof of an optimum');
         expect(WEEKLY_AEROBIC_EVIDENCE_WINDOW_DAYS).toBe(28);
         expect(WEEKLY_AEROBIC_MIN_OBSERVED_WEEKS).toBe(3);
