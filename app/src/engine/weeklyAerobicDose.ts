@@ -1,7 +1,7 @@
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CompletedExposure } from './trainingHistory';
 import type { TrainingPriority } from './models';
-import { WORKOUTS_BY_ID } from '../workouts/catalog';
+import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 
 export const WEEKLY_AEROBIC_EVIDENCE_WINDOW_DAYS = 28;
 export const WEEKLY_AEROBIC_MIN_OBSERVED_WEEKS = 3;
@@ -69,11 +69,11 @@ function dominantModality(exposures: readonly CompletedExposure[]): WeeklyAerobi
     return [...minutes.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] as WeeklyAerobicDoseEnvelope['modality'] ?? null;
 }
 
-const LONG_AEROBIC_WORKOUT_BY_MODALITY = {
-    Cycling: 'cycling_zone2_standard_01',
-    Running: 'running_easy_continuous_01',
-    Walking: 'walking_brisk_continuous_01',
-    Swimming: 'swimming_easy_aerobic_01',
+const LONG_AEROBIC_ROLE_BY_MODALITY = {
+    Cycling: { workoutId: 'cycling_zone2_standard_01', templateId: 'end_easy_01' },
+    Running: { workoutId: 'running_easy_continuous_01', templateId: 'end_easy_02' },
+    Walking: { workoutId: 'walking_brisk_continuous_01', templateId: 'end_walk_01' },
+    Swimming: { workoutId: 'swimming_easy_aerobic_01', templateId: 'swim_easy_01' },
 } as const;
 
 /**
@@ -122,13 +122,37 @@ export function resolveWeeklyAerobicDoseEnvelope(input: WeeklyAerobicDoseInput):
     const target = enduranceIntent && developmentPhase ? percentile(sorted, 0.75) : maintenance;
     const floor = Math.max(WEEKLY_AEROBIC_HEALTH_FLOOR_MIN, percentile(sorted, 0.25));
     const boundedTarget = Math.max(floor, target);
+
+    // Complete history is not, by itself, evidence for a primary-modality easy-aerobic
+    // obligation above the public-health minimum. When the selected history statistic
+    // does not raise the weekly target above 150 minutes, keep guideline semantics:
+    // moderate/vigorous work may contribute through the existing equivalence rule and no
+    // athlete-specific long anchor is manufactured from sub-guideline easy volume.
+    if (boundedTarget <= WEEKLY_AEROBIC_HEALTH_FLOOR_MIN) {
+        return {
+            source: 'guideline_fallback', modality: null,
+            floorMinutes: WEEKLY_AEROBIC_HEALTH_FLOOR_MIN,
+            targetMinutes: WEEKLY_AEROBIC_HEALTH_FLOOR_MIN,
+            upperMinutes: WEEKLY_AEROBIC_HEALTH_TARGET_MAX_MIN,
+            typicalSessionMinutes: null,
+            longAnchor: null,
+            weeklyMinutes: allModalityWeeklyMinutes, observedWeeks: allObservedWeeks,
+        };
+    }
+
     const upper = Math.max(percentile(sorted, 0.75), boundedTarget);
     const modalitySessions = modalityEvidence
         .map(duration)
         .filter((value): value is number => value !== null)
         .sort((a, b) => a - b);
-    const anchorWorkoutId = modality ? LONG_AEROBIC_WORKOUT_BY_MODALITY[modality] : undefined;
-    const anchorMaximum = anchorWorkoutId ? WORKOUTS_BY_ID.get(anchorWorkoutId)?.duration.maximumMin : undefined;
+    const anchorRole = modality ? LONG_AEROBIC_ROLE_BY_MODALITY[modality] : undefined;
+    const anchorWorkoutId = anchorRole?.workoutId;
+    // The long-anchor requirement is consumed by the engine-template allocator, whose
+    // standard prescription is what it can materialize without a separate progression
+    // decision. Cap here at that executable ceiling rather than the detailed workout's
+    // harder-dose maximum; otherwise packing can claim a 90-minute role that allocation
+    // cannot actually prescribe.
+    const anchorMaximum = anchorRole ? ENRICHED_TEMPLATES_BY_ID.get(anchorRole.templateId)?.durationMax : undefined;
     const typicalSessionMinutes = anchorMaximum && modalitySessions.length > 0
         ? Math.min(anchorMaximum, median(modalitySessions))
         : null;
