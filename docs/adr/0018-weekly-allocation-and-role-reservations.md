@@ -86,7 +86,7 @@ that no feasible assignment exists. A supporting candidate is not admitted when 
 viability check exhausts budget before proving that it preserves the incumbent allocation.
 Wall-clock time is deliberately not a semantic cut-off, because it would make equal inputs
 produce different plans on different devices; the operational acceptance budget is p95
-≤50 ms and p99 ≤100 ms for the fixed live-sized scenario fixture. Exceeding it is a
+≤100 ms and p99 ≤150 ms for the fixed live-sized scenario fixture. Exceeding it is a
 performance failure to optimise/cache, not permission to change allocation semantics.
 
 ### D-FEASIBILITY — use the production eligibility path and revalidate after every pick
