@@ -76,6 +76,55 @@ describe('resolveSessionDefinition', () => {
         });
     });
 
+    it('fails closed when a manual prescription removes a required composition component', async () => {
+        const definition: SessionDefinition = {
+            schemaVersion: 1,
+            id: 'manual-composition',
+            revision: 1,
+            title: 'Manual composition',
+            intent: 'training',
+            movementComposition: [{
+                id: 'unilateral',
+                pattern: 'unilateral_lower_body',
+                status: 'required',
+                stepIds: ['split-squat'],
+            }],
+            blocks: [{
+                id: 'main',
+                role: 'main',
+                executionMode: 'sequential',
+                steps: [{
+                    id: 'split-squat',
+                    kind: 'exercise',
+                    exerciseRef: { kind: 'catalog', exerciseId: 'rear_foot_elevated_split_squat' },
+                    compositionPatterns: ['unilateral_lower_body'],
+                }],
+            }],
+        };
+        const hash = await hashSessionDefinition(definition);
+        const source = { kind: 'manual' as const, definitionId: definition.id, revision: 1, contentHash: hash };
+        services.definition.getDefinitionRevision.mockResolvedValue({
+            status: 'AVAILABLE', data: definition, revision: null,
+        } satisfies DataState<SessionDefinition>);
+        services.prescription.getPrescription.mockResolvedValue({
+            status: 'AVAILABLE',
+            revision: null,
+            data: {
+                schemaVersion: 1,
+                prescriptionHash: 'manual-with-missing-component',
+                sessionSource: source,
+                definitionHash: hash,
+                blocks: [{ id: 'main', role: 'main', executionMode: 'sequential', steps: [] }],
+                createdAt: '2026-09-26T12:00:00Z',
+            },
+        } satisfies DataState<ExecutionPrescription>);
+
+        await expect(resolveSessionDefinition('u1', source, 'manual-with-missing-component')).resolves.toMatchObject({
+            status: 'INVALID',
+            issues: [{ code: 'invalid-prescription-session-definition' }],
+        });
+    });
+
     it('rejects an external source when the stored plan bytes do not match its recorded hash', async () => {
         const plan = {
             schema: 'adaptive-training-recommender/external-plan@1', planId: 'plan-1', revision: 1,

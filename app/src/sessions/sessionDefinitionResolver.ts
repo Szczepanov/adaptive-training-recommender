@@ -85,9 +85,26 @@ async function applyStoredPrescription(
             issues: [{ code: 'prescription-definition-hash-mismatch', field: 'definitionHash', documentPath }],
         };
     }
+    const prescribedDefinition: SessionDefinition = {
+        ...definition,
+        blocks: prescriptionState.data.blocks,
+    };
+    const validation = validateSessionDefinition(prescribedDefinition);
+    if (!validation.ok) {
+        const first = validation.issues[0];
+        return {
+            status: 'INVALID',
+            issues: [{
+                code: 'invalid-prescription-session-definition',
+                documentPath,
+                ...(first?.path ? { field: first.path } : {}),
+                ...(first?.message ? { message: first.message } : {}),
+            }],
+        };
+    }
     return {
         status: 'AVAILABLE',
-        data: { ...definition, blocks: prescriptionState.data.blocks },
+        data: validation.value,
         revision: prescriptionHash,
     };
 }
