@@ -42,13 +42,21 @@ describe('Catalog Session Adapter (M3.1 / ADR-0023)', () => {
         expect(sessionDef.blocks.map(block => block.role)).toEqual(['warmup', 'main', 'main', 'accessory']);
         const ramp = sessionDef.blocks[0].steps.find(step => step.id === 'full_warmup_clean_ramp');
         expect(ramp?.load).toEqual({ kind: 'descriptive', display: 'Empty bar, then light rehearsal load' });
+        expect(sessionDef.movementComposition).toEqual([{
+            id: 'regular_unilateral_lower_body',
+            pattern: 'unilateral_lower_body',
+            stepIds: ['unilateral_lower_body'],
+            status: 'required',
+        }]);
+        expect(sessionDef.blocks.flatMap(block => block.steps).find(step => step.id === 'unilateral_lower_body')?.compositionPatterns)
+            .toEqual(['unilateral_lower_body']);
 
         const validation = validateSessionDefinition(sessionDef);
         expect(validation.ok).toBe(true);
     });
 
     it('generates an ExecutionPrescription with valid prescriptionHash', async () => {
-        const presc = makeTestPrescription('str_upper_01');
+        const presc = makeTestPrescription('str_full_01');
         expect(presc).not.toBeNull();
 
         const execPresc = await createExecutionPrescriptionFromCatalog(presc, 'def-hash-xyz');
@@ -57,6 +65,24 @@ describe('Catalog Session Adapter (M3.1 / ADR-0023)', () => {
         expect(execPresc.definitionHash).toBe('def-hash-xyz');
         expect(execPresc.prescriptionHash).toMatch(/^[0-9a-f]{64}$/);
         expect(execPresc.blocks.length).toBeGreaterThan(0);
+        expect(execPresc.displayMetadata?.movementComposition?.[0].pattern).toBe('unilateral_lower_body');
+    });
+
+    it('carries an explicit relaxed composition into a return-to-training definition', () => {
+        const presc = structuredClone(makeTestPrescription('str_full_01'));
+        presc.variantId = 'return_to_training';
+        const omitted = new Set(['unilateral_lower_body']);
+        presc.adjustedBlocks = presc.adjustedBlocks.map(block => ({
+            ...block,
+            steps: block.steps.filter(step => !omitted.has(step.id)),
+        }));
+        const definition = adaptCatalogPrescriptionToSessionDefinition(presc);
+        expect(definition.movementComposition?.[0]).toMatchObject({
+            pattern: 'unilateral_lower_body',
+            status: 'relaxed',
+            reason: expect.any(String),
+        });
+        expect(validateSessionDefinition(definition).ok).toBe(true);
     });
 
     it('does not duplicate catalog step notes when display cues already contain them', () => {

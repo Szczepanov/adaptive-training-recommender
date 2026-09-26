@@ -3,7 +3,7 @@ import { repsStep, timeStep } from './helpers.ts';
 
 export const LOWER_BODY_STRENGTH_WORKOUTS: WorkoutDefinition[] = [
   {
-    id: 'strength_lower_body_01', version: 2, status: 'active',
+    id: 'strength_lower_body_01', version: 3, status: 'active',
     name: 'Lower-body Strength and Power',
     description: 'Lower-body force, power, and tissue-capacity work without upper-body pressing or pulling.',
     modality: 'strength', category: 'full_body_strength', objectives: ['strength_maintenance', 'power_maintenance', 'tissue_capacity'],
@@ -33,6 +33,7 @@ export const LOWER_BODY_STRENGTH_WORKOUTS: WorkoutDefinition[] = [
         repsStep('lower_heel_raise', 'eccentric_heel_raise', 'Eccentric heel raise', 8, { sets: 2, restAfterSec: 45, optional: true })
       ] }
     ],
+    compositionRequirements: [{ id: 'regular_unilateral_lower_body', pattern: 'unilateral_lower_body', stepIds: ['lower_split_squat'] }],
     variants: [
       { id: 'full', targetDurationMin: 55, loadMultiplier: 1, rationale: 'Normal lower-body force and tissue-capacity dose.', stepOverrides: [] },
       { id: 'reduced', targetDurationMin: 40, loadMultiplier: 0.7, rationale: 'Reduce main-lift volume while retaining capacity work.', stepOverrides: [{ stepId: 'lower_power_clean', sets: 2 }, { stepId: 'lower_front_squat', sets: 2 }, { stepId: 'lower_split_squat', sets: 2 }, { stepId: 'lower_rdl', sets: 2 }] },

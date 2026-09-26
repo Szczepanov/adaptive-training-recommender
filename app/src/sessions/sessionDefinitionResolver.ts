@@ -203,6 +203,7 @@ export async function resolveSessionDefinition(
             intent: meta.intent,
             dominantModality: meta.dominantModality,
             duration: meta.duration,
+            movementComposition: meta.movementComposition,
             blocks: prescriptionState.data.blocks,
         };
         if (await hashSessionDefinition(reconstructed) !== prescriptionState.data.definitionHash) {

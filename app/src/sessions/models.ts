@@ -7,6 +7,7 @@
  */
 
 import type { IntensityGauge } from '../engine/models';
+import type { MovementCompositionPattern, SessionMovementCompositionRequirement } from '../workouts/models';
 
 export const SESSION_SCHEMA_VERSION = 1;
 
@@ -136,6 +137,8 @@ export interface StepAlternative {
     exerciseRef: ExerciseRef;
     dose?: SessionDose;
     load?: SessionLoad;
+    compositionPatterns?: MovementCompositionPattern[];
+    degradedComposition?: { pattern: MovementCompositionPattern; reason: string };
 }
 
 export type StepLaterality = 'bilateral' | 'per_side' | 'alternating';
@@ -152,6 +155,9 @@ export interface SessionStep {
     rest?: RangeOrNumber;
     tempo?: string;
     laterality?: StepLaterality;
+    /** Structured, source-provided movement-family evidence; never inferred from title or notes. */
+    compositionPatterns?: MovementCompositionPattern[];
+    degradedComposition?: { pattern: MovementCompositionPattern; reason: string };
     optional?: boolean;
     alternatives?: StepAlternative[];
     notes?: string;
@@ -209,6 +215,8 @@ export interface SessionDefinition {
         notEarlierThanMinutesAfter?: number;
         note?: string;
     }>;
+    /** Optional source-authored composition contract. Missing evidence remains unknown. */
+    movementComposition?: SessionMovementCompositionRequirement[];
     blocks: SessionBlock[];
 }
 
@@ -324,6 +332,7 @@ export interface SessionDisplayMetadata {
     intent: SessionIntent;
     dominantModality?: string;
     duration?: NumericRange;
+    movementComposition?: SessionMovementCompositionRequirement[];
 }
 
 export interface ExecutionPrescription {
@@ -427,6 +436,8 @@ export interface SessionEntry {
     executionId: string;
     stepId?: string;
     exerciseRef?: ExerciseRef;
+    compositionPatterns?: MovementCompositionPattern[];
+    degradedComposition?: { pattern: MovementCompositionPattern; reason: string };
     side?: 'left' | 'right' | 'bilateral';
     selectedOptionId?: string;
     completedAt: string;

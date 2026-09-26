@@ -3,7 +3,7 @@ import { repsStep, timeStep } from './helpers.ts';
 
 export const STRENGTH_WORKOUTS: WorkoutDefinition[] = [
   {
-    id: 'strength_full_body_maintenance_01', version: 2, status: 'active',
+    id: 'strength_full_body_maintenance_01', version: 3, status: 'active',
     name: 'Primary Full-body Strength Maintenance',
     description: 'Low-fatigue strength session preserving force, Olympic-lift speed and tissue capacity during cycling build.',
     modality: 'strength', category: 'full_body_strength', objectives: ['strength_maintenance', 'power_maintenance', 'tissue_capacity'],
@@ -22,6 +22,7 @@ export const STRENGTH_WORKOUTS: WorkoutDefinition[] = [
       ]},
       { id: 'main', name: 'Strength maintenance', role: 'main', steps: [
         repsStep('front_squat', 'front_squat', 'Front squat', 5, { sets: 3, restAfterSec: 150, target: { type: 'reps_in_reserve', min: 3, max: 5 } }),
+        repsStep('unilateral_lower_body', 'rear_foot_elevated_split_squat', 'Rear-foot elevated split squat', 6, { sets: 2, restAfterSec: 90, target: { type: 'reps_in_reserve', min: 3, max: 5 } }),
         repsStep('rdl', 'romanian_deadlift', 'Romanian deadlift', 6, { sets: 3, restAfterSec: 120, target: { type: 'reps_in_reserve', min: 3, max: 5 } }),
         repsStep('bench', 'bench_press', 'Bench press', 6, { sets: 3, restAfterSec: 120, target: { type: 'reps_in_reserve', min: 3, max: 5 } }),
         repsStep('pullup', 'pull_up', 'Pull-up', 5, { sets: 3, restAfterSec: 90, target: { type: 'reps_in_reserve', min: 2, max: 4 } })
@@ -36,11 +37,16 @@ export const STRENGTH_WORKOUTS: WorkoutDefinition[] = [
     ],
     variants: [
       { id: 'full', targetDurationMin: 60, loadMultiplier: 1, rationale: 'Normal weekly force-maintenance dose.', stepOverrides: [] },
-      { id: 'reduced', targetDurationMin: 45, loadMultiplier: 0.7, rationale: 'Reduce lower-body sets and preserve upper-body and tissue work.', stepOverrides: [{ stepId: 'front_squat', sets: 2 }, { stepId: 'rdl', sets: 2 }, { stepId: 'power_clean', sets: 3 }] },
-      { id: 'return_to_training', targetDurationMin: 18, loadMultiplier: 0.5, rationale: 'Use upper-dominant work and low-load tissue capacity.', stepOverrides: [{ stepId: 'full_warmup_clean_ramp', omit: true }, { stepId: 'power_clean', omit: true }, { stepId: 'front_squat', omit: true }, { stepId: 'rdl', sets: 2, target: { type: 'reps_in_reserve', min: 5, max: 6 } }, { stepId: 'bench', sets: 2 }, { stepId: 'pullup', sets: 2 }, { stepId: 'full_nordic', omit: true }, { stepId: 'full_heel_raise', omit: true }] }
+      { id: 'reduced', targetDurationMin: 45, loadMultiplier: 0.7, rationale: 'Reduce lower-body sets and preserve upper-body and tissue work.', stepOverrides: [{ stepId: 'front_squat', sets: 2 }, { stepId: 'unilateral_lower_body', sets: 1 }, { stepId: 'rdl', sets: 2 }, { stepId: 'power_clean', sets: 3 }] },
+      { id: 'return_to_training', targetDurationMin: 18, loadMultiplier: 0.5, rationale: 'Use upper-dominant work and low-load tissue capacity.', stepOverrides: [{ stepId: 'full_warmup_clean_ramp', omit: true }, { stepId: 'power_clean', omit: true }, { stepId: 'front_squat', omit: true }, { stepId: 'unilateral_lower_body', omit: true }, { stepId: 'rdl', sets: 2, target: { type: 'reps_in_reserve', min: 5, max: 6 } }, { stepId: 'bench', sets: 2 }, { stepId: 'pullup', sets: 2 }, { stepId: 'full_nordic', omit: true }, { stepId: 'full_heel_raise', omit: true }], compositionRelaxations: [{ pattern: 'unilateral_lower_body', reason: 'Return-to-training variant intentionally uses upper-dominant work while lower-body loading is reintroduced.' }] }
     ],
+    compositionRequirements: [{ id: 'regular_unilateral_lower_body', pattern: 'unilateral_lower_body', stepIds: ['unilateral_lower_body'] }],
     regressions: ['strength_compact_power_01', 'strength_full_body_reentry_01'], progressions: [],
-    substitutions: [{ exerciseId: 'front_squat', substituteExerciseId: 'rear_foot_elevated_split_squat', reason: 'Use a symptom-free unilateral alternative when equipment or squat tolerance requires it.' }],
+    substitutions: [
+      { exerciseId: 'front_squat', substituteExerciseId: 'rear_foot_elevated_split_squat', reason: 'Use a symptom-free unilateral alternative when equipment or squat tolerance requires it.' },
+      { exerciseId: 'rear_foot_elevated_split_squat', substituteExerciseId: 'walking_lunge', reason: 'Preserve unilateral lower-body composition with a supported lunge pattern.' },
+      { exerciseId: 'rear_foot_elevated_split_squat', substituteExerciseId: 'step_up', reason: 'Preserve unilateral lower-body composition with a controlled step-up pattern.' }
+    ],
     garmin: { exportable: false },
     tags: ['strength', 'low_grind', 'cycling_support'],
     sourceNotes: ['Macrocycle primary strength session is 45–70 minutes, mostly RPE 5–7, no grinding and generally 3–5 repetitions in reserve.']

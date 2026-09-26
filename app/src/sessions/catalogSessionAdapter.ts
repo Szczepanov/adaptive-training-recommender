@@ -1,5 +1,6 @@
 import type { WorkoutPrescription, PrescriptionBlock, PrescriptionStep, WorkoutBlock, WorkoutStep, WorkoutStepLoad } from '../workouts/models';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
+import { EXERCISES_BY_ID } from '../workouts/exercises';
 import type {
     SessionDefinition,
     SessionBlock,
@@ -153,6 +154,9 @@ function adaptCatalogWorkoutStep(step: WorkoutStep, display?: PrescriptionStep):
         ...(step.target?.type === 'rpe' ? { effort: { rpe: { min: step.target.min, max: step.target.max } } } : {}),
         ...(step.target?.type === 'reps_in_reserve' ? { effort: { rir: { min: step.target.min, max: step.target.max } } } : {}),
         ...(step.optional ? { optional: true } : {}),
+        ...(EXERCISES_BY_ID.get(step.exerciseId)?.compositionPatterns?.length
+            ? { compositionPatterns: EXERCISES_BY_ID.get(step.exerciseId)!.compositionPatterns }
+            : {}),
         ...(notes.length ? { notes: notes.join('; ') } : {}),
         ...(technicalStopConditions?.length ? { stopConditions: technicalStopConditions } : {}),
     };
@@ -185,6 +189,12 @@ export function adaptCatalogPrescriptionToSessionDefinition(
     // adjustedBlocks is the evaluated prescription.  Do not parse display strings back
     // into dose: it loses source identity and silently changes the executed content.
     const blocks = prescription.adjustedBlocks.map(block => adaptCatalogWorkoutBlock(block, displayById));
+    const variant = workout?.variants.find(item => item.id === prescription.variantId);
+    const relaxations = new Map((variant?.compositionRelaxations ?? []).map(item => [item.pattern, item.reason]));
+    const movementComposition = workout?.compositionRequirements?.map(requirement => {
+        const reason = relaxations.get(requirement.pattern);
+        return { ...requirement, status: reason ? 'relaxed' as const : 'required' as const, ...(reason ? { reason } : {}) };
+    });
 
     return {
         schemaVersion: 1,
@@ -194,6 +204,7 @@ export function adaptCatalogPrescriptionToSessionDefinition(
         summary: workout?.description ?? '',
         intent,
         ...(modality ? { dominantModality: modality } : {}),
+        ...(movementComposition?.length ? { movementComposition } : {}),
         duration: {
             min: prescription.targetDurationMin ?? workout?.duration.minimumMin ?? 30,
             max: prescription.targetDurationMin ?? workout?.duration.maximumMin ?? 30,
@@ -226,6 +237,7 @@ export async function createExecutionPrescriptionFromCatalog(
             intent: sessionDef.intent,
             ...(sessionDef.dominantModality !== undefined ? { dominantModality: sessionDef.dominantModality } : {}),
             ...(sessionDef.duration !== undefined ? { duration: sessionDef.duration } : {}),
+            ...(sessionDef.movementComposition !== undefined ? { movementComposition: sessionDef.movementComposition } : {}),
         },
         createdAt: now,
     };

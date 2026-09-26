@@ -83,6 +83,22 @@ describe('Session Definition Canonical Hashing (M3.1 / ADR-0023)', () => {
         expect(hash1).not.toBe(hash2);
     });
 
+    it('hashes authored movement composition and structured component metadata', async () => {
+        const base: SessionDefinition = {
+            schemaVersion: 1, id: 'strength', revision: 1, title: 'Strength', intent: 'training',
+            movementComposition: [{ id: 'unilateral', pattern: 'unilateral_lower_body', stepIds: ['split'], status: 'required' }],
+            blocks: [{ id: 'main', role: 'main', executionMode: 'sequential', steps: [{
+                id: 'split', kind: 'exercise', exerciseRef: { kind: 'catalog', exerciseId: 'rear_foot_elevated_split_squat' },
+                compositionPatterns: ['unilateral_lower_body'],
+            }] }],
+        };
+        const relaxed: SessionDefinition = {
+            ...base,
+            movementComposition: [{ ...base.movementComposition![0], status: 'relaxed', reason: 'Return-to-training variant.' }],
+        };
+        await expect(hashSessionDefinition(base)).resolves.not.toBe(await hashSessionDefinition(relaxed));
+    });
+
     it('does not treat source identity, revision, or placement as executable content', async () => {
         const base: SessionDefinition = {
             schemaVersion: 1, id: 'manual-a', revision: 1, title: 'Session', intent: 'training',

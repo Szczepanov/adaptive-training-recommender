@@ -84,6 +84,14 @@ export type ExerciseFamily = 'cycling' | 'running' | 'strength' | 'field_drill' 
 export type ExerciseDoseKind = 'repetition' | 'duration' | 'distance' | 'checkoff';
 export type ExerciseLoadKind = 'bodyweight' | 'mass' | 'band' | 'percent_max' | 'percent_one_rm' | 'descriptive' | 'unloaded';
 export type ExerciseLaterality = 'bilateral' | 'per_side' | 'alternating';
+/** Stable exercise composition facets. These describe a movement's role, not its dose or stimulus credit. */
+export type MovementCompositionPattern =
+  | 'knee_dominant_bilateral'
+  | 'hip_dominant_hinge'
+  | 'unilateral_lower_body'
+  | 'upper_push'
+  | 'upper_pull'
+  | 'trunk_tissue_capacity';
 export type ExerciseMeasurementProfile = 'repetitions' | 'duration' | 'distance' | 'timed_sprint' | 'checkoff';
 export type FieldDomainFacet = 'acceleration' | 'max_velocity' | 'braking' | 'change_of_direction' | 'elastic';
 
@@ -107,6 +115,8 @@ export interface ExerciseDefinition {
   name: string;
   modality: WorkoutModality;
   movementPatterns: string[];
+  /** Explicit composition metadata; never inferred from name or the broad legacy movementPatterns list. */
+  compositionPatterns?: MovementCompositionPattern[];
   primaryMuscles: string[];
   equipment: Equipment[];
   impact: 'none' | 'low' | 'moderate' | 'high';
@@ -232,6 +242,20 @@ export interface WorkoutVariant {
   loadMultiplier: number;
   rationale: string;
   stepOverrides: WorkoutVariantStepOverride[];
+  /** Required movement families this authored variant intentionally relaxes. */
+  compositionRelaxations?: Array<{ pattern: MovementCompositionPattern; reason: string }>;
+}
+
+export interface WorkoutCompositionRequirement {
+  id: string;
+  pattern: MovementCompositionPattern;
+  /** Stable authored step identities which can deliver this requirement. */
+  stepIds: string[];
+}
+
+export interface SessionMovementCompositionRequirement extends WorkoutCompositionRequirement {
+  status: 'required' | 'relaxed';
+  reason?: string;
 }
 
 export type WorkoutParameterUnit =
@@ -366,6 +390,8 @@ export interface WorkoutDefinition {
   /** Active strength catalog entries cite the bounded evidence used for their warm-up rule. */
   warmupKnowledgeClaimIds?: string[];
   blocks: WorkoutBlock[];
+  /** Optional authored session-composition contract. */
+  compositionRequirements?: WorkoutCompositionRequirement[];
   variants: WorkoutVariant[];
   parameters?: WorkoutParameter[];
   regressions: string[];
@@ -374,6 +400,8 @@ export interface WorkoutDefinition {
     exerciseId: string;
     substituteExerciseId: string;
     reason: string;
+    /** Explicitly records a composition loss when the alternative cannot preserve a declared family. */
+    degradedComposition?: { pattern: MovementCompositionPattern; reason: string };
   }>;
   garmin: {
     exportable: boolean;

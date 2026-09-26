@@ -198,6 +198,27 @@ describe('resolveSessionDefinition', () => {
             expect(result.data.blocks).toEqual(blocks);
         });
 
+        it('round-trips movement-composition metadata through catalog prescription replay', async () => {
+            const movementComposition: NonNullable<ExecutionPrescription['displayMetadata']>['movementComposition'] = [
+                { id: 'unilateral', pattern: 'unilateral_lower_body', status: 'required', stepIds: ['split-squat'] },
+            ];
+            const meta: NonNullable<ExecutionPrescription['displayMetadata']> = {
+                title: 'Strength', intent: 'training', dominantModality: 'strength', duration: { min: 30, max: 60 }, movementComposition,
+            };
+            const blocks: ExecutionPrescription['blocks'] = [{ id: 'evaluated-block', role: 'main', executionMode: 'sequential', steps: [] }];
+            const definition: SessionDefinition = {
+                schemaVersion: 1, id: 'catalog-workout-1', revision: 1, title: meta.title, intent: meta.intent,
+                dominantModality: meta.dominantModality, duration: meta.duration, movementComposition, blocks,
+            };
+            const definitionHash = await hashSessionDefinition(definition);
+            services.prescription.getPrescription.mockResolvedValue({ status: 'AVAILABLE', revision: null, data: {
+                ...storedPrescription, definitionHash, blocks, displayMetadata: meta,
+            } } satisfies DataState<ExecutionPrescription>);
+            await expect(resolveSessionDefinition('u1', catalogSource, 'hash-1')).resolves.toMatchObject({
+                status: 'AVAILABLE', data: { movementComposition },
+            });
+        });
+
         it('rejects a catalog prescription whose stored displayMetadata does not match its definitionHash', async () => {
             const blocks: ExecutionPrescription['blocks'] = [{ id: 'evaluated-block', role: 'main', executionMode: 'sequential', steps: [] }];
             services.prescription.getPrescription.mockResolvedValue({
