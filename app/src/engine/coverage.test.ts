@@ -320,6 +320,32 @@ describe('athlete-relative aerobic_volume floor (#757)', () => {
             }],
         }], EVERGREEN_GENERAL_COVERAGE_SET);
         expect(wrongCanonicalIdentity.requirements.find(requirement => requirement.key === 'long_aerobic_anchor')?.completedSessions).toBe(0);
+
+        // A completed occurrence is governed by actual performed duration even if a legacy
+        // object still carries the original prescription range. Projected occurrences may
+        // use that range because their exact duration is not known yet.
+        const completedRange = buildCoverageState(plan, '2026-09-03', [{
+            date: '2026-09-02', workoutId: 'cycling_zone2_standard_01',
+            durationMin: 60, durationMax: 90,
+        }], EVERGREEN_GENERAL_COVERAGE_SET);
+        expect(completedRange.requirements.find(requirement => requirement.key === 'long_aerobic_anchor')?.completedSessions).toBe(0);
+
+        const projectedRange = buildCoverageState(plan, '2026-09-03', [{
+            date: '2026-09-02', workoutId: 'cycling_zone2_standard_01',
+            durationMin: 60, durationMax: 90, source: 'projected',
+        }], EVERGREEN_GENERAL_COVERAGE_SET);
+        expect(projectedRange.requirements.find(requirement => requirement.key === 'long_aerobic_anchor')?.projectedSessions).toBe(1);
+
+        const canonicalCompletedRange = buildCoverageState(plan, '2026-09-03', [{
+            date: '2026-09-02', workoutId: 'cycling_zone2_standard_01',
+            durationMin: 60, durationMax: 90,
+            canonicalCoverageCredits: [{
+                coverageSetId: EVERGREEN_GENERAL_COVERAGE_SET.id,
+                coverageKey: 'long_aerobic_anchor',
+                creditKind: 'exact',
+            }],
+        }], EVERGREEN_GENERAL_COVERAGE_SET);
+        expect(canonicalCompletedRange.requirements.find(requirement => requirement.key === 'long_aerobic_anchor')?.completedSessions).toBe(0);
     });
 
     it('credits an uncapped planned ride or base run whose prescribed range reaches the floor (#768, #798)', () => {
