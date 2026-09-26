@@ -76,7 +76,7 @@ import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './sti
 import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry } from './coverage';
 import { resolveEvergreenPlan } from './evergreenPlanning';
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
-import { isFreshSubjectiveWithAdverseWearables, isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
+import { hasCurrentClinicalSymptoms, isFreshSubjectiveWithAdverseWearables, isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { applyPlanningOverlays } from './planningOverlays';
 import {
     allocationSurvives,
@@ -2387,6 +2387,7 @@ export async function generateWeekAheadPlanWithIntent(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, todayDate, options.fixedActivities ?? [], options.days ?? 7,
         isAdverseRecovery, options.scheduleOverlays ?? [], new Map(), aerobicVolumeFloor,
+        hasCurrentClinicalSymptoms(todayReadiness),
     );
     return generateWeekAheadPlan(
         todayReadiness,

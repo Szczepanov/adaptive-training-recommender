@@ -110,16 +110,16 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'evergreen.high_intensity_weekly_prior', domain: 'evergreen_dose', title: 'Conditional high-intensity weekly prior',
-        currentRule: 'When recent training evidence qualifies, Evergreen targets one high-intensity session and permits no more than two per week.',
+        currentRule: 'When recent training evidence qualifies, Evergreen targets one high-intensity session and permits no more than two per week; acute adverse recovery, current pain/injury, illness or red-flag symptoms, and Post-Event Recovery withhold the prior. A packed quality occurrence may substitute up to one aerobic-volume reservation using that role\'s current packed dose, bounded so at least one full aerobic occurrence remains; the packer restores the full aerobic requirement when quality is not packed.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
-        codeRefs: ['engine/evergreenStrategy.ts:resolveEvidenceBackedStrategy'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.conditionalHighIntensityPrior],
-        coverageRationale: 'The weekly target/cap is explicitly registered as a conservative product prior. Qualification thresholds are inventoried separately.',
+        codeRefs: ['engine/evergreenStrategy.ts:resolveEvidenceBackedStrategy', 'engine/weeklyDosePacking.ts:packWeeklyDose'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.conditionalHighIntensityPrior],
+        coverageRationale: 'The weekly target/cap and bounded one-reservation transactional allocation rule are registered as product policy. Qualification thresholds are inventoried separately; the credit follows the current aerobic role dose, preserves at least one full aerobic occurrence, and does not rewrite the underlying WHO aerobic requirement.',
     },
     {
         id: 'evergreen.quality_set_composition', domain: 'evergreen_dose', title: 'Optional evergreen quality workout set',
-        currentRule: 'The optional sustained_quality role permits controlled cycling threshold, controlled cycling tempo (40-minute default, authored 30-minute easier dose), and running tempo exact identities when an eligible quality strategy is packed; all ordinary safety, time, spacing, and load gates still apply. A capacity miss is reported only when every observed feasible forecast date in the active plan block has a fulfilled exact required-role reservation.',
+        currentRule: 'The optional sustained_quality role permits controlled cycling threshold, controlled cycling tempo (40-minute default, authored 30-minute easier dose), and running tempo exact identities. The packer can reserve capacity for quality transactionally, while ordinary safety, time, spacing, load, exact-role coverage and weekly-capacity gates still apply.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
-        codeRefs: ['workouts/event-plan.ts:EVERGREEN_SESSION_COVERAGE', 'engine/templates.ts:TEMPLATES', 'engine/eligibility.ts:evaluateTemplateEligibility', 'engine/optimizer.ts:rankCandidates', 'engine/planner.ts:generateWeekAheadPlan'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition],
+        codeRefs: ['workouts/event-plan.ts:EVERGREEN_SESSION_COVERAGE', 'engine/templates.ts:TEMPLATES', 'engine/weeklyDosePacking.ts:packWeeklyDose', 'engine/eligibility.ts:evaluateTemplateEligibility', 'engine/optimizer.ts:rankCandidates', 'engine/planner.ts:generateWeekAheadPlan'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition],
         coverageRationale: 'Registered as an explicit exact-identity product-policy claim for issue #758, separate from the conditional weekly high-intensity prior and from catalog eligibility.',
     },
     {

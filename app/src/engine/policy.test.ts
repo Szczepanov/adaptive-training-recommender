@@ -3,8 +3,8 @@ import { isHistoricalPolicyVersion, HISTORICAL_POLICY_VERSIONS, POLICY_VERSION }
 
 describe('isHistoricalPolicyVersion', () => {
     it('records the current transition and the previous live policies exactly once', () => {
-        expect(POLICY_VERSION).toBe('2026-09-established-easy-run-aerobic-coverage-v1');
-        expect(HISTORICAL_POLICY_VERSIONS[0]).toBe('2026-09-garmin-cycling-typekey-modality-v1');
+        expect(POLICY_VERSION).toBe('2026-09-evergreen-quality-transactional-substitution-v1');
+        expect(HISTORICAL_POLICY_VERSIONS[0]).toBe('2026-09-established-easy-run-aerobic-coverage-v1');
         expect(HISTORICAL_POLICY_VERSIONS.filter(
             (version) => version === '2026-09-evergreen-cycling-quality-set-v1',
         )).toHaveLength(1);

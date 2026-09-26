@@ -49,17 +49,36 @@ The first blocker applies even in the 90–120-minute frozen case. Adding a 30-m
 
 ## Implemented safe scope
 
-The evergreen optional `sustained_quality` set now includes the existing
-`cycling_tempo_surges_01` identity. Its 30-minute authored easier dose may enter a
-35-minute window, while `end_mod_02` keeps its 40-minute default for ordinary
-recommendations and training-history accounting. The low-time persona now selects a
-cap-fitting cycling quality session. The normal-recovery established-history case
-still selects no quality because every observed feasible date in its active quality
-block is occupied by a fulfilled required-role reservation; its allocation report
-records `capacity_exhausted_by_required_roles`. Required aerobic/strength reservations
-and all recovery, tissue, spacing, and rolling-load gates remain authoritative.
+The first issue #758 change added the existing `cycling_tempo_surges_01` identity to the
+optional `sustained_quality` set, giving the 35-minute persona a real cycling quality
+candidate. The remaining baseline failure was capacity: the full easy-aerobic requirement
+could consume the forecast dates before optional quality reached daily selection.
 
-This implements the conservative GPT-6-Sol recommendation but leaves the issue's
-baseline criterion of at least one quality session unresolved. Achieving that requires
-a separate product choice to add session capacity or let an optional quality role
-displace/report a required occurrence; this change makes neither choice.
+PR #835 resolves that capacity conflict without weakening the evidence contract:
+
+- `resolveEvidenceBackedStrategy` keeps the WHO-backed aerobic requirement at its full
+  150-minute minimum. Quality is never pre-credited into strategy provenance.
+- `packWeeklyDose` may provisionally substitute up to one aerobic-volume reservation while
+  it attempts to place an eligible high-intensity occurrence. The credited minute value
+  follows that aerobic role's current packed dose, including the athlete-relative floor from
+  #757, but is bounded so at least one full aerobic occurrence remains. This is an explicit
+  product heuristic with ADR-0033 lineage, not a physiological equivalence claim.
+- The substitution becomes effective only when quality is actually packed. If quality
+  cannot be packed, the packer reruns against the full aerobic requirement; warning logic
+  uses the same single reservation credit and cannot subtract it twice.
+- The normal-recovery cycling-primary baseline now has capacity for cycling quality over
+  the 14-day acceptance window. The 35-minute case retains its authored cap-fitting
+  cycling tempo dose. Adverse-recovery and local-tissue-conflict cases remain quality-free.
+- Freeing that capacity exposed that the local-tissue-conflict case had been quality-free
+  only because no slot was left, not because a gate withheld quality. The generic
+  conditional quality prior is now also withheld explicitly while the planning-day
+  check-in reports current pain/injury, illness or red-flag symptoms
+  (`hasCurrentClinicalSymptoms`), so symptom suppression no longer depends on packing
+  arithmetic.
+- Event-model `Base`/`Build` labels are deliberately **not** treated as mesocycle
+  `develop`/`maintain` authority. ADR-0037 owns objective-level block intent, and the
+  event-proximity phase can span training blocks with different purposes. The generic
+  quality prior is only additionally suppressed for explicit `Post-Event Recovery`.
+
+This keeps issue #758 narrow: it creates a safe capacity substitution for an already
+eligible exact quality role rather than inventing a second mesocycle-intent authority.
