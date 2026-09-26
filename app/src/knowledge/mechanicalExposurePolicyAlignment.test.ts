@@ -10,6 +10,7 @@ import {
     grantsMechanicalExposureCredit,
     MECHANICAL_QUALIFYING_IDENTITIES,
     MECHANICAL_QUALIFYING_WORKOUT_IDS,
+    MECHANICAL_MAINTENANCE_WORKOUT_IDS,
 } from '../workouts/mechanicalExposure';
 import { ENGINE_KNOWLEDGE_COVERAGE } from './knowledgeCoverage';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from './sportsKnowledgeRegistry';
@@ -62,7 +63,7 @@ describe('mechanical exposure policy alignment (ADR-0033, issue #804)', () => {
             recommendationStrength: 'conditional',
             safetyImpact: 'moderate',
         });
-        expect(evidence.limitations.some(limitation => limitation.includes('saturation') || limitation.includes('microdamage'))).toBe(true);
+        expect(evidence.limitations.some(limitation => limitation.includes('no-consecutive-day') || limitation.includes('14-day'))).toBe(true);
 
         const policy = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.mechanicalExposurePolicy);
         expect(policy).toMatchObject({
@@ -122,6 +123,9 @@ describe('mechanical exposure policy alignment (ADR-0033, issue #804)', () => {
         const stage4 = MECHANICAL_QUALIFYING_IDENTITIES.filter(i => i.stage === 4);
         expect(stage4.some(i => i.workoutId === 'field_controlled_maintenance_01')).toBe(true);
 
+        expect(MECHANICAL_MAINTENANCE_WORKOUT_IDS).toContain('running_walk_run_01');
+        expect(MECHANICAL_MAINTENANCE_WORKOUT_IDS).not.toContain('running_long_run_01');
+
         // Readiness-modified doses never earn credit
         expect(grantsMechanicalExposureCredit({ workoutId: 'running_easy_continuous_01', isReadinessModifiedDose: true })).toBe(false);
         // Full doses earn credit
@@ -141,25 +145,23 @@ describe('mechanical exposure policy alignment (ADR-0033, issue #804)', () => {
         expect(missingVerdict.eligibleWorkoutIds).toContain('running_walk_run_01');
         expect(missingVerdict.eligibleWorkoutIds).not.toContain('running_easy_continuous_01');
 
-        // Positive normal response permits advancement to Stage 2
+        // Two explicit tolerated Stage-1 exposures permit advancement to Stage 2.
         const advanceVerdict = evaluateMechanicalProgression({
             asOfDate: '2026-09-20',
-            exposureHistory: [{ date: '2026-09-17', workoutId: 'running_walk_run_01', stage: 1 }],
+            exposureHistory: [
+                { date: '2026-09-15', workoutId: 'running_walk_run_01', stage: 1 },
+                { date: '2026-09-17', workoutId: 'running_walk_run_01', stage: 1 },
+            ],
             checkinHistory: [
-                {
-                    date: '2026-09-18',
-                    checkin: checkin({
-                        tissueResponses: {
-                            knee: { region: 'knee', morningState: 'normal', nextMorningReaction: 'normal' },
-                        },
-                    }),
-                },
+                { date: '2026-09-16', checkin: checkin({ tissueResponses: { knee: { region: 'knee', morningState: 'normal', nextMorningReaction: 'normal' } } }) },
+                { date: '2026-09-18', checkin: checkin({ tissueResponses: { knee: { region: 'knee', morningState: 'normal', nextMorningReaction: 'normal' } } }) },
             ],
             targetStage: 2,
         });
         expect(advanceVerdict.stage).toBe(2);
         expect(advanceVerdict.tissueResponse.verdict).toBe('normal');
-        expect(advanceVerdict.eligibleWorkoutIds).toContain('running_easy_continuous_01');
+        expect(advanceVerdict.eligibleWorkoutIds).toContain('strength_reactive_power_01');
+        expect(advanceVerdict.eligibleWorkoutIds).not.toContain('running_easy_continuous_01');
 
         // Adverse symptoms cause regression to Stage 1
         const regressedVerdict = evaluateMechanicalProgression({
