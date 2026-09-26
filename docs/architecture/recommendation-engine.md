@@ -814,8 +814,11 @@ requiring at least three measured sessions spanning seven days; projected select
 the same envelope at their prescribed duration upper bound. Pending fixed training with exact
 catalog or external-authored identity reserves its stated minutes and one session slot, even
 when booked later in the taper; an unlinked calendar commitment is not assumed to be training.
-An athlete-authored taper of another length keeps the generic taper behavior rather than
-silently inheriting this Olympic-specific calibration. The volume ceiling is 0.59 of that
+Across the whole taper, the remaining slot budget protects at least one opportunity for each
+race discipline not yet represented; this only reserves planner opportunity and never bypasses
+equipment, readiness, safety or other eligibility gates. An athlete-authored taper of another
+length keeps the generic taper behavior rather than silently inheriting this Olympic-specific
+calibration. The volume ceiling is 0.59 of that
 pre-taper block, expressing the registered 41–60% population-level taper reduction as a
 conservative product rule. The frequency ceiling rounds up 0.85 of the athlete's prior
 session count, with a three-session floor. Each seven-day block may use at most half the
