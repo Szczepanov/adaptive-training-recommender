@@ -102,6 +102,7 @@ import {
     primaryAllocationUnresolved,
 } from './weeklyAllocation';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
+import type { CheckinRecord } from './mechanicalProgression';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { resolveHealthPlanningPolicy, type HealthPlanningPolicy } from './healthPlanningPolicy';
 import { fixedActivityOccurrenceKey, resolveFixedActivityIdentity } from './fixedActivityIdentity';
@@ -328,6 +329,9 @@ export interface WeekAheadOptions {
     fatigueFusionPolicy?: FatigueFusionPolicy;
     /** Event-free health planning prior resolved from the current training intent. */
     healthPlanningPolicy?: HealthPlanningPolicy | null;
+    /** Structured tissue-response history for #804 mechanical progression. Absence is
+     * supported and intentionally prevents stage advancement rather than assuming normal response. */
+    mechanicalCheckinHistory?: readonly CheckinRecord[];
 }
 
 const ZERO_COST: WorkoutCostProfile = {
@@ -2452,6 +2456,7 @@ export async function generateWeekAheadPlanWithIntent(
         preferences, context, todayDate, options.fixedActivities ?? [], options.days ?? 7,
         isAdverseRecovery, options.scheduleOverlays ?? [], new Map(), aerobicVolumeFloor,
         hasCurrentClinicalSymptoms(todayReadiness),
+        options.mechanicalCheckinHistory ?? [],
     );
     return generateWeekAheadPlan(
         todayReadiness,
