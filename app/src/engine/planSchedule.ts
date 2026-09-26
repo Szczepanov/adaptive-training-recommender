@@ -395,17 +395,23 @@ export function buildEvergreenPlanDefinition(
       coverageTargetSessions: count,
     }];
   });
-  // A coverage-only capability is planned only when the packer embedded it in a real
-  // occurrence; its count therefore never adds a session (ADR-0044 D6).
+  // Coverage-only capability semantics differ by owner. Power (#802) remains embedded-only:
+  // no packed host means no standalone catch-up target. Mechanical exposure (#804) must remain
+  // visible even when no current host carries it, so the canonical coverage allocator can repair
+  // the low-cost maintenance target instead of silently dropping the requirement.
   const coverageRequirements: PlanCoverageRequirementDefinition[] = packedBudget.requirements.flatMap(requirement => {
     const coverageKey = EVERGREEN_COVERAGE_ONLY_BY_ADAPTATION[requirement.adaptation];
-    const count = countByAdaptation.get(requirement.adaptation) ?? 0;
-    if (!coverageKey || count === 0) return [];
+    const packedCount = countByAdaptation.get(requirement.adaptation) ?? 0;
+    if (!coverageKey) return [];
+    const targetSessions = requirement.adaptation === 'mechanical_exposure'
+      ? Math.min(requirement.target.target, requirement.target.maximum)
+      : packedCount;
+    if (targetSessions <= 0) return [];
     return [{
       coverageKey,
       blockId: 'block_general',
       minimumSessions: requirement.floor?.dose.value ?? 0,
-      targetSessions: count,
+      targetSessions,
       priority: coverageOnlyPriority(requirement.priority),
       knowledgeRefs: [...requirement.knowledgeRefs],
     }];
