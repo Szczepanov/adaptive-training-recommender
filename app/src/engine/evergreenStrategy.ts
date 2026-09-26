@@ -96,7 +96,19 @@ export interface AthleteTrainingState {
 export interface GoalOrEventContext {
     priorities: readonly TrainingPriority[];
     isAdverseRecovery?: boolean;
+    /** Current pain/injury, illness or red-flag symptoms reported for the planning day. */
+    hasCurrentClinicalSymptoms?: boolean;
     phase?: PhaseWeights | null;
+}
+
+/** True when today's check-in reports a current clinical symptom (pain/injury, illness or
+ * a red flag). Mirrors the clinical-source resolution used by `evaluateEnvelopes`. */
+export function hasCurrentClinicalSymptoms(readiness: DailyReadiness | null | undefined): boolean {
+    if (!readiness) return false;
+    const subj = readiness.subjective ?? {};
+    return subj.painFlag === true
+        || (subj.clinicalEnvelopeSources?.length ?? 0) > 0
+        || (subj.redFlagFindings?.length ?? 0) > 0;
 }
 
 export function isSevereAdverseRecoveryReadiness(
@@ -311,6 +323,7 @@ export function resolveEvidenceBackedStrategy(
     const canUseConditionalPrior = athleteState.inference.dataQuality === 'high'
         && athleteState.trainingAgeProxy === 'established'
         && !goalOrEvent.isAdverseRecovery
+        && !goalOrEvent.hasCurrentClinicalSymptoms
         && !isRecoveryPhase;
 
     // Event proximity is not the mesocycle authority. An athlete can be in the event-model
@@ -347,9 +360,11 @@ export function resolveEvidenceBackedStrategy(
             code: 'conditional_prior_withheld',
             message: goalOrEvent.isAdverseRecovery
                 ? 'Performance-intensity work is withheld during acute adverse recovery.'
-                : isRecoveryPhase
-                    ? 'Performance-intensity work is withheld during post-event recovery.'
-                    : 'Performance-intensity work is withheld until sufficient, consistent recent training evidence is available.',
+                : goalOrEvent.hasCurrentClinicalSymptoms
+                    ? 'Performance-intensity work is withheld while pain, injury, illness or red-flag symptoms are reported.'
+                    : isRecoveryPhase
+                        ? 'Performance-intensity work is withheld during post-event recovery.'
+                        : 'Performance-intensity work is withheld until sufficient, consistent recent training evidence is available.',
         });
     }
     return { requirements, ...(canUseConditionalPrior ? { hardSessionCap } : {}), warnings };

@@ -80,6 +80,8 @@ export function resolveEvergreenPlan(
      * duration the coverage ledger will demand, so an unreachable floor surfaces as an
      * explicit packing shortfall instead of a silently dropped role. */
     aerobicVolumeFloor: AerobicVolumeFloor | null = null,
+    /** Current pain/injury, illness or red-flag symptoms withhold the generic quality prior. */
+    hasCurrentClinicalSymptoms: boolean = false,
 ): ResolvedEvergreenPlan | null {
     if (planningContext.mode !== 'evergreen' || !preferences) return null;
     const availability = Array.from({ length: Math.max(1, days) }, (_, index) => {
@@ -92,7 +94,7 @@ export function resolveEvergreenPlan(
     const capacity = resolveTrainingCapacity(planningContext.profile.weeklyCommitment, preferences, availability);
     const stateEvidence = historySnapshot?.athleteStateEvidence;
     const strategy = resolveEvidenceBackedStrategy(
-        { priorities: planningContext.profile.priorities, isAdverseRecovery, phase },
+        { priorities: planningContext.profile.priorities, isAdverseRecovery, hasCurrentClinicalSymptoms, phase },
         inferAthleteTrainingState(
             stateEvidence?.exposures ?? history,
             stateEvidence?.observedWindowDays ?? historySnapshot?.windowDays ?? 0,
