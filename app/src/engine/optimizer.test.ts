@@ -891,19 +891,26 @@ describe('optimizer — one optimizer invocation context (F4 / 3.3)', () => {
     it('buildOptimizationContext produces equivalent context from intent and context inputs', () => {
         const intent = {
             unresolvedObjectives: [], fatigue: DEFAULT_FATIGUE, periodization: { focusEvent: null },
-            history: [{ date: '2026-03-01', modality: 'Cycling', category: 'Hard Endurance' as const, systemicCost: 0.8, lowerBodyCost: 0.5 }],
+            history: [
+                { date: '2026-03-01', modality: 'Cycling', category: 'Hard Endurance' as const, systemicCost: 0.8, lowerBodyCost: 0.5 },
+                { date: '2026-03-04', modality: 'Running', category: 'Easy Endurance' as const,
+                    systemicCost: 0.2, lowerBodyCost: 0.2, durationMin: 20, durationMax: 40, source: 'projected' as const },
+            ],
         };
         const testContext = {
             trainingSettings: { userId: 'user_1', defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 90 } },
             constraints: { restrictedModalities: ['Running'] }, preferences: DEFAULT_PREFERENCES,
         } as unknown as UserContext;
 
-        const optContext = buildOptimizationContext(intent, testContext, DEFAULT_PREFERENCES, '2026-03-05');
+        const taperBudgetHistory: RecentHistoryEntry[] = [{ date: '2026-02-20', modality: 'Cycling', durationMin: 45 }];
+        const optContext = buildOptimizationContext(intent, testContext, DEFAULT_PREFERENCES, '2026-03-05', { taperBudgetHistory });
 
         expect(optContext.injuryConstraints).toEqual(['Running']);
         expect(optContext.preferences.userId).toBe('user_1');
         expect(optContext.options.date).toBe('2026-03-05');
-        expect(optContext.options.recentHistory).toHaveLength(1);
+        expect(optContext.options.recentHistory).toHaveLength(2);
+        expect(optContext.options.recentHistory?.[1]).toMatchObject({ source: 'projected', durationMin: 20, durationMax: 40 });
+        expect(optContext.options.taperBudgetHistory).toBe(taperBudgetHistory);
     });
 
     it('returns identical ranking when given identical OptimizationContext', () => {

@@ -232,6 +232,9 @@ describe('recommendation knowledge lineage', () => {
         expect(trainingIntentKnowledgeRefs({
             history: [{}], periodization: { focusEvent: null, phase: { taperActive: false } },
         }, { rollingLoadBudgetEvaluated: true })).toContain(KNOWLEDGE_CLAIM_IDS.rollingLoadBudgetPolicy);
+        expect(trainingIntentKnowledgeRefs({
+            history: [{}], periodization: { focusEvent: null, phase: { taperActive: false } },
+        }, { olympicTaperPolicyEvaluated: true })).toContain(KNOWLEDGE_CLAIM_IDS.olympicTriathlonPlanBudgetPolicy);
     });
 
     it('merges training-intent lineage into external-plan recommendations', async () => {

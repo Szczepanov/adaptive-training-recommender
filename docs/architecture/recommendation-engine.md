@@ -805,6 +805,38 @@ event-specific touches can remain appropriate near the event. Priority-A race we
 separate Issue #676 interaction guard below, which can hard-exclude substantial Race-Specific
 Endurance when another hard/race-specific exposure occurred in the preceding three days.
 
+### Olympic-triathlon plan-level taper budget (Issue #800)
+
+For a Priority-A Olympic-distance triathlon whose resolved taper is **exactly 14 days**,
+comparable swim/bike/run training history activates a shared plan-level frequency and volume
+envelope. The comparison uses the preceding 14 days of completed swim/bike/run training,
+requiring at least three measured sessions spanning seven days; projected selections consume
+the same envelope at their prescribed duration upper bound. Pending fixed training with exact
+catalog or external-authored identity reserves its stated minutes and one session slot, even
+when booked later in the taper; an unlinked calendar commitment is not assumed to be training.
+Across the whole taper, the remaining slot budget protects at least one opportunity for each
+race discipline not yet represented; this only reserves planner opportunity and never bypasses
+equipment, readiness, safety or other eligibility gates. An athlete-authored taper of another
+length keeps the generic taper behavior rather than silently inheriting this Olympic-specific
+calibration. The volume ceiling is 0.59 of that
+pre-taper block, expressing the registered 41–60% population-level taper reduction as a
+conservative product rule. The frequency ceiling rounds up 0.85 of the athlete's prior
+session count, with a three-session floor. Each seven-day block may use at most half the
+minute allowance and its rounded-up half-session allocation. If the reference block
+contains at least two measured sessions in every race discipline, the planner reserves
+one swim, bike and run touch in each block where feasible, including 30 minutes for a
+swim. Brief bike and run touches are reserved for D-4 through D-2, while race-week swims
+are bounded to 45 minutes. Soft benefit nudges favor a race-week swim, late run and
+cycling opener within the existing eligibility gates. A
+completed session is charged at its delivered duration when the plan is regenerated,
+while future sessions are charged at their prescribed upper bound. On D-1, the generated
+recommendation is Rest inside this exact policy scope; existing fixed or externally authored
+commitments keep their normal authority and are not silently deleted by the taper budget.
+The planner can retain brief touches in each discipline when access, readiness and the shared
+budget permit. These exact ceilings and
+race-eve rest are product calibration rather than universal sports-science thresholds;
+other distances and event priorities keep their own taper behavior.
+
 ### Whole-horizon recent-load and Priority-A race-week interaction policy (Issue #676)
 
 Issue #676 adds two deliberately distinct controls:
