@@ -43,6 +43,11 @@ You take a GitHub issue number as input and drive it to an opened PR: issue inta
      happened to be active when the MCP server started. Activate/retarget Serena to the absolute
      `WORKTREE` path and verify it before using symbol tools. If that cannot be done safely,
      skip Serena for this run and use ordinary repository search/read tools.
+   - For a single cohesive issue, keep issue discovery, planning, implementation and deterministic
+     verification in the primary agent. Do not spawn research/planning/validator subagents merely
+     to repeat repository discovery. The default independent delegation is one diff-first review
+     after implementation; add another specialist only when the change has a distinct risk domain
+     that materially benefits from independent analysis.
 
 ## Phase 1 — Read the GitHub issue and its history
 
@@ -80,12 +85,15 @@ Follow the `docs/README.md` precedence: **code wins, then `architecture/`, then 
 ## Phase 3 — Analyze the code and related artifacts
 
 - Locate affected modules using the `AGENTS.md` package-architecture map (`src/garmin_sync/`, `app/src/engine/`, `app/src/sessions/`, `app/src/responses/`, `app/src/observations/`, `app/src/outcomes/`, `app/src/knowledge/` — directory wins over the map).
-- When Serena is available and correctly bound to `WORKTREE`, use semantic navigation first for
-  source-code discovery: `get_symbols_overview` / `find_symbol` to locate the target,
+- When Serena is available and correctly bound to `WORKTREE`, use one targeted semantic
+  discovery pass: `get_symbols_overview` / `find_symbol` to locate unfamiliar targets,
   `find_referencing_symbols` for callers/impact radius, and `find_implementations` for
-  polymorphic contracts. Use Grep/text search for literals, docs/config, generated files,
-  unsupported language-server cases, and as a completeness check. Never use semantic results from
-  a different checkout.
+  polymorphic contracts. Once the target and relevant callers are established, read those files
+  directly rather than repeatedly rediscovering known symbols. Use Grep/text search for literals,
+  docs/config, generated files, unsupported language-server cases, and as a completeness check.
+  If Serena is still initializing, treat that as transient: do only the minimum fallback discovery
+  needed and retry before broad source exploration. Never use semantic results from a different
+  checkout.
 - Identify: reusable utilities, existing test fixtures (`tests/fixtures/`, engine `tests/`, `simulation/`), schema validators, and the `TrainingHistoryProvider` / Firestore boundaries if history or persistence is involved.
 - When correctness depends on an external library/API contract, use Context7 for current,
   version-appropriate documentation as defined by `docs/standards/agent-tooling.md`. Do not use
@@ -150,12 +158,24 @@ The canonical gate is `make verify` (defined in `scripts/verify_repo.py`, docume
 
 ## Phase 7.5 — Independent review (before the PR)
 
-Do not rely on the implementer's own "checks passed" claim.
+Do not rely only on the implementer's own inspection, but do not pay for a second full repository
+analysis either.
 
-- Always run a read-only review of the branch diff (the `code-reviewer` subagent when available) against I1–I6, knowledge lineage and engine purity. Address CRITICAL/HIGH findings.
-- If the change touches auth, Firestore rules/paths, ingestion, secrets or logging, also run `security-reviewer`.
-- For engine, rules, auth or ingestion changes, have a separate read-only validator (`code-validator`) re-run the key checks and report command, working directory and exit code.
-- Skip only for trivial docs-only changes, and say so in the PR.
+- For non-trivial code changes, run **one** read-only, diff-first review (the `code-reviewer`
+  subagent when available). Give it the issue acceptance criteria, implementation summary,
+  changed-file list and branch diff. It starts from that evidence and reads surrounding code only
+  where needed. Address CRITICAL/HIGH findings.
+- The reviewer must not recreate the implementation plan or independently remap the whole
+  repository. Semantic/caller lookup is justified only by a concrete unresolved review question;
+  routine repository rediscovery is not.
+- Keep deterministic validation (`make verify`, targeted tests, simulations, policy-drift checks)
+  in the primary agent. A separate validator subagent is **not** the default; use one only when
+  independent execution materially adds evidence for an unusually high-risk or environment-specific
+  change.
+- If the change touches auth, Firestore rules/paths, ingestion, secrets or logging, add the
+  `security-reviewer` only for that distinct security risk surface. Do not ask it to duplicate the
+  general code review.
+- Skip independent review for trivial docs-only changes, and say so in the PR.
 
 ## Phase 8 — Create the PR with detailed description and linked issue
 
