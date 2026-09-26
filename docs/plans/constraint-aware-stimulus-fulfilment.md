@@ -6,7 +6,7 @@
 | Date | 2026-09-26 |
 | Architecture decision | [ADR-0044 (Accepted)](../adr/0044-constraint-aware-requirement-fulfilment.md) |
 | Analysis | [2026-09-26 constraint-aware fulfilment](../analysis/2026-09-26-constraint-aware-training-fulfilment.md) |
-| Blocked by | ADR-0044 acceptance; canonical decisions in #801–#806 as noted per work package |
+| Blocked by | canonical decisions in #801–#806 as noted per work package (ADR-0044 accepted 2026-09-26) |
 | Unlocks | automatic generated doubles/microdoses; honest multi-stimulus constrained planning; richer #813 exposure readout |
 | Policy impact | Yes for every live selection/allocation work package |
 | Knowledge impact | Yes; ADR-0033 lineage required for all new constants/thresholds |

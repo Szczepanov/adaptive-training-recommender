@@ -4,7 +4,7 @@ import { inferAthleteTrainingState, resolveEvidenceBackedStrategy, type AthleteT
 import { EVERGREEN_PACKING_COVERAGE, packWeeklyDose, type CoverageSetDescriptor } from './weeklyDosePacking';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import { buildEvergreenPlanDefinition } from './planSchedule';
-import { buildCoverageState, coverageKeysForTemplate, getUnfulfilledTargetCoverage } from './coverage';
+import { buildCoverageState, coverageKeysForTemplate, coverageNeedTierForTemplate, getUnfulfilledTargetCoverage } from './coverage';
 import { generateWeeklyObjectives } from './microcycle';
 import { evaluatePeriodizationPhase } from './periodization';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
@@ -200,6 +200,36 @@ describe('power exposure coverage (#802)', () => {
         const fullBody = ENRICHED_TEMPLATES_BY_ID.get('str_full_01')!;
         expect(coverageKeysForTemplate(fullBody, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).toEqual(['primary_strength', 'power_exposure']);
         expect(coverageKeysForTemplate({ ...fullBody, isReadinessModifiedDose: true }, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).toEqual(['primary_strength']);
+    });
+});
+
+describe('power never drives catch-up ranking (#802, ADR-0044 D6)', () => {
+    const strategy = resolveEvidenceBackedStrategy({ priorities: [...hybrid] }, established);
+    const budget = packWeeklyDose(strategy, capacity(5), EVERGREEN_PACKING_COVERAGE);
+    const plan = buildEvergreenPlanDefinition(strategy, capacity(5), budget, DATE);
+    if (plan.status !== 'AVAILABLE') throw new Error('plan should be available');
+
+    it('keeps standalone power and lower-body work at tier 3 after a readiness-modified strength day left power unmet', () => {
+        const state = buildCoverageState(plan.data, '2026-09-04', [
+            { date: '2026-09-02', templateId: 'str_full_01', durationMin: 18, isReadinessModifiedDose: true },
+        ], EVERGREEN_GENERAL_COVERAGE_SET);
+        expect(state.requirements.find(item => item.key === 'primary_strength')?.completedSessions).toBe(1);
+        expect(getUnfulfilledTargetCoverage(state).map(item => item.key)).toContain('power_exposure');
+        for (const templateId of ['str_power_01', 'str_lower_01']) {
+            expect(coverageNeedTierForTemplate(state, ENRICHED_TEMPLATES_BY_ID.get(templateId)!)).toBe(3);
+        }
+    });
+
+    it('leaves the host strength role tier unchanged by the embedded power key', () => {
+        const empty = buildCoverageState(plan.data, '2026-09-04', [], EVERGREEN_GENERAL_COVERAGE_SET);
+        const fullBody = ENRICHED_TEMPLATES_BY_ID.get('str_full_01')!;
+        const bodyweight = ENRICHED_TEMPLATES_BY_ID.get('str_full_02')!;
+        expect(coverageNeedTierForTemplate(empty, fullBody)).toBe(coverageNeedTierForTemplate(empty, bodyweight));
+        const strengthDone = buildCoverageState(plan.data, '2026-09-04', [
+            { date: '2026-09-01', templateId: 'str_full_02', durationMin: 35 },
+            { date: '2026-09-02', templateId: 'str_full_02', durationMin: 35 },
+        ], EVERGREEN_GENERAL_COVERAGE_SET);
+        expect(coverageNeedTierForTemplate(strengthDone, fullBody)).toBe(3);
     });
 });
 

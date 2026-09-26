@@ -416,8 +416,9 @@ tie-breaker; it does not set a physiological requirement or hide a capacity shor
 
 Neuromuscular power (#802, ADR-0044 capability exposure) is a separate `AdaptationKey`,
 `neuromuscular_power`, never a form of `high_intensity`. `resolveEvidenceBackedStrategy`
-emits it only when the strategy already requires strength, the athlete selected endurance,
-speed/power, sport-readiness or balanced performance, and recent history is high-quality and
+emits it only when the strategy already requires strength, the priorities include endurance,
+speed/power, sport-readiness or balanced performance (also the in-memory default when no
+priorities are saved), and recent history is high-quality and
 `established`: target one exposure per week, at most two credited, no floor; `target` for a
 speed/power priority and `optional` otherwise. Acute adverse recovery, current clinical
 symptoms, `Peak/Taper`, `Post-Event Recovery` or insufficient history withhold it with a
@@ -435,9 +436,10 @@ flagged `impact`) and the variants that keep their power steps (`full`, `reduced
 coverage ledger therefore credits one power-clean strength session to both
 `primary_strength` and `power_exposure` as one occurrence, denies `power_exposure` to
 readiness-modified doses in both `coverageKeysForExposure` and the canonical performed-fact
-path, and never credits threshold/VO2 work or generic strength. The unmet target only
-reaches ranking through the ordinary coverage-need tier; it does not relax eligibility, so an
-impact guardrail still blocks plyometrics and the power gap is reported instead. Policy is
+path, and never credits threshold/VO2 work or generic strength. `power_exposure` is
+excluded from `coverageNeedTierForTemplate`, so an unmet power target never promotes a
+standalone power or lower-body session as catch-up work; it does not relax eligibility
+either, so an impact guardrail still blocks plyometrics and the power gap is reported. Policy is
 owned by `policy.evergreen.power_maintenance_exposure_v1`, with low-certainty support from
 `performance.power.low_frequency_maintenance` (ADR-0033). Event-directed plans do not yet
 carry the power requirement.

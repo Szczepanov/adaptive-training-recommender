@@ -244,6 +244,14 @@ const DEFERRED_SUPPORT_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
     'recovery_or_rest',
 ]);
 
+/** Issue #802 / ADR-0044 D6: embedded capability keys are credited and reported but never
+ * raise a candidate's coverage-need tier. An unmet power target must not promote a
+ * standalone power or lower-body session as catch-up work; power rides only inside the
+ * strength role that already earns its own tier. */
+const EMBEDDED_ONLY_COVERAGE_KEYS = new Set<PlanCoverageKey>([
+    'power_exposure',
+]);
+
 /** For a cycling A/B event the aerobic-volume floor is the prerequisite for repairing a
  * missed hard role. Primary strength remains a tier-1 required role, but it cannot veto
  * the next feasible cycling-quality repair. */
@@ -620,7 +628,8 @@ export function coverageNeedTierForTemplate(
     anchorRole: 'event-specific' | 'quality' | null = null,
     deferAnchorAdjacentHeavyStrength: boolean = false,
 ): 0 | 1 | 2 | 3 {
-    const keys = state.descriptor ? coverageKeysForTemplate(template, state.phase, state.descriptor, state.aerobicVolumeFloor) : [];
+    const keys = (state.descriptor ? coverageKeysForTemplate(template, state.phase, state.descriptor, state.aerobicVolumeFloor) : [])
+        .filter(key => !EMBEDDED_ONLY_COVERAGE_KEYS.has(key));
     if (keys.length === 0) return 3;
 
     const anchorKey: PlanCoverageKey | null = anchorRole === 'event-specific'

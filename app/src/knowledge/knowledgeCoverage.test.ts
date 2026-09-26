@@ -190,7 +190,7 @@ describe('engine knowledge coverage inventory', () => {
         });
     });
 
-    it('reports coverage and risk debt after the #758, #809 and #800 policies', () => {
+    it('reports coverage and risk debt after the #758, #809, #800 and #802 policies', () => {
         // Issue #675 added one partial/p1 item; #762 added three covered items;
         // #744 added one covered optimizer policy and one uncovered/p1 aerobic floor;
         // #746 WP1 and WP2 each add one covered product-policy item with no research debt;
@@ -198,10 +198,11 @@ describe('engine knowledge coverage inventory', () => {
         // #758 adds one covered exact evergreen quality-set policy with no research debt.
         // #809 adds one covered Garmin stimulus/session-cost classification item.
         // #800 adds one partial/p1 Olympic-triathlon taper budget item.
+        // #802 adds one partial/p2 embedded power-maintenance item (no power-specific dose evidence).
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(78);
-        expect(summary.byCoverage).toEqual({ covered: 53, partial: 18, uncovered: 1, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 8, p1: 9, p2: 2, p3: 0, none: 59 });
+        expect(summary.total).toBe(79);
+        expect(summary.byCoverage).toEqual({ covered: 53, partial: 19, uncovered: 1, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 8, p1: 9, p2: 3, p3: 0, none: 59 });
         expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
     });

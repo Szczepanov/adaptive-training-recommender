@@ -6,6 +6,7 @@ export const POLICY_VERSION = '2026-09-neuromuscular-power-maintenance-v1';
  * audits remain readable evidence, but replay is rejected explicitly because the old
  * decision function is not bundled alongside the current policy. */
 export const HISTORICAL_POLICY_VERSIONS = [
+    '2026-09-olympic-triathlon-plan-taper-budget-v1',
     '2026-09-evergreen-quality-transactional-substitution-v1',
     '2026-09-established-easy-run-aerobic-coverage-v1',
     '2026-09-garmin-cycling-typekey-modality-v1',

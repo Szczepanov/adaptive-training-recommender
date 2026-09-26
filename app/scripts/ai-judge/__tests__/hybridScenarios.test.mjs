@@ -12,6 +12,7 @@ import { coverageKeysForTemplate } from '../../../src/engine/coverage.ts';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../../../src/workouts/event-plan.ts';
 import { workoutIdForTemplateId } from '../../../src/engine/coverage.ts';
 import { grantsPowerExposureCredit, powerIdentityFor } from '../../../src/workouts/powerExposure.ts';
+import { inferAthleteTrainingState, resolveEvidenceBackedStrategy } from '../../../src/engine/evergreenStrategy.ts';
 
 const families = buildPersonaFamilies({ includeHybridExpansion: true });
 const definitions = families.filter(({ familyId }) => familyId.startsWith('persona_hybrid_')).flatMap(({ cases }) => cases);
@@ -259,9 +260,24 @@ describe('cycling hybrid targeted evaluation', () => {
     for (const weekIndex of [0, 1]) {
       expect(powerDates(weekOf(reference, weekIndex)).length).toBeGreaterThanOrEqual(1);
     }
-    // Embedded, not additive: every power day is also that day's strength session.
-    expect(powerDates(reference).every((date) => reference.decisionTraces
-      .find((trace) => trace.date === date).selected.modality === 'Strength')).toBe(true);
+    // Embedded, not additive: every power day is an exact primary-strength role occurrence.
+    expect(powerDates(reference).every((date) => {
+      const trace = reference.decisionTraces.find((item) => item.date === date);
+      return coverageKeysForTemplate(ENRICHED_TEMPLATES.find(({ id }) => id === trace.selected.templateId), 'general', EVERGREEN_GENERAL_COVERAGE_SET)
+        .includes('primary_strength');
+    })).toBe(true);
+  });
+
+  it('gives the persona fixtures a real power requirement that adverse recovery withholds', () => {
+    const scenario = find('capacity_reference').scenario;
+    const state = inferAthleteTrainingState(scenario.initialHistory, 28);
+    expect(state.trainingAgeProxy).toBe('established');
+    const normal = resolveEvidenceBackedStrategy({ priorities: scenario.trainingIntentProfile.priorities }, state);
+    expect(normal.requirements.find(({ adaptation }) => adaptation === 'neuromuscular_power'))
+      .toMatchObject({ delivery: 'embedded', target: { target: 1, maximum: 2 } });
+    const adverse = resolveEvidenceBackedStrategy({ priorities: scenario.trainingIntentProfile.priorities, isAdverseRecovery: true }, state);
+    expect(adverse.requirements.some(({ adaptation }) => adaptation === 'neuromuscular_power')).toBe(false);
+    expect(adverse.warnings.map(({ code }) => code)).toContain('power_exposure_withheld');
   });
 
   it('withholds power while recovery is adverse and resumes it only after full-dose readiness returns', async () => {
