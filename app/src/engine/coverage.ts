@@ -247,13 +247,13 @@ const DEFERRED_SUPPORT_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
     'recovery_or_rest',
 ]);
 
-/** Issue #802 / ADR-0044 D6: embedded capability keys are credited and reported but never
- * raise a candidate's coverage-need tier. An unmet power target must not promote a
- * standalone power or lower-body session as catch-up work; power rides only inside the
- * strength role that already earns its own tier. */
+/** Issue #802 / ADR-0044 D6: power remains an embedded-only capability: an unmet
+ * power target must not promote a standalone power/lower-body session as catch-up work.
+ * Mechanical exposure differs (#804): the evergreen plan keeps an explicit low-cost
+ * maintenance target, so the normal allocator may repair it with an exact authored
+ * maintenance identity when no already-planned session supplies the capability. */
 const EMBEDDED_ONLY_COVERAGE_KEYS = new Set<PlanCoverageKey>([
     'power_exposure',
-    'mechanical_exposure',
 ]);
 
 /** For a cycling A/B event the aerobic-volume floor is the prerequisite for repairing a
