@@ -88,7 +88,7 @@ contracts**.
 
 ### 1.4 Recent time-cap work solved symptoms, not the general problem
 
-#744 correctly prevents a purely technical time cap from making a cycling-primary athlete
+Issue #744 correctly prevents a purely technical time cap from making a cycling-primary athlete
 switch to walking when a valid shortened cycling prescription fits. #757 made the
 single-session aerobic coverage floor athlete-relative. #758 added cap-fitting cycling quality.
 
@@ -100,7 +100,7 @@ Those changes are useful but intentionally local. They do not yet answer:
 
 ### 1.5 The open physical-capability issues expose the same missing abstraction
 
-#801–#806 converge on the same architectural pressure: a second strength/power exposure,
+Issues #801–#806 converge on the same architectural pressure: a second strength/power exposure,
 neuromuscular power, unilateral strength composition, impact/running/jumping,
 multidirectional skill, and weekly aerobic dose + a long anchor.
 
@@ -247,7 +247,7 @@ Properties:
 - distinguish actual dose from broad stimulus;
 - do not use arbitrary intensity-equivalence multipliers unless a reviewed policy owns them.
 
-#806 should become the canonical owner for aerobic dose.
+Issue #806 should become the canonical owner for aerobic dose.
 
 ### D. Longitudinal capability exposures
 
@@ -272,12 +272,21 @@ not an evidence-derived physiological hierarchy. If live ordering changes select
 ordering needs ADR-0033 lineage and policy-version governance just like any other decision
 heuristic.
 
+### Before degradation — recompute canonical residuals
+
+Apply every valid completed and already-committed/projected contribution through its canonical
+owner before deciding that more work is needed. A retained threshold ride can therefore reduce
+an aerobic-stimulus residual immediately, and a strength/power session can reduce several
+explicit capability rows when its canonical metadata says so. This is **accounting**, not a
+degradation step. Treating cross-credit as a late fallback would risk scheduling a microdose
+for a requirement already covered by retained work.
+
 ### Level 0 — full plan
-Use normal development doses and preferred standalone sessions.
+Use normal development doses and preferred standalone sessions for the residual requirements.
 
 ### Level 1 — dose compression inside the authored prescription
 Shorten a session inside its validated range/variant while retaining exact role only when the
-role's minimum dose is still reached. #744/#757 implement part of this.
+role's minimum dose is still reached. Issues #744/#757 implement part of this.
 
 ### Level 2 — consolidate compatible stressors on one day
 Use separate intraday windows under ADR-0036. Examples: AM cycling quality + PM compact
@@ -290,19 +299,13 @@ When a secondary quality cannot retain its full development dose, preserve the s
 reviewed maintenance exposure rather than silently deleting it. Record
 `development -> maintenance/microdose` explicitly.
 
-### Level 4 — stimulus-sharing / cross-credit
-Recognize benefits already delivered by retained key sessions. Tempo/threshold cycling
-contributes aerobic stimulus; a qualifying strength-power session contributes strength +
-power; a field session contributes power + impact + COD only when metadata explicitly says so.
-Cross-credit reduces residual need but does not rewrite exact roles.
-
-### Level 5 — safe substitution
+### Level 4 — safe substitution
 If equipment or a local tissue restriction removes a specific exercise/modality, substitute
 only where the alternative is explicitly valid for the remaining requirement. Unique blocked
-capabilities remain `deliberately_suspended` rather than "fulfilled by something else."
+capabilities remain visible rather than "fulfilled by something else."
 
-### Level 6 — typed shortfall
-If the target cannot fit after valid compression/consolidation/cross-credit, surface the
+### Level 5 — typed shortfall
+If the target cannot fit after valid compression/consolidation/substitution, surface the
 requirement, target, delivered/forecast credit, blocking reason, status
 (`unmet`/`blocked`/`deliberately_suspended`), and next eligible opportunity.
 
@@ -351,16 +354,39 @@ usableCredit = min(canonicalCredit, residualRequirement)
 ```
 
 ADR-0014 already owns fractional objective-credit semantics, including delivered-dose handling.
-ADR-0033 evidence certainty describes the authority and limitations of a policy claim; it is
-not a numeric discount on physiological credit. If source evidence is insufficient, the
-canonical fact/credit owner must express that through its own unknown/no-credit semantics.
-The missing part here is only using **residual portfolio value** during weekly
-packing/allocation.
+ADR-0033 `KnowledgeClaim.evidenceCertainty` describes the authority and limitations of a
+policy claim; it is not a numeric discount on physiological credit. That must not be confused
+with the existing ADR-0014 `StimulusConfidence` /
+`CONFIDENCE_CREDIT_WEIGHT`, which is a performed-evidence confidence input already applied
+inside the canonical objective-credit calculation. The fulfilment layer must neither remove
+that discount nor apply it a second time.
 
-### 5.4 Never use one scalar "training value"
+If source evidence is insufficient, the canonical fact/credit owner must express that through
+its own unknown/no-credit semantics. The missing part here is only using **residual portfolio
+value** during weekly packing/allocation.
 
-Keep benefit and cost vectors separate. Scalar ranking can remain a late tie-breaker, but
-feasibility and residual required coverage should be vector-aware first.
+### 5.4 Residual rows need stable identity and explicit units
+
+One logical requirement may expose more than one semantic row. For example, a long aerobic
+requirement could own an exact-role row and a separate aerobic-stimulus/dose row. The
+fulfilment view should therefore use:
+
+- one stable `requirementId` for the logical requirement;
+- one stable row id per `requirementId + class + dimensionKey`;
+- an explicit unit such as count, credit, minutes, sets, exposures or days;
+- nullable quantities when the canonical owner cannot establish target/progress.
+
+Sibling rows remain associated without becoming interchangeable. Unknown is `null`/unknown,
+not numeric zero, and a blocked requirement keeps its desired target visible rather than
+becoming a fabricated zero-target success.
+
+### 5.5 Never use one scalar "training value"
+
+Keep benefit and cost vectors separate. Raw residual values in unlike units are not additive
+and must not be compared as though 20 minutes, 0.5 objective credit and one capability
+exposure were the same currency. Scalar ranking can remain a late tie-breaker only after
+canonical priority/deadline policy and comparable residual semantics have been applied;
+feasibility and required coverage remain vector-aware first.
 
 ## 6. Proposed microdose model
 
@@ -414,20 +440,28 @@ Candidate weekly algorithm:
 1. resolve full requirements and completed/projected credit;
 2. reserve fixed activities, exact key/event roles and protected rest;
 3. generate primary full-session candidates;
-4. compute residual requirement vector;
+4. recompute residual rows after every canonical contribution already delivered or committed by
+   that retained portfolio;
 5. for each unused explicit training window, generate eligible full sessions, compact variants
    and microdose modules;
 6. consider compatible second-window additions on already-hard days when this protects truly
-   easy days;
-7. compare bounded candidates by required **residual** contribution before optional surplus;
-8. for every proposed secondary occurrence, reuse ADR-0018 D-SUPPORT viability to prove that
-   the incumbent maximum achievable exact required-role allocation is preserved under the
-   projected state;
+   easy days, but require any new occurrence to fit the existing weekly session/occurrence
+   commitment as well as the daily ledger;
+7. compare bounded candidates by policy-ordered **residual** contribution before optional
+   surplus; never sum unlike residual units;
+8. for every proposed secondary occurrence, reuse ADR-0018 D-SUPPORT's preservation invariant
+   and bounded proof. The current allocator's `AllocationAssignment` topology is
+   one-session-per-date, so the secondary should be applied as projected support load/history on
+   its actual date and the existing required-role feasibility proof rerun against that state,
+   not represented as a fictitious second primary reservation on the same date;
 9. after an accepted secondary pick, recompute remaining reservations and residuals;
 10. keep spacing, rolling-load, injury, readiness and taper gates;
 11. mark unresolved/blocked residual requirements explicitly.
 
-Never infer a second window because the athlete "probably has ten minutes at home."
+Never infer a second window because the athlete "probably has ten minutes at home." An extra
+window also does not create extra weekly training commitment. A distinct PM occurrence consumes
+the applicable existing occurrence/session capacity; an embedded module remains part of its
+containing occurrence while its materialized minutes, cost and stimulus still count normally.
 
 Same-day priority:
 
@@ -469,11 +503,16 @@ Distinguish:
 
 - contraindicated delivery — do not prescribe it;
 - shared stimulus safely attainable elsewhere — cross-credit/substitute;
-- unique capability temporarily unavailable — deliberately suspend it.
+- `blocked` — the requirement remains active but a current hard constraint prevents delivery
+  in this planning window;
+- `deliberately_suspended` — the canonical block/event/safety owner intentionally turns the
+  requirement off for the relevant window, with no catch-up debt;
+- `unknown` — target/progress cannot be established from the authoritative evidence.
 
 If impact is blocked but cycling is safe, cycling can preserve aerobic stimulus; safe strength
 patterns can still train strength; but impact/running familiarity is **not fulfilled by
-cycling**.
+cycling**. The fulfilment layer consumes the canonical status and must not infer suspension
+from a missing workout or from modality names.
 
 ## 10. Optimization hierarchy
 
@@ -481,8 +520,8 @@ Do not replace ADR-0018's live feasibility hierarchy. Safety/clinical/tissue gat
 commitments/protected rest, the ADR-0043 rolling-load envelope, and exact required-role
 reservation/preservation remain incumbent authorities.
 
-Only inside the remaining feasible support space should residual fulfilment add ordering such
-as:
+Only inside the remaining feasible support space should residual fulfilment add lexicographic
+ordering such as:
 
 1. canonical minimum accumulated dose / overdue capability floors;
 2. phase-priority BUILD stimulus;
@@ -492,8 +531,9 @@ as:
 
 Any rule that promotes a capability/dose residual into the exact required-role tier must be
 owned by that canonical family and integrated through ADR-0018 rather than smuggled in as a
-ranking bonus. Within the support tiers, choose candidates by marginal **residual requirement
-contribution** while preserving spacing, quality and the incumbent required-role witness.
+ranking bonus. Within a comparable support tier, choose candidates by marginal **residual
+requirement contribution** while preserving spacing, quality and the incumbent required-role
+witness. Do not compare raw residual magnitudes across unlike units/classes.
 
 Do not expose "benefit per minute" as a universal physiological metric. It is an allocation
 heuristic over registered benefits/costs.
