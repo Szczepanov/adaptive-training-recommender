@@ -20,9 +20,11 @@ either:
 - claiming that a convenient substitute fully satisfies a requirement it does not actually
   deliver.
 
-The implementation should prefer the **smallest valid portfolio of sessions/modules** that
-covers the largest residual required stimulus/capability set inside safety, schedule, load,
-spacing and event constraints.
+The implementation should first maximize **policy-ordered fulfilment of valid residual
+requirements** inside safety, schedule, load, spacing and event constraints. Only among
+portfolios with equivalent higher-priority fulfilment should it prefer fewer occurrences,
+less fragmentation and lower optional cost. "Smallest portfolio" must never justify dropping a
+more important requirement.
 
 ## 2. Scope boundary
 
@@ -62,13 +64,27 @@ type RequirementStatus =
   | 'deliberately_suspended'
   | 'unknown';
 
+type RequirementUnit =
+  | 'count'
+  | 'credit'
+  | 'minutes'
+  | 'sets'
+  | 'exposures'
+  | 'days';
+
 interface RequirementResidual {
+  /** Stable row identity: requirementId::class::dimensionKey. */
   id: string;
+  /** Stable logical requirement shared by all sibling class/dimension rows. */
+  requirementId: string;
   class: RequirementClass;
-  target: number;
-  completed: number;
-  projected: number;
-  residual: number;
+  /** Canonical role/objective/dose/capability key owned by sourceAuthority. */
+  dimensionKey: string;
+  unit: RequirementUnit;
+  target: number | null;
+  completed: number | null;
+  projected: number | null;
+  residual: number | null;
   priority: 'must_have' | 'should_have' | 'nice_to_have';
   status: RequirementStatus;
   reason?: string;
@@ -80,17 +96,29 @@ Requirements:
 
 - pure derivation from existing canonical owners;
 - no new physiological constants;
+- CF0 emits **one row per canonical semantic class/dimension**, not one lossy row per logical
+  requirement. When one logical requirement exposes, for example, an exact-role row and a
+  fractional-stimulus row, both share `requirementId` while each receives a distinct stable
+  `id = requirementId::class::dimensionKey`;
+- `unit` is explicit and raw numeric residuals are never summed or compared across unlike
+  classes/units;
 - exact coverage and stimulus credit remain source-specific;
 - `completed` is derived only from canonical performed-training authorities;
 - `projected` may reduce a forecast residual but never confirms performed capability;
+- for `unknown`, any quantity the canonical owner cannot establish is `null`, never zero;
+- `blocked` retains the active requirement/target but cannot generate an inadmissible
+  candidate; `deliberately_suspended` is source-owned intentional suppression and creates no
+  catch-up debt;
 - diagnostics identify the source authority for each residual;
 - no persistence/schema change in CF0 unless replay requires it.
 
 Tests:
 
-- exact role + fractional stimulus can coexist without one satisfying the other;
+- exact role + fractional stimulus can coexist as sibling rows with one `requirementId`
+  without one satisfying the other;
+- row identity is stable and unlike units are never arithmetically combined;
 - over-delivery is capped in residual view;
-- unknown source remains unknown;
+- unknown source remains unknown with nullable quantities rather than fabricated zeroes;
 - blocked/suspended is not converted into zero-target "satisfied."
 
 ### CF1 — Residual stimulus value in weekly allocation
@@ -103,10 +131,17 @@ required credit**, not gross stimulus.
 
 Rules:
 
+- begin every residual pass by applying all canonical completed and already-committed/projected
+  contributions; valid multi-stimulus cross-credit is baseline accounting, not a later
+  degradation fallback;
 - compute objective/capability credit only through canonical authorities;
 - ADR-0014 `deriveObjectiveCredit*` remains the sole objective-credit formula;
-- ADR-0033 evidence certainty is provenance, not a numeric credit multiplier;
-- cap marginal value at residual requirement;
+- ADR-0033 `KnowledgeClaim.evidenceCertainty` is policy provenance, not a numeric credit
+  multiplier; the existing ADR-0014 `StimulusConfidence` /
+  `CONFIDENCE_CREDIT_WEIGHT` performed-evidence discount remains inside the canonical
+  objective-credit result and is not applied again here;
+- cap each marginal contribution at its own residual row;
+- never add or directly compare raw residual numbers across unlike units/classes;
 - exact must-have role remains ahead of optional fractional surplus;
 - no new scalar physiological "value";
 - existing utility remains a later tie-breaker.
@@ -130,7 +165,7 @@ Acceptance:
 ### CF2 — Training-module / microdose catalog contract
 
 **Blocked by:** ADR-0044; preferably #802/#803 canonical metadata decisions
-**Can partially start:** schema/validator spike only
+**Can partially start:** schema/validator spike only with explicit authorization before ADR-0044 acceptance
 
 Add a structured module contract rather than creating many new monolithic workouts.
 
@@ -195,14 +230,20 @@ Add a bounded second-window search for generated work.
 Algorithm sketch:
 
 1. begin from the already-resolved weekly primary allocation;
-2. identify residual must/should requirements;
+2. recompute residual must/should rows after applying every canonical completed and
+   committed/projected contribution from the retained portfolio;
 3. enumerate only explicit unused windows;
 4. generate eligible compact/module candidates;
-5. apply standard equipment/environment/safety/spacing gates;
+5. apply standard equipment/environment/safety/spacing gates **and the existing weekly
+   session/occurrence commitment** for any candidate that creates another occurrence;
 6. simulate the shared daily ledger debit;
-7. compare marginal residual coverage;
-8. reuse ADR-0018 D-SUPPORT viability to prove that the candidate preserves the incumbent
-   maximum achievable exact required-role allocation under projected state;
+7. compare policy-ordered marginal residual contribution without summing unlike residual
+   units;
+8. reuse ADR-0018 D-SUPPORT's preservation invariant and bounded proof: apply the secondary
+   occurrence as projected support load/history on its actual date, then prove that the
+   incumbent maximum achievable exact required-role allocation survives. Do not model the
+   secondary as a second `AllocationAssignment` if that canonical structure remains
+   one-session-per-date;
 9. reserve the best bounded candidate only after that proof, then recompute remaining
    reservations/residuals;
 10. mark PM decision provisional;
@@ -212,7 +253,11 @@ Constraints:
 
 - maximum one generated secondary occurrence per unused window in v1;
 - no new window inferred;
-- no more weekly required dose because more windows exist;
+- extra windows do not increase weekly session/occurrence commitment, required dose or
+  tolerated-load assumptions;
+- a separate secondary occurrence consumes the applicable existing weekly commitment;
+- an embedded module inside an existing occurrence consumes no second occurrence count, but its
+  materialized minutes/cost/stimulus still count normally;
 - no automatic same-session merge in v1;
 - explicit fragmentation penalty/tie-breaker after requirement coverage so the engine does not
   create needless snacks.
@@ -282,16 +327,18 @@ One session/module may contribute to multiple capabilities through explicit meta
 
 **Blocked by:** CF1–CF6 sufficient coverage
 
-Implement the degradation repertoire with a versioned policy-selected ordering. The sequence
-below is the proposed initial product heuristic, not an evidence-derived physiological law:
+Implement the degradation repertoire with a versioned policy-selected ordering. **Before**
+this sequence, recompute residuals from all canonical completed and committed/projected
+contributions; cross-credit is accounting and therefore is not a degradation operation. The
+sequence below is the proposed initial product heuristic, not an evidence-derived physiological
+law:
 
-1. full dose;
+1. full dose for still-residual requirements;
 2. valid compression;
 3. same-day consolidation;
 4. BUILD -> MAINTAIN/MICRODOSE;
-5. cross-credit;
-6. safe substitution;
-7. typed shortfall/suspension.
+5. safe substitution;
+6. typed shortfall/suspension.
 
 This should be a small orchestration layer. It must not encode family-specific science.
 Any ordering/tie-break that changes live selection requires ADR-0033 product-policy lineage.
@@ -328,7 +375,8 @@ safety/readiness/taper/daily-capacity gates; committed fixed/overlay load; the A
 catalog-load envelope; then exact required-role allocation and D-SUPPORT preservation. ADR-0036
 adds the shared intraday ledger for same-day capacity; it does not reorder weekly authority.
 
-Within the remaining feasible support space, the proposed residual ordering is:
+Within the remaining feasible support space, the proposed **lexicographic** residual ordering
+is:
 
 1. canonical minimum accumulated dose / overdue capability floors;
 2. BUILD stimulus;
@@ -337,8 +385,11 @@ Within the remaining feasible support space, the proposed residual ordering is:
 5. optional surplus utility.
 
 A capability becomes an ADR-0018 exact must-have only when its canonical owner explicitly
-defines that role. The support ordering is a product-policy heuristic and must be registered,
-versioned and alignment-tested before it changes live selection.
+defines that role. Raw residual magnitudes from different units/classes are never compared as
+if 20 minutes, 0.5 objective credit and one exposure were the same currency. Canonical
+priority/deadline policy decides the tier first; within comparable rows, marginal contribution
+may then guide selection. The support ordering is a product-policy heuristic and must be
+registered, versioned and alignment-tested before it changes live selection.
 
 ## 5. Evidence/knowledge work
 
@@ -351,8 +402,10 @@ Before any CF work changes recommendations, add ADR-0033 claims for:
 - capability cadence/max gaps;
 - any cross-credit threshold not already contained in authored stimulus profiles.
 
-Keep claims explicit about evidence class. Knowledge evidence certainty must not be multiplied
-into ADR-0014 objective credit; it governs policy authority/limitations instead. The following
+Keep claims explicit about evidence class. ADR-0033 knowledge-claim evidence certainty must
+not be multiplied into ADR-0014 objective credit; it governs policy authority/limitations
+instead. Existing ADR-0014 performed-evidence `StimulusConfidence` remains a separate input to
+the canonical credit calculation and is not removed or re-applied by this layer. The following
 are **not** established physiological constants:
 
 - 10/15/20-minute universal strength minimum;
