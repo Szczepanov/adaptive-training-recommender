@@ -57,6 +57,9 @@ describe('taper and fueling evidence pack', () => {
         expect(getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.preEventRestrictionsPolicy)).toMatchObject({
             claimType: 'heuristic', evidenceCertainty: 'not_applicable',
         });
+        expect(getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.olympicTriathlonPlanBudgetPolicy)).toMatchObject({
+            claimType: 'heuristic', evidenceCertainty: 'not_applicable',
+        });
         expect(getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.taperSharpeningPolicy)).toMatchObject({
             claimType: 'heuristic', evidenceCertainty: 'not_applicable',
         });
@@ -129,6 +132,7 @@ describe('taper and fueling evidence pack', () => {
         // claims and is covered. The independently calibrated A-event post-event recovery window it
         // used to bundle is split into its own family and stays uncovered.
         expect(coverageById('periodization.taper_windows_volume')).toMatchObject({ coverage: 'covered', researchPriority: 'none' });
+        expect(coverageById('periodization.olympic_triathlon_plan_taper_budget')).toMatchObject({ coverage: 'partial', researchPriority: 'p1' });
         expect(coverageById('periodization.post_event_recovery_window')).toMatchObject({ coverage: 'uncovered', researchPriority: 'p1' });
         expect(ENGINE_KNOWLEDGE_COVERAGE.some(item => item.id.includes('fuel'))).toBe(false);
     });

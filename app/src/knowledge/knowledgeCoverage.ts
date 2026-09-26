@@ -530,6 +530,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'The pre-event volume-reduction-while-preserving-intensity boundary has a moderate-certainty scientific claim; exact default scheduling (authored-start override precedence, cycling-A race-week alignment with a 3-day minimum, and legacy 14/5-day fallback for non-general targets) plus the 0.6 volume endpoint are separately registered as explicit product policy, not scientific constants. SKR1 runtime lineage (`knowledgeLineage.ts:trainingIntentKnowledgeRefs`) already emits both claims while a taper is active for an endurance event.',
     },
     {
+        id: 'periodization.olympic_triathlon_plan_taper_budget', domain: 'periodization_taper', title: 'Olympic-triathlon plan-level taper frequency and volume budget',
+        currentRule: 'For an A-priority Olympic triathlon with at least three measured pre-taper swim/bike/run sessions spanning seven days, the final 14-day as-of plan caps projected upper-bound minutes plus delivered minutes at 0.59 of the prior 14-day recorded minutes and session count at 0.85 of the prior count, with a three-session floor. The first seven days spend at most half the minute allowance; the final week can use what remains, reserving 30 cycling and 25 running minutes for D-4 through D-2 and limiting race-week swim to 45 minutes. D-1 is rest.',
+        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
+        codeRefs: ['engine/optimizer.ts:rankCandidates', 'engine/taperPlanBudget.ts:resolveOlympicTriathlonTaperBudget', 'engine/taperPlanBudget.ts:olympicTriathlonTaperExclusion'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.endurancePreEventTaper, KNOWLEDGE_CLAIM_IDS.olympicTriathlonPlanBudgetPolicy],
+        coverageRationale: 'The registered moderate-certainty taper claim supports a substantial volume reduction with useful intensity; it does not establish the product 0.85 frequency cap, D-1 rest, or exact individual response. A separate policy claim owns those choices. Coverage remains partial pending athlete outcome calibration and validation across more histories.',
+    },
+    {
         id: 'periodization.post_event_recovery_window', domain: 'periodization_taper', title: 'A-event post-event recovery window',
         currentRule: 'A-priority cycling/running events completed or DNF within the last 3 days enter a Post-Event Recovery phase at volume/intensity 0.4; B/C events and events older than 3 days do not.',
         classification: 'product_heuristic', coverage: 'uncovered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'p1',

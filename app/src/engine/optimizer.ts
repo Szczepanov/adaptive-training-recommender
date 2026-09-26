@@ -35,6 +35,7 @@ import {
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveEventTaper } from './taperPolicy';
+import { isPriorityAOlympicTriathlon, olympicTriathlonTaperBenefitBoost, olympicTriathlonTaperCandidateCap, olympicTriathlonTaperExclusion, resolveOlympicTriathlonTaperBudget } from './taperPlanBudget';
 import { resolveInjuryRestrictions } from './injuryPolicy';
 import { classifyCandidateStrength, classifyPriorStrength, evaluateStrengthSpacingStatus, type StrengthExposureLike } from './strengthSpacingPolicy';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
@@ -192,8 +193,47 @@ export function resolveTimeCapDoseAdjustment(
     };
 }
 
+/** Reuses authored shorter doses where available. An Easy Endurance prescription may
+ * also be truncated inside its authored duration range, including swim templates that
+ * do not offer a named easier dose. The selected range and all costs are materialized
+ * together before ranking and projection. */
+function resolveOlympicTaperDoseAdjustment(
+    template: SessionTemplate,
+    capMinutes: number,
+): { activeDose: DoseVariation; adjustment: SessionAdjustment } | null {
+    if (template.durationMax <= capMinutes) return null;
+    const existing = resolveTimeCapDoseAdjustment(template, capMinutes, false);
+    let activeDose = existing?.activeDose.durationMax !== undefined && existing.activeDose.durationMax <= capMinutes
+        ? existing.activeDose : null;
+    if (!activeDose && (template.category === 'Easy Endurance' || template.id === 'end_pre_race_openers_01')
+        && template.durationMin <= capMinutes) {
+        const baseMidpoint = (template.durationMin + template.durationMax) / 2;
+        const cappedMidpoint = (template.durationMin + capMinutes) / 2;
+        activeDose = {
+            label: `${template.durationMin}-${capMinutes} min ${template.title}`,
+            durationMin: template.durationMin,
+            durationMax: capMinutes,
+            doseRatio: cappedMidpoint / baseMidpoint,
+            prescriptionSummary: `${template.description} Keep total duration at or below ${capMinutes} minutes.`,
+        };
+    }
+    if (!activeDose) return null;
+    return {
+        activeDose,
+        adjustment: {
+            direction: 'easier', tier: 1,
+            originalTemplateId: template.id,
+            originalTemplateTitle: template.title,
+            adjustedDoseLabel: activeDose.label,
+            rationale: `The Olympic triathlon taper has ${capMinutes} minutes available for this session, so its prescription is ${activeDose.label}.`,
+        },
+    };
+}
+
 export interface RankedCandidate {
     template: SessionTemplate;
+    /** A concrete reduced prescription charged to the athlete's Olympic taper budget. */
+    taperDoseAdjustment?: { activeDose: DoseVariation; adjustment: SessionAdjustment };
     benefitScore: number;
     costPenalty: number;
     utilityScore: number;
@@ -246,6 +286,9 @@ export interface OptimizationOptions {
     preferredModalityToday?: string | null;
     focusEvent?: UserEvent | null;
     recentHistory?: (RecentHistoryEntry | SessionHistoryEntry)[];
+    /** Completed evidence wider than operational history, used only to establish and
+     * account for the athlete-specific Olympic taper budget. */
+    taperBudgetHistory?: (RecentHistoryEntry | SessionHistoryEntry)[];
     /** Canonical performed-training exposure facts are the recency/spacing authority for
      * strength. An explicitly present empty array must stay empty rather than falling back
      * to legacy reconstructed history. */
@@ -974,6 +1017,9 @@ export function buildOptimizationContext(
         const lowerBody = costProf?.lowerBody;
         const entryType = 'type' in e && typeof e.type === 'string' ? e.type : undefined;
         const recoveryHours = ('recoveryHours' in e && typeof e.recoveryHours === 'number') ? e.recoveryHours : undefined;
+        const projectedSource = 'source' in e && e.source === 'projected';
+        const projectedDurationMax = 'durationMax' in e && typeof e.durationMax === 'number' ? e.durationMax : undefined;
+        const occurrenceKey = 'occurrenceKey' in e && typeof e.occurrenceKey === 'string' ? e.occurrenceKey : undefined;
 
         return {
             date: completedDate ?? e.date,
@@ -984,6 +1030,9 @@ export function buildOptimizationContext(
             systemicCost: e.systemicCost ?? systemic ?? 0,
             lowerBodyCost: ('lowerBodyCost' in e && typeof e.lowerBodyCost === 'number') ? e.lowerBodyCost : (lowerBody ?? 0),
             ...(recoveryHours !== undefined ? { recoveryHours } : {}),
+            ...(projectedSource ? { source: 'projected' as const } : {}),
+            ...(projectedDurationMax !== undefined ? { durationMax: projectedDurationMax } : {}),
+            ...(occurrenceKey !== undefined ? { occurrenceKey } : {}),
             ...((typeof (e as Record<string, unknown>).durationMin === 'number') || recordDurationMin !== undefined
                 ? { durationMin: typeof (e as Record<string, unknown>).durationMin === 'number'
                     ? (e as Record<string, number>).durationMin
@@ -1027,6 +1076,7 @@ export function buildOptimizationContext(
             ...(options.preferredModalityToday !== undefined ? { preferredModalityToday: options.preferredModalityToday } : {}),
             focusEvent,
             recentHistory: rawHistory,
+            ...(options.taperBudgetHistory ? { taperBudgetHistory: options.taperBudgetHistory } : {}),
             anchorRole: options.anchorRole ?? null,
             adjacentToAnchor: options.adjacentToAnchor ?? false,
             coverageState,
@@ -1089,6 +1139,11 @@ export function rankCandidates(
     const cyclingDurabilityFocusEvent = isCyclingDurabilityFocusEvent(focusEvent);
     const rawHistory = options.recentHistory ?? [];
     const history = normalizeHistory(rawHistory, targetDate);
+    const olympicTaperBudget = resolveOlympicTriathlonTaperBudget(focusEvent, targetDate, rawHistory, options.taperBudgetHistory);
+    const olympicRaceEve = isPriorityAOlympicTriathlon(focusEvent)
+        && resolvedTaper !== null
+        && targetDate >= resolvedTaper.startDate
+        && getDayDiff(focusEvent!.timing?.planningDate ?? focusEvent!.date, targetDate) === 1;
     const summary = buildHistoryFeatureSummary(history, targetDate, options.resolveRecoveryHours);
     const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance' || o.key === 'strength_development');
     const coverageState = options.coverageState;
@@ -1121,7 +1176,15 @@ export function rankCandidates(
         if (!template) return;
         const excludedReasons: string[] = [];
 
-        const activeDoseAdjustment = resolveTimeCapDoseAdjustment(template, availability.maxTimeMinutes, options.fatigueTier === 'modify');
+        const readinessDoseAdjustment = resolveTimeCapDoseAdjustment(template, availability.maxTimeMinutes, options.fatigueTier === 'modify');
+        const taperCandidateCap = olympicTriathlonTaperCandidateCap(template, olympicTaperBudget);
+        const proposedTaperDoseAdjustment = taperCandidateCap !== null
+            ? resolveOlympicTaperDoseAdjustment(template, Math.min(taperCandidateCap, availability.maxTimeMinutes))
+            : null;
+        const useTaperDose = proposedTaperDoseAdjustment && (!readinessDoseAdjustment
+            || proposedTaperDoseAdjustment.activeDose.durationMax < readinessDoseAdjustment.activeDose.durationMax);
+        const activeDoseAdjustment = useTaperDose ? proposedTaperDoseAdjustment : readinessDoseAdjustment;
+        const taperDoseAdjustment = useTaperDose ? proposedTaperDoseAdjustment : null;
         // Only opted-in catalog templates may use an authored easier dose below their
         // default minimum to enter a shorter window.
         const minimumForTimeBudget = template.allowsShortTimeCapDose
@@ -1160,6 +1223,14 @@ export function rankCandidates(
                 ...(isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
             }
             : template;
+        if (olympicRaceEve && template.category !== 'Rest') {
+            excludedReasons.push('OLYMPIC_TRIATHLON_RACE_EVE_REST');
+        } else {
+            const taperExclusion = olympicTriathlonTaperExclusion(
+                template, olympicTaperBudget, effectiveCandidate.durationMax,
+            );
+            if (taperExclusion) excludedReasons.push(taperExclusion);
+        }
         let benefit = calculateStimulusBenefit(effectiveCandidate, unresolvedObjectives);
         const fulfilsNominatedAnchor = candidateMatchesAnchorRole(template, options.anchorRole);
         const deferAnchorAdjacentHeavyStrength = Boolean(
@@ -1284,6 +1355,9 @@ export function rankCandidates(
             }
         }
 
+        const taperBenefitBoost = excludedReasons.length === 0
+            ? olympicTriathlonTaperBenefitBoost(template, olympicTaperBudget) : 0;
+        benefit += taperBenefitBoost;
         if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate, summary)) {
             benefit += MULTISPORT_MODALITY_COVERAGE_BENEFIT;
         }
@@ -1458,6 +1532,9 @@ export function rankCandidates(
         if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate, summary)) {
             rationale += ` (Event-modality coverage: ${template.modality} has no exposure in the rolling 6-day history.)`;
         }
+        if (taperBenefitBoost > 0) {
+            rationale += ' (Olympic triathlon taper: preserves a feasible race-week discipline touch.)';
+        }
         if (sequenceIntent) {
             rationale += ` (Sequence intent: ${sequenceIntent.progressionMode}/${sequenceIntent.qualityDensityMode}, preferred key gap ${sequenceIntent.minimumPreferredKeyGapDays}d.)`;
             if (sequencePreference.reasons.length > 0) {
@@ -1467,6 +1544,7 @@ export function rankCandidates(
 
         const item: RankedCandidate = {
             template,
+            ...(taperDoseAdjustment ? { taperDoseAdjustment } : {}),
             benefitScore: benefit,
             costPenalty,
             utilityScore: utility,

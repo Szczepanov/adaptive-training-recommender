@@ -7,6 +7,7 @@ export const TAPER_FUELING_CLAIM_IDS = {
     hydrationAvoidOverdrinking: 'nutrition.endurance.hydration.avoid_overdrinking',
     taperWindowsVolumePolicy: 'policy.taper.windows_volume_v1',
     preEventRestrictionsPolicy: 'policy.taper.pre_event_restrictions_v1',
+    olympicTriathlonPlanBudgetPolicy: 'policy.taper.olympic_triathlon_plan_budget_v1',
     taperSharpeningPolicy: 'policy.taper.sharpening_targets_v1',
 } as const;
 
@@ -136,7 +137,7 @@ export const TAPER_FUELING_SOURCES: readonly KnowledgeSource[] = [
         sourceType: 'product_policy',
         citation: 'Adaptive Training Recommender product policy, reviewed 2026-08-30.',
         publishedOn: '2026-08-30',
-        notes: 'Registers exact taper windows, volume curve, pre-event blocking windows and sharpening target values as product calibration. These values remain distinct from the scientific taper principle.',
+        notes: 'Registers exact taper windows, volume curve, pre-event blocking windows, Olympic-triathlon plan budget and sharpening target values as product calibration. These values remain distinct from the scientific taper principle.',
     },
 ];
 
@@ -220,6 +221,14 @@ export const TAPER_FUELING_CLAIMS: readonly KnowledgeClaim[] = [
         applicability: { contexts: ['pre_event_taper'], sports: ['cycling', 'running', 'triathlon'], populations: ['app_users_with_A_B_or_C_events'], outcomes: ['session_eligibility'], horizon: 'acute' },
         evidence: [{ sourceId: TAPER_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
         limitations: ['Taper evidence supports freshness, progressive volume reduction and preserved quality while load falls; it does not directly validate each 1/2/3/7-day block, the D-3 generic Moderate/Hard exclusion, the 0.35 light-strength ceiling, the one-touch limit, or the 3-day density gap as universal biological recovery thresholds.'], reviewedOn: '2026-09-23', version: 5,
+    },
+    {
+        id: TAPER_FUELING_CLAIM_IDS.olympicTriathlonPlanBudgetPolicy,
+        statement: 'Product Olympic-triathlon A-event taper budget v1: when a 14-day pre-taper swim/bike/run history has at least 3 measured sessions spanning at least 7 days, the final 14-day plan admits at most 0.59 times its recorded training minutes and 0.85 times its session frequency, with a three-session floor. Projected sessions charge their prescribed duration upper bound; completed sessions charge delivered minutes at each as-of replan. The first 7-day block may spend at most 0.5 of the minute budget and its rounded-up half-session allocation; the final block may use the remaining 14-day budget. Reserve 30 cycling minutes and 25 running minutes for D-4 through D-2 where feasible, and shorten race-week swim prescriptions to at most 45 minutes. Reserve recovery before the race by selecting rest on D-1. Existing readiness, access and time gates retain authority.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
+        applicability: { contexts: ['pre_event_taper'], sports: ['triathlon'], populations: ['app_users_with_A_priority_olympic_triathlon_and_comparable_training_history'], outcomes: ['plan_frequency', 'planned_training_volume', 'pre_race_recovery'], horizon: 'acute' },
+        evidence: [{ sourceId: TAPER_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['The 0.59 volume ratio operationalizes the lower bound of the registered population-level 41-60% reduction finding; 0.85 frequency, the three-session floor, first-block pacing, late sport-touch reserve and D-1 rest are product choices for this reproducible persona gap, not universal taper prescriptions.', 'Sparse, non-comparable or missing pre-taper history cannot justify an athlete-relative numeric cap. No arbitrary distance, event priority or recovery state inherits this exact budget. A future replan may prescribe more work after earlier sessions were completed below their original upper bound; stale prescription maxima are not actual delivered load.'], reviewedOn: '2026-09-25', version: 1,
     },
     {
         id: TAPER_FUELING_CLAIM_IDS.taperSharpeningPolicy,

@@ -189,7 +189,7 @@ export interface WeekAheadPlanSeed {
     aerobicVolumeFloor?: AerobicVolumeFloor | null;
 }
 
-type ForecastPickCandidate = Pick<RankedCandidate, 'template' | 'utilityScore' | 'benefitScore' | 'costPenalty' | 'coverageNeedTier' | 'rationale'>;
+type ForecastPickCandidate = Pick<RankedCandidate, 'template' | 'utilityScore' | 'benefitScore' | 'costPenalty' | 'coverageNeedTier' | 'rationale' | 'taperDoseAdjustment'>;
 export type AllocationPreservation = 'preserves' | 'degrades' | 'unresolved_search_budget';
 
 export interface ForecastPickSelection {
@@ -678,6 +678,8 @@ export interface ProjectedDatePlanningContext {
     healthPlanningPolicy?: HealthPlanningPolicy | null;
     aerobicVolumeFloor?: AerobicVolumeFloor | null;
     rollingLoadBudgetProfile?: RollingLoadBudgetProfile;
+    /** Wider completed exposure read for the Olympic taper budget only. */
+    taperBudgetHistory?: (RecentHistoryEntry | SessionHistoryEntry)[];
     rollingLoadBudgetHorizonStartDate?: string;
     rollingLoadBudgetHorizonEndDate?: string;
     /** Severe-recovery forecast policy shared by budget admission and final prescription. */
@@ -992,6 +994,7 @@ export function evaluateProjectedDate(
             // final forecast dose so ranking cannot credit a dose it will not prescribe.
             fatigueTier: budgetFatigueTier,
             healthPlanningPolicy: shared.healthPlanningPolicy,
+            taperBudgetHistory: shared.taperBudgetHistory,
             authoredPlanBlocks: shared.authoredPlanBlocks,
             resolvedAvailability: availability,
             ...(planDefinition ? {
@@ -1161,6 +1164,8 @@ export function trailingHistoryFromCompletedExposures(
         costProfile: e.costProfile,
         ...(e.occurrenceKey ? { occurrenceKey: e.occurrenceKey } : {}),
         durationMin: e.trainingRecordLike?.duration_min ?? e.deliveredDose?.completedDurationMin,
+        ...('source' in e && e.source === 'projected' ? { source: 'projected' as const } : {}),
+        ...('durationMax' in e && typeof e.durationMax === 'number' ? { durationMax: e.durationMax } : {}),
         recoveryHours: e.recoveryHours ?? (e.templateId ? resolveRecoveryHoursForTemplate(e.templateId) : undefined),
     }));
 }
@@ -1789,6 +1794,7 @@ export function generateWeekAheadPlan(
         healthPlanningPolicy: options.healthPlanningPolicy,
         aerobicVolumeFloor: seed.aerobicVolumeFloor ?? null,
         rollingLoadBudgetProfile,
+        taperBudgetHistory: seed.rollingLoadBudgetHistory,
         rollingLoadBudgetHorizonStartDate: rollingLoadBudgetHorizon.startDate,
         rollingLoadBudgetHorizonEndDate: rollingLoadBudgetHorizon.endDate,
     };
@@ -2100,8 +2106,9 @@ export function generateWeekAheadPlan(
             rationale: 'Fallback rest day.',
         };
 
-        const preservesAllocation = (template: SessionTemplate): AllocationPreservation => {
-            const candidateDose = resolveTimeCapDoseAdjustment(
+        const preservesAllocation = (candidate: ForecastPickCandidate): AllocationPreservation => {
+            const template = candidate.template;
+            const candidateDose = candidate.taperDoseAdjustment?.activeDose ?? resolveTimeCapDoseAdjustment(
                 template,
                 evaluation.availability.maxTimeMinutes,
                 effectiveFatigueTier === 'modify',
@@ -2178,7 +2185,7 @@ export function generateWeekAheadPlan(
             ranked,
             viabilityApplies,
             fallbackPick,
-            candidate => preservesAllocation(candidate.template),
+            preservesAllocation,
             incumbentFallback,
         );
         if (pickSelection.allocationUnresolved) {
@@ -2189,7 +2196,8 @@ export function generateWeekAheadPlan(
         const pick = pickSelection.candidate;
 
         const bestBenefit = [...(ranked.length > 0 ? ranked : [{ template: restFallback, benefitScore: 0 }])].sort((a, b) => b.benefitScore - a.benefitScore)[0];
-        const forecastDoseAdjustment = resolveTimeCapDoseAdjustment(pick.template, evaluation.availability.maxTimeMinutes, effectiveFatigueTier === 'modify');
+        const forecastDoseAdjustment = pick.taperDoseAdjustment
+            ?? resolveTimeCapDoseAdjustment(pick.template, evaluation.availability.maxTimeMinutes, effectiveFatigueTier === 'modify');
         const forecastActiveDose = forecastDoseAdjustment?.activeDose;
         const pickCredits = creditingObjectivesFor(pick.template, forecastActiveDose);
         const addressed = pickCredits.map(item => item.objective.title);

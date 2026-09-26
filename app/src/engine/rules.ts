@@ -43,7 +43,9 @@ import { fixedActivityOccurrenceKey } from './fixedActivityIdentity';
 // M3.6: this module only ever reads gating/isEvent/id/title, identical on v1 and v2
 // sessions -- widened to accept either rather than kept v1-only.
 import type { AnyExternalPlanSession as ExternalPlanSession } from '../sessions/externalPlanV2';
-import { applyFixedActivityStimulusCredit } from './planner';
+import { applyFixedActivityStimulusCredit, trailingHistoryFromCompletedExposures } from './planner';
+import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS } from './rollingLoadBudget';
+import { isPriorityAOlympicTriathlon } from './taperPlanBudget';
 import { getUnresolvedObjectives } from './microcycle';
 import { applyCompletedSessionLoad, computeInternalResponseStrain, decayFatigue, type FatigueFusionPolicy } from './fatigue';
 import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaseline, type SubjectiveBaselineMetric } from './subjectiveBaseline';
@@ -797,6 +799,7 @@ export async function evaluateTrainingWithIntent(
             healthPlanningPolicy,
             preferredModalityToday: readiness.subjective.preferredModalityToday,
             aerobicVolumeFloor,
+            taperBudgetHistory: trailingHistoryFromCompletedExposures(intent.rollingLoadBudgetHistory, date),
             ...(evergreen ? {
                 coverageState: buildCoverageState(
                     evergreen.planDefinition,
@@ -833,12 +836,13 @@ export async function evaluateTrainingWithIntent(
         ? progressionDoseForTemplate(pick.template, confirmedProgressionOverrides)
         : null;
     const progressionDoseAllowed = progressionDose && pick
+        && !pick.taperDoseAdjustment
         && progressionDose.durationMin <= availability.maxTimeMinutes
         && !exceedsPlanCeiling(pick.template.systemicCost * progressionDose.doseRatio, envelopes.plan)
         ? progressionDose
         : null;
     const doseAdjustment = pick
-        ? resolveTimeCapDoseAdjustment(pick.template, availability.maxTimeMinutes, mode === 'modify')
+        ? pick.taperDoseAdjustment ?? resolveTimeCapDoseAdjustment(pick.template, availability.maxTimeMinutes, mode === 'modify')
         : null;
     const appliedProgressionDose = progressionDoseAllowed
         && (!doseAdjustment || progressionDoseAllowed.durationMin <= doseAdjustment.activeDose.durationMin)
@@ -1184,7 +1188,7 @@ export function evaluateNextDayPlan(
 const ZERO_COST: WorkoutCostProfile = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
 const ZERO_STIMULUS: WorkoutStimulusProfile = { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0, maxStrength: 0, hypertrophy: 0 };
 
-function recommendationProjection(date: string, rec: Recommendation): CompletedExposure {
+function recommendationProjection(date: string, rec: Recommendation): CompletedExposure & { source: 'projected'; durationMax: number } {
     const workoutId = workoutForTemplate(rec.template.id)?.id;
     const effectiveTemplate = materializeEffectiveDose(rec.template, rec.activeDose);
     return {
@@ -1197,6 +1201,8 @@ function recommendationProjection(date: string, rec: Recommendation): CompletedE
         ...(workoutId ? { workoutId } : {}),
         modality: rec.template.modality,
         category: rec.template.category,
+        source: 'projected',
+        durationMax: effectiveTemplate.durationMax,
         trainingRecordLike: { type: `${rec.template.modality} ${rec.template.category}`, duration_min: effectiveTemplate.durationMin, training_effect: 0, intensity_tag: '' },
     };
 }
@@ -1287,14 +1293,15 @@ async function projectedProviderForTomorrow(
     scheduleOverlays: readonly ScheduleOverlay[],
     historyProvider?: TrainingHistoryProvider,
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
+    historyWindowDays: number = 7,
 ): Promise<TrainingHistoryProvider> {
-    const windowStart = addDaysToLocalDateString(tomorrowDate, -7);
+    const windowStart = addDaysToLocalDateString(tomorrowDate, -historyWindowDays);
     let prior: CompletedExposure[];
-    if (preparedHistorySnapshot) {
+    if (preparedHistorySnapshot && preparedHistorySnapshot.windowDays >= historyWindowDays) {
         prior = preparedHistorySnapshot.exposures;
     } else {
         const baseProvider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
-        prior = await baseProvider.reconstruct(userId, tomorrowDate, 7);
+        prior = await baseProvider.reconstruct(userId, tomorrowDate, historyWindowDays);
     }
     const unrepresentedFixed = unrepresentedFixedActivityProjection(todayDate, todayRec, fixedActivities);
     const overlayProjection = scheduleOverlayProjection(todayDate, scheduleOverlays);
@@ -1345,6 +1352,7 @@ export async function evaluateNextDayPlanWithIntent(
         scheduleOverlays,
         historyProvider,
         preparedHistorySnapshot,
+        events.some(isPriorityAOlympicTriathlon) ? ROLLING_LOAD_BUDGET_LOOKBACK_DAYS : 7,
     );
     const evaluate = async (scenario: NextDayScenario) => evaluatedBranch(
         scenario,

@@ -805,6 +805,25 @@ event-specific touches can remain appropriate near the event. Priority-A race we
 separate Issue #676 interaction guard below, which can hard-exclude substantial Race-Specific
 Endurance when another hard/race-specific exposure occurred in the preceding three days.
 
+### Olympic-triathlon plan-level taper budget (Issue #800)
+
+For a Priority-A Olympic-distance triathlon with comparable swim/bike/run training history,
+the 14-day taper now has a shared plan-level frequency and volume envelope. The comparison
+uses the preceding 14 days of completed swim/bike/run training, requiring at least three
+measured sessions spanning seven days; projected selections consume the same envelope at
+their prescribed duration upper bound. The volume ceiling is 0.59 of that
+pre-taper block, expressing the registered 41–60% population-level taper reduction as a
+conservative product rule. The frequency ceiling is 0.85 of the athlete's prior session
+count, with a three-session floor. The first seven days may use at most half the minute
+allowance; the final seven days use the remaining allowance, with brief bike and run
+touches reserved for D-4 through D-2 and race-week swims bounded to 45 minutes. A
+completed session is charged at its delivered duration when the plan is regenerated,
+while future sessions are charged at their prescribed upper bound. D-1 is rest. The
+planner can retain brief touches in each
+discipline when access, readiness and the shared budget permit. These exact ceilings and
+race-eve rest are product calibration rather than universal sports-science thresholds;
+other distances and event priorities keep their own taper behavior.
+
 ### Whole-horizon recent-load and Priority-A race-week interaction policy (Issue #676)
 
 Issue #676 adds two deliberately distinct controls:

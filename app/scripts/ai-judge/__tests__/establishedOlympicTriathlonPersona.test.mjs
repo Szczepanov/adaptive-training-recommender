@@ -143,4 +143,53 @@ describe('established Olympic-triathlon persona (issue #679)', () => {
       }
     }
   });
+
+  it('issue #800: reduces actual planned volume and load against the pre-taper block, with recovery before race day', async () => {
+    const definition = caseBySuffix('taper');
+    const traces = (await resultFor(definition)).decisionTraces;
+    const taperStart = traces[0].date;
+    const prior = definition.scenario.initialHistory.filter((entry) =>
+      dayDiff(taperStart, entry.date) >= 1 && dayDiff(taperStart, entry.date) <= 14);
+    const priorMinutes = prior.reduce((sum, entry) => sum + entry.trainingRecordLike.duration_min, 0);
+    const priorSystemicCost = prior.reduce((sum, entry) => sum + entry.costProfile.systemic, 0);
+    const substantive = traces.filter((trace) => trace.selected.category !== 'Rest' && trace.selected.category !== 'Mobility/Recovery');
+    const plannedMaxMinutes = substantive.reduce((sum, trace) => sum + (trace.selected.durationMax ?? 0), 0);
+    const firstWeek = traces.slice(0, 7).filter((trace) => trace.selected.category !== 'Rest' && trace.selected.category !== 'Mobility/Recovery');
+    const secondWeek = traces.slice(7).filter((trace) => trace.selected.category !== 'Rest' && trace.selected.category !== 'Mobility/Recovery');
+    const firstWeekMax = firstWeek.reduce((sum, trace) => sum + (trace.selected.durationMax ?? 0), 0);
+    const firstWeekDeliveredMin = firstWeek.reduce((sum, trace) => sum + (trace.selected.durationMin ?? 0), 0);
+    const secondWeekMax = secondWeek.reduce((sum, trace) => sum + (trace.selected.durationMax ?? 0), 0);
+    const plannedSystemicCost = substantive.reduce((sum, trace) => sum + trace.selected.projectedCost.systemic, 0);
+    const raceWeek = traces.slice(7);
+    const quality = substantive.filter((trace) =>
+      MODERATE_OR_HARDER_ENDURANCE_CATEGORIES.includes(trace.selected.category)
+      || trace.selected.category === 'Race-Specific Endurance');
+
+    expect(prior).toHaveLength(6);
+    expect(priorMinutes).toBe(330);
+    expect(substantive.length).toBeLessThanOrEqual(prior.length);
+    // The second forecast is generated after week one is simulated as performed at its
+    // lower prescribed bound. Its as-of budget therefore charges actual delivered minutes
+    // plus current projected upper bounds, not expired week-one upper prescriptions.
+    expect(firstWeekMax).toBeLessThanOrEqual(priorMinutes * 0.59 / 2);
+    expect(firstWeekDeliveredMin + secondWeekMax).toBeLessThanOrEqual(priorMinutes * 0.59);
+    expect(plannedMaxMinutes).toBeLessThanOrEqual(priorMinutes * 0.59);
+    expect(plannedSystemicCost).toBeLessThan(priorSystemicCost);
+    expect(raceWeek.filter((trace) => trace.selected.category !== 'Rest' && trace.selected.category !== 'Mobility/Recovery').length).toBeLessThan(7);
+    expect(quality.length).toBeLessThanOrEqual(2);
+    expect(substantive.every((trace) => (trace.selected.durationMax ?? 0) > 0 && trace.selected.projectedCost.systemic >= 0)).toBe(true);
+    expect(traces.at(-1).selected.category).toBe('Rest');
+    for (const modality of ['Swimming', 'Cycling', 'Running']) {
+      expect(substantive.some((trace) => trace.selected.modality === modality), `${modality} taper touch`).toBe(true);
+    }
+    const lateTouches = substantive.filter((trace) => {
+      const daysToRace = dayDiff(definition.scenario.event.date, trace.date);
+      return daysToRace >= 2 && daysToRace <= 4;
+    });
+    expect(lateTouches.some((trace) => trace.selected.modality === 'Cycling')).toBe(true);
+    expect(lateTouches.some((trace) => trace.selected.modality === 'Running')).toBe(true);
+    expect(raceWeek.some((trace) => trace.selected.modality === 'Swimming')).toBe(true);
+    expect(lateTouches.some((trace) => trace.selected.modality === 'Cycling'
+      && trace.selected.category === 'Race-Specific Endurance')).toBe(true);
+  });
 });

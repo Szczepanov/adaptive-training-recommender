@@ -19,6 +19,21 @@ import {
     getActiveKnowledgeClaim as getActiveRegistryKnowledgeClaim,
     KNOWLEDGE_CLAIM_IDS as REGISTRY_KNOWLEDGE_CLAIM_IDS,
 } from './sportsKnowledgeRegistry';
+import {
+    OLYMPIC_TRIATHLON_TAPER_MAX_FREQUENCY_RATIO,
+    OLYMPIC_TRIATHLON_TAPER_MAX_VOLUME_RATIO,
+    OLYMPIC_TRIATHLON_TAPER_FIRST_BLOCK_VOLUME_SHARE,
+    OLYMPIC_TRIATHLON_TAPER_LATE_TOUCH_START_DAYS_TO_RACE,
+    OLYMPIC_TRIATHLON_TAPER_LATE_TOUCH_END_DAYS_TO_RACE,
+    OLYMPIC_TRIATHLON_TAPER_LATE_CYCLING_MINUTES,
+    OLYMPIC_TRIATHLON_TAPER_LATE_RUNNING_MINUTES,
+    OLYMPIC_TRIATHLON_TAPER_RACE_WEEK_SWIM_MAX_MINUTES,
+    OLYMPIC_TRIATHLON_TAPER_MIN_REFERENCE_SESSIONS,
+    OLYMPIC_TRIATHLON_TAPER_MIN_REFERENCE_SPAN_DAYS,
+    OLYMPIC_TRIATHLON_TAPER_PACING_BLOCK_DAYS,
+    OLYMPIC_TRIATHLON_TAPER_PACING_BLOCKS,
+    OLYMPIC_TRIATHLON_TAPER_REFERENCE_DAYS,
+} from '../engine/taperPlanBudget';
 
 function template(overrides: Partial<SessionTemplate> = {}): SessionTemplate {
     return {
@@ -51,6 +66,26 @@ function history(overrides: Partial<SessionHistoryEntry>): SessionHistoryEntry {
 }
 
 describe('load + intensity + recovery product-claim alignment', () => {
+    it('issue #800: aligns the Olympic-triathlon plan budget with its registered policy and taper evidence', () => {
+        const policy = getActiveRegistryKnowledgeClaim(REGISTRY_KNOWLEDGE_CLAIM_IDS.olympicTriathlonPlanBudgetPolicy);
+        const science = getActiveRegistryKnowledgeClaim(REGISTRY_KNOWLEDGE_CLAIM_IDS.endurancePreEventTaper);
+        expect(policy.claimType).toBe('heuristic');
+        expect(policy.statement).toContain(`${OLYMPIC_TRIATHLON_TAPER_MAX_VOLUME_RATIO}`);
+        expect(policy.statement).toContain(`${OLYMPIC_TRIATHLON_TAPER_MAX_FREQUENCY_RATIO}`);
+        expect(policy.statement).toContain(`${OLYMPIC_TRIATHLON_TAPER_REFERENCE_DAYS}-day`);
+        expect(policy.statement).toContain(`${OLYMPIC_TRIATHLON_TAPER_MIN_REFERENCE_SESSIONS} measured`);
+        expect(policy.statement).toContain(`at least ${OLYMPIC_TRIATHLON_TAPER_MIN_REFERENCE_SPAN_DAYS} days`);
+        expect(policy.statement).toContain(`first ${OLYMPIC_TRIATHLON_TAPER_PACING_BLOCK_DAYS}-day block`);
+        expect(OLYMPIC_TRIATHLON_TAPER_PACING_BLOCKS).toBe(2);
+        expect(policy.statement).toContain(`${OLYMPIC_TRIATHLON_TAPER_FIRST_BLOCK_VOLUME_SHARE}`);
+        expect(policy.statement).toContain(`D-${OLYMPIC_TRIATHLON_TAPER_LATE_TOUCH_START_DAYS_TO_RACE} through D-${OLYMPIC_TRIATHLON_TAPER_LATE_TOUCH_END_DAYS_TO_RACE}`);
+        expect(policy.statement).toContain(`${OLYMPIC_TRIATHLON_TAPER_LATE_CYCLING_MINUTES} cycling minutes`);
+        expect(policy.statement).toContain(`${OLYMPIC_TRIATHLON_TAPER_LATE_RUNNING_MINUTES} running minutes`);
+        expect(policy.statement).toContain(`${OLYMPIC_TRIATHLON_TAPER_RACE_WEEK_SWIM_MAX_MINUTES} minutes`);
+        expect(policy.statement).toContain('D-1');
+        expect(science.statement).toContain('41-60%');
+        expect(OLYMPIC_TRIATHLON_TAPER_MAX_VOLUME_RATIO).toBeCloseTo(1 - 0.41);
+    });
     it('pins the registered intensity-band claim to the current public classifier boundary', () => {
         getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.internalLoadIntensityBands);
 
