@@ -101,10 +101,12 @@ const EMBEDDED_HOSTS: Partial<Record<AdaptationKey, { hostAdaptations: readonly 
     mechanical_exposure: { hostAdaptations: ['strength', 'aerobic_endurance'], workoutIds: MECHANICAL_QUALIFYING_WORKOUT_IDS },
 };
 
-/** Attach an embedded requirement to already-packed host occurrences, earliest first, up to
- * its target. Hosts keep their full `exactWorkoutIds` so equipment/safety gates can still
- * pick a non-power identity; the resulting power gap is then reported by exact coverage
- * rather than hidden. Never adds an occurrence or consumes a slot (ADR-0044 D6). */
+/** Cross-credit an embedded requirement onto already-packed exact hosts, earliest first,
+ * up to its target. This function does not synthesize a microdose or infer extra minutes.
+ * Power is embedded-only; mechanical exposure may later retain a separate low-cost support
+ * occurrence through the coverage/allocation path when no host exists (#804, ADR-0044 D4-D6).
+ * Hosts keep their full `exactWorkoutIds` so equipment/safety gates still choose the real
+ * authored workout and any remaining capability gap stays explicit. */
 function embedRequirement(
     requirement: AdaptationDoseRequirement,
     packed: MutableOccurrence[],
