@@ -14,6 +14,26 @@ import { resolveSequenceIntent, type SequenceIntentPolicy } from './sequenceInte
 import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS } from './rollingLoadBudget';
 import { resolvePriorityAOlympicTriathlonTaper } from './taperPlanBudget';
 import { AEROBIC_VOLUME_FLOOR_WINDOW_DAYS, CATALOG_AEROBIC_VOLUME_FLOOR, resolveAerobicVolumeFloor, type AerobicVolumeFloor } from './aerobicVolumeFloor';
+import { strengthRequirement } from './evergreenStrategy';
+
+/**
+ * Issue #801: the cycling event plan already authors one exact primary-strength role. For
+ * an athlete whose durable intent explicitly includes `strength_muscle`, preserve the rest
+ * of the evergreen strategy's registered two-day health floor as a product-policy count seed for build-block support
+ * roles, so an event becoming active does not by itself cut two exposures to one. This does
+ * not claim that every compact support identity independently satisfies the WHO major-muscle-group guideline.
+ * Feasibility, recovery, spacing and anchor authority stay with the weekly allocator,
+ * which reserves support only without displacing a primary role.
+ */
+export function eventStrengthSupportSessions(
+    planningContext: PlanningContext,
+    profile: TrainingIntentProfile | null | undefined,
+): number {
+    if (planningContext.mode !== 'event_directed' || profile?.priorities.includes('strength_muscle') !== true) return 0;
+    const floor = strengthRequirement('required').floor;
+    const authoredPrimaryStrengthRoles = 1;
+    return floor?.dose.unit === 'sessions' ? Math.max(0, floor.dose.value - authoredPrimaryStrengthRoles) : 0;
+}
 
 export type PlannedRecoveryReason =
   | 'scheduled_recovery'   // Prescribed microcycle rest day
@@ -29,6 +49,8 @@ export interface TrainingIntent {
      * which is durable athlete input rather than a computed decision result. */
     planningContext: PlanningContext;
     periodization: PeriodizationResult;
+    /** Issue #801: durable-intent support-role count threaded to every event-plan build. */
+    eventStrengthSupportSessions: number;
     unresolvedObjectives: WeeklyObjective[];
     plannedDose: PlannedDose;
     fatigue: FatigueState;
@@ -173,7 +195,10 @@ export async function resolveTrainingIntent(
     const periodization = planningContext.mode === 'event_directed'
         ? eventPeriodization
         : evaluatePeriodizationPhase([], date);
-    const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
+    const strengthSupportSessions = eventStrengthSupportSessions(planningContext, trainingIntentProfile);
+    const planDefinition = resolvePlanDefinitionForEvent(
+        periodization.focusEvent, authoredPlanBlocks, strengthSupportSessions,
+    );
     // CoverageCreditFact is descriptor-scoped. Derive canonical role facts against the same
     // coverage set the live decision will consume; otherwise a workout whose role differs
     // between evergreen and event plans can be silently reinterpreted at read time.
@@ -304,7 +329,7 @@ export async function resolveTrainingIntent(
         date,
     ), date, authoredPlanBlocks, planDefinition);
     return {
-        planningContext, periodization, unresolvedObjectives, plannedDose, fatigue, history, rollingLoadBudgetHistory, performedTrainingFacts, historySnapshot, aerobicVolumeFloor, microcycle,
+        planningContext, periodization, eventStrengthSupportSessions: strengthSupportSessions, unresolvedObjectives, plannedDose, fatigue, history, rollingLoadBudgetHistory, performedTrainingFacts, historySnapshot, aerobicVolumeFloor, microcycle,
         droppedContributorObjectives: multiEventResolution.droppedContributorObjectives,
         sequenceIntent: resolveSequenceIntent(periodization.phase),
     };

@@ -297,4 +297,50 @@ describe('cycling hybrid targeted evaluation', () => {
     expect(conflict.decisionTraces
       .every((trace) => !powerIdentityFor(workoutIdForTemplateId(trace.selected.templateId))?.impact)).toBe(true);
   });
+
+  // Issue #801: an event becoming active must not by itself cut the hybrid athlete's
+  // weekly resistance exposures from two to one.
+  const weekOutcome = (result, weekIndex, key) => result.allocationReports
+    .find((entry) => entry.weekIndex === weekIndex)?.report.outcomes
+    .find((item) => item.occurrence.coverageKey === key);
+
+  it('preserves two distinct weekly resistance exposures in the cycling event build without losing cycling anchors', async () => {
+    const build = await resultFor(find('event_build'));
+    const keysFor = (trace) => coverageKeysForTemplate(
+      ENRICHED_TEMPLATES.find(({ id }) => id === trace.selected.templateId), 'build');
+    const strengthDays = (weekIndex) => build.decisionTraces
+      .filter((trace) => trace.weekIndex === weekIndex && trace.selected.modality === 'Strength');
+
+    // Week 1 (still block_build): one exact primary-strength day and one exact compact support
+    // day, on distinct dates. The support day is the seeded tomorrow pick (09-08), so it is
+    // discharged before the weekly allocation report is built.
+    const weekOne = strengthDays(1);
+    expect(new Set(weekOne.map(({ date }) => date)).size).toBe(2);
+    expect(weekOne.filter((trace) => keysFor(trace).includes('primary_strength'))).toHaveLength(1);
+    expect(weekOne.filter((trace) => keysFor(trace).includes('compact_strength')
+      && !keysFor(trace).includes('primary_strength'))).toHaveLength(1);
+
+    // Week 0: the primary-only pass places quality exactly as main does, which leaves no
+    // admissible support date; the deferral is typed, never silent or unresolved, and the
+    // cycling anchors are untouched.
+    expect(weekOutcome(build, 0, 'compact_strength')).toMatchObject({ status: 'missed', reason: 'subordinate_to_required_roles' });
+    for (const key of ['sustained_quality', 'outdoor_event_specific']) {
+      expect(weekOutcome(build, 0, key)?.status).toBe('fulfilled');
+    }
+    expect(build.allocationReports.flatMap(({ report }) => report.outcomes)
+      .some((item) => item.status === 'unresolved_search_budget')).toBe(false);
+  });
+
+  it('defers the support exposure under adverse recovery and carries none into taper', async () => {
+    const adverse = await resultFor(find('event_adverse'));
+    const deferred = weekOutcome(adverse, 0, 'compact_strength');
+    expect(deferred?.status).toBe('missed');
+    expect(deferred?.reason).toEqual(expect.any(String));
+    expect(adverse.decisionTraces
+      .filter((trace) => trace.mode === 'recover')
+      .every((trace) => trace.selected.modality !== 'Strength')).toBe(true);
+    const taper = await resultFor(find('event_taper'));
+    expect(taper.allocationReports.flatMap(({ report }) => report.outcomes)
+      .some((item) => item.occurrence.coverageKey === 'compact_strength')).toBe(false);
+  });
 });

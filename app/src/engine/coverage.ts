@@ -65,6 +65,8 @@ export interface WeeklyCoverageRequirement {
     windowStart?: string;
     windowEnd?: string;
     credits: CoverageCredit[];
+    /** Issue #801: reserved only without displacing a primary required role. */
+    reservationTier?: 'support';
 }
 
 export interface CoverageState {
@@ -472,6 +474,17 @@ export function buildCoverageState(
         );
         const existing = requirementsByKey.get(definition.coverageKey);
         if (existing) {
+            // A primary definition for the same key always wins over a support tier.
+            if (definition.reservationTier !== 'support' && existing.reservationTier === 'support') {
+                requirementsByKey.set(definition.coverageKey, {
+                    ...existing,
+                    reservationTier: undefined,
+                    minimumSessions: Math.max(existing.minimumSessions, minimumSessions),
+                    targetSessions: Math.max(existing.targetSessions, targetSessions),
+                    priority: definition.priority === 'must_have' ? 'must_have' : existing.priority,
+                });
+                return;
+            }
             existing.minimumSessions = Math.max(existing.minimumSessions, minimumSessions);
             existing.targetSessions = Math.max(existing.targetSessions, targetSessions);
             if (definition.priority === 'must_have') existing.priority = 'must_have';
@@ -490,7 +503,11 @@ export function buildCoverageState(
             windowEnd: block.endDate,
             index,
         });
-        if (requirement) requirementsByKey.set(definition.coverageKey, requirement);
+        if (requirement) {
+            requirementsByKey.set(definition.coverageKey, definition.reservationTier === 'support'
+                ? { ...requirement, reservationTier: 'support' }
+                : requirement);
+        }
     });
 
     // Issue #802: coverage-only capability requirements (no stimulus objective) share the
@@ -659,7 +676,9 @@ export function coverageNeedTierForTemplate(
             advancesAnchorTimedMinimum = true;
             continue;
         }
-        if (DEFERRED_SUPPORT_COVERAGE_KEYS.has(key)) {
+        // Issue #801: a support-tier minimum is deferred support, never as urgent as a
+        // primary role -- today's pick has no allocator guard against it outranking one.
+        if (DEFERRED_SUPPORT_COVERAGE_KEYS.has(key) || requirement.reservationTier === 'support') {
             advancesDeferredSupportMinimum = true;
             continue;
         }

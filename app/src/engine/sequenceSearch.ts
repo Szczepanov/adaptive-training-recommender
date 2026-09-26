@@ -120,6 +120,7 @@ export function beamSearchWeekAheadPlan(
     const events = options.events ?? [];
     const fixedActivities = options.fixedActivities ?? [];
     const authoredPlanBlocks = options.authoredPlanBlocks ?? [];
+    const eventStrengthSupportSessions = options.eventStrengthSupportSessions ?? 0;
     const suppliedPlanDefinition = options.planDefinition ?? null;
     const effectivePreferences = preferences ?? { ...NEUTRAL_PREFERENCES, preferredRecoveryStyle: resolveRecoveryStyle(context) };
 
@@ -172,6 +173,7 @@ export function beamSearchWeekAheadPlan(
             branch.projectionExposures,
             authoredPlanBlocks,
             suppliedPlanDefinition,
+            eventStrengthSupportSessions,
         );
 
         const droppedContributorObjectives = [...branch.droppedContributorObjectives];
@@ -303,7 +305,8 @@ export function beamSearchWeekAheadPlan(
         const date = addDaysToLocalDateString(todayDate, offset);
         const periodization = evaluatePeriodizationPhase(events, date);
         const availability = resolveAvailability(date, null, fixedActivities, context);
-        const planDefinition = suppliedPlanDefinition ?? resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
+        const planDefinition = suppliedPlanDefinition
+            ?? resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks, eventStrengthSupportSessions);
 
         const nextGeneration: SearchBranch[] = [];
 
@@ -351,7 +354,7 @@ export function beamSearchWeekAheadPlan(
                     plannedDose: resolvePlannedDoseForDate(periodization.phase, reconciledBranch.microcycle.objectives, unresolved, planDefinition, date),
                 },
                 context, effectivePreferences, date,
-                { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, fatigueTier: fatigueTierFor(peakFatigue), authoredPlanBlocks: options.authoredPlanBlocks },
+                { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, fatigueTier: fatigueTierFor(peakFatigue), authoredPlanBlocks: options.authoredPlanBlocks, eventStrengthSupportSessions },
                 fixedActivities,
             );
 
@@ -470,7 +473,11 @@ export async function generateWeekAheadPlanWithIntentBeamSearch(
             trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
             droppedContributorObjectives: intent.droppedContributorObjectives,
         },
-        { ...options, events: intent.planningContext.mode === 'event_directed' ? events : [] },
+        {
+            ...options,
+            events: intent.planningContext.mode === 'event_directed' ? events : [],
+            eventStrengthSupportSessions: intent.eventStrengthSupportSessions,
+        },
         beamWidth,
         candidatesPerDay
     );

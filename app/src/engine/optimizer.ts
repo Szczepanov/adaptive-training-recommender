@@ -341,6 +341,10 @@ export interface OptimizationOptions {
     resolveRecoveryHours?: (templateId: string) => number | undefined;
     /** Explicit, user-authored date overlays applied to the focus event plan. */
     authoredPlanBlocks?: readonly AuthoredPlanBlock[];
+    /** Issue #801: build-block compact strength/power support roles resolved from durable
+     * intent (`trainingIntent.ts` `eventStrengthSupportSessions`). Every event-plan
+     * construction on this path must receive it; absent means 0. */
+    eventStrengthSupportSessions?: number;
     /** Resolved safety guardrails, including structured injury-derived guardrails. */
     guardrails?: GuardrailKey[];
     /** ADR-0038: Resolved recovery placement state for weekly rest/recovery placement. */
@@ -1072,7 +1076,7 @@ export function buildOptimizationContext(
     const focusEvent = options.focusEvent ?? intent.periodization?.focusEvent ?? null;
     const coverageHistory = resolveCoverageHistory(intent.performedTrainingFacts, intent.history);
     const coverageState = options.coverageState ?? buildCoverageState(
-        resolvePlanDefinitionForEvent(focusEvent, options.authoredPlanBlocks),
+        resolvePlanDefinitionForEvent(focusEvent, options.authoredPlanBlocks, options.eventStrengthSupportSessions ?? 0),
         date,
         coverageHistory,
         undefined,

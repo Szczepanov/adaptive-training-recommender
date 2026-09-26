@@ -7,6 +7,8 @@ import {
     occurrencesFulfilledByTemplateSelection,
     resolveWeeklyRoleReservations,
     PROJECTED_RECOVERY_POLICY_BLOCKER,
+    allocationValuePreserved,
+    primaryAllocationUnresolved,
     weeklyRoleMissReasonForBlockers,
     WEEKLY_ALLOCATION_SEARCH_BUDGET,
     type AllocationAssignment,
@@ -346,5 +348,166 @@ describe('ADR-0018 D-BOUND search budget', () => {
             acceptedByDate: { '2026-08-11': ['zone2'] },
         }, ['2026-08-11']));
         expect(result.reservationsByDate.get('2026-08-11')?.occurrence.id).toBe(early.id);
+    });
+});
+
+describe('issue #801 support-tier reservations (ADR-0018 D-SUPPORT)', () => {
+    const quality = occurrence('sustained_quality', 0, ['end_hard_02']);
+    const support: RequiredRoleOccurrence = { ...occurrence('compact_strength', 0, ['str_power_01']), reservationTier: 'support' };
+
+    it('never trades a primary role for a support role on an equal-cardinality tie', () => {
+        // One usable date. Canonical key order would examine compact_strength first; the
+        // lexicographic objective must still keep the primary quality role.
+        const result = resolveWeeklyRoleReservations([support, quality], stubEvaluator({
+            acceptedByDate: { '2026-08-11': ['end_hard_02', 'str_power_01'] },
+        }, ['2026-08-11']));
+        expect(result.reservationsByDate.get('2026-08-11')?.occurrence.coverageKey).toBe('sustained_quality');
+        expect(result.outcomes.find(item => item.occurrence.id === support.id)).toMatchObject({
+            status: 'missed', reason: 'subordinate_to_required_roles',
+        });
+        expect(result).toMatchObject({ fulfilledCount: 1, primaryFulfilledCount: 1 });
+    });
+
+    it('places the support role when it fits alongside every primary role', () => {
+        const result = resolveWeeklyRoleReservations([support, quality], stubEvaluator({
+            acceptedByDate: { '2026-08-11': ['end_hard_02', 'str_power_01'], '2026-08-12': ['str_power_01'] },
+        }, ['2026-08-11', '2026-08-12']));
+        expect(result.reservationsByDate.get('2026-08-11')?.occurrence.coverageKey).toBe('sustained_quality');
+        expect(result.reservationsByDate.get('2026-08-12')?.occurrence.coverageKey).toBe('compact_strength');
+        expect(result).toMatchObject({ fulfilledCount: 2, primaryFulfilledCount: 1 });
+    });
+
+    it('keeps a support role off the nominated date of a primary role', () => {
+        // Quality could move to 08-12, which would free 08-11 for the support role; a
+        // nominated anchor must not be displaced for support work.
+        const result = resolveWeeklyRoleReservations([support, quality], stubEvaluator({
+            acceptedByDate: { '2026-08-11': ['end_hard_02', 'str_power_01'], '2026-08-12': ['end_hard_02'] },
+        }, ['2026-08-11', '2026-08-12']), { nominatedDates: new Map([[quality.id, '2026-08-11']]) });
+        expect(result.reservationsByDate.get('2026-08-11')?.occurrence.coverageKey).toBe('sustained_quality');
+        expect(result.outcomes.find(item => item.occurrence.id === support.id)).toMatchObject({
+            status: 'missed', reason: 'subordinate_to_required_roles',
+        });
+    });
+
+    it('reports an ordinary typed reason when the support role is infeasible on its own', () => {
+        const result = resolveWeeklyRoleReservations([support], stubEvaluator({
+            acceptedByDate: { '2026-08-11': [] },
+            fatigueExcluded: { '2026-08-11': ['str_power_01'] },
+        }, ['2026-08-11']));
+        expect(result.outcomes[0]).toMatchObject({ status: 'missed', reason: 'projected_fatigue' });
+    });
+
+    it('keeps the original maximum-cardinality value when no support role exists', () => {
+        const aerobic = occurrence('aerobic_volume', 0, ['zone2']);
+        const result = resolveWeeklyRoleReservations([aerobic, quality], stubEvaluator({
+            acceptedByDate: { '2026-08-11': ['zone2', 'end_hard_02'], '2026-08-12': ['zone2'] },
+        }, ['2026-08-11', '2026-08-12']));
+        expect(result.fulfilledCount).toBe(2);
+        expect(result.primaryFulfilledCount).toBe(result.fulfilledCount);
+    });
+
+    it('treats losing a primary role as degradation even when a support role replaces it', () => {
+        const incumbent = { fulfilledCount: 3, primaryFulfilledCount: 3 };
+        expect(allocationValuePreserved(incumbent, { fulfilledCount: 3, primaryFulfilledCount: 2 })).toBe(false);
+        expect(allocationValuePreserved(incumbent, { fulfilledCount: 2, primaryFulfilledCount: 2 }, [quality])).toBe(true);
+        expect(allocationValuePreserved(incumbent, { fulfilledCount: 3, primaryFulfilledCount: 2 }, [support])).toBe(false);
+        expect(allocationValuePreserved({ fulfilledCount: 2, primaryFulfilledCount: 2 }, { fulfilledCount: 2, primaryFulfilledCount: 2 })).toBe(true);
+    });
+});
+
+describe('issue #801 two-pass support placement (review regressions)', () => {
+    const SIX = ['2026-08-11', '2026-08-12', '2026-08-13', '2026-08-14', '2026-08-15', '2026-08-16'];
+    const support: RequiredRoleOccurrence = {
+        ...occurrence('compact_strength', 0, ['str_power_01', 'str_full_02']), reservationTier: 'support',
+    };
+
+    it('places support on dates left free even when it has more candidates than the per-occurrence cap', () => {
+        const primaries = [
+            occurrence('aerobic_volume', 0, ['zone2']),
+            occurrence('primary_strength', 0, ['str_full_01']),
+            occurrence('sustained_quality', 0, ['end_hard_02']),
+            occurrence('outdoor_event_specific', 0, ['end_race_specific_01']),
+        ];
+        const firstFour = Object.fromEntries(SIX.slice(0, 4).map(date => [date, ['zone2', 'str_full_01', 'end_hard_02', 'end_race_specific_01', 'str_power_01', 'str_full_02']]));
+        const lastTwo = Object.fromEntries(SIX.slice(4).map(date => [date, ['str_power_01', 'str_full_02']]));
+        const evaluator = stubEvaluator({ acceptedByDate: { ...firstFour, ...lastTwo } }, SIX);
+        const alone = resolveWeeklyRoleReservations(primaries, evaluator);
+        const withSupport = resolveWeeklyRoleReservations([...primaries, support], evaluator);
+        const supportOutcome = withSupport.outcomes.find(item => item.occurrence.id === support.id);
+        expect(supportOutcome?.status).toBe('reserved');
+        expect(SIX.slice(4)).toContain(supportOutcome?.reservation.assignedDate);
+        for (const primary of primaries) {
+            expect(withSupport.outcomes.find(item => item.occurrence.id === primary.id)?.reservation.assignedDate)
+                .toBe(alone.outcomes.find(item => item.occurrence.id === primary.id)?.reservation.assignedDate);
+        }
+        expect(primaryAllocationUnresolved(withSupport)).toBe(false);
+        expect(withSupport).toMatchObject({ fulfilledCount: 5, primaryFulfilledCount: 4 });
+    });
+
+    it('never moves a primary role on the first allocation, even when support wins canonical tie order', () => {
+        const quality = occurrence('sustained_quality', 0, ['end_hard_02']);
+        const everyDate = Object.fromEntries(SIX.map(date => [date, ['end_hard_02', 'str_power_01']]));
+        const evaluator = stubEvaluator({ acceptedByDate: everyDate }, SIX);
+        const alone = resolveWeeklyRoleReservations([quality], evaluator);
+        const withSupport = resolveWeeklyRoleReservations([support, quality], evaluator);
+        expect(withSupport.reservationsByDate.get(alone.outcomes[0].reservation.assignedDate!)?.occurrence.id).toBe(quality.id);
+    });
+
+    it('keeps support off explicitly excluded anchor dates', () => {
+        const result = resolveWeeklyRoleReservations([support], stubEvaluator({
+            acceptedByDate: { '2026-08-11': ['str_power_01'], '2026-08-12': ['str_power_01'] },
+        }, ['2026-08-11', '2026-08-12']), { supportExcludedDates: new Set(['2026-08-11']) });
+        expect(result.outcomes[0].reservation.assignedDate).toBe('2026-08-12');
+        const blocked = resolveWeeklyRoleReservations([support], stubEvaluator({
+            acceptedByDate: { '2026-08-11': ['str_power_01'] },
+        }, ['2026-08-11']), { supportExcludedDates: new Set(['2026-08-11']) });
+        expect(blocked.outcomes[0]).toMatchObject({ status: 'missed', reason: 'subordinate_to_required_roles' });
+    });
+
+    it('rejects a support pick that would invalidate a later primary reservation', () => {
+        const quality = occurrence('sustained_quality', 0, ['end_hard_02']);
+        // Quality can only run on 08-12, and not the day after strength work.
+        const evaluator = stubEvaluator({
+            acceptedByDate: { '2026-08-11': ['str_power_01'], '2026-08-12': ['end_hard_02'] },
+            conflicts: (assignments, date) => date === '2026-08-12' && assignments.some(item => item.date === '2026-08-11' && item.templateId === 'str_power_01')
+                ? ['end_hard_02'] : [],
+        }, ['2026-08-11', '2026-08-12']);
+        const result = resolveWeeklyRoleReservations([support, quality], evaluator);
+        expect(result.reservationsByDate.get('2026-08-12')?.occurrence.id).toBe(quality.id);
+        expect(result.outcomes.find(item => item.occurrence.id === support.id)).toMatchObject({
+            status: 'missed', reason: 'subordinate_to_required_roles',
+        });
+    });
+
+    it('keeps the real gate reason when a time cap, not the primary roles, blocks support', () => {
+        const quality = occurrence('sustained_quality', 0, ['end_hard_02']);
+        const timeCapped = { 'str_power_01': ['NOT_ELIGIBLE_ON_DATE'], 'str_full_02': ['NOT_ELIGIBLE_ON_DATE'] };
+        const result = resolveWeeklyRoleReservations([support, quality], stubEvaluator({
+            acceptedByDate: { '2026-08-11': ['end_hard_02'], '2026-08-12': [] },
+            exclusionReasons: { '2026-08-11': timeCapped, '2026-08-12': timeCapped },
+        }, ['2026-08-11', '2026-08-12']));
+        expect(result.reservationsByDate.get('2026-08-11')?.occurrence.id).toBe(quality.id);
+        const supportOutcome = result.outcomes.find(item => item.occurrence.id === support.id);
+        expect(supportOutcome?.status).toBe('missed');
+        expect(supportOutcome?.reason).not.toBe('subordinate_to_required_roles');
+    });
+
+    it('reports the removed-date gate when primaries leave no usable date and support could not run there anyway', () => {
+        const quality = occurrence('sustained_quality', 0, ['end_hard_02']);
+        const result = resolveWeeklyRoleReservations([support, quality], stubEvaluator({
+            acceptedByDate: { '2026-08-11': ['end_hard_02'] },
+            fatigueExcluded: { '2026-08-11': ['str_power_01', 'str_full_02'] },
+        }, ['2026-08-11']));
+        expect(result.outcomes.find(item => item.occurrence.id === support.id)).toMatchObject({ status: 'missed', reason: 'projected_fatigue' });
+    });
+
+    it('does not let an unresolved support outcome mark the primary allocation unresolved', () => {
+        const unresolvedSupport = {
+            occurrence: support, status: 'unresolved_search_budget' as const,
+            reservation: { occurrenceId: support.id, nominatedDate: null, assignedDate: null, templateId: null, workoutId: null, wasMoved: false },
+        };
+        expect(primaryAllocationUnresolved({ budgetExhausted: false, outcomes: [unresolvedSupport] })).toBe(false);
+        const unresolvedPrimary = { ...unresolvedSupport, occurrence: occurrence('primary_strength', 0, ['str_full_01']) };
+        expect(primaryAllocationUnresolved({ budgetExhausted: false, outcomes: [unresolvedPrimary] })).toBe(true);
     });
 });

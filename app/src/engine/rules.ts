@@ -799,6 +799,7 @@ export async function evaluateTrainingWithIntent(
         date,
         {
             resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, resolvedAvailability: availability, fatigueTier: mode, authoredPlanBlocks,
+            eventStrengthSupportSessions: intent.eventStrengthSupportSessions,
             healthPlanningPolicy,
             preferredModalityToday: readiness.subjective.preferredModalityToday,
             aerobicVolumeFloor,

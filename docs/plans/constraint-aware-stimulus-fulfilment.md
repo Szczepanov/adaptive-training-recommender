@@ -304,6 +304,11 @@ Acceptance scenarios:
 
 **Blocked by:** #802–#805 as each canonical model lands
 
+#801 (second weekly strength/power exposure in cycling event builds) is live as an exact
+`compact_strength` support role derived from the evergreen strength floor, reserved through
+the allocator's support tier without displacing primary roles; see
+`docs/architecture/recommendation-engine.md`.
+
 #802 (neuromuscular power) now has a canonical owner: `workouts/powerExposure.ts`
 (`POWER_QUALIFYING_IDENTITIES`, `grantsPowerExposureCredit`), the embedded evergreen
 `neuromuscular_power` requirement and the `power_exposure` exact coverage key. See
