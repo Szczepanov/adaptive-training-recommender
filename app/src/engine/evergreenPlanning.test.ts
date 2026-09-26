@@ -110,7 +110,7 @@ describe('resolveEvergreenPlan athlete-relative aerobic floor (#757)', () => {
         expect(aerobicPackingForFloor(CATALOG_AEROBIC_VOLUME_FLOOR, []).descriptor.roles.find(role => role.id === 'aerobic_volume')!.durationMinutes).toBe(30);
     });
 
-    it('caps the long anchor and its packed role at the exact workout maximum', () => {
+    it('caps the long anchor and its packed role at the allocator-executable template maximum', () => {
         const highFloor: AerobicVolumeFloor = { floorMin: 135, source: 'athlete_history', sampleCount: 8, medianMin: 180 };
         const weeklyDose = {
             source: 'athlete_history' as const, modality: 'Cycling' as const,
@@ -119,7 +119,7 @@ describe('resolveEvergreenPlan athlete-relative aerobic floor (#757)', () => {
             weeklyMinutes: [180, 240, 300, 360], observedWeeks: 4,
         };
         const result = aerobicPackingForFloor(highFloor, [{ date: DATE, availableMinutes: 150 }], weeklyDose, true);
-        expect(result.descriptor.longAerobicAnchor?.durationMinutes).toBe(90);
-        expect(result.descriptor.roles.find(role => role.id === 'aerobic_volume')?.durationMinutes).toBe(90);
+        expect(result.descriptor.longAerobicAnchor?.durationMinutes).toBe(60);
+        expect(result.descriptor.roles.find(role => role.id === 'aerobic_volume')?.durationMinutes).toBe(60);
     });
 });
