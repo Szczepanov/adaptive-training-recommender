@@ -304,6 +304,20 @@ function standardTemplateCeilingFor(
     return maxTemplateCeiling;
 }
 
+/** Exact coverage duration authority. Completed history is credited only from the
+ * performed duration; a stale/planned durationMax must never inflate completed work.
+ * Projected/fixed occurrences may use the upper bound of their prescribed range. */
+function coverageDurationReach(identity: ExposureIdentity & { source?: CoverageCreditSource }): number {
+    const lower = typeof identity.durationMin === 'number' && Number.isFinite(identity.durationMin)
+        ? identity.durationMin
+        : 0;
+    if (identity.source !== 'projected' && identity.source !== 'fixed_activity') return lower;
+    const upper = typeof identity.durationMax === 'number' && Number.isFinite(identity.durationMax)
+        ? identity.durationMax
+        : lower;
+    return Math.max(lower, upper);
+}
+
 /** The lower bound must reach the catalog minimum, as before #757. Issue #757 adds the
  * athlete-level floor: a completed session meets it with its actual duration, a planned
  * one with the upper bound of its prescribed range (a capped day truncates that bound).
@@ -326,10 +340,7 @@ function hasRequiredAerobicDose(
     const athleteFloor = effectiveCeiling !== undefined
         ? Math.max(catalogMinimum, Math.min(rawAthleteFloor, effectiveCeiling))
         : rawAthleteFloor;
-    const reach = typeof identity.durationMax === 'number' && Number.isFinite(identity.durationMax)
-        ? Math.max(lower, identity.durationMax)
-        : lower;
-    return reach >= athleteFloor;
+    return coverageDurationReach(identity) >= athleteFloor;
 }
 
 /** Return all authored plan coverage keys satisfied by an exposure in the given phase. */
@@ -347,7 +358,7 @@ export function coverageKeysForExposure(
         .filter(item => item.phases.includes(phase) && item.workoutIds.includes(workoutId))
         .filter(item => item.key !== 'aerobic_volume' || hasRequiredAerobicDose(identity, workoutId, floor, templateCeilingMin))
         .filter(item => item.minimumDurationMinutes === undefined
-            || Math.max(identity.durationMin ?? 0, identity.durationMax ?? 0) >= item.minimumDurationMinutes)
+            || coverageDurationReach(identity) >= item.minimumDurationMinutes)
         .filter(item => item.key !== 'power_exposure' || grantsPowerExposureCredit({ workoutId, isReadinessModifiedDose: identity.isReadinessModifiedDose }))
         .map(item => item.key);
 }
@@ -379,7 +390,7 @@ function canonicalCoverageKeysForExposure(
                 return grantsPowerExposureCredit({ workoutId, isReadinessModifiedDose: exposure.isReadinessModifiedDose });
             }
             if (definition.minimumDurationMinutes !== undefined
-                && Math.max(exposure.durationMin ?? 0, exposure.durationMax ?? 0) < definition.minimumDurationMinutes) return false;
+                && coverageDurationReach(exposure) < definition.minimumDurationMinutes) return false;
             if (key !== 'aerobic_volume') return true;
             return workoutId !== undefined && hasRequiredAerobicDose(exposure, workoutId, floor);
         });
@@ -401,6 +412,7 @@ export function coverageKeysForTemplate(
         category: template.category,
         durationMin: template.durationMin,
         durationMax: template.durationMax,
+        source: 'projected',
         ...(template.isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
     }, phase, descriptor, floor, uncappedTemplateCeiling);
 }
