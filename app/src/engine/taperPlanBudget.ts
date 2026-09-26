@@ -96,8 +96,10 @@ export function resolvePriorityAOlympicTriathlonTaper(
     event: UserEvent | null | undefined,
     targetDate: string,
 ): ResolvedTaper | null {
-    const taper = resolvePriorityAOlympicTriathlonTaper(event, targetDate);
-    if (!taper) return null;
+    if (!isPriorityAOlympicTriathlon(event)) return null;
+    const taper = resolveEventTaper(event!);
+    if (!taper || taper.durationDays !== OLYMPIC_TRIATHLON_TAPER_REFERENCE_DAYS
+        || targetDate < taper.startDate || targetDate > taper.endDate) return null;
     return taper;
 }
 
@@ -128,10 +130,8 @@ export function resolveOlympicTriathlonTaperBudget(
     widerCompletedHistory?: readonly HistoryEntry[],
     fixedReservations: readonly HistoryEntry[] = [],
 ): OlympicTriathlonTaperBudget | null {
-    if (!isPriorityAOlympicTriathlon(event)) return null;
-    const taper = resolveEventTaper(event!);
-    if (!taper || taper.durationDays !== OLYMPIC_TRIATHLON_TAPER_REFERENCE_DAYS
-        || targetDate < taper.startDate || targetDate > taper.endDate) return null;
+    const taper = resolvePriorityAOlympicTriathlonTaper(event, targetDate);
+    if (!taper) return null;
 
     const referenceStart = addDaysToLocalDateString(taper.startDate, -OLYMPIC_TRIATHLON_TAPER_REFERENCE_DAYS);
     // Operational history is intentionally short. The separate wider channel contains
