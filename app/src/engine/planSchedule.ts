@@ -58,6 +58,8 @@ export interface PlanCoverageRequirementDefinition {
   targetSessions: number;
   priority: ObjectivePriority;
   knowledgeRefs: string[];
+  /** Optional candidate allow-list owned by the capability progression authority. */
+  eligibleWorkoutIds?: string[];
 }
 
 export interface PlanDefinition {
@@ -371,6 +373,7 @@ export function buildEvergreenPlanDefinition(
   capacity: ResolvedTrainingCapacity,
   packedBudget: WeeklyBudget,
   asOfDate: string,
+  mechanicalEligibleWorkoutIds: readonly string[] = [],
 ): DataState<PlanDefinition> {
   void strategy;
   void capacity;
@@ -414,6 +417,9 @@ export function buildEvergreenPlanDefinition(
       targetSessions,
       priority: coverageOnlyPriority(requirement.priority),
       knowledgeRefs: [...requirement.knowledgeRefs],
+      ...(requirement.adaptation === 'mechanical_exposure'
+        ? { eligibleWorkoutIds: [...mechanicalEligibleWorkoutIds] }
+        : {}),
     }];
   });
   const block: PlanBlock = {
