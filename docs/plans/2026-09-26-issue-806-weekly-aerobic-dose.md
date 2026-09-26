@@ -12,7 +12,8 @@ The existing #757 single-session `aerobic_volume` coverage floor remains a separ
 
 ## Preconditions
 
-- ADR-0044 is accepted and keeps requirement classes and exact-role coverage distinct.
+- ADR-0044 is accepted and keeps requirement classes and exact-role coverage distinct; accepted ADR-0044 remains immutable.
+- ADR-0045 owns the #806 athlete-relative aerobic-dose policy implemented by this plan.
 - Planning already holds the bounded `TrainingHistorySnapshot`; the resolver adds no IO.
 - Existing readiness, injury, load, taper and schedule gates remain authoritative.
 
