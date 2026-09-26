@@ -14,7 +14,7 @@ import {
     type BlockExecutionMode,
     SESSION_SCHEMA_VERSION,
 } from './models';
-import { MOVEMENT_COMPOSITION_PATTERNS } from '../workouts/movementComposition.ts';
+import { MOVEMENT_COMPOSITION_PATTERNS } from './movementCompositionContract';
 
 const REST_END_REASONS = new Set(['timer_elapsed', 'skipped', 'next_set_started', 'session_ended']);
 

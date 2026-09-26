@@ -7,7 +7,7 @@
  */
 
 import type { IntensityGauge } from '../engine/models';
-import type { MovementCompositionPattern, SessionMovementCompositionRequirement } from '../workouts/models';
+import type { MovementCompositionPattern, SessionMovementCompositionRequirement } from './movementCompositionContract';
 
 export const SESSION_SCHEMA_VERSION = 1;
 

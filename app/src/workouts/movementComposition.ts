@@ -1,14 +1,5 @@
-import type { MovementCompositionPattern } from './models';
+import type { MovementCompositionPattern } from '../sessions/movementCompositionContract';
 import type { SessionDefinition, SessionEntry } from '../sessions/models';
-
-export const MOVEMENT_COMPOSITION_PATTERNS: ReadonlySet<string> = new Set<MovementCompositionPattern>([
-  'knee_dominant_bilateral',
-  'hip_dominant_hinge',
-  'unilateral_lower_body',
-  'upper_push',
-  'upper_pull',
-  'trunk_tissue_capacity',
-]);
 
 export type MovementCompositionEvidenceStatus = 'performed' | 'omitted' | 'degraded' | 'relaxed' | 'unknown';
 

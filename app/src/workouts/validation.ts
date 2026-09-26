@@ -13,7 +13,7 @@ import type {
   WorkoutStep,
 } from './models.ts';
 import { getActiveKnowledgeClaim } from '../knowledge/sportsKnowledgeRegistry.ts';
-import { MOVEMENT_COMPOSITION_PATTERNS } from './movementComposition.ts';
+import { MOVEMENT_COMPOSITION_PATTERNS } from '../sessions/movementCompositionContract.ts';
 
 export interface WorkoutLibraryValidationResult {
   valid: boolean;
@@ -347,6 +347,7 @@ export function validateWorkoutLibrary(
         const omittedAll = requirement.stepIds.every(stepId => variant.stepOverrides.some(item => item.stepId === stepId && item.omit));
         if (omittedAll && (!relaxed || !relaxed.reason.trim())) errors.push(`${prefix}/${variant.id}: omitting ${requirement.pattern} requires an explicit composition relaxation reason`);
         if (relaxed && !relaxed.reason.trim()) errors.push(`${prefix}/${variant.id}: ${requirement.pattern} relaxation reason is required`);
+        if (relaxed && !omittedAll) errors.push(`${prefix}/${variant.id}: cannot relax ${requirement.pattern} while a declared component step remains active`);
       }
     }
     for (const variant of workout.variants) {
@@ -449,6 +450,19 @@ export function validateWorkoutLibrary(
       if (!usedExerciseIds.has(substitution.exerciseId)) errors.push(`${prefix}: substitution source ${substitution.exerciseId} is not used by the workout`);
       if (!exerciseIds.has(substitution.substituteExerciseId)) errors.push(`${prefix}: substitution target ${substitution.substituteExerciseId} does not exist`);
       if (!substitution.reason.trim()) errors.push(`${prefix}: substitution reason is required`);
+      if (substitution.degradedComposition) {
+        const degradation = substitution.degradedComposition;
+        const affectedRequirement = (workout.compositionRequirements ?? []).find(requirement =>
+          requirement.pattern === degradation.pattern
+          && requirement.stepIds.some(stepId => workoutSteps.get(stepId)?.exerciseId === substitution.exerciseId));
+        if (!MOVEMENT_COMPOSITION_PATTERNS.has(degradation.pattern) || !degradation.reason.trim()) {
+          errors.push(`${prefix}: substitution ${substitution.exerciseId} -> ${substitution.substituteExerciseId} has invalid degraded-composition metadata`);
+        } else if (!affectedRequirement) {
+          errors.push(`${prefix}: substitution ${substitution.exerciseId} -> ${substitution.substituteExerciseId} degrades an undeclared or unaffected composition pattern ${degradation.pattern}`);
+        } else if (exerciseById.get(substitution.substituteExerciseId)?.compositionPatterns?.includes(degradation.pattern)) {
+          errors.push(`${prefix}: substitution ${substitution.exerciseId} -> ${substitution.substituteExerciseId} declares degradation even though the target preserves ${degradation.pattern}`);
+        }
+      }
       for (const requirement of workout.compositionRequirements ?? []) {
         const sourceRequired = requirement.stepIds.some(stepId => workoutSteps.get(stepId)?.exerciseId === substitution.exerciseId);
         const targetPreserves = exerciseById.get(substitution.substituteExerciseId)?.compositionPatterns?.includes(requirement.pattern);

@@ -1,3 +1,6 @@
+import type { MovementCompositionPattern, MovementCompositionRequirementBase } from '../sessions/movementCompositionContract';
+export type { MovementCompositionPattern, SessionMovementCompositionRequirement } from '../sessions/movementCompositionContract';
+
 export type WorkoutModality =
   | 'cycling'
   | 'running'
@@ -84,14 +87,6 @@ export type ExerciseFamily = 'cycling' | 'running' | 'strength' | 'field_drill' 
 export type ExerciseDoseKind = 'repetition' | 'duration' | 'distance' | 'checkoff';
 export type ExerciseLoadKind = 'bodyweight' | 'mass' | 'band' | 'percent_max' | 'percent_one_rm' | 'descriptive' | 'unloaded';
 export type ExerciseLaterality = 'bilateral' | 'per_side' | 'alternating';
-/** Stable exercise composition facets. These describe a movement's role, not its dose or stimulus credit. */
-export type MovementCompositionPattern =
-  | 'knee_dominant_bilateral'
-  | 'hip_dominant_hinge'
-  | 'unilateral_lower_body'
-  | 'upper_push'
-  | 'upper_pull'
-  | 'trunk_tissue_capacity';
 export type ExerciseMeasurementProfile = 'repetitions' | 'duration' | 'distance' | 'timed_sprint' | 'checkoff';
 export type FieldDomainFacet = 'acceleration' | 'max_velocity' | 'braking' | 'change_of_direction' | 'elastic';
 
@@ -246,17 +241,7 @@ export interface WorkoutVariant {
   compositionRelaxations?: Array<{ pattern: MovementCompositionPattern; reason: string }>;
 }
 
-export interface WorkoutCompositionRequirement {
-  id: string;
-  pattern: MovementCompositionPattern;
-  /** Stable authored step identities which can deliver this requirement. */
-  stepIds: string[];
-}
-
-export interface SessionMovementCompositionRequirement extends WorkoutCompositionRequirement {
-  status: 'required' | 'relaxed';
-  reason?: string;
-}
+export interface WorkoutCompositionRequirement extends MovementCompositionRequirementBase {}
 
 export type WorkoutParameterUnit =
   | 'minutes'
