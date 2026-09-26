@@ -32,6 +32,8 @@ export interface RequiredRoleOccurrence {
     label: string;
     eligibleTemplateIds: string[];
     eligibleWorkoutIds: string[];
+    /** Optional capability-owned restriction applied before exact coverage identities are attached. */
+    candidateWorkoutAllowList?: string[];
     /** Issue #801: a support occurrence is placed only after, and around, the primary
      * allocation (see `resolveWeeklyRoleReservations`). Absent means primary. */
     reservationTier?: 'support';
@@ -200,6 +202,9 @@ export function deriveRequiredRoleOccurrences(state: CoverageState): RequiredRol
                     label: requirement.label,
                     eligibleTemplateIds: [],
                     eligibleWorkoutIds: [],
+                    ...(requirement.eligibleWorkoutIds !== undefined
+                        ? { candidateWorkoutAllowList: [...requirement.eligibleWorkoutIds] }
+                        : {}),
                     ...(requirement.reservationTier === 'support' ? { reservationTier: 'support' as const } : {}),
                 };
             });
@@ -217,6 +222,11 @@ export function attachExactEligibleIdentities(
     return occurrences.map(occurrence => {
         const eligibleTemplateIds = templates
             .filter(template => coverageKeysForTemplate(template, occurrence.phase, coverageSetFor(occurrence.coverageSetId), aerobicVolumeFloor).includes(occurrence.coverageKey))
+            .filter(template => occurrence.candidateWorkoutAllowList === undefined
+                || (() => {
+                    const workoutId = workoutIdForTemplateId(template.id);
+                    return workoutId !== undefined && occurrence.candidateWorkoutAllowList.includes(workoutId);
+                })())
             .map(template => template.id)
             .sort();
         return {
