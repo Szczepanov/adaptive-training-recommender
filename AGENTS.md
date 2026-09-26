@@ -446,6 +446,26 @@ For reviews, refactors, bug tracing and unfamiliar code:
 Do not make ceremonial Serena calls for docs-only work or a known tiny edit whose target is already
 established. The objective is better evidence with less broad reading, not tool-call count.
 
+### Semantic-navigation economy
+
+For one cohesive issue, refactor, or review, prefer **one semantic-discovery pass by the primary
+agent**. Serena is a precision tool for answering concrete symbol/reference questions, not a second
+way to exhaustively read the repository.
+
+- Once the target file/symbol and its relevant callers are established, read the code directly
+  instead of repeatedly calling `find_symbol` for already-known locations.
+- Do not have multiple subagents independently reconstruct the same call graph or architecture.
+  Give reviewers the issue acceptance criteria, implementation summary, changed-file list and diff
+  first; semantic lookup is only for a specific unresolved wiring/impact question.
+- Use `find_referencing_symbols` / `find_implementations` when caller/implementation evidence is
+  actually needed, not as a routine follow-up to every symbol lookup.
+- Treat Serena project/language-service initialization as a transient startup state. If an early
+  semantic call cannot run because initialization is still in progress, do the minimum useful
+  fallback work and retry Serena before starting a broad source-reading sweep.
+- As a soft tripwire, if semantic navigation reaches roughly 10–15 Serena calls for a single
+  cohesive issue without materially narrowing the change surface, stop and reassess the retrieval
+  strategy. This is not a hard correctness limit; larger refactors can legitimately exceed it.
+
 This matters especially before changing an engine constant
 ([`CLAUDE.md` § 2](./CLAUDE.md#2-before-you-change-a-number-in-the-engine)): one reference
 query can expose the implemented constant, its knowledge claim/coverage ownership, and the
