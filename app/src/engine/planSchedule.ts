@@ -60,6 +60,9 @@ export interface PlanCoverageRequirementDefinition {
   knowledgeRefs: string[];
   /** Optional candidate allow-list owned by the capability progression authority. */
   eligibleWorkoutIds?: string[];
+  /** Capability maintenance may be a real weekly minimum without being allowed to displace
+   * BUILD roles. Same semantics as objective support reservations (#801). */
+  reservationTier?: 'support';
 }
 
 export interface PlanDefinition {
@@ -413,12 +416,17 @@ export function buildEvergreenPlanDefinition(
     return [{
       coverageKey,
       blockId: 'block_general',
-      minimumSessions: requirement.floor?.dose.value ?? 0,
+      minimumSessions: requirement.adaptation === 'mechanical_exposure' && requirement.priority === 'target'
+        ? Math.min(1, targetSessions)
+        : (requirement.floor?.dose.value ?? 0),
       targetSessions,
       priority: coverageOnlyPriority(requirement.priority),
       knowledgeRefs: [...requirement.knowledgeRefs],
       ...(requirement.adaptation === 'mechanical_exposure'
-        ? { eligibleWorkoutIds: [...mechanicalEligibleWorkoutIds] }
+        ? {
+            eligibleWorkoutIds: [...mechanicalEligibleWorkoutIds],
+            reservationTier: 'support' as const,
+          }
         : {}),
     }];
   });
