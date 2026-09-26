@@ -3,7 +3,7 @@ import { resolveDemandProfile } from './eventPresets';
 import { fixedActivityOccurrenceKey, resolveFixedActivityIdentity } from './fixedActivityIdentity';
 import { dedupeFixedActivitiesByLedgerIdentity } from './fixedActivityLedger';
 import type { FixedActivity, SessionTemplate, UserEvent } from './models';
-import { resolveEventTaper } from './taperPolicy';
+import { resolveEventTaper, type ResolvedTaper } from './taperPolicy';
 import type { RecentHistoryEntry } from './optimizer';
 
 /** Product-policy limits for an A-priority Olympic triathlon. The volume limit is the
@@ -86,6 +86,19 @@ export function isPriorityAOlympicTriathlon(event: UserEvent | null | undefined)
     if (event?.priority !== 'A' || event.category !== 'triathlon') return false;
     return (Object.keys(olympicDemand) as (keyof typeof olympicDemand)[])
         .every(axis => event.demandProfile[axis] === olympicDemand[axis]);
+}
+
+/** Resolve the exact policy scope once so budget admission, race-eve recovery,
+ * knowledge lineage and wider-history reads cannot drift apart. Athlete-authored
+ * tapers of a different length keep the generic taper policy rather than silently
+ * inheriting this 14-day Olympic-specific calibration. */
+export function resolvePriorityAOlympicTriathlonTaper(
+    event: UserEvent | null | undefined,
+    targetDate: string,
+): ResolvedTaper | null {
+    const taper = resolvePriorityAOlympicTriathlonTaper(event, targetDate);
+    if (!taper) return null;
+    return taper;
 }
 
 function isTraining(entry: HistoryEntry): boolean {
