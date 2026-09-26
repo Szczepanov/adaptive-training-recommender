@@ -111,22 +111,31 @@ describe('evaluateMechanicalStageProgression', () => {
       targetStage: 3,
     });
     expect(gapVerdict.stage).toBe(1);
+
+    const exactBoundaryVerdict = evaluateMechanicalStageProgression({
+      asOfDate: '2026-09-20',
+      exposureHistory: [{ date: '2026-09-06', workoutId: 'field_acceleration_braking_01', stage: 3 }],
+      checkinHistory: [],
+      targetStage: 3,
+    });
+    expect(exactBoundaryVerdict.stage).toBe(1);
+
   });
 
-  it('progresses from Stage 1 to Stage 2 when prior exposure was tolerated with normal tissue response', () => {
+  it('progresses from Stage 1 to Stage 2 only after two tolerated current-stage exposures', () => {
     const exposures: MechanicalExposureRecord[] = [
+      { date: '2026-09-15', workoutId: 'running_walk_run_01', stage: 1 },
       { date: '2026-09-17', workoutId: 'running_walk_run_01', stage: 1 },
     ];
-    const checkins: CheckinRecord[] = [
-      {
-        date: '2026-09-18',
-        checkin: checkin({
-          tissueResponses: {
-            knee: { region: 'knee', morningState: 'normal', nextMorningReaction: 'normal' },
-            achilles: { region: 'achilles', morningState: 'normal', nextMorningReaction: 'normal' },
-          },
-        }),
+    const normalTissueCheckin = () => checkin({
+      tissueResponses: {
+        knee: { region: 'knee', morningState: 'normal', nextMorningReaction: 'normal' },
+        achilles: { region: 'achilles', morningState: 'normal', nextMorningReaction: 'normal' },
       },
+    });
+    const checkins: CheckinRecord[] = [
+      { date: '2026-09-16', checkin: normalTissueCheckin() },
+      { date: '2026-09-18', checkin: normalTissueCheckin() },
     ];
 
     const verdict = evaluateMechanicalStageProgression({
@@ -140,7 +149,7 @@ describe('evaluateMechanicalStageProgression', () => {
     expect(verdict.stage).toBe(2);
     expect(verdict.status).toBe('eligible');
     expect(verdict.tissueResponse.verdict).toBe('normal');
-    expect(verdict.eligibleWorkoutIds).toContain('running_easy_continuous_01');
+    expect(verdict.eligibleWorkoutIds).not.toContain('running_easy_continuous_01');
     expect(verdict.eligibleWorkoutIds).toContain('strength_reactive_power_01');
   });
 
@@ -159,6 +168,35 @@ describe('evaluateMechanicalStageProgression', () => {
     expect(verdict.eligible).toBe(true);
     expect(verdict.stage).toBe(1); // Held at Stage 1, not progressed to 2
     expect(verdict.tissueResponse.verdict).toBe('missing');
+  });
+
+  it('fails closed when a follow-up check-in exists but has no explicit lower-body tissue response', () => {
+    const verdict = evaluateMechanicalStageProgression({
+      asOfDate: '2026-09-20',
+      exposureHistory: [{ date: '2026-09-17', workoutId: 'running_walk_run_01', stage: 1 }],
+      checkinHistory: [{ date: '2026-09-18', checkin: checkin() }],
+      targetStage: 2,
+    });
+
+    expect(verdict.stage).toBe(1);
+    expect(verdict.tissueResponse.verdict).toBe('missing');
+    expect(verdict.tissueResponse.notes.join(' ')).toContain('missing');
+  });
+
+  it('holds after one tolerated current-stage exposure instead of advancing early', () => {
+    const verdict = evaluateMechanicalStageProgression({
+      asOfDate: '2026-09-20',
+      exposureHistory: [{ date: '2026-09-17', workoutId: 'running_walk_run_01', stage: 1 }],
+      checkinHistory: [{
+        date: '2026-09-18',
+        checkin: checkin({ tissueResponses: { knee: { region: 'knee', morningState: 'normal' } } }),
+      }],
+      targetStage: 2,
+    });
+
+    expect(verdict.stage).toBe(1);
+    expect(verdict.tissueResponse.verdict).toBe('normal');
+    expect(verdict.tissueResponse.notes.join(' ')).toContain('1/2');
   });
 
   it('regresses stage when mild lower-body symptoms are reported', () => {
@@ -218,26 +256,21 @@ describe('evaluateMechanicalStageProgression', () => {
 
   it('limits progression to at most +1 stage even if higher stage is requested', () => {
     const exposures: MechanicalExposureRecord[] = [
+      { date: '2026-09-15', workoutId: 'running_walk_run_01', stage: 1 },
       { date: '2026-09-17', workoutId: 'running_walk_run_01', stage: 1 },
     ];
     const checkins: CheckinRecord[] = [
-      {
-        date: '2026-09-18',
-        checkin: checkin({
-          tissueResponses: {
-            knee: { region: 'knee', morningState: 'normal' },
-          },
-        }),
-      },
+      { date: '2026-09-16', checkin: checkin({ tissueResponses: { knee: { region: 'knee', morningState: 'normal' } } }) },
+      { date: '2026-09-18', checkin: checkin({ tissueResponses: { knee: { region: 'knee', morningState: 'normal' } } }) },
     ];
 
     const verdict = evaluateMechanicalStageProgression({
       asOfDate: '2026-09-20',
       exposureHistory: exposures,
       checkinHistory: checkins,
-      targetStage: 4, // Requested Stage 4 from Stage 1
+      targetStage: 4,
     });
 
-    expect(verdict.stage).toBe(2); // Capped at Stage 1 + 1 = 2
+    expect(verdict.stage).toBe(2);
   });
 });
