@@ -65,7 +65,9 @@ describe('cycling hybrid event strength support (#801)', () => {
             'endurance-athlete', [event], date, readiness, 7, historyProvider,
             undefined, [], profile(['endurance']),
         );
-        expect(intent.planDefinition?.objectives.some(item => item.coverageKey === 'compact_strength')).toBe(false);
+        expect(intent.eventStrengthSupportSessions).toBe(0);
+        const resolved = resolvePlanDefinitionForEvent(event, [], intent.eventStrengthSupportSessions);
+        expect(resolved?.objectives.some(item => item.coverageKey === 'compact_strength')).toBe(false);
     });
 
     it('does not carry the support minimum into taper or race blocks', async () => {
@@ -73,7 +75,7 @@ describe('cycling hybrid event strength support (#801)', () => {
             'hybrid-athlete', [event], date, readiness, 7, historyProvider,
             undefined, [], profile(['endurance', 'strength_muscle']),
         );
-        const plan = intent.planDefinition;
+        const plan = resolvePlanDefinitionForEvent(event, [], intent.eventStrengthSupportSessions);
         if (!plan) throw new Error('event plan unavailable');
         expect(plan.objectives.filter(item =>
             (item.blockId === 'block_taper' || item.blockId === 'block_race')
