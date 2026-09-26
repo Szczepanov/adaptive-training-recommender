@@ -38,7 +38,7 @@ describe('weekly aerobic dose envelope (#806)', () => {
         ];
         expect(establishedEnvelope(sessions)).toMatchObject({
             source: 'athlete_history', modality: 'Cycling', weeklyMinutes: [180, 210, 240, 300],
-            floorMinutes: 180, targetMinutes: 225, upperMinutes: 240, typicalSessionMinutes: 90,
+            floorMinutes: 180, targetMinutes: 225, upperMinutes: 240, typicalSessionMinutes: 60,
         });
         expect(establishedEnvelope(sessions, 'Build')).toMatchObject({
             source: 'athlete_history', floorMinutes: 180, targetMinutes: 240, upperMinutes: 240,
@@ -51,7 +51,7 @@ describe('weekly aerobic dose envelope (#806)', () => {
         const lowVolume = establishedEnvelope([
             ride('2026-09-02', 60), ride('2026-09-09', 60), ride('2026-09-16', 60), ride('2026-09-23', 60),
         ]);
-        expect(lowVolume).toMatchObject({ floorMinutes: 150, targetMinutes: 150, upperMinutes: 150 });
+        expect(lowVolume).toMatchObject({ source: 'guideline_fallback', modality: null, floorMinutes: 150, targetMinutes: 150, upperMinutes: 300, longAnchor: null });
     });
 
     it('derives relative minutes from the dominant modality only', () => {
@@ -59,13 +59,13 @@ describe('weekly aerobic dose envelope (#806)', () => {
             ...ride(date, 30), modality: 'Walking', trainingRecordLike: { type: 'Easy Endurance', duration_min: 30, training_effect: 2, intensity_tag: 'easy' },
         });
         const mixed = establishedEnvelope([
-            ride('2026-09-02', 60), walking('2026-09-03'),
-            ride('2026-09-09', 60), walking('2026-09-10'),
-            ride('2026-09-16', 60), walking('2026-09-17'),
-            ride('2026-09-23', 60),
+            ride('2026-09-02', 180), walking('2026-09-03'),
+            ride('2026-09-09', 180), walking('2026-09-10'),
+            ride('2026-09-16', 180), walking('2026-09-17'),
+            ride('2026-09-23', 180),
         ]);
         expect(mixed.modality).toBe('Cycling');
-        expect(mixed.weeklyMinutes).toEqual([60, 60, 60, 60]);
+        expect(mixed.weeklyMinutes).toEqual([180, 180, 180, 180]);
     });
 
     it('keeps swim-primary history on an exact swim anchor identity', () => {
@@ -88,7 +88,7 @@ describe('weekly aerobic dose envelope (#806)', () => {
         expect(establishedEnvelope(sessions)).toMatchObject({
             weeklyMinutes: [180, 210, 240, 300],
             modality: 'Cycling',
-            longAnchor: { workoutId: 'cycling_zone2_standard_01', durationMinutes: 90 },
+            longAnchor: { workoutId: 'cycling_zone2_standard_01', durationMinutes: 60 },
         });
     });
 });
