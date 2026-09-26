@@ -166,11 +166,13 @@ describe('ExecutionPrescriptionService', () => {
             const stored = docStore.get(path);
             expect(stored).toBeDefined();
             expect([earliestTime, laterTime]).toContain(stored?.createdAt);
+            expect(state.versionCounter).toBe(1);
 
             // Whichever concurrent transaction committed first remains immutable.
             const committedTime = stored?.createdAt;
             await service.savePrescription('u1', { ...raw, prescriptionHash, createdAt: '2026-09-06T08:00:10.000Z' });
             expect(docStore.get(path)?.createdAt).toBe(committedTime);
+            expect(state.versionCounter).toBe(1);
         });
 
         it('preserves first committed write even when concurrent transactions experience contention and retry', async () => {
