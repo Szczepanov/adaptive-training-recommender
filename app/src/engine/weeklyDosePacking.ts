@@ -5,6 +5,7 @@ import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { getDayDiff } from '../utils/localDate';
 import { progressionOverrideKey } from './progressionOverrideKey';
 import { POWER_QUALIFYING_WORKOUT_IDS } from '../workouts/powerExposure';
+import { KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
 
 export interface CoverageRoleDescriptor {
     /** Stable authored identity; never a category/modality similarity match. */
@@ -147,7 +148,7 @@ function doseFor(role: CoverageRoleDescriptor, requirement: AdaptationDoseRequir
 
 function isAthleteRelativeEasyDose(requirement: AdaptationDoseRequirement): boolean {
     return requirement.adaptation === 'aerobic_endurance'
-        && requirement.knowledgeRefs.includes('policy.stimulus.weekly_aerobic_dose_envelope_v1');
+        && requirement.knowledgeRefs.includes(KNOWLEDGE_CLAIM_IDS.weeklyAerobicDoseEnvelopePolicy);
 }
 
 function desiredDose(requirement: AdaptationDoseRequirement): number {
@@ -295,9 +296,7 @@ function packWeeklyDoseAttempt(
     const shortfalls: PackingWarning[] = [];
     const structuralShortfallAdaptations = new Set<AdaptationKey>();
     const sessionLimit = (requirement: AdaptationDoseRequirement) => {
-        const athleteRelativeAerobicRange = requirement.adaptation === 'aerobic_endurance'
-            && requirement.target.unit === 'minutes'
-            && requirement.target.target > (requirement.floor?.dose.value ?? 0);
+        const athleteRelativeAerobicRange = isAthleteRelativeEasyDose(requirement);
         return requirement.priority === 'required'
             ? athleteRelativeAerobicRange ? capacity.targetSessions : capacity.minSessions
             : requirement.priority === 'target' ? capacity.targetSessions : capacity.maxSessions;
@@ -378,8 +377,11 @@ function packWeeklyDoseAttempt(
         const totalDemand = demandByPeer.reduce((total, demand) => total + demand, 0);
         const laterPeersNeedingCoverage = demandByPeer.slice(1).filter(demand => demand > 0).length;
         const roomRemainingInTier = Math.max(0, sessionLimit(requirement) - packed.length);
-        const proportionalShare = totalDemand > 0
-            ? Math.ceil(roomRemainingInTier * currentDemand / totalDemand)
+        // Do not bias a shared tier toward the first requirement merely because it is
+        // iterated first. Floor the proportional share (while preserving one slot when any
+        // room exists) so a later co-required adaptation can retain its proportional claim.
+        const proportionalShare = totalDemand > 0 && roomRemainingInTier > 0
+            ? Math.max(1, Math.floor(roomRemainingInTier * currentDemand / totalDemand))
             : 0;
         const reserveForLaterPeers = Math.min(laterPeersNeedingCoverage, Math.max(0, roomRemainingInTier - 1));
         const maxWithoutStarvingLaterPeers = Math.max(0, roomRemainingInTier - reserveForLaterPeers);
