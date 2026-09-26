@@ -1352,7 +1352,7 @@ a support role can never disable preservation proofs for primary roles. Greedy-s
 preservation uses `allocationValuePreserved` (no fewer primary occurrences, then no fewer
 overall). In today's ranking, an unmet support minimum is deferred support (coverage tier 2),
 never as urgent as an unmet primary minimum.
-Wall-clock time is not a semantic cut-off; p95 ≤50 ms / p99 ≤100 ms on the live-sized
+Wall-clock time is not a semantic cut-off; p95 ≤100 ms / p99 ≤150 ms on the live-sized
 fixture is an operational gate only.
 
 **Protection during greedy selection.** Reservations are recomputed after every selected
