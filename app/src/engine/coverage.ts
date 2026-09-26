@@ -539,10 +539,15 @@ export function buildCoverageState(
                 windowEnd: block.endDate,
                 index: activeDefinitions.length + index,
             });
-            if (requirement) requirementsByKey.set(definition.coverageKey,
-                definition.eligibleWorkoutIds !== undefined
-                    ? { ...requirement, eligibleWorkoutIds: [...definition.eligibleWorkoutIds] }
-                    : requirement);
+            if (requirement) {
+                requirementsByKey.set(definition.coverageKey, {
+                    ...requirement,
+                    ...(definition.eligibleWorkoutIds !== undefined
+                        ? { eligibleWorkoutIds: [...definition.eligibleWorkoutIds] }
+                        : {}),
+                    ...(definition.reservationTier === 'support' ? { reservationTier: 'support' as const } : {}),
+                });
+            }
         });
 
     const recoveryCoverage = coverageFor(descriptor, 'recovery_or_rest');
