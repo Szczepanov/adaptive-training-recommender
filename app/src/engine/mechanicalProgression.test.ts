@@ -68,6 +68,15 @@ describe('evaluateMechanicalStageProgression', () => {
     });
     expect(painVerdict.eligible).toBe(false);
     expect(painVerdict.status).toBe('blocked');
+
+    const illnessVerdict = evaluateMechanicalStageProgression({
+      asOfDate: '2026-09-20',
+      exposureHistory: [{ date: '2026-09-17', workoutId: 'running_walk_run_01', stage: 1 }],
+      checkinHistory: [{ date: '2026-09-20', checkin: checkin({ illnessSymptoms: true }) }],
+    });
+    expect(illnessVerdict.eligible).toBe(false);
+    expect(illnessVerdict.status).toBe('withheld');
+    expect(illnessVerdict.withheldReason).toContain('illness symptoms');
   });
 
   it('withholds exposure on consecutive days to protect connective tissue remodeling', () => {

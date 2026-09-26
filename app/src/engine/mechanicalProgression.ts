@@ -57,6 +57,8 @@ const LOWER_BODY_REGIONS: ReadonlySet<BodyRegion> = new Set<BodyRegion>([
   'ankle',
   'hamstring',
   'quadriceps',
+  'adductor_groin',
+  'hip',
 ]);
 
 function isGuardrailActive(
@@ -85,26 +87,27 @@ export function evaluateMechanicalStageProgression(
   const { asOfDate, exposureHistory, checkinHistory, guardrails } = input;
 
   // 1. Guardrail and acute clinical symptom check
-  if (isGuardrailActive(guardrails, 'avoid_high_impact')) {
-    return {
-      stage: 1,
-      eligible: false,
-      status: 'blocked',
-      withheldReason: 'Impact and mechanical loading are blocked by the active avoid_high_impact safety limit.',
-      recentExposureCount: 0,
-      tissueResponse: { verdict: 'none_recent', affectedRegions: [], notes: ['avoid_high_impact guardrail is active'] },
-      eligibleWorkoutIds: [],
-    };
-  }
+  const guardrailCheck = evaluateMechanicalGuardrails({
+    avoid_high_impact: isGuardrailActive(guardrails, 'avoid_high_impact'),
+    knee_swelling: Boolean(input.hasKneeSwelling),
+    acute_pain: Boolean(input.hasAcutePain),
+  });
 
-  if (input.hasKneeSwelling || input.hasAcutePain) {
+  if (guardrailCheck.blocked) {
+    const isAvoidImpact = guardrailCheck.reasons.includes('avoid_high_impact_active');
     return {
       stage: 1,
       eligible: false,
       status: 'blocked',
-      withheldReason: 'Mechanical exposure is blocked while acute pain or joint swelling is reported.',
+      withheldReason: isAvoidImpact
+        ? 'Impact and mechanical loading are blocked by the active avoid_high_impact safety limit.'
+        : 'Mechanical exposure is blocked while acute pain or joint swelling is reported.',
       recentExposureCount: 0,
-      tissueResponse: { verdict: 'adverse', affectedRegions: input.hasKneeSwelling ? ['knee'] : [], notes: ['Acute pain or swelling reported'] },
+      tissueResponse: {
+        verdict: isAvoidImpact ? 'none_recent' : 'adverse',
+        affectedRegions: input.hasKneeSwelling ? ['knee'] : [],
+        notes: isAvoidImpact ? ['avoid_high_impact guardrail is active'] : ['Acute pain or swelling reported'],
+      },
       eligibleWorkoutIds: [],
     };
   }
@@ -149,6 +152,20 @@ export function evaluateMechanicalStageProgression(
       lastExposureDate: lastExposure?.date,
       lastExposureStage: lastExposure?.stage,
       tissueResponse: { verdict: 'adverse', affectedRegions: [], notes: ['painFlag is active'] },
+      eligibleWorkoutIds: [],
+    };
+  }
+
+  if (todayCheckin?.illnessSymptoms) {
+    return {
+      stage: lastExposure?.stage ?? 1,
+      eligible: false,
+      status: 'withheld',
+      withheldReason: 'Mechanical exposure is withheld while illness symptoms are active.',
+      recentExposureCount: recentExposures.length,
+      lastExposureDate: lastExposure?.date,
+      lastExposureStage: lastExposure?.stage,
+      tissueResponse: { verdict: 'none_recent', affectedRegions: [], notes: ['Illness symptoms active'] },
       eligibleWorkoutIds: [],
     };
   }
