@@ -254,6 +254,103 @@ describe('weekly dose packing', () => {
         expect(budget.shortfalls).toEqual([]);
     });
 
+    it('applies the aerobic credit exactly once only when a quality occurrence is actually packed', () => {
+        const strategy: EvidenceBackedStrategy = {
+            ...healthStrategy,
+            requirements: [
+                healthStrategy.requirements[0],
+                {
+                    ...healthStrategy.requirements[0],
+                    adaptation: 'high_intensity',
+                    priority: 'optional',
+                    floor: null,
+                    target: { unit: 'sessions', minimum: 0, target: 1, maximum: 2 },
+                    substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Cycling'] },
+                },
+            ],
+            hardSessionCap: 2,
+        };
+        const roles: CoverageSetDescriptor = {
+            id: 'quality-credit-test',
+            roles: [
+                { id: 'aerobic', adaptations: ['aerobic_endurance'], exactWorkoutIds: ['cycling_zone2_standard_01'], durationMinutes: 60 },
+                { id: 'quality', adaptations: ['high_intensity'], exactWorkoutIds: ['cycling_tempo_surges_01'], durationMinutes: 40 },
+            ],
+        };
+        const threeSessionCapacity = { ...capacity(60, 3), minSessions: 2, targetSessions: 2, maxSessions: 3 };
+        const budget = packWeeklyDose(strategy, threeSessionCapacity, roles);
+
+        expect(budget.requirements.find(r => r.adaptation === 'aerobic_endurance')?.floor?.dose.value).toBe(150);
+        expect(budget.requiredRoles.filter(role => role.coverageRoleId === 'aerobic')).toHaveLength(2);
+        expect(budget.optionalRoles.filter(role => role.coverageRoleId === 'quality')).toHaveLength(1);
+        expect(budget.shortfalls).toEqual([]);
+    });
+
+    it('never lets quality substitution erase the only aerobic-volume occurrence', () => {
+        const strategy: EvidenceBackedStrategy = {
+            ...healthStrategy,
+            requirements: [
+                healthStrategy.requirements[0],
+                {
+                    ...healthStrategy.requirements[0],
+                    adaptation: 'high_intensity',
+                    priority: 'optional',
+                    floor: null,
+                    target: { unit: 'sessions', minimum: 0, target: 1, maximum: 2 },
+                    substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Cycling'] },
+                },
+            ],
+            hardSessionCap: 2,
+        };
+        const roles: CoverageSetDescriptor = {
+            id: 'quality-credit-large-aerobic-role-test',
+            roles: [
+                { id: 'aerobic', adaptations: ['aerobic_endurance'], exactWorkoutIds: ['cycling_zone2_standard_01'], durationMinutes: 160 },
+                { id: 'quality', adaptations: ['high_intensity'], exactWorkoutIds: ['cycling_tempo_surges_01'], durationMinutes: 40 },
+            ],
+        };
+        const twoSessionCapacity = { ...capacity(180, 2), minSessions: 1, targetSessions: 1, maxSessions: 2 };
+        const budget = packWeeklyDose(strategy, twoSessionCapacity, roles);
+
+        expect(budget.requiredRoles.filter(role => role.coverageRoleId === 'aerobic')).toHaveLength(1);
+        expect(budget.optionalRoles.filter(role => role.coverageRoleId === 'quality')).toHaveLength(1);
+        expect(budget.shortfalls).toEqual([]);
+    });
+
+    it('restores the full aerobic floor when the provisional quality occurrence cannot be packed', () => {
+        const strategy: EvidenceBackedStrategy = {
+            ...healthStrategy,
+            requirements: [
+                healthStrategy.requirements[0],
+                {
+                    ...healthStrategy.requirements[0],
+                    adaptation: 'high_intensity',
+                    priority: 'optional',
+                    floor: null,
+                    target: { unit: 'sessions', minimum: 0, target: 1, maximum: 2 },
+                    substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Cycling'] },
+                },
+            ],
+            hardSessionCap: 2,
+        };
+        const roles: CoverageSetDescriptor = {
+            id: 'quality-credit-rollback-test',
+            roles: [
+                { id: 'aerobic', adaptations: ['aerobic_endurance'], exactWorkoutIds: ['cycling_zone2_standard_01'], durationMinutes: 60 },
+                { id: 'quality', adaptations: ['high_intensity'], exactWorkoutIds: ['cycling_tempo_surges_01'], durationMinutes: 40 },
+            ],
+        };
+        const twoSessionCapacity = { ...capacity(60, 2), minSessions: 2, targetSessions: 2, maxSessions: 2 };
+        const budget = packWeeklyDose(strategy, twoSessionCapacity, roles);
+        const aerobicShortfall = budget.shortfalls.find(warning => warning.adaptation === 'aerobic_endurance');
+
+        expect(budget.optionalRoles).toHaveLength(0);
+        expect(budget.requirements.find(r => r.adaptation === 'aerobic_endurance')?.floor?.dose.value).toBe(150);
+        expect(aerobicShortfall).toMatchObject({ code: 'below_guideline_range' });
+        expect(aerobicShortfall?.message).toContain('stated floor remains 150 minutes');
+        expect(aerobicShortfall?.message).not.toContain('70 minutes');
+    });
+
     describe('durationOverridesByRoleId (ADR-0037 D-DOSE confirmed progression)', () => {
         it('credits the overridden per-session minutes instead of the role\'s catalog duration, closing a floor shortfall', () => {
             const wideWindows = capacity(90, 2);

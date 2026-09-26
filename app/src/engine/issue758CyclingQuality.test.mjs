@@ -57,7 +57,7 @@ describe('issue #758 evergreen cycling quality', () => {
         )).toBe(true);
     });
 
-    it('packs optional cycling quality and explains when required reservations consume the feasible forecast dates', async () => {
+    it('selects cycling quality in the normal-recovery 14-day baseline without erasing required aerobic evidence', async () => {
         const scenario = caseFor('persona_cycling_hybrid_baseline');
         expect(scenario.initialHistory).toHaveLength(12);
         expect(scenario.initialHistory.reduce((sum, item) => sum + item.trainingRecordLike.duration_min, 0)).toBeGreaterThanOrEqual(720);
@@ -74,34 +74,10 @@ describe('issue #758 evergreen cycling quality', () => {
             return plan;
         });
         expect(result.decisionTraces).toHaveLength(14);
-        expect(cyclingQuality(result)).toHaveLength(0);
-        expect(plans[0].allocationReport.optionalMisses).toContainEqual(expect.objectContaining({
-            coverageKey: 'sustained_quality', reason: 'capacity_exhausted_by_required_roles',
-            observedBlockedDates: expect.arrayContaining([expect.any(String)]),
-        }));
-        const blockedDates = plans[0].allocationReport.optionalMisses[0].observedBlockedDates;
-        expect(blockedDates.every(date => plans[0].allocationReport.outcomes.some(outcome =>
-            outcome.status === 'fulfilled' && outcome.reservation.assignedDate === date,
-        ))).toBe(true);
-    });
-
-    it('limits seven-day capacity evidence to the active evergreen quality block', async () => {
-        const scenario = { ...caseFor('persona_cycling_hybrid_baseline'), weeks: 1 };
-        let plan;
-        await runScenario(scenario, async (...args) => {
-            args[8] = { ...args[8], days: 7 };
-            plan = await generateWeekAheadPlanWithIntent(...args);
-            return plan;
-        });
-        const blockEndDate = addDaysToLocalDateString(scenario.startDate, 6);
-        expect(plan.days.at(-1).date).toBe(addDaysToLocalDateString(blockEndDate, 1));
-        expect(plan.allocationReport.optionalMisses).toContainEqual(expect.objectContaining({
-            coverageKey: 'sustained_quality', reason: 'capacity_exhausted_by_required_roles',
-            observedBlockedDates: expect.arrayContaining([expect.any(String)]),
-        }));
-        expect(plan.allocationReport.optionalMisses[0].observedBlockedDates.every(date =>
-            date >= scenario.startDate && date <= blockEndDate,
-        )).toBe(true);
+        expect(cyclingQuality(result).length).toBeGreaterThanOrEqual(1);
+        expect(plans.flatMap(plan => plan.allocationReport.optionalMisses ?? []).some(
+            miss => miss.reason === 'capacity_exhausted_by_required_roles',
+        )).toBe(false);
     });
 
     it('uses an otherwise-free training day for quality without exceeding maxSessions or moving required roles', async () => {

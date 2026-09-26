@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { CompletedExposure } from './trainingHistory';
-import { inferAthleteTrainingState, isFreshSubjectiveWithAdverseWearables, resolveEvidenceBackedStrategy } from './evergreenStrategy';
+import { hasCurrentClinicalSymptoms, inferAthleteTrainingState, isFreshSubjectiveWithAdverseWearables, resolveEvidenceBackedStrategy } from './evergreenStrategy';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledge';
+import { DEFAULT_BASE_DEMAND } from './periodization';
 
 const exposure = (duration: number): CompletedExposure => ({
     date: '2026-08-01', trainingRecordLike: { type: 'Cycling endurance', duration_min: duration, training_effect: 0, intensity_tag: '' },
@@ -79,7 +80,7 @@ describe('evergreen evidence-backed strategy', () => {
         });
     });
 
-    it('preserves Evergreen dose values while migrating provenance', () => {
+    it('keeps the WHO aerobic requirement intact while quality allocation remains a packing concern', () => {
         const established = inferAthleteTrainingState(Array.from({ length: 12 }, () => exposure(60)), 28);
         const strategy = resolveEvidenceBackedStrategy({ priorities: ['health', 'endurance'] }, established);
         const aerobic = strategy.requirements.find(requirement => requirement.adaptation === 'aerobic_endurance');
@@ -104,6 +105,58 @@ describe('evergreen evidence-backed strategy', () => {
             },
         });
         expect(strategy.hardSessionCap).toBe(2);
+    });
+
+    it('uses event periodization only to suppress the generic quality prior in post-event recovery', () => {
+        const established = inferAthleteTrainingState(Array.from({ length: 12 }, () => exposure(60)), 28);
+        for (const phaseName of ['Base', 'Build', 'Specificity'] as const) {
+            const strategy = resolveEvidenceBackedStrategy({
+                priorities: ['endurance'],
+                phase: { phaseName, targetDemandVector: DEFAULT_BASE_DEMAND, volumeScale: 1, intensityScale: 1, taperActive: false },
+            }, established);
+            expect(strategy.hardSessionCap).toBe(2);
+            expect(strategy.requirements.find(r => r.adaptation === 'high_intensity')?.target.maximum).toBe(2);
+        }
+
+        const taperStrategy = resolveEvidenceBackedStrategy({
+            priorities: ['endurance'],
+            phase: { phaseName: 'Peak/Taper', targetDemandVector: DEFAULT_BASE_DEMAND, volumeScale: 0.7, intensityScale: 1, taperActive: true },
+        }, established);
+        expect(taperStrategy.hardSessionCap).toBe(2);
+
+        const recoveryStrategy = resolveEvidenceBackedStrategy({
+            priorities: ['endurance'],
+            phase: { phaseName: 'Post-Event Recovery', targetDemandVector: DEFAULT_BASE_DEMAND, volumeScale: 0.5, intensityScale: 0.5, taperActive: false },
+        }, established);
+        expect(recoveryStrategy.requirements.some(r => r.adaptation === 'high_intensity')).toBe(false);
+        expect(recoveryStrategy.hardSessionCap).toBeUndefined();
+        expect(recoveryStrategy.warnings).toContainEqual(expect.objectContaining({
+            code: 'conditional_prior_withheld',
+            message: expect.stringContaining('post-event recovery'),
+        }));
+    });
+
+    it('withholds the conditional quality prior while clinical symptoms are reported (#758)', () => {
+        const established = inferAthleteTrainingState(Array.from({ length: 12 }, () => exposure(60)), 28);
+        const symptomatic = resolveEvidenceBackedStrategy({ priorities: ['endurance'], hasCurrentClinicalSymptoms: true }, established);
+        expect(symptomatic.requirements.some(r => r.adaptation === 'high_intensity')).toBe(false);
+        expect(symptomatic.hardSessionCap).toBeUndefined();
+        expect(symptomatic.requirements.some(r => r.adaptation === 'aerobic_endurance')).toBe(true);
+        expect(symptomatic.warnings).toContainEqual(expect.objectContaining({
+            code: 'conditional_prior_withheld',
+            message: expect.stringContaining('pain, injury, illness or red-flag'),
+        }));
+        const clear = resolveEvidenceBackedStrategy({ priorities: ['endurance'], hasCurrentClinicalSymptoms: false }, established);
+        expect(clear.requirements.some(r => r.adaptation === 'high_intensity')).toBe(true);
+    });
+
+    it('detects current clinical symptoms from the check-in', () => {
+        const subjective = { readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2, motivation: 8, timeAvailable: 60, painFlag: false, alreadyTrainedToday: false, preferredModalityToday: null };
+        const objective = {} as never;
+        expect(hasCurrentClinicalSymptoms(null)).toBe(false);
+        expect(hasCurrentClinicalSymptoms({ subjective, objective } as never)).toBe(false);
+        expect(hasCurrentClinicalSymptoms({ subjective: { ...subjective, painFlag: true }, objective } as never)).toBe(true);
+        expect(hasCurrentClinicalSymptoms({ subjective: { ...subjective, clinicalEnvelopeSources: ['non_allergy_illness'] }, objective } as never)).toBe(true);
     });
 
     it('does not manufacture strength development for an endurance-only priority', () => {

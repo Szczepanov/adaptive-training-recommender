@@ -159,11 +159,14 @@ describe('resolveWorkoutPrescription', () => {
   });
 
   it('calculates Zone 2 cycling target watts from FTP and exposes structured step targets', () => {
+    // Staleness is measured against the wall clock, so a fixed fixture date ages into the
+    // >56-day review tag. Keep the benchmark recent relative to now.
+    const recentDate = new Date(Date.now() - 6 * 86400 * 1000).toISOString();
     const prescription = resolveWorkoutPrescription(
       recommendation('end_easy_01'),
       'u1',
       '2026-08-07',
-      { cycling: { ftpWatts: 200, lthrBpm: 155, measuredAt: '2026-08-01T00:00:00Z' } },
+      { cycling: { ftpWatts: 200, lthrBpm: 155, measuredAt: recentDate } },
       dose(1),
       makeSettings({ powerMeter: true, heartRateMonitor: true, cadenceData: true })
     );
