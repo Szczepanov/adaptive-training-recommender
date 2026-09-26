@@ -254,7 +254,12 @@ exceeds 150 minutes/week. Otherwise guideline semantics remain authoritative, in
 aerobic equivalence. When athlete-history semantics are active, the floor is max(150, the lower
 quartile of weekly easy-aerobic minutes); maintenance uses the median, and an
 endurance/sport-readiness development priority may target the upper quartile. History changes
-the target within the athlete's demonstrated range. More free time alone cannot raise it.
+the target within the athlete's demonstrated range. More free time alone cannot raise it. When an
+active athlete-history dose requires more occurrences than the profile's minimum-session commitment,
+packing may use the profile's declared target-session capacity, but extra aerobic occurrences cannot
+consume feasible dose still required by another required adaptation. That later co-required demand is
+reserved first; any remaining aerobic gap stays explicit as a typed shortfall rather than silently
+erasing the peer floor.
 
 Only completed easy-endurance / Zone 2 activity in the dominant evidenced modality enters
 the athlete-relative envelope. No intensity conversion is used: threshold or vigorous
