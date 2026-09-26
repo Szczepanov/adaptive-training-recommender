@@ -5,6 +5,7 @@ import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { getDayDiff } from '../utils/localDate';
 import { progressionOverrideKey } from './progressionOverrideKey';
 import { POWER_QUALIFYING_WORKOUT_IDS } from '../workouts/powerExposure';
+import { MECHANICAL_QUALIFYING_WORKOUT_IDS } from '../workouts/mechanicalExposure';
 
 export interface CoverageRoleDescriptor {
     /** Stable authored identity; never a category/modality similarity match. */
@@ -95,8 +96,9 @@ const NO_DURATION_OVERRIDES: ReadonlyMap<string, number> = new Map();
 
 /** Exact identities that can host each embedded adaptation. Host adaptation and identity
  * both come from authored metadata; a broad `Strength` modality never qualifies (#802). */
-const EMBEDDED_HOSTS: Partial<Record<AdaptationKey, { hostAdaptation: AdaptationKey; workoutIds: readonly string[] }>> = {
-    neuromuscular_power: { hostAdaptation: 'strength', workoutIds: POWER_QUALIFYING_WORKOUT_IDS },
+const EMBEDDED_HOSTS: Partial<Record<AdaptationKey, { hostAdaptations: readonly AdaptationKey[]; workoutIds: readonly string[] }>> = {
+    neuromuscular_power: { hostAdaptations: ['strength'], workoutIds: POWER_QUALIFYING_WORKOUT_IDS },
+    mechanical_exposure: { hostAdaptations: ['strength', 'aerobic_endurance'], workoutIds: MECHANICAL_QUALIFYING_WORKOUT_IDS },
 };
 
 /** Attach an embedded requirement to already-packed host occurrences, earliest first, up to
@@ -112,7 +114,7 @@ function embedRequirement(
     if (!host || wanted <= 0) return null;
     const hostIndexes = packed
         .map((occurrence, index) => ({ occurrence, index }))
-        .filter(({ occurrence }) => occurrence.adaptations.includes(host.hostAdaptation)
+        .filter(({ occurrence }) => occurrence.adaptations.some(adaptation => host.hostAdaptations.includes(adaptation))
             && !occurrence.adaptations.includes(requirement.adaptation)
             && occurrence.exactWorkoutIds.some(id => host.workoutIds.includes(id)))
         .sort((left, right) => left.occurrence.date.localeCompare(right.occurrence.date) || left.index - right.index)
@@ -128,10 +130,11 @@ function embedRequirement(
         };
     }
     if (hostIndexes.length >= wanted) return null;
+    const hostDesc = host.hostAdaptations.join('/');
     return {
         code: 'embedded_host_unavailable',
         adaptation: requirement.adaptation,
-        message: `${requirement.adaptation} is embedded in ${hostIndexes.length} of ${wanted} targeted ${host.hostAdaptation} occurrence(s); no further packed ${host.hostAdaptation} occurrence has an authored identity that carries it, and no extra session is created for it.`,
+        message: `${requirement.adaptation} is embedded in ${hostIndexes.length} of ${wanted} targeted ${hostDesc} occurrence(s); no further packed ${hostDesc} occurrence has an authored identity that carries it, and no extra session is created for it.`,
     };
 }
 

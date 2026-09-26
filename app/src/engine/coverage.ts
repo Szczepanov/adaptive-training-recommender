@@ -10,6 +10,7 @@ import { aerobicVolumeFloorForWorkout, type AerobicVolumeFloor } from './aerobic
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { grantsPowerExposureCredit } from '../workouts/powerExposure';
+import { grantsMechanicalExposureCredit } from '../workouts/mechanicalExposure';
 
 /**
  * Phase 6.2c / ADR-0016: physiological stimulus credit and programming-role coverage
@@ -252,6 +253,7 @@ const DEFERRED_SUPPORT_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
  * strength role that already earns its own tier. */
 const EMBEDDED_ONLY_COVERAGE_KEYS = new Set<PlanCoverageKey>([
     'power_exposure',
+    'mechanical_exposure',
 ]);
 
 /** For a cycling A/B event the aerobic-volume floor is the prerequisite for repairing a
@@ -345,6 +347,7 @@ export function coverageKeysForExposure(
         .filter(item => item.phases.includes(phase) && item.workoutIds.includes(workoutId))
         .filter(item => item.key !== 'aerobic_volume' || hasRequiredAerobicDose(identity, workoutId, floor, templateCeilingMin))
         .filter(item => item.key !== 'power_exposure' || grantsPowerExposureCredit({ workoutId, isReadinessModifiedDose: identity.isReadinessModifiedDose }))
+        .filter(item => item.key !== 'mechanical_exposure' || grantsMechanicalExposureCredit({ workoutId, isReadinessModifiedDose: identity.isReadinessModifiedDose }))
         .map(item => item.key);
 }
 
@@ -372,6 +375,9 @@ function canonicalCoverageKeysForExposure(
             // Power exposure is likewise withheld from a readiness-modified dose (#802).
             if (key === 'power_exposure') {
                 return grantsPowerExposureCredit({ workoutId, isReadinessModifiedDose: exposure.isReadinessModifiedDose });
+            }
+            if (key === 'mechanical_exposure') {
+                return grantsMechanicalExposureCredit({ workoutId, isReadinessModifiedDose: exposure.isReadinessModifiedDose });
             }
             if (key !== 'aerobic_volume') return true;
             return workoutId !== undefined && hasRequiredAerobicDose(exposure, workoutId, floor);

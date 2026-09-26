@@ -12,10 +12,10 @@ export const DEFAULT_TRAINING_INTENT_PROFILE: Omit<TrainingIntentProfile, 'userI
     organizationPreference: 'auto', schemaVersion: 1,
 };
 
-/** `neuromuscular_power` (#802) is deliberately distinct from metabolic `high_intensity`
- * and from `strength`: VO2/threshold work never satisfies it, and it is credited only by
- * exact authored power identities (`workouts/powerExposure.ts`). */
-export type AdaptationKey = 'aerobic_endurance' | 'strength' | 'high_intensity' | 'neuromuscular_power';
+/** `neuromuscular_power` (#802) and `mechanical_exposure` (#804) are deliberately distinct
+ * from metabolic `high_intensity` and generic `strength`: VO2/threshold work never satisfies them,
+ * and they are credited only by exact authored qualifying identities. */
+export type AdaptationKey = 'aerobic_endurance' | 'strength' | 'high_intensity' | 'neuromuscular_power' | 'mechanical_exposure';
 export type DoseUnit = 'minutes' | 'sessions';
 
 export interface DoseTarget {
@@ -161,7 +161,7 @@ export function isFreshSubjectiveWithAdverseWearables(readiness: DailyReadiness 
 }
 
 export interface PolicyWarning {
-    code: 'conditional_prior_withheld' | 'power_exposure_withheld';
+    code: 'conditional_prior_withheld' | 'power_exposure_withheld' | 'mechanical_exposure_withheld';
     message: string;
 }
 
@@ -340,6 +340,37 @@ function powerWithheldReason(
     return null;
 }
 
+/** Build the progressive mechanical-exposure requirement (#804). The target and ceiling
+ * are product policy owned by `policy.evergreen.mechanical_exposure_v1`; progressive mechanical
+ * loading is supported by `biomechanics.impact.progressive_mechanical_loading`.
+ * Embedded in running, field or strength occurrences rather than adding a standalone session (ADR-0044 D5/D6). */
+function mechanicalRequirement(priority: AdaptationDoseRequirement['priority']): AdaptationDoseRequirement {
+    const primaryClaimId = KNOWLEDGE_CLAIM_IDS.mechanicalExposurePolicy;
+    return {
+        adaptation: 'mechanical_exposure', priority, delivery: 'embedded', floor: null,
+        target: { unit: 'sessions', minimum: 0, target: 1, maximum: 2 },
+        substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Running', 'Field', 'Strength'] },
+        knowledgeRefs: [primaryClaimId, KNOWLEDGE_CLAIM_IDS.progressiveMechanicalLoading],
+        evidence: evidenceProvenance(primaryClaimId, 'product_heuristic', 'low'),
+    };
+}
+
+/** Why an otherwise-eligible mechanical exposure requirement is deliberately suspended, or null (#804). */
+function mechanicalWithheldReason(
+    goalOrEvent: GoalOrEventContext,
+    athleteState: AthleteTrainingState,
+): string | null {
+    const phaseName = goalOrEvent.phase?.phaseName;
+    if (goalOrEvent.isAdverseRecovery) return 'Mechanical exposure is withheld during acute adverse recovery; it is not owed as catch-up work.';
+    if (goalOrEvent.hasCurrentClinicalSymptoms) return 'Mechanical exposure is withheld while pain, injury, illness or red-flag symptoms are reported.';
+    if (phaseName === 'Peak/Taper') return 'Mechanical exposure is deliberately suspended during peak/taper; freshness takes priority.';
+    if (phaseName === 'Post-Event Recovery') return 'Mechanical exposure is deliberately suspended during post-event recovery.';
+    if (athleteState.inference.dataQuality !== 'high' || athleteState.trainingAgeProxy !== 'established') {
+        return 'Mechanical exposure is withheld until sufficient, consistent recent training evidence establishes the athlete as trained.';
+    }
+    return null;
+}
+
 /** Resolves dose before capacity. The result makes no assumption about the athlete's
  * available minutes or declared session count; those constraints belong to
  * `trainingCapacity.ts`. */
@@ -410,6 +441,15 @@ export function resolveEvidenceBackedStrategy(
         const withheld = powerWithheldReason(goalOrEvent, athleteState);
         if (withheld) warnings.push({ code: 'power_exposure_withheld', message: withheld });
         else requirements.push(powerRequirement(priorities.has('speed_power') ? 'target' : 'optional'));
+    }
+
+    // Issue #804: progressive mechanical and impact exposure model.
+    // When priorities include sport_readiness or speed_power, mechanical exposure is required or targeted.
+    const mechanicalCandidate = priorities.has('sport_readiness') || priorities.has('speed_power');
+    if (mechanicalCandidate) {
+        const withheld = mechanicalWithheldReason(goalOrEvent, athleteState);
+        if (withheld) warnings.push({ code: 'mechanical_exposure_withheld', message: withheld });
+        else requirements.push(mechanicalRequirement('target'));
     }
     return { requirements, ...(canUseConditionalPrior ? { hardSessionCap } : {}), warnings };
 }

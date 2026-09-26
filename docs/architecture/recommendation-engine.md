@@ -459,6 +459,28 @@ owned by `policy.evergreen.power_maintenance_exposure_v1`, with low-certainty su
 `performance.power.low_frequency_maintenance` (ADR-0033). Event-directed plans do not yet
 carry the power requirement.
 
+Mechanical and impact exposure (#804, ADR-0044 capability exposure) is a separate `AdaptationKey`,
+`mechanical_exposure`, distinct from `impactTissue` cost, metabolic conditioning, or generic strength.
+`resolveEvidenceBackedStrategy` emits it when athlete priorities include `sport_readiness` or
+`speed_power`, and recent history is high-quality and `established`: target 1 exposure per week, at most 2
+credited, no floor; priority `target`. Acute adverse recovery, current clinical symptoms, `Peak/Taper`,
+`Post-Event Recovery` or insufficient history withhold it with a typed `mechanical_exposure_withheld` warning.
+Like power, the requirement has `delivery: 'embedded'`: `packWeeklyDose` embeds it across already-packed
+strength, running or field occurrences whose exact identities carry mechanical exposure
+(`embeddedAdaptations`/`embeddedWorkoutIds`), never adding a standalone session. `buildEvergreenPlanDefinition`
+turns it into a coverage-only `PlanDefinition.coverageRequirements` entry for the `mechanical_exposure` key.
+`workouts/mechanicalExposure.ts` is the canonical owner of mechanical identities, qualifying variants (`full`,
+`reduced`), and discrete progression stages: Stage 1 (walk-run, landing drills), Stage 2 (bilateral jump/plyometrics,
+linear running), Stage 3 (deceleration/braking mechanics), Stage 4 (multidirectional/COD field work). Progression is
+managed by `engine/mechanicalProgression.ts`: conservative response-gated advancement ($K \to K+1$) requires
+explicit positive normal tissue response evidence (`RegionTissueResponse`); missing follow-up check-in evidence fails closed
+and halts stage advancement; adverse symptoms (mild/moderate/severe, soreness >= 5, `painFlag`), consecutive high-impact
+days, or gaps >= 14 days regress the stage (with >= 14 days resetting to Stage 1 re-entry). Active guardrails
+(`avoid_high_impact`, knee swelling, acute pain) immediately block mechanical targets while preserving typed reasons.
+Mechanical exposure is excluded from `coverageNeedTierForTemplate` so an unmet target never promotes a session as catch-up
+work. Policy is owned by `policy.evergreen.mechanical_exposure_v1`, with moderate-certainty scientific support from
+`biomechanics.impact.progressive_mechanical_loading` (ADR-0033).
+
 Event-free `health` planning also resolves `healthPlanningPolicy.ts`
 `resolveHealthPlanningPolicy` from the current intent and preferences. Explicit Running
 support means Running is preferred and is neither deprioritized nor avoided. Without that

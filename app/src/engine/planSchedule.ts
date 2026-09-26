@@ -352,9 +352,10 @@ const EVERGREEN_OBJECTIVE_BY_ADAPTATION: Partial<Record<AdaptationKey, {
   high_intensity: { key: 'vo2_max', coverageKey: 'sustained_quality', priority: 'nice_to_have' },
 };
 
-/** Capability adaptations that own exact coverage but no stimulus objective (#802). */
+/** Capability adaptations that own exact coverage but no stimulus objective (#802, #804). */
 const EVERGREEN_COVERAGE_ONLY_BY_ADAPTATION: Partial<Record<AdaptationKey, PlanCoverageKey>> = {
   neuromuscular_power: 'power_exposure',
+  mechanical_exposure: 'mechanical_exposure',
 };
 
 function coverageOnlyPriority(priority: AdaptationDoseRequirement['priority']): ObjectivePriority {

@@ -37,6 +37,7 @@ import type {
 import { normalizeModality } from './performedTrainingFacts';
 import type { StimulusConfidence } from './stimulus';
 import { grantsPowerExposureCredit } from '../workouts/powerExposure';
+import { grantsMechanicalExposureCredit, type MechanicalDoseVariant } from '../workouts/mechanicalExposure';
 
 export type CapabilityStatus = 'confirmed' | 'planned' | 'unknown' | 'overdue' | 'deliberately_suspended';
 type Modality = SessionTemplate['modality'] | 'Unknown';
@@ -317,12 +318,26 @@ const CAPABILITIES: readonly CapabilitySpec[] = [
         plans: s => plannedModality(s) === 'Field',
         suspension: safety => modalityBlocked(safety, 'Field') ?? impactBlocked(safety),
     },
+    {
+        // Issue #804: only an exact authored mechanical/impact identity at a qualifying dose counts.
+        // Garmin records and imported-plan titles cannot prove mechanical/plyometric content, so they never
+        // confirm or plan it; generic running/strength leaves impact_jump `unknown`.
+        key: 'impact_jump',
+        confirmsFact: f => grantsMechanicalExposureCredit({
+            workoutId: f.workoutId,
+            variant: f.workoutVariantId as MechanicalDoseVariant,
+            isReadinessModifiedDose: f.isReadinessModifiedDose,
+        }),
+        label: 'Impact / jump-land',
+        confirms: () => false,
+        plans: () => false,
+        suspension: safety => impactBlocked(safety),
+    },
 ];
 
 /** Families without a canonical exposure model yet. Reported, never inferred. */
 const UNMODELLED: ReadonlyArray<{ key: string; label: string; source: string; impact: boolean }> = [
     { key: 'unilateral_lower_body', label: 'Unilateral lower-body', source: '#803', impact: false },
-    { key: 'impact_jump', label: 'Impact / jump-land', source: '#804', impact: true },
     { key: 'cod_lateral', label: 'COD / lateral', source: '#805', impact: true },
     { key: 'long_aerobic_anchor', label: 'Long aerobic anchor', source: '#806', impact: false },
     { key: 'hamstring_calf_grip', label: 'Hamstring knee-flexion / calf-soleus / grip-carry', source: 'no issue yet', impact: false },

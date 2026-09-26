@@ -132,6 +132,21 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Issue #802 registers the target, ceiling, embedded delivery, identity mapping and suppression rules as explicit product policy. Low-certainty evidence supports low-frequency, intensity-preserving strength/peak-power maintenance in cyclists, but no reviewed evidence validates a power-specific minimum dose, contact count or maximum gap; that remains a research priority.',
     },
     {
+        id: 'evergreen.mechanical_exposure', domain: 'evergreen_dose', title: 'Progressive mechanical and impact exposure model',
+        currentRule: 'Athletes with sport_readiness or speed_power priorities receive a mechanical_exposure requirement (target 1, max 2 sessions/week, embedded in strength, running, or field occurrences). Mechanical exposure progresses across 4 discrete stages: Stage 1 (landing/walk-run), Stage 2 (bilateral jump/linear running), Stage 3 (deceleration/braking), Stage 4 (multidirectional COD field). Progression is gated by positive normal tissue response evidence (RegionTissueResponse) and fails closed when follow-up evidence is missing. Regresses on adverse symptoms (mild/moderate/severe, soreness >= 5, painFlag), consecutive high-impact days, or gaps >= 14 days (re-entry at Stage 1). High-impact work is immediately blocked by avoid_high_impact, knee swelling, or acute pain.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
+        codeRefs: [
+            'engine/evergreenStrategy.ts:resolveEvidenceBackedStrategy',
+            'engine/mechanicalProgression.ts:evaluateMechanicalProgression',
+            'engine/weeklyDosePacking.ts:packWeeklyDose',
+            'engine/planSchedule.ts:buildEvergreenPlanDefinition',
+            'engine/coverage.ts:buildCoverageState',
+            'workouts/mechanicalExposure.ts:MECHANICAL_QUALIFYING_IDENTITIES',
+        ],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.mechanicalExposurePolicy, KNOWLEDGE_CLAIM_IDS.progressiveMechanicalLoading],
+        coverageRationale: 'Issue #804 registers the 4-stage discrete progression, response-gated advancement, symptom regression, 14-day re-entry, and safety blocking as explicit product policy. Moderate-certainty evidence supports connective and skeletal tissue adaptation to progressive mechanical loading with early saturation and adequate recovery separation.',
+    },
+    {
         id: 'evergreen.quality_set_composition', domain: 'evergreen_dose', title: 'Optional evergreen quality workout set',
         currentRule: 'The optional sustained_quality role permits controlled cycling threshold, controlled cycling tempo (40-minute default, authored 30-minute easier dose), and running tempo exact identities. The packer can reserve capacity for quality transactionally, while ordinary safety, time, spacing, load, exact-role coverage and weekly-capacity gates still apply.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',

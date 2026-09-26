@@ -14,6 +14,7 @@ import type { SessionTemplate, EvidenceTier, NormalizedGarminActivity, Completed
 import type { CoverageSetId, PlanCoverageKey, CoverageSetDescriptor } from '../workouts/event-plan';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { grantsPowerExposureCredit } from '../workouts/powerExposure';
+import { grantsMechanicalExposureCredit, type MechanicalDoseVariant } from '../workouts/mechanicalExposure';
 import type { WorkoutVariant } from '../workouts/models';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { getTemplateIdsForWorkoutId, getUniqueTemplateIdForWorkoutId } from './workoutTemplateIndex';
@@ -294,6 +295,17 @@ export function deriveFactsFromOccurrence(
                 && grantsPowerExposureCredit({
                     workoutId,
                     variant: hydrated.structured.workoutVariantId,
+                    isReadinessModifiedDose: hydrated.structured.isReadinessModifiedDose,
+                })
+            ))
+            // Issue #804: completed mechanical credit requires both exact workout identity and
+            // the exact materialized dose variant. Unknown variants fail closed; this avoids
+            // treating a return-to-training prescription as full mechanical exposure.
+            .filter(item => item.key !== 'mechanical_exposure' || (
+                hydrated.structured?.workoutVariantId !== undefined
+                && grantsMechanicalExposureCredit({
+                    workoutId,
+                    variant: hydrated.structured.workoutVariantId as MechanicalDoseVariant,
                     isReadinessModifiedDose: hydrated.structured.isReadinessModifiedDose,
                 })
             ));

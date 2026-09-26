@@ -141,6 +141,9 @@ const decisionAffectingFiles = [
   'app/src/workouts/prescription.ts',
   'app/src/workouts/models.ts',
   'app/src/sessions/catalogSessionAdapter.ts',
+  // #804: progressive mechanical and impact exposure capability and progression rules.
+  'app/src/engine/mechanicalProgression.ts',
+  'app/src/workouts/mechanicalExposure.ts',
   // Confirmed progression overrides alter the active dose of the selected catalog
   // workout, including authored event/taper roles that are outside evergreen packing.
   'app/src/engine/confirmedProgressionOverrides.ts',
