@@ -342,6 +342,8 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.weeklyAerobicDoseEnvelopePolicy);
         expect(claim.statement).toContain('median of those four weekly minute totals');
         expect(claim.statement).toContain('the upper observed quartile in an endurance development phase');
+        expect(claim.statement).toContain('only when that selected target exceeds the 150-minute public-health minimum');
+        expect(claim.statement).toContain('allocator-executable standard engine-template ceiling');
         expect(claim.statement).toContain('Quality-session minutes are not converted to low-intensity minutes');
         expect(claim.limitations.join(' ')).toContain('not proof of an optimum');
         expect(WEEKLY_AEROBIC_EVIDENCE_WINDOW_DAYS).toBe(28);
