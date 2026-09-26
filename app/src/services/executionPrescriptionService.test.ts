@@ -155,16 +155,22 @@ describe('ExecutionPrescriptionService', () => {
                 createdAt: laterTime,
             };
 
-            // Simulate concurrent invocation
+            // Either invocation may reach the first Firestore commit; call order alone
+            // does not determine transaction commit order under scheduler contention.
             await Promise.all([
                 service.savePrescription('u1', firstPrescription),
                 service.savePrescription('u1', secondPrescription),
             ]);
 
-            const stored = docStore.get('users/u1/execution_prescriptions/' + prescriptionHash);
+            const path = 'users/u1/execution_prescriptions/' + prescriptionHash;
+            const stored = docStore.get(path);
             expect(stored).toBeDefined();
-            // First-commit write remains stored
-            expect(stored?.createdAt).toBe(earliestTime);
+            expect([earliestTime, laterTime]).toContain(stored?.createdAt);
+
+            // Whichever concurrent transaction committed first remains immutable.
+            const committedTime = stored?.createdAt;
+            await service.savePrescription('u1', { ...raw, prescriptionHash, createdAt: '2026-09-06T08:00:10.000Z' });
+            expect(docStore.get(path)?.createdAt).toBe(committedTime);
         });
 
         it('preserves first committed write even when concurrent transactions experience contention and retry', async () => {
