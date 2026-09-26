@@ -23,6 +23,7 @@ export type MechanicalExposureClass =
 
 export type MechanicalStage = 1 | 2 | 3 | 4;
 export type MechanicalDoseVariant = 'full' | 'reduced' | 'return_to_training';
+export type MechanicalPlanningUse = 'maintenance_candidate' | 'incidental_credit';
 
 export interface MechanicalDose {
   stage: MechanicalStage;
@@ -39,6 +40,9 @@ export interface MechanicalQualifyingIdentity {
   workoutId: string;
   stage: MechanicalStage;
   dose: MechanicalDose;
+  /** Whether this identity may be selected specifically to repair an evergreen mechanical-maintenance target.
+   * Higher-cost sport/running sessions can still earn performed capability credit without becoming catch-up prescriptions. */
+  planningUse: MechanicalPlanningUse;
   /** Step ids that carry the mechanical impact content. */
   stepIds: readonly string[];
   /** Authored variants that retain meaningful mechanical impact content. */
@@ -49,10 +53,10 @@ export const MECHANICAL_QUALIFYING_IDENTITIES: readonly MechanicalQualifyingIden
   {
     workoutId: 'running_walk_run_01',
     stage: 1,
+    planningUse: 'maintenance_candidate',
     dose: {
       stage: 1,
-      exposureClasses: ['landing_drills'],
-      contactCountBand: { min: 200, max: 400 },
+      exposureClasses: ['linear_mechanics'],
       runningDurationMin: 18,
       multidirectional: false,
       laterality: 'bilateral',
@@ -64,10 +68,10 @@ export const MECHANICAL_QUALIFYING_IDENTITIES: readonly MechanicalQualifyingIden
   {
     workoutId: 'running_easy_continuous_01',
     stage: 2,
+    planningUse: 'incidental_credit',
     dose: {
       stage: 2,
       exposureClasses: ['linear_mechanics'],
-      contactCountBand: { min: 2500, max: 5000 },
       runningDurationMin: 40,
       multidirectional: false,
       laterality: 'bilateral',
@@ -79,6 +83,7 @@ export const MECHANICAL_QUALIFYING_IDENTITIES: readonly MechanicalQualifyingIden
   {
     workoutId: 'strength_reactive_power_01',
     stage: 2,
+    planningUse: 'maintenance_candidate',
     dose: {
       stage: 2,
       exposureClasses: ['bilateral_plyometrics', 'landing_drills'],
@@ -94,6 +99,7 @@ export const MECHANICAL_QUALIFYING_IDENTITIES: readonly MechanicalQualifyingIden
   {
     workoutId: 'field_sprint_mechanics_foundation_01',
     stage: 2,
+    planningUse: 'maintenance_candidate',
     dose: {
       stage: 2,
       exposureClasses: ['landing_drills', 'linear_mechanics'],
@@ -109,6 +115,7 @@ export const MECHANICAL_QUALIFYING_IDENTITIES: readonly MechanicalQualifyingIden
   {
     workoutId: 'field_acceleration_braking_01',
     stage: 3,
+    planningUse: 'maintenance_candidate',
     dose: {
       stage: 3,
       exposureClasses: ['linear_mechanics', 'deceleration_braking'],
@@ -124,6 +131,7 @@ export const MECHANICAL_QUALIFYING_IDENTITIES: readonly MechanicalQualifyingIden
   {
     workoutId: 'field_controlled_maintenance_01',
     stage: 4,
+    planningUse: 'maintenance_candidate',
     dose: {
       stage: 4,
       exposureClasses: ['linear_mechanics', 'deceleration_braking', 'multidirectional_field'],
@@ -139,10 +147,10 @@ export const MECHANICAL_QUALIFYING_IDENTITIES: readonly MechanicalQualifyingIden
   {
     workoutId: 'running_long_run_01',
     stage: 2,
+    planningUse: 'incidental_credit',
     dose: {
       stage: 2,
       exposureClasses: ['linear_mechanics'],
-      contactCountBand: { min: 6000, max: 14000 },
       runningDurationMin: 90,
       multidirectional: false,
       laterality: 'bilateral',
@@ -154,10 +162,10 @@ export const MECHANICAL_QUALIFYING_IDENTITIES: readonly MechanicalQualifyingIden
   {
     workoutId: 'running_race_pace_01',
     stage: 2,
+    planningUse: 'incidental_credit',
     dose: {
       stage: 2,
       exposureClasses: ['linear_mechanics'],
-      contactCountBand: { min: 3500, max: 7000 },
       runningDurationMin: 55,
       multidirectional: false,
       laterality: 'bilateral',
@@ -169,10 +177,10 @@ export const MECHANICAL_QUALIFYING_IDENTITIES: readonly MechanicalQualifyingIden
   {
     workoutId: 'running_tempo_01',
     stage: 2,
+    planningUse: 'incidental_credit',
     dose: {
       stage: 2,
       exposureClasses: ['linear_mechanics'],
-      contactCountBand: { min: 3000, max: 6000 },
       runningDurationMin: 40,
       multidirectional: false,
       laterality: 'bilateral',
@@ -184,10 +192,10 @@ export const MECHANICAL_QUALIFYING_IDENTITIES: readonly MechanicalQualifyingIden
   {
     workoutId: 'running_vo2_4x4_01',
     stage: 2,
+    planningUse: 'incidental_credit',
     dose: {
       stage: 2,
       exposureClasses: ['linear_mechanics'],
-      contactCountBand: { min: 3000, max: 6000 },
       runningDurationMin: 40,
       multidirectional: false,
       laterality: 'bilateral',
@@ -199,10 +207,10 @@ export const MECHANICAL_QUALIFYING_IDENTITIES: readonly MechanicalQualifyingIden
   {
     workoutId: 'running_hill_repeats_01',
     stage: 2,
+    planningUse: 'incidental_credit',
     dose: {
       stage: 2,
       exposureClasses: ['linear_mechanics'],
-      contactCountBand: { min: 2500, max: 5000 },
       runningDurationMin: 35,
       multidirectional: false,
       laterality: 'bilateral',
@@ -214,6 +222,13 @@ export const MECHANICAL_QUALIFYING_IDENTITIES: readonly MechanicalQualifyingIden
 ];
 
 export const MECHANICAL_QUALIFYING_WORKOUT_IDS: readonly string[] = MECHANICAL_QUALIFYING_IDENTITIES.map(i => i.workoutId);
+
+/** Exact low-cost identities the evergreen allocator may choose specifically to repair a
+ * mechanical-maintenance target. Higher-cost running/race work remains incidental performed
+ * credit only, so a missing maintenance touch never manufactures a long run or HIIT session. */
+export const MECHANICAL_MAINTENANCE_WORKOUT_IDS: readonly string[] = MECHANICAL_QUALIFYING_IDENTITIES
+  .filter(identity => identity.planningUse === 'maintenance_candidate')
+  .map(identity => identity.workoutId);
 
 const MECHANICAL_IDENTITY_BY_WORKOUT_ID: ReadonlyMap<string, MechanicalQualifyingIdentity> = new Map(
   MECHANICAL_QUALIFYING_IDENTITIES.map(identity => [identity.workoutId, identity]),
