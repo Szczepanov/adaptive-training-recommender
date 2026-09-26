@@ -58,29 +58,41 @@ Examples:
 A qualifying session may contribute to every structured stimulus/capability axis it actually
 delivers, but the fulfilment layer does not calculate a second physiological credit. Fractional
 objective credit reuses ADR-0014's canonical `deriveObjectiveCredit*` path; capability credit
-comes from the canonical capability owner as those models land. Knowledge evidence certainty
-under ADR-0033 is provenance for policy, not a numeric multiplier on delivered training credit.
-Marginal value is capped at the residual requirement.
+comes from the canonical capability owner as those models land. Before any degradation or
+secondary-session search, completed and already-committed/projected sessions contribute through
+those canonical owners and the requirement view is recomputed. Cross-credit is therefore
+baseline residual accounting, not a late fallback that can trigger work which existing sessions
+already satisfy.
+
+Knowledge-claim `evidenceCertainty` under ADR-0033 is provenance for policy, not a numeric
+multiplier on delivered training credit. This does **not** remove ADR-0014's existing
+`StimulusConfidence` / `CONFIDENCE_CREDIT_WEIGHT` handling for performed evidence: that is
+source/delivery confidence inside the canonical objective-credit calculation. The fulfilment
+layer applies neither a second scientific-certainty discount nor a second performed-evidence
+discount. Marginal contribution is capped at the residual requirement.
 
 No universal intensity-time exchange rate is introduced. In particular, there is no fixed rule
 such as "one threshold minute equals N low-intensity minutes."
 
 ### D4 — Constraint degradation is explicit and ordered
 
-After safety/event/load feasibility, the architecture exposes the following admissible
+After safety/event/load feasibility **and after D3 has recomputed residuals from all canonical
+completed/projected contributions**, the architecture exposes the following admissible
 degradation operations. Their live ordering is policy, not physiology: any ordering or
 tie-break that changes selection must have the ADR-0033 lineage required by D10. The proposed
 initial search sequence is:
 
-1. full authored dose;
+1. full authored dose for still-residual requirements;
 2. validated dose compression;
 3. compatible same-day consolidation using real windows;
 4. conversion of secondary BUILD work to MAINTAIN/MICRODOSE when a registered policy permits;
-5. structured cross-credit from retained sessions;
-6. safe equipment/modality substitution for genuinely shared requirements;
-7. typed shortfall or deliberate suspension.
+5. safe equipment/modality substitution for genuinely shared requirements;
+6. typed shortfall or deliberate suspension.
 
-The engine does not claim that all requirements can always be fulfilled.
+Cross-credit is intentionally absent from this list because it is accounting, not degradation:
+every accepted or already-committed session immediately updates the canonical residual view
+before another candidate is considered. The engine does not claim that all requirements can
+always be fulfilled.
 
 ### D5 — Microdose is a delivery form, not a coverage loophole
 
@@ -113,10 +125,22 @@ It reuses:
 - existing spacing and rolling-load authorities.
 
 The packer does not infer extra availability and does not create a second fatigue or safety
-model. It also does not run as an unconstrained post-processing optimizer: every generated
+model. A distinct generated secondary occurrence also consumes the athlete's existing
+weekly session/occurrence commitment when that commitment applies; an extra window does not
+increase weekly commitment, required dose or tolerated-load assumptions. An embedded module
+inside one occurrence does not consume another occurrence count, but its materialized minutes,
+cost and stimulus remain part of that occurrence.
+
+The packer also does not run as an unconstrained post-processing optimizer: every generated
 secondary occurrence must preserve ADR-0018's incumbent maximum achievable required-role
 allocation under the projected state (D-SUPPORT), and remaining reservations are recomputed
-after each accepted secondary pick.
+after each accepted secondary pick. This reuses D-SUPPORT's **preservation invariant and
+bounded proof**, not the allocator's current one-session-per-date assignment topology. The
+secondary occurrence is applied as projected support load/history on its actual date and the
+existing bounded required-role feasibility proof is rerun against that projected state. If a
+small adapter is needed to project same-date secondary load into the evaluator, it must reuse
+the canonical feasibility/state-transition path rather than introduce a parallel allocator or
+second set of gates.
 
 ### D7 — Current block priority owns freshness
 
@@ -139,18 +163,31 @@ Aerobic planning must keep separate:
 Tempo/threshold may advance (1) and (2). It advances (3) only for actual work in the
 low-intensity domain and (4) only when the exact anchor definition is satisfied.
 
-#806 is the canonical follow-up for accumulated aerobic dose and the long anchor.
+Issue #806 is the canonical follow-up for accumulated aerobic dose and the long anchor.
 
 ### D9 — Unique blocked capabilities become suspended, not substituted
 
 If a tissue/injury restriction blocks a unique capability such as impact/COD, other safe
 training may still receive its genuine shared stimulus credit. The unavailable unique
-capability becomes `deliberately_suspended` or `blocked`; it is not marked satisfied.
+capability is not marked satisfied.
+
+The status vocabulary is source-owned and has explicit semantics:
+
+- `blocked` — the requirement remains active, but a current hard constraint prevents delivery
+  in the planning window; its target/residual remains visible and does not generate an
+  inadmissible candidate;
+- `deliberately_suspended` — the canonical block/event/safety policy intentionally turns the
+  requirement off for the relevant window; it does not create catch-up debt;
+- `unknown` — the canonical owner cannot establish the target or progress from available
+  evidence; unknown quantities remain unknown rather than becoming zero.
+
+The fulfilment layer consumes those states; it does not infer `blocked` versus
+`deliberately_suspended` from a workout name or from missing data.
 
 Completed and projected state remain distinct. Completed/delivered capability or role evidence
 comes only from the canonical performed-training authorities; a planned occurrence may reduce a
 forecast residual but never confirms that the capability was performed. The fulfilment layer
-and #813 readout consume this distinction rather than creating another completion ledger.
+and the #813 readout consume this distinction rather than creating another completion ledger.
 
 ### D10 — Policy constants and selection ordering require knowledge lineage
 
@@ -164,8 +201,10 @@ transition rule introduced under this ADR requires:
 - a policy-alignment test;
 - `POLICY_VERSION` bump when recommendation behavior changes.
 
-Evidence certainty or source confidence must not be repurposed as a generic physiological
+ADR-0033 knowledge-claim evidence certainty must not be repurposed as a generic physiological
 credit multiplier; credit semantics remain owned by the canonical objective/capability model.
+ADR-0014's existing performed-evidence `StimulusConfidence` remains part of that canonical
+objective-credit model and must not be multiplied a second time by this layer.
 
 ## Consequences
 
@@ -213,3 +252,9 @@ Those remain separate evidence/policy decisions and must not be smuggled into th
 4. #806 specifies aerobic duration/intensity accounting without threshold-to-Z2 equivalence.
 5. A simulation design covers time, equipment, tissue restriction, taper and no-second-window
    cases.
+6. The residual-view contract defines stable sibling identity and unit isolation for logical
+   requirements that expose more than one semantic class; unknown quantities are never encoded
+   as zero.
+7. Automatic secondary packing proves that extra intraday windows do not increase weekly
+   session commitment and that same-date secondary load preserves ADR-0018 D-SUPPORT without
+   changing its exact-role reservation semantics.
