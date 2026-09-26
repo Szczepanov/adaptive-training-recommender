@@ -1,5 +1,11 @@
 # 2026-09-24 Serena agent-tooling adoption review
 
+> **Follow-up (2026-09-26):** the adoption recommendations below were intentionally revised after
+> observing duplicated Serena discovery across independent review/validation subagents. Normal
+> reviewers are now diff-first and do not receive Serena by default; the primary agent owns the
+> semantic discovery pass. See
+> [2026-09-26 agent delegation and Serena usage-efficiency review](./2026-09-26-agent-delegation-serena-usage-efficiency-review.md).
+
 ## Scope
 
 This review asks a narrower question than "is Serena configured?": **does the repository make semantic code navigation a normal part of agent work when Serena is available, without making the repository unusable for contributors who do not install it?**
