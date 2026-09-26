@@ -9,6 +9,7 @@ import type { WorkoutDefinition } from '../workouts/models';
 import { adaptExternalPlanSessionToSessionDefinition } from './externalSessionAdapter';
 import { isV2Session } from './externalPlanV2';
 import { canonicalizeSessionData, hashSessionDefinition } from './sessionDefinitionHash';
+import { validateSessionDefinition } from './validation';
 
 // Fixture imports
 import fixture01 from './fixtures/01-full-body-maintenance.json';
@@ -212,7 +213,20 @@ export async function resolveSessionDefinition(
                 issues: [{ code: 'prescription-definition-hash-mismatch', field: 'definitionHash', documentPath }],
             };
         }
-        return { status: 'AVAILABLE', data: reconstructed, revision: prescriptionHash };
+        const validation = validateSessionDefinition(reconstructed);
+        if (!validation.ok) {
+            const first = validation.issues[0];
+            return {
+                status: 'INVALID',
+                issues: [{
+                    code: 'invalid-prescription-session-definition',
+                    documentPath,
+                    ...(first?.path ? { field: first.path } : {}),
+                    ...(first?.message ? { message: first.message } : {}),
+                }],
+            };
+        }
+        return { status: 'AVAILABLE', data: validation.value, revision: prescriptionHash };
     }
 
     const revision = await externalPlanService.getRevisionState(userId, source.planId, source.revision);

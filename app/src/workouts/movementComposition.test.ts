@@ -22,6 +22,26 @@ describe('authored movement composition', () => {
     expect(reentry.compositionRelaxations).toEqual([{ pattern: 'unilateral_lower_body', reason: expect.any(String) }]);
   });
 
+  it('rejects a relaxation that claims the requirement is absent while a component step remains active', () => {
+    const invalid = structuredClone(fullBody);
+    const reduced = invalid.variants.find(variant => variant.id === 'reduced')!;
+    reduced.compositionRelaxations = [{ pattern: 'unilateral_lower_body', reason: 'Incorrectly relaxed.' }];
+    const result = validateWorkoutLibrary(EXERCISES, [invalid]);
+    expect(result.errors.some(error => error.includes('cannot relax unilateral_lower_body'))).toBe(true);
+  });
+
+  it('rejects degradation metadata when a substitute still preserves the required pattern', () => {
+    const invalid = structuredClone(fullBody);
+    const substitution = invalid.substitutions.find(item =>
+      item.exerciseId === 'rear_foot_elevated_split_squat' && item.substituteExerciseId === 'walking_lunge')!;
+    substitution.degradedComposition = {
+      pattern: 'unilateral_lower_body',
+      reason: 'Incorrectly marked degraded.',
+    };
+    const result = validateWorkoutLibrary(EXERCISES, [invalid]);
+    expect(result.errors.some(error => error.includes('declares degradation even though the target preserves unilateral_lower_body'))).toBe(true);
+  });
+
   it('rejects a unilateral component silently replaced by a bilateral exercise', () => {
     const invalid = structuredClone(fullBody);
     invalid.substitutions.push({

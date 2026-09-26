@@ -205,7 +205,13 @@ describe('resolveSessionDefinition', () => {
             const meta: NonNullable<ExecutionPrescription['displayMetadata']> = {
                 title: 'Strength', intent: 'training', dominantModality: 'strength', duration: { min: 30, max: 60 }, movementComposition,
             };
-            const blocks: ExecutionPrescription['blocks'] = [{ id: 'evaluated-block', role: 'main', executionMode: 'sequential', steps: [] }];
+            const blocks: ExecutionPrescription['blocks'] = [{
+                id: 'evaluated-block', role: 'main', executionMode: 'sequential', steps: [{
+                    id: 'split-squat', kind: 'exercise',
+                    exerciseRef: { kind: 'catalog', exerciseId: 'rear_foot_elevated_split_squat' },
+                    compositionPatterns: ['unilateral_lower_body'],
+                }],
+            }];
             const definition: SessionDefinition = {
                 schemaVersion: 1, id: 'catalog-workout-1', revision: 1, title: meta.title, intent: meta.intent,
                 dominantModality: meta.dominantModality, duration: meta.duration, movementComposition, blocks,
@@ -216,6 +222,28 @@ describe('resolveSessionDefinition', () => {
             } } satisfies DataState<ExecutionPrescription>);
             await expect(resolveSessionDefinition('u1', catalogSource, 'hash-1')).resolves.toMatchObject({
                 status: 'AVAILABLE', data: { movementComposition },
+            });
+        });
+
+        it('fails closed on a self-consistent prescription whose composition contract does not match stored steps', async () => {
+            const movementComposition: NonNullable<ExecutionPrescription['displayMetadata']>['movementComposition'] = [
+                { id: 'unilateral', pattern: 'unilateral_lower_body', status: 'required', stepIds: ['missing-step'] },
+            ];
+            const meta: NonNullable<ExecutionPrescription['displayMetadata']> = {
+                title: 'Strength', intent: 'training', dominantModality: 'strength', movementComposition,
+            };
+            const blocks: ExecutionPrescription['blocks'] = [{ id: 'evaluated-block', role: 'main', executionMode: 'sequential', steps: [] }];
+            const malformedDefinition: SessionDefinition = {
+                schemaVersion: 1, id: 'catalog-workout-1', revision: 1, title: meta.title, intent: meta.intent,
+                dominantModality: meta.dominantModality, movementComposition, blocks,
+            };
+            const definitionHash = await hashSessionDefinition(malformedDefinition);
+            services.prescription.getPrescription.mockResolvedValue({ status: 'AVAILABLE', revision: null, data: {
+                ...storedPrescription, definitionHash, blocks, displayMetadata: meta,
+            } } satisfies DataState<ExecutionPrescription>);
+
+            await expect(resolveSessionDefinition('u1', catalogSource, 'hash-1')).resolves.toMatchObject({
+                status: 'INVALID', issues: [{ code: 'invalid-prescription-session-definition' }],
             });
         });
 

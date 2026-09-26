@@ -270,6 +270,33 @@ describe('ExecutionPrescriptionService', () => {
             }
         });
 
+        it('returns INVALID for malformed movement-composition display metadata even when the hash is self-consistent', async () => {
+            const raw = makeBasePrescription();
+            const malformed = {
+                ...raw,
+                displayMetadata: {
+                    ...raw.displayMetadata,
+                    movementComposition: [{
+                        id: 'unilateral',
+                        pattern: 'not_a_known_pattern',
+                        stepIds: ['step-1'],
+                        status: 'required',
+                    }],
+                },
+            } as unknown as Omit<ExecutionPrescription, 'prescriptionHash'>;
+            const prescriptionHash = await hashExecutionPrescription({ ...malformed, prescriptionHash: '' });
+            docStore.set('users/u1/execution_prescriptions/' + prescriptionHash, {
+                ...malformed,
+                prescriptionHash,
+            } as unknown as Record<string, unknown>);
+
+            const result = await service.getPrescription('u1', prescriptionHash);
+            expect(result.status).toBe('INVALID');
+            if (result.status === 'INVALID') {
+                expect(result.issues[0].code).toBe('invalid-prescription-shape');
+            }
+        });
+
         it('returns INVALID when document fails shape validation or hash verification', async () => {
             const raw = makeBasePrescription();
             const prescriptionHash = await hashExecutionPrescription({ ...raw, prescriptionHash: '' });
