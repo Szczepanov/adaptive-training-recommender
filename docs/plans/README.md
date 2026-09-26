@@ -79,7 +79,7 @@ intraday windows/reassessment is accepted in
 D-TIME (`localInstant.ts`), D-LEDGER's pure engine (`dailyLedger.ts`), D-PLACEMENT's
 bundle-placement engine, D-REASSESS's pure `reassessDependentBundleMember`
 (`intradayReassessment.ts`, #442) and D-AUDIT's decision store (`intradayDecision.ts`,
-#443) are all delivered; #434 PR 1 bound the v4 primary session to the source-neutral
+issue #443) are all delivered; #434 PR 1 bound the v4 primary session to the source-neutral
 launch path (#440), PR 2 added external-plan occurrence tracking (#445), PR 3
 Phases 1-2 (#448) added D-WINDOW's real per-window exclusivity, atomic re-import
 supersession, and D-LEDGER's persisted date-level reservation aggregate, and PR 3 Phase 3
@@ -250,10 +250,11 @@ all-`Ready` table became unusable.
 | SAW | [Server-authoritative anthropometry writes](./anthropometry-server-authoritative-writes.md) | **Implemented** | — | — | implementation landed in #572 and the 2026-09-17 production release verified CI, backend/index/rules/Hosting deployment, and the Hosting → anthropometry rewrite smoke check; owner reads remain direct and recommendation authority remains zero |
 | TC | [Time-capped cycling specificity (#744)](./2026-09-24-issue-744-time-capped-cycling-specificity.md) | **In review (TC1–TC5 complete; deterministic TC6 complete)** | externally scored plan/persona judge baselines await a comparable reviewed run | external scoring, not a code blocker | on a time-capped train day, trims the authored Easy Endurance prescription to the cap instead of swapping in the readiness easier dose; the 35-minute cycling persona has 8 rides and 1 walk in 14 days; follow-ups [#756](https://github.com/Szczepanov/adaptive-training-recommender/issues/756), [#757](https://github.com/Szczepanov/adaptive-training-recommender/issues/757), [#758](https://github.com/Szczepanov/adaptive-training-recommender/issues/758) |
 | AF | [Athlete-relative aerobic-volume coverage floor (#757)](./2026-09-24-issue-757-athlete-relative-aerobic-floor.md) | **In review (AF1–AF5 complete)** | reviewed baseline refresh (AF6) | review of the simulation/persona diffs, not a code blocker | exact weekly `aerobic_volume` coverage requires one athlete-level floor, max(catalog minimum, round-5(0.75 × median 28-day full-dose aerobic session)) with ≥4 sessions, else the catalog minimum; an unreachable floor keeps the aerobic role planned and reports an explicit packing shortfall; partial coverage credit (ledger convergence) is deferred |
+| CF | [Constraint-aware stimulus fulfilment](./constraint-aware-stimulus-fulfilment.md) | **Draft** | none until ADR-0044 is accepted; schema/validator spike only with explicit authorization | ADR-0044 acceptance; #801–#806 canonical models per work package | shared residual-fulfilment layer, microdose/module contract and bounded automatic secondary-window packing without duplicating exact coverage, objective credit, load or intraday ledgers |
 
 
-Rows G, HRF, S, M, CT, WU, UX, UX-R, OV, HA, SV, MS, PI, ES, TO, SEP, SKR, BC, NTA, SAW, TC, AF, RP, and PG are **not phases**. They are capability/surface plans whose work items are
-prefixed `G*`, `HRF*`, `S*`, `M*`, `CT*`, `WU*`, `UX*`, `UX-R*`, `OV*`, `HA*`, `SV*`, `MS*`, `PI*`, `ES*`, `TO*`, `SEP-*`, `SKR*`, `BC*`, `SAW*`, `TC*`, `AF*`, `RP*`, and `PG*` precisely so they cannot be mistaken for the `Phase 0`–`9`
+Rows G, HRF, S, M, CT, WU, UX, UX-R, OV, HA, SV, MS, PI, ES, TO, SEP, SKR, BC, NTA, SAW, TC, AF, CF, RP, and PG are **not phases**. They are capability/surface plans whose work items are
+prefixed `G*`, `HRF*`, `S*`, `M*`, `CT*`, `WU*`, `UX*`, `UX-R*`, `OV*`, `HA*`, `SV*`, `MS*`, `PI*`, `ES*`, `TO*`, `SEP-*`, `SKR*`, `BC*`, `SAW*`, `TC*`, `AF*`, `CF*`, `RP*`, and `PG*` precisely so they cannot be mistaken for the `Phase 0`–`9`
 sequence; the `#` column carries that prefix rather than a phase number. For capability plans, an item
 with satisfied dependencies but an unmet usage trigger is **not** listed as startable. A transferred
 historical item (former M7) is likewise not listed under its old plan; only the canonical owner tracks it.
