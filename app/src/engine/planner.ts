@@ -1138,7 +1138,7 @@ export function projectedDateOutcomeFrom(
     });
     const outcome: ProjectedDateOutcome = {
         date: evaluation.date,
-        availableMinutes: evaluation.availability.maxTimeMinutes,
+        ...(evaluation.availability ? { availableMinutes: evaluation.availability.maxTimeMinutes } : {}),
         fatigueTier: reservationFatigueThresholds
             ? fatigueTierFor(evaluation.peakFatigue, reservationFatigueThresholds)
             : evaluation.fatigueTier,
