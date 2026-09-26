@@ -446,12 +446,11 @@ export function resolveEvidenceBackedStrategy(
     }
 
     // Issue #804: progressive mechanical and impact exposure model. Sport-readiness/speed
-    // athletes target it directly. A balanced athlete, or an endurance+strength hybrid,
-    // retains it as an optional maintenance capability so cycling/endurance can stay primary
+    // athletes target it directly. An endurance+strength hybrid retains it as an optional
+    // maintenance capability so cycling/endurance can stay primary
     // without letting foot-ground exposure disappear for months.
     const directMechanicalPriority = priorities.has('sport_readiness') || priorities.has('speed_power');
-    const hybridMechanicalMaintenance = priorities.has('balanced_performance')
-        || (priorities.has('endurance') && strengthPlanned);
+    const hybridMechanicalMaintenance = priorities.has('endurance') && strengthPlanned;
     if (directMechanicalPriority || hybridMechanicalMaintenance) {
         const withheld = mechanicalWithheldReason(goalOrEvent, athleteState);
         if (withheld) warnings.push({ code: 'mechanical_exposure_withheld', message: withheld });
