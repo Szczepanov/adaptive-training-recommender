@@ -59,6 +59,9 @@ The existing #757 single-session `aerobic_volume` coverage floor remains a separ
   athlete-specific primary-modality easy-volume floor.
 - [x] Long anchor is one exact session, is bounded by allocator-executable template capacity,
   can reserve only a date that fits its duration, and has typed shortfall.
+- [x] Athlete-relative volume may expand into declared target-session capacity without consuming
+  feasible dose still owed to a co-required required adaptation such as strength; remaining
+  aerobic insufficiency is reported instead of hiding the peer floor.
 - [x] Repository, deterministic simulation and independent review gates complete; the
   deterministic persona corpus was generated.
 - [ ] Persona score diff requires the local Ollama service, which was unavailable in this run.
