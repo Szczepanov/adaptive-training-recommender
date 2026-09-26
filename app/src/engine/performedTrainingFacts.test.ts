@@ -15,7 +15,9 @@ import { getPerformedTrainingFactsInRange } from '../training-occurrence/perform
 import type { PerformedTrainingOccurrence } from '../training-occurrence/models';
 import { performedTrainingOccurrenceRepository as repository } from '../training-occurrence/repository';
 import { activityService } from '../services/activityService';
-import type { NormalizedGarminActivity, CompletedTrainingEvent } from './models';
+import { sessionExecutionService } from '../services/sessionExecutionService';
+import { recommendationService } from '../services/recommendationService';
+import type { NormalizedGarminActivity, CompletedTrainingEvent, DailyRecommendation } from './models';
 
 vi.mock('../training-occurrence/repository', () => ({
     performedTrainingOccurrenceRepository: {
@@ -32,6 +34,12 @@ vi.mock('../services/sessionExecutionService', () => ({
 vi.mock('../services/activityService', () => ({
     activityService: {
         getActivitiesInRange: vi.fn(),
+    },
+}));
+
+vi.mock('../services/recommendationService', () => ({
+    recommendationService: {
+        getRecommendationsInRange: vi.fn(),
     },
 }));
 
@@ -414,6 +422,59 @@ describe('performedTrainingFacts', () => {
             const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-08-31', '2026-09-02');
             expect(snapshot.exposures.map(e => e.performedOccurrenceId)).toEqual(['pto-1', 'pto-2']);
             expect(repository.queryActiveInDateWindow).toHaveBeenCalledWith('user-1', '2026-08-31', '2026-09-01');
+        });
+
+        it('recovers the executed catalog variant from its bound persisted recommendation and fails power credit closed', async () => {
+            const occ = mockOccurrence({
+                performedOccurrenceId: 'pto-return',
+                localDate: '2026-09-01',
+                sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-return' }],
+            });
+            vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([occ]);
+            vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({
+                status: 'AVAILABLE',
+                revision: 'exec-rev',
+                data: {
+                    userId: 'user-1',
+                    executionId: 'exec-return',
+                    sessionSource: {
+                        kind: 'catalog',
+                        workoutId: 'strength_full_body_maintenance_01',
+                        catalogVersion: '1',
+                    },
+                    prescriptionHash: 'rx-return',
+                    date: '2026-09-01',
+                    startedAt: '2026-09-01T10:00:00.000Z',
+                    completedAt: '2026-09-01T10:20:00.000Z',
+                    updatedAt: '2026-09-01T10:20:00.000Z',
+                    state: 'completed',
+                    schemaVersion: 1,
+                },
+            });
+            vi.mocked(recommendationService.getRecommendationsInRange).mockResolvedValue({
+                status: 'AVAILABLE',
+                revision: 'rec-rev',
+                data: [{
+                    date: '2026-09-01',
+                    templateId: 'str_full_01',
+                    mode: 'recover',
+                    primarySession: { prescriptionHash: 'rx-return' },
+                    prescription: {
+                        workoutId: 'strength_full_body_maintenance_01',
+                        variantId: 'return_to_training',
+                    },
+                } as unknown as DailyRecommendation],
+            });
+
+            const snapshot = await getPerformedTrainingFactsInRange(
+                'user-1',
+                '2026-08-31',
+                '2026-09-02',
+                { preloadedActivities: [] },
+            );
+
+            expect(snapshot.exposures[0].workoutVariantId).toBe('return_to_training');
+            expect(snapshot.coverageCredits.map(credit => credit.coverageKey)).toEqual(['primary_strength']);
         });
     });
 

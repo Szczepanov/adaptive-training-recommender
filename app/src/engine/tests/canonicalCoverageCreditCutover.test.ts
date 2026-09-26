@@ -81,6 +81,7 @@ describe('PR 3 — Canonical weekly coverage credit cutover', () => {
                 category: 'Full-body Strength',
                 startedAt: '2026-09-01T10:00:00.000Z',
                 durationMin: 60,
+                workoutVariantId: 'full',
                 isLegacyStrength: false,
             },
         };
@@ -168,6 +169,7 @@ describe('PR 3 — Canonical weekly coverage credit cutover', () => {
                 modality: 'Strength',
                 startedAt: '2026-09-01T10:00:00.000Z',
                 durationMin: 30,
+                workoutVariantId: 'full',
                 isLegacyStrength: false,
             },
         };
@@ -251,6 +253,7 @@ describe('PR 3 — Canonical weekly coverage credit cutover', () => {
                 category: 'Full-body Strength',
                 startedAt: '2026-09-01T10:00:00.000Z',
                 durationMin: 60,
+                workoutVariantId: 'full',
                 isLegacyStrength: false,
             },
             provider: {
