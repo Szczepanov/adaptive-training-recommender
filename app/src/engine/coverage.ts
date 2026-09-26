@@ -9,6 +9,7 @@ import type { CompletedExposure } from './trainingHistory';
 import { aerobicVolumeFloorForWorkout, type AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
+import { grantsPowerExposureCredit } from '../workouts/powerExposure';
 
 /**
  * Phase 6.2c / ADR-0016: physiological stimulus credit and programming-role coverage
@@ -243,6 +244,14 @@ const DEFERRED_SUPPORT_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
     'recovery_or_rest',
 ]);
 
+/** Issue #802 / ADR-0044 D6: embedded capability keys are credited and reported but never
+ * raise a candidate's coverage-need tier. An unmet power target must not promote a
+ * standalone power or lower-body session as catch-up work; power rides only inside the
+ * strength role that already earns its own tier. */
+const EMBEDDED_ONLY_COVERAGE_KEYS = new Set<PlanCoverageKey>([
+    'power_exposure',
+]);
+
 /** For a cycling A/B event the aerobic-volume floor is the prerequisite for repairing a
  * missed hard role. Primary strength remains a tier-1 required role, but it cannot veto
  * the next feasible cycling-quality repair. */
@@ -333,6 +342,7 @@ export function coverageKeysForExposure(
     return descriptor.coverage
         .filter(item => item.phases.includes(phase) && item.workoutIds.includes(workoutId))
         .filter(item => item.key !== 'aerobic_volume' || hasRequiredAerobicDose(identity, workoutId, floor, templateCeilingMin))
+        .filter(item => item.key !== 'power_exposure' || grantsPowerExposureCredit({ workoutId, isReadinessModifiedDose: identity.isReadinessModifiedDose }))
         .map(item => item.key);
 }
 
@@ -357,6 +367,10 @@ function canonicalCoverageKeysForExposure(
             // Identity comes from the canonical semantic ledger; dose eligibility remains a
             // coverage-state concern so a short exact Z2 execution cannot satisfy the
             // authored aerobic-volume floor merely because its catalog id is known.
+            // Power exposure is likewise withheld from a readiness-modified dose (#802).
+            if (key === 'power_exposure') {
+                return grantsPowerExposureCredit({ workoutId, isReadinessModifiedDose: exposure.isReadinessModifiedDose });
+            }
             if (key !== 'aerobic_volume') return true;
             return workoutId !== undefined && hasRequiredAerobicDose(exposure, workoutId, floor);
         });
@@ -479,6 +493,29 @@ export function buildCoverageState(
         if (requirement) requirementsByKey.set(definition.coverageKey, requirement);
     });
 
+    // Issue #802: coverage-only capability requirements (no stimulus objective) share the
+    // same exact-identity ledger, so one session may credit several keys at once.
+    (planDefinition.coverageRequirements ?? [])
+        .filter(definition => definition.blockId === block.id && !requirementsByKey.has(definition.coverageKey))
+        .forEach((definition, index) => {
+            const coverage = coverageFor(descriptor, definition.coverageKey);
+            if (!coverage || !coverage.phases.includes(block.phase)) return;
+            const minimumSessions = Math.max(0, definition.minimumSessions);
+            const requirement = newRequirement({
+                descriptor,
+                blockId: block.id,
+                key: definition.coverageKey,
+                minimumSessions,
+                targetSessions: Math.max(minimumSessions, definition.targetSessions),
+                priority: definition.priority,
+                rollingWindowDays,
+                windowStart,
+                windowEnd: block.endDate,
+                index: activeDefinitions.length + index,
+            });
+            if (requirement) requirementsByKey.set(definition.coverageKey, requirement);
+        });
+
     const recoveryCoverage = coverageFor(descriptor, 'recovery_or_rest');
     if (recoveryCoverage?.requirement === 'required'
         && recoveryCoverage.phases.includes(block.phase)
@@ -591,7 +628,8 @@ export function coverageNeedTierForTemplate(
     anchorRole: 'event-specific' | 'quality' | null = null,
     deferAnchorAdjacentHeavyStrength: boolean = false,
 ): 0 | 1 | 2 | 3 {
-    const keys = state.descriptor ? coverageKeysForTemplate(template, state.phase, state.descriptor, state.aerobicVolumeFloor) : [];
+    const keys = (state.descriptor ? coverageKeysForTemplate(template, state.phase, state.descriptor, state.aerobicVolumeFloor) : [])
+        .filter(key => !EMBEDDED_ONLY_COVERAGE_KEYS.has(key));
     if (keys.length === 0) return 3;
 
     const anchorKey: PlanCoverageKey | null = anchorRole === 'event-specific'

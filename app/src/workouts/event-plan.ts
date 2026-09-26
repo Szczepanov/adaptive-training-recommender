@@ -1,4 +1,5 @@
 import type { WorkoutDefinition } from './models.ts';
+import { POWER_QUALIFYING_WORKOUT_IDS } from './powerExposure.ts';
 
 /** Generic planning vocabulary. The September cycling set is merely its first
  * descriptor; evergreen adds the `general` phase in Phase 7.5. */
@@ -14,6 +15,7 @@ export type PlanCoverageKey =
   | 'outdoor_event_specific'
   | 'primary_strength'
   | 'compact_strength'
+  | 'power_exposure'
   | 'upper_body_trunk'
   | 'field_maintenance'
   | 'walk_run'
@@ -123,6 +125,7 @@ export const EVERGREEN_SESSION_COVERAGE: PlanSessionCoverage[] = [
   { key: 'sustained_quality', label: 'Optional sustained quality', phases: ['general'], requirement: 'optional', workoutIds: ['cycling_controlled_threshold_4x8_01', 'cycling_tempo_surges_01', 'running_tempo_01'], notes: 'Optional performance work; it is introduced only by an eligible evidence-backed strategy. The cycling tempo identity provides a 30-minute minimum for short windows.' },
   { key: 'primary_strength', label: 'Primary full-body strength', phases: ['general'], requirement: 'required', workoutIds: ['strength_full_body_maintenance_01', 'strength_bodyweight_full_body_01'], notes: 'Exact full-body resistance exposure for the strength role; the bodyweight identity is the zero-equipment floor so a no-equipment athlete has a reachable required-strength candidate.' },
   { key: 'compact_strength', label: 'Compact strength support', phases: ['general'], requirement: 'optional', workoutIds: ['strength_compact_power_01'], notes: 'Optional lower-time resistance alternative; never silently replaces a required full-body role.' },
+  { key: 'power_exposure', label: 'Neuromuscular power exposure', phases: ['general'], requirement: 'conditional', workoutIds: [...POWER_QUALIFYING_WORKOUT_IDS], notes: 'Issue #802 embedded capability exposure: exact authored identities with Olympic-derivative, ballistic-throw or reactive-plyometric content at a full or reduced dose. A session may earn this key alongside primary_strength without counting as a second session; readiness-modified doses, threshold/VO2 work and generic strength never earn it. Only active when the evergreen strategy emits a power requirement.' },
   { key: 'recovery_or_rest', label: 'Recovery or rest', phases: ['general'], requirement: 'required', workoutIds: [...EVERGREEN_RECOVERY_WORKOUT_IDS], notes: 'ADR-0038 baseline exact recovery identities. Recovery spin is recovery coverage only and does not earn aerobic-volume credit.' },
   { key: 'upper_body_trunk', label: 'Upper-body and trunk support', phases: ['general'], requirement: 'conditional', workoutIds: ['strength_upper_body_trunk_01'], notes: 'Conditional alternative when lower-body loading is inappropriate.' },
   { key: 'walk_run', label: 'Optional walk-run', phases: ['general'], requirement: 'optional', workoutIds: ['running_walk_run_01'], notes: 'A distinct low-impact entry; it is not credited as full continuous aerobic volume.' },

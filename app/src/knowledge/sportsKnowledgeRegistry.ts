@@ -67,6 +67,11 @@ import {
     PHYSICAL_WORK_STRAIN_CLAIMS,
     PHYSICAL_WORK_STRAIN_SOURCES,
 } from './physicalWorkStrainKnowledge.ts';
+import {
+    POWER_MAINTENANCE_CLAIM_IDS,
+    POWER_MAINTENANCE_CLAIMS,
+    POWER_MAINTENANCE_SOURCES,
+} from './powerMaintenanceKnowledge.ts';
 
 /**
  * Canonical aggregate registry.
@@ -90,6 +95,7 @@ export const SPORTS_KNOWLEDGE_SOURCES: readonly KnowledgeSource[] = [
     ...GOAL_FEASIBILITY_SOURCES,
     ...PERFORMANCE_GOAL_TRAINING_SOURCES,
     ...PHYSICAL_WORK_STRAIN_SOURCES,
+    ...POWER_MAINTENANCE_SOURCES,
 ];
 
 export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
@@ -106,6 +112,7 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
     ...GOAL_FEASIBILITY_CLAIMS,
     ...PERFORMANCE_GOAL_TRAINING_CLAIMS,
     ...PHYSICAL_WORK_STRAIN_CLAIMS,
+    ...POWER_MAINTENANCE_CLAIMS,
 ];
 
 export const KNOWLEDGE_CLAIM_IDS = {
@@ -122,6 +129,7 @@ export const KNOWLEDGE_CLAIM_IDS = {
     ...GOAL_FEASIBILITY_CLAIM_IDS,
     ...PERFORMANCE_GOAL_TRAINING_CLAIM_IDS,
     ...PHYSICAL_WORK_STRAIN_CLAIM_IDS,
+    ...POWER_MAINTENANCE_CLAIM_IDS,
 } as const;
 
 export const SPORTS_KNOWLEDGE_SOURCES_BY_ID: ReadonlyMap<string, KnowledgeSource> = new Map(

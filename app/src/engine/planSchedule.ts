@@ -4,7 +4,7 @@ import type { DataIssue, DataState } from './dataState.ts';
 import type { AuthoredPlanBlock, ObjectiveKey, ObjectivePriority, UserEvent } from './models.ts';
 import { resolveEventTaper } from './taperPolicy';
 import { addDaysToLocalDateString } from '../utils/localDate.ts';
-import type { EvidenceBackedStrategy, AdaptationKey } from './evergreenStrategy.ts';
+import type { EvidenceBackedStrategy, AdaptationDoseRequirement, AdaptationKey } from './evergreenStrategy.ts';
 import type { ResolvedTrainingCapacity } from './trainingCapacity.ts';
 import type { WeeklyBudget } from './weeklyDosePacking.ts';
 
@@ -43,6 +43,19 @@ export interface SequencingRule {
   paramValue: number;
 }
 
+/** Issue #802 / ADR-0044 D1: an exact-identity coverage requirement for a capability that
+ * has no canonical stimulus axis (e.g. neuromuscular power). It feeds only the coverage
+ * ledger, never a stimulus `WeeklyObjective`, so power is not conflated with metabolic
+ * intensity or strength stimulus credit. */
+export interface PlanCoverageRequirementDefinition {
+  coverageKey: PlanCoverageKey;
+  blockId: string;
+  minimumSessions: number;
+  targetSessions: number;
+  priority: ObjectivePriority;
+  knowledgeRefs: string[];
+}
+
 export interface PlanDefinition {
   id: string;
   eventId: string;
@@ -50,6 +63,8 @@ export interface PlanDefinition {
   blocks: PlanBlock[];
   objectives: PlanObjectiveDefinition[];
   sequencingRules: SequencingRule[];
+  /** Absent for plans without coverage-only capability requirements. */
+  coverageRequirements?: PlanCoverageRequirementDefinition[];
 }
 
 export function buildPlanDefinition(
@@ -60,6 +75,7 @@ export function buildPlanDefinition(
   sequencingRules: SequencingRule[] = [],
   id: string = `plan_${event.id}`,
   coverageSetId: CoverageSetId = SEPTEMBER_CYCLING_EVENT_COVERAGE_SET.id,
+  coverageRequirements: PlanCoverageRequirementDefinition[] = [],
 ): DataState<PlanDefinition> {
   const issues: DataIssue[] = [];
 
@@ -121,12 +137,46 @@ export function buildPlanDefinition(
     }
   }
 
+  for (const requirement of coverageRequirements) {
+    const block = blockSchedule.find((item) => item.id === requirement.blockId);
+    if (!block) {
+      issues.push({
+        code: 'DANGLING_BLOCK_ID',
+        field: `coverageRequirements.${requirement.coverageKey}`,
+        documentPath: `plan/${id}`,
+      });
+    }
+    const coverageItem = coverageByKey.get(requirement.coverageKey);
+    if (!coverageItem) {
+      issues.push({
+        code: 'UNKNOWN_COVERAGE_KEY',
+        field: `coverageRequirements.${requirement.coverageKey}`,
+        documentPath: `plan/${id}`,
+      });
+    } else if (block && !coverageItem.phases.includes(block.phase)) {
+      issues.push({
+        code: 'COVERAGE_UNAVAILABLE_IN_BLOCK_PHASE',
+        field: `coverageRequirements.${requirement.coverageKey}`,
+        documentPath: `plan/${id}`,
+      });
+    }
+    if (requirement.minimumSessions < 0) {
+      issues.push({ code: 'INVALID_COVERAGE_MINIMUM', field: `coverageRequirements.${requirement.coverageKey}`, documentPath: `plan/${id}` });
+    }
+    if (requirement.targetSessions < requirement.minimumSessions) {
+      issues.push({ code: 'COVERAGE_TARGET_BELOW_MINIMUM', field: `coverageRequirements.${requirement.coverageKey}`, documentPath: `plan/${id}` });
+    }
+  }
+
   if (issues.length > 0) return { status: 'INVALID', issues };
 
   return {
     status: 'AVAILABLE',
     revision: null,
-    data: { id, eventId: event.id, coverageSetId, blocks: blockSchedule, objectives, sequencingRules },
+    data: {
+      id, eventId: event.id, coverageSetId, blocks: blockSchedule, objectives, sequencingRules,
+      ...(coverageRequirements.length > 0 ? { coverageRequirements } : {}),
+    },
   };
 }
 
@@ -267,15 +317,24 @@ export function buildSeptemberCyclingEventPlan(event: UserEvent): DataState<Plan
   return buildCyclingEventPlan(event);
 }
 
-const EVERGREEN_OBJECTIVE_BY_ADAPTATION: Record<AdaptationKey, {
+const EVERGREEN_OBJECTIVE_BY_ADAPTATION: Partial<Record<AdaptationKey, {
   key: ObjectiveKey;
   coverageKey: PlanCoverageKey;
   priority: ObjectivePriority;
-}> = {
+}>> = {
   aerobic_endurance: { key: 'zone2_aerobic', coverageKey: 'aerobic_volume', priority: 'must_have' },
   strength: { key: 'strength_development', coverageKey: 'primary_strength', priority: 'must_have' },
   high_intensity: { key: 'vo2_max', coverageKey: 'sustained_quality', priority: 'nice_to_have' },
 };
+
+/** Capability adaptations that own exact coverage but no stimulus objective (#802). */
+const EVERGREEN_COVERAGE_ONLY_BY_ADAPTATION: Partial<Record<AdaptationKey, PlanCoverageKey>> = {
+  neuromuscular_power: 'power_exposure',
+};
+
+function coverageOnlyPriority(priority: AdaptationDoseRequirement['priority']): ObjectivePriority {
+  return priority === 'required' ? 'must_have' : priority === 'target' ? 'should_have' : 'nice_to_have';
+}
 
 /** Builds the rolling, non-event plan from already-resolved evidence, capacity, and exact
  * packed roles. Neither raw profile session counts nor DEFAULT_BASE_DEMAND participate
@@ -310,11 +369,26 @@ export function buildEvergreenPlanDefinition(
       coverageTargetSessions: count,
     }];
   });
+  // A coverage-only capability is planned only when the packer embedded it in a real
+  // occurrence; its count therefore never adds a session (ADR-0044 D6).
+  const coverageRequirements: PlanCoverageRequirementDefinition[] = packedBudget.requirements.flatMap(requirement => {
+    const coverageKey = EVERGREEN_COVERAGE_ONLY_BY_ADAPTATION[requirement.adaptation];
+    const count = countByAdaptation.get(requirement.adaptation) ?? 0;
+    if (!coverageKey || count === 0) return [];
+    return [{
+      coverageKey,
+      blockId: 'block_general',
+      minimumSessions: requirement.floor?.dose.value ?? 0,
+      targetSessions: count,
+      priority: coverageOnlyPriority(requirement.priority),
+      knowledgeRefs: [...requirement.knowledgeRefs],
+    }];
+  });
   const block: PlanBlock = {
     id: 'block_general', phase: 'general', startDate: asOfDate,
     endDate: addDaysToLocalDateString(asOfDate, 6), volumeScale: 1, intensityScale: 1,
   };
-  return buildPlanDefinition(
+  const result = buildPlanDefinition(
     EVERGREEN_GENERAL_COVERAGE_SET.coverage,
     [block],
     { id: 'evergreen_general' } as UserEvent,
@@ -322,7 +396,9 @@ export function buildEvergreenPlanDefinition(
     [],
     'plan_evergreen_general',
     EVERGREEN_GENERAL_COVERAGE_SET.id,
+    coverageRequirements,
   );
+  return result;
 }
 
 /** Every scheduled cycling event receives the richer authored plan, relative to its own

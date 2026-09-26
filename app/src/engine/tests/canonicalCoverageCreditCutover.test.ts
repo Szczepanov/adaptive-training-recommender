@@ -81,12 +81,16 @@ describe('PR 3 — Canonical weekly coverage credit cutover', () => {
                 category: 'Full-body Strength',
                 startedAt: '2026-09-01T10:00:00.000Z',
                 durationMin: 60,
+                workoutVariantId: 'full',
                 isLegacyStrength: false,
             },
         };
 
         const facts = deriveFactsFromOccurrence(occ, hydrated, descriptor);
-        expect(facts.coverageCredits).toHaveLength(1);
+        // One occurrence, two distinct exact keys: the authored hang power clean also earns
+        // the embedded power exposure (#802) without becoming a second session.
+        expect(facts.coverageCredits.map(credit => credit.coverageKey)).toEqual(['primary_strength', 'power_exposure']);
+        expect(new Set(facts.coverageCredits.map(credit => credit.performedOccurrenceId)).size).toBe(1);
         expect(facts.coverageCredits[0]).toMatchObject({
             coverageKey: 'primary_strength',
             workoutId: 'strength_full_body_maintenance_01',
@@ -165,13 +169,13 @@ describe('PR 3 — Canonical weekly coverage credit cutover', () => {
                 modality: 'Strength',
                 startedAt: '2026-09-01T10:00:00.000Z',
                 durationMin: 30,
+                workoutVariantId: 'full',
                 isLegacyStrength: false,
             },
         };
 
         const facts = deriveFactsFromOccurrence(occ, hydrated, descriptor);
-        expect(facts.coverageCredits).toHaveLength(1);
-        expect(facts.coverageCredits[0].coverageKey).toBe('compact_strength');
+        expect(facts.coverageCredits.map(credit => credit.coverageKey)).toEqual(['compact_strength', 'power_exposure']);
         expect(facts.coverageCredits.some(c => c.coverageKey === 'primary_strength')).toBe(false);
 
         const history = resolveCoverageHistory({
@@ -249,6 +253,7 @@ describe('PR 3 — Canonical weekly coverage credit cutover', () => {
                 category: 'Full-body Strength',
                 startedAt: '2026-09-01T10:00:00.000Z',
                 durationMin: 60,
+                workoutVariantId: 'full',
                 isLegacyStrength: false,
             },
             provider: {
@@ -272,7 +277,8 @@ describe('PR 3 — Canonical weekly coverage credit cutover', () => {
         };
 
         const facts = deriveFactsFromOccurrence(occ, hydrated, descriptor);
-        expect(facts.coverageCredits).toHaveLength(1);
+        // App + Garmin still collapse to one occurrence; the two credits are distinct keys.
+        expect(facts.coverageCredits.map(credit => credit.coverageKey)).toEqual(['primary_strength', 'power_exposure']);
         expect(facts.coverageCredits[0].creditKind).toBe('exact');
         expect(facts.coverageCredits[0].sourceKinds).toEqual(['structured_execution', 'provider_activity']);
 

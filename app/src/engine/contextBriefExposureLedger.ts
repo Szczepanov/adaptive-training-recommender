@@ -36,6 +36,7 @@ import type {
 } from './models';
 import { normalizeModality } from './performedTrainingFacts';
 import type { StimulusConfidence } from './stimulus';
+import { grantsPowerExposureCredit } from '../workouts/powerExposure';
 
 export type CapabilityStatus = 'confirmed' | 'planned' | 'unknown' | 'overdue' | 'deliberately_suspended';
 type Modality = SessionTemplate['modality'] | 'Unknown';
@@ -286,6 +287,21 @@ const CAPABILITIES: readonly CapabilitySpec[] = [
         suspension: safety => modalityBlocked(safety, 'Strength'),
     },
     {
+        // Issue #802: only an exact authored power identity at a non-modified dose counts.
+        // Garmin records and imported-plan titles cannot prove power content, so they never
+        // confirm or plan it; strength/VO2/threshold history leaves power `unknown`.
+        key: 'neuromuscular_power',
+        confirmsFact: f => f.workoutVariantId !== undefined && grantsPowerExposureCredit({
+            workoutId: f.workoutId,
+            variant: f.workoutVariantId,
+            isReadinessModifiedDose: f.isReadinessModifiedDose,
+        }),
+        label: 'Neuromuscular power',
+        confirms: () => false,
+        plans: () => false,
+        suspension: safety => modalityBlocked(safety, 'Strength'),
+    },
+    {
         key: 'running',
         confirmsFact: f => f.modality === 'Running',
         label: 'Running familiarity',
@@ -305,7 +321,6 @@ const CAPABILITIES: readonly CapabilitySpec[] = [
 
 /** Families without a canonical exposure model yet. Reported, never inferred. */
 const UNMODELLED: ReadonlyArray<{ key: string; label: string; source: string; impact: boolean }> = [
-    { key: 'neuromuscular_power', label: 'Neuromuscular power', source: '#802', impact: false },
     { key: 'unilateral_lower_body', label: 'Unilateral lower-body', source: '#803', impact: false },
     { key: 'impact_jump', label: 'Impact / jump-land', source: '#804', impact: true },
     { key: 'cod_lateral', label: 'COD / lateral', source: '#805', impact: true },
@@ -358,6 +373,9 @@ function capabilityEntry(spec: CapabilitySpec, events: readonly ResolvedEvent[],
     const notes: string[] = [];
     if (spec.key === 'strength' && safety.guardrails.has('avoid_heavy_lower_body')) {
         notes.push('heavy lower-body loading suspended by an active safety limit');
+    }
+    if (spec.key === 'neuromuscular_power' && impactBlocked(safety)) {
+        notes.push('impact (plyometric) power suspended by an active safety limit; non-impact power identities remain eligible');
     }
     if (!input.activitiesReadable && !lastDate) notes.push('activity history unreadable');
     let status: CapabilityStatus;
@@ -452,7 +470,7 @@ export function renderExposureLedger(ledger: ExposureLedger, lookbackStart: stri
         `Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next ${PLANNED_HORIZON_DAYS} days only (never counted as done); `
             + '`unknown` = not observed in this window or no canonical model; `deliberately_suspended` = blocked by a current safety limit, not neglect. '
             + 'No authoritative cadence/max-gap policy is wired in, so nothing is reported `overdue`. '
-            + 'Not yet represented: taper/event-specific suppression, and the #802–#806 capability models.',
+            + 'Not yet represented: taper/event-specific suppression, and the #803–#806 capability models. Neuromuscular power (#802) is confirmed only by an exact authored power identity.',
     );
     for (const entry of ledger.capabilities) lines.push(formatCapability(entry));
     for (const note of ledger.notes) lines.push(`- Note: ${note}`);

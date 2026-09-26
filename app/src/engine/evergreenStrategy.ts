@@ -1,13 +1,8 @@
 import type { CompletedExposure } from './trainingHistory';
 import type { DailyReadiness, TrainingIntentProfile, TrainingPriority } from './models';
 import type { PhaseWeights } from './periodization';
-import {
-    getActiveKnowledgeClaim,
-    KNOWLEDGE_CLAIM_IDS,
-    type EvidenceCertainty,
-    type KnowledgeMaturity,
-    type KnowledgeStatus,
-} from '../knowledge/sportsKnowledge';
+import type { EvidenceCertainty, KnowledgeMaturity, KnowledgeStatus } from '../knowledge/sportsKnowledge';
+import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
 
 /** The one in-memory default for an athlete who has not yet saved an intent profile.
  * It is deliberately not persisted by planning-mode resolution. */
@@ -17,7 +12,10 @@ export const DEFAULT_TRAINING_INTENT_PROFILE: Omit<TrainingIntentProfile, 'userI
     organizationPreference: 'auto', schemaVersion: 1,
 };
 
-export type AdaptationKey = 'aerobic_endurance' | 'strength' | 'high_intensity';
+/** `neuromuscular_power` (#802) is deliberately distinct from metabolic `high_intensity`
+ * and from `strength`: VO2/threshold work never satisfies it, and it is credited only by
+ * exact authored power identities (`workouts/powerExposure.ts`). */
+export type AdaptationKey = 'aerobic_endurance' | 'strength' | 'high_intensity' | 'neuromuscular_power';
 export type DoseUnit = 'minutes' | 'sessions';
 
 export interface DoseTarget {
@@ -63,6 +61,9 @@ export interface AdaptationDoseRequirement {
     } | null;
     target: DoseRange;
     priority: 'required' | 'target' | 'optional';
+    /** `embedded` requirements ride inside an occurrence packed for another adaptation and
+     * never consume their own weekly session slot (ADR-0044 D5/D6). Absent = standalone. */
+    delivery?: 'embedded';
     substitutionPolicy: SubstitutionPolicy;
     /** All scientific/product knowledge claims that justify this requirement. */
     knowledgeRefs: string[];
@@ -160,7 +161,7 @@ export function isFreshSubjectiveWithAdverseWearables(readiness: DailyReadiness 
 }
 
 export interface PolicyWarning {
-    code: 'conditional_prior_withheld';
+    code: 'conditional_prior_withheld' | 'power_exposure_withheld';
     message: string;
 }
 
@@ -307,6 +308,38 @@ function strengthRequirement(priority: AdaptationDoseRequirement['priority']): A
     };
 }
 
+/** Build the #802 neuromuscular-power requirement. The one-exposure target and two-exposure
+ * ceiling are product policy owned by `policy.evergreen.power_maintenance_exposure_v1`; the
+ * low-frequency direction is supported, with low certainty, by
+ * `performance.power.low_frequency_maintenance`. No floor: power is never a guideline
+ * minimum, and it is embedded in strength rather than adding a session. */
+function powerRequirement(priority: AdaptationDoseRequirement['priority']): AdaptationDoseRequirement {
+    const primaryClaimId = KNOWLEDGE_CLAIM_IDS.powerMaintenanceExposurePolicy;
+    return {
+        adaptation: 'neuromuscular_power', priority, delivery: 'embedded', floor: null,
+        target: { unit: 'sessions', minimum: 0, target: 1, maximum: 2 },
+        substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Strength'] },
+        knowledgeRefs: [primaryClaimId, KNOWLEDGE_CLAIM_IDS.lowFrequencyStrengthPowerMaintenance],
+        evidence: evidenceProvenance(primaryClaimId, 'product_heuristic', 'low'),
+    };
+}
+
+/** Why an otherwise-eligible power requirement is deliberately suspended, or null. */
+function powerWithheldReason(
+    goalOrEvent: GoalOrEventContext,
+    athleteState: AthleteTrainingState,
+): string | null {
+    const phaseName = goalOrEvent.phase?.phaseName;
+    if (goalOrEvent.isAdverseRecovery) return 'Power exposure is withheld during acute adverse recovery; it is not owed as catch-up work.';
+    if (goalOrEvent.hasCurrentClinicalSymptoms) return 'Power exposure is withheld while pain, injury, illness or red-flag symptoms are reported.';
+    if (phaseName === 'Peak/Taper') return 'Power exposure is deliberately suspended during peak/taper; freshness takes priority.';
+    if (phaseName === 'Post-Event Recovery') return 'Power exposure is deliberately suspended during post-event recovery.';
+    if (athleteState.inference.dataQuality !== 'high' || athleteState.trainingAgeProxy !== 'established') {
+        return 'Power exposure is withheld until sufficient, consistent recent training evidence establishes the athlete as trained.';
+    }
+    return null;
+}
+
 /** Resolves dose before capacity. The result makes no assumption about the athlete's
  * available minutes or declared session count; those constraints belong to
  * `trainingCapacity.ts`. */
@@ -366,6 +399,17 @@ export function resolveEvidenceBackedStrategy(
                         ? 'Performance-intensity work is withheld during post-event recovery.'
                         : 'Performance-intensity work is withheld until sufficient, consistent recent training evidence is available.',
         });
+    }
+
+    // Issue #802: a hybrid athlete who already carries a strength requirement and a
+    // performance priority gets a separate embedded power requirement. It never rides on the
+    // generic high-intensity prior above, so VO2/threshold work cannot satisfy it.
+    const strengthPlanned = requirements.some(requirement => requirement.adaptation === 'strength');
+    const powerCandidate = strengthPlanned && (performancePriority || priorities.has('balanced_performance'));
+    if (powerCandidate) {
+        const withheld = powerWithheldReason(goalOrEvent, athleteState);
+        if (withheld) warnings.push({ code: 'power_exposure_withheld', message: withheld });
+        else requirements.push(powerRequirement(priorities.has('speed_power') ? 'target' : 'optional'));
     }
     return { requirements, ...(canUseConditionalPrior ? { hardSessionCap } : {}), warnings };
 }

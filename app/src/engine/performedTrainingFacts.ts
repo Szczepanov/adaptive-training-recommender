@@ -13,6 +13,8 @@
 import type { SessionTemplate, EvidenceTier, NormalizedGarminActivity, CompletedTrainingEvent } from './models';
 import type { CoverageSetId, PlanCoverageKey, CoverageSetDescriptor } from '../workouts/event-plan';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
+import { grantsPowerExposureCredit } from '../workouts/powerExposure';
+import type { WorkoutVariant } from '../workouts/models';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { getTemplateIdsForWorkoutId, getUniqueTemplateIdForWorkoutId } from './workoutTemplateIndex';
 import type { PerformedTrainingOccurrence } from '../training-occurrence/models';
@@ -35,6 +37,9 @@ export interface PerformedExposureFact {
     evidenceTier: EvidenceTier;
     workoutId?: string;
     templateId?: string;
+    /** Exact catalog dose variant recovered from the recommendation that owns this execution.
+     * Missing means the performed dose variant is unknown and cannot prove power coverage. */
+    workoutVariantId?: WorkoutVariant['id'];
     /** True when the completed exposure used a readiness-limited (`modify`-tier) easier
      * dose. Preserved through canonical coverage history so a completed modify-tier walk
      * cannot claim exact weekly `aerobic_volume` role coverage. */
@@ -130,6 +135,7 @@ export interface HydratedOccurrenceContext {
         endedAt?: string;
         durationMin?: number;
         isLegacyStrength?: boolean;
+        workoutVariantId?: WorkoutVariant['id'];
         isReadinessModifiedDose?: boolean;
     };
     provider?: {
@@ -271,12 +277,26 @@ export function deriveFactsFromOccurrence(
         evidenceTier,
         ...(workoutId ? { workoutId } : {}),
         ...(templateId ? { templateId } : {}),
+        ...(hydrated.structured?.workoutVariantId ? { workoutVariantId: hydrated.structured.workoutVariantId } : {}),
         ...(hydrated.structured?.isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
     };
 
     const coverageCredits: CoverageCreditFact[] = [];
     if (workoutId && workoutId !== 'legacy_strength') {
-        const matchingItems = descriptor.coverage.filter(item => item.workoutIds.includes(workoutId));
+        const matchingItems = descriptor.coverage
+            .filter(item => item.workoutIds.includes(workoutId))
+            // Issue #802: completed power credit requires both exact workout identity and
+            // the exact materialized dose variant. Unknown variants fail closed; this avoids
+            // treating a return-to-training prescription as full power merely because the
+            // catalog workout family contains a power step.
+            .filter(item => item.key !== 'power_exposure' || (
+                hydrated.structured?.workoutVariantId !== undefined
+                && grantsPowerExposureCredit({
+                    workoutId,
+                    variant: hydrated.structured.workoutVariantId,
+                    isReadinessModifiedDose: hydrated.structured.isReadinessModifiedDose,
+                })
+            ));
         for (const item of matchingItems) {
             coverageCredits.push({
                 performedOccurrenceId: occurrence.performedOccurrenceId,

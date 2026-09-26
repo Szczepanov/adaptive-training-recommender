@@ -2,11 +2,11 @@
 
 | Field | Value |
 |---|---|
-| Status | Draft |
+| Status | In progress |
 | Date | 2026-09-26 |
-| Architecture decision | [ADR-0044 (Proposed)](../adr/0044-constraint-aware-requirement-fulfilment.md) |
+| Architecture decision | [ADR-0044 (Accepted)](../adr/0044-constraint-aware-requirement-fulfilment.md) |
 | Analysis | [2026-09-26 constraint-aware fulfilment](../analysis/2026-09-26-constraint-aware-training-fulfilment.md) |
-| Blocked by | ADR-0044 acceptance; canonical decisions in #801–#806 as noted per work package |
+| Blocked by | canonical decisions in #801–#806 as noted per work package (ADR-0044 accepted 2026-09-26) |
 | Unlocks | automatic generated doubles/microdoses; honest multi-stimulus constrained planning; richer #813 exposure readout |
 | Policy impact | Yes for every live selection/allocation work package |
 | Knowledge impact | Yes; ADR-0033 lineage required for all new constants/thresholds |
@@ -303,6 +303,12 @@ Acceptance scenarios:
 ### CF6 — Capability integration
 
 **Blocked by:** #802–#805 as each canonical model lands
+
+#802 (neuromuscular power) now has a canonical owner: `workouts/powerExposure.ts`
+(`POWER_QUALIFYING_IDENTITIES`, `grantsPowerExposureCredit`), the embedded evergreen
+`neuromuscular_power` requirement and the `power_exposure` exact coverage key. See
+`docs/architecture/recommendation-engine.md` for current behavior; the fulfilment layer
+consumes these outputs and must not re-derive them.
 
 Consume capability outputs; never rebuild their rules.
 
