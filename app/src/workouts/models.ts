@@ -241,7 +241,7 @@ export interface WorkoutVariant {
   compositionRelaxations?: Array<{ pattern: MovementCompositionPattern; reason: string }>;
 }
 
-export interface WorkoutCompositionRequirement extends MovementCompositionRequirementBase {}
+export type WorkoutCompositionRequirement = MovementCompositionRequirementBase;
 
 export type WorkoutParameterUnit =
   | 'minutes'
