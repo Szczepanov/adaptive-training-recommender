@@ -295,18 +295,17 @@ function packWeeklyDoseAttempt(
     const packed: MutableOccurrence[] = [];
     const shortfalls: PackingWarning[] = [];
     const structuralShortfallAdaptations = new Set<AdaptationKey>();
-    const sessionLimit = (requirement: AdaptationDoseRequirement) => {
-        const athleteRelativeAerobicRange = isAthleteRelativeEasyDose(requirement);
-        return requirement.priority === 'required'
-            ? athleteRelativeAerobicRange ? capacity.targetSessions : capacity.minSessions
-            : requirement.priority === 'target' ? capacity.targetSessions : capacity.maxSessions;
-    };
-
     const embeddedRequirements = strategy.requirements.filter(requirement => requirement.delivery === 'embedded');
     const requirements = strategy.requirements.filter(requirement => requirement.delivery !== 'embedded').sort((left, right) => {
         const rank = { required: 0, target: 1, optional: 2 } as const;
         return rank[left.priority] - rank[right.priority];
     });
+    const hasAthleteRelativeRequiredAerobicDose = requirements.some(requirement =>
+        requirement.priority === 'required' && isAthleteRelativeEasyDose(requirement));
+    const sessionLimit = (requirement: AdaptationDoseRequirement) =>
+        requirement.priority === 'required'
+            ? hasAthleteRelativeRequiredAerobicDose ? capacity.targetSessions : capacity.minSessions
+            : requirement.priority === 'target' ? capacity.targetSessions : capacity.maxSessions;
     // Easy-aerobic support minutes are tracked as their own intensity domain. Quality
     // sessions retain their canonical stimulus credit but are not exchanged for easy minutes.
 
@@ -375,15 +374,23 @@ function packWeeklyDoseAttempt(
         const demandByPeer = tierPeersRemaining.map(peer => sessionsNeededFor(peer));
         const currentDemand = demandByPeer[0] ?? 0;
         const totalDemand = demandByPeer.reduce((total, demand) => total + demand, 0);
-        const laterPeersNeedingCoverage = demandByPeer.slice(1).filter(demand => demand > 0).length;
+        const laterPeerDemand = demandByPeer.slice(1).filter(demand => demand > 0);
         const roomRemainingInTier = Math.max(0, sessionLimit(requirement) - packed.length);
-        // Do not bias a shared tier toward the first requirement merely because it is
-        // iterated first. Floor the proportional share (while preserving one slot when any
-        // room exists) so a later co-required adaptation can retain its proportional claim.
-        const proportionalShare = totalDemand > 0 && roomRemainingInTier > 0
-            ? Math.max(1, Math.floor(roomRemainingInTier * currentDemand / totalDemand))
+        const proportionalShare = totalDemand > 0
+            ? Math.ceil(roomRemainingInTier * currentDemand / totalDemand)
             : 0;
-        const reserveForLaterPeers = Math.min(laterPeersNeedingCoverage, Math.max(0, roomRemainingInTier - 1));
+        // The historical min-session path reserves one occurrence per later peer. When an
+        // athlete-relative aerobic requirement intentionally expands the required tier into
+        // target-session capacity, preserve the full remaining feasible demand of later
+        // co-required adaptations instead. Extra aerobic dose may consume target capacity,
+        // but it must not silently spend the two-session strength floor that the same
+        // strategy declares required.
+        const reserveForLaterPeers = Math.min(
+            hasAthleteRelativeRequiredAerobicDose && requirement.priority === 'required'
+                ? laterPeerDemand.reduce((total, demand) => total + demand, 0)
+                : laterPeerDemand.length,
+            Math.max(0, roomRemainingInTier - 1),
+        );
         const maxWithoutStarvingLaterPeers = Math.max(0, roomRemainingInTier - reserveForLaterPeers);
         const requirementSessionBudget = Math.min(currentDemand, proportionalShare, maxWithoutStarvingLaterPeers);
         const allowedSessions = packed.length + requirementSessionBudget;
