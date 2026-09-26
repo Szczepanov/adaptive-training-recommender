@@ -76,6 +76,11 @@ const LONG_AEROBIC_ROLE_BY_MODALITY = {
     Swimming: { workoutId: 'swimming_easy_aerobic_01', templateId: 'swim_easy_01' },
 } as const;
 
+export function executableLongAerobicCeilingForWorkout(workoutId: string): number | undefined {
+    const role = Object.values(LONG_AEROBIC_ROLE_BY_MODALITY).find(candidate => candidate.workoutId === workoutId);
+    return role ? ENRICHED_TEMPLATES_BY_ID.get(role.templateId)?.durationMax : undefined;
+}
+
 /**
  * Resolve a low-intensity weekly dose from four fixed, completed seven-day bins.
  * Availability and readiness are intentionally absent: neither can increase an
@@ -152,7 +157,7 @@ export function resolveWeeklyAerobicDoseEnvelope(input: WeeklyAerobicDoseInput):
     // decision. Cap here at that executable ceiling rather than the detailed workout's
     // harder-dose maximum; otherwise packing can claim a 90-minute role that allocation
     // cannot actually prescribe.
-    const anchorMaximum = anchorRole ? ENRICHED_TEMPLATES_BY_ID.get(anchorRole.templateId)?.durationMax : undefined;
+    const anchorMaximum = anchorWorkoutId ? executableLongAerobicCeilingForWorkout(anchorWorkoutId) : undefined;
     const typicalSessionMinutes = anchorMaximum && modalitySessions.length > 0
         ? Math.min(anchorMaximum, median(modalitySessions))
         : null;
