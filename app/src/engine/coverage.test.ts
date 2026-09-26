@@ -423,6 +423,14 @@ describe('athlete-relative aerobic_volume floor (#757)', () => {
             date: '2026-09-02',
             templateId: 'end_easy_02',
             workoutId: 'running_easy_continuous_01',
+            durationMin: 60,
+            durationMax: 90,
+            source: 'completed',
+        }).completedSessions).toBe(0);
+        expect(runAerobic({
+            date: '2026-09-02',
+            templateId: 'end_easy_02',
+            workoutId: 'running_easy_continuous_01',
             durationMin: 70,
             source: 'completed',
         }).completedSessions).toBe(1);
