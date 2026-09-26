@@ -94,7 +94,44 @@ Before completion, run `make verify`.
 
 This separation keeps iteration fast without letting an agent redefine "done" per task.
 
-## 3. Coding-agent evaluations
+## 3. Delegation and context economy
+
+Subagents are useful when work is genuinely separable, but every delegated agent has its own
+reasoning/context budget and can duplicate repository discovery. For a single cohesive GitHub issue,
+the default workflow is therefore:
+
+1. the primary agent owns issue intake, repository discovery, planning, implementation and
+   deterministic verification;
+2. after implementation, at most one general read-only reviewer starts from the acceptance
+   criteria and diff;
+3. add a specialist reviewer only for a distinct risk domain (for example auth/secrets/Firestore
+   security), not to repeat the same architecture review;
+4. do not create a separate validator merely to rerun deterministic commands that the primary
+   agent can execute and report directly.
+
+A delegated reviewer must be **diff-first**. Give it the issue acceptance criteria, implementation
+summary, changed-file list and diff. It should read surrounding code only to answer concrete review
+questions and must not independently reconstruct the whole repository architecture.
+
+The same economy applies to semantic navigation:
+
+- prefer one Serena discovery pass by the primary agent for a cohesive issue;
+- once target symbols and relevant callers are known, read them directly rather than repeatedly
+  rediscovering them;
+- do not have multiple agents independently rebuild the same call graph;
+- if Serena is still initializing, treat that as transient and retry after minimum fallback work;
+- roughly 10–15 semantic calls without meaningful narrowing is a **soft tripwire** to reassess the
+  retrieval strategy, not a hard limit.
+
+Client-specific concurrency, model choice, reasoning effort, MCP output limits and lifecycle hooks
+remain developer-local settings. Use them to enforce a smaller delegation budget when the client
+supports it, but do not commit personal MCP configuration or credentials to this repository.
+
+Current OpenAI multi-agent guidance also treats concurrency as an explicit budget and recommends
+tuning when the root model should delegate:
+<https://developers.openai.com/api/docs/guides/responses-multi-agent>.
+
+## 4. Coding-agent evaluations
 
 Product recommendation evaluation (simulation, plan judge, persona judge) and **coding-agent
 evaluation** answer different questions and must remain separate.
