@@ -7,8 +7,14 @@ import { liveSizedWeek } from './weeklyAllocationPlanner.fixtures';
  * `npm run test:perf` with a single worker.
  */
 describe('7A.3 operational latency budget', () => {
-    it('meets the p95 <=100 ms / p99 <=150 ms gate on the live-sized fixture', () => {
-        const fixture = liveSizedWeek();
+    it.each([
+        ['the live-sized fixture', undefined, 0],
+        // Issue #801: a build week with one support role exercises the second placement pass.
+        ['a build week with a strength support role', '2026-08-01', 1],
+    ] as const)('meets the p95 <=100 ms / p99 <=150 ms gate on %s', (_label, today, supportSessions) => {
+        const fixture = liveSizedWeek(today, supportSessions);
+        expect(fixture.run().allocationReport.outcomes.some(item => item.occurrence.reservationTier === 'support'))
+            .toBe(supportSessions > 0);
         fixture.run(); // warm the module-level catalogue caches
 
         // ADR-0018's budget describes one plan generation, not a machine running eight

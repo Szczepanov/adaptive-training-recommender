@@ -212,12 +212,15 @@ occurrences keep every original rule.
 * **D-RESERVE.** Reservation is two-pass. Pass 1 is the original maximum-cardinality search
   over primary occurrences only, so primary outcomes are identical to a week without support
   occurrences. Pass 2 places support occurrences only on dates pass 1 left free, never on a
-  date nominated to a primary occurrence or on the weekly quality/event-specific anchor dates,
-  with every primary reservation held fixed; a support pick that would invalidate a later
-  primary reservation is inadmissible.
+  date nominated to a primary occurrence or on a weekly quality/event-specific anchor date
+  while that anchor's role is still pending, with every primary reservation held fixed; a
+  support pick that would invalidate a later primary reservation is inadmissible.
 * **D-BOUND.** Each pass uses the same `WeeklyAllocationSearchBudget`. Exhaustion in the
   support pass is reported only on support outcomes and never marks the primary allocation
-  unresolved.
+  unresolved. Pass 2's check that fixed later primary reservations survive a support pick
+  evaluates outside the transition count; it is bounded by (support templates x later primary
+  reservations) per evaluated date and is covered by the live-sized latency gate with a
+  support role present.
 * **D-SUPPORT.** Preservation compares allocations by primary occurrences first and total
   occurrences second (`allocationValuePreserved`). A pick that keeps the count by trading a
   primary occurrence for a support occurrence is degradation.

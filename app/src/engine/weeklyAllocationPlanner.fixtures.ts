@@ -67,17 +67,20 @@ export const readiness = {
     },
 };
 
-export function liveSizedWeek() {
+/** `today`/`strengthSupportSessions` default to the original fixture; issue #801 uses a
+ * build-block date with one support role to put the support pass under the latency gate. */
+export function liveSizedWeek(today: string = TODAY, strengthSupportSessions: number = 0) {
+    const TODAY_DATE = today;
     const focusEvent = event();
-    const periodization = evaluatePeriodizationPhase([focusEvent], TODAY);
-    const planState = buildCyclingEventPlan(focusEvent);
+    const periodization = evaluatePeriodizationPhase([focusEvent], TODAY_DATE);
+    const planState = buildCyclingEventPlan(focusEvent, [], strengthSupportSessions);
     if (planState.status !== 'AVAILABLE') throw new Error('event plan unavailable');
     const raceSpecific = ENRICHED_TEMPLATES.find(item => item.category === 'Race-Specific Endurance' && item.modality === 'Cycling');
     const recovery = ENRICHED_TEMPLATES.find(item => item.category === 'Mobility/Recovery');
     if (!recovery || !raceSpecific?.stimulusProfile) throw new Error('required templates missing');
 
     let microcycle = generateWeeklyObjectives(
-        periodization.phase, addDaysToLocalDateString(TODAY, -7), focusEvent, planState.data, TODAY,
+        periodization.phase, addDaysToLocalDateString(TODAY_DATE, -7), focusEvent, planState.data, TODAY_DATE,
     );
     microcycle = creditObjectivesFromStimulus(microcycle, raceSpecific.stimulusProfile, raceSpecific.modality, raceSpecific.category);
 
@@ -85,9 +88,9 @@ export function liveSizedWeek() {
     return {
         focusEvent, periodization, microcycle, todayRec,
         run: () => generateWeekAheadPlan(
-            readiness, context(), preferences, TODAY, todayRec, null,
-            { microcycle, fatigue: createEmptyFatigue(TODAY), trailingHistory: [] },
-            { days: 7, events: [focusEvent] },
+            readiness, context(), preferences, TODAY_DATE, todayRec, null,
+            { microcycle, fatigue: createEmptyFatigue(TODAY_DATE), trailingHistory: [] },
+            { days: 7, events: [focusEvent], eventStrengthSupportSessions: strengthSupportSessions },
         ),
     };
 }

@@ -647,16 +647,35 @@ export function resolveWeeklyRoleReservations(
         nominatedDates: new Map([...nominated].filter(([id]) => support.some(occurrence => occurrence.id === id))),
     });
 
-    const primaryDatesBlockedSupport = primaryDates.size > 0 && evaluator.forecastDates.length > usableForSupport.length;
+    // Primaries "cost" a support occurrence a date only if it was admissible there on its own
+    // (root state); a date removed by pass 1 that the support could never use proves nothing.
+    const removedDates = evaluator.forecastDates.filter(date => primaryDates.has(date) && !(options.unavailableDates?.has(date)));
+    const rootOutcomes = new Map(removedDates.map(date => [date, evaluator.evaluate([], date)] as const));
+    const primariesCostDate = (occurrence: RequiredRoleOccurrence) => removedDates.some(date =>
+        occurrence.eligibleTemplateIds.some(templateId => rootOutcomes.get(date)?.acceptedTemplateIds.includes(templateId)));
+    /** When pass 1 left no usable date, the gates on the removed dates are the real reason. */
+    const removedDateGateReason = (occurrence: RequiredRoleOccurrence) => weeklyRoleMissReasonForBlockers(
+        removedDates.flatMap(date => occurrence.eligibleTemplateIds.flatMap(templateId => {
+            const outcome = rootOutcomes.get(date);
+            if (!outcome) return [];
+            return outcome.fatigueExcludedTemplateIds.includes(templateId)
+                ? [PROJECTED_FATIGUE_CEILING_BLOCKER]
+                : [...(outcome.exclusionReasons.get(templateId) ?? [])];
+        })),
+    );
     const supportOutcomes = supportResult.outcomes.map((outcome): WeeklyRoleAllocationOutcome => {
         if (outcome.status !== 'missed' || outcome.occurrence.eligibleTemplateIds.length === 0) return outcome;
-        // A genuine gate (fatigue, safety, ledger, rolling load) keeps its own reason; only a
-        // miss caused by the primary allocation itself is reported as subordinate.
-        const heldOffByPrimary = primaryDatesBlockedSupport
+        // A genuine gate (time, equipment, fatigue, safety, ledger, rolling load) keeps its own
+        // reason; only a miss the primary allocation actually caused is reported as subordinate.
+        const heldOffByPrimary = primariesCostDate(outcome.occurrence)
             || (outcome.observedBlockers ?? []).some(blocker => blocker.endsWith(SUPPORT_SUBORDINATE_BLOCKER));
-        const subordinate = outcome.reason === 'no_conflict_free_date'
-            || (outcome.reason === 'no_exact_candidate' && heldOffByPrimary);
-        return subordinate ? { ...outcome, reason: 'subordinate_to_required_roles' } : outcome;
+        if (outcome.reason === 'no_conflict_free_date' || (outcome.reason === 'no_exact_candidate' && heldOffByPrimary)) {
+            return { ...outcome, reason: 'subordinate_to_required_roles' };
+        }
+        const gateReason = outcome.reason === 'no_exact_candidate' && usableForSupport.length === 0
+            ? removedDateGateReason(outcome.occurrence)
+            : null;
+        return gateReason ? { ...outcome, reason: gateReason } : outcome;
     });
 
     const reservationsByDate = new Map(primaryResult.reservationsByDate);

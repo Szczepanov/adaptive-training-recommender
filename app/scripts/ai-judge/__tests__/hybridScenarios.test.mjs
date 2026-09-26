@@ -306,24 +306,29 @@ describe('cycling hybrid targeted evaluation', () => {
 
   it('preserves two distinct weekly resistance exposures in the cycling event build without losing cycling anchors', async () => {
     const build = await resultFor(find('event_build'));
-    const strengthDates = (weekIndex) => new Set(build.decisionTraces
-      .filter((trace) => trace.weekIndex === weekIndex && trace.selected.modality === 'Strength')
-      .map(({ date }) => date));
-    // Two distinct resistance days in at least one build week, one of them the compact support identity.
-    expect(Math.max(strengthDates(0).size, strengthDates(1).size)).toBeGreaterThanOrEqual(2);
-    expect(build.decisionTraces.some((trace) => trace.selected.templateId === 'str_power_01')).toBe(true);
-    // Primary cycling roles are never traded away for support work.
+    const keysFor = (trace) => coverageKeysForTemplate(
+      ENRICHED_TEMPLATES.find(({ id }) => id === trace.selected.templateId), 'build');
+    const strengthDays = (weekIndex) => build.decisionTraces
+      .filter((trace) => trace.weekIndex === weekIndex && trace.selected.modality === 'Strength');
+
+    // Week 1 (still block_build): one exact primary-strength day and one exact compact support
+    // day, on distinct dates. The support day is the seeded tomorrow pick (09-08), so it is
+    // discharged before the weekly allocation report is built.
+    const weekOne = strengthDays(1);
+    expect(new Set(weekOne.map(({ date }) => date)).size).toBe(2);
+    expect(weekOne.filter((trace) => keysFor(trace).includes('primary_strength'))).toHaveLength(1);
+    expect(weekOne.filter((trace) => keysFor(trace).includes('compact_strength')
+      && !keysFor(trace).includes('primary_strength'))).toHaveLength(1);
+
+    // Week 0: the primary-only pass places quality exactly as main does, which leaves no
+    // admissible support date; the deferral is typed, never silent or unresolved, and the
+    // cycling anchors are untouched.
+    expect(weekOutcome(build, 0, 'compact_strength')).toMatchObject({ status: 'missed', reason: 'subordinate_to_required_roles' });
     for (const key of ['sustained_quality', 'outdoor_event_specific']) {
       expect(weekOutcome(build, 0, key)?.status).toBe('fulfilled');
     }
-    // A week that cannot fit the support role says why; it is never silently dropped or unresolved.
-    const support = build.allocationReports.flatMap(({ report }) => report.outcomes)
-      .filter((item) => item.occurrence.coverageKey === 'compact_strength');
-    expect(support.length).toBeGreaterThan(0);
-    for (const item of support.filter(({ status }) => status === 'missed')) {
-      expect(item.reason).toEqual(expect.any(String));
-    }
-    expect(support.some(({ status }) => status === 'unresolved_search_budget')).toBe(false);
+    expect(build.allocationReports.flatMap(({ report }) => report.outcomes)
+      .some((item) => item.status === 'unresolved_search_budget')).toBe(false);
   });
 
   it('defers the support exposure under adverse recovery and carries none into taper', async () => {

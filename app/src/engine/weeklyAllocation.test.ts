@@ -479,6 +479,28 @@ describe('issue #801 two-pass support placement (review regressions)', () => {
         });
     });
 
+    it('keeps the real gate reason when a time cap, not the primary roles, blocks support', () => {
+        const quality = occurrence('sustained_quality', 0, ['end_hard_02']);
+        const timeCapped = { 'str_power_01': ['NOT_ELIGIBLE_ON_DATE'], 'str_full_02': ['NOT_ELIGIBLE_ON_DATE'] };
+        const result = resolveWeeklyRoleReservations([support, quality], stubEvaluator({
+            acceptedByDate: { '2026-08-11': ['end_hard_02'], '2026-08-12': [] },
+            exclusionReasons: { '2026-08-11': timeCapped, '2026-08-12': timeCapped },
+        }, ['2026-08-11', '2026-08-12']));
+        expect(result.reservationsByDate.get('2026-08-11')?.occurrence.id).toBe(quality.id);
+        const supportOutcome = result.outcomes.find(item => item.occurrence.id === support.id);
+        expect(supportOutcome?.status).toBe('missed');
+        expect(supportOutcome?.reason).not.toBe('subordinate_to_required_roles');
+    });
+
+    it('reports the removed-date gate when primaries leave no usable date and support could not run there anyway', () => {
+        const quality = occurrence('sustained_quality', 0, ['end_hard_02']);
+        const result = resolveWeeklyRoleReservations([support, quality], stubEvaluator({
+            acceptedByDate: { '2026-08-11': ['end_hard_02'] },
+            fatigueExcluded: { '2026-08-11': ['str_power_01', 'str_full_02'] },
+        }, ['2026-08-11']));
+        expect(result.outcomes.find(item => item.occurrence.id === support.id)).toMatchObject({ status: 'missed', reason: 'projected_fatigue' });
+    });
+
     it('does not let an unresolved support outcome mark the primary allocation unresolved', () => {
         const unresolvedSupport = {
             occurrence: support, status: 'unresolved_search_budget' as const,

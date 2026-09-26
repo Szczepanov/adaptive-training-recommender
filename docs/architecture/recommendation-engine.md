@@ -1340,11 +1340,13 @@ requirement has `reservationTier: 'support'` is still reserved from its coverage
 `resolveWeeklyRoleReservations` runs two passes. Pass 1 is the unchanged maximum-cardinality
 search over primary (untiered) occurrences only, so primary outcomes are identical to a week
 without support roles. Pass 2 places support occurrences only on dates pass 1 left free,
-excluding dates nominated to a primary occurrence and the weekly quality/event-specific anchor
-dates (`supportExcludedDates`), with every primary reservation held fixed in the projected
+excluding dates nominated to a primary occurrence and a weekly quality/event-specific anchor
+date while that anchor's role is still pending (`supportExcludedDates`), with every primary
+reservation held fixed in the projected
 state; a support pick that would invalidate a later primary reservation is inadmissible. A
-support miss caused only by the primary allocation is `subordinate_to_required_roles`;
-otherwise it keeps the ordinary typed reason (for example `projected_fatigue`). Support-pass
+support miss is `subordinate_to_required_roles` only when the primary allocation actually cost
+it an admissible date; a time, equipment, fatigue or safety gate keeps its own typed reason
+(for example `no_exact_candidate` under a 20-minute cap, or `projected_fatigue`). Support-pass
 budget exhaustion shows only on support outcomes: `primaryAllocationUnresolved` ignores it, so
 a support role can never disable preservation proofs for primary roles. Greedy-selection
 preservation uses `allocationValuePreserved` (no fewer primary occurrences, then no fewer

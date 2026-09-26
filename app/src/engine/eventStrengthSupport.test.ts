@@ -159,8 +159,8 @@ describe('cycling build strength support in the weekly allocator (#801)', () => 
             ctx.constraints.maxTimeMinutes = 20;
         };
         const support = outcome(week(1, capped), 'compact_strength');
-        expect(support?.status).toBe('missed');
-        expect(support?.reason).toEqual(expect.any(String));
+        // Nothing fits a 20-minute cap: the time gate is the reason, not the primary roles.
+        expect(support).toMatchObject({ status: 'missed', reason: 'no_exact_candidate' });
     });
 
     it('ranks an unmet support role as deferred support in today\'s pick, never as urgent as a primary role', () => {
