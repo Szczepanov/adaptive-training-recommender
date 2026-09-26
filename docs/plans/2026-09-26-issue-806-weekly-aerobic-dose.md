@@ -20,10 +20,11 @@ The existing #757 single-session `aerobic_volume` coverage floor remains a separ
 
 1. `weeklyAerobicDose.ts`: use four fixed seven-day bins from the 28-day snapshot. Require
    established training and activity in at least three bins; otherwise use the adult-health
-   150/150/300 minute floor/target/upper range. For supported history use a 150-minute minimum
-   floor and historical quartiles/median for maintenance or development. Do not use availability
-   to raise the dose. Done when fixed-window tests cover sparse history, maintenance, development
-   and the no-free-time-increase property.
+   150/150/300 minute floor/target/upper range. For supported history, activate athlete-relative
+   easy-volume semantics only when the selected historical maintenance/development target exceeds
+   150 minutes/week; otherwise retain the guideline fallback and its broad aerobic equivalence.
+   Do not use availability to raise the dose. Done when fixed-window tests cover sparse history,
+   sub-guideline complete history, maintenance, development and the no-free-time-increase property.
 2. `evergreenPlanning.ts` and `evergreenStrategy.ts`: derive the envelope from already available
    history; limit its relative accounting to easy aerobic activity in the dominant evidenced
    modality. Do not equate intensity zones. Done when strategy requirements and claim references
@@ -31,7 +32,9 @@ The existing #757 single-session `aerobic_volume` coverage floor remains a separ
 3. `weeklyDosePacking.ts`, `coverage.ts`, `weeklyAllocation.ts`, `planSchedule.ts` and
    `workouts/event-plan.ts`: let actually packed quality-session minutes contribute to the
    general-health fallback only, and add a conditional exact `long_aerobic_anchor` requirement
-   that one matching session must meet. Report typed shortfall if it cannot be packed.
+   that one matching session must meet. Cap that anchor at the standard engine-template dose the
+   allocator can materialize, and reserve it only on a date whose resolved window can fit the
+   duration. Report typed shortfall if it cannot be packed.
 4. Register and align the policy in `stimulusHeuristicsKnowledge.ts` and
    `knowledgeCoverage.ts`; bump `POLICY_VERSION` and include the old version in history.
 5. Update ADR-0044, `recommendation-engine.md`, and this status board entry.
@@ -52,8 +55,10 @@ The existing #757 single-session `aerobic_volume` coverage floor remains a separ
 - [x] Relative volume counts only the dominant modality's easy aerobic work; no intensity
   equivalence is inferred.
 - [x] Fallback follows the 150/150/300 adult-health range and counts packed quality duration
-  only after packing.
-- [x] Long anchor is one exact session, is bounded by catalog capacity, and has typed shortfall.
+  only after packing; complete sub-guideline easy history does not relabel 150 minutes as an
+  athlete-specific primary-modality easy-volume floor.
+- [x] Long anchor is one exact session, is bounded by allocator-executable template capacity,
+  can reserve only a date that fits its duration, and has typed shortfall.
 - [x] Repository, deterministic simulation and independent review gates complete; the
   deterministic persona corpus was generated.
 - [ ] Persona score diff requires the local Ollama service, which was unavailable in this run.
