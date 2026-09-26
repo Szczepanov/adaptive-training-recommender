@@ -272,6 +272,7 @@ describe('performedTrainingFacts', () => {
                     templateId: 'str_full_01',
                     modality: 'Strength',
                     durationMin: 45,
+                    workoutVariantId: 'full',
                 },
                 provider: {
                     activityId: 'act-1',
@@ -287,6 +288,7 @@ describe('performedTrainingFacts', () => {
             expect(exposure.category).toBe('Full-body Strength');
             expect(exposure.workoutId).toBe('strength_full_body_maintenance_01');
             expect(exposure.templateId).toBe('str_full_01');
+            expect(exposure.workoutVariantId).toBe('full');
             expect(exposure.confidence).toBe('exact');
             expect(exposure.sourceKinds).toEqual(['structured_execution', 'provider_activity']);
             expect(exposure.durationMin).toBe(45);
@@ -307,10 +309,38 @@ describe('performedTrainingFacts', () => {
                     templateId: 'str_full_01',
                     modality: 'Strength',
                     durationMin: 18,
+                    workoutVariantId: 'reduced',
                     isReadinessModifiedDose: true,
                 },
             });
             expect(coverageCredits.map(credit => credit.coverageKey)).toEqual(['primary_strength']);
+        });
+
+        it('denies embedded power credit to return-to-training and unknown performed variants (#802)', () => {
+            const occurrence = mockOccurrence({
+                sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-return' }],
+            });
+            const returned = deriveFactsFromOccurrence(occurrence, {
+                structured: {
+                    executionId: 'exec-return',
+                    workoutId: 'strength_full_body_maintenance_01',
+                    templateId: 'str_full_01',
+                    modality: 'Strength',
+                    durationMin: 20,
+                    workoutVariantId: 'return_to_training',
+                },
+            });
+            const unknown = deriveFactsFromOccurrence(occurrence, {
+                structured: {
+                    executionId: 'exec-return',
+                    workoutId: 'strength_full_body_maintenance_01',
+                    templateId: 'str_full_01',
+                    modality: 'Strength',
+                    durationMin: 20,
+                },
+            });
+            expect(returned.coverageCredits.map(credit => credit.coverageKey)).toEqual(['primary_strength']);
+            expect(unknown.coverageCredits.map(credit => credit.coverageKey)).toEqual(['primary_strength']);
         });
 
         it('derives a safe shared category from workout identity without inventing a shared template id', () => {

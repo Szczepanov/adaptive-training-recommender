@@ -7,6 +7,7 @@
 import type { SessionTemplate, NormalizedGarminActivity, DailyRecommendation } from '../engine/models';
 import type { SessionExecution } from '../sessions/models';
 import type { CoverageSetDescriptor } from '../workouts/event-plan';
+import type { WorkoutVariant } from '../workouts/models';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import {
@@ -35,6 +36,19 @@ export interface GetPerformedTrainingFactsOptions {
     preloadedActivities?: readonly NormalizedGarminActivity[];
 }
 
+/** True only when this persisted recommendation owns the structured execution. Modern
+ * records bind by prescription hash; the template fallback preserves pre-binding history. */
+function recommendationOwnsExecution(
+    execution: SessionExecution,
+    templateId: string | undefined,
+    recommendation: DailyRecommendation | undefined,
+): boolean {
+    if (!recommendation) return false;
+    const boundHash = recommendation.primarySession?.prescriptionHash;
+    if (boundHash && execution.prescriptionHash) return boundHash === execution.prescriptionHash;
+    return templateId !== undefined && templateId === recommendation.templateId;
+}
+
 /**
  * A structured execution carries no dose/readiness field of its own, so the modify-tier
  * marker is recovered from the persisted daily recommendation it executed: a modify-tier
@@ -52,9 +66,22 @@ function isReadinessModifiedExecution(
     if (!recommendation || recommendation.mode !== 'modify') return false;
     const adjustment = recommendation.adjustment;
     if (!adjustment || adjustment.direction !== 'easier' || adjustment.tier !== 1) return false;
-    const boundHash = recommendation.primarySession?.prescriptionHash;
-    if (boundHash && execution.prescriptionHash) return boundHash === execution.prescriptionHash;
-    return templateId !== undefined && templateId === recommendation.templateId;
+    return recommendationOwnsExecution(execution, templateId, recommendation);
+}
+
+/** Recover the exact catalog variant from the persisted recommendation that owns the
+ * execution. Power coverage needs this stricter fact because `return_to_training` may
+ * remove (or intentionally underdose) the power content even when the workout id is the
+ * same. Unknown ownership/legacy records fail closed later instead of guessing `full`. */
+function workoutVariantForExecution(
+    execution: SessionExecution,
+    templateId: string | undefined,
+    recommendation: DailyRecommendation | undefined,
+): WorkoutVariant['id'] | undefined {
+    if (!recommendationOwnsExecution(execution, templateId, recommendation)) return undefined;
+    const prescription = recommendation?.prescription;
+    if (!prescription || execution.sessionSource.kind !== 'catalog') return undefined;
+    return prescription.workoutId === execution.sessionSource.workoutId ? prescription.variantId : undefined;
 }
 
 /**
@@ -160,6 +187,9 @@ export async function getPerformedTrainingFactsInRange(
                     ? Math.max(0, Math.round((Date.parse(execution.completedAt) - Date.parse(execution.startedAt)) / 60000))
                     : undefined;
 
+                const recommendation = recommendationsByDate.get(execution.date);
+                const workoutVariantId = workoutVariantForExecution(execution, templateId, recommendation);
+
                 hydrated.structured = {
                     executionId: execution.executionId,
                     ...(workoutId ? { workoutId } : {}),
@@ -170,7 +200,8 @@ export async function getPerformedTrainingFactsInRange(
                     ...(execution.completedAt ? { endedAt: execution.completedAt } : {}),
                     ...(durationMin !== undefined ? { durationMin } : {}),
                     isLegacyStrength,
-                    ...(isReadinessModifiedExecution(execution, templateId, recommendationsByDate.get(execution.date))
+                    ...(workoutVariantId ? { workoutVariantId } : {}),
+                    ...(isReadinessModifiedExecution(execution, templateId, recommendation)
                         ? { isReadinessModifiedDose: true }
                         : {}),
                 };

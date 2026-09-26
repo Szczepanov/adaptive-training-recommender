@@ -49,9 +49,10 @@ export function powerIdentityFor(workoutId: string | undefined): PowerQualifying
 export interface PowerExposureEvidence {
   workoutId?: string;
   isReadinessModifiedDose?: boolean;
-  /** Materialized dose variant, when known. No planning/coverage caller has it today (they
-   * pass `isReadinessModifiedDose` instead); the `full`/`reduced` contract is otherwise
-   * enforced by `validatePowerQualifyingIdentities`. */
+  /** Materialized dose variant, when known. Planning/template callers may omit it and rely
+   * on their authored identity plus readiness marker; canonical performed-fact credit
+   * supplies it and fails closed when it cannot recover the executed variant. The
+   * `full`/`reduced` catalog contract is also enforced by `validatePowerQualifyingIdentities`. */
   variant?: PowerDoseVariant;
 }
 

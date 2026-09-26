@@ -75,6 +75,7 @@ export function buildPlanDefinition(
   sequencingRules: SequencingRule[] = [],
   id: string = `plan_${event.id}`,
   coverageSetId: CoverageSetId = SEPTEMBER_CYCLING_EVENT_COVERAGE_SET.id,
+  coverageRequirements: PlanCoverageRequirementDefinition[] = [],
 ): DataState<PlanDefinition> {
   const issues: DataIssue[] = [];
 
@@ -136,12 +137,46 @@ export function buildPlanDefinition(
     }
   }
 
+  for (const requirement of coverageRequirements) {
+    const block = blockSchedule.find((item) => item.id === requirement.blockId);
+    if (!block) {
+      issues.push({
+        code: 'DANGLING_BLOCK_ID',
+        field: `coverageRequirements.${requirement.coverageKey}`,
+        documentPath: `plan/${id}`,
+      });
+    }
+    const coverageItem = coverageByKey.get(requirement.coverageKey);
+    if (!coverageItem) {
+      issues.push({
+        code: 'UNKNOWN_COVERAGE_KEY',
+        field: `coverageRequirements.${requirement.coverageKey}`,
+        documentPath: `plan/${id}`,
+      });
+    } else if (block && !coverageItem.phases.includes(block.phase)) {
+      issues.push({
+        code: 'COVERAGE_UNAVAILABLE_IN_BLOCK_PHASE',
+        field: `coverageRequirements.${requirement.coverageKey}`,
+        documentPath: `plan/${id}`,
+      });
+    }
+    if (requirement.minimumSessions < 0) {
+      issues.push({ code: 'INVALID_COVERAGE_MINIMUM', field: `coverageRequirements.${requirement.coverageKey}`, documentPath: `plan/${id}` });
+    }
+    if (requirement.targetSessions < requirement.minimumSessions) {
+      issues.push({ code: 'COVERAGE_TARGET_BELOW_MINIMUM', field: `coverageRequirements.${requirement.coverageKey}`, documentPath: `plan/${id}` });
+    }
+  }
+
   if (issues.length > 0) return { status: 'INVALID', issues };
 
   return {
     status: 'AVAILABLE',
     revision: null,
-    data: { id, eventId: event.id, coverageSetId, blocks: blockSchedule, objectives, sequencingRules },
+    data: {
+      id, eventId: event.id, coverageSetId, blocks: blockSchedule, objectives, sequencingRules,
+      ...(coverageRequirements.length > 0 ? { coverageRequirements } : {}),
+    },
   };
 }
 
@@ -361,9 +396,9 @@ export function buildEvergreenPlanDefinition(
     [],
     'plan_evergreen_general',
     EVERGREEN_GENERAL_COVERAGE_SET.id,
+    coverageRequirements,
   );
-  if (result.status !== 'AVAILABLE' || coverageRequirements.length === 0) return result;
-  return { ...result, data: { ...result.data, coverageRequirements } };
+  return result;
 }
 
 /** Every scheduled cycling event receives the richer authored plan, relative to its own

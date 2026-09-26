@@ -286,9 +286,10 @@ read-only ledgers (`contextBriefExposureLedger.ts` `deriveExposureLedger` /
   hard modality exclusions — the same sources section 1 prints) and `overdue`, which is
   never emitted because no authoritative cadence/max-gap policy exists yet. Neuromuscular
   power (#802) consumes its canonical owner, `workouts/powerExposure.ts`
-  `grantsPowerExposureCredit`: only a canonical performed fact with an exact power identity
-  at a non-readiness-modified dose confirms it (Garmin records and imported-plan titles
-  cannot prove power content), and an active impact guardrail adds a note that plyometric
+  `grantsPowerExposureCredit`: only a canonical performed fact with an exact power identity,
+  a recoverable materialized `full`/`reduced` variant, and a non-readiness-modified dose
+  confirms it. Unknown/legacy variants fail closed rather than being guessed as `full`
+  (Garmin records and imported-plan titles cannot prove power content), and an active impact guardrail adds a note that plyometric
   power is suspended while non-impact identities remain eligible. Families still without a
   canonical model (unilateral #803, impact/jump #804, COD #805, long aerobic anchor #806,
   hamstring/calf/grip) are `unknown` and are to be switched to those models' outputs as
@@ -436,7 +437,9 @@ flagged `impact`) and the variants that keep their power steps (`full`, `reduced
 coverage ledger therefore credits one power-clean strength session to both
 `primary_strength` and `power_exposure` as one occurrence, denies `power_exposure` to
 readiness-modified doses in both `coverageKeysForExposure` and the canonical performed-fact
-path, and never credits threshold/VO2 work or generic strength. `power_exposure` is
+path, and requires the canonical performed-fact path to recover the exact materialized
+`full`/`reduced` variant before crediting completed power. It never credits threshold/VO2
+work, generic strength, `return_to_training`, or an unknown performed variant. `power_exposure` is
 excluded from `coverageNeedTierForTemplate`, so an unmet power target never promotes a
 standalone power or lower-body session as catch-up work; it does not relax eligibility
 either, so an impact guardrail still blocks plyometrics and the power gap is reported. Policy is

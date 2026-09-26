@@ -3,7 +3,7 @@ import type { CompletedExposure } from './trainingHistory';
 import { inferAthleteTrainingState, resolveEvidenceBackedStrategy, type AthleteTrainingState } from './evergreenStrategy';
 import { EVERGREEN_PACKING_COVERAGE, packWeeklyDose, type CoverageSetDescriptor } from './weeklyDosePacking';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
-import { buildEvergreenPlanDefinition } from './planSchedule';
+import { buildEvergreenPlanDefinition, buildPlanDefinition } from './planSchedule';
 import { buildCoverageState, coverageKeysForTemplate, coverageNeedTierForTemplate, getUnfulfilledTargetCoverage } from './coverage';
 import { generateWeeklyObjectives } from './microcycle';
 import { evaluatePeriodizationPhase } from './periodization';
@@ -150,6 +150,24 @@ describe('embedded power packing (#802)', () => {
         expect(budget.shortfalls).toContainEqual(expect.objectContaining({ code: 'embedded_host_unavailable', adaptation: 'neuromuscular_power' }));
     });
 
+    it('validates coverage-only requirements inside the canonical plan builder', () => {
+        const result = buildPlanDefinition(
+            EVERGREEN_GENERAL_COVERAGE_SET.coverage,
+            [{ id: 'block_general', phase: 'general', startDate: '2026-09-01', endDate: '2026-09-07', volumeScale: 1, intensityScale: 1 }],
+            { id: 'evergreen_general' } as Parameters<typeof buildPlanDefinition>[2],
+            [], [], 'plan_validation', EVERGREEN_GENERAL_COVERAGE_SET.id,
+            [{
+                coverageKey: 'power_exposure', blockId: 'missing_block', minimumSessions: 0, targetSessions: 1,
+                priority: 'nice_to_have', knowledgeRefs: ['policy.evergreen.power_maintenance_exposure_v1'],
+            }],
+        );
+        expect(result.status).toBe('INVALID');
+        if (result.status !== 'INVALID') throw new Error('coverage-only plan should be invalid');
+        expect(result.issues).toContainEqual(expect.objectContaining({
+            code: 'DANGLING_BLOCK_ID', field: 'coverageRequirements.power_exposure',
+        }));
+    });
+
     it('turns packed power into a coverage-only requirement without a stimulus objective', () => {
         const budget = packWeeklyDose(strategy, capacity(5), EVERGREEN_PACKING_COVERAGE);
         const plan = buildEvergreenPlanDefinition(strategy, capacity(5), budget, DATE);
@@ -253,7 +271,9 @@ describe('power in the exposure ledger (#802)', () => {
     } satisfies ExposureLedgerInput).capabilities.find(entry => entry.key === 'neuromuscular_power')!;
 
     it('confirms power only from an exact power identity, never from generic strength', () => {
-        expect(ledger([fact('strength_full_body_maintenance_01')])).toMatchObject({ status: 'confirmed', lastConfirmed: '2026-09-20' });
+        expect(ledger([fact('strength_full_body_maintenance_01', { workoutVariantId: 'full' })])).toMatchObject({ status: 'confirmed', lastConfirmed: '2026-09-20' });
+        expect(ledger([fact('strength_full_body_maintenance_01', { workoutVariantId: 'return_to_training' })]).status).toBe('unknown');
+        expect(ledger([fact('strength_full_body_maintenance_01')]).status).toBe('unknown');
         expect(ledger([fact('strength_bodyweight_full_body_01')]).status).toBe('unknown');
         expect(ledger([fact('strength_full_body_maintenance_01', { isReadinessModifiedDose: true })]).status).toBe('unknown');
     });

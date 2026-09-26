@@ -291,7 +291,11 @@ const CAPABILITIES: readonly CapabilitySpec[] = [
         // Garmin records and imported-plan titles cannot prove power content, so they never
         // confirm or plan it; strength/VO2/threshold history leaves power `unknown`.
         key: 'neuromuscular_power',
-        confirmsFact: f => grantsPowerExposureCredit({ workoutId: f.workoutId, isReadinessModifiedDose: f.isReadinessModifiedDose }),
+        confirmsFact: f => f.workoutVariantId !== undefined && grantsPowerExposureCredit({
+            workoutId: f.workoutId,
+            variant: f.workoutVariantId,
+            isReadinessModifiedDose: f.isReadinessModifiedDose,
+        }),
         label: 'Neuromuscular power',
         confirms: () => false,
         plans: () => false,
