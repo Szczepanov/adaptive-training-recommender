@@ -528,7 +528,7 @@ the authored template (`WeeklyRoleAllocationStatus`), so a capped session can se
 allocation occurrence while the coverage ledger leaves the role open; coverage state is
 the authority. The floor admits coverage; it does not claim dose adequacy.
 
-The separate weekly accumulated-dose envelope (#806) is resolved by
+The separate weekly accumulated-dose envelope (#806; ADR-0045) is resolved by
 `weeklyAerobicDose.ts` from four fixed seven-day bins in the supplied 28-day training
 history. Established athletes with evidence in at least three bins use an athlete-relative
 easy-aerobic floor and maintenance/development target only when the selected historical target
