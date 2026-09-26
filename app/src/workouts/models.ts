@@ -1,3 +1,6 @@
+import type { MovementCompositionPattern, MovementCompositionRequirementBase } from '../sessions/movementCompositionContract';
+export type { MovementCompositionPattern, SessionMovementCompositionRequirement } from '../sessions/movementCompositionContract';
+
 export type WorkoutModality =
   | 'cycling'
   | 'running'
@@ -107,6 +110,8 @@ export interface ExerciseDefinition {
   name: string;
   modality: WorkoutModality;
   movementPatterns: string[];
+  /** Explicit composition metadata; never inferred from name or the broad legacy movementPatterns list. */
+  compositionPatterns?: MovementCompositionPattern[];
   primaryMuscles: string[];
   equipment: Equipment[];
   impact: 'none' | 'low' | 'moderate' | 'high';
@@ -232,7 +237,11 @@ export interface WorkoutVariant {
   loadMultiplier: number;
   rationale: string;
   stepOverrides: WorkoutVariantStepOverride[];
+  /** Required movement families this authored variant intentionally relaxes. */
+  compositionRelaxations?: Array<{ pattern: MovementCompositionPattern; reason: string }>;
 }
+
+export type WorkoutCompositionRequirement = MovementCompositionRequirementBase;
 
 export type WorkoutParameterUnit =
   | 'minutes'
@@ -366,6 +375,8 @@ export interface WorkoutDefinition {
   /** Active strength catalog entries cite the bounded evidence used for their warm-up rule. */
   warmupKnowledgeClaimIds?: string[];
   blocks: WorkoutBlock[];
+  /** Optional authored session-composition contract. */
+  compositionRequirements?: WorkoutCompositionRequirement[];
   variants: WorkoutVariant[];
   parameters?: WorkoutParameter[];
   regressions: string[];
@@ -374,6 +385,8 @@ export interface WorkoutDefinition {
     exerciseId: string;
     substituteExerciseId: string;
     reason: string;
+    /** Explicitly records a composition loss when the alternative cannot preserve a declared family. */
+    degradedComposition?: { pattern: MovementCompositionPattern; reason: string };
   }>;
   garmin: {
     exportable: boolean;

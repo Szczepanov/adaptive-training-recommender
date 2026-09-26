@@ -14,6 +14,7 @@ interface ExerciseSwapModalProps {
         tempo?: string | null;
         rest?: SessionStep['rest'];
         notes?: string | null;
+        compositionPatterns?: SessionStep['compositionPatterns'];
     }) => void;
     onClose: () => void;
 }
@@ -65,6 +66,7 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
 
         onSwap({
             exerciseRef: { kind: 'catalog', exerciseId: exercise.id },
+            compositionPatterns: exercise.compositionPatterns,
             title: exercise.name,
             tempo: customTempo.trim() || null,
             notes: customNotes.trim() || exercise.instruction || null,

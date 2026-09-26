@@ -9,9 +9,11 @@ import type {
   WorkoutParameterBindingSet,
   WorkoutParameterSetBinding,
   WorkoutParameterStepField,
-  WorkoutParameterUnit
+  WorkoutParameterUnit,
+  WorkoutStep,
 } from './models.ts';
 import { getActiveKnowledgeClaim } from '../knowledge/sportsKnowledgeRegistry.ts';
+import { MOVEMENT_COMPOSITION_PATTERNS } from '../sessions/movementCompositionContract.ts';
 
 export interface WorkoutLibraryValidationResult {
   valid: boolean;
@@ -217,6 +219,11 @@ export function validateWorkoutLibrary(
     exerciseIds.add(exercise.id);
     exerciseById.set(exercise.id, exercise);
     validateExerciseFacets(exercise, `exercise ${exercise.id}`, errors);
+    if (exercise.compositionPatterns && (exercise.compositionPatterns.length === 0
+      || new Set(exercise.compositionPatterns).size !== exercise.compositionPatterns.length
+      || !exercise.compositionPatterns.every(pattern => MOVEMENT_COMPOSITION_PATTERNS.has(pattern)))) {
+      errors.push(`exercise ${exercise.id}: compositionPatterns must be unique known movement-family values`);
+    }
     if (!exercise.name.trim()) errors.push(`${exercise.id}: exercise name is required`);
     if (!exercise.instruction.trim()) errors.push(`${exercise.id}: exercise instruction is required`);
   }
@@ -277,6 +284,7 @@ export function validateWorkoutLibrary(
     if (reducedVariant && returnVariant && returnVariant.targetDurationMin > reducedVariant.targetDurationMin) errors.push(`${prefix}: return-to-training duration cannot exceed reduced duration`);
 
     const stepIds = new Set<string>();
+    const workoutSteps = new Map<string, WorkoutStep>();
     let hasTechnicalTarget = false;
     if (workout.status === 'active' && workout.modality === 'strength' && !workout.manualOnly) {
       const firstBlock = workout.blocks[0];
@@ -298,6 +306,7 @@ export function validateWorkoutLibrary(
         const stepPath = `${prefix}/${block.id}/${step.id}`;
         if (stepIds.has(step.id)) errors.push(`${prefix}: duplicate step id ${step.id}`);
         stepIds.add(step.id);
+        workoutSteps.set(step.id, step);
         usedExerciseIds.add(step.exerciseId);
         const exercise = exerciseById.get(step.exerciseId);
         if (!exercise) {
@@ -320,6 +329,34 @@ export function validateWorkoutLibrary(
           validateTarget(step.target, stepPath, errors);
           if (step.target.type === 'technical_quality') hasTechnicalTarget = true;
         }
+      }
+    }
+    const compositionRequirementIds = new Set<string>();
+    for (const requirement of workout.compositionRequirements ?? []) {
+      if (!requirement.id.trim() || compositionRequirementIds.has(requirement.id)) errors.push(`${prefix}: composition requirement ids must be non-empty and unique`);
+      compositionRequirementIds.add(requirement.id);
+      if (!MOVEMENT_COMPOSITION_PATTERNS.has(requirement.pattern)) errors.push(`${prefix}/${requirement.id}: unknown movement-family pattern ${requirement.pattern}`);
+      if (requirement.stepIds.length === 0 || new Set(requirement.stepIds).size !== requirement.stepIds.length) errors.push(`${prefix}/${requirement.id}: stepIds must be non-empty and unique`);
+      for (const stepId of requirement.stepIds) {
+        const step = workoutSteps.get(stepId);
+        if (!step) errors.push(`${prefix}/${requirement.id}: unknown component step ${stepId}`);
+        else if (!exerciseById.get(step.exerciseId)?.compositionPatterns?.includes(requirement.pattern)) errors.push(`${prefix}/${requirement.id}: step ${stepId} lacks structured ${requirement.pattern} evidence`);
+      }
+      for (const variant of workout.variants) {
+        const relaxed = variant.compositionRelaxations?.find(item => item.pattern === requirement.pattern);
+        const omittedAll = requirement.stepIds.every(stepId => variant.stepOverrides.some(item => item.stepId === stepId && item.omit));
+        if (omittedAll && (!relaxed || !relaxed.reason.trim())) errors.push(`${prefix}/${variant.id}: omitting ${requirement.pattern} requires an explicit composition relaxation reason`);
+        if (relaxed && !relaxed.reason.trim()) errors.push(`${prefix}/${variant.id}: ${requirement.pattern} relaxation reason is required`);
+        if (relaxed && !omittedAll) errors.push(`${prefix}/${variant.id}: cannot relax ${requirement.pattern} while a declared component step remains active`);
+      }
+    }
+    for (const variant of workout.variants) {
+      const seenRelaxations = new Set<string>();
+      for (const relaxation of variant.compositionRelaxations ?? []) {
+        if (!MOVEMENT_COMPOSITION_PATTERNS.has(relaxation.pattern) || seenRelaxations.has(relaxation.pattern)) errors.push(`${prefix}/${variant.id}: composition relaxations must use unique known patterns`);
+        seenRelaxations.add(relaxation.pattern);
+        if (!(workout.compositionRequirements ?? []).some(item => item.pattern === relaxation.pattern)) errors.push(`${prefix}/${variant.id}: cannot relax undeclared composition pattern ${relaxation.pattern}`);
+        if (!relaxation.reason.trim()) errors.push(`${prefix}/${variant.id}: composition relaxation reason is required`);
       }
     }
     if (workout.category === 'technical_skill' && !hasTechnicalTarget) errors.push(`${prefix}: technical workout requires a technical-quality target`);
@@ -413,6 +450,26 @@ export function validateWorkoutLibrary(
       if (!usedExerciseIds.has(substitution.exerciseId)) errors.push(`${prefix}: substitution source ${substitution.exerciseId} is not used by the workout`);
       if (!exerciseIds.has(substitution.substituteExerciseId)) errors.push(`${prefix}: substitution target ${substitution.substituteExerciseId} does not exist`);
       if (!substitution.reason.trim()) errors.push(`${prefix}: substitution reason is required`);
+      if (substitution.degradedComposition) {
+        const degradation = substitution.degradedComposition;
+        const affectedRequirement = (workout.compositionRequirements ?? []).find(requirement =>
+          requirement.pattern === degradation.pattern
+          && requirement.stepIds.some(stepId => workoutSteps.get(stepId)?.exerciseId === substitution.exerciseId));
+        if (!MOVEMENT_COMPOSITION_PATTERNS.has(degradation.pattern) || !degradation.reason.trim()) {
+          errors.push(`${prefix}: substitution ${substitution.exerciseId} -> ${substitution.substituteExerciseId} has invalid degraded-composition metadata`);
+        } else if (!affectedRequirement) {
+          errors.push(`${prefix}: substitution ${substitution.exerciseId} -> ${substitution.substituteExerciseId} degrades an undeclared or unaffected composition pattern ${degradation.pattern}`);
+        } else if (exerciseById.get(substitution.substituteExerciseId)?.compositionPatterns?.includes(degradation.pattern)) {
+          errors.push(`${prefix}: substitution ${substitution.exerciseId} -> ${substitution.substituteExerciseId} declares degradation even though the target preserves ${degradation.pattern}`);
+        }
+      }
+      for (const requirement of workout.compositionRequirements ?? []) {
+        const sourceRequired = requirement.stepIds.some(stepId => workoutSteps.get(stepId)?.exerciseId === substitution.exerciseId);
+        const targetPreserves = exerciseById.get(substitution.substituteExerciseId)?.compositionPatterns?.includes(requirement.pattern);
+        const declaredDegradation = substitution.degradedComposition?.pattern === requirement.pattern
+          && substitution.degradedComposition.reason.trim().length > 0;
+        if (sourceRequired && !targetPreserves && !declaredDegradation) errors.push(`${prefix}: substitution ${substitution.exerciseId} -> ${substitution.substituteExerciseId} loses ${requirement.pattern} without an explicit degraded-composition reason`);
+      }
     }
 
     if (workout.garmin.exportable && workout.modality !== 'cycling' && workout.modality !== 'running') errors.push(`${prefix}: only cycling and running workouts may be Garmin-exportable`);

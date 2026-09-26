@@ -14,6 +14,7 @@ import {
     type BlockExecutionMode,
     SESSION_SCHEMA_VERSION,
 } from './models';
+import { MOVEMENT_COMPOSITION_PATTERNS } from './movementCompositionContract';
 
 const REST_END_REASONS = new Set(['timer_elapsed', 'skipped', 'next_set_started', 'session_ended']);
 
@@ -69,7 +70,7 @@ const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 export const SESSION_DEFINITION_KEYS = [
     'schemaVersion', 'id', 'revision', 'title', 'summary', 'intent', 'modalities',
     'dominantModality', 'duration', 'defaultScheduledDate', 'sessionTargets',
-    'prohibitedAdditions', 'importWarnings', 'companionSessions', 'blocks',
+    'prohibitedAdditions', 'importWarnings', 'companionSessions', 'movementComposition', 'blocks',
 ];
 
 function isObject(val: unknown): val is Record<string, unknown> {
@@ -198,6 +199,7 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
     const allStepIds = new Set<string>();
     const stepOrder: string[] = [];
     const stepAlternativeIds = new Map<string, Set<string>>();
+    const stepObjectsById = new Map<string, Record<string, unknown>>();
 
     // First pass to collect step IDs and check duplicates
     raw.blocks.forEach((block, bIdx) => {
@@ -221,11 +223,25 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
                         issues.push({ path: `blocks[${bIdx}].steps[${sIdx}].id`, message: `Duplicate step id: ${step.id}` });
                     }
                     allStepIds.add(step.id);
+                    stepObjectsById.set(step.id, step);
                     stepOrder.push(step.id);
                     const altIds = new Set<string>();
                     if (Array.isArray(step.alternatives)) {
-                        step.alternatives.forEach(alt => {
+                        step.alternatives.forEach((alt, altIndex) => {
                             if (isObject(alt) && typeof alt.id === 'string' && alt.id.length > 0) altIds.add(alt.id);
+                            if (isObject(alt) && alt.compositionPatterns !== undefined
+                                && (!Array.isArray(alt.compositionPatterns) || alt.compositionPatterns.length === 0
+                                    || new Set(alt.compositionPatterns).size !== alt.compositionPatterns.length
+                                    || !alt.compositionPatterns.every(pattern => MOVEMENT_COMPOSITION_PATTERNS.has(pattern as string)))) {
+                                issues.push({ path: `blocks[${bIdx}].steps[${sIdx}].alternatives[${altIndex}].compositionPatterns`, message: 'compositionPatterns must be unique known movement-family values' });
+                            }
+                            if (isObject(alt) && alt.degradedComposition !== undefined
+                                && (!isObject(alt.degradedComposition)
+                                    || !MOVEMENT_COMPOSITION_PATTERNS.has(alt.degradedComposition.pattern as string)
+                                    || typeof alt.degradedComposition.reason !== 'string'
+                                    || alt.degradedComposition.reason.trim().length === 0)) {
+                                issues.push({ path: `blocks[${bIdx}].steps[${sIdx}].alternatives[${altIndex}].degradedComposition`, message: 'A degraded alternative requires a known pattern and explicit reason' });
+                            }
                         });
                     }
                     stepAlternativeIds.set(step.id, altIds);
@@ -262,6 +278,14 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
 
                 if (typeof step.id !== 'string' || step.id.trim().length === 0) {
                     issues.push({ path: `${sPath}.id`, message: 'Step ID must be non-empty string' });
+                }
+
+                if (step.compositionPatterns !== undefined
+                    && (!Array.isArray(step.compositionPatterns)
+                        || step.compositionPatterns.length === 0
+                        || new Set(step.compositionPatterns).size !== step.compositionPatterns.length
+                        || !step.compositionPatterns.every(pattern => MOVEMENT_COMPOSITION_PATTERNS.has(pattern as string)))) {
+                    issues.push({ path: `${sPath}.compositionPatterns`, message: 'compositionPatterns must be unique known movement-family values' });
                 }
 
                 if (!step.kind || !['exercise', 'transition', 'rest'].includes(String(step.kind))) {
@@ -418,6 +442,60 @@ export function validateSessionDefinition(raw: unknown): ValidationResult<Sessio
         }
     });
 
+    if (raw.movementComposition !== undefined) {
+        if (!Array.isArray(raw.movementComposition)) {
+            issues.push({ path: 'movementComposition', message: 'movementComposition must be an array' });
+        } else {
+            const requirementIds = new Set<string>();
+            raw.movementComposition.forEach((requirement, index) => {
+                const path = `movementComposition[${index}]`;
+                if (!isObject(requirement)) {
+                    issues.push({ path, message: 'Requirement must be an object' });
+                    return;
+                }
+                if (typeof requirement.id !== 'string' || requirement.id.trim().length === 0 || requirementIds.has(requirement.id)) {
+                    issues.push({ path: `${path}.id`, message: 'Requirement id must be non-empty and unique' });
+                } else requirementIds.add(requirement.id);
+                if (!MOVEMENT_COMPOSITION_PATTERNS.has(requirement.pattern as string)) {
+                    issues.push({ path: `${path}.pattern`, message: 'Unknown movement-family pattern' });
+                }
+                if (!Array.isArray(requirement.stepIds) || requirement.stepIds.length === 0
+                    || new Set(requirement.stepIds).size !== requirement.stepIds.length) {
+                    issues.push({ path: `${path}.stepIds`, message: 'stepIds must be a non-empty unique array' });
+                } else {
+                    for (const stepId of requirement.stepIds) {
+                        const step = typeof stepId === 'string' ? stepObjectsById.get(stepId) : undefined;
+                        if (!step && requirement.status !== 'relaxed') issues.push({ path: `${path}.stepIds`, message: `Unknown component step ${String(stepId)}` });
+                        if (step && requirement.status !== 'relaxed'
+                            && (!Array.isArray(step.compositionPatterns) || !step.compositionPatterns.includes(requirement.pattern))) {
+                            issues.push({ path: `${path}.stepIds`, message: `Step ${stepId} does not provide structured ${String(requirement.pattern)} evidence` });
+                        }
+                        if (step && Array.isArray(step.alternatives)) {
+                            step.alternatives.forEach((alternative, alternativeIndex) => {
+                                if (!isObject(alternative)) return;
+                                const preserves = Array.isArray(alternative.compositionPatterns) && alternative.compositionPatterns.includes(requirement.pattern);
+                                const degraded = isObject(alternative.degradedComposition)
+                                    && alternative.degradedComposition.pattern === requirement.pattern
+                                    && typeof alternative.degradedComposition.reason === 'string'
+                                    && alternative.degradedComposition.reason.trim().length > 0;
+                                if (!preserves && !degraded) issues.push({
+                                    path: `${path}.stepIds`,
+                                    message: `Alternative ${String(alternative.id)} on step ${stepId} must preserve ${String(requirement.pattern)} or declare an explicit degradation (index ${alternativeIndex})`,
+                                });
+                            });
+                        }
+                    }
+                }
+                if (!['required', 'relaxed'].includes(String(requirement.status))) {
+                    issues.push({ path: `${path}.status`, message: 'status must be required or relaxed' });
+                }
+                if (requirement.status === 'relaxed' && (typeof requirement.reason !== 'string' || requirement.reason.trim().length === 0)) {
+                    issues.push({ path: `${path}.reason`, message: 'A relaxed requirement needs an explicit reason' });
+                }
+            });
+        }
+    }
+
     if (issues.length > 0) {
         return { ok: false, issues };
     }
@@ -552,6 +630,21 @@ export function validateSessionEntry(raw: unknown): ValidationResult<SessionEntr
     if (typeof raw.completedAt !== 'string' || raw.completedAt.length === 0) issues.push({ path: 'completedAt', message: 'Missing completedAt' });
     if (typeof raw.createdAt !== 'string' || raw.createdAt.length === 0) issues.push({ path: 'createdAt', message: 'Missing createdAt' });
     if (typeof raw.updatedAt !== 'string' || raw.updatedAt.length === 0) issues.push({ path: 'updatedAt', message: 'Missing updatedAt' });
+    if (raw.compositionPatterns !== undefined
+        && (!Array.isArray(raw.compositionPatterns)
+            || raw.compositionPatterns.length === 0
+            || new Set(raw.compositionPatterns).size !== raw.compositionPatterns.length
+            || !raw.compositionPatterns.every(pattern => MOVEMENT_COMPOSITION_PATTERNS.has(pattern as string)))) {
+        issues.push({ path: 'compositionPatterns', message: 'compositionPatterns must be unique known movement-family values' });
+    }
+    if (raw.degradedComposition !== undefined) {
+        if (!isObject(raw.degradedComposition)
+            || !MOVEMENT_COMPOSITION_PATTERNS.has(String(raw.degradedComposition.pattern))
+            || typeof raw.degradedComposition.reason !== 'string'
+            || raw.degradedComposition.reason.trim().length === 0) {
+            issues.push({ path: 'degradedComposition', message: 'degradedComposition requires a known pattern and non-empty reason' });
+        }
+    }
 
     if (!isObject(raw.payload)) {
         issues.push({ path: 'payload', message: 'Missing entry payload' });

@@ -71,6 +71,8 @@ function applySelectAlternative(step: SessionStep, alternativeId: string): void 
     step.title = alternative.title;
     if (alternative.dose) step.dose = alternative.dose;
     if (alternative.load) step.load = alternative.load;
+    step.compositionPatterns = alternative.compositionPatterns;
+    step.degradedComposition = alternative.degradedComposition;
     step.resolutionNote = `Substituted via athlete choice: ${alternative.title}`;
 }
 

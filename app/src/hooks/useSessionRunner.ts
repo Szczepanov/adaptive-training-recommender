@@ -27,6 +27,7 @@ import { adjustRest, closeRest, startRest, type ActiveRestState, type RestEventF
 import type { RestEndReason } from '../sessions/models';
 import { resolveEffectiveInjuryConstraints, resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { ineligibleAlternativeOptionIds } from '../engine/sessionChoiceEligibility';
+import { EXERCISES_BY_ID } from '../workouts/exercises.ts';
 import type { BodyRegion, RegionTissueResponse } from '../engine/models';
 import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
 import { reconcileStructuredCompletion } from '../training-occurrence';
@@ -102,12 +103,21 @@ export function createCustomTemplateDefinition(
     title: string,
     summary?: string,
 ): SessionDefinition {
+    const movementComposition = source.movementComposition?.map(requirement => {
+        const hasStructuredEvidence = requirement.stepIds.some(stepId => source.blocks
+            .flatMap(block => block.steps)
+            .some(step => step.id === stepId && step.compositionPatterns?.includes(requirement.pattern)));
+        return !hasStructuredEvidence && requirement.status === 'required'
+            ? { ...requirement, status: 'relaxed' as const, reason: 'Saved template no longer has structured evidence for this movement component.' }
+            : requirement;
+    });
     return {
         ...source,
         id: templateId,
         revision: 1,
         title: title.trim().length > 0 ? title.trim() : source.title,
         ...(summary !== undefined ? { summary } : {}),
+        ...(movementComposition ? { movementComposition } : {}),
     };
 }
 
@@ -394,6 +404,8 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             executionId: execution.executionId,
             stepId: activeStep.id,
             exerciseRef: activeStep.exerciseRef,
+            ...(activeStep.compositionPatterns ? { compositionPatterns: activeStep.compositionPatterns } : {}),
+            ...(activeStep.degradedComposition ? { degradedComposition: activeStep.degradedComposition } : {}),
             ...(side ? { side } : {}),
             ...(selectedOptionId ? { selectedOptionId } : {}),
             completedAt: now,
@@ -541,6 +553,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             tempo?: string | null;
             rest?: SessionStep['rest'];
             notes?: string | null;
+            compositionPatterns?: SessionStep['compositionPatterns'];
         },
     ) => {
         setRawDefinition(prev => {
@@ -551,13 +564,26 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                     if (sIdx !== stepIndex) return step;
                     const resolvedTitle = replacement.title
                         ?? (replacement.exerciseRef?.kind === 'catalog' ? replacement.exerciseRef.exerciseId : (replacement.exerciseRef?.kind === 'unresolved_free_text' ? replacement.exerciseRef.name : step.id));
+                    const compositionPatterns = replacement.exerciseRef?.kind === 'catalog'
+                        ? EXERCISES_BY_ID.get(replacement.exerciseRef.exerciseId)?.compositionPatterns
+                        : undefined;
+                    const requiredPatterns = prev.movementComposition
+                        ?.filter(requirement => requirement.status === 'required' && requirement.stepIds.includes(step.id))
+                        .map(requirement => requirement.pattern) ?? step.compositionPatterns ?? [];
+                    const lostRequiredPattern = requiredPatterns.find(pattern => !compositionPatterns?.includes(pattern));
                     const nextStep: SessionStep = {
                         ...step,
                         exerciseRef: replacement.exerciseRef,
+                        degradedComposition: undefined,
+                        ...(lostRequiredPattern && replacement.exerciseRef?.kind === 'catalog'
+                            ? { degradedComposition: { pattern: lostRequiredPattern, reason: 'Athlete selected a catalog exercise that does not preserve this movement component.' } }
+                            : {}),
                         title: resolvedTitle,
                         ...(replacement.dose ? { dose: replacement.dose } : {}),
                         ...(replacement.rest !== undefined ? { rest: replacement.rest } : {}),
                     };
+                    if (compositionPatterns?.length) nextStep.compositionPatterns = compositionPatterns;
+                    else delete nextStep.compositionPatterns;
                     if (replacement.tempo === null) delete nextStep.tempo;
                     else if (replacement.tempo !== undefined) nextStep.tempo = replacement.tempo;
                     if (replacement.notes === null) delete nextStep.notes;

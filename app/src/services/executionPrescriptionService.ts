@@ -8,6 +8,7 @@ import { getDb } from '../firebase';
 import type { DataState } from '../engine/dataState';
 import type { ExecutionPrescription } from '../sessions/models';
 import { hashExecutionPrescription } from '../sessions/sessionDefinitionHash';
+import { MOVEMENT_COMPOSITION_PATTERNS } from '../sessions/movementCompositionContract';
 
 function hasSessionSource(value: unknown): boolean {
     if (!value || typeof value !== 'object') return false;
@@ -16,6 +17,26 @@ function hasSessionSource(value: unknown): boolean {
     if (source.kind === 'manual') return typeof source.definitionId === 'string' && typeof source.revision === 'number' && typeof source.contentHash === 'string';
     if (source.kind === 'external_plan') return typeof source.planId === 'string' && typeof source.revision === 'number' && typeof source.sessionId === 'string' && typeof source.contentHash === 'string';
     return source.kind === 'unplanned_fixture' && typeof source.fixtureId === 'string';
+}
+
+function hasValidMovementComposition(value: unknown): boolean {
+    if (value === undefined) return true;
+    if (!Array.isArray(value)) return false;
+    const requirementIds = new Set<string>();
+    for (const requirement of value) {
+        if (!requirement || typeof requirement !== 'object' || Array.isArray(requirement)) return false;
+        const item = requirement as Record<string, unknown>;
+        if (typeof item.id !== 'string' || item.id.trim().length === 0 || requirementIds.has(item.id)) return false;
+        requirementIds.add(item.id);
+        if (!MOVEMENT_COMPOSITION_PATTERNS.has(String(item.pattern))) return false;
+        if (!Array.isArray(item.stepIds) || item.stepIds.length === 0
+            || !item.stepIds.every(stepId => typeof stepId === 'string' && stepId.length > 0)
+            || new Set(item.stepIds).size !== item.stepIds.length) return false;
+        if (item.status !== 'required' && item.status !== 'relaxed') return false;
+        if (item.reason !== undefined && typeof item.reason !== 'string') return false;
+        if (item.status === 'relaxed' && (typeof item.reason !== 'string' || item.reason.trim().length === 0)) return false;
+    }
+    return true;
 }
 
 /** Optional (M3.2): absent on prescriptions written before this field existed. */
@@ -31,6 +52,7 @@ function hasValidDisplayMetadata(value: unknown): boolean {
         const duration = meta.duration as Record<string, unknown>;
         if (typeof duration.min !== 'number' || typeof duration.max !== 'number') return false;
     }
+    if (!hasValidMovementComposition(meta.movementComposition)) return false;
     return true;
 }
 

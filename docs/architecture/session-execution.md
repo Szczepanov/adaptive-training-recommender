@@ -30,6 +30,23 @@ that role, step dose/rest, and any bounded structured load into the content-addr
 prescription. The runner shows the load instruction as stored; it does not derive a kilogram target
 from a percentage or profile during rendering.
 
+The source-neutral session contract owns a bounded movement-family vocabulary used by
+`compositionPatterns`, for example `unilateral_lower_body`. Catalog exercises are one producer
+of this metadata, but the vocabulary is not owned by the workout evaluator. An authored workout
+can declare composition requirements against step identities, and variants that intentionally omit
+a required family carry an explicit relaxation reason. The catalog adapter snapshots both the
+requirement state and each step's structured patterns into `SessionDefinition` and the execution
+prescription hash. Manual and imported sessions may provide the same structured step evidence; a
+missing tag remains unknown and titles/notes are never parsed for movement intent.
+
+Persisted prescription metadata is shape-validated on read. Catalog replay then verifies the
+definition hash and re-validates the reconstructed `SessionDefinition`, including requirement-to-
+step evidence, so a self-consistent but semantically malformed composition snapshot fails closed.
+Completed entries are joined by step identity: a completed required component is reported with its
+catalog exercise identity when known, while a completed session with no performed component is
+reported as omitted. This composition evidence does not create another weekly strength occurrence
+or change exact-role coverage.
+
 For a repetition step, `SessionRunner` passes the active block role into `RepetitionInputCard`.
 Entries from a prescribed `warmup` block default to `isWarmup: true`; other blocks default to false.
 The athlete can correct the checkbox before logging, and the recorded value remains the historical

@@ -155,16 +155,24 @@ describe('ExecutionPrescriptionService', () => {
                 createdAt: laterTime,
             };
 
-            // Simulate concurrent invocation
+            // Either invocation may reach the first Firestore commit; call order alone
+            // does not determine transaction commit order under scheduler contention.
             await Promise.all([
                 service.savePrescription('u1', firstPrescription),
                 service.savePrescription('u1', secondPrescription),
             ]);
 
-            const stored = docStore.get('users/u1/execution_prescriptions/' + prescriptionHash);
+            const path = 'users/u1/execution_prescriptions/' + prescriptionHash;
+            const stored = docStore.get(path);
             expect(stored).toBeDefined();
-            // First-commit write remains stored
-            expect(stored?.createdAt).toBe(earliestTime);
+            expect([earliestTime, laterTime]).toContain(stored?.createdAt);
+            expect(state.versionCounter).toBe(1);
+
+            // Whichever concurrent transaction committed first remains immutable.
+            const committedTime = stored?.createdAt;
+            await service.savePrescription('u1', { ...raw, prescriptionHash, createdAt: '2026-09-06T08:00:10.000Z' });
+            expect(docStore.get(path)?.createdAt).toBe(committedTime);
+            expect(state.versionCounter).toBe(1);
         });
 
         it('preserves first committed write even when concurrent transactions experience contention and retry', async () => {
@@ -259,6 +267,33 @@ describe('ExecutionPrescriptionService', () => {
             if (result.status === 'AVAILABLE') {
                 expect(result.data.prescriptionHash).toBe(prescriptionHash);
                 expect(result.revision).toBeNull();
+            }
+        });
+
+        it('returns INVALID for malformed movement-composition display metadata even when the hash is self-consistent', async () => {
+            const raw = makeBasePrescription();
+            const malformed = {
+                ...raw,
+                displayMetadata: {
+                    ...raw.displayMetadata,
+                    movementComposition: [{
+                        id: 'unilateral',
+                        pattern: 'not_a_known_pattern',
+                        stepIds: ['step-1'],
+                        status: 'required',
+                    }],
+                },
+            } as unknown as Omit<ExecutionPrescription, 'prescriptionHash'>;
+            const prescriptionHash = await hashExecutionPrescription({ ...malformed, prescriptionHash: '' });
+            docStore.set('users/u1/execution_prescriptions/' + prescriptionHash, {
+                ...malformed,
+                prescriptionHash,
+            } as unknown as Record<string, unknown>);
+
+            const result = await service.getPrescription('u1', prescriptionHash);
+            expect(result.status).toBe('INVALID');
+            if (result.status === 'INVALID') {
+                expect(result.issues[0].code).toBe('invalid-prescription-shape');
             }
         });
 

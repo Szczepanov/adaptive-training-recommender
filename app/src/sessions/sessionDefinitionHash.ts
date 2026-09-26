@@ -25,7 +25,7 @@ export function canonicalSessionDefinitionJson(definition: SessionDefinition): s
     // binding used by occurrences and prescriptions (ADR-0023 D-MSNAP).
     const content = pickDefined(definition, [
         'schemaVersion', 'title', 'summary', 'intent', 'modalities', 'dominantModality',
-        'duration', 'sessionTargets', 'prohibitedAdditions', 'importWarnings', 'blocks',
+        'duration', 'sessionTargets', 'prohibitedAdditions', 'importWarnings', 'movementComposition', 'blocks',
     ]);
     return JSON.stringify(canonicalizeSessionData(content));
 }
