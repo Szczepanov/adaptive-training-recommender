@@ -531,20 +531,23 @@ the authority. The floor admits coverage; it does not claim dose adequacy.
 The separate weekly accumulated-dose envelope (#806) is resolved by
 `weeklyAerobicDose.ts` from four fixed seven-day bins in the supplied 28-day training
 history. Established athletes with evidence in at least three bins use an athlete-relative
-easy-aerobic floor and maintenance/development target; insufficient history uses the adult
-health range. Only easy work in the dominant evidenced modality counts toward the relative
-envelope, and no intensity conversion is used. The target is history-derived and does not
-rise with additional free time. `weeklyDosePacking.ts` accounts for the guideline's broad
-aerobic minutes from quality sessions only after those sessions are actually packed.
+easy-aerobic floor and maintenance/development target only when the selected historical target
+exceeds 150 min/week; otherwise the adult-health 150/150/300 fallback remains authoritative
+rather than turning the guideline minimum into a primary-modality easy-only obligation. Only
+easy work in the dominant evidenced modality counts toward an active relative envelope, and no
+intensity conversion is used. The target is history-derived and does not rise with additional
+free time. `weeklyDosePacking.ts` accounts for the guideline's broad aerobic minutes from
+quality sessions only after those sessions are actually packed.
 
 For eligible endurance or sport-readiness development, `evergreenPlanning.ts` can add a
 conditional exact `long_aerobic_anchor` role from the 75th-percentile historical easy-session
-duration, capped by the matching catalog workout. `coverage.ts` and
-`weeklyAllocation.ts` require one exact session to meet that duration; multiple short
-sessions do not combine. Recovery, symptoms, taper/recovery phase and schedule feasibility
-can suspend the anchor while preserving the weekly aerobic target, with a typed packing
-shortfall when the requested role does not fit. This is separate from #757's one-session
-`aerobic_volume` floor.
+duration, capped by the matching standard engine template that the allocator can actually
+materialize. `coverage.ts` and `weeklyAllocation.ts` require one exact session to meet that
+duration; multiple short sessions do not combine, and the allocator can reserve the role only
+on a date whose resolved exercise window reaches the duration gate. Recovery, symptoms,
+taper/recovery phase and schedule feasibility can suspend the anchor while preserving the
+weekly aerobic target, with a typed packing shortfall when the requested role does not fit.
+This is separate from #757's one-session `aerobic_volume` floor.
 
 Authored travel blocks scale planned dose through `applyPlanningOverlays` across
 structured, demand-derived, and evergreen paths. Fixed activities retain schedule
