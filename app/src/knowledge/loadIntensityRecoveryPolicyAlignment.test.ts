@@ -84,6 +84,7 @@ describe('load + intensity + recovery product-claim alignment', () => {
         expect(OLYMPIC_TRIATHLON_TAPER_PACING_BLOCKS).toBe(2);
         expect(policy.statement).toContain(`${OLYMPIC_TRIATHLON_TAPER_FIRST_BLOCK_VOLUME_SHARE}`);
         expect(policy.statement).toContain('Pending, dated fixed training with exact or external-authored identity');
+        expect(policy.statement).toContain('at least one opportunity for each race discipline');
         expect(policy.statement).toContain(`${OLYMPIC_TRIATHLON_TAPER_SWIM_TOUCH_MINUTES} swim minutes`);
         expect(policy.statement).toContain(`D-${OLYMPIC_TRIATHLON_TAPER_LATE_TOUCH_START_DAYS_TO_RACE} through D-${OLYMPIC_TRIATHLON_TAPER_LATE_TOUCH_END_DAYS_TO_RACE}`);
         expect(policy.statement).toContain(`${OLYMPIC_TRIATHLON_TAPER_LATE_CYCLING_MINUTES} cycling minutes`);
