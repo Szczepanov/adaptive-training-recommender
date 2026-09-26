@@ -262,7 +262,7 @@ Properties:
 - can be intentionally suspended by taper/injury/illness;
 - absence must be distinguishable from blocked/suspended.
 
-#802–#805 should become canonical owners for these families.
+Issues #802–#805 should become canonical owners for these families.
 
 ## 4. Constraint-degradation ladder
 
