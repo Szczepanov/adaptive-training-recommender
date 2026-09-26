@@ -4,6 +4,7 @@ import { EVERGREEN_GENERAL_COVERAGE_SET, EVERGREEN_COVERAGE_BY_KEY } from '../wo
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { getDayDiff } from '../utils/localDate';
 import { progressionOverrideKey } from './progressionOverrideKey';
+import { POWER_QUALIFYING_WORKOUT_IDS } from '../workouts/powerExposure';
 
 export interface CoverageRoleDescriptor {
     /** Stable authored identity; never a category/modality similarity match. */
@@ -56,10 +57,15 @@ export interface PackedRoleOccurrence {
     exactWorkoutIds: readonly string[];
     adaptations: readonly AdaptationKey[];
     priority: AdaptationDoseRequirement['priority'];
+    /** Adaptations delivered by an embedded block inside this same occurrence (#802). They
+     * are also listed in `adaptations` but never consumed a session slot of their own. */
+    embeddedAdaptations?: readonly AdaptationKey[];
+    /** The subset of `exactWorkoutIds` that actually carries the embedded content. */
+    embeddedWorkoutIds?: readonly string[];
 }
 
 export interface PackingWarning {
-    code: 'below_guideline_range' | 'guideline_target_shortfall' | 'goal_requirement_shortfall' | 'minimum_dose_shortfall' | 'no_exact_eligible_role' | 'goal_constraint_conflict';
+    code: 'below_guideline_range' | 'guideline_target_shortfall' | 'goal_requirement_shortfall' | 'minimum_dose_shortfall' | 'no_exact_eligible_role' | 'goal_constraint_conflict' | 'embedded_host_unavailable';
     adaptation: AdaptationKey;
     message: string;
 }
@@ -86,6 +92,48 @@ interface EligibleCandidate {
 }
 
 const NO_DURATION_OVERRIDES: ReadonlyMap<string, number> = new Map();
+
+/** Exact identities that can host each embedded adaptation. Host adaptation and identity
+ * both come from authored metadata; a broad `Strength` modality never qualifies (#802). */
+const EMBEDDED_HOSTS: Partial<Record<AdaptationKey, { hostAdaptation: AdaptationKey; workoutIds: readonly string[] }>> = {
+    neuromuscular_power: { hostAdaptation: 'strength', workoutIds: POWER_QUALIFYING_WORKOUT_IDS },
+};
+
+/** Attach an embedded requirement to already-packed host occurrences, earliest first, up to
+ * its target. Hosts keep their full `exactWorkoutIds` so equipment/safety gates can still
+ * pick a non-power identity; the resulting power gap is then reported by exact coverage
+ * rather than hidden. Never adds an occurrence or consumes a slot (ADR-0044 D6). */
+function embedRequirement(
+    requirement: AdaptationDoseRequirement,
+    packed: MutableOccurrence[],
+): PackingWarning | null {
+    const host = EMBEDDED_HOSTS[requirement.adaptation];
+    const wanted = Math.min(requirement.target.target, requirement.target.maximum);
+    if (!host || wanted <= 0) return null;
+    const hostIndexes = packed
+        .map((occurrence, index) => ({ occurrence, index }))
+        .filter(({ occurrence }) => occurrence.adaptations.includes(host.hostAdaptation)
+            && !occurrence.adaptations.includes(requirement.adaptation)
+            && occurrence.exactWorkoutIds.some(id => host.workoutIds.includes(id)))
+        .sort((left, right) => left.occurrence.date.localeCompare(right.occurrence.date) || left.index - right.index)
+        .slice(0, wanted)
+        .map(({ index }) => index);
+    for (const index of hostIndexes) {
+        const occurrence = packed[index];
+        packed[index] = {
+            ...occurrence,
+            adaptations: [...occurrence.adaptations, requirement.adaptation],
+            embeddedAdaptations: [...(occurrence.embeddedAdaptations ?? []), requirement.adaptation],
+            embeddedWorkoutIds: occurrence.exactWorkoutIds.filter(id => host.workoutIds.includes(id)),
+        };
+    }
+    if (hostIndexes.length >= wanted) return null;
+    return {
+        code: 'embedded_host_unavailable',
+        adaptation: requirement.adaptation,
+        message: `${requirement.adaptation} is embedded in ${hostIndexes.length} of ${wanted} targeted ${host.hostAdaptation} occurrence(s); no further packed ${host.hostAdaptation} occurrence has an authored identity that carries it, and no extra session is created for it.`,
+    };
+}
 
 /** Product-policy substitution reserves one aerobic-volume occurrence for an eligible
  * quality occurrence. The credited minutes are therefore derived from the exact aerobic
@@ -250,7 +298,8 @@ function packWeeklyDoseAttempt(
     const sessionLimit = (priority: AdaptationDoseRequirement['priority']) =>
         priority === 'required' ? capacity.minSessions : priority === 'target' ? capacity.targetSessions : capacity.maxSessions;
 
-    const requirements = [...strategy.requirements].sort((left, right) => {
+    const embeddedRequirements = strategy.requirements.filter(requirement => requirement.delivery === 'embedded');
+    const requirements = strategy.requirements.filter(requirement => requirement.delivery !== 'embedded').sort((left, right) => {
         const rank = { required: 0, target: 1, optional: 2 } as const;
         return rank[left.priority] - rank[right.priority];
     });
@@ -401,6 +450,11 @@ function packWeeklyDoseAttempt(
         }
     }
 
+    for (const requirement of embeddedRequirements) {
+        const warning = embedRequirement(requirement, packed);
+        if (warning) shortfalls.push(warning);
+    }
+
     const packedQuality = packed.some(occurrence => occurrence.adaptations.includes('high_intensity'));
     const packedQualityAerobicCreditMinutes = packedQuality ? reservedQualityAerobicCreditMinutes : 0;
     for (const requirement of requirements) {
@@ -420,6 +474,8 @@ function packWeeklyDoseAttempt(
         exactWorkoutIds: occurrence.exactWorkoutIds,
         adaptations: occurrence.adaptations,
         priority: occurrence.priority,
+        ...(occurrence.embeddedAdaptations ? { embeddedAdaptations: occurrence.embeddedAdaptations } : {}),
+        ...(occurrence.embeddedWorkoutIds ? { embeddedWorkoutIds: occurrence.embeddedWorkoutIds } : {}),
     });
 
     const requiredRoles: PackedRoleOccurrence[] = [];
@@ -437,7 +493,7 @@ function packWeeklyDoseAttempt(
     }
 
     return {
-        capacity, requirements,
+        capacity, requirements: [...requirements, ...embeddedRequirements],
         requiredRoles,
         targetRoles,
         optionalRoles,

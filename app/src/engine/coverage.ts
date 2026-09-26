@@ -9,6 +9,7 @@ import type { CompletedExposure } from './trainingHistory';
 import { aerobicVolumeFloorForWorkout, type AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
+import { grantsPowerExposureCredit } from '../workouts/powerExposure';
 
 /**
  * Phase 6.2c / ADR-0016: physiological stimulus credit and programming-role coverage
@@ -333,6 +334,7 @@ export function coverageKeysForExposure(
     return descriptor.coverage
         .filter(item => item.phases.includes(phase) && item.workoutIds.includes(workoutId))
         .filter(item => item.key !== 'aerobic_volume' || hasRequiredAerobicDose(identity, workoutId, floor, templateCeilingMin))
+        .filter(item => item.key !== 'power_exposure' || grantsPowerExposureCredit({ workoutId, isReadinessModifiedDose: identity.isReadinessModifiedDose }))
         .map(item => item.key);
 }
 
@@ -357,6 +359,10 @@ function canonicalCoverageKeysForExposure(
             // Identity comes from the canonical semantic ledger; dose eligibility remains a
             // coverage-state concern so a short exact Z2 execution cannot satisfy the
             // authored aerobic-volume floor merely because its catalog id is known.
+            // Power exposure is likewise withheld from a readiness-modified dose (#802).
+            if (key === 'power_exposure') {
+                return grantsPowerExposureCredit({ workoutId, isReadinessModifiedDose: exposure.isReadinessModifiedDose });
+            }
             if (key !== 'aerobic_volume') return true;
             return workoutId !== undefined && hasRequiredAerobicDose(exposure, workoutId, floor);
         });
@@ -478,6 +484,29 @@ export function buildCoverageState(
         });
         if (requirement) requirementsByKey.set(definition.coverageKey, requirement);
     });
+
+    // Issue #802: coverage-only capability requirements (no stimulus objective) share the
+    // same exact-identity ledger, so one session may credit several keys at once.
+    (planDefinition.coverageRequirements ?? [])
+        .filter(definition => definition.blockId === block.id && !requirementsByKey.has(definition.coverageKey))
+        .forEach((definition, index) => {
+            const coverage = coverageFor(descriptor, definition.coverageKey);
+            if (!coverage || !coverage.phases.includes(block.phase)) return;
+            const minimumSessions = Math.max(0, definition.minimumSessions);
+            const requirement = newRequirement({
+                descriptor,
+                blockId: block.id,
+                key: definition.coverageKey,
+                minimumSessions,
+                targetSessions: Math.max(minimumSessions, definition.targetSessions),
+                priority: definition.priority,
+                rollingWindowDays,
+                windowStart,
+                windowEnd: block.endDate,
+                index: activeDefinitions.length + index,
+            });
+            if (requirement) requirementsByKey.set(definition.coverageKey, requirement);
+        });
 
     const recoveryCoverage = coverageFor(descriptor, 'recovery_or_rest');
     if (recoveryCoverage?.requirement === 'required'

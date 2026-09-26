@@ -10,6 +10,8 @@ import { resolvePlanningContext } from '../../../src/engine/planningMode.ts';
 import { evaluatePeriodizationPhase } from '../../../src/engine/periodization.ts';
 import { coverageKeysForTemplate } from '../../../src/engine/coverage.ts';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../../../src/workouts/event-plan.ts';
+import { workoutIdForTemplateId } from '../../../src/engine/coverage.ts';
+import { grantsPowerExposureCredit, powerIdentityFor } from '../../../src/workouts/powerExposure.ts';
 
 const families = buildPersonaFamilies({ includeHybridExpansion: true });
 const definitions = families.filter(({ familyId }) => familyId.startsWith('persona_hybrid_')).flatMap(({ cases }) => cases);
@@ -238,5 +240,45 @@ describe('cycling hybrid targeted evaluation', () => {
     expect(taperDefinition.scenario.event.taper.startDate).toBe(taperDefinition.scenario.startDate);
     expect(taper.decisionTraces.every(({ date }) => date < taperDefinition.scenario.event.date)).toBe(true);
     expect(taper.objectiveResolution.map(({ key }) => key)).not.toContain('threshold_quality');
+  });
+
+  // Issue #802: power exposure = an exact authored power identity selected on a full-dose
+  // (train-mode) day. Readiness-modified or recover-mode sessions never count.
+  const powerDates = (result) => result.decisionTraces
+    .filter((trace) => trace.mode === 'train'
+      && grantsPowerExposureCredit({ workoutId: workoutIdForTemplateId(trace.selected.templateId) }))
+    .map(({ date }) => date);
+  const weekOf = (result, weekIndex) => ({
+    ...result,
+    decisionTraces: result.decisionTraces.filter((trace) => trace.weekIndex === weekIndex),
+  });
+  const findAnyCase = (id) => families.flatMap(({ cases }) => cases).find(({ scenario }) => scenario.id === id);
+
+  it('preserves the weekly power-maintenance target inside strength sessions for the normal-recovery hybrid', async () => {
+    const reference = await resultFor(find('capacity_reference'));
+    for (const weekIndex of [0, 1]) {
+      expect(powerDates(weekOf(reference, weekIndex)).length).toBeGreaterThanOrEqual(1);
+    }
+    // Embedded, not additive: every power day is also that day's strength session.
+    expect(powerDates(reference).every((date) => reference.decisionTraces
+      .find((trace) => trace.date === date).selected.modality === 'Strength')).toBe(true);
+  });
+
+  it('withholds power while recovery is adverse and resumes it only after full-dose readiness returns', async () => {
+    const baseline = await resultFor(findAnyCase('persona_cycling_hybrid_baseline'));
+    const adverse = await resultFor(findAnyCase('persona_cycling_hybrid_adverse_recovery'));
+    const firstTrainDay = adverse.decisionTraces.find((trace) => trace.mode === 'train')?.date;
+    expect(powerDates(adverse)[0] > powerDates(baseline)[0]).toBe(true);
+    expect(powerDates(adverse).every((date) => firstTrainDay !== undefined && date >= firstTrainDay)).toBe(true);
+    // A modify-mode power-capable strength day may run, but earns no power credit (above).
+    expect(adverse.decisionTraces
+      .filter((trace) => trace.mode === 'recover')
+      .every((trace) => !powerIdentityFor(workoutIdForTemplateId(trace.selected.templateId)))).toBe(true);
+  });
+
+  it('does not prescribe impact plyometrics to satisfy power under an impact/heavy-lower-body guardrail', async () => {
+    const conflict = await resultFor(findAnyCase('persona_cycling_hybrid_local_tissue_conflict'));
+    expect(conflict.decisionTraces
+      .every((trace) => !powerIdentityFor(workoutIdForTemplateId(trace.selected.templateId))?.impact)).toBe(true);
   });
 });

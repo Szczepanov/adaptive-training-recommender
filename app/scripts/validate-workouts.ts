@@ -3,13 +3,17 @@ import { EXERCISES } from '../src/workouts/exercises.ts';
 import { COVERAGE_SETS, validatePlanCoverage } from '../src/workouts/event-plan.ts';
 import { WORKOUT_PARAMETER_BINDINGS } from '../src/workouts/parameter-bindings.ts';
 import { validateWorkoutLibrary } from '../src/workouts/validation.ts';
+import { validatePowerQualifyingIdentities } from '../src/workouts/powerExposure.ts';
 
 const result = validateWorkoutLibrary(
   EXERCISES,
   WORKOUTS,
   WORKOUT_PARAMETER_BINDINGS
 );
-const coverageErrors = Object.values(COVERAGE_SETS).flatMap(descriptor => validatePlanCoverage(WORKOUTS, descriptor));
+const coverageErrors = [
+  ...Object.values(COVERAGE_SETS).flatMap(descriptor => validatePlanCoverage(WORKOUTS, descriptor)),
+  ...validatePowerQualifyingIdentities(WORKOUTS),
+];
 
 for (const warning of result.warnings) {
   console.warn(`workout-library warning: ${warning}`);

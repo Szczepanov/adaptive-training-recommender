@@ -13,6 +13,7 @@
 import type { SessionTemplate, EvidenceTier, NormalizedGarminActivity, CompletedTrainingEvent } from './models';
 import type { CoverageSetId, PlanCoverageKey, CoverageSetDescriptor } from '../workouts/event-plan';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
+import { grantsPowerExposureCredit } from '../workouts/powerExposure';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { getTemplateIdsForWorkoutId, getUniqueTemplateIdForWorkoutId } from './workoutTemplateIndex';
 import type { PerformedTrainingOccurrence } from '../training-occurrence/models';
@@ -276,7 +277,13 @@ export function deriveFactsFromOccurrence(
 
     const coverageCredits: CoverageCreditFact[] = [];
     if (workoutId && workoutId !== 'legacy_strength') {
-        const matchingItems = descriptor.coverage.filter(item => item.workoutIds.includes(workoutId));
+        const matchingItems = descriptor.coverage
+            .filter(item => item.workoutIds.includes(workoutId))
+            // Issue #802: a readiness-modified dose may have dropped its power content.
+            .filter(item => item.key !== 'power_exposure' || grantsPowerExposureCredit({
+                workoutId,
+                isReadinessModifiedDose: hydrated.structured?.isReadinessModifiedDose,
+            }));
         for (const item of matchingItems) {
             coverageCredits.push({
                 performedOccurrenceId: occurrence.performedOccurrenceId,

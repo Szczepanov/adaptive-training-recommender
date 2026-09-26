@@ -1,6 +1,6 @@
 # ADR-0044 — Constraint-aware requirement fulfilment and bounded multi-stimulus packing
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-09-26
 **Related:** ADR-0016, ADR-0018, ADR-0033, ADR-0036, ADR-0043; #801–#806, #813
 **Analysis:** [Constraint-aware training requirement fulfilment](../analysis/2026-09-26-constraint-aware-training-fulfilment.md)

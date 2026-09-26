@@ -34,6 +34,7 @@ export const coverageKeyLabels: Record<(typeof SUPPORTED_PLAN_COVERAGE_KEYS)[num
   field_maintenance: 'Field maintenance', walk_run: 'Walk/run', recovery_or_rest: 'Recovery or rest',
   travel_aerobic: 'Travel aerobic', travel_strength: 'Travel strength', taper_sharpening: 'Taper sharpening',
   pre_race_openers: 'Pre-race openers', race_week_strength: 'Race-week strength', race_day: 'Race day',
+  power_exposure: 'Neuromuscular power',
 };
 
 export const priorityLabels: Record<(typeof SUPPORTED_OBJECTIVE_PRIORITIES)[number], string> = {

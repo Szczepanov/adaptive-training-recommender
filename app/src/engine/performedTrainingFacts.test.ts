@@ -291,10 +291,26 @@ describe('performedTrainingFacts', () => {
             expect(exposure.sourceKinds).toEqual(['structured_execution', 'provider_activity']);
             expect(exposure.durationMin).toBe(45);
 
-            expect(coverageCredits).toHaveLength(1);
-            expect(coverageCredits[0].coverageKey).toBe('primary_strength');
+            expect(coverageCredits.map(credit => credit.coverageKey)).toEqual(['primary_strength', 'power_exposure']);
             expect(coverageCredits[0].creditKind).toBe('exact');
             expect(coverageCredits[0].reasonCode).toBe('exact_workout_identity');
+        });
+
+        it('denies embedded power credit to a readiness-modified dose of a power identity (#802)', () => {
+            const occurrence = mockOccurrence({
+                sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-mod' }],
+            });
+            const { coverageCredits } = deriveFactsFromOccurrence(occurrence, {
+                structured: {
+                    executionId: 'exec-mod',
+                    workoutId: 'strength_full_body_maintenance_01',
+                    templateId: 'str_full_01',
+                    modality: 'Strength',
+                    durationMin: 18,
+                    isReadinessModifiedDose: true,
+                },
+            });
+            expect(coverageCredits.map(credit => credit.coverageKey)).toEqual(['primary_strength']);
         });
 
         it('derives a safe shared category from workout identity without inventing a shared template id', () => {

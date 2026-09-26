@@ -284,17 +284,22 @@ read-only ledgers (`contextBriefExposureLedger.ts` `deriveExposureLedger` /
 - **Status vocabulary.** `confirmed`, `planned`, `unknown`, `deliberately_suspended`
   (current settings guardrails, unexpired injuries via `resolveInjuryRestrictions`, and
   hard modality exclusions — the same sources section 1 prints) and `overdue`, which is
-  never emitted because no authoritative cadence/max-gap policy exists yet. Families
-  without a canonical model (power #802, unilateral #803, impact/jump #804, COD #805, long
-  aerobic anchor #806, hamstring/calf/grip) are `unknown` and are to be switched to those
-  models' outputs as they land, not re-derived here. Unreadable activities, adherence,
+  never emitted because no authoritative cadence/max-gap policy exists yet. Neuromuscular
+  power (#802) consumes its canonical owner, `workouts/powerExposure.ts`
+  `grantsPowerExposureCredit`: only a canonical performed fact with an exact power identity
+  at a non-readiness-modified dose confirms it (Garmin records and imported-plan titles
+  cannot prove power content), and an active impact guardrail adds a note that plyometric
+  power is suspended while non-impact identities remain eligible. Families still without a
+  canonical model (unilateral #803, impact/jump #804, COD #805, long aerobic anchor #806,
+  hamstring/calf/grip) are `unknown` and are to be switched to those models' outputs as
+  they land, not re-derived here. Unreadable activities, adherence,
   overrides, plan schedule or settings are stated as unknown, never as absence.
 - **Athlete reclassification** (`activity_overrides`, read for the render window only) is
   applied with explicit provenance and labelled display-only; each such row also prints the
   engine-recorded modality/intensity and cost row, because the engine's training history
   does not consume overrides.
 - **Deferred.** Taper/event-specific suppression is not yet represented, and the
-  #802–#806 capability families remain `unknown` until their canonical models land.
+  #803–#806 capability families remain `unknown` until their canonical models land.
   Presentation only — `POLICY_VERSION` is unaffected.
 
 #### Recommendation feedback vs plan execution (issue #815)
@@ -408,6 +413,34 @@ role. This exact workout set and spare-date preference are registered as product
 `policy.evergreen.quality_set_composition_v1` (ADR-0033).
 The legacy 2-to-6-session table is only an equal-dose placement
 tie-breaker; it does not set a physiological requirement or hide a capacity shortfall.
+
+Neuromuscular power (#802, ADR-0044 capability exposure) is a separate `AdaptationKey`,
+`neuromuscular_power`, never a form of `high_intensity`. `resolveEvidenceBackedStrategy`
+emits it only when the strategy already requires strength, the athlete selected endurance,
+speed/power, sport-readiness or balanced performance, and recent history is high-quality and
+`established`: target one exposure per week, at most two credited, no floor; `target` for a
+speed/power priority and `optional` otherwise. Acute adverse recovery, current clinical
+symptoms, `Peak/Taper`, `Post-Event Recovery` or insufficient history withhold it with a
+typed `power_exposure_withheld` warning (a deliberate suspension, not catch-up debt). The
+requirement has `delivery: 'embedded'`: `packWeeklyDose` never gives it a slot, and instead
+annotates already-packed strength occurrences whose exact identities include a power
+identity (`embeddedAdaptations`/`embeddedWorkoutIds`); with no such host it reports
+`embedded_host_unavailable` rather than adding a session. `buildEvergreenPlanDefinition`
+turns the embedded count into a coverage-only `PlanDefinition.coverageRequirements` entry
+for the `power_exposure` key — no stimulus `WeeklyObjective`, because no canonical stimulus
+axis represents neuromuscular power. `workouts/powerExposure.ts` owns the exact identities
+(`strength_full_body_maintenance_01` and `strength_lower_body_01` hang power cleans,
+`strength_compact_power_01` medicine-ball slams, `strength_reactive_power_01` jumps, the last
+flagged `impact`) and the variants that keep their power steps (`full`, `reduced`). The
+coverage ledger therefore credits one power-clean strength session to both
+`primary_strength` and `power_exposure` as one occurrence, denies `power_exposure` to
+readiness-modified doses in both `coverageKeysForExposure` and the canonical performed-fact
+path, and never credits threshold/VO2 work or generic strength. The unmet target only
+reaches ranking through the ordinary coverage-need tier; it does not relax eligibility, so an
+impact guardrail still blocks plyometrics and the power gap is reported instead. Policy is
+owned by `policy.evergreen.power_maintenance_exposure_v1`, with low-certainty support from
+`performance.power.low_frequency_maintenance` (ADR-0033). Event-directed plans do not yet
+carry the power requirement.
 
 Event-free `health` planning also resolves `healthPlanningPolicy.ts`
 `resolveHealthPlanningPolicy` from the current intent and preferences. Explicit Running

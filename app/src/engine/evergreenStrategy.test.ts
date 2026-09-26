@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CompletedExposure } from './trainingHistory';
 import { hasCurrentClinicalSymptoms, inferAthleteTrainingState, isFreshSubjectiveWithAdverseWearables, resolveEvidenceBackedStrategy } from './evergreenStrategy';
-import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledge';
+import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
 import { DEFAULT_BASE_DEMAND } from './periodization';
 
 const exposure = (duration: number): CompletedExposure => ({
@@ -46,7 +46,8 @@ describe('evergreen evidence-backed strategy', () => {
         const state = inferAthleteTrainingState(Array.from({ length: 12 }, () => exposure(60)), 28);
         const strategy = resolveEvidenceBackedStrategy({ priorities: ['health', 'endurance'] }, state);
         expect(state.trainingAgeProxy).toBe('established');
-        expect(strategy.requirements).toHaveLength(3);
+        // aerobic + strength + conditional high intensity + embedded power (#802)
+        expect(strategy.requirements).toHaveLength(4);
         strategy.requirements.forEach(requirement => {
             expect(requirement.knowledgeRefs.length).toBeGreaterThan(0);
             requirement.knowledgeRefs.forEach(claimId => expect(() => getActiveKnowledgeClaim(claimId)).not.toThrow());
