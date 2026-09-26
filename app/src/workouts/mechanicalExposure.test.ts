@@ -3,6 +3,7 @@ import { WORKOUTS } from './catalog.ts';
 import {
   grantsMechanicalExposureCredit,
   mechanicalIdentityFor,
+  MECHANICAL_MAINTENANCE_WORKOUT_IDS,
   validateMechanicalQualifyingIdentities,
 } from './mechanicalExposure.ts';
 
@@ -26,6 +27,23 @@ describe('mechanicalExposure catalog validation', () => {
     expect(grantsMechanicalExposureCredit({ workoutId: 'running_walk_run_01', variant: 'reduced' })).toBe(true);
     expect(grantsMechanicalExposureCredit({ workoutId: 'running_walk_run_01', variant: 'return_to_training' })).toBe(false);
     expect(grantsMechanicalExposureCredit({ workoutId: 'running_walk_run_01', isReadinessModifiedDose: true })).toBe(false);
+  });
+
+  it('keeps high-cost running as incidental evidence, not maintenance catch-up work', () => {
+    expect(MECHANICAL_MAINTENANCE_WORKOUT_IDS).toContain('running_walk_run_01');
+    expect(MECHANICAL_MAINTENANCE_WORKOUT_IDS).toContain('strength_reactive_power_01');
+    expect(MECHANICAL_MAINTENANCE_WORKOUT_IDS).not.toContain('running_long_run_01');
+    expect(MECHANICAL_MAINTENANCE_WORKOUT_IDS).not.toContain('running_vo2_4x4_01');
+  });
+
+  it('does not fabricate contact counts for duration-authored running exposures', () => {
+    for (const workoutId of ['running_walk_run_01', 'running_easy_continuous_01', 'running_long_run_01', 'running_race_pace_01']) {
+      const identity = mechanicalIdentityFor(workoutId);
+      expect(identity).toBeDefined();
+      expect(identity?.dose.runningDurationMin).toBeGreaterThan(0);
+      expect(identity?.dose.contactCountBand).toBeUndefined();
+      expect(identity?.dose.estimatedContacts).toBeUndefined();
+    }
   });
 
   it('denies mechanical credit for non-impact workouts', () => {
