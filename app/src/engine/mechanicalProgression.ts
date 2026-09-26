@@ -75,10 +75,11 @@ function isGuardrailActive(
  *
  * Enforces:
  * 1. Hard safety gates: `avoid_high_impact`, knee swelling, acute pain block mechanical exposure.
- * 2. Spacing gate: No consecutive high-impact calendar days (minimum 48h for connective tissue).
+ * 2. Spacing gate: No consecutive mechanical-impact calendar days. This is a product-policy
+ *    guardrail, not a claim that a date boundary proves a fixed 48-hour biological interval.
  * 3. Gap re-entry gate: Absence of exposure for >= 14 days resets allowed stage to Stage 1.
- * 4. Response-gated progression: Stage advancement (K -> K+1) strictly requires explicit normal
- *    tissue response evidence following Stage K exposure. Missing evidence halts progression.
+ * 4. Response-gated progression: Stage advancement (K -> K+1) requires at least two recent
+ *    Stage-K exposures with explicit normal follow-up tissue evidence. Missing evidence fails closed.
  * 5. Symptom regression: Reported mild/moderate/severe tissue symptoms regress or withhold stage.
  */
 export function evaluateMechanicalStageProgression(
@@ -119,7 +120,9 @@ export function evaluateMechanicalStageProgression(
 
   const lastExposure = pastExposures.at(-1);
   const lookback14Days = addDaysToLocalDateString(asOfDate, -14);
-  const recentExposures = pastExposures.filter(e => e.date >= lookback14Days);
+  // `lookback14Days` itself is exactly 14 calendar days ago, so it is outside the
+  // continuity window: >=14 days without exposure is re-entry by policy.
+  const recentExposures = pastExposures.filter(e => e.date > lookback14Days);
 
   // Spacing rule: no high-impact on consecutive days
   const yesterday = addDaysToLocalDateString(asOfDate, -1);
@@ -170,13 +173,14 @@ export function evaluateMechanicalStageProgression(
     };
   }
 
-  // Check for adverse tissue response in recent checkins
+  // Check for adverse response after the most recent exposure. Older resolved symptoms do
+  // not keep regressing the athlete indefinitely once a newer exposure has been completed.
   const affectedRegions: BodyRegion[] = [];
   let foundAdverse = false;
   let foundSevere = false;
 
   for (const record of checkinHistory) {
-    if (record.date < lookback14Days || record.date > asOfDate) continue;
+    if (record.date <= (lastExposure?.date ?? lookback14Days) || record.date > asOfDate) continue;
     const checkin = record.checkin;
     if (checkin.soreness !== undefined && checkin.soreness !== null && checkin.soreness >= 5) {
       foundAdverse = true;
@@ -227,8 +231,8 @@ export function evaluateMechanicalStageProgression(
   if (!lastExposure || recentExposures.length === 0) {
     // Gap >= 14 days or no history: re-entry at Stage 1
     const eligibleWorkouts = MECHANICAL_QUALIFYING_IDENTITIES
-      .filter(i => i.stage <= 1)
-      .map(i => i.workoutId);
+      .filter(identity => identity.planningUse === 'maintenance_candidate' && identity.stage <= 1)
+      .map(identity => identity.workoutId);
 
     return {
       stage: 1,
@@ -242,18 +246,31 @@ export function evaluateMechanicalStageProgression(
 
   // Check the tissue response following the most recent exposure
   const dayAfterLastExposure = addDaysToLocalDateString(lastExposure.date, 1);
-  const followUpCheckin = checkinsByDate.get(dayAfterLastExposure) ?? checkinsByDate.get(asOfDate);
+  const followUpCheckin = checkinsByDate.get(dayAfterLastExposure);
 
-  let responseVerdict: TissueResponseVerdict = 'normal';
+  const explicitFollowUpVerdict = (checkin: DailySubjectiveCheckin | undefined): TissueResponseVerdict => {
+    if (!checkin?.tissueResponses) return 'missing';
+    const lowerBodyResponses = Object.entries(checkin.tissueResponses)
+      .filter(([region, response]) => LOWER_BODY_REGIONS.has(region as BodyRegion) && Boolean(response))
+      .map(([, response]) => response as RegionTissueResponse);
+    if (lowerBodyResponses.length === 0) return 'missing';
+    const levels = lowerBodyResponses.flatMap(response => [
+      response.morningState,
+      response.painDuringTraining,
+      response.afterTrainingState,
+      response.nextMorningReaction,
+    ].filter(Boolean));
+    if (levels.some(level => level === 'mild' || level === 'moderate' || level === 'severe')) return 'adverse';
+    return levels.some(level => level === 'normal') ? 'normal' : 'missing';
+  };
+
+  let responseVerdict: TissueResponseVerdict = foundAdverse ? 'adverse' : explicitFollowUpVerdict(followUpCheckin);
   const responseNotes: string[] = [];
 
-  if (foundAdverse) {
-    responseVerdict = 'adverse';
-    responseNotes.push(`Mild symptoms reported in: ${affectedRegions.join(', ')}`);
-  } else if (!followUpCheckin) {
-    // No follow-up check-in recorded after the last exposure: missing evidence fails closed
-    responseVerdict = 'missing';
-    responseNotes.push('No follow-up check-in recorded after previous exposure; progression held');
+  if (responseVerdict === 'adverse') {
+    responseNotes.push(`Symptoms reported after the latest exposure${affectedRegions.length ? ` in: ${affectedRegions.join(', ')}` : ''}`);
+  } else if (responseVerdict === 'missing') {
+    responseNotes.push('Explicit next-day lower-body tissue response is missing; progression held');
   }
 
   // 5. Progression / Regression calculation
@@ -263,11 +280,19 @@ export function evaluateMechanicalStageProgression(
     // Regress stage on adverse symptoms
     calculatedStage = Math.max(1, (lastExposure.stage - 1)) as MechanicalStage;
   } else if (responseVerdict === 'normal') {
-    // Normal response allows progression if targetStage requests higher
     const requested = input.targetStage ?? lastExposure.stage;
     if (requested > lastExposure.stage) {
-      // Conservative progression: at most +1 stage
-      calculatedStage = Math.min(4, lastExposure.stage + 1) as MechanicalStage;
+      const successfulCurrentStageExposures = recentExposures.filter(exposure =>
+        exposure.stage === lastExposure.stage
+        && explicitFollowUpVerdict(checkinsByDate.get(addDaysToLocalDateString(exposure.date, 1))) === 'normal'
+      ).length;
+      if (successfulCurrentStageExposures >= 2) {
+        // Conservative progression: at most +1 stage.
+        calculatedStage = Math.min(4, lastExposure.stage + 1) as MechanicalStage;
+      } else {
+        calculatedStage = lastExposure.stage;
+        responseNotes.push(`Progression held: ${successfulCurrentStageExposures}/2 current-stage exposures have explicit normal follow-up.`);
+      }
     } else {
       calculatedStage = requested;
     }
@@ -278,8 +303,8 @@ export function evaluateMechanicalStageProgression(
 
   const status: MechanicalProgressionStatus = foundAdverse ? 'regressed' : 'eligible';
   const eligibleWorkouts = MECHANICAL_QUALIFYING_IDENTITIES
-    .filter(i => i.stage <= calculatedStage)
-    .map(i => i.workoutId);
+    .filter(identity => identity.planningUse === 'maintenance_candidate' && identity.stage <= calculatedStage)
+    .map(identity => identity.workoutId);
 
   return {
     stage: calculatedStage,
