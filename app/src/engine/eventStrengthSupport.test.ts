@@ -13,7 +13,7 @@ import { createEmptyFatigue } from './fatigue';
 import { generateWeekAheadPlan } from './planner';
 import { ENRICHED_TEMPLATES } from './templates';
 import { strengthRequirement } from './evergreenStrategy';
-import { addDaysToLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 import type { PlanningContext } from './planningMode';
 import type { DailyReadiness, Recommendation, TrainingIntentProfile, UserEvent } from './models';
 import type { TrainingHistoryProvider } from './trainingHistory';
@@ -130,6 +130,10 @@ describe('cycling build strength support in the weekly allocator (#801)', () => 
         expect(primary?.status).toBe('fulfilled');
         expect(support?.status).toBe('fulfilled');
         expect(primary?.reservation.assignedDate).not.toBe(support?.reservation.assignedDate);
+        expect(Math.abs(getDayDiff(
+            primary?.reservation.assignedDate ?? '',
+            support?.reservation.assignedDate ?? '',
+        ))).toBeGreaterThanOrEqual(2);
         expect(support?.reservation.workoutId).toBe('strength_compact_power_01');
         // Primary roles keep exactly their baseline outcome and dates.
         for (const key of ['aerobic_volume', 'primary_strength', 'sustained_quality', 'outdoor_event_specific']) {
