@@ -46,11 +46,11 @@ const snapshot: TrainingHistorySnapshot = {
     athleteStateEvidence: { observedWindowDays: 28, exposures },
 };
 
-function resolve(isAdverseRecovery = false) {
+function resolve(isAdverseRecovery = false, hasCurrentClinicalSymptoms = false) {
     const periodization = evaluatePeriodizationPhase([], DATE);
     return resolveEvergreenPlan(
         resolvePlanningContext(profile, periodization, DATE), periodization.phase, [], snapshot,
-        preferences, context, DATE, [], 7, isAdverseRecovery,
+        preferences, context, DATE, [], 7, isAdverseRecovery, [], new Map(), null, hasCurrentClinicalSymptoms,
     );
 }
 
@@ -75,6 +75,9 @@ describe('evergreen quality set policy alignment (ADR-0033, issue #758)', () => 
         const withheld = resolve(true);
         expect(withheld?.budget.optionalRoles.some(role => role.coverageRoleId === 'sustained_quality')).toBe(false);
         expect(withheld?.knowledgeRefs).not.toContain(KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition);
+        const symptomatic = resolve(false, true);
+        expect(symptomatic?.budget.optionalRoles.some(role => role.coverageRoleId === 'sustained_quality')).toBe(false);
+        expect(symptomatic?.knowledgeRefs).not.toContain(KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition);
     });
 
     it('aligns conditionalHighIntensityPrior claim v2 with recovery gating and transactional aerobic credit', () => {
@@ -82,7 +85,7 @@ describe('evergreen quality set policy alignment (ADR-0033, issue #758)', () => 
         expect(claim.version).toBe(2);
         expect(claim.reviewedOn).toBe('2026-09-25');
         expect(claim.statement).toContain('up to two in the weekly plan');
-        expect(claim.statement).toContain('withheld during acute adverse recovery and Post-Event Recovery');
+        expect(claim.statement).toContain('withheld during acute adverse recovery, while current pain/injury, illness or red-flag symptoms are reported, and during Post-Event Recovery');
         expect(claim.statement).toContain('Base/Build labels do not replace objective-owned mesocycle intent');
         expect(claim.statement).toContain('substituting up to one aerobic-volume reservation');
         expect(claim.statement).toContain('bounded so at least one full aerobic-volume occurrence remains');

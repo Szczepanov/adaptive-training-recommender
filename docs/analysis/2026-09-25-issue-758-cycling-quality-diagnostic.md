@@ -69,6 +69,12 @@ PR #835 resolves that capacity conflict without weakening the evidence contract:
 - The normal-recovery cycling-primary baseline now has capacity for cycling quality over
   the 14-day acceptance window. The 35-minute case retains its authored cap-fitting
   cycling tempo dose. Adverse-recovery and local-tissue-conflict cases remain quality-free.
+- Freeing that capacity exposed that the local-tissue-conflict case had been quality-free
+  only because no slot was left, not because a gate withheld quality. The generic
+  conditional quality prior is now also withheld explicitly while the planning-day
+  check-in reports current pain/injury, illness or red-flag symptoms
+  (`hasCurrentClinicalSymptoms`), so symptom suppression no longer depends on packing
+  arithmetic.
 - Event-model `Base`/`Build` labels are deliberately **not** treated as mesocycle
   `develop`/`maintain` authority. ADR-0037 owns objective-level block intent, and the
   event-proximity phase can span training blocks with different purposes. The generic
