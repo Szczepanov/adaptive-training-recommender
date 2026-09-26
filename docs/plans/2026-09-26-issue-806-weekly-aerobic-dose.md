@@ -38,7 +38,7 @@ The existing #757 single-session `aerobic_volume` coverage floor remains a separ
    duration. Report typed shortfall if it cannot be packed.
 4. Register and align the policy in `stimulusHeuristicsKnowledge.ts` and
    `knowledgeCoverage.ts`; bump `POLICY_VERSION` and include the old version in history.
-5. Update ADR-0044, `recommendation-engine.md`, and this status board entry.
+5. Record the #806 decision in ADR-0045 (without mutating accepted ADR-0044), update `recommendation-engine.md`, and update this status board entry.
 
 ## Tests and verification
 
