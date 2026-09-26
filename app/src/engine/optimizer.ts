@@ -35,7 +35,7 @@ import {
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveEventTaper } from './taperPolicy';
-import { isPriorityAOlympicTriathlon, olympicTriathlonTaperBenefitBoost, olympicTriathlonTaperCandidateCap, olympicTriathlonTaperExclusion, resolveOlympicTriathlonTaperBudget } from './taperPlanBudget';
+import { isPriorityAOlympicTriathlon, olympicTriathlonTaperBenefitBoost, olympicTriathlonTaperCandidateCap, olympicTriathlonTaperExclusion, resolveOlympicTriathlonTaperBudget, type OlympicTriathlonTaperBudget } from './taperPlanBudget';
 import { resolveInjuryRestrictions } from './injuryPolicy';
 import { classifyCandidateStrength, classifyPriorStrength, evaluateStrengthSpacingStatus, type StrengthExposureLike } from './strengthSpacingPolicy';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
@@ -230,6 +230,31 @@ function resolveOlympicTaperDoseAdjustment(
     };
 }
 
+/** Shared dose authority for ranking and forecast load admission. A taper-reduced
+ * prescription must be charged at the same cost before and after candidate ranking. */
+export function resolveTaperAwareDoseAdjustments(
+    template: SessionTemplate,
+    maxTimeMinutes: number,
+    isModifyTier: boolean,
+    taperBudget: OlympicTriathlonTaperBudget | null,
+): {
+    activeDoseAdjustment: { activeDose: DoseVariation; adjustment: SessionAdjustment } | null;
+    taperDoseAdjustment: { activeDose: DoseVariation; adjustment: SessionAdjustment } | null;
+} {
+    const readinessDoseAdjustment = resolveTimeCapDoseAdjustment(template, maxTimeMinutes, isModifyTier);
+    const taperCandidateCap = olympicTriathlonTaperCandidateCap(template, taperBudget);
+    const proposedTaperDoseAdjustment = taperCandidateCap !== null
+        ? resolveOlympicTaperDoseAdjustment(template, Math.min(taperCandidateCap, maxTimeMinutes))
+        : null;
+    const taperDoseAdjustment = proposedTaperDoseAdjustment && (!readinessDoseAdjustment
+        || proposedTaperDoseAdjustment.activeDose.durationMax < readinessDoseAdjustment.activeDose.durationMax)
+        ? proposedTaperDoseAdjustment : null;
+    return {
+        activeDoseAdjustment: taperDoseAdjustment ?? readinessDoseAdjustment,
+        taperDoseAdjustment,
+    };
+}
+
 export interface RankedCandidate {
     template: SessionTemplate;
     /** A concrete reduced prescription charged to the athlete's Olympic taper budget. */
@@ -289,6 +314,8 @@ export interface OptimizationOptions {
     /** Completed evidence wider than operational history, used only to establish and
      * account for the athlete-specific Olympic taper budget. */
     taperBudgetHistory?: (RecentHistoryEntry | SessionHistoryEntry)[];
+    /** Booked training occurrences, including future commitments within the taper. */
+    taperFixedReservations?: RecentHistoryEntry[];
     /** Canonical performed-training exposure facts are the recency/spacing authority for
      * strength. An explicitly present empty array must stay empty rather than falling back
      * to legacy reconstructed history. */
@@ -1077,6 +1104,7 @@ export function buildOptimizationContext(
             focusEvent,
             recentHistory: rawHistory,
             ...(options.taperBudgetHistory ? { taperBudgetHistory: options.taperBudgetHistory } : {}),
+            ...(options.taperFixedReservations ? { taperFixedReservations: options.taperFixedReservations } : {}),
             anchorRole: options.anchorRole ?? null,
             adjacentToAnchor: options.adjacentToAnchor ?? false,
             coverageState,
@@ -1139,7 +1167,9 @@ export function rankCandidates(
     const cyclingDurabilityFocusEvent = isCyclingDurabilityFocusEvent(focusEvent);
     const rawHistory = options.recentHistory ?? [];
     const history = normalizeHistory(rawHistory, targetDate);
-    const olympicTaperBudget = resolveOlympicTriathlonTaperBudget(focusEvent, targetDate, rawHistory, options.taperBudgetHistory);
+    const olympicTaperBudget = resolveOlympicTriathlonTaperBudget(
+        focusEvent, targetDate, rawHistory, options.taperBudgetHistory, options.taperFixedReservations,
+    );
     const olympicRaceEve = isPriorityAOlympicTriathlon(focusEvent)
         && resolvedTaper !== null
         && targetDate >= resolvedTaper.startDate
@@ -1176,15 +1206,9 @@ export function rankCandidates(
         if (!template) return;
         const excludedReasons: string[] = [];
 
-        const readinessDoseAdjustment = resolveTimeCapDoseAdjustment(template, availability.maxTimeMinutes, options.fatigueTier === 'modify');
-        const taperCandidateCap = olympicTriathlonTaperCandidateCap(template, olympicTaperBudget);
-        const proposedTaperDoseAdjustment = taperCandidateCap !== null
-            ? resolveOlympicTaperDoseAdjustment(template, Math.min(taperCandidateCap, availability.maxTimeMinutes))
-            : null;
-        const useTaperDose = proposedTaperDoseAdjustment && (!readinessDoseAdjustment
-            || proposedTaperDoseAdjustment.activeDose.durationMax < readinessDoseAdjustment.activeDose.durationMax);
-        const activeDoseAdjustment = useTaperDose ? proposedTaperDoseAdjustment : readinessDoseAdjustment;
-        const taperDoseAdjustment = useTaperDose ? proposedTaperDoseAdjustment : null;
+        const { activeDoseAdjustment, taperDoseAdjustment } = resolveTaperAwareDoseAdjustments(
+            template, availability.maxTimeMinutes, options.fatigueTier === 'modify', olympicTaperBudget,
+        );
         // Only opted-in catalog templates may use an authored easier dose below their
         // default minimum to enter a shorter window.
         const minimumForTimeBudget = template.allowsShortTimeCapDose

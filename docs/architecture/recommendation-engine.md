@@ -811,16 +811,23 @@ For a Priority-A Olympic-distance triathlon with comparable swim/bike/run traini
 the 14-day taper now has a shared plan-level frequency and volume envelope. The comparison
 uses the preceding 14 days of completed swim/bike/run training, requiring at least three
 measured sessions spanning seven days; projected selections consume the same envelope at
-their prescribed duration upper bound. The volume ceiling is 0.59 of that
+their prescribed duration upper bound. Pending fixed training with exact catalog or
+external-authored identity reserves its stated minutes and one session slot, even when
+booked later in the taper; an unlinked calendar commitment is not assumed to be training.
+The volume ceiling is 0.59 of that
 pre-taper block, expressing the registered 41–60% population-level taper reduction as a
-conservative product rule. The frequency ceiling is 0.85 of the athlete's prior session
-count, with a three-session floor. The first seven days may use at most half the minute
-allowance; the final seven days use the remaining allowance, with brief bike and run
-touches reserved for D-4 through D-2 and race-week swims bounded to 45 minutes. A
+conservative product rule. The frequency ceiling rounds up 0.85 of the athlete's prior
+session count, with a three-session floor. Each seven-day block may use at most half the
+minute allowance and its rounded-up half-session allocation. If the reference block
+contains at least two measured sessions in every race discipline, the planner reserves
+one swim, bike and run touch in each block where feasible, including 30 minutes for a
+swim. Brief bike and run touches are reserved for D-4 through D-2, while race-week swims
+are bounded to 45 minutes. Soft benefit nudges favor a race-week swim, late run and
+cycling opener within the existing eligibility gates. A
 completed session is charged at its delivered duration when the plan is regenerated,
 while future sessions are charged at their prescribed upper bound. D-1 is rest. The
-planner can retain brief touches in each
-discipline when access, readiness and the shared budget permit. These exact ceilings and
+planner can retain brief touches in each discipline when access, readiness and the shared
+budget permit. These exact ceilings and
 race-eve rest are product calibration rather than universal sports-science thresholds;
 other distances and event priorities keep their own taper behavior.
 

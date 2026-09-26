@@ -45,7 +45,8 @@ import { fixedActivityOccurrenceKey } from './fixedActivityIdentity';
 import type { AnyExternalPlanSession as ExternalPlanSession } from '../sessions/externalPlanV2';
 import { applyFixedActivityStimulusCredit, trailingHistoryFromCompletedExposures } from './planner';
 import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS } from './rollingLoadBudget';
-import { isPriorityAOlympicTriathlon } from './taperPlanBudget';
+import { isPriorityAOlympicTriathlon, OLYMPIC_TRIATHLON_TAPER_REFERENCE_DAYS, taperHistoryFromFixedActivities } from './taperPlanBudget';
+import { resolveEventTaper } from './taperPolicy';
 import { getUnresolvedObjectives } from './microcycle';
 import { applyCompletedSessionLoad, computeInternalResponseStrain, decayFatigue, type FatigueFusionPolicy } from './fatigue';
 import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaseline, type SubjectiveBaselineMetric } from './subjectiveBaseline';
@@ -769,9 +770,15 @@ export async function evaluateTrainingWithIntent(
         };
     }
 
+    const taperFocusEvent = intent.periodization.focusEvent;
+    const olympicTaper = isPriorityAOlympicTriathlon(taperFocusEvent)
+        ? resolveEventTaper(taperFocusEvent!) : null;
+    const olympicTaperPolicyEvaluated = Boolean(olympicTaper
+        && olympicTaper.durationDays === OLYMPIC_TRIATHLON_TAPER_REFERENCE_DAYS
+        && date >= olympicTaper.startDate && date <= olympicTaper.endDate);
     const decisionKnowledgeRefs = mergeKnowledgeRefs(
         envelopeState.knowledgeRefs,
-        trainingIntentKnowledgeRefs(intent),
+        trainingIntentKnowledgeRefs(intent, { olympicTaperPolicyEvaluated }),
         candidateSelectionKnowledgeRefs(),
         healthPlanningKnowledgeRefs(healthPlanningPolicy !== null),
         evergreen?.knowledgeRefs,
@@ -800,6 +807,7 @@ export async function evaluateTrainingWithIntent(
             preferredModalityToday: readiness.subjective.preferredModalityToday,
             aerobicVolumeFloor,
             taperBudgetHistory: trailingHistoryFromCompletedExposures(intent.rollingLoadBudgetHistory, date),
+            taperFixedReservations: taperHistoryFromFixedActivities(fixedActivities),
             ...(evergreen ? {
                 coverageState: buildCoverageState(
                     evergreen.planDefinition,

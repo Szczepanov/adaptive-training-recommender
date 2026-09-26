@@ -167,11 +167,12 @@ describe('established Olympic-triathlon persona (issue #679)', () => {
 
     expect(prior).toHaveLength(6);
     expect(priorMinutes).toBe(330);
-    expect(substantive.length).toBeLessThanOrEqual(prior.length);
+    expect(substantive).toHaveLength(Math.ceil(prior.length * 0.85));
     // The second forecast is generated after week one is simulated as performed at its
     // lower prescribed bound. Its as-of budget therefore charges actual delivered minutes
     // plus current projected upper bounds, not expired week-one upper prescriptions.
     expect(firstWeekMax).toBeLessThanOrEqual(priorMinutes * 0.59 / 2);
+    expect(secondWeekMax).toBeLessThanOrEqual(priorMinutes * 0.59 / 2);
     expect(firstWeekDeliveredMin + secondWeekMax).toBeLessThanOrEqual(priorMinutes * 0.59);
     expect(plannedMaxMinutes).toBeLessThanOrEqual(priorMinutes * 0.59);
     expect(plannedSystemicCost).toBeLessThan(priorSystemicCost);
@@ -180,7 +181,8 @@ describe('established Olympic-triathlon persona (issue #679)', () => {
     expect(substantive.every((trace) => (trace.selected.durationMax ?? 0) > 0 && trace.selected.projectedCost.systemic >= 0)).toBe(true);
     expect(traces.at(-1).selected.category).toBe('Rest');
     for (const modality of ['Swimming', 'Cycling', 'Running']) {
-      expect(substantive.some((trace) => trace.selected.modality === modality), `${modality} taper touch`).toBe(true);
+      expect(firstWeek.filter((trace) => trace.selected.modality === modality), `${modality} first-week taper touch`).toHaveLength(1);
+      expect(secondWeek.filter((trace) => trace.selected.modality === modality), `${modality} second-week taper touch`).toHaveLength(1);
     }
     const lateTouches = substantive.filter((trace) => {
       const daysToRace = dayDiff(definition.scenario.event.date, trace.date);

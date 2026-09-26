@@ -65,8 +65,10 @@ import {
     materializeEffectiveDose,
     rankCandidates,
     resolveRecoveryStyle,
+    resolveTaperAwareDoseAdjustments,
     resolveTimeCapDoseAdjustment,
 } from './optimizer';
+import { resolveOlympicTriathlonTaperBudget, taperHistoryFromFixedActivities } from './taperPlanBudget';
 import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
 import { prepareTrainingHistorySnapshot, resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
@@ -864,6 +866,10 @@ export function evaluateProjectedDate(
     const fatigueThresholds = projectedFatigueThresholds(isConservative);
     const fatigueTier = fatigueTierFor(peakFatigue, fatigueThresholds);
     const budgetFatigueTier = effectiveProjectedFatigueTier(fatigueTier, shared.projectedRecoveryPolicy);
+    const fixedTaperReservations = taperHistoryFromFixedActivities(shared.fixedActivities);
+    const olympicTaperBudget = resolveOlympicTriathlonTaperBudget(
+        periodization.focusEvent, date, state.projectedHistory, shared.taperBudgetHistory, fixedTaperReservations,
+    );
 
     const loadBudgetProfile = shared.rollingLoadBudgetProfile
         ?? resolveRollingLoadBudgetProfile(state.projectedHistory, date);
@@ -934,11 +940,9 @@ export function evaluateProjectedDate(
         // fatigue, safety, spacing and daily-ledger gates remain authoritative until
         // the athlete has enough stable baseline evidence for this product envelope.
         if (loadBudgetProfile.confidence === 'provisional') return true;
-        const activeDose = resolveTimeCapDoseAdjustment(
-            template,
-            availability.maxTimeMinutes,
-            budgetFatigueTier === 'modify',
-        )?.activeDose;
+        const activeDose = resolveTaperAwareDoseAdjustments(
+            template, availability.maxTimeMinutes, budgetFatigueTier === 'modify', olympicTaperBudget,
+        ).activeDoseAdjustment?.activeDose;
         const effective = effectiveTemplateForProjection(template, activeDose);
         return evaluateRollingLoadBudget({
             asOfDate: date,
@@ -995,6 +999,7 @@ export function evaluateProjectedDate(
             fatigueTier: budgetFatigueTier,
             healthPlanningPolicy: shared.healthPlanningPolicy,
             taperBudgetHistory: shared.taperBudgetHistory,
+            taperFixedReservations: fixedTaperReservations,
             authoredPlanBlocks: shared.authoredPlanBlocks,
             resolvedAvailability: availability,
             ...(planDefinition ? {
