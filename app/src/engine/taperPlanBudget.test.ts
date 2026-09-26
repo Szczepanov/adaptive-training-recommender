@@ -20,6 +20,7 @@ import {
     olympicTriathlonTaperCandidateCap,
     olympicTriathlonTaperExclusion,
     resolveOlympicTriathlonTaperBudget,
+    resolvePriorityAOlympicTriathlonTaper,
     taperHistoryFromFixedActivities,
 } from './taperPlanBudget';
 
@@ -60,6 +61,40 @@ describe('A Olympic triathlon plan-level taper budget', () => {
         expect(isPriorityAOlympicTriathlon({ ...event, priority: 'B' })).toBe(false);
         expect(isPriorityAOlympicTriathlon({ ...event, demandProfile: resolveDemandProfile('triathlon', 'sprint') })).toBe(false);
         expect(isPriorityAOlympicTriathlon({ ...event, category: 'running_race' })).toBe(false);
+    });
+
+    it('keeps athlete-authored non-14-day tapers outside this policy and its D-1 Rest gate', () => {
+        const shortTaperEvent: UserEvent = {
+            ...event,
+            taper: { startDate: '2026-09-09' },
+        };
+        expect(resolvePriorityAOlympicTriathlonTaper(shortTaperEvent, '2026-09-13')).toBeNull();
+        expect(resolveOlympicTriathlonTaperBudget(shortTaperEvent, '2026-09-13', baseline)).toBeNull();
+
+        const fatigue: FatigueState = {
+            lastUpdatedDate: '2026-09-13',
+            externalLoadFatigue: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalResponseStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            combinedFatigue: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+        };
+        const availability: ResolvedAvailability = {
+            date: '2026-09-13', maxTimeMinutes: 60, availableEquipment: [], fixedActivities: [],
+            reservedCapacityCost: 0,
+            reservedCapacityCostProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            environmentOverride: null,
+        };
+        const preferences: UserPreferences = {
+            userId: 'athlete', preferredRecoveryStyle: 'mixed', preferredModalities: [],
+            deprioritizedModalities: [], avoidedModalities: [], conservativeBias: false,
+            defaultWeekdayTimeMin: 60, defaultWeekendTimeMin: 90, preferredTimeOfDay: 'flexible',
+            explanationVerbosity: 'detailed', preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' },
+            schemaVersion: 1, createdAt: '', updatedAt: '',
+        };
+        const result = rankCandidates([easyRun, rest], [], fatigue, availability, [], preferences, {
+            date: '2026-09-13', focusEvent: shortTaperEvent, recentHistory: [],
+        });
+        expect(result.all.find(candidate => candidate.template.id === easyRun.id)?.excludedReasons)
+            .not.toContain('OLYMPIC_TRIATHLON_RACE_EVE_REST');
     });
 
     it('derives the 14-day minutes and session ceiling from completed pre-taper exposure', () => {
