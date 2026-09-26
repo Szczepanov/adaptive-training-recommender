@@ -3,6 +3,7 @@ import type { EvidenceBackedStrategy } from './evergreenStrategy';
 import { packWeeklyDose, type CoverageSetDescriptor } from './weeklyDosePacking';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import { progressionOverrideKey } from './progressionOverrideKey';
+import { KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
 
 const healthStrategy: EvidenceBackedStrategy = {
     requirements: [{
@@ -143,6 +144,41 @@ describe('weekly dose packing', () => {
         expect(adaptationsPacked.has('aerobic_endurance')).toBe(true);
         expect(adaptationsPacked.has('strength')).toBe(true);
         expect(budget.requiredRoles).toHaveLength(3);
+    });
+
+    it('uses target-session room for athlete-relative aerobic dose without starving the co-required strength floor', () => {
+        const aerobic = {
+            ...healthStrategy.requirements[0],
+            floor: { dose: { unit: 'minutes' as const, value: 320 }, semantics: 'evidence_supported_minimum' as const },
+            target: { unit: 'minutes' as const, minimum: 320, target: 320, maximum: 320 },
+            substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Cycling'] },
+            knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.weeklyAerobicDoseEnvelopePolicy],
+        };
+        const strength = {
+            ...healthStrategy.requirements[0],
+            adaptation: 'strength' as const,
+            floor: { dose: { unit: 'sessions' as const, value: 2 }, semantics: 'guideline_recommended_minimum' as const },
+            target: { unit: 'sessions' as const, minimum: 2, target: 2, maximum: 3 },
+            substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Strength'] },
+        };
+        const roles: CoverageSetDescriptor = {
+            id: 'athlete-relative-peer-floor-test',
+            roles: [
+                { id: 'aerobic', adaptations: ['aerobic_endurance'], exactWorkoutIds: ['cycling_zone2_standard_01'], durationMinutes: 60 },
+                { id: 'strength', adaptations: ['strength'], exactWorkoutIds: ['strength_full_body_maintenance_01'], durationMinutes: 45 },
+            ],
+        };
+        const sixSessionCapacity = { ...capacity(90, 6), minSessions: 5, targetSessions: 6, maxSessions: 7 };
+        const budget = packWeeklyDose({ requirements: [aerobic, strength], warnings: [] }, sixSessionCapacity, roles);
+
+        expect(budget.requiredRoles.filter(role => role.coverageRoleId === 'aerobic')).toHaveLength(4);
+        expect(budget.requiredRoles.filter(role => role.coverageRoleId === 'strength')).toHaveLength(2);
+        expect(budget.requiredRoles).toHaveLength(6);
+        expect(budget.shortfalls).toContainEqual(expect.objectContaining({
+            adaptation: 'aerobic_endurance',
+            code: 'minimum_dose_shortfall',
+        }));
+        expect(budget.shortfalls.some(warning => warning.adaptation === 'strength')).toBe(false);
     });
 
     it('reclaims unused fair-share capacity when a later required peer needs fewer sessions', () => {
