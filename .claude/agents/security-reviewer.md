@@ -10,10 +10,11 @@ You find security and privacy problems and report them. You never edit files, ro
 
 ## Scope
 
-When Serena's read-only semantic tools are available, use them to trace symbol references and
-implementations across auth, persistence, ingestion, and logging boundaries before falling back to
-broad source reads. Keep Grep for secrets/literals/config patterns and completeness checks. If
-Serena is unavailable, continue with the built-in read tools; do not weaken the security review.
+Use Grep for secrets/literals/config patterns and completeness checks. When a concrete question
+needs callers or implementations across auth, persistence, ingestion or logging boundaries, Serena's
+read-only semantic tools may answer it, but only if Serena is verified against the checkout under
+review (in a worktree it usually is not; see `AGENTS.md` § Worktree safety). If Serena is unavailable
+or unverified, continue with the built-in read tools; do not weaken the security review.
 
 Start from `git status --short` and `git diff` (include untracked files), or the area the caller names. Read surrounding code before judging a hunk.
 

@@ -426,21 +426,28 @@ thin pointer to the `.agents/skills/` file. Edit the shared file, never the poin
 ## Code navigation with Serena
 
 The repository ships a [Serena](https://github.com/oraios/serena) project config in
-`.serena/` (TypeScript and Python language servers). Serena is an optional local dependency,
-but **when its tools are connected it is the preferred semantic navigation layer for source-code
-discovery**. Do not block a task because Serena is unavailable; fall back to the normal repository
-tools.
+`.serena/` (TypeScript and Python language servers). Serena is an **optional, question-driven
+precision tool**, not the default discovery layer and not a startup ritual. Do not block a task
+because Serena is unavailable, and do not call it to satisfy a process rule.
 
 ### Retrieval policy
 
-For reviews, refactors, bug tracing and unfamiliar code:
+Pick the cheapest tool that answers the actual question:
 
-1. Use `get_symbols_overview` for an unfamiliar file/area and `find_symbol` for the target.
-2. Use `find_referencing_symbols` before changing a public/exported symbol, an engine
-   decision-authority constant, or cross-module wiring. Add `find_implementations` when an
-   interface/abstract symbol can have multiple implementations.
-3. Use exact text search for literals, error messages, configuration keys, docs, YAML/JSON,
-   generated files, and as a completeness check when appropriate.
+1. **Discovery (default):** text search (`Grep`/`rg`) plus direct reads of the files it finds.
+   This also covers literals, error messages, configuration keys, docs, YAML/JSON and generated
+   files.
+2. **Type-level ripple:** when a change adds a union member or `Record` key, adds a required
+   field, or changes an exported signature, make the change and run the compiler
+   (`cd app && npx tsc -b`; `uv run mypy` for Python). Its errors are the complete,
+   authoritative impact list at no extra cost. In `app/`, `tsc -p .` checks nothing; use
+   `tsc -b`.
+3. **Serena:** use `find_referencing_symbols` / `find_implementations` / `find_symbol` for a
+   concrete question the first two answer poorly: callers of a generically named symbol
+   (`requirements`, `coverage`, `budget`) that text search would drown in, implementations of an
+   interface, or value-level wiring the compiler does not flag. Before changing an engine
+   decision-authority constant, one reference query can show the constant, its claim/coverage
+   ownership and the `*PolicyAlignment.test.ts` assertions together.
 4. If the language server cannot answer reliably, fall back rather than forcing a semantic query.
 
 Do not make ceremonial Serena calls for docs-only work or a known tiny edit whose target is already
@@ -474,17 +481,29 @@ query can expose the implemented constant, its knowledge claim/coverage ownershi
 ### Worktree safety
 
 Serena is stateful around an active project. A shell `workdir` change does not prove that a
-long-lived Serena server is reading the same checkout. If a workflow creates a worktree after the
-session starts:
+long-lived Serena server is reading the same checkout. **In a worktree created after the session
+started, Serena is off by default.** Use it there only when:
 
-- activate/retarget Serena to the **worktree path** and verify that project before semantic reads;
-- prefer per-session startup with Serena's current `--project-from-cwd` support when possible;
-- if the client cannot safely verify/retarget the active Serena project, skip Serena for that
-  worktree and use ordinary repository tools rather than querying the wrong checkout.
+- the client exposes a project-activation tool (`activate_project`) and **one** activation call to
+  the absolute worktree path succeeds and is verified; or
+- the Serena server was itself started from that worktree (per-session `--project-from-cwd`).
+
+A client that exposes no activation tool is pinned to the checkout it started in; its semantic
+results describe a different tree, so do not use it in that worktree. Do not spend more than one
+activation attempt; fall back to text search plus the compiler.
 
 See the dated tooling review
 [`docs/analysis/2026-09-24-serena-agent-tooling-adoption-review.md`](./docs/analysis/2026-09-24-serena-agent-tooling-adoption-review.md)
-for client-specific Claude Code/Codex/Antigravity guidance and the rationale for this policy.
+for client-specific Claude Code/Codex/Antigravity guidance and the original rationale.
+
+### Retention review
+
+Serena is kept on evidence, not by default. Code PRs record one line under **Validation**:
+`Serena: not used` or `Serena: used — <question it answered that text search/compiler did not>`.
+Review that record at the checkpoint in
+[`docs/standards/agent-tooling.md`](./docs/standards/agent-tooling.md#semantic-navigation-retention);
+if it shows no answered question that the cheaper tools missed, remove the `.serena/` config and
+this section.
 
 ### Memory and edit policy
 
