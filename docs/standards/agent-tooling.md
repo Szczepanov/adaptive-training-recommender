@@ -113,19 +113,42 @@ A delegated reviewer must be **diff-first**. Give it the issue acceptance criter
 summary, changed-file list and diff. It should read surrounding code only to answer concrete review
 questions and must not independently reconstruct the whole repository architecture.
 
-The same economy applies to semantic navigation:
+The same economy applies to semantic navigation (full policy in
+[`AGENTS.md` § Code navigation with Serena](../../AGENTS.md#code-navigation-with-serena)):
 
-- prefer one Serena discovery pass by the primary agent for a cohesive issue;
+- discover with text search plus direct reads, and use the compiler (`tsc -b`, `mypy`) as the
+  impact list for type-level changes; Serena answers only concrete reference/implementation
+  questions those miss;
 - once target symbols and relevant callers are known, read them directly rather than repeatedly
   rediscovering them;
 - do not have multiple agents independently rebuild the same call graph;
-- if Serena is still initializing, treat that as transient and retry after minimum fallback work;
+- Serena is off in a worktree unless one activation call to that worktree succeeds and is verified;
 - roughly 10–15 semantic calls without meaningful narrowing is a **soft tripwire** to reassess the
   retrieval strategy, not a hard limit.
 
 Client-specific concurrency, model choice, reasoning effort, MCP output limits and lifecycle hooks
 remain developer-local settings. Use them to enforce a smaller delegation budget when the client
 supports it, but do not commit personal MCP configuration or credentials to this repository.
+Developer-local hooks should not make Serena a mandatory startup step or block ordinary file reads;
+the repository policy above is question-driven.
+
+### Semantic-navigation retention
+
+Serena stays only while it earns its cost: startup instructions, language-server resources, and
+worktree binding effort. Code PRs record `Serena: not used` or `Serena: used — <question it
+answered that text search/compiler did not>` under **Validation**.
+
+- **Checkpoint:** after 10 merged code PRs that carry this line, or on 2026-11-15, whichever comes
+  first.
+- **Keep** if the record shows repeated reference/implementation questions that Serena answered and
+  text search plus the compiler did not.
+- **Remove** the `.serena/` config, the `AGENTS.md` Serena section, and the Serena tools in agent
+  definitions if it does not.
+- **Baseline observation (2026-09-26):** the #802 implementation (PR #842) touched engine,
+  coverage, knowledge and workout modules without Serena. Its only type-level impact question
+  (new `PlanCoverageKey`/`AdaptationKey` members) was answered completely by `tsc -b`. The Serena
+  server in that Claude Code client exposed no `activate_project` tool, so it could not have been
+  bound to the issue worktree.
 
 Current OpenAI multi-agent guidance also treats concurrency as an explicit budget and recommends
 tuning when the root model should delegate:

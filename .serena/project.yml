@@ -150,17 +150,16 @@ added_modes:
 # initial prompt for the project. It will always be given to the LLM upon activating the project
 # (contrary to the memories, which are loaded on demand).
 initial_prompt: |
-  This repository prefers Serena for semantic source-code navigation when Serena is available.
-  Use one targeted semantic-discovery pass for a cohesive issue: locate unfamiliar targets with
-  get_symbols_overview / find_symbol, then query references or implementations only when impact
-  evidence is needed. Once the target and relevant callers are known, read them directly rather
-  than repeatedly rediscovering the same symbols. Do not have multiple agents independently rebuild
-  the same call graph. Treat project/language-service initialization as transient: do minimum
-  fallback work and retry before broad source exploration. If roughly 10-15 Serena calls do not
-  materially narrow the task, reassess the retrieval strategy. Use text search for literals,
-  docs/config, generated files, and language-server gaps. For worktrees, only use Serena after
-  confirming that the worktree itself is the active project. Repository docs remain authoritative;
-  see AGENTS.md "Code navigation with Serena" and read mem:core when project routing is needed.
+  In this repository Serena is an optional precision tool, not the default discovery layer.
+  Discover with text search plus direct reads; for type-level ripple run the compiler
+  (cd app && npx tsc -b, uv run mypy). Use find_referencing_symbols / find_implementations /
+  find_symbol only for a concrete reference or implementation question those miss. Once targets
+  are known, read them directly. Do not have multiple agents rebuild the same call graph. If
+  roughly 10-15 Serena calls do not materially narrow the task, stop and reassess. In a worktree
+  Serena is off unless one activation call to that worktree succeeds and is verified; a server
+  with no activation tool is pinned to the checkout it started in. Repository docs remain
+  authoritative; see AGENTS.md "Code navigation with Serena" and read mem:core when project
+  routing is needed.
 
 # time budget (seconds) per tool call for the retrieval of additional symbol information
 # such as docstrings or parameter information.

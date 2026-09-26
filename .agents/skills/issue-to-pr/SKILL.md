@@ -39,10 +39,10 @@ You take a GitHub issue number as input and drive it to an opened PR: issue inta
    - Knowledge lineage (ADR-0033): every engine threshold, weight, cadence or policy constant with decision authority is owned by a registered claim. Check the registry before changing one (Phase 3).
    - Reference symbols, never line numbers, in docs and plans (e.g. `` `rules.ts` `evaluateEnvelopes` ``).
    - Work in `WORKTREE` on its feature branch, never directly on `main` and never in the main checkout. One issue = one worktree = one branch unless the user says otherwise.
-   - If Serena is available, semantic reads must come from `WORKTREE`, not the checkout that
-     happened to be active when the MCP server started. Activate/retarget Serena to the absolute
-     `WORKTREE` path and verify it before using symbol tools. If that cannot be done safely,
-     skip Serena for this run and use ordinary repository search/read tools.
+   - Serena is off by default in `WORKTREE`: a server started before the worktree existed reads a
+     different checkout. Use it only if the client exposes `activate_project` and one activation
+     call to the absolute `WORKTREE` path succeeds and is verified; otherwise (including clients
+     with no activation tool) skip it for this run. See `AGENTS.md` § Worktree safety.
    - For a single cohesive issue, keep issue discovery, planning, implementation and deterministic
      verification in the primary agent. Do not spawn research/planning/validator subagents merely
      to repeat repository discovery. The default independent delegation is one diff-first review
@@ -85,15 +85,11 @@ Follow the `docs/README.md` precedence: **code wins, then `architecture/`, then 
 ## Phase 3 — Analyze the code and related artifacts
 
 - Locate affected modules using the `AGENTS.md` package-architecture map (`src/garmin_sync/`, `app/src/engine/`, `app/src/sessions/`, `app/src/responses/`, `app/src/observations/`, `app/src/outcomes/`, `app/src/knowledge/` — directory wins over the map).
-- When Serena is available and correctly bound to `WORKTREE`, use one targeted semantic
-  discovery pass: `get_symbols_overview` / `find_symbol` to locate unfamiliar targets,
-  `find_referencing_symbols` for callers/impact radius, and `find_implementations` for
-  polymorphic contracts. Once the target and relevant callers are established, read those files
-  directly rather than repeatedly rediscovering known symbols. Use Grep/text search for literals,
-  docs/config, generated files, unsupported language-server cases, and as a completeness check.
-  If Serena is still initializing, treat that as transient: do only the minimum fallback discovery
-  needed and retry before broad source exploration. Never use semantic results from a different
-  checkout.
+- Discover with text search plus direct reads. For type-level ripple (new union member or
+  `Record` key, new required field, changed exported signature), make the change and run
+  `cd app && npx tsc -b` (or `uv run mypy`): the errors are the impact list. Use Serena only for a
+  concrete reference/implementation question those miss, and only when it is verified against
+  `WORKTREE` (Phase 0). Never use semantic results from a different checkout.
 - Identify: reusable utilities, existing test fixtures (`tests/fixtures/`, engine `tests/`, `simulation/`), schema validators, and the `TrainingHistoryProvider` / Firestore boundaries if history or persistence is involved.
 - When correctness depends on an external library/API contract, use Context7 for current,
   version-appropriate documentation as defined by `docs/standards/agent-tooling.md`. Do not use
@@ -193,6 +189,7 @@ analysis either.
    ## Validation
    - [x] `command`: pass — what it covered
    - Manual check: scenario + observed result (or why N/A)
+   - Serena: not used | used — <question it answered that text search/compiler did not>
    ## Risk and reviewer guidance
    - What to inspect closely, what could regress, migration/deployment/rollback notes.
    ## Domain invariants

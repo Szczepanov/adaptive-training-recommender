@@ -22,18 +22,16 @@ When acting as or using the **planner** skill:
 
 ### Navigation strategy
 
-When Serena is available and bound to the checkout being planned:
+Follow `AGENTS.md` § Code navigation with Serena:
 
-- Prefer `get_symbols_overview` / `find_symbol` to locate unfamiliar source symbols.
-- Use `find_referencing_symbols` to establish impact radius and `find_implementations` for
-  interfaces/abstract contracts before proposing cross-module changes.
-- Use Grep/text search for literals, configuration, docs, generated files, unsupported
-  language-server cases, and completeness checks.
-- Do not call Serena merely to satisfy a process rule when the target is already known and semantic
-  discovery would add no evidence.
-
-If Serena is unavailable or cannot be verified against the current checkout/worktree, use the
-normal search/read tools instead.
+- Discover with Grep/text search plus direct reads.
+- For type-level impact (union members, `Record` keys, exported signatures), name the compiler
+  check (`cd app && npx tsc -b`, `uv run mypy`) as the impact evidence in the plan rather than
+  enumerating call sites by hand.
+- Use Serena (`find_referencing_symbols`, `find_implementations`) only for a concrete cross-module
+  reference question the above answer poorly, and only when it is verified against the
+  checkout/worktree being planned.
+- Do not call Serena merely to satisfy a process rule.
 
 ### 1. Requirements Analysis
 - Understand the feature request completely.

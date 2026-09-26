@@ -59,11 +59,11 @@ when it affects confidence. See
 ## 3. Working loop
 
 **Before writing code**
-- For source-code discovery, when Serena is connected follow
-  [`AGENTS.md` § Code navigation with Serena](./AGENTS.md#code-navigation-with-serena):
-  prefer symbol/reference/implementation traversal for unfamiliar or cross-module code, and keep
-  Grep/text search for literals, docs/config and completeness checks. In worktrees, verify Serena
-  is bound to that worktree before trusting semantic results.
+- For source-code discovery, use text search plus direct reads; for type-level ripple, run the
+  compiler (`cd app && npx tsc -b`, `uv run mypy`). Serena is an optional precision tool for
+  concrete reference/implementation questions those miss, and is off in a worktree unless it can
+  be verified against that worktree — see
+  [`AGENTS.md` § Code navigation with Serena](./AGENTS.md#code-navigation-with-serena).
 - Check [`docs/plans/README.md`](./docs/plans/README.md) — the authoritative status board.
   It says what is in progress, what shipped, and what is deliberately shadow-mode only.
   Never infer delivery status from a file's existence or from this file.
