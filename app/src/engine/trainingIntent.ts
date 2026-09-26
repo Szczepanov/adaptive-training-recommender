@@ -19,8 +19,9 @@ import { strengthRequirement } from './evergreenStrategy';
 /**
  * Issue #801: the cycling event plan already authors one exact primary-strength role. For
  * an athlete whose durable intent explicitly includes `strength_muscle`, preserve the rest
- * of the evergreen strategy's evidence-backed weekly strength floor as build-block support
- * roles, so an event becoming active does not by itself cut two exposures to one.
+ * of the evergreen strategy's registered two-day health floor as a product-policy count seed for build-block support
+ * roles, so an event becoming active does not by itself cut two exposures to one. This does
+ * not claim that every compact support identity independently satisfies the WHO major-muscle-group guideline.
  * Feasibility, recovery, spacing and anchor authority stay with the weekly allocator,
  * which reserves support only without displacing a primary role.
  */

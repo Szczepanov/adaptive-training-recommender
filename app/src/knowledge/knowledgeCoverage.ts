@@ -106,7 +106,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/trainingIntent.ts:eventStrengthSupportSessions', 'engine/planSchedule.ts:buildCyclingEventPlan', 'engine/coverage.ts:buildCoverageState', 'engine/weeklyAllocation.ts:resolveWeeklyRoleReservations', 'engine/weeklyAllocation.ts:allocationValuePreserved', 'engine/weeklyAllocation.ts:primaryAllocationUnresolved', 'engine/coverage.ts:coverageNeedTierForTemplate', 'engine/planner.ts:generateWeekAheadPlan'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.cyclingBuildStrengthSupportPolicy, KNOWLEDGE_CLAIM_IDS.adultStrengthHealthFrequency],
-        coverageRationale: 'Issue #801 registers the translation of the existing strength floor into event build roles and the primary-first allocation rule as explicit product policy; the frequency itself is owned by the existing WHO strength-frequency claim rather than a new constant.',
+        coverageRationale: 'Issue #801 registers the translation of the existing strength floor into event build roles and the primary-first allocation rule as explicit product policy. The existing WHO strength-frequency claim supplies the numeric two-day count seed rather than a new constant; compact support identities are not asserted to independently satisfy WHO\'s major-muscle-group strengthening-day definition.',
     },
     {
         id: 'evergreen.health_adherence_modality_intensity_prior', domain: 'evergreen_dose', title: 'Health adherence-friendly modality and intensity prior',

@@ -106,7 +106,7 @@ export const STRENGTH_CONCURRENT_CLAIMS: readonly KnowledgeClaim[] = [
             { sourceId: HELD_CONCURRENT_UMBRELLA_SOURCE, directness: 'indirect', note: 'Concurrent training preserves strength-related qualities; no universal frequency or separation.' },
         ],
         limitations: [
-            'The support count is the evergreen WHO-backed floor minus one authored primary role; the WHO guideline is a general adult-health recommendation, not a validated frequency for cycling performance.',
+            'The support count uses the evergreen WHO-backed two-day floor minus one authored primary role as a product-policy count seed. The WHO guideline is a general adult-health recommendation, not a validated frequency for cycling performance, and a compact/power support occurrence is not asserted to independently satisfy WHO\'s major-muscle-group strengthening-day definition.',
             'Subordinating support roles to every primary required role is a product priority rule, not evidence that strength is less valuable than cycling quality for a given athlete.',
             'Restricting support to the build block is a conservative product choice; peak-block strength frequency is not separately evidenced here.',
             'The exact compact_strength identity set (compact power, reactive power, travel and bodyweight maintenance) is authored product policy, not a claim of physiological equivalence between them.',
