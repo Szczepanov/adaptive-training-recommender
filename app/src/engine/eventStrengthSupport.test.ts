@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveDemandProfile } from './eventPresets';
 import { eventStrengthSupportSessions, resolveTrainingIntent } from './trainingIntent';
-import { buildCoverageState } from './coverage';
+import { buildCoverageState, coverageNeedTierForTemplate } from './coverage';
 import { deriveRequiredRoleOccurrences } from './weeklyAllocation';
 import { creditObjectivesFromStimulus, generateWeeklyObjectives } from './microcycle';
 import { buildCyclingEventPlan, resolvePlanDefinitionForEvent } from './planSchedule';
@@ -142,7 +142,11 @@ describe('cycling build strength support in the weekly allocator (#801)', () => 
     it('defers the support exposure with a typed reason under adverse recovery without changing primary outcomes', () => {
         const baseline = week(0, adverse);
         const supported = week(1, adverse);
-        expect(outcome(supported, 'compact_strength')).toMatchObject({ status: 'missed', reason: 'projected_fatigue' });
+        // Typed deferral, never an unresolved search: fatigue gates the early free dates and the
+        // last remaining dates belong to primary roles, so either reason is truthful.
+        const deferred = outcome(supported, 'compact_strength');
+        expect(deferred?.status).toBe('missed');
+        expect(['projected_fatigue', 'subordinate_to_required_roles', 'hard_safety_or_recovery']).toContain(deferred?.reason);
         for (const key of ['aerobic_volume', 'primary_strength', 'sustained_quality']) {
             expect(outcome(supported, key)?.status).toBe(outcome(baseline, key)?.status);
         }
@@ -157,6 +161,31 @@ describe('cycling build strength support in the weekly allocator (#801)', () => 
         const support = outcome(week(1, capped), 'compact_strength');
         expect(support?.status).toBe('missed');
         expect(support?.reason).toEqual(expect.any(String));
+    });
+
+    it('ranks an unmet support role as deferred support in today\'s pick, never as urgent as a primary role', () => {
+        const plan = buildCyclingEventPlan(event, [], 1);
+        if (plan.status !== 'AVAILABLE') throw new Error('event plan unavailable');
+        const compact = ENRICHED_TEMPLATES.find(item => item.id === 'str_power_01');
+        const fullBody = ENRICHED_TEMPLATES.find(item => item.id === 'str_full_01');
+        if (!compact || !fullBody) throw new Error('templates missing');
+        const noHistory = buildCoverageState(plan.data, '2026-08-05');
+        expect(coverageNeedTierForTemplate(noHistory, fullBody)).toBe(1);
+        expect(coverageNeedTierForTemplate(noHistory, compact)).toBe(2);
+    });
+
+    it('lets a primary definition for the same coverage key win over a support tier without losing its minimum', () => {
+        const plan = buildCyclingEventPlan(event, [], 1);
+        if (plan.status !== 'AVAILABLE') throw new Error('event plan unavailable');
+        const support = plan.data.objectives.find(item => item.coverageKey === 'compact_strength');
+        if (!support) throw new Error('support objective missing');
+        const merged = {
+            ...plan.data,
+            objectives: [...plan.data.objectives, { ...support, reservationTier: undefined, priority: 'must_have' as const, coverageMinimumSessions: 2, coverageTargetSessions: 2 }],
+        };
+        const requirement = buildCoverageState(merged, '2026-08-05').requirements.find(item => item.key === 'compact_strength');
+        expect(requirement).toMatchObject({ minimumSessions: 2, targetSessions: 2, priority: 'must_have' });
+        expect(requirement?.reservationTier).toBeUndefined();
     });
 
     it('keeps support roles out of peak, taper and race blocks and never inflates primary-strength credit', () => {

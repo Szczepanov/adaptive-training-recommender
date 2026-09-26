@@ -1335,18 +1335,21 @@ If more than four dates are eligible, the earliest four are kept. Reaching a cap
 the best-known jointly feasible partial allocation and marks the remainder
 `unresolved_search_budget` -- never a safety miss.
 
-**Support-tier occurrences (#801).** An occurrence whose coverage requirement has
-`reservationTier: 'support'` is still reserved from its coverage minimum, but the search
-objective is lexicographic: maximize primary (untiered) occurrences first, then total
-occurrences. With no support occurrence this is exactly the original maximum-cardinality
-rule (`primaryFulfilledCount === fulfilledCount`). A support occurrence also never takes a
-date already nominated to a pending primary occurrence, so a later daily reallocation cannot
-move a quality, event-specific, aerobic or primary-strength anchor to make room for it. An
-unplaced support occurrence with admissible dates is reported
-`subordinate_to_required_roles`; otherwise it gets the ordinary typed reason (for example
-`projected_fatigue` under adverse recovery). Greedy-selection preservation uses the same
-ordering through `allocationValuePreserved`, so a pick that keeps the role count by trading a
-primary role for a support role counts as degradation.
+**Support-tier occurrences (#801, ADR-0018 amendment).** An occurrence whose coverage
+requirement has `reservationTier: 'support'` is still reserved from its coverage minimum, but
+`resolveWeeklyRoleReservations` runs two passes. Pass 1 is the unchanged maximum-cardinality
+search over primary (untiered) occurrences only, so primary outcomes are identical to a week
+without support roles. Pass 2 places support occurrences only on dates pass 1 left free,
+excluding dates nominated to a primary occurrence and the weekly quality/event-specific anchor
+dates (`supportExcludedDates`), with every primary reservation held fixed in the projected
+state; a support pick that would invalidate a later primary reservation is inadmissible. A
+support miss caused only by the primary allocation is `subordinate_to_required_roles`;
+otherwise it keeps the ordinary typed reason (for example `projected_fatigue`). Support-pass
+budget exhaustion shows only on support outcomes: `primaryAllocationUnresolved` ignores it, so
+a support role can never disable preservation proofs for primary roles. Greedy-selection
+preservation uses `allocationValuePreserved` (no fewer primary occurrences, then no fewer
+overall). In today's ranking, an unmet support minimum is deferred support (coverage tier 2),
+never as urgent as an unmet primary minimum.
 Wall-clock time is not a semantic cut-off; p95 ≤50 ms / p99 ≤100 ms on the live-sized
 fixture is an operational gate only.
 

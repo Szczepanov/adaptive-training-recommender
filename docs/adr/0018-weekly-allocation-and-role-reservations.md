@@ -199,6 +199,36 @@ planner; it neither imports the beam-search wrapper nor changes its adoption sta
 * This improves local allocation but does not prove that a bounded whole-week search is
   unnecessary; ADR-0015 remains the record for that later decision.
 
+## Amendments
+
+### 2026-09-26 — support-tier occurrences (issue #801)
+
+Issue #801 adds a required occurrence that must not compete with the roles above: the second
+weekly strength/power exposure in a cycling event build (`compact_strength`, authored only for
+durable `strength_muscle` intent). Such an occurrence carries `reservationTier: 'support'`.
+This amends D-RESERVE, D-BOUND, D-SUPPORT and D-MISS as follows; untiered ("primary")
+occurrences keep every original rule.
+
+* **D-RESERVE.** Reservation is two-pass. Pass 1 is the original maximum-cardinality search
+  over primary occurrences only, so primary outcomes are identical to a week without support
+  occurrences. Pass 2 places support occurrences only on dates pass 1 left free, never on a
+  date nominated to a primary occurrence or on the weekly quality/event-specific anchor dates,
+  with every primary reservation held fixed; a support pick that would invalidate a later
+  primary reservation is inadmissible.
+* **D-BOUND.** Each pass uses the same `WeeklyAllocationSearchBudget`. Exhaustion in the
+  support pass is reported only on support outcomes and never marks the primary allocation
+  unresolved.
+* **D-SUPPORT.** Preservation compares allocations by primary occurrences first and total
+  occurrences second (`allocationValuePreserved`). A pick that keeps the count by trading a
+  primary occurrence for a support occurrence is degradation.
+* **D-MISS.** A support occurrence may be `missed` with the added typed reason
+  `subordinate_to_required_roles` when the primary allocation, rather than a safety or
+  capacity gate, left it no admissible date. This is a policy outcome, not the exhaustive
+  infeasibility proof the original `missed` rule requires for primary occurrences.
+
+Policy lineage: `policy.event.cycling_build_strength_support_v1` (ADR-0033). Current behavior:
+`docs/architecture/recommendation-engine.md`.
+
 ## References
 
 * Implementation plan: [Phase 7A](../plans/phase-7-weekly-allocation-and-role-reservations.md)

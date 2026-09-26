@@ -32,8 +32,8 @@ export interface RequiredRoleOccurrence {
     label: string;
     eligibleTemplateIds: string[];
     eligibleWorkoutIds: string[];
-    /** Issue #801: a support occurrence is placed only when it does not reduce the number
-     * of primary (untiered) occurrences the bounded search can place. */
+    /** Issue #801: a support occurrence is placed only after, and around, the primary
+     * allocation (see `resolveWeeklyRoleReservations`). Absent means primary. */
     reservationTier?: 'support';
 }
 
@@ -124,15 +124,12 @@ export interface WeeklyRoleAllocationResult {
     /** Reserved occurrence per forecast date, for the greedy loop to protect. */
     reservationsByDate: Map<string, { occurrence: RequiredRoleOccurrence; templateId: string }>;
     fulfilledCount: number;
-    /** Issue #801: reserved occurrences without a `support` tier. Equals `fulfilledCount`
-     * whenever no support occurrence exists. */
+    /** Issue #801: reserved primary (untiered) occurrences. Equals `fulfilledCount` whenever
+     * no support occurrence exists. */
     primaryFulfilledCount: number;
     transitionsUsed: number;
     budgetExhausted: boolean;
 }
-
-/** Observed blocker for a support occurrence kept off a primary role's nominated date. */
-export const PRIMARY_ROLE_NOMINATED_DATE_BLOCKER = 'PRIMARY_ROLE_NOMINATED_DATE';
 
 /** Hard-gate exclusions that are genuinely safety/feasibility outcomes rather than a
  * scheduling conflict. Anything unrecognised stays an observed blocker only. */
@@ -174,20 +171,6 @@ function fulfilledSessions(requirement: WeeklyCoverageRequirement): number {
 /** Derive only remaining minimum authored roles. Credit ids are already deduplicated by
  * `buildCoverageState`, so replaying the same completed/projected exposure cannot create
  * an extra occurrence here. */
-/** Issue #801: does a candidate allocation (plus occurrences it discharges itself) keep the
- * incumbent's value under the lexicographic objective — primary roles first, then total? */
-export function allocationValuePreserved(
-    incumbent: { fulfilledCount: number; primaryFulfilledCount: number },
-    candidate: { fulfilledCount: number; primaryFulfilledCount: number },
-    selfFulfilled: readonly RequiredRoleOccurrence[] = [],
-): boolean {
-    const selfPrimary = selfFulfilled.filter(occurrence => occurrence.reservationTier !== 'support').length;
-    const primary = candidate.primaryFulfilledCount + selfPrimary;
-    const total = candidate.fulfilledCount + selfFulfilled.length;
-    return primary > incumbent.primaryFulfilledCount
-        || (primary === incumbent.primaryFulfilledCount && total >= incumbent.fulfilledCount);
-}
-
 export function deriveRequiredRoleOccurrences(state: CoverageState): RequiredRoleOccurrence[] {
     const { phase, coverageSetId } = state;
     if (!phase || !coverageSetId) return [];
@@ -315,6 +298,9 @@ export interface WeeklyRoleReservationOptions {
     unavailableDates?: ReadonlySet<string>;
     /** Prior nominations, so a re-plan reports `wasMoved` instead of a new occurrence. */
     nominatedDates?: ReadonlyMap<string, string | null>;
+    /** Issue #801: dates no support occurrence may take (e.g. the weekly quality and
+     * event-specific anchors). Primary occurrences ignore this. */
+    supportExcludedDates?: ReadonlySet<string>;
 }
 
 interface OccurrenceSearchState {
@@ -363,11 +349,11 @@ function missReasonFor(state: OccurrenceSearchState): WeeklyRoleMissReason {
  * projected fatigue/history transition produced by the accumulated assignments, so two
  * individually feasible dates that conflict after the first pick cannot both be reserved.
  */
-export function resolveWeeklyRoleReservations(
+function resolveSinglePass(
     occurrences: readonly RequiredRoleOccurrence[],
     evaluator: AllocationDateEvaluator,
     options: WeeklyRoleReservationOptions = {},
-): WeeklyRoleAllocationResult {
+): Omit<WeeklyRoleAllocationResult, 'primaryFulfilledCount'> {
     const budget = options.budget ?? WEEKLY_ALLOCATION_SEARCH_BUDGET;
     const unavailableDates = options.unavailableDates ?? new Set<string>();
     const nominatedDates = options.nominatedDates ?? new Map<string, string | null>();
@@ -402,13 +388,6 @@ export function resolveWeeklyRoleReservations(
     const rootOutcomes = new Map<string, ProjectedDateOutcome>(
         dates.map(date => [date, evaluateCached([], date)] as const),
     );
-    // Issue #801: a support occurrence never claims a date already nominated to a pending
-    // primary occurrence, so it cannot push a quality/event-specific anchor (or any primary
-    // role) off its nominated date in a later daily reallocation.
-    const primaryNominatedDates = new Set(examined
-        .filter(occurrence => occurrence.reservationTier !== 'support')
-        .map(occurrence => nominatedDates.get(occurrence.id))
-        .filter((date): date is string => typeof date === 'string'));
     const searchStates: OccurrenceSearchState[] = examined.map(occurrence => {
         const all: AllocationAssignment[] = [];
         const blockers = new Set<string>();
@@ -417,10 +396,6 @@ export function resolveWeeklyRoleReservations(
         let sawLedgerCapacityExclusion = false;
         let sawRollingLoadBudgetExclusion = false;
         for (const date of dates) {
-            if (occurrence.reservationTier === 'support' && primaryNominatedDates.has(date)) {
-                blockers.add(`${date}:${PRIMARY_ROLE_NOMINATED_DATE_BLOCKER}`);
-                continue;
-            }
             const outcome = rootOutcomes.get(date)!;
             for (const templateId of occurrence.eligibleTemplateIds) {
                 if (outcome.acceptedTemplateIds.includes(templateId)) {
@@ -467,14 +442,6 @@ export function resolveWeeklyRoleReservations(
     let transitionsUsed = 0;
     let budgetExhausted = false;
     let bestByOccurrence = new Map<string, AllocationAssignment>();
-    // Issue #801: lexicographic objective (primary occurrences placed, then all placed).
-    // Without support occurrences this is exactly the original maximum-cardinality rule.
-    const isPrimary = (occurrenceId: string) => stateById.get(occurrenceId)?.occurrence.reservationTier !== 'support';
-    const primaryCount = (ids: Iterable<string>) => [...ids].filter(isPrimary).length;
-    const beats = (primary: number, total: number, incumbent: Map<string, AllocationAssignment>) => {
-        const incumbentPrimary = primaryCount(incumbent.keys());
-        return primary > incumbentPrimary || (primary === incumbentPrimary && total > incumbent.size);
-    };
 
     const search = (
         assignments: AllocationAssignment[],
@@ -482,7 +449,7 @@ export function resolveWeeklyRoleReservations(
         remaining: readonly OccurrenceSearchState[],
         depth: number,
     ): void => {
-        if (beats(primaryCount(placed.keys()), placed.size, bestByOccurrence)) bestByOccurrence = new Map(placed);
+        if (placed.size > bestByOccurrence.size) bestByOccurrence = new Map(placed);
         // Every occurrence placed: no branch can beat this, so the search is complete.
         if (bestByOccurrence.size === searchStates.length) return;
         if (remaining.length === 0 || budgetExhausted) return;
@@ -493,11 +460,7 @@ export function resolveWeeklyRoleReservations(
         // candidates use ADR-0018's date-diverse date/template order. Equal cardinality
         // never replaces the incumbent, so an equal branch could only produce a different
         // deterministic tie, not improve the primary maximum-cardinality objective.
-        if (!beats(
-            primaryCount(placed.keys()) + remaining.filter(state => isPrimary(state.occurrence.id)).length,
-            placed.size + remaining.length,
-            bestByOccurrence,
-        )) return;
+        if (placed.size + remaining.length <= bestByOccurrence.size) return;
 
         const usedDates = new Set(assignments.map(item => item.date));
         const freeCount = (state: OccurrenceSearchState) =>
@@ -597,13 +560,7 @@ export function resolveWeeklyRoleReservations(
         if (budgetExhausted || state.truncated) {
             return { occurrence, reservation, status: 'unresolved_search_budget' as const, ...observedBlockers };
         }
-        // A support occurrence with an admissible root candidate was left out only because
-        // placing it would have cost a primary role (or it lost every remaining date to one).
-        const reason = occurrence.reservationTier === 'support'
-            && (state.candidates.length > 0 || [...state.blockers].some(blocker => blocker.endsWith(PRIMARY_ROLE_NOMINATED_DATE_BLOCKER)))
-            ? 'subordinate_to_required_roles' as const
-            : missReasonFor(state);
-        return { occurrence, reservation, status: 'missed' as const, reason, ...observedBlockers };
+        return { occurrence, reservation, status: 'missed' as const, reason: missReasonFor(state), ...observedBlockers };
     });
 
     const unexaminedOutcomes: WeeklyRoleAllocationOutcome[] = unexamined.map(occurrence => ({
@@ -617,8 +574,122 @@ export function resolveWeeklyRoleReservations(
             .sort((left, right) => left.occurrence.id.localeCompare(right.occurrence.id)),
         reservationsByDate,
         fulfilledCount: bestByOccurrence.size,
-        primaryFulfilledCount: primaryCount(bestByOccurrence.keys()),
         transitionsUsed,
         budgetExhausted: budgetExhausted || unexamined.length > 0,
     };
+}
+
+
+const SUPPORT_SUBORDINATE_BLOCKER = 'SUBORDINATE_TO_PRIMARY_ALLOCATION';
+
+/** Canonical occurrence order, shared by both passes so combined outcomes stay stable. */
+function canonicalOutcomeOrder(left: WeeklyRoleAllocationOutcome, right: WeeklyRoleAllocationOutcome): number {
+    const a = left.occurrence;
+    const b = right.occurrence;
+    return a.windowEnd.localeCompare(b.windowEnd)
+        || a.coverageKey.localeCompare(b.coverageKey)
+        || a.ordinal - b.ordinal
+        || a.id.localeCompare(b.id);
+}
+
+/**
+ * ADR-0018 as amended for issue #801. Primary (untiered) occurrences are resolved first by
+ * the unchanged maximum-cardinality search, so their outcome is identical to a week with no
+ * support roles. Support occurrences are then placed only on dates that primary pass left
+ * free, outside any date nominated to a primary occurrence and outside
+ * `supportExcludedDates`, with every primary reservation held fixed in the projected state;
+ * a support pick that would invalidate a later primary reservation is inadmissible. A
+ * support occurrence that cannot fit therefore never degrades a primary role, and its
+ * outcome is reported without affecting the primary allocation's resolution status.
+ */
+export function resolveWeeklyRoleReservations(
+    occurrences: readonly RequiredRoleOccurrence[],
+    evaluator: AllocationDateEvaluator,
+    options: WeeklyRoleReservationOptions = {},
+): WeeklyRoleAllocationResult {
+    const primary = occurrences.filter(occurrence => occurrence.reservationTier !== 'support');
+    const support = occurrences.filter(occurrence => occurrence.reservationTier === 'support');
+    const primaryResult = resolveSinglePass(primary, evaluator, options);
+    if (support.length === 0) return { ...primaryResult, primaryFulfilledCount: primaryResult.fulfilledCount };
+
+    const fixed: AllocationAssignment[] = [...primaryResult.reservationsByDate.entries()]
+        .map(([date, reservation]) => ({ date, templateId: reservation.templateId }));
+    const nominated = options.nominatedDates ?? new Map<string, string | null>();
+    const primaryDates = new Set<string>([
+        ...fixed.map(item => item.date),
+        ...primary.map(occurrence => nominated.get(occurrence.id)).filter((date): date is string => typeof date === 'string'),
+        ...(options.supportExcludedDates ?? []),
+    ]);
+    const usableForSupport = evaluator.forecastDates.filter(date => !primaryDates.has(date));
+    const withFixed = (assignments: readonly AllocationAssignment[]) => [...fixed, ...assignments];
+    const supportEvaluator: AllocationDateEvaluator = {
+        forecastDates: usableForSupport,
+        evaluate(assignments, date) {
+            const outcome = evaluator.evaluate(withFixed(assignments), date);
+            const laterFixed = fixed.filter(item => item.date > date);
+            if (laterFixed.length === 0) return outcome;
+            // Hold every later primary reservation: a support template is admissible on this
+            // date only if each later primary pick still survives with it in place.
+            const exclusionReasons = new Map(outcome.exclusionReasons);
+            const acceptedTemplateIds = outcome.acceptedTemplateIds.filter(templateId => {
+                const projected = withFixed([...assignments, { date, templateId }]);
+                const survives = laterFixed.every(item => evaluator
+                    .evaluate(projected.filter(other => other.date < item.date), item.date)
+                    .acceptedTemplateIds.includes(item.templateId));
+                if (!survives) exclusionReasons.set(templateId, [...(exclusionReasons.get(templateId) ?? []), SUPPORT_SUBORDINATE_BLOCKER]);
+                return survives;
+            });
+            return { ...outcome, acceptedTemplateIds, exclusionReasons };
+        },
+    };
+    const supportResult = resolveSinglePass(support, supportEvaluator, {
+        ...options,
+        nominatedDates: new Map([...nominated].filter(([id]) => support.some(occurrence => occurrence.id === id))),
+    });
+
+    const primaryDatesBlockedSupport = primaryDates.size > 0 && evaluator.forecastDates.length > usableForSupport.length;
+    const supportOutcomes = supportResult.outcomes.map((outcome): WeeklyRoleAllocationOutcome => {
+        if (outcome.status !== 'missed' || outcome.occurrence.eligibleTemplateIds.length === 0) return outcome;
+        // A genuine gate (fatigue, safety, ledger, rolling load) keeps its own reason; only a
+        // miss caused by the primary allocation itself is reported as subordinate.
+        const heldOffByPrimary = primaryDatesBlockedSupport
+            || (outcome.observedBlockers ?? []).some(blocker => blocker.endsWith(SUPPORT_SUBORDINATE_BLOCKER));
+        const subordinate = outcome.reason === 'no_conflict_free_date'
+            || (outcome.reason === 'no_exact_candidate' && heldOffByPrimary);
+        return subordinate ? { ...outcome, reason: 'subordinate_to_required_roles' } : outcome;
+    });
+
+    const reservationsByDate = new Map(primaryResult.reservationsByDate);
+    supportResult.reservationsByDate.forEach((reservation, date) => reservationsByDate.set(date, reservation));
+    return {
+        outcomes: [...primaryResult.outcomes, ...supportOutcomes].sort(canonicalOutcomeOrder),
+        reservationsByDate,
+        fulfilledCount: primaryResult.fulfilledCount + supportResult.fulfilledCount,
+        primaryFulfilledCount: primaryResult.fulfilledCount,
+        transitionsUsed: primaryResult.transitionsUsed + supportResult.transitionsUsed,
+        // Support-pass exhaustion is visible on the support outcomes only; it never marks the
+        // primary allocation unresolved.
+        budgetExhausted: primaryResult.budgetExhausted,
+    };
+}
+
+/** Issue #801: does a candidate allocation (plus occurrences it discharges itself) keep the
+ * incumbent's value under the amended ordering -- primary roles first, then total? */
+export function allocationValuePreserved(
+    incumbent: Pick<WeeklyRoleAllocationResult, 'fulfilledCount' | 'primaryFulfilledCount'>,
+    candidate: Pick<WeeklyRoleAllocationResult, 'fulfilledCount' | 'primaryFulfilledCount'>,
+    selfFulfilled: readonly RequiredRoleOccurrence[] = [],
+): boolean {
+    const selfPrimary = selfFulfilled.filter(occurrence => occurrence.reservationTier !== 'support').length;
+    const primaryCount = candidate.primaryFulfilledCount + selfPrimary;
+    const total = candidate.fulfilledCount + selfFulfilled.length;
+    return primaryCount > incumbent.primaryFulfilledCount
+        || (primaryCount === incumbent.primaryFulfilledCount && total >= incumbent.fulfilledCount);
+}
+
+/** Issue #801: only the primary allocation's search budget can make the incumbent unresolved;
+ * a support occurrence left `unresolved_search_budget` must not disable preservation proofs. */
+export function primaryAllocationUnresolved(result: Pick<WeeklyRoleAllocationResult, 'budgetExhausted' | 'outcomes'>): boolean {
+    return result.budgetExhausted || result.outcomes.some(outcome =>
+        outcome.status === 'unresolved_search_budget' && outcome.occurrence.reservationTier !== 'support');
 }

@@ -34,9 +34,9 @@ export interface PlanObjectiveDefinition {
    * replacing a distinct weekly role. */
   coverageMinimumSessions?: number;
   coverageTargetSessions?: number;
-  /** Issue #801 / ADR-0018 D-SUPPORT: a `support` role is still reserved by its coverage
-   * minimum, but the weekly allocator never trades a primary (untiered) required role for
-   * it. Absent means primary; every pre-#801 role is primary. */
+  /** Issue #801 (ADR-0018 amendment): a `support` role is still reserved from its coverage
+   * minimum, but only after and around the primary allocation, so it never displaces a
+   * primary (untiered) required role. Absent means primary; every pre-#801 role is primary. */
   reservationTier?: 'support';
 }
 
