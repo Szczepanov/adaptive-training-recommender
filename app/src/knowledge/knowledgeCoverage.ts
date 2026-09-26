@@ -627,6 +627,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.stimulus.aerobic_volume_athlete_relative_floor_v1`) with alignment testing (#757). The claim states that evidence does not support a sharp minimum-effective-session threshold; the floor is a coverage-admission heuristic, not a dose-adequacy claim.',
     },
     {
+        id: 'stimulus.weekly_aerobic_dose_envelope', domain: 'stimulus_credit', title: 'Athlete-relative weekly easy-aerobic dose envelope and long anchor',
+        currentRule: 'After 28 observed days, established athletes with easy aerobic work in at least 3 of 4 weeks use a median weekly minute target (upper quartile in an endurance development phase) only when that selected history target exceeds 150 min/week; otherwise the 150/150/300 guideline fallback remains authoritative. Active athlete-history semantics use a lower-quartile-or-150-minute floor and may add an exact primary-modality anchor at the 75th-percentile session duration, capped to the allocator-executable standard template and real date capacity.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['engine/weeklyAerobicDose.ts:resolveWeeklyAerobicDoseEnvelope', 'engine/weeklyDosePacking.ts:packWeeklyDose', 'engine/coverage.ts:buildCoverageState'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.weeklyAerobicDoseEnvelopePolicy, KNOWLEDGE_CLAIM_IDS.adultAerobicHealthVolume],
+        coverageRationale: 'The history-derived range and anchor are explicit maintenance/productive-dose product policy. The guideline floor remains scientifically sourced rather than being relabelled as athlete-specific when history does not raise the selected target above it. Registry limitations state that recent exposure does not establish an optimum or biological minimum and that threshold/percentile/window choices need prospective review.',
+    },
+    {
         id: 'stimulus.coverage_threshold', domain: 'stimulus_credit', title: 'Stimulus coverage qualification threshold',
         currentRule: 'Generic stimulus coverage uses a 0.6 qualification threshold where consumed by compatibility/planning paths.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',

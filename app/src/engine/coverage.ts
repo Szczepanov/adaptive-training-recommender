@@ -58,6 +58,8 @@ export interface WeeklyCoverageRequirement {
     requirement: EventPlanRequirement;
     minimumSessions: number;
     targetSessions: number;
+    minimumDurationMinutes?: number;
+    exactWorkoutIds?: string[];
     completedSessions: number;
     projectedSessions: number;
     priority: ObjectivePriority;
@@ -344,6 +346,8 @@ export function coverageKeysForExposure(
     return descriptor.coverage
         .filter(item => item.phases.includes(phase) && item.workoutIds.includes(workoutId))
         .filter(item => item.key !== 'aerobic_volume' || hasRequiredAerobicDose(identity, workoutId, floor, templateCeilingMin))
+        .filter(item => item.minimumDurationMinutes === undefined
+            || Math.max(identity.durationMin ?? 0, identity.durationMax ?? 0) >= item.minimumDurationMinutes)
         .filter(item => item.key !== 'power_exposure' || grantsPowerExposureCredit({ workoutId, isReadinessModifiedDose: identity.isReadinessModifiedDose }))
         .map(item => item.key);
 }
@@ -366,6 +370,7 @@ function canonicalCoverageKeysForExposure(
         .filter(key => {
             const definition = coverageFor(descriptor, key);
             if (!definition || !definition.phases.includes(phase)) return false;
+            if (workoutId === undefined || !definition.workoutIds.includes(workoutId)) return false;
             // Identity comes from the canonical semantic ledger; dose eligibility remains a
             // coverage-state concern so a short exact Z2 execution cannot satisfy the
             // authored aerobic-volume floor merely because its catalog id is known.
@@ -373,6 +378,8 @@ function canonicalCoverageKeysForExposure(
             if (key === 'power_exposure') {
                 return grantsPowerExposureCredit({ workoutId, isReadinessModifiedDose: exposure.isReadinessModifiedDose });
             }
+            if (definition.minimumDurationMinutes !== undefined
+                && Math.max(exposure.durationMin ?? 0, exposure.durationMax ?? 0) < definition.minimumDurationMinutes) return false;
             if (key !== 'aerobic_volume') return true;
             return workoutId !== undefined && hasRequiredAerobicDose(exposure, workoutId, floor);
         });
@@ -455,6 +462,21 @@ export function buildCoverageState(
         return { asOfDate, phase: null, activeBlockId: null, coverageSetId: null, descriptor: null, requirements: [], aerobicVolumeFloor };
     }
 
+    const anchorRequirement = planDefinition.coverageRequirements?.find(requirement =>
+        requirement.coverageKey === 'long_aerobic_anchor' && requirement.blockId === block.id)?.minimumDurationMinutes;
+    const anchorPlanRequirement = planDefinition.coverageRequirements?.find(requirement =>
+        requirement.coverageKey === 'long_aerobic_anchor' && requirement.blockId === block.id);
+    const activeDescriptor: CoverageSetDescriptor = anchorPlanRequirement === undefined ? descriptor : {
+        ...descriptor,
+        coverage: descriptor.coverage.map(item => item.key === 'long_aerobic_anchor'
+            ? {
+                ...item,
+                ...(anchorRequirement !== undefined ? { minimumDurationMinutes: anchorRequirement } : {}),
+                ...(anchorPlanRequirement.exactWorkoutIds?.length ? { workoutIds: anchorPlanRequirement.exactWorkoutIds } : {}),
+            }
+            : item),
+    };
+
     const rollingWindowDays = 7;
     // `asOfDate` is exclusive, so the preceding seven calendar dates start seven days
     // back (not six). This keeps a full seven completed/projected exposures eligible.
@@ -464,7 +486,7 @@ export function buildCoverageState(
     const requirementsByKey = new Map<PlanCoverageKey, WeeklyCoverageRequirement>();
 
     activeDefinitions.forEach((definition, index) => {
-        const coverage = coverageFor(descriptor, definition.coverageKey);
+        const coverage = coverageFor(activeDescriptor, definition.coverageKey);
         if (!coverage || !coverage.phases.includes(block.phase)) return;
         const minimumSessions = Math.max(0, definition.coverageMinimumSessions
             ?? (definition.priority === 'must_have' ? Math.min(1, definition.requiredCredit) : 0));
@@ -492,7 +514,7 @@ export function buildCoverageState(
             return;
         }
         const requirement = newRequirement({
-            descriptor,
+            descriptor: activeDescriptor,
             blockId: block.id,
             key: definition.coverageKey,
             minimumSessions,
@@ -515,11 +537,11 @@ export function buildCoverageState(
     (planDefinition.coverageRequirements ?? [])
         .filter(definition => definition.blockId === block.id && !requirementsByKey.has(definition.coverageKey))
         .forEach((definition, index) => {
-            const coverage = coverageFor(descriptor, definition.coverageKey);
+            const coverage = coverageFor(activeDescriptor, definition.coverageKey);
             if (!coverage || !coverage.phases.includes(block.phase)) return;
             const minimumSessions = Math.max(0, definition.minimumSessions);
             const requirement = newRequirement({
-                descriptor,
+                descriptor: activeDescriptor,
                 blockId: block.id,
                 key: definition.coverageKey,
                 minimumSessions,
@@ -530,15 +552,19 @@ export function buildCoverageState(
                 windowEnd: block.endDate,
                 index: activeDefinitions.length + index,
             });
-            if (requirement) requirementsByKey.set(definition.coverageKey, requirement);
+            if (requirement) requirementsByKey.set(definition.coverageKey, {
+                ...requirement,
+                ...(definition.minimumDurationMinutes !== undefined ? { minimumDurationMinutes: definition.minimumDurationMinutes } : {}),
+                ...(definition.exactWorkoutIds?.length ? { exactWorkoutIds: definition.exactWorkoutIds } : {}),
+            });
         });
 
-    const recoveryCoverage = coverageFor(descriptor, 'recovery_or_rest');
+    const recoveryCoverage = coverageFor(activeDescriptor, 'recovery_or_rest');
     if (recoveryCoverage?.requirement === 'required'
         && recoveryCoverage.phases.includes(block.phase)
         && !requirementsByKey.has('recovery_or_rest')) {
         const recoveryRequirement = newRequirement({
-            descriptor,
+            descriptor: activeDescriptor,
             blockId: block.id,
             key: 'recovery_or_rest',
             minimumSessions: 1,
@@ -560,8 +586,8 @@ export function buildCoverageState(
         if (seenOccurrences.has(occurrenceKey)) continue;
         seenOccurrences.add(occurrenceKey);
 
-        const canonicalKeys = canonicalCoverageKeysForExposure(exposure, block.phase, descriptor, workoutId, aerobicVolumeFloor);
-        const keys = canonicalKeys ?? coverageKeysForExposure(exposure, block.phase, descriptor, aerobicVolumeFloor);
+        const canonicalKeys = canonicalCoverageKeysForExposure(exposure, block.phase, activeDescriptor, workoutId, aerobicVolumeFloor);
+        const keys = canonicalKeys ?? coverageKeysForExposure(exposure, block.phase, activeDescriptor, aerobicVolumeFloor);
         for (const key of keys) {
             const requirement = requirementsByKey.get(key);
             if (!requirement) continue;
@@ -583,8 +609,8 @@ export function buildCoverageState(
         asOfDate,
         phase: block.phase,
         activeBlockId: block.id,
-        coverageSetId: descriptor.id,
-        descriptor,
+        coverageSetId: activeDescriptor.id,
+        descriptor: activeDescriptor,
         requirements: Array.from(requirementsByKey.values()),
         aerobicVolumeFloor,
     };

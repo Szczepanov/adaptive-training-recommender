@@ -241,6 +241,39 @@ This ADR does **not** decide:
 
 Those remain separate evidence/policy decisions and must not be smuggled into the packer.
 
+### #806 — Weekly aerobic-dose envelope
+
+Issue #806 resolves the aerobic-dose non-decision for an opt-in athlete-history envelope.
+`resolveWeeklyAerobicDoseEnvelope` uses four fixed seven-day bins from the supplied 28-day
+history. It requires established training evidence and aerobic activity in at least three of
+the four bins; otherwise the recommendation falls back to the adult-health guideline range
+(150-minute floor, 150-minute initial target, 300-minute upper bound). Complete history alone
+does not relabel that public-health floor as an athlete-specific easy-volume obligation: the
+athlete-history envelope activates only when the selected maintenance/development statistic
+exceeds 150 minutes/week. Otherwise guideline semantics remain authoritative, including broad
+aerobic equivalence. When athlete-history semantics are active, the floor is max(150, the lower
+quartile of weekly easy-aerobic minutes); maintenance uses the median, and an
+endurance/sport-readiness development priority may target the upper quartile. History changes
+the target within the athlete's demonstrated range. More free time alone cannot raise it.
+
+Only completed easy-endurance / Zone 2 activity in the dominant evidenced modality enters
+the athlete-relative envelope. No intensity conversion is used: threshold or vigorous
+minutes do not become low-intensity minutes. Under the guideline fallback, actually packed
+quality-session minutes may count toward the general weekly aerobic-health total, without a
+multiplier. The existing #757 single-session exact-role duration floor remains separate.
+
+An established athlete with at least four primary-modality easy sessions may also receive a
+conditional `long_aerobic_anchor` exact role for endurance or sport-readiness development.
+Its duration is the history's 75th-percentile session duration bounded by the matching
+allocator-executable standard engine-template ceiling. The packer therefore cannot claim a
+harder-dose duration that the weekly allocator has no authority to materialize. One exact
+qualifying session must meet that duration; several short sessions cannot combine to satisfy
+the anchor, and allocation may reserve it only on a date whose resolved exercise window reaches
+the duration gate. Adverse recovery, symptoms, taper/recovery phase, or lack of a matching safe
+schedule window suspends the anchor while retaining the weekly aerobic target and reports a
+typed shortfall when it cannot be packed. Existing readiness, injury, load and availability
+authorities remain controlling.
+
 ## Acceptance before status can move to Accepted
 
 1. Owners of #801–#806 agree that their canonical models can map to these four requirement

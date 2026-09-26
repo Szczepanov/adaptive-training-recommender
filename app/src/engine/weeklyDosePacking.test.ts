@@ -83,6 +83,22 @@ describe('weekly dose packing', () => {
         ]);
     });
 
+    it('requires one exact long aerobic session and emits a typed shortfall when no window fits', () => {
+        const anchorCoverage: CoverageSetDescriptor = {
+            id: 'anchor-test',
+            roles: [{ ...coverage.roles[0], durationMinutes: 90 }],
+            longAerobicAnchor: { workoutId: 'cycling_zone2_standard_01', durationMinutes: 90 },
+        };
+        const tooShort = packWeeklyDose(healthStrategy, capacity(60, 3), anchorCoverage);
+        const sufficient = packWeeklyDose(healthStrategy, capacity(90, 3), anchorCoverage);
+
+        expect(tooShort.longAerobicAnchorRequired).toBe(true);
+        expect(tooShort.longAerobicAnchorDurationMinutes).toBe(90);
+        expect(tooShort.shortfalls).toContainEqual(expect.objectContaining({ code: 'long_aerobic_anchor_shortfall' }));
+        expect(sufficient.requiredRoles).toContainEqual(expect.objectContaining({ coverageRoleId: 'aerobic-ride', durationMinutes: 90 }));
+        expect(sufficient.shortfalls).toEqual([]);
+    });
+
     it('keeps required, target, and optional roles inside their respective session ceilings', () => {
         const strategy: EvidenceBackedStrategy = {
             requirements: [

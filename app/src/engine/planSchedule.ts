@@ -58,6 +58,8 @@ export interface PlanCoverageRequirementDefinition {
   targetSessions: number;
   priority: ObjectivePriority;
   knowledgeRefs: string[];
+  minimumDurationMinutes?: number;
+  exactWorkoutIds?: string[];
 }
 
 export interface PlanDefinition {
@@ -166,6 +168,10 @@ export function buildPlanDefinition(
     }
     if (requirement.minimumSessions < 0) {
       issues.push({ code: 'INVALID_COVERAGE_MINIMUM', field: `coverageRequirements.${requirement.coverageKey}`, documentPath: `plan/${id}` });
+    }
+    if (requirement.minimumDurationMinutes !== undefined
+      && (!Number.isFinite(requirement.minimumDurationMinutes) || requirement.minimumDurationMinutes <= 0)) {
+      issues.push({ code: 'INVALID_COVERAGE_MINIMUM', field: `coverageRequirements.${requirement.coverageKey}.minimumDurationMinutes`, documentPath: `plan/${id}` });
     }
     if (requirement.targetSessions < requirement.minimumSessions) {
       issues.push({ code: 'COVERAGE_TARGET_BELOW_MINIMUM', field: `coverageRequirements.${requirement.coverageKey}`, documentPath: `plan/${id}` });
@@ -409,6 +415,15 @@ export function buildEvergreenPlanDefinition(
       knowledgeRefs: [...requirement.knowledgeRefs],
     }];
   });
+  if (packedBudget.longAerobicAnchorRequired) {
+    const aerobicKnowledgeRefs = packedBudget.requirements.find(requirement => requirement.adaptation === 'aerobic_endurance')?.knowledgeRefs ?? [];
+    coverageRequirements.push({
+      coverageKey: 'long_aerobic_anchor', blockId: 'block_general', minimumSessions: 1, targetSessions: 1,
+      priority: 'must_have', knowledgeRefs: [...aerobicKnowledgeRefs],
+      minimumDurationMinutes: packedBudget.longAerobicAnchorDurationMinutes,
+      exactWorkoutIds: packedBudget.longAerobicAnchorWorkoutId ? [packedBudget.longAerobicAnchorWorkoutId] : [],
+    });
+  }
   const block: PlanBlock = {
     id: 'block_general', phase: 'general', startDate: asOfDate,
     endDate: addDaysToLocalDateString(asOfDate, 6), volumeScale: 1, intensityScale: 1,

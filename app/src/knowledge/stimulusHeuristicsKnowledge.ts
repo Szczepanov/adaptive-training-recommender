@@ -18,6 +18,7 @@ export const STIMULUS_HEURISTICS_CLAIM_IDS = {
     coverageThresholdPolicy: 'policy.stimulus.coverage_threshold_v1',
     legacyKeywordCreditPolicy: 'policy.stimulus.legacy_keyword_credit_v1',
     aerobicVolumeFloorPolicy: 'policy.stimulus.aerobic_volume_athlete_relative_floor_v1',
+    weeklyAerobicDoseEnvelopePolicy: 'policy.stimulus.weekly_aerobic_dose_envelope_v1',
     maxFusionPolicy: 'policy.fatigue.max_fusion_policy_v1',
     ambientStepSurgePolicy: 'policy.fatigue.ambient_step_surge_v1',
     planTierCostCeilingsPolicy: 'policy.readiness.plan_tier_cost_ceilings_v1',
@@ -108,6 +109,20 @@ export const STIMULUS_HEURISTICS_CLAIMS: readonly KnowledgeClaim[] = [
             'Applying one athlete-level floor across modalities deliberately prevents a short non-primary session from satisfying the role; it does not model modality-specific aerobic equivalence.',
         ],
         reviewedOn: '2026-09-25', version: 1,
+    },
+    {
+        id: STIMULUS_HEURISTICS_CLAIM_IDS.weeklyAerobicDoseEnvelopePolicy,
+        statement: 'Product weekly aerobic-dose envelope v1 (#806): after at least 28 observed days, an established athlete with easy continuous aerobic sessions in at least 3 of the 4 fixed prior weeks may receive a low-intensity weekly target from the median of those four weekly minute totals, or the upper observed quartile in an endurance development phase. Athlete-history semantics activate only when that selected target exceeds the 150-minute public-health minimum; otherwise the 150/150/300 guideline fallback remains authoritative, including its broad aerobic equivalence. When athlete-history semantics are active, the floor is the greater of 150 minutes and the lower observed quartile, capped at the selected target. History of fewer than 4 primary-modality sessions does not nominate a long anchor. The anchor is one continuous authored session using the 75th-percentile duration in that modality, capped by the allocator-executable standard engine-template ceiling (and reconciled with the #757 session floor during packing), when it fits real date capacity; taper, post-event recovery, adverse recovery and current clinical symptoms suspend it. Quality-session minutes are not converted to low-intensity minutes under athlete-history semantics, and athlete-history targets are restricted to the historically primary modality.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
+        applicability: { contexts: ['weekly_aerobic_dose', 'low_intensity_support', 'long_aerobic_anchor'], sports: ['cycling', 'running', 'walking', 'swimming', 'endurance_multisport'], populations: ['established_app_users'], outcomes: ['weekly_aerobic_dose_target', 'long_aerobic_role'], horizon: 'chronic' },
+        evidence: [{ sourceId: STIMULUS_CREDIT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: [
+            'Observed weekly training is a maintenance/productive-dose prior, not proof of an optimum, causal adaptation response, or biological minimum.',
+            'The 28-day window, three observed weeks, >150 activation threshold, quartile selection, and percentile anchor duration are product calibration choices and require prospective outcome review.',
+            'Minutes are counted only from sessions identified as easy continuous aerobic work; this does not claim equivalence across modalities. The primary modality is selected from observed low-intensity minutes.',
+            'The envelope does not replace readiness, tissue, capacity or rolling-load authorities. Temporary delivery limits do not rewrite the evidence-derived weekly target.',
+        ],
+        reviewedOn: '2026-09-26', version: 1,
     },
     {
         id: STIMULUS_HEURISTICS_CLAIM_IDS.maxFusionPolicy,

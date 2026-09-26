@@ -289,6 +289,39 @@ describe('athlete-relative aerobic_volume floor (#757)', () => {
         expect(aerobic(ESTABLISHED).completedSessions).toBe(1);
     });
 
+    it('requires the selected primary workout identity and duration for a long anchor', () => {
+        const planState = buildCyclingEventPlan(cyclingEvent());
+        if (planState.status !== 'AVAILABLE') throw new Error('cycling plan should be available');
+        const plan = {
+            ...planState.data,
+            coverageSetId: EVERGREEN_GENERAL_COVERAGE_SET.id,
+            blocks: [{ id: 'block_general', phase: 'general' as const, startDate: '2026-09-01', endDate: '2026-09-10', volumeScale: 1, intensityScale: 1 }],
+            coverageRequirements: [{
+                coverageKey: 'long_aerobic_anchor' as const, blockId: 'block_general', minimumSessions: 1, targetSessions: 1,
+                priority: 'must_have' as const, knowledgeRefs: [], minimumDurationMinutes: 75,
+                exactWorkoutIds: ['cycling_zone2_standard_01'],
+            }],
+        };
+        const state = buildCoverageState(plan, '2026-09-03', [
+            { date: '2026-09-01', workoutId: 'running_easy_continuous_01', durationMin: 90 },
+            { date: '2026-09-02', workoutId: 'cycling_zone2_standard_01', durationMin: 75 },
+        ], EVERGREEN_GENERAL_COVERAGE_SET);
+        expect(state.requirements.find(requirement => requirement.key === 'long_aerobic_anchor')?.completedSessions).toBe(1);
+        const wrongModalityOnly = buildCoverageState(plan, '2026-09-03', [
+            { date: '2026-09-01', workoutId: 'running_easy_continuous_01', durationMin: 90 },
+        ], EVERGREEN_GENERAL_COVERAGE_SET);
+        expect(wrongModalityOnly.requirements.find(requirement => requirement.key === 'long_aerobic_anchor')?.completedSessions).toBe(0);
+        const wrongCanonicalIdentity = buildCoverageState(plan, '2026-09-03', [{
+            date: '2026-09-01', workoutId: 'running_easy_continuous_01', durationMin: 90,
+            canonicalCoverageCredits: [{
+                coverageSetId: EVERGREEN_GENERAL_COVERAGE_SET.id,
+                coverageKey: 'long_aerobic_anchor',
+                creditKind: 'exact',
+            }],
+        }], EVERGREEN_GENERAL_COVERAGE_SET);
+        expect(wrongCanonicalIdentity.requirements.find(requirement => requirement.key === 'long_aerobic_anchor')?.completedSessions).toBe(0);
+    });
+
     it('credits an uncapped planned ride or base run whose prescribed range reaches the floor (#768, #798)', () => {
         const catalogState = unmetAerobicState(null);
         const establishedState = unmetAerobicState(ESTABLISHED);

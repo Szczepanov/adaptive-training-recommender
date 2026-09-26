@@ -165,6 +165,14 @@ describe('engine knowledge coverage inventory', () => {
         expect(floor?.coverageRationale).toContain('#757');
     });
 
+    it('tracks the accumulated weekly aerobic-dose envelope and anchor policy for issue #806', () => {
+        expect(byId('stimulus.weekly_aerobic_dose_envelope')).toMatchObject({
+            classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high',
+            safetyImpact: 'moderate', researchPriority: 'none',
+            knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.weeklyAerobicDoseEnvelopePolicy, KNOWLEDGE_CLAIM_IDS.adultAerobicHealthVolume],
+        });
+    });
+
     it('keeps W2b families covered with their intended product-policy claims', () => {
         const expectedClaims = {
             'stimulus.objective_credit_confidence': KNOWLEDGE_CLAIM_IDS.objectiveCreditConfidencePolicy,
@@ -201,9 +209,9 @@ describe('engine knowledge coverage inventory', () => {
         // #802 adds one partial/p2 embedded power-maintenance item (no power-specific dose evidence).
         // #801 adds one covered cycling-build strength-support product-policy item.
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(80);
-        expect(summary.byCoverage).toEqual({ covered: 54, partial: 19, uncovered: 1, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 8, p1: 9, p2: 3, p3: 0, none: 60 });
+        expect(summary.total).toBe(81);
+        expect(summary.byCoverage).toEqual({ covered: 55, partial: 19, uncovered: 1, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 8, p1: 9, p2: 3, p3: 0, none: 61 });
         expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
     });
