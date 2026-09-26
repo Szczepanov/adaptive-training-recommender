@@ -536,7 +536,11 @@ exceeds 150 min/week; otherwise the adult-health 150/150/300 fallback remains au
 rather than turning the guideline minimum into a primary-modality easy-only obligation. Only
 easy work in the dominant evidenced modality counts toward an active relative envelope, and no
 intensity conversion is used. The target is history-derived and does not rise with additional
-free time. `weeklyDosePacking.ts` accounts for the guideline's broad aerobic minutes from
+free time. When athlete-relative dose needs more occurrences than the profile's minimum-session
+commitment, `weeklyDosePacking.ts` may use declared target-session capacity, but it reserves the
+full feasible remaining demand of later co-required required adaptations before assigning extra
+aerobic occurrences. Unmet aerobic dose remains a typed shortfall instead of silently displacing a
+required peer. `weeklyDosePacking.ts` accounts for the guideline's broad aerobic minutes from
 quality sessions only after those sessions are actually packed.
 
 For eligible endurance or sport-readiness development, `evergreenPlanning.ts` can add a
