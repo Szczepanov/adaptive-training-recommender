@@ -343,7 +343,9 @@ function powerWithheldReason(
 /** Build the progressive mechanical-exposure requirement (#804). The target and ceiling
  * are product policy owned by `policy.evergreen.mechanical_exposure_v1`; progressive mechanical
  * loading is supported by `biomechanics.impact.progressive_mechanical_loading`.
- * Embedded in running, field or strength occurrences rather than adding a standalone session (ADR-0044 D5/D6). */
+ * Preferentially embedded/cross-credited when an already-planned exact identity supplies it.
+ * If no host exists, the explicit low-cost coverage target remains visible and may be repaired
+ * by the canonical allocator rather than disappearing silently (ADR-0044 D4/D5/D6). */
 function mechanicalRequirement(priority: AdaptationDoseRequirement['priority']): AdaptationDoseRequirement {
     const primaryClaimId = KNOWLEDGE_CLAIM_IDS.mechanicalExposurePolicy;
     return {
@@ -443,13 +445,17 @@ export function resolveEvidenceBackedStrategy(
         else requirements.push(powerRequirement(priorities.has('speed_power') ? 'target' : 'optional'));
     }
 
-    // Issue #804: progressive mechanical and impact exposure model.
-    // When priorities include sport_readiness or speed_power, mechanical exposure is required or targeted.
-    const mechanicalCandidate = priorities.has('sport_readiness') || priorities.has('speed_power');
-    if (mechanicalCandidate) {
+    // Issue #804: progressive mechanical and impact exposure model. Sport-readiness/speed
+    // athletes target it directly. A balanced athlete, or an endurance+strength hybrid,
+    // retains it as an optional maintenance capability so cycling/endurance can stay primary
+    // without letting foot-ground exposure disappear for months.
+    const directMechanicalPriority = priorities.has('sport_readiness') || priorities.has('speed_power');
+    const hybridMechanicalMaintenance = priorities.has('balanced_performance')
+        || (priorities.has('endurance') && strengthPlanned);
+    if (directMechanicalPriority || hybridMechanicalMaintenance) {
         const withheld = mechanicalWithheldReason(goalOrEvent, athleteState);
         if (withheld) warnings.push({ code: 'mechanical_exposure_withheld', message: withheld });
-        else requirements.push(mechanicalRequirement('target'));
+        else requirements.push(mechanicalRequirement(directMechanicalPriority ? 'target' : 'optional'));
     }
     return { requirements, ...(canUseConditionalPrior ? { hardSessionCap } : {}), warnings };
 }
