@@ -35,7 +35,7 @@ import {
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveEventTaper } from './taperPolicy';
-import { isPriorityAOlympicTriathlon, olympicTriathlonTaperBenefitBoost, olympicTriathlonTaperCandidateCap, olympicTriathlonTaperExclusion, resolveOlympicTriathlonTaperBudget, type OlympicTriathlonTaperBudget } from './taperPlanBudget';
+import { olympicTriathlonTaperBenefitBoost, olympicTriathlonTaperCandidateCap, olympicTriathlonTaperExclusion, resolveOlympicTriathlonTaperBudget, resolvePriorityAOlympicTriathlonTaper, type OlympicTriathlonTaperBudget } from './taperPlanBudget';
 import { resolveInjuryRestrictions } from './injuryPolicy';
 import { classifyCandidateStrength, classifyPriorStrength, evaluateStrengthSpacingStatus, type StrengthExposureLike } from './strengthSpacingPolicy';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
@@ -1170,10 +1170,8 @@ export function rankCandidates(
     const olympicTaperBudget = resolveOlympicTriathlonTaperBudget(
         focusEvent, targetDate, rawHistory, options.taperBudgetHistory, options.taperFixedReservations,
     );
-    const olympicRaceEve = isPriorityAOlympicTriathlon(focusEvent)
-        && resolvedTaper !== null
-        && targetDate >= resolvedTaper.startDate
-        && getDayDiff(focusEvent!.timing?.planningDate ?? focusEvent!.date, targetDate) === 1;
+    const olympicTaper = resolvePriorityAOlympicTriathlonTaper(focusEvent, targetDate);
+    const olympicRaceEve = olympicTaper?.endDate === targetDate;
     const summary = buildHistoryFeatureSummary(history, targetDate, options.resolveRecoveryHours);
     const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance' || o.key === 'strength_development');
     const coverageState = options.coverageState;
