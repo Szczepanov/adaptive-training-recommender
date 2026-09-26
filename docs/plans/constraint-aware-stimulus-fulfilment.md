@@ -42,7 +42,7 @@ Do not duplicate:
 
 ### CF0 — Requirement-class contract and diagnostics
 
-**Blocked by:** ADR-0044 acceptance  
+**Blocked by:** ADR-0044 acceptance
 **Can start independently:** Yes after acceptance
 
 Add a typed requirement-view contract, conceptually:
@@ -66,7 +66,7 @@ interface RequirementResidual {
   id: string;
   class: RequirementClass;
   target: number;
-  delivered: number;
+  completed: number;
   projected: number;
   residual: number;
   priority: 'must_have' | 'should_have' | 'nice_to_have';
@@ -81,6 +81,8 @@ Requirements:
 - pure derivation from existing canonical owners;
 - no new physiological constants;
 - exact coverage and stimulus credit remain source-specific;
+- `completed` is derived only from canonical performed-training authorities;
+- `projected` may reduce a forecast residual but never confirms performed capability;
 - diagnostics identify the source authority for each residual;
 - no persistence/schema change in CF0 unless replay requires it.
 
@@ -93,7 +95,7 @@ Tests:
 
 ### CF1 — Residual stimulus value in weekly allocation
 
-**Blocked by:** CF0  
+**Blocked by:** CF0
 **Depends on:** existing `stimulus.ts` and ADR-0018
 
 Extend allocation diagnostics/search scoring so a candidate's value is based on **remaining
@@ -101,7 +103,9 @@ required credit**, not gross stimulus.
 
 Rules:
 
-- compute objective/capability credit through canonical authorities;
+- compute objective/capability credit only through canonical authorities;
+- ADR-0014 `deriveObjectiveCredit*` remains the sole objective-credit formula;
+- ADR-0033 evidence certainty is provenance, not a numeric credit multiplier;
 - cap marginal value at residual requirement;
 - exact must-have role remains ahead of optional fractional surplus;
 - no new scalar physiological "value";
@@ -111,10 +115,8 @@ Suggested helper:
 
 ```ts
 deriveMarginalRequirementContribution(
-  candidate,
   residualRequirements,
-  deliveredDose,
-  evidence
+  canonicalContributions
 ): RequirementContribution[]
 ```
 
@@ -127,7 +129,7 @@ Acceptance:
 
 ### CF2 — Training-module / microdose catalog contract
 
-**Blocked by:** ADR-0044; preferably #802/#803 canonical metadata decisions  
+**Blocked by:** ADR-0044; preferably #802/#803 canonical metadata decisions
 **Can partially start:** schema/validator spike only
 
 Add a structured module contract rather than creating many new monolithic workouts.
@@ -142,7 +144,8 @@ Required fields:
 - movement/capability composition when available;
 - eligible delivery modes: standalone / embedded / second window;
 - intent: development / maintenance / microdose;
-- explicit exact-role eligibility, default none.
+- stable materialized identity so the active coverage descriptor can decide exact role credit;
+  the module itself grants no role.
 
 Initial modules should be minimal and evidence-aligned, for example:
 
@@ -184,7 +187,7 @@ Rules:
 
 ### CF4 — Automatic intraday secondary packing
 
-**Blocked by:** CF0–CF3 and live canonical modules  
+**Blocked by:** CF0–CF3 and live canonical modules
 **Consumes:** ADR-0036 only; does not alter it
 
 Add a bounded second-window search for generated work.
@@ -198,10 +201,12 @@ Algorithm sketch:
 5. apply standard equipment/environment/safety/spacing gates;
 6. simulate the shared daily ledger debit;
 7. compare marginal residual coverage;
-8. reserve the best bounded candidate when it improves required coverage and does not displace
-   higher-priority work;
-9. mark PM decision provisional;
-10. before launch, rerun ADR-0036 reassessment and atomically claim capacity.
+8. reuse ADR-0018 D-SUPPORT viability to prove that the candidate preserves the incumbent
+   maximum achievable exact required-role allocation under projected state;
+9. reserve the best bounded candidate only after that proof, then recompute remaining
+   reservations/residuals;
+10. mark PM decision provisional;
+11. before launch, rerun ADR-0036 reassessment and atomically claim capacity.
 
 Constraints:
 
@@ -277,7 +282,8 @@ One session/module may contribute to multiple capabilities through explicit meta
 
 **Blocked by:** CF1–CF6 sufficient coverage
 
-Implement the ordered degradation ladder:
+Implement the degradation repertoire with a versioned policy-selected ordering. The sequence
+below is the proposed initial product heuristic, not an evidence-derived physiological law:
 
 1. full dose;
 2. valid compression;
@@ -288,13 +294,18 @@ Implement the ordered degradation ladder:
 7. typed shortfall/suspension.
 
 This should be a small orchestration layer. It must not encode family-specific science.
+Any ordering/tie-break that changes live selection requires ADR-0033 product-policy lineage.
 
-Diagnostics must state which level was used.
+Diagnostics must state which operation was used.
 
 ### CF8 — Context brief/UI explanation
 
-**Blocked by:** CF0 and incremental canonical integrations  
+**Blocked by:** CF0 and incremental canonical integrations
 **Related:** #813
+
+Main already contains #813's read-only stressor/physical-capability ledger. CF8 extends that
+existing read model as canonical #802–#806 outputs become available; it does not create a
+second exposure/completion ledger.
 
 Expose a bounded summary such as:
 
@@ -312,20 +323,22 @@ Do not reconstruct policy in the renderer.
 
 ## 4. Priority / search policy
 
-Use lexicographic feasibility:
+Preserve ADR-0018's incumbent feasibility hierarchy and reservation topology: hard
+safety/readiness/taper/daily-capacity gates; committed fixed/overlay load; the ADR-0043 rolling
+catalog-load envelope; then exact required-role allocation and D-SUPPORT preservation. ADR-0036
+adds the shared intraday ledger for same-day capacity; it does not reorder weekly authority.
 
-1. safety/clinical/tissue;
-2. protected rest and fixed commitments;
-3. event/taper/key-session authority;
-4. rolling-load + daily-ledger capacity;
-5. exact must-have roles;
-6. minimum accumulated dose/overdue capabilities;
-7. BUILD stimulus;
-8. MAINTAIN/MICRODOSE residuals;
-9. modality preference/logistics;
-10. optional surplus utility.
+Within the remaining feasible support space, the proposed residual ordering is:
 
-This hierarchy should be encoded once and alignment-tested.
+1. canonical minimum accumulated dose / overdue capability floors;
+2. BUILD stimulus;
+3. MAINTAIN/MICRODOSE residuals;
+4. modality preference/logistics;
+5. optional surplus utility.
+
+A capability becomes an ADR-0018 exact must-have only when its canonical owner explicitly
+defines that role. The support ordering is a product-policy heuristic and must be registered,
+versioned and alignment-tested before it changes live selection.
 
 ## 5. Evidence/knowledge work
 
@@ -338,8 +351,9 @@ Before any CF work changes recommendations, add ADR-0033 claims for:
 - capability cadence/max gaps;
 - any cross-credit threshold not already contained in authored stimulus profiles.
 
-Keep claims explicit about evidence class. The following are **not** established physiological
-constants:
+Keep claims explicit about evidence class. Knowledge evidence certainty must not be multiplied
+into ADR-0014 objective credit; it governs policy authority/limitations instead. The following
+are **not** established physiological constants:
 
 - 10/15/20-minute universal strength minimum;
 - one universal same-day separation;
@@ -414,8 +428,12 @@ Each activation gets a new `POLICY_VERSION`. Baseline refresh is a separate revi
 Likely touch points:
 
 - `app/src/engine/models.ts` — requirement residual types;
-- `app/src/engine/stimulus.ts` — reusable residual contribution helper, not new science;
-- `app/src/engine/weeklyAllocation.ts` — marginal residual coverage;
+- `app/src/engine/stimulus.ts` — reuse the existing canonical objective-credit primitive;
+  do not add a competing credit formula;
+- a small fulfilment/residual module under `app/src/engine/` — clamp canonical contributions
+  to residual requirements and expose diagnostics;
+- `app/src/engine/weeklyAllocation.ts` — integrate residual support without weakening
+  ADR-0018 required-role reservation/D-SUPPORT;
 - `app/src/engine/weeklyDosePacking.ts` — consume accumulated/capability targets;
 - `app/src/engine/planner.ts` — bounded multi-window secondary proposal;
 - `app/src/engine/intradayBundlePlacement.ts` / existing services — reuse, not duplicate;

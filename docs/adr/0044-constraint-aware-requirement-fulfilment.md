@@ -1,8 +1,8 @@
 # ADR-0044 — Constraint-aware requirement fulfilment and bounded multi-stimulus packing
 
-**Status:** Proposed  
-**Date:** 2026-09-26  
-**Related:** ADR-0016, ADR-0018, ADR-0033, ADR-0036, ADR-0043; #801–#806, #813  
+**Status:** Proposed
+**Date:** 2026-09-26
+**Related:** ADR-0016, ADR-0018, ADR-0033, ADR-0036, ADR-0043; #801–#806, #813
 **Analysis:** [Constraint-aware training requirement fulfilment](../analysis/2026-09-26-constraint-aware-training-fulfilment.md)
 
 ## Context
@@ -56,14 +56,21 @@ Examples:
 ### D3 — Cross-credit is residual, fractional and evidence-bounded
 
 A qualifying session may contribute to every structured stimulus/capability axis it actually
-delivers. Credit is bounded by delivered dose, evidence confidence and the residual requirement.
+delivers, but the fulfilment layer does not calculate a second physiological credit. Fractional
+objective credit reuses ADR-0014's canonical `deriveObjectiveCredit*` path; capability credit
+comes from the canonical capability owner as those models land. Knowledge evidence certainty
+under ADR-0033 is provenance for policy, not a numeric multiplier on delivered training credit.
+Marginal value is capped at the residual requirement.
 
 No universal intensity-time exchange rate is introduced. In particular, there is no fixed rule
 such as "one threshold minute equals N low-intensity minutes."
 
 ### D4 — Constraint degradation is explicit and ordered
 
-After safety/event/load feasibility, the planner attempts:
+After safety/event/load feasibility, the architecture exposes the following admissible
+degradation operations. Their live ordering is policy, not physiology: any ordering or
+tie-break that changes selection must have the ADR-0033 lineage required by D10. The proposed
+initial search sequence is:
 
 1. full authored dose;
 2. validated dose compression;
@@ -84,9 +91,12 @@ A microdose must be a structured authored module or occurrence with:
 - structured stimulus/capability metadata;
 - normal cost accounting;
 - explicit eligible intent (`develop`, `maintain`, `microdose`);
-- exact role credit only when a coverage descriptor explicitly permits it.
+- materialization into the existing session/occurrence and canonical stimulus/cost contracts.
 
-Free-text fragments and arbitrary truncation do not create microdose authority.
+A module has no intrinsic exact-role authority. Exact role credit exists only when the
+materialized identity is explicitly mapped by the active coverage descriptor and passes its
+dose/phase rules. Free-text fragments and arbitrary truncation do not create microdose
+authority.
 
 ### D6 — Same-day automatic packing reuses ADR-0036
 
@@ -103,7 +113,10 @@ It reuses:
 - existing spacing and rolling-load authorities.
 
 The packer does not infer extra availability and does not create a second fatigue or safety
-model.
+model. It also does not run as an unconstrained post-processing optimizer: every generated
+secondary occurrence must preserve ADR-0018's incumbent maximum achievable required-role
+allocation under the projected state (D-SUPPORT), and remaining reservations are recomputed
+after each accepted secondary pick.
 
 ### D7 — Current block priority owns freshness
 
@@ -134,7 +147,12 @@ If a tissue/injury restriction blocks a unique capability such as impact/COD, ot
 training may still receive its genuine shared stimulus credit. The unavailable unique
 capability becomes `deliberately_suspended` or `blocked`; it is not marked satisfied.
 
-### D10 — Policy constants require knowledge lineage
+Completed and projected state remain distinct. Completed/delivered capability or role evidence
+comes only from the canonical performed-training authorities; a planned occurrence may reduce a
+forecast residual but never confirms that the capability was performed. The fulfilment layer
+and #813 readout consume this distinction rather than creating another completion ledger.
+
+### D10 — Policy constants and selection ordering require knowledge lineage
 
 Any live minimum dose, max-gap, cross-credit threshold, packing preference or BUILD->MAINTAIN
 transition rule introduced under this ADR requires:
@@ -145,6 +163,9 @@ transition rule introduced under this ADR requires:
 - a coverage item;
 - a policy-alignment test;
 - `POLICY_VERSION` bump when recommendation behavior changes.
+
+Evidence certainty or source confidence must not be repurposed as a generic physiological
+credit multiplier; credit semantics remain owned by the canonical objective/capability model.
 
 ## Consequences
 
@@ -185,7 +206,8 @@ Those remain separate evidence/policy decisions and must not be smuggled into th
 
 1. Owners of #801–#806 agree that their canonical models can map to these four requirement
    classes without duplicating ledgers.
-2. A bounded allocation design demonstrates no loss of ADR-0018 exact-role guarantees.
+2. A bounded allocation design demonstrates no loss of ADR-0018 exact-role guarantees,
+   including D-SUPPORT preservation after every generated secondary occurrence.
 3. Automatic intraday packing proves it can reuse ADR-0036's shared ledger and reassessment
    rather than bypassing them.
 4. #806 specifies aerobic duration/intensity accounting without threshold-to-Z2 equivalence.

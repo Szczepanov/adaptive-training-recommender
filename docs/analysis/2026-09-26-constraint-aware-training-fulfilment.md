@@ -1,8 +1,8 @@
 # Constraint-aware training requirement fulfilment — architecture review
 
-**Date:** 2026-09-26  
-**Status:** Point-in-time analysis / recommendation  
-**Scope:** Weekly planning under time, equipment, travel, recovery and tissue constraints; same-day microdosing; multi-stimulus sessions; aerobic-quality cross-credit  
+**Date:** 2026-09-26
+**Status:** Point-in-time analysis / recommendation
+**Scope:** Weekly planning under time, equipment, travel, recovery and tissue constraints; same-day microdosing; multi-stimulus sessions; aerobic-quality cross-credit
 **Related:** #801, #802, #803, #804, #805, #806, #813; ADR-0016, ADR-0018, ADR-0033, ADR-0036, ADR-0043
 
 ## Executive conclusion
@@ -267,7 +267,10 @@ Properties:
 ## 4. Constraint-degradation ladder
 
 When the unconstrained plan does not fit, degrade deliberately instead of dropping whichever
-workout happens to rank lowest.
+workout happens to rank lowest. The levels below are a proposed product-policy search sequence,
+not an evidence-derived physiological hierarchy. If live ordering changes selection, that
+ordering needs ADR-0033 lineage and policy-version governance just like any other decision
+heuristic.
 
 ### Level 0 — full plan
 Use normal development doses and preferred standalone sessions.
@@ -343,16 +346,16 @@ the optimizer.
 Conceptually:
 
 ```text
-credit(session, objective) =
-  authoredStimulus(session, objective)
-  × deliveredDose(session)
-  × evidenceConfidence(session)
-
-usableCredit = min(credit, residualRequirement)
+canonicalCredit = deriveObjectiveCreditFromProfile(...)
+usableCredit = min(canonicalCredit, residualRequirement)
 ```
 
-The existing `deriveObjectiveCreditFromProfile()` is already close to this. The missing part
-is using **residual portfolio value** explicitly during weekly packing/allocation.
+ADR-0014 already owns fractional objective-credit semantics, including delivered-dose handling.
+ADR-0033 evidence certainty describes the authority and limitations of a policy claim; it is
+not a numeric discount on physiological credit. If source evidence is insufficient, the
+canonical fact/credit owner must express that through its own unknown/no-credit semantics.
+The missing part here is only using **residual portfolio value** during weekly
+packing/allocation.
 
 ### 5.4 Never use one scalar "training value"
 
@@ -393,7 +396,12 @@ Rules:
 - an embedded module does not double-count as another full session;
 - a separate PM occurrence consumes minutes/load normally;
 - one module may satisfy several capability exposures only via explicit metadata;
-- a microdose does not earn primary/full-role credit unless its descriptor explicitly permits it.
+- module metadata does not itself grant an exact programming role;
+- after materialization, exact role credit follows the normal active coverage-descriptor and
+  dose/phase rules.
+
+A module is therefore a compact authoring/delivery form over the existing session, stimulus,
+cost and occurrence authorities, not a parallel workout/accounting system.
 
 ## 7. Automatic same-day packing
 
@@ -411,9 +419,13 @@ Candidate weekly algorithm:
    and microdose modules;
 6. consider compatible second-window additions on already-hard days when this protects truly
    easy days;
-7. run bounded allocation maximizing required **residual** coverage before optional surplus;
-8. keep spacing, rolling-load, injury, readiness and taper gates;
-9. mark unresolved/blocked residual requirements explicitly.
+7. compare bounded candidates by required **residual** contribution before optional surplus;
+8. for every proposed secondary occurrence, reuse ADR-0018 D-SUPPORT viability to prove that
+   the incumbent maximum achievable exact required-role allocation is preserved under the
+   projected state;
+9. after an accepted secondary pick, recompute remaining reservations and residuals;
+10. keep spacing, rolling-load, injury, readiness and taper gates;
+11. mark unresolved/blocked residual requirements explicitly.
 
 Never infer a second window because the athlete "probably has ten minutes at home."
 
@@ -465,21 +477,23 @@ cycling**.
 
 ## 10. Optimization hierarchy
 
-The allocator should behave lexicographically:
+Do not replace ADR-0018's live feasibility hierarchy. Safety/clinical/tissue gates, fixed
+commitments/protected rest, the ADR-0043 rolling-load envelope, and exact required-role
+reservation/preservation remain incumbent authorities.
 
-1. safety / clinical / tissue hard gates;
-2. fixed commitments and protected rest;
-3. event/taper/key-session authority;
-4. rolling-load and daily capacity feasibility;
-5. minimum exact required roles;
-6. minimum accumulated dose / overdue capability floors;
-7. phase-priority BUILD stimulus;
-8. secondary maintenance/microdose requirements;
-9. preferred modality and convenience;
-10. optional surplus utility.
+Only inside the remaining feasible support space should residual fulfilment add ordering such
+as:
 
-Within 5–8, choose the set of sessions/modules that maximizes marginal **residual requirement
-coverage** per constrained resource while preserving spacing and quality.
+1. canonical minimum accumulated dose / overdue capability floors;
+2. phase-priority BUILD stimulus;
+3. secondary MAINTAIN/MICRODOSE residuals;
+4. preferred modality and logistics;
+5. optional surplus utility.
+
+Any rule that promotes a capability/dose residual into the exact required-role tier must be
+owned by that canonical family and integrated through ADR-0018 rather than smuggled in as a
+ranking bonus. Within the support tiers, choose candidates by marginal **residual requirement
+contribution** while preserving spacing, quality and the incumbent required-role witness.
 
 Do not expose "benefit per minute" as a universal physiological metric. It is an allocation
 heuristic over registered benefits/costs.
@@ -522,7 +536,8 @@ heuristic over registered benefits/costs.
 4. #806 — accumulated aerobic dose + long anchor, separate from stimulus credit.
 5. #804 + #805 — longitudinal impact/COD capability ledgers with blocked/suspended states.
 6. Automatic intraday packing — consume those canonical models and ADR-0036.
-7. #813 — render canonical residual/blocked/overdue state; never own the policy.
+7. Extend the already-landed #813 read-only exposure/stressor ledger to consume canonical
+   residual/blocked/overdue state as #802–#806 land; the renderer never owns the policy.
 
 ## 13. Future acceptance scenarios
 
