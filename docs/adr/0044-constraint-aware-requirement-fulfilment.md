@@ -1,0 +1,193 @@
+# ADR-0044 — Constraint-aware requirement fulfilment and bounded multi-stimulus packing
+
+**Status:** Proposed  
+**Date:** 2026-09-26  
+**Related:** ADR-0016, ADR-0018, ADR-0033, ADR-0036, ADR-0043; #801–#806, #813  
+**Analysis:** [Constraint-aware training requirement fulfilment](../analysis/2026-09-26-constraint-aware-training-fulfilment.md)
+
+## Context
+
+The recommendation engine has deliberately separate authorities for physiological objective
+credit, exact weekly programming-role coverage, safety/readiness, rolling load, and intraday
+capacity. That separation is correct, but the planner still lacks one explicit answer to a
+common constrained-planning problem:
+
+> when the ideal weekly set of sessions does not fit, how should the engine preserve as much
+> of the intended adaptation/capability portfolio as possible without inventing equivalence?
+
+Current and planned capability work (#801–#806) increases that pressure. Strength, power,
+movement composition, impact, COD, aerobic accumulated dose and long-duration durability
+cannot each become an independent mandatory workout without inflating session count.
+
+ADR-0036 already permits several safe authored occurrences on one day using explicit windows,
+a shared daily ledger and later-session reassessment. Automatic multi-window packing was
+deliberately deferred until those boundaries existed.
+
+## Decision
+
+### D1 — Requirements have four semantic classes
+
+The planner will distinguish:
+
+1. **exact role** — identity/composition matters and exact coverage remains authoritative;
+2. **fractional stimulus** — a session may contribute dose-scaled credit to several
+   physiological objectives;
+3. **accumulated dose** — minutes/sets/other quantity accumulated over a window;
+4. **longitudinal capability exposure** — rolling-horizon maintenance/re-entry of a specific
+   physical capability.
+
+A requirement may own more than one class, but the classes never silently substitute for one
+another.
+
+### D2 — Exact role coverage remains strict
+
+`CoverageCreditFact` and descriptor-scoped role coverage remain the authority for authored
+programming roles. Fractional stimulus, accumulated minutes or a related modality cannot
+silently promote an exposure into an exact role.
+
+Examples:
+
+- threshold cycling may contribute aerobic stimulus but does not automatically satisfy a long
+  aerobic anchor;
+- compact resistance work may contribute strength stimulus but does not automatically satisfy
+  `primary_strength`;
+- cycling may preserve aerobic work while an impact capability remains blocked.
+
+### D3 — Cross-credit is residual, fractional and evidence-bounded
+
+A qualifying session may contribute to every structured stimulus/capability axis it actually
+delivers. Credit is bounded by delivered dose, evidence confidence and the residual requirement.
+
+No universal intensity-time exchange rate is introduced. In particular, there is no fixed rule
+such as "one threshold minute equals N low-intensity minutes."
+
+### D4 — Constraint degradation is explicit and ordered
+
+After safety/event/load feasibility, the planner attempts:
+
+1. full authored dose;
+2. validated dose compression;
+3. compatible same-day consolidation using real windows;
+4. conversion of secondary BUILD work to MAINTAIN/MICRODOSE when a registered policy permits;
+5. structured cross-credit from retained sessions;
+6. safe equipment/modality substitution for genuinely shared requirements;
+7. typed shortfall or deliberate suspension.
+
+The engine does not claim that all requirements can always be fulfilled.
+
+### D5 — Microdose is a delivery form, not a coverage loophole
+
+A microdose must be a structured authored module or occurrence with:
+
+- bounded duration/dose;
+- explicit equipment and safety requirements;
+- structured stimulus/capability metadata;
+- normal cost accounting;
+- explicit eligible intent (`develop`, `maintain`, `microdose`);
+- exact role credit only when a coverage descriptor explicitly permits it.
+
+Free-text fragments and arbitrary truncation do not create microdose authority.
+
+### D6 — Same-day automatic packing reuses ADR-0036
+
+A future automatic packer may place multiple generated occurrences on one day only when
+explicit athlete availability contains distinct usable windows.
+
+It reuses:
+
+- the one shared daily minute/load ledger;
+- occurrence reservations;
+- common eligibility/readiness/injury gates;
+- later-session reassessment;
+- atomic launch/admission;
+- existing spacing and rolling-load authorities.
+
+The packer does not infer extra availability and does not create a second fatigue or safety
+model.
+
+### D7 — Current block priority owns freshness
+
+When compatible work shares a day, the current block's BUILD quality normally receives first
+claim on freshness. Secondary MAINTAIN/MICRODOSE work is placed later by default.
+
+A strength-development block may reverse that order. No universal clock-time separation is
+declared here; any minimum separation remains an authored/planning constraint and later-session
+reassessment still governs execution.
+
+### D8 — Aerobic base is not one scalar checkbox
+
+Aerobic planning must keep separate:
+
+1. fractional aerobic-endurance stimulus;
+2. total aerobic duration by intensity domain;
+3. low-intensity support volume/range;
+4. long continuous aerobic/durability anchor.
+
+Tempo/threshold may advance (1) and (2). It advances (3) only for actual work in the
+low-intensity domain and (4) only when the exact anchor definition is satisfied.
+
+#806 is the canonical follow-up for accumulated aerobic dose and the long anchor.
+
+### D9 — Unique blocked capabilities become suspended, not substituted
+
+If a tissue/injury restriction blocks a unique capability such as impact/COD, other safe
+training may still receive its genuine shared stimulus credit. The unavailable unique
+capability becomes `deliberately_suspended` or `blocked`; it is not marked satisfied.
+
+### D10 — Policy constants require knowledge lineage
+
+Any live minimum dose, max-gap, cross-credit threshold, packing preference or BUILD->MAINTAIN
+transition rule introduced under this ADR requires:
+
+- a registered ADR-0033 claim;
+- explicit evidence/product-heuristic classification;
+- limitations;
+- a coverage item;
+- a policy-alignment test;
+- `POLICY_VERSION` bump when recommendation behavior changes.
+
+## Consequences
+
+### Positive
+
+- constrained athletes can preserve more of the intended training portfolio without inflating
+  full-session count;
+- quality sessions receive all valid secondary physiological credit;
+- microdoses become useful without weakening exact coverage semantics;
+- same-day doubles become a controlled allocation tool instead of ad hoc calendar logic;
+- injury/equipment constraints degrade honestly;
+- #801–#806 can share one fulfilment architecture rather than creating separate special cases.
+
+### Costs
+
+- weekly allocation becomes a multi-dimensional residual-coverage problem;
+- capability metadata must become structured;
+- microdose modules need catalog/validation support;
+- diagnostics must explain partial, blocked and suspended requirements;
+- simulation coverage must expand to constrained multi-session cases.
+
+## Non-decisions
+
+This ADR does **not** decide:
+
+- athlete-relative aerobic-dose formulas (#806);
+- power frequency/dose (#802);
+- unilateral composition rules (#803);
+- impact progression/max gaps (#804);
+- multidirectional cadence (#805);
+- a universal minimum strength microdose;
+- a universal same-day separation duration;
+- an intensity-equivalence multiplier.
+
+Those remain separate evidence/policy decisions and must not be smuggled into the packer.
+
+## Acceptance before status can move to Accepted
+
+1. Owners of #801–#806 agree that their canonical models can map to these four requirement
+   classes without duplicating ledgers.
+2. A bounded allocation design demonstrates no loss of ADR-0018 exact-role guarantees.
+3. Automatic intraday packing proves it can reuse ADR-0036's shared ledger and reassessment
+   rather than bypassing them.
+4. #806 specifies aerobic duration/intensity accounting without threshold-to-Z2 equivalence.
+5. A simulation design covers time, equipment, tissue restriction, taper and no-second-window
+   cases.
