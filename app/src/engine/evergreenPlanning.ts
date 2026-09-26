@@ -12,9 +12,8 @@ import { buildEvergreenPlanDefinition, type PlanDefinition } from './planSchedul
 import { buildMicrocycleState } from './microcycle';
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
-import { resolveWeeklyAerobicDoseEnvelope } from './weeklyAerobicDose';
+import { executableLongAerobicCeilingForWorkout, resolveWeeklyAerobicDoseEnvelope } from './weeklyAerobicDose';
 import type { WeeklyAerobicDoseEnvelope } from './weeklyAerobicDose';
-import { WORKOUTS_BY_ID } from '../workouts/catalog';
 
 export interface ResolvedEvergreenPlan {
     planDefinition: PlanDefinition;
@@ -38,7 +37,7 @@ export function aerobicPackingForFloor(
     reserveLongAnchor = false,
 ): { descriptor: CoverageSetDescriptor; shortfall: PackingWarning | null } {
     const longAnchor = reserveLongAnchor ? weeklyDose?.longAnchor : null;
-    const anchorMaximum = longAnchor ? WORKOUTS_BY_ID.get(longAnchor.workoutId)?.duration.maximumMin : undefined;
+    const anchorMaximum = longAnchor ? executableLongAerobicCeilingForWorkout(longAnchor.workoutId) : undefined;
     const anchorDuration = longAnchor
         ? Math.min(anchorMaximum ?? longAnchor.durationMinutes,
             Math.max(floor?.floorMin ?? 30, longAnchor.durationMinutes))
