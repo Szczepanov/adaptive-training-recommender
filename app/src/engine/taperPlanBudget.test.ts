@@ -305,7 +305,7 @@ describe('A Olympic triathlon plan-level taper budget', () => {
         expect(result.rejected[0].excludedReasons).toContain('OLYMPIC_TRIATHLON_RACE_EVE_REST');
     });
 
-    it('attributes the D-1 Rest decision to Olympic taper policy even without measured reference', async () => {
+    it('attributes D-1 Rest only to the exact 14-day Olympic taper policy scope', async () => {
         const readiness: DailyReadiness = {
             subjective: {
                 readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2,
@@ -340,6 +340,13 @@ describe('A Olympic triathlon plan-level taper budget', () => {
         );
         expect(recommendation.template.category).toBe('Rest');
         expect(recommendation.knowledgeRefs).toContain(KNOWLEDGE_CLAIM_IDS.olympicTriathlonPlanBudgetPolicy);
+
+        const authoredShortTaperRecommendation = await evaluateTrainingWithIntent(
+            'athlete', readiness, context, [{ ...event, taper: { startDate: '2026-09-09' } }],
+            '2026-09-13', undefined, { reconstruct: async () => [] },
+        );
+        expect(authoredShortTaperRecommendation.knowledgeRefs)
+            .not.toContain(KNOWLEDGE_CLAIM_IDS.olympicTriathlonPlanBudgetPolicy);
     });
 
     it('admits a swim to the rolling load budget using its taper dose cost', () => {
