@@ -296,7 +296,7 @@ function aerobicRequirement(
 }
 
 /** Build the adult strength requirement from the WHO floor plus the separate product upper-target claim. */
-function strengthRequirement(priority: AdaptationDoseRequirement['priority']): AdaptationDoseRequirement {
+export function strengthRequirement(priority: AdaptationDoseRequirement['priority']): AdaptationDoseRequirement {
     const primaryClaimId = KNOWLEDGE_CLAIM_IDS.adultStrengthHealthFrequency;
     return {
         adaptation: 'strength', priority,

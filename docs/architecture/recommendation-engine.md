@@ -389,6 +389,18 @@ path. An explicit `event_directed` profile uses an eligible event when present. 
 the effective mode is `evergreen`: it has no focus event and no event strategy, even if an
 event record exists. Event-directed cycling uses `structured_plan`; Running, triathlon, strength, and general events retain demand-derived planning. Running race-specific objectives are modality-scoped and half-marathon/marathon demand adds a long-run durability objective; the generic single-sport aerobic-base objective intentionally remains cross-training-creditable. Triathlon demand creates separate swim, bike, and run aerobic objectives so one discipline cannot silently satisfy the whole sport. Outdoor cycling and swimming are hard-gated by declared bicycle/swim access.
 
+Cycling event build strength support (#801): when the durable intent explicitly includes
+`strength_muscle`, `trainingIntent.ts` `eventStrengthSupportSessions` keeps the rest of the
+evergreen strength floor (`strengthRequirement` floor 2 minus the one authored
+`primary_strength` role, i.e. 1) as build-block `compact_strength` support roles in
+`buildCyclingEventPlan`. They carry `requiredCredit: 0` (no second physiological strength
+objective; `generateWeeklyObjectives` drops zero-credit definitions), `priority: 'should_have'`
+and `reservationTier: 'support'`; peak, taper and race blocks carry none. The count is threaded
+alongside `authoredPlanBlocks` to every decision-path plan construction (daily optimizer,
+week-ahead planner, forecast reconciliation, sequence search); a source guard test in
+`eventStrengthSupport.test.ts` fails if a construction site omits it. Policy lineage:
+`policy.event.cycling_build_strength_support_v1` (ADR-0033).
+
 For evergreen mode, `resolveEvergreenPlan` combines bounded completed history with the
 profile and real schedule availability. `resolveEvidenceBackedStrategy` establishes dose
 requirements before `resolveTrainingCapacity` and `packWeeklyDose` map them to exact
@@ -1322,6 +1334,19 @@ eligible date in date/template order, then fills spare slots with same-date alte
 If more than four dates are eligible, the earliest four are kept. Reaching a cap returns
 the best-known jointly feasible partial allocation and marks the remainder
 `unresolved_search_budget` -- never a safety miss.
+
+**Support-tier occurrences (#801).** An occurrence whose coverage requirement has
+`reservationTier: 'support'` is still reserved from its coverage minimum, but the search
+objective is lexicographic: maximize primary (untiered) occurrences first, then total
+occurrences. With no support occurrence this is exactly the original maximum-cardinality
+rule (`primaryFulfilledCount === fulfilledCount`). A support occurrence also never takes a
+date already nominated to a pending primary occurrence, so a later daily reallocation cannot
+move a quality, event-specific, aerobic or primary-strength anchor to make room for it. An
+unplaced support occurrence with admissible dates is reported
+`subordinate_to_required_roles`; otherwise it gets the ordinary typed reason (for example
+`projected_fatigue` under adverse recovery). Greedy-selection preservation uses the same
+ordering through `allocationValuePreserved`, so a pick that keeps the role count by trading a
+primary role for a support role counts as degradation.
 Wall-clock time is not a semantic cut-off; p95 ≤50 ms / p99 ≤100 ms on the live-sized
 fixture is an operational gate only.
 
@@ -1333,7 +1358,8 @@ not an exemption from allocation preservation: even an exact candidate that fulf
 current occurrence can spend rolling-budget capacity needed by another later occurrence.
 Therefore every non-recover selection -- discretionary support, an exact reserved-role
 candidate, or Rest -- is admitted only while the still-required incumbent allocation is
-proven to survive its projected cost (or an equal-cardinality reallocation is proven).
+proven to survive its projected cost (or an equal-value reallocation is proven: no fewer
+primary occurrences, and no fewer occurrences overall when the primary count is equal).
 If the current candidate itself fulfils one or more occurrences that had later incumbent
 reservations, those occurrences are discharged before the incumbent replay rather than
 being charged twice as future proof obligations. A true recover-tier selection is exempt:

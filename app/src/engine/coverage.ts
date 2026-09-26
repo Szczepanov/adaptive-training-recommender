@@ -65,6 +65,8 @@ export interface WeeklyCoverageRequirement {
     windowStart?: string;
     windowEnd?: string;
     credits: CoverageCredit[];
+    /** Issue #801: reserved only without displacing a primary required role. */
+    reservationTier?: 'support';
 }
 
 export interface CoverageState {
@@ -472,6 +474,8 @@ export function buildCoverageState(
         );
         const existing = requirementsByKey.get(definition.coverageKey);
         if (existing) {
+            // A primary definition for the same key always wins over a support tier.
+            if (definition.reservationTier !== 'support') delete existing.reservationTier;
             existing.minimumSessions = Math.max(existing.minimumSessions, minimumSessions);
             existing.targetSessions = Math.max(existing.targetSessions, targetSessions);
             if (definition.priority === 'must_have') existing.priority = 'must_have';
@@ -490,7 +494,11 @@ export function buildCoverageState(
             windowEnd: block.endDate,
             index,
         });
-        if (requirement) requirementsByKey.set(definition.coverageKey, requirement);
+        if (requirement) {
+            requirementsByKey.set(definition.coverageKey, definition.reservationTier === 'support'
+                ? { ...requirement, reservationTier: 'support' }
+                : requirement);
+        }
     });
 
     // Issue #802: coverage-only capability requirements (no stimulus objective) share the

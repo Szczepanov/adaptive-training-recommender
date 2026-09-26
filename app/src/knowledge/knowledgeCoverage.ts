@@ -101,6 +101,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Explicitly registered as a product heuristic, separate from the WHO >=2-day recommendation.',
     },
     {
+        id: 'event.cycling_build_strength_support', domain: 'planning_capacity', title: 'Cycling build strength-support roles for durable strength intent',
+        currentRule: 'For an event-directed cycling plan whose durable intent explicitly includes strength_muscle, the build block adds (evergreen strength floor 2 - 1 authored primary_strength role) = 1 exact compact_strength support role with requiredCredit 0 and reservationTier support. The weekly allocator maximizes primary required roles first and total roles second, never places a support role on a date nominated to a primary role, and reports subordinate_to_required_roles (or the ordinary typed reason) when it cannot fit. Peak, taper and race blocks carry no support role.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['engine/trainingIntent.ts:eventStrengthSupportSessions', 'engine/planSchedule.ts:buildCyclingEventPlan', 'engine/coverage.ts:buildCoverageState', 'engine/weeklyAllocation.ts:resolveWeeklyRoleReservations', 'engine/weeklyAllocation.ts:allocationValuePreserved', 'engine/planner.ts:generateWeekAheadPlan'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.cyclingBuildStrengthSupportPolicy, KNOWLEDGE_CLAIM_IDS.adultStrengthHealthFrequency],
+        coverageRationale: 'Issue #801 registers the translation of the existing strength floor into event build roles and the primary-first allocation rule as explicit product policy; the frequency itself is owned by the existing WHO strength-frequency claim rather than a new constant.',
+    },
+    {
         id: 'evergreen.health_adherence_modality_intensity_prior', domain: 'evergreen_dose', title: 'Health adherence-friendly modality and intensity prior',
         currentRule: 'For event-free health plans without explicit Running support (Running preferred and neither deprioritized nor avoided), Walking/Cycling receive a soft aerobic ranking preference and quality endurance is limited to one prior session in a rolling seven-day window. Hard Endurance is withheld as generic quality filler only when no endurance, speed/power, or sport-readiness priority is also selected; Moderate Endurance remains available. Adverse-recovery forecasts withhold quality endurance until the next fresh planning check. Running remains available at non-hard intensity and strength requirements are unchanged.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',

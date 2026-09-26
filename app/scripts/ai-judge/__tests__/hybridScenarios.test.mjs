@@ -297,4 +297,42 @@ describe('cycling hybrid targeted evaluation', () => {
     expect(conflict.decisionTraces
       .every((trace) => !powerIdentityFor(workoutIdForTemplateId(trace.selected.templateId))?.impact)).toBe(true);
   });
+
+  // Issue #801: an event becoming active must not by itself cut the hybrid athlete's
+  // weekly resistance exposures from two to one.
+  const weekOutcome = (result, weekIndex, key) => result.allocationReports
+    .find((entry) => entry.weekIndex === weekIndex)?.report.outcomes
+    .find((item) => item.occurrence.coverageKey === key);
+
+  it('preserves two distinct weekly resistance exposures in the cycling event build without losing cycling anchors', async () => {
+    const build = await resultFor(find('event_build'));
+    const firstWeek = build.decisionTraces.filter((trace) => trace.weekIndex === 0);
+    const strength = firstWeek.filter((trace) => trace.selected.modality === 'Strength');
+    expect(new Set(strength.map(({ date }) => date)).size).toBeGreaterThanOrEqual(2);
+    expect(weekOutcome(build, 0, 'compact_strength')?.status).toBe('fulfilled');
+    expect(weekOutcome(build, 0, 'compact_strength')?.reservation.workoutId).toBe('strength_compact_power_01');
+    for (const key of ['sustained_quality', 'outdoor_event_specific']) {
+      expect(weekOutcome(build, 0, key)?.status).toBe('fulfilled');
+    }
+    const support = weekOutcome(build, 0, 'compact_strength');
+    const primaryDates = new Set(firstWeek
+      .filter((trace) => coverageKeysForTemplate(ENRICHED_TEMPLATES.find(({ id }) => id === trace.selected.templateId), 'build')
+        .includes('primary_strength'))
+      .map(({ date }) => date));
+    expect(primaryDates.size).toBeGreaterThanOrEqual(1);
+    expect(primaryDates.has(support.reservation.assignedDate)).toBe(false);
+  });
+
+  it('defers the support exposure under adverse recovery and carries none into taper', async () => {
+    const adverse = await resultFor(find('event_adverse'));
+    const deferred = weekOutcome(adverse, 0, 'compact_strength');
+    expect(deferred?.status).toBe('missed');
+    expect(deferred?.reason).toEqual(expect.any(String));
+    expect(adverse.decisionTraces
+      .filter((trace) => trace.mode === 'recover')
+      .every((trace) => trace.selected.modality !== 'Strength')).toBe(true);
+    const taper = await resultFor(find('event_taper'));
+    expect(taper.allocationReports.flatMap(({ report }) => report.outcomes)
+      .some((item) => item.occurrence.coverageKey === 'compact_strength')).toBe(false);
+  });
 });

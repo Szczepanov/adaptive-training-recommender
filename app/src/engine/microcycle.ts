@@ -47,7 +47,7 @@ export function generateWeeklyObjectives(
         const activeBlockIds = new Set(activeBlock ? [activeBlock.id] : []);
 
         planDefinition.objectives
-            .filter((objDef) => activeBlockIds.has(objDef.blockId))
+            .filter((objDef) => activeBlockIds.has(objDef.blockId) && objDef.requiredCredit > 0)
             .forEach((objDef, idx) => {
             const block = blockMap.get(objDef.blockId);
             const windowStart = block?.startDate;

@@ -97,6 +97,7 @@ import {
     type WeeklyRoleAllocationOutcome,
     type WeeklyRoleAllocationReport,
     type WeeklyRoleMissReason,
+    allocationValuePreserved,
 } from './weeklyAllocation';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
@@ -313,6 +314,10 @@ export interface WeekAheadOptions {
     events?: UserEvent[];
     fixedActivities?: FixedActivity[];
     authoredPlanBlocks?: readonly AuthoredPlanBlock[];
+    /** Issue #801: build-block compact strength/power support roles resolved from durable
+     * intent (`trainingIntent.ts` `eventStrengthSupportSessions`). Every event-plan
+     * construction on this path must receive it; absent means 0. */
+    eventStrengthSupportSessions?: number;
     scheduleOverlays?: readonly ScheduleOverlay[];
     planDefinition?: PlanDefinition | null;
     /** Evergreen session windows and weekly ceiling for optional-role placement. */
@@ -670,6 +675,10 @@ export interface ProjectedDatePlanningContext {
     events: UserEvent[];
     fixedActivities: FixedActivity[];
     authoredPlanBlocks: readonly AuthoredPlanBlock[];
+    /** Issue #801: build-block compact strength/power support roles resolved from durable
+     * intent (`trainingIntent.ts` `eventStrengthSupportSessions`). Every event-plan
+     * construction on this path must receive it; absent means 0. */
+    eventStrengthSupportSessions?: number;
     scheduleOverlays?: readonly ScheduleOverlay[];
     anchors: WeeklyAnchors;
     internalStrain: DimensionalFatigue;
@@ -974,7 +983,8 @@ export function evaluateProjectedDate(
         || isAdjacentDate(date, shared.anchors.qualityAnchorDate);
 
     const unresolved = getUnresolvedObjectives(state.microcycle, true);
-    const planDefinition = shared.planDefinition ?? resolvePlanDefinitionForEvent(periodization.focusEvent, shared.authoredPlanBlocks);
+    const planDefinition = shared.planDefinition
+        ?? resolvePlanDefinitionForEvent(periodization.focusEvent, shared.authoredPlanBlocks, shared.eventStrengthSupportSessions ?? 0);
     const optimizationContext = buildOptimizationContext(
         {
             unresolvedObjectives: unresolved,
@@ -1001,6 +1011,7 @@ export function evaluateProjectedDate(
             taperBudgetHistory: shared.taperBudgetHistory,
             taperFixedReservations: fixedTaperReservations,
             authoredPlanBlocks: shared.authoredPlanBlocks,
+            eventStrengthSupportSessions: shared.eventStrengthSupportSessions ?? 0,
             resolvedAvailability: availability,
             ...(planDefinition ? {
                 coverageState: buildCoverageState(
@@ -1324,6 +1335,7 @@ export function reconcileObjectivesForDate(
     priorExposures: readonly ProjectionExposure[] = [],
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
     planDefinition?: PlanDefinition | null,
+    eventStrengthSupportSessions: number = 0,
 ): {
     microcycle: MicrocycleState;
     droppedContributorObjectives: DroppedContributorObjective[];
@@ -1331,7 +1343,8 @@ export function reconcileObjectivesForDate(
      * completed training is authoritative for these definitions on this forecast date. */
     historicalReplayObjectiveIds: readonly string[];
 } {
-    const planDefinitionForDate = planDefinition ?? resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
+    const planDefinitionForDate = planDefinition
+        ?? resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks, eventStrengthSupportSessions);
     const skeleton = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent, planDefinitionForDate, date);
     const historicalReplayObjectiveIds = skeleton.objectives.map(objective => objective.id);
     const fresh = resolveMultiEventObjectives(events, date, periodization, skeleton.objectives);
@@ -1593,6 +1606,7 @@ export function generateWeekAheadPlan(
         return unsetDateFixedActivities.length > 0 ? [...dated, ...unsetDateFixedActivities] : dated;
     };
     const authoredPlanBlocks = options.authoredPlanBlocks ?? [];
+    const eventStrengthSupportSessions = options.eventStrengthSupportSessions ?? 0;
     const scheduleOverlays = options.scheduleOverlays ?? [];
     const suppliedPlanDefinition = options.planDefinition ?? null;
     const evergreenCapacity = options.evergreenCapacity;
@@ -1752,7 +1766,7 @@ export function generateWeekAheadPlan(
     if (tomorrowRec) {
         const tomorrowDate = addDaysToLocalDateString(todayDate, 1);
         const tomorrowPeriodization = evaluatePeriodizationPhase(events, tomorrowDate);
-        const tomorrowReconciled = reconcileObjectivesForDate(microcycle, events, tomorrowDate, todayDate, tomorrowPeriodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition);
+        const tomorrowReconciled = reconcileObjectivesForDate(microcycle, events, tomorrowDate, todayDate, tomorrowPeriodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition, eventStrengthSupportSessions);
         microcycle = tomorrowReconciled.microcycle;
         if (seed.completedExposures) {
             microcycle = ageCompletedObjectiveCreditForForecastDate(
@@ -1789,6 +1803,7 @@ export function generateWeekAheadPlan(
         events,
         fixedActivities,
         authoredPlanBlocks,
+        eventStrengthSupportSessions,
         scheduleOverlays,
         anchors,
         internalStrain,
@@ -1969,7 +1984,7 @@ export function generateWeekAheadPlan(
         const periodization = evaluatePeriodizationPhase(events, date, todayDate);
 
         const priorObjectiveIds = new Set(microcycle.objectives.map(objective => objective.id));
-        const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition);
+        const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition, eventStrengthSupportSessions);
         microcycle = reconciled.microcycle;
         if (seed.completedExposures) {
             microcycle = ageCompletedObjectiveCreditForForecastDate(
@@ -2154,7 +2169,7 @@ export function generateWeekAheadPlan(
                     if (after.budgetExhausted || after.outcomes.some(outcome => outcome.status === 'unresolved_search_budget')) {
                         return 'unresolved_search_budget';
                     }
-                    return after.fulfilledCount + selfFulfilledOccurrences.length >= allocation.fulfilledCount ? 'preserves' : 'degrades';
+                    return allocationValuePreserved(allocation, after, selfFulfilledOccurrences) ? 'preserves' : 'degrades';
                 },
             });
         };
@@ -2424,6 +2439,7 @@ export async function generateWeekAheadPlanWithIntent(
             fatigueFusionPolicy,
             healthPlanningPolicy,
             events: intent.planningContext.mode === 'event_directed' ? events : [],
+            eventStrengthSupportSessions: intent.eventStrengthSupportSessions,
             ...(evergreen ? { planDefinition: evergreen.planDefinition } : {}),
             ...(evergreen ? { evergreenCapacity: evergreen.budget.capacity } : {}),
         },

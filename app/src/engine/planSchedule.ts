@@ -34,6 +34,10 @@ export interface PlanObjectiveDefinition {
    * replacing a distinct weekly role. */
   coverageMinimumSessions?: number;
   coverageTargetSessions?: number;
+  /** Issue #801 / ADR-0018 D-SUPPORT: a `support` role is still reserved by its coverage
+   * minimum, but the weekly allocator never trades a primary (untiered) required role for
+   * it. Absent means primary; every pre-#801 role is primary. */
+  reservationTier?: 'support';
 }
 
 export interface SequencingRule {
@@ -187,6 +191,7 @@ function eventPlanningDate(event: UserEvent): string {
 function developmentalObjectives(
   blockId: 'block_build' | 'block_peak',
   event: UserEvent,
+  strengthSupportSessions: number = 0,
 ): PlanObjectiveDefinition[] {
   const objectives: PlanObjectiveDefinition[] = [
     {
@@ -206,6 +211,20 @@ function developmentalObjectives(
       coverageMinimumSessions: 1, coverageTargetSessions: 1,
     },
   ];
+
+  // Issue #801: the existing primary occurrence is the first of the evidence-backed
+  // strength frequency. A second, exact compact strength/power role is authored in build
+  // only for an athlete whose durable intent requires it. It is a coverage-only support
+  // role: no second physiological objective credit (requiredCredit 0), and the allocator
+  // never lets it displace aerobic, quality, event-specific or primary-strength roles.
+  if (blockId === 'block_build' && strengthSupportSessions > 0) {
+    objectives.push({
+      key: 'strength_maintenance', coverageKey: 'compact_strength', blockId,
+      requiredCredit: 0, priority: 'should_have', role: 'secondary_support',
+      coverageMinimumSessions: strengthSupportSessions, coverageTargetSessions: strengthSupportSessions,
+      reservationTier: 'support',
+    });
+  }
 
   if (event.demandProfile.thresholdPower >= 0.5) {
     objectives.push({
@@ -230,7 +249,13 @@ function developmentalObjectives(
  * Travel is deliberately NOT fabricated here; it is an explicit availability/day-context
  * overlay (or an explicitly authored plan block) rather than a property of every event.
  */
-export function buildCyclingEventPlan(event: UserEvent, authoredBlocks: readonly AuthoredPlanBlock[] = []): DataState<PlanDefinition> {
+export function buildCyclingEventPlan(
+  event: UserEvent,
+  authoredBlocks: readonly AuthoredPlanBlock[] = [],
+  /** Issue #801: build-block compact strength/power support occurrences beyond the one
+   * authored primary-strength role (0 = pre-#801 plan). */
+  strengthSupportSessions: number = 0,
+): DataState<PlanDefinition> {
   const raceDate = eventPlanningDate(event);
   const taper = resolveEventTaper(event);
   const peakEnd = taper ? addDaysToLocalDateString(taper.startDate, -1) : addDaysToLocalDateString(raceDate, -1);
@@ -278,7 +303,7 @@ export function buildCyclingEventPlan(event: UserEvent, authoredBlocks: readonly
   );
 
   const objectives: PlanObjectiveDefinition[] = [
-    ...developmentalObjectives('block_build', event),
+    ...developmentalObjectives('block_build', event, strengthSupportSessions),
     ...developmentalObjectives('block_peak', event),
   ];
 
@@ -403,8 +428,12 @@ export function buildEvergreenPlanDefinition(
 
 /** Every scheduled cycling event receives the richer authored plan, relative to its own
  * planning date. Other event categories keep the generic demand-derived path. */
-export function resolvePlanDefinitionForEvent(event: UserEvent | null, authoredBlocks: readonly AuthoredPlanBlock[] = []): PlanDefinition | null {
+export function resolvePlanDefinitionForEvent(
+  event: UserEvent | null,
+  authoredBlocks: readonly AuthoredPlanBlock[] = [],
+  strengthSupportSessions: number = 0,
+): PlanDefinition | null {
   if (!event || event.category !== 'cycling_event') return null;
-  const result = buildCyclingEventPlan(event, authoredBlocks);
+  const result = buildCyclingEventPlan(event, authoredBlocks, strengthSupportSessions);
   return result.status === 'AVAILABLE' ? result.data : null;
 }

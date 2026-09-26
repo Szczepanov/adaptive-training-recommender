@@ -3,6 +3,7 @@ import type { KnowledgeClaim, KnowledgeSource } from './sportsKnowledge';
 export const STRENGTH_CONCURRENT_CLAIM_IDS = {
     enduranceStrengthPerformanceSupport: 'performance.endurance.strength_training.performance_support',
     concurrentSequenceGoalPriority: 'performance.concurrent.sequence.goal_priority',
+    cyclingBuildStrengthSupportPolicy: 'policy.event.cycling_build_strength_support_v1',
 } as const;
 
 const RAMOS_CAMPO_STRENGTH_UMBRELLA_SOURCE = 'RAMOS-CAMPO-2025-ENDURANCE-STRENGTH-UMBRELLA';
@@ -11,8 +12,16 @@ const LLANOS_LAGOS_CYCLING_STRENGTH_SOURCE = 'LLANOS-LAGOS-2026-CYCLING-STRENGTH
 const HELD_CONCURRENT_UMBRELLA_SOURCE = 'HELD-2026-CONCURRENT-TRAINING-UMBRELLA';
 const EDDENS_SEQUENCE_SOURCE = 'EDDENS-2018-CONCURRENT-SEQUENCE-META';
 const BANGSBO_ELITE_CONSENSUS_SOURCE = 'BANGSBO-2025-ELITE-ATHLETE-CONSENSUS';
+const CYCLING_BUILD_STRENGTH_SUPPORT_POLICY_SOURCE = 'PRODUCT-CYCLING-BUILD-STRENGTH-SUPPORT-V1';
 
 export const STRENGTH_CONCURRENT_SOURCES: readonly KnowledgeSource[] = [
+    {
+        id: CYCLING_BUILD_STRENGTH_SUPPORT_POLICY_SOURCE,
+        title: 'Cycling build strength-support policy v1',
+        sourceType: 'product_policy',
+        citation: 'Adaptive Training Recommender product policy: cycling-build-strength-support-v1 (issue #801).',
+        notes: 'Explicit product policy translating the evergreen strength floor into event-directed cycling build roles and subordinating them to primary required roles. It is not represented as external scientific evidence.',
+    },
     {
         id: RAMOS_CAMPO_STRENGTH_UMBRELLA_SOURCE,
         title: 'The Effect of Strength Training on Endurance Performance Determinants in Middle- and Long-Distance Endurance Athletes: An Umbrella Review of Systematic Reviews and Meta-Analysis',
@@ -75,6 +84,36 @@ export const STRENGTH_CONCURRENT_SOURCES: readonly KnowledgeSource[] = [
 ];
 
 export const STRENGTH_CONCURRENT_CLAIMS: readonly KnowledgeClaim[] = [
+    {
+        id: STRENGTH_CONCURRENT_CLAIM_IDS.cyclingBuildStrengthSupportPolicy,
+        statement: 'Cycling build strength-support policy v1: when an athlete whose durable training intent explicitly includes strength_muscle is in an event-directed cycling plan, the build block keeps the rest of the evergreen weekly strength floor (the WHO-backed two-session floor minus the one authored primary-strength role, i.e. one) as exact compact_strength support roles. Support roles earn no second physiological strength objective credit and do not inflate primary_strength coverage. The weekly allocator reserves them only when they fit without reducing the number of primary required roles and never on a date already nominated to a primary role (quality, event-specific, aerobic or primary strength); otherwise it reports a typed miss. Peak, taper and race blocks do not carry them. Readiness, fatigue, spacing, tissue, rolling-load and time gates remain authoritative.',
+        claimType: 'heuristic',
+        maturity: 'heuristic',
+        status: 'active',
+        evidenceCertainty: 'not_applicable',
+        recommendationStrength: 'conditional',
+        safetyImpact: 'moderate',
+        applicability: {
+            contexts: ['event_directed', 'cycling_build', 'concurrent_training', 'weekly_planning'],
+            sports: ['cycling', 'strength'],
+            populations: ['cycling_primary_hybrid_athletes_with_durable_strength_priority'],
+            outcomes: ['weekly_resistance_exposure_preservation'],
+            horizon: 'chronic',
+        },
+        evidence: [
+            { sourceId: CYCLING_BUILD_STRENGTH_SUPPORT_POLICY_SOURCE, directness: 'direct', note: 'Issue #801 product policy; the role count is derived from the registered strength floor, not a new constant.' },
+            { sourceId: LLANOS_LAGOS_CYCLING_STRENGTH_SOURCE, directness: 'indirect', note: 'Supports continued strength training alongside cycling without prescribing a frequency.' },
+            { sourceId: HELD_CONCURRENT_UMBRELLA_SOURCE, directness: 'indirect', note: 'Concurrent training preserves strength-related qualities; no universal frequency or separation.' },
+        ],
+        limitations: [
+            'The support count is the evergreen WHO-backed floor minus one authored primary role; the WHO guideline is a general adult-health recommendation, not a validated frequency for cycling performance.',
+            'Subordinating support roles to every primary required role is a product priority rule, not evidence that strength is less valuable than cycling quality for a given athlete.',
+            'Restricting support to the build block is a conservative product choice; peak-block strength frequency is not separately evidenced here.',
+            'The exact compact_strength identity set (compact power, reactive power, travel and bodyweight maintenance) is authored product policy, not a claim of physiological equivalence between them.',
+        ],
+        reviewedOn: '2026-09-26',
+        version: 1,
+    },
     {
         id: STRENGTH_CONCURRENT_CLAIM_IDS.enduranceStrengthPerformanceSupport,
         statement: 'Supplemental strength training can improve endurance performance and economy or efficiency in trained runners and cyclists without reliably increasing VO2max; high-load and combined strength methods are supported options, but current evidence does not establish one universal frequency, loading scheme or strength dose for every endurance athlete.',
