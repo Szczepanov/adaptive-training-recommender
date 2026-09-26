@@ -68,6 +68,9 @@ export interface WeeklyCoverageRequirement {
     credits: CoverageCredit[];
     /** Issue #801: reserved only without displacing a primary required role. */
     reservationTier?: 'support';
+    /** Capability-owned candidate allow-list. `undefined` means unrestricted; an empty
+     * list is an explicit fail-closed block for this planning window. */
+    eligibleWorkoutIds?: readonly string[];
 }
 
 export interface CoverageState {
@@ -536,7 +539,10 @@ export function buildCoverageState(
                 windowEnd: block.endDate,
                 index: activeDefinitions.length + index,
             });
-            if (requirement) requirementsByKey.set(definition.coverageKey, requirement);
+            if (requirement) requirementsByKey.set(definition.coverageKey,
+                definition.eligibleWorkoutIds !== undefined
+                    ? { ...requirement, eligibleWorkoutIds: [...definition.eligibleWorkoutIds] }
+                    : requirement);
         });
 
     const recoveryCoverage = coverageFor(descriptor, 'recovery_or_rest');
@@ -651,8 +657,13 @@ export function coverageNeedTierForTemplate(
     anchorRole: 'event-specific' | 'quality' | null = null,
     deferAnchorAdjacentHeavyStrength: boolean = false,
 ): 0 | 1 | 2 | 3 {
+    const workoutId = workoutIdForTemplateId(template.id);
     const keys = (state.descriptor ? coverageKeysForTemplate(template, state.phase, state.descriptor, state.aerobicVolumeFloor) : [])
-        .filter(key => !EMBEDDED_ONLY_COVERAGE_KEYS.has(key));
+        .filter(key => !EMBEDDED_ONLY_COVERAGE_KEYS.has(key))
+        .filter(key => {
+            const eligibleWorkoutIds = state.requirements.find(requirement => requirement.key === key)?.eligibleWorkoutIds;
+            return eligibleWorkoutIds === undefined || (workoutId !== undefined && eligibleWorkoutIds.includes(workoutId));
+        });
     if (keys.length === 0) return 3;
 
     const anchorKey: PlanCoverageKey | null = anchorRole === 'event-specific'
