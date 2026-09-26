@@ -79,7 +79,7 @@ intraday windows/reassessment is accepted in
 D-TIME (`localInstant.ts`), D-LEDGER's pure engine (`dailyLedger.ts`), D-PLACEMENT's
 bundle-placement engine, D-REASSESS's pure `reassessDependentBundleMember`
 (`intradayReassessment.ts`, #442) and D-AUDIT's decision store (`intradayDecision.ts`,
-#443) are all delivered; #434 PR 1 bound the v4 primary session to the source-neutral
+issue #443) are all delivered; #434 PR 1 bound the v4 primary session to the source-neutral
 launch path (#440), PR 2 added external-plan occurrence tracking (#445), PR 3
 Phases 1-2 (#448) added D-WINDOW's real per-window exclusivity, atomic re-import
 supersession, and D-LEDGER's persisted date-level reservation aggregate, and PR 3 Phase 3
