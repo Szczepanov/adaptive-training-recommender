@@ -8,6 +8,7 @@ export type PlanRequirement = 'required' | 'optional' | 'conditional';
 
 export type PlanCoverageKey =
   | 'aerobic_volume'
+  | 'long_aerobic_anchor'
   | 'recovery_spin'
   | 'sustained_quality'
   | 'short_surges'
@@ -33,6 +34,8 @@ export interface PlanSessionCoverage {
   phases: PlanPhase[];
   requirement: PlanRequirement;
   workoutIds: string[];
+  /** Optional per-plan duration gate; used by the athlete-relative long aerobic anchor. */
+  minimumDurationMinutes?: number;
   notes: string;
 }
 
@@ -121,7 +124,8 @@ export const EVERGREEN_RECOVERY_WORKOUT_IDS = [
  * separate from the evidence metadata in evergreenStrategy.ts: it maps exact workout
  * identities to programming roles and makes no blanket scientific claim. */
 export const EVERGREEN_SESSION_COVERAGE: PlanSessionCoverage[] = [
-  { key: 'aerobic_volume', label: 'Continuous aerobic volume', phases: ['general'], requirement: 'required', workoutIds: ['cycling_zone2_standard_01', 'running_easy_continuous_01', 'walking_brisk_continuous_01'], notes: 'Counts only an authored continuous aerobic prescription at or above the athlete-relative aerobic-volume floor (the catalog minimum until 28-day history supports a higher one; one athlete-level floor for every aerobic modality, #757); walk-run and generic recovery walking are not equivalent -- only the purposeful brisk-walk identity earns this credit.' },
+  { key: 'aerobic_volume', label: 'Continuous aerobic volume', phases: ['general'], requirement: 'required', workoutIds: ['cycling_zone2_standard_01', 'running_easy_continuous_01', 'walking_brisk_continuous_01', 'swimming_easy_aerobic_01'], notes: 'Counts only an authored continuous aerobic prescription at or above the athlete-relative aerobic-volume floor (the catalog minimum until 28-day history supports a higher one; one athlete-level floor for every aerobic modality, #757); walk-run and generic recovery walking are not equivalent -- only the purposeful brisk-walk identity earns this credit.' },
+  { key: 'long_aerobic_anchor', label: 'Long continuous aerobic durability anchor', phases: ['general'], requirement: 'conditional', workoutIds: ['cycling_zone2_standard_01', 'running_easy_continuous_01', 'walking_brisk_continuous_01', 'swimming_easy_aerobic_01'], notes: 'Issue #806: one exact, primary-modality continuous session at the history-derived long-session duration; multiple shorter sessions do not satisfy this separate anchor.' },
   { key: 'sustained_quality', label: 'Optional sustained quality', phases: ['general'], requirement: 'optional', workoutIds: ['cycling_controlled_threshold_4x8_01', 'cycling_tempo_surges_01', 'running_tempo_01'], notes: 'Optional performance work; it is introduced only by an eligible evidence-backed strategy. The cycling tempo identity provides a 30-minute minimum for short windows.' },
   { key: 'primary_strength', label: 'Primary full-body strength', phases: ['general'], requirement: 'required', workoutIds: ['strength_full_body_maintenance_01', 'strength_bodyweight_full_body_01'], notes: 'Exact full-body resistance exposure for the strength role; the bodyweight identity is the zero-equipment floor so a no-equipment athlete has a reachable required-strength candidate.' },
   { key: 'compact_strength', label: 'Compact strength support', phases: ['general'], requirement: 'optional', workoutIds: ['strength_compact_power_01'], notes: 'Optional lower-time resistance alternative; never silently replaces a required full-body role.' },

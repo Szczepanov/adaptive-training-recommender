@@ -528,6 +528,24 @@ the authored template (`WeeklyRoleAllocationStatus`), so a capped session can se
 allocation occurrence while the coverage ledger leaves the role open; coverage state is
 the authority. The floor admits coverage; it does not claim dose adequacy.
 
+The separate weekly accumulated-dose envelope (#806) is resolved by
+`weeklyAerobicDose.ts` from four fixed seven-day bins in the supplied 28-day training
+history. Established athletes with evidence in at least three bins use an athlete-relative
+easy-aerobic floor and maintenance/development target; insufficient history uses the adult
+health range. Only easy work in the dominant evidenced modality counts toward the relative
+envelope, and no intensity conversion is used. The target is history-derived and does not
+rise with additional free time. `weeklyDosePacking.ts` accounts for the guideline's broad
+aerobic minutes from quality sessions only after those sessions are actually packed.
+
+For eligible endurance or sport-readiness development, `evergreenPlanning.ts` can add a
+conditional exact `long_aerobic_anchor` role from the 75th-percentile historical easy-session
+duration, capped by the matching catalog workout. `coverage.ts` and
+`weeklyAllocation.ts` require one exact session to meet that duration; multiple short
+sessions do not combine. Recovery, symptoms, taper/recovery phase and schedule feasibility
+can suspend the anchor while preserving the weekly aerobic target, with a typed packing
+shortfall when the requested role does not fit. This is separate from #757's one-session
+`aerobic_volume` floor.
+
 Authored travel blocks scale planned dose through `applyPlanningOverlays` across
 structured, demand-derived, and evergreen paths. Fixed activities retain schedule
 ownership and constrain availability before candidates are selected.

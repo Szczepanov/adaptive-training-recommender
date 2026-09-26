@@ -36,6 +36,13 @@ import {
     resolveAerobicVolumeFloor,
 } from '../engine/aerobicVolumeFloor';
 import { coverageKeysForExposure } from '../engine/coverage';
+import {
+    WEEKLY_AEROBIC_EVIDENCE_WINDOW_DAYS,
+    WEEKLY_AEROBIC_HEALTH_FLOOR_MIN,
+    WEEKLY_AEROBIC_HEALTH_TARGET_MAX_MIN,
+    WEEKLY_AEROBIC_MIN_OBSERVED_WEEKS,
+    resolveWeeklyAerobicDoseEnvelope,
+} from '../engine/weeklyAerobicDose';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import {
     evaluateEnvelopes,
@@ -329,6 +336,24 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
         // One athlete-level floor across modalities, clamped to each catalog maximum.
         expect(aerobicVolumeFloorForWorkout('walking_brisk_continuous_01', floor)).toBe(45);
         expect(coverageKeysForExposure({ workoutId: 'walking_brisk_continuous_01', durationMin: 30 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET, floor)).not.toContain('aerobic_volume');
+    });
+
+    it('pins the weekly aerobic envelope (#806) to registered policy and fallback behavior', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.weeklyAerobicDoseEnvelopePolicy);
+        expect(claim.statement).toContain('median of those four weekly minute totals');
+        expect(claim.statement).toContain('the upper observed quartile in an endurance development phase');
+        expect(claim.statement).toContain('Quality-session minutes are not converted to low-intensity minutes');
+        expect(claim.limitations.join(' ')).toContain('not proof of an optimum');
+        expect(WEEKLY_AEROBIC_EVIDENCE_WINDOW_DAYS).toBe(28);
+        expect(WEEKLY_AEROBIC_MIN_OBSERVED_WEEKS).toBe(3);
+        expect(WEEKLY_AEROBIC_HEALTH_FLOOR_MIN).toBe(150);
+        expect(WEEKLY_AEROBIC_HEALTH_TARGET_MAX_MIN).toBe(300);
+
+        const fallback = resolveWeeklyAerobicDoseEnvelope({
+            exposures: [], asOfDate: '2026-09-26', observedWindowDays: 7,
+            priorities: ['endurance'], phaseName: 'Build', trainingAgeEstablished: false,
+        });
+        expect(fallback).toMatchObject({ source: 'guideline_fallback', floorMinutes: 150, targetMinutes: 150, upperMinutes: 300, longAnchor: null });
     });
 
     it('pins the legacy session spacing tie breaker to production values including the 7+ clamp', () => {

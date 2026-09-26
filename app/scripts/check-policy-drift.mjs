@@ -121,6 +121,7 @@ const decisionAffectingFiles = [
   // Findings 4 and 8 both changed live recommendations by editing only these files, and
   // the drift gate did not previously notice because none of them were listed here.
   'app/src/engine/evergreenStrategy.ts',
+  'app/src/engine/weeklyAerobicDose.ts',
   'app/src/engine/weeklyDosePacking.ts',
   'app/src/engine/coverage.ts',
   // #757: the athlete-relative aerobic_volume floor decides which sessions earn exact

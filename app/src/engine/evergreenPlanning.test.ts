@@ -109,4 +109,17 @@ describe('resolveEvergreenPlan athlete-relative aerobic floor (#757)', () => {
         expect(roomy.descriptor.roles.find(role => role.id === 'aerobic_volume')!.durationMinutes).toBe(45);
         expect(aerobicPackingForFloor(CATALOG_AEROBIC_VOLUME_FLOOR, []).descriptor.roles.find(role => role.id === 'aerobic_volume')!.durationMinutes).toBe(30);
     });
+
+    it('caps the long anchor and its packed role at the exact workout maximum', () => {
+        const highFloor: AerobicVolumeFloor = { floorMin: 135, source: 'athlete_history', sampleCount: 8, medianMin: 180 };
+        const weeklyDose = {
+            source: 'athlete_history' as const, modality: 'Cycling' as const,
+            floorMinutes: 180, targetMinutes: 240, upperMinutes: 300,
+            typicalSessionMinutes: 90, longAnchor: { workoutId: 'cycling_zone2_standard_01', durationMinutes: 90 },
+            weeklyMinutes: [180, 240, 300, 360], observedWeeks: 4,
+        };
+        const result = aerobicPackingForFloor(highFloor, [{ date: DATE, availableMinutes: 150 }], weeklyDose, true);
+        expect(result.descriptor.longAerobicAnchor?.durationMinutes).toBe(90);
+        expect(result.descriptor.roles.find(role => role.id === 'aerobic_volume')?.durationMinutes).toBe(90);
+    });
 });

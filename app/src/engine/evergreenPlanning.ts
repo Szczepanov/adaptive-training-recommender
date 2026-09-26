@@ -12,6 +12,9 @@ import { buildEvergreenPlanDefinition, type PlanDefinition } from './planSchedul
 import { buildMicrocycleState } from './microcycle';
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
+import { resolveWeeklyAerobicDoseEnvelope } from './weeklyAerobicDose';
+import type { WeeklyAerobicDoseEnvelope } from './weeklyAerobicDose';
+import { WORKOUTS_BY_ID } from '../workouts/catalog';
 
 export interface ResolvedEvergreenPlan {
     planDefinition: PlanDefinition;
@@ -31,24 +34,58 @@ const AEROBIC_VOLUME_ROLE_ID = 'aerobic_volume';
 export function aerobicPackingForFloor(
     floor: AerobicVolumeFloor | null,
     usableWindows: readonly ResolvedAvailabilityWindow[],
+    weeklyDose?: WeeklyAerobicDoseEnvelope,
+    reserveLongAnchor = false,
 ): { descriptor: CoverageSetDescriptor; shortfall: PackingWarning | null } {
-    const role = EVERGREEN_PACKING_COVERAGE.roles.find(item => item.id === AEROBIC_VOLUME_ROLE_ID);
-    if (!floor || !role || floor.floorMin <= role.durationMinutes) {
-        return { descriptor: EVERGREEN_PACKING_COVERAGE, shortfall: null };
+    const longAnchor = reserveLongAnchor ? weeklyDose?.longAnchor : null;
+    const anchorMaximum = longAnchor ? WORKOUTS_BY_ID.get(longAnchor.workoutId)?.duration.maximumMin : undefined;
+    const anchorDuration = longAnchor
+        ? Math.min(anchorMaximum ?? longAnchor.durationMinutes,
+            Math.max(floor?.floorMin ?? 30, longAnchor.durationMinutes))
+        : null;
+    const descriptor: CoverageSetDescriptor = longAnchor && anchorDuration !== null
+        ? {
+            ...EVERGREEN_PACKING_COVERAGE,
+            roles: [...EVERGREEN_PACKING_COVERAGE.roles, {
+                id: 'long_aerobic_anchor', adaptations: ['aerobic_endurance'],
+                exactWorkoutIds: [longAnchor.workoutId], durationMinutes: anchorDuration,
+            }],
+            longAerobicAnchor: { workoutId: longAnchor.workoutId, durationMinutes: anchorDuration },
+        }
+        : EVERGREEN_PACKING_COVERAGE;
+    const role = descriptor.roles.find(item => item.id === AEROBIC_VOLUME_ROLE_ID);
+    const typicalSessionMinutes = weeklyDose?.source === 'athlete_history' ? weeklyDose.typicalSessionMinutes ?? 0 : 0;
+    const roleDuration = role?.durationMinutes ?? 0;
+    const normalRoleMaximum = anchorMaximum ?? Number.POSITIVE_INFINITY;
+    const normalRoleDuration = role
+        ? Math.min(normalRoleMaximum, Math.max(roleDuration, floor?.floorMin ?? 0, typicalSessionMinutes))
+        : 0;
+    if (!floor || !role || floor.floorMin <= roleDuration) {
+        return normalRoleDuration > roleDuration
+            ? {
+                descriptor: {
+                    ...descriptor,
+                    roles: descriptor.roles.map(item => item.id === AEROBIC_VOLUME_ROLE_ID
+                        ? { ...item, durationMinutes: normalRoleDuration } : item),
+                },
+                shortfall: null,
+            }
+            : { descriptor, shortfall: null };
     }
     const longestWindow = Math.max(0, ...usableWindows.map(window => window.availableMinutes));
     if (longestWindow >= floor.floorMin) {
         return {
             descriptor: {
-                ...EVERGREEN_PACKING_COVERAGE,
-                roles: EVERGREEN_PACKING_COVERAGE.roles.map(item =>
-                    item.id === AEROBIC_VOLUME_ROLE_ID ? { ...item, durationMinutes: floor.floorMin } : item),
+                ...descriptor,
+                roles: descriptor.roles.map(item => item.id === AEROBIC_VOLUME_ROLE_ID
+                    ? { ...item, durationMinutes: Math.min(normalRoleMaximum, Math.max(floor.floorMin, typicalSessionMinutes)) }
+                    : item),
             },
             shortfall: null,
         };
     }
     return {
-        descriptor: EVERGREEN_PACKING_COVERAGE,
+        descriptor,
         shortfall: {
             code: 'minimum_dose_shortfall',
             adaptation: 'aerobic_endurance',
@@ -93,14 +130,29 @@ export function resolveEvergreenPlan(
     });
     const capacity = resolveTrainingCapacity(planningContext.profile.weeklyCommitment, preferences, availability);
     const stateEvidence = historySnapshot?.athleteStateEvidence;
+    const athleteEvidence = stateEvidence?.exposures ?? history;
+    const observedWindowDays = stateEvidence?.observedWindowDays ?? historySnapshot?.windowDays ?? 0;
+    const athleteState = inferAthleteTrainingState(athleteEvidence, observedWindowDays);
+    const weeklyAerobicDose = resolveWeeklyAerobicDoseEnvelope({
+        exposures: athleteEvidence,
+        asOfDate: date,
+        observedWindowDays,
+        priorities: planningContext.profile.priorities,
+        phaseName: phase.phaseName,
+        trainingAgeEstablished: athleteState.trainingAgeProxy === 'established'
+            && athleteState.inference.dataQuality === 'high',
+    });
     const strategy = resolveEvidenceBackedStrategy(
         { priorities: planningContext.profile.priorities, isAdverseRecovery, hasCurrentClinicalSymptoms, phase },
-        inferAthleteTrainingState(
-            stateEvidence?.exposures ?? history,
-            stateEvidence?.observedWindowDays ?? historySnapshot?.windowDays ?? 0,
-        ),
+        athleteState,
+        weeklyAerobicDose,
     );
-    const aerobicPacking = aerobicPackingForFloor(aerobicVolumeFloor, capacity.usableWindows);
+    const longAnchorEligible = planningContext.profile.priorities.some(priority =>
+        priority === 'endurance' || priority === 'sport_readiness')
+        && (phase.phaseName === 'Build' || phase.phaseName === 'Specificity')
+        && !isAdverseRecovery
+        && !hasCurrentClinicalSymptoms;
+    const aerobicPacking = aerobicPackingForFloor(aerobicVolumeFloor, capacity.usableWindows, weeklyAerobicDose, longAnchorEligible);
     const packed = packWeeklyDose(strategy, capacity, aerobicPacking.descriptor, progressionOverrides, date);
     const budget: WeeklyBudget = aerobicPacking.shortfall
         ? { ...packed, shortfalls: [...packed.shortfalls, aerobicPacking.shortfall] }
@@ -115,6 +167,7 @@ export function resolveEvergreenPlan(
         budget,
         knowledgeRefs: [...new Set([
             ...strategy.requirements.flatMap(requirement => requirement.knowledgeRefs),
+            ...(weeklyAerobicDose.source === 'athlete_history' ? [KNOWLEDGE_CLAIM_IDS.weeklyAerobicDoseEnvelopePolicy] : []),
             ...(qualityRolePacked ? [KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition] : []),
         ])].sort(),
     };

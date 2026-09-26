@@ -30,6 +30,8 @@ export interface RequiredRoleOccurrence {
     windowEnd: string;
     ordinal: number;
     label: string;
+    minimumDurationMinutes?: number;
+    exactWorkoutIds?: string[];
     eligibleTemplateIds: string[];
     eligibleWorkoutIds: string[];
     /** Issue #801: a support occurrence is placed only after, and around, the primary
@@ -198,6 +200,8 @@ export function deriveRequiredRoleOccurrences(state: CoverageState): RequiredRol
                     windowEnd,
                     ordinal,
                     label: requirement.label,
+                    ...(requirement.minimumDurationMinutes !== undefined ? { minimumDurationMinutes: requirement.minimumDurationMinutes } : {}),
+                    ...(requirement.exactWorkoutIds?.length ? { exactWorkoutIds: requirement.exactWorkoutIds } : {}),
                     eligibleTemplateIds: [],
                     eligibleWorkoutIds: [],
                     ...(requirement.reservationTier === 'support' ? { reservationTier: 'support' as const } : {}),
@@ -216,7 +220,11 @@ export function attachExactEligibleIdentities(
 ): RequiredRoleOccurrence[] {
     return occurrences.map(occurrence => {
         const eligibleTemplateIds = templates
-            .filter(template => coverageKeysForTemplate(template, occurrence.phase, coverageSetFor(occurrence.coverageSetId), aerobicVolumeFloor).includes(occurrence.coverageKey))
+            .filter(template => (occurrence.minimumDurationMinutes === undefined
+                || template.durationMax >= occurrence.minimumDurationMinutes)
+                && (!occurrence.exactWorkoutIds?.length
+                    || occurrence.exactWorkoutIds.includes(workoutIdForTemplateId(template.id) ?? ''))
+                && coverageKeysForTemplate(template, occurrence.phase, coverageSetFor(occurrence.coverageSetId), aerobicVolumeFloor).includes(occurrence.coverageKey))
             .map(template => template.id)
             .sort();
         return {
