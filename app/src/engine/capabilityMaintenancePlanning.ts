@@ -69,9 +69,12 @@ export function capabilityGates(
     const avoided = new Set<string>();
     const environmentUnavailable = new Set<string>();
     const environmentAvailableDates = new Map<string, readonly string[]>();
+    const minimumDurationMinutes = new Map<string, number>();
     const deprioritized = new Set<string>();
     for (const workoutId of MECHANICAL_MAINTENANCE_WORKOUT_IDS) {
+        const workout = WORKOUTS_BY_ID.get(workoutId);
         const template = templateForWorkout(workoutId);
+        if (workout?.duration.minimumMin !== undefined) minimumDurationMinutes.set(workoutId, workout.duration.minimumMin);
         if (!template) {
             environmentUnavailable.add(workoutId);
             environmentAvailableDates.set(workoutId, []);
@@ -94,7 +97,10 @@ export function capabilityGates(
         environmentAvailableDates.set(workoutId, environmentDates);
         if (environmentWindows.length > 0 && environmentDates.length === 0) environmentUnavailable.add(workoutId);
     }
-    return { guardrailBlocked, unavailable, avoided, environmentUnavailable, environmentAvailableDates, deprioritized };
+    return {
+        guardrailBlocked, unavailable, avoided, environmentUnavailable,
+        environmentAvailableDates, minimumDurationMinutes, deprioritized,
+    };
 }
 
 export interface CapabilityMaintenancePlanInput {
@@ -109,6 +115,7 @@ export interface CapabilityMaintenancePlanInput {
     mechanicalVerdict: MechanicalProgressionVerdict | null;
     gates: CapabilityMaintenanceInput['gates'];
     supportCapacityDates: readonly string[];
+    supportCapacityMinutesByDate?: ReadonlyMap<string, number>;
 }
 
 /** D-F/D-H: typed readout plus a warning only for owed-but-blocked/unknown capabilities.
@@ -130,6 +137,7 @@ export function resolveCapabilityMaintenancePlan(input: CapabilityMaintenancePla
         mechanicalVerdict: input.mechanicalVerdict,
         gates: input.gates,
         supportCapacityDates: input.supportCapacityDates,
+        supportCapacityMinutesByDate: input.supportCapacityMinutesByDate,
     });
     const warnings: PolicyWarning[] = result.capabilities
         .filter(item => (item.status === 'due' || item.status === 'overdue')
