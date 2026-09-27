@@ -189,6 +189,24 @@ describe('capability fulfilment (#805 Phase 3, ADR-0044 D9)', () => {
         expect(result.placements).toEqual([]);
     });
 
+    it('uses capability-qualifying variant duration rather than the workout-wide minimum', () => {
+        const gates = {
+            ...noGates(),
+            minimumDurationMinutes: new Map([['field_controlled_maintenance_01', 22]]),
+            capabilityMinimumDurationMinutes: new Map([
+                ['sport_skill:field_controlled_maintenance_01', 22],
+                ['multidirectional_change_of_direction:field_controlled_maintenance_01', 30],
+            ]),
+        };
+        const result = evaluate({
+            gates,
+            supportCapacityMinutesByDate: new Map(HORIZON.map(date => [date, 22])),
+        });
+        expect(sportSkill(result).fulfilment).toEqual({ status: 'plannable' });
+        expect(result.capabilities.find(item => item.capability === 'multidirectional_change_of_direction')?.fulfilment)
+            .toEqual({ status: 'blocked', reason: 'no_support_capacity' });
+    });
+
     it('reports no support capacity when dates exist but no due-window slot can fit the capability', () => {
         const minimumDurationMinutes = new Map([['field_controlled_maintenance_01', 22]]);
         const tooShort = evaluate({
