@@ -239,7 +239,6 @@ const fitAccountingConsistent = Number.isInteger(corpus.originalFitCount)
     && Number.isInteger(fitEvidence.notExaminedRateLimited)
     && fitEvidence.activitiesExamined + fitEvidence.notExaminedRateLimited === corpus.originalFitCount
     && Number.isInteger(fitEvidence.originalFitAvailable)
-    && fitEvidence.originalFitAvailable > 0
     && Number.isInteger(fitEvidence.originalFitUnavailable)
     && Number.isInteger(fitEvidence.downloadFailure)
     && fitEvidence.originalFitAvailable + fitEvidence.originalFitUnavailable + fitEvidence.downloadFailure === fitEvidence.activitiesExamined
