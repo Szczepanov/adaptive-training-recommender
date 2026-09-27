@@ -24,7 +24,7 @@ describe('athletic capability maintenance policy alignment (ADR-0033, issue #805
     it('registers the policy as a product heuristic without invented scientific certainty', () => {
         expect(claim).toMatchObject({
             claimType: 'heuristic', maturity: 'heuristic', evidenceCertainty: 'not_applicable',
-            recommendationStrength: 'conditional', safetyImpact: 'high', version: 1,
+            recommendationStrength: 'conditional', safetyImpact: 'high', version: 2,
         });
         expect(claim.limitations.some(item => item.includes('not a validated physiological cliff'))).toBe(true);
         expect(claim.limitations.some(item => item.includes('7-10-day football/event-block'))).toBe(true);
@@ -40,6 +40,8 @@ describe('athletic capability maintenance policy alignment (ADR-0033, issue #805
         expect(claim.statement).toContain('fixed 14-day maximum gap');
         expect(claim.statement).toContain('last qualifying exposure + 13 days');
         expect(claim.statement).toContain('not-before and target date equal to that due date');
+        expect(claim.statement).toContain('Observation span must be proven');
+        expect(claim.statement).toContain('current-date coverage urgency both enforce that date');
         const cadence = evaluateCapabilityCadence({
             asOfDate: '2026-09-10', planningHorizonDays: 7, observedWindowDays: 28,
             preference: { enabled: true, capabilities: ['sport_skill'] },
