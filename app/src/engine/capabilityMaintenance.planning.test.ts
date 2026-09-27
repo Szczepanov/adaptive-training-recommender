@@ -256,7 +256,17 @@ describe('periodic capability maintenance in evergreen planning (#805 Phase 7)',
 
     it('shows a horizon-entry target as due but gives no consent or coverage urgency before its due date', () => {
         const evidence = [...RIDES, field(at(-8), 'field_controlled_maintenance_01')].sort((left, right) => left.date.localeCompare(right.date));
-        const resolved = plan({ evidence });
+        const sportSkillOnly = {
+            ...profile(true),
+            capabilityMaintenance: { enabled: true as const, capabilities: ['sport_skill' as const] },
+        };
+        const planningContext = resolvePlanningContext(sportSkillOnly, evaluatePeriodizationPhase([], D), D);
+        const history = snapshot(evidence);
+        const resolved = resolveEvergreenPlan(
+            planningContext, evaluatePeriodizationPhase([], D).phase, history.exposures, history,
+            basePreferences, baseContext, D, [], 7, false, [], new Map(), null, false,
+            { checkinHistory: normalFollowUps(evidence) },
+        )!;
         expect(capability(resolved, 'sport_skill')).toMatchObject({ status: 'due', notBeforeDate: at(5) });
         const stateOn = (date: string) => buildCoverageState(resolved.planDefinition, date, []);
         const supportNow = stateOn(D).requirements.find(item => item.key === 'mechanical_exposure')!;
