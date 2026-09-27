@@ -339,7 +339,7 @@ function fulfilmentFor(
             supportWorkoutIds: capacityEligibleProgression,
         };
     }
-    const capacityEligible = stageEligible.filter(hasCapacityInDueWindow);
+    const capacityEligible = stageEligible.filter(id => hasCapacityInDueWindow(id));
     if (capacityEligible.length === 0) {
         return { fulfilment: { status: 'blocked', reason: 'no_support_capacity' }, ...none };
     }
