@@ -15,6 +15,7 @@ import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS } from './rollingLoadBudget';
 import { resolvePriorityAOlympicTriathlonTaper } from './taperPlanBudget';
 import { AEROBIC_VOLUME_FLOOR_WINDOW_DAYS, CATALOG_AEROBIC_VOLUME_FLOOR, resolveAerobicVolumeFloor, type AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { strengthRequirement } from './evergreenStrategy';
+import { MECHANICAL_CONTINUITY_WINDOW_DAYS } from './mechanicalProgression';
 
 /**
  * Issue #801: the cycling event plan already authors one exact primary-strength role. For
@@ -67,6 +68,12 @@ export interface TrainingIntent {
     /** The short operational snapshot. Evergreen performance planning may attach a wider
      * `athleteStateEvidence` window, but that evidence is never replayed into `history`. */
     historySnapshot: TrainingHistorySnapshot | null;
+    /** Read-only performed-training evidence for the #804 mechanical capability owner. When
+     * the evergreen intent can emit a mechanical requirement it spans at least
+     * `MECHANICAL_CONTINUITY_WINDOW_DAYS` before `date`, so the 14-day re-entry rule never
+     * runs on the 7-day operational window; otherwise it is `history`. Like
+     * `athleteStateEvidence`, it is never replayed into `history`. */
+    mechanicalExposureHistory: CompletedExposure[];
     /** Issue #757: the athlete-level `aerobic_volume` floor, resolved once from at least 28
      * days of completed evidence so today, tomorrow and the forecast share one value. */
     aerobicVolumeFloor: AerobicVolumeFloor;
@@ -100,6 +107,24 @@ function needsEstablishedPerformanceEvidence(planningContext: PlanningContext): 
     if (planningContext.mode !== 'evergreen') return false;
     return planningContext.profile.priorities.some(priority =>
         priority === 'endurance' || priority === 'speed_power' || priority === 'sport_readiness');
+}
+
+/** Issue #804: whether this intent can emit a mechanical requirement, and therefore whether
+ * orchestration must source mechanical exposure evidence and tissue check-ins. */
+export function mechanicalEvidenceRequired(planningContext: PlanningContext): boolean {
+    return needsEstablishedPerformanceEvidence(planningContext);
+}
+
+/** The same predicate before a `TrainingIntent` exists (the next-day projection resolves
+ * check-ins once for all of its branches). */
+export function mechanicalEvidenceRequiredFor(
+    trainingIntentProfile: TrainingIntentProfile | null,
+    events: UserEvent[],
+    date: string,
+): boolean {
+    return mechanicalEvidenceRequired(
+        resolvePlanningContext(trainingIntentProfile, evaluatePeriodizationPhase(events, date), date),
+    );
 }
 
 /**
@@ -153,6 +178,31 @@ export function resolvePlannedDoseForDate(
         return boundedPlannedDose(activeBlock.volumeScale, activeBlock.intensityScale);
     }
     return resolvePlannedDose(phase, objectives, unresolvedObjectives);
+}
+
+/** Issue #804: evidence for the mechanical continuity window, reusing the widest window
+ * this resolution already holds: the 28-day athlete-state evidence first, then a wide
+ * enough operational snapshot; only a snapshot-less provider (e.g. the projected next-day
+ * provider) is asked to reconstruct the window. The operational `history` stays bounded. */
+async function resolveMechanicalExposureEvidence(
+    userId: string,
+    date: string,
+    historySnapshot: TrainingHistorySnapshot | null,
+    operationalSnapshot: TrainingHistorySnapshot | null,
+    operationalHistory: readonly CompletedExposure[],
+    provider: TrainingHistoryProvider,
+): Promise<CompletedExposure[]> {
+    const windowStart = addDaysToLocalDateString(date, -MECHANICAL_CONTINUITY_WINDOW_DAYS);
+    const bounded = (exposures: readonly CompletedExposure[]): CompletedExposure[] =>
+        exposures.filter(exposure => exposure.date >= windowStart && exposure.date < date);
+    const stateEvidence = historySnapshot?.athleteStateEvidence;
+    if (stateEvidence && stateEvidence.observedWindowDays >= MECHANICAL_CONTINUITY_WINDOW_DAYS) {
+        return bounded(stateEvidence.exposures);
+    }
+    if (operationalSnapshot && operationalSnapshot.windowDays >= MECHANICAL_CONTINUITY_WINDOW_DAYS) {
+        return bounded(operationalHistory);
+    }
+    return bounded(await provider.reconstruct(userId, date, MECHANICAL_CONTINUITY_WINDOW_DAYS));
 }
 
 /** Fetch the bounded history once and reuse that immutable revision across every
@@ -280,6 +330,15 @@ export async function resolveTrainingIntent(
         };
     }
 
+    // Only the performance priorities can emit a mechanical requirement (pinned by
+    // mechanicalExposurePolicyAlignment.test.ts); for any other evergreen intent the verdict
+    // has no consumer, so no wider read is spent on it.
+    const mechanicalExposureHistory = mechanicalEvidenceRequired(planningContext)
+        ? await resolveMechanicalExposureEvidence(
+            userId, date, historySnapshot, operationalSnapshot, operationalHistory, provider,
+        )
+        : history;
+
     // Issue #757: the floor reuses evidence this resolution already holds and never adds a
     // read. A caller-prepared snapshot fixes the history revision for every horizon of a
     // refresh, so a rolling-load window fetched separately by one horizon (the week-ahead
@@ -329,7 +388,7 @@ export async function resolveTrainingIntent(
         date,
     ), date, authoredPlanBlocks, planDefinition);
     return {
-        planningContext, periodization, eventStrengthSupportSessions: strengthSupportSessions, unresolvedObjectives, plannedDose, fatigue, history, rollingLoadBudgetHistory, performedTrainingFacts, historySnapshot, aerobicVolumeFloor, microcycle,
+        planningContext, periodization, eventStrengthSupportSessions: strengthSupportSessions, unresolvedObjectives, plannedDose, fatigue, history, rollingLoadBudgetHistory, performedTrainingFacts, historySnapshot, mechanicalExposureHistory, aerobicVolumeFloor, microcycle,
         droppedContributorObjectives: multiEventResolution.droppedContributorObjectives,
         sequenceIntent: resolveSequenceIntent(periodization.phase),
     };

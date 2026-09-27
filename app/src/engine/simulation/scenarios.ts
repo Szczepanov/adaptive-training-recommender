@@ -11,6 +11,7 @@ import type {
     FixedActivity,
 } from '../models';
 import type { CompletedExposure } from '../trainingHistory';
+import type { CheckinRecord } from '../mechanicalProgression';
 import { resolveDemandProfile } from '../eventPresets';
 import { addDaysToLocalDateString } from '../../utils/localDate';
 import { subjectiveProfileReadiness, subjectiveProfileDay, SUBJECTIVE_PROFILE_KINDS, type SubjectiveProfileKind } from './subjectiveProfiles';
@@ -48,6 +49,11 @@ export interface AthleteScenario {
     initialHistory?: CompletedExposure[];
     /** User-authored commitments passed through every day-0/day-1/week-ahead decision. */
     fixedActivities?: FixedActivity[];
+    /** Structured tissue check-ins (#804) passed through every day-0/day-1/week-ahead
+     * decision, so mechanical stage progression and regression are testable at scenario
+     * level. Absent means none: the injected history provider keeps simulation offline, and
+     * missing follow-up evidence holds stage advancement. */
+    mechanicalCheckinHistory?: readonly CheckinRecord[];
     /** Optional policy-report grouping; assertions remain independently classified. */
     tags?: readonly string[];
     /** Simulated 7-day windows, chained (not one large `days:` call -- see analyze.ts for

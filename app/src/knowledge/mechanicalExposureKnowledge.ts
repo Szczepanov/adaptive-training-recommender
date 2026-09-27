@@ -43,7 +43,7 @@ export const MECHANICAL_EXPOSURE_SOURCES: readonly KnowledgeSource[] = [
         title: 'Mechanical and impact exposure policy v1',
         sourceType: 'product_policy',
         citation: 'Adaptive Training Recommender product policy: mechanical-exposure-v1 (issue #804).',
-        notes: 'Explicit product policy for longitudinal mechanical and impact exposure: 4-stage discrete progression, conservative response-gated advancement (missing response fails closed), regression on symptoms or gaps, and safety blocking under avoid_high_impact, knee swelling, or acute pain.',
+        notes: 'Explicit product policy for longitudinal mechanical and impact exposure: 4-stage discrete progression, conservative response-gated advancement (missing response fails closed), regression on symptoms or gaps, safety blocking under avoid_high_impact, knee swelling, or acute pain, and an evergreen default progression target of Stage 2 with Stage 3/4 behind explicit opt-in.',
     },
 ];
 
@@ -78,7 +78,7 @@ export const MECHANICAL_EXPOSURE_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: MECHANICAL_EXPOSURE_CLAIM_IDS.mechanicalExposurePolicy,
-        statement: 'Evergreen mechanical exposure policy v1: an established hybrid athlete whose priorities include sport readiness or speed/power, or who maintains mechanical capacity alongside cycling, receives a longitudinal mechanical exposure requirement targeting one low-dose session per week (max 2 credited). Progression follows 4 discrete stages (Stage 1 landing/walk-run, Stage 2 bilateral jump/linear running, Stage 3 braking/deceleration, Stage 4 multidirectional/COD) and strictly requires explicit normal tissue response evidence after at least two current-stage exposures; missing follow-up response evidence fails closed and halts progression at the current stage. Mild tissue symptoms regress the stage by 1; moderate/severe symptoms, pain flags, knee swelling, or active avoid_high_impact guardrails immediately withhold or block exposure. Exposures on consecutive calendar days are withheld to protect tissue remodeling, and absence of exposure for >= 14 days enforces re-entry at Stage 1.',
+        statement: 'Evergreen mechanical exposure policy v1: an established hybrid athlete whose priorities include sport readiness or speed/power, or who maintains mechanical capacity alongside cycling, receives a longitudinal mechanical exposure requirement targeting one low-dose session per week (max 2 credited). Progression follows 4 discrete stages (Stage 1 landing/walk-run, Stage 2 bilateral jump/linear running, Stage 3 braking/deceleration, Stage 4 multidirectional/COD) and strictly requires explicit normal tissue response evidence after at least two current-stage exposures; missing follow-up response evidence fails closed and halts progression at the current stage. Mild tissue symptoms regress the stage by 1; moderate/severe symptoms, pain flags, knee swelling, or active avoid_high_impact guardrails immediately withhold or block exposure. Exposures on consecutive calendar days are withheld to protect tissue remodeling, and absence of exposure for >= 14 days enforces re-entry at Stage 1. The verdict consumes performed-exposure evidence spanning the full 14-day continuity window (never the 7-day operational window) and the structured tissue check-ins of the athlete through the decision date. Evergreen planning requests progression only through the linear/bilateral ladder: its default target stage is Stage 2, raised to the latest performed stage when that is higher so no one is demoted by the default. Stage 3 braking and Stage 4 multidirectional/COD field work are requested only by an explicit athlete opt-in target.',
         claimType: 'heuristic',
         maturity: 'heuristic',
         status: 'active',
@@ -101,8 +101,9 @@ export const MECHANICAL_EXPOSURE_CLAIMS: readonly KnowledgeClaim[] = [
             'The 4-stage discrete progression is an operational product heuristic, not a universal physiological boundary.',
             'Missing response evidence fails closed to prevent premature load escalation, but may delay advancement for athletes who skip daily check-ins.',
             'Subjective tissue responses rely on athlete compliance and self-reporting accuracy.',
+            'The Stage-2 evergreen default target is a consent boundary for multidirectional field work, not a physiological ceiling; athletes who opt in to broader capability maintenance (issue #805) supply a higher target.',
         ],
-        reviewedOn: '2026-09-26',
-        version: 1,
+        reviewedOn: '2026-09-27',
+        version: 2,
     },
 ];

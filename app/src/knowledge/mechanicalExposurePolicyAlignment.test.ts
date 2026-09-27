@@ -5,7 +5,18 @@ import type { DailySubjectiveCheckin } from '../engine/models';
 import {
     evaluateMechanicalGuardrails,
     evaluateMechanicalProgression,
+    MECHANICAL_CONTINUITY_WINDOW_DAYS,
+    type CheckinRecord,
 } from '../engine/mechanicalProgression';
+import {
+    EVERGREEN_MECHANICAL_DEFAULT_TARGET_STAGE_CEILING,
+    evergreenMechanicalTargetStage,
+    resolveEvergreenMechanicalProgression,
+} from '../engine/evergreenPlanning';
+import { mechanicalEvidenceRequired } from '../engine/trainingIntent';
+import { resolvePlanningContext } from '../engine/planningMode';
+import { evaluatePeriodizationPhase } from '../engine/periodization';
+import type { TrainingIntentProfile } from '../engine/models';
 import {
     grantsMechanicalExposureCredit,
     MECHANICAL_QUALIFYING_IDENTITIES,
@@ -70,11 +81,14 @@ describe('mechanical exposure policy alignment (ADR-0033, issue #804)', () => {
             claimType: 'heuristic',
             maturity: 'heuristic',
             evidenceCertainty: 'not_applicable',
-            version: 1,
+            version: 2,
             safetyImpact: 'high',
         });
         expect(policy.statement).toContain('4 discrete stages');
         expect(policy.statement).toContain('fails closed');
+        expect(policy.statement).toContain('full 14-day continuity window');
+        expect(policy.statement).toContain('default target stage is Stage 2');
+        expect(policy.statement).toContain('explicit athlete opt-in target');
 
         const coverage = ENGINE_KNOWLEDGE_COVERAGE.find(item => item.id === 'evergreen.mechanical_exposure');
         expect(coverage).toMatchObject({
@@ -97,7 +111,7 @@ describe('mechanical exposure policy alignment (ADR-0033, issue #804)', () => {
             floor: null,
             delivery: 'embedded',
             target: { unit: 'sessions', minimum: 0, target: 1, maximum: 2 },
-            evidence: { knowledgeClaimId: KNOWLEDGE_CLAIM_IDS.mechanicalExposurePolicy, knowledgeClaimVersion: 1 },
+            evidence: { knowledgeClaimId: KNOWLEDGE_CLAIM_IDS.mechanicalExposurePolicy, knowledgeClaimVersion: 2 },
         });
         expect(mechanical?.substitutionPolicy.permittedModalities).toEqual(['Running', 'Field', 'Strength']);
     });
@@ -192,6 +206,77 @@ describe('mechanical exposure policy alignment (ADR-0033, issue #804)', () => {
         });
         expect(gapVerdict.stage).toBe(1);
         expect(gapVerdict.tissueResponse.verdict).toBe('none_recent');
+    });
+
+    it('keeps the continuity window and the evergreen default target aligned with the policy claim', () => {
+        expect(MECHANICAL_CONTINUITY_WINDOW_DAYS).toBe(14);
+        expect(EVERGREEN_MECHANICAL_DEFAULT_TARGET_STAGE_CEILING).toBe(2);
+        const coverage = ENGINE_KNOWLEDGE_COVERAGE.find(item => item.id === 'evergreen.mechanical_exposure');
+        expect(coverage?.codeRefs).toEqual(expect.arrayContaining([
+            'engine/mechanicalProgression.ts:MECHANICAL_CONTINUITY_WINDOW_DAYS',
+            'engine/evergreenPlanning.ts:EVERGREEN_MECHANICAL_DEFAULT_TARGET_STAGE_CEILING',
+            'engine/evergreenPlanning.ts:resolveEvergreenMechanicalProgression',
+        ]));
+
+        // Cold start asks for Stage 2; a latest performed Stage 3 is kept, not demoted; an
+        // explicit opt-in target (issue #805) can raise the request but never lower it.
+        const stageThree = [{ date: '2026-09-17', workoutId: 'field_acceleration_braking_01', stage: 3 as const }];
+        expect(evergreenMechanicalTargetStage([], '2026-09-20')).toBe(2);
+        expect(evergreenMechanicalTargetStage(stageThree, '2026-09-20')).toBe(3);
+        expect(evergreenMechanicalTargetStage(stageThree, '2026-09-20', 2)).toBe(3);
+        expect(evergreenMechanicalTargetStage(
+            [{ date: '2026-09-17', workoutId: 'running_walk_run_01', stage: 1 }], '2026-09-20', 4,
+        )).toBe(4);
+    });
+
+    it('lets evergreen climb the linear ladder but keeps Stage 3/4 behind explicit opt-in', () => {
+        const tolerated = (date: string): CheckinRecord => ({
+            date,
+            checkin: checkin({ date, tissueResponses: { achilles: { region: 'achilles', morningState: 'normal', nextMorningReaction: 'normal' } } }),
+        });
+        const stageTwo = (date: string): CompletedExposure => ({
+            ...exposures[0], occurrenceKey: `reactive-${date}`, date, workoutId: 'strength_reactive_power_01',
+        });
+        const history = [stageTwo('2026-09-15'), stageTwo('2026-09-17')];
+        const checkins = [tolerated('2026-09-16'), tolerated('2026-09-18')];
+
+        const walkRuns = history.map(item => ({ ...item, workoutId: 'running_walk_run_01' }));
+        expect(resolveEvergreenMechanicalProgression('2026-09-20', walkRuns, checkins, new Set()).stage).toBe(2);
+        expect(resolveEvergreenMechanicalProgression('2026-09-20', walkRuns, [], new Set()).stage).toBe(1);
+
+        const evergreenDefault = resolveEvergreenMechanicalProgression('2026-09-20', history, checkins, new Set());
+        expect(evergreenDefault.stage).toBe(2);
+        expect(evergreenDefault.eligibleWorkoutIds).not.toContain('field_acceleration_braking_01');
+
+        const optedIn = resolveEvergreenMechanicalProgression('2026-09-20', history, checkins, new Set(), 3);
+        expect(optedIn.stage).toBe(3);
+        expect(optedIn.eligibleWorkoutIds).toContain('field_acceleration_braking_01');
+        expect(optedIn.eligibleWorkoutIds).not.toContain('field_controlled_maintenance_01');
+    });
+
+    it('sources wide mechanical evidence for every priority that can emit the requirement', () => {
+        const state = inferAthleteTrainingState(exposures, 28);
+        const priorityCombos: TrainingIntentProfile['priorities'][] = [
+            ['health'], ['strength_muscle'], ['balanced_performance'], ['health', 'strength_muscle'],
+            ['strength_muscle', 'balanced_performance'], ['endurance'], ['endurance', 'strength_muscle'],
+            ['speed_power'], ['sport_readiness'],
+        ];
+        const emitting: string[] = [];
+        for (const priorities of priorityCombos) {
+            const emitsMechanical = resolveEvidenceBackedStrategy({ priorities }, state).requirements
+                .some(requirement => requirement.adaptation === 'mechanical_exposure');
+            const profile: TrainingIntentProfile = {
+                userId: 'athlete', planningMode: 'evergreen', priorities,
+                weeklyCommitment: { minSessions: 3, targetSessions: 4, maxSessions: 5 },
+                organizationPreference: 'auto', schemaVersion: 1, createdAt: '', updatedAt: '',
+            };
+            const planningContext = resolvePlanningContext(profile, evaluatePeriodizationPhase([], '2026-09-20'), '2026-09-20');
+            if (emitsMechanical) {
+                emitting.push(priorities.join('+'));
+                expect(mechanicalEvidenceRequired(planningContext), priorities.join('+')).toBe(true);
+            }
+        }
+        expect(emitting).toEqual(expect.arrayContaining(['speed_power', 'sport_readiness']));
     });
 
     it('blocks mechanical targets immediately under guardrails while preserving typed reasons', () => {

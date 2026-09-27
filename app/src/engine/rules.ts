@@ -29,10 +29,12 @@ import type { ExternalRestDecisionProvenance } from './externalRestProvenance';
 import { TEMPLATES, ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID, TEMPLATES_BY_ID } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
 import { buildOptimizationContext, computeRankingCounterfactual, materializeEffectiveDose, rankCandidates, resolveRecoveryStyle, resolveTimeCapDoseAdjustment } from './optimizer';
-import { addDaysToLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
-import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
+import { mechanicalEvidenceRequiredFor, resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
+import { resolveMechanicalCheckinHistory } from './mechanicalCheckinHistory';
+import type { CheckinRecord } from './mechanicalProgression';
 import { POLICY_VERSION } from './policy';
 import { resolveExecutionDose } from './dose';
 import { isTemplatePhaseEligible } from './periodization';
@@ -666,9 +668,18 @@ export async function evaluateTrainingWithIntent(
     /** ADR-0037 D-DOSE: exact-workout duration authority derived for `date`. */
     confirmedProgressionOverrides: ReadonlyMap<string, number> = new Map(),
     carriedInternalStrain?: DimensionalFatigue,
+    /** #804 structured tissue check-ins through `date`. Absent: read through the lazily
+     * imported default provider, unless an injected `historyProvider` makes this call
+     * self-contained (then none, which holds stage advancement). */
+    mechanicalCheckinHistory?: readonly CheckinRecord[],
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode, subjectiveDriftPolicy, subjectiveDriftWeights);
     const { mode, envelopes, telemetry } = envelopeState;
+    // #804: the check-in read does not depend on the intent, so it runs alongside it.
+    const mechanicalCheckinsRead = mechanicalCheckinHistory
+        ?? (preferences && !historyProvider && mechanicalEvidenceRequiredFor(trainingIntentProfile, events, date)
+            ? resolveMechanicalCheckinHistory(userId, date)
+            : []);
     let intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy, undefined, carriedInternalStrain);
 
     let externalEventAdvisory: {
@@ -738,10 +749,12 @@ export async function evaluateTrainingWithIntent(
     // Issue #757: one athlete-level aerobic floor for the packer and coverage ranking, in
     // evergreen and event modes alike.
     const aerobicVolumeFloor = intent.aerobicVolumeFloor;
+    const mechanicalCheckins = await mechanicalCheckinsRead;
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, date, fixedActivities, 7, isAdverseRecovery, scheduleOverlays,
         confirmedProgressionOverrides, aerobicVolumeFloor, hasCurrentClinicalSymptoms(readiness),
+        { exposureHistory: intent.mechanicalExposureHistory, checkinHistory: mechanicalCheckins },
     );
     if (evergreen) {
         const unresolvedObjectives = getUnresolvedObjectives(evergreen.microcycle);
@@ -1300,18 +1313,9 @@ async function projectedProviderForTomorrow(
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
     historyWindowDays: number = 7,
 ): Promise<TrainingHistoryProvider> {
-    const windowStart = addDaysToLocalDateString(tomorrowDate, -historyWindowDays);
-    let prior: CompletedExposure[];
-    if (preparedHistorySnapshot && preparedHistorySnapshot.windowDays >= historyWindowDays) {
-        prior = preparedHistorySnapshot.exposures;
-    } else {
-        const baseProvider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
-        prior = await baseProvider.reconstruct(userId, tomorrowDate, historyWindowDays);
-    }
     const unrepresentedFixed = unrepresentedFixedActivityProjection(todayDate, todayRec, fixedActivities);
     const overlayProjection = scheduleOverlayProjection(todayDate, scheduleOverlays);
-    const projected = [
-        ...prior.filter(exposure => exposure.date >= windowStart && exposure.date < tomorrowDate),
+    const todayProjections: CompletedExposure[] = [
         recommendationProjection(todayDate, todayRec),
         ...fixedActivities.filter(activity => activity.date === todayDate && !activity.isCompleted).flatMap(activity => {
             const exposure = fixedActivityProjection(activity);
@@ -1319,12 +1323,50 @@ async function projectedProviderForTomorrow(
         }),
         ...(unrepresentedFixed ? [unrepresentedFixed] : []),
         ...(overlayProjection ? [overlayProjection] : []),
-    ].sort((a, b) => a.date.localeCompare(b.date));
+    ];
+    const projectFor = async (windowDays: number): Promise<CompletedExposure[]> => {
+        const windowStart = addDaysToLocalDateString(tomorrowDate, -windowDays);
+        let prior: CompletedExposure[];
+        if (preparedHistorySnapshot && preparedHistorySnapshot.windowDays >= windowDays) {
+            prior = preparedHistorySnapshot.exposures;
+        } else {
+            const baseProvider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
+            prior = await baseProvider.reconstruct(userId, tomorrowDate, windowDays);
+        }
+        return [
+            ...prior.filter(exposure => exposure.date >= windowStart && exposure.date < tomorrowDate),
+            ...todayProjections,
+        ].sort((a, b) => a.date.localeCompare(b.date));
+    };
+    const projected = await projectFor(historyWindowDays);
+    // A consumer may ask for more than the operational window (the #804 mechanical continuity
+    // window). Fetch that wider prior lazily, once, instead of truncating it to seven days.
+    // Today is represented only by the projections above, as in a prepared snapshot, so a
+    // wider reconstruct cannot count today twice. The wider evidence is optional: a failed
+    // read falls back to the operational projection (for the mechanical owner, missing
+    // evidence means conservative re-entry) rather than failing tomorrow's whole plan.
+    const widerProjections = new Map<number, Promise<CompletedExposure[]>>();
+    const widerProjectionFor = (windowDays: number): Promise<CompletedExposure[]> => projectFor(windowDays)
+        .then(exposures => [
+            ...exposures.filter(exposure => exposure.date < todayDate),
+            ...todayProjections,
+        ].sort((a, b) => a.date.localeCompare(b.date)))
+        .catch((error: unknown) => {
+            console.warn('Wider projected history unavailable; using the operational window:', error);
+            return projected;
+        });
 
     return {
         reconstruct: async (_requestUserId, throughDateExclusive, windowDays) => {
             const start = addDaysToLocalDateString(throughDateExclusive, -windowDays);
-            return projected.filter(exposure => exposure.date >= start && exposure.date < throughDateExclusive);
+            const neededWindowDays = getDayDiff(tomorrowDate, start);
+            let source = projected;
+            if (neededWindowDays > historyWindowDays) {
+                const wider = widerProjections.get(neededWindowDays) ?? widerProjectionFor(neededWindowDays);
+                widerProjections.set(neededWindowDays, wider);
+                source = await wider;
+            }
+            return source.filter(exposure => exposure.date >= start && exposure.date < throughDateExclusive);
         },
     };
 }
@@ -1346,8 +1388,15 @@ export async function evaluateNextDayPlanWithIntent(
     subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off',
     subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
     scheduleOverlays: readonly ScheduleOverlay[] = [],
+    /** #804 structured tissue check-ins; same default as `evaluateTrainingWithIntent`,
+     * resolved once for all three branches. */
+    mechanicalCheckinHistory?: readonly CheckinRecord[],
 ): Promise<NextDayPotentialPlan> {
     const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
+    const mechanicalCheckins = mechanicalCheckinHistory
+        ?? (preferences && !historyProvider && mechanicalEvidenceRequiredFor(trainingIntentProfile, events, scenarios.date)
+            ? await resolveMechanicalCheckinHistory(userId, scenarios.date)
+            : []);
     const projectedProvider = await projectedProviderForTomorrow(
         userId,
         scenarios.date,
@@ -1367,6 +1416,7 @@ export async function evaluateNextDayPlanWithIntent(
             userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, projectedProvider, null,
             fixedActivities, authoredPlanBlocks, trainingIntentProfile, preferences, fatigueFusionPolicy, null,
             subjectiveDriftPolicy, subjectiveDriftWeights, null, false, scheduleOverlays, new Map(), scenario.carriedInternalStrain,
+            mechanicalCheckins,
         ),
     );
     const [green, yellow, red] = await Promise.all([

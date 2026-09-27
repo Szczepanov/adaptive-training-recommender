@@ -3,12 +3,16 @@ import { isHistoricalPolicyVersion, HISTORICAL_POLICY_VERSIONS, POLICY_VERSION }
 
 describe('isHistoricalPolicyVersion', () => {
     it('records the current transition and the previous live policies exactly once', () => {
-        expect(POLICY_VERSION).toBe('2026-09-longitudinal-mechanical-impact-exposure-v1');
-        expect(HISTORICAL_POLICY_VERSIONS[0]).toBe('2026-09-weekly-aerobic-dose-envelope-v1');
-        expect(HISTORICAL_POLICY_VERSIONS[1]).toBe('2026-09-hybrid-strength-unilateral-composition-v1');
-        expect(HISTORICAL_POLICY_VERSIONS[2]).toBe('2026-09-neuromuscular-power-maintenance-v1');
-        expect(HISTORICAL_POLICY_VERSIONS[3]).toBe('2026-09-olympic-triathlon-plan-taper-budget-v1');
-        expect(HISTORICAL_POLICY_VERSIONS[4]).toBe('2026-09-evergreen-quality-transactional-substitution-v1');
+        expect(POLICY_VERSION).toBe('2026-09-mechanical-progression-live-wiring-v1');
+        expect(HISTORICAL_POLICY_VERSIONS[0]).toBe('2026-09-longitudinal-mechanical-impact-exposure-v1');
+        expect(HISTORICAL_POLICY_VERSIONS[1]).toBe('2026-09-weekly-aerobic-dose-envelope-v1');
+        expect(HISTORICAL_POLICY_VERSIONS[2]).toBe('2026-09-hybrid-strength-unilateral-composition-v1');
+        expect(HISTORICAL_POLICY_VERSIONS[3]).toBe('2026-09-neuromuscular-power-maintenance-v1');
+        expect(HISTORICAL_POLICY_VERSIONS[4]).toBe('2026-09-olympic-triathlon-plan-taper-budget-v1');
+        expect(HISTORICAL_POLICY_VERSIONS[5]).toBe('2026-09-evergreen-quality-transactional-substitution-v1');
+        expect(HISTORICAL_POLICY_VERSIONS.filter(
+            (version) => version === '2026-09-longitudinal-mechanical-impact-exposure-v1',
+        )).toHaveLength(1);
         expect(HISTORICAL_POLICY_VERSIONS.filter(
             (version) => version === '2026-09-weekly-aerobic-dose-envelope-v1',
         )).toHaveLength(1);

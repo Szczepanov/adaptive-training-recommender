@@ -493,6 +493,24 @@ is capped at +1 stage. Mild response regresses one stage; moderate/severe respon
 allowed stage to Stage 1. The no-consecutive-calendar-day rule and 14-day reset are conservative product-policy
 guardrails, not experimentally validated biological thresholds.
 
+The evaluator stays pure; orchestration supplies its two evidence streams. Exposure evidence is
+`TrainingIntent.mechanicalExposureHistory`, which `resolveTrainingIntent` bounds to at least
+`MECHANICAL_CONTINUITY_WINDOW_DAYS` (14) whenever the evergreen intent can emit the requirement: it reuses the
+28-day `athleteStateEvidence`, and only a snapshot-less provider reconstructs the window (the projected next-day
+provider fetches that wider prior lazily). The 7-day operational `history` is never widened, so an exposure 8-13
+days ago is neither lost to the re-entry rule nor counted in fatigue/objective bookkeeping. Structured check-ins
+(`DailySubjectiveCheckin.tissueResponses`) for the window through the decision date are read once per entry point
+(`evaluateTrainingWithIntent`, `evaluateNextDayPlanWithIntent`, `generateWeekAheadPlanWithIntent`) by
+`mechanicalCheckinHistory.ts` `resolveMechanicalCheckinHistory`, whose Firestore provider is a lazily-imported
+default. A caller that injects a history provider (simulation, replay) is self-contained and supplies check-ins
+explicitly (`AthleteScenario.mechanicalCheckinHistory`); a failed read yields none and holds advancement.
+
+Evergreen planning requests Stage 2 by default (`EVERGREEN_MECHANICAL_DEFAULT_TARGET_STAGE_CEILING`), raised to
+the athlete's latest performed stage so the default never demotes anyone. Stage 3 braking and Stage 4
+multidirectional/COD work are requested only by an explicit opt-in target (`EvergreenMechanicalInputs.targetStage`,
+supplied by #805 capability maintenance); a target only ever raises the request, and the evaluator's response
+gate and +1 cap still apply.
+
 The progression verdict supplies an exact workout allow-list to both coverage ranking and weekly reservations.
 A blocked verdict therefore leaves the target visible with zero eligible candidates instead of silently widening
 to harder stages or substituting generic exercise. Policy is owned by

@@ -71,7 +71,8 @@ import {
 import { resolveOlympicTriathlonTaperBudget, taperHistoryFromFixedActivities } from './taperPlanBudget';
 import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
-import { prepareTrainingHistorySnapshot, resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
+import { mechanicalEvidenceRequiredFor, prepareTrainingHistorySnapshot, resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
+import { resolveMechanicalCheckinHistory } from './mechanicalCheckinHistory';
 import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
@@ -329,8 +330,10 @@ export interface WeekAheadOptions {
     fatigueFusionPolicy?: FatigueFusionPolicy;
     /** Event-free health planning prior resolved from the current training intent. */
     healthPlanningPolicy?: HealthPlanningPolicy | null;
-    /** Structured tissue-response history for #804 mechanical progression. Absence is
-     * supported and intentionally prevents stage advancement rather than assuming normal response. */
+    /** Structured tissue-response history for #804 mechanical progression. Absent: read
+     * through the lazily imported default provider, unless an injected history provider makes
+     * the call self-contained (then none, which holds stage advancement rather than assuming
+     * a normal response). */
     mechanicalCheckinHistory?: readonly CheckinRecord[];
 }
 
@@ -2439,6 +2442,11 @@ export async function generateWeekAheadPlanWithIntent(
             ROLLING_LOAD_BUDGET_LOOKBACK_DAYS,
             historyProvider,
         );
+    // #804: the check-in read does not depend on the intent, so it runs alongside it.
+    const mechanicalCheckinsRead = options.mechanicalCheckinHistory
+        ?? (preferences && !historyProvider && mechanicalEvidenceRequiredFor(trainingIntentProfile, events, todayDate)
+            ? resolveMechanicalCheckinHistory(userId, todayDate)
+            : []);
     const intent = await resolveTrainingIntent(
         userId,
         events,
@@ -2465,12 +2473,13 @@ export async function generateWeekAheadPlanWithIntent(
     // Issue #757: one athlete-level aerobic floor, resolved as of today, for both the packer
     // and every projected date's coverage state.
     const aerobicVolumeFloor = intent.aerobicVolumeFloor;
+    const mechanicalCheckinHistory = await mechanicalCheckinsRead;
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, todayDate, options.fixedActivities ?? [], options.days ?? 7,
         isAdverseRecovery, options.scheduleOverlays ?? [], new Map(), aerobicVolumeFloor,
         hasCurrentClinicalSymptoms(todayReadiness),
-        options.mechanicalCheckinHistory ?? [],
+        { exposureHistory: intent.mechanicalExposureHistory, checkinHistory: mechanicalCheckinHistory },
     );
     return generateWeekAheadPlan(
         todayReadiness,
