@@ -1,5 +1,5 @@
 import { addDaysToLocalDateString } from '../utils/localDate';
-import type { FixedActivity, MicrocycleState, ScheduleOverlay, UserContext, UserPreferences } from './models';
+import type { FixedActivity, GuardrailKey, MicrocycleState, ScheduleOverlay, UserContext, UserPreferences } from './models';
 import type { PlanningContext } from './planningMode';
 import type { CompletedExposure } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
@@ -12,8 +12,13 @@ import { buildEvergreenPlanDefinition, type PlanDefinition } from './planSchedul
 import { buildMicrocycleState } from './microcycle';
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
-import { evaluateMechanicalStageProgression, type CheckinRecord } from './mechanicalProgression';
-import { mechanicalIdentityFor } from '../workouts/mechanicalExposure';
+import {
+    evaluateMechanicalStageProgression,
+    type CheckinRecord,
+    type MechanicalExposureRecord,
+    type MechanicalProgressionVerdict,
+} from './mechanicalProgression';
+import { mechanicalIdentityFor, type MechanicalStage } from '../workouts/mechanicalExposure';
 import { executableLongAerobicCeilingForWorkout, resolveWeeklyAerobicDoseEnvelope } from './weeklyAerobicDose';
 import type { WeeklyAerobicDoseEnvelope } from './weeklyAerobicDose';
 
@@ -25,6 +30,72 @@ export interface ResolvedEvergreenPlan {
 }
 
 const AEROBIC_VOLUME_ROLE_ID = 'aerobic_volume';
+
+/** Highest stage evergreen planning requests on its own (`policy.evergreen.mechanical_exposure_v1`):
+ * the linear/bilateral ladder (Stage 1 landing/walk-run -> Stage 2 bilateral jump/linear
+ * running). Stage 3 braking and Stage 4 multidirectional/COD field work are requested only by
+ * an explicit athlete opt-in (issue #805 supplies `targetStage`); an athlete who already
+ * performs them keeps that stage rather than being demoted by this ceiling. */
+export const EVERGREEN_MECHANICAL_DEFAULT_TARGET_STAGE_CEILING: MechanicalStage = 2;
+
+/** Mechanical capability inputs, resolved by orchestration (`rules.ts`, `planner.ts`). */
+export interface EvergreenMechanicalInputs {
+    /** Performed-training evidence spanning at least `MECHANICAL_CONTINUITY_WINDOW_DAYS`.
+     * The seven-day operational `history` is too short: an exposure 8-13 days ago would be
+     * invisible and read as a >=14-day re-entry gap. */
+    exposureHistory?: readonly CompletedExposure[];
+    /** Canonical structured check-ins. Missing history fails closed for stage advancement
+     * rather than being interpreted as a normal tissue response. */
+    checkinHistory?: readonly CheckinRecord[];
+    /** Explicit opt-in progression target (issue #805 decision D-C: the due capability's
+     * required stage). Absent means the evergreen default. */
+    targetStage?: MechanicalStage;
+}
+
+/** The stage evergreen planning asks the evaluator for: the highest of the default ceiling,
+ * the athlete's latest performed stage and any explicit opt-in target. A target only ever
+ * raises the request; lowering the eligible stage is the evaluator's job (adverse response,
+ * re-entry, guardrails), and the evaluator still advances at most one stage per verdict. */
+export function evergreenMechanicalTargetStage(
+    exposureHistory: readonly MechanicalExposureRecord[],
+    asOfDate: string,
+    optInTargetStage?: MechanicalStage,
+): MechanicalStage {
+    // Highest stage on the latest date: the evaluator's last exposure is order-dependent
+    // within a day, and a request below it would demote.
+    const latest = exposureHistory
+        .filter(exposure => exposure.date < asOfDate)
+        .reduce<MechanicalExposureRecord | null>((current, exposure) =>
+            !current || exposure.date > current.date || (exposure.date === current.date && exposure.stage > current.stage)
+                ? exposure
+                : current, null);
+    return Math.max(
+        EVERGREEN_MECHANICAL_DEFAULT_TARGET_STAGE_CEILING,
+        latest?.stage ?? 1,
+        optInTargetStage ?? 1,
+    ) as MechanicalStage;
+}
+
+/** Pure bridge from performed training and check-ins to the #804 mechanical verdict. */
+export function resolveEvergreenMechanicalProgression(
+    date: string,
+    exposures: readonly CompletedExposure[],
+    checkinHistory: readonly CheckinRecord[],
+    guardrails: ReadonlySet<GuardrailKey>,
+    optInTargetStage?: MechanicalStage,
+): MechanicalProgressionVerdict {
+    const exposureHistory = exposures.flatMap(exposure => {
+        const identity = mechanicalIdentityFor(exposure.workoutId);
+        return identity ? [{ date: exposure.date, workoutId: identity.workoutId, stage: identity.stage }] : [];
+    });
+    return evaluateMechanicalStageProgression({
+        asOfDate: date,
+        exposureHistory,
+        checkinHistory,
+        guardrails,
+        targetStage: evergreenMechanicalTargetStage(exposureHistory, date, optInTargetStage),
+    });
+}
 
 /**
  * Issue #757: budget the `aerobic_volume` role at the athlete floor wherever some usable
@@ -120,9 +191,8 @@ export function resolveEvergreenPlan(
     aerobicVolumeFloor: AerobicVolumeFloor | null = null,
     /** Current pain/injury, illness or red-flag symptoms withhold the generic quality prior. */
     hasCurrentClinicalSymptoms: boolean = false,
-    /** Canonical structured check-ins used only by the mechanical capability owner. Missing
-     * history fails closed for stage advancement rather than being interpreted as normal. */
-    mechanicalCheckinHistory: readonly CheckinRecord[] = [],
+    /** Inputs used only by the #804 mechanical capability owner. */
+    mechanical: EvergreenMechanicalInputs = {},
 ): ResolvedEvergreenPlan | null {
     if (planningContext.mode !== 'evergreen' || !preferences) return null;
     const availability = Array.from({ length: Math.max(1, days) }, (_, index) => {
@@ -157,16 +227,13 @@ export function resolveEvergreenPlan(
         && !isAdverseRecovery
         && !hasCurrentClinicalSymptoms;
     const aerobicPacking = aerobicPackingForFloor(aerobicVolumeFloor, capacity.usableWindows, weeklyAerobicDose, longAnchorEligible);
-    const mechanicalExposureHistory = history.flatMap(exposure => {
-        const identity = mechanicalIdentityFor(exposure.workoutId);
-        return identity ? [{ date: exposure.date, workoutId: identity.workoutId, stage: identity.stage }] : [];
-    });
-    const mechanicalProgression = evaluateMechanicalStageProgression({
-        asOfDate: date,
-        exposureHistory: mechanicalExposureHistory,
-        checkinHistory: mechanicalCheckinHistory,
-        guardrails: new Set(context.constraints.impliedGuardrails ?? []),
-    });
+    const mechanicalProgression = resolveEvergreenMechanicalProgression(
+        date,
+        mechanical.exposureHistory ?? stateEvidence?.exposures ?? history,
+        mechanical.checkinHistory ?? [],
+        new Set(context.constraints.impliedGuardrails ?? []),
+        mechanical.targetStage,
+    );
     const packed = packWeeklyDose(strategy, capacity, aerobicPacking.descriptor, progressionOverrides, date);
     const budget: WeeklyBudget = aerobicPacking.shortfall
         ? { ...packed, shortfalls: [...packed.shortfalls, aerobicPacking.shortfall] }

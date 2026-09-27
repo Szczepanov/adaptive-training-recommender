@@ -50,6 +50,12 @@ export interface EvaluateMechanicalProgressionInput {
   targetStage?: MechanicalStage;
 }
 
+/** Continuity window owned by `policy.evergreen.mechanical_exposure_v1`: an exposure
+ * exactly this many calendar days ago is outside it, so >= 14 days without exposure is
+ * re-entry at Stage 1. Callers must supply at least this much exposure history; a shorter
+ * read makes a recent exposure invisible and is indistinguishable from a real gap. */
+export const MECHANICAL_CONTINUITY_WINDOW_DAYS = 14;
+
 const LOWER_BODY_REGIONS: ReadonlySet<BodyRegion> = new Set<BodyRegion>([
   'knee',
   'achilles',
@@ -119,7 +125,7 @@ export function evaluateMechanicalStageProgression(
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const lastExposure = pastExposures.at(-1);
-  const lookback14Days = addDaysToLocalDateString(asOfDate, -14);
+  const lookback14Days = addDaysToLocalDateString(asOfDate, -MECHANICAL_CONTINUITY_WINDOW_DAYS);
   // `lookback14Days` itself is exactly 14 calendar days ago, so it is outside the
   // continuity window: >=14 days without exposure is re-entry by policy.
   const recentExposures = pastExposures.filter(e => e.date > lookback14Days);

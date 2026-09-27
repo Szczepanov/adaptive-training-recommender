@@ -4,7 +4,7 @@ import { expect, type Locator, type Page } from '@playwright/test';
 export async function assertEffectiveTarget(control: Locator, minimum = 44): Promise<void> {
   await expect(control).toBeVisible();
   await control.scrollIntoViewIfNeeded();
-  const measurement = await control.evaluate(element => {
+  await expect.poll(() => control.evaluate(element => {
     const rect = element.getBoundingClientRect();
     const samples = [0.25, 0.5, 0.75].flatMap(x =>
       [0.25, 0.5, 0.75].map(y => {
@@ -12,12 +12,17 @@ export async function assertEffectiveTarget(control: Locator, minimum = 44): Pro
         return hit !== null && (hit === element || element.contains(hit));
       }),
     );
-    return { width: rect.width, height: rect.height, samples };
-  });
+    return samples.every(Boolean);
+  }), {
+    message: 'control must receive pointer hits across its rendered area after mobile navigation settles',
+  }).toBe(true);
 
+  const measurement = await control.evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return { width: rect.width, height: rect.height };
+  });
   expect(measurement.width, 'effective target width').toBeGreaterThanOrEqual(minimum);
   expect(measurement.height, 'effective target height').toBeGreaterThanOrEqual(minimum);
-  expect(measurement.samples, 'control must receive pointer hits across its rendered area').not.toContain(false);
 }
 
 export async function assertNoBodyHorizontalOverflow(page: Page): Promise<void> {

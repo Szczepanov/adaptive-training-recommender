@@ -384,6 +384,21 @@ function mechanicalWithheldReason(
     return null;
 }
 
+/** Whether an evergreen priority set can produce the #804 mechanical requirement.
+ * This is the single priority-level authority used both by strategy construction and by
+ * orchestration to decide whether the wider mechanical evidence streams are needed. */
+export function canEmitMechanicalRequirement(priorities: readonly TrainingPriority[]): boolean {
+    const effectivePriorities: readonly TrainingPriority[] = priorities.length > 0
+        ? priorities
+        : ['balanced_performance'];
+    const prioritySet = new Set(effectivePriorities);
+    const directMechanicalPriority = prioritySet.has('sport_readiness') || prioritySet.has('speed_power');
+    const strengthPlanned = prioritySet.has('health')
+        || prioritySet.has('balanced_performance')
+        || prioritySet.has('strength_muscle');
+    return directMechanicalPriority || (prioritySet.has('endurance') && strengthPlanned);
+}
+
 /** Resolves dose before capacity. The result makes no assumption about the athlete's
  * available minutes or declared session count; those constraints belong to
  * `trainingCapacity.ts`. */
@@ -462,8 +477,7 @@ export function resolveEvidenceBackedStrategy(
     // maintenance capability so cycling/endurance can stay primary
     // without letting foot-ground exposure disappear for months.
     const directMechanicalPriority = priorities.has('sport_readiness') || priorities.has('speed_power');
-    const hybridMechanicalMaintenance = priorities.has('endurance') && strengthPlanned;
-    if (directMechanicalPriority || hybridMechanicalMaintenance) {
+    if (canEmitMechanicalRequirement(goalOrEvent.priorities)) {
         const withheld = mechanicalWithheldReason(goalOrEvent, athleteState);
         if (withheld) warnings.push({ code: 'mechanical_exposure_withheld', message: withheld });
         else requirements.push(mechanicalRequirement(directMechanicalPriority ? 'target' : 'optional'));

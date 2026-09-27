@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { aerobicPackingForFloor, resolveEvergreenPlan } from './evergreenPlanning';
+import { aerobicPackingForFloor, resolveEvergreenPlan, type EvergreenMechanicalInputs } from './evergreenPlanning';
+import type { CheckinRecord } from './mechanicalProgression';
+import type { CompletedExposure } from './trainingHistory';
+import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
+import { addDaysToLocalDateString } from '../utils/localDate';
 import { resolvePlanningContext } from './planningMode';
 import { evaluatePeriodizationPhase } from './periodization';
-import type { UserContext, UserPreferences, TrainingIntentProfile } from './models';
+import type { DailySubjectiveCheckin, UserContext, UserPreferences, TrainingIntentProfile } from './models';
 import { CATALOG_AEROBIC_VOLUME_FLOOR, type AerobicVolumeFloor } from './aerobicVolumeFloor';
 
 /**
@@ -121,5 +125,91 @@ describe('resolveEvergreenPlan athlete-relative aerobic floor (#757)', () => {
         const result = aerobicPackingForFloor(highFloor, [{ date: DATE, availableMinutes: 150 }], weeklyDose, true);
         expect(result.descriptor.longAerobicAnchor?.durationMinutes).toBe(60);
         expect(result.descriptor.roles.find(role => role.id === 'aerobic_volume')?.durationMinutes).toBe(60);
+    });
+});
+
+describe('resolveEvergreenPlan mechanical progression inputs (#804)', () => {
+    const MECHANICAL_DATE = '2026-09-20';
+    const sportReadinessProfile: TrainingIntentProfile = { ...evergreenProfile, priorities: ['sport_readiness'] };
+    const establishedRuns: CompletedExposure[] = Array.from({ length: 12 }, (_, index) => ({
+        occurrenceKey: `run-${index}`,
+        date: addDaysToLocalDateString(MECHANICAL_DATE, -27 + index * 2),
+        modality: 'Running',
+        category: 'Easy Endurance',
+        costProfile: { systemic: 0.25, cardiovascular: 0.35, lowerBody: 0.2, upperBody: 0, impactTissue: 0.3, neuromuscular: 0.1 },
+        trainingRecordLike: { type: 'Running aerobic endurance', duration_min: 60, training_effect: 2, intensity_tag: 'easy' },
+    }));
+    const historySnapshot: TrainingHistorySnapshot = {
+        throughDateExclusive: MECHANICAL_DATE,
+        windowDays: 7,
+        completedEvents: [],
+        exposures: [],
+        sourceStates: {
+            activities: { status: 'AVAILABLE', revision: 'a' },
+            recommendations: { status: 'AVAILABLE', revision: 'r' },
+            manualTraining: { status: 'MISSING' },
+        },
+        generatedAt: '2026-09-20T05:00:00Z',
+        revision: 'mechanical-test',
+        athleteStateEvidence: { observedWindowDays: 28, exposures: establishedRuns },
+    };
+    const exposure = (date: string, workoutId: string): CompletedExposure => ({
+        ...establishedRuns[0], occurrenceKey: `${workoutId}-${date}`, date, workoutId,
+    });
+    const tolerated = (date: string): CheckinRecord => ({
+        date,
+        checkin: {
+            userId: 'u1', date, readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, mentalStress: 2, motivation: 8,
+            painOrInjury: false, illnessSymptoms: false, unusuallyLimitedTime: false, alreadyTrainedToday: false,
+            availability: { timeAvailableMin: 60, preferredModalityToday: null, indoorOnly: false },
+            notes: null, submittedAt: `${date}T07:00:00.000Z`,
+            tissueResponses: { knee: { region: 'knee', morningState: 'normal', nextMorningReaction: 'normal' } },
+        } as DailySubjectiveCheckin,
+    });
+
+    function eligibleMechanicalWorkouts(mechanical: EvergreenMechanicalInputs): string[] | undefined {
+        const planningContext = resolvePlanningContext(sportReadinessProfile, evaluatePeriodizationPhase([], MECHANICAL_DATE), MECHANICAL_DATE);
+        const plan = resolveEvergreenPlan(
+            planningContext, evaluatePeriodizationPhase([], MECHANICAL_DATE).phase, [], historySnapshot,
+            preferences, context, MECHANICAL_DATE, [], 7, false, [], new Map(), null, false, mechanical,
+        );
+        return plan?.planDefinition.coverageRequirements
+            ?.find(requirement => requirement.coverageKey === 'mechanical_exposure')?.eligibleWorkoutIds;
+    }
+
+    const walkRuns = [exposure('2026-09-15', 'running_walk_run_01'), exposure('2026-09-17', 'running_walk_run_01')];
+
+    it('advances a tolerated Stage-1 athlete to Stage 2 only with explicit follow-up check-ins', () => {
+        const withCheckins = eligibleMechanicalWorkouts({
+            exposureHistory: walkRuns, checkinHistory: [tolerated('2026-09-16'), tolerated('2026-09-18')],
+        });
+        expect(withCheckins).toContain('strength_reactive_power_01');
+        expect(withCheckins).not.toContain('field_acceleration_braking_01');
+
+        const withoutCheckins = eligibleMechanicalWorkouts({ exposureHistory: walkRuns });
+        expect(withoutCheckins).toContain('running_walk_run_01');
+        expect(withoutCheckins).not.toContain('strength_reactive_power_01');
+    });
+
+    it('keeps a Stage-2 exposure from 10 days ago instead of re-entering at Stage 1', () => {
+        const eligible = eligibleMechanicalWorkouts({ exposureHistory: [exposure('2026-09-10', 'strength_reactive_power_01')] });
+        expect(eligible).toContain('strength_reactive_power_01');
+    });
+
+    it('advances from Stage 2 to Stage 3 only for an explicit higher target', () => {
+        const stageTwo = [exposure('2026-09-15', 'strength_reactive_power_01'), exposure('2026-09-17', 'strength_reactive_power_01')];
+        const checkinHistory = [tolerated('2026-09-16'), tolerated('2026-09-18')];
+
+        expect(eligibleMechanicalWorkouts({ exposureHistory: stageTwo, checkinHistory })).not.toContain('field_acceleration_braking_01');
+        expect(eligibleMechanicalWorkouts({ exposureHistory: stageTwo, checkinHistory, targetStage: 3 }))
+            .toContain('field_acceleration_braking_01');
+    });
+
+    it('preserves a recent already-performed Stage 3 without requiring a new higher target', () => {
+        const stageThree = [exposure('2026-09-15', 'field_acceleration_braking_01')];
+        const checkinHistory = [tolerated('2026-09-16')];
+
+        expect(eligibleMechanicalWorkouts({ exposureHistory: stageThree, checkinHistory }))
+            .toContain('field_acceleration_braking_01');
     });
 });

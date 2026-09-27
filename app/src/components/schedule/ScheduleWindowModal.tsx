@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, memo } from 'react';
 import { scheduleWindowService, type ScheduleWindowWithId } from '../../services/scheduleWindowService';
 import { getLocalDateString } from '../../utils/localDate';
 import { useOverlayDialog } from '../useOverlayDialog';
@@ -52,7 +52,7 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
         savingRef.current = saving;
     }, [saving]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!isOpen) return;
         if (existingWindow) {
             setDate(existingWindow.date);
