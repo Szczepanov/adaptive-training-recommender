@@ -241,6 +241,63 @@ def test_decode_activity_original_extracts_distinct_ordered_workout_step_indices
     assert evidence.workout_name == "5x5 Squat"
 
 
+def test_decode_activity_original_retains_transient_lap_execution_linkage() -> None:
+    start = datetime(2026, 1, 1, 10, 0)
+    messages = [
+        FakeDataMessage(
+            "workout_step",
+            message_index=3,
+            wkt_step_name="Threshold",
+            duration_type="time",
+            duration_value=900,
+            target_type="power",
+            target_value=0,
+            custom_target_value_low=230,
+            custom_target_value_high=230,
+            intensity="active",
+            equipment="bike",
+        ),
+        FakeDataMessage(
+            "record",
+            timestamp=start,
+            heart_rate=150,
+            cadence=90,
+            power=228,
+            workout_step=3,
+        ),
+        FakeDataMessage(
+            "lap",
+            message_index=4,
+            start_time=start,
+            timestamp=datetime(2026, 1, 1, 10, 15),
+            total_timer_time=900,
+            workout_step_index=3,
+            avg_power=228,
+            avg_heart_rate=154,
+            max_heart_rate=162,
+            avg_cadence=91,
+            max_cadence=98,
+        ),
+    ]
+
+    with patch(
+        "garmin_sync.fit_activity.fitdecode.FitReader",
+        return_value=_reader_with(messages),
+    ):
+        evidence = decode_activity_original(_synthetic_original_zip())
+
+    assert evidence.records[0].workout_step_index == 3
+    assert evidence.workout_steps[0].message_index == 3
+    assert evidence.workout_steps[0].custom_target_value_low == 230.0
+    assert len(evidence.laps) == 1
+    lap = evidence.laps[0]
+    assert lap.workout_step_index == 3
+    assert lap.duration_seconds == 900.0
+    assert lap.average_power_watts == 228.0
+    assert lap.average_hr_bpm == 154.0
+    assert lap.max_cadence_rpm == 98.0
+
+
 def test_decode_activity_original_leaves_workout_fields_absent_for_a_freeform_recording() -> None:
     messages = [
         FakeDataMessage("record", timestamp=datetime(2026, 1, 1, 10, 0), heart_rate=140),
