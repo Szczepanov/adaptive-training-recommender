@@ -7,6 +7,7 @@ import { evaluateTemplateEligibility } from './eligibility';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { MECHANICAL_MAINTENANCE_WORKOUT_IDS, type MechanicalStage } from '../workouts/mechanicalExposure';
+import { ATHLETIC_CAPABILITY_IDENTITIES } from '../workouts/athleticCapability';
 import {
     capabilityProgressionTargetStage,
     evaluateCapabilityCadence,
@@ -70,6 +71,20 @@ export function capabilityGates(
     const environmentUnavailable = new Set<string>();
     const environmentAvailableDates = new Map<string, readonly string[]>();
     const minimumDurationMinutes = new Map<string, number>();
+    const capabilityMinimumDurationMinutes = new Map<string, number>();
+    for (const identity of ATHLETIC_CAPABILITY_IDENTITIES) {
+        const workout = WORKOUTS_BY_ID.get(identity.workoutId);
+        if (!workout) continue;
+        const qualifyingDurations = workout.variants
+            .filter(variant => identity.qualifyingVariants.includes(variant.id))
+            .map(variant => variant.targetDurationMin);
+        if (qualifyingDurations.length > 0) {
+            capabilityMinimumDurationMinutes.set(
+                `${identity.capability}:${identity.workoutId}`,
+                Math.min(...qualifyingDurations),
+            );
+        }
+    }
     const deprioritized = new Set<string>();
     for (const workoutId of MECHANICAL_MAINTENANCE_WORKOUT_IDS) {
         const workout = WORKOUTS_BY_ID.get(workoutId);
@@ -99,7 +114,7 @@ export function capabilityGates(
     }
     return {
         guardrailBlocked, unavailable, avoided, environmentUnavailable,
-        environmentAvailableDates, minimumDurationMinutes, deprioritized,
+        environmentAvailableDates, minimumDurationMinutes, capabilityMinimumDurationMinutes, deprioritized,
     };
 }
 
