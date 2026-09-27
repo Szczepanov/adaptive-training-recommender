@@ -44,6 +44,118 @@ def _is_running_activity_type(activity_type: str) -> bool:
     )
 
 
+def serialize_hr_measurement(
+    hr_measurement: CanonicalHrMeasurementQuality,
+) -> dict[str, Any]:
+    return {
+        "externalHrSensorPresent": hr_measurement.source.external_hr_sensor_present,
+        "sourceForActivity": hr_measurement.source.source_for_activity,
+        "provenanceConfidence": hr_measurement.source.provenance_confidence,
+        "sensorTechnology": hr_measurement.source.sensor_technology,
+        "activityMotionRisk": hr_measurement.activity_motion_risk,
+        "coveragePct": hr_measurement.coverage_pct,
+        "longestGapSeconds": hr_measurement.longest_gap_seconds,
+        "signalQuality": hr_measurement.signal_quality,
+        "measurementConfidence": hr_measurement.measurement_confidence,
+        "summaryCompatibility": hr_measurement.summary_compatibility,
+        "artifactFlags": list(hr_measurement.artifact_flags),
+        "reasons": list(hr_measurement.reasons),
+        "diagnosticVersion": hr_measurement.diagnostic_version,
+    }
+
+
+def serialize_activity_response(
+    activity_response: CanonicalActivityResponseTelemetry,
+) -> dict[str, Any]:
+    resolution = activity_response.source_resolution
+    response_payload: dict[str, Any] = {
+        "derivationVersion": activity_response.derivation_version,
+        "sourceResolution": {
+            key: value
+            for key, value in {
+                "powerSeconds": resolution.power_seconds,
+                "hrSeconds": resolution.hr_seconds,
+                "cadenceSeconds": resolution.cadence_seconds,
+            }.items()
+            if value is not None
+        },
+        "segmentCountTotal": activity_response.segment_count_total,
+        "segmentsTruncated": activity_response.segments_truncated,
+        "segments": [],
+        "powerDurationPeaks": [],
+    }
+    for segment in activity_response.segments:
+        target = segment.prescribed_target
+        segment_payload: dict[str, Any] = {
+            key: value
+            for key, value in {
+                "segmentIndex": segment.segment_index,
+                "segmentType": segment.segment_type,
+                "identitySource": segment.identity_source,
+                "startOffsetSeconds": segment.start_offset_seconds,
+                "durationSeconds": segment.duration_seconds,
+                "averagePowerWatts": segment.average_power_watts,
+                "peak1sPowerWatts": segment.peak_1s_power_watts,
+                "peak5sPowerWatts": segment.peak_5s_power_watts,
+                "peak10sPowerWatts": segment.peak_10s_power_watts,
+                "averageHrBpm": segment.average_hr_bpm,
+                "endHrBpm": segment.end_hr_bpm,
+                "maxHrBpm": segment.max_hr_bpm,
+                "averageCadenceRpm": segment.average_cadence_rpm,
+                "maxCadenceRpm": segment.max_cadence_rpm,
+                "firstThirdPowerWatts": segment.first_third_power_watts,
+                "middleThirdPowerWatts": segment.middle_third_power_watts,
+                "lastThirdPowerWatts": segment.last_third_power_watts,
+                "lastThirdHrBpm": segment.last_third_hr_bpm,
+                "evidenceConfidence": segment.evidence_confidence,
+            }.items()
+            if value is not None
+        }
+        if target is not None:
+            segment_payload["prescribedTarget"] = {
+                key: value
+                for key, value in {
+                    "kind": target.kind,
+                    "value": target.value,
+                    "low": target.low,
+                    "high": target.high,
+                    "text": target.text,
+                }.items()
+                if value is not None
+            }
+        response_payload["segments"].append(segment_payload)
+
+    response_payload["powerDurationPeaks"] = [
+        {
+            key: value
+            for key, value in {
+                "durationSeconds": peak.duration_seconds,
+                "powerWatts": peak.power_watts,
+                "confidence": peak.confidence,
+                "elapsedBeforeSeconds": peak.elapsed_before_seconds,
+                "activityHalf": peak.activity_half,
+            }.items()
+            if value is not None
+        }
+        for peak in activity_response.power_duration_peaks
+    ]
+    if activity_response.steady_halves is not None:
+        halves = activity_response.steady_halves
+        response_payload["steadyHalves"] = {
+            key: value
+            for key, value in {
+                "firstPowerWatts": halves.first_power_watts,
+                "secondPowerWatts": halves.second_power_watts,
+                "firstHrBpm": halves.first_hr_bpm,
+                "secondHrBpm": halves.second_hr_bpm,
+                "firstCadenceRpm": halves.first_cadence_rpm,
+                "secondCadenceRpm": halves.second_cadence_rpm,
+            }.items()
+            if value is not None
+        }
+    return response_payload
+
+
 def normalize_activity(
     activity: CanonicalActivity,
     sync_run_id: str,
@@ -130,110 +242,10 @@ def normalize_activity(
             payload["runningDynamics"] = rd_dict
 
     if hr_measurement is not None:
-        payload["hrMeasurement"] = {
-            "externalHrSensorPresent": hr_measurement.source.external_hr_sensor_present,
-            "sourceForActivity": hr_measurement.source.source_for_activity,
-            "provenanceConfidence": hr_measurement.source.provenance_confidence,
-            "sensorTechnology": hr_measurement.source.sensor_technology,
-            "activityMotionRisk": hr_measurement.activity_motion_risk,
-            "coveragePct": hr_measurement.coverage_pct,
-            "longestGapSeconds": hr_measurement.longest_gap_seconds,
-            "signalQuality": hr_measurement.signal_quality,
-            "measurementConfidence": hr_measurement.measurement_confidence,
-            "summaryCompatibility": hr_measurement.summary_compatibility,
-            "artifactFlags": list(hr_measurement.artifact_flags),
-            "reasons": list(hr_measurement.reasons),
-            "diagnosticVersion": hr_measurement.diagnostic_version,
-        }
+        payload["hrMeasurement"] = serialize_hr_measurement(hr_measurement)
 
     if activity_response is not None:
-        resolution = activity_response.source_resolution
-        response_payload: dict[str, Any] = {
-            "derivationVersion": activity_response.derivation_version,
-            "sourceResolution": {
-                key: value
-                for key, value in {
-                    "powerSeconds": resolution.power_seconds,
-                    "hrSeconds": resolution.hr_seconds,
-                    "cadenceSeconds": resolution.cadence_seconds,
-                }.items()
-                if value is not None
-            },
-            "segmentCountTotal": activity_response.segment_count_total,
-            "segmentsTruncated": activity_response.segments_truncated,
-            "segments": [],
-            "powerDurationPeaks": [],
-        }
-        for segment in activity_response.segments:
-            target = segment.prescribed_target
-            segment_payload: dict[str, Any] = {
-                key: value
-                for key, value in {
-                    "segmentIndex": segment.segment_index,
-                    "segmentType": segment.segment_type,
-                    "identitySource": segment.identity_source,
-                    "startOffsetSeconds": segment.start_offset_seconds,
-                    "durationSeconds": segment.duration_seconds,
-                    "averagePowerWatts": segment.average_power_watts,
-                    "peak1sPowerWatts": segment.peak_1s_power_watts,
-                    "peak5sPowerWatts": segment.peak_5s_power_watts,
-                    "peak10sPowerWatts": segment.peak_10s_power_watts,
-                    "averageHrBpm": segment.average_hr_bpm,
-                    "endHrBpm": segment.end_hr_bpm,
-                    "maxHrBpm": segment.max_hr_bpm,
-                    "averageCadenceRpm": segment.average_cadence_rpm,
-                    "maxCadenceRpm": segment.max_cadence_rpm,
-                    "firstThirdPowerWatts": segment.first_third_power_watts,
-                    "middleThirdPowerWatts": segment.middle_third_power_watts,
-                    "lastThirdPowerWatts": segment.last_third_power_watts,
-                    "lastThirdHrBpm": segment.last_third_hr_bpm,
-                    "evidenceConfidence": segment.evidence_confidence,
-                }.items()
-                if value is not None
-            }
-            if target is not None:
-                segment_payload["prescribedTarget"] = {
-                    key: value
-                    for key, value in {
-                        "kind": target.kind,
-                        "value": target.value,
-                        "low": target.low,
-                        "high": target.high,
-                        "text": target.text,
-                    }.items()
-                    if value is not None
-                }
-            response_payload["segments"].append(segment_payload)
-
-        response_payload["powerDurationPeaks"] = [
-            {
-                key: value
-                for key, value in {
-                    "durationSeconds": peak.duration_seconds,
-                    "powerWatts": peak.power_watts,
-                    "confidence": peak.confidence,
-                    "elapsedBeforeSeconds": peak.elapsed_before_seconds,
-                    "activityHalf": peak.activity_half,
-                }.items()
-                if value is not None
-            }
-            for peak in activity_response.power_duration_peaks
-        ]
-        if activity_response.steady_halves is not None:
-            halves = activity_response.steady_halves
-            response_payload["steadyHalves"] = {
-                key: value
-                for key, value in {
-                    "firstPowerWatts": halves.first_power_watts,
-                    "secondPowerWatts": halves.second_power_watts,
-                    "firstHrBpm": halves.first_hr_bpm,
-                    "secondHrBpm": halves.second_hr_bpm,
-                    "firstCadenceRpm": halves.first_cadence_rpm,
-                    "secondCadenceRpm": halves.second_cadence_rpm,
-                }.items()
-                if value is not None
-            }
-        payload["activityResponse"] = response_payload
+        payload["activityResponse"] = serialize_activity_response(activity_response)
 
     if detail is None:
         return payload
