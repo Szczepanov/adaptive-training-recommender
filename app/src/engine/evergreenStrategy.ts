@@ -477,7 +477,7 @@ export function resolveEvidenceBackedStrategy(
     // maintenance capability so cycling/endurance can stay primary
     // without letting foot-ground exposure disappear for months.
     const directMechanicalPriority = priorities.has('sport_readiness') || priorities.has('speed_power');
-    if (canEmitMechanicalRequirement([...priorities])) {
+    if (canEmitMechanicalRequirement(goalOrEvent.priorities)) {
         const withheld = mechanicalWithheldReason(goalOrEvent, athleteState);
         if (withheld) warnings.push({ code: 'mechanical_exposure_withheld', message: withheld });
         else requirements.push(mechanicalRequirement(directMechanicalPriority ? 'target' : 'optional'));
