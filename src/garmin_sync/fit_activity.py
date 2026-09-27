@@ -43,12 +43,29 @@ class FitDeviceInventoryEntry:
 
 @dataclass(frozen=True)
 class FitRecordSample:
-    """Transient sample values used only by deterministic HR diagnostics."""
+    """Transient sample values used only by deterministic signal diagnostics/derivation."""
 
     timestamp: datetime | None
     heart_rate_bpm: float | None
     cadence_rpm: float | None
     power_watts: float | None
+    workout_step_index: int | None = None
+
+
+@dataclass(frozen=True)
+class FitLapEvidence:
+    """Transient FIT Lap evidence used to link performed time to workout-step semantics."""
+
+    message_index: int | None
+    start_time: datetime | None
+    timestamp: datetime | None
+    duration_seconds: float | None
+    workout_step_index: int | None
+    average_power_watts: float | None
+    average_hr_bpm: float | None
+    max_hr_bpm: float | None
+    average_cadence_rpm: float | None
+    max_cadence_rpm: float | None
 
 
 @dataclass(frozen=True)
@@ -111,10 +128,11 @@ class FitActivityEvidence:
     lap_average_heart_rate_bpm: tuple[float, ...]
     time_in_hr_zone_seconds: tuple[float, ...]
     timer_events: tuple[FitTimerEvent, ...]
+    laps: tuple[FitLapEvidence, ...] = ()
     # PR 5 (training-occurrence plan, ADR-0034 "FIT structured-workout identity"):
     # `workout_steps` is the semantic definition when the Activity FIT embeds Workout /
     # Workout Step messages. `workout_step_indices` is observed execution linkage from
-    # Lap.workout_step_index (plus the legacy record-level fallback) and is intentionally
+    # FIT Lap.wkt_step_index (plus the legacy record-level fallback) and is intentionally
     # weaker evidence when the definition itself is absent.
     workout_step_indices: tuple[int, ...] = ()
     workout_name: str | None = None
@@ -129,6 +147,7 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
     lap_average_heart_rate_bpm: list[float] = []
     time_in_hr_zone_seconds: list[float] = []
     timer_events: list[FitTimerEvent] = []
+    laps: list[FitLapEvidence] = []
     average_heart_rate_bpm: float | None = None
     session_count = 0
     workout_step_indices: list[int] = []
@@ -180,18 +199,19 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                     )
                 elif name == "record":
                     _guard_capacity(records, _MAX_RECORD_SAMPLES, "record sample")
+                    record_step_index = _integer(_value(message, "workout_step"))
                     records.append(
                         FitRecordSample(
                             timestamp=_timestamp(_value(message, "timestamp")),
                             heart_rate_bpm=_number(_value(message, "heart_rate")),
                             cadence_rpm=_number(_value(message, "cadence")),
                             power_watts=_number(_value(message, "power")),
+                            workout_step_index=record_step_index,
                         )
                     )
-                    # Retain the pre-PR hardening record-level field as a compatibility
-                    # fallback for files/devices exposing it, but do not treat it as a
-                    # semantic workout definition.
-                    remember_workout_step_index(_integer(_value(message, "workout_step")))
+                    # Retain the record-level field as compatibility execution linkage.
+                    # FIT Lap.wkt_step_index remains the stronger performed-step anchor.
+                    remember_workout_step_index(record_step_index)
                 elif name == "event":
                     event = _value(message, "event")
                     if event == "timer" or event == 0:
@@ -257,10 +277,29 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                             "lap HR summary",
                         )
                         lap_average_heart_rate_bpm.append(average)
-                    # FIT Activity files typically associate each completed workout step
-                    # with a Lap via workout_step_index. This is execution linkage, not the
-                    # definition itself, so it only backs the fallback fingerprint path.
-                    remember_workout_step_index(_integer(_value(message, "workout_step_index")))
+                    # A structured workout normally writes one Lap per completed step.
+                    # Keep only compact Lap metadata transiently so deterministic response
+                    # extraction can bind performed samples to the semantic step definition.
+                    lap_step_index = _integer(_value(message, "wkt_step_index"))
+                    remember_workout_step_index(lap_step_index)
+                    _guard_capacity(laps, _MAX_LAP_SUMMARIES, "lap evidence")
+                    duration_seconds = _number(_value(message, "total_timer_time"))
+                    if duration_seconds is None:
+                        duration_seconds = _number(_value(message, "total_elapsed_time"))
+                    laps.append(
+                        FitLapEvidence(
+                            message_index=_integer(_value(message, "message_index")),
+                            start_time=_timestamp(_value(message, "start_time")),
+                            timestamp=_timestamp(_value(message, "timestamp")),
+                            duration_seconds=duration_seconds,
+                            workout_step_index=lap_step_index,
+                            average_power_watts=_number(_value(message, "avg_power")),
+                            average_hr_bpm=average,
+                            max_hr_bpm=_number(_value(message, "max_heart_rate")),
+                            average_cadence_rpm=_number(_value(message, "avg_cadence")),
+                            max_cadence_rpm=_number(_value(message, "max_cadence")),
+                        )
+                    )
                 elif name == "time_in_zone" and session_count <= 1 and not time_in_hr_zone_seconds:
                     # FIT time-in-zone is an array and can be scoped to session/lap via
                     # reference_mesg/reference_index. Only session-scoped data is a safe
@@ -290,6 +329,7 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
         lap_average_heart_rate_bpm=tuple(lap_average_heart_rate_bpm),
         time_in_hr_zone_seconds=tuple(time_in_hr_zone_seconds),
         timer_events=tuple(timer_events),
+        laps=tuple(laps),
         workout_step_indices=observed_step_indices,
         workout_name=workout_name,
         workout_steps=semantic_workout_steps,

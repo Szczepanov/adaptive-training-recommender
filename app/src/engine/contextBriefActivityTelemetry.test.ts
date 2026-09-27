@@ -66,6 +66,41 @@ describe('renderContextBriefActivityTelemetry', () => {
         expect(text).toContain('| 2 | 5:00 | 330 W | 162 bpm |');
     });
 
+
+
+    it('renders bounded multi-resolution provenance and semantic segments in diagnostic mode', () => {
+        const text = renderContextBriefActivityTelemetry([
+            activity({
+                activityResponse: {
+                    derivationVersion: 'multi-resolution-v1',
+                    sourceResolution: { powerSeconds: 1, hrSeconds: 1, cadenceSeconds: 2 },
+                    segmentCountTotal: 1,
+                    segmentsTruncated: false,
+                    powerDurationPeaks: [
+                        { durationSeconds: 5, powerWatts: 710, confidence: 'high', activityHalf: 'first' },
+                        { durationSeconds: 60, powerWatts: 320, confidence: 'high' },
+                    ],
+                    segments: [{
+                        segmentIndex: 1,
+                        segmentType: 'sprint',
+                        identitySource: 'fit_workout_step',
+                        durationSeconds: 10,
+                        prescribedTarget: { kind: 'power_watts', value: 700 },
+                        averagePowerWatts: 680,
+                        peak5sPowerWatts: 710,
+                        maxCadenceRpm: 122,
+                        evidenceConfidence: 'high',
+                    }],
+                },
+            }),
+        ]);
+
+        expect(text).toContain('Source resolution: power ~1 s · HR ~1 s · cadence ~2 s');
+        expect(text).toContain('Power-duration peaks: 5s 710 W');
+        expect(text).toContain('| 1 | sprint | fit_workout_step | 0:10 | 700 W |');
+        expect(text).not.toContain('raw sample');
+    });
+
     it('renders partial telemetry without inventing missing power data', () => {
         const text = renderContextBriefActivityTelemetry([
             activity({

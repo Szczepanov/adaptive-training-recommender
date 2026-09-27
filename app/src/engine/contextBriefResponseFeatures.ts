@@ -1,4 +1,4 @@
-import type { ActivityLapSummary, ActivityStimulusDomain, NormalizedGarminActivity } from './models';
+import type { ActivityLapSummary, ActivityPrescribedTarget, ActivitySegmentSummary, ActivityStimulusDomain, NormalizedGarminActivity } from './models';
 import { normalizeModality } from './performedTrainingFacts';
 import { getHrUseAuthority, type HrAuthorityReason, type HrUseCase } from './activityHrFidelity';
 
@@ -47,7 +47,28 @@ export interface WorkInterval {
     durationSeconds: number;
     powerWatts: number;
     hrBpm?: number;
+    endHrBpm?: number;
+    lastThirdHrBpm?: number;
+    peak5sPowerWatts?: number;
+    peak10sPowerWatts?: number;
+    maxCadenceRpm?: number;
+    firstThirdPowerWatts?: number;
+    middleThirdPowerWatts?: number;
+    lastThirdPowerWatts?: number;
+    prescribedTarget?: ActivityPrescribedTarget;
+    identitySource?: ActivitySegmentSummary['identitySource'];
 }
+
+export type SprintRepetition =
+    | {
+        state: 'available';
+        sprints: WorkInterval[];
+        lastToBestPct: number;
+        meanPowerWatts: number;
+        meanPeak5sWatts?: number;
+        pattern: 'repeatable' | 'late_fade';
+    }
+    | Insufficient;
 
 export type IntervalRepetition =
     | {
@@ -134,6 +155,71 @@ function isCycling(activity: NormalizedGarminActivity): boolean {
     return normalizeModality(activity.type) === 'Cycling';
 }
 
+type SemanticSelection = { state: 'selected'; segments: ActivitySegmentSummary[] } | Insufficient;
+
+function semanticSegments(
+    activity: NormalizedGarminActivity,
+    segmentType: 'work' | 'sprint',
+): SemanticSelection | null {
+    const response = activity.activityResponse;
+    if (!response) return null;
+    const structured = response.segments
+        .filter(segment =>
+            segment.segmentType === segmentType
+            && (segment.identitySource === 'reconciled_workout_step' || segment.identitySource === 'fit_workout_step'))
+        .sort((a, b) => a.segmentIndex - b.segmentIndex);
+    if (structured.length === 0) return null;
+    if (response.segmentsTruncated) {
+        return { state: 'insufficient_evidence', reason: 'semantic segment list was truncated; repeatability not judged' };
+    }
+    if (structured.some(segment => segment.averagePowerWatts === undefined)) {
+        return { state: 'insufficient_evidence', reason: 'semantic work segment lacks performed power' };
+    }
+    return { state: 'selected', segments: structured };
+}
+
+function workIntervalFromSegment(
+    segment: ActivitySegmentSummary,
+    hr: HrEvidence,
+): WorkInterval {
+    return {
+        durationSeconds: segment.durationSeconds,
+        powerWatts: segment.averagePowerWatts as number,
+        ...(!hr.withheld && segment.averageHrBpm !== undefined ? { hrBpm: segment.averageHrBpm } : {}),
+        ...(!hr.withheld && segment.endHrBpm !== undefined ? { endHrBpm: segment.endHrBpm } : {}),
+        ...(!hr.withheld && segment.lastThirdHrBpm !== undefined ? { lastThirdHrBpm: segment.lastThirdHrBpm } : {}),
+        ...(segment.peak5sPowerWatts !== undefined ? { peak5sPowerWatts: segment.peak5sPowerWatts } : {}),
+        ...(segment.peak10sPowerWatts !== undefined ? { peak10sPowerWatts: segment.peak10sPowerWatts } : {}),
+        ...(segment.maxCadenceRpm !== undefined ? { maxCadenceRpm: segment.maxCadenceRpm } : {}),
+        ...(segment.firstThirdPowerWatts !== undefined ? { firstThirdPowerWatts: segment.firstThirdPowerWatts } : {}),
+        ...(segment.middleThirdPowerWatts !== undefined ? { middleThirdPowerWatts: segment.middleThirdPowerWatts } : {}),
+        ...(segment.lastThirdPowerWatts !== undefined ? { lastThirdPowerWatts: segment.lastThirdPowerWatts } : {}),
+        ...(segment.prescribedTarget ? { prescribedTarget: segment.prescribedTarget } : {}),
+        identitySource: segment.identitySource,
+    };
+}
+
+function summarizeIntervals(intervals: WorkInterval[], hrNote: string | null): IntervalRepetition {
+    if (intervals.length < 2) return { state: 'insufficient_evidence', reason: 'fewer than two work intervals available' };
+    const powers = intervals.map(item => item.powerWatts);
+    const first = powers[0];
+    const last = powers[powers.length - 1];
+    const mean = powers.reduce((sum, value) => sum + value, 0) / powers.length;
+    const firstToLastPct = ((last - first) / first) * 100;
+    const secondHalf = powers.slice(Math.ceil(powers.length / 2));
+    const pattern = secondHalf.some(value => value < first * INTERVAL_COLLAPSE_RATIO)
+        ? 'late_collapse'
+        : firstToLastPct < -INTERVAL_FADE_PCT ? 'late_fade' : 'repeatable';
+    return {
+        state: 'available',
+        intervals,
+        firstToLastPct: round(firstToLastPct, 1),
+        spreadPct: round(((Math.max(...powers) - Math.min(...powers)) / mean) * 100, 1),
+        pattern,
+        hrNote,
+    };
+}
+
 type ProtocolSelection = { state: 'selected'; laps: ActivityLapSummary[] } | Insufficient;
 
 /** Protocol structure first, power second: the first qualifying work lap fixes the protocol
@@ -169,50 +255,79 @@ function selectProtocolLaps(activity: NormalizedGarminActivity): ProtocolSelecti
     return { state: 'selected', laps: protocol };
 }
 
-/** Structured-interval repeatability from lap power. Eligible only for cycling sessions
- * the engine classified as a structured stimulus, or that carry a device
- * structured-workout fingerprint. */
+/** Structured-interval repeatability. Issue #850 gives executed workout-step
+ * semantics first authority; the older >=120 s relative-power lap heuristic is retained
+ * only as a backward-compatible fallback for legacy records without semantic segments. */
 export function deriveIntervalRepetition(activity: NormalizedGarminActivity): IntervalRepetition {
     if (!isCycling(activity)) return { state: 'insufficient_evidence', reason: 'not a cycling session' };
+    const hr = hrEvidence(activity, 'INTERVAL_RESPONSE');
+    const semantic = semanticSegments(activity, 'work');
+    if (semantic) {
+        if (semantic.state !== 'selected') return semantic;
+        return summarizeIntervals(
+            semantic.segments.map(segment => workIntervalFromSegment(segment, hr)),
+            hr.note,
+        );
+    }
+
     const domain = stimulusDomainOf(activity);
-    if (!activity.fitWorkoutFingerprint && !STRUCTURED_DOMAINS.has(domain)) {
-        return { state: 'insufficient_evidence', reason: `stimulus classified ${domain} without a structured-workout fingerprint` };
+    // A fingerprint proves only that some workout structure existed; without executed
+    // semantic step linkage it cannot turn race/auto-laps into interval identity.
+    if (!STRUCTURED_DOMAINS.has(domain)) {
+        return { state: 'insufficient_evidence', reason: `stimulus classified ${domain}; no executed structured-workout segments` };
     }
     const selection = selectProtocolLaps(activity);
     if (selection.state !== 'selected') return selection;
-    const hr = hrEvidence(activity, 'INTERVAL_RESPONSE');
-    const intervals: WorkInterval[] = selection.laps.map(lap => ({
-        durationSeconds: lap.durationSeconds,
-        powerWatts: lap.averagePowerWatts as number,
-        ...(!hr.withheld && lap.averageHrBpm !== undefined ? { hrBpm: lap.averageHrBpm } : {}),
-    }));
-    const powers = intervals.map(item => item.powerWatts);
-    const first = powers[0];
-    const last = powers[powers.length - 1];
-    const mean = powers.reduce((sum, value) => sum + value, 0) / powers.length;
-    const firstToLastPct = ((last - first) / first) * 100;
-    const secondHalf = powers.slice(Math.ceil(powers.length / 2));
-    const pattern = secondHalf.some(value => value < first * INTERVAL_COLLAPSE_RATIO)
-        ? 'late_collapse'
-        : firstToLastPct < -INTERVAL_FADE_PCT ? 'late_fade' : 'repeatable';
+    return summarizeIntervals(
+        selection.laps.map(lap => ({
+            durationSeconds: lap.durationSeconds,
+            powerWatts: lap.averagePowerWatts as number,
+            ...(!hr.withheld && lap.averageHrBpm !== undefined ? { hrBpm: lap.averageHrBpm } : {}),
+            identitySource: 'manual_lap' as const,
+        })),
+        hr.note,
+    );
+}
+
+/** Repeated short efforts use semantic workout-step identity rather than the long-interval
+ * fallback. HR is intentionally not part of sprint-quality classification. */
+export function deriveSprintRepetition(activity: NormalizedGarminActivity): SprintRepetition {
+    if (!isCycling(activity)) return { state: 'insufficient_evidence', reason: 'not a cycling session' };
+    const semantic = semanticSegments(activity, 'sprint');
+    if (!semantic) return { state: 'insufficient_evidence', reason: 'no executed semantic sprint segments' };
+    if (semantic.state !== 'selected') return semantic;
+    if (semantic.segments.length < 2) return { state: 'insufficient_evidence', reason: 'fewer than two semantic sprint segments' };
+    const sprints = semantic.segments.map(segment =>
+        workIntervalFromSegment(segment, { withheld: true, observational: true, note: null }));
+    const powers = sprints.map(item => item.powerWatts);
+    const best = Math.max(...powers);
+    const lastToBestPct = ((powers[powers.length - 1] - best) / best) * 100;
+    const meanPeak5 = sprints.every(item => item.peak5sPowerWatts !== undefined)
+        ? sprints.reduce((sum, item) => sum + (item.peak5sPowerWatts as number), 0) / sprints.length
+        : undefined;
     return {
         state: 'available',
-        intervals,
-        firstToLastPct: round(firstToLastPct, 1),
-        spreadPct: round(((Math.max(...powers) - Math.min(...powers)) / mean) * 100, 1),
-        pattern,
-        hrNote: hr.note,
+        sprints,
+        lastToBestPct: round(lastToBestPct, 1),
+        meanPowerWatts: round(powers.reduce((sum, value) => sum + value, 0) / powers.length, 1),
+        ...(meanPeak5 === undefined ? {} : { meanPeak5sWatts: round(meanPeak5, 1) }),
+        pattern: lastToBestPct < -INTERVAL_FADE_PCT ? 'late_fade' : 'repeatable',
     };
 }
 
-/** Reasons a session is not a steady, power+HR session; empty when it is one. */
-function steadyIneligibility(activity: NormalizedGarminActivity): string[] {
+function steadyStructureIneligibility(activity: NormalizedGarminActivity): string[] {
     const reasons: string[] = [];
     if (!isCycling(activity)) reasons.push('not a cycling session');
     const domain = stimulusDomainOf(activity);
     if (!STEADY_DOMAINS.has(domain)) reasons.push(`stimulus classified ${domain}, not steady endurance`);
     if (activity.variabilityIndex === undefined) reasons.push('variability index not reported');
     else if (activity.variabilityIndex > STEADY_MAX_VARIABILITY_INDEX) reasons.push(`variable power (VI ${round(activity.variabilityIndex, 2)})`);
+    return reasons;
+}
+
+/** Reasons a session is not a steady, session-summary power+HR comparison candidate. */
+function steadyIneligibility(activity: NormalizedGarminActivity): string[] {
+    const reasons = steadyStructureIneligibility(activity);
     if (activity.normalizedPower === undefined) reasons.push('no power recorded');
     if (activity.averageHr === null) reasons.push('no HR recorded');
     else if (hrEvidence(activity, 'AEROBIC_DECOUPLING').withheld) reasons.push('HR withheld by the HR authority');
@@ -230,10 +345,31 @@ function halfEfficiency(items: readonly ActivityLapSummary[]): number {
  * steady sessions with balanced halves: intervals and variable power make a lap-based drift
  * misleading. Stops inside a lap are not detected (laps carry no moving-time split). */
 export function deriveDecoupling(activity: NormalizedGarminActivity): Decoupling {
-    const reasons = steadyIneligibility(activity).filter(reason => reason !== 'no power recorded');
+    const reasons = steadyStructureIneligibility(activity);
+    const hr = hrEvidence(activity, 'AEROBIC_DECOUPLING');
+    if (hr.withheld) reasons.push('HR withheld by the HR authority');
     if (reasons.length > 0) return { state: 'insufficient_evidence', reason: reasons.join('; ') };
     if ((activity.durationMin ?? 0) < DECOUPLING_MIN_DURATION_MIN) {
         return { state: 'insufficient_evidence', reason: `shorter than ${DECOUPLING_MIN_DURATION_MIN} min` };
+    }
+
+    const native = activity.activityResponse?.steadyHalves;
+    if (
+        native?.firstPowerWatts !== undefined
+        && native.secondPowerWatts !== undefined
+        && native.firstHrBpm !== undefined
+        && native.secondHrBpm !== undefined
+        && native.firstHrBpm > 0
+        && native.secondHrBpm > 0
+    ) {
+        const first = native.firstPowerWatts / native.firstHrBpm;
+        const second = native.secondPowerWatts / native.secondHrBpm;
+        return {
+            state: 'available',
+            decouplingPct: round(((first - second) / first) * 100, 1),
+            hrNote: hr.note,
+            observational: hr.observational,
+        };
     }
     const laps = [...(activity.laps ?? [])]
         .sort((a, b) => a.lapIndex - b.lapIndex)
@@ -254,7 +390,6 @@ export function deriveDecoupling(activity: NormalizedGarminActivity): Decoupling
     }
     const first = halfEfficiency(halves[0]);
     const second = halfEfficiency(halves[1]);
-    const hr = hrEvidence(activity, 'AEROBIC_DECOUPLING');
     return { state: 'available', decouplingPct: round(((first - second) / first) * 100, 1), hrNote: hr.note, observational: hr.observational };
 }
 

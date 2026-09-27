@@ -317,6 +317,85 @@ def test_normalize_activity_maps_canonical_fields():
     assert "maxHr" not in normalized
 
 
+def test_normalize_activity_serializes_bounded_activity_response_without_raw_samples() -> None:
+    from garmin_sync.canonical import (
+        CanonicalActivityResponseTelemetry,
+        CanonicalActivitySegmentSummary,
+        CanonicalPowerDurationPeak,
+        CanonicalPrescribedTarget,
+        CanonicalSignalResolution,
+    )
+
+    activity = CanonicalActivity(
+        activity_id="999",
+        date="2026-08-05",
+        type="road_biking",
+        duration_min=60,
+        duration_seconds=3600,
+        training_effect_aerobic=3.8,
+        training_effect_anaerobic=1.2,
+        average_hr=150,
+        training_load=120.0,
+        intensity_tag="hard",
+    )
+    response = CanonicalActivityResponseTelemetry(
+        source_resolution=CanonicalSignalResolution(
+            power_seconds=1.0,
+            hr_seconds=1.0,
+            cadence_seconds=2.0,
+        ),
+        segments=(
+            CanonicalActivitySegmentSummary(
+                segment_index=1,
+                segment_type="work",
+                identity_source="fit_workout_step",
+                duration_seconds=900.0,
+                evidence_confidence="high",
+                prescribed_target=CanonicalPrescribedTarget(
+                    kind="power_watts",
+                    value=230.0,
+                ),
+                average_power_watts=228.0,
+                last_third_power_watts=224.0,
+                last_third_hr_bpm=158.0,
+            ),
+        ),
+        power_duration_peaks=(
+            CanonicalPowerDurationPeak(
+                duration_seconds=5,
+                power_watts=710.0,
+                confidence="high",
+                elapsed_before_seconds=120.0,
+                activity_half="first",
+            ),
+        ),
+        segment_count_total=1,
+    )
+
+    normalized = normalize_activity(
+        activity,
+        sync_run_id="run-response",
+        activity_response=response,
+    )
+
+    telemetry = normalized["activityResponse"]
+    assert telemetry["derivationVersion"] == "multi-resolution-v1"
+    assert telemetry["sourceResolution"] == {
+        "powerSeconds": 1.0,
+        "hrSeconds": 1.0,
+        "cadenceSeconds": 2.0,
+    }
+    assert telemetry["segments"][0]["prescribedTarget"] == {
+        "kind": "power_watts",
+        "value": 230.0,
+    }
+    assert telemetry["segments"][0]["averagePowerWatts"] == 228.0
+    assert telemetry["segments"][0]["lastThirdHrBpm"] == 158.0
+    assert telemetry["powerDurationPeaks"][0]["durationSeconds"] == 5
+    assert "records" not in telemetry
+    assert "samples" not in telemetry
+
+
 def test_normalize_activity_maps_max_hr_when_present() -> None:
     activity = CanonicalActivity(
         activity_id="999",
