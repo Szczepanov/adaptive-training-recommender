@@ -103,6 +103,33 @@ describe('Coach Preferences progressive disclosure (#623)', () => {
     expectDisclosure(html, 'training-plan-title', 'Training Plan');
   });
 
+  it('offers a default-off broad-athleticism opt-in that is independent of priorities (#805)', () => {
+    const off = renderToStaticMarkup(
+      <TrainingPlanSection
+        trainingIntentProfile={buildTrainingIntentProfile()}
+        updateTrainingIntentProfile={() => undefined}
+        toggleTrainingPriority={() => undefined}
+        moveTrainingPriority={() => undefined}
+        updateWeeklyCommitment={() => undefined}
+      />,
+    );
+    expect(off).toContain('Keep broad athletic skills: sprinting, braking, change of direction, ball skill');
+    expect(off).toMatch(/<input type="checkbox" aria-describedby="capability-maintenance-desc"\/>/);
+    const on = renderToStaticMarkup(
+      <TrainingPlanSection
+        trainingIntentProfile={{
+          ...buildTrainingIntentProfile(),
+          capabilityMaintenance: { enabled: true, capabilities: ['sport_skill'] },
+        }}
+        updateTrainingIntentProfile={() => undefined}
+        toggleTrainingPriority={() => undefined}
+        moveTrainingPriority={() => undefined}
+        updateWeeklyCommitment={() => undefined}
+      />,
+    );
+    expect(on).toMatch(/<input type="checkbox" aria-describedby="capability-maintenance-desc" checked=""\/>/);
+  });
+
   it('opens Unavailable Training Types by default while its soft-preference siblings stay collapsed', () => {
     const html = renderToStaticMarkup(
       <ModalitySections preferences={buildPreferences()} {...noopModalityHandlers} />,

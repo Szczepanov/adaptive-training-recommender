@@ -92,7 +92,22 @@ The current technical progressions are deliberately conservative:
 
 Technical templates are not placed in the default green-day hard-session pool. They are selected when the athlete explicitly requests the matching modality, preventing a coordination session from being substituted randomly for a primary endurance or strength objective.
 
-Field Maintenance and the automatic Field technical/Sprint Mechanics templates declare `requiresExplicitModalityPreference`, so the intent-aware optimizer admits them only when the athlete explicitly prefers Field; this is specialized catalog opt-in metadata rather than a generic safety restriction, and these sessions are not fallbacks for other training preferences or members of the readiness-only green-day pool. Field Maintenance's catalogue spacing rule (two days after hard lower-body work) cannot be represented by that path's template filter, so this avoids suggesting high-impact field work without its required spacing check.
+Field Maintenance and the automatic Field technical/Sprint Mechanics templates declare `requiresExplicitModalityPreference`, so the intent-aware optimizer admits them only when the athlete explicitly prefers Field; this is specialized catalog opt-in metadata rather than a generic safety restriction, and these sessions are not fallbacks for other training preferences or members of the readiness-only green-day pool. Field Maintenance's catalogue spacing rule (two days after hard lower-body work) cannot be represented by that path's template filter, so this avoids suggesting high-impact field work without its required spacing check. The one exception is #805 capability maintenance: an athlete's explicit broad-athleticism opt-in may admit an exact capability identity on a date where that capability is owed (see `docs/architecture/recommendation-engine.md`). An unavailable Field modality is always a hard exclusion.
+
+### Athletic-capability identities (#805)
+
+`workouts/athleticCapability.ts` owns which authored field workouts credit which sport-neutral capability, per variant. A variant earns a capability only if it retains every defining step:
+
+| Workout | Capability | Defining steps | Qualifying variants |
+|---|---|---|---|
+| `field_sprint_mechanics_foundation_01` | `linear_speed_skill` | `a_march`, `falling_starts` | full, reduced, return_to_training |
+| `field_acceleration_braking_01` | `linear_speed_skill` | `accel_20m` | full, reduced, return_to_training |
+| `field_acceleration_braking_01` | `acceleration_deceleration` | `accel_20m`, `braking_sticks` | full, reduced |
+| `field_controlled_maintenance_01` | `acceleration_deceleration` | `accels`, `decelerations` | full, reduced |
+| `field_controlled_maintenance_01` | `multidirectional_change_of_direction` | `cuts` | full, reduced |
+| `field_controlled_maintenance_01` | `sport_skill` | `ball_skill` | full, reduced, return_to_training |
+
+Every mapped workout must be a #804 mechanical `maintenance_candidate`; its stage comes from `mechanicalExposure.ts`. Running, walk-run and reactive plyometric identities are deliberately unmapped. A future racket, court or field-sport identity adds rows, not capability keys. The 7–10-day note on `field_controlled_maintenance_01` describes the legacy football/event-block context only; general evergreen cadence belongs to `policy.evergreen.athletic_capability_maintenance_v1`.
 
 ## Generic session families
 

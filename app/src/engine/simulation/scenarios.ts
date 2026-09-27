@@ -263,6 +263,73 @@ function aerobicFloorScenario(id: string, label: string, historyRideMinutes: num
     };
 }
 
+/** Issue #805 fixture: an established cycling-primary hybrid who is already stage-4 ready
+ * (two stage-3 field sessions inside the #804 re-entry window) and last did controlled field
+ * work 15 days before START_DATE. */
+function capabilityReadyHistory(): CompletedExposure[] {
+    const cost = { systemic: 0.3, cardiovascular: 0.4, lowerBody: 0.3, upperBody: 0, impactTissue: 0.2, neuromuscular: 0.2 };
+    const field = (daysBefore: number, workoutId: string, templateId: string): CompletedExposure => {
+        const date = addDaysToLocalDateString(START_DATE, -daysBefore);
+        return {
+            occurrenceKey: `scenario:capability:${workoutId}:${date}`, date, templateId, workoutId,
+            modality: 'Field', category: 'Technical Skill', stimulusConfidence: 'exact', costProfile: cost,
+            trainingRecordLike: { type: 'Field Technical Skill', duration_min: 35, training_effect: 2, intensity_tag: 'moderate' },
+        };
+    };
+    return [
+        ...zone2RideHistory(75, 9),
+        field(15, 'field_controlled_maintenance_01', 'field_maint_01'),
+        field(10, 'field_acceleration_braking_01', 'field_technical_02'),
+        field(5, 'field_acceleration_braking_01', 'field_technical_02'),
+    ].sort((left, right) => left.date.localeCompare(right.date));
+}
+
+/** An explicit normal lower-body check-in every day of the run, so #804 progression and
+ * the #805 cadence are never held on missing follow-up evidence. */
+function dailyNormalTissueCheckins(fromDaysBefore: number, weeks: number): CheckinRecord[] {
+    return Array.from({ length: fromDaysBefore + weeks * 7 + 1 }, (_, index) => {
+        const date = addDaysToLocalDateString(START_DATE, index - fromDaysBefore);
+        return {
+            date,
+            checkin: {
+                userId: 'sim-user', date, readiness: 7, sleepQuality: 7, fatigue: 3, soreness: 2, mentalStress: 3, motivation: 7,
+                painOrInjury: false, illnessSymptoms: false, unusuallyLimitedTime: false, alreadyTrainedToday: false,
+                tissueResponses: { knee: { region: 'knee', morningState: 'normal', nextMorningReaction: 'normal' } },
+                availability: { timeAvailableMin: null, preferredModalityToday: null, indoorOnly: false },
+                notes: null, submittedAt: `${date}T07:00:00.000Z`, createdAt: `${date}T07:00:00.000Z`, updatedAt: `${date}T07:00:00.000Z`,
+                dataQuality: { isComplete: true, missingFields: [] }, schemaVersion: 1,
+            },
+        };
+    });
+}
+
+function capabilityMaintenanceScenario(optedIn: boolean): AthleteScenario {
+    const weeks = 8;
+    return {
+        id: optedIn ? 'capability_maintenance_opted_in_8wk' : 'capability_maintenance_opted_out_8wk',
+        label: optedIn
+            ? 'Cycling-primary hybrid with broad-athleticism opt-in, 8 weeks (#805)'
+            : 'Cycling-primary hybrid without broad-athleticism opt-in, 8 weeks (#805)',
+        description: optedIn
+            ? 'Stage-4-ready endurance+strength cyclist who opted in to capability maintenance. Controlled field work should recur roughly every 14 days on the existing mechanical support slot, never earlier than 14 days after the prior qualifying session and without adding sessions.'
+            : 'Identical athlete and history without the opt-in: field templates stay behind the explicit-preference gate, so no field sport is prescribed.',
+        context: context({ indoor_bike: true, outdoor_bike: true, free_weights: true }, ['Cycling', 'Strength']),
+        event: null,
+        trainingIntentProfile: {
+            ...evergreenProfile(['endurance', 'strength_muscle'], { minSessions: 3, targetSessions: 4, maxSessions: 5 }),
+            ...(optedIn ? { capabilityMaintenance: {
+                enabled: true,
+                capabilities: ['linear_speed_skill', 'acceleration_deceleration', 'multidirectional_change_of_direction', 'sport_skill'],
+            } } : {}),
+        },
+        preferences: { ...preferences(60, 120), preferredModalities: ['Cycling', 'Strength'], deprioritizedModalities: ['Running'] },
+        initialHistory: capabilityReadyHistory(),
+        mechanicalCheckinHistory: dailyNormalTissueCheckins(28, weeks),
+        startDate: START_DATE, weeks, tags: ['capability-maintenance', 'mechanical', 'multisport'],
+        readinessForWeek: () => stableReadiness({ readiness: 7, fatigue: 3, soreness: 3 }),
+    };
+}
+
 export const SCENARIOS: AthleteScenario[] = [
     {
         id: 'evergreen_health_two_sessions',
@@ -734,4 +801,7 @@ export const SCENARIOS: AthleteScenario[] = [
         'Four ~30-minute Zone 2 rides in the prior 28 days keep the aerobic_volume floor at the 30-minute catalog minimum, so capped rides still earn weekly aerobic coverage.'),
     aerobicFloorScenario('aerobic_floor_established_35min_cap', 'Established cyclist under a 35-minute cap (#757)', 60,
         'Eight 60-minute Zone 2 rides raise the athlete floor to 45 minutes. Under the same 35-minute cap no candidate reaches it: the aerobic role is reported as a packing shortfall, and a 30-minute walk does not claim it in place of a capped ride.'),
+    // Issue #805: identical athlete, history and check-ins; only the explicit opt-in differs.
+    capabilityMaintenanceScenario(true),
+    capabilityMaintenanceScenario(false),
 ];

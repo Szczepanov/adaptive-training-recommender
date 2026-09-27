@@ -28,7 +28,9 @@ import {
     buildCoverageState,
     coverageKeysForTemplate,
     coverageNeedTierForTemplate,
+    hasCapabilityConsent,
     resolveCoverageHistory,
+    workoutIdForTemplateId,
     supportsUnmetPrimaryStrengthAsSymptomCompatibleFallback,
     type CoverageState,
 } from './coverage';
@@ -1230,8 +1232,12 @@ export function rankCandidates(
         // checked before, and independently of, every preference or consent exemption, so
         // no override can re-admit an unavailable modality.
         if (unavailableModalities.has(lowerMod)) excludedReasons.push('UNAVAILABLE_MODALITY');
+        // Issue #805 (D-E): the capability opt-in satisfies the explicit-preference gate only
+        // for an exact capability identity consented for this date. It never promotes the
+        // modality into general preferences, and UNAVAILABLE_MODALITY above still applies.
         if (template.requiresExplicitModalityPreference
-            && !preferences.preferredModalities.some(modality => matchesPreferredModality(modality, template.modality))) {
+            && !preferences.preferredModalities.some(modality => matchesPreferredModality(modality, template.modality))
+            && !hasCapabilityConsent(options.coverageState, workoutIdForTemplateId(template.id))) {
             excludedReasons.push('EXPLICIT_MODALITY_PREFERENCE_REQUIRED');
         }
         if (injuryConstraints.some(inj => inj.toLowerCase() === lowerMod || inj.toLowerCase().includes(lowerMod))) {

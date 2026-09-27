@@ -2,13 +2,38 @@
 
 | | |
 |---|---|
-| **Status** | `Approved` — decisions D-A to D-I resolved on 27 September 2026; Phase 0A is delivered by PR #854, while Phase 0B still blocks capability-consent integration |
+| **Status** | `In review` — Phase 0B and Phases 1–8 delivered by the #805 implementation PR; Phase 0A was delivered separately by PR #854 |
 | **Source** | [issue #805](https://github.com/Szczepanov/adaptive-training-recommender/issues/805) |
-| **Blocked by** | Phase 0B (F11 unavailable-modality hard-exclusion repair) before capability-consent integration. Phase 0A (#804 wiring gaps F1–F3) is satisfied by PR #854; schema/mapping/evaluator work remains startable. |
+| **Blocked by** | Nothing. |
 | **Unlocks** | Retires `cod_lateral` from the context-brief ledger's unmodelled list; first authoritative cadence for ledger `overdue` |
 | **Baseline** | Reviewed against `main` @ `305d3c4e` (#851 merged). The implementation must use the then-current `POLICY_VERSION` after prerequisite PRs land. |
 
 All symbols below exist on the baseline unless marked **new**.
+
+## Delivery record
+
+The findings (F1–F15) and phase text below are the approved design as written before implementation; they are
+historical, not open work. What shipped, and where it deviated:
+
+- **Phase 0A** (check-ins, wider mechanical history, default stage target, simulation seam) shipped in PR #854.
+  #805 supplies only the `targetStage` hook it reserved (D-C), raised to the highest owed capability stage.
+- **Phase 0B** shipped here: `rankCandidates` rejects unavailable modalities with `UNAVAILABLE_MODALITY` before any
+  preference or consent exemption.
+- **Deviation — support occurrence.** An `optional` #804 requirement has `minimumSessions: 0`, so for the
+  cycling-primary persona no support occurrence existed to reuse (the opted-out 8-week run contains zero mechanical
+  sessions). While a capability placement exists, the single `mechanical_exposure` requirement therefore carries a
+  support-tier minimum of one — the shape a `target` mechanical requirement already had — so the allocator places
+  it only around primary roles. No requirement, objective or session is added; the 8-week simulation shows fewer
+  realized training days opted-in than opted-out.
+- **Deviation — date-aware placement.** Placement is resolved per planning date in `coverage.ts`
+  `buildCoverageState` (narrowed allow-list plus exact-identity consent while a placement is active and unfulfilled)
+  rather than by a new constraint inside `weeklyDosePacking.ts`, which never selects the mechanical support date.
+- **Context brief.** The ledger consumes a resolved `CapabilityMaintenanceResult` when supplied, but
+  `contextBriefService.ts` does not yet compute one, so the exported brief reports that no authoritative overdue
+  status is available. Surfacing the planner's result in the brief is follow-up work.
+- **Persona judge.** `persona_cycling_hybrid_broad_athleticism` was added; the LLM persona-judge baseline was not
+  re-run in this change.
+
 
 ## Goal
 

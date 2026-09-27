@@ -7,6 +7,7 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CoverageCreditFact, PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import type { CompletedExposure } from './trainingHistory';
 import { aerobicVolumeFloorForWorkout, type AerobicVolumeFloor } from './aerobicVolumeFloor';
+import { activeCapabilityPlacements, type CapabilityPlacement } from './capabilityMaintenance';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { grantsPowerExposureCredit } from '../workouts/powerExposure';
@@ -73,6 +74,12 @@ export interface WeeklyCoverageRequirement {
     /** Capability-owned candidate allow-list. `undefined` means unrestricted; an empty
      * list is an explicit fail-closed block for this planning window. */
     eligibleWorkoutIds?: readonly string[];
+    /** Issue #805: the plan's capability placements, as authored for the whole horizon. */
+    capabilityPlacements?: readonly CapabilityPlacement[];
+    /** Issue #805 (D-E): exact capability identities the athlete's opt-in consents to on this
+     * state's `asOfDate` -- only placements already due and not yet fulfilled. The optimizer
+     * may exempt exactly these from `requiresExplicitModalityPreference`; nothing else. */
+    capabilityConsentWorkoutIds?: readonly string[];
 }
 
 export interface CoverageState {
@@ -580,6 +587,7 @@ export function buildCoverageState(
                     ...(definition.reservationTier === 'support' ? { reservationTier: 'support' as const } : {}),
                     ...(definition.minimumDurationMinutes !== undefined ? { minimumDurationMinutes: definition.minimumDurationMinutes } : {}),
                     ...(definition.exactWorkoutIds?.length ? { exactWorkoutIds: definition.exactWorkoutIds } : {}),
+                    ...(definition.capabilityPlacements?.length ? { capabilityPlacements: definition.capabilityPlacements } : {}),
                 });
             }
         });
@@ -636,9 +644,40 @@ export function buildCoverageState(
         activeBlockId: block.id,
         coverageSetId: activeDescriptor.id,
         descriptor: activeDescriptor,
-        requirements: Array.from(requirementsByKey.values()),
+        requirements: Array.from(requirementsByKey.values()).map(requirement => withActiveCapabilityPlacements(requirement, asOfDate)),
         aerobicVolumeFloor,
     };
+}
+
+/**
+ * Issue #805 (F12): resolve capability placements for one planning date. Before a placement's
+ * not-before date, or once a qualifying touch has been credited on/after it, the #804 allow-list
+ * is unchanged and no consent exists. While a placement is active, the support requirement is
+ * narrowed to that placement's exact identities -- a date-aware reuse of the same occurrence,
+ * never an additional requirement, objective or session.
+ */
+function withActiveCapabilityPlacements(requirement: WeeklyCoverageRequirement, asOfDate: string): WeeklyCoverageRequirement {
+    if (!requirement.capabilityPlacements?.length) return requirement;
+    const touches = requirement.credits.map(credit => ({ date: credit.date, workoutId: credit.workoutId }));
+    const active = activeCapabilityPlacements(requirement.capabilityPlacements, asOfDate, touches);
+    if (active.length === 0) return requirement;
+    const narrowed = [...new Set(active.flatMap(placement => placement.workoutIds))]
+        .filter(workoutId => requirement.eligibleWorkoutIds === undefined || requirement.eligibleWorkoutIds.includes(workoutId))
+        .sort();
+    const consent = [...new Set(active.flatMap(placement => placement.consentWorkoutIds))]
+        .filter(workoutId => narrowed.includes(workoutId))
+        .sort();
+    return {
+        ...requirement,
+        eligibleWorkoutIds: narrowed,
+        ...(consent.length > 0 ? { capabilityConsentWorkoutIds: consent } : {}),
+    };
+}
+
+/** Issue #805 (D-E): true only for an exact capability identity consented on this state's date. */
+export function hasCapabilityConsent(state: CoverageState | null | undefined, workoutId: string | undefined): boolean {
+    if (!state || !workoutId) return false;
+    return state.requirements.some(requirement => requirement.capabilityConsentWorkoutIds?.includes(workoutId));
 }
 
 function fulfilledSessions(requirement: WeeklyCoverageRequirement): number {
@@ -759,6 +798,10 @@ export function coverageNeedTierForTemplate(
     for (const key of keys) {
         const requirement = state.requirements.find(item => item.key === key);
         if (requirement && fulfilledSessions(requirement) < requirement.targetSessions) return 2;
+        // Issue #805: an active, unfulfilled capability placement is owed even when generic
+        // #804 mechanical dose already met its weekly target -- ranking urgency only, never
+        // an extra requirement or reserved occurrence.
+        if (requirement && workoutId !== undefined && requirement.capabilityConsentWorkoutIds?.includes(workoutId)) return 2;
     }
     return 3;
 }

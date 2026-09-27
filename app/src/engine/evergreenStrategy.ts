@@ -101,6 +101,11 @@ export interface GoalOrEventContext {
     /** Current pain/injury, illness or red-flag symptoms reported for the planning day. */
     hasCurrentClinicalSymptoms?: boolean;
     phase?: PhaseWeights | null;
+    /** Issue #805 (D-A/D-B): explicit broad-athleticism opt-in. Independent of the
+     * `sport_readiness` priority; it only guarantees an optional #804 mechanical requirement
+     * exists (when #804 has not deliberately suspended it) so capability maintenance can reuse
+     * that support occurrence. It never adds a session of its own. */
+    capabilityMaintenanceEnabled?: boolean;
 }
 
 /** True when today's check-in reports a current clinical symptom (pain/injury, illness or
@@ -162,7 +167,7 @@ export function isFreshSubjectiveWithAdverseWearables(readiness: DailyReadiness 
 }
 
 export interface PolicyWarning {
-    code: 'conditional_prior_withheld' | 'power_exposure_withheld' | 'mechanical_exposure_withheld';
+    code: 'conditional_prior_withheld' | 'power_exposure_withheld' | 'mechanical_exposure_withheld' | 'capability_maintenance_unfulfilled';
     message: string;
 }
 
@@ -368,26 +373,35 @@ function mechanicalRequirement(priority: AdaptationDoseRequirement['priority']):
     };
 }
 
+/** Typed source of a deliberate #804 mechanical suspension (#805 reads it for ADR-0044 D9
+ * `deliberately_suspended` capability diagnostics). */
+export type MechanicalSuspensionSource = 'adverse_recovery' | 'clinical_symptoms' | 'event_phase' | 'mechanical_withheld';
+
 /** Why an otherwise-eligible mechanical exposure requirement is deliberately suspended, or null (#804). */
-function mechanicalWithheldReason(
+export function mechanicalSuspensionFor(
     goalOrEvent: GoalOrEventContext,
     athleteState: AthleteTrainingState,
-): string | null {
+): { source: MechanicalSuspensionSource; message: string } | null {
     const phaseName = goalOrEvent.phase?.phaseName;
-    if (goalOrEvent.isAdverseRecovery) return 'Mechanical exposure is withheld during acute adverse recovery; it is not owed as catch-up work.';
-    if (goalOrEvent.hasCurrentClinicalSymptoms) return 'Mechanical exposure is withheld while pain, injury, illness or red-flag symptoms are reported.';
-    if (phaseName === 'Peak/Taper') return 'Mechanical exposure is deliberately suspended during peak/taper; freshness takes priority.';
-    if (phaseName === 'Post-Event Recovery') return 'Mechanical exposure is deliberately suspended during post-event recovery.';
+    if (goalOrEvent.isAdverseRecovery) return { source: 'adverse_recovery', message: 'Mechanical exposure is withheld during acute adverse recovery; it is not owed as catch-up work.' };
+    if (goalOrEvent.hasCurrentClinicalSymptoms) return { source: 'clinical_symptoms', message: 'Mechanical exposure is withheld while pain, injury, illness or red-flag symptoms are reported.' };
+    if (phaseName === 'Peak/Taper') return { source: 'event_phase', message: 'Mechanical exposure is deliberately suspended during peak/taper; freshness takes priority.' };
+    if (phaseName === 'Post-Event Recovery') return { source: 'event_phase', message: 'Mechanical exposure is deliberately suspended during post-event recovery.' };
     if (athleteState.inference.dataQuality !== 'high' || athleteState.trainingAgeProxy !== 'established') {
-        return 'Mechanical exposure is withheld until sufficient, consistent recent training evidence establishes the athlete as trained.';
+        return { source: 'mechanical_withheld', message: 'Mechanical exposure is withheld until sufficient, consistent recent training evidence establishes the athlete as trained.' };
     }
     return null;
 }
 
 /** Whether an evergreen priority set can produce the #804 mechanical requirement.
  * This is the single priority-level authority used both by strategy construction and by
- * orchestration to decide whether the wider mechanical evidence streams are needed. */
-export function canEmitMechanicalRequirement(priorities: readonly TrainingPriority[]): boolean {
+ * orchestration to decide whether the wider mechanical evidence streams are needed. An
+ * explicit #805 capability-maintenance opt-in (D-B) always can, independent of priorities. */
+export function canEmitMechanicalRequirement(
+    priorities: readonly TrainingPriority[],
+    capabilityMaintenanceEnabled: boolean = false,
+): boolean {
+    if (capabilityMaintenanceEnabled) return true;
     const effectivePriorities: readonly TrainingPriority[] = priorities.length > 0
         ? priorities
         : ['balanced_performance'];
@@ -476,10 +490,12 @@ export function resolveEvidenceBackedStrategy(
     // athletes target it directly. An endurance+strength hybrid retains it as an optional
     // maintenance capability so cycling/endurance can stay primary
     // without letting foot-ground exposure disappear for months.
+    // Issue #805 (D-B): an explicit capability-maintenance opt-in guarantees at least an
+    // optional mechanical requirement so capability work can reuse #804's support occurrence.
     const directMechanicalPriority = priorities.has('sport_readiness') || priorities.has('speed_power');
-    if (canEmitMechanicalRequirement(goalOrEvent.priorities)) {
-        const withheld = mechanicalWithheldReason(goalOrEvent, athleteState);
-        if (withheld) warnings.push({ code: 'mechanical_exposure_withheld', message: withheld });
+    if (canEmitMechanicalRequirement(goalOrEvent.priorities, goalOrEvent.capabilityMaintenanceEnabled)) {
+        const withheld = mechanicalSuspensionFor(goalOrEvent, athleteState);
+        if (withheld) warnings.push({ code: 'mechanical_exposure_withheld', message: withheld.message });
         else requirements.push(mechanicalRequirement(directMechanicalPriority ? 'target' : 'optional'));
     }
     return { requirements, ...(canUseConditionalPrior ? { hardSessionCap } : {}), warnings };

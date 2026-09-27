@@ -5,7 +5,9 @@ import type { CompletedExposure } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import type { PhaseWeights } from './periodization';
 import { resolveAvailability } from './schedule';
-import { inferAthleteTrainingState, resolveEvidenceBackedStrategy } from './evergreenStrategy';
+import { inferAthleteTrainingState, mechanicalSuspensionFor, resolveEvidenceBackedStrategy, type PolicyWarning } from './evergreenStrategy';
+import { capabilityGates, capabilityTargetStage, resolveCapabilityMaintenancePlan } from './capabilityMaintenancePlanning';
+import type { CapabilityMaintenanceResult } from './capabilityMaintenance';
 import { resolveTrainingCapacity, type ResolvedAvailabilityWindow } from './trainingCapacity';
 import { EVERGREEN_PACKING_COVERAGE, packWeeklyDose, type CoverageSetDescriptor, type PackingWarning, type WeeklyBudget } from './weeklyDosePacking';
 import { buildEvergreenPlanDefinition, type PlanDefinition } from './planSchedule';
@@ -17,6 +19,7 @@ import {
     type CheckinRecord,
     type MechanicalExposureRecord,
     type MechanicalProgressionVerdict,
+    MECHANICAL_CONTINUITY_WINDOW_DAYS,
 } from './mechanicalProgression';
 import { mechanicalIdentityFor, type MechanicalStage } from '../workouts/mechanicalExposure';
 import { executableLongAerobicCeilingForWorkout, resolveWeeklyAerobicDoseEnvelope } from './weeklyAerobicDose';
@@ -27,6 +30,12 @@ export interface ResolvedEvergreenPlan {
     microcycle: MicrocycleState;
     budget: WeeklyBudget;
     knowledgeRefs: string[];
+    /** The #804 mechanical progression verdict this plan's mechanical allow-list came from. */
+    mechanicalProgression: MechanicalProgressionVerdict;
+    /** Issue #805 (D-F): capability-maintenance readout; null when the athlete has not opted in. */
+    capabilityMaintenance: CapabilityMaintenanceResult | null;
+    /** Typed strategy and capability warnings for this plan (never persisted in v1). */
+    warnings: PolicyWarning[];
 }
 
 const AEROBIC_VOLUME_ROLE_ID = 'aerobic_volume';
@@ -195,14 +204,15 @@ export function resolveEvergreenPlan(
     mechanical: EvergreenMechanicalInputs = {},
 ): ResolvedEvergreenPlan | null {
     if (planningContext.mode !== 'evergreen' || !preferences) return null;
-    const availability = Array.from({ length: Math.max(1, days) }, (_, index) => {
+    const resolvedWindows = Array.from({ length: Math.max(1, days) }, (_, index) => {
         const windowDate = addDaysToLocalDateString(date, index);
-        return {
-            date: windowDate,
-            maxTimeMinutes: resolveAvailability(windowDate, null, [...fixedActivities], context, scheduleOverlays).maxTimeMinutes,
-        };
+        const resolved = resolveAvailability(windowDate, null, [...fixedActivities], context, scheduleOverlays);
+        return { date: windowDate, maxTimeMinutes: resolved.maxTimeMinutes, environmentOverride: resolved.environmentOverride };
     });
+    const availability = resolvedWindows.map(({ date: windowDate, maxTimeMinutes }) => ({ date: windowDate, maxTimeMinutes }));
     const capacity = resolveTrainingCapacity(planningContext.profile.weeklyCommitment, preferences, availability);
+    const profile = planningContext.profile;
+    const capabilityMaintenanceEnabled = profile.capabilityMaintenance?.enabled === true;
     const stateEvidence = historySnapshot?.athleteStateEvidence;
     const athleteEvidence = stateEvidence?.exposures ?? history;
     const observedWindowDays = stateEvidence?.observedWindowDays ?? historySnapshot?.windowDays ?? 0;
@@ -216,34 +226,61 @@ export function resolveEvergreenPlan(
         trainingAgeEstablished: athleteState.trainingAgeProxy === 'established'
             && athleteState.inference.dataQuality === 'high',
     });
-    const strategy = resolveEvidenceBackedStrategy(
-        { priorities: planningContext.profile.priorities, isAdverseRecovery, hasCurrentClinicalSymptoms, phase },
-        athleteState,
-        weeklyAerobicDose,
-    );
+    const goalOrEvent = {
+        priorities: profile.priorities, isAdverseRecovery, hasCurrentClinicalSymptoms, phase, capabilityMaintenanceEnabled,
+    };
+    const strategy = resolveEvidenceBackedStrategy(goalOrEvent, athleteState, weeklyAerobicDose);
     const longAnchorEligible = planningContext.profile.priorities.some(priority =>
         priority === 'endurance' || priority === 'sport_readiness')
         && (phase.phaseName === 'Build' || phase.phaseName === 'Specificity')
         && !isAdverseRecovery
         && !hasCurrentClinicalSymptoms;
     const aerobicPacking = aerobicPackingForFloor(aerobicVolumeFloor, capacity.usableWindows, weeklyAerobicDose, longAnchorEligible);
+    // Issue #805 (D-C): an owed capability steers #804 toward its required stage; the request
+    // only ever raises the #804 default, and #804 still owns the one-stage cap and evidence.
+    // Cadence reads the widest evidence available: the 28-day athlete-state window, else the
+    // orchestration-supplied mechanical evidence (>= the 14-day interval, e.g. on the projected
+    // next-day branch), never the 7-day operational history alone.
+    const capabilityEvidence = stateEvidence
+        ? { exposures: athleteEvidence, observedWindowDays }
+        : mechanical.exposureHistory
+            ? { exposures: mechanical.exposureHistory, observedWindowDays: MECHANICAL_CONTINUITY_WINDOW_DAYS }
+            : { exposures: athleteEvidence, observedWindowDays };
+    const capabilityStage = capabilityTargetStage(profile, date, days, capabilityEvidence.exposures, capabilityEvidence.observedWindowDays);
+    const optInTargetStage = mechanical.targetStage !== undefined || capabilityStage !== undefined
+        ? Math.max(mechanical.targetStage ?? 1, capabilityStage ?? 1) as MechanicalStage
+        : undefined;
     const mechanicalProgression = resolveEvergreenMechanicalProgression(
         date,
         mechanical.exposureHistory ?? stateEvidence?.exposures ?? history,
         mechanical.checkinHistory ?? [],
         new Set(context.constraints.impliedGuardrails ?? []),
-        mechanical.targetStage,
+        optInTargetStage,
     );
     const packed = packWeeklyDose(strategy, capacity, aerobicPacking.descriptor, progressionOverrides, date);
     const budget: WeeklyBudget = aerobicPacking.shortfall
         ? { ...packed, shortfalls: [...packed.shortfalls, aerobicPacking.shortfall] }
         : packed;
+    const capability = resolveCapabilityMaintenancePlan({
+        profile,
+        mode: planningContext.mode,
+        date,
+        planningHorizonDays: Math.max(1, days),
+        exposures: capabilityEvidence.exposures,
+        observedWindowDays: capabilityEvidence.observedWindowDays,
+        mechanicalSuspension: capabilityMaintenanceEnabled ? mechanicalSuspensionFor(goalOrEvent, athleteState)?.source ?? null : null,
+        mechanicalRequirementPresent: strategy.requirements.some(requirement => requirement.adaptation === 'mechanical_exposure'),
+        mechanicalVerdict: mechanicalProgression,
+        gates: capabilityGates(context, preferences, date, resolvedWindows.map(window => window.environmentOverride)),
+        supportCapacityDates: capacity.usableWindows.map(window => window.date),
+    });
     const result = buildEvergreenPlanDefinition(
         strategy,
         capacity,
         budget,
         date,
         mechanicalProgression.eligible ? mechanicalProgression.eligibleWorkoutIds : [],
+        capability?.result.placements ?? [],
     );
     if (result.status !== 'AVAILABLE') return null;
     const qualityRolePacked = [...budget.requiredRoles, ...budget.targetRoles, ...budget.optionalRoles]
@@ -252,10 +289,14 @@ export function resolveEvergreenPlan(
         planDefinition: result.data,
         microcycle: buildMicrocycleState(phase, addDaysToLocalDateString(date, -7), [...history], null, result.data, date),
         budget,
+        mechanicalProgression,
+        capabilityMaintenance: capability?.result ?? null,
+        warnings: [...strategy.warnings, ...(capability?.warnings ?? [])],
         knowledgeRefs: [...new Set([
             ...strategy.requirements.flatMap(requirement => requirement.knowledgeRefs),
             ...(weeklyAerobicDose.source === 'athlete_history' ? [KNOWLEDGE_CLAIM_IDS.weeklyAerobicDoseEnvelopePolicy] : []),
             ...(qualityRolePacked ? [KNOWLEDGE_CLAIM_IDS.evergreenQualitySetComposition] : []),
+            ...(capability ? [KNOWLEDGE_CLAIM_IDS.athleticCapabilityMaintenancePolicy] : []),
         ])].sort(),
     };
 }

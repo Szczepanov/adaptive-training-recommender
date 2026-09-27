@@ -68,6 +68,37 @@ describe('TrainingIntentProfile persistence boundary', () => {
         });
     });
 
+    it('accepts an absent or well-formed capability-maintenance opt-in and rejects malformed ones (#805)', () => {
+        expect(validateTrainingIntentProfile(profile).isValid).toBe(true);
+        const all = ['linear_speed_skill', 'acceleration_deceleration', 'multidirectional_change_of_direction', 'sport_skill'];
+        expect(validateTrainingIntentProfile({ ...profile, capabilityMaintenance: { enabled: true, capabilities: all } }).isValid).toBe(true);
+        expect(validateTrainingIntentProfile({ ...profile, capabilityMaintenance: { enabled: false, capabilities: [] } }).isValid).toBe(true);
+        expect(validateTrainingIntentProfile({ ...profile, capabilityMaintenance: { enabled: true, capabilities: [] } }).isValid).toBe(false);
+        expect(validateTrainingIntentProfile({ ...profile, capabilityMaintenance: { enabled: true, capabilities: ['football'] } }).isValid).toBe(false);
+        expect(validateTrainingIntentProfile({ ...profile, capabilityMaintenance: { enabled: true, capabilities: ['sport_skill', 'sport_skill'] } }).isValid).toBe(false);
+        expect(validateTrainingIntentProfile({ ...profile, capabilityMaintenance: { enabled: true, capabilities: ['sport_skill'], intervalDays: 7 } }).isValid).toBe(false);
+        expect(validateTrainingIntentProfile({ ...profile, capabilityMaintenance: { enabled: 'yes', capabilities: ['sport_skill'] } }).isValid).toBe(false);
+        expect(validateTrainingIntentProfile({ ...profile, capabilityMaintenance: null }).isValid).toBe(false);
+    });
+
+    it('opts out by writing enabled: false, because a merge-write cannot delete the field (#805)', async () => {
+        firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => ({
+            ...profile, capabilityMaintenance: { enabled: true, capabilities: ['sport_skill'] },
+        }) });
+        const saved = await new TrainingIntentProfileService().upsert('u1', {
+            planningMode: 'evergreen', priorities: ['health'],
+            weeklyCommitment: { minSessions: 2, targetSessions: 3, maxSessions: 4 },
+            organizationPreference: 'auto', schemaVersion: 1,
+            capabilityMaintenance: { enabled: false, capabilities: ['sport_skill'] },
+        });
+        expect(saved.capabilityMaintenance).toEqual({ enabled: false, capabilities: ['sport_skill'] });
+        expect(firestore.setDoc).toHaveBeenCalledWith(
+            expect.anything(),
+            expect.objectContaining({ capabilityMaintenance: { enabled: false, capabilities: ['sport_skill'] } }),
+            { merge: true },
+        );
+    });
+
     it('fails closed for malformed persisted documents', async () => {
         firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ ...profile, planningMode: 'unsupported' }) });
         await expect(new TrainingIntentProfileService().getProfileState('u1')).resolves.toMatchObject({ status: 'INVALID' });

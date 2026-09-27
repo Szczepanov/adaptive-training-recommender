@@ -284,14 +284,17 @@ read-only ledgers (`contextBriefExposureLedger.ts` `deriveExposureLedger` /
 - **Status vocabulary.** `confirmed`, `planned`, `unknown`, `deliberately_suspended`
   (current settings guardrails, unexpired injuries via `resolveInjuryRestrictions`, and
   hard modality exclusions — the same sources section 1 prints) and `overdue`, which is
-  never emitted because no authoritative cadence/max-gap policy exists yet. Neuromuscular
+  emitted only for change of direction and sport skill, and only from a caller-supplied resolved #805
+  `CapabilityMaintenanceResult` (the ledger never imports the interval or recomputes a due date; without a
+  resolved result it states that no authoritative overdue status is reported). Change of direction and sport
+  skill are confirmed only by `workouts/athleticCapability.ts` `grantsAthleticCapabilityCredit` exact identities. Neuromuscular
   power (#802) consumes its canonical owner, `workouts/powerExposure.ts`
   `grantsPowerExposureCredit`: only a canonical performed fact with an exact power identity,
   a recoverable materialized `full`/`reduced` variant, and a non-readiness-modified dose
   confirms it. Unknown/legacy variants fail closed rather than being guessed as `full`
   (Garmin records and imported-plan titles cannot prove power content), and an active impact guardrail adds a note that plyometric
   power is suspended while non-impact identities remain eligible. Families still without a
-  canonical model (unilateral #803, impact/jump #804, COD #805, long aerobic anchor #806,
+  canonical model (unilateral #803, long aerobic anchor #806,
   hamstring/calf/grip) are `unknown` and are to be switched to those models' outputs as
   they land, not re-derived here. Unreadable activities, adherence,
   overrides, plan schedule or settings are stated as unknown, never as absence.
@@ -518,6 +521,52 @@ to harder stages or substituting generic exercise. Policy is owned by
 `policy.evergreen.mechanical_exposure_v1`; `biomechanics.impact.progressive_mechanical_loading` supplies only
 the narrower scientific rationale that bone and tendon adapt to mechanical loading. The registry explicitly
 documents that the exact scheduling/progression thresholds are product heuristics (ADR-0033).
+
+### Periodic athletic-capability maintenance (#805)
+
+An athlete may opt in (`TrainingIntentProfile.capabilityMaintenance`, default off, optional in Firestore and
+validated by `validationCore.ts` and `firestore.rules`) to periodic broad-athleticism maintenance. The opt-in is
+independent of the `sport_readiness` priority and never changes preferred modalities or event modality. Four
+sport-neutral capabilities exist: `linear_speed_skill`, `acceleration_deceleration`,
+`multidirectional_change_of_direction` and `sport_skill`.
+
+- **Identity.** `workouts/athleticCapability.ts` maps capability x workout x authored variant x retained steps
+  (sprint mechanics, acceleration/braking and controlled field maintenance). `return_to_training` credits only
+  the capabilities whose defining steps it keeps; readiness-modified doses fail closed; running, walk-run and
+  reactive plyometrics never qualify. Stages are read from `mechanicalIdentityFor`, never duplicated.
+  `validateAthleticCapabilityIdentities` runs in `validate-workouts`.
+- **Cadence.** `engine/capabilityMaintenance.ts` `evaluateCapabilityCadence` is pure. A capability is `due` when
+  last qualifying exposure + 14 days (`ATHLETIC_CAPABILITY_TARGET_INTERVAL_DAYS`) falls in the planning horizon,
+  with not-before and target dates equal to that due date; `overdue` past it or with no qualifying exposure in a
+  complete observed interval; `insufficient_history` below 14 observed days. Evidence is the 28-day athlete-state
+  window, else the orchestration-supplied mechanical exposure evidence.
+- **Fulfilment.** `evaluateCapabilityMaintenance` keeps ADR-0044 D9 fulfilment separate: `plannable`, `blocked`
+  (`mechanical_guardrail`, `mechanical_stage_insufficient`, `modality_unavailable`, `modality_avoided`,
+  `environment_unavailable`, `no_support_capacity`), `deliberately_suspended` (`adverse_recovery`,
+  `clinical_symptoms`, `event_phase`, `mechanical_withheld`, `event_directed_mode`) or `unknown`
+  (`mechanical_requirement_absent`, `history_unavailable`). Hard gates come from the existing authorities via
+  `capabilityMaintenancePlanning.ts` `capabilityGates` (template eligibility, preferences, resolved schedule
+  environment). A suspension creates no placement, so at most one touch per capability is ever owed.
+- **Planning.** In `resolveEvergreenPlan` the opt-in guarantees an optional #804 mechanical requirement unless #804
+  deliberately suspends it (`canEmitMechanicalRequirement`), and the highest owed capability stage is passed as
+  #804's `targetStage` (#804 still caps advancement at one stage and requires its response evidence). Owed
+  capabilities become `CapabilityPlacement`s on the single `mechanical_exposure` coverage requirement, which then
+  carries a support-tier minimum of one (the shape a `target` mechanical requirement already has). No requirement,
+  objective or session is added. `coverage.ts` `buildCoverageState` resolves placements per planning date: before
+  the not-before date, or once a qualifying touch is credited on/after it, the #804 allow-list is unchanged; while
+  active, the requirement is narrowed to the stage-eligible capability identities (or, when none is stage-eligible,
+  to the highest currently eligible #804 identities so progression can occur).
+- **Consent.** `rankCandidates` evaluates the hard `UNAVAILABLE_MODALITY` exclusion first, then exempts from
+  `EXPLICIT_MODALITY_PREFERENCE_REQUIRED` only exact capability identities that the date's coverage state consents
+  to (`hasCapabilityConsent`). Avoided modalities block the optional injection; deprioritized modalities stay soft.
+- **Authority and diagnostics.** Recommendation authority is evergreen-only; event-directed planning reports
+  `deliberately_suspended/event_directed_mode` and unlocks nothing. `ResolvedEvergreenPlan.capabilityMaintenance`
+  and `ResolvedEvergreenPlan.warnings` carry the typed readout; owed `blocked`/`unknown` capabilities raise
+  `capability_maintenance_unfulfilled`, while deliberate suspension stays visible without a warning. Diagnostics are
+  not persisted in the recommendation audit in v1.
+
+Policy is owned by `policy.evergreen.athletic_capability_maintenance_v1`, a product heuristic: no reviewed
+trained-adult evidence validates a 14-day (or 28-day) change-of-direction or ball-skill maintenance minimum.
 
 Event-free `health` planning also resolves `healthPlanningPolicy.ts`
 `resolveHealthPlanningPolicy` from the current intent and preferences. Explicit Running

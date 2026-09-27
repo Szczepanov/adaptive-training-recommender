@@ -105,15 +105,20 @@ function boundedPlannedDose(volume: number, intensity: number): PlannedDose {
 
 function needsEstablishedPerformanceEvidence(planningContext: PlanningContext): boolean {
     if (planningContext.mode !== 'evergreen') return false;
-    return planningContext.profile.priorities.some(priority =>
-        priority === 'endurance' || priority === 'speed_power' || priority === 'sport_readiness');
+    // Issue #805: an explicit capability-maintenance opt-in is a longitudinal consumer too.
+    return planningContext.profile.capabilityMaintenance?.enabled === true
+        || planningContext.profile.priorities.some(priority =>
+            priority === 'endurance' || priority === 'speed_power' || priority === 'sport_readiness');
 }
 
 /** Issue #804: whether this intent can emit a mechanical requirement, and therefore whether
  * orchestration must source mechanical exposure evidence and tissue check-ins. */
 export function mechanicalEvidenceRequired(planningContext: PlanningContext): boolean {
     return planningContext.mode === 'evergreen'
-        && canEmitMechanicalRequirement(planningContext.profile.priorities);
+        && canEmitMechanicalRequirement(
+            planningContext.profile.priorities,
+            planningContext.profile.capabilityMaintenance?.enabled === true,
+        );
 }
 
 /** The same predicate before a `TrainingIntent` exists (the next-day projection resolves

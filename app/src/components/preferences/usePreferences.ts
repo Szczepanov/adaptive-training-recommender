@@ -45,6 +45,9 @@ export function usePreferences(userId: string) {
           weeklyCommitment: profileState.data.weeklyCommitment,
           organizationPreference: profileState.data.organizationPreference,
           schemaVersion: profileState.data.schemaVersion,
+          ...(profileState.data.capabilityMaintenance
+            ? { capabilityMaintenance: profileState.data.capabilityMaintenance }
+            : {}),
         });
       } else {
         setTrainingIntentProfile(defaultTrainingIntentProfile());

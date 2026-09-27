@@ -1027,6 +1027,21 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(getDoc(doc(otherDb, trainingIntentProfilePath)));
     });
 
+    it('accepts an absent or valid capability-maintenance opt-in and rejects malformed ones (#805)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const valid = validTrainingIntentProfile();
+        const profileRef = doc(ownerDb, trainingIntentProfilePath);
+        const all = ['linear_speed_skill', 'acceleration_deceleration', 'multidirectional_change_of_direction', 'sport_skill'];
+        await assertSucceeds(setDoc(profileRef, valid));
+        await assertSucceeds(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: true, capabilities: all } }));
+        await assertSucceeds(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: false, capabilities: all } }));
+        await assertFails(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: true, capabilities: ['football'] } }));
+        await assertFails(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: true, capabilities: ['sport_skill'], intervalDays: 7 } }));
+        await assertFails(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: true, capabilities: [] } }));
+        await assertFails(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: true, capabilities: ['sport_skill', 'sport_skill'] } }));
+        await assertFails(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: 'yes', capabilities: ['sport_skill'] } }));
+    });
+
     it('rejects re-saving the same decision with a different audit than what is stored', async () => {
         await testEnvironment.withSecurityRulesDisabled(async context => {
             await setDoc(doc(context.firestore(), recommendationPath), { ...validRecommendation('2026-08-07T08:00:00Z'), revision: 1 });

@@ -30,6 +30,9 @@ export const FIELD_WORKOUTS: WorkoutDefinition[] = [
     regressions: ['recovery_mobility_tissue_01'], progressions: [], substitutions: [],
     garmin: { exportable: false },
     tags: ['field', 'football', 'controlled', 'mechanical_load'],
-    sourceNotes: ['Macrocycle football exposure is approximately every 7–10 days; unrestricted 90–120 minute play is not required before the race.']
+    sourceNotes: [
+      'Macrocycle football exposure is approximately every 7–10 days; unrestricted 90–120 minute play is not required before the race.',
+      'The 7–10-day cadence above is the legacy football/event-block context only. General evergreen broad-athleticism cadence is owned by the #805 capability-maintenance policy (policy.evergreen.athletic_capability_maintenance_v1), not by this workout note.'
+    ]
   }
 ];
