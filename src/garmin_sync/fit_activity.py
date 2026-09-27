@@ -132,7 +132,7 @@ class FitActivityEvidence:
     # PR 5 (training-occurrence plan, ADR-0034 "FIT structured-workout identity"):
     # `workout_steps` is the semantic definition when the Activity FIT embeds Workout /
     # Workout Step messages. `workout_step_indices` is observed execution linkage from
-    # Lap.workout_step_index (plus the legacy record-level fallback) and is intentionally
+    # FIT Lap.wkt_step_index (plus the legacy record-level fallback) and is intentionally
     # weaker evidence when the definition itself is absent.
     workout_step_indices: tuple[int, ...] = ()
     workout_name: str | None = None
@@ -280,7 +280,7 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                     # A structured workout normally writes one Lap per completed step.
                     # Keep only compact Lap metadata transiently so deterministic response
                     # extraction can bind performed samples to the semantic step definition.
-                    lap_step_index = _integer(_value(message, "workout_step_index"))
+                    lap_step_index = _integer(_value(message, "wkt_step_index"))
                     remember_workout_step_index(lap_step_index)
                     _guard_capacity(laps, _MAX_LAP_SUMMARIES, "lap evidence")
                     duration_seconds = _number(_value(message, "total_timer_time"))
