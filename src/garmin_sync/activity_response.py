@@ -13,7 +13,7 @@ Lap/Record execution linkage to an actual FIT Workout Step definition.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from statistics import median
 from typing import Callable, Iterable
@@ -730,3 +730,450 @@ def evaluate_resolution_candidates(
         evaluate_resolution_candidate(records, candidate)
         for candidate in RESOLUTION_CANDIDATES_SECONDS
     )
+
+
+
+@dataclass(frozen=True)
+class ActivityResolutionFeature:
+    """One feature-level preservation decision for the activity calibration harness."""
+
+    feature: str
+    reference_value: float | None
+    candidate_value: float | None
+    error_value: float | None
+    error_unit: str
+    tolerance_value: float
+    state: str  # preserved | degraded | source_insufficient | feature_unavailable
+
+
+@dataclass(frozen=True)
+class ActivityResolutionCandidateResult:
+    candidate_seconds: int
+    features: tuple[ActivityResolutionFeature, ...]
+    eligible_feature_count: int
+    preserved_feature_count: int
+    source_insufficient_count: int
+    preservation_rate_pct: float | None
+    passes_required_rate: bool | None
+
+
+def _mean_optional(values: Iterable[float | None]) -> float | None:
+    return _mean(values)
+
+
+def _downsample_records(
+    records: tuple[FitRecordSample, ...],
+    bucket_seconds: int,
+) -> tuple[FitRecordSample, ...]:
+    timestamped = [record for record in records if record.timestamp is not None]
+    if not timestamped:
+        return ()
+    timestamped.sort(key=lambda row: row.timestamp or datetime.min)
+    start = timestamped[0].timestamp
+    assert start is not None
+    buckets: dict[int, list[FitRecordSample]] = {}
+    for record in timestamped:
+        assert record.timestamp is not None
+        index = int((record.timestamp - start).total_seconds() // bucket_seconds)
+        buckets.setdefault(index, []).append(record)
+
+    result: list[FitRecordSample] = []
+    for index in sorted(buckets):
+        bucket = buckets[index]
+        step_indices = {
+            record.workout_step_index
+            for record in bucket
+            if record.workout_step_index is not None
+        }
+        result.append(
+            FitRecordSample(
+                timestamp=bucket[0].timestamp,
+                heart_rate_bpm=_mean_optional(record.heart_rate_bpm for record in bucket),
+                cadence_rpm=_mean_optional(record.cadence_rpm for record in bucket),
+                power_watts=_mean_optional(record.power_watts for record in bucket),
+                workout_step_index=next(iter(step_indices)) if len(step_indices) == 1 else None,
+            )
+        )
+    return tuple(result)
+
+
+def _append_relative_feature(
+    features: list[ActivityResolutionFeature],
+    feature: str,
+    reference: float | None,
+    candidate: float | None,
+    tolerance_pct: float,
+) -> None:
+    if reference is None:
+        features.append(
+            ActivityResolutionFeature(
+                feature=feature,
+                reference_value=None,
+                candidate_value=None,
+                error_value=None,
+                error_unit="percent",
+                tolerance_value=tolerance_pct,
+                state="source_insufficient",
+            )
+        )
+        return
+    if candidate is None:
+        features.append(
+            ActivityResolutionFeature(
+                feature=feature,
+                reference_value=round(reference, 3),
+                candidate_value=None,
+                error_value=None,
+                error_unit="percent",
+                tolerance_value=tolerance_pct,
+                state="feature_unavailable",
+            )
+        )
+        return
+    error = abs(candidate - reference) / max(abs(reference), 1e-9) * 100
+    features.append(
+        ActivityResolutionFeature(
+            feature=feature,
+            reference_value=round(reference, 3),
+            candidate_value=round(candidate, 3),
+            error_value=round(error, 3),
+            error_unit="percent",
+            tolerance_value=tolerance_pct,
+            state="preserved" if error <= tolerance_pct else "degraded",
+        )
+    )
+
+
+def _append_absolute_feature(
+    features: list[ActivityResolutionFeature],
+    feature: str,
+    reference: float | None,
+    candidate: float | None,
+    tolerance: float,
+    unit: str,
+) -> None:
+    if reference is None:
+        features.append(
+            ActivityResolutionFeature(
+                feature=feature,
+                reference_value=None,
+                candidate_value=None,
+                error_value=None,
+                error_unit=unit,
+                tolerance_value=tolerance,
+                state="source_insufficient",
+            )
+        )
+        return
+    if candidate is None:
+        features.append(
+            ActivityResolutionFeature(
+                feature=feature,
+                reference_value=round(reference, 3),
+                candidate_value=None,
+                error_value=None,
+                error_unit=unit,
+                tolerance_value=tolerance,
+                state="feature_unavailable",
+            )
+        )
+        return
+    error = abs(candidate - reference)
+    features.append(
+        ActivityResolutionFeature(
+            feature=feature,
+            reference_value=round(reference, 3),
+            candidate_value=round(candidate, 3),
+            error_value=round(error, 3),
+            error_unit=unit,
+            tolerance_value=tolerance,
+            state="preserved" if error <= tolerance else "degraded",
+        )
+    )
+
+
+def _fade_pct(segments: list[CanonicalActivitySegmentSummary]) -> float | None:
+    if len(segments) < 2:
+        return None
+    first = segments[0].average_power_watts
+    last = segments[-1].average_power_watts
+    if first is None or last is None or first == 0:
+        return None
+    return (last - first) / first * 100
+
+
+def _decoupling_pct(halves: CanonicalSteadyHalfSummary | None) -> float | None:
+    if (
+        halves is None
+        or halves.first_power_watts is None
+        or halves.second_power_watts is None
+        or halves.first_hr_bpm is None
+        or halves.second_hr_bpm is None
+        or halves.first_hr_bpm <= 0
+        or halves.second_hr_bpm <= 0
+    ):
+        return None
+    first = halves.first_power_watts / halves.first_hr_bpm
+    second = halves.second_power_watts / halves.second_hr_bpm
+    if first == 0:
+        return None
+    return (first - second) / first * 100
+
+
+def _response_by_index(
+    response: CanonicalActivityResponseTelemetry,
+    segment_type: str,
+) -> dict[int, CanonicalActivitySegmentSummary]:
+    return {
+        segment.segment_index: segment
+        for segment in response.segments
+        if segment.segment_type == segment_type
+    }
+
+
+def _compare_work_features(
+    reference: CanonicalActivityResponseTelemetry,
+    candidate: CanonicalActivityResponseTelemetry,
+    features: list[ActivityResolutionFeature],
+) -> None:
+    reference_work = _response_by_index(reference, "work")
+    candidate_work = _response_by_index(candidate, "work")
+    for index, segment in reference_work.items():
+        other = candidate_work.get(index)
+        prefix = f"work_{index}"
+        _append_relative_feature(
+            features,
+            f"{prefix}_mean_power",
+            segment.average_power_watts,
+            None if other is None else other.average_power_watts,
+            1.0,
+        )
+        _append_absolute_feature(
+            features,
+            f"{prefix}_average_hr",
+            segment.average_hr_bpm,
+            None if other is None else other.average_hr_bpm,
+            1.0,
+            "bpm",
+        )
+        _append_absolute_feature(
+            features,
+            f"{prefix}_end_hr",
+            segment.end_hr_bpm,
+            None if other is None else other.end_hr_bpm,
+            2.0,
+            "bpm",
+        )
+        for label, reference_value, candidate_value in (
+            (
+                "first_third_power",
+                segment.first_third_power_watts,
+                None if other is None else other.first_third_power_watts,
+            ),
+            (
+                "middle_third_power",
+                segment.middle_third_power_watts,
+                None if other is None else other.middle_third_power_watts,
+            ),
+            (
+                "last_third_power",
+                segment.last_third_power_watts,
+                None if other is None else other.last_third_power_watts,
+            ),
+        ):
+            _append_relative_feature(
+                features,
+                f"{prefix}_{label}",
+                reference_value,
+                candidate_value,
+                1.5,
+            )
+
+    reference_ordered = [reference_work[index] for index in sorted(reference_work)]
+    candidate_ordered = [candidate_work[index] for index in sorted(reference_work) if index in candidate_work]
+    _append_absolute_feature(
+        features,
+        "work_first_to_last_fade",
+        _fade_pct(reference_ordered),
+        _fade_pct(candidate_ordered) if len(candidate_ordered) == len(reference_ordered) else None,
+        1.0,
+        "percentage_points",
+    )
+
+
+def _compare_sprint_features(
+    reference: CanonicalActivityResponseTelemetry,
+    candidate: CanonicalActivityResponseTelemetry,
+    features: list[ActivityResolutionFeature],
+) -> None:
+    reference_sprints = _response_by_index(reference, "sprint")
+    candidate_sprints = _response_by_index(candidate, "sprint")
+    for index, segment in reference_sprints.items():
+        other = candidate_sprints.get(index)
+        prefix = f"sprint_{index}"
+        _append_relative_feature(
+            features,
+            f"{prefix}_mean_power",
+            segment.average_power_watts,
+            None if other is None else other.average_power_watts,
+            2.0,
+        )
+        _append_relative_feature(
+            features,
+            f"{prefix}_peak_5s_power",
+            segment.peak_5s_power_watts,
+            None if other is None else other.peak_5s_power_watts,
+            2.0,
+        )
+        _append_absolute_feature(
+            features,
+            f"{prefix}_max_cadence",
+            segment.max_cadence_rpm,
+            None if other is None else other.max_cadence_rpm,
+            2.0,
+            "rpm",
+        )
+
+    reference_ordered = [reference_sprints[index] for index in sorted(reference_sprints)]
+    candidate_ordered = [
+        candidate_sprints[index]
+        for index in sorted(reference_sprints)
+        if index in candidate_sprints
+    ]
+    _append_absolute_feature(
+        features,
+        "sprint_last_vs_best_fade",
+        _fade_pct(reference_ordered),
+        _fade_pct(candidate_ordered)
+        if len(candidate_ordered) == len(reference_ordered)
+        else None,
+        1.0,
+        "percentage_points",
+    )
+
+
+def _compare_unstructured_mmp_features(
+    reference: CanonicalActivityResponseTelemetry,
+    candidate: CanonicalActivityResponseTelemetry,
+    features: list[ActivityResolutionFeature],
+) -> None:
+    candidate_peaks = {
+        peak.duration_seconds: peak
+        for peak in candidate.power_duration_peaks
+    }
+    tolerances = {
+        1: 5.0,
+        5: 2.0,
+        10: 2.0,
+        30: 2.0,
+        60: 1.5,
+        180: 1.0,
+        300: 1.0,
+        1200: 1.0,
+    }
+    reference_peaks = {
+        peak.duration_seconds: peak
+        for peak in reference.power_duration_peaks
+    }
+    for duration in POWER_DURATION_WINDOWS_SECONDS:
+        reference_peak = reference_peaks.get(duration)
+        candidate_peak = candidate_peaks.get(duration)
+        _append_relative_feature(
+            features,
+            f"mmp_{duration}s",
+            None if reference_peak is None else reference_peak.power_watts,
+            None if candidate_peak is None else candidate_peak.power_watts,
+            tolerances[duration],
+        )
+
+
+def evaluate_activity_resolution_candidate(
+    activity_type: str,
+    evidence: FitActivityEvidence,
+    candidate_seconds: int,
+    *,
+    required_preservation_rate_pct: float = 95.0,
+) -> ActivityResolutionCandidateResult:
+    """Evaluate one candidate cadence against native-source decision features.
+
+    The feature family is inferred from semantic evidence. Structured work compares
+    interval mean/fade/trajectory/HR; structured sprints compare mean/5 s/cadence/fade;
+    otherwise fixed MMPs are compared. A steady unstructured activity additionally
+    compares first-vs-second-half Pw:HR decoupling.
+    """
+    reference = derive_activity_response(activity_type, evidence)
+    if reference is None:
+        return ActivityResolutionCandidateResult(
+            candidate_seconds=candidate_seconds,
+            features=(),
+            eligible_feature_count=0,
+            preserved_feature_count=0,
+            source_insufficient_count=0,
+            preservation_rate_pct=None,
+            passes_required_rate=None,
+        )
+
+    candidate_evidence = replace(
+        evidence,
+        records=_downsample_records(evidence.records, candidate_seconds),
+    )
+    candidate = derive_activity_response(activity_type, candidate_evidence)
+    if candidate is None:
+        candidate = CanonicalActivityResponseTelemetry(
+            source_resolution=CanonicalSignalResolution(),
+        )
+
+    features: list[ActivityResolutionFeature] = []
+    has_work = any(segment.segment_type == "work" for segment in reference.segments)
+    has_sprint = any(segment.segment_type == "sprint" for segment in reference.segments)
+    if has_work:
+        _compare_work_features(reference, candidate, features)
+    if has_sprint:
+        _compare_sprint_features(reference, candidate, features)
+    if not has_work and not has_sprint:
+        _compare_unstructured_mmp_features(reference, candidate, features)
+        _append_absolute_feature(
+            features,
+            "pw_hr_decoupling",
+            _decoupling_pct(reference.steady_halves),
+            _decoupling_pct(candidate.steady_halves),
+            1.0,
+            "percentage_points",
+        )
+
+    eligible = sum(feature.state != "source_insufficient" for feature in features)
+    preserved = sum(feature.state == "preserved" for feature in features)
+    source_insufficient = sum(feature.state == "source_insufficient" for feature in features)
+    rate = None if eligible == 0 else preserved / eligible * 100
+    return ActivityResolutionCandidateResult(
+        candidate_seconds=candidate_seconds,
+        features=tuple(features),
+        eligible_feature_count=eligible,
+        preserved_feature_count=preserved,
+        source_insufficient_count=source_insufficient,
+        preservation_rate_pct=None if rate is None else round(rate, 1),
+        passes_required_rate=None if rate is None else rate >= required_preservation_rate_pct,
+    )
+
+
+def evaluate_activity_resolution_candidates(
+    activity_type: str,
+    evidence: FitActivityEvidence,
+) -> tuple[ActivityResolutionCandidateResult, ...]:
+    """Evaluate all issue #850 candidates for the activity's actual feature family."""
+    return tuple(
+        evaluate_activity_resolution_candidate(activity_type, evidence, candidate)
+        for candidate in RESOLUTION_CANDIDATES_SECONDS
+    )
+
+
+def coarsest_preserving_resolution(
+    results: tuple[ActivityResolutionCandidateResult, ...],
+) -> int | None:
+    """Return the coarsest candidate meeting the >=95% preservation gate."""
+    passing = [
+        result.candidate_seconds
+        for result in results
+        if result.passes_required_rate is True
+    ]
+    return max(passing) if passing else None
