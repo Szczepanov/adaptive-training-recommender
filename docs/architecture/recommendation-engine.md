@@ -555,7 +555,9 @@ sport-neutral capabilities exist: `linear_speed_skill`, `acceleration_decelerati
   `clinical_symptoms`, `event_phase`, `mechanical_withheld`, `event_directed_mode`) or `unknown`
   (`mechanical_requirement_absent`, `history_unavailable`). Hard gates come from the existing authorities via
   `capabilityMaintenancePlanning.ts` `capabilityGates` (template eligibility, preferences, resolved schedule
-  environment). A suspension creates no placement, so at most one touch per capability is ever owed.
+  environment). Capacity is also duration-aware: a positive date is not enough if none of its due-window
+  minutes can fit the canonical minimum duration of a qualifying/progression identity. A suspension creates
+  no placement, so at most one touch per capability is ever owed.
 - **Planning.** In `resolveEvergreenPlan` the opt-in guarantees an optional #804 mechanical requirement unless #804
   deliberately suspends it (`canEmitMechanicalRequirement`), and the highest owed capability stage is passed as
   #804's `targetStage` (#804 still caps advancement at one stage and requires its response evidence). Owed
