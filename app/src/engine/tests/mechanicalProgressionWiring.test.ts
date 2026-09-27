@@ -181,7 +181,7 @@ describe('mechanical exposure evidence spans the 14-day continuity window', () =
 
         const intent = await resolveTrainingIntent('u1', [], DATE, readiness(), 7, history, undefined, [], profile);
 
-        expect(history.reconstruct).toHaveBeenCalledWith('u1', DATE, 14);
+        expect(history.reconstruct).toHaveBeenCalledWith('u1', DATE, 28);
         expect(intent.mechanicalExposureHistory.map(item => item.date)).toEqual(['2026-09-10']);
     });
 
@@ -191,7 +191,7 @@ describe('mechanical exposure evidence spans the 14-day continuity window', () =
 
         const intent = await resolveTrainingIntent('u1', [], DATE, readiness(), 7, history, undefined, [], healthProfile);
 
-        expect(history.reconstruct).not.toHaveBeenCalledWith('u1', DATE, 14);
+        expect(history.reconstruct).not.toHaveBeenCalledWith('u1', DATE, 28);
         expect(intent.mechanicalExposureHistory).toEqual(intent.history);
     });
 });
@@ -199,7 +199,7 @@ describe('mechanical exposure evidence spans the 14-day continuity window', () =
 describe('live planning entry points supply check-ins and wide exposure evidence', () => {
     const checkins = [normalFollowUp('2026-09-11')];
 
-    it('evaluateTrainingWithIntent forwards explicit check-ins and 14-day evidence', async () => {
+    it('evaluateTrainingWithIntent forwards explicit check-ins and a mechanical evidence window spanning continuity', async () => {
         await evaluateTrainingWithIntent(
             'u1', readiness(), context, [], DATE, undefined, provider([TEN_DAYS_AGO], true), null, [], [], profile, preferences,
             'max', null, 'off', undefined, null, false, [], new Map(), undefined, checkins,
