@@ -1,5 +1,6 @@
 import type { ActivityLapSummary, ActivityZoneBucket, NormalizedGarminActivity } from './models';
 import { findSectionHeading, SECTION_TITLE } from './contextBrief';
+import { hrEvidence } from './contextBriefResponseFeatures';
 import {
     deriveKeySessionSummaries,
     hasAvailableFeature,
@@ -75,6 +76,8 @@ function powerDurationLabel(seconds: number): string {
 function renderActivityResponse(activity: NormalizedGarminActivity): string[] {
     const response = activity.activityResponse;
     if (!response) return [];
+    const intervalHr = hrEvidence(activity, 'INTERVAL_RESPONSE');
+    const aerobicHr = hrEvidence(activity, 'AEROBIC_DECOUPLING');
     const lines: string[] = ['- Multi-resolution response telemetry:'];
     const resolution = response.sourceResolution;
     const parts = [
@@ -83,6 +86,10 @@ function renderActivityResponse(activity: NormalizedGarminActivity): string[] {
         resolution.cadenceSeconds === undefined ? null : `cadence ~${formatNumber(resolution.cadenceSeconds, 2)} s`,
     ].filter((part): part is string => part !== null);
     lines.push(`  - Source resolution: ${parts.length > 0 ? parts.join(' · ') : 'not estimable'} · derivation ${response.derivationVersion}`);
+    if (intervalHr.note) lines.push(`  - Segment HR provenance: ${intervalHr.note}`);
+    if (aerobicHr.note && aerobicHr.note !== intervalHr.note) {
+        lines.push(`  - Steady-half HR provenance: ${aerobicHr.note}`);
+    }
 
     if (response.powerDurationPeaks.length > 0) {
         lines.push(`  - Power-duration peaks: ${response.powerDurationPeaks
@@ -94,7 +101,7 @@ function renderActivityResponse(activity: NormalizedGarminActivity): string[] {
         const halfParts = [
             half.firstPowerWatts === undefined || half.secondPowerWatts === undefined
                 ? null : `power ${formatNumber(half.firstPowerWatts, 0)}→${formatNumber(half.secondPowerWatts, 0)} W`,
-            half.firstHrBpm === undefined || half.secondHrBpm === undefined
+            aerobicHr.withheld || half.firstHrBpm === undefined || half.secondHrBpm === undefined
                 ? null : `HR ${formatNumber(half.firstHrBpm, 0)}→${formatNumber(half.secondHrBpm, 0)} bpm`,
             half.firstCadenceRpm === undefined || half.secondCadenceRpm === undefined
                 ? null : `cadence ${formatNumber(half.firstCadenceRpm, 0)}→${formatNumber(half.secondCadenceRpm, 0)} rpm`,
@@ -124,13 +131,15 @@ function renderActivityResponse(activity: NormalizedGarminActivity): string[] {
                 segment.peak5sPowerWatts === undefined ? null : `5s ${formatNumber(segment.peak5sPowerWatts, 0)}`,
                 segment.peak10sPowerWatts === undefined ? null : `10s ${formatNumber(segment.peak10sPowerWatts, 0)}`,
             ].filter((part): part is string => part !== null).join('/');
-            const hr = [segment.averageHrBpm, segment.endHrBpm, segment.maxHrBpm]
-                .map(value => value === undefined ? '—' : formatNumber(value, 0)).join('/');
+            const hr = intervalHr.withheld
+                ? 'withheld'
+                : [segment.averageHrBpm, segment.endHrBpm, segment.maxHrBpm]
+                    .map(value => value === undefined ? '—' : formatNumber(value, 0)).join('/');
             const cadence = [segment.averageCadenceRpm, segment.maxCadenceRpm]
                 .map(value => value === undefined ? '—' : formatNumber(value, 0)).join('/');
             const thirds = [segment.firstThirdPowerWatts, segment.middleThirdPowerWatts, segment.lastThirdPowerWatts]
                 .map(value => value === undefined ? '—' : formatNumber(value, 0)).join('/');
-            lines.push(`  | ${segment.segmentIndex} | ${segment.segmentType} | ${segment.identitySource} | ${formatDuration(segment.durationSeconds)} | ${target} | ${power || '—'} W | ${hr} bpm | ${cadence} rpm | ${thirds} W | ${segment.evidenceConfidence} |`);
+            lines.push(`  | ${segment.segmentIndex} | ${segment.segmentType} | ${segment.identitySource} | ${formatDuration(segment.durationSeconds)} | ${target} | ${power || '—'} W | ${hr}${hr === 'withheld' ? '' : ' bpm'} | ${cadence} rpm | ${thirds} W | ${segment.evidenceConfidence} |`);
         }
     }
     return lines;
