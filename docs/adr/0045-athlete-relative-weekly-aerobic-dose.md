@@ -1,8 +1,8 @@
 # ADR-0045 — Athlete-relative weekly aerobic dose envelope
 
-**Status:** Accepted  
-**Date:** 2026-09-26  
-**Related:** ADR-0033, ADR-0044; #757, #758, #802, #806  
+**Status:** Accepted
+**Date:** 2026-09-26
+**Related:** ADR-0033, ADR-0044; #757, #758, #802, #806
 **Implementation plan:** [Issue #806 — Evidence-backed weekly aerobic dose envelope](../plans/2026-09-26-issue-806-weekly-aerobic-dose.md)
 
 ## Context
