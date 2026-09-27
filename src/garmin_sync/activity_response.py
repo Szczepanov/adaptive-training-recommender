@@ -168,22 +168,36 @@ def _peak_power(
 
     best_power: float | None = None
     best_start: datetime | None = None
-    for index in range(0, len(values) - required + 1):
-        window = values[index : index + required]
-        if len(window) > 1:
-            gaps = [
-                (current[0] - previous[0]).total_seconds()
-                for previous, current in zip(window, window[1:], strict=True)
-            ]
-            if any(gap <= 0 or gap > resolution * 2.5 for gap in gaps):
-                continue
-            observed_span = (window[-1][0] - window[0][0]).total_seconds() + resolution
+
+    # Partition once on timestamp discontinuities, then use prefix sums inside each
+    # contiguous run. This keeps each MMP window O(n) instead of O(n * window_length)
+    # on long 1 Hz traces.
+    run_start = 0
+    run_bounds: list[tuple[int, int]] = []
+    for index in range(1, len(values)):
+        gap = (values[index][0] - values[index - 1][0]).total_seconds()
+        if gap <= 0 or gap > resolution * 2.5:
+            run_bounds.append((run_start, index))
+            run_start = index
+    run_bounds.append((run_start, len(values)))
+
+    for start_index, end_index in run_bounds:
+        run = values[start_index:end_index]
+        if len(run) < required:
+            continue
+        prefix = [0.0]
+        for _, power in run:
+            prefix.append(prefix[-1] + power)
+        for index in range(0, len(run) - required + 1):
+            window_start = run[index][0]
+            window_end = run[index + required - 1][0]
+            observed_span = (window_end - window_start).total_seconds() + resolution
             if observed_span < duration_seconds * 0.8 or observed_span > duration_seconds * 1.25:
                 continue
-        value = sum(item[1] for item in window) / len(window)
-        if best_power is None or value > best_power:
-            best_power = value
-            best_start = window[0][0]
+            value = (prefix[index + required] - prefix[index]) / required
+            if best_power is None or value > best_power:
+                best_power = value
+                best_start = window_start
 
     if best_power is None:
         return None
@@ -410,13 +424,14 @@ def _workout_step_map(
 def _semantic_lap_segments(
     evidence: FitActivityEvidence,
     resolution: CanonicalSignalResolution,
-) -> list[CanonicalActivitySegmentSummary]:
+) -> tuple[list[CanonicalActivitySegmentSummary], int]:
     steps = _workout_step_map(evidence.workout_steps)
     if not steps:
-        return []
+        return [], 0
     timestamped = [record.timestamp for record in evidence.records if record.timestamp is not None]
     activity_start = min(timestamped) if timestamped else None
     segments: list[CanonicalActivitySegmentSummary] = []
+    total_segments = 0
     for lap in evidence.laps:
         if lap.workout_step_index is None or lap.workout_step_index not in steps:
             continue
@@ -426,9 +441,12 @@ def _semantic_lap_segments(
             duration = (end - start).total_seconds()
         if duration is None or duration <= 0:
             continue
+        total_segments += 1
+        if len(segments) >= MAX_PERSISTED_SEGMENTS:
+            continue
         segments.append(
             _summarize_segment(
-                segment_index=len(segments) + 1,
+                segment_index=total_segments,
                 identity_source="fit_workout_step",
                 step=steps[lap.workout_step_index],
                 duration_seconds=duration,
@@ -444,13 +462,13 @@ def _semantic_lap_segments(
                 activity_start=activity_start,
             )
         )
-    return segments
+    return segments, total_segments
 
 
 def _semantic_record_segments(
     evidence: FitActivityEvidence,
     resolution: CanonicalSignalResolution,
-) -> list[CanonicalActivitySegmentSummary]:
+) -> tuple[list[CanonicalActivitySegmentSummary], int]:
     steps = _workout_step_map(evidence.workout_steps)
     records = [
         record
@@ -460,14 +478,17 @@ def _semantic_record_segments(
         and record.workout_step_index in steps
     ]
     if not records:
-        return []
+        return [], 0
     records.sort(key=lambda row: row.timestamp or datetime.min)
     activity_start = records[0].timestamp
     groups: list[list[FitRecordSample]] = []
+    total_groups = 0
     for record in records:
         if not groups or groups[-1][-1].workout_step_index != record.workout_step_index:
-            groups.append([record])
-        else:
+            total_groups += 1
+            if len(groups) < MAX_PERSISTED_SEGMENTS:
+                groups.append([record])
+        elif groups and groups[-1][-1].workout_step_index == record.workout_step_index:
             groups[-1].append(record)
 
     segments: list[CanonicalActivitySegmentSummary] = []
@@ -498,16 +519,17 @@ def _semantic_record_segments(
                 activity_start=activity_start,
             )
         )
-    return segments
+    return segments, total_groups
 
 
 def _manual_lap_segments(
     evidence: FitActivityEvidence,
     resolution: CanonicalSignalResolution,
-) -> list[CanonicalActivitySegmentSummary]:
+) -> tuple[list[CanonicalActivitySegmentSummary], int]:
     timestamped = [record.timestamp for record in evidence.records if record.timestamp is not None]
     activity_start = min(timestamped) if timestamped else None
     segments: list[CanonicalActivitySegmentSummary] = []
+    total_segments = 0
     for lap in evidence.laps:
         duration = lap.duration_seconds
         start, end = _lap_bounds(lap)
@@ -515,9 +537,12 @@ def _manual_lap_segments(
             duration = (end - start).total_seconds()
         if duration is None or duration <= 0:
             continue
+        total_segments += 1
+        if len(segments) >= MAX_PERSISTED_SEGMENTS:
+            continue
         segments.append(
             _summarize_segment(
-                segment_index=len(segments) + 1,
+                segment_index=total_segments,
                 identity_source="manual_lap",
                 step=None,
                 duration_seconds=duration,
@@ -533,7 +558,7 @@ def _manual_lap_segments(
                 activity_start=activity_start,
             )
         )
-    return segments
+    return segments, total_segments
 
 
 def _steady_halves(records: tuple[FitRecordSample, ...]) -> CanonicalSteadyHalfSummary | None:
@@ -571,16 +596,15 @@ def derive_activity_response(
         return None
 
     resolution = _source_resolution(evidence.records)
-    segments = _semantic_lap_segments(evidence, resolution)
-    if not segments:
-        segments = _semantic_record_segments(evidence, resolution)
-    if not segments:
-        segments = _manual_lap_segments(evidence, resolution)
+    segments, total_segments = _semantic_lap_segments(evidence, resolution)
+    if total_segments == 0:
+        segments, total_segments = _semantic_record_segments(evidence, resolution)
+    if total_segments == 0:
+        segments, total_segments = _manual_lap_segments(evidence, resolution)
 
-    total_segments = len(segments)
     return CanonicalActivityResponseTelemetry(
         source_resolution=resolution,
-        segments=tuple(segments[:MAX_PERSISTED_SEGMENTS]),
+        segments=tuple(segments),
         power_duration_peaks=_power_duration_peaks(
             evidence.records,
             resolution.power_seconds,
