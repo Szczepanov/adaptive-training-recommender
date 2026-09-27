@@ -107,7 +107,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0041: Typed Strength, Speed and Power Performance Goals (Stage 1)**](./adr/0041-strength-speed-power-performance-goals.md) — *Accepted, amended.* Explicit typed performance outcomes for strength, speed, and power metrics without overriding core safety authority.
 * [**ADR-0042: Nutrition Ingestion, Provenance, and Decision Authority**](./adr/0042-nutrition-ingestion-provenance-and-decision-authority.md) — *Accepted.* Provider-neutral energy intake and macro ingestion, strict separation from energy expenditure, tripartite provenance identity, and strictly retrospective zero recommendation authority.
 * [**ADR-0043: Individualized Rolling Catalog-Load Budget**](./adr/0043-rolling-catalog-load-budget.md) — *Accepted.* Versioned, user-history-derived catalog-load envelope to week-ahead planning.
-* [**ADR-0044: Constraint-Aware Requirement Fulfilment and Bounded Multi-Stimulus Packing**](./adr/0044-constraint-aware-requirement-fulfilment.md) — *Proposed.* Defines the requirement-class boundary for constrained planning while preserving canonical coverage, objective-credit, load and intraday authorities.
+* [**ADR-0044: Constraint-Aware Requirement Fulfilment and Bounded Multi-Stimulus Packing**](./adr/0044-constraint-aware-requirement-fulfilment.md) — *Accepted.* Defines the requirement-class boundary for constrained planning while preserving canonical coverage, objective-credit, load and intraday authorities.
 
 ---
 
@@ -238,7 +238,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 ### 🗺️ Implementation Plans
 How agreed changes get made. Mutable, status-tracked, and expected to go stale — see [`docs/plans/`](./plans/) for the index and conventions.
 
-* [**Constraint-aware stimulus fulfilment**](./plans/constraint-aware-stimulus-fulfilment.md) — *Draft.* CF0–CF8 implementation plan for residual requirement views, microdose modules and bounded secondary-window packing, blocked on ADR-0044/canonical family decisions.
+* [**Constraint-aware stimulus fulfilment**](./plans/constraint-aware-stimulus-fulfilment.md) — *In progress.* CF0–CF8 implementation plan for residual requirement views, microdose modules and bounded secondary-window packing, blocked on canonical decisions in #801–#806.
 * [**Multisource Health & Recovery Ingestion**](./plans/multisource-health-and-recovery-ingestion.md) — *Implemented (MS0–MS19).* Multi-source Google Health / Eight Sleep ingestion, OAuth connection management, historical backfill, empirical audits, candidate evidence-fusion engine, simulation comparator, and metric-by-metric production activation.
 * [**Phase 0: Instrumentation & developer baseline**](./plans/phase-0-instrumentation.md) — Coaching invariants as the CI gate; clean-clone runnability.
 * [**Phase 1: Live defects**](./plans/phase-1-live-defects.md) — Injury gate, Garmin objective credit, recommendation immutability.
