@@ -5,17 +5,28 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TextIO
 
 from detect_ci_changes import get_worktree_changed_files, is_code_file
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "app"
+LOG_DIR = APP / "artifacts" / "verify"
+FAILURE_TAIL_LINES = 80
+SPAWN_FAILED = 127
+# Same split as CI's rules job matrix.
+RULES_SHARDS = 2
 VerificationMode = Literal["docs", "code"]
 
 
@@ -27,6 +38,25 @@ class VerificationStep:
     argv: tuple[str, ...]
     cwd: Path = ROOT
     required: bool = True
+    env: tuple[tuple[str, str], ...] = ()
+
+
+@dataclass(frozen=True)
+class VerificationPhase:
+    """A set of lanes that run concurrently; each lane runs its steps in order."""
+
+    name: str
+    lanes: tuple[tuple[VerificationStep, ...], ...]
+
+
+@dataclass(frozen=True)
+class StepResult:
+    """Outcome of one executed step."""
+
+    step: VerificationStep
+    returncode: int
+    seconds: float
+    log_path: Path | None
 
 
 def classify_paths(paths: list[str]) -> VerificationMode:
@@ -72,64 +102,120 @@ def resolve_base_sha(explicit_base: str | None = None) -> str:
     )
 
 
-def build_plan(mode: VerificationMode, base_sha: str) -> list[VerificationStep]:
-    """Build the stable local verification plan for a docs or code diff."""
-    common = [
-        VerificationStep(
-            "repository hygiene",
+def _npm(script: str) -> tuple[str, ...]:
+    return ("npm", "--prefix", "app", "run", script)
+
+
+def build_plan(mode: VerificationMode, base_sha: str) -> list[VerificationPhase]:
+    """Build the stable local verification plan for a docs or code diff.
+
+    Phases run in order. Within a phase, lanes run concurrently and each lane runs its steps
+    in order, so a lane holds exactly the steps that must not overlap, e.g. ``simulate:diff``
+    reads the report that ``simulate:scenarios`` writes. Emulator suites can share a phase only
+    because each rules shard gets ports of its own (``app/scripts/run-rules-shard.mjs``) while
+    browser E2E keeps ``firebase.json``'s defaults. Wall-clock latency gates get a phase of their own so no
+    sibling competes for the CPU while samples are taken.
+    """
+    # In code mode the gates phase runs mypy and ESLint itself; pre-commit's copies of those
+    # hooks would only repeat the two slowest checks before any gate starts.
+    duplicated_hooks: tuple[tuple[str, str], ...] = (
+        () if mode == "docs" else (("SKIP", "mypy,eslint"),)
+    )
+    hygiene = VerificationPhase(
+        "hygiene",
+        (
             (
-                "uv",
-                "run",
-                "pre-commit",
-                "run",
-                "--all-files",
-                "--show-diff-on-failure",
+                VerificationStep(
+                    "repository hygiene",
+                    (
+                        "uv",
+                        "run",
+                        "pre-commit",
+                        "run",
+                        "--all-files",
+                        "--show-diff-on-failure",
+                    ),
+                    env=duplicated_hooks,
+                ),
+            ),
+            (
+                VerificationStep(
+                    "coding-agent eval corpus",
+                    ("uv", "run", "python", "scripts/agent_eval.py", "validate"),
+                ),
             ),
         ),
-        VerificationStep(
-            "coding-agent eval corpus",
-            ("uv", "run", "python", "scripts/agent_eval.py", "validate"),
-        ),
-    ]
+    )
     if mode == "docs":
-        return common
+        return [hygiene]
 
-    return [
-        *common,
-        VerificationStep("static checks and unit tests", ("make", "check")),
-        VerificationStep("Firestore security rules", ("make", "test-rules")),
-        VerificationStep(
-            "browser E2E",
-            ("npm", "--prefix", "app", "run", "test:e2e"),
+    gates = VerificationPhase(
+        "gates",
+        (
+            *(
+                (
+                    VerificationStep(
+                        f"Firestore security rules {index}/{RULES_SHARDS}",
+                        (*_npm("test:rules:shard"), "--", f"{index}/{RULES_SHARDS}"),
+                    ),
+                )
+                for index in range(1, RULES_SHARDS + 1)
+            ),
+            (VerificationStep("browser E2E", _npm("test:e2e")),),
+            (
+                VerificationStep("ruff lint", ("uv", "run", "ruff", "check", ".")),
+                VerificationStep("ruff format", ("uv", "run", "ruff", "format", "--check", ".")),
+                VerificationStep("mypy", ("uv", "run", "mypy")),
+                VerificationStep("pytest", ("uv", "run", "pytest")),
+            ),
+            (
+                VerificationStep("frontend typecheck", _npm("typecheck")),
+                VerificationStep("frontend lint", _npm("lint")),
+                VerificationStep("knowledge registry", _npm("validate:knowledge")),
+                VerificationStep("knowledge coverage", _npm("validate:knowledge-coverage")),
+                VerificationStep("knowledge freshness", _npm("validate:knowledge-freshness")),
+                VerificationStep("workout catalog", _npm("validate:workouts")),
+            ),
+            (VerificationStep("frontend unit tests", _npm("test")),),
+            (
+                VerificationStep("engine simulations", _npm("simulate:scenarios")),
+                VerificationStep(
+                    "simulation baseline cleanliness",
+                    ("git", "diff", "--exit-code", "--", "docs/analysis/simulation-baseline.json"),
+                ),
+                VerificationStep(
+                    "simulation semantic diff (advisory)",
+                    _npm("simulate:diff"),
+                    required=False,
+                ),
+            ),
+            (
+                VerificationStep("deterministic plan-judge corpus", _npm("simulate:plan-judge")),
+                VerificationStep("deterministic persona corpus", _npm("persona:build")),
+                VerificationStep(
+                    "policy-version drift",
+                    ("node", "scripts/check-policy-drift.mjs", base_sha),
+                    cwd=APP,
+                ),
+            ),
+            (VerificationStep("production build", _npm("build:bundle")),),
         ),
-        VerificationStep(
-            "engine simulations",
-            ("npm", "--prefix", "app", "run", "simulate:scenarios"),
-        ),
-        VerificationStep(
-            "simulation baseline cleanliness",
-            ("git", "diff", "--exit-code", "--", "docs/analysis/simulation-baseline.json"),
-        ),
-        VerificationStep(
-            "simulation semantic diff (advisory)",
-            ("npm", "--prefix", "app", "run", "simulate:diff"),
-            required=False,
-        ),
-        VerificationStep(
-            "deterministic plan-judge corpus",
-            ("npm", "--prefix", "app", "run", "simulate:plan-judge"),
-        ),
-        VerificationStep(
-            "deterministic persona corpus",
-            ("npm", "--prefix", "app", "run", "persona:build"),
-        ),
-        VerificationStep(
-            "policy-version drift",
-            ("node", "scripts/check-policy-drift.mjs", base_sha),
-            cwd=APP,
-        ),
-        VerificationStep("production build", ("make", "build")),
-    ]
+    )
+    latency = VerificationPhase(
+        "latency",
+        ((VerificationStep("frontend latency gates", _npm("test:perf")),),),
+    )
+    return [hygiene, gates, latency]
+
+
+def plan_steps(phases: list[VerificationPhase]) -> list[VerificationStep]:
+    """Flatten a plan into its steps, in phase then lane order."""
+    return [step for phase in phases for lane in phase.lanes for step in lane]
+
+
+def serialize_plan(phases: list[VerificationPhase]) -> list[VerificationPhase]:
+    """Collapse a plan into one single-lane phase, i.e. the old strictly sequential run."""
+    return [VerificationPhase("serial", (tuple(plan_steps(phases)),))]
 
 
 def resolve_argv(argv: tuple[str, ...]) -> tuple[str, ...]:
@@ -145,26 +231,139 @@ def resolve_argv(argv: tuple[str, ...]) -> tuple[str, ...]:
     return (resolved, *argv[1:]) if resolved else argv
 
 
-def run_plan(steps: list[VerificationStep]) -> int:
-    """Run each step in order and stop on the first failure."""
-    for index, step in enumerate(steps, start=1):
-        command = " ".join(step.argv)
-        relative_cwd = step.cwd.relative_to(ROOT) if step.cwd != ROOT else Path(".")
-        print(f"[verify {index}/{len(steps)}] {step.name}: {command} (cwd={relative_cwd})")
-        completed = subprocess.run(resolve_argv(step.argv), cwd=step.cwd, check=False)
-        if completed.returncode != 0:
-            if not step.required:
-                print(
-                    f"[verify] ADVISORY: {step.name} exited {completed.returncode}; continuing",
-                    file=sys.stderr,
+def _log_path(step: VerificationStep, log_dir: Path) -> Path:
+    slug = re.sub(r"[^a-z0-9]+", "-", step.name.lower()).strip("-")
+    return log_dir / f"{slug}.log"
+
+
+def _step_env(step: VerificationStep) -> dict[str, str] | None:
+    if not step.env:
+        return None
+    env = dict(os.environ)
+    for key, value in step.env:
+        # Extend rather than replace a caller's own list (e.g. SKIP=gitleaks make verify).
+        env[key] = ",".join(filter(None, (env.get(key), value))) if key == "SKIP" else value
+    return env
+
+
+def _display_command(step: VerificationStep) -> str:
+    return "".join(f"{key}={value} " for key, value in step.env) + " ".join(step.argv)
+
+
+def _spawn(step: VerificationStep, log_path: Path | None) -> int:
+    """Run one step, streaming its output or writing it to ``log_path``; return its exit code."""
+    if log_path is None:
+        return subprocess.run(
+            resolve_argv(step.argv), cwd=step.cwd, env=_step_env(step), check=False
+        ).returncode
+    with log_path.open("w", encoding="utf-8", errors="replace") as log:
+        return subprocess.run(
+            resolve_argv(step.argv),
+            cwd=step.cwd,
+            env=_step_env(step),
+            check=False,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+        ).returncode
+
+
+def _run_step(
+    step: VerificationStep, log_dir: Path | None, emit: Callable[[str], None]
+) -> StepResult:
+    relative_cwd = step.cwd.relative_to(ROOT) if step.cwd != ROOT else Path(".")
+    emit(f"[verify] start {step.name}: {_display_command(step)} (cwd={relative_cwd})")
+    started = time.monotonic()
+    log_path = None if log_dir is None else _log_path(step, log_dir)
+    try:
+        returncode = _spawn(step, log_path)
+    except OSError as exc:
+        # A missing executable or unwritable log fails this step, not the whole lane thread.
+        emit(f"[verify] cannot start {step.name}: {exc}")
+        returncode = SPAWN_FAILED
+    result = StepResult(step, returncode, time.monotonic() - started, log_path)
+    status = "ok" if returncode == 0 else f"exit {returncode}"
+    advisory = "" if step.required or returncode == 0 else " (advisory, continuing)"
+    emit(f"[verify] {status:>7} {result.seconds:6.1f}s {step.name}{advisory}")
+    return result
+
+
+def _run_lane(
+    lane: tuple[VerificationStep, ...],
+    log_dir: Path | None,
+    abort: threading.Event,
+    emit: Callable[[str], None],
+) -> list[StepResult]:
+    results: list[StepResult] = []
+    for step in lane:
+        if abort.is_set():
+            break
+        result = _run_step(step, log_dir, emit)
+        results.append(result)
+        if result.returncode != 0 and step.required:
+            abort.set()
+            break
+    return results
+
+
+def _print_log(result: StepResult, heading: str, tail: int | None, file: TextIO) -> None:
+    print(heading, file=file)
+    if result.log_path is None:
+        return
+    lines = result.log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    shown = lines if tail is None else lines[-tail:]
+    print(f"[verify] {len(shown)} of {len(lines)} lines of {result.log_path}:", file=file)
+    for line in shown:
+        print(f"    {line}", file=file)
+
+
+def run_plan(phases: list[VerificationPhase], log_dir: Path = LOG_DIR) -> int:
+    """Run phases in order, lanes concurrently, and stop scheduling on the first failure.
+
+    A failing required step stops every lane from starting its next step; steps already
+    running finish rather than being killed, so no emulator or dev server is orphaned.
+    A single-lane phase streams its output; concurrent lanes write per-step logs, and an
+    advisory step's log is printed in full because reading it is the point of running it.
+    """
+    lock = threading.Lock()
+
+    def emit(message: str) -> None:
+        with lock:
+            print(message, flush=True)
+
+    # Logs left by an earlier run would be mistaken for this run's output.
+    for stale in log_dir.glob("*.log") if log_dir.is_dir() else ():
+        stale.unlink()
+
+    started = time.monotonic()
+    for index, phase in enumerate(phases, start=1):
+        phase_log_dir = None if len(phase.lanes) == 1 else log_dir
+        if phase_log_dir is not None:
+            phase_log_dir.mkdir(parents=True, exist_ok=True)
+        emit(
+            f"[verify phase {index}/{len(phases)}] {phase.name}: {len(phase.lanes)} lane(s)"
+            + ("" if phase_log_dir is None else f", logs in {phase_log_dir}")
+        )
+        abort = threading.Event()
+        with ThreadPoolExecutor(max_workers=len(phase.lanes)) as pool:
+            run_lane = partial(_run_lane, log_dir=phase_log_dir, abort=abort, emit=emit)
+            results = [result for lane in pool.map(run_lane, phase.lanes) for result in lane]
+
+        for result in results:
+            if not result.step.required:
+                heading = (
+                    f"[verify] ADVISORY output of {result.step.name} (exit {result.returncode}):"
                 )
-                continue
-            print(
-                f"[verify] FAILED: {step.name} exited {completed.returncode}",
-                file=sys.stderr,
-            )
-            return completed.returncode
-    print("[verify] PASS: all required local verification steps succeeded")
+                _print_log(result, heading, None, sys.stdout)
+        failures = [r for r in results if r.returncode != 0 and r.step.required]
+        for failure in failures:
+            heading = f"[verify] FAILED: {failure.step.name} exited {failure.returncode}"
+            _print_log(failure, heading, FAILURE_TAIL_LINES, sys.stderr)
+        if failures:
+            return failures[0].returncode
+
+    elapsed = time.monotonic() - started
+    print(f"[verify] PASS: all required local verification steps succeeded in {elapsed:.0f}s")
     return 0
 
 
@@ -185,6 +384,13 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the resolved verification plan without executing commands.",
     )
+    parser.add_argument(
+        "--serial",
+        action="store_true",
+        default=os.getenv("VERIFY_SERIAL") == "1",
+        help="Run every step one after another with streamed output (debugging aid; slower). "
+        "Also enabled by VERIFY_SERIAL=1.",
+    )
     return parser
 
 
@@ -196,7 +402,9 @@ def main(argv: list[str] | None = None) -> int:
         changed_files = get_worktree_changed_files(base_sha, cwd=ROOT)
         detected_mode = classify_paths(changed_files)
         mode: VerificationMode = detected_mode if args.mode == "auto" else args.mode
-        steps = build_plan(mode, base_sha)
+        phases = build_plan(mode, base_sha)
+        if args.serial:
+            phases = serialize_plan(phases)
 
         print(f"[verify] base={base_sha}")
         print(
@@ -206,12 +414,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"[verify] changed: {path}")
 
         if args.plan:
-            for step in steps:
-                cwd = step.cwd.relative_to(ROOT) if step.cwd != ROOT else Path(".")
-                print(f"[verify] plan: {step.name}: {' '.join(step.argv)} (cwd={cwd})")
+            for phase in phases:
+                for lane_index, lane in enumerate(phase.lanes, start=1):
+                    for step in lane:
+                        cwd = step.cwd.relative_to(ROOT) if step.cwd != ROOT else Path(".")
+                        print(
+                            f"[verify] plan: {phase.name}/lane {lane_index}: {step.name}: "
+                            f"{_display_command(step)} (cwd={cwd})"
+                        )
             return 0
 
-        return run_plan(steps)
+        return run_plan(phases)
     except RuntimeError as exc:
         print(f"[verify] ERROR: {exc}", file=sys.stderr)
         return 2
