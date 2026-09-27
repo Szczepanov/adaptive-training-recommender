@@ -342,6 +342,14 @@ def _summarize_segment(
     activity_start: datetime | None = None,
 ) -> CanonicalActivitySegmentSummary:
     samples = _records_between(records, start, end)
+    if step is not None and step.message_index is not None:
+        linked_samples = tuple(
+            record
+            for record in samples
+            if record.workout_step_index == step.message_index
+        )
+        if linked_samples:
+            samples = linked_samples
     average_power = _mean(record.power_watts for record in samples)
     average_hr = _mean(record.heart_rate_bpm for record in samples)
     average_cadence = _mean(record.cadence_rpm for record in samples)
