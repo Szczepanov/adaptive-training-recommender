@@ -195,6 +195,29 @@ def test_semantic_30_30_recoveries_are_not_work_segments():
     )
 
 
+def test_lap_record_windows_do_not_double_count_the_next_segment_boundary():
+    evidence = _structured_evidence(
+        [
+            {"duration": 10, "intensity": "interval", "power": 700, "cadence": 120},
+            {"duration": 60, "intensity": "recovery", "power": 100, "cadence": 80},
+        ]
+    )
+    evidence = replace(
+        evidence,
+        records=tuple(replace(record, workout_step_index=None) for record in evidence.records),
+    )
+
+    response = derive_activity_response("road_biking", evidence)
+
+    assert response is not None
+    sprint = next(segment for segment in response.segments if segment.segment_type == "sprint")
+    recovery = next(
+        segment for segment in response.segments if segment.segment_type == "recovery"
+    )
+    assert sprint.average_power_watts == 700.0
+    assert recovery.average_power_watts == 100.0
+
+
 def test_six_ten_second_sprints_preserve_short_power_and_cadence():
     specs = [{"duration": 180, "intensity": "warmup", "power": 150}]
     for index in range(6):
