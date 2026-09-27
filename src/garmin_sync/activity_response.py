@@ -82,7 +82,7 @@ def _resolution_seconds(
         return None
     deltas = [
         (current[0] - previous[0]).total_seconds()
-        for previous, current in zip(values, values[1:])
+        for previous, current in zip(values, values[1:], strict=True)
     ]
     positive = [delta for delta in deltas if math.isfinite(delta) and delta > 0]
     if len(positive) < 2:
@@ -173,7 +173,7 @@ def _peak_power(
         if len(window) > 1:
             gaps = [
                 (current[0] - previous[0]).total_seconds()
-                for previous, current in zip(window, window[1:])
+                for previous, current in zip(window, window[1:], strict=True)
             ]
             if any(gap <= 0 or gap > resolution * 2.5 for gap in gaps):
                 continue
