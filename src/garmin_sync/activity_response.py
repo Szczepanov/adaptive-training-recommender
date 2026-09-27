@@ -82,7 +82,7 @@ def _resolution_seconds(
         return None
     deltas = [
         (current[0] - previous[0]).total_seconds()
-        for previous, current in zip(values, values[1:], strict=True)
+        for previous, current in zip(values, values[1:], strict=False)
     ]
     positive = [delta for delta in deltas if math.isfinite(delta) and delta > 0]
     if len(positive) < 2:
