@@ -81,11 +81,16 @@ describe('mechanical exposure policy alignment (ADR-0033, issue #804)', () => {
             claimType: 'heuristic',
             maturity: 'heuristic',
             evidenceCertainty: 'not_applicable',
-            version: 2,
+            version: 3,
             safetyImpact: 'high',
         });
         expect(policy.statement).toContain('4 discrete stages');
         expect(policy.statement).toContain('fails closed');
+        expect(policy.statement).toContain('highest stage performed with an explicit normal next-day follow-up');
+        expect(policy.statement).toContain('otherwise the latest performed stage is retained for continuity');
+        expect(policy.statement).toContain('explicit #805 capability-maintenance opt-in');
+        expect(policy.statement).toContain('dedicated 28-day mechanical evidence stream');
+        expect(policy.statement).toContain('known horizon-scoping limitation remains tracked separately in #859');
         expect(policy.statement).toContain('full 14-day continuity window');
         expect(policy.statement).toContain('default target stage is Stage 2');
         expect(policy.statement).toContain('requires an explicit higher target');
@@ -113,7 +118,7 @@ describe('mechanical exposure policy alignment (ADR-0033, issue #804)', () => {
             floor: null,
             delivery: 'embedded',
             target: { unit: 'sessions', minimum: 0, target: 1, maximum: 2 },
-            evidence: { knowledgeClaimId: KNOWLEDGE_CLAIM_IDS.mechanicalExposurePolicy, knowledgeClaimVersion: 2 },
+            evidence: { knowledgeClaimId: KNOWLEDGE_CLAIM_IDS.mechanicalExposurePolicy, knowledgeClaimVersion: 3 },
         });
         expect(mechanical?.substitutionPolicy.permittedModalities).toEqual(['Running', 'Field', 'Strength']);
     });

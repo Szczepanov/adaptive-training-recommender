@@ -2479,7 +2479,11 @@ export async function generateWeekAheadPlanWithIntent(
         preferences, context, todayDate, options.fixedActivities ?? [], options.days ?? 7,
         isAdverseRecovery, options.scheduleOverlays ?? [], new Map(), aerobicVolumeFloor,
         hasCurrentClinicalSymptoms(todayReadiness),
-        { exposureHistory: intent.mechanicalExposureHistory, checkinHistory: mechanicalCheckinHistory },
+        {
+            exposureHistory: intent.mechanicalExposureHistory,
+            observedWindowDays: intent.mechanicalEvidenceObservedWindowDays,
+            checkinHistory: mechanicalCheckinHistory,
+        },
     );
     return generateWeekAheadPlan(
         todayReadiness,

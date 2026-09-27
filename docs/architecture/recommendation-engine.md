@@ -294,14 +294,17 @@ read-only ledgers (`contextBriefExposureLedger.ts` `deriveExposureLedger` /
 - **Status vocabulary.** `confirmed`, `planned`, `unknown`, `deliberately_suspended`
   (current settings guardrails, unexpired injuries via `resolveInjuryRestrictions`, and
   hard modality exclusions — the same sources section 1 prints) and `overdue`, which is
-  never emitted because no authoritative cadence/max-gap policy exists yet. Neuromuscular
+  emitted only for change of direction and sport skill, and only from a caller-supplied resolved #805
+  `CapabilityMaintenanceResult` (the ledger never imports the interval or recomputes a due date; without a
+  resolved result it states that no authoritative overdue status is reported). Change of direction and sport
+  skill are confirmed only by `workouts/athleticCapability.ts` `grantsAthleticCapabilityCredit` exact identities. Neuromuscular
   power (#802) consumes its canonical owner, `workouts/powerExposure.ts`
   `grantsPowerExposureCredit`: only a canonical performed fact with an exact power identity,
   a recoverable materialized `full`/`reduced` variant, and a non-readiness-modified dose
   confirms it. Unknown/legacy variants fail closed rather than being guessed as `full`
   (Garmin records and imported-plan titles cannot prove power content), and an active impact guardrail adds a note that plyometric
   power is suspended while non-impact identities remain eligible. Families still without a
-  canonical model (unilateral #803, impact/jump #804, COD #805, long aerobic anchor #806,
+  canonical model (unilateral #803, long aerobic anchor #806,
   hamstring/calf/grip) are `unknown` and are to be switched to those models' outputs as
   they land, not re-derived here. Unreadable activities, adherence,
   overrides, plan schedule or settings are stated as unknown, never as absence.
@@ -498,17 +501,21 @@ allocation. Stage 1 is re-entry/walk-run; Stage 2 adds low-volume bilateral plyo
 adds deceleration/braking; Stage 4 adds multidirectional/COD work. Advancement ($K \to K+1$) requires at least two
 recent current-stage exposures, each followed by an explicit normal lower-body tissue response on the next-day
 check-in. A check-in without structured tissue response is **missing evidence**, not a green response. Advancement
-is capped at +1 stage. Mild response regresses one stage; moderate/severe response, active pain/illness, or
+is capped at +1 stage. When explicit normal next-day follow-up exists inside the 14-day continuity window, the held
+stage is the highest confirmed stage; otherwise the latest performed stage is retained for continuity while missing
+follow-up still blocks advancement. This means a lower-stage session (for example
+a #805 linear-speed touch) does not demote an athlete who is tolerating a higher stage. Mild response regresses one stage; moderate/severe response, active pain/illness, or
 `avoid_high_impact` blocks/withholds exposure. Exactly 14 or more days without qualifying exposure resets the
 allowed stage to Stage 1. The no-consecutive-calendar-day rule and 14-day reset are conservative product-policy
 guardrails, not experimentally validated biological thresholds.
 
 The evaluator stays pure; orchestration supplies its two evidence streams. Exposure evidence is
-`TrainingIntent.mechanicalExposureHistory`, which `resolveTrainingIntent` bounds to at least
-`MECHANICAL_CONTINUITY_WINDOW_DAYS` (14) whenever the evergreen intent can emit the requirement: it reuses the
-28-day `athleteStateEvidence`, and only a snapshot-less provider reconstructs the window (the projected next-day
-provider fetches that wider prior lazily). The 7-day operational `history` is never widened, so an exposure 8-13
-days ago is neither lost to the re-entry rule nor counted in fatigue/objective bookkeeping. Structured check-ins
+`TrainingIntent.mechanicalExposureHistory`. Whenever evergreen can emit #804 — including an explicit #805
+capability-maintenance opt-in — `resolveTrainingIntent` supplies a dedicated 28-day mechanical establishment
+window and its observation span. This stream is separate from `athleteStateEvidence`, so enabling capability
+maintenance cannot change the aerobic floor, power prior or quality prior. The #804 progression evaluator still
+filters that evidence to its own 14-day continuity window. The 7-day operational `history` is never widened, so
+older evidence is not replayed into fatigue/objective bookkeeping. Structured check-ins
 (`DailySubjectiveCheckin.tissueResponses`) for the window through the decision date are read once per entry point
 (`evaluateTrainingWithIntent`, `evaluateNextDayPlanWithIntent`, `generateWeekAheadPlanWithIntent`) by
 `mechanicalCheckinHistory.ts` `resolveMechanicalCheckinHistory`, whose Firestore provider is a lazily-imported
@@ -524,10 +531,75 @@ eligibility still apply. A target only ever raises the request, and the evaluato
 
 The progression verdict supplies an exact workout allow-list to both coverage ranking and weekly reservations.
 A blocked verdict therefore leaves the target visible with zero eligible candidates instead of silently widening
-to harder stages or substituting generic exercise. Policy is owned by
+to harder stages or substituting generic exercise. The conservative no-consecutive-mechanical-days rule remains
+inside the shared #804 progression verdict in this PR. That means a verdict computed on the day after a mechanical
+exposure can still suppress the wider planning horizon; correcting that pre-existing scoping issue is deliberately
+kept in follow-up #859 rather than changing non-opted-in recommendations inside #805. Policy is owned by
 `policy.evergreen.mechanical_exposure_v1`; `biomechanics.impact.progressive_mechanical_loading` supplies only
 the narrower scientific rationale that bone and tendon adapt to mechanical loading. The registry explicitly
 documents that the exact scheduling/progression thresholds are product heuristics (ADR-0033).
+
+### Periodic athletic-capability maintenance (#805)
+
+An athlete may opt in (`TrainingIntentProfile.capabilityMaintenance`, default off, optional in Firestore and
+validated by `validationCore.ts` and `firestore.rules`) to periodic broad-athleticism maintenance. The opt-in is
+independent of the `sport_readiness` priority and never changes preferred modalities or event modality. Four
+sport-neutral capabilities exist: `linear_speed_skill`, `acceleration_deceleration`,
+`multidirectional_change_of_direction` and `sport_skill`.
+
+- **Identity.** `workouts/athleticCapability.ts` maps capability x workout x authored variant x retained steps
+  (sprint mechanics, acceleration/braking and controlled field maintenance). `return_to_training` credits only
+  the capabilities whose defining steps it keeps; readiness-modified doses fail closed; running, walk-run and
+  reactive plyometrics never qualify. Stages are read from `mechanicalIdentityFor`, never duplicated.
+  `validateAthleticCapabilityIdentities` runs in `validate-workouts`.
+- **Cadence.** `engine/capabilityMaintenance.ts` `evaluateCapabilityCadence` is pure. The interval
+  (`ATHLETIC_CAPABILITY_TARGET_INTERVAL_DAYS`, 14) is a maximum gap equal to #804's continuity window, so a
+  capability is `due` when last qualifying exposure + 13 days (`ATHLETIC_CAPABILITY_DUE_OFFSET_DAYS`) falls in the
+  planning horizon, with not-before and target dates equal to that due date; a touch on the due date therefore never
+  lands on a #804 re-entry day. It is `overdue` past that date or with no qualifying exposure in a complete observed
+  interval, and `insufficient_history` below 14 proven observed days. Evidence is the 28-day athlete-state window when the
+  priorities already load it, else the dedicated #804 mechanical establishment read. Snapshot-backed providers
+  report the observed span; reconstruct-only providers may still return a wider exposure list for #804 progression
+  but retain conservative operational coverage for cadence/establishment rather than claiming 28 unseen days. The
+  opt-in never widens general athlete-state evidence, so it cannot change aerobic, power or quality decisions.
+- **Fulfilment.** `evaluateCapabilityMaintenance` keeps ADR-0044 D9 fulfilment separate: `plannable`, `blocked`
+  (`mechanical_guardrail`, `mechanical_stage_insufficient`, `modality_unavailable`, `modality_avoided`,
+  `environment_unavailable`, `no_support_capacity`), `deliberately_suspended` (`adverse_recovery`,
+  `clinical_symptoms`, `event_phase`, `mechanical_withheld`, `event_directed_mode`) or `unknown`
+  (`mechanical_requirement_absent`, `history_unavailable`). Hard gates come from the existing authorities via
+  `capabilityMaintenancePlanning.ts` `capabilityGates` (template eligibility, preferences, resolved schedule
+  environment). Capacity is also duration-aware: a positive date is not enough if none of its due-window
+  minutes can fit the canonical minimum duration of a qualifying/progression identity. A suspension creates
+  no placement, so at most one touch per capability is ever owed.
+- **Planning.** In `resolveEvergreenPlan` the opt-in guarantees an optional #804 mechanical requirement unless #804
+  deliberately suspends it (`canEmitMechanicalRequirement`), and the highest owed capability stage is passed as
+  #804's `targetStage` (#804 still caps advancement at one stage and requires its response evidence). Owed
+  capabilities become `CapabilityPlacement`s on the single `mechanical_exposure` coverage requirement, which then
+  carries a support-tier minimum of one (the shape a `target` mechanical requirement already has). No distinct
+  capability requirement/objective is added and the configured weekly session commitment is unchanged; the
+  existing mechanical support occurrence can become reservable while a capability is owed. `coverage.ts`
+  `buildCoverageState` resolves placements per planning date. Before the first open placement becomes active,
+  allocator-visible candidates are the union of its open exact identities and each workout carries the earliest
+  applicable not-before date into `weeklyAllocation.ts`; reservation and coverage-need ranking both enforce that
+  bound, including for athletes who already prefer Field. Once placements are active, current-date coverage narrows
+  to identities that settle the most active placements. Exact consent also starts only on/after not-before. Once
+  every placement is fulfilled the support minimum lapses. A delivery identity is a
+  stage-eligible capability identity, or, when none is stage-eligible, the highest currently eligible #804 identity so
+  progression can occur. This does not create a distinct capability requirement/objective or increase the athlete's
+  configured weekly session commitment; it can make the existing mechanical support occurrence reservable when a
+  capability is owed.
+- **Consent.** `rankCandidates` evaluates the hard `UNAVAILABLE_MODALITY` exclusion first, then exempts from
+  `EXPLICIT_MODALITY_PREFERENCE_REQUIRED` only exact identities of enabled capabilities that the date's coverage
+  state consents to (`hasCapabilityConsent`); a progression-only touch may consent an enabled capability's identity
+  that is not itself due, because it is the only path to the owed higher stage. Avoided modalities block the optional injection; deprioritized modalities stay soft.
+- **Authority and diagnostics.** Recommendation authority is evergreen-only; event-directed planning reports
+  `deliberately_suspended/event_directed_mode` and unlocks nothing. `ResolvedEvergreenPlan.capabilityMaintenance`
+  and `ResolvedEvergreenPlan.warnings` carry the typed readout; owed `blocked`/`unknown` capabilities raise
+  `capability_maintenance_unfulfilled`, while deliberate suspension stays visible without a warning. Diagnostics are
+  not persisted in the recommendation audit in v1.
+
+Policy is owned by `policy.evergreen.athletic_capability_maintenance_v1`, a product heuristic: no reviewed
+trained-adult evidence validates a 14-day (or 28-day) change-of-direction or ball-skill maintenance minimum.
 
 Event-free `health` planning also resolves `healthPlanningPolicy.ts`
 `resolveHealthPlanningPolicy` from the current intent and preferences. Explicit Running

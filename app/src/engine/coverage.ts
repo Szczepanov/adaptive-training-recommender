@@ -7,6 +7,7 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CoverageCreditFact, PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import type { CompletedExposure } from './trainingHistory';
 import { aerobicVolumeFloorForWorkout, type AerobicVolumeFloor } from './aerobicVolumeFloor';
+import { activeCapabilityPlacements, isCapabilityPlacementFulfilled, type CapabilityPlacement } from './capabilityMaintenance';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { grantsPowerExposureCredit } from '../workouts/powerExposure';
@@ -73,6 +74,15 @@ export interface WeeklyCoverageRequirement {
     /** Capability-owned candidate allow-list. `undefined` means unrestricted; an empty
      * list is an explicit fail-closed block for this planning window. */
     eligibleWorkoutIds?: readonly string[];
+    /** Issue #805: earliest date each capability-owned workout may satisfy/reserve this
+     * support occurrence. The allocator and current-date ranking both enforce it. */
+    candidateWorkoutNotBeforeDates?: Readonly<Record<string, string>>;
+    /** Issue #805: the plan's capability placements, as authored for the whole horizon. */
+    capabilityPlacements?: readonly CapabilityPlacement[];
+    /** Issue #805 (D-E): exact capability identities the athlete's opt-in consents to on this
+     * state's `asOfDate` -- only placements already due and not yet fulfilled. The optimizer
+     * may exempt exactly these from `requiresExplicitModalityPreference`; nothing else. */
+    capabilityConsentWorkoutIds?: readonly string[];
 }
 
 export interface CoverageState {
@@ -580,6 +590,7 @@ export function buildCoverageState(
                     ...(definition.reservationTier === 'support' ? { reservationTier: 'support' as const } : {}),
                     ...(definition.minimumDurationMinutes !== undefined ? { minimumDurationMinutes: definition.minimumDurationMinutes } : {}),
                     ...(definition.exactWorkoutIds?.length ? { exactWorkoutIds: definition.exactWorkoutIds } : {}),
+                    ...(definition.capabilityPlacements?.length ? { capabilityPlacements: definition.capabilityPlacements } : {}),
                 });
             }
         });
@@ -636,9 +647,67 @@ export function buildCoverageState(
         activeBlockId: block.id,
         coverageSetId: activeDescriptor.id,
         descriptor: activeDescriptor,
-        requirements: Array.from(requirementsByKey.values()),
+        requirements: Array.from(requirementsByKey.values()).map(requirement => withActiveCapabilityPlacements(requirement, asOfDate)),
         aerobicVolumeFloor,
     };
+}
+
+/**
+ * Issue #805 (F12): resolve capability placements for one planning date. Pending placements
+ * expose only their exact delivery/progression identities plus per-workout not-before metadata;
+ * current-date consent and coverage urgency remain off until a placement becomes active.
+ * Active placements narrow the support requirement to their exact identities. A fulfilled set
+ * lapses the support minimum. This is a date-aware reuse of one occurrence, never an additional
+ * requirement, objective or session.
+ */
+function withActiveCapabilityPlacements(requirement: WeeklyCoverageRequirement, asOfDate: string): WeeklyCoverageRequirement {
+    if (!requirement.capabilityPlacements?.length) return requirement;
+    const touches = requirement.credits.map(credit => ({ date: credit.date, workoutId: credit.workoutId }));
+    const open = requirement.capabilityPlacements.filter(placement => !isCapabilityPlacementFulfilled(placement, asOfDate, touches));
+    if (open.length === 0) {
+        // Every owed touch is delivered: the support minimum the placements carried lapses.
+        return { ...requirement, minimumSessions: 0 };
+    }
+    const active = activeCapabilityPlacements(open, asOfDate, touches);
+    // Before the first due date expose every open placement identity to the allocator, but
+    // carry each identity's earliest not-before date so it cannot be reserved or gain coverage
+    // urgency early (including when Field is already preferred). Once something is active,
+    // narrow current-date coverage to the identities that settle the most active placements.
+    const pendingIds = open.flatMap(placement => placement.workoutIds);
+    const narrowed = [...new Set(active.length > 0 ? preferBroadestCoverage(active) : pendingIds)]
+        .filter(workoutId => requirement.eligibleWorkoutIds === undefined || requirement.eligibleWorkoutIds.includes(workoutId))
+        .sort();
+    const candidateWorkoutNotBeforeDates = Object.fromEntries(narrowed.map(workoutId => {
+        const earliest = open
+            .filter(placement => placement.workoutIds.includes(workoutId))
+            .map(placement => placement.notBeforeDate)
+            .sort()[0];
+        return [workoutId, earliest];
+    }));
+    const consent = [...new Set(active.flatMap(placement => placement.consentWorkoutIds))]
+        .filter(workoutId => narrowed.includes(workoutId))
+        .sort();
+    return {
+        ...requirement,
+        eligibleWorkoutIds: narrowed,
+        candidateWorkoutNotBeforeDates,
+        ...(consent.length > 0 ? { capabilityConsentWorkoutIds: consent } : {}),
+    };
+}
+
+/** One support occurrence should settle as many owed capabilities as possible: keep only the
+ * placement identities shared by the largest number of open placements (never widening). */
+function preferBroadestCoverage(placements: readonly CapabilityPlacement[]): string[] {
+    const ids = [...new Set(placements.flatMap(placement => placement.workoutIds))];
+    const coverage = (workoutId: string) => placements.filter(placement => placement.workoutIds.includes(workoutId)).length;
+    const best = Math.max(0, ...ids.map(coverage));
+    return ids.filter(workoutId => coverage(workoutId) === best);
+}
+
+/** Issue #805 (D-E): true only for an exact capability identity consented on this state's date. */
+export function hasCapabilityConsent(state: CoverageState | null | undefined, workoutId: string | undefined): boolean {
+    if (!state || !workoutId) return false;
+    return state.requirements.some(requirement => requirement.capabilityConsentWorkoutIds?.includes(workoutId));
 }
 
 function fulfilledSessions(requirement: WeeklyCoverageRequirement): number {
@@ -700,8 +769,11 @@ export function coverageNeedTierForTemplate(
     const keys = (state.descriptor ? coverageKeysForTemplate(template, state.phase, state.descriptor, state.aerobicVolumeFloor) : [])
         .filter(key => !EMBEDDED_ONLY_COVERAGE_KEYS.has(key))
         .filter(key => {
-            const eligibleWorkoutIds = state.requirements.find(requirement => requirement.key === key)?.eligibleWorkoutIds;
-            return eligibleWorkoutIds === undefined || (workoutId !== undefined && eligibleWorkoutIds.includes(workoutId));
+            const requirement = state.requirements.find(item => item.key === key);
+            const eligibleWorkoutIds = requirement?.eligibleWorkoutIds;
+            if (eligibleWorkoutIds !== undefined && (workoutId === undefined || !eligibleWorkoutIds.includes(workoutId))) return false;
+            const notBefore = workoutId ? requirement?.candidateWorkoutNotBeforeDates?.[workoutId] : undefined;
+            return notBefore === undefined || state.asOfDate >= notBefore;
         });
     if (keys.length === 0) return 3;
 
@@ -759,6 +831,10 @@ export function coverageNeedTierForTemplate(
     for (const key of keys) {
         const requirement = state.requirements.find(item => item.key === key);
         if (requirement && fulfilledSessions(requirement) < requirement.targetSessions) return 2;
+        // Issue #805: an active, unfulfilled capability placement is owed even when generic
+        // #804 mechanical dose already met its weekly target -- ranking urgency only, never
+        // an extra requirement or reserved occurrence.
+        if (requirement && workoutId !== undefined && requirement.capabilityConsentWorkoutIds?.includes(workoutId)) return 2;
     }
     return 3;
 }

@@ -2,13 +2,63 @@
 
 | | |
 |---|---|
-| **Status** | `Approved` — decisions D-A to D-I resolved on 27 September 2026; Phase 0A is delivered by PR #854, while Phase 0B still blocks capability-consent integration |
+| **Status** | `In review` — Phase 0B and Phases 1–8 delivered by the #805 implementation PR; Phase 0A was delivered separately by PR #854 |
 | **Source** | [issue #805](https://github.com/Szczepanov/adaptive-training-recommender/issues/805) |
-| **Blocked by** | Phase 0B (F11 unavailable-modality hard-exclusion repair) before capability-consent integration. Phase 0A (#804 wiring gaps F1–F3) is satisfied by PR #854; schema/mapping/evaluator work remains startable. |
+| **Blocked by** | Nothing. |
 | **Unlocks** | Retires `cod_lateral` from the context-brief ledger's unmodelled list; first authoritative cadence for ledger `overdue` |
 | **Baseline** | Reviewed against `main` @ `305d3c4e` (#851 merged). The implementation must use the then-current `POLICY_VERSION` after prerequisite PRs land. |
 
 All symbols below exist on the baseline unless marked **new**.
+
+## Delivery record
+
+The findings (F1–F15) and phase text below are the approved design as written before implementation; they are
+historical, not open work. What shipped, and where it deviated:
+
+- **Phase 0A** (check-ins, wider mechanical history, default stage target, simulation seam) shipped in PR #854.
+  #805 supplies only the `targetStage` hook it reserved (D-C), raised to the highest owed capability stage.
+- **Phase 0B** shipped here: `rankCandidates` rejects unavailable modalities with `UNAVAILABLE_MODALITY` before any
+  preference or consent exemption.
+- **Deviation — support occurrence.** An `optional` #804 requirement has `minimumSessions: 0`, so for the
+  cycling-primary persona no support occurrence existed to reuse (the opted-out 8-week run contains zero mechanical
+  sessions). While a capability placement exists, the single `mechanical_exposure` requirement therefore carries a
+  support-tier minimum of one — the shape a `target` mechanical requirement already had — so the allocator places
+  it only around primary roles. No distinct capability requirement/objective is added and the athlete's configured
+  weekly session commitment is unchanged; the existing mechanical support occurrence can become reservable when a
+  capability is owed. The 8-week simulation shows fewer realized training days opted-in than opted-out.
+- **Deviation — date-aware placement.** Placement is resolved per planning date in `coverage.ts`
+  `buildCoverageState` (narrowed allow-list plus exact-identity consent while a placement is active and unfulfilled)
+  rather than by a new constraint inside `weeklyDosePacking.ts`, which never selects the mechanical support date.
+- **Review-driven change — cadence vs #804 (approved 27 September 2026).** Independent review found that a due
+  date of last + 14 always fell on a #804 re-entry day (gap >= 14 resets to Stage 1) and that #804's latest-stage
+  rule let any Stage 2/3 linear-speed touch demote a Stage-4 athlete, so field work stalled after one or two touches.
+  Resolution: the capability is due at last + 13 (the 14-day interval is now a maximum gap equal to #804's continuity
+  window), and #804 holds the highest stage with explicit normal follow-up inside that window when such evidence
+  exists; otherwise it retains the latest performed stage while missing follow-up still blocks advancement
+  (`policy.evergreen.mechanical_exposure_v1` claim v3). This overrides the original plan note not to fix the stage
+  ratchet inside #805. A deterministic eight-week cycle test drives #804 and #805 day by day and proves recurrence.
+- **Other review fixes.** Consent is limited to identities of enabled capabilities (a progression-only touch may
+  consent an enabled capability's identity that is not itself due — recorded deviation); a qualifying touch anywhere
+  from a placement's planning date closes it. Pending placements expose their candidate identities to the weekly
+  allocator with per-workout not-before dates; both reservation and coverage urgency enforce those dates, including
+  when Field is already preferred. Once active, identities settling the most active placements are preferred.
+- **D-A evidence scope / #857 closure.** The opt-in does not widen athlete-state evidence (which would change aerobic
+  floor, power and quality decisions). Instead #804 receives a dedicated establishment read. Snapshot-backed providers
+  carry the confirmed observation span; reconstruct-only providers may return the wider exposure list but fail closed
+  at the conservative operational span for cadence/establishment, so missing history cannot masquerade as 28 observed days.
+- **Simulation harness limits.** The 8-week family shows field work on the support slot and respects the cadence,
+  but it cannot show sustained recurrence: the harness records every simulated session at template minimum duration,
+  so the athlete drops below #804's "established" volume after about three weeks (in both arms), and #804's
+  consecutive-day `withheld` verdict on the weekly planning day blanks the whole seven-day horizon. Recurrence is
+  therefore proven by the deterministic cycle test; both harness/#804 horizon effects are follow-ups.
+- **Diagnostics reach.** `ResolvedEvergreenPlan.capabilityMaintenance` and `warnings` are not yet threaded into the
+  recommendation explanation, so a stalled target is diagnosable at the engine API but not yet shown to the athlete.
+- **Context brief.** The ledger consumes a resolved `CapabilityMaintenanceResult` when supplied, but
+  `contextBriefService.ts` does not yet compute one, so the exported brief reports that no authoritative overdue
+  status is available. Surfacing the planner's result in the brief is follow-up work.
+- **Persona judge.** `persona_cycling_hybrid_broad_athleticism` was added; the LLM persona-judge baseline was not
+  re-run in this change.
+
 
 ## Goal
 

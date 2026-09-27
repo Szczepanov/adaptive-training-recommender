@@ -36,6 +36,8 @@ export interface RequiredRoleOccurrence {
     eligibleWorkoutIds: string[];
     /** Optional capability-owned restriction applied before exact coverage identities are attached. */
     candidateWorkoutAllowList?: string[];
+    /** Earliest reservation date by exact capability-owned workout identity. */
+    candidateWorkoutNotBeforeDates?: Readonly<Record<string, string>>;
     /** Issue #801: a support occurrence is placed only after, and around, the primary
      * allocation (see `resolveWeeklyRoleReservations`). Absent means primary. */
     reservationTier?: 'support';
@@ -142,6 +144,7 @@ export interface WeeklyRoleAllocationResult {
  * scheduling conflict. Anything unrecognised stays an observed blocker only. */
 const SAFETY_EXCLUSION_REASONS = new Set([
     'INJURY_RESTRICTION',
+    'UNAVAILABLE_MODALITY',
     'QUALITY_SPACING_VIOLATION',
     'HARD_LOWER_BODY_SPACING_VIOLATION',
     'ROLLING_HARD_CAP_EXCEEDED',
@@ -211,6 +214,9 @@ export function deriveRequiredRoleOccurrences(state: CoverageState): RequiredRol
                     eligibleWorkoutIds: [],
                     ...(requirement.eligibleWorkoutIds !== undefined
                         ? { candidateWorkoutAllowList: [...requirement.eligibleWorkoutIds] }
+                        : {}),
+                    ...(requirement.candidateWorkoutNotBeforeDates
+                        ? { candidateWorkoutNotBeforeDates: { ...requirement.candidateWorkoutNotBeforeDates } }
                         : {}),
                     ...(requirement.reservationTier === 'support' ? { reservationTier: 'support' as const } : {}),
                 };
@@ -352,6 +358,12 @@ function assignmentSignature(assignments: readonly AllocationAssignment[]): stri
         .join(',');
 }
 
+function candidateIsDueOnDate(occurrence: RequiredRoleOccurrence, templateId: string, date: string): boolean {
+    const workoutId = workoutIdForTemplateId(templateId);
+    const notBefore = workoutId ? occurrence.candidateWorkoutNotBeforeDates?.[workoutId] : undefined;
+    return notBefore === undefined || date >= notBefore;
+}
+
 function missReasonFor(state: OccurrenceSearchState): WeeklyRoleMissReason {
     if (state.candidates.length === 0) {
         if (state.sawSafetyExclusion) return 'hard_safety_or_recovery';
@@ -431,6 +443,7 @@ function resolveSinglePass(
                 continue;
             }
             for (const templateId of occurrence.eligibleTemplateIds) {
+                if (!candidateIsDueOnDate(occurrence, templateId, date)) continue;
                 if (outcome.acceptedTemplateIds.includes(templateId)) {
                     all.push({ date, templateId });
                 } else if (outcome.fatigueExcludedTemplateIds.includes(templateId)) {

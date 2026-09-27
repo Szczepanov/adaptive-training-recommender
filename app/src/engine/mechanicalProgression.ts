@@ -280,31 +280,43 @@ export function evaluateMechanicalStageProgression(
   }
 
   // 5. Progression / Regression calculation
-  let calculatedStage: MechanicalStage = lastExposure.stage;
+  // Issue #805: the held stage is the highest stage performed with an explicit normal next-day
+  // follow-up inside the continuity window, not merely the latest exposure's stage. A lower-stage
+  // session (e.g. a linear-speed touch) therefore no longer demotes an athlete who is tolerating a
+  // higher stage; symptoms, gaps and guardrails still regress/block as before.
+  const hasNormalFollowUp = (exposure: MechanicalExposureRecord): boolean =>
+    explicitFollowUpVerdict(checkinsByDate.get(addDaysToLocalDateString(exposure.date, 1))) === 'normal';
+  const confirmedStages = recentExposures.filter(hasNormalFollowUp).map(exposure => exposure.stage);
+  // Normal-confirmed stages ratchet the held stage upward so a later lower-stage touch cannot
+  // demote previously demonstrated capacity. If the continuity window contains no explicit
+  // normal follow-up at all, preserve #804's pre-#805 retention contract by holding the latest
+  // performed stage; missing follow-up still prevents advancement to a higher stage.
+  const heldStage = (confirmedStages.length > 0 ? Math.max(...confirmedStages) : lastExposure.stage) as MechanicalStage;
+  let calculatedStage: MechanicalStage = heldStage;
 
   if (responseVerdict === 'adverse') {
-    // Regress stage on adverse symptoms
+    // Regress stage on adverse symptoms after the latest exposure
     calculatedStage = Math.max(1, (lastExposure.stage - 1)) as MechanicalStage;
   } else if (responseVerdict === 'normal') {
-    const requested = input.targetStage ?? lastExposure.stage;
-    if (requested > lastExposure.stage) {
+    // A target only ever raises the request; it never demotes below the held stage.
+    const requested = input.targetStage ?? heldStage;
+    if (requested > heldStage) {
       const successfulCurrentStageExposures = recentExposures.filter(exposure =>
-        exposure.stage === lastExposure.stage
-        && explicitFollowUpVerdict(checkinsByDate.get(addDaysToLocalDateString(exposure.date, 1))) === 'normal'
+        exposure.stage === heldStage && hasNormalFollowUp(exposure)
       ).length;
       if (successfulCurrentStageExposures >= 2) {
         // Conservative progression: at most +1 stage.
-        calculatedStage = Math.min(4, lastExposure.stage + 1) as MechanicalStage;
+        calculatedStage = Math.min(4, heldStage + 1) as MechanicalStage;
       } else {
-        calculatedStage = lastExposure.stage;
+        calculatedStage = heldStage;
         responseNotes.push(`Progression held: ${successfulCurrentStageExposures}/2 current-stage exposures have explicit normal follow-up.`);
       }
     } else {
-      calculatedStage = requested;
+      calculatedStage = heldStage;
     }
   } else if (responseVerdict === 'missing') {
-    // Missing response evidence: hold stage at last exposure stage, do NOT advance
-    calculatedStage = lastExposure.stage;
+    // Missing response evidence for the latest exposure: hold, do NOT advance
+    calculatedStage = heldStage;
   }
 
   const status: MechanicalProgressionStatus = foundAdverse ? 'regressed' : 'eligible';

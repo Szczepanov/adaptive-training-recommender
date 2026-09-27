@@ -253,6 +253,7 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
       'Adverse recovery should reduce near-term training cost without erasing the longer-horizon requirement for both cycling and resistance exposure.',
       'A strength preference today is a soft preference, not authority to turn the week into strength-primary programming.',
       'More available training time is not automatically a reason to add another hard session; inexpensive aerobic volume is preferable to gratuitous intensity when progression is otherwise appropriate.',
+      'When the athlete has opted in to broad-athleticism maintenance, periodic field/multidirectional work is acceptable only as low-frequency maintenance: it must stay subordinate to cycling quality, never displace key cycling sessions, and never appear merely because running or accelerations were available.',
     ],
   };
 
@@ -265,7 +266,7 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
   }
 
   /** Materialize one evergreen hybrid case from shared identity, history, and intent. */
-  function makeCase({ id, label, readiness, caseContext = context }) {
+  function makeCase({ id, label, readiness, caseContext = context, caseIntent = intent }) {
     return {
       persona: clone(persona),
       scenario: {
@@ -276,7 +277,7 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
         context: clone(caseContext),
         event: null,
         events: [],
-        trainingIntentProfile: clone(intent),
+        trainingIntentProfile: clone(caseIntent),
         preferences: clone(preferences),
         initialHistory: clone(currentHistory),
         fixedActivities: [],
@@ -286,6 +287,12 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
       },
     };
   }
+
+  const broadAthleticismIntent = clone(intent);
+  broadAthleticismIntent.capabilityMaintenance = {
+    enabled: true,
+    capabilities: ['linear_speed_skill', 'acceleration_deceleration', 'multidirectional_change_of_direction', 'sport_skill'],
+  };
 
   const tissueConflictContext = clone(context);
   tissueConflictContext.constraints.impliedGuardrails = ['avoid_high_impact', 'avoid_heavy_lower_body'];
@@ -358,14 +365,18 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
 
   return {
     familyId: CYCLING_HYBRID_FAMILY_ID,
-    changedAxis: 'recovery, local mechanical constraint, today-specific modality preference, and time availability for a cycling-primary hybrid athlete',
-    comparisonInstruction: 'Compare one established cycling-primary hybrid athlete across normal recovery, adverse recovery, a genuinely favorable-wearable/local-tissue conflict, a strength preference today, and a short training window. Cycling remains the primary performance objective, resistance training remains a real retention requirement backed by observed history, and active pain/guardrails outrank favorable wearable readiness.',
+    changedAxis: 'recovery, local mechanical constraint, today-specific modality preference, time availability, and broad-athleticism opt-in for a cycling-primary hybrid athlete',
+    comparisonInstruction: 'Compare one established cycling-primary hybrid athlete across normal recovery, adverse recovery, a genuinely favorable-wearable/local-tissue conflict, a strength preference today, a short training window, and an explicit broad-athleticism opt-in. Cycling remains the primary performance objective, resistance training remains a real retention requirement backed by observed history, and active pain/guardrails outrank favorable wearable readiness.',
     cases: [
       makeCase({ id: 'persona_cycling_hybrid_baseline', label: 'Cycling-primary hybrid persona — normal recovery', readiness: baselineReadiness }),
       makeCase({ id: 'persona_cycling_hybrid_adverse_recovery', label: 'Cycling-primary hybrid persona — adverse recovery', readiness: adverseReadiness }),
       makeCase({ id: 'persona_cycling_hybrid_local_tissue_conflict', label: 'Cycling-primary hybrid persona — favorable wearable signals with active local-tissue guardrails', readiness: tissueConflictReadiness, caseContext: tissueConflictContext }),
       makeCase({ id: 'persona_cycling_hybrid_strength_preference', label: 'Cycling-primary hybrid persona — strength preference today', readiness: strengthPreferenceReadiness }),
       makeCase({ id: 'persona_cycling_hybrid_low_time', label: 'Cycling-primary hybrid persona — 35-minute training window', readiness: lowTimeReadiness, caseContext: lowTimeContext }),
+      // Issue #805: the same athlete with the explicit broad-athleticism opt-in. Qualitative
+      // only: two simulated weeks cannot validate the 14-day cadence, which is covered by
+      // deterministic engine tests and the 8-week simulation family.
+      makeCase({ id: 'persona_cycling_hybrid_broad_athleticism', label: 'Cycling-primary hybrid persona — broad-athleticism capability maintenance opted in', readiness: baselineReadiness, caseIntent: broadAthleticismIntent }),
     ],
   };
 }
@@ -518,7 +529,7 @@ export function assertPersonaFixtureIntegrity(families) {
   const cyclingHybrid = families.find((family) => family.familyId === CYCLING_HYBRID_FAMILY_ID);
   assertHybridScenarioIntegrity(families, cyclingHybrid);
   if (!cyclingHybrid) failures.push('Active suite is missing the cycling-primary hybrid persona.');
-  if (cyclingHybrid?.cases.length !== 5) failures.push(`Cycling-primary hybrid persona must have exactly 5 state cases, found ${cyclingHybrid?.cases.length ?? 0}.`);
+  if (cyclingHybrid?.cases.length !== 6) failures.push(`Cycling-primary hybrid persona must have exactly 6 state cases, found ${cyclingHybrid?.cases.length ?? 0}.`);
   for (const definition of cyclingHybrid?.cases ?? []) {
     const { scenario, persona } = definition;
     if (persona.personaId !== CYCLING_HYBRID_PERSONA_ID) failures.push(`${scenario.id}: cycling-primary hybrid case drifted to persona ${persona.personaId}.`);

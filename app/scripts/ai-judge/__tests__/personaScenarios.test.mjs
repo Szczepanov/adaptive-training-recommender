@@ -13,7 +13,7 @@ const EXPECTED_FAMILY_CASE_COUNTS = new Map([
   ['persona_stacked_constraints', 3],
   ['persona_walking_preferred', 3],
   ['persona_established_history', 4],
-  ['persona_cycling_primary_hybrid', 5],
+  ['persona_cycling_primary_hybrid', 6],
   ['persona_running_event_priority', 3],
   ['persona_triathlon_established_olympic', 4],
 ]);
@@ -178,7 +178,7 @@ describe('active persona AI-judge suite', () => {
   it('adds an anonymized cycling-primary hybrid persona with explicit hierarchy and evidence-backed mixed history', () => {
     const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_cycling_primary_hybrid');
     expect(family).toBeDefined();
-    expect(family.cases).toHaveLength(5);
+    expect(family.cases).toHaveLength(6);
 
     for (const definition of family.cases) {
       expect(definition.persona.personaId).toBe('cycling_primary_hybrid_advanced');
@@ -204,6 +204,11 @@ describe('active persona AI-judge suite', () => {
       expect(strengthHistory.every((exposure) => exposure.category === 'Full-body Strength')).toBe(true);
       expect(definition.scenario.event).toBeNull();
     }
+
+    // Issue #805: only the broad-athleticism case carries the explicit opt-in.
+    const optedIn = family.cases.filter((definition) => definition.scenario.trainingIntentProfile.capabilityMaintenance?.enabled);
+    expect(optedIn.map((definition) => definition.scenario.id)).toEqual(['persona_cycling_hybrid_broad_athleticism']);
+    expect(optedIn[0].persona.judgeExpectations.some((expectation) => expectation.includes('subordinate to cycling quality'))).toBe(true);
 
     const tissueConflict = family.cases.find((definition) => definition.scenario.id === 'persona_cycling_hybrid_local_tissue_conflict');
     const tissueReadiness = tissueConflict.scenario.readinessForWeek(0);

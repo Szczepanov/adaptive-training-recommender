@@ -1051,11 +1051,26 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    // Issue #805: optional, default-off capability-maintenance opt-in. Absent = opted out;
+    // mirrors validationCore.ts validateTrainingIntentProfile.
+    function hasValidCapabilityMaintenance(value) {
+      return value is map
+        && value.keys().hasOnly(['enabled', 'capabilities'])
+        && value.keys().hasAll(['enabled', 'capabilities'])
+        && value.enabled is bool
+        && value.capabilities is list
+        && value.capabilities.size() <= 4
+        && value.capabilities.hasOnly(['linear_speed_skill', 'acceleration_deceleration', 'multidirectional_change_of_direction', 'sport_skill'])
+        && value.capabilities.toSet().size() == value.capabilities.size()
+        && (value.enabled == false || value.capabilities.size() > 0);
+    }
+
     function hasValidTrainingIntentProfile(userId) {
       let data = request.resource.data;
       let commitment = data.weeklyCommitment;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference', 'schemaVersion', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference', 'schemaVersion', 'createdAt', 'updatedAt', 'capabilityMaintenance'])
+        && (!('capabilityMaintenance' in data) || hasValidCapabilityMaintenance(data.capabilityMaintenance))
         && data.keys().hasAll(['userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference', 'schemaVersion', 'createdAt', 'updatedAt'])
         && data.planningMode in ['evergreen', 'event_directed', 'externally_planned']
         && data.priorities is list && data.priorities.size() <= 6

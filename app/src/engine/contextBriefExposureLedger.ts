@@ -13,8 +13,16 @@
  *
  * Deferred, not modelled here: capability families owned by #801–#806 and the tissue-specific
  * families are reported `unknown` until those canonical models exist; taper/event-specific
- * suppression is not represented yet; `overdue` is never emitted until an authoritative
- * cadence/max-gap policy exists.
+ * suppression is not represented yet.
+ *
+ * Issue #805: change of direction and sport skill are confirmed only through exact
+ * `grantsAthleticCapabilityCredit` identities. `overdue` / cadence-driven suspension is emitted
+ * only from a caller-supplied resolved `CapabilityMaintenanceResult` (the single cadence owner);
+ * this module never imports the interval or recomputes a due date, so when no resolved result
+ * is supplied it reports no authoritative overdue status rather than a second ledger. Unlike the
+ * planner, which credits historical exposures without a recorded variant, the ledger confirms a
+ * capability only from a canonical fact with a known authored variant, so it can show `unknown`
+ * where the planner already counts the capability as satisfied.
  */
 import {
     reconcileCompletedTrainingEvents,
@@ -38,6 +46,9 @@ import { normalizeModality } from './performedTrainingFacts';
 import type { StimulusConfidence } from './stimulus';
 import { grantsPowerExposureCredit } from '../workouts/powerExposure';
 import { grantsMechanicalExposureCredit, type MechanicalDoseVariant } from '../workouts/mechanicalExposure';
+import { grantsAthleticCapabilityCredit } from '../workouts/athleticCapability';
+import type { AthleticCapabilityKey } from './models';
+import type { CapabilityMaintenanceResult } from './capabilityMaintenance';
 
 export type CapabilityStatus = 'confirmed' | 'planned' | 'unknown' | 'overdue' | 'deliberately_suspended';
 type Modality = SessionTemplate['modality'] | 'Unknown';
@@ -66,6 +77,9 @@ export interface ExposureLedgerInput {
     plannedSessions: readonly ExposurePlannedSession[] | null;
     trainingSettings: TrainingSettings | null;
     preferences: UserPreferences | null;
+    /** Issue #805: the resolved capability-maintenance readout from evergreen planning, when
+     * the caller has one. Absent/null = no authoritative cadence status is reported. */
+    capabilityMaintenance?: CapabilityMaintenanceResult | null;
 }
 
 export interface StressorEntry {
@@ -253,7 +267,18 @@ interface CapabilitySpec {
     confirmsFact: (fact: PerformedExposureFact) => boolean;
     plans: (session: ExposurePlannedSession) => boolean;
     suspension: (safety: SafetyState) => string | null;
+    /** Issue #805: the capability whose resolved cadence status this row reads, if any. */
+    athleticCapability?: AthleticCapabilityKey;
 }
+
+/** Exact #805 capability confirmation from a canonical fact with a known authored variant. */
+const confirmsAthleticCapability = (capability: AthleticCapabilityKey) => (fact: PerformedExposureFact): boolean =>
+    fact.workoutVariantId !== undefined && grantsAthleticCapabilityCredit({
+        workoutId: fact.workoutId,
+        capability,
+        variant: fact.workoutVariantId as MechanicalDoseVariant,
+        isReadinessModifiedDose: fact.isReadinessModifiedDose,
+    });
 
 const plannedModality = (session: ExposurePlannedSession): Modality => normalizeModality(session.modality);
 const modalityBlocked = (safety: SafetyState, modality: string): string | null =>
@@ -333,12 +358,31 @@ const CAPABILITIES: readonly CapabilitySpec[] = [
         plans: () => false,
         suspension: safety => impactBlocked(safety),
     },
+    {
+        // Issue #805: only exact authored capability identities whose defining steps were
+        // retained count; Garmin field records, running and imported-plan titles never do.
+        key: 'multidirectional_change_of_direction',
+        confirmsFact: confirmsAthleticCapability('multidirectional_change_of_direction'),
+        label: 'Change of direction / multidirectional',
+        confirms: () => false,
+        plans: () => false,
+        suspension: safety => modalityBlocked(safety, 'Field') ?? impactBlocked(safety),
+        athleticCapability: 'multidirectional_change_of_direction',
+    },
+    {
+        key: 'sport_skill',
+        confirmsFact: confirmsAthleticCapability('sport_skill'),
+        label: 'Sport skill',
+        confirms: () => false,
+        plans: () => false,
+        suspension: safety => modalityBlocked(safety, 'Field') ?? impactBlocked(safety),
+        athleticCapability: 'sport_skill',
+    },
 ];
 
 /** Families without a canonical exposure model yet. Reported, never inferred. */
 const UNMODELLED: ReadonlyArray<{ key: string; label: string; source: string; impact: boolean }> = [
     { key: 'unilateral_lower_body', label: 'Unilateral lower-body', source: '#803', impact: false },
-    { key: 'cod_lateral', label: 'COD / lateral', source: '#805', impact: true },
     { key: 'long_aerobic_anchor', label: 'Long aerobic anchor', source: '#806', impact: false },
     { key: 'hamstring_calf_grip', label: 'Hamstring knee-flexion / calf-soleus / grip-carry', source: 'no issue yet', impact: false },
 ];
@@ -399,6 +443,17 @@ function capabilityEntry(spec: CapabilitySpec, events: readonly ResolvedEvent[],
     else if (planned) status = 'planned';
     else status = 'unknown';
     if (suspension) notes.unshift(suspension);
+    const resolved = spec.athleticCapability
+        ? input.capabilityMaintenance?.capabilities.find(item => item.capability === spec.athleticCapability)
+        : undefined;
+    if (spec.athleticCapability && !input.capabilityMaintenance) {
+        notes.push('no resolved capability-maintenance cadence in this export; overdue status is not reported');
+    } else if (resolved && resolved.status !== 'disabled' && !suspension) {
+        // Read, never recompute: the evergreen planner's resolved cadence owns overdue/suspended.
+        if (resolved.fulfilment?.status === 'deliberately_suspended') status = 'deliberately_suspended';
+        else if (resolved.status === 'overdue') status = 'overdue';
+        notes.push(`capability maintenance: ${resolved.message}`);
+    }
     return {
         key: spec.key,
         label: spec.label,
@@ -483,9 +538,9 @@ export function renderExposureLedger(ledger: ExposureLedger, lookbackStart: stri
         '### Physical-capability exposure',
         '',
         `Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next ${PLANNED_HORIZON_DAYS} days only (never counted as done); `
-            + '`unknown` = not observed in this window or no canonical model; `deliberately_suspended` = blocked by a current safety limit, not neglect. '
-            + 'No authoritative cadence/max-gap policy is wired in, so nothing is reported `overdue`. '
-            + 'Not yet represented: taper/event-specific suppression, and the #803–#806 capability models. Neuromuscular power (#802) is confirmed only by an exact authored power identity.',
+            + '`unknown` = not observed in this window or no canonical model; `deliberately_suspended` = blocked by a current safety limit or a deliberate planning suspension, not neglect. '
+            + '`overdue` is reported only for change of direction and sport skill, and only from the evergreen planner\'s resolved #805 capability-maintenance cadence when this export carries it; no other family has an authoritative cadence/max-gap policy. '
+            + 'Not yet represented: taper/event-specific suppression outside #805, and the #803/#806 capability models. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities.',
     );
     for (const entry of ledger.capabilities) lines.push(formatCapability(entry));
     for (const note of ledger.notes) lines.push(`- Note: ${note}`);

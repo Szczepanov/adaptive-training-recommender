@@ -1,4 +1,5 @@
 import type { CoverageSetId, PlanCoverageKey, PlanPhase, PlanSessionCoverage } from '../workouts/event-plan.ts';
+import type { CapabilityPlacement } from './capabilityMaintenance.ts';
 import { EVERGREEN_GENERAL_COVERAGE_SET, SEPTEMBER_CYCLING_EVENT_COVERAGE_SET, SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE } from '../workouts/event-plan.ts';
 import type { DataIssue, DataState } from './dataState.ts';
 import type { AuthoredPlanBlock, ObjectiveKey, ObjectivePriority, UserEvent } from './models.ts';
@@ -65,6 +66,10 @@ export interface PlanCoverageRequirementDefinition {
   reservationTier?: 'support';
   minimumDurationMinutes?: number;
   exactWorkoutIds?: string[];
+  /** Issue #805: date-scoped capability placements riding on the #804 mechanical support
+   * requirement. They never add a requirement or occurrence; `buildCoverageState` resolves
+   * them per planning date into a narrowed allow-list and exact-identity consent. */
+  capabilityPlacements?: CapabilityPlacement[];
 }
 
 export interface PlanDefinition {
@@ -383,6 +388,7 @@ export function buildEvergreenPlanDefinition(
   packedBudget: WeeklyBudget,
   asOfDate: string,
   mechanicalEligibleWorkoutIds: readonly string[] = [],
+  capabilityPlacements: readonly CapabilityPlacement[] = [],
 ): DataState<PlanDefinition> {
   void strategy;
   void capacity;
@@ -422,7 +428,11 @@ export function buildEvergreenPlanDefinition(
     return [{
       coverageKey,
       blockId: 'block_general',
-      minimumSessions: requirement.adaptation === 'mechanical_exposure' && requirement.priority === 'target'
+      // Issue #805: an owed capability placement makes the #804 support occurrence real (one
+      // support-tier minimum, the same shape a `target` mechanical requirement already has), so
+      // the allocator reserves it only around primary roles instead of relying on leftover ranking.
+      minimumSessions: requirement.adaptation === 'mechanical_exposure'
+        && (requirement.priority === 'target' || capabilityPlacements.length > 0)
         ? Math.min(1, targetSessions)
         : (requirement.floor?.dose.value ?? 0),
       targetSessions,
@@ -432,6 +442,9 @@ export function buildEvergreenPlanDefinition(
         ? {
             eligibleWorkoutIds: [...mechanicalEligibleWorkoutIds],
             reservationTier: 'support' as const,
+            ...(capabilityPlacements.length > 0
+              ? { capabilityPlacements: capabilityPlacements.map(placement => ({ ...placement })) }
+              : {}),
           }
         : {}),
     }];

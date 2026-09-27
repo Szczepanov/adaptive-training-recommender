@@ -243,6 +243,11 @@
   cursor: pointer;
 }
 
+.capability-maintenance-option {
+  min-height: var(--touch-target-min, 44px);
+  margin-bottom: 0.25rem;
+}
+
 .priority-order {
   display: flex;
   flex-wrap: wrap;
