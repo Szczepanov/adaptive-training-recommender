@@ -1,0 +1,204 @@
+import { describe, expect, it } from 'vitest';
+import type { DailyRecommendation, NormalizedGarminActivity } from '../engine/models';
+import type { SessionExecution } from '../sessions/models';
+import { buildTrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
+import { workoutForTemplate } from '../workouts/prescription';
+import type { PerformedOccurrenceSourceRef, PerformedTrainingOccurrence } from './models';
+import {
+    computeCanonicalIdentityMetrics,
+    deriveCanonicalBroadExposure,
+    pairLiveAndCanonicalHistory,
+    type CanonicalHistorySources,
+} from './canonicalBroadHistory';
+
+const TEMPLATE_ID = 'end_mod_02';
+const WORKOUT_ID = workoutForTemplate(TEMPLATE_ID)!.id;
+
+function activity(overrides: Partial<NormalizedGarminActivity> = {}): NormalizedGarminActivity {
+    return {
+        activityId: 'a-1', date: '2026-08-06', type: 'cycling', durationMin: 50,
+        trainingEffectAerobic: 3.2, trainingEffectAnaerobic: null, averageHr: 150,
+        activityTrainingLoad: 115, intensityTag: 'hard',
+        startedAt: '2026-08-06T16:00:00Z', endedAt: '2026-08-06T16:50:00Z',
+        ...overrides,
+    };
+}
+
+function recommendation(overrides: Partial<DailyRecommendation> = {}): DailyRecommendation {
+    return {
+        userId: 'u1', date: '2026-08-06', templateId: TEMPLATE_ID, templateTitle: 'Tempo Ride',
+        category: 'Moderate Endurance', modality: 'Cycling', mode: 'train', rationale: 'test', schemaVersion: 2,
+        createdAt: '', updatedAt: '',
+        adherence: { respondedAt: 'x', followed: true, actualModality: null, actualDurationMin: 50, skipped: false, notes: null },
+        ...overrides,
+    };
+}
+
+function execution(overrides: Partial<SessionExecution> = {}): SessionExecution {
+    return {
+        userId: 'u1', executionId: 'e-1', date: '2026-08-06',
+        sessionSource: { kind: 'catalog', workoutId: WORKOUT_ID, catalogVersion: 'v1' },
+        startedAt: '2026-08-06T16:00:00Z', completedAt: '2026-08-06T16:45:00Z', updatedAt: '2026-08-06T16:45:00Z',
+        state: 'completed', schemaVersion: 1,
+        ...overrides,
+    };
+}
+
+function occurrence(sourceRefs: PerformedOccurrenceSourceRef[], overrides: Partial<PerformedTrainingOccurrence> = {}): PerformedTrainingOccurrence {
+    return {
+        schemaVersion: 1, performedOccurrenceId: `pto-${sourceRefs.length}`, userId: 'u1', status: 'active',
+        localDate: '2026-08-06', modality: 'cycling', sourceRefs,
+        reconciliation: { state: sourceRefs.length > 1 ? 'matched' : 'single_source' },
+        createdAt: 'x', updatedAt: 'x',
+        ...overrides,
+    };
+}
+
+const structuredRef: PerformedOccurrenceSourceRef = { kind: 'structured_execution', executionId: 'e-1' };
+const garminRef: PerformedOccurrenceSourceRef = { kind: 'provider_activity', provider: 'garmin', activityId: 'a-1' };
+
+function sources(overrides: Partial<CanonicalHistorySources> = {}): CanonicalHistorySources {
+    return {
+        executionsById: new Map([['e-1', execution()]]),
+        activitiesById: new Map([['a-1', activity()]]),
+        recommendationsByDate: new Map([['2026-08-06', recommendation()]]),
+        ...overrides,
+    };
+}
+
+describe('deriveCanonicalBroadExposure', () => {
+    it('reproduces the live exact-template exposure for a matched structured + Garmin workout', () => {
+        const live = buildTrainingHistorySnapshot(
+            '2026-08-07', 7,
+            { status: 'AVAILABLE', data: [activity()], revision: 'r' },
+            { status: 'AVAILABLE', data: [recommendation()], revision: 'r' },
+            'fixed',
+        ).exposures;
+        const derived = deriveCanonicalBroadExposure(occurrence([structuredRef, garminRef]), sources());
+        expect(live).toHaveLength(1);
+        expect(derived.status).toBe('derived');
+        if (derived.status !== 'derived') return;
+        expect(derived.authority).toBe('structured');
+        expect(derived.exposure.costProfile).toEqual(live[0].costProfile);
+        expect(derived.exposure.stimulusProfile).toEqual(live[0].stimulusProfile);
+        expect(derived.exposure.deliveredDose).toEqual(live[0].deliveredDose);
+        expect(derived.exposure).toMatchObject({ templateId: TEMPLATE_ID, workoutId: WORKOUT_ID, stimulusConfidence: 'exact', modality: 'Cycling' });
+    });
+
+    it('keeps structured identity and modality when Garmin classifies the workout differently', () => {
+        const disagreeing = sources({ activitiesById: new Map([['a-1', activity({ type: 'walking' })]]) });
+        const derived = deriveCanonicalBroadExposure(occurrence([structuredRef, garminRef]), disagreeing);
+        expect(derived).toMatchObject({ status: 'derived', authority: 'structured', exposure: { modality: 'Cycling', templateId: TEMPLATE_ID } });
+    });
+
+    it('uses the production Garmin-only mapper for a provider-only occurrence', () => {
+        const live = buildTrainingHistorySnapshot('2026-08-07', 7, { status: 'AVAILABLE', data: [activity()], revision: 'r' }, { status: 'AVAILABLE', data: [], revision: 'r' }, 'fixed').exposures[0];
+        const derived = deriveCanonicalBroadExposure(occurrence([garminRef]), sources());
+        expect(derived).toMatchObject({ status: 'derived', authority: 'provider' });
+        if (derived.status === 'derived') expect({ ...derived.exposure }).toEqual({ ...live, occurrenceKey: undefined, date: '2026-08-06' });
+    });
+
+    it.each([
+        ['multiple_provider_sources', [garminRef, { kind: 'provider_activity', provider: 'garmin', activityId: 'a-2' }] as PerformedOccurrenceSourceRef[], sources()],
+        ['unsupported_provider', [{ kind: 'provider_activity', provider: 'polar', activityId: 'p-1' }] as PerformedOccurrenceSourceRef[], sources()],
+        ['structured_source_unavailable', [structuredRef], sources({ executionsById: new Map() })],
+        ['structured_source_not_completed', [structuredRef], sources({ executionsById: new Map([['e-1', execution({ state: 'abandoned' })]]) })],
+        ['non_catalog_structured_semantics', [structuredRef], sources({ executionsById: new Map([['e-1', execution({ sessionSource: { kind: 'manual', definitionId: 'd', revision: 1, contentHash: 'h' } })]]) })],
+        ['legacy_strength_semantics_not_derived', [structuredRef], sources({ executionsById: new Map([['e-1', execution({ sessionSource: { kind: 'catalog', workoutId: 'legacy_strength', catalogVersion: 'v1' } })]]) })],
+        ['provider_source_unavailable', [garminRef], sources({ activitiesById: new Map() })],
+    ])('reports %s as unknown instead of fabricating semantics', (reason, refs, hydrated) => {
+        expect(deriveCanonicalBroadExposure(occurrence(refs), hydrated)).toEqual({ status: 'unknown', reason });
+    });
+});
+
+describe('pairLiveAndCanonicalHistory', () => {
+    const live = buildTrainingHistorySnapshot(
+        '2026-08-07', 7,
+        { status: 'AVAILABLE', data: [activity()], revision: 'r' },
+        { status: 'AVAILABLE', data: [recommendation()], revision: 'r' },
+        'fixed',
+    );
+
+    it('counts one matched structured + Garmin workout exactly once with an opaque alias', () => {
+        const result = pairLiveAndCanonicalHistory({
+            liveEvents: live.completedEvents, liveExposures: live.exposures,
+            occurrences: [occurrence([structuredRef, garminRef])], sources: sources(),
+        });
+        expect(result.liveExposures).toHaveLength(1);
+        expect(result.canonicalExposures).toHaveLength(1);
+        expect(result.canonicalExposures[0].occurrenceKey).toBe('occ-0001');
+        expect(result.liveExposures[0].occurrenceKey).toBe('occ-0001');
+        expect(JSON.stringify([result.liveExposures, result.canonicalExposures])).not.toMatch(/a-1|e-1|pto-/);
+    });
+
+    it('shares one alias across a group that cannot be split one-to-one so it is reported ambiguous', () => {
+        const split = [
+            occurrence([garminRef], { performedOccurrenceId: 'pto-g' }),
+            occurrence([structuredRef], { performedOccurrenceId: 'pto-s' }),
+        ];
+        const result = pairLiveAndCanonicalHistory({ liveEvents: live.completedEvents, liveExposures: live.exposures, occurrences: split, sources: sources() });
+        expect(new Set(result.canonicalExposures.map(row => row.occurrenceKey)).size).toBe(1);
+        expect(result.canonicalExposures).toHaveLength(2);
+    });
+
+    it('keeps same-day distinct workouts distinct', () => {
+        const second = activity({ activityId: 'a-2', startedAt: '2026-08-06T19:00:00Z', endedAt: '2026-08-06T19:30:00Z', durationMin: 30 });
+        const twoActivities = buildTrainingHistorySnapshot('2026-08-07', 7, { status: 'AVAILABLE', data: [activity(), second], revision: 'r' }, { status: 'AVAILABLE', data: [], revision: 'r' }, 'fixed');
+        const result = pairLiveAndCanonicalHistory({
+            liveEvents: twoActivities.completedEvents, liveExposures: twoActivities.exposures,
+            occurrences: [
+                occurrence([garminRef], { performedOccurrenceId: 'pto-1' }),
+                occurrence([{ kind: 'provider_activity', provider: 'garmin', activityId: 'a-2' }], { performedOccurrenceId: 'pto-2' }),
+            ],
+            sources: sources({ activitiesById: new Map([['a-1', activity()], ['a-2', second]]) }),
+        });
+        expect(new Set(result.canonicalExposures.map(row => row.occurrenceKey)).size).toBe(2);
+    });
+
+    it('lists an underivable occurrence as unknown with its reason and no canonical row', () => {
+        const result = pairLiveAndCanonicalHistory({
+            liveEvents: live.completedEvents, liveExposures: live.exposures,
+            occurrences: [occurrence([garminRef], { performedOccurrenceId: 'pto-x' })],
+            sources: sources({ activitiesById: new Map() }),
+        });
+        expect(result.canonicalExposures).toHaveLength(0);
+        expect(result.unknownCanonicalOccurrenceKeys).toEqual(['occ-0001']);
+        expect(result.unknownByReason).toEqual({ provider_source_unavailable: 1 });
+    });
+
+    it('never reads a merged occurrence as performed history', () => {
+        const result = pairLiveAndCanonicalHistory({
+            liveEvents: [], liveExposures: [],
+            occurrences: [occurrence([garminRef], { status: 'merged', mergedIntoOccurrenceId: 'pto-z' })],
+            sources: sources(),
+        });
+        expect(result.canonicalExposures).toHaveLength(0);
+    });
+});
+
+describe('computeCanonicalIdentityMetrics', () => {
+    it('evaluates every provider ref and detects conflicts and sticky-decision violations', () => {
+        const unlinked = occurrence([garminRef], {
+            performedOccurrenceId: 'pto-u',
+            reconciliation: {
+                state: 'single_source',
+                manualDecision: { decision: 'unlink', actor: 'athlete', decidedAt: 'x' },
+                excludedSourceKeys: ['provider_activity:garmin:a-1'],
+            },
+        });
+        const metrics = computeCanonicalIdentityMetrics([
+            occurrence([structuredRef, garminRef], { performedOccurrenceId: 'pto-m' }),
+            unlinked,
+            occurrence([{ kind: 'provider_activity', provider: 'polar', activityId: 'p-1' }, { kind: 'provider_activity', provider: 'garmin', activityId: 'a-9' }], { performedOccurrenceId: 'pto-p' }),
+        ], []);
+        expect(metrics).toMatchObject({
+            activeOccurrences: 3,
+            sourceLinkConflicts: 1,
+            manualDecisionOccurrences: 1,
+            manualDecisionViolations: 1,
+            multiProviderSourceOccurrences: 1,
+            nonGarminProviderSourceRefs: 1,
+            canonicalProviderActivitiesAbsentFromLive: 2,
+        });
+    });
+});
