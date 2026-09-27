@@ -35,7 +35,6 @@ import {
     type CoverageState,
 } from './coverage';
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
-import { mechanicalIdentityFor } from '../workouts/mechanicalExposure';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveEventTaper } from './taperPolicy';
 import { olympicTriathlonTaperBenefitBoost, olympicTriathlonTaperCandidateCap, olympicTriathlonTaperExclusion, resolveOlympicTriathlonTaperBudget, resolvePriorityAOlympicTriathlonTaper, type OlympicTriathlonTaperBudget } from './taperPlanBudget';
