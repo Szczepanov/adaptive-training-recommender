@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { resolveEvergreenPlan } from './evergreenPlanning';
 import { resolvePlanningContext } from './planningMode';
 import { evaluatePeriodizationPhase } from './periodization';
-import { buildCoverageState } from './coverage';
+import { buildCoverageState, coverageNeedTierForTemplate } from './coverage';
 import { rankCandidates } from './optimizer';
 import { resolveTrainingIntent } from './trainingIntent';
 import type { DailyReadiness } from './models';
@@ -254,16 +254,23 @@ describe('periodic capability maintenance in evergreen planning (#805 Phase 7)',
         expect(cold.warnings.filter(warning => warning.code === 'capability_maintenance_unfulfilled')).toHaveLength(4);
     });
 
-    it('shows a horizon-entry target as due but consents nothing capability-bearing before its due date', () => {
+    it('shows a horizon-entry target as due but gives no consent or coverage urgency before its due date', () => {
         const evidence = [...RIDES, field(at(-8), 'field_controlled_maintenance_01')].sort((left, right) => left.date.localeCompare(right.date));
         const resolved = plan({ evidence });
         expect(capability(resolved, 'sport_skill')).toMatchObject({ status: 'due', notBeforeDate: at(5) });
-        const consentOn = (date: string) => buildCoverageState(resolved.planDefinition, date, [])
-            .requirements.find(item => item.key === 'mechanical_exposure')?.capabilityConsentWorkoutIds ?? [];
+        const stateOn = (date: string) => buildCoverageState(resolved.planDefinition, date, []);
+        const supportNow = stateOn(D).requirements.find(item => item.key === 'mechanical_exposure')!;
+        expect(supportNow.candidateWorkoutNotBeforeDates?.field_controlled_maintenance_01).toBe(at(5));
         for (let offset = 0; offset < 5; offset++) {
-            expect(consentOn(at(offset))).not.toContain('field_controlled_maintenance_01');
+            const state = stateOn(at(offset));
+            expect(state.requirements.find(item => item.key === 'mechanical_exposure')?.capabilityConsentWorkoutIds ?? [])
+                .not.toContain('field_controlled_maintenance_01');
+            expect(coverageNeedTierForTemplate(state, template('field_maint_01'))).toBe(3);
         }
-        expect(consentOn(at(5))).toContain('field_controlled_maintenance_01');
+        const dueState = stateOn(at(5));
+        expect(dueState.requirements.find(item => item.key === 'mechanical_exposure')?.capabilityConsentWorkoutIds)
+            .toContain('field_controlled_maintenance_01');
+        expect(coverageNeedTierForTemplate(dueState, template('field_maint_01'))).toBe(2);
     });
 
     it('lifts the narrowing once a qualifying touch is projected on or after the not-before date', () => {
@@ -320,5 +327,41 @@ describe('periodic capability maintenance in evergreen planning (#805 Phase 7)',
         expect(resolvedHealth.planDefinition.coverageRequirements?.some(item => item.coverageKey === 'mechanical_exposure')).toBe(true);
         expect(resolvedHealth.warnings.some(item => item.code === 'mechanical_exposure_withheld')).toBe(false);
         expect(resolvedHealth.capabilityMaintenance?.enabled).toBe(true);
+    });
+
+    it('does not invent a 28-day observation span for reconstruct-only history providers', async () => {
+        const provider: TrainingHistoryProvider = {
+            reconstruct: async (_userId, through, requestedWindowDays) => STAGE_4_READY.filter(item =>
+                item.date >= addDaysToLocalDateString(through, -requestedWindowDays) && item.date < through),
+        };
+        const readiness = { subjective: { readiness: 8, fatigue: 2, soreness: 2 }, objective: {} } as unknown as DailyReadiness;
+        const healthProfile: TrainingIntentProfile = { ...profile(true), priorities: ['health'] };
+        const intent = await resolveTrainingIntent('u1', [], D, readiness, 7, provider, undefined, [], healthProfile);
+        expect(intent.mechanicalExposureHistory.some(item => item.date < at(-14))).toBe(true);
+        expect(intent.mechanicalEvidenceObservedWindowDays).toBe(7);
+
+        const resolved = resolveEvergreenPlan(
+            intent.planningContext,
+            evaluatePeriodizationPhase([], D).phase,
+            intent.history,
+            intent.historySnapshot,
+            basePreferences,
+            baseContext,
+            D,
+            [],
+            7,
+            false,
+            [],
+            new Map(),
+            intent.aerobicVolumeFloor,
+            false,
+            {
+                exposureHistory: intent.mechanicalExposureHistory,
+                observedWindowDays: intent.mechanicalEvidenceObservedWindowDays,
+                checkinHistory: normalFollowUps(intent.mechanicalExposureHistory),
+            },
+        )!;
+        expect(resolved.capabilityMaintenance?.capabilities.every(item => item.status === 'insufficient_history')).toBe(true);
+        expect(resolved.capabilityMaintenance?.placements).toEqual([]);
     });
 });

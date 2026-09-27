@@ -437,6 +437,25 @@ describe('issue #801 support-tier reservations (ADR-0018 D-SUPPORT)', () => {
         expect(result.outcomes[0]).toMatchObject({ status: 'missed', reason: 'projected_fatigue' });
     });
 
+    it('never reserves a capability support identity before its exact not-before date', () => {
+        const capabilitySupport: RequiredRoleOccurrence = {
+            ...occurrence('mechanical_exposure', 0, ['field_maint_01']),
+            reservationTier: 'support',
+            candidateWorkoutNotBeforeDates: { field_controlled_maintenance_01: '2026-08-13' },
+        };
+        const result = resolveWeeklyRoleReservations([capabilitySupport], stubEvaluator({
+            acceptedByDate: {
+                '2026-08-11': ['field_maint_01'],
+                '2026-08-12': ['field_maint_01'],
+                '2026-08-13': ['field_maint_01'],
+            },
+        }, ['2026-08-11', '2026-08-12', '2026-08-13']));
+        expect(result.outcomes[0]).toMatchObject({
+            status: 'reserved',
+            reservation: { assignedDate: '2026-08-13', templateId: 'field_maint_01' },
+        });
+    });
+
     it('keeps the original maximum-cardinality value when no support role exists', () => {
         const aerobic = occurrence('aerobic_volume', 0, ['zone2']);
         const result = resolveWeeklyRoleReservations([aerobic, quality], stubEvaluator({
