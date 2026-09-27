@@ -491,8 +491,9 @@ allocation. Stage 1 is re-entry/walk-run; Stage 2 adds low-volume bilateral plyo
 adds deceleration/braking; Stage 4 adds multidirectional/COD work. Advancement ($K \to K+1$) requires at least two
 recent current-stage exposures, each followed by an explicit normal lower-body tissue response on the next-day
 check-in. A check-in without structured tissue response is **missing evidence**, not a green response. Advancement
-is capped at +1 stage. The held stage is the highest stage performed with an explicit normal next-day follow-up
-inside the 14-day continuity window, not merely the latest exposure's stage, so a lower-stage session (for example
+is capped at +1 stage. When explicit normal next-day follow-up exists inside the 14-day continuity window, the held
+stage is the highest confirmed stage; otherwise the latest performed stage is retained for continuity while missing
+follow-up still blocks advancement. This means a lower-stage session (for example
 a #805 linear-speed touch) does not demote an athlete who is tolerating a higher stage. Mild response regresses one stage; moderate/severe response, active pain/illness, or
 `avoid_high_impact` blocks/withholds exposure. Exactly 14 or more days without qualifying exposure resets the
 allowed stage to Stage 1. The no-consecutive-calendar-day rule and 14-day reset are conservative product-policy
