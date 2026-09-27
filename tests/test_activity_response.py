@@ -210,12 +210,8 @@ def test_lap_record_windows_do_not_double_count_the_next_segment_boundary():
     response = derive_activity_response("road_biking", evidence)
 
     assert response is not None
-    sprint = next(
-        segment for segment in response.segments if segment.segment_type == "sprint"
-    )
-    recovery = next(
-        segment for segment in response.segments if segment.segment_type == "recovery"
-    )
+    sprint = next(segment for segment in response.segments if segment.segment_type == "sprint")
+    recovery = next(segment for segment in response.segments if segment.segment_type == "recovery")
     assert sprint.average_power_watts == 700.0
     assert recovery.average_power_watts == 100.0
 
