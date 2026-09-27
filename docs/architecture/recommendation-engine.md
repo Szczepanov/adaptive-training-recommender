@@ -506,10 +506,11 @@ default. A caller that injects a history provider (simulation, replay) is self-c
 explicitly (`AthleteScenario.mechanicalCheckinHistory`); a failed read yields none and holds advancement.
 
 Evergreen planning requests Stage 2 by default (`EVERGREEN_MECHANICAL_DEFAULT_TARGET_STAGE_CEILING`), raised to
-the athlete's latest performed stage so the default never demotes anyone. Stage 3 braking and Stage 4
-multidirectional/COD work are requested only by an explicit opt-in target (`EvergreenMechanicalInputs.targetStage`,
-supplied by #805 capability maintenance); a target only ever raises the request, and the evaluator's response
-gate and +1 cap still apply.
+the athlete's latest performed stage so the default never demotes anyone. Advancing an athlete from Stage 2 into
+Stage 3 braking or Stage 4 multidirectional/COD requires an explicit higher target
+(`EvergreenMechanicalInputs.targetStage`, supplied by #805 capability maintenance when applicable). A recent
+already-performed Stage 3/4 is preserved rather than artificially demoted; ordinary modality consent and candidate
+eligibility still apply. A target only ever raises the request, and the evaluator's response gate and +1 cap remain authoritative.
 
 The progression verdict supplies an exact workout allow-list to both coverage ranking and weekly reservations.
 A blocked verdict therefore leaves the target visible with zero eligible candidates instead of silently widening
