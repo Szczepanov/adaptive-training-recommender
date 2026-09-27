@@ -293,6 +293,40 @@ describe('evaluateMechanicalStageProgression', () => {
       expect(verdict.eligibleWorkoutIds).toContain('field_controlled_maintenance_01');
     });
 
+    it('does not ratchet to a latest higher stage until that exposure has a normal follow-up', () => {
+      const stage2Then4: MechanicalExposureRecord[] = [
+        { date: '2026-09-12', workoutId: 'field_sprint_mechanics_foundation_01', stage: 2 },
+        { date: '2026-09-16', workoutId: 'field_controlled_maintenance_01', stage: 4 },
+      ];
+      const missing = evaluateMechanicalStageProgression({
+        asOfDate: '2026-09-20', exposureHistory: stage2Then4,
+        checkinHistory: [normal('2026-09-13')], targetStage: 4,
+      });
+      expect(missing.tissueResponse.verdict).toBe('missing');
+      expect(missing.stage).toBe(2);
+      expect(missing.eligibleWorkoutIds).not.toContain('field_controlled_maintenance_01');
+
+      const confirmed = evaluateMechanicalStageProgression({
+        asOfDate: '2026-09-20', exposureHistory: stage2Then4,
+        checkinHistory: [normal('2026-09-13'), normal('2026-09-17')], targetStage: 4,
+      });
+      expect(confirmed.stage).toBe(4);
+      expect(confirmed.eligibleWorkoutIds).toContain('field_controlled_maintenance_01');
+    });
+
+    it('fails closed to Stage 1 when no recent stage has any explicit normal follow-up', () => {
+      const verdict = evaluateMechanicalStageProgression({
+        asOfDate: '2026-09-20',
+        exposureHistory: [{ date: '2026-09-16', workoutId: 'field_acceleration_braking_01', stage: 3 }],
+        checkinHistory: [],
+        targetStage: 4,
+      });
+      expect(verdict.tissueResponse.verdict).toBe('missing');
+      expect(verdict.stage).toBe(1);
+      expect(verdict.eligibleWorkoutIds).toContain('running_walk_run_01');
+      expect(verdict.eligibleWorkoutIds).not.toContain('field_acceleration_braking_01');
+    });
+
     it('does not hold a higher stage whose follow-up was missing, and still regresses on symptoms', () => {
       const unconfirmed = evaluateMechanicalStageProgression({
         asOfDate: '2026-09-20', exposureHistory: stage4Then2, checkinHistory: [normal('2026-09-17')],
