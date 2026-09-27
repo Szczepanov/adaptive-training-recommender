@@ -88,7 +88,9 @@ describe('mechanical exposure policy alignment (ADR-0033, issue #804)', () => {
         expect(policy.statement).toContain('fails closed');
         expect(policy.statement).toContain('full 14-day continuity window');
         expect(policy.statement).toContain('default target stage is Stage 2');
-        expect(policy.statement).toContain('explicit athlete opt-in target');
+        expect(policy.statement).toContain('requires an explicit higher target');
+        expect(policy.statement).toContain('already-performed Stage 3/4 is preserved');
+        expect(policy.limitations.some(limitation => limitation.includes('does not establish that this policy prevents sports injury'))).toBe(true);
 
         const coverage = ENGINE_KNOWLEDGE_COVERAGE.find(item => item.id === 'evergreen.mechanical_exposure');
         expect(coverage).toMatchObject({
