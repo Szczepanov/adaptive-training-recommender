@@ -189,6 +189,23 @@ describe('capability fulfilment (#805 Phase 3, ADR-0044 D9)', () => {
         expect(result.placements).toEqual([]);
     });
 
+    it('reports no support capacity when dates exist but no due-window slot can fit the capability', () => {
+        const minimumDurationMinutes = new Map([['field_controlled_maintenance_01', 22]]);
+        const tooShort = evaluate({
+            gates: { ...noGates(), minimumDurationMinutes },
+            supportCapacityMinutesByDate: new Map(HORIZON.map(date => [date, 15])),
+        });
+        expect(sportSkill(tooShort).fulfilment).toEqual({ status: 'blocked', reason: 'no_support_capacity' });
+        expect(sportSkill(tooShort).supportWorkoutIds).toEqual([]);
+
+        const oneUsable = evaluate({
+            gates: { ...noGates(), minimumDurationMinutes },
+            supportCapacityMinutesByDate: new Map(HORIZON.map((date, index) => [date, index === 4 ? 22 : 15])),
+        });
+        expect(sportSkill(oneUsable).fulfilment).toEqual({ status: 'plannable' });
+        expect(sportSkill(oneUsable).supportWorkoutIds).toEqual(['field_controlled_maintenance_01']);
+    });
+
     it('reports environment, capacity and stage insufficiency as typed blocks', () => {
         expect(sportSkill(evaluate({ gates: { ...noGates(), environmentUnavailable: FIELD_IDS } })).fulfilment)
             .toEqual({ status: 'blocked', reason: 'environment_unavailable' });
