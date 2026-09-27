@@ -7,6 +7,7 @@ import { decisionComposer } from './engine/composer';
 import { hasCompletedSubjectiveCheckinForDecision } from './engine/checkinCompletion';
 import type { HealthAnomalyAssessmentRevision } from './engine/healthAnomalyModels';
 import type { DailyDecisionInput } from './engine/models';
+import type { CapabilityMaintenanceResult } from './engine/capabilityMaintenance';
 import type { SessionDefinition, SessionExecution, SessionIntent } from './sessions/models';
 import type { Screen } from './types/navigation';
 import { readScreenRoute, requiresCurrentCheckin, screenRouteUrl } from './types/screenRoute';
@@ -42,6 +43,15 @@ function App() {
   const { userId, authPhase } = useAuth();
   const [screen, setScreen] = useState<Screen>('home');
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
+  const [capabilityMaintenanceResolution, setCapabilityMaintenanceResolution] = useState<{
+    userId: string;
+    date: string;
+    result: CapabilityMaintenanceResult | null;
+  } | null>(null);
+  const [pendingBriefAfterPlanner, setPendingBriefAfterPlanner] = useState<{ userId: string; date: string } | null>(null);
+  const recordCapabilityMaintenance = useCallback((resolvedUserId: string, date: string, result: CapabilityMaintenanceResult | null) => {
+    setCapabilityMaintenanceResolution({ userId: resolvedUserId, date, result });
+  }, []);
   const [healthAnomalyShadowRevision, setHealthAnomalyShadowRevision] = useState<HealthAnomalyAssessmentRevision | null>(null);
   const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
@@ -51,6 +61,9 @@ function App() {
   const decisionInputRequestRevision = useRef(0);
   const activeUserIdRef = useRef<string | null>(userId);
   const currentScreenRef = useRef<Screen>(screen);
+  useEffect(() => {
+    currentScreenRef.current = screen;
+  }, [screen]);
   // M3.4/M2.7 cutover: legacy Strength v1 remains a permanent read format, but it no longer
   // owns a second live runner. An already-open pre-cutover document is surfaced only so the
   // athlete can close it without losing its partial sets; all new execution uses SessionRunner.
@@ -64,6 +77,7 @@ function App() {
 
   const loadDecisionInput = useCallback(async () => {
     if (!userId) return;
+    const wasBrief = currentScreenRef.current === 'brief';
     const requestUserId = userId;
     const requestRevision = ++decisionInputRequestRevision.current;
 
@@ -77,6 +91,7 @@ function App() {
       }
 
       setDecisionInput(input);
+      setCapabilityMaintenanceResolution(null);
 
       // The initial route is resolved before the dashboard is allowed to mount, avoiding a
       // flash (and unnecessary recommendation work) on Home before a pending check-in wins.
@@ -85,15 +100,19 @@ function App() {
       const needsInitialRoute = initialRouteUserIdRef.current !== requestUserId;
       const needsDailyRoute = lastRoutedDate.current !== input.date;
       const isSafeAutoRouteScreen = currentScreenRef.current === 'home' || currentScreenRef.current === 'checkin';
-      if (needsInitialRoute || (needsDailyRoute && isSafeAutoRouteScreen)) {
+      const requestedInitialRoute = needsInitialRoute ? readScreenRoute(window.location) : null;
+      const shouldResolveBrief = requestedInitialRoute === 'brief' || wasBrief;
+      if (needsInitialRoute || (needsDailyRoute && isSafeAutoRouteScreen) || wasBrief) {
         const checkinComplete = hasCompletedSubjectiveCheckinForDecision(input);
         const checkinRequired = requiresCurrentCheckin(input.date, checkinComplete, getLocalDateString());
         const nextScreen: Screen = checkinRequired
           ? 'checkin'
-          : needsInitialRoute
-            ? readScreenRoute(window.location) ?? 'home'
-            : 'home';
-        currentScreenRef.current = nextScreen;
+          : shouldResolveBrief ? 'home' : requestedInitialRoute ?? 'home';
+        if (!checkinRequired && shouldResolveBrief) {
+          setPendingBriefAfterPlanner({ userId: input.userId, date: input.date });
+        } else {
+          setPendingBriefAfterPlanner(null);
+        }
         setScreen(nextScreen);
         window.history.replaceState(window.history.state, '', screenRouteUrl(window.location, nextScreen));
         initialRouteUserIdRef.current = requestUserId;
@@ -131,7 +150,6 @@ function App() {
       if (initialRouteUserIdRef.current !== requestUserId) {
         initialRouteUserIdRef.current = requestUserId;
         lastRoutedDate.current = getLocalDateString();
-        currentScreenRef.current = 'checkin';
         setScreen('checkin');
         window.history.replaceState(window.history.state, '', screenRouteUrl(window.location, 'checkin'));
         setInitialRouteUserId(requestUserId);
@@ -153,6 +171,8 @@ function App() {
     lastRoutedDate.current = null;
     setInitialRouteUserId(null);
     setDecisionInput(null);
+    setCapabilityMaintenanceResolution(null);
+    setPendingBriefAfterPlanner(null);
     setHealthAnomalyShadowRevision(null);
 
     // Clear synchronously on every identity change so a resolved session from a previous
@@ -168,7 +188,6 @@ function App() {
     setSessionLaunch(null);
     setDesktopSettingsOpen(false);
     setMobileMoreOpen(false);
-    currentScreenRef.current = 'home';
     setScreen('home');
     setOnboardingDismissed(isOnboardingDismissedForUser(userId));
     if (!userId || authPhase !== 'AUTHENTICATED') return;
@@ -222,7 +241,7 @@ function App() {
     if (!userId || authPhase !== 'AUTHENTICATED' || initialRouteUserId !== userId) return;
 
     const refreshIfCalendarDayChanged = () => {
-      const isSafeAutoRouteScreen = currentScreenRef.current === 'home' || currentScreenRef.current === 'checkin';
+      const isSafeAutoRouteScreen = screen === 'home' || screen === 'checkin';
       if (isSafeAutoRouteScreen && lastRoutedDate.current !== getLocalDateString()) {
         void loadDecisionInput();
       }
@@ -239,11 +258,11 @@ function App() {
       window.removeEventListener('focus', refreshIfCalendarDayChanged);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [userId, authPhase, initialRouteUserId, loadDecisionInput]);
+  }, [userId, authPhase, initialRouteUserId, loadDecisionInput, screen]);
 
   const navigateToScreen = useCallback((newScreen: Screen, historyMode: 'push' | 'replace' | 'none') => {
-    const screenChanged = currentScreenRef.current !== newScreen;
-    currentScreenRef.current = newScreen;
+    if (newScreen !== 'home' && newScreen !== 'brief') setPendingBriefAfterPlanner(null);
+    const screenChanged = screen !== newScreen;
     setScreen(newScreen);
     setDesktopSettingsOpen(false);
     setMobileMoreOpen(false);
@@ -265,14 +284,41 @@ function App() {
     ) {
       void loadDecisionInput();
     }
-  }, [loadDecisionInput]);
+  }, [loadDecisionInput, screen]);
+
+  useEffect(() => {
+    if (!pendingBriefAfterPlanner) return;
+    const resolved = capabilityMaintenanceResolution?.userId === pendingBriefAfterPlanner.userId
+      && capabilityMaintenanceResolution.date === pendingBriefAfterPlanner.date;
+    if (resolved) {
+      setPendingBriefAfterPlanner(null);
+      navigateToScreen('brief', 'replace');
+      return;
+    }
+    // Home can be unable to resolve a normal recommendation when recovery, safety, or
+    // history sources are unavailable. After a bounded wait, open the read-only brief with
+    // an explicit no-authoritative-cadence state instead of leaving the athlete on Home.
+    const timeout = window.setTimeout(() => {
+      setCapabilityMaintenanceResolution({ ...pendingBriefAfterPlanner, result: null });
+    }, 8000);
+    return () => window.clearTimeout(timeout);
+  }, [pendingBriefAfterPlanner, capabilityMaintenanceResolution, navigateToScreen]);
+
+  useEffect(() => {
+    if (screen !== 'brief' || !decisionInput) return;
+    const hasCurrentPlannerResult = capabilityMaintenanceResolution?.userId === userId
+      && capabilityMaintenanceResolution.date === decisionInput.date;
+    if (hasCurrentPlannerResult) return;
+    setPendingBriefAfterPlanner({ userId: decisionInput.userId, date: decisionInput.date });
+    navigateToScreen('home', 'replace');
+  }, [screen, userId, decisionInput, capabilityMaintenanceResolution, navigateToScreen]);
 
   useEffect(() => {
     if (!userId || authPhase !== 'AUTHENTICATED' || initialRouteUserId !== userId) return;
     const onPopState = () => {
       const requested = readScreenRoute(window.location);
       const resumeMismatch = requested === 'testing'
-        && currentScreenRef.current === 'sessions'
+        && screen === 'sessions'
         && activeStructuredSession?.state === 'in_progress'
         && activeStructuredIntent !== 'testing';
       const nextScreen: Screen = resumeMismatch ? 'home' : requested ?? 'home';
@@ -280,7 +326,7 @@ function App() {
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [activeStructuredIntent, activeStructuredSession, authPhase, initialRouteUserId, navigateToScreen, userId]);
+  }, [activeStructuredIntent, activeStructuredSession, authPhase, initialRouteUserId, navigateToScreen, screen, userId]);
 
   if (authPhase !== 'AUTHENTICATED') {
     return <LoginScreen />;
@@ -300,6 +346,13 @@ function App() {
   }
 
   const handleNavigate = (newScreen: Screen) => {
+    const hasCurrentPlannerResult = capabilityMaintenanceResolution?.userId === userId
+      && capabilityMaintenanceResolution.date === decisionInput?.date;
+    if (newScreen === 'brief' && decisionInput && !hasCurrentPlannerResult) {
+      setPendingBriefAfterPlanner({ userId: decisionInput.userId, date: decisionInput.date });
+      navigateToScreen('home', 'push');
+      return;
+    }
     navigateToScreen(newScreen, 'push');
   };
 
@@ -370,6 +423,7 @@ function App() {
               key={`${userId}:${dailyViewDate}`}
               userId={userId!}
               onNavigate={handleNavigate}
+              onCapabilityMaintenanceResolved={recordCapabilityMaintenance}
               onViewData={() => {
                 void loadDecisionInput();
                 handleNavigate('data');
@@ -406,6 +460,10 @@ function App() {
               <DataView
                 key={userId}
                 decisionInput={decisionInput}
+                capabilityMaintenance={capabilityMaintenanceResolution?.userId === userId
+                  && capabilityMaintenanceResolution.date === decisionInput?.date
+                  ? capabilityMaintenanceResolution.result
+                  : undefined}
                 userId={userId!}
                 onBack={() => handleNavigate('home')}
                 onRetry={() => { void loadDecisionInput(); }}
@@ -428,6 +486,10 @@ function App() {
             <DataView
               key={userId}
               decisionInput={decisionInput}
+              capabilityMaintenance={capabilityMaintenanceResolution?.userId === userId
+                && capabilityMaintenanceResolution.date === decisionInput?.date
+                ? capabilityMaintenanceResolution.result
+                : undefined}
               userId={userId!}
               initialTab="brief"
               onBack={() => handleNavigate('home')}
@@ -520,7 +582,7 @@ function App() {
                   setActiveStructuredIntent('testing');
                 } else if (
                   session
-                  && currentScreenRef.current === 'testing'
+                  && screen === 'testing'
                   && activeStructuredSession?.executionId === session.executionId
                 ) {
                   setActiveStructuredSession(null);
@@ -536,6 +598,7 @@ function App() {
               key={userId}
               userId={userId!}
               onNavigate={handleNavigate}
+              onCapabilityMaintenanceResolved={recordCapabilityMaintenance}
               onPlanChanged={() => {
                 void loadDecisionInput();
               }}

@@ -268,6 +268,23 @@ describe('exposure ledger (#813)', () => {
             expect(cap(full.capabilities, 'sport_skill').note).toContain('overdue status is not reported');
         });
 
+        it('includes maintenance state for every opted-in capability', () => {
+            const capabilities = [
+                'linear_speed_skill', 'acceleration_deceleration',
+                'multidirectional_change_of_direction', 'sport_skill',
+            ] as const;
+            const ledger = deriveExposureLedger(input({ capabilityMaintenance: {
+                enabled: true, intervalDays: 14, placements: [], softContext: [],
+                capabilities: capabilities.map(capability => ({
+                    capability, status: 'overdue' as const, requiredStage: 4 as const,
+                    supportWorkoutIds: [], message: `${capability} overdue`,
+                })),
+            } }));
+            for (const capability of capabilities) {
+                expect(cap(ledger.capabilities, capability).status).toBe('overdue');
+            }
+        });
+
         it('reads overdue and deliberate suspension from the resolved planner cadence, never recomputing it', () => {
             const resolved = (fulfilmentStatus: 'blocked' | 'deliberately_suspended') => ({
                 enabled: true, intervalDays: 14, placements: [], softContext: [],
@@ -284,6 +301,40 @@ describe('exposure ledger (#813)', () => {
             const suspended = deriveExposureLedger(input({ capabilityMaintenance: resolved('deliberately_suspended') }));
             expect(cap(suspended.capabilities, 'sport_skill').status).toBe('deliberately_suspended');
             expect(cap(suspended.capabilities, 'multidirectional_change_of_direction').status).toBe('unknown');
+        });
+
+        it('explains planner cadence versus ledger only when an unknown-variant fact exists', () => {
+            const unknownVariantFact: PerformedExposureFact = {
+                performedOccurrenceId: 'occ-field-unknown', localDate: AS_OF, modality: 'Field',
+                category: 'Field Maintenance', workoutId: 'field_controlled_maintenance_01',
+                confidence: 'exact', sourceKinds: ['structured_execution'], evidenceTier: 'completedStructuredWorkout',
+            };
+            const maintenance = {
+                enabled: true, intervalDays: 14, placements: [], softContext: [],
+                capabilities: [{
+                    capability: 'sport_skill' as const, status: 'satisfied' as const, requiredStage: 4 as const,
+                    lastQualifyingDate: AS_OF, nextDueDate: '2026-10-01', supportWorkoutIds: [], message: 'satisfied until 2026-10-01',
+                }],
+            };
+            const ledger = deriveExposureLedger(input({ performedFacts: [unknownVariantFact], capabilityMaintenance: maintenance }));
+            const sportSkill = cap(ledger.capabilities, 'sport_skill');
+            expect(sportSkill.status).toBe('unknown');
+            expect(sportSkill.note).toContain('planner cadence counts historical exposure without a known workout variant');
+
+            const noHistory = deriveExposureLedger(input({ capabilityMaintenance: maintenance }));
+            expect(cap(noHistory.capabilities, 'sport_skill').note).not.toContain('planner cadence counts historical exposure');
+            const unreadable = deriveExposureLedger(input({
+                activitiesReadable: false, performedFacts: null, capabilityMaintenance: maintenance,
+            }));
+            expect(cap(unreadable.capabilities, 'sport_skill').note).not.toContain('planner cadence counts historical exposure');
+            const readinessModified = deriveExposureLedger(input({
+                performedFacts: [{ ...unknownVariantFact, isReadinessModifiedDose: true }], capabilityMaintenance: maintenance,
+            }));
+            expect(cap(readinessModified.capabilities, 'sport_skill').note).not.toContain('planner cadence counts historical exposure');
+            const otherDate = deriveExposureLedger(input({
+                performedFacts: [{ ...unknownVariantFact, localDate: '2026-09-19' }], capabilityMaintenance: maintenance,
+            }));
+            expect(cap(otherDate.capabilities, 'sport_skill').note).not.toContain('planner cadence counts historical exposure');
         });
     });
 });

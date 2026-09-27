@@ -995,6 +995,9 @@ export interface SessionAdjustment {
 export interface Recommendation {
     template: SessionTemplate;
     rationale: string;
+    /** Runtime-only planner readout for explanation/context exports. The persistence
+     * boundary deliberately does not serialize this field or add it to RecommendationAudit. */
+    capabilityMaintenance?: import('./capabilityMaintenance').CapabilityMaintenanceResult | null;
     /** The engine's internal train/modify/recover classification that produced this
      *  template -- previously computed and discarded inside evaluateTraining, now
      *  exposed so callers (persistence, adherence analysis) don't have to re-derive it

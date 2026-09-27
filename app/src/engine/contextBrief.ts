@@ -64,7 +64,7 @@ export interface ContextBriefInput {
      * capability-exposure ledgers. Omitted = the ledgers are not rendered. Completed sessions
      * and recommendations come from this input's own windowed arrays. */
     exposureLedger?: Pick<ExposureLedgerInput,
-        'activitiesReadable' | 'recommendationsReadable' | 'activityOverrides' | 'performedFacts' | 'plannedSessions'>;
+        'activitiesReadable' | 'recommendationsReadable' | 'activityOverrides' | 'performedFacts' | 'plannedSessions' | 'capabilityMaintenance'>;
     /** Effective planning mode resolved by planningMode.ts (ADR-0017). When 'externally_planned',
      * or when `isExternalPlanAuthority` is true, the recommendation feedback section notes that
      * an imported/external plan is the planning authority. */

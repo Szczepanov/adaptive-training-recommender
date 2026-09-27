@@ -1,6 +1,7 @@
 import { useState, memo } from 'react';
 import type { WeekAheadDay, WeekAheadPlan } from '../engine/planner';
 import type { NextDayPotentialPlan, PlanningMode, ScheduleOverlay, TrainingIntentProfile } from '../engine/models';
+import { capabilityMaintenanceReadout } from '../engine/capabilityMaintenance';
 import { splitCoachingRationale } from '../utils/rationaleDisplay';
 import './WeekAheadStrip.css';
 
@@ -234,6 +235,15 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
 
       {evergreenWeekPurpose && (
         <p className="week-purpose">Week purpose: {evergreenWeekPurpose}</p>
+      )}
+
+      {capabilityMaintenanceReadout(plan.capabilityMaintenance).length > 0 && (
+        <section className="week-role-summary" aria-label="Capability maintenance status">
+          <strong>Capability maintenance</strong>
+          <ul>
+            {capabilityMaintenanceReadout(plan.capabilityMaintenance).map(note => <li key={note}>{note}</li>)}
+          </ul>
+        </section>
       )}
 
       {strengthSummary && (

@@ -597,6 +597,14 @@ sport-neutral capabilities exist: `linear_speed_skill`, `acceleration_decelerati
   and `ResolvedEvergreenPlan.warnings` carry the typed readout; owed `blocked`/`unknown` capabilities raise
   `capability_maintenance_unfulfilled`, while deliberate suspension stays visible without a warning. Diagnostics are
   not persisted in the recommendation audit in v1.
+- **Athlete readouts (#856).** `Recommendation.capabilityMaintenance` and
+  `WeekAheadPlan.capabilityMaintenance` carry the planner's typed result to the morning decision and
+  `WeekAheadStrip`. The same-day result resolved by the daily recommendation is forwarded through the app to
+  `ContextBriefService` and the exposure ledger; the brief service never computes cadence. The result is runtime-only
+  and does not extend the persisted recommendation audit. When a canonical fact has a known capability workout
+  identity but no recorded variant, and planner compatibility history counts it while the exact-variant ledger cannot,
+  the brief keeps its `unknown` evidence status and explains the provenance gap. The readout covers all four opted-in
+  capabilities: linear speed, acceleration/deceleration, change of direction, and sport skill.
 
 Policy is owned by `policy.evergreen.athletic_capability_maintenance_v1`, a product heuristic: no reviewed
 trained-adult evidence validates a 14-day (or 28-day) change-of-direction or ball-skill maintenance minimum.

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { DailyRecoverySnapshot } from '../engine/models';
+import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
 
 const services = vi.hoisted(() => ({
     getRecoverySnapshotState: vi.fn(),
@@ -103,6 +104,22 @@ describe('ContextBriefService', () => {
         services.getRecoverySnapshotsInRangeState.mockResolvedValue({ status: 'MISSING' });
         services.getOverridesSinceState.mockResolvedValue({ status: 'AVAILABLE', data: {}, revision: null });
         services.getPerformedTrainingFactsInRange.mockResolvedValue({ asOfDate: '', windowDays: 0, revision: 'r', exposures: [], coverageCredits: [] });
+    });
+
+    it('passes the supplied planner resolution into the exposure ledger without recalculating cadence', async () => {
+        const resolved: CapabilityMaintenanceResult = {
+            enabled: true, intervalDays: 14, placements: [], softContext: [],
+            capabilities: [{
+                capability: 'sport_skill', status: 'overdue', requiredStage: 4,
+                fulfilment: { status: 'blocked', reason: 'modality_avoided' },
+                supportWorkoutIds: [],
+                message: 'sport_skill: overdue since 2026-08-01; blocked (modality_avoided)',
+            }],
+        };
+
+        const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full', resolved);
+
+        expect(result.text).toContain('sport_skill: overdue since 2026-08-01; blocked (modality_avoided)');
     });
 
     it('renders the #813 exposure ledgers and says when reclassifications or activities were unreadable', async () => {

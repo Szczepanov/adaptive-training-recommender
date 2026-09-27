@@ -46,7 +46,11 @@ import { normalizeModality } from './performedTrainingFacts';
 import type { StimulusConfidence } from './stimulus';
 import { grantsPowerExposureCredit } from '../workouts/powerExposure';
 import { grantsMechanicalExposureCredit, type MechanicalDoseVariant } from '../workouts/mechanicalExposure';
-import { grantsAthleticCapabilityCredit } from '../workouts/athleticCapability';
+import {
+    ATHLETIC_CAPABILITY_WORKOUT_IDS,
+    athleticCapabilitiesCreditedBy,
+    grantsAthleticCapabilityCredit,
+} from '../workouts/athleticCapability';
 import type { AthleticCapabilityKey } from './models';
 import type { CapabilityMaintenanceResult } from './capabilityMaintenance';
 
@@ -359,6 +363,24 @@ const CAPABILITIES: readonly CapabilitySpec[] = [
         suspension: safety => impactBlocked(safety),
     },
     {
+        key: 'linear_speed_skill',
+        confirmsFact: confirmsAthleticCapability('linear_speed_skill'),
+        label: 'Linear speed',
+        confirms: () => false,
+        plans: () => false,
+        suspension: safety => modalityBlocked(safety, 'Field') ?? impactBlocked(safety),
+        athleticCapability: 'linear_speed_skill',
+    },
+    {
+        key: 'acceleration_deceleration',
+        confirmsFact: confirmsAthleticCapability('acceleration_deceleration'),
+        label: 'Acceleration / deceleration',
+        confirms: () => false,
+        plans: () => false,
+        suspension: safety => modalityBlocked(safety, 'Field') ?? impactBlocked(safety),
+        athleticCapability: 'acceleration_deceleration',
+    },
+    {
         // Issue #805: only exact authored capability identities whose defining steps were
         // retained count; Garmin field records, running and imported-plan titles never do.
         key: 'multidirectional_change_of_direction',
@@ -453,6 +475,19 @@ function capabilityEntry(spec: CapabilitySpec, events: readonly ResolvedEvent[],
         if (resolved.fulfilment?.status === 'deliberately_suspended') status = 'deliberately_suspended';
         else if (resolved.status === 'overdue') status = 'overdue';
         notes.push(`capability maintenance: ${resolved.message}`);
+        const unknownVariantEvidence = (input.performedFacts ?? []).some(fact =>
+            fact.workoutVariantId === undefined
+            && fact.workoutId !== undefined
+            && ATHLETIC_CAPABILITY_WORKOUT_IDS.includes(fact.workoutId)
+            && fact.localDate === resolved.lastQualifyingDate
+            && athleticCapabilitiesCreditedBy({
+                workoutId: fact.workoutId,
+                isReadinessModifiedDose: fact.isReadinessModifiedDose,
+            }).includes(spec.athleticCapability!),
+        );
+        if (resolved.status === 'satisfied' && !lastDate && unknownVariantEvidence) {
+            notes.push('planner cadence counts historical exposure without a known workout variant; this ledger cannot confirm variant-specific credit');
+        }
     }
     return {
         key: spec.key,

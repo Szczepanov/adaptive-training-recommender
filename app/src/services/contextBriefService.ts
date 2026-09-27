@@ -44,6 +44,7 @@ import type { BriefRestDirective } from '../engine/briefPlanAuthority';
 import { activityOverrideService } from './activityOverrideService';
 import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
 import type { PerformedExposureFact } from '../engine/performedTrainingFacts';
+import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
 import { activityService } from './activityService';
 import { anthropometryService } from './anthropometryService';
 import { checkinService } from './checkinService';
@@ -200,6 +201,7 @@ export class ContextBriefService {
         asOfDate?: string,
         windowDays: number = defaultBriefWindowDays(),
         preset: BriefWindowPreset = windowDays <= briefWindowDaysFor('daily') ? 'daily' : 'full',
+        capabilityMaintenance?: CapabilityMaintenanceResult | null,
     ): Promise<ContextBriefResult> {
         const targetDate = asOfDate ?? getLocalDateString();
         // Purpose selects what is rendered, never what is fetched: every read below
@@ -569,6 +571,7 @@ export class ContextBriefService {
                         date: session.date, modality: session.modality, intensity: session.intensity, title: session.title,
                     }))
                     : null,
+                capabilityMaintenance,
             },
         };
         // `activities` was fetched over contextDays (>= windowDays) to feed the fixed
