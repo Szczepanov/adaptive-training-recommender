@@ -91,11 +91,9 @@ describe('evaluateMechanicalStageProgression', () => {
       }],
     });
 
-    // #859: spacing belongs to the date-scoped coverage/ranking layer. The shared
-    // week-level verdict remains usable for later dates in the same horizon.
-    expect(verdict.eligible).toBe(true);
-    expect(verdict.status).toBe('eligible');
-    expect(verdict.stage).toBe(1);
+    expect(verdict.eligible).toBe(false);
+    expect(verdict.status).toBe('withheld');
+    expect(verdict.withheldReason).toContain('consecutive days');
   });
 
   it('enforces re-entry at Stage 1 when history is empty or gap is >= 14 days', () => {
@@ -321,7 +319,7 @@ describe('evaluateMechanicalStageProgression', () => {
       expect(confirmed.eligibleWorkoutIds).toContain('field_controlled_maintenance_01');
     });
 
-    it('fails closed to Stage 1 when no recent stage has any explicit normal follow-up', () => {
+    it('retains the latest performed stage when no recent stage has explicit normal follow-up, without advancing', () => {
       const verdict = evaluateMechanicalStageProgression({
         asOfDate: '2026-09-20',
         exposureHistory: [{ date: '2026-09-16', workoutId: 'field_acceleration_braking_01', stage: 3 }],
@@ -329,9 +327,9 @@ describe('evaluateMechanicalStageProgression', () => {
         targetStage: 4,
       });
       expect(verdict.tissueResponse.verdict).toBe('missing');
-      expect(verdict.stage).toBe(1);
-      expect(verdict.eligibleWorkoutIds).toContain('running_walk_run_01');
-      expect(verdict.eligibleWorkoutIds).not.toContain('field_acceleration_braking_01');
+      expect(verdict.stage).toBe(3);
+      expect(verdict.eligibleWorkoutIds).toContain('field_acceleration_braking_01');
+      expect(verdict.eligibleWorkoutIds).not.toContain('field_controlled_maintenance_01');
     });
 
     it('does not hold a higher stage whose follow-up was missing, and still regresses on symptoms', () => {
