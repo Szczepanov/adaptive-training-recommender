@@ -87,6 +87,7 @@ describe('mechanical exposure policy alignment (ADR-0033, issue #804)', () => {
         expect(policy.statement).toContain('4 discrete stages');
         expect(policy.statement).toContain('fails closed');
         expect(policy.statement).toContain('highest stage performed with an explicit normal next-day follow-up');
+        expect(policy.statement).toContain('otherwise the latest performed stage is retained for continuity');
         expect(policy.statement).toContain('explicit #805 capability-maintenance opt-in');
         expect(policy.statement).toContain('dedicated 28-day mechanical evidence stream');
         expect(policy.statement).toContain('date-scoped candidate gate');
