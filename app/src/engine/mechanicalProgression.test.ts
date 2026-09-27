@@ -79,16 +79,23 @@ describe('evaluateMechanicalStageProgression', () => {
     expect(illnessVerdict.withheldReason).toContain('illness symptoms');
   });
 
-  it('withholds exposure on consecutive days to protect connective tissue remodeling', () => {
+  it('keeps stage/tissue progression horizon-wide when the last exposure was yesterday', () => {
     const verdict = evaluateMechanicalStageProgression({
       asOfDate: '2026-09-20',
       exposureHistory: [{ date: '2026-09-19', workoutId: 'running_walk_run_01', stage: 1 }],
-      checkinHistory: [{ date: '2026-09-20', checkin: checkin() }],
+      checkinHistory: [{
+        date: '2026-09-20',
+        checkin: checkin({
+          tissueResponses: { knee: { region: 'knee', morningState: 'normal', nextMorningReaction: 'normal' } },
+        }),
+      }],
     });
 
-    expect(verdict.eligible).toBe(false);
-    expect(verdict.status).toBe('withheld');
-    expect(verdict.withheldReason).toContain('consecutive days');
+    // #859: spacing belongs to the date-scoped coverage/ranking layer. The shared
+    // week-level verdict remains usable for later dates in the same horizon.
+    expect(verdict.eligible).toBe(true);
+    expect(verdict.status).toBe('eligible');
+    expect(verdict.stage).toBe(1);
   });
 
   it('enforces re-entry at Stage 1 when history is empty or gap is >= 14 days', () => {
