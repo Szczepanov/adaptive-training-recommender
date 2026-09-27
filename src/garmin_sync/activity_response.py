@@ -344,9 +344,7 @@ def _summarize_segment(
     samples = _records_between(records, start, end)
     if step is not None and step.message_index is not None:
         linked_samples = tuple(
-            record
-            for record in samples
-            if record.workout_step_index == step.message_index
+            record for record in samples if record.workout_step_index == step.message_index
         )
         if linked_samples:
             samples = linked_samples
@@ -408,9 +406,7 @@ def _summarize_segment(
         average_cadence_rpm=_rounded(
             average_cadence if average_cadence is not None else fallback_cadence
         ),
-        max_cadence_rpm=_rounded(
-            max_cadence if max_cadence is not None else fallback_max_cadence
-        ),
+        max_cadence_rpm=_rounded(max_cadence if max_cadence is not None else fallback_max_cadence),
         first_third_power_watts=_rounded(power_thirds[0]),
         middle_third_power_watts=_rounded(power_thirds[1]),
         last_third_power_watts=_rounded(power_thirds[2]),
@@ -509,10 +505,7 @@ def _semantic_record_segments(
         if start is None or end is None:
             continue
         local_resolution = (
-            resolution.power_seconds
-            or resolution.hr_seconds
-            or resolution.cadence_seconds
-            or 1
+            resolution.power_seconds or resolution.hr_seconds or resolution.cadence_seconds or 1
         )
         duration = max(local_resolution, (end - start).total_seconds() + local_resolution)
         step_index = group[0].workout_step_index
@@ -767,7 +760,6 @@ def evaluate_resolution_candidates(
     )
 
 
-
 @dataclass(frozen=True)
 class ActivityResolutionFeature:
     """One feature-level preservation decision for the activity calibration harness."""
@@ -816,9 +808,7 @@ def _downsample_records(
     for index in sorted(buckets):
         bucket = buckets[index]
         step_indices = {
-            record.workout_step_index
-            for record in bucket
-            if record.workout_step_index is not None
+            record.workout_step_index for record in bucket if record.workout_step_index is not None
         }
         result.append(
             FitRecordSample(
@@ -1039,7 +1029,9 @@ def _compare_work_features(
             )
 
     reference_ordered = [reference_work[index] for index in sorted(reference_work)]
-    candidate_ordered = [candidate_work[index] for index in sorted(reference_work) if index in candidate_work]
+    candidate_ordered = [
+        candidate_work[index] for index in sorted(reference_work) if index in candidate_work
+    ]
     _append_absolute_feature(
         features,
         "work_first_to_last_fade",
@@ -1106,10 +1098,7 @@ def _compare_unstructured_mmp_features(
     candidate: CanonicalActivityResponseTelemetry,
     features: list[ActivityResolutionFeature],
 ) -> None:
-    candidate_peaks = {
-        peak.duration_seconds: peak
-        for peak in candidate.power_duration_peaks
-    }
+    candidate_peaks = {peak.duration_seconds: peak for peak in candidate.power_duration_peaks}
     tolerances = {
         1: 5.0,
         5: 2.0,
@@ -1120,10 +1109,7 @@ def _compare_unstructured_mmp_features(
         300: 1.0,
         1200: 1.0,
     }
-    reference_peaks = {
-        peak.duration_seconds: peak
-        for peak in reference.power_duration_peaks
-    }
+    reference_peaks = {peak.duration_seconds: peak for peak in reference.power_duration_peaks}
     for duration in POWER_DURATION_WINDOWS_SECONDS:
         reference_peak = reference_peaks.get(duration)
         candidate_peak = candidate_peaks.get(duration)
@@ -1221,8 +1207,6 @@ def coarsest_preserving_resolution(
 ) -> int | None:
     """Return the coarsest candidate meeting the >=95% preservation gate."""
     passing = [
-        result.candidate_seconds
-        for result in results
-        if result.passes_required_rate is True
+        result.candidate_seconds for result in results if result.passes_required_rate is True
     ]
     return max(passing) if passing else None
