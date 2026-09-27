@@ -49,7 +49,8 @@ While the native trace is still in memory, activity_response.py derives:
 - signal-specific source resolution;
 - at most 64 semantic segment summaries;
 - fixed power-duration peaks at 1 s, 5 s, 10 s, 30 s, 60 s, 3 min, 5 min and 20 min when
-  source cadence supports each window;
+  source cadence supports each window; the 1-second peak remains moderate-confidence at a
+  common 1 Hz source cadence because it is a single-record, sampling-sensitive statistic;
 - one deterministic first/second-half summary for sessions long enough to support it.
 
 The native records are then discarded. They are not written to Firestore, logs, context
