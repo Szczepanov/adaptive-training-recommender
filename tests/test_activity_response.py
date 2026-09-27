@@ -92,11 +92,32 @@ def test_threshold_fixture_keeps_exact_semantics_target_actual_and_thirds_separa
     evidence = _structured_evidence(
         [
             {"duration": 1200, "intensity": "warmup", "power": 150, "hr": 120},
-            {"duration": 900, "intensity": "active", "power": 229, "target": 230, "thirds": (232, 230, 225), "hr": 150},
+            {
+                "duration": 900,
+                "intensity": "active",
+                "power": 229,
+                "target": 230,
+                "thirds": (232, 230, 225),
+                "hr": 150,
+            },
             {"duration": 300, "intensity": "recovery", "power": 120, "hr": 125},
-            {"duration": 900, "intensity": "active", "power": 231, "target": 230, "thirds": (233, 231, 228), "hr": 152},
+            {
+                "duration": 900,
+                "intensity": "active",
+                "power": 231,
+                "target": 230,
+                "thirds": (233, 231, 228),
+                "hr": 152,
+            },
             {"duration": 300, "intensity": "recovery", "power": 120, "hr": 126},
-            {"duration": 900, "intensity": "active", "power": 226, "target": 230, "thirds": (230, 227, 221), "hr": 154},
+            {
+                "duration": 900,
+                "intensity": "active",
+                "power": 226,
+                "target": 230,
+                "thirds": (230, 227, 221),
+                "hr": 154,
+            },
             {"duration": 1200, "intensity": "cooldown", "power": 130, "hr": 128},
         ]
     )
@@ -136,7 +157,9 @@ def test_semantic_30_30_recoveries_are_not_work_segments():
     response = derive_activity_response("indoor_cycling", _structured_evidence(specs))
     assert response is not None
     assert len([segment for segment in response.segments if segment.segment_type == "work"]) == 6
-    assert len([segment for segment in response.segments if segment.segment_type == "recovery"]) == 6
+    assert (
+        len([segment for segment in response.segments if segment.segment_type == "recovery"]) == 6
+    )
 
 
 def test_six_ten_second_sprints_preserve_short_power_and_cadence():
@@ -328,8 +351,7 @@ def test_feature_family_resolution_harness_requires_fine_source_for_sprint_peaks
         for feature in one_second.features
     )
     assert any(
-        feature.feature.endswith("_peak_5s_power")
-        and feature.state == "feature_unavailable"
+        feature.feature.endswith("_peak_5s_power") and feature.state == "feature_unavailable"
         for feature in two_seconds.features
     )
     assert two_seconds.passes_required_rate is False
