@@ -142,6 +142,7 @@ export interface WeeklyRoleAllocationResult {
  * scheduling conflict. Anything unrecognised stays an observed blocker only. */
 const SAFETY_EXCLUSION_REASONS = new Set([
     'INJURY_RESTRICTION',
+    'UNAVAILABLE_MODALITY',
     'QUALITY_SPACING_VIOLATION',
     'HARD_LOWER_BODY_SPACING_VIOLATION',
     'ROLLING_HARD_CAP_EXCEEDED',

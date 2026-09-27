@@ -1145,6 +1145,7 @@ export function rankCandidates(
     const isDisliked = (t: SessionTemplate) => preferences.avoidedModalities.some(m => m.toLowerCase() === (t.modality ?? '').toLowerCase());
     const isPreferred = (t: SessionTemplate) => preferences.preferredModalities.some(m => matchesPreferredModality(m, t.modality));
     const isDeprioritized = (t: SessionTemplate) => preferences.deprioritizedModalities.some(m => m.toLowerCase() === (t.modality ?? '').toLowerCase());
+    const unavailableModalities = new Set((preferences.unavailableModalities ?? []).map(modality => modality.toLowerCase()));
     const satisfiesUnresolvedObjective = (template: SessionTemplate) => unresolvedObjectives.some(obj =>
         obj.qualification?.allowedModalities
             ? obj.qualification.allowedModalities.includes(template.modality)
@@ -1225,6 +1226,10 @@ export function rankCandidates(
         }
 
         const lowerMod = (template.modality ?? '').toLowerCase();
+        // Hard exclusion owned by the athlete's "Unavailable Training Types" setting. It is
+        // checked before, and independently of, every preference or consent exemption, so
+        // no override can re-admit an unavailable modality.
+        if (unavailableModalities.has(lowerMod)) excludedReasons.push('UNAVAILABLE_MODALITY');
         if (template.requiresExplicitModalityPreference
             && !preferences.preferredModalities.some(modality => matchesPreferredModality(modality, template.modality))) {
             excludedReasons.push('EXPLICIT_MODALITY_PREFERENCE_REQUIRED');
