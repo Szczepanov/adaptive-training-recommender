@@ -15,7 +15,6 @@ import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS } from './rollingLoadBudget';
 import { resolvePriorityAOlympicTriathlonTaper } from './taperPlanBudget';
 import { AEROBIC_VOLUME_FLOOR_WINDOW_DAYS, CATALOG_AEROBIC_VOLUME_FLOOR, resolveAerobicVolumeFloor, type AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { canEmitMechanicalRequirement, strengthRequirement } from './evergreenStrategy';
-import { MECHANICAL_CONTINUITY_WINDOW_DAYS } from './mechanicalProgression';
 
 /**
  * Issue #801: the cycling event plan already authors one exact primary-strength role. For
@@ -69,11 +68,13 @@ export interface TrainingIntent {
      * `athleteStateEvidence` window, but that evidence is never replayed into `history`. */
     historySnapshot: TrainingHistorySnapshot | null;
     /** Read-only performed-training evidence for the #804 mechanical capability owner. When
-     * the evergreen intent can emit a mechanical requirement it spans at least
-     * `MECHANICAL_CONTINUITY_WINDOW_DAYS` before `date`, so the 14-day re-entry rule never
-     * runs on the 7-day operational window; otherwise it is `history`. Like
-     * `athleteStateEvidence`, it is never replayed into `history`. */
+     * evergreen can emit a mechanical requirement it carries a dedicated 28-day establishment
+     * window. #804 still evaluates progression/continuity only inside its own 14-day window;
+     * the extra history exists solely so its "established athlete" gate does not depend on
+     * unrelated performance-priority evidence. It is never replayed into `history`. */
     mechanicalExposureHistory: CompletedExposure[];
+    /** Observation span for `mechanicalExposureHistory`; optional only for legacy fixtures. */
+    mechanicalEvidenceObservedWindowDays?: number;
     /** Issue #757: the athlete-level `aerobic_volume` floor, resolved once from at least 28
      * days of completed evidence so today, tomorrow and the forecast share one value. */
     aerobicVolumeFloor: AerobicVolumeFloor;
@@ -93,7 +94,7 @@ export interface TrainingIntent {
 
 const MAX_PLANNED_VOLUME = 1;
 const MAX_PLANNED_INTENSITY = 1.2;
-const ATHLETE_STATE_HISTORY_WINDOW_DAYS = 28;
+export const ATHLETE_STATE_HISTORY_WINDOW_DAYS = 28;
 const CANONICAL_FACT_REVISION_PREFIX = 'canonical-facts-v1:';
 
 function boundedPlannedDose(volume: number, intensity: number): PlannedDose {
@@ -187,10 +188,10 @@ export function resolvePlannedDoseForDate(
     return resolvePlannedDose(phase, objectives, unresolvedObjectives);
 }
 
-/** Issue #804: evidence for the mechanical continuity window, reusing the widest window
- * this resolution already holds: the 28-day athlete-state evidence first, then a wide
- * enough operational snapshot; only a snapshot-less provider (e.g. the projected next-day
- * provider) is asked to reconstruct the window. The operational `history` stays bounded. */
+/** Issue #804/#857: dedicated evidence for mechanical establishment. The 28-day window is
+ * intentionally separate from `athleteStateEvidence`: enabling capability maintenance must
+ * not change aerobic-floor, power or quality priors. The #804 progression evaluator itself
+ * still filters this evidence to its 14-day continuity window. */
 async function resolveMechanicalExposureEvidence(
     userId: string,
     date: string,
@@ -198,18 +199,22 @@ async function resolveMechanicalExposureEvidence(
     operationalSnapshot: TrainingHistorySnapshot | null,
     operationalHistory: readonly CompletedExposure[],
     provider: TrainingHistoryProvider,
-): Promise<CompletedExposure[]> {
-    const windowStart = addDaysToLocalDateString(date, -MECHANICAL_CONTINUITY_WINDOW_DAYS);
+): Promise<{ exposures: CompletedExposure[]; observedWindowDays: number }> {
+    const windowDays = ATHLETE_STATE_HISTORY_WINDOW_DAYS;
+    const windowStart = addDaysToLocalDateString(date, -windowDays);
     const bounded = (exposures: readonly CompletedExposure[]): CompletedExposure[] =>
         exposures.filter(exposure => exposure.date >= windowStart && exposure.date < date);
     const stateEvidence = historySnapshot?.athleteStateEvidence;
-    if (stateEvidence && stateEvidence.observedWindowDays >= MECHANICAL_CONTINUITY_WINDOW_DAYS) {
-        return bounded(stateEvidence.exposures);
+    if (stateEvidence && stateEvidence.observedWindowDays >= windowDays) {
+        return { exposures: bounded(stateEvidence.exposures), observedWindowDays: windowDays };
     }
-    if (operationalSnapshot && operationalSnapshot.windowDays >= MECHANICAL_CONTINUITY_WINDOW_DAYS) {
-        return bounded(operationalHistory);
+    if (operationalSnapshot && operationalSnapshot.windowDays >= windowDays) {
+        return { exposures: bounded(operationalHistory), observedWindowDays: windowDays };
     }
-    return bounded(await provider.reconstruct(userId, date, MECHANICAL_CONTINUITY_WINDOW_DAYS));
+    return {
+        exposures: bounded(await provider.reconstruct(userId, date, windowDays)),
+        observedWindowDays: windowDays,
+    };
 }
 
 /** Fetch the bounded history once and reuse that immutable revision across every
@@ -337,14 +342,18 @@ export async function resolveTrainingIntent(
         };
     }
 
-    // Only the performance priorities can emit a mechanical requirement (pinned by
-    // mechanicalExposurePolicyAlignment.test.ts); for any other evergreen intent the verdict
-    // has no consumer, so no wider read is spent on it.
-    const mechanicalExposureHistory = mechanicalEvidenceRequired(planningContext)
+    // Mechanical establishment has its own evidence stream (#857). This is loaded exactly
+    // when #804 can emit, including an explicit #805 opt-in, without widening the general
+    // athlete-state evidence used by aerobic/power/quality policy.
+    const mechanicalEvidence = mechanicalEvidenceRequired(planningContext)
         ? await resolveMechanicalExposureEvidence(
             userId, date, historySnapshot, operationalSnapshot, operationalHistory, provider,
         )
-        : history;
+        : {
+            exposures: history,
+            observedWindowDays: operationalSnapshot?.windowDays ?? windowDays,
+        };
+    const mechanicalExposureHistory = mechanicalEvidence.exposures;
 
     // Issue #757: the floor reuses evidence this resolution already holds and never adds a
     // read. A caller-prepared snapshot fixes the history revision for every horizon of a
@@ -395,7 +404,9 @@ export async function resolveTrainingIntent(
         date,
     ), date, authoredPlanBlocks, planDefinition);
     return {
-        planningContext, periodization, eventStrengthSupportSessions: strengthSupportSessions, unresolvedObjectives, plannedDose, fatigue, history, rollingLoadBudgetHistory, performedTrainingFacts, historySnapshot, mechanicalExposureHistory, aerobicVolumeFloor, microcycle,
+        planningContext, periodization, eventStrengthSupportSessions: strengthSupportSessions, unresolvedObjectives, plannedDose, fatigue, history, rollingLoadBudgetHistory, performedTrainingFacts, historySnapshot, mechanicalExposureHistory,
+        mechanicalEvidenceObservedWindowDays: mechanicalEvidence.observedWindowDays,
+        aerobicVolumeFloor, microcycle,
         droppedContributorObjectives: multiEventResolution.droppedContributorObjectives,
         sequenceIntent: resolveSequenceIntent(periodization.phase),
     };
