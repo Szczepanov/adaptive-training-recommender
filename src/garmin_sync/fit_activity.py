@@ -210,7 +210,7 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                         )
                     )
                     # Retain the record-level field as compatibility execution linkage.
-                    # Lap.workout_step_index remains the stronger performed-step anchor.
+                    # FIT Lap.wkt_step_index remains the stronger performed-step anchor.
                     remember_workout_step_index(record_step_index)
                 elif name == "event":
                     event = _value(message, "event")
