@@ -62,17 +62,19 @@ export function capabilityGates(
     preferences: UserPreferences,
     date: string,
     /** Resolved schedule-overlay environment per plannable date (null = unconstrained). */
-    environmentOverrides: readonly (string | null | undefined)[],
+    environmentWindows: readonly { date: string; environmentOverride: string | null | undefined }[],
 ): CapabilityMaintenanceInput['gates'] {
     const guardrailBlocked = new Set<string>();
     const unavailable = new Set<string>();
     const avoided = new Set<string>();
     const environmentUnavailable = new Set<string>();
+    const environmentAvailableDates = new Map<string, readonly string[]>();
     const deprioritized = new Set<string>();
     for (const workoutId of MECHANICAL_MAINTENANCE_WORKOUT_IDS) {
         const template = templateForWorkout(workoutId);
         if (!template) {
             environmentUnavailable.add(workoutId);
+            environmentAvailableDates.set(workoutId, []);
             continue;
         }
         if (hasModality(preferences.unavailableModalities, template.modality)) unavailable.add(workoutId);
@@ -84,11 +86,15 @@ export function capabilityGates(
             guardrailBlocked.add(workoutId);
         }
         if (reasons.includes('environment') || reasons.includes('equipment')) environmentUnavailable.add(workoutId);
-        const scheduleExcludes = environmentOverrides.length > 0 && environmentOverrides.every(override =>
-            Boolean(override) && template.environment !== 'either' && template.environment !== override);
-        if (scheduleExcludes) environmentUnavailable.add(workoutId);
+        const environmentDates = environmentWindows
+            .filter(window => !window.environmentOverride
+                || template.environment === 'either'
+                || template.environment === window.environmentOverride)
+            .map(window => window.date);
+        environmentAvailableDates.set(workoutId, environmentDates);
+        if (environmentWindows.length > 0 && environmentDates.length === 0) environmentUnavailable.add(workoutId);
     }
-    return { guardrailBlocked, unavailable, avoided, environmentUnavailable, deprioritized };
+    return { guardrailBlocked, unavailable, avoided, environmentUnavailable, environmentAvailableDates, deprioritized };
 }
 
 export interface CapabilityMaintenancePlanInput {
