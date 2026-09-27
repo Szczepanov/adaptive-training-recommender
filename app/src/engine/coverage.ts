@@ -96,9 +96,6 @@ export interface CoverageState {
     /** Issue #757: athlete-level `aerobic_volume` duration floor applied to both completed
      * history and candidate templates. Absent means the catalog minimum. */
     aerobicVolumeFloor?: AerobicVolumeFloor | null;
-    /** Issue #859: true only when a qualifying mechanical exposure occurred on the previous
-     * calendar date. This is a date-scoped hard gate, never a whole-horizon suspension. */
-    mechanicalSpacingBlocked?: boolean;
 }
 
 export interface CoverageHistoryEntry extends ExposureIdentity {
@@ -641,13 +638,6 @@ export function buildCoverageState(
         }
     }
 
-    const yesterday = addDaysToLocalDateString(asOfDate, -1);
-    const mechanicalSpacingBlocked = history.some(exposure => {
-        if (exposure.date !== yesterday) return false;
-        const workoutId = exposure.workoutId ?? workoutIdForTemplateId(exposure.templateId);
-        return mechanicalIdentityFor(workoutId) !== undefined;
-    });
-
     return {
         asOfDate,
         phase: block.phase,
@@ -656,7 +646,6 @@ export function buildCoverageState(
         descriptor: activeDescriptor,
         requirements: Array.from(requirementsByKey.values()).map(requirement => withActiveCapabilityPlacements(requirement, asOfDate)),
         aerobicVolumeFloor,
-        mechanicalSpacingBlocked,
     };
 }
 
