@@ -271,7 +271,7 @@ export function resolveEvergreenPlan(
         mechanicalSuspension: capabilityMaintenanceEnabled ? mechanicalSuspensionFor(goalOrEvent, athleteState)?.source ?? null : null,
         mechanicalRequirementPresent: strategy.requirements.some(requirement => requirement.adaptation === 'mechanical_exposure'),
         mechanicalVerdict: mechanicalProgression,
-        gates: capabilityGates(context, preferences, date, resolvedWindows.map(window => window.environmentOverride)),
+        gates: capabilityGates(context, preferences, date, resolvedWindows),
         supportCapacityDates: capacity.usableWindows.map(window => window.date),
     }) : null;
     const result = buildEvergreenPlanDefinition(
