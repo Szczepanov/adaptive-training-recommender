@@ -144,8 +144,12 @@ export interface CapabilityMaintenanceInput extends CapabilityCadenceInput {
          * Optional for pure/unit callers; when present, fulfilment is evaluated only inside the
          * capability's not-before/due window rather than across the whole planning horizon. */
         environmentAvailableDates?: ReadonlyMap<string, readonly string[]>;
-        /** Canonical minimum executable duration per mechanical workout identity. */
+        /** Canonical minimum executable duration per mechanical workout identity, used for
+         * progression-only support that is not yet capability-delivering. */
         minimumDurationMinutes?: ReadonlyMap<string, number>;
+        /** Minimum duration that retains the defining authored steps for a specific
+         * capability/workout pair. Key format is `<capability>:<workoutId>`. */
+        capabilityMinimumDurationMinutes?: ReadonlyMap<string, number>;
         deprioritized: ReadonlySet<string>;
     };
     /** Plannable dates that still have usable training capacity. */
@@ -307,9 +311,11 @@ function fulfilmentFor(
     }
     const hardGated = (id: string) => gates.guardrailBlocked.has(id) || gates.unavailable.has(id)
         || gates.avoided.has(id) || gates.environmentUnavailable.has(id) || !environmentFeasibleInDueWindow(id);
-    const hasCapacityInDueWindow = (id: string): boolean => {
+    const hasCapacityInDueWindow = (id: string, capabilitySpecific = true): boolean => {
         const capacity = input.supportCapacityMinutesByDate;
-        const minimum = gates.minimumDurationMinutes?.get(id);
+        const minimum = capabilitySpecific
+            ? gates.capabilityMinimumDurationMinutes?.get(`${cadence.capability}:${id}`) ?? gates.minimumDurationMinutes?.get(id)
+            : gates.minimumDurationMinutes?.get(id);
         // Legacy/pure callers that supplied only dates preserve the old contract. Production
         // supplies both maps and therefore proves that a qualifying identity can actually fit.
         if (!capacity || minimum === undefined) return true;
@@ -324,7 +330,7 @@ function fulfilmentFor(
         .sort();
     if (stageEligible.length === 0) {
         const progression = progressionWorkoutIds(verdict, hardGated);
-        const capacityEligibleProgression = progression.filter(hasCapacityInDueWindow);
+        const capacityEligibleProgression = progression.filter(id => hasCapacityInDueWindow(id, false));
         if (progression.length > 0 && capacityEligibleProgression.length === 0) {
             return { fulfilment: { status: 'blocked', reason: 'no_support_capacity' }, ...none };
         }
