@@ -14,7 +14,7 @@ import { resolveSequenceIntent, type SequenceIntentPolicy } from './sequenceInte
 import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS } from './rollingLoadBudget';
 import { resolvePriorityAOlympicTriathlonTaper } from './taperPlanBudget';
 import { AEROBIC_VOLUME_FLOOR_WINDOW_DAYS, CATALOG_AEROBIC_VOLUME_FLOOR, resolveAerobicVolumeFloor, type AerobicVolumeFloor } from './aerobicVolumeFloor';
-import { strengthRequirement } from './evergreenStrategy';
+import { canEmitMechanicalRequirement, strengthRequirement } from './evergreenStrategy';
 import { MECHANICAL_CONTINUITY_WINDOW_DAYS } from './mechanicalProgression';
 
 /**
@@ -112,14 +112,8 @@ function needsEstablishedPerformanceEvidence(planningContext: PlanningContext): 
 /** Issue #804: whether this intent can emit a mechanical requirement, and therefore whether
  * orchestration must source mechanical exposure evidence and tissue check-ins. */
 export function mechanicalEvidenceRequired(planningContext: PlanningContext): boolean {
-    if (planningContext.mode !== 'evergreen') return false;
-    const priorities = new Set(planningContext.profile.priorities);
-    const directMechanicalPriority = priorities.has('sport_readiness') || priorities.has('speed_power');
-    const strengthPlanned = priorities.has('health')
-        || priorities.has('balanced_performance')
-        || priorities.has('strength_muscle');
-    const hybridMechanicalMaintenance = priorities.has('endurance') && strengthPlanned;
-    return directMechanicalPriority || hybridMechanicalMaintenance;
+    return planningContext.mode === 'evergreen'
+        && canEmitMechanicalRequirement(planningContext.profile.priorities);
 }
 
 /** The same predicate before a `TrainingIntent` exists (the next-day projection resolves
