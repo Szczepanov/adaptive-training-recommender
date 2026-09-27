@@ -98,6 +98,7 @@ Full statements, with rationale and the checks that enforce them, are in
 * `npm run test:rules` — Firestore security-rule suite inside the Firebase emulator (needs Java)
 * `npm run test:e2e` — Playwright browser E2E suite inside the Auth + Firestore emulators (`playwright.e2e.config.ts`; `npm run e2e:serve` serves the E2E app at `http://127.0.0.1:4173`)
 * `npm run emulators:exec:rules -- "<cmd>"` / `npm run emulators:exec:e2e -- "<cmd>"` — run a command inside the same emulators `test:rules` / `test:e2e` use; CI shards with e.g. `npm run emulators:exec:rules -- "npm run test:rules:emulator -- --shard=1/2"` (`test:e2e:emulator` is the Playwright counterpart)
+* `npm run test:rules:shard -- <index>/<total>` — one rules shard on emulator ports of its own (`scripts/run-rules-shard.mjs`), so shards can run side by side with each other and with `test:e2e` on one machine; `make verify` uses it
 * `npm run build` — `npm run check && vite build`
 * `npm run dev` — Vite dev server (`predev` runs `npm run check` first)
 * `npm run validate:workouts` / `npm run validate:knowledge` / `npm run validate:knowledge-coverage` — catalog and registry validators, individually

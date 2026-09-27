@@ -82,6 +82,15 @@ gates.
 The contract is implemented by `scripts/verify_repo.py`; `make verify` is the stable public
 entry point. Do not duplicate the command matrix in agent prompts or skills.
 
+Independent gates run concurrently: repository hygiene first (pre-commit may rewrite files),
+then every static, unit, emulator, simulation and build gate in parallel lanes, then the
+wall-clock latency gates alone so nothing competes for the CPU while they sample. Each
+concurrent step writes its output to `app/artifacts/verify/<step>.log`; a failure prints the
+tail of its log, and no lane starts another step after a required step fails. The Firestore
+rules suite runs as two shards on their own emulator ports next to browser E2E. For
+sequential, streamed output while debugging, run
+`uv run python scripts/verify_repo.py --serial` (or `VERIFY_SERIAL=1 make verify`).
+
 ### Iteration versus completion
 
 During implementation, use the narrowest useful command:

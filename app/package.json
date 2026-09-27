@@ -92,6 +92,7 @@
     "emulators:exec:rules": "firebase --project demo-adaptive-training emulators:exec --only firestore",
     "test:rules": "npm run emulators:exec:rules -- \"npm run test:rules:emulator\"",
     "test:rules:emulator": "vitest run src/emulator --fileParallelism=false --maxWorkers=1",
+    "test:rules:shard": "node scripts/run-rules-shard.mjs",
     "e2e:serve": "vite --mode e2e --host 127.0.0.1 --port 4173",
     "emulators:exec:e2e": "firebase --project demo-adaptive-training-e2e emulators:exec --only auth,firestore",
     "test:e2e": "npm run emulators:exec:e2e -- \"npm run test:e2e:emulator\"",
