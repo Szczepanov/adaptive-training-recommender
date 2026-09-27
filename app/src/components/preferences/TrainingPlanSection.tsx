@@ -116,8 +116,8 @@ export function TrainingPlanSection({
       <p id="capability-maintenance-desc" className="preference-desc">
         Off by default. When on, an occasional field-skill session (about every two weeks) can replace
         a mechanical-loading slot once your tissue tolerance allows it. It never changes your main sport
-        or adds sessions, and it pauses near events, during recovery, and whenever field work is avoided
-        or unavailable.
+        or increases your weekly session limit; its support occurrence stays subordinate to primary training,
+        and it pauses near events, during recovery, and whenever field work is avoided or unavailable.
       </p>
     </SettingsDisclosure>
   );
