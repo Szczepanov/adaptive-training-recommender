@@ -563,7 +563,9 @@ sport-neutral capabilities exist: `linear_speed_skill`, `acceleration_decelerati
   identities that settle the most open placements are preferred. Consent and ranking urgency start only on/after the
   not-before date. Once every placement is fulfilled the support minimum lapses. A delivery identity is a
   stage-eligible capability identity, or, when none is stage-eligible, the highest currently eligible #804 identity so
-  progression can occur.
+  progression can occur. This does not create a distinct capability requirement/objective or increase the athlete's
+  configured weekly session commitment; it can make the existing mechanical support occurrence reservable when a
+  capability is owed.
 - **Consent.** `rankCandidates` evaluates the hard `UNAVAILABLE_MODALITY` exclusion first, then exempts from
   `EXPLICIT_MODALITY_PREFERENCE_REQUIRED` only exact identities of enabled capabilities that the date's coverage
   state consents to (`hasCapabilityConsent`); a progression-only touch may consent an enabled capability's identity
