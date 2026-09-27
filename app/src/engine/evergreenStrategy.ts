@@ -104,7 +104,7 @@ export interface GoalOrEventContext {
     /** Issue #805 (D-A/D-B): explicit broad-athleticism opt-in. Independent of the
      * `sport_readiness` priority; it only guarantees an optional #804 mechanical requirement
      * exists (when #804 has not deliberately suspended it) so capability maintenance can reuse
-     * that support occurrence. It never adds a session of its own. */
+     * that support occurrence. It never increases the configured weekly session commitment. */
     capabilityMaintenanceEnabled?: boolean;
 }
 
@@ -420,6 +420,8 @@ export function resolveEvidenceBackedStrategy(
     goalOrEvent: GoalOrEventContext,
     athleteState: AthleteTrainingState,
     weeklyAerobicDose?: WeeklyAerobicDoseEnvelope,
+    /** #857: #804 establishment evidence is independent from the broader performance state. */
+    mechanicalAthleteState: AthleteTrainingState = athleteState,
 ): EvidenceBackedStrategy {
     const priorities = new Set(goalOrEvent.priorities.length > 0 ? goalOrEvent.priorities : ['balanced_performance']);
     const requirements: AdaptationDoseRequirement[] = [];
@@ -494,7 +496,7 @@ export function resolveEvidenceBackedStrategy(
     // optional mechanical requirement so capability work can reuse #804's support occurrence.
     const directMechanicalPriority = priorities.has('sport_readiness') || priorities.has('speed_power');
     if (canEmitMechanicalRequirement(goalOrEvent.priorities, goalOrEvent.capabilityMaintenanceEnabled)) {
-        const withheld = mechanicalSuspensionFor(goalOrEvent, athleteState);
+        const withheld = mechanicalSuspensionFor(goalOrEvent, mechanicalAthleteState);
         if (withheld) warnings.push({ code: 'mechanical_exposure_withheld', message: withheld.message });
         else requirements.push(mechanicalRequirement(directMechanicalPriority ? 'target' : 'optional'));
     }
