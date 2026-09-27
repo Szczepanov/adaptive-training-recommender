@@ -1,6 +1,6 @@
 import type { DailyRecommendation, DeliveredDose, SessionTemplate, TrainingRecord, WorkoutCostProfile, WorkoutStimulusProfile } from './models';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
-import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
+import { ENRICHED_TEMPLATES_BY_ID, ENRICHED_TEMPLATES_BY_MODALITY } from './templates';
 import { workoutForTemplate } from '../workouts/prescription';
 
 /** A completed, adherence-backed exposure reconstructed for the rolling engine. */
@@ -35,7 +35,7 @@ export function exposureFromRecommendation(date: string, rec: DailyRecommendatio
     if (!rec || rec.adherence.followed === null || rec.adherence.skipped) return null;
     const template = rec.adherence.followed
         ? ENRICHED_TEMPLATES_BY_ID.get(rec.templateId)
-        : ENRICHED_TEMPLATES.find(t => t.modality === rec.adherence.actualModality);
+        : (rec.adherence.actualModality ? ENRICHED_TEMPLATES_BY_MODALITY.get(rec.adherence.actualModality) : undefined);
     if (!template) return null;
     const trainingRecordLike: TrainingRecord = {
         type: rec.adherence.followed ? `${rec.modality} ${rec.category}` : `${rec.adherence.actualModality} training`,
