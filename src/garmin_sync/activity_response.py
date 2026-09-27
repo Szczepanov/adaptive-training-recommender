@@ -129,7 +129,10 @@ def _records_between(
         if record.timestamp is None:
             continue
         try:
-            if start <= record.timestamp <= end:
+            # FIT Laps are sequential/non-overlapping summaries. Use a half-open
+            # interval so a Record exactly at the next Lap's start is never counted
+            # in both segments.
+            if start <= record.timestamp < end:
                 selected.append(record)
         except TypeError:
             return ()
