@@ -144,7 +144,11 @@ def _lap_bounds(lap: FitLapEvidence) -> tuple[datetime | None, datetime | None]:
     end = lap.timestamp
     if start is None and end is not None and lap.duration_seconds is not None:
         start = end - timedelta(seconds=lap.duration_seconds)
-    if end is None and start is not None and lap.duration_seconds is not None:
+    if (
+        (end is None or (start is not None and end <= start))
+        and start is not None
+        and lap.duration_seconds is not None
+    ):
         end = start + timedelta(seconds=lap.duration_seconds)
     return start, end
 

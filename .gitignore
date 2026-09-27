@@ -231,6 +231,7 @@ artifacts/respiration-baseline-evidence/
 # on demand via `export-identity-replay` + `npm run evidence:identity-replay`.
 artifacts/identity-replay/
 artifacts/identity-replay-reports/
+artifacts/activity-response-preservation*.json
 app/artifacts/*
 # Per-shard emulator configs written (and removed) by app/scripts/run-rules-shard.mjs
 app/.rules-shard-*.firebase.json

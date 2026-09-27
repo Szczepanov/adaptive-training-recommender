@@ -436,3 +436,61 @@ def test_resolution_harness_reports_candidate_degradation_separately_from_source
         for feature in by_resolution[10].features
     )
     assert len(results) == 10
+
+
+def test_lap_bounds_recovers_when_lap_timestamp_matches_activity_start():
+    t0 = datetime(2026, 9, 27, 6, 0, tzinfo=timezone.utc)
+    t1 = t0 + timedelta(seconds=600)
+    evidence = FitActivityEvidence(
+        devices=(),
+        average_heart_rate_bpm=150,
+        lap_average_heart_rate_bpm=(),
+        time_in_hr_zone_seconds=(),
+        timer_events=(),
+        records=tuple(
+            FitRecordSample(
+                timestamp=t1 + timedelta(seconds=s),
+                heart_rate_bpm=150.0,
+                cadence_rpm=90.0,
+                power_watts=250.0,
+            )
+            for s in range(300)
+        ),
+        workout_steps=(
+            _step(0, "warmup", 600),
+            _step(1, "active", 300),
+        ),
+        laps=(
+            FitLapEvidence(
+                message_index=0,
+                start_time=t0,
+                timestamp=t0,
+                duration_seconds=600.0,
+                workout_step_index=0,
+                average_power_watts=None,
+                average_hr_bpm=None,
+                max_hr_bpm=None,
+                average_cadence_rpm=None,
+                max_cadence_rpm=None,
+            ),
+            FitLapEvidence(
+                message_index=1,
+                start_time=t1,
+                timestamp=t0,
+                duration_seconds=300.0,
+                workout_step_index=1,
+                average_power_watts=None,
+                average_hr_bpm=None,
+                max_hr_bpm=None,
+                average_cadence_rpm=None,
+                max_cadence_rpm=None,
+            ),
+        ),
+    )
+    response = derive_activity_response("road_biking", evidence)
+    assert response is not None
+    assert len(response.segments) == 2
+    work_seg = response.segments[1]
+    assert work_seg.segment_type == "work"
+    assert work_seg.average_power_watts == 250.0
+    assert work_seg.first_third_power_watts == 250.0
