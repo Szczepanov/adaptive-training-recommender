@@ -438,9 +438,7 @@ def _semantic_lap_segments(
     if not steps:
         return [], 0
 
-    executable_laps: list[
-        tuple[FitLapEvidence, float, datetime | None, datetime | None]
-    ] = []
+    executable_laps: list[tuple[FitLapEvidence, float, datetime | None, datetime | None]] = []
     for lap in evidence.laps:
         duration = lap.duration_seconds
         start, end = _lap_bounds(lap)
