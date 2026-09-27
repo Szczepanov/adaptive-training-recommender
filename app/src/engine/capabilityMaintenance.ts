@@ -140,6 +140,10 @@ export interface CapabilityMaintenanceInput extends CapabilityCadenceInput {
         unavailable: ReadonlySet<string>;
         avoided: ReadonlySet<string>;
         environmentUnavailable: ReadonlySet<string>;
+        /** Dates on which the existing schedule/environment authority permits each identity.
+         * Optional for pure/unit callers; when present, fulfilment is evaluated only inside the
+         * capability's not-before/due window rather than across the whole planning horizon. */
+        environmentAvailableDates?: ReadonlyMap<string, readonly string[]>;
         deprioritized: ReadonlySet<string>;
     };
     /** Plannable dates that still have usable training capacity. */
@@ -283,20 +287,32 @@ function fulfilmentFor(
     if (deliverable.length === 0) {
         return { fulfilment: { status: 'blocked', reason: 'environment_unavailable' }, ...none };
     }
+    const notBeforeDate = cadence.notBeforeDate ?? input.asOfDate;
+    const dueWindowCapacityDates = input.supportCapacityDates.filter(date => date >= notBeforeDate);
+    if (dueWindowCapacityDates.length === 0) {
+        return { fulfilment: { status: 'blocked', reason: 'no_support_capacity' }, ...none };
+    }
+    const environmentFeasibleInDueWindow = (id: string): boolean => {
+        const availableDates = gates.environmentAvailableDates?.get(id);
+        if (availableDates === undefined) return true;
+        return dueWindowCapacityDates.some(date => availableDates.includes(date));
+    };
+    deliverable = deliverable.filter(environmentFeasibleInDueWindow);
+    if (deliverable.length === 0) {
+        return { fulfilment: { status: 'blocked', reason: 'environment_unavailable' }, ...none };
+    }
     const hardGated = (id: string) => gates.guardrailBlocked.has(id) || gates.unavailable.has(id)
-        || gates.avoided.has(id) || gates.environmentUnavailable.has(id);
+        || gates.avoided.has(id) || gates.environmentUnavailable.has(id) || !environmentFeasibleInDueWindow(id);
     const verdict = input.mechanicalVerdict;
     const stageEligible = deliverable
         .filter(id => (athleticCapabilityStageFor(id) ?? 5) <= verdict.stage && verdict.eligibleWorkoutIds.includes(id))
         .sort();
-    const noCapacity = !input.supportCapacityDates.some(date => date >= (cadence.notBeforeDate ?? input.asOfDate));
     if (stageEligible.length === 0) {
         return {
-            fulfilment: { status: 'blocked', reason: noCapacity ? 'no_support_capacity' : 'mechanical_stage_insufficient' },
-            supportWorkoutIds: noCapacity ? [] : progressionWorkoutIds(verdict, hardGated),
+            fulfilment: { status: 'blocked', reason: 'mechanical_stage_insufficient' },
+            supportWorkoutIds: progressionWorkoutIds(verdict, hardGated),
         };
     }
-    if (noCapacity) return { fulfilment: { status: 'blocked', reason: 'no_support_capacity' }, ...none };
     return { fulfilment: { status: 'plannable' }, supportWorkoutIds: stageEligible };
 }
 
