@@ -188,7 +188,8 @@ class GarminSyncService:
         details_by_activity_id: dict[str, CanonicalActivityDetail] | None = None,
         hr_measurements_by_activity_id: dict[str, CanonicalHrMeasurementQuality] | None = None,
         fit_workout_fingerprints_by_activity_id: dict[str, str] | None = None,
-        activity_responses_by_activity_id: dict[str, CanonicalActivityResponseTelemetry] | None = None,
+        activity_responses_by_activity_id: dict[str, CanonicalActivityResponseTelemetry]
+        | None = None,
     ) -> None:
         """Write a normalized standalone record per activity to users/{userId}/activities/.
         Safe to call unconditionally (no-op for an empty list). Activities without a
