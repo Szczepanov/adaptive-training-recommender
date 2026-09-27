@@ -3,6 +3,9 @@
  * completed-training history and coach integration", "Shadow calculation first"):
  * compares the LIVE completed-training pipeline's exposure count and evidence-tier
  * distribution against a canonical-occurrence-derived estimate, for the same window.
+ * When a caller also supplies semantic canonical `CompletedExposure` rows, the same diff
+ * reports load, delivered-dose, stimulus and identity aggregates. No canonical exposure
+ * adapter is inferred from the UI DTO: missing derivation remains an explicit null.
  *
  * This module NEVER changes live behavior -- it is not imported by
  * `engine/completedTraining.ts`, `engine/trainingHistorySnapshot.ts`, or any
@@ -15,14 +18,14 @@
  * have none) enables a real per-activity coverage join against canonical occurrences'
  * `provider_activity` source refs, in addition to the aggregate counts ADR-0034's own
  * suggested metric names (`history_shadow.exposure_count_delta`,
- * `history_shadow.evidence_tier_delta`) ask for. Evidence-TIER comparison stays
- * aggregate-only, though: `CompletedTrainingEvent` doesn't expose enough of its own
- * derivation to let a shadow diff re-derive a matching tier per activity without
- * duplicating `completedTraining.ts`'s cost/stimulus logic, which is out of scope here.
+ * `history_shadow.evidence_tier_delta`) ask for. Evidence-tier comparison stays
+ * aggregate-only because event-to-tier attribution is not part of the current DTO.
  */
 import type { CompletedTrainingEvent, EvidenceTier } from '../engine/models';
-import { classifyGarminTier } from '../engine/completedTraining';
+import { classifyGarminTier, completedEventToExposure } from '../engine/completedTraining';
+import type { CompletedExposure } from '../engine/trainingHistory';
 import type { CompletedWorkoutView } from './completedWorkoutView';
+import { compareCompletedExposureSets, type ExposureComparison } from './historyCounterfactual';
 
 export type EvidenceTierCounts = Partial<Record<EvidenceTier, number>>;
 
@@ -51,6 +54,8 @@ export interface HistoryShadowDiff {
      * folded into a matched occurrence's structured side and never needed its own live
      * link (expected and benign for a genuinely matched workout). */
     canonicalActivityIdsMissingFromLive: string[];
+    /** null until an evidence adapter can honestly produce broad canonical exposures. */
+    broadExposureComparison: ExposureComparison | null;
 }
 
 /** Estimates the canonical-side evidence tier for one workout using the exact same
@@ -87,6 +92,12 @@ function tallyTiers(tiers: readonly (EvidenceTier | null | undefined)[]): Eviden
 export function diffCompletedTrainingHistory(
     liveEvents: readonly CompletedTrainingEvent[],
     canonicalWorkouts: readonly CompletedWorkoutView[],
+    options: {
+        canonicalExposures?: readonly CompletedExposure[];
+        unknownCanonicalOccurrenceKeys?: readonly string[];
+        /** Opaque, same-occurrence aliases prepared without exposing source IDs in reports. */
+        liveOccurrenceKeysByEventId?: ReadonlyMap<string, string>;
+    } = {},
 ): HistoryShadowDiff {
     const canonicalExposureCount = canonicalWorkouts.length;
     const matchedOccurrenceCount = canonicalWorkouts.filter(w => w.sourceBadge.hasStructured && w.sourceBadge.hasProvider).length;
@@ -108,6 +119,18 @@ export function diffCompletedTrainingHistory(
         ambiguousOccurrenceCount,
         liveActivityIdsMissingFromCanonical: [...liveActivityIds].filter(id => !canonicalActivityIds.has(id)),
         canonicalActivityIdsMissingFromLive: [...canonicalActivityIds].filter(id => !liveActivityIds.has(id)),
+        broadExposureComparison: options.canonicalExposures
+            ? compareCompletedExposureSets(
+                liveEvents.map(event => ({
+                    ...completedEventToExposure(event),
+                    ...(options.liveOccurrenceKeysByEventId?.get(event.id)
+                        ? { occurrenceKey: options.liveOccurrenceKeysByEventId.get(event.id) }
+                        : {}),
+                })),
+                options.canonicalExposures,
+                options.unknownCanonicalOccurrenceKeys,
+            )
+            : null,
     };
 }
 

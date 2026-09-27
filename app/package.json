@@ -77,6 +77,8 @@
     "simulate:subjective-drift": "node scripts/simulate-subjective-drift.mjs",
     "evidence:health-anomaly": "node scripts/health-anomaly-evidence.mjs",
     "evidence:identity-replay": "node scripts/identity-replay-evidence.mjs",
+    "evidence:training-occurrence": "node --experimental-strip-types scripts/training-occurrence-evidence.mjs",
+    "evidence:training-occurrence:prepare": "node scripts/training-occurrence-prepare.mjs",
     "measure:garmin-zone-credit": "node scripts/measure-garmin-zone-credit.mjs",
     "simulate:diff": "node scripts/simulate-diff.mjs",
     "simulate:update-baseline": "node scripts/simulate-update-baseline.mjs",

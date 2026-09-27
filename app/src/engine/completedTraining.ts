@@ -215,7 +215,7 @@ function catalogIntensity(template: SessionTemplate): CompletedTrainingIntensity
 /** One scalar planning reference from a displayed duration range. The midpoint uses both
  * authored bounds and represents the intended dose without pretending either boundary is
  * the single prescription. */
-function templateDurationReferenceMin(template: Pick<SessionTemplate, 'durationMin' | 'durationMax'>): number | undefined {
+export function templateDurationReferenceMin(template: Pick<SessionTemplate, 'durationMin' | 'durationMax'>): number | undefined {
     const min = Number.isFinite(template.durationMin) && template.durationMin > 0 ? template.durationMin : undefined;
     const max = Number.isFinite(template.durationMax) && template.durationMax > 0 ? template.durationMax : undefined;
     if (min !== undefined && max !== undefined) return (min + Math.max(min, max)) / 2;
