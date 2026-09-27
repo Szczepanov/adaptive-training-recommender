@@ -206,7 +206,7 @@ function efficiencyLines(feature: EfficiencyComparison): string[] {
 function decouplingLines(feature: Decoupling): string[] {
     if (feature.state !== 'available') return [];
     const note = feature.hrNote ? ` · ${feature.hrNote}` : '';
-    return [`- Pw:HR decoupling (lap averages, first vs second half): ${fmt(feature.decouplingPct, 1)}%${note}`];
+    return [`- Pw:HR decoupling (first vs second half): ${fmt(feature.decouplingPct, 1)}%${note}`];
 }
 
 function topSetText(set: { topWeightKg?: number; topReps?: number }): string {
