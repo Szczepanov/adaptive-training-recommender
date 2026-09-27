@@ -6,6 +6,7 @@ export const POLICY_VERSION = '2026-09-longitudinal-mechanical-impact-exposure-v
  * audits remain readable evidence, but replay is rejected explicitly because the old
  * decision function is not bundled alongside the current policy. */
 export const HISTORICAL_POLICY_VERSIONS = [
+    '2026-09-weekly-aerobic-dose-envelope-v1',
     '2026-09-hybrid-strength-unilateral-composition-v1',
     '2026-09-neuromuscular-power-maintenance-v1',
     '2026-09-olympic-triathlon-plan-taper-budget-v1',

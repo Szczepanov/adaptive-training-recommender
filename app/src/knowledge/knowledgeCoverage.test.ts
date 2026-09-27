@@ -165,6 +165,14 @@ describe('engine knowledge coverage inventory', () => {
         expect(floor?.coverageRationale).toContain('#757');
     });
 
+    it('tracks the accumulated weekly aerobic-dose envelope and anchor policy for issue #806', () => {
+        expect(byId('stimulus.weekly_aerobic_dose_envelope')).toMatchObject({
+            classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high',
+            safetyImpact: 'moderate', researchPriority: 'none',
+            knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.weeklyAerobicDoseEnvelopePolicy, KNOWLEDGE_CLAIM_IDS.adultAerobicHealthVolume],
+        });
+    });
+
     it('keeps W2b families covered with their intended product-policy claims', () => {
         const expectedClaims = {
             'stimulus.objective_credit_confidence': KNOWLEDGE_CLAIM_IDS.objectiveCreditConfidencePolicy,

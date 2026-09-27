@@ -264,7 +264,7 @@ export function evaluateMechanicalStageProgression(
     return levels.some(level => level === 'normal') ? 'normal' : 'missing';
   };
 
-  let responseVerdict: TissueResponseVerdict = foundAdverse ? 'adverse' : explicitFollowUpVerdict(followUpCheckin);
+  const responseVerdict: TissueResponseVerdict = foundAdverse ? 'adverse' : explicitFollowUpVerdict(followUpCheckin);
   const responseNotes: string[] = [];
 
   if (responseVerdict === 'adverse') {

@@ -95,6 +95,7 @@ Adaptive Training Recommendations & Native Session Execution
 30. **Typed Strength, Speed and Power Performance Goals (ADR-0041)**: Explicit non-authoritative typed targets and shared deterministic multi-target comparator for performance goals.
 31. **Nutrition Ingestion, Provenance, and Decision Authority (ADR-0042)**: Provider-neutral energy intake and macro ingestion, strict separation from energy expenditure, tripartite provenance identity, explicit missingness semantics, safe daily deduplication, and strictly retrospective zero recommendation authority.
 32. **Individualized Rolling Catalog-Load Budget (ADR-0043)**: Versioned, user-history-derived catalog-load envelope to week-ahead planning.
+33. **Constraint-Aware Requirement Fulfilment (ADR-0044)**: Defines the requirement-class boundary for constrained planning while preserving canonical coverage, objective-credit, load and intraday authorities.
 
 ---
 

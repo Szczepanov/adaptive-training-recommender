@@ -6,6 +6,7 @@ import { getDayDiff } from '../utils/localDate';
 import { progressionOverrideKey } from './progressionOverrideKey';
 import { POWER_QUALIFYING_WORKOUT_IDS } from '../workouts/powerExposure';
 import { MECHANICAL_QUALIFYING_WORKOUT_IDS } from '../workouts/mechanicalExposure';
+import { KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
 
 export interface CoverageRoleDescriptor {
     /** Stable authored identity; never a category/modality similarity match. */
@@ -18,6 +19,7 @@ export interface CoverageRoleDescriptor {
 export interface CoverageSetDescriptor {
     id: string;
     roles: readonly CoverageRoleDescriptor[];
+    longAerobicAnchor?: { workoutId: string; durationMinutes: number };
 }
 
 /**
@@ -56,6 +58,7 @@ export interface PackedRoleOccurrence {
     coverageRoleId: string;
     date: string;
     exactWorkoutIds: readonly string[];
+    durationMinutes?: number;
     adaptations: readonly AdaptationKey[];
     priority: AdaptationDoseRequirement['priority'];
     /** Adaptations delivered by an embedded block inside this same occurrence (#802). They
@@ -66,7 +69,7 @@ export interface PackedRoleOccurrence {
 }
 
 export interface PackingWarning {
-    code: 'below_guideline_range' | 'guideline_target_shortfall' | 'goal_requirement_shortfall' | 'minimum_dose_shortfall' | 'no_exact_eligible_role' | 'goal_constraint_conflict' | 'embedded_host_unavailable';
+    code: 'below_guideline_range' | 'guideline_target_shortfall' | 'goal_requirement_shortfall' | 'minimum_dose_shortfall' | 'no_exact_eligible_role' | 'goal_constraint_conflict' | 'embedded_host_unavailable' | 'long_aerobic_anchor_shortfall';
     adaptation: AdaptationKey;
     message: string;
 }
@@ -78,6 +81,9 @@ export interface WeeklyBudget {
     targetRoles: PackedRoleOccurrence[];
     optionalRoles: PackedRoleOccurrence[];
     shortfalls: PackingWarning[];
+    longAerobicAnchorRequired?: boolean;
+    longAerobicAnchorDurationMinutes?: number;
+    longAerobicAnchorWorkoutId?: string;
 }
 
 interface MutableOccurrence extends PackedRoleOccurrence {
@@ -140,24 +146,18 @@ function embedRequirement(
     };
 }
 
-/** Product-policy substitution reserves one aerobic-volume occurrence for an eligible
- * quality occurrence. The credited minutes are therefore derived from the exact aerobic
- * role currently being packed (including an athlete-relative floor), not from a fixed
- * physiological-equivalence constant. If quality cannot be packed, the packer reruns
- * without any substitution. */
+/** Dose is the exact role's planned minutes or exposure count. */
 function doseFor(role: CoverageRoleDescriptor, requirement: AdaptationDoseRequirement): number {
     return requirement.target.unit === 'minutes' ? role.durationMinutes : 1;
 }
 
-function desiredDose(
-    requirement: AdaptationDoseRequirement,
-    reservedQualityAerobicCreditMinutes: number,
-): number {
-    const base = requirement.floor?.dose.value ?? requirement.target.target;
-    if (requirement.adaptation === 'aerobic_endurance' && requirement.target.unit === 'minutes') {
-        return Math.max(0, base - reservedQualityAerobicCreditMinutes);
-    }
-    return base;
+function isAthleteRelativeEasyDose(requirement: AdaptationDoseRequirement): boolean {
+    return requirement.adaptation === 'aerobic_endurance'
+        && requirement.knowledgeRefs.includes(KNOWLEDGE_CLAIM_IDS.weeklyAerobicDoseEnvelopePolicy);
+}
+
+function desiredDose(requirement: AdaptationDoseRequirement): number {
+    return Math.max(requirement.floor?.dose.value ?? 0, requirement.target.target);
 }
 
 function permittedWorkoutIds(role: CoverageRoleDescriptor, requirement: AdaptationDoseRequirement): string[] {
@@ -243,14 +243,16 @@ function placementTieBreakerPenalty(
 function warningFor(
     requirement: AdaptationDoseRequirement,
     delivered: number,
-    packedQualityCreditMinutes: number,
+    qualityMinutes: number,
 ): PackingWarning | null {
     const floor = requirement.floor;
-    const qualityCredit = requirement.adaptation === 'aerobic_endurance'
-        && requirement.target.unit === 'minutes'
-        ? packedQualityCreditMinutes
+    const guidelineAerobicMinutes = requirement.adaptation === 'aerobic_endurance'
+        && floor?.semantics === 'guideline_recommended_minimum'
+        && floor.dose.unit === 'minutes'
+        && !isAthleteRelativeEasyDose(requirement)
+        ? qualityMinutes
         : 0;
-    const creditedDelivered = delivered + qualityCredit;
+    const creditedDelivered = delivered + guidelineAerobicMinutes;
 
     if (floor && creditedDelivered < floor.dose.value) {
         const code = floor.semantics === 'guideline_recommended_minimum'
@@ -258,11 +260,10 @@ function warningFor(
             : floor.semantics === 'goal_required_minimum'
                 ? 'goal_requirement_shortfall'
                 : 'minimum_dose_shortfall';
-        const creditNote = qualityCredit > 0 ? ` plus ${qualityCredit} minutes of packed-quality allocation credit` : '';
         return {
             code,
             adaptation: requirement.adaptation,
-            message: `${requirement.adaptation} fits ${delivered} ${floor.dose.unit}${creditNote}; the stated floor remains ${floor.dose.value} ${floor.dose.unit}.`,
+            message: `${requirement.adaptation} fits ${delivered} ${floor.dose.unit}${guidelineAerobicMinutes > 0 ? ` plus ${guidelineAerobicMinutes} minutes of packed moderate-or-higher aerobic work` : ''}; the stated floor remains ${floor.dose.value} ${floor.dose.unit}.`,
         };
     }
     if (creditedDelivered < requirement.target.target) {
@@ -294,40 +295,24 @@ function packWeeklyDoseAttempt(
     coverage: CoverageSetDescriptor,
     durationOverridesByRoleId: ReadonlyMap<string, number>,
     overrideEffectiveDate: string | undefined,
-    reservePackedQualitySlot: boolean,
 ): WeeklyBudget {
     const slots = capacity.usableWindows.map(window => ({ ...window, used: false }));
     const packed: MutableOccurrence[] = [];
     const shortfalls: PackingWarning[] = [];
     const structuralShortfallAdaptations = new Set<AdaptationKey>();
-    const sessionLimit = (priority: AdaptationDoseRequirement['priority']) =>
-        priority === 'required' ? capacity.minSessions : priority === 'target' ? capacity.targetSessions : capacity.maxSessions;
-
     const embeddedRequirements = strategy.requirements.filter(requirement => requirement.delivery === 'embedded');
     const requirements = strategy.requirements.filter(requirement => requirement.delivery !== 'embedded').sort((left, right) => {
         const rank = { required: 0, target: 1, optional: 2 } as const;
         return rank[left.priority] - rank[right.priority];
     });
-    const aerobicRequirementForCredit = requirements.find(requirement =>
-        requirement.adaptation === 'aerobic_endurance' && requirement.target.unit === 'minutes');
-    const aerobicCandidateDoses = reservePackedQualitySlot && aerobicRequirementForCredit
-        ? eligibleCandidates(coverage.roles, aerobicRequirementForCredit, NO_DURATION_OVERRIDES)
-            .map(candidate => doseFor(candidate.role, aerobicRequirementForCredit))
-            .filter(dose => Number.isFinite(dose) && dose > 0)
-        : [];
-    const aerobicBaseDose = aerobicRequirementForCredit
-        ? (aerobicRequirementForCredit.floor?.dose.value ?? aerobicRequirementForCredit.target.target)
-        : 0;
-    const smallestAerobicOccurrenceDose = aerobicCandidateDoses.length > 0
-        ? Math.min(...aerobicCandidateDoses)
-        : 0;
-    // Substitute no more than one occurrence and never let that substitution erase the
-    // last full aerobic-volume occurrence. This matters when an athlete-relative floor is
-    // itself close to or above the weekly public-health minimum.
-    const reservedQualityAerobicCreditMinutes = Math.min(
-        smallestAerobicOccurrenceDose,
-        Math.max(0, aerobicBaseDose - smallestAerobicOccurrenceDose),
-    );
+    const hasAthleteRelativeRequiredAerobicDose = requirements.some(requirement =>
+        requirement.priority === 'required' && isAthleteRelativeEasyDose(requirement));
+    const sessionLimit = (requirement: AdaptationDoseRequirement) =>
+        requirement.priority === 'required'
+            ? hasAthleteRelativeRequiredAerobicDose ? capacity.targetSessions : capacity.minSessions
+            : requirement.priority === 'target' ? capacity.targetSessions : capacity.maxSessions;
+    // Easy-aerobic support minutes are tracked as their own intensity domain. Quality
+    // sessions retain their canonical stimulus credit but are not exchanged for easy minutes.
 
     /** Estimate how many of the *remaining feasible windows* a requirement can still use.
      * This feeds only fair-share reservation; it must not reserve capacity for a later peer
@@ -339,7 +324,7 @@ function packWeeklyDoseAttempt(
         const delivered = packed
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
-        const remainingDose = Math.max(0, desiredDose(requirement, reservedQualityAerobicCreditMinutes) - delivered);
+        const remainingDose = Math.max(0, desiredDose(requirement) - delivered);
         if (remainingDose <= 0) return 0;
 
         const feasibleDoseBySlot = slots
@@ -381,7 +366,7 @@ function packWeeklyDoseAttempt(
         let delivered = packed
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
-        const requiredDose = desiredDose(requirement, reservedQualityAerobicCreditMinutes);
+        const requiredDose = desiredDose(requirement);
         // A priority tier's ceiling is shared. Allocate scarce room in proportion to the
         // remaining *feasible* session demand, while reserving one occurrence for every
         // later peer that can still use a window. Unlike a fixed even split, this also lets
@@ -394,12 +379,23 @@ function packWeeklyDoseAttempt(
         const demandByPeer = tierPeersRemaining.map(peer => sessionsNeededFor(peer));
         const currentDemand = demandByPeer[0] ?? 0;
         const totalDemand = demandByPeer.reduce((total, demand) => total + demand, 0);
-        const laterPeersNeedingCoverage = demandByPeer.slice(1).filter(demand => demand > 0).length;
-        const roomRemainingInTier = Math.max(0, sessionLimit(requirement.priority) - packed.length);
+        const laterPeerDemand = demandByPeer.slice(1).filter(demand => demand > 0);
+        const roomRemainingInTier = Math.max(0, sessionLimit(requirement) - packed.length);
         const proportionalShare = totalDemand > 0
             ? Math.ceil(roomRemainingInTier * currentDemand / totalDemand)
             : 0;
-        const reserveForLaterPeers = Math.min(laterPeersNeedingCoverage, Math.max(0, roomRemainingInTier - 1));
+        // The historical min-session path reserves one occurrence per later peer. When an
+        // athlete-relative aerobic requirement intentionally expands the required tier into
+        // target-session capacity, preserve the full remaining feasible demand of later
+        // co-required adaptations instead. Extra aerobic dose may consume target capacity,
+        // but it must not silently spend the two-session strength floor that the same
+        // strategy declares required.
+        const reserveForLaterPeers = Math.min(
+            hasAthleteRelativeRequiredAerobicDose && requirement.priority === 'required'
+                ? laterPeerDemand.reduce((total, demand) => total + demand, 0)
+                : laterPeerDemand.length,
+            Math.max(0, roomRemainingInTier - 1),
+        );
         const maxWithoutStarvingLaterPeers = Math.max(0, roomRemainingInTier - reserveForLaterPeers);
         const requirementSessionBudget = Math.min(currentDemand, proportionalShare, maxWithoutStarvingLaterPeers);
         const allowedSessions = packed.length + requirementSessionBudget;
@@ -418,7 +414,9 @@ function packWeeklyDoseAttempt(
                     coverage.roles,
                     requirement,
                     overridesForSlot(durationOverridesByRoleId, overrideEffectiveDate, slot.date),
-                ).filter(candidate => slot.availableMinutes >= candidate.role.durationMinutes)
+                ).filter(candidate => candidate.role.id !== 'long_aerobic_anchor'
+                    || !packed.some(occurrence => occurrence.coverageRoleId === 'long_aerobic_anchor'))
+                    .filter(candidate => slot.availableMinutes >= candidate.role.durationMinutes)
                     .map(candidate => ({ ...candidate, slot })))
                 .sort((left, right) =>
                     // An active exact effective-date override represents a confirmed
@@ -431,7 +429,8 @@ function packWeeklyDoseAttempt(
                     // window that can host the current requirement before preferring a
                     // larger-dose role. This preserves scarce long windows for later roles
                     // that have no short-window alternative.
-                    || left.slot.availableMinutes - right.slot.availableMinutes
+                || Number(right.role.id === 'long_aerobic_anchor') - Number(left.role.id === 'long_aerobic_anchor')
+                || left.slot.availableMinutes - right.slot.availableMinutes
                     || right.role.durationMinutes - left.role.durationMinutes
                     || (penaltyByDate.get(left.slot.date) ?? 0)
                         - (penaltyByDate.get(right.slot.date) ?? 0)
@@ -460,14 +459,15 @@ function packWeeklyDoseAttempt(
         if (warning) shortfalls.push(warning);
     }
 
-    const packedQuality = packed.some(occurrence => occurrence.adaptations.includes('high_intensity'));
-    const packedQualityAerobicCreditMinutes = packedQuality ? reservedQualityAerobicCreditMinutes : 0;
     for (const requirement of requirements) {
         if (structuralShortfallAdaptations.has(requirement.adaptation)) continue;
         const delivered = packed
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
-        const warning = warningFor(requirement, delivered, packedQualityAerobicCreditMinutes);
+        const qualityMinutes = packed
+            .filter(occurrence => occurrence.adaptations.includes('high_intensity'))
+            .reduce((total, occurrence) => total + occurrence.descriptor.durationMinutes, 0);
+        const warning = warningFor(requirement, delivered, qualityMinutes);
         if (warning) shortfalls.push(warning);
     }
 
@@ -477,6 +477,7 @@ function packWeeklyDoseAttempt(
         coverageRoleId: occurrence.coverageRoleId,
         date: occurrence.date,
         exactWorkoutIds: occurrence.exactWorkoutIds,
+        durationMinutes: occurrence.descriptor.durationMinutes,
         adaptations: occurrence.adaptations,
         priority: occurrence.priority,
         ...(occurrence.embeddedAdaptations ? { embeddedAdaptations: occurrence.embeddedAdaptations } : {}),
@@ -506,13 +507,9 @@ function packWeeklyDoseAttempt(
     };
 }
 
-/** Convert strategy requirements into exact weekly roles. The first pass may provisionally
- * substitute up to one exact aerobic-volume occurrence with the optional quality role.
- * The credit follows that aerobic role's current packed dose but is bounded so at least one
- * full aerobic-volume occurrence remains. Athlete-relative floors therefore participate in
- * the same slot arithmetic without allowing quality to erase the whole aerobic floor. The
- * credit becomes effective only when high intensity is actually packed; otherwise the whole pack is
- * recomputed against the unmodified aerobic requirement. */
+/** Convert strategy requirements into exact weekly roles. Exact quality duration may
+ * contribute to the guideline total-minute fallback, but never to athlete-history easy
+ * support minutes. */
 export function packWeeklyDose(
     strategy: EvidenceBackedStrategy,
     capacity: ResolvedTrainingCapacity,
@@ -520,28 +517,31 @@ export function packWeeklyDose(
     durationOverridesByRoleId: ReadonlyMap<string, number> = new Map(),
     overrideEffectiveDate?: string,
 ): WeeklyBudget {
-    const qualityPriorActive = strategy.requirements.some(requirement =>
-        requirement.adaptation === 'high_intensity'
-        && (requirement.target.target > 0 || requirement.target.maximum > 0),
-    );
-    const provisional = packWeeklyDoseAttempt(
+    const result = packWeeklyDoseAttempt(
         strategy,
         capacity,
         coverage,
         durationOverridesByRoleId,
         overrideEffectiveDate,
-        qualityPriorActive,
     );
-    const qualityPacked = [...provisional.requiredRoles, ...provisional.targetRoles, ...provisional.optionalRoles]
-        .some(role => role.adaptations.includes('high_intensity'));
-    if (!qualityPriorActive || qualityPacked) return provisional;
-
-    return packWeeklyDoseAttempt(
-        strategy,
-        capacity,
-        coverage,
-        durationOverridesByRoleId,
-        overrideEffectiveDate,
-        false,
-    );
+    const anchorDescriptor = coverage.longAerobicAnchor;
+    const anchorRequested = anchorDescriptor !== undefined;
+    const anchorWorkoutId = anchorDescriptor?.workoutId;
+    const anchorPacked = anchorDescriptor !== undefined && anchorWorkoutId !== undefined
+        && [...result.requiredRoles, ...result.targetRoles, ...result.optionalRoles].some(role => role.adaptations.includes('aerobic_endurance')
+            && (role.durationMinutes ?? 0) >= anchorDescriptor.durationMinutes
+            && role.exactWorkoutIds.includes(anchorWorkoutId));
+    return anchorRequested
+        ? {
+            ...result,
+            longAerobicAnchorRequired: true,
+            longAerobicAnchorDurationMinutes: anchorDescriptor.durationMinutes,
+            longAerobicAnchorWorkoutId: anchorDescriptor.workoutId,
+            ...(!anchorPacked ? { shortfalls: [...result.shortfalls, {
+                code: 'long_aerobic_anchor_shortfall' as const,
+                adaptation: 'aerobic_endurance' as const,
+                message: 'The athlete-relative long aerobic anchor could not fit a usable window or the weekly session commitment; shorter aerobic sessions do not replace it.',
+            }] } : {}),
+        }
+        : result;
 }

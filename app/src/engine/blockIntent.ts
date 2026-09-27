@@ -33,7 +33,7 @@ export const SUPPORTED_OBJECTIVE_PRIORITIES: readonly ObjectivePriority[] = [
 ] as const;
 
 export const SUPPORTED_PLAN_COVERAGE_KEYS: readonly PlanCoverageKey[] = [
-    'aerobic_volume', 'recovery_spin', 'sustained_quality', 'short_surges', 'gap_closing',
+    'aerobic_volume', 'long_aerobic_anchor', 'recovery_spin', 'sustained_quality', 'short_surges', 'gap_closing',
     'outdoor_event_specific', 'primary_strength', 'compact_strength', 'upper_body_trunk',
     'field_maintenance', 'walk_run', 'recovery_or_rest', 'travel_aerobic', 'travel_strength',
     'taper_sharpening', 'pre_race_openers', 'race_week_strength', 'race_day',
