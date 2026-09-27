@@ -375,7 +375,7 @@ Also:
 | Opted-in, stage-4-ready history with normal follow-ups, 15 days since last qualifying field session | `field_controlled_maintenance_01` uses the existing mechanical support occurrence; total session count equals opted-out |
 | Opted-out, same history | No capability consent; non-preferred field templates remain excluded |
 | `avoid_high_impact` active | `blocked/mechanical_guardrail`; nothing substitutes for COD/skill |
-| Adverse recovery or clinical symptoms | `deliberately_suspended/adverse_recovery|clinical_symptoms`; no catch-up count |
+| Adverse recovery or clinical symptoms | `deliberately_suspended/adverse_recovery` or `deliberately_suspended/clinical_symptoms`; no catch-up count |
 | `Field` unavailable | `blocked/modality_unavailable`; capability consent cannot override it |
 | `Field` avoided | `blocked/modality_avoided`; optional maintenance is not injected |
 | `Field` deprioritized | remains soft preference; it is not mislabeled as a hard block |
