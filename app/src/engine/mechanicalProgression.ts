@@ -274,11 +274,11 @@ export function evaluateMechanicalStageProgression(
   const hasNormalFollowUp = (exposure: MechanicalExposureRecord): boolean =>
     explicitFollowUpVerdict(checkinsByDate.get(addDaysToLocalDateString(exposure.date, 1))) === 'normal';
   const confirmedStages = recentExposures.filter(hasNormalFollowUp).map(exposure => exposure.stage);
-  // Only normal-confirmed stages are allowed to ratchet the held stage upward. A newly
-  // attempted higher-stage exposure with a missing follow-up therefore cannot silently become
-  // the new baseline. When no exposure in the continuity window has any explicit normal
-  // follow-up, fail closed to Stage 1 rather than manufacturing evidence of tolerance.
-  const heldStage = (confirmedStages.length > 0 ? Math.max(...confirmedStages) : 1) as MechanicalStage;
+  // Normal-confirmed stages ratchet the held stage upward so a later lower-stage touch cannot
+  // demote previously demonstrated capacity. If the continuity window contains no explicit
+  // normal follow-up at all, preserve #804's pre-#805 retention contract by holding the latest
+  // performed stage; missing follow-up still prevents advancement to a higher stage.
+  const heldStage = (confirmedStages.length > 0 ? Math.max(...confirmedStages) : lastExposure.stage) as MechanicalStage;
   let calculatedStage: MechanicalStage = heldStage;
 
   if (responseVerdict === 'adverse') {
