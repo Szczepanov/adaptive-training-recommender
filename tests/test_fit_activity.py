@@ -271,7 +271,7 @@ def test_decode_activity_original_retains_transient_lap_execution_linkage() -> N
             start_time=start,
             timestamp=datetime(2026, 1, 1, 10, 15),
             total_timer_time=900,
-            workout_step_index=3,
+            wkt_step_index=3,
             avg_power=228,
             avg_heart_rate=154,
             max_heart_rate=162,
