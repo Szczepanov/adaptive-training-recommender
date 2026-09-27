@@ -145,7 +145,9 @@ def test_threshold_fixture_keeps_exact_semantics_target_actual_and_thirds_separa
     assert response.source_resolution.power_seconds == 1.0
     assert response.power_duration_peaks
     one_second = next(peak for peak in response.power_duration_peaks if peak.duration_seconds == 1)
-    five_seconds = next(peak for peak in response.power_duration_peaks if peak.duration_seconds == 5)
+    five_seconds = next(
+        peak for peak in response.power_duration_peaks if peak.duration_seconds == 5
+    )
     assert one_second.confidence == "moderate"
     assert five_seconds.confidence == "high"
 
