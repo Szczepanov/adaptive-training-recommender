@@ -196,12 +196,20 @@ describe('resolveEvergreenPlan mechanical progression inputs (#804)', () => {
         expect(eligible).toContain('strength_reactive_power_01');
     });
 
-    it('requests Stage 3 only for an explicit opt-in target', () => {
+    it('advances from Stage 2 to Stage 3 only for an explicit higher target', () => {
         const stageTwo = [exposure('2026-09-15', 'strength_reactive_power_01'), exposure('2026-09-17', 'strength_reactive_power_01')];
         const checkinHistory = [tolerated('2026-09-16'), tolerated('2026-09-18')];
 
         expect(eligibleMechanicalWorkouts({ exposureHistory: stageTwo, checkinHistory })).not.toContain('field_acceleration_braking_01');
         expect(eligibleMechanicalWorkouts({ exposureHistory: stageTwo, checkinHistory, targetStage: 3 }))
+            .toContain('field_acceleration_braking_01');
+    });
+
+    it('preserves a recent already-performed Stage 3 without requiring a new higher target', () => {
+        const stageThree = [exposure('2026-09-15', 'field_acceleration_braking_01')];
+        const checkinHistory = [tolerated('2026-09-16')];
+
+        expect(eligibleMechanicalWorkouts({ exposureHistory: stageThree, checkinHistory }))
             .toContain('field_acceleration_braking_01');
     });
 });
