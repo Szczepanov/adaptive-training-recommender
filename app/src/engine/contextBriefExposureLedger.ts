@@ -323,7 +323,7 @@ const CAPABILITIES: readonly CapabilitySpec[] = [
         // Garmin records and imported-plan titles cannot prove mechanical/plyometric content, so they never
         // confirm or plan it; generic running/strength leaves impact_jump `unknown`.
         key: 'impact_jump',
-        confirmsFact: f => grantsMechanicalExposureCredit({
+        confirmsFact: f => f.workoutVariantId !== undefined && grantsMechanicalExposureCredit({
             workoutId: f.workoutId,
             variant: f.workoutVariantId as MechanicalDoseVariant,
             isReadinessModifiedDose: f.isReadinessModifiedDose,

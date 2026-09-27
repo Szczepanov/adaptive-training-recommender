@@ -466,7 +466,7 @@ export function resolveEvidenceBackedStrategy(
     if (directMechanicalPriority || hybridMechanicalMaintenance) {
         const withheld = mechanicalWithheldReason(goalOrEvent, athleteState);
         if (withheld) warnings.push({ code: 'mechanical_exposure_withheld', message: withheld });
-        else requirements.push(mechanicalRequirement('target'));
+        else requirements.push(mechanicalRequirement(directMechanicalPriority ? 'target' : 'optional'));
     }
     return { requirements, ...(canUseConditionalPrior ? { hardSessionCap } : {}), warnings };
 }

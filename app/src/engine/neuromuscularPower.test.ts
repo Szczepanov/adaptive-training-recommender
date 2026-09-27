@@ -172,11 +172,11 @@ describe('embedded power packing (#802)', () => {
         const budget = packWeeklyDose(strategy, capacity(5), EVERGREEN_PACKING_COVERAGE);
         const plan = buildEvergreenPlanDefinition(strategy, capacity(5), budget, DATE);
         if (plan.status !== 'AVAILABLE') throw new Error('plan should be available');
-        expect(plan.data.coverageRequirements).toEqual([{
+        expect(plan.data.coverageRequirements).toContainEqual({
             coverageKey: 'power_exposure', blockId: 'block_general', minimumSessions: 0, targetSessions: 1,
             priority: 'nice_to_have',
             knowledgeRefs: ['policy.evergreen.power_maintenance_exposure_v1', 'performance.power.low_frequency_maintenance'],
-        }]);
+        });
         expect(plan.data.objectives.map(objective => objective.coverageKey)).not.toContain('power_exposure');
         const microcycle = generateWeeklyObjectives(BASE_PHASE, DATE, null, plan.data, DATE);
         expect(microcycle.objectives).toHaveLength(plan.data.objectives.length);

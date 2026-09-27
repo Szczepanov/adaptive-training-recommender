@@ -46,8 +46,8 @@ describe('evergreen evidence-backed strategy', () => {
         const state = inferAthleteTrainingState(Array.from({ length: 12 }, () => exposure(60)), 28);
         const strategy = resolveEvidenceBackedStrategy({ priorities: ['health', 'endurance'] }, state);
         expect(state.trainingAgeProxy).toBe('established');
-        // aerobic + strength + conditional high intensity + embedded power (#802)
-        expect(strategy.requirements).toHaveLength(4);
+        // aerobic + strength + conditional high intensity + embedded power (#802) + mechanical exposure (#804)
+        expect(strategy.requirements).toHaveLength(5);
         strategy.requirements.forEach(requirement => {
             expect(requirement.knowledgeRefs.length).toBeGreaterThan(0);
             requirement.knowledgeRefs.forEach(claimId => expect(() => getActiveKnowledgeClaim(claimId)).not.toThrow());
