@@ -547,9 +547,11 @@ sport-neutral capabilities exist: `linear_speed_skill`, `acceleration_decelerati
   capability is `due` when last qualifying exposure + 13 days (`ATHLETIC_CAPABILITY_DUE_OFFSET_DAYS`) falls in the
   planning horizon, with not-before and target dates equal to that due date; a touch on the due date therefore never
   lands on a #804 re-entry day. It is `overdue` past that date or with no qualifying exposure in a complete observed
-  interval, and `insufficient_history` below 14 observed days. Evidence is the 28-day athlete-state window when the
-  priorities already load it, else the dedicated 28-day #804 mechanical establishment stream. The opt-in never
-  widens general athlete-state evidence, so it cannot change aerobic, power or quality decisions.
+  interval, and `insufficient_history` below 14 proven observed days. Evidence is the 28-day athlete-state window when the
+  priorities already load it, else the dedicated #804 mechanical establishment read. Snapshot-backed providers
+  report the observed span; reconstruct-only providers may still return a wider exposure list for #804 progression
+  but retain conservative operational coverage for cadence/establishment rather than claiming 28 unseen days. The
+  opt-in never widens general athlete-state evidence, so it cannot change aerobic, power or quality decisions.
 - **Fulfilment.** `evaluateCapabilityMaintenance` keeps ADR-0044 D9 fulfilment separate: `plannable`, `blocked`
   (`mechanical_guardrail`, `mechanical_stage_insufficient`, `modality_unavailable`, `modality_avoided`,
   `environment_unavailable`, `no_support_capacity`), `deliberately_suspended` (`adverse_recovery`,
@@ -566,11 +568,12 @@ sport-neutral capabilities exist: `linear_speed_skill`, `acceleration_decelerati
   carries a support-tier minimum of one (the shape a `target` mechanical requirement already has). No distinct
   capability requirement/objective is added and the configured weekly session commitment is unchanged; the
   existing mechanical support occurrence can become reservable while a capability is owed. `coverage.ts`
-  `buildCoverageState` resolves placements per planning date. While any
-  placement is open (not yet fulfilled by a qualifying touch from its planning date on), the requirement is narrowed
-  to the owed delivery identities, so no generic mechanical session is reserved ahead of the not-before date; the
-  identities that settle the most open placements are preferred. Consent and ranking urgency start only on/after the
-  not-before date. Once every placement is fulfilled the support minimum lapses. A delivery identity is a
+  `buildCoverageState` resolves placements per planning date. Before the first open placement becomes active,
+  allocator-visible candidates are the union of its open exact identities and each workout carries the earliest
+  applicable not-before date into `weeklyAllocation.ts`; reservation and coverage-need ranking both enforce that
+  bound, including for athletes who already prefer Field. Once placements are active, current-date coverage narrows
+  to identities that settle the most active placements. Exact consent also starts only on/after not-before. Once
+  every placement is fulfilled the support minimum lapses. A delivery identity is a
   stage-eligible capability identity, or, when none is stage-eligible, the highest currently eligible #804 identity so
   progression can occur. This does not create a distinct capability requirement/objective or increase the athlete's
   configured weekly session commitment; it can make the existing mechanical support occurrence reservable when a

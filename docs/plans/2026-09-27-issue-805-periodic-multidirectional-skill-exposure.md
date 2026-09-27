@@ -39,12 +39,13 @@ historical, not open work. What shipped, and where it deviated:
   ratchet inside #805. A deterministic eight-week cycle test drives #804 and #805 day by day and proves recurrence.
 - **Other review fixes.** Consent is limited to identities of enabled capabilities (a progression-only touch may
   consent an enabled capability's identity that is not itself due — recorded deviation); a qualifying touch anywhere
-  from a placement's planning date closes it; open placements narrow the support requirement before their not-before
-  date so no generic mechanical session is reserved early; identities settling the most open placements are preferred.
-- **D-A evidence scope.** The opt-in does not widen athlete-state evidence (which would change aerobic floor, power
-  and quality decisions). Consequence: an opted-in athlete whose priorities do not already load it (health, balanced
-  performance, strength-only) cannot meet #804's "established" gate and sees `deliberately_suspended/mechanical_withheld`.
-  Follow-up: give #804 its own establishment evidence.
+  from a placement's planning date closes it. Pending placements expose their candidate identities to the weekly
+  allocator with per-workout not-before dates; both reservation and coverage urgency enforce those dates, including
+  when Field is already preferred. Once active, identities settling the most active placements are preferred.
+- **D-A evidence scope / #857 closure.** The opt-in does not widen athlete-state evidence (which would change aerobic
+  floor, power and quality decisions). Instead #804 receives a dedicated establishment read. Snapshot-backed providers
+  carry the confirmed observation span; reconstruct-only providers may return the wider exposure list but fail closed
+  at the conservative operational span for cadence/establishment, so missing history cannot masquerade as 28 observed days.
 - **Simulation harness limits.** The 8-week family shows field work on the support slot and respects the cadence,
   but it cannot show sustained recurrence: the harness records every simulated session at template minimum duration,
   so the athlete drops below #804's "established" volume after about three weeks (in both arms), and #804's
