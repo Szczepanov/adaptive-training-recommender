@@ -74,6 +74,9 @@ export interface WeeklyCoverageRequirement {
     /** Capability-owned candidate allow-list. `undefined` means unrestricted; an empty
      * list is an explicit fail-closed block for this planning window. */
     eligibleWorkoutIds?: readonly string[];
+    /** Issue #805: earliest date each capability-owned workout may satisfy/reserve this
+     * support occurrence. The allocator and current-date ranking both enforce it. */
+    candidateWorkoutNotBeforeDates?: Readonly<Record<string, string>>;
     /** Issue #805: the plan's capability placements, as authored for the whole horizon. */
     capabilityPlacements?: readonly CapabilityPlacement[];
     /** Issue #805 (D-E): exact capability identities the athlete's opt-in consents to on this
@@ -665,17 +668,28 @@ function withActiveCapabilityPlacements(requirement: WeeklyCoverageRequirement, 
         return { ...requirement, minimumSessions: 0 };
     }
     const active = activeCapabilityPlacements(open, asOfDate, touches);
-    // A pending placement (not-before still ahead) narrows the support requirement too, so no
-    // generic mechanical session is reserved early; consent and urgency start only once active.
-    const narrowed = [...new Set(preferBroadestCoverage(active.length > 0 ? active : open))]
+    // Before the first due date expose every open placement identity to the allocator, but
+    // carry each identity's earliest not-before date so it cannot be reserved or gain coverage
+    // urgency early (including when Field is already preferred). Once something is active,
+    // narrow current-date coverage to the identities that settle the most active placements.
+    const pendingIds = open.flatMap(placement => placement.workoutIds);
+    const narrowed = [...new Set(active.length > 0 ? preferBroadestCoverage(active) : pendingIds)]
         .filter(workoutId => requirement.eligibleWorkoutIds === undefined || requirement.eligibleWorkoutIds.includes(workoutId))
         .sort();
+    const candidateWorkoutNotBeforeDates = Object.fromEntries(narrowed.map(workoutId => {
+        const earliest = open
+            .filter(placement => placement.workoutIds.includes(workoutId))
+            .map(placement => placement.notBeforeDate)
+            .sort()[0];
+        return [workoutId, earliest];
+    }));
     const consent = [...new Set(active.flatMap(placement => placement.consentWorkoutIds))]
         .filter(workoutId => narrowed.includes(workoutId))
         .sort();
     return {
         ...requirement,
         eligibleWorkoutIds: narrowed,
+        candidateWorkoutNotBeforeDates,
         ...(consent.length > 0 ? { capabilityConsentWorkoutIds: consent } : {}),
     };
 }
@@ -754,8 +768,11 @@ export function coverageNeedTierForTemplate(
     const keys = (state.descriptor ? coverageKeysForTemplate(template, state.phase, state.descriptor, state.aerobicVolumeFloor) : [])
         .filter(key => !EMBEDDED_ONLY_COVERAGE_KEYS.has(key))
         .filter(key => {
-            const eligibleWorkoutIds = state.requirements.find(requirement => requirement.key === key)?.eligibleWorkoutIds;
-            return eligibleWorkoutIds === undefined || (workoutId !== undefined && eligibleWorkoutIds.includes(workoutId));
+            const requirement = state.requirements.find(item => item.key === key);
+            const eligibleWorkoutIds = requirement?.eligibleWorkoutIds;
+            if (eligibleWorkoutIds !== undefined && (workoutId === undefined || !eligibleWorkoutIds.includes(workoutId))) return false;
+            const notBefore = workoutId ? requirement?.candidateWorkoutNotBeforeDates?.[workoutId] : undefined;
+            return notBefore === undefined || state.asOfDate >= notBefore;
         });
     if (keys.length === 0) return 3;
 

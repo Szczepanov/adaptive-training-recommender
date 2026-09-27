@@ -198,6 +198,7 @@ async function resolveMechanicalExposureEvidence(
     historySnapshot: TrainingHistorySnapshot | null,
     operationalSnapshot: TrainingHistorySnapshot | null,
     operationalHistory: readonly CompletedExposure[],
+    operationalObservedWindowDays: number,
     provider: TrainingHistoryProvider,
 ): Promise<{ exposures: CompletedExposure[]; observedWindowDays: number }> {
     const windowDays = ATHLETE_STATE_HISTORY_WINDOW_DAYS;
@@ -211,9 +212,19 @@ async function resolveMechanicalExposureEvidence(
     if (operationalSnapshot && operationalSnapshot.windowDays >= windowDays) {
         return { exposures: bounded(operationalHistory), observedWindowDays: windowDays };
     }
+    if (provider.getSnapshot) {
+        const mechanicalSnapshot = await provider.getSnapshot(userId, date, windowDays);
+        return {
+            exposures: bounded(mechanicalSnapshot.exposures),
+            observedWindowDays: Math.min(windowDays, Math.max(0, mechanicalSnapshot.windowDays)),
+        };
+    }
+    // A reconstruct-only provider returns exposures but no observation-span proof. The wider
+    // read is still useful to #804 progression, but cadence/establishment must fail closed
+    // at the span the operational path can actually attest instead of fabricating 28 days.
     return {
         exposures: bounded(await provider.reconstruct(userId, date, windowDays)),
-        observedWindowDays: windowDays,
+        observedWindowDays: Math.min(windowDays, Math.max(0, operationalObservedWindowDays)),
     };
 }
 
@@ -347,7 +358,8 @@ export async function resolveTrainingIntent(
     // athlete-state evidence used by aerobic/power/quality policy.
     const mechanicalEvidence = mechanicalEvidenceRequired(planningContext)
         ? await resolveMechanicalExposureEvidence(
-            userId, date, historySnapshot, operationalSnapshot, operationalHistory, provider,
+            userId, date, historySnapshot, operationalSnapshot, operationalHistory,
+            operationalSnapshot?.windowDays ?? windowDays, provider,
         )
         : {
             exposures: history,

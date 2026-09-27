@@ -244,13 +244,14 @@ export function resolveEvergreenPlan(
     const aerobicPacking = aerobicPackingForFloor(aerobicVolumeFloor, capacity.usableWindows, weeklyAerobicDose, longAnchorEligible);
     // Issue #805 (D-C): an owed capability steers #804 toward its required stage; the request
     // only ever raises the #804 default, and #804 still owns the one-stage cap and evidence.
-    // Cadence reads the widest evidence available: the 28-day athlete-state window, else the
-    // orchestration-supplied mechanical evidence (>= the 14-day interval, e.g. on the projected
-    // next-day branch), never the 7-day operational history alone.
+    // Cadence reads the widest *proven* evidence available: the athlete-state window, else
+    // orchestration-supplied mechanical evidence with its explicit observation span. Injected
+    // exposure arrays without span metadata fail closed at 0 rather than fabricating a complete
+    // 14-day interval.
     const capabilityEvidence = stateEvidence
         ? { exposures: athleteEvidence, observedWindowDays }
         : mechanical.exposureHistory
-            ? { exposures: mechanical.exposureHistory, observedWindowDays: mechanical.observedWindowDays ?? MECHANICAL_CONTINUITY_WINDOW_DAYS }
+            ? { exposures: mechanical.exposureHistory, observedWindowDays: mechanical.observedWindowDays ?? 0 }
             : { exposures: athleteEvidence, observedWindowDays };
     const capabilityStage = capabilityTargetStage(profile, date, days, capabilityEvidence.exposures, capabilityEvidence.observedWindowDays);
     const optInTargetStage = mechanical.targetStage !== undefined || capabilityStage !== undefined
