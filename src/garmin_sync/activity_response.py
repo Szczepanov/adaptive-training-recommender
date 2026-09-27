@@ -483,12 +483,15 @@ def _semantic_record_segments(
     activity_start = records[0].timestamp
     groups: list[list[FitRecordSample]] = []
     total_groups = 0
+    current_step_index: int | None = None
     for record in records:
-        if not groups or groups[-1][-1].workout_step_index != record.workout_step_index:
+        if record.workout_step_index != current_step_index:
+            current_step_index = record.workout_step_index
             total_groups += 1
             if len(groups) < MAX_PERSISTED_SEGMENTS:
                 groups.append([record])
-        elif groups and groups[-1][-1].workout_step_index == record.workout_step_index:
+            continue
+        if groups and groups[-1][-1].workout_step_index == current_step_index:
             groups[-1].append(record)
 
     segments: list[CanonicalActivitySegmentSummary] = []
