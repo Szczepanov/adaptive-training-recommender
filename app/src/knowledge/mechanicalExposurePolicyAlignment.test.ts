@@ -254,11 +254,12 @@ describe('mechanical exposure policy alignment (ADR-0033, issue #804)', () => {
         expect(optedIn.eligibleWorkoutIds).not.toContain('field_controlled_maintenance_01');
     });
 
-    it('sources wide mechanical evidence for every priority that can emit the requirement', () => {
+    it('sources wide mechanical evidence exactly for priorities that can emit the requirement', () => {
         const state = inferAthleteTrainingState(exposures, 28);
         const priorityCombos: TrainingIntentProfile['priorities'][] = [
             ['health'], ['strength_muscle'], ['balanced_performance'], ['health', 'strength_muscle'],
             ['strength_muscle', 'balanced_performance'], ['endurance'], ['endurance', 'strength_muscle'],
+            ['endurance', 'health'], ['endurance', 'balanced_performance'],
             ['speed_power'], ['sport_readiness'],
         ];
         const emitting: string[] = [];
@@ -271,12 +272,17 @@ describe('mechanical exposure policy alignment (ADR-0033, issue #804)', () => {
                 organizationPreference: 'auto', schemaVersion: 1, createdAt: '', updatedAt: '',
             };
             const planningContext = resolvePlanningContext(profile, evaluatePeriodizationPhase([], '2026-09-20'), '2026-09-20');
-            if (emitsMechanical) {
-                emitting.push(priorities.join('+'));
-                expect(mechanicalEvidenceRequired(planningContext), priorities.join('+')).toBe(true);
-            }
+            expect(mechanicalEvidenceRequired(planningContext), priorities.join('+')).toBe(emitsMechanical);
+            if (emitsMechanical) emitting.push(priorities.join('+'));
         }
-        expect(emitting).toEqual(expect.arrayContaining(['speed_power', 'sport_readiness']));
+        expect(emitting).toEqual(expect.arrayContaining([
+            'endurance+strength_muscle',
+            'endurance+health',
+            'endurance+balanced_performance',
+            'speed_power',
+            'sport_readiness',
+        ]));
+        expect(emitting).not.toContain('endurance');
     });
 
     it('blocks mechanical targets immediately under guardrails while preserving typed reasons', () => {
