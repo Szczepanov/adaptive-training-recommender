@@ -56,6 +56,9 @@ export interface EvergreenMechanicalInputs {
     /** Canonical structured check-ins. Missing history fails closed for stage advancement
      * rather than being interpreted as a normal tissue response. */
     checkinHistory?: readonly CheckinRecord[];
+    /** Observation span for `exposureHistory`. Production supplies 28 days for #804's
+     * establishment gate; progression itself still filters to the 14-day continuity window. */
+    observedWindowDays?: number;
     /** Explicit opt-in progression target (issue #805 decision D-C: the due capability's
      * required stage). Absent means the evergreen default. */
     targetStage?: MechanicalStage;
@@ -217,6 +220,9 @@ export function resolveEvergreenPlan(
     const athleteEvidence = stateEvidence?.exposures ?? history;
     const observedWindowDays = stateEvidence?.observedWindowDays ?? historySnapshot?.windowDays ?? 0;
     const athleteState = inferAthleteTrainingState(athleteEvidence, observedWindowDays);
+    const mechanicalAthleteState = mechanical.exposureHistory && mechanical.observedWindowDays
+        ? inferAthleteTrainingState(mechanical.exposureHistory, mechanical.observedWindowDays)
+        : athleteState;
     const weeklyAerobicDose = resolveWeeklyAerobicDoseEnvelope({
         exposures: athleteEvidence,
         asOfDate: date,
@@ -229,7 +235,7 @@ export function resolveEvergreenPlan(
     const goalOrEvent = {
         priorities: profile.priorities, isAdverseRecovery, hasCurrentClinicalSymptoms, phase, capabilityMaintenanceEnabled,
     };
-    const strategy = resolveEvidenceBackedStrategy(goalOrEvent, athleteState, weeklyAerobicDose);
+    const strategy = resolveEvidenceBackedStrategy(goalOrEvent, athleteState, weeklyAerobicDose, mechanicalAthleteState);
     const longAnchorEligible = planningContext.profile.priorities.some(priority =>
         priority === 'endurance' || priority === 'sport_readiness')
         && (phase.phaseName === 'Build' || phase.phaseName === 'Specificity')
@@ -244,7 +250,7 @@ export function resolveEvergreenPlan(
     const capabilityEvidence = stateEvidence
         ? { exposures: athleteEvidence, observedWindowDays }
         : mechanical.exposureHistory
-            ? { exposures: mechanical.exposureHistory, observedWindowDays: MECHANICAL_CONTINUITY_WINDOW_DAYS }
+            ? { exposures: mechanical.exposureHistory, observedWindowDays: mechanical.observedWindowDays ?? MECHANICAL_CONTINUITY_WINDOW_DAYS }
             : { exposures: athleteEvidence, observedWindowDays };
     const capabilityStage = capabilityTargetStage(profile, date, days, capabilityEvidence.exposures, capabilityEvidence.observedWindowDays);
     const optInTargetStage = mechanical.targetStage !== undefined || capabilityStage !== undefined
@@ -268,7 +274,7 @@ export function resolveEvergreenPlan(
         planningHorizonDays: Math.max(1, days),
         exposures: capabilityEvidence.exposures,
         observedWindowDays: capabilityEvidence.observedWindowDays,
-        mechanicalSuspension: capabilityMaintenanceEnabled ? mechanicalSuspensionFor(goalOrEvent, athleteState)?.source ?? null : null,
+        mechanicalSuspension: capabilityMaintenanceEnabled ? mechanicalSuspensionFor(goalOrEvent, mechanicalAthleteState)?.source ?? null : null,
         mechanicalRequirementPresent: strategy.requirements.some(requirement => requirement.adaptation === 'mechanical_exposure'),
         mechanicalVerdict: mechanicalProgression,
         gates: capabilityGates(context, preferences, date, resolvedWindows),
