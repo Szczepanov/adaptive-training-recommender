@@ -81,12 +81,14 @@ function isGuardrailActive(
  *
  * Enforces:
  * 1. Hard safety gates: `avoid_high_impact`, knee swelling, acute pain block mechanical exposure.
- * 2. Spacing gate: No consecutive mechanical-impact calendar days. This is a product-policy
- *    guardrail, not a claim that a date boundary proves a fixed 48-hour biological interval.
- * 3. Gap re-entry gate: Absence of exposure for >= 14 days resets allowed stage to Stage 1.
- * 4. Response-gated progression: Stage advancement (K -> K+1) requires at least two recent
+ * 2. Gap re-entry gate: Absence of exposure for >= 14 days resets allowed stage to Stage 1.
+ * 3. Response-gated progression: Stage advancement (K -> K+1) requires at least two recent
  *    Stage-K exposures with explicit normal follow-up tissue evidence. Missing evidence fails closed.
- * 5. Symptom regression: Reported mild/moderate/severe tissue symptoms regress or withhold stage.
+ * 4. Symptom regression: Reported mild/moderate/severe tissue symptoms regress or withhold stage.
+ *
+ * Consecutive-calendar-day spacing is intentionally date-scoped in coverage/optimizer
+ * (#859). A weekly stage/tissue verdict must not turn a one-day spacing constraint into a
+ * seven-day suspension.
  */
 export function evaluateMechanicalStageProgression(
   input: EvaluateMechanicalProgressionInput,
@@ -130,23 +132,8 @@ export function evaluateMechanicalStageProgression(
   // continuity window: >=14 days without exposure is re-entry by policy.
   const recentExposures = pastExposures.filter(e => e.date > lookback14Days);
 
-  // Spacing rule: no high-impact on consecutive days
-  const yesterday = addDaysToLocalDateString(asOfDate, -1);
-  if (lastExposure && lastExposure.date === yesterday) {
-    return {
-      stage: lastExposure.stage,
-      eligible: false,
-      status: 'withheld',
-      withheldReason: 'Mechanical exposure is withheld on consecutive days to allow connective tissue remodeling.',
-      recentExposureCount: recentExposures.length,
-      lastExposureDate: lastExposure.date,
-      lastExposureStage: lastExposure.stage,
-      tissueResponse: { verdict: 'none_recent', affectedRegions: [], notes: ['Exposure occurred yesterday'] },
-      eligibleWorkoutIds: [],
-    };
-  }
-
-  // 3. Analyze tissue responses following recent exposures
+  // 3. Analyze tissue responses following recent exposures. The date-specific
+  // no-consecutive-day gate is applied later from actual/projected history.
   const checkinsByDate = new Map(checkinHistory.map(c => [c.date, c.checkin]));
   const todayCheckin = checkinsByDate.get(asOfDate);
 
