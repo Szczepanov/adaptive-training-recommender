@@ -279,6 +279,7 @@ export function resolveEvergreenPlan(
         mechanicalVerdict: mechanicalProgression,
         gates: capabilityGates(context, preferences, date, resolvedWindows),
         supportCapacityDates: capacity.usableWindows.map(window => window.date),
+        supportCapacityMinutesByDate: new Map(capacity.usableWindows.map(window => [window.date, window.availableMinutes])),
     }) : null;
     const result = buildEvergreenPlanDefinition(
         strategy,
