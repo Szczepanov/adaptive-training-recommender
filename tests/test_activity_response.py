@@ -2,7 +2,9 @@ from datetime import datetime, timedelta, timezone
 
 from garmin_sync.activity_response import (
     MAX_PERSISTED_SEGMENTS,
+    coarsest_preserving_resolution,
     derive_activity_response,
+    evaluate_activity_resolution_candidates,
     evaluate_resolution_candidates,
 )
 from garmin_sync.fit_activity import (
@@ -162,6 +164,60 @@ def test_six_ten_second_sprints_preserve_short_power_and_cadence():
     assert sprints[-1].average_power_watts < sprints[0].average_power_watts
 
 
+def test_four_by_four_retains_interval_means_and_bounded_intra_rep_trajectory():
+    specs = [{"duration": 600, "intensity": "warmup", "power": 150, "hr": 120}]
+    for index in range(4):
+        specs.extend(
+            [
+                {
+                    "duration": 240,
+                    "intensity": "active",
+                    "power": 330 - index * 3,
+                    "thirds": (334 - index * 3, 330 - index * 3, 326 - index * 3),
+                    "hr": 155 + index,
+                },
+                {"duration": 180, "intensity": "recovery", "power": 120, "hr": 130},
+            ]
+        )
+    response = derive_activity_response("indoor_cycling", _structured_evidence(specs))
+    assert response is not None
+    work = [segment for segment in response.segments if segment.segment_type == "work"]
+    assert len(work) == 4
+    assert [round(segment.average_power_watts or 0) for segment in work] == [330, 327, 324, 321]
+    assert all(segment.first_third_power_watts is not None for segment in work)
+    assert all(segment.last_third_power_watts is not None for segment in work)
+    assert work[0].first_third_power_watts > work[0].last_third_power_watts
+
+
+def test_missing_power_and_cadence_remain_explicitly_unavailable():
+    start = datetime(2026, 9, 18, 6, 0, tzinfo=timezone.utc)
+    records = tuple(
+        FitRecordSample(
+            timestamp=start + timedelta(seconds=index),
+            heart_rate_bpm=125 + index / 60,
+            cadence_rpm=None,
+            power_watts=None,
+        )
+        for index in range(180)
+    )
+    evidence = FitActivityEvidence(
+        devices=(),
+        records=records,
+        average_heart_rate_bpm=127,
+        lap_average_heart_rate_bpm=(),
+        time_in_hr_zone_seconds=(),
+        timer_events=(),
+    )
+
+    response = derive_activity_response("road_biking", evidence)
+
+    assert response is not None
+    assert response.source_resolution.power_seconds is None
+    assert response.source_resolution.cadence_seconds is None
+    assert response.source_resolution.hr_seconds == 1.0
+    assert response.power_duration_peaks == ()
+
+
 def test_native_resolution_does_not_manufacture_unsupported_short_mmp():
     start = datetime(2026, 9, 18, 6, 0, tzinfo=timezone.utc)
     records = tuple(
@@ -202,6 +258,81 @@ def test_segment_storage_is_bounded():
     assert response.segment_count_total == MAX_PERSISTED_SEGMENTS + 10
     assert len(response.segments) == MAX_PERSISTED_SEGMENTS
     assert response.segments_truncated is True
+
+
+def test_feature_family_resolution_harness_reports_threshold_tolerances_and_coarsest_pass():
+    evidence = _structured_evidence(
+        [
+            {"duration": 300, "intensity": "warmup", "power": 150, "hr": 120},
+            {
+                "duration": 900,
+                "intensity": "active",
+                "power": 230,
+                "thirds": (232, 230, 228),
+                "hr": 150,
+            },
+            {"duration": 300, "intensity": "recovery", "power": 120, "hr": 125},
+            {
+                "duration": 900,
+                "intensity": "active",
+                "power": 228,
+                "thirds": (231, 228, 225),
+                "hr": 152,
+            },
+            {"duration": 300, "intensity": "recovery", "power": 120, "hr": 126},
+            {
+                "duration": 900,
+                "intensity": "active",
+                "power": 224,
+                "thirds": (228, 224, 220),
+                "hr": 154,
+            },
+        ]
+    )
+
+    results = evaluate_activity_resolution_candidates("road_biking", evidence)
+    one_second = next(result for result in results if result.candidate_seconds == 1)
+    assert one_second.passes_required_rate is True
+    assert any(
+        feature.feature == "work_first_to_last_fade"
+        and feature.error_unit == "percentage_points"
+        and feature.tolerance_value == 1.0
+        for feature in one_second.features
+    )
+    assert any(
+        feature.feature.endswith("_average_hr")
+        and feature.error_unit == "bpm"
+        and feature.tolerance_value == 1.0
+        for feature in one_second.features
+    )
+    assert coarsest_preserving_resolution(results) is not None
+
+
+def test_feature_family_resolution_harness_requires_fine_source_for_sprint_peaks():
+    evidence = _structured_evidence(
+        [
+            {"duration": 10, "intensity": "interval", "power": 720, "cadence": 122},
+            {"duration": 60, "intensity": "recovery", "power": 100, "cadence": 80},
+            {"duration": 10, "intensity": "interval", "power": 700, "cadence": 120},
+        ]
+    )
+
+    results = evaluate_activity_resolution_candidates("road_biking", evidence)
+    one_second = next(result for result in results if result.candidate_seconds == 1)
+    two_seconds = next(result for result in results if result.candidate_seconds == 2)
+    assert one_second.passes_required_rate is True
+    assert any(
+        feature.feature.endswith("_peak_5s_power")
+        and feature.tolerance_value == 2.0
+        and feature.state == "preserved"
+        for feature in one_second.features
+    )
+    assert any(
+        feature.feature.endswith("_peak_5s_power")
+        and feature.state == "feature_unavailable"
+        for feature in two_seconds.features
+    )
+    assert two_seconds.passes_required_rate is False
 
 
 def test_resolution_harness_reports_candidate_degradation_separately_from_source_limits():
