@@ -149,6 +149,15 @@ evidence produces `insufficient_evidence` with a reason, never an estimate.
 Eligibility and formulas (the engine's #809 stimulus classification is reused, never
 re-derived; legacy records without a `stimulusDomain` are `unknown`):
 
+Issue #850 adds the upstream bounded multi-resolution evidence contract documented in
+[`activity-response-telemetry.md`](activity-response-telemetry.md). Source resolution is
+estimated independently for power, HR and cadence while the native FIT trace is in memory;
+analysis resolution is feature-specific; export resolution is limited to semantic segments,
+fixed MMP windows and coarse halves. Raw samples are never persisted. Executed FIT Workout
+Step identity outranks manual laps, and a workout fingerprint alone is not segment identity.
+Historical activities without the new `activityResponse` object continue through the #814
+fallbacks. This remains display-only, so `POLICY_VERSION` is unaffected.
+
 - **HR evidence** — every HR value goes through `activityHrFidelity.ts` `getHrUseAuthority`
   (`INTERVAL_RESPONSE` for interval HR, `AEROBIC_DECOUPLING` for decoupling and efficiency),
   with no verified lineage or segment context claimed, so the authority fails closed. A
@@ -158,25 +167,26 @@ re-derived; legacy records without a `stimulusDomain` are `unknown`):
   are HR consumers in the sense of the HRF6 audit (`analysis/2026-08-29-hrf6-hr-consumer-lineage-audit.md`,
   which is dated and not edited): interval-response and decoupling now have display-only
   consumers routed through the authority.
-- **Interval repetition** — cycling sessions classified tempo/threshold/VO2/anaerobic, or any
-  cycling session carrying a device `fitWorkoutFingerprint` (`mixed`/`race` auto-laps are not
-  a protocol, so they need the fingerprint). Protocol structure is fixed first: the first lap
-  of at least `WORK_INTERVAL_MIN_SECONDS` whose average power is at least
-  `WORK_INTERVAL_POWER_RATIO` times the duration-weighted mean lap power sets the protocol
-  length, and every later lap within `REPEAT_DURATION_MAX_RATIO` of it is a protocol interval.
-  If any protocol-length lap misses the power bar (a possible collapse, or an equal-length
-  recovery), or any later work-power lap of at least `WORK_INTERVAL_MIN_SECONDS` is not
-  protocol-length (possibly a truncated interval), repeatability is not judged. Otherwise,
-  with at least two intervals, it reports
-  per-interval power (and HR per the authority), first→last change, spread, and a *late fade*
-  (last below first by more than `INTERVAL_FADE_PCT`) or *late collapse* (a second-half
-  interval below `INTERVAL_COLLAPSE_RATIO` of the first) label.
+- **Interval repetition** — executed semantic `work` segments from FIT Workout Step
+  definitions plus performed step linkage are authoritative when available. This supports
+  long intervals, 4x4 and structured microintervals without confusing equal-duration
+  recovery with work. Prescription is rendered separately from actual power, and native
+  evidence can add within-repetition power thirds plus final-third HR (still gated by the
+  HR authority). If semantic segments are absent, the legacy #814 heuristic remains for
+  tempo/threshold/VO2/anaerobic activities: the first >=`WORK_INTERVAL_MIN_SECONDS` lap
+  above the relative-power bar fixes protocol length, with the same ambiguity/fade/collapse
+  safeguards. A `fitWorkoutFingerprint` by itself no longer turns race/auto-laps into a
+  protocol.
+- **Sprint repetition** — repeated semantic `sprint` steps (normally <=20 s) report mean
+  performed power, supported 5-second peaks, 10-second means when appropriate, peak cadence,
+  and last-vs-best fade. HR may be displayed elsewhere but is deliberately not used as the
+  primary sprint-quality signal.
 - **Pw:HR decoupling** — steady cycling only: stimulus endurance/recovery, reported
-  variability index ≤ `STEADY_MAX_VARIABILITY_INDEX`, at least `DECOUPLING_MIN_DURATION_MIN`,
-  HR not withheld, laps with power and HR covering `DECOUPLING_MIN_LAP_COVERAGE` of the
-  session, and a lap layout whose halves each hold between `DECOUPLING_MIN_HALF_SHARE` and its
-  complement of lap time. Lap-average power ÷ HR, first vs second half. Interval and
-  variable-power sessions never get a drift value; stops inside a lap are not detected.
+  variability index ≤ `STEADY_MAX_VARIABILITY_INDEX`, at least `DECOUPLING_MIN_DURATION_MIN`
+  and HR not withheld. When #850 native-derived `steadyHalves` are present, their continuous
+  first/second-half power and HR are used. Otherwise the legacy lap path requires power+HR
+  lap coverage ≥`DECOUPLING_MIN_LAP_COVERAGE` and a balanced lap layout. Interval and
+  variable-power sessions never get a drift value.
 - **Aerobic-efficiency comparison** — NP ÷ average HR against the most recent prior session
   with the same activity type, the same steady stimulus, duration within
   `COMPARABLE_DURATION_MAX_RATIO`, power and non-withheld HR. Power-zone low boundaries
@@ -195,11 +205,11 @@ re-derived; legacy records without a `stimulusDomain` are `unknown`):
   validation as unreadable (or "possibly unreadable" when such a record has no readable
   date), never as a missing check-in.
 
-Known limitations: heat, terrain, cadence, fuelling and accumulated fatigue are not
-controlled; lap-average power is not NP; interval and decoupling features depend on the
-device's lap layout; running pace efficiency and structured-workout identity from the
-training-occurrence reconciliation (ADR-0034) are not yet used; comparisons cannot reach
-beyond the fetched lookback.
+Known limitations: heat, terrain, fuelling and accumulated fatigue are not controlled;
+lap-average power is not NP on legacy records; reconciled Adaptive-authored step identity
+(ADR-0034) is not yet connected to the #850 hierarchy; deterministic unstructured-segment
+detection is deliberately conservative; running pace efficiency is not implemented; and
+comparisons cannot reach beyond the fetched lookback.
 
 #### Recovery evidence synthesis (issue #812)
 
