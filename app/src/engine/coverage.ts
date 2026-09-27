@@ -653,11 +653,12 @@ export function buildCoverageState(
 }
 
 /**
- * Issue #805 (F12): resolve capability placements for one planning date. Before a placement's
- * not-before date, or once a qualifying touch has been credited on/after it, the #804 allow-list
- * is unchanged and no consent exists. While a placement is active, the support requirement is
- * narrowed to that placement's exact identities -- a date-aware reuse of the same occurrence,
- * never an additional requirement, objective or session.
+ * Issue #805 (F12): resolve capability placements for one planning date. Pending placements
+ * expose only their exact delivery/progression identities plus per-workout not-before metadata;
+ * current-date consent and coverage urgency remain off until a placement becomes active.
+ * Active placements narrow the support requirement to their exact identities. A fulfilled set
+ * lapses the support minimum. This is a date-aware reuse of one occurrence, never an additional
+ * requirement, objective or session.
  */
 function withActiveCapabilityPlacements(requirement: WeeklyCoverageRequirement, asOfDate: string): WeeklyCoverageRequirement {
     if (!requirement.capabilityPlacements?.length) return requirement;

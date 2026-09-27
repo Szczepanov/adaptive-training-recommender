@@ -19,7 +19,6 @@ import {
     type CheckinRecord,
     type MechanicalExposureRecord,
     type MechanicalProgressionVerdict,
-    MECHANICAL_CONTINUITY_WINDOW_DAYS,
 } from './mechanicalProgression';
 import { mechanicalIdentityFor, type MechanicalStage } from '../workouts/mechanicalExposure';
 import { executableLongAerobicCeilingForWorkout, resolveWeeklyAerobicDoseEnvelope } from './weeklyAerobicDose';
