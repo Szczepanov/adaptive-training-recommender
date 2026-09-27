@@ -65,9 +65,9 @@ def test_decodes_fit_standard_workout_definition_and_lap_step_linkage() -> None:
             intensity="rest",
             equipment="bike",
         ),
-        FakeDataMessage("lap", workout_step_index=0),
-        FakeDataMessage("lap", workout_step_index=1),
-        FakeDataMessage("lap", workout_step_index=0),
+        FakeDataMessage("lap", wkt_step_index=0),
+        FakeDataMessage("lap", wkt_step_index=1),
+        FakeDataMessage("lap", wkt_step_index=0),
     ]
 
     with patch(
@@ -102,7 +102,7 @@ def test_multiple_workout_messages_do_not_blend_definitions_into_one_semantic_id
         FakeDataMessage("workout_step", message_index=0, duration_type="time", duration_value=60),
         FakeDataMessage("workout", wkt_name="Second"),
         FakeDataMessage("workout_step", message_index=0, duration_type="time", duration_value=120),
-        FakeDataMessage("lap", workout_step_index=0),
+        FakeDataMessage("lap", wkt_step_index=0),
     ]
 
     with patch(
