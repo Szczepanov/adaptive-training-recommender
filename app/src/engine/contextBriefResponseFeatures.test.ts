@@ -513,3 +513,59 @@ describe('multi-resolution semantic response (#850)', () => {
         expect(text.length).toBeLessThan(5000);
     });
 });
+
+
+describe('multi-resolution HR-fidelity propagation (#850)', () => {
+    it('withholds semantic interval HR when the existing HR authority rejects the measurement', () => {
+        const session = ride({
+            stimulusDomain: 'threshold',
+            hrMeasurement: {
+                measurementConfidence: 'low',
+                signalQuality: 'unreliable',
+                summaryCompatibility: 'verified_same_effective_trace',
+                artifactFlags: [],
+                reasons: ['synthetic low-confidence fixture'],
+            } as unknown as HrMeasurement,
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1, hrSeconds: 1 },
+                segmentCountTotal: 2,
+                segmentsTruncated: false,
+                powerDurationPeaks: [],
+                segments: [
+                    {
+                        segmentIndex: 1,
+                        segmentType: 'work',
+                        identitySource: 'fit_workout_step',
+                        durationSeconds: 900,
+                        averagePowerWatts: 230,
+                        averageHrBpm: 155,
+                        endHrBpm: 160,
+                        lastThirdHrBpm: 158,
+                        evidenceConfidence: 'high',
+                    },
+                    {
+                        segmentIndex: 2,
+                        segmentType: 'work',
+                        identitySource: 'fit_workout_step',
+                        durationSeconds: 900,
+                        averagePowerWatts: 228,
+                        averageHrBpm: 158,
+                        endHrBpm: 163,
+                        lastThirdHrBpm: 161,
+                        evidenceConfidence: 'high',
+                    },
+                ],
+            },
+        });
+
+        const feature = deriveIntervalRepetition(session);
+
+        expect(feature.state).toBe('available');
+        if (feature.state !== 'available') return;
+        expect(feature.intervals.every(interval => interval.hrBpm === undefined)).toBe(true);
+        expect(feature.intervals.every(interval => interval.endHrBpm === undefined)).toBe(true);
+        expect(feature.intervals.every(interval => interval.lastThirdHrBpm === undefined)).toBe(true);
+        expect(feature.hrNote).toContain('HR withheld');
+    });
+});
