@@ -25,6 +25,7 @@ import {
     categoryForWorkoutId,
     templateIdForWorkoutId,
     normalizeModality,
+    recommendationOwnsExecution,
     type PerformedExposureFact,
     type CoverageCreditFact,
     type PerformedTrainingFactsSnapshot,
@@ -34,19 +35,6 @@ import {
 export interface GetPerformedTrainingFactsOptions {
     coverageSetDescriptor?: CoverageSetDescriptor;
     preloadedActivities?: readonly NormalizedGarminActivity[];
-}
-
-/** True only when this persisted recommendation owns the structured execution. Modern
- * records bind by prescription hash; the template fallback preserves pre-binding history. */
-function recommendationOwnsExecution(
-    execution: SessionExecution,
-    templateId: string | undefined,
-    recommendation: DailyRecommendation | undefined,
-): boolean {
-    if (!recommendation) return false;
-    const boundHash = recommendation.primarySession?.prescriptionHash;
-    if (boundHash && execution.prescriptionHash) return boundHash === execution.prescriptionHash;
-    return templateId !== undefined && templateId === recommendation.templateId;
 }
 
 /**

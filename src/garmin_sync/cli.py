@@ -1213,6 +1213,145 @@ def run_export_identity_replay_cmd(args: list[str] | None = None) -> int:
         return 1
 
 
+# Anchored to the repository (src/garmin_sync/cli.py -> repo root), never to the working
+# directory: a relative root would silently move with `cd app` into a non-ignored path.
+EVIDENCE_ARTIFACT_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))),
+    "app",
+    "artifacts",
+    "training-occurrence",
+)
+
+
+def _evidence_artifact_path(path: str) -> str:
+    """Private TO4/TO5 evidence may only be written under the git-ignored artifact directory."""
+    root = os.path.realpath(EVIDENCE_ARTIFACT_DIR)
+    resolved = os.path.realpath(path)
+    if resolved == root or os.path.commonpath([root, resolved]) != root:
+        raise ValueError(f"Evidence output must be under {EVIDENCE_ARTIFACT_DIR}: {path}")
+    return resolved
+
+
+def _active_garmin_token_object_for_user(db: Any, user_id: str) -> str:
+    """Return the exact active self-service Garmin token object for one app user.
+
+    Evidence export with an explicit --user-id must not fall back to the operator's
+    legacy single-user token store: that could combine one user's Firestore records with
+    another Garmin account's originals. The server-only connection document is the binding
+    authority used by scheduled multi-user sync.
+    """
+    snapshot = db.collection("garminConnections").document(user_id).get()
+    if not snapshot.exists:
+        raise ValueError(
+            f"FIT evidence for explicit user {user_id!r} requires an active Garmin connection"
+        )
+    data = snapshot.to_dict() or {}
+    owner_uid = data.get("userId")
+    if owner_uid is not None and str(owner_uid) != user_id:
+        raise ValueError("Garmin connection owner does not match the requested evidence user")
+    if data.get("status") != "active":
+        raise ValueError("Garmin connection for the requested evidence user is not active")
+    token_object = str(data.get("tokenObject") or "").strip()
+    if not token_object:
+        raise ValueError("Active Garmin connection is missing its committed tokenObject")
+    return token_object
+
+
+def _write_private_json(path: str, payload: Any) -> None:
+    import json
+    from pathlib import Path
+
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes((json.dumps(payload, indent=2) + "\n").encode("utf-8"))
+
+
+def run_export_training_occurrence_evidence_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Export one user's bounded TO4 training-occurrence records (and optionally TO5 FIT "
+            "identity aggregates) for issue #646. Read-only; outputs are private local files."
+        )
+    )
+    parser.add_argument("--days", type=int, default=90, help="Trailing days (default 90)")
+    parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
+    parser.add_argument("--end-date", type=str, default=None, help="Inclusive end date YYYY-MM-DD")
+    parser.add_argument("--user-id", type=str, default=None, help="Application User ID")
+    parser.add_argument(
+        "--output",
+        type=str,
+        default=os.path.join(EVIDENCE_ARTIFACT_DIR, "raw", "records.json"),
+    )
+    parser.add_argument(
+        "--with-fit",
+        action="store_true",
+        help="Also re-download Garmin originals in memory and aggregate FIT identity evidence",
+    )
+    parser.add_argument(
+        "--fit-output",
+        type=str,
+        default=os.path.join(EVIDENCE_ARTIFACT_DIR, "raw", "fit-evidence.json"),
+    )
+    parsed_args = parser.parse_args(args)
+
+    import json
+    import secrets
+    from datetime import date, timedelta
+
+    from garminconnect import GarminConnectTooManyRequestsError
+
+    from .firestore_repository import init_firestore_client
+    from .training_occurrence_export import (
+        collect_fit_identity_evidence,
+        export_training_occurrence_records,
+        fit_activity_refs_from_records,
+    )
+
+    if parsed_args.user_id:
+        os.environ["APP_USER_ID"] = parsed_args.user_id
+
+    try:
+        output_path = _evidence_artifact_path(parsed_args.output)
+        fit_output_path = _evidence_artifact_path(parsed_args.fit_output)
+        settings = load_settings()
+        start_date_str, end_date_str = _resolve_date_range(parsed_args, default_days=90)
+        end_exclusive = (date.fromisoformat(end_date_str) + timedelta(days=1)).isoformat()
+        db = init_firestore_client(settings.firebase_credentials_path)
+        fit_settings = settings
+        if parsed_args.with_fit and parsed_args.user_id:
+            token_object = _active_garmin_token_object_for_user(db, settings.app_user_id)
+            fit_settings = load_settings_for_user(settings.app_user_id, token_object=token_object)
+        records = export_training_occurrence_records(
+            db, settings.app_user_id, start_date_str, end_exclusive
+        )
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        _write_private_json(output_path, records)
+        print(
+            f"TO4 records {start_date_str}..{end_date_str}: "
+            f"{len(records['performedTrainingOccurrences'])} occurrences, "
+            f"{len(records['sessionExecutions'])} executions, {len(records['activities'])} activities, "
+            f"{len(records['dailyRecommendations'])} recommendations (private; do not commit)."
+        )
+
+        if parsed_args.with_fit:
+            client = GarminSyncService(fit_settings)._init_garmin_client()
+            evidence = collect_fit_identity_evidence(
+                client,
+                fit_activity_refs_from_records(records),
+                alias_salt=secrets.token_hex(16),
+                is_rate_limit=lambda error: isinstance(error, GarminConnectTooManyRequestsError),
+            )
+            _write_private_json(
+                fit_output_path,
+                {"aggregate": evidence.aggregate, "privateRows": evidence.private_rows},
+            )
+            print(f"TO5 FIT aggregate: {json.dumps(evidence.aggregate, sort_keys=True)}")
+        return 0
+    except Exception as error:
+        log_exception(logger, "export training occurrence evidence", error)
+        return 1
+
+
 def run_export_activities_cmd(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Export recent activity telemetry to JSON for AI agent planning."
@@ -1407,6 +1546,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--output", type=str, default="artifacts/identity-replay/replay-input.json"
     )
 
+    export_occurrence_evidence_parser = subparsers.add_parser(
+        "export-training-occurrence-evidence",
+        help="Export bounded TO4 records and optional TO5 FIT aggregates for issue #646",
+    )
+    export_occurrence_evidence_parser.add_argument("--days", type=int, default=90)
+    export_occurrence_evidence_parser.add_argument("--start-date", type=str, default=None)
+    export_occurrence_evidence_parser.add_argument("--end-date", type=str, default=None)
+    export_occurrence_evidence_parser.add_argument("--user-id", type=str, default=None)
+    export_occurrence_evidence_parser.add_argument("--output", type=str, default=None)
+    export_occurrence_evidence_parser.add_argument("--with-fit", action="store_true")
+    export_occurrence_evidence_parser.add_argument("--fit-output", type=str, default=None)
+
     push_workout_parser = subparsers.add_parser("push-workout", help="Push one queued workout")
     push_workout_parser.add_argument("--date", type=str, default=None)
 
@@ -1456,6 +1607,8 @@ def dispatch_command(command: str) -> int:
         return run_backfill_eight_sleep_direct_cmd(args_list)
     if command == "compare-eight-sleep-transports":
         return run_compare_eight_sleep_transports_cmd(args_list)
+    if command == "export-training-occurrence-evidence":
+        return run_export_training_occurrence_evidence_cmd(args_list)
     if command == "export-identity-replay":
         return run_export_identity_replay_cmd(args_list)
     if command == "audit":

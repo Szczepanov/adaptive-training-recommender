@@ -17,6 +17,7 @@ artifacts/fatigue-fusion-reports/
 artifacts/subjective-drift-reports/
 artifacts/health-anomaly-reports/
 artifacts/identity-replay-reports/
+artifacts/training-occurrence/
 artifacts/coverage/
 artifacts/firestore-rules-rollbacks/
 artifacts/sequence-search-comparison/
