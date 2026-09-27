@@ -459,6 +459,47 @@ owned by `policy.evergreen.power_maintenance_exposure_v1`, with low-certainty su
 `performance.power.low_frequency_maintenance` (ADR-0033). Event-directed plans do not yet
 carry the power requirement.
 
+Mechanical and impact exposure (#804, ADR-0044 capability exposure) is a separate `AdaptationKey`,
+`mechanical_exposure`, distinct from `impactTissue` cost, metabolic conditioning, or generic strength.
+`resolveEvidenceBackedStrategy` emits it for established athletes with `sport_readiness` or `speed_power`
+priorities and for established endurance+strength hybrids that need a small mechanical-maintenance floor:
+target one exposure per week, at most two credited, no evidence-derived physiological floor; the one-session
+maintenance minimum is product policy. Acute adverse recovery, current clinical symptoms, `Peak/Taper`,
+`Post-Event Recovery` or insufficient history withhold it with a typed `mechanical_exposure_withheld` warning.
+
+The weekly packer first tries exact cross-credit: an already-packed strength or aerobic occurrence whose authored
+workout identity carries mechanical content can satisfy the capability without another occurrence. Unlike
+`neuromuscular_power`, however, absence of such a host does **not** erase the mechanical target.
+`buildEvergreenPlanDefinition` preserves one exact `mechanical_exposure` coverage occurrence as
+`reservationTier: 'support'`. The existing two-pass weekly allocator may place that support occurrence only on
+capacity left after primary BUILD roles; it cannot displace cycling/aerobic, quality, or primary-strength
+reservations. This is an authored workout occurrence with normal duration/cost/safety metadata, not free-text
+bookkeeping or inferred extra availability (ADR-0044 D4-D6).
+
+`workouts/mechanicalExposure.ts` is the canonical owner of exact mechanical identities, qualifying variants
+(`full`, `reduced`), progression stage, and planning use. Low-cost maintenance candidates are intentionally
+separate from higher-cost sessions that may earn **performed** incidental credit: completing an authored long run,
+tempo/VO2 run, or race-pace session can close the capability ledger when its exact identity/variant qualifies, but
+the engine never manufactures those sessions merely to repair a missing mechanical touch. Running dose records
+duration where authored; contact counts remain unknown unless the workout actually authors them.
+
+Progression is managed by `engine/mechanicalProgression.ts` and is wired into evergreen planning before coverage
+allocation. Stage 1 is re-entry/walk-run; Stage 2 adds low-volume bilateral plyometric/linear mechanics; Stage 3
+adds deceleration/braking; Stage 4 adds multidirectional/COD work. Advancement ($K \to K+1$) requires at least two
+recent current-stage exposures, each followed by an explicit normal lower-body tissue response on the next-day
+check-in. A check-in without structured tissue response is **missing evidence**, not a green response. Advancement
+is capped at +1 stage. Mild response regresses one stage; moderate/severe response, active pain/illness, or
+`avoid_high_impact` blocks/withholds exposure. Exactly 14 or more days without qualifying exposure resets the
+allowed stage to Stage 1. The no-consecutive-calendar-day rule and 14-day reset are conservative product-policy
+guardrails, not experimentally validated biological thresholds.
+
+The progression verdict supplies an exact workout allow-list to both coverage ranking and weekly reservations.
+A blocked verdict therefore leaves the target visible with zero eligible candidates instead of silently widening
+to harder stages or substituting generic exercise. Policy is owned by
+`policy.evergreen.mechanical_exposure_v1`; `biomechanics.impact.progressive_mechanical_loading` supplies only
+the narrower scientific rationale that bone and tendon adapt to mechanical loading. The registry explicitly
+documents that the exact scheduling/progression thresholds are product heuristics (ADR-0033).
+
 Event-free `health` planning also resolves `healthPlanningPolicy.ts`
 `resolveHealthPlanningPolicy` from the current intent and preferences. Explicit Running
 support means Running is preferred and is neither deprioritized nor avoided. Without that

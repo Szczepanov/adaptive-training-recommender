@@ -58,6 +58,11 @@ export interface PlanCoverageRequirementDefinition {
   targetSessions: number;
   priority: ObjectivePriority;
   knowledgeRefs: string[];
+  /** Optional candidate allow-list owned by the capability progression authority. */
+  eligibleWorkoutIds?: string[];
+  /** Capability maintenance may be a real weekly minimum without being allowed to displace
+   * BUILD roles. Same semantics as objective support reservations (#801). */
+  reservationTier?: 'support';
   minimumDurationMinutes?: number;
   exactWorkoutIds?: string[];
 }
@@ -358,9 +363,10 @@ const EVERGREEN_OBJECTIVE_BY_ADAPTATION: Partial<Record<AdaptationKey, {
   high_intensity: { key: 'vo2_max', coverageKey: 'sustained_quality', priority: 'nice_to_have' },
 };
 
-/** Capability adaptations that own exact coverage but no stimulus objective (#802). */
+/** Capability adaptations that own exact coverage but no stimulus objective (#802, #804). */
 const EVERGREEN_COVERAGE_ONLY_BY_ADAPTATION: Partial<Record<AdaptationKey, PlanCoverageKey>> = {
   neuromuscular_power: 'power_exposure',
+  mechanical_exposure: 'mechanical_exposure',
 };
 
 function coverageOnlyPriority(priority: AdaptationDoseRequirement['priority']): ObjectivePriority {
@@ -376,6 +382,7 @@ export function buildEvergreenPlanDefinition(
   capacity: ResolvedTrainingCapacity,
   packedBudget: WeeklyBudget,
   asOfDate: string,
+  mechanicalEligibleWorkoutIds: readonly string[] = [],
 ): DataState<PlanDefinition> {
   void strategy;
   void capacity;
@@ -400,19 +407,33 @@ export function buildEvergreenPlanDefinition(
       coverageTargetSessions: count,
     }];
   });
-  // A coverage-only capability is planned only when the packer embedded it in a real
-  // occurrence; its count therefore never adds a session (ADR-0044 D6).
+  // Coverage-only capability semantics differ by owner. Power (#802) remains embedded-only:
+  // no packed host means no standalone catch-up target. Mechanical exposure (#804) must remain
+  // visible even when no current host carries it, so the canonical coverage allocator can repair
+  // the low-cost maintenance target instead of silently dropping the requirement.
   const coverageRequirements: PlanCoverageRequirementDefinition[] = packedBudget.requirements.flatMap(requirement => {
     const coverageKey = EVERGREEN_COVERAGE_ONLY_BY_ADAPTATION[requirement.adaptation];
-    const count = countByAdaptation.get(requirement.adaptation) ?? 0;
-    if (!coverageKey || count === 0) return [];
+    const packedCount = countByAdaptation.get(requirement.adaptation) ?? 0;
+    if (!coverageKey) return [];
+    const targetSessions = requirement.adaptation === 'mechanical_exposure'
+      ? Math.min(requirement.target.target, requirement.target.maximum)
+      : packedCount;
+    if (targetSessions <= 0) return [];
     return [{
       coverageKey,
       blockId: 'block_general',
-      minimumSessions: requirement.floor?.dose.value ?? 0,
-      targetSessions: count,
+      minimumSessions: requirement.adaptation === 'mechanical_exposure' && requirement.priority === 'target'
+        ? Math.min(1, targetSessions)
+        : (requirement.floor?.dose.value ?? 0),
+      targetSessions,
       priority: coverageOnlyPriority(requirement.priority),
       knowledgeRefs: [...requirement.knowledgeRefs],
+      ...(requirement.adaptation === 'mechanical_exposure'
+        ? {
+            eligibleWorkoutIds: [...mechanicalEligibleWorkoutIds],
+            reservationTier: 'support' as const,
+          }
+        : {}),
     }];
   });
   if (packedBudget.longAerobicAnchorRequired) {

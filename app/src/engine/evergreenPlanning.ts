@@ -12,6 +12,8 @@ import { buildEvergreenPlanDefinition, type PlanDefinition } from './planSchedul
 import { buildMicrocycleState } from './microcycle';
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
+import { evaluateMechanicalStageProgression, type CheckinRecord } from './mechanicalProgression';
+import { mechanicalIdentityFor } from '../workouts/mechanicalExposure';
 import { executableLongAerobicCeilingForWorkout, resolveWeeklyAerobicDoseEnvelope } from './weeklyAerobicDose';
 import type { WeeklyAerobicDoseEnvelope } from './weeklyAerobicDose';
 
@@ -118,6 +120,9 @@ export function resolveEvergreenPlan(
     aerobicVolumeFloor: AerobicVolumeFloor | null = null,
     /** Current pain/injury, illness or red-flag symptoms withhold the generic quality prior. */
     hasCurrentClinicalSymptoms: boolean = false,
+    /** Canonical structured check-ins used only by the mechanical capability owner. Missing
+     * history fails closed for stage advancement rather than being interpreted as normal. */
+    mechanicalCheckinHistory: readonly CheckinRecord[] = [],
 ): ResolvedEvergreenPlan | null {
     if (planningContext.mode !== 'evergreen' || !preferences) return null;
     const availability = Array.from({ length: Math.max(1, days) }, (_, index) => {
@@ -152,11 +157,27 @@ export function resolveEvergreenPlan(
         && !isAdverseRecovery
         && !hasCurrentClinicalSymptoms;
     const aerobicPacking = aerobicPackingForFloor(aerobicVolumeFloor, capacity.usableWindows, weeklyAerobicDose, longAnchorEligible);
+    const mechanicalExposureHistory = history.flatMap(exposure => {
+        const identity = mechanicalIdentityFor(exposure.workoutId);
+        return identity ? [{ date: exposure.date, workoutId: identity.workoutId, stage: identity.stage }] : [];
+    });
+    const mechanicalProgression = evaluateMechanicalStageProgression({
+        asOfDate: date,
+        exposureHistory: mechanicalExposureHistory,
+        checkinHistory: mechanicalCheckinHistory,
+        guardrails: new Set(context.constraints.impliedGuardrails ?? []),
+    });
     const packed = packWeeklyDose(strategy, capacity, aerobicPacking.descriptor, progressionOverrides, date);
     const budget: WeeklyBudget = aerobicPacking.shortfall
         ? { ...packed, shortfalls: [...packed.shortfalls, aerobicPacking.shortfall] }
         : packed;
-    const result = buildEvergreenPlanDefinition(strategy, capacity, budget, date);
+    const result = buildEvergreenPlanDefinition(
+        strategy,
+        capacity,
+        budget,
+        date,
+        mechanicalProgression.eligible ? mechanicalProgression.eligibleWorkoutIds : [],
+    );
     if (result.status !== 'AVAILABLE') return null;
     const qualityRolePacked = [...budget.requiredRoles, ...budget.targetRoles, ...budget.optionalRoles]
         .some(role => role.coverageRoleId === 'sustained_quality');

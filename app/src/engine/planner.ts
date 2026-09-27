@@ -102,6 +102,7 @@ import {
     primaryAllocationUnresolved,
 } from './weeklyAllocation';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
+import type { CheckinRecord } from './mechanicalProgression';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { resolveHealthPlanningPolicy, type HealthPlanningPolicy } from './healthPlanningPolicy';
 import { fixedActivityOccurrenceKey, resolveFixedActivityIdentity } from './fixedActivityIdentity';
@@ -328,6 +329,9 @@ export interface WeekAheadOptions {
     fatigueFusionPolicy?: FatigueFusionPolicy;
     /** Event-free health planning prior resolved from the current training intent. */
     healthPlanningPolicy?: HealthPlanningPolicy | null;
+    /** Structured tissue-response history for #804 mechanical progression. Absence is
+     * supported and intentionally prevents stage advancement rather than assuming normal response. */
+    mechanicalCheckinHistory?: readonly CheckinRecord[];
 }
 
 const ZERO_COST: WorkoutCostProfile = {
@@ -2084,23 +2088,6 @@ export function generateWeekAheadPlan(
             if (progressiveEasyCandidates.length > 0) rankingCandidates = rankingCandidates.filter(template => template.category !== 'Rest');
         }
 
-        const exactReserved = reservation
-            ? rankingCandidates.filter(template => reservation.occurrence.eligibleTemplateIds.includes(template.id))
-            : [];
-        if (optionalQualityBlock && date >= optionalQualityBlock.startDate && date <= optionalQualityBlock.endDate) {
-            const feasibleQualityTemplateIds = projectedDateOutcomeFrom(evaluation).acceptedTemplateIds.filter(templateId =>
-                qualityWorkoutIds.has(workoutIdForTemplateId(templateId) ?? '')
-                && rankingCandidates.some(template => template.id === templateId));
-            if (feasibleQualityTemplateIds.length > 0) {
-                qualityOpportunityDates.push(date);
-                if (reservation && exactReserved.length > 0
-                    && feasibleQualityTemplateIds.every(templateId => !exactReserved.some(template => template.id === templateId))) {
-                    requiredReservationBlockedQualityDates.push(date);
-                }
-            }
-        }
-        if (reservation && exactReserved.length > 0) rankingCandidates = exactReserved;
-
         const plannedExerciseSessionCount = [
             { date: todayDate, template: todayRec.template },
             ...resultDays.map(day => ({ date: day.date, template: day.template })),
@@ -2114,19 +2101,58 @@ export function generateWeekAheadPlan(
             && activity.date >= optionalQualityBlock.startDate
             && activity.date <= optionalQualityBlock.endDate
             && (activity.expectedCost || activity.expectedStimulus)).length;
-        const futureRequiredExerciseDates = [...new Set([...allocation.reservationsByDate.keys()]
-            .filter(reservedDate => reservedDate > date
+        const futureRequiredExerciseDates = [...new Set([...allocation.reservationsByDate.entries()]
+            .filter(([reservedDate, res]) => reservedDate > date
+                && res.occurrence.reservationTier !== 'support'
                 && optionalQualityBlock
                 && reservedDate >= optionalQualityBlock.startDate
-                && reservedDate <= optionalQualityBlock.endDate))];
+                && reservedDate <= optionalQualityBlock.endDate)
+            .map(([reservedDate]) => reservedDate))];
         const hasFixedTraining = getFixedActivitiesForDate(date).some(activity =>
             Boolean(activity.expectedCost || activity.expectedStimulus));
         const capacityOccupiedSessionCount = plannedExerciseSessionCount
             + fixedExerciseSessionCount
             + futureRequiredExerciseDates.length;
+        const qualityWindow = evergreenCapacity?.usableWindows.find(window => window.date === date);
+        const qualityAlreadySelected = [
+            { date: todayDate, template: todayRec.template },
+            ...resultDays.map(day => ({ date: day.date, template: day.template })),
+        ].some(day => optionalQualityBlock
+            && day.date >= optionalQualityBlock.startDate
+            && day.date <= optionalQualityBlock.endDate
+            && qualityWorkoutIds.has(workoutIdForTemplateId(day.template.id) ?? ''));
+        const isSupportReservation = reservation?.occurrence.reservationTier === 'support';
+        const canPlaceOptionalQuality = Boolean(optionalQualityBlock
+            && date >= optionalQualityBlock.startDate
+            && date <= optionalQualityBlock.endDate
+            && qualityWindow
+            && (!reservation || isSupportReservation)
+            && !hasFixedTraining
+            && !qualityAlreadySelected
+            && capacityOccupiedSessionCount < (evergreenCapacity?.maxSessions ?? 0));
+
+        const exactReserved = reservation
+            ? rankingCandidates.filter(template => reservation.occurrence.eligibleTemplateIds.includes(template.id))
+            : [];
+        if (optionalQualityBlock && date >= optionalQualityBlock.startDate && date <= optionalQualityBlock.endDate) {
+            const feasibleQualityTemplateIds = projectedDateOutcomeFrom(evaluation).acceptedTemplateIds.filter(templateId =>
+                qualityWorkoutIds.has(workoutIdForTemplateId(templateId) ?? '')
+                && rankingCandidates.some(template => template.id === templateId));
+            if (feasibleQualityTemplateIds.length > 0) {
+                qualityOpportunityDates.push(date);
+                if (reservation && !isSupportReservation && exactReserved.length > 0
+                    && feasibleQualityTemplateIds.every(templateId => !exactReserved.some(template => template.id === templateId))) {
+                    requiredReservationBlockedQualityDates.push(date);
+                }
+            }
+        }
+        if (reservation && exactReserved.length > 0 && !(canPlaceOptionalQuality && isSupportReservation)) {
+            rankingCandidates = exactReserved;
+        }
+
         if (evergreenCapacity && optionalQualityBlock
             && date <= optionalQualityBlock.endDate
-            && !reservation
+            && (!reservation || isSupportReservation)
             && capacityOccupiedSessionCount >= evergreenCapacity.maxSessions) {
             rankingCandidates = rankingCandidates.filter(template =>
                 template.category === 'Rest' || template.category === 'Mobility/Recovery');
@@ -2206,26 +2232,17 @@ export function generateWeekAheadPlan(
                     if (primaryAllocationUnresolved(after)) {
                         return 'unresolved_search_budget';
                     }
+                    const isOptionalQualityCandidate = Boolean(optionalQualityBlock
+                        && date >= optionalQualityBlock.startDate
+                        && date <= optionalQualityBlock.endDate
+                        && qualityWorkoutIds.has(workoutIdForTemplateId(template.id) ?? ''));
+                    if (isOptionalQualityCandidate) {
+                        return after.primaryFulfilledCount >= allocation.primaryFulfilledCount ? 'preserves' : 'degrades';
+                    }
                     return allocationValuePreserved(allocation, after, selfFulfilledOccurrences) ? 'preserves' : 'degrades';
                 },
             });
         };
-        const qualityWindow = evergreenCapacity?.usableWindows.find(window => window.date === date);
-        const qualityAlreadySelected = [
-            { date: todayDate, template: todayRec.template },
-            ...resultDays.map(day => ({ date: day.date, template: day.template })),
-        ].some(day => optionalQualityBlock
-            && day.date >= optionalQualityBlock.startDate
-            && day.date <= optionalQualityBlock.endDate
-            && qualityWorkoutIds.has(workoutIdForTemplateId(day.template.id) ?? ''));
-        const canPlaceOptionalQuality = Boolean(optionalQualityBlock
-            && date >= optionalQualityBlock.startDate
-            && date <= optionalQualityBlock.endDate
-            && qualityWindow
-            && !reservation
-            && !hasFixedTraining
-            && !qualityAlreadySelected
-            && capacityOccupiedSessionCount < (evergreenCapacity?.maxSessions ?? 0));
         if (canPlaceOptionalQuality) {
             const qualityFirst = ranked.filter(candidate => candidate.template.modality === 'Cycling'
                 && qualityWorkoutIds.has(workoutIdForTemplateId(candidate.template.id) ?? ''));
@@ -2453,6 +2470,7 @@ export async function generateWeekAheadPlanWithIntent(
         preferences, context, todayDate, options.fixedActivities ?? [], options.days ?? 7,
         isAdverseRecovery, options.scheduleOverlays ?? [], new Map(), aerobicVolumeFloor,
         hasCurrentClinicalSymptoms(todayReadiness),
+        options.mechanicalCheckinHistory ?? [],
     );
     return generateWeekAheadPlan(
         todayReadiness,

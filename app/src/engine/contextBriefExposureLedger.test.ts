@@ -230,4 +230,21 @@ describe('exposure ledger (#813)', () => {
         const withAdherence = deriveExposureLedger(input({ activitiesReadable: false, recommendations: [followed] }));
         expect(cap(withAdherence.capabilities, 'strength').status).toBe('confirmed');
     });
+
+    it('confirms impact_jump from a canonical mechanical structured execution at qualifying dose', () => {
+        const fact: PerformedExposureFact = {
+            performedOccurrenceId: 'occ-mech', localDate: '2026-09-22', modality: 'Running', category: 'Easy Endurance',
+            workoutId: 'running_easy_continuous_01', workoutVariantId: 'full',
+            confidence: 'exact', sourceKinds: ['structured_execution'], evidenceTier: 'completedStructuredWorkout',
+        };
+        const ledger = deriveExposureLedger(input({ performedFacts: [fact] }));
+        const impact = cap(ledger.capabilities, 'impact_jump');
+        expect(impact.status).toBe('confirmed');
+        expect(impact.lastConfirmed).toBe('2026-09-22');
+
+        // Readiness-modified dose does not confirm impact_jump
+        const modifiedFact: PerformedExposureFact = { ...fact, isReadinessModifiedDose: true };
+        const ledgerModified = deriveExposureLedger(input({ performedFacts: [modifiedFact] }));
+        expect(cap(ledgerModified.capabilities, 'impact_jump').status).toBe('unknown');
+    });
 });

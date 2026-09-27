@@ -10,6 +10,7 @@ import { aerobicVolumeFloorForWorkout, type AerobicVolumeFloor } from './aerobic
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { grantsPowerExposureCredit } from '../workouts/powerExposure';
+import { grantsMechanicalExposureCredit } from '../workouts/mechanicalExposure';
 
 /**
  * Phase 6.2c / ADR-0016: physiological stimulus credit and programming-role coverage
@@ -69,6 +70,9 @@ export interface WeeklyCoverageRequirement {
     credits: CoverageCredit[];
     /** Issue #801: reserved only without displacing a primary required role. */
     reservationTier?: 'support';
+    /** Capability-owned candidate allow-list. `undefined` means unrestricted; an empty
+     * list is an explicit fail-closed block for this planning window. */
+    eligibleWorkoutIds?: readonly string[];
 }
 
 export interface CoverageState {
@@ -248,10 +252,11 @@ const DEFERRED_SUPPORT_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
     'recovery_or_rest',
 ]);
 
-/** Issue #802 / ADR-0044 D6: embedded capability keys are credited and reported but never
- * raise a candidate's coverage-need tier. An unmet power target must not promote a
- * standalone power or lower-body session as catch-up work; power rides only inside the
- * strength role that already earns its own tier. */
+/** Issue #802 / ADR-0044 D6: power remains an embedded-only capability: an unmet
+ * power target must not promote a standalone power/lower-body session as catch-up work.
+ * Mechanical exposure differs (#804): the evergreen plan keeps an explicit low-cost
+ * maintenance target, so the normal allocator may repair it with an exact authored
+ * maintenance identity when no already-planned session supplies the capability. */
 const EMBEDDED_ONLY_COVERAGE_KEYS = new Set<PlanCoverageKey>([
     'power_exposure',
 ]);
@@ -358,6 +363,7 @@ export function coverageKeysForExposure(
         .filter(item => item.minimumDurationMinutes === undefined
             || coverageDurationReach(identity) >= item.minimumDurationMinutes)
         .filter(item => item.key !== 'power_exposure' || grantsPowerExposureCredit({ workoutId, isReadinessModifiedDose: identity.isReadinessModifiedDose }))
+        .filter(item => item.key !== 'mechanical_exposure' || grantsMechanicalExposureCredit({ workoutId, isReadinessModifiedDose: identity.isReadinessModifiedDose }))
         .map(item => item.key);
 }
 
@@ -386,6 +392,9 @@ function canonicalCoverageKeysForExposure(
             // Power exposure is likewise withheld from a readiness-modified dose (#802).
             if (key === 'power_exposure') {
                 return grantsPowerExposureCredit({ workoutId, isReadinessModifiedDose: exposure.isReadinessModifiedDose });
+            }
+            if (key === 'mechanical_exposure') {
+                return grantsMechanicalExposureCredit({ workoutId, isReadinessModifiedDose: exposure.isReadinessModifiedDose });
             }
             if (definition.minimumDurationMinutes !== undefined
                 && coverageDurationReach(exposure) < definition.minimumDurationMinutes) return false;
@@ -562,11 +571,17 @@ export function buildCoverageState(
                 windowEnd: block.endDate,
                 index: activeDefinitions.length + index,
             });
-            if (requirement) requirementsByKey.set(definition.coverageKey, {
-                ...requirement,
-                ...(definition.minimumDurationMinutes !== undefined ? { minimumDurationMinutes: definition.minimumDurationMinutes } : {}),
-                ...(definition.exactWorkoutIds?.length ? { exactWorkoutIds: definition.exactWorkoutIds } : {}),
-            });
+            if (requirement) {
+                requirementsByKey.set(definition.coverageKey, {
+                    ...requirement,
+                    ...(definition.eligibleWorkoutIds !== undefined
+                        ? { eligibleWorkoutIds: [...definition.eligibleWorkoutIds] }
+                        : {}),
+                    ...(definition.reservationTier === 'support' ? { reservationTier: 'support' as const } : {}),
+                    ...(definition.minimumDurationMinutes !== undefined ? { minimumDurationMinutes: definition.minimumDurationMinutes } : {}),
+                    ...(definition.exactWorkoutIds?.length ? { exactWorkoutIds: definition.exactWorkoutIds } : {}),
+                });
+            }
         });
 
     const recoveryCoverage = coverageFor(activeDescriptor, 'recovery_or_rest');
@@ -681,8 +696,13 @@ export function coverageNeedTierForTemplate(
     anchorRole: 'event-specific' | 'quality' | null = null,
     deferAnchorAdjacentHeavyStrength: boolean = false,
 ): 0 | 1 | 2 | 3 {
+    const workoutId = workoutIdForTemplateId(template.id);
     const keys = (state.descriptor ? coverageKeysForTemplate(template, state.phase, state.descriptor, state.aerobicVolumeFloor) : [])
-        .filter(key => !EMBEDDED_ONLY_COVERAGE_KEYS.has(key));
+        .filter(key => !EMBEDDED_ONLY_COVERAGE_KEYS.has(key))
+        .filter(key => {
+            const eligibleWorkoutIds = state.requirements.find(requirement => requirement.key === key)?.eligibleWorkoutIds;
+            return eligibleWorkoutIds === undefined || (workoutId !== undefined && eligibleWorkoutIds.includes(workoutId));
+        });
     if (keys.length === 0) return 3;
 
     const anchorKey: PlanCoverageKey | null = anchorRole === 'event-specific'

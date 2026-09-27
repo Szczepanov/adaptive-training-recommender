@@ -34,6 +34,8 @@ export interface RequiredRoleOccurrence {
     exactWorkoutIds?: string[];
     eligibleTemplateIds: string[];
     eligibleWorkoutIds: string[];
+    /** Optional capability-owned restriction applied before exact coverage identities are attached. */
+    candidateWorkoutAllowList?: string[];
     /** Issue #801: a support occurrence is placed only after, and around, the primary
      * allocation (see `resolveWeeklyRoleReservations`). Absent means primary. */
     reservationTier?: 'support';
@@ -207,6 +209,9 @@ export function deriveRequiredRoleOccurrences(state: CoverageState): RequiredRol
                     ...(requirement.exactWorkoutIds?.length ? { exactWorkoutIds: requirement.exactWorkoutIds } : {}),
                     eligibleTemplateIds: [],
                     eligibleWorkoutIds: [],
+                    ...(requirement.eligibleWorkoutIds !== undefined
+                        ? { candidateWorkoutAllowList: [...requirement.eligibleWorkoutIds] }
+                        : {}),
                     ...(requirement.reservationTier === 'support' ? { reservationTier: 'support' as const } : {}),
                 };
             });
@@ -222,12 +227,18 @@ export function attachExactEligibleIdentities(
     aerobicVolumeFloor: AerobicVolumeFloor | null = null,
 ): RequiredRoleOccurrence[] {
     return occurrences.map(occurrence => {
+        const candidateWorkoutAllowList = occurrence.candidateWorkoutAllowList;
         const eligibleTemplateIds = templates
             .filter(template => (occurrence.minimumDurationMinutes === undefined
                 || template.durationMax >= occurrence.minimumDurationMinutes)
                 && (!occurrence.exactWorkoutIds?.length
                     || occurrence.exactWorkoutIds.includes(workoutIdForTemplateId(template.id) ?? ''))
                 && coverageKeysForTemplate(template, occurrence.phase, coverageSetFor(occurrence.coverageSetId), aerobicVolumeFloor).includes(occurrence.coverageKey))
+            .filter(template => {
+                if (candidateWorkoutAllowList === undefined) return true;
+                const workoutId = workoutIdForTemplateId(template.id);
+                return workoutId !== undefined && candidateWorkoutAllowList.includes(workoutId);
+            })
             .map(template => template.id)
             .sort();
         return {
