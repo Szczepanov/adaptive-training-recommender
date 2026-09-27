@@ -754,7 +754,11 @@ export async function evaluateTrainingWithIntent(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, date, fixedActivities, 7, isAdverseRecovery, scheduleOverlays,
         confirmedProgressionOverrides, aerobicVolumeFloor, hasCurrentClinicalSymptoms(readiness),
-        { exposureHistory: intent.mechanicalExposureHistory, checkinHistory: mechanicalCheckins },
+        {
+            exposureHistory: intent.mechanicalExposureHistory,
+            observedWindowDays: intent.mechanicalEvidenceObservedWindowDays,
+            checkinHistory: mechanicalCheckins,
+        },
     );
     if (evergreen) {
         const unresolvedObjectives = getUnresolvedObjectives(evergreen.microcycle);
