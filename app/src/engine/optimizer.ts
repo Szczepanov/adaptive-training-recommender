@@ -35,6 +35,7 @@ import {
     type CoverageState,
 } from './coverage';
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
+import { mechanicalIdentityFor } from '../workouts/mechanicalExposure';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveEventTaper } from './taperPolicy';
 import { olympicTriathlonTaperBenefitBoost, olympicTriathlonTaperCandidateCap, olympicTriathlonTaperExclusion, resolveOlympicTriathlonTaperBudget, resolvePriorityAOlympicTriathlonTaper, type OlympicTriathlonTaperBudget } from './taperPlanBudget';
@@ -1242,6 +1243,12 @@ export function rankCandidates(
         }
         if (injuryConstraints.some(inj => inj.toLowerCase() === lowerMod || inj.toLowerCase().includes(lowerMod))) {
             excludedReasons.push('INJURY_RESTRICTION');
+        }
+        // #859: the no-consecutive-mechanical-days policy is a hard, date-scoped gate.
+        // The week-level #804 verdict remains eligible so later dates are not suppressed.
+        if (coverageState?.mechanicalSpacingBlocked
+            && mechanicalIdentityFor(workoutIdForTemplateId(template.id))) {
+            excludedReasons.push('CONSECUTIVE_MECHANICAL_DAYS');
         }
 
         if (options.plannedDose && !isIntensityClassAdmissible(intensityClassForTemplate(template), options.plannedDose.intensity)) {
