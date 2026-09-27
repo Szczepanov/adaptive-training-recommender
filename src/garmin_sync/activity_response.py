@@ -237,8 +237,13 @@ def _power_duration_peaks(
         if result is None:
             continue
         power, elapsed, half = result
+        # A 1-second MMP is a single-record statistic at the common 1 Hz source cadence
+        # and is therefore more sampling-sensitive than multi-second windows. Keep it
+        # moderate unless a future source-quality contract can justify stronger confidence.
         confidence = (
-            "high"
+            "moderate"
+            if duration == 1
+            else "high"
             if source_resolution_seconds is not None and source_resolution_seconds <= 1.1
             else "moderate"
         )
@@ -432,19 +437,42 @@ def _semantic_lap_segments(
     steps = _workout_step_map(evidence.workout_steps)
     if not steps:
         return [], 0
-    timestamped = [record.timestamp for record in evidence.records if record.timestamp is not None]
-    activity_start = min(timestamped) if timestamped else None
-    segments: list[CanonicalActivitySegmentSummary] = []
-    total_segments = 0
+
+    executable_laps: list[
+        tuple[FitLapEvidence, float, datetime | None, datetime | None]
+    ] = []
     for lap in evidence.laps:
-        if lap.workout_step_index is None or lap.workout_step_index not in steps:
-            continue
         duration = lap.duration_seconds
         start, end = _lap_bounds(lap)
         if duration is None and start is not None and end is not None:
             duration = (end - start).total_seconds()
         if duration is None or duration <= 0:
             continue
+        executable_laps.append((lap, duration, start, end))
+
+    if not executable_laps:
+        return [], 0
+
+    # FIT step semantics are authoritative only when the performed Lap linkage is
+    # complete for the usable lap sequence. A partially linked sequence is ambiguous:
+    # silently dropping the unlinked laps could make a 3x15 session look like 2x15.
+    # Return no semantic-lap result so the caller can try record linkage, then the
+    # lower-confidence manual-lap fallback.
+    linked_laps = [
+        item
+        for item in executable_laps
+        if item[0].workout_step_index is not None and item[0].workout_step_index in steps
+    ]
+    if len(linked_laps) != len(executable_laps):
+        return [], 0
+
+    timestamped = [record.timestamp for record in evidence.records if record.timestamp is not None]
+    activity_start = min(timestamped) if timestamped else None
+    segments: list[CanonicalActivitySegmentSummary] = []
+    total_segments = 0
+    for lap, duration, start, end in linked_laps:
+        step_index = lap.workout_step_index
+        assert step_index is not None
         total_segments += 1
         if len(segments) >= MAX_PERSISTED_SEGMENTS:
             continue
@@ -452,7 +480,7 @@ def _semantic_lap_segments(
             _summarize_segment(
                 segment_index=total_segments,
                 identity_source="fit_workout_step",
-                step=steps[lap.workout_step_index],
+                step=steps[step_index],
                 duration_seconds=duration,
                 start=start,
                 end=end,
