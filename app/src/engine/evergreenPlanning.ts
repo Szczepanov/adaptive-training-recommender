@@ -261,7 +261,7 @@ export function resolveEvergreenPlan(
     const budget: WeeklyBudget = aerobicPacking.shortfall
         ? { ...packed, shortfalls: [...packed.shortfalls, aerobicPacking.shortfall] }
         : packed;
-    const capability = resolveCapabilityMaintenancePlan({
+    const capability = capabilityMaintenanceEnabled ? resolveCapabilityMaintenancePlan({
         profile,
         mode: planningContext.mode,
         date,
@@ -273,7 +273,7 @@ export function resolveEvergreenPlan(
         mechanicalVerdict: mechanicalProgression,
         gates: capabilityGates(context, preferences, date, resolvedWindows.map(window => window.environmentOverride)),
         supportCapacityDates: capacity.usableWindows.map(window => window.date),
-    });
+    }) : null;
     const result = buildEvergreenPlanDefinition(
         strategy,
         capacity,

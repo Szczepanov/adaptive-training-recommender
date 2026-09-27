@@ -491,7 +491,9 @@ allocation. Stage 1 is re-entry/walk-run; Stage 2 adds low-volume bilateral plyo
 adds deceleration/braking; Stage 4 adds multidirectional/COD work. Advancement ($K \to K+1$) requires at least two
 recent current-stage exposures, each followed by an explicit normal lower-body tissue response on the next-day
 check-in. A check-in without structured tissue response is **missing evidence**, not a green response. Advancement
-is capped at +1 stage. Mild response regresses one stage; moderate/severe response, active pain/illness, or
+is capped at +1 stage. The held stage is the highest stage performed with an explicit normal next-day follow-up
+inside the 14-day continuity window, not merely the latest exposure's stage, so a lower-stage session (for example
+a #805 linear-speed touch) does not demote an athlete who is tolerating a higher stage. Mild response regresses one stage; moderate/severe response, active pain/illness, or
 `avoid_high_impact` blocks/withholds exposure. Exactly 14 or more days without qualifying exposure resets the
 allowed stage to Stage 1. The no-consecutive-calendar-day rule and 14-day reset are conservative product-policy
 guardrails, not experimentally validated biological thresholds.
@@ -535,11 +537,14 @@ sport-neutral capabilities exist: `linear_speed_skill`, `acceleration_decelerati
   the capabilities whose defining steps it keeps; readiness-modified doses fail closed; running, walk-run and
   reactive plyometrics never qualify. Stages are read from `mechanicalIdentityFor`, never duplicated.
   `validateAthleticCapabilityIdentities` runs in `validate-workouts`.
-- **Cadence.** `engine/capabilityMaintenance.ts` `evaluateCapabilityCadence` is pure. A capability is `due` when
-  last qualifying exposure + 14 days (`ATHLETIC_CAPABILITY_TARGET_INTERVAL_DAYS`) falls in the planning horizon,
-  with not-before and target dates equal to that due date; `overdue` past it or with no qualifying exposure in a
-  complete observed interval; `insufficient_history` below 14 observed days. Evidence is the 28-day athlete-state
-  window, else the orchestration-supplied mechanical exposure evidence.
+- **Cadence.** `engine/capabilityMaintenance.ts` `evaluateCapabilityCadence` is pure. The interval
+  (`ATHLETIC_CAPABILITY_TARGET_INTERVAL_DAYS`, 14) is a maximum gap equal to #804's continuity window, so a
+  capability is `due` when last qualifying exposure + 13 days (`ATHLETIC_CAPABILITY_DUE_OFFSET_DAYS`) falls in the
+  planning horizon, with not-before and target dates equal to that due date; a touch on the due date therefore never
+  lands on a #804 re-entry day. It is `overdue` past that date or with no qualifying exposure in a complete observed
+  interval, and `insufficient_history` below 14 observed days. Evidence is the 28-day athlete-state window when the
+  priorities already load it, else the orchestration-supplied #804 mechanical exposure evidence (the opt-in itself
+  never widens athlete-state evidence, so it cannot change aerobic, power or quality decisions).
 - **Fulfilment.** `evaluateCapabilityMaintenance` keeps ADR-0044 D9 fulfilment separate: `plannable`, `blocked`
   (`mechanical_guardrail`, `mechanical_stage_insufficient`, `modality_unavailable`, `modality_avoided`,
   `environment_unavailable`, `no_support_capacity`), `deliberately_suspended` (`adverse_recovery`,
@@ -552,13 +557,17 @@ sport-neutral capabilities exist: `linear_speed_skill`, `acceleration_decelerati
   #804's `targetStage` (#804 still caps advancement at one stage and requires its response evidence). Owed
   capabilities become `CapabilityPlacement`s on the single `mechanical_exposure` coverage requirement, which then
   carries a support-tier minimum of one (the shape a `target` mechanical requirement already has). No requirement,
-  objective or session is added. `coverage.ts` `buildCoverageState` resolves placements per planning date: before
-  the not-before date, or once a qualifying touch is credited on/after it, the #804 allow-list is unchanged; while
-  active, the requirement is narrowed to the stage-eligible capability identities (or, when none is stage-eligible,
-  to the highest currently eligible #804 identities so progression can occur).
+  objective or session is added. `coverage.ts` `buildCoverageState` resolves placements per planning date. While any
+  placement is open (not yet fulfilled by a qualifying touch from its planning date on), the requirement is narrowed
+  to the owed delivery identities, so no generic mechanical session is reserved ahead of the not-before date; the
+  identities that settle the most open placements are preferred. Consent and ranking urgency start only on/after the
+  not-before date. Once every placement is fulfilled the support minimum lapses. A delivery identity is a
+  stage-eligible capability identity, or, when none is stage-eligible, the highest currently eligible #804 identity so
+  progression can occur.
 - **Consent.** `rankCandidates` evaluates the hard `UNAVAILABLE_MODALITY` exclusion first, then exempts from
-  `EXPLICIT_MODALITY_PREFERENCE_REQUIRED` only exact capability identities that the date's coverage state consents
-  to (`hasCapabilityConsent`). Avoided modalities block the optional injection; deprioritized modalities stay soft.
+  `EXPLICIT_MODALITY_PREFERENCE_REQUIRED` only exact identities of enabled capabilities that the date's coverage
+  state consents to (`hasCapabilityConsent`); a progression-only touch may consent an enabled capability's identity
+  that is not itself due, because it is the only path to the owed higher stage. Avoided modalities block the optional injection; deprioritized modalities stay soft.
 - **Authority and diagnostics.** Recommendation authority is evergreen-only; event-directed planning reports
   `deliberately_suspended/event_directed_mode` and unlocks nothing. `ResolvedEvergreenPlan.capabilityMaintenance`
   and `ResolvedEvergreenPlan.warnings` carry the typed readout; owed `blocked`/`unknown` capabilities raise

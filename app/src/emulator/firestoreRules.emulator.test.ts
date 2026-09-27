@@ -1040,6 +1040,11 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: true, capabilities: [] } }));
         await assertFails(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: true, capabilities: ['sport_skill', 'sport_skill'] } }));
         await assertFails(setDoc(profileRef, { ...valid, capabilityMaintenance: { enabled: 'yes', capabilities: ['sport_skill'] } }));
+        // Update path: the owner can opt out with a merge-write and keeps the field shape-checked.
+        await assertSucceeds(setDoc(profileRef, { capabilityMaintenance: { enabled: false, capabilities: [] } }, { merge: true }));
+        await assertFails(setDoc(profileRef, { capabilityMaintenance: { enabled: true, capabilities: ['football'] } }, { merge: true }));
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(setDoc(doc(otherDb, trainingIntentProfilePath), { ...valid, capabilityMaintenance: { enabled: true, capabilities: all } }));
     });
 
     it('rejects re-saving the same decision with a different audit than what is stored', async () => {

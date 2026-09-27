@@ -55,21 +55,21 @@ function evaluate(overrides: Partial<CapabilityMaintenanceInput> = {}) {
 const sportSkill = (result: ReturnType<typeof evaluate>) => result.capabilities.find(item => item.capability === 'sport_skill')!;
 
 describe('capability cadence (#805 Phase 3)', () => {
-    it('uses a fixed 14-day interval: day 13 is due tomorrow, day 14 due today, day 15 overdue', () => {
+    it('keeps the gap below the 14-day interval: day 12 is due tomorrow, day 13 due today, day 14 overdue', () => {
         expect(ATHLETIC_CAPABILITY_TARGET_INTERVAL_DAYS).toBe(14);
-        expect(statusOf(cadenceOf([fieldMaint(daysAgo(13))]), 'sport_skill')).toMatchObject({
+        expect(statusOf(cadenceOf([fieldMaint(daysAgo(12))]), 'sport_skill')).toMatchObject({
             status: 'due', nextDueDate: daysAgo(-1), notBeforeDate: daysAgo(-1), targetDate: daysAgo(-1),
         });
-        expect(statusOf(cadenceOf([fieldMaint(daysAgo(14))]), 'sport_skill')).toMatchObject({ status: 'due', notBeforeDate: D });
-        expect(statusOf(cadenceOf([fieldMaint(daysAgo(15))]), 'sport_skill')).toMatchObject({
+        expect(statusOf(cadenceOf([fieldMaint(daysAgo(13))]), 'sport_skill')).toMatchObject({ status: 'due', notBeforeDate: D });
+        expect(statusOf(cadenceOf([fieldMaint(daysAgo(14))]), 'sport_skill')).toMatchObject({
             status: 'overdue', nextDueDate: daysAgo(1), notBeforeDate: D,
         });
-        expect(statusOf(cadenceOf([fieldMaint(daysAgo(13))], { planningHorizonDays: 1 }), 'sport_skill').status).toBe('satisfied');
+        expect(statusOf(cadenceOf([fieldMaint(daysAgo(12))], { planningHorizonDays: 1 }), 'sport_skill').status).toBe('satisfied');
     });
 
     it('makes a horizon-entry target visible as due without pulling placement earlier (F12)', () => {
         const entry = statusOf(cadenceOf([fieldMaint(daysAgo(8))]), 'sport_skill');
-        expect(entry).toMatchObject({ status: 'due', notBeforeDate: addDaysToLocalDateString(D, 6), targetDate: addDaysToLocalDateString(D, 6) });
+        expect(entry).toMatchObject({ status: 'due', notBeforeDate: addDaysToLocalDateString(D, 5), targetDate: addDaysToLocalDateString(D, 5) });
     });
 
     it('never infers due from partial history and reports disabled capabilities', () => {
@@ -156,12 +156,20 @@ describe('capability fulfilment (#805 Phase 3, ADR-0044 D9)', () => {
         expect(coldStart.placements[0].workoutIds).toEqual(['running_walk_run_01']);
     });
 
-    it('steers progression to the highest eligible stage without consenting a non-due identity', () => {
-        const stage2 = evaluate({ exposures: [], mechanicalVerdict: verdict(2, ['running_walk_run_01', 'strength_reactive_power_01', 'field_sprint_mechanics_foundation_01']) });
+    it('steers progression to the highest eligible stage and consents only enabled capability identities', () => {
+        const stage2Ids = ['running_walk_run_01', 'strength_reactive_power_01', 'field_sprint_mechanics_foundation_01'];
+        const stage2 = evaluate({ exposures: [], mechanicalVerdict: verdict(2, stage2Ids) });
         expect(stage2.capabilities.find(item => item.capability === 'linear_speed_skill')!.fulfilment).toEqual({ status: 'plannable' });
         const sport = stage2.placements.find(item => item.capability === 'sport_skill')!;
         expect(sport.progressionOnly).toBe(true);
         expect(sport.workoutIds).toEqual(['field_sprint_mechanics_foundation_01', 'strength_reactive_power_01']);
+        expect(sport.consentWorkoutIds).toEqual(['field_sprint_mechanics_foundation_01']);
+        // Only sport skill enabled: steering may narrow to sprint mechanics but never consents it.
+        const sportOnly = evaluate({
+            exposures: [], preference: { enabled: true, capabilities: ['sport_skill'] }, mechanicalVerdict: verdict(2, stage2Ids),
+        });
+        expect(sportOnly.placements).toHaveLength(1);
+        expect(sportOnly.placements[0].consentWorkoutIds).toEqual([]);
     });
 
     it('treats source suspensions and event-directed mode as deliberate, with no catch-up placement', () => {
@@ -193,14 +201,18 @@ describe('date-aware placement resolution (#805 F12)', () => {
     const placement = {
         capability: 'sport_skill' as const, notBeforeDate: addDaysToLocalDateString(D, 3), targetDate: addDaysToLocalDateString(D, 3),
         workoutIds: ['field_controlled_maintenance_01'], consentWorkoutIds: ['field_controlled_maintenance_01'], progressionOnly: false,
+        plannedOnDate: D,
     };
 
-    it('is inactive before the not-before date and until a qualifying touch after it', () => {
+    it('is inactive before the not-before date and until a qualifying touch from the planning date on', () => {
         expect(activeCapabilityPlacements([placement], addDaysToLocalDateString(D, 2), [])).toEqual([]);
         expect(activeCapabilityPlacements([placement], addDaysToLocalDateString(D, 3), [])).toHaveLength(1);
-        // An earlier generic touch does not fulfil the future capability placement.
-        expect(activeCapabilityPlacements([placement], addDaysToLocalDateString(D, 5), [fieldMaint(addDaysToLocalDateString(D, 1))])).toHaveLength(1);
+        // A generic (non-qualifying) touch never fulfils it; a qualifying touch earlier in the
+        // horizon already credited the capability, so no second session is forced.
+        expect(activeCapabilityPlacements([placement], addDaysToLocalDateString(D, 5), [{ date: addDaysToLocalDateString(D, 1), workoutId: 'strength_reactive_power_01' }])).toHaveLength(1);
+        expect(activeCapabilityPlacements([placement], addDaysToLocalDateString(D, 5), [fieldMaint(addDaysToLocalDateString(D, 1))])).toEqual([]);
         expect(activeCapabilityPlacements([placement], addDaysToLocalDateString(D, 5), [fieldMaint(addDaysToLocalDateString(D, 3))])).toEqual([]);
+        expect(activeCapabilityPlacements([placement], addDaysToLocalDateString(D, 5), [fieldMaint(daysAgo(1))])).toHaveLength(1);
         // A running touch after the not-before date never fulfils sport skill.
         expect(activeCapabilityPlacements([placement], addDaysToLocalDateString(D, 5), [{ date: addDaysToLocalDateString(D, 4), workoutId: 'running_easy_continuous_01' }])).toHaveLength(1);
     });

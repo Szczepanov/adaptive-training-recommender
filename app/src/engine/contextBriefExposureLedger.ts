@@ -19,7 +19,10 @@
  * `grantsAthleticCapabilityCredit` identities. `overdue` / cadence-driven suspension is emitted
  * only from a caller-supplied resolved `CapabilityMaintenanceResult` (the single cadence owner);
  * this module never imports the interval or recomputes a due date, so when no resolved result
- * is supplied it reports no authoritative overdue status rather than a second ledger.
+ * is supplied it reports no authoritative overdue status rather than a second ledger. Unlike the
+ * planner, which credits historical exposures without a recorded variant, the ledger confirms a
+ * capability only from a canonical fact with a known authored variant, so it can show `unknown`
+ * where the planner already counts the capability as satisfied.
  */
 import {
     reconcileCompletedTrainingEvents,

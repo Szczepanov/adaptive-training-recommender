@@ -40,13 +40,13 @@ describe('capability maintenance 8-week simulation (#805)', () => {
         for (const day of capabilityDays) {
             const credited = athleticCapabilitiesCreditedBy({ workoutId: workoutForTemplate(day.templateId)?.id });
             // At least one capability this session credits was owed: its previous qualifying
-            // touch is >= 14 days earlier (no weekly checkbox, no pulled-forward placement).
+            // touch is >= 13 days earlier (due at last + 13) (no weekly checkbox, no pulled-forward placement).
             const owedCapability = credited.some(capability => {
                 const previous = touches
                     .filter(touch => touch.date < day.date
                         && athleticCapabilitiesCreditedBy({ workoutId: touch.workoutId }).includes(capability))
                     .at(-1);
-                return !previous || getDayDiff(day.date, previous.date) >= 14;
+                return !previous || getDayDiff(day.date, previous.date) >= 13;
             });
             expect(owedCapability, `${day.date} ${day.templateId}`).toBe(true);
         }

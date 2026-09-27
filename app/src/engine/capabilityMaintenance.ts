@@ -3,6 +3,7 @@ import type { AthleticCapabilityKey, CapabilityMaintenancePreference } from './m
 import type { MechanicalProgressionVerdict } from './mechanicalProgression';
 import {
     ATHLETIC_CAPABILITY_WORKOUT_IDS,
+    athleticCapabilitiesCreditedBy,
     athleticCapabilityStageFor,
     capabilityIdentitiesFor,
     grantsAthleticCapabilityCredit,
@@ -20,8 +21,12 @@ import { mechanicalIdentityFor } from '../workouts/mechanicalExposure';
  * Owned by the `policy.evergreen.athletic_capability_maintenance_v1` knowledge claim.
  */
 
-/** Fixed v1 product guardrail (D-G), not a validated physiological cliff. */
+/** Fixed v1 product guardrail (D-G), not a validated physiological cliff: the maximum gap
+ * between qualifying touches. It equals #804's mechanical continuity window, so a touch is due
+ * one day before the gap would reach it (`ATHLETIC_CAPABILITY_DUE_OFFSET_DAYS`) -- otherwise the
+ * due date itself would be a #804 re-entry day and reset the athlete to Stage 1. */
 export const ATHLETIC_CAPABILITY_TARGET_INTERVAL_DAYS = 14;
+export const ATHLETIC_CAPABILITY_DUE_OFFSET_DAYS = ATHLETIC_CAPABILITY_TARGET_INTERVAL_DAYS - 1;
 
 export const ATHLETIC_CAPABILITIES: readonly AthleticCapabilityKey[] = [
     'linear_speed_skill', 'acceleration_deceleration', 'multidirectional_change_of_direction', 'sport_skill',
@@ -95,6 +100,10 @@ export interface CapabilityPlacement {
     consentWorkoutIds: readonly string[];
     /** True when the touch steers #804 progression rather than delivering the capability. */
     progressionOnly: boolean;
+    /** The planning date the placement was resolved on. Any qualifying touch from this date on
+     * closes it, so a touch that already credited the capability earlier in the horizon is
+     * never followed by a second, forced session. */
+    plannedOnDate: string;
 }
 
 export interface CapabilityMaintenanceResult {
@@ -169,7 +178,7 @@ export function evaluateCapabilityCadence(input: CapabilityCadenceInput): Capabi
             // A complete observed interval contains no qualifying exposure.
             return { capability, status: 'overdue', requiredStage, notBeforeDate: input.asOfDate, targetDate: input.asOfDate };
         }
-        const nextDueDate = addDaysToLocalDateString(lastQualifyingDate, ATHLETIC_CAPABILITY_TARGET_INTERVAL_DAYS);
+        const nextDueDate = addDaysToLocalDateString(lastQualifyingDate, ATHLETIC_CAPABILITY_DUE_OFFSET_DAYS);
         if (input.asOfDate > nextDueDate) {
             return { capability, status: 'overdue', requiredStage, lastQualifyingDate, nextDueDate, notBeforeDate: input.asOfDate, targetDate: input.asOfDate };
         }
@@ -306,8 +315,13 @@ export function evaluateCapabilityMaintenance(input: CapabilityMaintenanceInput)
             notBeforeDate: item.notBeforeDate!,
             targetDate: item.targetDate!,
             workoutIds: item.supportWorkoutIds,
-            consentWorkoutIds: item.supportWorkoutIds.filter(id => ATHLETIC_CAPABILITY_WORKOUT_IDS.includes(id)),
+            // D-E: consent only exact identities that deliver an enabled capability. A
+            // progression-only touch may consent an enabled capability's identity that is not
+            // itself due (recorded deviation): it is the only path to the owed higher stage.
+            consentWorkoutIds: item.supportWorkoutIds.filter(id => ATHLETIC_CAPABILITY_WORKOUT_IDS.includes(id)
+                && athleticCapabilitiesCreditedBy({ workoutId: id }).some(capability => isEnabled(input.preference, capability))),
             progressionOnly: item.fulfilment?.status !== 'plannable',
+            plannedOnDate: input.asOfDate,
         }));
     const deprioritized = capabilities.some(item => isOwed(item)
         && capabilityIdentitiesFor(item.capability).some(identity => input.gates.deprioritized.has(identity.workoutId)));
@@ -328,8 +342,19 @@ export function activeCapabilityPlacements(
     touches: readonly CapabilityExposureRecord[],
 ): CapabilityPlacement[] {
     return placements.filter(placement => placement.notBeforeDate <= date
-        && !touches.some(touch => touch.date >= placement.notBeforeDate && touch.date < date
+        && !isCapabilityPlacementFulfilled(placement, date, touches));
+}
+
+/** A placement is fulfilled once a qualifying touch lands on/after the planning date it was
+ * resolved on (not only on/after its not-before date) and before `date`. */
+export function isCapabilityPlacementFulfilled(
+    placement: CapabilityPlacement,
+    date: string,
+    touches: readonly CapabilityExposureRecord[],
+): boolean {
+    const from = placement.plannedOnDate < placement.notBeforeDate ? placement.plannedOnDate : placement.notBeforeDate;
+    return touches.some(touch => touch.date >= from && touch.date < date
             && (placement.progressionOnly
                 ? placement.workoutIds.includes(touch.workoutId ?? '')
-                : grantsAthleticCapabilityCredit({ ...touch, capability: placement.capability }))));
+                : grantsAthleticCapabilityCredit({ ...touch, capability: placement.capability })));
 }

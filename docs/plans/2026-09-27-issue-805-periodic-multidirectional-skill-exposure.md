@@ -28,6 +28,28 @@ historical, not open work. What shipped, and where it deviated:
 - **Deviation — date-aware placement.** Placement is resolved per planning date in `coverage.ts`
   `buildCoverageState` (narrowed allow-list plus exact-identity consent while a placement is active and unfulfilled)
   rather than by a new constraint inside `weeklyDosePacking.ts`, which never selects the mechanical support date.
+- **Review-driven change — cadence vs #804 (approved 27 September 2026).** Independent review found that a due
+  date of last + 14 always fell on a #804 re-entry day (gap >= 14 resets to Stage 1) and that #804's latest-stage
+  rule let any Stage 2/3 linear-speed touch demote a Stage-4 athlete, so field work stalled after one or two touches.
+  Resolution: the capability is due at last + 13 (the 14-day interval is now a maximum gap equal to #804's continuity
+  window), and #804 holds the highest stage performed with explicit normal follow-up inside that window
+  (`policy.evergreen.mechanical_exposure_v1` claim v3). This overrides the original plan note not to fix the stage
+  ratchet inside #805. A deterministic eight-week cycle test drives #804 and #805 day by day and proves recurrence.
+- **Other review fixes.** Consent is limited to identities of enabled capabilities (a progression-only touch may
+  consent an enabled capability's identity that is not itself due — recorded deviation); a qualifying touch anywhere
+  from a placement's planning date closes it; open placements narrow the support requirement before their not-before
+  date so no generic mechanical session is reserved early; identities settling the most open placements are preferred.
+- **D-A evidence scope.** The opt-in does not widen athlete-state evidence (which would change aerobic floor, power
+  and quality decisions). Consequence: an opted-in athlete whose priorities do not already load it (health, balanced
+  performance, strength-only) cannot meet #804's "established" gate and sees `deliberately_suspended/mechanical_withheld`.
+  Follow-up: give #804 its own establishment evidence.
+- **Simulation harness limits.** The 8-week family shows field work on the support slot and respects the cadence,
+  but it cannot show sustained recurrence: the harness records every simulated session at template minimum duration,
+  so the athlete drops below #804's "established" volume after about three weeks (in both arms), and #804's
+  consecutive-day `withheld` verdict on the weekly planning day blanks the whole seven-day horizon. Recurrence is
+  therefore proven by the deterministic cycle test; both harness/#804 horizon effects are follow-ups.
+- **Diagnostics reach.** `ResolvedEvergreenPlan.capabilityMaintenance` and `warnings` are not yet threaded into the
+  recommendation explanation, so a stalled target is diagnosable at the engine API but not yet shown to the athlete.
 - **Context brief.** The ledger consumes a resolved `CapabilityMaintenanceResult` when supplied, but
   `contextBriefService.ts` does not yet compute one, so the exported brief reports that no authoritative overdue
   status is available. Surfacing the planner's result in the brief is follow-up work.

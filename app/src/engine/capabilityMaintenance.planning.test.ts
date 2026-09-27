@@ -4,6 +4,9 @@ import { resolvePlanningContext } from './planningMode';
 import { evaluatePeriodizationPhase } from './periodization';
 import { buildCoverageState } from './coverage';
 import { rankCandidates } from './optimizer';
+import { resolveTrainingIntent } from './trainingIntent';
+import type { DailyReadiness } from './models';
+import type { TrainingHistoryProvider } from './trainingHistory';
 import { ENRICHED_TEMPLATES } from './templates';
 import type {
     DailySubjectiveCheckin, FatigueState, TrainingIntentProfile, TrainingSettings, UserContext, UserPreferences,
@@ -251,16 +254,16 @@ describe('periodic capability maintenance in evergreen planning (#805 Phase 7)',
         expect(cold.warnings.filter(warning => warning.code === 'capability_maintenance_unfulfilled')).toHaveLength(4);
     });
 
-    it('shows a horizon-entry target as due but places nothing capability-bearing before day 14', () => {
+    it('shows a horizon-entry target as due but consents nothing capability-bearing before its due date', () => {
         const evidence = [...RIDES, field(at(-8), 'field_controlled_maintenance_01')].sort((left, right) => left.date.localeCompare(right.date));
         const resolved = plan({ evidence });
-        expect(capability(resolved, 'sport_skill')).toMatchObject({ status: 'due', notBeforeDate: at(6) });
+        expect(capability(resolved, 'sport_skill')).toMatchObject({ status: 'due', notBeforeDate: at(5) });
         const consentOn = (date: string) => buildCoverageState(resolved.planDefinition, date, [])
             .requirements.find(item => item.key === 'mechanical_exposure')?.capabilityConsentWorkoutIds ?? [];
-        for (let offset = 0; offset < 6; offset++) {
+        for (let offset = 0; offset < 5; offset++) {
             expect(consentOn(at(offset))).not.toContain('field_controlled_maintenance_01');
         }
-        expect(consentOn(at(6))).toContain('field_controlled_maintenance_01');
+        expect(consentOn(at(5))).toContain('field_controlled_maintenance_01');
     });
 
     it('lifts the narrowing once a qualifying touch is projected on or after the not-before date', () => {
@@ -270,5 +273,25 @@ describe('periodic capability maintenance in evergreen planning (#805 Phase 7)',
         const support = later.requirements.find(item => item.key === 'mechanical_exposure')!;
         expect(support.capabilityConsentWorkoutIds).toBeUndefined();
         expect(support.eligibleWorkoutIds).toContain('running_walk_run_01');
+    });
+
+    it('does not let the opt-in widen athlete-state evidence or change the aerobic floor (D-A)', async () => {
+        const provider: TrainingHistoryProvider = {
+            reconstruct: async (_userId, through, windowDays) => STAGE_4_READY.filter(item =>
+                item.date >= addDaysToLocalDateString(through, -windowDays) && item.date < through),
+            getSnapshot: async (_userId, through, windowDays) => ({
+                ...snapshot(STAGE_4_READY), throughDateExclusive: through, windowDays,
+                exposures: STAGE_4_READY.filter(item => item.date >= addDaysToLocalDateString(through, -windowDays) && item.date < through),
+                athleteStateEvidence: undefined,
+            }),
+        };
+        const readiness = { subjective: { readiness: 8, fatigue: 2, soreness: 2 }, objective: {} } as unknown as DailyReadiness;
+        const health = (optedIn: boolean): TrainingIntentProfile => ({ ...profile(optedIn), priorities: ['health'] });
+        const withOptIn = await resolveTrainingIntent('u1', [], D, readiness, 7, provider, undefined, [], health(true));
+        const without = await resolveTrainingIntent('u1', [], D, readiness, 7, provider, undefined, [], health(false));
+        expect(withOptIn.historySnapshot?.athleteStateEvidence).toBeUndefined();
+        expect(withOptIn.aerobicVolumeFloor).toEqual(without.aerobicVolumeFloor);
+        // The opt-in still makes #804 mechanical evidence (>= 14 days) available for cadence.
+        expect(withOptIn.mechanicalExposureHistory.some(item => item.date < at(-7))).toBe(true);
     });
 });

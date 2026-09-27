@@ -7,7 +7,7 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CoverageCreditFact, PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import type { CompletedExposure } from './trainingHistory';
 import { aerobicVolumeFloorForWorkout, type AerobicVolumeFloor } from './aerobicVolumeFloor';
-import { activeCapabilityPlacements, type CapabilityPlacement } from './capabilityMaintenance';
+import { activeCapabilityPlacements, isCapabilityPlacementFulfilled, type CapabilityPlacement } from './capabilityMaintenance';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { grantsPowerExposureCredit } from '../workouts/powerExposure';
@@ -659,9 +659,15 @@ export function buildCoverageState(
 function withActiveCapabilityPlacements(requirement: WeeklyCoverageRequirement, asOfDate: string): WeeklyCoverageRequirement {
     if (!requirement.capabilityPlacements?.length) return requirement;
     const touches = requirement.credits.map(credit => ({ date: credit.date, workoutId: credit.workoutId }));
-    const active = activeCapabilityPlacements(requirement.capabilityPlacements, asOfDate, touches);
-    if (active.length === 0) return requirement;
-    const narrowed = [...new Set(active.flatMap(placement => placement.workoutIds))]
+    const open = requirement.capabilityPlacements.filter(placement => !isCapabilityPlacementFulfilled(placement, asOfDate, touches));
+    if (open.length === 0) {
+        // Every owed touch is delivered: the support minimum the placements carried lapses.
+        return { ...requirement, minimumSessions: 0 };
+    }
+    const active = activeCapabilityPlacements(open, asOfDate, touches);
+    // A pending placement (not-before still ahead) narrows the support requirement too, so no
+    // generic mechanical session is reserved early; consent and urgency start only once active.
+    const narrowed = [...new Set(preferBroadestCoverage(active.length > 0 ? active : open))]
         .filter(workoutId => requirement.eligibleWorkoutIds === undefined || requirement.eligibleWorkoutIds.includes(workoutId))
         .sort();
     const consent = [...new Set(active.flatMap(placement => placement.consentWorkoutIds))]
@@ -672,6 +678,15 @@ function withActiveCapabilityPlacements(requirement: WeeklyCoverageRequirement, 
         eligibleWorkoutIds: narrowed,
         ...(consent.length > 0 ? { capabilityConsentWorkoutIds: consent } : {}),
     };
+}
+
+/** One support occurrence should settle as many owed capabilities as possible: keep only the
+ * placement identities shared by the largest number of open placements (never widening). */
+function preferBroadestCoverage(placements: readonly CapabilityPlacement[]): string[] {
+    const ids = [...new Set(placements.flatMap(placement => placement.workoutIds))];
+    const coverage = (workoutId: string) => placements.filter(placement => placement.workoutIds.includes(workoutId)).length;
+    const best = Math.max(0, ...ids.map(coverage));
+    return ids.filter(workoutId => coverage(workoutId) === best);
 }
 
 /** Issue #805 (D-E): true only for an exact capability identity consented on this state's date. */

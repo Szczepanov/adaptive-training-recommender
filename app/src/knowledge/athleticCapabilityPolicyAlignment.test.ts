@@ -8,6 +8,7 @@ import { ATHLETIC_CAPABILITY_KEYS } from '../engine/validationCore';
 import { resolveEvidenceBackedStrategy, type AthleteTrainingState } from '../engine/evergreenStrategy';
 import { ATHLETIC_CAPABILITY_IDENTITIES, athleticCapabilityStageFor } from '../workouts/athleticCapability';
 import { mechanicalIdentityFor } from '../workouts/mechanicalExposure';
+import { MECHANICAL_CONTINUITY_WINDOW_DAYS } from '../engine/mechanicalProgression';
 import { ENGINE_KNOWLEDGE_COVERAGE } from './knowledgeCoverage';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from './sportsKnowledgeRegistry';
 
@@ -35,14 +36,16 @@ describe('athletic capability maintenance policy alignment (ADR-0033, issue #805
 
     it('matches the implemented interval and date-aware placement semantics', () => {
         expect(ATHLETIC_CAPABILITY_TARGET_INTERVAL_DAYS).toBe(14);
-        expect(claim.statement).toContain('fixed 14-day target interval');
+        expect(ATHLETIC_CAPABILITY_TARGET_INTERVAL_DAYS).toBe(MECHANICAL_CONTINUITY_WINDOW_DAYS);
+        expect(claim.statement).toContain('fixed 14-day maximum gap');
+        expect(claim.statement).toContain('last qualifying exposure + 13 days');
         expect(claim.statement).toContain('not-before and target date equal to that due date');
         const cadence = evaluateCapabilityCadence({
             asOfDate: '2026-09-10', planningHorizonDays: 7, observedWindowDays: 28,
             preference: { enabled: true, capabilities: ['sport_skill'] },
             exposures: [{ date: '2026-09-02', workoutId: 'field_controlled_maintenance_01' }],
         }).find(item => item.capability === 'sport_skill');
-        expect(cadence).toMatchObject({ status: 'due', notBeforeDate: '2026-09-16', targetDate: '2026-09-16' });
+        expect(cadence).toMatchObject({ status: 'due', notBeforeDate: '2026-09-15', targetDate: '2026-09-15' });
     });
 
     it('names exactly the implemented capability vocabulary and identity mapping', () => {
