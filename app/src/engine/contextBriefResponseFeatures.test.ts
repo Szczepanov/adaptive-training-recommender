@@ -481,6 +481,10 @@ describe('multi-resolution semantic response (#850)', () => {
         const feature = deriveDecoupling(session);
         expect(feature.state).toBe('available');
         expect(feature.state === 'available' && feature.decouplingPct).toBeGreaterThan(4);
+        const context = { history: [session], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20' };
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries([session], context), context);
+        expect(text).toContain('Pw:HR decoupling (first vs second half)');
+        expect(text).not.toContain('lap averages');
     });
 
     it('keeps planning output bounded for long microinterval protocols', () => {
