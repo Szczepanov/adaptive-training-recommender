@@ -144,10 +144,14 @@ export interface CapabilityMaintenanceInput extends CapabilityCadenceInput {
          * Optional for pure/unit callers; when present, fulfilment is evaluated only inside the
          * capability's not-before/due window rather than across the whole planning horizon. */
         environmentAvailableDates?: ReadonlyMap<string, readonly string[]>;
+        /** Canonical minimum executable duration per mechanical workout identity. */
+        minimumDurationMinutes?: ReadonlyMap<string, number>;
         deprioritized: ReadonlySet<string>;
     };
     /** Plannable dates that still have usable training capacity. */
     supportCapacityDates: readonly string[];
+    /** Resolved positive minutes on each usable date. Optional only for pure legacy fixtures. */
+    supportCapacityMinutesByDate?: ReadonlyMap<string, number>;
 }
 
 function requiredStageFor(capability: AthleticCapabilityKey): MechanicalStage {
@@ -303,17 +307,37 @@ function fulfilmentFor(
     }
     const hardGated = (id: string) => gates.guardrailBlocked.has(id) || gates.unavailable.has(id)
         || gates.avoided.has(id) || gates.environmentUnavailable.has(id) || !environmentFeasibleInDueWindow(id);
+    const hasCapacityInDueWindow = (id: string): boolean => {
+        const capacity = input.supportCapacityMinutesByDate;
+        const minimum = gates.minimumDurationMinutes?.get(id);
+        // Legacy/pure callers that supplied only dates preserve the old contract. Production
+        // supplies both maps and therefore proves that a qualifying identity can actually fit.
+        if (!capacity || minimum === undefined) return true;
+        const availableDates = gates.environmentAvailableDates?.get(id);
+        return dueWindowCapacityDates.some(date =>
+            (availableDates === undefined || availableDates.includes(date))
+            && (capacity.get(date) ?? 0) >= minimum);
+    };
     const verdict = input.mechanicalVerdict;
     const stageEligible = deliverable
         .filter(id => (athleticCapabilityStageFor(id) ?? 5) <= verdict.stage && verdict.eligibleWorkoutIds.includes(id))
         .sort();
     if (stageEligible.length === 0) {
+        const progression = progressionWorkoutIds(verdict, hardGated);
+        const capacityEligibleProgression = progression.filter(hasCapacityInDueWindow);
+        if (progression.length > 0 && capacityEligibleProgression.length === 0) {
+            return { fulfilment: { status: 'blocked', reason: 'no_support_capacity' }, ...none };
+        }
         return {
             fulfilment: { status: 'blocked', reason: 'mechanical_stage_insufficient' },
-            supportWorkoutIds: progressionWorkoutIds(verdict, hardGated),
+            supportWorkoutIds: capacityEligibleProgression,
         };
     }
-    return { fulfilment: { status: 'plannable' }, supportWorkoutIds: stageEligible };
+    const capacityEligible = stageEligible.filter(hasCapacityInDueWindow);
+    if (capacityEligible.length === 0) {
+        return { fulfilment: { status: 'blocked', reason: 'no_support_capacity' }, ...none };
+    }
+    return { fulfilment: { status: 'plannable' }, supportWorkoutIds: capacityEligible };
 }
 
 /** Full evaluation. Call `evaluateCapabilityCadence` + `capabilityProgressionTargetStage`
