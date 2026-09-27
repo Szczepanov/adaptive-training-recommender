@@ -170,6 +170,25 @@ describe('capability fulfilment (#805 Phase 3, ADR-0044 D9)', () => {
             .toEqual({ status: 'blocked', reason: 'modality_avoided' });
     });
 
+    it('does not call a future capability plannable when environment is compatible only before its not-before date', () => {
+        const result = evaluate({
+            exposures: [fieldMaint(daysAgo(8))],
+            preference: { enabled: true, capabilities: ['sport_skill'] },
+            gates: {
+                ...noGates(),
+                environmentAvailableDates: new Map([
+                    ['field_controlled_maintenance_01', HORIZON.slice(0, 5)],
+                ]),
+            },
+        });
+        expect(sportSkill(result)).toMatchObject({
+            status: 'due',
+            notBeforeDate: addDaysToLocalDateString(D, 5),
+            fulfilment: { status: 'blocked', reason: 'environment_unavailable' },
+        });
+        expect(result.placements).toEqual([]);
+    });
+
     it('reports environment, capacity and stage insufficiency as typed blocks', () => {
         expect(sportSkill(evaluate({ gates: { ...noGates(), environmentUnavailable: FIELD_IDS } })).fulfilment)
             .toEqual({ status: 'blocked', reason: 'environment_unavailable' });
