@@ -607,6 +607,89 @@ class CanonicalLapSummary:
     average_speed_mps: float | None = None
 
 
+@dataclass(frozen=True)
+class CanonicalSignalResolution:
+    """Observed FIT record cadence per signal. Missing means the trace cannot support a
+    defensible resolution estimate for that signal."""
+
+    power_seconds: float | None = None
+    hr_seconds: float | None = None
+    cadence_seconds: float | None = None
+
+
+@dataclass(frozen=True)
+class CanonicalPrescribedTarget:
+    """Workout prescription kept distinct from performed telemetry."""
+
+    kind: str
+    value: float | None = None
+    low: float | None = None
+    high: float | None = None
+    text: str | None = None
+
+
+@dataclass(frozen=True)
+class CanonicalActivitySegmentSummary:
+    """Bounded, provider-neutral response summary for one meaningful activity segment."""
+
+    segment_index: int
+    segment_type: str
+    identity_source: str
+    duration_seconds: float
+    evidence_confidence: str
+    start_offset_seconds: float | None = None
+    prescribed_target: CanonicalPrescribedTarget | None = None
+    average_power_watts: float | None = None
+    peak_1s_power_watts: float | None = None
+    peak_5s_power_watts: float | None = None
+    peak_10s_power_watts: float | None = None
+    average_hr_bpm: float | None = None
+    end_hr_bpm: float | None = None
+    max_hr_bpm: float | None = None
+    average_cadence_rpm: float | None = None
+    max_cadence_rpm: float | None = None
+    first_third_power_watts: float | None = None
+    middle_third_power_watts: float | None = None
+    last_third_power_watts: float | None = None
+    last_third_hr_bpm: float | None = None
+
+
+@dataclass(frozen=True)
+class CanonicalPowerDurationPeak:
+    duration_seconds: int
+    power_watts: float
+    confidence: str
+    elapsed_before_seconds: float | None = None
+    activity_half: str | None = None
+
+
+@dataclass(frozen=True)
+class CanonicalSteadyHalfSummary:
+    first_power_watts: float | None = None
+    second_power_watts: float | None = None
+    first_hr_bpm: float | None = None
+    second_hr_bpm: float | None = None
+    first_cadence_rpm: float | None = None
+    second_cadence_rpm: float | None = None
+
+
+@dataclass(frozen=True)
+class CanonicalActivityResponseTelemetry:
+    """Compact multi-resolution evidence derived while the native FIT trace is in memory.
+
+    This object intentionally cannot contain raw samples. The fixed-size power-duration
+    family and capped segment list are the persistence boundary for issue #850.
+    """
+
+    source_resolution: CanonicalSignalResolution
+    segments: tuple[CanonicalActivitySegmentSummary, ...] = ()
+    power_duration_peaks: tuple[CanonicalPowerDurationPeak, ...] = ()
+    steady_halves: CanonicalSteadyHalfSummary | None = None
+    segment_count_total: int = 0
+    segments_truncated: bool = False
+    derivation_version: str = "multi-resolution-v1"
+
+
 @dataclass
 class CanonicalExerciseSet:
     set_order: int
