@@ -146,6 +146,30 @@ describe('capability fulfilment (#805 Phase 3, ADR-0044 D9)', () => {
         expect(deprioritized.softContext).toHaveLength(1);
     });
 
+    it('classifies mixed hard gates by authority precedence instead of inventing an environment block', () => {
+        const acceleration = (result: ReturnType<typeof evaluate>) =>
+            result.capabilities.find(item => item.capability === 'acceleration_deceleration')!;
+        const mixedSafetyAndUnavailable = evaluate({
+            gates: {
+                ...noGates(),
+                guardrailBlocked: new Set(['field_acceleration_braking_01']),
+                unavailable: new Set(['field_controlled_maintenance_01']),
+            },
+        });
+        expect(acceleration(mixedSafetyAndUnavailable).fulfilment)
+            .toEqual({ status: 'blocked', reason: 'modality_unavailable' });
+
+        const mixedUnavailableAndAvoided = evaluate({
+            gates: {
+                ...noGates(),
+                unavailable: new Set(['field_acceleration_braking_01']),
+                avoided: new Set(['field_controlled_maintenance_01']),
+            },
+        });
+        expect(acceleration(mixedUnavailableAndAvoided).fulfilment)
+            .toEqual({ status: 'blocked', reason: 'modality_avoided' });
+    });
+
     it('reports environment, capacity and stage insufficiency as typed blocks', () => {
         expect(sportSkill(evaluate({ gates: { ...noGates(), environmentUnavailable: FIELD_IDS } })).fulfilment)
             .toEqual({ status: 'blocked', reason: 'environment_unavailable' });
