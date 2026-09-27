@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from garmin_sync.activity_response import (
@@ -143,6 +144,36 @@ def test_threshold_fixture_keeps_exact_semantics_target_actual_and_thirds_separa
     assert work[2].last_third_hr_bpm is not None
     assert response.source_resolution.power_seconds == 1.0
     assert response.power_duration_peaks
+    one_second = next(peak for peak in response.power_duration_peaks if peak.duration_seconds == 1)
+    five_seconds = next(peak for peak in response.power_duration_peaks if peak.duration_seconds == 5)
+    assert one_second.confidence == "moderate"
+    assert five_seconds.confidence == "high"
+
+
+def test_partial_semantic_lap_linkage_falls_back_instead_of_dropping_steps():
+    evidence = _structured_evidence(
+        [
+            {"duration": 300, "intensity": "warmup", "power": 150},
+            {"duration": 900, "intensity": "active", "power": 230},
+            {"duration": 300, "intensity": "recovery", "power": 120},
+            {"duration": 900, "intensity": "active", "power": 228},
+        ]
+    )
+    laps = list(evidence.laps)
+    laps[2] = replace(laps[2], workout_step_index=None)
+    response = derive_activity_response("road_biking", replace(evidence, laps=tuple(laps)))
+
+    assert response is not None
+    # Complete record-level linkage is preferred over a partial Lap mapping. Most
+    # importantly, the unlinked recovery is not silently dropped from the semantic set.
+    assert response.segment_count_total == 4
+    assert [segment.segment_type for segment in response.segments] == [
+        "warmup",
+        "work",
+        "recovery",
+        "work",
+    ]
+    assert all(segment.identity_source == "fit_workout_step" for segment in response.segments)
 
 
 def test_semantic_30_30_recoveries_are_not_work_segments():
