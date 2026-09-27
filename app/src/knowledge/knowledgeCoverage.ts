@@ -138,7 +138,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
         codeRefs: [
             'engine/evergreenStrategy.ts:resolveEvidenceBackedStrategy',
-            'engine/mechanicalProgression.ts:evaluateMechanicalProgression',
+            'engine/mechanicalProgression.ts:evaluateMechanicalStageProgression',
             'engine/mechanicalProgression.ts:MECHANICAL_CONTINUITY_WINDOW_DAYS',
             'engine/evergreenPlanning.ts:resolveEvergreenMechanicalProgression',
             'engine/evergreenPlanning.ts:EVERGREEN_MECHANICAL_DEFAULT_TARGET_STAGE_CEILING',
