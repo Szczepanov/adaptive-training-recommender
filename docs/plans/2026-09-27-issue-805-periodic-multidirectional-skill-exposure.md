@@ -33,7 +33,8 @@ historical, not open work. What shipped, and where it deviated:
   date of last + 14 always fell on a #804 re-entry day (gap >= 14 resets to Stage 1) and that #804's latest-stage
   rule let any Stage 2/3 linear-speed touch demote a Stage-4 athlete, so field work stalled after one or two touches.
   Resolution: the capability is due at last + 13 (the 14-day interval is now a maximum gap equal to #804's continuity
-  window), and #804 holds the highest stage performed with explicit normal follow-up inside that window
+  window), and #804 holds the highest stage with explicit normal follow-up inside that window when such evidence
+  exists; otherwise it retains the latest performed stage while missing follow-up still blocks advancement
   (`policy.evergreen.mechanical_exposure_v1` claim v3). This overrides the original plan note not to fix the stage
   ratchet inside #805. A deterministic eight-week cycle test drives #804 and #805 day by day and proves recurrence.
 - **Other review fixes.** Consent is limited to identities of enabled capabilities (a progression-only touch may
