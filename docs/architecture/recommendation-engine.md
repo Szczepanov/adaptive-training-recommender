@@ -520,7 +520,10 @@ eligibility still apply. A target only ever raises the request, and the evaluato
 
 The progression verdict supplies an exact workout allow-list to both coverage ranking and weekly reservations.
 A blocked verdict therefore leaves the target visible with zero eligible candidates instead of silently widening
-to harder stages or substituting generic exercise. Policy is owned by
+to harder stages or substituting generic exercise. The conservative no-consecutive-mechanical-days rule is
+different: it is applied per planning date by coverage/optimizer from actual and projected mechanical history.
+It excludes mechanical candidates only on the immediately adjacent calendar date; it does not blank the shared
+#804 verdict for the rest of a seven-day horizon. Policy is owned by
 `policy.evergreen.mechanical_exposure_v1`; `biomechanics.impact.progressive_mechanical_loading` supplies only
 the narrower scientific rationale that bone and tendon adapt to mechanical loading. The registry explicitly
 documents that the exact scheduling/progression thresholds are product heuristics (ADR-0033).
