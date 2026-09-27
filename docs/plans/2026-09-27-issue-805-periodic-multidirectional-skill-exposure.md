@@ -23,8 +23,9 @@ historical, not open work. What shipped, and where it deviated:
   cycling-primary persona no support occurrence existed to reuse (the opted-out 8-week run contains zero mechanical
   sessions). While a capability placement exists, the single `mechanical_exposure` requirement therefore carries a
   support-tier minimum of one — the shape a `target` mechanical requirement already had — so the allocator places
-  it only around primary roles. No requirement, objective or session is added; the 8-week simulation shows fewer
-  realized training days opted-in than opted-out.
+  it only around primary roles. No distinct capability requirement/objective is added and the athlete's configured
+  weekly session commitment is unchanged; the existing mechanical support occurrence can become reservable when a
+  capability is owed. The 8-week simulation shows fewer realized training days opted-in than opted-out.
 - **Deviation — date-aware placement.** Placement is resolved per planning date in `coverage.ts`
   `buildCoverageState` (narrowed allow-list plus exact-identity consent while a placement is active and unfulfilled)
   rather than by a new constraint inside `weeklyDosePacking.ts`, which never selects the mechanical support date.
