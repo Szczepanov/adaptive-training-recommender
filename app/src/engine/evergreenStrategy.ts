@@ -388,7 +388,10 @@ function mechanicalWithheldReason(
  * This is the single priority-level authority used both by strategy construction and by
  * orchestration to decide whether the wider mechanical evidence streams are needed. */
 export function canEmitMechanicalRequirement(priorities: readonly TrainingPriority[]): boolean {
-    const prioritySet = new Set(priorities.length > 0 ? priorities : ['balanced_performance'] as TrainingPriority[]);
+    const effectivePriorities: readonly TrainingPriority[] = priorities.length > 0
+        ? priorities
+        : ['balanced_performance'];
+    const prioritySet = new Set(effectivePriorities);
     const directMechanicalPriority = prioritySet.has('sport_readiness') || prioritySet.has('speed_power');
     const strengthPlanned = prioritySet.has('health')
         || prioritySet.has('balanced_performance')
