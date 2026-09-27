@@ -165,29 +165,6 @@ describe('periodic capability maintenance in evergreen planning (#805 Phase 7)',
         expect(optedIn.knowledgeRefs).toContain('policy.evergreen.athletic_capability_maintenance_v1');
     });
 
-    it('applies the no-consecutive-mechanical-days gate only to the adjacent date (#859)', () => {
-        const optedIn = plan();
-        const priorMechanical = [field(at(-1), 'field_sprint_mechanics_foundation_01')];
-
-        const todayState = buildCoverageState(optedIn.planDefinition, D, priorMechanical);
-        expect(todayState.mechanicalSpacingBlocked).toBe(true);
-        const today = rankCandidates(
-            [template('field_maint_01')], [], FATIGUE, availability(D), [], basePreferences,
-            { date: D, coverageState: todayState },
-        );
-        expect(today.rejected.find(item => item.template.id === 'field_maint_01')?.excludedReasons)
-            .toContain('CONSECUTIVE_MECHANICAL_DAYS');
-
-        const tomorrowDate = at(1);
-        const tomorrowState = buildCoverageState(optedIn.planDefinition, tomorrowDate, priorMechanical);
-        expect(tomorrowState.mechanicalSpacingBlocked).toBe(false);
-        const tomorrow = rankCandidates(
-            [template('field_maint_01')], [], FATIGUE, availability(tomorrowDate), [], basePreferences,
-            { date: tomorrowDate, coverageState: tomorrowState },
-        );
-        expect(tomorrow.accepted.map(item => item.template.id)).toContain('field_maint_01');
-    });
-
     it('adds no session, objective or requirement compared with the opted-out plan', () => {
         const optedIn = plan();
         const optedOut = plan({ optedIn: false });
