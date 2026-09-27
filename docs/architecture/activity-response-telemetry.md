@@ -113,8 +113,20 @@ activity_response.py exposes a deterministic calibration harness for candidate r
 
 1 s, 2 s, 5 s, 10 s, 15 s, 30 s, 60 s, 120 s, 300 s and 600 s.
 
-For each candidate it recomputes the fixed power-duration features, compares them with
-native-source values using feature-specific tolerances, and reports each feature as:
+Two calibration levels are available:
+
+- a signal-only MMP harness for synthetic power traces;
+- an activity-feature harness that downsamples the transient record stream, re-derives the
+  bounded response object, and compares the feature family actually present.
+
+Structured work evaluates interval mean power (<=1% error), first-to-last fade (<=1
+percentage point), power thirds (<=1.5%), average HR (<=1 bpm) and end HR (<=2 bpm).
+Structured sprint evaluates mean/full-rep power and 5-second peak power (<=2%), peak cadence
+(<=2 rpm) and last-vs-best fade (<=1 percentage point). Unstructured/steady evidence uses
+the fixed MMP family and first-vs-second-half Pw:HR decoupling (<=1 percentage point).
+These are engineering preservation tolerances from issue #850, not physiological thresholds.
+
+Every candidate reports each feature as:
 
 - preserved;
 - degraded;
@@ -122,9 +134,10 @@ native-source values using feature-specific tolerances, and reports each feature
 - source insufficient at the native resolution.
 
 Source insufficiency is excluded from the candidate pass-rate denominator. The default
-acceptance criterion is at least 95% preservation of source-supported features. This
-harness is calibration/evaluation infrastructure; it does not dynamically change
-production policy.
+acceptance criterion is at least 95% preservation of source-supported features, and
+`coarsest_preserving_resolution` exposes the coarsest candidate meeting that gate for
+calibration reports. This harness is evaluation infrastructure; it does not dynamically
+change recommendation policy or persist a downsampled raw trace.
 
 ## Boundaries and non-goals
 
