@@ -30,7 +30,8 @@ function hasDetailedTelemetry(activity: NormalizedGarminActivity): boolean {
         || activity.variabilityIndex !== undefined
         || (activity.powerInZones?.length ?? 0) > 0
         || (activity.hrInZones?.length ?? 0) > 0
-        || (activity.laps?.length ?? 0) > 0;
+        || (activity.laps?.length ?? 0) > 0
+        || activity.activityResponse !== undefined;
 }
 
 function formatDuration(seconds: number): string {
@@ -61,6 +62,76 @@ function renderZones(
             ? ''
             : ` · low boundary ${formatNumber(bucket.lowBoundary, 0)} ${boundaryUnit}`;
         lines.push(`  - Z${bucket.zoneNumber}: ${formatDuration(bucket.secondsInZone)}${shareText}${boundary}`);
+    }
+    return lines;
+}
+
+function powerDurationLabel(seconds: number): string {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds % 60 === 0) return `${seconds / 60}m`;
+    return formatDuration(seconds);
+}
+
+function renderActivityResponse(activity: NormalizedGarminActivity): string[] {
+    const response = activity.activityResponse;
+    if (!response) return [];
+    const lines: string[] = ['- Multi-resolution response telemetry:'];
+    const resolution = response.sourceResolution;
+    const parts = [
+        resolution.powerSeconds === undefined ? null : `power ~${formatNumber(resolution.powerSeconds, 2)} s`,
+        resolution.hrSeconds === undefined ? null : `HR ~${formatNumber(resolution.hrSeconds, 2)} s`,
+        resolution.cadenceSeconds === undefined ? null : `cadence ~${formatNumber(resolution.cadenceSeconds, 2)} s`,
+    ].filter((part): part is string => part !== null);
+    lines.push(`  - Source resolution: ${parts.length > 0 ? parts.join(' · ') : 'not estimable'} · derivation ${response.derivationVersion}`);
+
+    if (response.powerDurationPeaks.length > 0) {
+        lines.push(`  - Power-duration peaks: ${response.powerDurationPeaks
+            .map(peak => `${powerDurationLabel(peak.durationSeconds)} ${formatNumber(peak.powerWatts, 0)} W (${peak.confidence}${peak.activityHalf ? `, ${peak.activityHalf} half` : ''})`)
+            .join(' · ')}`);
+    }
+    if (response.steadyHalves) {
+        const half = response.steadyHalves;
+        const halfParts = [
+            half.firstPowerWatts === undefined || half.secondPowerWatts === undefined
+                ? null : `power ${formatNumber(half.firstPowerWatts, 0)}→${formatNumber(half.secondPowerWatts, 0)} W`,
+            half.firstHrBpm === undefined || half.secondHrBpm === undefined
+                ? null : `HR ${formatNumber(half.firstHrBpm, 0)}→${formatNumber(half.secondHrBpm, 0)} bpm`,
+            half.firstCadenceRpm === undefined || half.secondCadenceRpm === undefined
+                ? null : `cadence ${formatNumber(half.firstCadenceRpm, 0)}→${formatNumber(half.secondCadenceRpm, 0)} rpm`,
+        ].filter((part): part is string => part !== null);
+        if (halfParts.length > 0) lines.push(`  - Deterministic halves: ${halfParts.join(' · ')}`);
+    }
+    if (response.segments.length > 0) {
+        lines.push(
+            `  - Segments: ${response.segmentCountTotal}${response.segmentsTruncated ? ` total; persisted first ${response.segments.length}` : ''}`,
+            '',
+            '  | # | Type | Identity | Duration | Target | Avg/peaks power | HR avg/end/max | Cadence avg/max | Power thirds | Confidence |',
+            '  |---:|---|---|---:|---|---|---|---|---|---|',
+        );
+        for (const segment of response.segments) {
+            const target = segment.prescribedTarget
+                ? segment.prescribedTarget.kind === 'power_watts' && segment.prescribedTarget.value !== undefined
+                    ? `${formatNumber(segment.prescribedTarget.value, 0)} W`
+                    : segment.prescribedTarget.kind === 'power_range_watts'
+                        ? `${segment.prescribedTarget.low === undefined ? '—' : formatNumber(segment.prescribedTarget.low, 0)}–${segment.prescribedTarget.high === undefined ? '—' : formatNumber(segment.prescribedTarget.high, 0)} W`
+                        : segment.prescribedTarget.value === undefined
+                            ? segment.prescribedTarget.kind
+                            : `${segment.prescribedTarget.kind} ${formatNumber(segment.prescribedTarget.value, 0)}`
+                : '—';
+            const power = [
+                segment.averagePowerWatts === undefined ? null : `avg ${formatNumber(segment.averagePowerWatts, 0)}`,
+                segment.peak1sPowerWatts === undefined ? null : `1s ${formatNumber(segment.peak1sPowerWatts, 0)}`,
+                segment.peak5sPowerWatts === undefined ? null : `5s ${formatNumber(segment.peak5sPowerWatts, 0)}`,
+                segment.peak10sPowerWatts === undefined ? null : `10s ${formatNumber(segment.peak10sPowerWatts, 0)}`,
+            ].filter((part): part is string => part !== null).join('/');
+            const hr = [segment.averageHrBpm, segment.endHrBpm, segment.maxHrBpm]
+                .map(value => value === undefined ? '—' : formatNumber(value, 0)).join('/');
+            const cadence = [segment.averageCadenceRpm, segment.maxCadenceRpm]
+                .map(value => value === undefined ? '—' : formatNumber(value, 0)).join('/');
+            const thirds = [segment.firstThirdPowerWatts, segment.middleThirdPowerWatts, segment.lastThirdPowerWatts]
+                .map(value => value === undefined ? '—' : formatNumber(value, 0)).join('/');
+            lines.push(`  | ${segment.segmentIndex} | ${segment.segmentType} | ${segment.identitySource} | ${formatDuration(segment.durationSeconds)} | ${target} | ${power || '—'} W | ${hr} bpm | ${cadence} rpm | ${thirds} W | ${segment.evidenceConfidence} |`);
+        }
     }
     return lines;
 }
@@ -122,6 +193,9 @@ export function renderContextBriefActivityTelemetry(
         }
         if (activity.laps?.length) {
             lines.push(...renderLaps(activity.laps));
+        }
+        if (activity.activityResponse) {
+            lines.push(...renderActivityResponse(activity));
         }
     }
 
@@ -186,6 +260,20 @@ export function renderCompactActivityTelemetry(
         const hrZone = activity.hrInZones?.length ? dominantZone(activity.hrInZones) : null;
         if (hrZone) parts.push(`most time in HR ${hrZone}`);
         if (activity.laps?.length) parts.push(lapDigest(activity.laps));
+        if (activity.activityResponse?.powerDurationPeaks.length) {
+            const preferred = [5, 60, 300]
+                .map(duration => activity.activityResponse?.powerDurationPeaks.find(peak => peak.durationSeconds === duration))
+                .filter((peak): peak is NonNullable<typeof peak> => peak !== undefined);
+            if (preferred.length > 0) {
+                parts.push(`MMP ${preferred.map(peak => `${powerDurationLabel(peak.durationSeconds)} ${formatNumber(peak.powerWatts, 0)} W`).join(' / ')}`);
+            }
+        }
+        if (activity.activityResponse) {
+            const response = activity.activityResponse;
+            const semantic = response.segments.filter(segment =>
+                segment.identitySource === 'reconciled_workout_step' || segment.identitySource === 'fit_workout_step').length;
+            if (semantic > 0) parts.push(`${semantic} semantic segments (${response.derivationVersion})`);
+        }
         lines.push(`- ${activity.date} — ${formatActivityType(activity.type)} — ${activity.intensityTag}: ${parts.length > 0 ? parts.join(' · ') : 'no usable power, zone or lap detail reported'}`);
     }
     return lines.join('\n');
