@@ -902,6 +902,20 @@ def _fade_pct(segments: list[CanonicalActivitySegmentSummary]) -> float | None:
     return (last - first) / first * 100
 
 
+def _last_vs_best_pct(segments: list[CanonicalActivitySegmentSummary]) -> float | None:
+    powers = [
+        segment.average_power_watts
+        for segment in segments
+        if segment.average_power_watts is not None
+    ]
+    if len(powers) != len(segments) or len(powers) < 2:
+        return None
+    best = max(powers)
+    if best == 0:
+        return None
+    return (powers[-1] - best) / best * 100
+
+
 def _decoupling_pct(halves: CanonicalSteadyHalfSummary | None) -> float | None:
     if (
         halves is None
@@ -1043,8 +1057,8 @@ def _compare_sprint_features(
     _append_absolute_feature(
         features,
         "sprint_last_vs_best_fade",
-        _fade_pct(reference_ordered),
-        _fade_pct(candidate_ordered)
+        _last_vs_best_pct(reference_ordered),
+        _last_vs_best_pct(candidate_ordered)
         if len(candidate_ordered) == len(reference_ordered)
         else None,
         1.0,
