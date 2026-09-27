@@ -74,10 +74,12 @@ describe('issue #758 evergreen cycling quality', () => {
             return plan;
         });
         expect(result.decisionTraces).toHaveLength(14);
-        expect(cyclingQuality(result).length).toBeGreaterThanOrEqual(1);
+        // The athlete-history weekly easy-aerobic target now outranks an optional quality
+        // add-on when the existing weekly session commitment cannot fit both.
+        expect(cyclingQuality(result)).toHaveLength(0);
         expect(plans.flatMap(plan => plan.allocationReport.optionalMisses ?? []).some(
             miss => miss.reason === 'capacity_exhausted_by_required_roles',
-        )).toBe(false);
+        )).toBe(true);
     });
 
     it('uses an otherwise-free training day for quality without exceeding maxSessions or moving required roles', async () => {

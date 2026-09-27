@@ -3,6 +3,7 @@ import type { DailyReadiness, TrainingIntentProfile, TrainingPriority } from './
 import type { PhaseWeights } from './periodization';
 import type { EvidenceCertainty, KnowledgeMaturity, KnowledgeStatus } from '../knowledge/sportsKnowledge';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
+import type { WeeklyAerobicDoseEnvelope } from './weeklyAerobicDose';
 
 /** The one in-memory default for an athlete who has not yet saved an intent profile.
  * It is deliberately not persisted by planning-mode resolution. */
@@ -283,15 +284,25 @@ export function inferAthleteTrainingState(
  * pre-credited into the evidence-backed requirement itself. */
 function aerobicRequirement(
     priority: AdaptationDoseRequirement['priority'],
+    envelope?: WeeklyAerobicDoseEnvelope,
 ): AdaptationDoseRequirement {
-    const primaryClaimId = KNOWLEDGE_CLAIM_IDS.adultAerobicHealthVolume;
+    const primaryClaimId = envelope?.source === 'athlete_history'
+        ? KNOWLEDGE_CLAIM_IDS.weeklyAerobicDoseEnvelopePolicy
+        : KNOWLEDGE_CLAIM_IDS.adultAerobicHealthVolume;
+    const floorMinutes = envelope?.floorMinutes ?? 150;
+    const targetMinutes = envelope?.targetMinutes ?? 150;
+    const upperMinutes = envelope?.upperMinutes ?? 300;
     return {
         adaptation: 'aerobic_endurance', priority,
-        floor: { dose: { unit: 'minutes', value: 150 }, semantics: 'guideline_recommended_minimum' },
-        target: { unit: 'minutes', minimum: 150, target: 150, maximum: 300 },
-        substitutionPolicy: { equivalentModalitiesAllowed: true, permittedModalities: ['Walking', 'Running', 'Cycling', 'Other'] },
-        knowledgeRefs: [primaryClaimId],
-        evidence: evidenceProvenance(primaryClaimId, 'guideline_target', 'high'),
+        floor: { dose: { unit: 'minutes', value: floorMinutes }, semantics: envelope?.source === 'athlete_history' ? 'evidence_supported_minimum' : 'guideline_recommended_minimum' },
+        target: { unit: 'minutes', minimum: floorMinutes, target: targetMinutes, maximum: upperMinutes },
+        substitutionPolicy: envelope?.source === 'athlete_history' && envelope.modality
+            ? { equivalentModalitiesAllowed: false, permittedModalities: [envelope.modality] }
+            : { equivalentModalitiesAllowed: true, permittedModalities: ['Walking', 'Running', 'Cycling', 'Swimming', 'Other'] },
+        knowledgeRefs: envelope?.source === 'athlete_history'
+            ? [primaryClaimId, KNOWLEDGE_CLAIM_IDS.adultAerobicHealthVolume]
+            : [primaryClaimId],
+        evidence: evidenceProvenance(primaryClaimId, envelope?.source === 'athlete_history' ? 'product_heuristic' : 'guideline_target', envelope?.source === 'athlete_history' ? 'low' : 'high'),
     };
 }
 
@@ -346,6 +357,7 @@ function powerWithheldReason(
 export function resolveEvidenceBackedStrategy(
     goalOrEvent: GoalOrEventContext,
     athleteState: AthleteTrainingState,
+    weeklyAerobicDose?: WeeklyAerobicDoseEnvelope,
 ): EvidenceBackedStrategy {
     const priorities = new Set(goalOrEvent.priorities.length > 0 ? goalOrEvent.priorities : ['balanced_performance']);
     const requirements: AdaptationDoseRequirement[] = [];
@@ -371,8 +383,8 @@ export function resolveEvidenceBackedStrategy(
     // explicitly selected by the athlete, keep its evidence-backed floor non-droppable.
     // Capacity may still produce an explicit shortfall; it must not silently erase a whole
     // guideline-backed adaptation by relegating it to opportunistic leftover sessions.
-    if (healthOrBalanced || priorities.has('endurance')) {
-        requirements.push(aerobicRequirement('required'));
+    if (healthOrBalanced || priorities.has('endurance') || priorities.has('sport_readiness')) {
+        requirements.push(aerobicRequirement('required', weeklyAerobicDose));
     }
     if (healthOrBalanced || priorities.has('strength_muscle')) {
         requirements.push(strengthRequirement('required'));
