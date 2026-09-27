@@ -11,7 +11,7 @@ import { activeCapabilityPlacements, isCapabilityPlacementFulfilled, type Capabi
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { grantsPowerExposureCredit } from '../workouts/powerExposure';
-import { grantsMechanicalExposureCredit } from '../workouts/mechanicalExposure';
+import { grantsMechanicalExposureCredit, mechanicalIdentityFor } from '../workouts/mechanicalExposure';
 
 /**
  * Phase 6.2c / ADR-0016: physiological stimulus credit and programming-role coverage
@@ -645,10 +645,7 @@ export function buildCoverageState(
     const mechanicalSpacingBlocked = history.some(exposure => {
         if (exposure.date !== yesterday) return false;
         const workoutId = exposure.workoutId ?? workoutIdForTemplateId(exposure.templateId);
-        return grantsMechanicalExposureCredit({
-            workoutId,
-            isReadinessModifiedDose: exposure.isReadinessModifiedDose,
-        });
+        return mechanicalIdentityFor(workoutId) !== undefined;
     });
 
     return {
