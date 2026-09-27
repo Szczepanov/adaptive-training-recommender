@@ -208,9 +208,9 @@ const SUSPENSION_MESSAGES: Record<CapabilitySuspendedReason, string> = {
 const BLOCKED_MESSAGES: Record<CapabilityBlockedReason, string> = {
     mechanical_guardrail: 'blocked by an active mechanical/impact safety limit; nothing substitutes for it',
     mechanical_stage_insufficient: 'mechanical capacity is not yet at the required stage; the support slot carries the safest eligible progression identity',
-    modality_unavailable: 'every qualifying identity is in an unavailable training type',
-    modality_avoided: 'every qualifying identity is in a training type the athlete avoids',
-    environment_unavailable: 'the configured or scheduled training environment excludes every qualifying identity',
+    modality_unavailable: 'every otherwise safety-eligible qualifying identity is in an unavailable training type',
+    modality_avoided: 'every otherwise eligible qualifying identity is in a training type the athlete avoids',
+    environment_unavailable: 'the configured or scheduled training environment excludes every otherwise eligible qualifying identity',
     no_support_capacity: 'no usable training window exists on or after the due date in this horizon',
 };
 const UNKNOWN_MESSAGES: Record<CapabilityUnknownReason, string> = {
@@ -254,7 +254,12 @@ function fulfilmentFor(
     }
     const identities = capabilityIdentitiesFor(cadence.capability).map(identity => identity.workoutId);
     const { gates } = input;
-    if (identities.every(id => gates.guardrailBlocked.has(id))) {
+    // Classify hard blocks in the same precedence order the candidate set is actually
+    // narrowed. This matters when different identities are blocked by different authorities:
+    // a guardrail on one identity plus an unavailable modality on another must not fall
+    // through and be mislabeled as an environment block (ADR-0044 D9).
+    let deliverable = identities.filter(id => !gates.guardrailBlocked.has(id));
+    if (deliverable.length === 0) {
         return { fulfilment: { status: 'blocked', reason: 'mechanical_guardrail' }, ...none };
     }
     if (input.mechanicalVerdict && !input.mechanicalVerdict.eligible) {
@@ -263,21 +268,23 @@ function fulfilmentFor(
         const reason: CapabilitySuspendedReason = input.mechanicalVerdict.status === 'blocked' ? 'clinical_symptoms' : 'mechanical_withheld';
         return { fulfilment: { status: 'deliberately_suspended', reason }, ...none };
     }
-    if (identities.every(id => gates.unavailable.has(id))) {
+    deliverable = deliverable.filter(id => !gates.unavailable.has(id));
+    if (deliverable.length === 0) {
         return { fulfilment: { status: 'blocked', reason: 'modality_unavailable' }, ...none };
     }
-    if (identities.every(id => gates.unavailable.has(id) || gates.avoided.has(id))) {
+    deliverable = deliverable.filter(id => !gates.avoided.has(id));
+    if (deliverable.length === 0) {
         return { fulfilment: { status: 'blocked', reason: 'modality_avoided' }, ...none };
     }
     if (!input.mechanicalRequirementPresent || !input.mechanicalVerdict) {
         return { fulfilment: { status: 'unknown', reason: 'mechanical_requirement_absent' }, ...none };
     }
-    const hardGated = (id: string) => gates.guardrailBlocked.has(id) || gates.unavailable.has(id)
-        || gates.avoided.has(id) || gates.environmentUnavailable.has(id);
-    const deliverable = identities.filter(id => !hardGated(id));
+    deliverable = deliverable.filter(id => !gates.environmentUnavailable.has(id));
     if (deliverable.length === 0) {
         return { fulfilment: { status: 'blocked', reason: 'environment_unavailable' }, ...none };
     }
+    const hardGated = (id: string) => gates.guardrailBlocked.has(id) || gates.unavailable.has(id)
+        || gates.avoided.has(id) || gates.environmentUnavailable.has(id);
     const verdict = input.mechanicalVerdict;
     const stageEligible = deliverable
         .filter(id => (athleticCapabilityStageFor(id) ?? 5) <= verdict.stage && verdict.eligibleWorkoutIds.includes(id))
