@@ -1,18 +1,31 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 from detect_ci_changes import get_worktree_changed_files
-from verify_repo import build_plan, classify_paths, resolve_argv
+from verify_repo import (
+    SPAWN_FAILED,
+    VerificationPhase,
+    VerificationStep,
+    _step_env,
+    build_plan,
+    classify_paths,
+    plan_steps,
+    resolve_argv,
+    run_plan,
+    serialize_plan,
+)
 
 
 def test_docs_only_diff_uses_hygiene_contract() -> None:
     assert classify_paths(["README.md", "docs/README.md"]) == "docs"
 
-    plan = build_plan("docs", "a" * 40)
+    plan = plan_steps(build_plan("docs", "a" * 40))
     names = [step.name for step in plan]
 
     assert names == ["repository hygiene", "coding-agent eval corpus"]
@@ -23,11 +36,26 @@ def test_agent_config_yaml_fails_safe_to_code_contract() -> None:
 
 
 def test_code_contract_contains_ci_critical_local_gates() -> None:
-    plan = build_plan("code", "b" * 40)
+    plan = plan_steps(build_plan("code", "b" * 40))
     names = [step.name for step in plan]
 
-    assert "static checks and unit tests" in names
-    assert "Firestore security rules" in names
+    for name in (
+        "ruff lint",
+        "ruff format",
+        "mypy",
+        "pytest",
+        "frontend typecheck",
+        "frontend lint",
+        "frontend unit tests",
+        "frontend latency gates",
+        "knowledge registry",
+        "knowledge coverage",
+        "knowledge freshness",
+        "workout catalog",
+    ):
+        assert name in names
+    assert "Firestore security rules 1/2" in names
+    assert "Firestore security rules 2/2" in names
     assert "browser E2E" in names
     assert "engine simulations" in names
     assert "deterministic plan-judge corpus" in names
@@ -42,8 +70,60 @@ def test_code_contract_contains_ci_critical_local_gates() -> None:
     assert semantic_diff.argv == ("npm", "--prefix", "app", "run", "simulate:diff")
 
 
+def _lane_of(
+    phases: list[VerificationPhase], name: str
+) -> tuple[str, tuple[VerificationStep, ...]]:
+    for phase in phases:
+        for lane in phase.lanes:
+            if any(step.name == name for step in lane):
+                return phase.name, lane
+    raise AssertionError(f"{name} not in plan")
+
+
+def test_code_contract_lanes_isolate_emulators_and_order_simulations() -> None:
+    phases = build_plan("code", "d" * 40)
+
+    # Every rules shard runs, each in a lane of its own (the launcher gives it its own ports).
+    rules_steps = [
+        step for step in plan_steps(phases) if step.name.startswith("Firestore security rules")
+    ]
+    assert [step.argv[-1] for step in rules_steps] == ["1/2", "2/2"]
+    assert all(
+        step.argv[:5] == ("npm", "--prefix", "app", "run", "test:rules:shard")
+        for step in rules_steps
+    )
+    lanes = {_lane_of(phases, step.name) for step in rules_steps} | {
+        _lane_of(phases, "browser E2E")
+    }
+    assert len(lanes) == 3
+
+    # simulate:diff reads the report simulate:scenarios writes.
+    _, sim_lane = _lane_of(phases, "engine simulations")
+    sim_names = [step.name for step in sim_lane]
+    assert sim_names.index("engine simulations") < sim_names.index(
+        "simulation semantic diff (advisory)"
+    )
+
+
+def test_code_contract_isolates_latency_gates_and_runs_hygiene_first() -> None:
+    phases = build_plan("code", "e" * 40)
+
+    assert phases[0].name == "hygiene"
+    assert [step.name for step in plan_steps([phases[-1]])] == ["frontend latency gates"]
+    assert len(phases[-1].lanes) == 1
+
+
+def test_serialize_plan_preserves_every_step_in_order() -> None:
+    phases = build_plan("code", "f" * 40)
+    serial = serialize_plan(phases)
+
+    assert len(serial) == 1
+    assert len(serial[0].lanes) == 1
+    assert plan_steps(serial) == plan_steps(phases)
+
+
 def test_code_contract_avoids_external_registry_and_docker_gates() -> None:
-    plan = build_plan("code", "c" * 40)
+    plan = plan_steps(build_plan("code", "c" * 40))
     commands = [" ".join(step.argv) for step in plan]
 
     assert all("npm audit" not in command for command in commands)
@@ -117,8 +197,122 @@ def test_resolve_argv_keeps_unresolvable_or_empty_argv(monkeypatch: pytest.Monke
 
 
 def test_resolve_argv_finds_every_real_plan_executable() -> None:
-    executables = {step.argv[0] for step in build_plan("code", "c" * 40)}
+    executables = {step.argv[0] for step in plan_steps(build_plan("code", "c" * 40))}
 
     for executable in executables:
         resolved = resolve_argv((executable,))[0]
         assert Path(resolved).is_absolute(), f"{executable} not found on PATH"
+
+
+def test_code_contract_skips_only_pre_commit_hooks_the_gates_rerun() -> None:
+    docs_hygiene = plan_steps(build_plan("docs", "a" * 40))[0]
+    code_steps = plan_steps(build_plan("code", "a" * 40))
+    code_hygiene = code_steps[0]
+
+    assert docs_hygiene.env == ()
+    assert code_hygiene.env == (("SKIP", "mypy,eslint"),)
+    commands = {" ".join(step.argv) for step in code_steps}
+    assert "uv run mypy" in commands
+    assert "npm --prefix app run lint" in commands
+
+
+def test_step_env_extends_a_caller_skip_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SKIP", "gitleaks")
+    step = VerificationStep("hygiene", ("true",), env=(("SKIP", "mypy,eslint"),))
+
+    env = _step_env(step)
+
+    assert env is not None
+    assert env["SKIP"] == "gitleaks,mypy,eslint"
+    assert _step_env(VerificationStep("plain", ("true",))) is None
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _make_recipe_commands(target: str, makefile: str) -> list[str]:
+    """Expand a Makefile target into the shell commands its recipes run, dependencies first."""
+    commands: list[str] = []
+    match = re.search(rf"^{re.escape(target)}:([^\n]*)\n((?:\t[^\n]*\n)*)", makefile, re.M)
+    assert match, f"target {target} not found"
+    for dependency in match.group(1).split():
+        commands.extend(_make_recipe_commands(dependency, makefile))
+    commands.extend(line.strip() for line in match.group(2).splitlines())
+    return commands
+
+
+def test_code_contract_runs_every_make_check_and_build_command() -> None:
+    makefile = (REPO_ROOT / "Makefile").read_text(encoding="utf-8")
+    plan_commands = {" ".join(step.argv) for step in plan_steps(build_plan("code", "a" * 40))}
+
+    expected = _make_recipe_commands("check", makefile) + _make_recipe_commands("build", makefile)
+
+    assert expected, "Makefile check/build targets expanded to no commands"
+    missing = [command for command in expected if command not in plan_commands]
+    assert missing == [], f"make verify no longer runs: {missing}"
+
+
+def _exit_step(name: str, code: int, *, required: bool = True) -> VerificationStep:
+    return VerificationStep(
+        name,
+        (sys.executable, "-c", f"print('{name} output'); raise SystemExit({code})"),
+        required=required,
+    )
+
+
+def test_run_plan_stops_scheduling_after_a_required_failure(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    phases = [
+        VerificationPhase(
+            "gates",
+            (
+                (_exit_step("fails", 3), _exit_step("never runs", 0)),
+                (_exit_step("sibling", 0),),
+            ),
+        ),
+        VerificationPhase("later", ((_exit_step("later phase", 0),),)),
+    ]
+
+    assert run_plan(phases, tmp_path) == 3
+
+    out, err = capsys.readouterr()
+    assert "never runs" not in out
+    assert "later phase" not in out
+    assert "FAILED: fails exited 3" in err
+    assert "fails output" in err
+
+
+def test_run_plan_prints_advisory_output_and_continues(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "stale.log").write_text("from an earlier run\n")
+    phases = [
+        VerificationPhase(
+            "gates",
+            (
+                (_exit_step("advisory diff", 1, required=False), _exit_step("next", 0)),
+                (_exit_step("sibling", 0),),
+            ),
+        )
+    ]
+
+    assert run_plan(phases, tmp_path) == 0
+
+    out, _ = capsys.readouterr()
+    assert "ADVISORY output of advisory diff (exit 1)" in out
+    assert "advisory diff output" in out
+    assert "PASS" in out
+    assert not (tmp_path / "stale.log").exists()
+
+
+def test_run_plan_fails_a_step_whose_executable_is_missing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    missing = VerificationStep("missing tool", (str(tmp_path / "no-such-executable"),))
+    phases = [VerificationPhase("gates", ((missing,), (_exit_step("sibling", 0),)))]
+
+    assert run_plan(phases, tmp_path) == SPAWN_FAILED
+
+    _, err = capsys.readouterr()
+    assert "FAILED: missing tool" in err
