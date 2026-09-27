@@ -499,11 +499,12 @@ allowed stage to Stage 1. The no-consecutive-calendar-day rule and 14-day reset 
 guardrails, not experimentally validated biological thresholds.
 
 The evaluator stays pure; orchestration supplies its two evidence streams. Exposure evidence is
-`TrainingIntent.mechanicalExposureHistory`, which `resolveTrainingIntent` bounds to at least
-`MECHANICAL_CONTINUITY_WINDOW_DAYS` (14) whenever the evergreen intent can emit the requirement: it reuses the
-28-day `athleteStateEvidence`, and only a snapshot-less provider reconstructs the window (the projected next-day
-provider fetches that wider prior lazily). The 7-day operational `history` is never widened, so an exposure 8-13
-days ago is neither lost to the re-entry rule nor counted in fatigue/objective bookkeeping. Structured check-ins
+`TrainingIntent.mechanicalExposureHistory`. Whenever evergreen can emit #804 — including an explicit #805
+capability-maintenance opt-in — `resolveTrainingIntent` supplies a dedicated 28-day mechanical establishment
+window and its observation span. This stream is separate from `athleteStateEvidence`, so enabling capability
+maintenance cannot change the aerobic floor, power prior or quality prior. The #804 progression evaluator still
+filters that evidence to its own 14-day continuity window. The 7-day operational `history` is never widened, so
+older evidence is not replayed into fatigue/objective bookkeeping. Structured check-ins
 (`DailySubjectiveCheckin.tissueResponses`) for the window through the decision date are read once per entry point
 (`evaluateTrainingWithIntent`, `evaluateNextDayPlanWithIntent`, `generateWeekAheadPlanWithIntent`) by
 `mechanicalCheckinHistory.ts` `resolveMechanicalCheckinHistory`, whose Firestore provider is a lazily-imported
@@ -543,8 +544,8 @@ sport-neutral capabilities exist: `linear_speed_skill`, `acceleration_decelerati
   planning horizon, with not-before and target dates equal to that due date; a touch on the due date therefore never
   lands on a #804 re-entry day. It is `overdue` past that date or with no qualifying exposure in a complete observed
   interval, and `insufficient_history` below 14 observed days. Evidence is the 28-day athlete-state window when the
-  priorities already load it, else the orchestration-supplied #804 mechanical exposure evidence (the opt-in itself
-  never widens athlete-state evidence, so it cannot change aerobic, power or quality decisions).
+  priorities already load it, else the dedicated 28-day #804 mechanical establishment stream. The opt-in never
+  widens general athlete-state evidence, so it cannot change aerobic, power or quality decisions.
 - **Fulfilment.** `evaluateCapabilityMaintenance` keeps ADR-0044 D9 fulfilment separate: `plannable`, `blocked`
   (`mechanical_guardrail`, `mechanical_stage_insufficient`, `modality_unavailable`, `modality_avoided`,
   `environment_unavailable`, `no_support_capacity`), `deliberately_suspended` (`adverse_recovery`,
@@ -556,8 +557,10 @@ sport-neutral capabilities exist: `linear_speed_skill`, `acceleration_decelerati
   deliberately suspends it (`canEmitMechanicalRequirement`), and the highest owed capability stage is passed as
   #804's `targetStage` (#804 still caps advancement at one stage and requires its response evidence). Owed
   capabilities become `CapabilityPlacement`s on the single `mechanical_exposure` coverage requirement, which then
-  carries a support-tier minimum of one (the shape a `target` mechanical requirement already has). No requirement,
-  objective or session is added. `coverage.ts` `buildCoverageState` resolves placements per planning date. While any
+  carries a support-tier minimum of one (the shape a `target` mechanical requirement already has). No distinct
+  capability requirement/objective is added and the configured weekly session commitment is unchanged; the
+  existing mechanical support occurrence can become reservable while a capability is owed. `coverage.ts`
+  `buildCoverageState` resolves placements per planning date. While any
   placement is open (not yet fulfilled by a qualifying touch from its planning date on), the requirement is narrowed
   to the owed delivery identities, so no generic mechanical session is reserved ahead of the not-before date; the
   identities that settle the most open placements are preferred. Consent and ranking urgency start only on/after the
