@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | `Approved` — decisions D-A to D-I resolved on 27 September 2026; implementation is still dependency-blocked |
+| **Status** | `Approved` — decisions D-A to D-I resolved on 27 September 2026; Phase 0A is delivered by PR #854, while Phase 0B still blocks capability-consent integration |
 | **Source** | [issue #805](https://github.com/Szczepanov/adaptive-training-recommender/issues/805) |
-| **Blocked by** | Phase 0A (#804 wiring gaps F1–F3) before the positive planning acceptance criterion; Phase 0B (F11 unavailable-modality hard-exclusion repair) before capability-consent integration. Schema/mapping/evaluator work is otherwise startable. |
+| **Blocked by** | Phase 0B (F11 unavailable-modality hard-exclusion repair) before capability-consent integration. Phase 0A (#804 wiring gaps F1–F3) is satisfied by PR #854; schema/mapping/evaluator work remains startable. |
 | **Unlocks** | Retires `cod_lateral` from the context-brief ledger's unmodelled list; first authoritative cadence for ledger `overdue` |
 | **Baseline** | Reviewed against `main` @ `305d3c4e` (#851 merged). The implementation must use the then-current `POLICY_VERSION` after prerequisite PRs land. |
 
@@ -27,7 +27,7 @@ Implement from current `main`. #847 is merged. PR #851 only changes verification
 
 ## Findings that shape the design (verified in code)
 
-These were found while reviewing an earlier draft of this plan against the merged #804 code.
+These were found while reviewing an earlier draft of this plan against the merged #804 code. **F1–F3 are historical prerequisite findings resolved by PR #854**; they are retained here to explain the dependency and design decisions. F4 onward remain inputs to #805 unless separately marked delivered.
 
 | # | Finding | Evidence | Consequence |
 |---|---|---|---|
@@ -112,10 +112,9 @@ as product policy with limitations, not presented as research-derived physiology
 
 Use **two small prerequisite fixes** so #805 does not hide pre-existing defects inside a new feature.
 
-### Phase 0A — close #804 progression/history wiring gaps (F1–F3)
+### Phase 0A — close #804 progression/history wiring gaps (F1–F3) — **Delivered by PR #854**
 
-These are #847/#804 defects and need their own recommendation-policy version bump and simulation
-review.
+PR #854 closes these #847/#804 defects with its own recommendation-policy version bump, knowledge-lineage update and simulation coverage. The checklist below is retained as the delivered contract.
 
 1. Source structured check-ins (`DailySubjectiveCheckin` with `tissueResponses`) in orchestration
    and pass them to `resolveEvergreenPlan` from both daily and week-ahead paths. Reuse the
@@ -143,8 +142,7 @@ Prefer a separate small fix PR because this corrects global preference semantics
 4. Cross-check the Preferences copy (“will not be offered”) against the implemented behavior and
    include the behavior change in policy-drift/versioning review.
 
-**Gate:** without Phase 0A, the positive stage-progression/planning AC remains unreachable. Without
-Phase 0B, capability consent cannot truthfully claim that hard unavailability has precedence.
+**Gate:** Phase 0A is satisfied by PR #854. Phase 0B remains required before capability consent can truthfully claim that hard unavailability has precedence.
 
 ---
 
