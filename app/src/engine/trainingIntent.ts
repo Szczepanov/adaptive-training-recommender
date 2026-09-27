@@ -112,7 +112,14 @@ function needsEstablishedPerformanceEvidence(planningContext: PlanningContext): 
 /** Issue #804: whether this intent can emit a mechanical requirement, and therefore whether
  * orchestration must source mechanical exposure evidence and tissue check-ins. */
 export function mechanicalEvidenceRequired(planningContext: PlanningContext): boolean {
-    return needsEstablishedPerformanceEvidence(planningContext);
+    if (planningContext.mode !== 'evergreen') return false;
+    const priorities = new Set(planningContext.profile.priorities);
+    const directMechanicalPriority = priorities.has('sport_readiness') || priorities.has('speed_power');
+    const strengthPlanned = priorities.has('health')
+        || priorities.has('balanced_performance')
+        || priorities.has('strength_muscle');
+    const hybridMechanicalMaintenance = priorities.has('endurance') && strengthPlanned;
+    return directMechanicalPriority || hybridMechanicalMaintenance;
 }
 
 /** The same predicate before a `TrainingIntent` exists (the next-day projection resolves
