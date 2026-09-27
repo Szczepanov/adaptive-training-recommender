@@ -291,7 +291,34 @@ describe('periodic capability maintenance in evergreen planning (#805 Phase 7)',
         const without = await resolveTrainingIntent('u1', [], D, readiness, 7, provider, undefined, [], health(false));
         expect(withOptIn.historySnapshot?.athleteStateEvidence).toBeUndefined();
         expect(withOptIn.aerobicVolumeFloor).toEqual(without.aerobicVolumeFloor);
-        // The opt-in still makes #804 mechanical evidence (>= 14 days) available for cadence.
-        expect(withOptIn.mechanicalExposureHistory.some(item => item.date < at(-7))).toBe(true);
+        // The opt-in loads a dedicated 28-day #804 establishment stream without attaching
+        // it to the general athlete-state snapshot.
+        expect(withOptIn.mechanicalEvidenceObservedWindowDays).toBe(28);
+        expect(withOptIn.mechanicalExposureHistory.some(item => item.date < at(-14))).toBe(true);
+
+        const resolvedHealth = resolveEvergreenPlan(
+            withOptIn.planningContext,
+            evaluatePeriodizationPhase([], D).phase,
+            withOptIn.history,
+            withOptIn.historySnapshot,
+            basePreferences,
+            baseContext,
+            D,
+            [],
+            7,
+            false,
+            [],
+            new Map(),
+            withOptIn.aerobicVolumeFloor,
+            false,
+            {
+                exposureHistory: withOptIn.mechanicalExposureHistory,
+                observedWindowDays: withOptIn.mechanicalEvidenceObservedWindowDays,
+                checkinHistory: normalFollowUps(withOptIn.mechanicalExposureHistory),
+            },
+        )!;
+        expect(resolvedHealth.planDefinition.coverageRequirements?.some(item => item.coverageKey === 'mechanical_exposure')).toBe(true);
+        expect(resolvedHealth.warnings.some(item => item.code === 'mechanical_exposure_withheld')).toBe(false);
+        expect(resolvedHealth.capabilityMaintenance?.enabled).toBe(true);
     });
 });
