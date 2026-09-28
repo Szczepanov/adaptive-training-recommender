@@ -11,10 +11,10 @@
  */
 import type { DailyRecommendation, NormalizedGarminActivity } from '../engine/models';
 import type { CompletedExposure } from '../engine/trainingHistory';
-import type { SessionExecution } from '../sessions/models';
+import type { ExecutionPrescription, SessionEntry, SessionExecution } from '../sessions/models';
 import { buildTrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
 import { parseDailyRecommendation, parseNormalizedGarminActivity } from '../persistence/parsers/trainingHistory';
-import { parseSessionExecutionDocument } from '../persistence/parsers/sessionExecution';
+import { parseSessionEntryDocument, parseSessionExecutionDocument } from '../persistence/parsers/sessionExecution';
 import { getLocalDateString } from '../utils/localDate';
 import {
     PERFORMED_OCCURRENCE_SCHEMA_VERSION,
@@ -45,6 +45,8 @@ export interface TrainingOccurrenceRecordExport {
     window: { startDate: string; endDateExclusive: string };
     performedTrainingOccurrences: RawRecordDocument[];
     sessionExecutions: RawRecordDocument[];
+    sessionEntries?: RawRecordDocument[];
+    executionPrescriptions?: RawRecordDocument[];
     activities: RawRecordDocument[];
     dailyRecommendations: RawRecordDocument[];
 }
@@ -77,6 +79,8 @@ function daysBetween(start: string, endExclusive: string): number {
 interface ParsedRecords {
     occurrences: PerformedTrainingOccurrence[];
     executions: SessionExecution[];
+    entries: SessionEntry[];
+    prescriptions: ExecutionPrescription[];
     activities: NormalizedGarminActivity[];
     recommendations: DailyRecommendation[];
     crossUserRecords: number;
@@ -84,11 +88,35 @@ interface ParsedRecords {
 }
 
 function parseRecords(raw: TrainingOccurrenceRecordExport): ParsedRecords {
-    const parsed: ParsedRecords = { occurrences: [], executions: [], activities: [], recommendations: [], crossUserRecords: 0, invalidRecords: 0 };
+    const parsed: ParsedRecords = { occurrences: [], executions: [], entries: [], prescriptions: [], activities: [], recommendations: [], crossUserRecords: 0, invalidRecords: 0 };
     const ownerOf = (data: unknown): unknown => (data && typeof data === 'object' ? (data as Record<string, unknown>).userId : undefined);
     const foreign = (data: unknown): boolean => {
         const owner = ownerOf(data);
         return owner !== undefined && owner !== raw.userId;
+    };
+    const validPrescription = (data: unknown, documentId: string): data is ExecutionPrescription => {
+        if (!data || typeof data !== 'object') return false;
+        const candidate = data as Record<string, unknown>;
+        const metadata = candidate.displayMetadata as Record<string, unknown> | undefined;
+        if (candidate.prescriptionHash !== documentId || !Array.isArray(candidate.blocks)
+            || !metadata || typeof metadata.title !== 'string' || !metadata.title.trim()) return false;
+        return candidate.blocks.every(block => {
+            if (!block || typeof block !== 'object' || typeof (block as Record<string, unknown>).id !== 'string'
+                || !Array.isArray((block as Record<string, unknown>).steps)) return false;
+            return ((block as Record<string, unknown>).steps as unknown[]).every(step => {
+                if (!step || typeof step !== 'object' || typeof (step as Record<string, unknown>).id !== 'string') return false;
+                const dose = (step as Record<string, unknown>).dose;
+                if (dose === undefined) return true;
+                if (!dose || typeof dose !== 'object') return false;
+                const fields = dose as Record<string, unknown>;
+                if (!['repetition', 'duration', 'distance', 'checkoff'].includes(String(fields.kind))) return false;
+                const count = fields.kind === 'repetition' ? fields.sets
+                    : fields.kind === 'checkoff' ? fields.rounds
+                        : fields.kind === 'duration' || fields.kind === 'distance' ? fields.sets : undefined;
+                return (fields.kind !== 'repetition' || (typeof count === 'number' && Number.isFinite(count) && count >= 0))
+                    && (count === undefined || (typeof count === 'number' && Number.isFinite(count) && count >= 0));
+            });
+        });
     };
     for (const document of raw.performedTrainingOccurrences) {
         if (foreign(document.data)) { parsed.crossUserRecords += 1; continue; }
@@ -103,6 +131,18 @@ function parseRecords(raw: TrainingOccurrenceRecordExport): ParsedRecords {
         const state = parseSessionExecutionDocument(document.data, `session_executions/${document.id}`);
         if (state.status === 'AVAILABLE') parsed.executions.push(state.data);
         else parsed.invalidRecords += 1;
+    }
+    for (const document of raw.sessionEntries ?? []) {
+        if (foreign(document.data)) { parsed.crossUserRecords += 1; continue; }
+        const state = parseSessionEntryDocument(document.data, `session_executions/*/entries/${document.id}`);
+        if (state.status === 'AVAILABLE') parsed.entries.push(state.data);
+        else parsed.invalidRecords += 1;
+    }
+    for (const document of raw.executionPrescriptions ?? []) {
+        if (foreign(document.data)) { parsed.crossUserRecords += 1; continue; }
+        if (validPrescription(document.data, document.id)) {
+            parsed.prescriptions.push(document.data);
+        } else parsed.invalidRecords += 1;
     }
     for (const document of raw.activities) {
         if (foreign(document.data)) { parsed.crossUserRecords += 1; continue; }
@@ -192,6 +232,10 @@ function pair(parsed: ParsedRecords, window: TrainingOccurrenceRecordExport['win
         // can reference an activity whose provider date is just outside it).
         activitiesById: new Map(parsed.activities.map(activity => [activity.activityId, activity])),
         executionsById: new Map(parsed.executions.map(execution => [execution.executionId, execution])),
+        entriesByExecutionId: new Map(parsed.executions.map(execution => [
+            execution.executionId, parsed.entries.filter(entry => entry.executionId === execution.executionId),
+        ])),
+        prescriptionsByHash: new Map(parsed.prescriptions.map(prescription => [prescription.prescriptionHash, prescription])),
         recommendationsByDate: new Map(parsed.recommendations.map(recommendation => [recommendation.date, recommendation])),
     };
     const occurrences = occurrencesInWindow(parsed.occurrences, window);
@@ -248,6 +292,7 @@ export function prepareTo4Evidence(raw: TrainingOccurrenceRecordExport, options:
     for (const row of first.pairing.canonicalExposures) canonicalAliasCounts.set(row.occurrenceKey ?? '', (canonicalAliasCounts.get(row.occurrenceKey ?? '') ?? 0) + 1);
     const audit = first.pairing.audit;
     const totalRecords = raw.performedTrainingOccurrences.length + raw.sessionExecutions.length
+        + (raw.sessionEntries?.length ?? 0) + (raw.executionPrescriptions?.length ?? 0)
         + raw.activities.length + raw.dailyRecommendations.length;
     const evaluated = (denominator: number, ok: boolean): GateState => (denominator === 0 ? 'not_evaluated' : ok ? 'pass' : 'fail');
 

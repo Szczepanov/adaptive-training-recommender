@@ -32,14 +32,20 @@ class _Snapshot:
 
 class _Query:
     def __init__(
-        self, docs: dict[str, dict[str, Any]], filters: list[tuple[str, str, Any]] | None = None
+        self,
+        docs: dict[str, dict[str, Any]],
+        filters: list[tuple[str, str, Any]] | None = None,
+        nested: dict[str, dict[str, dict[str, dict[str, Any]]]] | None = None,
     ) -> None:
         self._docs = docs
         self._filters = filters or []
+        self._nested = nested or {}
 
     def where(self, *, filter: Any) -> "_Query":  # noqa: A002 -- mirrors the Firestore API
         return _Query(
-            self._docs, [*self._filters, (filter.field_path, filter.op_string, filter.value)]
+            self._docs,
+            [*self._filters, (filter.field_path, filter.op_string, filter.value)],
+            self._nested,
         )
 
     def order_by(self, _field: str) -> "_Query":
@@ -57,10 +63,14 @@ class _Query:
 
     def document(self, doc_id: str) -> Any:
         docs = self._docs
+        nested = self._nested
 
         class _Ref:
             def get(self) -> _Snapshot:
                 return _Snapshot(doc_id, docs.get(doc_id))
+
+            def collection(self, collection_name: str) -> _Query:
+                return _Query(nested.get(doc_id, {}).get(collection_name, {}))
 
         return _Ref()
 
@@ -81,7 +91,10 @@ class _FakeDb:
 
                 class _User:
                     def collection(self, collection_name: str) -> _Query:
-                        return _Query(collections.get(collection_name, {}))
+                        return _Query(
+                            collections.get(collection_name, {}),
+                            nested=collections.get("_nested", {}).get(collection_name, {}),
+                        )
 
                 return _User()
 
@@ -107,8 +120,23 @@ def _db() -> _FakeDb:
                     "old": {**occurrence, "localDate": "2026-07-01"},
                 },
                 "session_executions": {
-                    "e1": {"userId": "u1", "executionId": "e1"},
+                    "e1": {"userId": "u1", "executionId": "e1", "prescriptionHash": "ph1"},
                     "e2": {"userId": "u1"},
+                },
+                "_nested": {
+                    "session_executions": {
+                        "e1": {
+                            "entries": {
+                                "set-1": {"executionId": "e1", "payload": {"kind": "repetition"}}
+                            }
+                        }
+                    }
+                },
+                "execution_prescriptions": {
+                    "ph1": {
+                        "prescriptionHash": "ph1",
+                        "displayMetadata": {"title": "Upper Maintenance"},
+                    }
                 },
                 "activities": {
                     "a1": {"activityId": "a1", "date": "2026-08-06"},
@@ -128,6 +156,8 @@ def test_record_export_is_bounded_to_one_user_and_window() -> None:
     assert set(db.touched_users) == {"u1"}
     assert [doc["id"] for doc in records["performedTrainingOccurrences"]] == ["p1"]
     assert [doc["id"] for doc in records["sessionExecutions"]] == ["e1"]
+    assert [doc["id"] for doc in records["sessionEntries"]] == ["set-1"]
+    assert [doc["id"] for doc in records["executionPrescriptions"]] == ["ph1"]
     assert sorted(doc["id"] for doc in records["activities"]) == ["a1", "edge"]
     assert (
         records["performedTrainingOccurrences"][0]["data"]["createdAt"]

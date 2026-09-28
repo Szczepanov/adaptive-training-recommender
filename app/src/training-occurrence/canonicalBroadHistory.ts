@@ -18,9 +18,9 @@
  * Everything else fails closed to an explicit `unknown` reason. Planned `SessionOccurrence`
  * documents are never read, so a plan cannot become a performed exposure.
  */
-import type { CompletedTrainingEvent, CompletedTrainingSource, DailyRecommendation, NormalizedGarminActivity } from '../engine/models';
+import type { CompletedTrainingEvent, CompletedTrainingSource, DailyRecommendation, NormalizedGarminActivity, SessionTemplate } from '../engine/models';
 import type { CompletedExposure } from '../engine/trainingHistory';
-import type { SessionExecution } from '../sessions/models';
+import type { ExecutionPrescription, SessionEntry, SessionExecution } from '../sessions/models';
 import {
     DEFAULT_COST_BY_MODALITY,
     DEFAULT_STIMULUS_BY_MODALITY,
@@ -30,10 +30,11 @@ import {
     scaleCostByDeliveredDose,
     templateDurationReferenceMin,
 } from '../engine/completedTraining';
-import { recommendationOwnsExecution, templateIdForWorkoutId } from '../engine/performedTrainingFacts';
+import { normalizeModality, recommendationOwnsExecution, templateIdForWorkoutId } from '../engine/performedTrainingFacts';
 import { ENRICHED_TEMPLATES_BY_ID } from '../engine/templates';
 import { workoutForTemplate } from '../workouts/prescription';
 import { getLocalDateString } from '../utils/localDate';
+import { countsTowardPrescribedSets } from '../sessions/workSets';
 import {
     isProviderActivityRef,
     isStructuredExecutionRef,
@@ -49,6 +50,7 @@ export const CANONICAL_EXPOSURE_UNKNOWN_REASONS = [
     'structured_source_not_completed',
     'legacy_strength_semantics_not_derived',
     'non_catalog_structured_semantics',
+    'non_catalog_execution_evidence_missing',
     'template_identity_ambiguous',
     'provider_source_unavailable',
     'no_performed_date',
@@ -57,6 +59,8 @@ export type CanonicalExposureUnknownReason = (typeof CANONICAL_EXPOSURE_UNKNOWN_
 
 export interface CanonicalHistorySources {
     executionsById: ReadonlyMap<string, SessionExecution>;
+    entriesByExecutionId: ReadonlyMap<string, readonly SessionEntry[]>;
+    prescriptionsByHash: ReadonlyMap<string, ExecutionPrescription>;
     activitiesById: ReadonlyMap<string, NormalizedGarminActivity>;
     recommendationsByDate: ReadonlyMap<string, DailyRecommendation>;
 }
@@ -111,7 +115,7 @@ function structuredExposure(
     if (source.kind === 'manual' && source.definitionId === 'legacy_strength') {
         return { status: 'unknown', reason: 'legacy_strength_semantics_not_derived' };
     }
-    if (source.kind !== 'catalog') return { status: 'unknown', reason: 'non_catalog_structured_semantics' };
+    if (source.kind !== 'catalog') return nonCatalogStructuredExposure(execution, activity, sources, localDate);
     if (source.workoutId === 'legacy_strength') return { status: 'unknown', reason: 'legacy_strength_semantics_not_derived' };
 
     const templateId = exactTemplateIdForExecution(execution, source.workoutId, sources.recommendationsByDate.get(execution.date));
@@ -156,6 +160,94 @@ function structuredExposure(
             workoutId: source.workoutId,
             modality: template.modality,
             category: template.category,
+        },
+    };
+}
+
+function modalityForOccurrence(value: string | undefined): SessionTemplate['modality'] | undefined {
+    const modality = normalizeModality(value);
+    return modality === 'Unknown' || modality === 'None' ? undefined : modality;
+}
+
+function workEntriesForPrescription(
+    execution: SessionExecution,
+    prescription: ExecutionPrescription,
+    sources: CanonicalHistorySources,
+): SessionEntry[] {
+    const stepIds = new Set(prescription.blocks
+        .filter(block => block.role !== 'warmup')
+        .flatMap(block => block.steps.map(step => step.id)));
+    return (sources.entriesByExecutionId.get(execution.executionId) ?? []).filter(entry =>
+        entry.stepId !== undefined && stepIds.has(entry.stepId)
+        && countsTowardPrescribedSets(entry)
+        && (entry.payload.kind !== 'checkoff' || entry.payload.completed),
+    );
+}
+
+function nonCatalogStructuredExposure(
+    execution: SessionExecution,
+    activity: NormalizedGarminActivity | undefined,
+    sources: CanonicalHistorySources,
+    localDate: string,
+): CanonicalExposureDerivation {
+    if (execution.sessionSource.kind !== 'manual' && execution.sessionSource.kind !== 'external_plan') {
+        return { status: 'unknown', reason: 'non_catalog_structured_semantics' };
+    }
+    const prescription = execution.prescriptionHash ? sources.prescriptionsByHash.get(execution.prescriptionHash) : undefined;
+    const metadata = prescription?.displayMetadata;
+    const title = metadata?.title?.trim();
+    const modality = modalityForOccurrence(metadata?.dominantModality);
+    const workEntries = prescription ? workEntriesForPrescription(execution, prescription, sources) : [];
+    if (!prescription || !title || !modality || workEntries.length === 0) {
+        return { status: 'unknown', reason: 'non_catalog_execution_evidence_missing' };
+    }
+
+    const garmin = activity ? liveGarminEvent(activity) : undefined;
+    // ponytail: uncalibrated CR-10 bands for this shadow fallback; require reviewed evidence before activation.
+    const intensity = garmin?.costIntensity ?? garmin?.intensity ?? (
+        execution.sessionRpe === undefined ? 'unknown'
+            : execution.sessionRpe >= 7 ? 'hard'
+                : execution.sessionRpe >= 4 ? 'moderate' : 'easy'
+    );
+    const plannedDurationMin = metadata?.duration?.min
+        ?? catalogReferenceDurationMin(modality, intensity);
+    const completedDurationMin = garmin?.durationMin ?? executionDurationMin(execution);
+    const expectedSets = prescription.blocks.filter(block => block.role !== 'warmup').flatMap(block => block.steps).reduce((total, step) => {
+        const dose = step.dose;
+        if (!dose) return total;
+        if (dose.kind === 'repetition') return total + dose.sets;
+        if (dose.kind === 'duration' || dose.kind === 'distance') return total + (dose.sets ?? 1);
+        return total + (dose.rounds ?? 1);
+    }, 0);
+    const deliveredDose = {
+        plannedDurationMin,
+        completedDurationMin,
+        ...(expectedSets > 0 ? { completionRatio: Math.min(1, workEntries.length / expectedSets) } : {}),
+    };
+    const cost = scaleCostByDeliveredDose(DEFAULT_COST_BY_MODALITY[modality][intensity], deliveredDose);
+    const stimulus = garmin?.modality === modality
+        ? { ...DEFAULT_STIMULUS_BY_MODALITY[modality][intensity], ...garmin.estimatedStimulus }
+        : DEFAULT_STIMULUS_BY_MODALITY[modality][intensity];
+    if (!Object.values(cost).every(value => Number.isFinite(value) && value >= 0)
+        || !Object.values(stimulus).every(value => Number.isFinite(value) && value >= 0)) {
+        return { status: 'unknown', reason: 'non_catalog_execution_evidence_missing' };
+    }
+    return {
+        status: 'derived',
+        authority: 'structured',
+        exposure: {
+            date: localDate,
+            costProfile: cost,
+            trainingRecordLike: {
+                type: title,
+                duration_min: completedDurationMin ?? 0,
+                training_effect: garmin?.trainingEffect ?? 0,
+                intensity_tag: intensity === 'unknown' ? '' : intensity,
+            },
+            deliveredDose,
+            stimulusProfile: stimulus,
+            stimulusConfidence: 'inferred',
+            modality,
         },
     };
 }
@@ -239,16 +331,29 @@ function auditDerivation(
     }
     const execution = structuredRefs.length === 1 ? sources.executionsById.get(structuredRefs[0].executionId) : undefined;
     const source = execution?.sessionSource;
-    const supported = Boolean(execution && execution.state === 'completed' && source?.kind === 'catalog'
+    const catalogSupported = Boolean(execution && execution.state === 'completed' && source?.kind === 'catalog'
         && source.workoutId !== 'legacy_strength' && providerRefs.length <= 1);
+    const prescription = execution?.prescriptionHash ? sources.prescriptionsByHash.get(execution.prescriptionHash) : undefined;
+    const nonCatalogSupported = Boolean(execution && execution.state === 'completed'
+        && (source?.kind === 'manual' || source?.kind === 'external_plan') && providerRefs.length <= 1
+        && prescription?.displayMetadata?.title && workEntriesForPrescription(execution, prescription, sources).length > 0);
+    const supported = catalogSupported || nonCatalogSupported;
     const exposure = derivation.exposure;
     const template = exposure.templateId ? ENRICHED_TEMPLATES_BY_ID.get(exposure.templateId) : undefined;
-    const structuredViolation = !template || source?.kind !== 'catalog'
-        || exposure.workoutId !== source.workoutId
-        || workoutForTemplate(template.id)?.id !== source.workoutId
-        || exposure.modality !== template.modality
-        || exposure.category !== template.category
-        || exposure.stimulusConfidence !== 'exact';
+    const expectedNonCatalogModality = modalityForOccurrence(prescription?.displayMetadata?.dominantModality);
+    const structuredViolation = source?.kind === 'catalog'
+        ? !template || exposure.workoutId !== source.workoutId
+            || workoutForTemplate(template.id)?.id !== source.workoutId
+            || exposure.modality !== template.modality
+            || exposure.category !== template.category
+            || exposure.stimulusConfidence !== 'exact'
+        : !prescription?.displayMetadata?.title
+            || exposure.trainingRecordLike.type !== prescription.displayMetadata.title.trim()
+            || !exposure.modality
+            || exposure.modality !== expectedNonCatalogModality
+            || !Object.values(exposure.costProfile).every(value => Number.isFinite(value) && value >= 0)
+            || !exposure.stimulusProfile
+            || !Object.values(exposure.stimulusProfile).every(value => Number.isFinite(value) && value >= 0);
     return { unsupported: !supported, structuredViolation };
 }
 
