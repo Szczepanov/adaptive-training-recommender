@@ -917,9 +917,8 @@ class GarminSyncService:
                         skipped_count += 1
                         continue
 
-                    updates: dict[str, Any] = {
-                        "activityResponse": serialize_activity_response(response),
-                    }
+                    activity_response_payload = serialize_activity_response(response)
+                    merged_updates: dict[str, Any] = {}
 
                     if activity.get("hrMeasurement") is None and evidence.records:
                         try:
@@ -928,7 +927,9 @@ class GarminSyncService:
                                 evidence,
                                 _source_evidence_from_fit_devices(evidence.devices),
                             )
-                            updates["hrMeasurement"] = serialize_hr_measurement(fidelity.quality)
+                            merged_updates["hrMeasurement"] = serialize_hr_measurement(
+                                fidelity.quality
+                            )
                         except Exception as error:
                             logger.debug(
                                 "Optional HR-fidelity enrichment failed for item %d/%d (%s).",
@@ -944,7 +945,7 @@ class GarminSyncService:
                                 evidence.workout_step_indices,
                             )
                             if fingerprint is not None:
-                                updates["fitWorkoutFingerprint"] = fingerprint
+                                merged_updates["fitWorkoutFingerprint"] = fingerprint
                         except Exception as error:
                             logger.debug(
                                 "Optional FIT workout fingerprint failed for item %d/%d (%s).",
@@ -954,7 +955,11 @@ class GarminSyncService:
                             )
 
                     if not dry_run:
-                        self.repository.upsert_activity(activity_id, updates)
+                        self.repository.update_activity_enrichment(
+                            activity_id,
+                            activity_response=activity_response_payload,
+                            merged_fields=merged_updates,
+                        )
                     derived_count += 1
                 except Exception as error:
                     logger.warning(
