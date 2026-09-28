@@ -39,6 +39,22 @@ ENRICHED_TEMPLATES → eligibility → envelope + mode ceilings → phase eligib
 
 Asynchronous; resolves training intent from completed/adherence history first. Path B consumes `evaluateReadinessAndSafetyEnvelope` to obtain `mode`, `envelopes`, and `telemetry` directly, sharing the exact readiness calculation with Path A without running a discarded template selection (F9 resolved under ADR-0012).
 
+The production same-day composition boundary calls `evaluateSameDayRecommendation`
+(`sameDayRecommendation.ts`), a thin typed argument-shape adapter around
+`evaluateTrainingWithIntent`; it is **not** a third evaluator or authority path. The Home
+caller omits optional injected history/check-in dependencies so production retains its normal
+service-backed semantics. TO4 offline evidence may use the same adapter only after it has
+assembled and provenance-bound the equivalent date-D inputs, at which point it injects
+in-memory broad history plus explicit narrow performed facts/mechanical check-ins to keep the
+counterfactual self-contained. Missing historical context blocks replay rather than falling
+back to a simulation scenario or current mutable state.
+
+`DecisionComposer` similarly keeps service I/O online while delegating deterministic
+source-state composition to `composeDailyDecisionInputFromSources`
+(`decisionInputComposition.ts`). This is a behavior-preserving extraction for offline parity:
+invalid/unavailable required sources retain their existing fail-closed behavior, and
+`evaluatedAt` remains an explicit composition-boundary input for deterministic inspection.
+
 ### Not a third selection path — adjudication (`externalSession.ts`, ADR-0019)
 
 `externally_planned` mode adds a second *entry point*, not a third selection path. The
