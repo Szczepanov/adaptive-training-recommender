@@ -98,6 +98,45 @@ describe('decision context record', () => {
         await expect(validateDecisionContext(record, identity)).resolves.toEqual(record);
     });
 
+    it('omits absent optional fields at any depth, including inside array elements', async () => {
+        const withUndefined = evaluatorInputs();
+        withUndefined.events = [{ id: 'race', title: 'Race', timing: undefined }] as never;
+        withUndefined.fixedActivities = [{ id: 'club-ride', nested: { note: undefined, minutes: 60 } }] as never;
+        const withoutUndefined = evaluatorInputs();
+        withoutUndefined.events = [{ id: 'race', title: 'Race' }] as never;
+        withoutUndefined.fixedActivities = [{ id: 'club-ride', nested: { minutes: 60 } }] as never;
+
+        const first = await createDecisionContext(input({ evaluatorInputs: withUndefined }));
+        const second = await createDecisionContext(input({ evaluatorInputs: withoutUndefined }));
+
+        expect(first.evaluatorInputs?.events).toEqual([{ id: 'race', title: 'Race' }]);
+        expect(first.evaluatorInputs?.events[0]).not.toHaveProperty('timing');
+        expect(first.contentHash).toBe(second.contentHash);
+        await expect(validateDecisionContext(first, identity)).resolves.toEqual(first);
+    });
+
+    it('rejects array elements that JSON would silently rewrite to null', async () => {
+        const undefinedElement = evaluatorInputs();
+        undefinedElement.events = [undefined] as never;
+        await expect(createDecisionContext(input({ evaluatorInputs: undefinedElement }))).rejects.toThrow(TypeError);
+
+        const sparse = evaluatorInputs();
+        // eslint-disable-next-line no-sparse-arrays
+        sparse.scheduleOverlays = [, { id: 'overlay' }] as never;
+        await expect(createDecisionContext(input({ evaluatorInputs: sparse }))).rejects.toThrow(TypeError);
+    });
+
+    it('normalizes legacy check-ins that omit soreness or boolean flags', async () => {
+        const record = await createDecisionContext(input({
+            mechanicalCheckinHistory: [{ date: identity.date, checkin: {} as never }],
+        }));
+        expect(record.mechanicalCheckinHistory).toEqual([{
+            date: identity.date,
+            checkin: { soreness: null, painOrInjury: false, illnessSymptoms: false },
+        }]);
+        await expect(validateDecisionContext(record, identity)).resolves.toEqual(record);
+    });
+
     it('hashes identical content identically despite input key and Map insertion order', async () => {
         const first = await createDecisionContext(input());
         const reordered = evaluatorInputs();

@@ -70,13 +70,23 @@ function exactKeys(value: Record<string, unknown>, required: readonly string[], 
         && Object.keys(value).every(key => required.includes(key) || optional.includes(key));
 }
 
-function isPlainJson(value: unknown, allowUndefined = false): boolean {
-    if (value === undefined) return allowUndefined; // Input-only optional object fields are omitted when captured.
+/**
+ * `allowUndefinedFields` admits an absent optional object property at any depth -- including
+ * inside objects nested in arrays -- because JSON.stringify omits it exactly as Firestore
+ * would. An `undefined` array element is always rejected: JSON would silently turn it into
+ * `null`, changing the captured value.
+ */
+function isPlainJson(value: unknown, allowUndefinedFields = false): boolean {
     if (value === null || typeof value === 'string' || typeof value === 'boolean') return true;
     if (typeof value === 'number') return Number.isFinite(value);
-    if (Array.isArray(value)) return value.every(item => isPlainJson(item));
+    if (Array.isArray(value)) {
+        // Array.from visits holes in sparse arrays as `undefined`; Array#every would skip them.
+        return Array.from(value).every(item => item !== undefined && isPlainJson(item, allowUndefinedFields));
+    }
     return isObject(value) && Object.getPrototypeOf(value) === Object.prototype
-        && Object.values(value).every(item => isPlainJson(item, allowUndefined));
+        && Object.values(value).every(item => item === undefined
+            ? allowUndefinedFields
+            : isPlainJson(item, allowUndefinedFields));
 }
 
 function copyJson<T>(value: T): T {
@@ -206,10 +216,12 @@ export async function createDecisionContext(input: CreateDecisionContextInput): 
             mechanicalCheckinHistory: input.mechanicalCheckinHistory.map(({ date, checkin }) => ({
                 date,
                 checkin: {
-                    soreness: checkin.soreness,
+                    // Normalized exactly as evaluateMechanicalStageProgression reads them: an
+                    // absent soreness is "not reported" and the flags are truthiness checks.
+                    soreness: checkin.soreness ?? null,
                     // The legacy painFlag alias is read by the evaluator; fold it into the canonical flag.
-                    painOrInjury: checkin.painOrInjury || Boolean((checkin as { painFlag?: boolean }).painFlag),
-                    illnessSymptoms: checkin.illnessSymptoms,
+                    painOrInjury: Boolean(checkin.painOrInjury) || Boolean((checkin as { painFlag?: boolean }).painFlag),
+                    illnessSymptoms: Boolean(checkin.illnessSymptoms),
                     ...(checkin.tissueResponses === undefined ? {} : {
                         tissueResponses: Object.fromEntries(Object.entries(checkin.tissueResponses)
                             .filter((entry): entry is [string, RegionTissueResponse] => Boolean(entry[1]))

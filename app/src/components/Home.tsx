@@ -609,7 +609,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           ? await resolveMechanicalCheckinHistory(userId, input.date)
           : [];
         const evaluatedAt = new Date().toISOString();
-        const sameDayInputs: SameDayRecommendationInputs = {
+        const evaluatorInputs: SameDayRecommendationInputs = {
           userId,
           readiness: { subjective, objective, subjectiveBaseline: input.subjectiveBaseline },
           context,
@@ -626,10 +626,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           scheduleOverlays: input.scheduleOverlays,
           confirmedProgressionOverrides,
           mechanicalCheckinHistory,
-        };
-        const evaluatorInputs: SameDayRecommendationInputs = {
-          ...sameDayInputs,
-          preparedHistorySnapshot: sameDayPreparedSnapshot,
         };
         const baseRecommendation = await evaluateSameDayRecommendation(evaluatorInputs);
         if (!isCurrent()) return;

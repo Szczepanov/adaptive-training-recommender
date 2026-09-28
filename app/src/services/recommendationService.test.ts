@@ -176,6 +176,90 @@ describe('RecommendationService persistence', () => {
         expect(firestore.setDoc).not.toHaveBeenCalled();
     });
 
+    describe('degrades to an unbound, not-replayable revision when capture cannot be persisted', () => {
+        const auditFor = (evaluatedAt: string): RecommendationAudit => ({
+            policyVersion: POLICY_VERSION, evaluatedAt,
+            decisionContextRevision: 'history-r1', safetyStatus: 'complete',
+            history: { completedEventCount: 0, unmatchedEventCount: 0, sourceStatuses: { activities: 'AVAILABLE', recommendations: 'AVAILABLE', manualTraining: 'MISSING' } },
+            envelope: { safetyRestrictedModalityCount: 0, planMaxAllowableTier: 'Hard' },
+            candidateScores: [], droppedContributorObjectives: [], knowledgeLineage: [],
+        });
+        const captureFor = (evaluatedAt: string, overrides: Record<string, unknown> = {}) => ({
+            evaluatedAt,
+            minimumSafetyStatus: 'complete' as const,
+            evaluatorInputs: {
+                userId: 'athlete', date: '2026-09-28', readiness: { subjective: {}, objective: {} }, context: {},
+                events: [], fixedActivities: [], authoredPlanBlocks: [], trainingIntentProfile: null,
+                preferences: null, externalPlan: null, externalRest: null, scheduleOverlays: [],
+                confirmedProgressionOverrides: new Map<string, number>(), mechanicalCheckinHistory: [],
+                ...overrides,
+            } as never,
+            performedTrainingFacts: { asOfDate: '2026-09-28', windowDays: 7, revision: 'facts-r1', exposures: [], coverageCredits: [] },
+            mechanicalCheckinHistory: [],
+        });
+
+        it('persists the recommendation without a binding when the context cannot be built', async () => {
+            const evaluatedAt = '2026-09-28T08:30:00.000Z';
+            firestore.getDoc.mockResolvedValue({ exists: () => false });
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+            const saved = await new RecommendationService().saveRecommendation('athlete', '2026-09-28', {
+                template: TEMPLATES[0], mode: 'train', rationale: 'Keep it easy.', recommendationAudit: auditFor(evaluatedAt),
+            }, captureFor(evaluatedAt, { readiness: { subjective: {}, objective: { hrv: Number.NaN } } }));
+
+            expect(saved?.revision).toBe(1);
+            expect(saved?.recommendationAudit).toBeDefined();
+            expect(saved?.recommendationAudit).not.toHaveProperty('decisionContext');
+            expect(firestore.setDoc).toHaveBeenCalledOnce();
+            expect(firestore.batch.commit).not.toHaveBeenCalled();
+            expect(warn).toHaveBeenCalledWith(expect.stringContaining('Decision context capture failed'), expect.anything());
+            warn.mockRestore();
+        });
+
+        it('retries once without the binding when the atomic context batch is rejected', async () => {
+            const evaluatedAt = '2026-09-28T08:30:00.000Z';
+            firestore.getDoc.mockResolvedValue({ exists: () => false });
+            firestore.batch.commit.mockRejectedValueOnce(new Error('context document rejected'));
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+            const saved = await new RecommendationService().saveRecommendation('athlete', '2026-09-28', {
+                template: TEMPLATES[0], mode: 'train', rationale: 'Keep it easy.', recommendationAudit: auditFor(evaluatedAt),
+            }, captureFor(evaluatedAt));
+
+            expect(firestore.batch.commit).toHaveBeenCalledOnce();
+            expect(firestore.setDoc).toHaveBeenCalledOnce();
+            const written = firestore.setDoc.mock.calls[0][1] as { recommendationAudit?: RecommendationAudit };
+            expect(written.recommendationAudit).not.toHaveProperty('decisionContext');
+            expect(saved?.recommendationAudit).not.toHaveProperty('decisionContext');
+            warn.mockRestore();
+        });
+
+        it('keeps a changed decision current even when a bound revision has no new capture', async () => {
+            const firstAt = '2026-09-28T08:30:00.000Z';
+            firestore.getDoc.mockResolvedValue({ exists: () => false });
+            const service = new RecommendationService();
+            const bound = await service.saveRecommendation('athlete', '2026-09-28', {
+                template: TEMPLATES[0], mode: 'train', rationale: 'Keep it easy.', recommendationAudit: auditFor(firstAt),
+            }, captureFor(firstAt));
+            expect(bound?.recommendationAudit?.decisionContext?.revision).toBe(1);
+
+            vi.clearAllMocks();
+            firestore.doc.mockReturnValue({ path: 'recommendation' });
+            firestore.batch.commit.mockResolvedValue(undefined);
+            firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => bound });
+            const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+            const changed = await service.saveRecommendation('athlete', '2026-09-28', {
+                template: TEMPLATES[0], mode: 'modify', rationale: 'Back off today.', recommendationAudit: auditFor('2026-09-28T12:00:00.000Z'),
+            });
+
+            expect(changed?.revision).toBe(2);
+            expect(changed?.mode).toBe('modify');
+            expect(changed?.recommendationAudit).not.toHaveProperty('decisionContext');
+            expect(firestore.batch.commit).toHaveBeenCalledOnce();
+            warn.mockRestore();
+        });
+    });
+
     it('stores a write-once not-applicable gate record without evaluator history', async () => {
         firestore.getDoc.mockResolvedValue({ exists: () => false });
         const saved = await new RecommendationService().saveNotApplicableContext(

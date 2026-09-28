@@ -307,7 +307,12 @@ emulatorDescribe('Recommendation audit budget', () => {
             appSource: { gitSha: 'abc123', dirty: false },
             minimumSafetyStatus: 'complete',
             evaluatorInputs: {},
-            performedTrainingFacts: null,
+            // A complete-gate context must carry canonical performed facts (firestore.rules
+            // decision_contexts create); null is only valid for a revision-0 gate record.
+            performedTrainingFacts: {
+                asOfDate: date, windowDays: 7, revision: 'canonical-facts-v1:evergreen_general:synthetic',
+                exposures: [], coverageCredits: [],
+            },
             contentHash: 'a'.repeat(64),
         });
         await assertSucceeds(batch.commit());

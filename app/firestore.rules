@@ -1947,11 +1947,17 @@ service cloud.firestore {
             && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data.recommendationAudit.decisionContext.path == 'users/' + userId + '/daily_recommendations/' + date + '/decision_contexts/' + revision
             && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data.recommendationAudit.decisionContext.revision == request.resource.data.recommendationRevision
             && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data.recommendationAudit.decisionContext.contentHash == request.resource.data.contentHash
+            // The capture must describe the same evaluation the bound audit records.
+            && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data.recommendationAudit.policyVersion == request.resource.data.policyVersion
+            && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data.recommendationAudit.evaluatedAt == request.resource.data.evaluatedAt
           ))
           && request.resource.data.evaluatedAt is string
           && request.resource.data.policyVersion is string
           && request.resource.data.captureVersion == 'same-day-capture-v1'
           && request.resource.data.appSource is map
+          && request.resource.data.appSource.keys().hasOnly(['gitSha', 'dirty'])
+          && request.resource.data.appSource.gitSha is string
+          && request.resource.data.appSource.dirty is bool
           && request.resource.data.minimumSafetyStatus in ['complete', 'missing', 'incomplete']
           && ((request.resource.data.minimumSafetyStatus == 'complete'
               && request.resource.data.recommendationRevision >= 1
