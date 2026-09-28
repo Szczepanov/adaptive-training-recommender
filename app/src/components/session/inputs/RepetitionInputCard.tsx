@@ -247,8 +247,8 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                 </div>
             </div>
 
-            <button type="submit" className="log-set-btn" disabled={isSubmitting}>
-                {isSubmitting ? 'Logging…' : 'Log Set ⏎'}
+            <button type="submit" className="log-set-btn" disabled={isSubmitting} aria-label="Log repetition set">
+                {isSubmitting ? 'Logging…' : 'Log'}
             </button>
         </form>
     );

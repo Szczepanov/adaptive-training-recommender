@@ -17,7 +17,7 @@ import { sessionDefinitionService, type SessionDefinitionHeader } from '../../se
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
 import { archivedSavedDefinitionError } from '../../sessions/sessionLaunch';
 import { getGroupProgress, targetEntriesForGroupStep } from '../../sessions/groupProgression';
-import { countsTowardPrescribedSets } from '../../sessions/workSets';
+import { completedPrescribedSets, nextHoldSide } from '../../sessions/workSets';
 import { stepName } from '../../sessions/stepDisplay';
 import { GroupProgress } from './GroupProgress';
 import { ChoiceCard } from './ChoiceCard';
@@ -110,28 +110,70 @@ export function resolveRestPreviewStep(
     activeBlockIndex: number,
     activeStepIndex: number,
 ): SessionStep | null {
+    const activeStep = definition.blocks[activeBlockIndex]?.steps[activeStepIndex];
     const activeBlock = definition.blocks[activeBlockIndex];
-    const activeStep = activeBlock?.steps[activeStepIndex];
-    if (!activeBlock || !activeStep) return null;
+    if (activeStep && activeBlock
+        && completedPrescribedSets(activeStep, entries) < targetEntriesForGroupStep(activeBlock, activeStep)) return activeStep;
+    const next = resolveNextDueStep(definition, entries, activeBlockIndex, activeStepIndex);
+    return next ? definition.blocks[next.blockIndex].steps[next.stepIndex] : null;
+}
 
-    const completedForActiveStep = entries.reduce(
-        (count, entry) => count + (entry.stepId === activeStep.id && countsTowardPrescribedSets(entry) ? 1 : 0),
-        0,
-    );
-    const targetForActiveStep = targetEntriesForGroupStep(activeBlock, activeStep);
-    if (completedForActiveStep < targetForActiveStep) return activeStep;
-
-    const groupProgress = getGroupProgress(activeBlock, entries, activeStepIndex);
-    if (groupProgress?.nextStepIndex !== null && groupProgress?.nextStepIndex !== undefined) {
-        return activeBlock.steps[groupProgress.nextStepIndex] ?? null;
+export function resolveNextDueStep(
+    definition: SessionDefinition,
+    entries: readonly SessionEntry[],
+    blockIndex: number,
+    stepIndex: number,
+): { blockIndex: number; stepIndex: number } | null {
+    const block = definition.blocks[blockIndex];
+    const activeStep = block?.steps[stepIndex];
+    if (!activeStep) return null;
+    const progress = getGroupProgress(block, entries, stepIndex);
+    if (progress && !progress.isComplete) {
+        return progress.nextStepIndex === null ? null : { blockIndex, stepIndex: progress.nextStepIndex };
     }
-    if (activeStepIndex + 1 < activeBlock.steps.length) {
-        return activeBlock.steps[activeStepIndex + 1];
+    if (!progress && completedPrescribedSets(activeStep, entries) < targetEntriesForGroupStep(block, activeStep)) {
+        return { blockIndex, stepIndex };
     }
-    const nextBlock = definition.blocks.find(
-        (candidate, index) => index > activeBlockIndex && candidate.steps.length > 0,
-    );
-    return nextBlock?.steps[0] ?? null;
+    for (let nextBlockIndex = progress ? blockIndex + 1 : blockIndex; nextBlockIndex < definition.blocks.length; nextBlockIndex++) {
+        const nextBlock = definition.blocks[nextBlockIndex];
+        // Optional work remains manually executable, but automatic progression follows only
+        // required prescription. This also preserves D-MCHOICE omit/end_block semantics.
+        if (!nextBlock.steps.some(step => !step.optional)) continue;
+        const nextGroup = getGroupProgress(nextBlock, entries, -1);
+        if (nextGroup) {
+            if (!nextGroup.isComplete && nextGroup.nextStepIndex !== null) {
+                return { blockIndex: nextBlockIndex, stepIndex: nextGroup.nextStepIndex };
+            }
+            continue;
+        }
+        for (let nextStepIndex = nextBlockIndex === blockIndex ? stepIndex + 1 : 0; nextStepIndex < nextBlock.steps.length; nextStepIndex++) {
+            const step = nextBlock.steps[nextStepIndex];
+            if (step.optional) continue;
+            if (completedPrescribedSets(step, entries) < targetEntriesForGroupStep(nextBlock, step)) {
+                return { blockIndex: nextBlockIndex, stepIndex: nextStepIndex };
+            }
+        }
+    }
+    // Manual navigation can land on the last authored step before earlier required work is done.
+    for (let earlierBlockIndex = 0; earlierBlockIndex <= blockIndex; earlierBlockIndex++) {
+        const earlierBlock = definition.blocks[earlierBlockIndex];
+        if (!earlierBlock.steps.some(step => !step.optional)) continue;
+        const earlierGroup = getGroupProgress(earlierBlock, entries, -1);
+        if (earlierGroup) {
+            if (!earlierGroup.isComplete && earlierGroup.nextStepIndex !== null) {
+                return { blockIndex: earlierBlockIndex, stepIndex: earlierGroup.nextStepIndex };
+            }
+            continue;
+        }
+        const end = earlierBlockIndex === blockIndex ? stepIndex : earlierBlock.steps.length;
+        for (let earlierStepIndex = 0; earlierStepIndex < end; earlierStepIndex++) {
+            const step = earlierBlock.steps[earlierStepIndex];
+            if (!step.optional && completedPrescribedSets(step, entries) < targetEntriesForGroupStep(earlierBlock, step)) {
+                return { blockIndex: earlierBlockIndex, stepIndex: earlierStepIndex };
+            }
+        }
+    }
+    return null;
 }
 
 export function resolveCompanionPromptCopy(finishedTitle: string, companionCount: number): { heading: string; subheading: string } {
@@ -245,11 +287,13 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [saveTemplateSuccess, setSaveTemplateSuccess] = useState<string | null>(null);
     const [saveTemplateError, setSaveTemplateError] = useState<string | null>(null);
     const [isSavingTemplate, setIsSavingTemplate] = useState<boolean>(false);
-    const [pendingGroupAdvance, setPendingGroupAdvance] = useState<{
+    const [pendingAdvance, setPendingAdvance] = useState<{
         blockIndex: number;
         stepIndex: number;
         entryCountBefore: number;
     } | null>(null);
+    const activeHeadingRef = useRef<HTMLHeadingElement>(null);
+    const [focusNextStep, setFocusNextStep] = useState(false);
 
     const activeExerciseIdentity = useMemo((): ExerciseIdentity | null => {
         if (!runner.activeStep?.exerciseRef) return null;
@@ -508,37 +552,49 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         }
     };
 
-    const handleEntrySubmit = async (payload: SessionEntryPayload) => {
+    const handleEntrySubmit = async (payload: SessionEntryPayload, side?: 'left' | 'right') => {
         if (!runner.definition || !runner.activeBlock || !runner.activeStep) return;
 
         const blockIndex = runner.activeBlockIndex;
         const stepIndex = runner.activeStepIndex;
         const entryCountBefore = runner.entries.length;
-        await runner.logEntry(payload);
-        setPendingGroupAdvance({ blockIndex, stepIndex, entryCountBefore });
+        await runner.logEntry(payload, side);
+        setPendingAdvance({ blockIndex, stepIndex, entryCountBefore });
+    };
+
+    const selectStepAndFocus = (blockIndex: number, stepIndex: number) => {
+        if (runner.activeBlockIndex === blockIndex && runner.activeStepIndex === stepIndex) return;
+        setFocusNextStep(true);
+        runner.selectStep(blockIndex, stepIndex);
     };
 
     useEffect(() => {
-        if (!pendingGroupAdvance || !runner.definition || runner.entries.length <= pendingGroupAdvance.entryCountBefore) return;
-
-        setPendingGroupAdvance(null);
-        const block = runner.definition.blocks[pendingGroupAdvance.blockIndex];
-        if (!block) return;
-
-        const progress = getGroupProgress(block, runner.entries, pendingGroupAdvance.stepIndex);
-        if (!progress) return;
-
-        if (progress.nextStepIndex !== null) {
-            runner.selectStep(pendingGroupAdvance.blockIndex, progress.nextStepIndex);
-            return;
+        if (!pendingAdvance || !runner.definition || runner.entries.length <= pendingAdvance.entryCountBefore) return;
+        setPendingAdvance(null);
+        if (runner.activeBlockIndex !== pendingAdvance.blockIndex || runner.activeStepIndex !== pendingAdvance.stepIndex) return;
+        const block = runner.definition.blocks[pendingAdvance.blockIndex];
+        const step = block?.steps[pendingAdvance.stepIndex];
+        if (!step) return;
+        const before = completedPrescribedSets(step, runner.entries.slice(0, pendingAdvance.entryCountBefore));
+        const after = completedPrescribedSets(step, runner.entries);
+        if (after <= before) return;
+        const next = resolveNextDueStep(runner.definition, runner.entries, pendingAdvance.blockIndex, pendingAdvance.stepIndex);
+        if (next) {
+            if (next.blockIndex !== pendingAdvance.blockIndex || next.stepIndex !== pendingAdvance.stepIndex) {
+                setFocusNextStep(true);
+                runner.selectStep(next.blockIndex, next.stepIndex);
+            }
+        } else {
+            setShowCompletionSheet(true);
         }
+    }, [pendingAdvance, runner]);
 
-        // A completed rotating group advances to the first step of the next non-empty block.
-        const nextBlockIndex = runner.definition.blocks.findIndex(
-            (candidate, index) => index > pendingGroupAdvance.blockIndex && candidate.steps.length > 0,
-        );
-        if (nextBlockIndex >= 0) runner.selectStep(nextBlockIndex, 0);
-    }, [pendingGroupAdvance, runner]);
+    useEffect(() => {
+        if (!focusNextStep) return;
+        setFocusNextStep(false);
+        activeHeadingRef.current?.focus();
+        activeHeadingRef.current?.scrollIntoView?.({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    }, [focusNextStep, runner.activeBlockIndex, runner.activeStepIndex]);
 
     // A choice-driven end_session (D-MCHOICE) routes straight to the completion sheet
     // rather than requiring the athlete to step through every now-optional block.
@@ -594,13 +650,11 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
 
     const stepCompletedCounts = useMemo(() => {
         const counts = new Map<string, number>();
-        for (const e of entries) {
-            if (e.stepId && countsTowardPrescribedSets(e)) {
-                counts.set(e.stepId, (counts.get(e.stepId) ?? 0) + 1);
-            }
+        for (const block of definition?.blocks ?? []) {
+            for (const step of block.steps) counts.set(step.id, completedPrescribedSets(step, entries));
         }
         return counts;
-    }, [entries]);
+    }, [definition, entries]);
 
     // The advisory rest banner follows the next actually due work rather than authored list order.
     const restNextStep = useMemo(
@@ -933,36 +987,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                 </div>
             )}
 
-            {/* Block & Step Navigation */}
-            <div className="step-nav-ribbon">
-                {definition.blocks.map((block, bIdx) => (
-                    <div key={block.id} className="block-nav-group">
-                        <span className="block-role-label">{block.title || block.role}</span>
-                        <div className="step-pills">
-                            {block.steps.map((step, sIdx) => {
-                                const stepCompletedSets = stepCompletedCounts.get(step.id) ?? 0;
-                                // Shares the same target-set contract GroupProgress uses below, so a
-                                // rotating group's block.rounds (not just the step's own dose.sets)
-                                // is honored consistently between the two displays.
-                                const targetSets = targetEntriesForGroupStep(block, step);
-                                const isStepComplete = stepCompletedSets >= targetSets;
-                                const isCurrent = runner.activeBlockIndex === bIdx && runner.activeStepIndex === sIdx;
-                                return (
-                                    <button
-                                        key={step.id}
-                                        type="button"
-                                        className={`step-nav-pill ${isCurrent ? 'active' : ''} ${isStepComplete ? 'completed' : ''}`}
-                                        onClick={() => runner.selectStep(bIdx, sIdx)}
-                                    >
-                                        {isStepComplete ? '✓ ' : (stepCompletedSets > 0 ? `(${stepCompletedSets}/${targetSets}) ` : '')}{stepName(step)}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-                ))}
-            </div>
-
             {/* Active Step Panel */}
             {activeStep && (
                 <div className="active-step-panel">
@@ -979,7 +1003,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                     🔄 Swap Exercise
                                 </button>
                             </div>
-                            <h3 className="step-name">
+                            <h3 className="step-name" ref={activeHeadingRef} tabIndex={-1}>
                                 {stepName(activeStep)}
                             </h3>
                             {pastSummary && (
@@ -1018,7 +1042,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                             block={activeBlock}
                             entries={entries}
                             activeStepIndex={runner.activeStepIndex}
-                            onSelectStep={stepIndex => runner.selectStep(runner.activeBlockIndex, stepIndex)}
+                            onSelectStep={stepIndex => selectStepAndFocus(runner.activeBlockIndex, stepIndex)}
                         />
                     )}
 
@@ -1071,6 +1095,8 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                     step={activeStep}
                                     suggestedLoadKg={suggestedLoadKg}
                                     suggestedSeconds={suggestedSeconds}
+                                    nextSide={nextHoldSide(activeStep, entries)}
+                                    performedEntryCount={activeStepEntries.filter(entry => entry.payload.kind === 'duration').length}
                                     onSubmit={handleEntrySubmit}
                                 />
                             ) : inputProfile === 'distance_split' ? (
@@ -1137,7 +1163,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                         </span>
                                                     )}
                                                     {entry.payload.kind === 'duration' && (
-                                                        <span className="set-metrics">{entry.payload.seconds}s hold</span>
+                                                        <span className="set-metrics">{entry.side === 'left' || entry.side === 'right' ? `${entry.side} · ` : ''}{entry.payload.seconds}s hold</span>
                                                     )}
                                                     {entry.payload.kind === 'distance' && (
                                                         <span className="set-metrics">{entry.payload.meters}m {entry.payload.durationSeconds ? `(${entry.payload.durationSeconds}s)` : ''}</span>
@@ -1171,6 +1197,34 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     </div>
                 </div>
             )}
+
+            {/* Authored order and manual selection stay available below the current task. */}
+            <nav className="step-nav-ribbon" aria-label="Workout steps">
+                {definition.blocks.map((block, bIdx) => (
+                    <div key={block.id} className="block-nav-group">
+                        <span className="block-role-label">{block.title || block.role}</span>
+                        <div className="step-pills">
+                            {block.steps.map((step, sIdx) => {
+                                const stepCompletedSets = stepCompletedCounts.get(step.id) ?? 0;
+                                const targetSets = targetEntriesForGroupStep(block, step);
+                                const isStepComplete = stepCompletedSets >= targetSets;
+                                const isCurrent = runner.activeBlockIndex === bIdx && runner.activeStepIndex === sIdx;
+                                return (
+                                    <button
+                                        key={step.id}
+                                        type="button"
+                                        className={`step-nav-pill ${isCurrent ? 'active' : ''} ${isStepComplete ? 'completed' : ''}`}
+                                        aria-current={isCurrent ? 'step' : undefined}
+                                        onClick={() => selectStepAndFocus(bIdx, sIdx)}
+                                    >
+                                        {isStepComplete ? '✓ ' : (stepCompletedSets > 0 ? `(${stepCompletedSets}/${targetSets}) ` : '')}{stepName(step)}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ))}
+            </nav>
 
             {/* Bottom Actions */}
             <div className="session-bottom-bar">
