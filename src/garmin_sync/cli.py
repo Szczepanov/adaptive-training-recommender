@@ -23,13 +23,16 @@ def _run_with_user_lease(
     operation_name: str,
     service: GarminSyncService,
     operation: Callable[[GarminSyncService], bool],
+    *,
+    busy_is_success: bool = True,
 ) -> bool:
     """Run one Garmin operation while holding the shared per-user Firestore lease.
 
-    A busy lease is a successful no-op: another process is already doing Garmin work for
-    this user, and the next scheduled tick will pick up anything still pending. Lease release
-    errors intentionally propagate so Cloud Run records a failure instead of silently leaving
-    the user blocked until expiry.
+    Scheduled operations treat a busy lease as a successful no-op because a later tick will
+    retry pending work. Explicit operator commands can pass busy_is_success=False so a
+    skipped run returns non-zero and can be retried deliberately. Lease release errors
+    intentionally propagate so Cloud Run records a failure instead of silently leaving the
+    user blocked until expiry.
     """
     lease = GarminExecutionLease(
         service.repository.db,
@@ -40,7 +43,7 @@ def _run_with_user_lease(
         logger.info(
             "%s: skipped because another Garmin operation is already running", operation_name
         )
-        return True
+        return busy_is_success
 
     try:
         return operation(service)
@@ -261,6 +264,7 @@ def run_backfill_activity_response(args: list[str] | None = None) -> int:
                 force=parsed_args.force,
                 dry_run=parsed_args.dry_run,
             ),
+            busy_is_success=False,
         )
         return 0 if success else 1
     except Exception as error:
