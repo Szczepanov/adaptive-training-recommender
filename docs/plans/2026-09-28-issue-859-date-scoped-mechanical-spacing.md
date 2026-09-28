@@ -306,7 +306,7 @@ Verify the rule through all active recommendation surfaces that consume evergree
 - next-day branch;
 - week-ahead projected dates.
 
-The same exact input/history should not produce different adjacency semantics merely because it entered through a
+The same input/history should not produce different adjacency semantics merely because it entered through a
 different orchestration path.
 
 If one path lacks the exact `CoverageState`/history needed to make this true, fix the orchestration wiring rather

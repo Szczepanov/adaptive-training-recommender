@@ -133,7 +133,7 @@ calendar adjacency constraint should move to the date evaluator.
 
 ## 3. Why a static not-before date is also insufficient
 
-#805 already uses `candidateWorkoutNotBeforeDates` for capability cadence. That mechanism is not enough
+\#805 already uses `candidateWorkoutNotBeforeDates` for capability cadence. That mechanism is not enough
 for #859.
 
 A static not-before date can express “yesterday was mechanical, so earliest is tomorrow”. It cannot
@@ -229,7 +229,7 @@ interval.
 
 ### 5.3 Preserve existing identity semantics
 
-#859 should not redefine what counts as a “mechanical exposure”.
+\#859 should not redefine what counts as a “mechanical exposure”.
 
 The current progression path maps performed history through `mechanicalIdentityFor` before evaluating
 spacing. The temporary PR #855 implementation initially used `grantsMechanicalExposureCredit`, then
@@ -288,10 +288,10 @@ Do not infer from:
 - title;
 - stimulus profile.
 
-The gate is exact-identity based.
+The gate is exact-identity-based.
 
 Because the state bit is produced only for plans with #804's requirement, endurance-only plans without
-#804 remain unchanged.
+\#804 remain unchanged.
 
 ### 6.4 `weeklyAllocation.ts`: classify the new exclusion as feasibility
 
@@ -416,7 +416,7 @@ The recommended design fits the existing accepted architecture:
 | Projected sessions become “performed” tissue evidence | Use them only for date feasibility; do not feed them into response-gated stage advancement. |
 | Candidate gate broadens from exact identity to modality/category | Use `mechanicalIdentityFor` on canonical workout identity only. |
 | #805 reports false deliberate suspension | Remove adjacency from shared verdict; add integration test for later-window placement. |
-| Other real withholds become date-local by accident | Unit-test illness, pain/guardrail and severe tissue cases explicitly. |
+| Other real withholds unintentionally become date-local | Unit-test illness, pain/guardrail and severe tissue cases explicitly. |
 | Policy drift CI fails | Update claim/alignment + `POLICY_VERSION` in the same implementation PR. |
 
 ## 11. Out of scope
