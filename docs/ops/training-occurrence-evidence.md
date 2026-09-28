@@ -104,12 +104,18 @@ title and modality with valid nonnegative cost and stimulus profiles.
   workout shared by several templates resolves only through the recommendation that owns the
   execution. As in the live Firestore path, `recoveryHours` is not set.
 - **Completed manual or external-plan execution:** requires its exported immutable
-  `execution_prescription` and at least one performed entry linked to a prescribed step. The
-  prescription title and modality stay authoritative; existing modality profiles are scaled
-  by completed duration and logged-set completion. Session RPE selects the diagnostic fallback
-  intensity when Garmin is absent. A linked Garmin activity contributes measured duration and
-  Training Effect stimulus while keeping the structured identity. This remains offline evidence
-  only; its RPE bands need review before any activation.
+  `execution_prescription`, an exact source-identity match to the completed execution, and at
+  least one performed entry owned by that execution and linked to a prescribed work step. The
+  prescription title and modality stay authoritative. Authored duration ranges use the same
+  midpoint reference semantics as catalog ranges. Logged completion is computed per required
+  prescribed step, capped at each step's target; rotating block rounds are honored, while
+  optional or excess work cannot compensate for missing required work. Existing modality
+  profiles are then scaled by completed duration and that independent completion ratio. Session
+  RPE selects the diagnostic fallback intensity when Garmin is absent. A linked Garmin activity
+  contributes measured duration and Training Effect stimulus while keeping the structured
+  identity. Malformed prescription metadata fails closed. This remains offline evidence only;
+  its RPE bands and generic non-catalog profiles need reviewed real-history evidence before any
+  activation.
 - **Unknown, never guessed:** more than one structured or provider source, a non-Garmin
   provider, a missing or non-completed execution, missing non-catalog prescription/entry
   evidence, a `legacy_strength` execution, an ambiguous template, a missing provider record, or
