@@ -1,57 +1,33 @@
 import { describe, expect, it } from 'vitest';
-import type { CompletedExposure } from '../engine/trainingHistory';
-import { SCENARIOS } from '../engine/simulation/scenarios';
 import { workoutForTemplate } from '../workouts/prescription';
-import { runHistoryCounterfactualSeries, type NonHistoryDecisionInputs } from './historyRecommendationCounterfactual';
-import { prepareTo4Evidence, type TrainingOccurrenceRecordExport } from './to4EvidencePreparation';
-
-const scenario = SCENARIOS.find(candidate => candidate.id === 'evergreen_balanced_four_sessions')!;
-const inputs: NonHistoryDecisionInputs = {
-    readiness: scenario.readinessForWeek(0),
-    context: scenario.context,
-    events: [...(scenario.events ?? (scenario.event ? [scenario.event] : []))],
-    fixedActivities: scenario.fixedActivities ?? [],
-    trainingIntentProfile: scenario.trainingIntentProfile ?? null,
-    preferences: scenario.preferences ?? null,
-};
-
-function hardRide(date: string): CompletedExposure {
-    return {
-        occurrenceKey: `occ-${date}`,
-        date,
-        costProfile: { systemic: 0.9, cardiovascular: 0.9, lowerBody: 0.8, upperBody: 0.1, impactTissue: 0.2, neuromuscular: 0.6 },
-        trainingRecordLike: { type: 'Cycling hard', duration_min: 120, training_effect: 4.5, intensity_tag: 'hard' },
-        stimulusConfidence: 'inferred',
-        modality: 'Cycling',
-    };
-}
-
-describe('runHistoryCounterfactualSeries', () => {
-    const dates = ['2026-08-10', '2026-08-11'];
-
-    it('reports no delta when only identical histories are swapped', async () => {
-        const history = [hardRide('2026-08-08')];
-        const series = await runHistoryCounterfactualSeries(inputs, history, history, dates);
-        expect(series).toMatchObject({ evaluatedDates: 2, changedDates: 0, unresolvedDates: 0 });
-    });
-
-    it('is deterministic and marks unclassified history-driven changes unresolved', async () => {
-        const heavy = ['2026-08-05', '2026-08-06', '2026-08-07', '2026-08-08', '2026-08-09'].map(hardRide);
-        const first = await runHistoryCounterfactualSeries(inputs, [], heavy, dates);
-        const second = await runHistoryCounterfactualSeries(inputs, [], heavy, dates);
-        expect(JSON.stringify(second)).toBe(JSON.stringify(first));
-        expect(first.changedDates).toBeGreaterThan(0);
-        expect(first.unresolvedDates).toBe(first.changedDates);
-    });
-});
+import { assembleOfflineHistoricalContext } from './offlineContextAssembler';
+import { prepareTo4Evidence, type ReviewLabel, type TrainingOccurrenceRecordExport } from './to4EvidencePreparation';
 
 const WORKOUT_ID = workoutForTemplate('end_mod_02')!.id;
 
 function recordExport(overrides: Partial<TrainingOccurrenceRecordExport> = {}): TrainingOccurrenceRecordExport {
+    const evaluationWindow = { startDate: '2026-08-01', endDateExclusive: '2026-08-08' };
+    const historyWindow = { startDate: '2026-07-01', endDateExclusive: '2026-08-08' };
     return {
-        schemaVersion: 1,
+        schemaVersion: 2,
         userId: 'u1',
-        window: { startDate: '2026-08-01', endDateExclusive: '2026-08-08' },
+        window: evaluationWindow,
+        evaluationWindow,
+        sourceEvidenceBounds: {
+            performedTrainingOccurrences: historyWindow, activities: historyWindow, dailyRecommendations: historyWindow,
+            dailyRecommendationRevisions: historyWindow, dailyRecoverySnapshots: evaluationWindow,
+            dailySubjectiveCheckins: historyWindow, fixedActivities: evaluationWindow,
+            scheduleOverlays: evaluationWindow, planBlocks: evaluationWindow,
+            scheduleWindowManifests: evaluationWindow, sessionOccurrences: evaluationWindow,
+            sessionExecutions: historyWindow, sessionEntries: historyWindow,
+            executionPrescriptions: historyWindow, sessionDefinitionRevisions: historyWindow,
+            externalPlanRevisions: evaluationWindow,
+        },
+        sourceProvenance: { dailyRecoverySnapshots: { status: 'unprovable', reason: 'No date-D proof' } },
+        dailyRecommendationRevisions: [], dailyRecoverySnapshots: [], dailySubjectiveCheckins: [],
+        fixedActivities: [], scheduleOverlays: [], planBlocks: [], scheduleWindowManifests: [],
+        sessionOccurrences: [], externalPlanHeaders: [], externalPlanRevisions: [], externalPlanPlacements: [],
+        goals: [], intentBlockHeaders: [], intentBlockRevisions: [], trainingSettings: [], preferences: [], trainingIntentProfiles: [],
         performedTrainingOccurrences: [{
             id: 'pto-1',
             data: {
@@ -67,6 +43,9 @@ function recordExport(overrides: Partial<TrainingOccurrenceRecordExport> = {}): 
                 startedAt: '2026-08-06T16:00:00Z', completedAt: '2026-08-06T16:45:00Z', updatedAt: '2026-08-06T16:45:00Z', state: 'completed', schemaVersion: 1,
             },
         }],
+        sessionEntries: [],
+        executionPrescriptions: [],
+        sessionDefinitionRevisions: [],
         activities: [{
             id: 'a-1',
             data: {
@@ -86,7 +65,7 @@ function recordExport(overrides: Partial<TrainingOccurrenceRecordExport> = {}): 
     };
 }
 
-const options = { sourceCommit: 'synthetic-fixture', coveragePolicyVersion: 'coverage-v1', fitFingerprintVersion: 'fit-workout-v2' };
+const options = { sourceCommit: 'synthetic-fixture', sourceTreeSha256: 'a'.repeat(64), coveragePolicyVersion: 'coverage-v1', fitFingerprintVersion: 'fit-workout-v2' };
 
 describe('prepareTo4Evidence', () => {
     it('produces a sanitized, one-to-one prepared input with evaluated hard gates', () => {
@@ -105,6 +84,105 @@ describe('prepareTo4Evidence', () => {
                 noStickyManualDecisionViolations: 'not_evaluated',
             },
         });
+    });
+
+    it('keeps lookback-only records out of evaluation exposure counts', () => {
+        const raw = recordExport();
+        const earlierOccurrence = structuredClone(raw.performedTrainingOccurrences[0]);
+        earlierOccurrence.id = 'pto-earlier';
+        Object.assign(earlierOccurrence.data as object, {
+            performedOccurrenceId: 'pto-earlier', localDate: '2026-07-20',
+            sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: 'a-earlier' }],
+            reconciliation: { state: 'single_source' },
+        });
+        const earlierActivity = structuredClone(raw.activities[0]);
+        earlierActivity.id = 'a-earlier';
+        Object.assign(earlierActivity.data as object, { activityId: 'a-earlier', date: '2026-07-20' });
+        raw.performedTrainingOccurrences.push(earlierOccurrence);
+        raw.activities.push(earlierActivity);
+        raw.dailyRecoverySnapshots.push({ id: 'private-recovery', data: { userId: 'u1', date: '2026-08-06' } });
+
+        const prepared = prepareTo4Evidence(raw, options);
+        expect(prepared.liveExposures.some(row => row.date === '2026-07-20')).toBe(false);
+        expect(prepared.canonicalExposures.some(row => row.date === '2026-07-20')).toBe(false);
+        expect(prepared.preparedInput).toMatchObject({
+            corpus: { realHistoryOccurrenceCount: 1 },
+            canonicalDerivation: { windowDays: 7, derived: 1 },
+            identityEvidence: { activeOccurrences: 1 },
+        });
+        expect(prepared.sourceEvidence.dailyRecoverySnapshots[0].id).toBe('private-recovery');
+        expect(JSON.stringify(prepared.preparedInput)).not.toContain('private-recovery');
+    });
+
+    it('rejects schema v1 and invalid offline source evidence', () => {
+        expect(() => prepareTo4Evidence({ ...recordExport(), schemaVersion: 1 } as unknown as TrainingOccurrenceRecordExport, options)).toThrow(/schemaVersion 2/);
+        expect(() => prepareTo4Evidence(recordExport({ dailyRecoverySnapshots: [{ id: 'foreign', data: { userId: 'other' } }] }), options)).toThrow(/cross-user/);
+        expect(() => prepareTo4Evidence(recordExport({ sourceEvidenceBounds: {
+            ...recordExport().sourceEvidenceBounds,
+            activities: { startDate: '2026-08-03', endDateExclusive: '2026-08-08' },
+        } }), options)).toThrow(/activities/);
+        expect(() => prepareTo4Evidence(recordExport({
+            sourceProvenance: { dailyRecoverySnapshots: { status: 'unprovable', reason: '' } },
+        }), options)).toThrow(/provenance/);
+        expect(() => prepareTo4Evidence(recordExport({
+            window: { startDate: '2026-08-02', endDateExclusive: '2026-08-08' },
+        }), options)).toThrow(/evaluationWindow/);
+    });
+
+    it('keeps every evaluation date and reports unprovable historical sources without fallback', () => {
+        const prepared = prepareTo4Evidence(recordExport(), options);
+        const context = assembleOfflineHistoricalContext(prepared.sourceEvidence, 'u1');
+        const first = context.inputForDate(context.dates[0]);
+
+        expect(context.dates).toHaveLength(7);
+        expect(context.sourceCoverage).toMatchObject({ candidateDates: 7, minimumSafetyCheckin: { missing: 7 } });
+        expect(first).toMatchObject({
+            status: 'not_replayable',
+            dateAlias: 'D001',
+            reasonCodes: expect.arrayContaining([
+                'recovery_history_unprovable', 'goal_history_unprovable', 'training_settings_history_unprovable',
+            ]),
+        });
+        expect(JSON.stringify(context.sourceCoverage)).not.toContain('u1');
+    });
+
+    it('marks a provably incomplete minimum-safety check-in not applicable', () => {
+        const incomplete = {
+            userId: 'u1', date: '2026-08-01', readiness: null, sleepQuality: null, fatigue: null, soreness: null,
+            mentalStress: null, motivation: null, painOrInjury: false, illnessSymptoms: false,
+            unusuallyLimitedTime: false, alreadyTrainedToday: false,
+            availability: { timeAvailableMin: null, preferredModalityToday: null, indoorOnly: false },
+            notes: null, submittedAt: '2026-07-31T21:00:00.000Z',
+            dataQuality: { isComplete: false, missingFields: ['fatigue', 'soreness'] }, schemaVersion: 1,
+            createdAt: '2026-07-31T21:00:00.000Z', updatedAt: '2026-07-31T21:00:00.000Z',
+        };
+        const prepared = prepareTo4Evidence(recordExport({
+            dailySubjectiveCheckins: [{ id: '2026-08-01', data: incomplete }],
+        }), options);
+        const context = assembleOfflineHistoricalContext(prepared.sourceEvidence, 'u1');
+
+        expect(context.inputForDate('2026-08-01')).toMatchObject({
+            status: 'not_applicable', reasonCode: 'minimum_safety_checkin_incomplete', dateAlias: 'D001',
+        });
+        expect(context.sourceCoverage.minimumSafetyCheckin).toMatchObject({ incomplete: 1, provenIncomplete: 1 });
+    });
+
+    it('does not infer a failed safety gate from an incomplete check-in updated during the date', () => {
+        const incomplete = {
+            userId: 'u1', date: '2026-08-01', readiness: null, sleepQuality: null, fatigue: null, soreness: null,
+            mentalStress: null, motivation: null, painOrInjury: false, illnessSymptoms: false,
+            unusuallyLimitedTime: false, alreadyTrainedToday: false,
+            availability: { timeAvailableMin: null, preferredModalityToday: null, indoorOnly: false },
+            notes: null, submittedAt: '2026-08-01T00:00:00.000Z',
+            dataQuality: { isComplete: false, missingFields: ['fatigue', 'soreness'] }, schemaVersion: 1,
+            createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-08-01T00:00:00.000Z',
+        };
+        const prepared = prepareTo4Evidence(recordExport({
+            dailySubjectiveCheckins: [{ id: '2026-08-01', data: incomplete }],
+        }), options);
+        const context = assembleOfflineHistoricalContext(prepared.sourceEvidence, 'u1');
+
+        expect(context.inputForDate('2026-08-01')).toMatchObject({ status: 'not_replayable' });
     });
 
     it('never passes a gate on an empty export', () => {
@@ -183,17 +261,14 @@ describe('prepareTo4Evidence', () => {
         });
     });
 
-    it('rejects foreign-user records and fails the cross-user gate', () => {
+    it('rejects foreign-user documents before they can enter prepared evidence', () => {
         const raw = recordExport();
         const foreign = {
             ...raw,
             activities: [...raw.activities, { id: 'a-9', data: { ...(raw.activities[0].data as object), activityId: 'a-9', userId: 'someone-else' } }],
             sessionEntries: [{ id: 'foreign-entry', data: { id: 'foreign-entry', executionId: 'e-1', userId: 'someone-else', stepId: 'step', completedAt: 'x', createdAt: 'x', updatedAt: 'x', payload: { kind: 'repetition', setIndex: 1, reps: 1 } } }],
         };
-        expect(prepareTo4Evidence(foreign, options).preparedInput).toMatchObject({
-            canonicalDerivation: { crossUserRecordsRejected: 2 },
-            hardGates: { noCrossUserEvidenceLeakage: 'fail' },
-        });
+        expect(() => prepareTo4Evidence(foreign, options)).toThrow(/cross-user/);
     });
 
     it('evaluates reviewed labels and refuses labels for unknown aliases', () => {
@@ -201,6 +276,10 @@ describe('prepareTo4Evidence', () => {
             .toMatchObject({ hardGates: { noKnownFalsePositiveMerges: 'pass' } });
         expect(prepareTo4Evidence(recordExport(), { ...options, labels: { 'occ-0001': 'false_positive_merge' } }).preparedInput)
             .toMatchObject({ hardGates: { noKnownFalsePositiveMerges: 'fail' } });
+        expect(() => prepareTo4Evidence(recordExport(), {
+            ...options,
+            labels: { 'occ-0001': 'not_a_review_label' } as unknown as Readonly<Record<string, ReviewLabel>>,
+        })).toThrow(/supported label/);
         expect(() => prepareTo4Evidence(recordExport(), { ...options, labels: { 'occ-9999': 'correct_merge' } })).toThrow(/alias/);
     });
 });

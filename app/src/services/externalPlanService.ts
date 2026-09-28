@@ -6,31 +6,19 @@ import type {
     ExternalTrainingPlan,
 } from '../engine/models';
 import type { DataIssue, DataState } from '../engine/dataState';
-import { validateExternalPlanPlacement, validateExternalTrainingPlan } from '../engine/validation';
+import { validateExternalPlanPlacement } from '../engine/validation';
 import { computeContentHash } from '../engine/externalPlanHash';
 import { getErrorCode, getErrorMessage } from '../utils/errors';
-import { validateExternalTrainingPlanV2, EXTERNAL_PLAN_SCHEMA_V2, type ExternalTrainingPlanV2 } from '../sessions/externalPlanV2';
-import { validateExternalTrainingPlanV3, EXTERNAL_PLAN_SCHEMA_V3, type ExternalTrainingPlanV3 } from '../sessions/externalPlanV3';
-import { validateExternalTrainingPlanV4, EXTERNAL_PLAN_SCHEMA_V4, type ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
-import { validateExternalTrainingPlanV5, EXTERNAL_PLAN_SCHEMA_V5, type ExternalTrainingPlanV5 } from '../sessions/externalPlanV5';
+import { type ExternalTrainingPlanV2 } from '../sessions/externalPlanV2';
+import { type ExternalTrainingPlanV3 } from '../sessions/externalPlanV3';
+import { type ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
+import { EXTERNAL_PLAN_SCHEMA_V5, type ExternalTrainingPlanV5 } from '../sessions/externalPlanV5';
+import { validateAnyExternalTrainingPlan } from '../sessions/externalPlanValidation';
 
 /** Re-exported so existing callers keep one import site. The implementation lives in
  * `engine/externalPlanHash.ts` because `replay.ts` verifies against it and must not pull
  * a Firestore-bound module into the audit path. */
 export { computeContentHash } from '../engine/externalPlanHash';
-
-/** Dispatches to the v1, v2, v3, v4 or v5 validator based on the raw document's own `schema`
- * literal, mirroring the "back-inferred/branched on a discriminant" precedent
- * `DailyRecommendation.schemaVersion` already uses. v1 stays the default so a malformed
- * `schema` value fails against v1's stricter literal check rather than silently passing. */
-function validateAnyExternalTrainingPlan(raw: unknown) {
-    const schema = (raw as { schema?: unknown } | null)?.schema;
-    if (schema === EXTERNAL_PLAN_SCHEMA_V5) return validateExternalTrainingPlanV5(raw);
-    if (schema === EXTERNAL_PLAN_SCHEMA_V4) return validateExternalTrainingPlanV4(raw);
-    if (schema === EXTERNAL_PLAN_SCHEMA_V3) return validateExternalTrainingPlanV3(raw);
-    if (schema === EXTERNAL_PLAN_SCHEMA_V2) return validateExternalTrainingPlanV2(raw);
-    return validateExternalTrainingPlan(raw);
-}
 
 export interface ImportResult {
     header: ExternalPlanHeader;

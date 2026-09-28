@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { validateExternalTrainingPlan } from '../engine/validation';
 import { impliedDate } from '../engine/externalPlacement';
 import { type ExternalPlanHeader, type ObjectiveKey } from '../engine/models';
 import { externalPlanService } from '../services/externalPlanService';
@@ -7,15 +6,13 @@ import { activateIntentBlocksFromPlan, type IntentBlockActivationResult } from '
 import { getLocalDateString } from '../utils/localDate';
 import { diffPlans, type PlanDiffRow } from './externalPlanDiff';
 import {
-    validateExternalTrainingPlanV2,
     isV2Session,
-    EXTERNAL_PLAN_SCHEMA_V2,
     type AnyExternalTrainingPlan as ExternalTrainingPlan,
     type AnyExternalPlanSession,
 } from '../sessions/externalPlanV2';
-import { validateExternalTrainingPlanV3, EXTERNAL_PLAN_SCHEMA_V3 } from '../sessions/externalPlanV3';
-import { validateExternalTrainingPlanV4, EXTERNAL_PLAN_SCHEMA_V4 } from '../sessions/externalPlanV4';
-import { validateExternalTrainingPlanV5, EXTERNAL_PLAN_SCHEMA_V5, isV5Plan } from '../sessions/externalPlanV5';
+import { EXTERNAL_PLAN_SCHEMA_V4 } from '../sessions/externalPlanV4';
+import { isV5Plan } from '../sessions/externalPlanV5';
+import { validateAnyExternalTrainingPlan } from '../sessions/externalPlanValidation';
 import { SessionDefinitionPreview } from './session/SessionDefinitionPreview';
 import './ExternalPlanImport.css';
 
@@ -31,21 +28,6 @@ type Phase =
     | { kind: 'saving' }
     | { kind: 'saved'; plan: ExternalTrainingPlan; untagged: AnyExternalPlanSession[]; intentBlockResults: IntentBlockActivationResult[] }
     | { kind: 'failed'; message: string };
-
-/** Dispatches to the v1-v5 validator based on the pasted document's own `schema` literal,
- * mirroring `externalPlanService.ts`'s own dispatcher (kept separate rather than imported
- * from there since that one isn't exported, and a UI validate-before-save step has no
- * service dependency otherwise). Previously stopped at v3, silently rejecting a pasted v4
- * plan before it ever reached the service's own (more complete) dispatcher -- fixed here
- * alongside adding v5, since leaving that gap while adding v5 support would be confusing. */
-function validateAnyExternalTrainingPlan(raw: unknown) {
-    const schema = (raw as { schema?: unknown } | null)?.schema;
-    if (schema === EXTERNAL_PLAN_SCHEMA_V5) return validateExternalTrainingPlanV5(raw);
-    if (schema === EXTERNAL_PLAN_SCHEMA_V4) return validateExternalTrainingPlanV4(raw);
-    if (schema === EXTERNAL_PLAN_SCHEMA_V3) return validateExternalTrainingPlanV3(raw);
-    if (schema === EXTERNAL_PLAN_SCHEMA_V2) return validateExternalTrainingPlanV2(raw);
-    return validateExternalTrainingPlan(raw);
-}
 
 /** Objective keys the engine can credit, offered when a session declared none. */
 const OBJECTIVE_CHOICES: ObjectiveKey[] = [

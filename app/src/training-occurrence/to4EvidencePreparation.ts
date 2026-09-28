@@ -36,26 +36,63 @@ import { compareCompletedExposureSets } from './historyCounterfactual';
 export interface RawRecordDocument {
     id: string;
     data: unknown;
+    recommendationId?: string;
+    planId?: string;
 }
 
+interface DateWindow { startDate: string; endDateExclusive: string }
+
+const BOUNDED_SOURCES = [
+    'performedTrainingOccurrences', 'activities', 'dailyRecommendations', 'dailyRecommendationRevisions',
+    'dailyRecoverySnapshots', 'dailySubjectiveCheckins', 'fixedActivities', 'scheduleOverlays',
+    'planBlocks', 'scheduleWindowManifests', 'sessionOccurrences', 'sessionExecutions',
+    'sessionEntries', 'executionPrescriptions', 'sessionDefinitionRevisions', 'externalPlanRevisions',
+] as const;
+
+const OFFLINE_SOURCES = [
+    'performedTrainingOccurrences', 'activities', 'dailyRecommendations', 'sessionExecutions',
+    'sessionEntries', 'executionPrescriptions', 'sessionDefinitionRevisions',
+    'dailyRecommendationRevisions', 'dailyRecoverySnapshots', 'dailySubjectiveCheckins',
+    'fixedActivities', 'scheduleOverlays', 'planBlocks', 'scheduleWindowManifests',
+    'sessionOccurrences', 'externalPlanHeaders', 'externalPlanRevisions', 'externalPlanPlacements',
+    'goals', 'intentBlockHeaders', 'intentBlockRevisions', 'trainingSettings', 'preferences',
+    'trainingIntentProfiles',
+] as const;
+
+type BoundedSource = (typeof BOUNDED_SOURCES)[number];
+type OfflineSource = (typeof OFFLINE_SOURCES)[number];
+type SourceProvenance = Record<string, { status: 'unprovable'; reason: string } | { status: 'exact_revision' }>;
+
 /** Shape written by `python -m garmin_sync export-training-occurrence-records`. */
-export interface TrainingOccurrenceRecordExport {
-    schemaVersion: 1;
+export interface TrainingOccurrenceRecordExport extends Record<OfflineSource, RawRecordDocument[]> {
+    schemaVersion: 2;
     userId: string;
-    window: { startDate: string; endDateExclusive: string };
+    window?: DateWindow;
+    evaluationWindow: DateWindow;
+    sourceEvidenceBounds: Record<BoundedSource, DateWindow>;
+    sourceProvenance: SourceProvenance;
     performedTrainingOccurrences: RawRecordDocument[];
     sessionExecutions: RawRecordDocument[];
-    sessionEntries?: RawRecordDocument[];
-    executionPrescriptions?: RawRecordDocument[];
-    sessionDefinitionRevisions?: RawRecordDocument[];
+    sessionEntries: RawRecordDocument[];
+    executionPrescriptions: RawRecordDocument[];
+    sessionDefinitionRevisions: RawRecordDocument[];
     activities: RawRecordDocument[];
     dailyRecommendations: RawRecordDocument[];
 }
 
+/** Private parsed export evidence for the offline date-D assembler; never placed in preparedInput. */
+export interface OfflineSourceEvidence extends Record<OfflineSource, Array<{ id: string; data: Record<string, unknown>; recommendationId?: string; planId?: string }>> {
+    evaluationWindow: DateWindow;
+    sourceEvidenceBounds: Record<BoundedSource, DateWindow>;
+    sourceProvenance: SourceProvenance;
+}
+
 export type ReviewLabel = 'correct_merge' | 'false_positive_merge' | 'correct_separate' | 'false_negative_split';
+const REVIEW_LABEL_VALUES = new Set<ReviewLabel>(['correct_merge', 'false_positive_merge', 'correct_separate', 'false_negative_split']);
 
 export interface PrepareOptions {
     sourceCommit: string;
+    sourceTreeSha256: string;
     coveragePolicyVersion: string;
     fitFingerprintVersion: string;
     /** Reviewer labels keyed by the opaque alias printed in the private review sheet. */
@@ -70,6 +107,7 @@ export interface PreparedTo4 {
     preparedInput: Record<string, unknown>;
     liveExposures: CompletedExposure[];
     canonicalExposures: CompletedExposure[];
+    sourceEvidence: OfflineSourceEvidence;
     privateReviewSheet: Array<Record<string, unknown>>;
 }
 
@@ -77,6 +115,51 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function daysBetween(start: string, endExclusive: string): number {
     return Math.round((Date.parse(`${endExclusive}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86400000);
+}
+
+function validWindow(value: unknown): value is DateWindow {
+    if (!value || typeof value !== 'object') return false;
+    const window = value as Record<string, unknown>;
+    return typeof window.startDate === 'string' && DATE.test(window.startDate)
+        && typeof window.endDateExclusive === 'string' && DATE.test(window.endDateExclusive)
+        && window.startDate < window.endDateExclusive;
+}
+
+function offlineEvidence(raw: TrainingOccurrenceRecordExport): OfflineSourceEvidence {
+    const sourceEvidenceBounds = {} as Record<BoundedSource, DateWindow>;
+    for (const key of BOUNDED_SOURCES) {
+        const bound = raw.sourceEvidenceBounds?.[key];
+        if (!validWindow(bound) || bound.startDate > raw.evaluationWindow.startDate
+            || bound.endDateExclusive < raw.evaluationWindow.endDateExclusive) {
+            throw new Error(`Invalid source evidence bounds for ${key}.`);
+        }
+        sourceEvidenceBounds[key] = bound;
+    }
+    if (!raw.sourceProvenance || typeof raw.sourceProvenance !== 'object') throw new Error('Missing source provenance.');
+    const sourceProvenance: SourceProvenance = {};
+    for (const [key, value] of Object.entries(raw.sourceProvenance)) {
+        if (!value || typeof value !== 'object'
+            || (value.status !== 'exact_revision' && (value.status !== 'unprovable' || typeof value.reason !== 'string' || !value.reason))) {
+            throw new Error(`Invalid source provenance for ${key}.`);
+        }
+        sourceProvenance[key] = value;
+    }
+    const result = { evaluationWindow: raw.evaluationWindow, sourceEvidenceBounds, sourceProvenance } as OfflineSourceEvidence;
+    for (const key of OFFLINE_SOURCES) {
+        const documents = raw[key];
+        if (!Array.isArray(documents)) throw new Error(`Missing offline source ${key}.`);
+        result[key] = documents.map(document => {
+            if (!document || typeof document.id !== 'string' || !document.id
+                || !document.data || typeof document.data !== 'object' || Array.isArray(document.data)
+                || ('userId' in document.data && document.data.userId !== raw.userId)
+                || (document.recommendationId !== undefined && (typeof document.recommendationId !== 'string' || !document.recommendationId))
+                || (document.planId !== undefined && (typeof document.planId !== 'string' || !document.planId))) {
+                throw new Error(`Invalid or cross-user offline source ${key}.`);
+            }
+            return document as { id: string; data: Record<string, unknown>; recommendationId?: string; planId?: string };
+        });
+    }
+    return result;
 }
 
 interface ParsedRecords {
@@ -240,7 +323,7 @@ function stableJson(value: unknown): string {
 
 function occurrencesInWindow(
     occurrences: readonly PerformedTrainingOccurrence[],
-    window: TrainingOccurrenceRecordExport['window'],
+    window: DateWindow,
 ): PerformedTrainingOccurrence[] {
     return occurrences.filter(occurrence => {
         const date = occurrence.localDate
@@ -251,7 +334,7 @@ function occurrencesInWindow(
 
 function pair(
     parsed: ParsedRecords,
-    window: TrainingOccurrenceRecordExport['window'],
+    window: DateWindow,
     manualDefinitionRevisions: PrepareOptions['manualDefinitionRevisions'],
 ): {
     pairing: HistoryPairingResult;
@@ -291,33 +374,52 @@ function pair(
 }
 
 export function prepareTo4Evidence(raw: TrainingOccurrenceRecordExport, options: PrepareOptions): PreparedTo4 {
-    if (raw.schemaVersion !== 1 || typeof raw.userId !== 'string' || raw.userId.length === 0) {
-        throw new Error('Record export must be schemaVersion 1 with a userId scope.');
+    if (options.labels !== undefined && (!options.labels || typeof options.labels !== 'object'
+        || Array.isArray(options.labels) || Object.values(options.labels).some(label => !REVIEW_LABEL_VALUES.has(label)))) {
+        throw new Error('Review labels must map aliases to a supported label.');
     }
-    if (!DATE.test(raw.window?.startDate ?? '') || !DATE.test(raw.window?.endDateExclusive ?? '') || raw.window.startDate >= raw.window.endDateExclusive) {
-        throw new Error('Record export window must be YYYY-MM-DD with startDate < endDateExclusive.');
+    if (raw.schemaVersion !== 2 || typeof raw.userId !== 'string' || raw.userId.length === 0) {
+        throw new Error('Record export must be schemaVersion 2 with a userId scope.');
     }
+    if (!validWindow(raw.evaluationWindow)) {
+        throw new Error('Record export evaluationWindow must be YYYY-MM-DD with startDate < endDateExclusive.');
+    }
+    if (raw.window !== undefined && (!validWindow(raw.window)
+        || raw.window.startDate !== raw.evaluationWindow.startDate
+        || raw.window.endDateExclusive !== raw.evaluationWindow.endDateExclusive)) {
+        throw new Error('Legacy window must match evaluationWindow.');
+    }
+    const sourceEvidence = offlineEvidence(raw);
+    const evaluationWindow = sourceEvidence.evaluationWindow;
+    const historyBounds = ['performedTrainingOccurrences', 'activities', 'dailyRecommendations'] as const;
+    const historyWindow: DateWindow = {
+        startDate: historyBounds.map(key => sourceEvidence.sourceEvidenceBounds[key].startDate).sort()[0],
+        endDateExclusive: historyBounds.map(key => sourceEvidence.sourceEvidenceBounds[key].endDateExclusive).sort().at(-1)!,
+    };
     const parsed = parseRecords(raw);
-    const first = pair(parsed, raw.window, options.manualDefinitionRevisions);
+    const first = pair(parsed, historyWindow, options.manualDefinitionRevisions);
+    const evaluated = pair(parsed, evaluationWindow, options.manualDefinitionRevisions);
     // Determinism gate: a second independent derivation from the same parsed input must match.
-    const second = pair(parseRecords(raw), raw.window, options.manualDefinitionRevisions);
+    const second = pair(parseRecords(raw), historyWindow, options.manualDefinitionRevisions);
     const deterministic = stableJson([first.pairing.liveExposures, first.pairing.canonicalExposures, first.pairing.unknownCanonicalOccurrenceKeys])
         === stableJson([second.pairing.liveExposures, second.pairing.canonicalExposures, second.pairing.unknownCanonicalOccurrenceKeys]);
 
-    const windowOccurrences = occurrencesInWindow(parsed.occurrences, raw.window);
-    const identity = computeCanonicalIdentityMetrics(windowOccurrences, first.liveEvents);
-    const comparison = compareCompletedExposureSets(first.pairing.liveExposures, first.pairing.canonicalExposures, first.pairing.unknownCanonicalOccurrenceKeys);
+    const windowOccurrences = occurrencesInWindow(parsed.occurrences, evaluationWindow);
+    const identity = computeCanonicalIdentityMetrics(windowOccurrences, evaluated.liveEvents);
+    const comparison = compareCompletedExposureSets(evaluated.pairing.liveExposures, evaluated.pairing.canonicalExposures, evaluated.pairing.unknownCanonicalOccurrenceKeys);
     const exactOf = (row: CompletedExposure | undefined) => Boolean(row?.workoutId || row?.templateId);
     let upgrades = 0;
     let downgrades = 0;
-    for (const canonical of first.pairing.canonicalExposures) {
-        const live = first.pairing.liveExposures.filter(row => row.occurrenceKey === canonical.occurrenceKey);
+    for (const canonical of evaluated.pairing.canonicalExposures) {
+        const live = evaluated.pairing.liveExposures.filter(row => row.occurrenceKey === canonical.occurrenceKey);
         if (live.length !== 1) continue;
         if (exactOf(canonical) && !exactOf(live[0])) upgrades += 1;
         if (!exactOf(canonical) && exactOf(live[0])) downgrades += 1;
     }
 
-    const privateReviewSheet = [...first.pairing.privateAliasSources.entries()]
+    const evaluationAliases = [...first.pairing.privateAliasSources.entries()]
+        .filter(([, entry]) => entry.date >= evaluationWindow.startDate && entry.date < evaluationWindow.endDateExclusive);
+    const privateReviewSheet = evaluationAliases
         .filter(([, entry]) => entry.canonicalSourceKeys.length > 1 || entry.liveSourceKeys.length !== 1
             || entry.canonicalSourceKeys.length === 0)
         .map(([alias, entry]) => ({ alias, ...entry, label: options.labels?.[alias] ?? null }));
@@ -331,35 +433,36 @@ export function prepareTo4Evidence(raw: TrainingOccurrenceRecordExport, options:
     const falsePositiveMerges = labels.filter(([, label]) => label === 'false_positive_merge').length;
     const mergedFullyLabelled = mergedAliases.every(alias => options.labels?.[alias] !== undefined);
     const canonicalAliasCounts = new Map<string, number>();
-    for (const row of first.pairing.canonicalExposures) canonicalAliasCounts.set(row.occurrenceKey ?? '', (canonicalAliasCounts.get(row.occurrenceKey ?? '') ?? 0) + 1);
-    const audit = first.pairing.audit;
+    for (const row of evaluated.pairing.canonicalExposures) canonicalAliasCounts.set(row.occurrenceKey ?? '', (canonicalAliasCounts.get(row.occurrenceKey ?? '') ?? 0) + 1);
+    const audit = evaluated.pairing.audit;
     const totalRecords = raw.performedTrainingOccurrences.length + raw.sessionExecutions.length
         + (raw.sessionEntries?.length ?? 0) + (raw.executionPrescriptions?.length ?? 0)
         + raw.activities.length + raw.dailyRecommendations.length;
-    const evaluated = (denominator: number, ok: boolean): GateState => (denominator === 0 ? 'not_evaluated' : ok ? 'pass' : 'fail');
+    const gate = (denominator: number, ok: boolean): GateState => (denominator === 0 ? 'not_evaluated' : ok ? 'pass' : 'fail');
 
     const hardGates: Record<string, GateState> = {
         // Path scoping in the exporter is the primary guarantee; this re-checks owner fields.
-        noCrossUserEvidenceLeakage: evaluated(totalRecords, parsed.crossUserRecords === 0),
-        noSourceUniquenessViolations: evaluated(identity.activeOccurrences, identity.sourceLinkConflicts === 0),
-        noStickyManualDecisionViolations: evaluated(identity.manualDecisionOccurrences, identity.manualDecisionViolations === 0),
-        deterministicReplayStable: evaluated(totalRecords, deterministic),
+        noCrossUserEvidenceLeakage: gate(totalRecords, parsed.crossUserRecords === 0),
+        noSourceUniquenessViolations: gate(identity.activeOccurrences, identity.sourceLinkConflicts === 0),
+        noStickyManualDecisionViolations: gate(identity.manualDecisionOccurrences, identity.manualDecisionViolations === 0),
+        deterministicReplayStable: gate(totalRecords, deterministic),
         noKnownFalsePositiveMerges: falsePositiveMerges > 0 ? 'fail'
-            : evaluated(mergedFullyLabelled ? mergedAliases.length : 0, true),
+            : gate(mergedFullyLabelled ? mergedAliases.length : 0, true),
         // A physical workout (one alias) may contribute at most one canonical row.
-        matchedOccurrenceSingleExposure: evaluated(audit.multiSourceDerived, [...canonicalAliasCounts.values()].every(count => count === 1)),
-        structuredSemanticAuthorityPreserved: evaluated(audit.structuredDerived, audit.structuredAuthorityViolations === 0),
-        missingDetailRemainsUnknown: evaluated(
+        matchedOccurrenceSingleExposure: gate(audit.multiSourceDerived, [...canonicalAliasCounts.values()].every(count => count === 1)),
+        structuredSemanticAuthorityPreserved: gate(audit.structuredDerived, audit.structuredAuthorityViolations === 0),
+        missingDetailRemainsUnknown: gate(
             audit.activeOccurrences,
             audit.derived + audit.unknown === audit.activeOccurrences && audit.unsupportedDerivations === 0,
         ),
     };
 
-    const aliasCount = first.pairing.privateAliasSources.size;
+    const aliasCount = evaluationAliases.length;
     const preparedInput = {
         schemaVersion: 1,
         metadata: {
             sourceCommit: options.sourceCommit,
+            sourceTreeSha256: options.sourceTreeSha256,
             occurrenceSchemaVersion: PERFORMED_OCCURRENCE_SCHEMA_VERSION,
             matcherVersion: RECONCILIATION_MATCHER_VERSION,
             reconciliationPolicyVersion: RECONCILIATION_POLICY_VERSION,
@@ -369,19 +472,19 @@ export function prepareTo4Evidence(raw: TrainingOccurrenceRecordExport, options:
         corpus: {
             realHistory: 'prepared',
             realHistoryOccurrenceCount: aliasCount,
-            strata: strataFor(windowOccurrences, first.sources),
+            strata: strataFor(windowOccurrences, evaluated.sources),
         },
-        liveExposures: first.pairing.liveExposures,
-        canonicalExposures: first.pairing.canonicalExposures,
-        unknownCanonicalOccurrenceKeys: first.pairing.unknownCanonicalOccurrenceKeys,
+        liveExposures: evaluated.pairing.liveExposures,
+        canonicalExposures: evaluated.pairing.canonicalExposures,
+        unknownCanonicalOccurrenceKeys: evaluated.pairing.unknownCanonicalOccurrenceKeys,
         canonicalDerivation: {
-            windowDays: daysBetween(raw.window.startDate, raw.window.endDateExclusive),
-            parsedOccurrences: parsed.occurrences.length,
+            windowDays: daysBetween(evaluationWindow.startDate, evaluationWindow.endDateExclusive),
+            parsedOccurrences: windowOccurrences.length,
             invalidRecords: parsed.invalidRecords,
             crossUserRecordsRejected: parsed.crossUserRecords,
-            derived: first.pairing.canonicalExposures.length,
-            manualDefinitionMetadataFallbacks: first.pairing.audit.manualDefinitionMetadataFallbacks,
-            unknownByReason: first.pairing.unknownByReason,
+            derived: evaluated.pairing.canonicalExposures.length,
+            manualDefinitionMetadataFallbacks: evaluated.pairing.audit.manualDefinitionMetadataFallbacks,
+            unknownByReason: evaluated.pairing.unknownByReason,
         },
         identityEvidence: {
             status: 'prepared',
@@ -401,8 +504,9 @@ export function prepareTo4Evidence(raw: TrainingOccurrenceRecordExport, options:
 
     return {
         preparedInput,
-        liveExposures: first.pairing.liveExposures,
-        canonicalExposures: first.pairing.canonicalExposures,
+        liveExposures: evaluated.pairing.liveExposures,
+        canonicalExposures: evaluated.pairing.canonicalExposures,
+        sourceEvidence,
         privateReviewSheet,
     };
 }

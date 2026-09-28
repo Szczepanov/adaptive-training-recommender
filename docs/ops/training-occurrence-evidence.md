@@ -75,11 +75,11 @@ eligible for review, and only a separately written analysis belongs in `docs/ana
 3. **Report (offline).** `npm run evidence:training-occurrence -- artifacts/training-occurrence/prepared-input.json artifacts/training-occurrence/report.json`
    validates the allow-listed prepared input and renders the aggregate report.
 
-To record reviewed match labels, write `{ "recordsSha256": "<from the review sheet>", "labels":
-{ "occ-0007": "correct_merge" } }` (values `correct_merge`, `false_positive_merge`,
+To record reviewed match labels, copy `recordsSha256`, `sourceCommit`, and `sourceTreeSha256`
+from the private review sheet into `{ "recordsSha256": "...", "sourceCommit": "...",
+"sourceTreeSha256": "...", "labels": { "occ-0007": "correct_merge" } }` (values `correct_merge`, `false_positive_merge`,
 `correct_separate`, `false_negative_split`) under the artifact directory and rerun step 2 with
-`--labels <path>`. Aliases are deterministic only for one exact export, so labels carrying a
-different `recordsSha256`, or naming an alias outside the review sheet, are refused. The
+`--labels <path>`. Aliases are deterministic only for one exact export and source tree, so labels carrying different provenance or naming an alias outside the review sheet are refused. The
 false-positive gate evaluates only when every multi-source (automatically merged) group is
 labelled; any `false_positive_merge` fails it.
 

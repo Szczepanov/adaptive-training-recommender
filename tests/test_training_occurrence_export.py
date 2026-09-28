@@ -154,16 +154,152 @@ def test_record_export_is_bounded_to_one_user_and_window() -> None:
     records = export_training_occurrence_records(db, "u1", "2026-08-01", "2026-08-08")
 
     assert set(db.touched_users) == {"u1"}
-    assert [doc["id"] for doc in records["performedTrainingOccurrences"]] == ["p1"]
+    assert [doc["id"] for doc in records["performedTrainingOccurrences"]] == ["old", "p1"]
     assert [doc["id"] for doc in records["sessionExecutions"]] == ["e1"]
     assert [doc["id"] for doc in records["sessionEntries"]] == ["set-1"]
     assert [doc["id"] for doc in records["executionPrescriptions"]] == ["ph1"]
     assert sorted(doc["id"] for doc in records["activities"]) == ["a1", "edge"]
     assert (
-        records["performedTrainingOccurrences"][0]["data"]["createdAt"]
+        records["performedTrainingOccurrences"][1]["data"]["createdAt"]
         == "2026-08-06T00:00:00+00:00"
     )
     assert records["window"] == {"startDate": "2026-08-01", "endDateExclusive": "2026-08-08"}
+    assert records["schemaVersion"] == 2
+    assert records["evaluationWindow"] == records["window"]
+    assert records["sourceEvidenceBounds"]["dailySubjectiveCheckins"] == {
+        "startDate": "2026-07-04",
+        "endDateExclusive": "2026-08-08",
+    }
+    assert records["sourceEvidenceBounds"]["performedTrainingOccurrences"] == {
+        "startDate": "2026-06-13",
+        "endDateExclusive": "2026-08-08",
+    }
+    assert records["sourceEvidenceBounds"]["fixedActivities"] == {
+        "startDate": "2026-08-01",
+        "endDateExclusive": "2026-08-15",
+    }
+
+
+def test_export_keeps_lookbacks_and_forward_evidence_out_of_evaluation_denominator() -> None:
+    db = _db()
+    user = db.users["u1"]
+    user["daily_subjective_checkins"] = {
+        "before": {"date": "2026-07-03"},
+        "first": {"date": "2026-07-04"},
+        "today": {"date": "2026-08-01"},
+        "outside": {"date": "2026-08-08"},
+    }
+    user["daily_recovery_snapshots"] = {
+        "first": {"date": "2026-08-01"},
+        "outside": {"date": "2026-08-08"},
+    }
+    user["fixed_activities"] = {
+        "ahead": {"date": "2026-08-14"},
+        "beyond": {"date": "2026-08-15"},
+    }
+    user["schedule_overlays"] = {
+        "overlap": {"startDate": "2026-07-20", "endDate": "2026-08-02"},
+        "old": {"startDate": "2026-07-20", "endDate": "2026-07-31"},
+        "late": {"startDate": "2026-08-15", "endDate": "2026-08-20"},
+    }
+    user["plan_blocks"] = {"block": {"startDate": "2026-08-01", "endDate": "2026-08-14"}}
+    user["schedule_window_manifests"] = {"next": {"date": "2026-08-14"}}
+    user["session_occurrences"] = {"next": {"date": "2026-08-14"}}
+
+    records = export_training_occurrence_records(db, "u1", "2026-08-01", "2026-08-08")
+
+    assert [item["id"] for item in records["dailySubjectiveCheckins"]] == ["first", "today"]
+    assert [item["id"] for item in records["dailyRecoverySnapshots"]] == ["first"]
+    assert [item["id"] for item in records["fixedActivities"]] == ["ahead"]
+    assert [item["id"] for item in records["scheduleOverlays"]] == ["overlap"]
+    assert [item["id"] for item in records["planBlocks"]] == ["block"]
+    assert [item["id"] for item in records["scheduleWindowManifests"]] == ["next"]
+    assert [item["id"] for item in records["sessionOccurrences"]] == ["next"]
+    assert records["evaluationWindow"] == {
+        "startDate": "2026-08-01",
+        "endDateExclusive": "2026-08-08",
+    }
+    assert records["sourceProvenance"]["scheduleOverlays"]["status"] == "unprovable"
+    assert set(db.touched_users) == {"u1"}
+
+
+def test_d_minus_one_recommendation_revisions_and_raw_singletons_are_read_only() -> None:
+    db = _db()
+    user = db.users["u1"]
+    user["daily_recommendations"]["2026-07-31"] = {
+        "date": "2026-07-31",
+        "revision": 3,
+        "mode": "train",
+    }
+    user["daily_recommendations"]["2026-08-07"] = {
+        "date": "2026-08-07",
+        "revision": 2,
+        "mode": "recover",
+    }
+    user["_nested"].setdefault("daily_recommendations", {}).update(
+        {
+            "2026-07-31": {
+                "revisions": {
+                    "1": {"revision": 1, "mode": "recover"},
+                    "2": {"revision": 2, "mode": "modify"},
+                    "3": {"revision": 3, "mode": "train"},
+                }
+            },
+            "2026-08-07": {"revisions": {"1": {"revision": 1, "mode": "modify"}}},
+        }
+    )
+    user["trainingSettings"] = {"profile": {"userId": "u1", "schemaVersion": 3}}
+    user["preferences"] = {"profile": {"userId": "u1"}}
+    user["training_intent"] = {"profile": {"userId": "u1"}}
+
+    records = export_training_occurrence_records(db, "u1", "2026-08-01", "2026-08-08")
+
+    assert [item["id"] for item in records["dailyRecommendations"]] == [
+        "2026-07-31",
+        "2026-08-06",
+        "2026-08-07",
+    ]
+    assert {
+        (item["recommendationId"], item["id"]) for item in records["dailyRecommendationRevisions"]
+    } == {("2026-07-31", "1"), ("2026-07-31", "2"), ("2026-08-07", "1")}
+    assert records["trainingSettings"] == [
+        {"id": "profile", "data": {"userId": "u1", "schemaVersion": 3}}
+    ]
+    assert records["sourceProvenance"]["trainingSettings"]["status"] == "unprovable"
+    assert set(db.touched_users) == {"u1"}
+
+
+def test_export_reads_only_exact_referenced_external_plan_revision() -> None:
+    db = _db()
+    user = db.users["u1"]
+    user["session_occurrences"] = {
+        "external": {
+            "date": "2026-08-06",
+            "externalPlanRef": {"planId": "plan-1", "revision": 2, "sessionId": "s1"},
+        },
+        "unsafe": {
+            "date": "2026-08-06",
+            "externalPlanRef": {"planId": "other/plan", "revision": 1},
+        },
+    }
+    user["external_plans"] = {"plan-1": {"revision": 3, "userId": "u1"}}
+    user["_nested"]["external_plans"] = {
+        "plan-1": {
+            "revisions": {"1": {"revision": 1}, "2": {"revision": 2}, "3": {"revision": 3}},
+            "placement": {"current": {"revision": 2}},
+        }
+    }
+
+    records = export_training_occurrence_records(db, "u1", "2026-08-01", "2026-08-08")
+
+    assert [row["id"] for row in records["externalPlanHeaders"]] == ["plan-1"]
+    assert [(row["planId"], row["id"]) for row in records["externalPlanRevisions"]] == [
+        ("plan-1", "2")
+    ]
+    assert [(row["planId"], row["id"]) for row in records["externalPlanPlacements"]] == [
+        ("plan-1", "current")
+    ]
+    assert records["sourceProvenance"]["externalPlans"]["status"] == "unprovable"
 
 
 @pytest.mark.parametrize(

@@ -90,7 +90,7 @@ const { compareCompletedExposureSets, compareRecommendationOutputs } = await imp
     pathToFileURL(path.resolve('src/training-occurrence/historyCounterfactual.ts')).href
 );
 
-const requiredMetadata = ['sourceCommit', 'occurrenceSchemaVersion', 'matcherVersion', 'reconciliationPolicyVersion', 'coveragePolicyVersion', 'fitFingerprintVersion'];
+const requiredMetadata = ['sourceCommit', 'sourceTreeSha256', 'occurrenceSchemaVersion', 'matcherVersion', 'reconciliationPolicyVersion', 'coveragePolicyVersion', 'fitFingerprintVersion'];
 const topLevelKeys = ['schemaVersion', 'metadata', 'corpus', 'liveExposures', 'canonicalExposures', 'unknownCanonicalOccurrenceKeys', 'recommendationReplay', 'recommendationSeries', 'canonicalDerivation', 'identityEvidence', 'fitEvidence', 'hardGates', 'deferredBlockers', 'decisions'];
 if (input.schemaVersion !== 1 || !input.metadata || !Array.isArray(input.liveExposures) || !Array.isArray(input.canonicalExposures)) {
     throw new Error('Prepared evidence input must have schemaVersion 1, metadata, liveExposures, and canonicalExposures.');
@@ -103,10 +103,13 @@ if (missingMetadata.length) throw new Error(`Prepared evidence metadata is missi
 if (typeof metadataInput.sourceCommit !== 'string' || !/^(?:[0-9a-f]{7,40}|synthetic-fixture)$/.test(metadataInput.sourceCommit)) {
     throw new Error('metadata.sourceCommit must be a Git SHA or synthetic-fixture.');
 }
+if (typeof metadataInput.sourceTreeSha256 !== 'string' || !/^[0-9a-f]{64}$/.test(metadataInput.sourceTreeSha256)) {
+    throw new Error('metadata.sourceTreeSha256 must be a SHA-256 digest.');
+}
 if (!Number.isInteger(metadataInput.occurrenceSchemaVersion) || metadataInput.occurrenceSchemaVersion < 1) {
     throw new Error('metadata.occurrenceSchemaVersion must be a positive integer.');
 }
-for (const key of requiredMetadata.filter(key => !['sourceCommit', 'occurrenceSchemaVersion'].includes(key))) {
+for (const key of requiredMetadata.filter(key => !['sourceCommit', 'sourceTreeSha256', 'occurrenceSchemaVersion'].includes(key))) {
     if (typeof metadataInput[key] !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(metadataInput[key])) {
         throw new Error(`metadata.${key} must be a bounded version token.`);
     }
@@ -303,27 +306,64 @@ if (input.canonicalDerivation !== undefined) {
 let recommendationSeries = { status: 'not_run' };
 if (input.recommendationSeries !== undefined) {
     const series = plainObject(input.recommendationSeries, 'recommendationSeries');
-    assertKnownKeys(series, ['status', 'referenceSource', 'nonHistoryInputsHash', 'evaluatedDates', 'changedDates', 'unresolvedDates', 'changedFieldCounts', 'repeatRunIdentical'], 'recommendationSeries');
-    if (series.status !== 'compared') throw new Error('recommendationSeries.status must be compared.');
-    if (typeof series.referenceSource !== 'string' || !/^simulation-scenario:[a-z0-9_]{1,80}$/.test(series.referenceSource)) {
-        throw new Error('recommendationSeries.referenceSource must name a simulation reference scenario.');
+    const seriesKeys = [
+        'status', 'referenceSource', 'seriesDigest', 'candidateDates', 'evaluatedDates', 'notApplicableDates',
+        'notReplayableDates', 'changedDates', 'expectedDates', 'explainableDates', 'unresolvedDates',
+        'changedFieldCounts', 'notReplayableByReason', 'classificationReasonCounts', 'repeatRunIdentical',
+    ];
+    assertKnownKeys(series, seriesKeys, 'recommendationSeries');
+    if (!['compared', 'blocked'].includes(series.status)) throw new Error('recommendationSeries.status must be compared or blocked.');
+    if (series.referenceSource !== 'historical-user-scoped-inputs-v2') {
+        throw new Error('recommendationSeries.referenceSource must identify schema-v2 historical inputs.');
     }
-    if (typeof series.nonHistoryInputsHash !== 'string' || !/^[0-9a-f]{64}$/.test(series.nonHistoryInputsHash)) {
-        throw new Error('recommendationSeries.nonHistoryInputsHash must be a SHA-256 hex digest.');
+    if (typeof series.seriesDigest !== 'string' || !/^[0-9a-f]{64}$/.test(series.seriesDigest)) {
+        throw new Error('recommendationSeries.seriesDigest must be a SHA-256 hex digest.');
     }
     if (typeof series.repeatRunIdentical !== 'boolean') throw new Error('recommendationSeries.repeatRunIdentical must be boolean.');
     const projectionFields = ['verdict', 'mode', 'selectedTemplate', 'prescription', 'dose', 'variant', 'coverage', 'sequence', 'fatigue', 'guardrails'];
     const fieldCounts = plainObject(series.changedFieldCounts ?? {}, 'recommendationSeries.changedFieldCounts');
     assertKnownKeys(fieldCounts, projectionFields, 'recommendationSeries.changedFieldCounts');
+    const reasonCounts = (raw, label) => {
+        const counts = plainObject(raw ?? {}, label);
+        for (const key of Object.keys(counts)) {
+            if (!/^[a-z][a-z0-9_]{0,79}$/.test(key)) throw new Error(`${label} contains an invalid reason code.`);
+        }
+        return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, value]) => [key, nonNegativeInteger(value, `${label}.${key}`)]));
+    };
+    const candidateDates = nonNegativeInteger(series.candidateDates, 'recommendationSeries.candidateDates');
+    const evaluatedDates = nonNegativeInteger(series.evaluatedDates, 'recommendationSeries.evaluatedDates');
+    const notApplicableDates = nonNegativeInteger(series.notApplicableDates, 'recommendationSeries.notApplicableDates');
+    const notReplayableDates = nonNegativeInteger(series.notReplayableDates, 'recommendationSeries.notReplayableDates');
+    const changedDates = nonNegativeInteger(series.changedDates, 'recommendationSeries.changedDates');
+    const expectedDates = nonNegativeInteger(series.expectedDates, 'recommendationSeries.expectedDates');
+    const explainableDates = nonNegativeInteger(series.explainableDates, 'recommendationSeries.explainableDates');
+    const unresolvedDates = nonNegativeInteger(series.unresolvedDates, 'recommendationSeries.unresolvedDates');
+    if (evaluatedDates + notApplicableDates + notReplayableDates !== candidateDates
+        || changedDates > evaluatedDates
+        || expectedDates + explainableDates + unresolvedDates !== changedDates) {
+        throw new Error('recommendationSeries date accounting is inconsistent.');
+    }
+    if (series.status === 'compared' && notReplayableDates !== 0) {
+        throw new Error('A compared recommendationSeries cannot contain not-replayable dates.');
+    }
     recommendationSeries = {
-        status: 'compared',
+        status: series.status,
         referenceSource: series.referenceSource,
-        nonHistoryInputsHash: series.nonHistoryInputsHash,
-        evaluatedDates: nonNegativeInteger(series.evaluatedDates, 'recommendationSeries.evaluatedDates'),
-        changedDates: nonNegativeInteger(series.changedDates, 'recommendationSeries.changedDates'),
-        unresolvedDates: nonNegativeInteger(series.unresolvedDates, 'recommendationSeries.unresolvedDates'),
+        replaySemantics: 'current-policy historical-context counterfactual; does not reproduce historical-policy output',
+        seriesDigest: series.seriesDigest,
+        candidateDates,
+        evaluatedDates,
+        notApplicableDates,
+        notReplayableDates,
+        changedDates,
+        expectedDates,
+        explainableDates,
+        unresolvedDates,
         changedFieldCounts: Object.fromEntries(Object.entries(fieldCounts).sort(([a], [b]) => a.localeCompare(b))
             .map(([key, value]) => [key, nonNegativeInteger(value, `recommendationSeries.changedFieldCounts.${key}`)])),
+        notReplayableByReason: reasonCounts(series.notReplayableByReason, 'recommendationSeries.notReplayableByReason'),
+        classificationReasonCounts: reasonCounts(series.classificationReasonCounts, 'recommendationSeries.classificationReasonCounts'),
         repeatRunIdentical: series.repeatRunIdentical,
     };
 }
@@ -365,9 +405,9 @@ for (const [name, allowed] of Object.entries(decisionStates)) if (!allowed.has(d
 const everyHardGatePassed = gateNames.every(name => hardGates[name] === 'pass');
 if (decisions.broadHistory === 'READY_FOR_SEPARATE_ACTIVATION_PR'
     && (!everyHardGatePassed || corpus.realHistory !== 'prepared' || !historyEvidenceConsistent || exposureComparison.unknownCanonicalOccurrenceCount > 0
-        || !((recommendationComparison.status === 'compared' && recommendationComparison.delta.classification !== 'unresolved')
-            || (recommendationSeries.status === 'compared' && recommendationSeries.evaluatedDates > 0
-                && recommendationSeries.unresolvedDates === 0 && recommendationSeries.repeatRunIdentical))
+        || !(recommendationSeries.status === 'compared' && recommendationSeries.candidateDates > 0
+            && recommendationSeries.evaluatedDates > 0 && recommendationSeries.notReplayableDates === 0
+            && recommendationSeries.unresolvedDates === 0 && recommendationSeries.repeatRunIdentical)
         || deferredBlockers.linkedProviderProjectionRefresh === 'BLOCKING' || deferredBlockers.sourceDeletionRevocation === 'BLOCKING')) {
     throw new Error('Broad-history readiness requires prepared real history, one-to-one occurrence pairing, every hard gate passed, complete canonical derivation, a verified same-input replay, and no blocking provider lifecycle items.');
 }
