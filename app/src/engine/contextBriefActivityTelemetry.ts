@@ -112,7 +112,7 @@ function formatPrescribedTarget(target: ActivityPrescribedTarget | undefined): s
     return label;
 }
 
-type ActivityResponseRenderDetail = 'bounded' | 'diagnostic';
+type ActivityResponseRenderDetail = 'morning' | 'bounded' | 'diagnostic';
 
 function renderActivityResponse(
     activity: NormalizedGarminActivity,
@@ -123,17 +123,29 @@ function renderActivityResponse(
     if (!response) return [];
     const intervalHr = hrEvidence(activity, 'INTERVAL_RESPONSE');
     const aerobicHr = hrEvidence(activity, 'AEROBIC_DECOUPLING');
-    const lines: string[] = ['- Multi-resolution response telemetry:'];
-    const resolution = response.sourceResolution;
-    const parts = [
-        resolution.powerSeconds === undefined ? null : `power ~${formatNumber(resolution.powerSeconds, 2)} s`,
-        resolution.hrSeconds === undefined ? null : `HR ~${formatNumber(resolution.hrSeconds, 2)} s`,
-        resolution.cadenceSeconds === undefined ? null : `cadence ~${formatNumber(resolution.cadenceSeconds, 2)} s`,
-    ].filter((part): part is string => part !== null);
-    lines.push(`  - Source resolution: ${parts.length > 0 ? parts.join(' · ') : 'not estimable'} · derivation ${response.derivationVersion}`);
-    if (intervalHr.note) lines.push(`  - Segment HR provenance: ${intervalHr.note}`);
-    if (aerobicHr.note && aerobicHr.note !== intervalHr.note) {
-        lines.push(`  - Steady-half HR provenance: ${aerobicHr.note}`);
+    const morning = detail === 'morning';
+    const lines: string[] = [morning ? '- Response telemetry:' : '- Multi-resolution response telemetry:'];
+    if (!morning) {
+        const resolution = response.sourceResolution;
+        const parts = [
+            resolution.powerSeconds === undefined ? null : `power ~${formatNumber(resolution.powerSeconds, 2)} s`,
+            resolution.hrSeconds === undefined ? null : `HR ~${formatNumber(resolution.hrSeconds, 2)} s`,
+            resolution.cadenceSeconds === undefined ? null : `cadence ~${formatNumber(resolution.cadenceSeconds, 2)} s`,
+        ].filter((part): part is string => part !== null);
+        lines.push(`  - Source resolution: ${parts.length > 0 ? parts.join(' · ') : 'not estimable'} · derivation ${response.derivationVersion}`);
+        if (intervalHr.note) lines.push(`  - Segment HR provenance: ${intervalHr.note}`);
+        if (aerobicHr.note && aerobicHr.note !== intervalHr.note) {
+            lines.push(`  - Steady-half HR provenance: ${aerobicHr.note}`);
+        }
+    } else if (activity.hrMeasurement) {
+        const measurement = activity.hrMeasurement;
+        const unverified = measurement.provenanceConfidence !== 'confirmed'
+            || measurement.summaryCompatibility !== 'verified_same_effective_trace'
+            || measurement.measurementConfidence === 'low'
+            || measurement.measurementConfidence === 'unreliable'
+            || measurement.measurementConfidence === 'unknown'
+            || measurement.artifactFlags.some(flag => flag.includes('UNVERIFIED'));
+        if (unverified) lines.push('  - HR Confidence: Unverified (Observational only)');
     }
 
     if (response.powerDurationPeaks.length > 0) {
@@ -324,19 +336,29 @@ function renderSessionDetail(activity: NormalizedGarminActivity, includeVariabil
     return parts.length > 0 ? [`- Session detail: ${parts.join(' · ')}`] : [];
 }
 
-function renderBoundedQualityActivityDetail(activity: NormalizedGarminActivity, viewLabel: string): string[] {
+function renderBoundedQualityActivityDetail(
+    activity: NormalizedGarminActivity,
+    viewLabel: string,
+    view: 'morning' | 'planning' = 'planning',
+): string[] {
     if (!isQualityCyclingOrRunning(activity)) return [];
     const modality = normalizeModality(activity.type);
     const detail: string[] = [
         ...renderSessionDetail(activity, true),
     ];
 
-    if (activity.powerInZones?.length) detail.push(...renderZones('Power zones', activity.powerInZones, 'W'));
-    if (activity.hrInZones?.length) detail.push(...renderZones('Heart-rate zones', activity.hrInZones, 'bpm'));
+    const hasIntervalRows = (activity.activityResponse?.segments.length ?? 0) > 0 || (activity.laps?.length ?? 0) > 0;
+    const includeZoneTables = view !== 'morning' || !hasIntervalRows;
+    if (includeZoneTables && activity.powerInZones?.length) detail.push(...renderZones('Power zones', activity.powerInZones, 'W'));
+    if (includeZoneTables && activity.hrInZones?.length) detail.push(...renderZones('Heart-rate zones', activity.hrInZones, 'bpm'));
     detail.push(...renderRunningDynamics(activity));
 
     if (activity.activityResponse) {
-        detail.push(...renderActivityResponse(activity, QUALITY_DETAIL_MAX_RESPONSE_SEGMENTS));
+        detail.push(...renderActivityResponse(
+            activity,
+            QUALITY_DETAIL_MAX_RESPONSE_SEGMENTS,
+            view === 'morning' ? 'morning' : 'bounded',
+        ));
     }
 
     // For running, laps are the interval-resolution evidence currently persisted by this
@@ -355,7 +377,7 @@ function renderBoundedQualityActivityDetail(activity: NormalizedGarminActivity, 
  * absent. This selection is display-only and has no recommendation authority.
  */
 export function renderMorningQualityActivityTelemetry(activity: NormalizedGarminActivity): string[] {
-    const detail = renderBoundedQualityActivityDetail(activity, 'morning brief');
+    const detail = renderBoundedQualityActivityDetail(activity, 'morning brief', 'morning');
     if (detail.length === 0) return [];
     return [
         '  - Quality-session detail (display-only):',
