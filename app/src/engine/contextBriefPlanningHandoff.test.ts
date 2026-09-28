@@ -208,6 +208,8 @@ function handoffInput(overrides: Partial<ContextBriefPlanningHandoffInput> = {})
         upcomingPlanBlocks: [],
         recommendationsReadable: true,
         restDirectiveToday: null,
+        yesterdayExternalSession: null,
+        restDirectiveYesterday: null,
         upcomingExternalSessions: [{
             date: '2026-08-21',
             planId: 'p1',
@@ -613,13 +615,16 @@ describe('enhanceContextBriefForPlanning', () => {
             expect(text).toContain('feeling slightly tight in the lower back');
 
             // Overnight recovery
-            expect(text).toContain('HRV (overnight avg): 70 ms');
+            expect(text).toContain('HRV: 70 ms (+4 vs 7d), RHR: 44 bpm (-1 vs 7d), Sleep: 7h 47m (88 pts) | Pattern:');
             expect(text).toContain('Recent 7-day recovery timeline');
+            expect(text).not.toContain('Most recent reading');
+            expect(text).not.toContain('Overnight reaction');
 
             // Yesterday's Closed-Loop Debrief
             expect(text).toContain('Prescribed: Zone 2 Foundation (Cycling · train)');
             expect(text).toContain('Recorded training: Road cycling · 65 min · Load 85 · Aerobic TE 2.9 · Avg HR 135 bpm · moderate');
             expect(text).toContain('Power summary: normalized power 195 W · IF 0.75');
+            expect(text).toContain('Adherence Delta: **ON_PLAN**');
             expect(text).toContain('Manual physical work: 1–3 hrs · hard effort · strain: lower back/spine, grip/forearms — "heavy yard work and soil moving"');
             expect(text).toContain('Recommendation feedback (athlete response, not execution): reported followed as prescribed — "Good steady rhythm on the road"');
 
@@ -631,6 +636,11 @@ describe('enhanceContextBriefForPlanning', () => {
             expect(text).toContain('Prescription steps:');
             expect(text).toContain('Spin: 10 min easy · targets: Zone 1 HR (<120 bpm) · cues: High cadence 90+ rpm');
             expect(text).toContain('Steady endurance: 30 min · targets: 65-72% FTP (145-160W) · cues: Stay seated, no heavy torque');
+
+            // Explicit D+1..D+3 horizon
+            expect(text).toContain('D+1 · 2026-08-21: Imported session: Threshold quality (cycling · 60–75 min · hard · priority: KEY)');
+            expect(text).toContain('D+2 · 2026-08-22: Fixed activity: 6v6 football (90 min · fixed)');
+            expect(text).toContain('D+3 · 2026-08-23: No app-held fixed activity, travel block, or imported session.');
 
             // Morning Coach Instructions
             expect(text).toContain('Treat this brief as state/context for your ongoing morning conversation');
@@ -709,7 +719,202 @@ describe('enhanceContextBriefForPlanning', () => {
             expect(text).toContain('Power-duration peaks: 5s 612 W');
             expect(text).toContain('Deterministic halves: power 198→207 W');
             expect(text).toContain('| 1 | work | fit_workout_step | 15:00 | 193–229 W |');
+            expect(text).not.toContain('Power zones:');
+            expect(text).not.toContain('multi-resolution-v1');
             expect(text).not.toContain('### Detailed activity telemetry');
+        });
+
+        it('surfaces the 2026-09-28-style rest-day deviation, sequence conflict, and full D+1..D+3 imported horizon', () => {
+            const targetDate = '2026-09-28';
+            const yesterdayDate = '2026-09-27';
+            const text = enhanceContextBriefForPlanning(BASE, handoffInput({
+                asOfDate: targetDate,
+                preset: 'daily',
+                snapshots: [snapshot(targetDate)],
+                checkins: [checkin(targetDate)],
+                activities: [{
+                    activityId: 'tempo-2026-09-27',
+                    date: yesterdayDate,
+                    type: 'road_biking',
+                    durationMin: 83,
+                    activityTrainingLoad: 122.6,
+                    trainingEffectAerobic: 3.7,
+                    trainingEffectAnaerobic: 0.8,
+                    averageHr: 140,
+                    maxHr: 168,
+                    intensityTag: 'moderate',
+                    stimulusDomain: 'tempo',
+                    sessionCost: 'high',
+                    intensityClassificationVersion: 2,
+                    normalizedPower: 203,
+                    intensityFactor: 0.8,
+                    variabilityIndex: 1.08,
+                    powerInZones: [
+                        { zoneNumber: 2, secondsInZone: 1200, lowBoundary: 142 },
+                        { zoneNumber: 3, secondsInZone: 2100, lowBoundary: 193 },
+                    ],
+                    activityResponse: {
+                        derivationVersion: 'multi-resolution-v1',
+                        sourceResolution: { powerSeconds: 1, hrSeconds: 1, cadenceSeconds: 1 },
+                        segmentCountTotal: 1,
+                        segmentsTruncated: false,
+                        powerDurationPeaks: [{ durationSeconds: 300, powerWatts: 251, confidence: 'high' }],
+                        segments: [{
+                            segmentIndex: 1,
+                            segmentType: 'work',
+                            identitySource: 'fit_workout_step',
+                            durationSeconds: 900,
+                            prescribedTarget: { kind: 'power_range_watts', low: 193, high: 229 },
+                            averagePowerWatts: 214,
+                            evidenceConfidence: 'high',
+                        }],
+                    },
+                }],
+                recommendations: [{
+                    userId: 'u1',
+                    date: yesterdayDate,
+                    templateId: 'rest',
+                    templateTitle: 'Total Rest',
+                    category: 'Rest',
+                    modality: 'Mobility',
+                    mode: 'recover',
+                    rationale: 'scheduled recovery',
+                    schemaVersion: 3,
+                    createdAt: `${yesterdayDate}T06:00:00Z`,
+                    updatedAt: `${yesterdayDate}T06:00:00Z`,
+                    adherence: {
+                        respondedAt: null,
+                        followed: null,
+                        actualModality: null,
+                        actualDurationMin: null,
+                        skipped: false,
+                        notes: null,
+                    },
+                }, {
+                    userId: 'u1',
+                    date: targetDate,
+                    templateId: 'tempo',
+                    templateTitle: 'Tempo Ride',
+                    category: 'Moderate Endurance',
+                    modality: 'Cycling',
+                    mode: 'train',
+                    rationale: 'Coverage tier: 2. Benefit score: 1.20, Fatigue cost penalty: 2.70. (Sequence intent: recondition/spread, preferred key gap 2d.) (Sequence soft preference x0.26: key-session gap 1d is below preferred 2d; quality-density policy spread adjusts consecutive high-intensity cost.)',
+                    schemaVersion: 3,
+                    createdAt: `${targetDate}T06:00:00Z`,
+                    updatedAt: `${targetDate}T06:00:00Z`,
+                    adherence: {
+                        respondedAt: null,
+                        followed: null,
+                        actualModality: null,
+                        actualDurationMin: null,
+                        skipped: false,
+                        notes: null,
+                    },
+                }],
+                upcomingFixedActivities: [],
+                upcomingPlanBlocks: [],
+                upcomingExternalSessions: [
+                    {
+                        date: '2026-09-29',
+                        planId: 'p-sep',
+                        planTitle: 'M01',
+                        revision: 1,
+                        sessionId: 'd1',
+                        title: 'Easy Endurance',
+                        priority: 'supporting',
+                        modality: 'cycling',
+                        intensity: 'easy',
+                        durationMin: 75,
+                        durationMax: 90,
+                        flexibility: 'preferred',
+                        status: 'planned',
+                        moved: false,
+                        isEvent: false,
+                        prescription: { summary: 'Easy aerobic ride' },
+                    },
+                    {
+                        date: '2026-09-30',
+                        planId: 'p-sep',
+                        planTitle: 'M01',
+                        revision: 1,
+                        sessionId: 'd2',
+                        title: 'Strength A',
+                        priority: 'key',
+                        modality: 'strength',
+                        intensity: 'moderate',
+                        durationMin: 60,
+                        durationMax: 60,
+                        flexibility: 'preferred',
+                        status: 'planned',
+                        moved: false,
+                        isEvent: false,
+                        prescription: { summary: 'Full-body strength' },
+                    },
+                    {
+                        date: '2026-10-01',
+                        planId: 'p-sep',
+                        planTitle: 'M01',
+                        revision: 1,
+                        sessionId: 'd3',
+                        title: 'Aerobic Anchor',
+                        priority: 'key',
+                        modality: 'cycling',
+                        intensity: 'moderate',
+                        durationMin: 150,
+                        durationMax: 180,
+                        flexibility: 'preferred',
+                        status: 'planned',
+                        moved: false,
+                        isEvent: false,
+                        prescription: { summary: 'Long aerobic ride' },
+                    },
+                ],
+            }));
+
+            expect(text).toContain('Date: 2026-09-28 (Europe/Warsaw) · Mode: Daily Morning Coach Handoff');
+            expect(text).toContain('Adherence Delta: **UNPLANNED_STRAIN**');
+            expect(text).toContain('⚠️ ADHERENCE ALERT');
+            expect(text).toContain('High unplanned strain executed on scheduled rest/recovery day (+122.6 load, IF 0.8).');
+            expect(text).toContain('⚠️ ENGINE CONFLICT');
+            expect(text).toContain('preferred 2-day key-session spacing (current gap: 1 day post-tempo)');
+            expect(text).toContain('Sequence preference x0.26 was applied');
+            expect(text).toContain('D+1 · 2026-09-29: Imported session: Easy Endurance (cycling · 75–90 min · easy · priority: SUPPORTING)');
+            expect(text).toContain('D+2 · 2026-09-30: Imported session: Strength A (strength · 60 min · moderate · priority: KEY)');
+            expect(text).toContain('D+3 · 2026-10-01: Imported session: Aerobic Anchor (cycling · 150–180 min · moderate · priority: KEY)');
+            expect(text).not.toContain('multi-resolution-v1');
+            expect(text).not.toContain('Power zones:');
+            expect(text).not.toContain('Most recent reading');
+            expect(text).not.toContain('Overnight reaction');
+        });
+
+        it('uses imported-plan rest authority for the adherence delta without treating athlete feedback as execution proof', () => {
+            const text = enhanceContextBriefForPlanning(BASE, handoffInput({
+                preset: 'daily',
+                recommendations: [recommendation()],
+                activities: [{
+                    activityId: 'unplanned-rest-day-ride',
+                    date: '2026-08-19',
+                    type: 'road_biking',
+                    durationMin: 50,
+                    activityTrainingLoad: 70,
+                    trainingEffectAerobic: 3,
+                    trainingEffectAnaerobic: 0,
+                    averageHr: 138,
+                    intensityTag: 'moderate',
+                    stimulusDomain: 'tempo',
+                    sessionCost: 'high',
+                    intensityFactor: 0.76,
+                }],
+                restDirectiveYesterday: {
+                    planId: 'p-rest',
+                    revision: 3,
+                    restDirectiveId: 'rest-w1-wed',
+                },
+            }));
+
+            expect(text).toContain('Prescribed: Imported-plan rest/recovery directive.');
+            expect(text).toContain('Adherence Delta: **UNPLANNED_STRAIN**');
+            expect(text).toContain('High unplanned strain executed on scheduled rest/recovery day (+70 load, IF 0.76).');
         });
 
         it('reports appetite in the daily check-in section with its non-authority caveat', () => {
