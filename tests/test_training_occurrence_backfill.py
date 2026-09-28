@@ -788,4 +788,3 @@ def test_impossible_activity_date_is_rejected_before_migration() -> None:
     with pytest.raises(ValueError, match="blocking invariant anomalies"):
         apply_training_occurrence_backfill(db, plan)
     assert db.write_count == 0
-
