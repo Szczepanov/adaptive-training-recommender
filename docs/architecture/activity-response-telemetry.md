@@ -92,6 +92,29 @@ A segment retains prescription and execution separately:
 The segment array is capped at 64. The MMP family is fixed-size. Historical activity
 documents without activityResponse degrade to the existing lap/session summary path.
 
+## Read-side hydration and athlete UI
+
+`trainingHistory.ts` treats `activityResponse` as one optional evidence sidecar. The base
+normalized activity remains available when the sidecar is absent or malformed, but the sidecar
+itself is accepted only when its derivation version is supported and its required shape plus any
+present nested evidence are internally valid. Unknown future derivation versions, invalid
+source-resolution fields, segment fields, prescribed targets, power-duration
+metadata, count/truncation bookkeeping, or steady-half values cause the complete
+`activityResponse` sidecar to be omitted rather than partially hydrating provenance that no
+longer matches the persisted contract.
+
+`ActivityTelemetry` exposes the capability badge in the recent-activity card and keeps the
+dense evidence behind a native `details` / `summary` disclosure. The expanded diagnostic view
+shows source cadence and derivation provenance, fixed MMP windows with confidence and activity-half
+context, steady-half summaries, semantic segment identity, prescribed-versus-performed telemetry,
+within-segment response and evidence confidence. Wide segment evidence remains inside a local
+horizontal-scroll container on narrow screens; it must not create page-level horizontal overflow.
+
+Recent-activity JSON export preserves the hydrated sidecar unchanged, and the context-brief
+consumer receives the same normalized activity object. This remains observational evidence:
+hydration, display and export do not grant the sidecar recommendation, readiness, load or safety
+authority.
+
 ## Context-brief consumers
 
 contextBriefResponseFeatures.ts consumes semantic work/sprint segments before any lap

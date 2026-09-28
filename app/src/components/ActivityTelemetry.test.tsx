@@ -207,6 +207,77 @@ describe('ActivityTelemetry', () => {
     expect(html).toContain('90s rest');
   });
 
+  it('renders activity response as bounded native disclosure with provenance and evidence', () => {
+    const html = renderToStaticMarkup(<ActivityTelemetry state={{
+      status: 'AVAILABLE', revision: null, data: [{
+        ...base,
+        activityResponse: {
+          derivationVersion: 'multi-resolution-v1',
+          sourceResolution: { powerSeconds: 1, hrSeconds: 1, cadenceSeconds: 1 },
+          segmentCountTotal: 2,
+          segmentsTruncated: false,
+          powerDurationPeaks: [
+            { durationSeconds: 5, powerWatts: 380, confidence: 'high', elapsedBeforeSeconds: 1200, activityHalf: 'first' },
+            { durationSeconds: 300, powerWatts: 240, confidence: 'moderate' },
+          ],
+          steadyHalves: {
+            firstPowerWatts: 190,
+            secondPowerWatts: 185,
+            firstHrBpm: 140,
+            secondHrBpm: 142,
+          },
+          segments: [{
+            segmentIndex: 1,
+            segmentType: 'work',
+            identitySource: 'fit_workout_step',
+            startOffsetSeconds: 1200,
+            durationSeconds: 900,
+            prescribedTarget: { kind: 'power_range_watts', low: 220, high: 240 },
+            averagePowerWatts: 230,
+            peak1sPowerWatts: 300,
+            peak5sPowerWatts: 280,
+            peak10sPowerWatts: 260,
+            averageHrBpm: 155,
+            endHrBpm: 158,
+            maxHrBpm: 162,
+            averageCadenceRpm: 92,
+            maxCadenceRpm: 102,
+            firstThirdPowerWatts: 228,
+            middleThirdPowerWatts: 231,
+            lastThirdPowerWatts: 232,
+            lastThirdHrBpm: 157,
+            evidenceConfidence: 'high',
+          }, {
+            segmentIndex: 2,
+            segmentType: 'recovery',
+            identitySource: 'fit_workout_step',
+            durationSeconds: 300,
+            prescribedTarget: { kind: 'power_zone', value: 4 },
+            averagePowerWatts: 110,
+            evidenceConfidence: 'high',
+          }],
+        },
+      }],
+    }} />);
+
+    expect(html).toContain('<details class="activity-response-telemetry">');
+    expect(html).not.toContain('<details class="activity-response-telemetry" open');
+    expect(html).toContain('Multi-resolution session analysis');
+    expect(html).toContain('2 segments · 2 MMP windows');
+    expect(html).toContain('Observational telemetry · multi-resolution-v1');
+    expect(html).toContain('Power source 1 s');
+    expect(html).toContain('380 W');
+    expect(html).toContain('high confidence');
+    expect(html).toContain('first half · after 20:00');
+    expect(html).toContain('fit workout step');
+    expect(html).toContain('220–240 W');
+    expect(html).toContain('Power zone 4');
+    expect(html).toContain('Peaks 1s 300 / 5s 280 / 10s 260 W');
+    expect(html).toContain('228 → 231 → 232 W');
+    expect(html).toContain('157 bpm final ⅓');
+    expect(html).toContain('Power 190 → 185 W · HR 140 → 142 bpm');
+  });
+
   it('renders Copy JSON button and capability badges for detailed telemetry', () => {
     const html = renderToStaticMarkup(<ActivityTelemetry state={{
       status: 'AVAILABLE', revision: null, data: [{

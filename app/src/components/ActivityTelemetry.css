@@ -197,22 +197,116 @@
   margin-top: 0.65rem;
 }
 
-.activity-laps table {
+.activity-lap-table-wrap table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.85rem;
 }
 
-.activity-laps th,
-.activity-laps td {
+.activity-lap-table-wrap th,
+.activity-lap-table-wrap td {
   padding: 0.55rem;
   border-bottom: 1px solid var(--border-color);
   text-align: right;
+  vertical-align: top;
 }
 
-.activity-laps th:first-child,
-.activity-laps td:first-child {
+.activity-lap-table-wrap th:first-child,
+.activity-lap-table-wrap td:first-child,
+.activity-exercise-sets th:nth-child(2),
+.activity-exercise-sets td:nth-child(2),
+.activity-response-table th:nth-child(2),
+.activity-response-table td:nth-child(2),
+.activity-response-table th:nth-child(3),
+.activity-response-table td:nth-child(3),
+.activity-response-table th:nth-child(6),
+.activity-response-table td:nth-child(6),
+.activity-response-table th:nth-child(10),
+.activity-response-table td:nth-child(10),
+.activity-response-table th:nth-child(11),
+.activity-response-table td:nth-child(11) {
   text-align: left;
+}
+
+.activity-response-telemetry {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.activity-response-telemetry > summary {
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 0.75rem 0.2rem;
+  cursor: pointer;
+  color: var(--text-color);
+  font-weight: 600;
+}
+
+.activity-response-summary {
+  margin-left: 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+.activity-response-body {
+  padding-top: 0.15rem;
+}
+
+.activity-response-provenance,
+.activity-response-truncation,
+.activity-table-scroll-hint,
+.activity-steady-halves {
+  margin: 0.35rem 0 0.65rem;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.activity-response-truncation {
+  color: var(--warning-color, #d6a54b);
+}
+
+.activity-response-subsection {
+  margin-top: 0.8rem;
+}
+
+.activity-mmp-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.55rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.activity-mmp-peak {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 6.5rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.activity-mmp-peak strong {
+  color: var(--text-color);
+  font-size: 0.9rem;
+}
+
+.activity-response-table {
+  min-width: 78rem;
+}
+
+.activity-response-cell-lines {
+  display: grid;
+  gap: 0.1rem;
+  white-space: nowrap;
+}
+
+.activity-table-scroll-hint {
+  display: none;
 }
 
 .activity-telemetry-state.error {
@@ -310,6 +404,15 @@
 }
 
 @media (max-width: 640px) {
+  .activity-response-summary {
+    display: block;
+    margin: 0.2rem 0 0 1rem;
+  }
+
+  .activity-table-scroll-hint {
+    display: block;
+  }
+
   .activity-telemetry-card > header {
     flex-direction: column;
   }
