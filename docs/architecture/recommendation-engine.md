@@ -109,7 +109,7 @@ the UI presets map onto them through `briefPurposeFor` (`daily` → `morning`, `
 fetched: `planning` and `diagnostic` share the same lookback and `ContextBriefService.build`
 issues identical reads for both.
 
-- `morning` — `buildMorningCoachBrief`: today's closed loop only; no multi-day plan.
+- `morning` — `buildMorningCoachBrief`: today's closed loop only; no multi-day plan. Yesterday's quality cycling/running session is expanded with bounded execution telemetry while ordinary endurance/recovery sessions stay compact.
 - `planning` — sections in decision-authority order (section 0 authority/data currency,
   constraints, current intent & goals, recovery, completed load with a bounded one-line
   telemetry digest per activity, recommendation feedback, upcoming commitments, compact long-term goals,
@@ -134,8 +134,14 @@ The completed-training section of the planning and diagnostic exports carries a
 **display-only**: only the brief telemetry renderer imports them, their constants have no
 recommendation authority (ADR-0033 display-only, so no claim or coverage item), and
 `POLICY_VERSION` is unaffected. Using them in policy would be a separately reviewed change.
-The morning export is rebuilt by `buildMorningCoachBrief`, so `ContextBriefService.build`
-does not derive them for `morning`.
+The morning export is rebuilt by `buildMorningCoachBrief`, so it does not run the historical
+comparison/next-day `deriveKeySessionSummaries` pipeline. Instead,
+`contextBriefActivityTelemetry.ts` `renderMorningQualityActivityTelemetry` expands only the
+previous day's quality cycling/running sessions (tempo, threshold, VO2, anaerobic, mixed, race,
+or a legacy hard tag). Cycling uses bounded zones plus persisted `activityResponse` MMP,
+steady-half and semantic-segment evidence; running uses running dynamics and bounded lap
+pace/power/HR evidence. This remains display-only and ordinary endurance/recovery sessions keep
+the one-line morning summary.
 
 A session is a *key session* when at least one feature produced a value, or when it is a
 steady session with no comparable prior session (its rejection reasons are stated). In the
