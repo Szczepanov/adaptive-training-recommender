@@ -136,7 +136,7 @@ describe('deriveCanonicalBroadExposure', () => {
         if (derived.status !== 'derived') return;
         expect(derived.exposure).toMatchObject({
             trainingRecordLike: { type: 'Upper Maintenance', duration_min: 45 }, modality: 'Strength',
-            deliveredDose: { plannedDurationMin: 50, completionRatio: 0.5 }, stimulusConfidence: 'inferred',
+            deliveredDose: { plannedDurationMin: 55, completionRatio: 0.5 }, stimulusConfidence: 'inferred',
         });
         expect(Object.values(derived.exposure.costProfile).every(value => Number.isFinite(value) && value > 0)).toBe(true);
         expect(Object.values(derived.exposure.stimulusProfile ?? {}).every(value => Number.isFinite(value) && value >= 0)).toBe(true);
@@ -144,6 +144,60 @@ describe('deriveCanonicalBroadExposure', () => {
             liveEvents: [], liveExposures: [], occurrences: [occurrence([structuredRef], { modality: 'strength' })], sources: hydrated,
         }).audit;
         expect(audit).toMatchObject({ derived: 1, unsupportedDerivations: 0, structuredAuthorityViolations: 0 });
+    });
+
+    it('computes completion from required per-step targets without optional or excess work masking misses', () => {
+        const manual = execution({ sessionSource: strengthPrescription.sessionSource, prescriptionHash: 'ph-1', sessionRpe: 8 });
+        const rotatingPrescription: ExecutionPrescription = {
+            ...strengthPrescription,
+            blocks: [{
+                id: 'main', role: 'main', executionMode: 'superset', rounds: 3,
+                steps: [
+                    { id: 'press', kind: 'exercise', dose: { kind: 'repetition', sets: 1, reps: 8 } },
+                    { id: 'row', kind: 'exercise', dose: { kind: 'repetition', sets: 1, reps: 8 } },
+                    { id: 'carry', kind: 'exercise', optional: true, dose: { kind: 'duration', seconds: 30 } },
+                ],
+            }],
+        };
+        const entries = [
+            setEntry('1'), setEntry('2'), setEntry('3'), setEntry('4'),
+            { ...setEntry('5'), stepId: 'row' },
+            { ...setEntry('6'), stepId: 'carry', payload: { kind: 'duration', setIndex: 1, seconds: 30 } as const },
+            { ...setEntry('7'), stepId: 'carry', payload: { kind: 'duration', setIndex: 2, seconds: 30 } as const },
+            { ...setEntry('8'), stepId: 'carry', payload: { kind: 'duration', setIndex: 3, seconds: 30 } as const },
+        ];
+        const derived = deriveCanonicalBroadExposure(occurrence([structuredRef], { modality: 'strength' }), sources({
+            executionsById: new Map([['e-1', manual]]),
+            entriesByExecutionId: new Map([['e-1', entries]]),
+            prescriptionsByHash: new Map([['ph-1', rotatingPrescription]]),
+        }));
+        expect(derived.status).toBe('derived');
+        if (derived.status !== 'derived') return;
+        // Superset rounds prescribe 3 press + 3 row entries. Four press entries cap at 3;
+        // optional carries do not compensate for the two missing row entries.
+        expect(derived.exposure.deliveredDose?.completionRatio).toBeCloseTo(4 / 6);
+    });
+
+    it('fails closed when prescription source identity does not match the completed execution', () => {
+        const manual = execution({ sessionSource: strengthPrescription.sessionSource, prescriptionHash: 'ph-1' });
+        const mismatched: ExecutionPrescription = {
+            ...strengthPrescription,
+            sessionSource: { kind: 'manual', definitionId: 'different', revision: 1, contentHash: 'h' },
+        };
+        expect(deriveCanonicalBroadExposure(occurrence([structuredRef], { modality: 'strength' }), sources({
+            executionsById: new Map([['e-1', manual]]),
+            entriesByExecutionId: new Map([['e-1', [setEntry('1')]]]),
+            prescriptionsByHash: new Map([['ph-1', mismatched]]),
+        }))).toEqual({ status: 'unknown', reason: 'non_catalog_execution_evidence_missing' });
+    });
+
+    it('ignores a foreign execution entry even if it is placed under the hydrated execution key', () => {
+        const manual = execution({ sessionSource: strengthPrescription.sessionSource, prescriptionHash: 'ph-1' });
+        expect(deriveCanonicalBroadExposure(occurrence([structuredRef], { modality: 'strength' }), sources({
+            executionsById: new Map([['e-1', manual]]),
+            entriesByExecutionId: new Map([['e-1', [setEntry('1', 'e-foreign')]]]),
+            prescriptionsByHash: new Map([['ph-1', strengthPrescription]]),
+        }))).toEqual({ status: 'unknown', reason: 'non_catalog_execution_evidence_missing' });
     });
 
     it('lets Garmin duration and Training Effect enrich an authored execution without replacing its identity', () => {
