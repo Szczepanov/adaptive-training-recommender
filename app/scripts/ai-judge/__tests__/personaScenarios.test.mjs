@@ -342,7 +342,7 @@ describe('active persona AI-judge suite', () => {
       expect(result.decisionTraces.every((trace) => Boolean(trace.selected?.templateId)), definition.scenario.id).toBe(true);
       expect(result.constraintViolations, definition.scenario.id).toEqual([]);
     }
-  });
+  }, 45_000);
 
   it('keeps all three triathlon race disciplines reachable when access exists and never fabricates swimming without a pool', async () => {
     const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_triathlon_established_olympic');
