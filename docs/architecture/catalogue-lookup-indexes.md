@@ -25,12 +25,26 @@ References:
 
 A duplicate ID therefore fails tests instead of silently changing lookup semantics.
 
+## Non-unique indexes: preserve ordered first-match semantics
+
+A non-ID key such as modality is intentionally not unique. If a repeated predicate lookup is indexed, the index must preserve the source array's ordering semantics rather than silently adopting Map's last-write-wins behavior.
+
+`ENRICHED_TEMPLATES_BY_MODALITY` is the narrow exception currently used by `trainingHistory.ts` for modified-adherence reconstruction. It is built once in source order and only sets a modality that has not been seen yet, so:
+
+`ENRICHED_TEMPLATES_BY_MODALITY.get(modality)`
+
+is object-identical to the previous:
+
+`ENRICHED_TEMPLATES.find(template => template.modality === modality)`.
+
+`catalogueIndexes.test.ts` protects this first-match invariant for every modality. Do not construct such an index with a plain `new Map(array.map(...))` unless last-match semantics are explicitly intended.
+
 ## Usage rules
 
 - Prefer `*_BY_ID.get(id)` for repeated exact-ID lookups when an index already exists.
 - Keep the index at module scope. Do not rebuild a `Map` inside a component render, loop, or event handler; that would replace repeated lookup cost with repeated index-construction cost.
 - Keep arrays as the source of truth for ordered iteration, filtering, and predicate searches.
-- Do **not** mechanically replace non-ID predicates such as `TEMPLATES.find(t => t.modality === 'Mobility')`. Add another index only when there is a repeated access pattern and a meaningful reason to maintain it.
+- Do **not** mechanically replace non-ID predicates such as `TEMPLATES.find(t => t.modality === 'Mobility')`. Add another index only when there is a repeated access pattern and a meaningful reason to maintain it, and explicitly preserve the predicate's ordering/duplicate-key semantics.
 - Describe the benefit as avoiding repeated linear scans or using indexed lookup, rather than promising a particular constant-time complexity.
 
 ## Trade-off
