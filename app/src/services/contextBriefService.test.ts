@@ -184,6 +184,36 @@ describe('ContextBriefService', () => {
             expect(services.getActivePlanState).toHaveBeenNthCalledWith(8, 'u1', '2026-08-21', []);
         });
 
+        it('renders a D+3 imported session with modality, duration, and intensity in the morning handoff', async () => {
+            services.getActivePlanState.mockImplementation(async (_userId: string, date: string) => {
+                if (date !== '2026-08-18') return { status: 'MISSING' };
+                return {
+                    status: 'AVAILABLE',
+                    data: {
+                        header: { planId: 'p-daily', title: 'Daily plan', revision: 4 },
+                        placed: [{
+                            date,
+                            status: 'planned',
+                            moved: false,
+                            session: {
+                                id: 'd3',
+                                title: 'Long aerobic support',
+                                priority: 'supporting',
+                                placement: { flexibility: 'preferred' },
+                                gating: { modality: 'cycling', intensity: 'easy', durationMin: 90, durationMax: 120 },
+                                prescription: { summary: 'Long easy aerobic ride' },
+                            },
+                        }],
+                    },
+                };
+            });
+
+            const result = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+
+            expect(result.text).toContain('D+3 · 2026-08-18: Imported session: Long aerobic support (cycling · 90–120 min · easy · priority: SUPPORTING)');
+            expect(result.text).not.toContain('No fixed activities, travel blocks, or imported sessions in the next 72 hours');
+        });
+
         it('does not widen the fetch for the full 14-day window, since it already exceeds the timeline horizon', async () => {
             await new ContextBriefService().build('u1', AS_OF, 14);
             expect(services.getRecoverySnapshotState).toHaveBeenCalledTimes(14);
