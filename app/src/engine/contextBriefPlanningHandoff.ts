@@ -776,8 +776,8 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         lines.push('- Manual physical work: none reported');
     }
 
-    const importedAuthorityYesterday = input.yesterdayExternalSession !== undefined
-        || input.restDirectiveYesterday !== undefined;
+    const importedAuthorityYesterday = input.yesterdayExternalSession != null
+        || input.restDirectiveYesterday != null;
     const adherenceDelta = deriveAdherenceDelta(
         importedAuthorityYesterday ? null : yesterdayRecommendation,
         input.yesterdayExternalSession ?? null,
