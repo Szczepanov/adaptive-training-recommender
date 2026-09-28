@@ -31,6 +31,7 @@ const PROVENANCE_REASONS: Readonly<Record<string, string>> = {
     scheduleOverlays: 'schedule_overlay_history_unprovable',
     planBlocks: 'plan_block_history_unprovable',
     scheduleWindowManifests: 'schedule_window_history_unprovable',
+    sessionOccurrences: 'session_occurrence_history_unprovable',
     trainingSettings: 'training_settings_history_unprovable',
     preferences: 'preferences_history_unprovable',
     trainingIntentProfiles: 'training_intent_history_unprovable',

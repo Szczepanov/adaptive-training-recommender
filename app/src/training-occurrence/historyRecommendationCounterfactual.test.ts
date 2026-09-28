@@ -155,6 +155,16 @@ describe('runHistoryCounterfactualSeries', () => {
         });
     });
 
+    it('propagates unexpected date-input assembly failures instead of disguising them as history gaps', async () => {
+        const pair = await options();
+        await expect(runHistoryCounterfactualSeries({
+            ...pair,
+            inputForDate: () => {
+                throw new Error('assembler_contract_regression');
+            },
+        })).rejects.toThrow('assembler_contract_regression');
+    });
+
     it('repeats deterministically and preserves the same wider provider requests in both passes', async () => {
         const base = inputs();
         const pair = await options({

@@ -519,15 +519,9 @@ export async function runHistoryCounterfactualSeries(options: HistoryCounterfact
 
     for (let index = 0; index < sortedDates.length; index += 1) {
         const date = sortedDates[index];
-        let resolved: HistoricalDateInput;
-        try {
-            resolved = await options.inputForDate(date);
-        } catch {
-            const dateAlias = `D${String(index + 1).padStart(3, '0')}`;
-            dates.push({ dateAlias, status: 'not_replayable', reasonCodes: ['historical_input_assembly_failed'] });
-            recordCount(notReplayableByReason, 'historical_input_assembly_failed');
-            continue;
-        }
+        // Provenance/data gaps are explicit HistoricalDateInput states. Unexpected assembler
+        // exceptions are pipeline failures and must not be disguised as ordinary missing history.
+        const resolved = await options.inputForDate(date);
         if (resolved.status === 'not_applicable') {
             dates.push({ dateAlias: resolved.dateAlias ?? `date-${String(index + 1).padStart(3, '0')}`, status: resolved.status, reasonCode: resolved.reasonCode });
             continue;

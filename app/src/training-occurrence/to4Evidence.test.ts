@@ -141,6 +141,7 @@ describe('prepareTo4Evidence', () => {
             dateAlias: 'D001',
             reasonCodes: expect.arrayContaining([
                 'recovery_history_unprovable', 'goal_history_unprovable', 'training_settings_history_unprovable',
+                'session_occurrence_history_unprovable',
             ]),
         });
         expect(JSON.stringify(context.sourceCoverage)).not.toContain('u1');
