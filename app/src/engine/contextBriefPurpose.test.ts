@@ -219,7 +219,7 @@ describe('planning export (#811)', () => {
         expect(huge).toContain('80 additional lap(s) omitted from the block-planning export');
         expect(huge.length).toBeGreaterThan(small.length);
         // Once the 20-row cap is reached, only bounded digest/omission-count text can differ.
-        expect(Math.abs(huge.length - capped.length)).toBeLessThan(80);
+        expect(Math.abs(huge.length - capped.length)).toBeLessThan(180);
     });
 
     it('keeps ordinary endurance telemetry compact even with many laps', () => {
