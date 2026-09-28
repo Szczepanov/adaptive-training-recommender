@@ -11,7 +11,7 @@
  */
 import type { DailyRecommendation, NormalizedGarminActivity } from '../engine/models';
 import type { CompletedExposure } from '../engine/trainingHistory';
-import type { ExecutionPrescription, SessionEntry, SessionExecution } from '../sessions/models';
+import type { ExecutionPrescription, SessionDefinition, SessionEntry, SessionExecution } from '../sessions/models';
 import { buildTrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
 import { parseDailyRecommendation, parseNormalizedGarminActivity } from '../persistence/parsers/trainingHistory';
 import { parseSessionEntryDocument, parseSessionExecutionDocument } from '../persistence/parsers/sessionExecution';
@@ -47,6 +47,7 @@ export interface TrainingOccurrenceRecordExport {
     sessionExecutions: RawRecordDocument[];
     sessionEntries?: RawRecordDocument[];
     executionPrescriptions?: RawRecordDocument[];
+    sessionDefinitionRevisions?: RawRecordDocument[];
     activities: RawRecordDocument[];
     dailyRecommendations: RawRecordDocument[];
 }
@@ -59,6 +60,8 @@ export interface PrepareOptions {
     fitFingerprintVersion: string;
     /** Reviewer labels keyed by the opaque alias printed in the private review sheet. */
     labels?: Readonly<Record<string, ReviewLabel>>;
+    /** Verified exact manual revisions; only used when an old prescription lacks display metadata. */
+    manualDefinitionRevisions?: readonly { definition: SessionDefinition; contentHash: string }[];
 }
 
 type GateState = 'pass' | 'fail' | 'not_evaluated';
@@ -122,10 +125,11 @@ function parseRecords(raw: TrainingOccurrenceRecordExport): ParsedRecords {
             || typeof candidate.createdAt !== 'string'
             || !validSource(candidate.sessionSource)
             || !Array.isArray(candidate.blocks)
-            || !metadata || typeof metadata.title !== 'string' || !metadata.title.trim()
-            || typeof metadata.intent !== 'string'
-            || (metadata.dominantModality !== undefined && typeof metadata.dominantModality !== 'string')
-            || (metadata.duration !== undefined && !validDuration(metadata.duration))) return false;
+            || (metadata === undefined && (candidate.sessionSource as Record<string, unknown>).kind !== 'manual')
+            || (metadata !== undefined && (!metadata || typeof metadata.title !== 'string' || !metadata.title.trim()
+                || typeof metadata.intent !== 'string'
+                || (metadata.dominantModality !== undefined && typeof metadata.dominantModality !== 'string')
+                || (metadata.duration !== undefined && !validDuration(metadata.duration))))) return false;
         const validRoles = new Set(['warmup', 'main', 'cooldown', 'accessory', 'test', 'recovery']);
         const validModes = new Set(['sequential', 'circuit', 'superset', 'density', 'amrap', 'alternating']);
         return candidate.blocks.every(block => {
@@ -245,7 +249,11 @@ function occurrencesInWindow(
     });
 }
 
-function pair(parsed: ParsedRecords, window: TrainingOccurrenceRecordExport['window']): {
+function pair(
+    parsed: ParsedRecords,
+    window: TrainingOccurrenceRecordExport['window'],
+    manualDefinitionRevisions: PrepareOptions['manualDefinitionRevisions'],
+): {
     pairing: HistoryPairingResult;
     liveEvents: ReturnType<typeof buildTrainingHistorySnapshot>['completedEvents'];
     sources: CanonicalHistorySources;
@@ -270,6 +278,7 @@ function pair(parsed: ParsedRecords, window: TrainingOccurrenceRecordExport['win
         ])),
         prescriptionsByHash: new Map(parsed.prescriptions.map(prescription => [prescription.prescriptionHash, prescription])),
         recommendationsByDate: new Map(parsed.recommendations.map(recommendation => [recommendation.date, recommendation])),
+        manualDefinitionRevisions,
     };
     const occurrences = occurrencesInWindow(parsed.occurrences, window);
     const pairing = pairLiveAndCanonicalHistory({
@@ -289,9 +298,9 @@ export function prepareTo4Evidence(raw: TrainingOccurrenceRecordExport, options:
         throw new Error('Record export window must be YYYY-MM-DD with startDate < endDateExclusive.');
     }
     const parsed = parseRecords(raw);
-    const first = pair(parsed, raw.window);
+    const first = pair(parsed, raw.window, options.manualDefinitionRevisions);
     // Determinism gate: a second independent derivation from the same parsed input must match.
-    const second = pair(parseRecords(raw), raw.window);
+    const second = pair(parseRecords(raw), raw.window, options.manualDefinitionRevisions);
     const deterministic = stableJson([first.pairing.liveExposures, first.pairing.canonicalExposures, first.pairing.unknownCanonicalOccurrenceKeys])
         === stableJson([second.pairing.liveExposures, second.pairing.canonicalExposures, second.pairing.unknownCanonicalOccurrenceKeys]);
 
@@ -371,6 +380,7 @@ export function prepareTo4Evidence(raw: TrainingOccurrenceRecordExport, options:
             invalidRecords: parsed.invalidRecords,
             crossUserRecordsRejected: parsed.crossUserRecords,
             derived: first.pairing.canonicalExposures.length,
+            manualDefinitionMetadataFallbacks: first.pairing.audit.manualDefinitionMetadataFallbacks,
             unknownByReason: first.pairing.unknownByReason,
         },
         identityEvidence: {

@@ -12,6 +12,16 @@ import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { exportWorkoutPrescriptionToJson } from '../utils/workoutJsonExport';
 import { computeWorkoutTemplateFingerprint } from '../training-occurrence/fitWorkoutIdentity';
 
+function displayMetadataFor(definition: SessionDefinition): NonNullable<ExecutionPrescription['displayMetadata']> {
+    return {
+        title: definition.title,
+        ...(definition.summary !== undefined ? { summary: definition.summary } : {}),
+        intent: definition.intent,
+        ...(definition.dominantModality !== undefined ? { dominantModality: definition.dominantModality } : {}),
+        ...(definition.duration !== undefined ? { duration: definition.duration } : {}),
+    };
+}
+
 /**
  * Creates the evidence records required before a manually-owned definition may execute.
  * It deliberately grants only `unplanned_log` authority; schedule/replacement/addition
@@ -39,6 +49,7 @@ export async function prepareUnplannedSessionLaunch(
         },
         definitionHash: contentHash,
         blocks: definition.blocks,
+        displayMetadata: displayMetadataFor(definition),
         createdAt: now,
     };
     const prescriptionHash = await hashExecutionPrescription(unsignedPrescription);
@@ -160,6 +171,7 @@ export async function prepareAuthoredOccurrenceLaunch(
         sessionSource: source,
         definitionHash: source.contentHash,
         blocks: acceptedDefinition.blocks,
+        displayMetadata: displayMetadataFor(acceptedDefinition),
         createdAt: now,
     };
     const prescriptionHash = await hashExecutionPrescription(unsignedPrescription);

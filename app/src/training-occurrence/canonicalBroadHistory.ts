@@ -20,7 +20,7 @@
  */
 import type { CompletedTrainingEvent, CompletedTrainingSource, DailyRecommendation, NormalizedGarminActivity, SessionTemplate } from '../engine/models';
 import type { CompletedExposure } from '../engine/trainingHistory';
-import type { ExecutionPrescription, SessionEntry, SessionExecution } from '../sessions/models';
+import type { ExecutionPrescription, SessionDefinition, SessionEntry, SessionExecution } from '../sessions/models';
 import {
     DEFAULT_COST_BY_MODALITY,
     DEFAULT_STIMULUS_BY_MODALITY,
@@ -36,6 +36,7 @@ import { workoutForTemplate } from '../workouts/prescription';
 import { getLocalDateString } from '../utils/localDate';
 import { isRotatingExecutionMode, targetEntriesForGroupStep } from '../sessions/groupProgression';
 import { countsTowardPrescribedSets } from '../sessions/workSets';
+import { canonicalizeSessionData } from '../sessions/sessionDefinitionHash';
 import {
     isProviderActivityRef,
     isStructuredExecutionRef,
@@ -64,6 +65,8 @@ export interface CanonicalHistorySources {
     prescriptionsByHash: ReadonlyMap<string, ExecutionPrescription>;
     activitiesById: ReadonlyMap<string, NormalizedGarminActivity>;
     recommendationsByDate: ReadonlyMap<string, DailyRecommendation>;
+    /** Hash-verified immutable manual revisions used only when an older prescription omitted display metadata. */
+    manualDefinitionRevisions?: readonly { definition: SessionDefinition; contentHash: string }[];
 }
 
 export type CanonicalExposureDerivation =
@@ -189,6 +192,32 @@ function sameNonCatalogSessionSource(
     return false;
 }
 
+function nonCatalogDisplayMetadata(
+    execution: SessionExecution,
+    prescription: ExecutionPrescription,
+    sources: CanonicalHistorySources,
+): ExecutionPrescription['displayMetadata'] {
+    if (prescription.displayMetadata !== undefined) return prescription.displayMetadata;
+    const source = execution.sessionSource;
+    if (source.kind !== 'manual'
+        || !sameNonCatalogSessionSource(source, prescription.sessionSource)
+        || prescription.definitionHash !== source.contentHash) return undefined;
+    const revision = sources.manualDefinitionRevisions?.find(candidate =>
+        candidate.definition.id === source.definitionId
+        && candidate.definition.revision === source.revision
+        && candidate.contentHash === source.contentHash
+        && JSON.stringify(canonicalizeSessionData(candidate.definition.blocks))
+            === JSON.stringify(canonicalizeSessionData(prescription.blocks)));
+    if (!revision) return undefined;
+    return {
+        title: revision.definition.title,
+        intent: revision.definition.intent,
+        ...(revision.definition.summary !== undefined ? { summary: revision.definition.summary } : {}),
+        ...(revision.definition.dominantModality !== undefined ? { dominantModality: revision.definition.dominantModality } : {}),
+        ...(revision.definition.duration !== undefined ? { duration: revision.definition.duration } : {}),
+    };
+}
+
 function workEntriesForPrescription(
     execution: SessionExecution,
     prescription: ExecutionPrescription,
@@ -252,7 +281,7 @@ function nonCatalogStructuredExposure(
         return { status: 'unknown', reason: 'non_catalog_structured_semantics' };
     }
     const prescription = execution.prescriptionHash ? sources.prescriptionsByHash.get(execution.prescriptionHash) : undefined;
-    const metadata = prescription?.displayMetadata;
+    const metadata = prescription ? nonCatalogDisplayMetadata(execution, prescription, sources) : undefined;
     const title = metadata?.title?.trim();
     const modality = modalityForOccurrence(metadata?.dominantModality);
     const workEntries = prescription ? workEntriesForPrescription(execution, prescription, sources) : [];
@@ -369,6 +398,7 @@ export interface DerivationAudit {
     unsupportedDerivations: number;
     multiSourceDerived: number;
     structuredDerived: number;
+    manualDefinitionMetadataFallbacks: number;
     /** Structured-derived rows whose identity/modality differs from the execution's catalog
      * template -- i.e. a provider classification overrode structured semantics. */
     structuredAuthorityViolations: number;
@@ -378,47 +408,56 @@ function auditDerivation(
     occurrence: PerformedTrainingOccurrence,
     derivation: Extract<CanonicalExposureDerivation, { status: 'derived' }>,
     sources: CanonicalHistorySources,
-): { unsupported: boolean; structuredViolation: boolean } {
+): { unsupported: boolean; structuredViolation: boolean; manualDefinitionMetadataFallback: boolean } {
     const structuredRefs = occurrence.sourceRefs.filter(isStructuredExecutionRef);
     const providerRefs = occurrence.sourceRefs.filter(isProviderActivityRef);
     if (derivation.authority === 'provider') {
         const ref = providerRefs[0];
         const supported = structuredRefs.length === 0 && providerRefs.length === 1
             && ref.provider.trim().toLowerCase() === 'garmin' && sources.activitiesById.has(ref.activityId);
-        return { unsupported: !supported, structuredViolation: false };
+        return { unsupported: !supported, structuredViolation: false, manualDefinitionMetadataFallback: false };
     }
     const execution = structuredRefs.length === 1 ? sources.executionsById.get(structuredRefs[0].executionId) : undefined;
     const source = execution?.sessionSource;
     const catalogSupported = Boolean(execution && execution.state === 'completed' && source?.kind === 'catalog'
         && source.workoutId !== 'legacy_strength' && providerRefs.length <= 1);
     const prescription = execution?.prescriptionHash ? sources.prescriptionsByHash.get(execution.prescriptionHash) : undefined;
+    const metadata = execution && prescription ? nonCatalogDisplayMetadata(execution, prescription, sources) : undefined;
     const nonCatalogSupported = Boolean(execution && execution.state === 'completed'
         && (source?.kind === 'manual' || source?.kind === 'external_plan') && providerRefs.length <= 1
-        && prescription?.displayMetadata?.title
+        && prescription
+        && metadata?.title
         && prescription.prescriptionHash === execution.prescriptionHash
         && sameNonCatalogSessionSource(execution.sessionSource, prescription.sessionSource)
         && workEntriesForPrescription(execution, prescription, sources).length > 0);
     const supported = catalogSupported || nonCatalogSupported;
     const exposure = derivation.exposure;
     const template = exposure.templateId ? ENRICHED_TEMPLATES_BY_ID.get(exposure.templateId) : undefined;
-    const expectedNonCatalogModality = modalityForOccurrence(prescription?.displayMetadata?.dominantModality);
+    const expectedNonCatalogModality = modalityForOccurrence(metadata?.dominantModality);
     const structuredViolation = source?.kind === 'catalog'
         ? !template || exposure.workoutId !== source.workoutId
             || workoutForTemplate(template.id)?.id !== source.workoutId
             || exposure.modality !== template.modality
             || exposure.category !== template.category
             || exposure.stimulusConfidence !== 'exact'
-        : !prescription?.displayMetadata?.title
+        : !prescription
+            || !metadata?.title
             || !execution
             || prescription.prescriptionHash !== execution.prescriptionHash
             || !sameNonCatalogSessionSource(execution.sessionSource, prescription.sessionSource)
-            || exposure.trainingRecordLike.type !== prescription.displayMetadata.title.trim()
+            || exposure.trainingRecordLike.type !== metadata.title.trim()
             || !exposure.modality
             || exposure.modality !== expectedNonCatalogModality
             || !Object.values(exposure.costProfile).every(value => Number.isFinite(value) && value >= 0)
             || !exposure.stimulusProfile
             || !Object.values(exposure.stimulusProfile).every(value => Number.isFinite(value) && value >= 0);
-    return { unsupported: !supported, structuredViolation };
+    return {
+        unsupported: !supported,
+        structuredViolation,
+        manualDefinitionMetadataFallback: source?.kind === 'manual'
+            && prescription?.displayMetadata === undefined
+            && Boolean(metadata),
+    };
 }
 
 function liveKeys(event: CompletedTrainingEvent): string[] {
@@ -492,6 +531,7 @@ export function pairLiveAndCanonicalHistory(input: HistoryPairingInput): History
         audit: {
             activeOccurrences: active.length, derived: 0, unknown: 0, unsupportedDerivations: 0,
             multiSourceDerived: 0, structuredDerived: 0, structuredAuthorityViolations: 0,
+            manualDefinitionMetadataFallbacks: 0,
         },
     };
     orderedGroups.forEach((group, groupIndex) => {
@@ -517,6 +557,7 @@ export function pairLiveAndCanonicalHistory(input: HistoryPairingInput): History
             }
             const check = auditDerivation(occurrence, derivation, input.sources);
             result.audit.derived += 1;
+            if (check.manualDefinitionMetadataFallback) result.audit.manualDefinitionMetadataFallbacks += 1;
             if (check.unsupported) result.audit.unsupportedDerivations += 1;
             if (occurrence.sourceRefs.length > 1) result.audit.multiSourceDerived += 1;
             if (derivation.authority === 'structured') {

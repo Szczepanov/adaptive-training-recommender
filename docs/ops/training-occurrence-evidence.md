@@ -41,7 +41,8 @@ eligible for review, and only a separately written analysis belongs in `docs/ana
 
    `export_training_occurrence_records` (`src/garmin_sync/training_occurrence_export.py`) reads
    only `users/{uid}/performedTrainingOccurrences`, the referenced `session_executions`, their
-   `entries` and immutable `execution_prescriptions`, `activities` and `daily_recommendations`
+   `entries` and immutable `execution_prescriptions`, exact referenced manual
+   `session_definitions/{definitionId}/revisions/{revision}` documents, `activities` and `daily_recommendations`
    for the window (at most 366 days). It never lists `users`. The output `raw/records.json` is
    **raw personal data**. With
    `--with-fit`, `collect_fit_identity_evidence` re-downloads each Garmin original, decodes it
@@ -106,7 +107,11 @@ title and modality with valid nonnegative cost and stimulus profiles.
 - **Completed manual or external-plan execution:** requires its exported immutable
   `execution_prescription`, an exact source-identity match to the completed execution, and at
   least one performed entry owned by that execution and linked to a prescribed work step. The
-  prescription title and modality stay authoritative. Authored duration ranges use the same
+  prescription title and modality stay authoritative. For a legacy manual prescription without
+  `displayMetadata`, preparation may use the exact manual definition revision only when its
+  user, revision, content hash, and full prescribed blocks verify against the execution and
+  prescription. This fallback is counted in `canonicalDerivation.manualDefinitionMetadataFallbacks`;
+  missing or mismatched revision evidence remains unknown. Authored duration ranges use the same
   midpoint reference semantics as catalog ranges. Logged completion is computed per required
   prescribed step, capped at each step's target; rotating block rounds are honored, while
   optional or excess work cannot compensate for missing required work. Existing modality

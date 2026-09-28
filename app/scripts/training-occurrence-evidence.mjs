@@ -272,23 +272,31 @@ if (hardGates.matchedOccurrenceSingleExposure === 'pass' && exposureComparison.d
 const unknownReasons = [
     'multiple_structured_sources', 'multiple_provider_sources', 'unsupported_provider', 'structured_source_unavailable',
     'structured_source_not_completed', 'legacy_strength_semantics_not_derived', 'non_catalog_structured_semantics',
+    'non_catalog_execution_evidence_missing',
     'template_identity_ambiguous', 'provider_source_unavailable', 'no_performed_date',
 ];
 let canonicalDerivation = { status: 'not_supplied' };
 if (input.canonicalDerivation !== undefined) {
     const derivation = plainObject(input.canonicalDerivation, 'canonicalDerivation');
     const countKeys = ['windowDays', 'parsedOccurrences', 'invalidRecords', 'crossUserRecordsRejected', 'derived'];
-    assertKnownKeys(derivation, [...countKeys, 'unknownByReason'], 'canonicalDerivation');
+    const optionalCountKeys = ['manualDefinitionMetadataFallbacks'];
+    assertKnownKeys(derivation, [...countKeys, ...optionalCountKeys, 'unknownByReason'], 'canonicalDerivation');
     const byReason = plainObject(derivation.unknownByReason ?? {}, 'canonicalDerivation.unknownByReason');
     assertKnownKeys(byReason, unknownReasons, 'canonicalDerivation.unknownByReason');
     canonicalDerivation = {
         status: 'prepared',
         ...Object.fromEntries(countKeys.map(key => [key, nonNegativeInteger(derivation[key], `canonicalDerivation.${key}`)])),
+        ...(derivation.manualDefinitionMetadataFallbacks !== undefined
+            ? { manualDefinitionMetadataFallbacks: nonNegativeInteger(derivation.manualDefinitionMetadataFallbacks, 'canonicalDerivation.manualDefinitionMetadataFallbacks') }
+            : {}),
         unknownByReason: Object.fromEntries(Object.entries(byReason).sort(([a], [b]) => a.localeCompare(b))
             .map(([key, value]) => [key, nonNegativeInteger(value, `canonicalDerivation.unknownByReason.${key}`)])),
     };
     if (canonicalDerivation.derived !== input.canonicalExposures.length) {
         throw new Error('canonicalDerivation.derived must equal the number of canonical exposure rows.');
+    }
+    if ((canonicalDerivation.manualDefinitionMetadataFallbacks ?? 0) > canonicalDerivation.derived) {
+        throw new Error('canonicalDerivation.manualDefinitionMetadataFallbacks cannot exceed derived exposures.');
     }
 }
 
