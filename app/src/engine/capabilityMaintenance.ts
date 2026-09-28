@@ -271,6 +271,9 @@ function progressionWorkoutIds(verdict: MechanicalProgressionVerdict | null, gat
     return open.filter(workoutId => (mechanicalIdentityFor(workoutId)?.stage ?? 0) === highest).sort();
 }
 
+/** Resolve #805 capability fulfilment from cadence plus horizon-wide #804 source authority.
+ * Date-local adjacency is deliberately absent here; candidate feasibility handles it per date.
+ */
 function fulfilmentFor(
     cadence: CapabilityCadence,
     input: CapabilityMaintenanceInput,

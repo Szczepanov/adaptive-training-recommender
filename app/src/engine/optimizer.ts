@@ -1130,6 +1130,10 @@ export function buildOptimizationContext(
     };
 }
 
+/** Apply hard feasibility/safety gates and deterministic utility ranking for one date.
+ * Date-scoped coverage constraints such as #859 mechanical adjacency must enter through
+ * `CoverageState` so actual forecast and weekly allocation use the same ranking path.
+ */
 export function rankCandidates(
     candidates: SessionTemplate[],
     unresolvedObjectives: WeeklyObjective[],

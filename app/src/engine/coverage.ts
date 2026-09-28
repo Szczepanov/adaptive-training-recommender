@@ -483,6 +483,10 @@ function newRequirement(args: {
     };
 }
 
+/** Build the date-local coverage ledger from the active plan and actual/projected history.
+ * Issue #859 adjacency state is derived here because callers rebuild this state for each
+ * projected date, while source progression/tissue authority remains outside coverage.
+ */
 export function buildCoverageState(
     planDefinition: PlanDefinition | null | undefined,
     asOfDate: string,
