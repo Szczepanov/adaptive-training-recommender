@@ -1,0 +1,152 @@
+name: Bug report
+description: Report a reproducible defect, regression, incorrect behavior, or broken developer/operational workflow.
+title: ""
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Provide enough evidence to reproduce the defect without exposing private data.
+
+        **Security:** do not report vulnerabilities, credentials, tokens, service-account data, or sensitive/raw health data in a public issue. Follow [SECURITY.md](https://github.com/Szczepanov/adaptive-training-recommender/blob/main/SECURITY.md) instead.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Recommendation engine / planning
+        - Frontend / UI
+        - Python ingestion / backend
+        - Training occurrence / sessions
+        - Firestore / security rules / persistence
+        - Wearable or external integration
+        - CI / build / developer tooling
+        - Documentation
+        - Other / cross-cutting
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Bug summary
+      description: Describe the defect in one concise statement and its impact.
+      placeholder: |
+        When ..., the system ..., which causes ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest reliable reproduction. Use synthetic/redacted data only.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: |
+        The system should ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: |
+        Instead, the system ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Include sanitized logs, screenshots, test failures, stack traces, or relevant IDs. Do not paste secrets or raw health payloads.
+      placeholder: |
+        Observed evidence:
+        - ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Record the context needed to reproduce the issue.
+      placeholder: |
+        Branch / commit:
+        Browser / OS:
+        Python / Node version:
+        Relevant provider or integration:
+        Other:
+    validations:
+      required: false
+
+  - type: textarea
+    id: regression
+    attributes:
+      label: Regression / last known good
+      description: If known, identify when this last worked or the change after which it failed.
+      placeholder: |
+        Last known good:
+        Suspected introducing PR/commit:
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance criteria
+      description: Define how the fix will be judged complete.
+      placeholder: |
+        - [ ] Reproduction is covered by a regression test where practical.
+        - [ ] Expected behavior is restored without violating repository invariants.
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Relevant architecture / invariants
+      description: Link relevant ADRs/docs and call out user scoping, Warsaw dates, D - 1 semantics, knowledge lineage/POLICY_VERSION, or privacy constraints when applicable.
+      placeholder: |
+        Relevant docs / ADRs:
+        - ...
+
+        Invariants at risk:
+        - ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      description: List the focused regression checks and any scope-specific validation expected in addition to the final `make verify` handoff.
+      placeholder: |
+        - Regression test: ...
+        - Manual check: ...
+        - Scope-specific check: ...
+        - Final handoff: make verify
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and pull requests for the same defect.
+          required: true
+        - label: I can reproduce this with sanitized/synthetic evidence and have not included credentials, tokens, service-account files, or raw/sensitive health payloads.
+          required: true

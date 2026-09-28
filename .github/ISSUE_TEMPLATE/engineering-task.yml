@@ -1,0 +1,167 @@
+name: Engineering task
+description: Define a feature, refactor, architecture, documentation, CI/tooling, research/evidence, or maintenance task.
+title: ""
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for implementation-oriented work that should be clear enough for a human or coding agent to take from issue to PR.
+
+        **Security:** do not report vulnerabilities, credentials, tokens, service-account data, or sensitive/raw health data in a public issue. Follow [SECURITY.md](https://github.com/Szczepanov/adaptive-training-recommender/blob/main/SECURITY.md) instead.
+
+  - type: dropdown
+    id: work_type
+    attributes:
+      label: Work type
+      description: Choose the primary kind of work. The implementation may span more than one area.
+      options:
+        - Feature / behavior change
+        - Refactor / technical debt
+        - Architecture / ADR
+        - Documentation
+        - CI / build / developer tooling
+        - Research / evidence
+        - Data migration / backfill
+        - Maintenance
+    validations:
+      required: true
+
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: State the concrete outcome this issue should achieve.
+      placeholder: |
+        Make <capability/behavior> do <desired outcome> so that <user/system benefit>.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context and motivation
+      description: Explain why this work is needed now. Include evidence, failure modes, user impact, or operational impact.
+      placeholder: |
+        Current context:
+        - ...
+        Why this matters:
+        - ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_state
+    attributes:
+      label: Current behavior / evidence
+      description: Describe the current state and include reproducible evidence where available. Leave implementation guesses out unless clearly labeled.
+      placeholder: |
+        Current behavior:
+        - ...
+        Evidence / examples:
+        - ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: desired_outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the observable end state, not only the proposed implementation.
+      placeholder: |
+        After this issue is complete:
+        - ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Separate required work from deliberate non-goals.
+      placeholder: |
+        In scope:
+        - ...
+
+        Out of scope:
+        - ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: Acceptance criteria
+      description: Use verifiable outcomes. Prefer behavior and contracts over file-level implementation details.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Architecture, policy, and invariants
+      description: Identify relevant ADRs/docs/contracts and any invariant or policy-version implications. Write "Not applicable" when none apply.
+      placeholder: |
+        Relevant architecture / ADRs:
+        - ...
+
+        Invariants / governance to preserve:
+        - User-scoped Firestore:
+        - Europe/Warsaw / D - 1 semantics:
+        - Knowledge lineage / POLICY_VERSION:
+        - Privacy / secrets:
+    validations:
+      required: true
+
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      description: State how completion will be proved. The PR should finish with the repository's canonical `make verify` gate plus any scope-specific evidence.
+      placeholder: |
+        Required evidence:
+        - Focused test(s): ...
+        - Manual scenario(s): ...
+        - Scope-specific checks: ...
+        - Final handoff: make verify
+    validations:
+      required: true
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and sequencing
+      description: List blockers, prerequisite issues/PRs, migration ordering, rollout constraints, or follow-up work.
+      placeholder: |
+        Depends on:
+        - ...
+
+        Follow-up:
+        - ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: references
+    attributes:
+      label: References
+      description: Link related issues, PRs, ADRs, plans, analysis documents, external evidence, or screenshots.
+      placeholder: |
+        Refs:
+        - #...
+        - docs/...
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and pull requests for duplicate or already-shipped work.
+          required: true
+        - label: This issue contains no credentials, tokens, service-account files, or raw/sensitive health payloads.
+          required: true
