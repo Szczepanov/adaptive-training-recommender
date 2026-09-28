@@ -48,7 +48,6 @@ function App() {
     date: string;
     result: CapabilityMaintenanceResult | null;
   } | null>(null);
-  const [pendingBriefAfterPlanner, setPendingBriefAfterPlanner] = useState<{ userId: string; date: string } | null>(null);
   const recordCapabilityMaintenance = useCallback((resolvedUserId: string, date: string, result: CapabilityMaintenanceResult | null) => {
     setCapabilityMaintenanceResolution({ userId: resolvedUserId, date, result });
   }, []);
@@ -61,9 +60,6 @@ function App() {
   const decisionInputRequestRevision = useRef(0);
   const activeUserIdRef = useRef<string | null>(userId);
   const currentScreenRef = useRef<Screen>(screen);
-  useEffect(() => {
-    currentScreenRef.current = screen;
-  }, [screen]);
   // M3.4/M2.7 cutover: legacy Strength v1 remains a permanent read format, but it no longer
   // owns a second live runner. An already-open pre-cutover document is surfaced only so the
   // athlete can close it without losing its partial sets; all new execution uses SessionRunner.
@@ -77,7 +73,6 @@ function App() {
 
   const loadDecisionInput = useCallback(async () => {
     if (!userId) return;
-    const wasBrief = currentScreenRef.current === 'brief';
     const requestUserId = userId;
     const requestRevision = ++decisionInputRequestRevision.current;
 
@@ -91,7 +86,6 @@ function App() {
       }
 
       setDecisionInput(input);
-      setCapabilityMaintenanceResolution(null);
 
       // The initial route is resolved before the dashboard is allowed to mount, avoiding a
       // flash (and unnecessary recommendation work) on Home before a pending check-in wins.
@@ -100,19 +94,15 @@ function App() {
       const needsInitialRoute = initialRouteUserIdRef.current !== requestUserId;
       const needsDailyRoute = lastRoutedDate.current !== input.date;
       const isSafeAutoRouteScreen = currentScreenRef.current === 'home' || currentScreenRef.current === 'checkin';
-      const requestedInitialRoute = needsInitialRoute ? readScreenRoute(window.location) : null;
-      const shouldResolveBrief = requestedInitialRoute === 'brief' || wasBrief;
-      if (needsInitialRoute || (needsDailyRoute && isSafeAutoRouteScreen) || wasBrief) {
+      if (needsInitialRoute || (needsDailyRoute && isSafeAutoRouteScreen)) {
         const checkinComplete = hasCompletedSubjectiveCheckinForDecision(input);
         const checkinRequired = requiresCurrentCheckin(input.date, checkinComplete, getLocalDateString());
         const nextScreen: Screen = checkinRequired
           ? 'checkin'
-          : shouldResolveBrief ? 'home' : requestedInitialRoute ?? 'home';
-        if (!checkinRequired && shouldResolveBrief) {
-          setPendingBriefAfterPlanner({ userId: input.userId, date: input.date });
-        } else {
-          setPendingBriefAfterPlanner(null);
-        }
+          : needsInitialRoute
+            ? readScreenRoute(window.location) ?? 'home'
+            : 'home';
+        currentScreenRef.current = nextScreen;
         setScreen(nextScreen);
         window.history.replaceState(window.history.state, '', screenRouteUrl(window.location, nextScreen));
         initialRouteUserIdRef.current = requestUserId;
@@ -150,6 +140,7 @@ function App() {
       if (initialRouteUserIdRef.current !== requestUserId) {
         initialRouteUserIdRef.current = requestUserId;
         lastRoutedDate.current = getLocalDateString();
+        currentScreenRef.current = 'checkin';
         setScreen('checkin');
         window.history.replaceState(window.history.state, '', screenRouteUrl(window.location, 'checkin'));
         setInitialRouteUserId(requestUserId);
@@ -172,7 +163,6 @@ function App() {
     setInitialRouteUserId(null);
     setDecisionInput(null);
     setCapabilityMaintenanceResolution(null);
-    setPendingBriefAfterPlanner(null);
     setHealthAnomalyShadowRevision(null);
 
     // Clear synchronously on every identity change so a resolved session from a previous
@@ -188,6 +178,7 @@ function App() {
     setSessionLaunch(null);
     setDesktopSettingsOpen(false);
     setMobileMoreOpen(false);
+    currentScreenRef.current = 'home';
     setScreen('home');
     setOnboardingDismissed(isOnboardingDismissedForUser(userId));
     if (!userId || authPhase !== 'AUTHENTICATED') return;
@@ -241,7 +232,7 @@ function App() {
     if (!userId || authPhase !== 'AUTHENTICATED' || initialRouteUserId !== userId) return;
 
     const refreshIfCalendarDayChanged = () => {
-      const isSafeAutoRouteScreen = screen === 'home' || screen === 'checkin';
+      const isSafeAutoRouteScreen = currentScreenRef.current === 'home' || currentScreenRef.current === 'checkin';
       if (isSafeAutoRouteScreen && lastRoutedDate.current !== getLocalDateString()) {
         void loadDecisionInput();
       }
@@ -258,11 +249,11 @@ function App() {
       window.removeEventListener('focus', refreshIfCalendarDayChanged);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [userId, authPhase, initialRouteUserId, loadDecisionInput, screen]);
+  }, [userId, authPhase, initialRouteUserId, loadDecisionInput]);
 
   const navigateToScreen = useCallback((newScreen: Screen, historyMode: 'push' | 'replace' | 'none') => {
-    if (newScreen !== 'home' && newScreen !== 'brief') setPendingBriefAfterPlanner(null);
-    const screenChanged = screen !== newScreen;
+    const screenChanged = currentScreenRef.current !== newScreen;
+    currentScreenRef.current = newScreen;
     setScreen(newScreen);
     setDesktopSettingsOpen(false);
     setMobileMoreOpen(false);
@@ -284,41 +275,14 @@ function App() {
     ) {
       void loadDecisionInput();
     }
-  }, [loadDecisionInput, screen]);
-
-  useEffect(() => {
-    if (!pendingBriefAfterPlanner) return;
-    const resolved = capabilityMaintenanceResolution?.userId === pendingBriefAfterPlanner.userId
-      && capabilityMaintenanceResolution.date === pendingBriefAfterPlanner.date;
-    if (resolved) {
-      setPendingBriefAfterPlanner(null);
-      navigateToScreen('brief', 'replace');
-      return;
-    }
-    // Home can be unable to resolve a normal recommendation when recovery, safety, or
-    // history sources are unavailable. After a bounded wait, open the read-only brief with
-    // an explicit no-authoritative-cadence state instead of leaving the athlete on Home.
-    const timeout = window.setTimeout(() => {
-      setCapabilityMaintenanceResolution({ ...pendingBriefAfterPlanner, result: null });
-    }, 8000);
-    return () => window.clearTimeout(timeout);
-  }, [pendingBriefAfterPlanner, capabilityMaintenanceResolution, navigateToScreen]);
-
-  useEffect(() => {
-    if (screen !== 'brief' || !decisionInput) return;
-    const hasCurrentPlannerResult = capabilityMaintenanceResolution?.userId === userId
-      && capabilityMaintenanceResolution.date === decisionInput.date;
-    if (hasCurrentPlannerResult) return;
-    setPendingBriefAfterPlanner({ userId: decisionInput.userId, date: decisionInput.date });
-    navigateToScreen('home', 'replace');
-  }, [screen, userId, decisionInput, capabilityMaintenanceResolution, navigateToScreen]);
+  }, [loadDecisionInput]);
 
   useEffect(() => {
     if (!userId || authPhase !== 'AUTHENTICATED' || initialRouteUserId !== userId) return;
     const onPopState = () => {
       const requested = readScreenRoute(window.location);
       const resumeMismatch = requested === 'testing'
-        && screen === 'sessions'
+        && currentScreenRef.current === 'sessions'
         && activeStructuredSession?.state === 'in_progress'
         && activeStructuredIntent !== 'testing';
       const nextScreen: Screen = resumeMismatch ? 'home' : requested ?? 'home';
@@ -326,7 +290,7 @@ function App() {
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [activeStructuredIntent, activeStructuredSession, authPhase, initialRouteUserId, navigateToScreen, screen, userId]);
+  }, [activeStructuredIntent, activeStructuredSession, authPhase, initialRouteUserId, navigateToScreen, userId]);
 
   if (authPhase !== 'AUTHENTICATED') {
     return <LoginScreen />;
@@ -346,13 +310,6 @@ function App() {
   }
 
   const handleNavigate = (newScreen: Screen) => {
-    const hasCurrentPlannerResult = capabilityMaintenanceResolution?.userId === userId
-      && capabilityMaintenanceResolution.date === decisionInput?.date;
-    if (newScreen === 'brief' && decisionInput && !hasCurrentPlannerResult) {
-      setPendingBriefAfterPlanner({ userId: decisionInput.userId, date: decisionInput.date });
-      navigateToScreen('home', 'push');
-      return;
-    }
     navigateToScreen(newScreen, 'push');
   };
 
@@ -582,7 +539,7 @@ function App() {
                   setActiveStructuredIntent('testing');
                 } else if (
                   session
-                  && screen === 'testing'
+                  && currentScreenRef.current === 'testing'
                   && activeStructuredSession?.executionId === session.executionId
                 ) {
                   setActiveStructuredSession(null);
