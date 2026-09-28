@@ -35,8 +35,16 @@ step identity remains a future integration with ADR-0034 occurrence reconciliati
 Detected segments are not manufactured merely from a workout fingerprint.
 
 A FIT workout fingerprint is session identity evidence only. It does not prove which lap is
-work, recovery, warm-up or cooldown. Garmin FIT Workout Step intensity and executed
-workout-step linkage provide that semantic role.
+work, recovery, warm-up or cooldown. Specific Garmin FIT Workout Step intensity roles and
+executed workout-step linkage provide that semantic role. A bounded target never promotes a
+step to work. Garmin's generic `active` role is weaker: an explicit step name may refine it,
+and on a complete untruncated semantic sequence only a terminal generic-active/work step may
+be downgraded to cooldown when at least two preceding work segments establish a primary set
+and the terminal prescription is more than 15% below that set (including bounded FIT variants
+such as `power_3s_target`), or is power Z1/Z2 after Z3+ work. Explicit FIT `interval`
+intensity is never downgraded by this fallback, and performed power alone never changes
+semantic role. This keeps an unprescribed failed final repetition visible as work rather
+than manufacturing a cooldown from the outcome.
 
 ## Ingestion boundary
 
@@ -126,7 +134,12 @@ heuristic:
 - repeated 10-second sprints use short-window power and cadence; HR is not used to classify
   sprint quality;
 - threshold/VO2 summaries may include within-repetition thirds and final-third HR, subject
-  to the existing HR-fidelity authority;
+  to the existing HR-fidelity authority; for compatibility with already-persisted
+  misclassified telemetry, first-to-last fade/collapse may exclude only a **final**
+  lower-prescription tail when the preceding work set has a coherent power-target profile
+  (or Z3+ power-zone profile). Internal lower-target work and higher-target work remain in
+  the comparison, and same-target low-power repetitions remain eligible for a genuine
+  collapse flag;
 - steady decoupling can use deterministic continuous halves before falling back to lap
   averages.
 

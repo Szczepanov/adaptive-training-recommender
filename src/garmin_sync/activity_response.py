@@ -271,18 +271,42 @@ def _power_duration_peaks(
     return tuple(peaks)
 
 
+def _named_step_type(step: FitWorkoutStepEvidence) -> str | None:
+    """Use explicit step-name semantics only when FIT intensity is generic/unknown."""
+    name = _normalized_identifier(step.name).replace("_", " ").replace("-", " ")
+    if "cooldown" in name or "cool down" in name:
+        return "cooldown"
+    if "warmup" in name or "warm up" in name:
+        return "warmup"
+    if "recovery" in name or "recover" in name or "rest" in name:
+        return "recovery"
+    return None
+
+
 def _segment_type(step: FitWorkoutStepEvidence | None, duration_seconds: float) -> str:
     if step is None:
         return "unknown"
     intensity = _normalized_identifier(step.intensity)
+
+    # FIT intensity is independent from target values. Preserve every specific role,
+    # including explicit interval work, before considering names or fallback heuristics.
     if intensity in {"1", "rest", "4", "recovery", "recover"}:
         return "recovery"
     if intensity in {"2", "warmup", "warm_up"}:
         return "warmup"
     if intensity in {"3", "cooldown", "cool_down"}:
         return "cooldown"
-    if intensity in {"0", "active", "5", "interval"}:
+    if intensity in {"5", "interval"}:
         return "sprint" if duration_seconds <= 20 else "work"
+
+    # Only generic/absent intensity may borrow semantics from an explicit step name.
+    # "Other" and any future explicit enum remain unknown rather than being overwritten.
+    if intensity in {"", "0", "active"}:
+        named_type = _named_step_type(step)
+        if named_type is not None:
+            return named_type
+        if intensity in {"0", "active"}:
+            return "sprint" if duration_seconds <= 20 else "work"
     return "unknown"
 
 
@@ -308,6 +332,87 @@ def _prescribed_target(step: FitWorkoutStepEvidence | None) -> CanonicalPrescrib
             high=high,
         )
     return None
+
+
+PRIMARY_SET_TARGET_TOLERANCE_RATIO = 0.15
+
+
+def _power_target_center(target: CanonicalPrescribedTarget | None) -> float | None:
+    if target is None:
+        return None
+    if target.kind == "power_watts":
+        return _finite_number(target.value)
+    is_bounded_power = target.kind == "power_range_watts" or (
+        target.kind.startswith("power_") and target.kind.endswith("_target")
+    )
+    if not is_bounded_power:
+        return None
+    values = [
+        value
+        for value in (_finite_number(target.low), _finite_number(target.high))
+        if value is not None
+    ]
+    return sum(values) / len(values) if values else None
+
+
+def _power_zone_target(target: CanonicalPrescribedTarget | None) -> float | None:
+    if target is None or target.kind != "power_zone":
+        return None
+    return _finite_number(target.value)
+
+
+def _reclassify_terminal_cooldown(
+    segments: list[CanonicalActivitySegmentSummary],
+    terminal_step: FitWorkoutStepEvidence | None,
+) -> list[CanonicalActivitySegmentSummary]:
+    """Downgrade one ambiguous terminal generic-active step from prescription evidence only.
+
+    Explicit FIT interval/recovery/warm-up/cool-down roles are never overwritten here.
+    Performed power alone is deliberately insufficient because a failed final repetition
+    must remain visible as work when the workout definition does not disambiguate it.
+    """
+    if len(segments) < 3 or terminal_step is None:
+        return segments
+    terminal = segments[-1]
+    if terminal.segment_type != "work":
+        return segments
+
+    intensity = _normalized_identifier(terminal_step.intensity)
+    if intensity not in {"0", "active"}:
+        return segments
+
+    preceding_work = [segment for segment in segments[:-1] if segment.segment_type == "work"]
+    if len(preceding_work) < 2:
+        return segments
+
+    preceding_targets = [
+        target
+        for segment in preceding_work
+        if (target := _power_target_center(segment.prescribed_target)) is not None
+    ]
+    terminal_target = _power_target_center(terminal.prescribed_target)
+    lower_target = (
+        terminal_target is not None
+        and len(preceding_targets) >= 2
+        and terminal_target < median(preceding_targets) * (1 - PRIMARY_SET_TARGET_TOLERANCE_RATIO)
+    )
+
+    preceding_zones = [
+        zone
+        for segment in preceding_work
+        if (zone := _power_zone_target(segment.prescribed_target)) is not None
+    ]
+    terminal_zone = _power_zone_target(terminal.prescribed_target)
+    lower_zone = (
+        terminal_zone is not None
+        and len(preceding_zones) >= 2
+        and terminal_zone <= 2
+        and median(preceding_zones) >= 3
+    )
+
+    if not (lower_target or lower_zone):
+        return segments
+    return [*segments[:-1], replace(terminal, segment_type="cooldown")]
 
 
 def _third_means(
@@ -504,6 +609,10 @@ def _semantic_lap_segments(
                 activity_start=activity_start,
             )
         )
+    if total_segments == len(segments):
+        terminal_step_index = linked_laps[-1][0].workout_step_index
+        assert terminal_step_index is not None
+        segments = _reclassify_terminal_cooldown(segments, steps[terminal_step_index])
     return segments, total_segments
 
 
@@ -512,13 +621,13 @@ def _semantic_record_segments(
     resolution: CanonicalSignalResolution,
 ) -> tuple[list[CanonicalActivitySegmentSummary], int]:
     steps = _workout_step_map(evidence.workout_steps)
+    timestamped_records = [record for record in evidence.records if record.timestamp is not None]
     records = [
         record
-        for record in evidence.records
-        if record.timestamp is not None
-        and record.workout_step_index is not None
-        and record.workout_step_index in steps
+        for record in timestamped_records
+        if record.workout_step_index is not None and record.workout_step_index in steps
     ]
+    linkage_complete = len(records) == len(timestamped_records)
     if not records:
         return [], 0
     records.sort(key=lambda row: row.timestamp or datetime.min)
@@ -561,6 +670,10 @@ def _semantic_record_segments(
                 activity_start=activity_start,
             )
         )
+    if linkage_complete and total_groups == len(segments):
+        terminal_step_index = groups[-1][0].workout_step_index
+        assert terminal_step_index is not None
+        segments = _reclassify_terminal_cooldown(segments, steps[terminal_step_index])
     return segments, total_groups
 
 

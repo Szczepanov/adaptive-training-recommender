@@ -264,7 +264,9 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                             custom_target_value_high=_number(
                                 _value(message, "custom_target_value_high")
                             ),
-                            intensity=_identifier(_value(message, "intensity")),
+                            intensity=_identifier(
+                                _first_value(message, "intensity", "wkt_step_intensity")
+                            ),
                             equipment=_identifier(_value(message, "equipment")),
                         )
                     )
@@ -376,6 +378,15 @@ def _extract_fit_bytes(original: bytes) -> bytes:
 def _value(message: Any, name: str) -> Any:
     getter = getattr(message, "get_value", None)
     return getter(name, fallback=None) if callable(getter) else None
+
+
+def _first_value(message: Any, *names: str) -> Any:
+    """Return the first populated FIT field across equivalent profile aliases."""
+    for name in names:
+        value = _value(message, name)
+        if value is not None:
+            return value
+    return None
 
 
 def _number(value: Any) -> float | None:

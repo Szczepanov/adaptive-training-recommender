@@ -18,9 +18,9 @@
  * Everything else fails closed to an explicit `unknown` reason. Planned `SessionOccurrence`
  * documents are never read, so a plan cannot become a performed exposure.
  */
-import type { CompletedTrainingEvent, CompletedTrainingSource, DailyRecommendation, NormalizedGarminActivity } from '../engine/models';
+import type { CompletedTrainingEvent, CompletedTrainingSource, DailyRecommendation, NormalizedGarminActivity, SessionTemplate } from '../engine/models';
 import type { CompletedExposure } from '../engine/trainingHistory';
-import type { SessionExecution } from '../sessions/models';
+import type { ExecutionPrescription, SessionEntry, SessionExecution } from '../sessions/models';
 import {
     DEFAULT_COST_BY_MODALITY,
     DEFAULT_STIMULUS_BY_MODALITY,
@@ -30,10 +30,12 @@ import {
     scaleCostByDeliveredDose,
     templateDurationReferenceMin,
 } from '../engine/completedTraining';
-import { recommendationOwnsExecution, templateIdForWorkoutId } from '../engine/performedTrainingFacts';
+import { normalizeModality, recommendationOwnsExecution, templateIdForWorkoutId } from '../engine/performedTrainingFacts';
 import { ENRICHED_TEMPLATES_BY_ID } from '../engine/templates';
 import { workoutForTemplate } from '../workouts/prescription';
 import { getLocalDateString } from '../utils/localDate';
+import { isRotatingExecutionMode, targetEntriesForGroupStep } from '../sessions/groupProgression';
+import { countsTowardPrescribedSets } from '../sessions/workSets';
 import {
     isProviderActivityRef,
     isStructuredExecutionRef,
@@ -49,6 +51,7 @@ export const CANONICAL_EXPOSURE_UNKNOWN_REASONS = [
     'structured_source_not_completed',
     'legacy_strength_semantics_not_derived',
     'non_catalog_structured_semantics',
+    'non_catalog_execution_evidence_missing',
     'template_identity_ambiguous',
     'provider_source_unavailable',
     'no_performed_date',
@@ -57,6 +60,8 @@ export type CanonicalExposureUnknownReason = (typeof CANONICAL_EXPOSURE_UNKNOWN_
 
 export interface CanonicalHistorySources {
     executionsById: ReadonlyMap<string, SessionExecution>;
+    entriesByExecutionId: ReadonlyMap<string, readonly SessionEntry[]>;
+    prescriptionsByHash: ReadonlyMap<string, ExecutionPrescription>;
     activitiesById: ReadonlyMap<string, NormalizedGarminActivity>;
     recommendationsByDate: ReadonlyMap<string, DailyRecommendation>;
 }
@@ -111,7 +116,7 @@ function structuredExposure(
     if (source.kind === 'manual' && source.definitionId === 'legacy_strength') {
         return { status: 'unknown', reason: 'legacy_strength_semantics_not_derived' };
     }
-    if (source.kind !== 'catalog') return { status: 'unknown', reason: 'non_catalog_structured_semantics' };
+    if (source.kind !== 'catalog') return nonCatalogStructuredExposure(execution, activity, sources, localDate);
     if (source.workoutId === 'legacy_strength') return { status: 'unknown', reason: 'legacy_strength_semantics_not_derived' };
 
     const templateId = exactTemplateIdForExecution(execution, source.workoutId, sources.recommendationsByDate.get(execution.date));
@@ -156,6 +161,151 @@ function structuredExposure(
             workoutId: source.workoutId,
             modality: template.modality,
             category: template.category,
+        },
+    };
+}
+
+function modalityForOccurrence(value: string | undefined): SessionTemplate['modality'] | undefined {
+    const modality = normalizeModality(value);
+    return modality === 'Unknown' || modality === 'None' ? undefined : modality;
+}
+
+function sameNonCatalogSessionSource(
+    executionSource: SessionExecution['sessionSource'],
+    prescriptionSource: ExecutionPrescription['sessionSource'],
+): boolean {
+    if (executionSource.kind !== prescriptionSource.kind) return false;
+    if (executionSource.kind === 'manual' && prescriptionSource.kind === 'manual') {
+        return executionSource.definitionId === prescriptionSource.definitionId
+            && executionSource.revision === prescriptionSource.revision
+            && executionSource.contentHash === prescriptionSource.contentHash;
+    }
+    if (executionSource.kind === 'external_plan' && prescriptionSource.kind === 'external_plan') {
+        return executionSource.planId === prescriptionSource.planId
+            && executionSource.revision === prescriptionSource.revision
+            && executionSource.sessionId === prescriptionSource.sessionId
+            && executionSource.contentHash === prescriptionSource.contentHash;
+    }
+    return false;
+}
+
+function workEntriesForPrescription(
+    execution: SessionExecution,
+    prescription: ExecutionPrescription,
+    sources: CanonicalHistorySources,
+): SessionEntry[] {
+    const stepIds = new Set(prescription.blocks
+        .filter(block => block.role !== 'warmup')
+        .flatMap(block => block.steps.filter(step => step.dose !== undefined).map(step => step.id)));
+    return (sources.entriesByExecutionId.get(execution.executionId) ?? []).filter(entry =>
+        entry.executionId === execution.executionId
+        && entry.stepId !== undefined && stepIds.has(entry.stepId)
+        && countsTowardPrescribedSets(entry)
+        && (entry.payload.kind !== 'checkoff' || entry.payload.completed),
+    );
+}
+
+function targetEntriesForStandaloneStep(step: ExecutionPrescription['blocks'][number]['steps'][number]): number {
+    const dose = step.dose;
+    if (!dose) return 0;
+    if (dose.kind === 'repetition') return dose.sets;
+    if (dose.kind === 'duration' || dose.kind === 'distance') return dose.sets ?? 1;
+    return dose.rounds ?? 1;
+}
+
+function completionRatioForPrescription(
+    prescription: ExecutionPrescription,
+    workEntries: readonly SessionEntry[],
+): number | undefined {
+    const completedByStep = new Map<string, number>();
+    for (const entry of workEntries) {
+        if (!entry.stepId) continue;
+        completedByStep.set(entry.stepId, (completedByStep.get(entry.stepId) ?? 0) + 1);
+    }
+
+    let expected = 0;
+    let completed = 0;
+    for (const block of prescription.blocks) {
+        if (block.role === 'warmup') continue;
+        for (const step of block.steps) {
+            // Optional work is real performed work, but it is not required completion and
+            // therefore cannot compensate for a missing required movement.
+            if (step.optional || !step.dose) continue;
+            const target = isRotatingExecutionMode(block.executionMode)
+                ? targetEntriesForGroupStep(block, step)
+                : targetEntriesForStandaloneStep(step);
+            if (!Number.isFinite(target) || target <= 0) continue;
+            expected += target;
+            completed += Math.min(target, completedByStep.get(step.id) ?? 0);
+        }
+    }
+    return expected > 0 ? Math.min(1, completed / expected) : undefined;
+}
+
+function nonCatalogStructuredExposure(
+    execution: SessionExecution,
+    activity: NormalizedGarminActivity | undefined,
+    sources: CanonicalHistorySources,
+    localDate: string,
+): CanonicalExposureDerivation {
+    if (execution.sessionSource.kind !== 'manual' && execution.sessionSource.kind !== 'external_plan') {
+        return { status: 'unknown', reason: 'non_catalog_structured_semantics' };
+    }
+    const prescription = execution.prescriptionHash ? sources.prescriptionsByHash.get(execution.prescriptionHash) : undefined;
+    const metadata = prescription?.displayMetadata;
+    const title = metadata?.title?.trim();
+    const modality = modalityForOccurrence(metadata?.dominantModality);
+    const workEntries = prescription ? workEntriesForPrescription(execution, prescription, sources) : [];
+    if (!prescription || prescription.prescriptionHash !== execution.prescriptionHash
+        || !sameNonCatalogSessionSource(execution.sessionSource, prescription.sessionSource)
+        || !title || !modality || workEntries.length === 0) {
+        return { status: 'unknown', reason: 'non_catalog_execution_evidence_missing' };
+    }
+
+    const garmin = activity ? liveGarminEvent(activity) : undefined;
+    const sessionRpe = execution.sessionRpe;
+    const validSessionRpe = typeof sessionRpe === 'number' && Number.isFinite(sessionRpe)
+        && sessionRpe >= 0 && sessionRpe <= 10 ? sessionRpe : undefined;
+    // Diagnostic-only CR-10 bands: uncalibrated until reviewed real-history evidence supports activation.
+    const intensity = garmin?.costIntensity ?? garmin?.intensity ?? (
+        validSessionRpe === undefined ? 'unknown'
+            : validSessionRpe >= 7 ? 'hard'
+                : validSessionRpe >= 4 ? 'moderate' : 'easy'
+    );
+    const plannedDurationMin = metadata?.duration
+        ? templateDurationReferenceMin({ durationMin: metadata.duration.min, durationMax: metadata.duration.max })
+        : catalogReferenceDurationMin(modality, intensity);
+    const completedDurationMin = garmin?.durationMin ?? executionDurationMin(execution);
+    const completionRatio = completionRatioForPrescription(prescription, workEntries);
+    const deliveredDose = {
+        plannedDurationMin,
+        completedDurationMin,
+        ...(completionRatio !== undefined ? { completionRatio } : {}),
+    };
+    const cost = scaleCostByDeliveredDose(DEFAULT_COST_BY_MODALITY[modality][intensity], deliveredDose);
+    const stimulus = garmin?.modality === modality
+        ? { ...DEFAULT_STIMULUS_BY_MODALITY[modality][intensity], ...garmin.estimatedStimulus }
+        : DEFAULT_STIMULUS_BY_MODALITY[modality][intensity];
+    if (!Object.values(cost).every(value => Number.isFinite(value) && value >= 0)
+        || !Object.values(stimulus).every(value => Number.isFinite(value) && value >= 0)) {
+        return { status: 'unknown', reason: 'non_catalog_execution_evidence_missing' };
+    }
+    return {
+        status: 'derived',
+        authority: 'structured',
+        exposure: {
+            date: localDate,
+            costProfile: cost,
+            trainingRecordLike: {
+                type: title,
+                duration_min: completedDurationMin ?? 0,
+                training_effect: garmin?.trainingEffect ?? 0,
+                intensity_tag: intensity === 'unknown' ? '' : intensity,
+            },
+            deliveredDose,
+            stimulusProfile: stimulus,
+            stimulusConfidence: 'inferred',
+            modality,
         },
     };
 }
@@ -239,16 +389,35 @@ function auditDerivation(
     }
     const execution = structuredRefs.length === 1 ? sources.executionsById.get(structuredRefs[0].executionId) : undefined;
     const source = execution?.sessionSource;
-    const supported = Boolean(execution && execution.state === 'completed' && source?.kind === 'catalog'
+    const catalogSupported = Boolean(execution && execution.state === 'completed' && source?.kind === 'catalog'
         && source.workoutId !== 'legacy_strength' && providerRefs.length <= 1);
+    const prescription = execution?.prescriptionHash ? sources.prescriptionsByHash.get(execution.prescriptionHash) : undefined;
+    const nonCatalogSupported = Boolean(execution && execution.state === 'completed'
+        && (source?.kind === 'manual' || source?.kind === 'external_plan') && providerRefs.length <= 1
+        && prescription?.displayMetadata?.title
+        && prescription.prescriptionHash === execution.prescriptionHash
+        && sameNonCatalogSessionSource(execution.sessionSource, prescription.sessionSource)
+        && workEntriesForPrescription(execution, prescription, sources).length > 0);
+    const supported = catalogSupported || nonCatalogSupported;
     const exposure = derivation.exposure;
     const template = exposure.templateId ? ENRICHED_TEMPLATES_BY_ID.get(exposure.templateId) : undefined;
-    const structuredViolation = !template || source?.kind !== 'catalog'
-        || exposure.workoutId !== source.workoutId
-        || workoutForTemplate(template.id)?.id !== source.workoutId
-        || exposure.modality !== template.modality
-        || exposure.category !== template.category
-        || exposure.stimulusConfidence !== 'exact';
+    const expectedNonCatalogModality = modalityForOccurrence(prescription?.displayMetadata?.dominantModality);
+    const structuredViolation = source?.kind === 'catalog'
+        ? !template || exposure.workoutId !== source.workoutId
+            || workoutForTemplate(template.id)?.id !== source.workoutId
+            || exposure.modality !== template.modality
+            || exposure.category !== template.category
+            || exposure.stimulusConfidence !== 'exact'
+        : !prescription?.displayMetadata?.title
+            || !execution
+            || prescription.prescriptionHash !== execution.prescriptionHash
+            || !sameNonCatalogSessionSource(execution.sessionSource, prescription.sessionSource)
+            || exposure.trainingRecordLike.type !== prescription.displayMetadata.title.trim()
+            || !exposure.modality
+            || exposure.modality !== expectedNonCatalogModality
+            || !Object.values(exposure.costProfile).every(value => Number.isFinite(value) && value >= 0)
+            || !exposure.stimulusProfile
+            || !Object.values(exposure.stimulusProfile).every(value => Number.isFinite(value) && value >= 0);
     return { unsupported: !supported, structuredViolation };
 }
 
