@@ -21,6 +21,7 @@ import { validateRecommendation, isValidDate } from '../../engine/validation';
 
 type RawDocument = Record<string, unknown>;
 type RecommendationWithEngineVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
+const FIT_WORKOUT_FINGERPRINT_PATTERN = /^fit-workout-v2:[0-9a-f]{32}$/;
 
 function invalid(documentPath: string, code: string, field?: string, schemaVersion?: number): DataState<never> {
     const issue: DataIssue = { code, documentPath, ...(field ? { field } : {}), ...(schemaVersion !== undefined ? { schemaVersion } : {}) };
@@ -539,9 +540,17 @@ export function parseNormalizedGarminActivity(
     if (raw.syncedAt !== undefined && typeof raw.syncedAt !== 'string') return invalid(documentPath, 'invalid-type', 'syncedAt');
     if (raw.startedAt !== undefined && typeof raw.startedAt !== 'string') return invalid(documentPath, 'invalid-type', 'startedAt');
     if (raw.endedAt !== undefined && typeof raw.endedAt !== 'string') return invalid(documentPath, 'invalid-type', 'endedAt');
+    // Fingerprint-only rows predate the evidence-kind field and remain readable for
+    // backward compatibility. Once a kind is present, however, the pair becomes eligible
+    // for reconciliation, so require a valid v2 fingerprint as well.
     if (raw.fitWorkoutFingerprint !== undefined && typeof raw.fitWorkoutFingerprint !== 'string') return invalid(documentPath, 'invalid-type', 'fitWorkoutFingerprint');
-    if (raw.fitWorkoutFingerprintKind !== undefined && (typeof raw.fitWorkoutFingerprintKind !== 'string' || !FIT_WORKOUT_FINGERPRINT_KINDS.includes(raw.fitWorkoutFingerprintKind as FitWorkoutFingerprintKind))) {
-        return invalid(documentPath, 'invalid-type', 'fitWorkoutFingerprintKind');
+    if (raw.fitWorkoutFingerprintKind !== undefined) {
+        if (typeof raw.fitWorkoutFingerprintKind !== 'string' || !FIT_WORKOUT_FINGERPRINT_KINDS.includes(raw.fitWorkoutFingerprintKind as FitWorkoutFingerprintKind)) {
+            return invalid(documentPath, 'invalid-type', 'fitWorkoutFingerprintKind');
+        }
+        if (typeof raw.fitWorkoutFingerprint !== 'string' || !FIT_WORKOUT_FINGERPRINT_PATTERN.test(raw.fitWorkoutFingerprint)) {
+            return invalid(documentPath, 'invalid-type', 'fitWorkoutFingerprint');
+        }
     }
 
     const powerInZones = parseZoneBuckets(raw.powerInZones);

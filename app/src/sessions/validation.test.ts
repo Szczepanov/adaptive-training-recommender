@@ -375,6 +375,14 @@ describe('Session Validation (M2.1 / ADR-0023)', () => {
                 fitWorkoutFingerprintKind: 'unsupported_kind',
             });
             expect(badKind.ok).toBe(false);
+
+            const missingKind = { ...validExec } as Record<string, unknown>;
+            delete missingKind.fitWorkoutFingerprintKind;
+            expect(validateSessionExecution(missingKind).ok).toBe(false);
+
+            const missingFingerprint = { ...validExec } as Record<string, unknown>;
+            delete missingFingerprint.fitWorkoutFingerprint;
+            expect(validateSessionExecution(missingFingerprint).ok).toBe(false);
         });
 
         it('validates discriminated entry payload', () => {

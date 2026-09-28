@@ -7,10 +7,10 @@ when a definition is absent: they describe what was executed, not the prescripti
 itself, and therefore must not make the fingerprint change merely because an athlete
 stopped a structured workout early.
 
-Adaptive does not currently push structured workouts to Garmin devices, so nothing on
-the structured-execution side yet produces a comparable fingerprint. This module remains
-additive evidence for a future correlation source and is intentionally not wired into
-reconciliation scoring yet.
+Adaptive now generates the same semantic identity from its canonical workout export before
+structured execution. Semantic fingerprints are used by reconciliation only when both sides
+are definition-derived and the template was canonicalized with the same context as the Garmin
+upload path. Observed-index fallbacks remain non-comparable execution evidence.
 """
 
 import hashlib
@@ -302,10 +302,60 @@ def canonical_workout_to_fit_steps(
     return garmin_payload_to_fit_steps(payload)
 
 
+FTP_RELATIVE_TARGET_PATTERN = re.compile(
+    r"(?:\d+(?:\.\d+)?\s*[-–—]\s*\d+(?:\.\d+)?\s*%\s*(?:FTP)?"
+    r"|\d+(?:\.\d+)?\s*%\s*FTP\b)",
+    re.IGNORECASE,
+)
+EXACT_WATT_TARGET_PATTERN = re.compile(
+    r"(?:\d+(?:\.\d+)?\s*[-–—]\s*\d+(?:\.\d+)?\s*W\b"
+    r"|\d+(?:\.\d+)?\s*W\b)",
+    re.IGNORECASE,
+)
+
+
+def canonical_workout_requires_athlete_ftp(workout: dict[str, Any]) -> bool:
+    """Return whether Garmin export can resolve this cycling template differently with FTP."""
+    modality = str(workout.get("modality") or "").lower()
+    if modality not in {"cycling", "bike"}:
+        return False
+
+    for block in workout.get("blocks") or []:
+        for step in block.get("steps") or []:
+            values: list[Any] = []
+            targets = step.get("targets")
+            if isinstance(targets, list):
+                values.extend(targets)
+            values.extend(
+                [
+                    step.get("recoveryTarget"),
+                    step.get("notes"),
+                    step.get("name"),
+                ]
+            )
+            if any(
+                isinstance(value, str)
+                and FTP_RELATIVE_TARGET_PATTERN.search(value)
+                and not EXACT_WATT_TARGET_PATTERN.search(value)
+                for value in values
+            ):
+                return True
+    return False
+
+
 def compute_workout_template_fingerprint(
     workout: dict[str, Any], athlete_ftp: float | None = None
 ) -> FitWorkoutIdentity:
     """Compute deterministic FitWorkoutIdentity from a canonical workout dictionary."""
+    if canonical_workout_requires_athlete_ftp(workout) and not (
+        isinstance(athlete_ftp, (int, float))
+        and math.isfinite(athlete_ftp)
+        and athlete_ftp > 0
+    ):
+        raise ValueError(
+            "Cycling %FTP workout identity requires the athlete FTP used for Garmin export"
+        )
+
     steps = canonical_workout_to_fit_steps(workout, athlete_ftp=athlete_ftp)
     workout_name = workout.get("title")
     identity = compute_fit_workout_identity(workout_name, (), steps)

@@ -17,7 +17,13 @@ describe('fitWorkoutIdentity', () => {
         for (const testCase of contractFixture.cases) {
             it(`matches contract case: ${testCase.id}`, async () => {
                 if ('workout' in testCase) {
-                    const result = await computeWorkoutTemplateFingerprint(testCase.workout as unknown as CanonicalWorkoutExport);
+                    const context = 'athleteFtpWatts' in testCase
+                        ? { athleteFtpWatts: testCase.athleteFtpWatts }
+                        : undefined;
+                    const result = await computeWorkoutTemplateFingerprint(
+                        testCase.workout as unknown as CanonicalWorkoutExport,
+                        context,
+                    );
                     expect(result.fingerprint).toBe(testCase.expectedFingerprint);
                     expect(result.kind).toBe(testCase.expectedKind);
                 } else {
@@ -81,6 +87,18 @@ describe('fitWorkoutIdentity', () => {
         it('convenience computeFitWorkoutFingerprint returns only fingerprint string', async () => {
             const fp = await computeFitWorkoutFingerprint('Morning Run', [0]);
             expect(fp).toMatch(new RegExp(`^${FIT_WORKOUT_FINGERPRINT_VERSION}:[0-9a-f]{32}$`));
+        });
+    });
+
+    describe('FTP-relative identity context', () => {
+        it('fails closed when a cycling %FTP template is fingerprinted without the FTP used by Garmin export', async () => {
+            const ftpCase = contractFixture.cases.find(testCase => testCase.id === 'cycling_ftp_context');
+            expect(ftpCase && 'workout' in ftpCase).toBe(true);
+            if (!ftpCase || !('workout' in ftpCase)) return;
+
+            await expect(
+                computeWorkoutTemplateFingerprint(ftpCase.workout as unknown as CanonicalWorkoutExport),
+            ).rejects.toThrow('requires the athlete FTP used for Garmin export');
         });
     });
 

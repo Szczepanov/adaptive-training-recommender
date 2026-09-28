@@ -31,8 +31,6 @@ import { EXERCISES_BY_ID } from '../workouts/exercises.ts';
 import type { BodyRegion, FitWorkoutFingerprintKind, RegionTissueResponse } from '../engine/models';
 import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
 import { reconcileStructuredCompletion } from '../training-occurrence';
-import { computeWorkoutTemplateFingerprint } from '../training-occurrence/fitWorkoutIdentity';
-import { exportSessionDefinitionToJson } from '../utils/workoutJsonExport';
 
 /** Two `ExerciseRef`s identify the same performed exercise. Used to scope a step's
  * per-exercise `setIndex` so a mid-session swap (`substituteStepExercise`) starts the
@@ -325,15 +323,13 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
 
         let fitWorkoutFingerprint = options.fitWorkoutFingerprint;
         let fitWorkoutFingerprintKind = options.fitWorkoutFingerprintKind;
-        if (!fitWorkoutFingerprint) {
-            try {
-                const canonicalExport = exportSessionDefinitionToJson(nextDefinition);
-                const identity = await computeWorkoutTemplateFingerprint(canonicalExport);
-                fitWorkoutFingerprint = identity.fingerprint;
-                fitWorkoutFingerprintKind = identity.kind;
-            } catch {
-                // Best effort; continue if fingerprint derivation does not apply
-            }
+        if (!fitWorkoutFingerprint || !fitWorkoutFingerprintKind) {
+            // Semantic workout identity is only trustworthy when it comes from the exact
+            // canonical payload used for Garmin export. SessionDefinition is an executable
+            // adapter and can intentionally omit display/export-only targets, so deriving a
+            // hard-match fingerprint here could create a false mismatch.
+            fitWorkoutFingerprint = undefined;
+            fitWorkoutFingerprintKind = undefined;
         }
 
         const executionId = `exec-${Date.now()}`;

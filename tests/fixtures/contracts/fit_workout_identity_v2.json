@@ -64,6 +64,37 @@
       "expectedKind": "semantic_definition"
     },
     {
+      "id": "cycling_ftp_context",
+      "athleteFtpWatts": 258,
+      "workout": {
+        "schemaVersion": "canonical_workout_v1",
+        "title": "FTP Endurance",
+        "workoutId": "ftp_endurance",
+        "modality": "cycling",
+        "targetDurationMin": 10,
+        "exportedAt": "2026-08-26T06:00:00Z",
+        "blocks": [
+          {
+            "id": "main",
+            "name": "Main",
+            "role": "main",
+            "steps": [
+              {
+                "id": "work",
+                "name": "Steady endurance",
+                "durationSeconds": 600,
+                "targets": [
+                  "65-75% FTP"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expectedFingerprint": "fit-workout-v2:11a0856117c27e5e99eb8a55551e4c8e",
+      "expectedKind": "semantic_definition"
+    },
+    {
       "id": "strength_3x5_canonical",
       "workout": {
         "schemaVersion": "canonical_workout_v1",

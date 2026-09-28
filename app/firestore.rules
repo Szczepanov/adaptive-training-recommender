@@ -1444,6 +1444,7 @@ service cloud.firestore {
         && hasValidSessionSource(data.sessionSource)
         && (!('occurrenceId' in data) || data.occurrenceId is string)
         && (!('prescriptionHash' in data) || data.prescriptionHash is string)
+        && (('fitWorkoutFingerprint' in data) == ('fitWorkoutFingerprintKind' in data))
         && (!('fitWorkoutFingerprint' in data) || (data.fitWorkoutFingerprint is string && data.fitWorkoutFingerprint.matches('^fit-workout-v2:[0-9a-f]{32}$')))
         && (!('fitWorkoutFingerprintKind' in data) || data.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback'])
         && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 1 && data.sessionRpe <= 10))
@@ -1735,6 +1736,7 @@ service cloud.firestore {
           && ref.executionId is string
           && (!('sessionOccurrenceId' in ref) || ref.sessionOccurrenceId is string)
           && (!('prescriptionHash' in ref) || ref.prescriptionHash is string)
+          && (('fitWorkoutFingerprint' in ref) == ('fitWorkoutFingerprintKind' in ref))
           && (!('fitWorkoutFingerprint' in ref) || (ref.fitWorkoutFingerprint is string && ref.fitWorkoutFingerprint.matches('^fit-workout-v2:[0-9a-f]{32}$')))
           && (!('fitWorkoutFingerprintKind' in ref) || ref.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback']))
         || (ref.kind == 'provider_activity'
@@ -1743,6 +1745,7 @@ service cloud.firestore {
           && ref.provider is string
           && ref.activityId is string
           && (!('deviceId' in ref) || ref.deviceId is string)
+          && (('fitWorkoutFingerprint' in ref) == ('fitWorkoutFingerprintKind' in ref))
           && (!('fitWorkoutFingerprint' in ref) || (ref.fitWorkoutFingerprint is string && ref.fitWorkoutFingerprint.matches('^fit-workout-v2:[0-9a-f]{32}$')))
           && (!('fitWorkoutFingerprintKind' in ref) || ref.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback']))
       );

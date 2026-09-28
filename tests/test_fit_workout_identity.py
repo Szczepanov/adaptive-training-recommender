@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from garmin_sync.fit_workout_identity import (
     FIT_WORKOUT_FINGERPRINT_VERSION,
     compute_fit_workout_fingerprint,
@@ -16,7 +18,9 @@ def test_cross_language_contract_fixture_parity() -> None:
     data = json.loads(fixture_path.read_text(encoding="utf-8"))
     for case in data["cases"]:
         if "workout" in case:
-            identity = compute_workout_template_fingerprint(case["workout"])
+            identity = compute_workout_template_fingerprint(
+                case["workout"], athlete_ftp=case.get("athleteFtpWatts")
+            )
             assert identity.fingerprint == case["expectedFingerprint"]
             assert identity.kind == case["expectedKind"]
         else:
@@ -67,3 +71,31 @@ def test_differs_for_a_different_step_structure() -> None:
 
 def test_produces_a_fingerprint_from_step_indices_alone_with_no_workout_name() -> None:
     assert compute_fit_workout_fingerprint(None, (0, 1)) is not None
+
+
+def test_ftp_relative_template_requires_exact_export_context() -> None:
+    workout = {
+        "schemaVersion": "canonical_workout_v1",
+        "title": "FTP Endurance",
+        "workoutId": "ftp_endurance",
+        "modality": "cycling",
+        "targetDurationMin": 10,
+        "blocks": [
+            {
+                "id": "main",
+                "name": "Main",
+                "role": "main",
+                "steps": [
+                    {
+                        "id": "work",
+                        "name": "Steady endurance",
+                        "durationSeconds": 600,
+                        "targets": ["65-75% FTP"],
+                    }
+                ],
+            }
+        ],
+    }
+
+    with pytest.raises(ValueError, match="requires the athlete FTP used for Garmin export"):
+        compute_workout_template_fingerprint(workout)
