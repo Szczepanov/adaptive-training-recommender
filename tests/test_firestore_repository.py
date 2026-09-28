@@ -39,7 +39,7 @@ def _mock_repo_with_existing_doc(
         "revision": existing_rev,
     }
     doc_ref.get.return_value = doc_snap
-    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = (\n        doc_ref\n    )
+    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = doc_ref
 
     repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
     return repo, doc_ref
@@ -94,7 +94,10 @@ def test_firestore_repository_user_mismatch_raises_error():
 def test_update_activity_enrichment_replaces_response_and_merges_sibling_fields() -> None:
     mock_db = MagicMock()
     doc_ref = MagicMock()
-    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = doc_ref
+    activities_ref = (
+        mock_db.collection.return_value.document.return_value.collection.return_value
+    )
+    activities_ref.document.return_value = doc_ref
     repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
 
     repo.update_activity_enrichment(
