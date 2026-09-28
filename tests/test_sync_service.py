@@ -423,13 +423,13 @@ def test_activity_response_backfill_uses_provider_boundary_and_preserves_sync_pr
     )
 
     assert provider.hr_fidelity_calls == ["1"]
-    repo.upsert_activity.assert_called_once()
-    activity_id, payload = repo.upsert_activity.call_args.args
-    assert activity_id == "1"
-    assert "activityResponse" in payload
-    assert "hrMeasurement" in payload
-    assert "syncRunId" not in payload
-    assert "syncedAt" not in payload
+    repo.update_activity_enrichment.assert_called_once()
+    call = repo.update_activity_enrichment.call_args
+    assert call.args == ("1",)
+    assert call.kwargs["activity_response"]["derivationVersion"] == "multi-resolution-v1"
+    assert "hrMeasurement" in call.kwargs["merged_fields"]
+    assert "syncRunId" not in call.kwargs["merged_fields"]
+    assert "syncedAt" not in call.kwargs["merged_fields"]
     service.token_store.persist.assert_called_once_with(service.token_file_path)
 
 
@@ -459,7 +459,7 @@ def test_activity_response_backfill_skips_existing_and_noncycling_without_garmin
     )
 
     assert provider.hr_fidelity_calls == []
-    repo.upsert_activity.assert_not_called()
+    repo.update_activity_enrichment.assert_not_called()
     service.token_store.persist.assert_not_called()
 
 
@@ -481,7 +481,7 @@ def test_activity_response_backfill_rate_limit_fails_and_persists_tokens():
         end_date_str="2026-08-06",
     )
 
-    repo.upsert_activity.assert_not_called()
+    repo.update_activity_enrichment.assert_not_called()
     service.token_store.persist.assert_called_once_with(service.token_file_path)
 
 
@@ -502,7 +502,7 @@ def test_activity_response_backfill_dry_run_derives_without_writing():
     )
 
     assert provider.hr_fidelity_calls == ["1"]
-    repo.upsert_activity.assert_not_called()
+    repo.update_activity_enrichment.assert_not_called()
     service.token_store.persist.assert_called_once_with(service.token_file_path)
 
 
