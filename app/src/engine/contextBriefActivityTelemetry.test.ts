@@ -102,6 +102,24 @@ describe('renderContextBriefActivityTelemetry', () => {
         expect(text).not.toContain('raw sample');
     });
 
+    it('renders running dynamics in diagnostic detail even when no cycling power fields exist', () => {
+        const text = renderContextBriefActivityTelemetry([
+            activity({
+                type: 'running',
+                normalizedPower: undefined,
+                intensityFactor: undefined,
+                runningDynamics: {
+                    groundContactTimeMs: 241,
+                    strideLengthM: 1.28,
+                    avgRunningPowerWatts: 305,
+                },
+            }),
+        ]);
+
+        expect(text).toContain('#### 2026-08-19 — Running — hard');
+        expect(text).toContain('Running dynamics: avg running power 305 W · stride 1.28 m · GCT 241 ms');
+    });
+
     it('renders partial telemetry without inventing missing power data', () => {
         const text = renderContextBriefActivityTelemetry([
             activity({
