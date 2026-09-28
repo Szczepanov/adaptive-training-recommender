@@ -895,6 +895,7 @@ export async function evaluateTrainingWithIntent(
         return {
             template: safeRecovery,
             rationale: fallbackRationale,
+            capabilityMaintenance: evergreen?.capabilityMaintenance ?? null,
             mode: 'recover', envelopes, telemetry,
             knowledgeRefs: decisionKnowledgeRefs,
             ...(externalEventAdvisory ? {
@@ -927,6 +928,7 @@ export async function evaluateTrainingWithIntent(
         plannedDose: intent.plannedDose,
         executionDose: resolveExecutionDose(intent.plannedDose, envelopes.plan, null),
         rationale: finalRationale,
+        capabilityMaintenance: evergreen?.capabilityMaintenance ?? null,
         mode, envelopes, telemetry,
         knowledgeRefs: decisionKnowledgeRefs,
         ...(effectiveDoseAdjustment ?? (appliedProgressionDose ? { activeDose: appliedProgressionDose } : {})),

@@ -200,4 +200,41 @@ describe('MorningDecisionCard session completion & resume state', () => {
         expect(html).toContain('🏋️');
         expect(html).toContain('Resume Session →');
     });
+
+    it('shows the named capability and typed block reason from the planner result', () => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                userId="athlete-1"
+                date="2026-09-18"
+                recommendation={{
+                    ...recommendation,
+                    capabilityMaintenance: {
+                        enabled: true, intervalDays: 14, placements: [], softContext: [],
+                        capabilities: [{
+                            capability: 'sport_skill', status: 'overdue', requiredStage: 4,
+                            fulfilment: { status: 'blocked', reason: 'modality_avoided' },
+                            supportWorkoutIds: [],
+                            message: 'overdue since 2026-09-15; blocked (modality_avoided): field sessions are avoided',
+                        }],
+                    },
+                }}
+                evidence={evidence}
+                prescription={prescription}
+                adjustmentDirection={null}
+                activeAlternativeId={null}
+                todayExecution={null}
+                onStartSession={() => undefined}
+                onAdjustLoad={() => undefined}
+                onSelectTimeCrunch={() => undefined}
+                onSelectHomeAlternative={() => undefined}
+                onSelectMobilityAlternative={() => undefined}
+                onSelectActiveRecoveryWalk={() => undefined}
+                onResetAlternative={() => undefined}
+            />,
+        );
+
+        expect(html).toContain('Capability maintenance');
+        expect(html).toContain('Sport skill:');
+        expect(html).toContain('modality_avoided');
+    });
 });

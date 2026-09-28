@@ -7,8 +7,9 @@ import { EVENT_PRESETS, resolveDemandProfile } from './eventPresets';
 
 /**
  * `daily` is today + yesterday only — a point reading for the everyday paste-into-chat
- * loop, so it does not re-send retrospective detail (completed-training rows, per-lap
- * telemetry) an external planning agent already saw the day before. `full` is the
+ * loop. It avoids broad retrospective/forensic telemetry, while the morning renderer may
+ * selectively expand bounded D-1 quality-session evidence (for example capped running laps
+ * or semantic cycling segments) needed to close yesterday's training loop. `full` is the
  * original two-week lookback, useful when actually designing a new block. Sections that
  * are already fixed-horizon regardless of window (the 7-day recovery timeline, the
  * 28-day subjective baseline, the 7-day commitments handoff) are unaffected by this

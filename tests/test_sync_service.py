@@ -398,6 +398,125 @@ def test_sync_daily_lookback_resync_forwards_hr_fidelity_flag():
     assert provider.hr_fidelity_calls == ["lookback-day", "target-day"]
 
 
+def test_activity_response_backfill_uses_provider_boundary_and_preserves_sync_provenance():
+    provider = HrFidelityFakeProvider(
+        workout_name="Threshold",
+        workout_step_indices=(0, 1, 2),
+    )
+    settings = Settings(app_user_id="test_uid_789")
+    repo = MagicMock()
+    repo.get_activities_in_range.return_value = [
+        {
+            "activityId": "1",
+            "date": "2026-08-06",
+            "type": "cycling",
+            "syncRunId": "original-sync",
+            "syncedAt": "2026-08-06T12:00:00+00:00",
+        }
+    ]
+    service = GarminSyncService(settings=settings, repository=repo, provider=provider)
+    service.token_store = MagicMock()
+
+    assert service.backfill_activity_response(
+        start_date_str="2026-08-06",
+        end_date_str="2026-08-06",
+    )
+
+    assert provider.hr_fidelity_calls == ["1"]
+    repo.update_activity_enrichment.assert_called_once()
+    call = repo.update_activity_enrichment.call_args
+    assert call.args == ("1",)
+    assert call.kwargs["activity_response"]["derivationVersion"] == "multi-resolution-v1"
+    assert "hrMeasurement" in call.kwargs["merged_fields"]
+    assert "syncRunId" not in call.kwargs["merged_fields"]
+    assert "syncedAt" not in call.kwargs["merged_fields"]
+    service.token_store.persist.assert_called_once_with(service.token_file_path)
+
+
+def test_activity_response_backfill_skips_existing_and_noncycling_without_garmin_calls():
+    provider = HrFidelityFakeProvider()
+    settings = Settings(app_user_id="test_uid_789")
+    repo = MagicMock()
+    repo.get_activities_in_range.return_value = [
+        {
+            "activityId": "1",
+            "date": "2026-08-06",
+            "type": "cycling",
+            "activityResponse": {"derivationVersion": "multi-resolution-v1"},
+        },
+        {
+            "activityId": "2",
+            "date": "2026-08-06",
+            "type": "running",
+        },
+    ]
+    service = GarminSyncService(settings=settings, repository=repo, provider=provider)
+    service.token_store = MagicMock()
+
+    assert service.backfill_activity_response(
+        start_date_str="2026-08-06",
+        end_date_str="2026-08-06",
+    )
+
+    assert provider.hr_fidelity_calls == []
+    repo.update_activity_enrichment.assert_not_called()
+    service.token_store.persist.assert_not_called()
+
+
+def test_activity_response_backfill_rate_limit_fails_and_persists_tokens():
+    provider = HrFidelityFakeProvider()
+    provider.fetch_activity_hr_fidelity = MagicMock(
+        side_effect=GarminConnectTooManyRequestsError("API Error 429")
+    )
+    settings = Settings(app_user_id="test_uid_789")
+    repo = MagicMock()
+    repo.get_activities_in_range.return_value = [
+        {"activityId": "1", "date": "2026-08-06", "type": "cycling"}
+    ]
+    service = GarminSyncService(settings=settings, repository=repo, provider=provider)
+    service.token_store = MagicMock()
+
+    assert not service.backfill_activity_response(
+        start_date_str="2026-08-06",
+        end_date_str="2026-08-06",
+    )
+
+    repo.update_activity_enrichment.assert_not_called()
+    service.token_store.persist.assert_called_once_with(service.token_file_path)
+
+
+def test_activity_response_backfill_dry_run_derives_without_writing():
+    provider = HrFidelityFakeProvider()
+    settings = Settings(app_user_id="test_uid_789")
+    repo = MagicMock()
+    repo.get_activities_in_range.return_value = [
+        {"activityId": "1", "date": "2026-08-06", "type": "cycling"}
+    ]
+    service = GarminSyncService(settings=settings, repository=repo, provider=provider)
+    service.token_store = MagicMock()
+
+    assert service.backfill_activity_response(
+        start_date_str="2026-08-06",
+        end_date_str="2026-08-06",
+        dry_run=True,
+    )
+
+    assert provider.hr_fidelity_calls == ["1"]
+    repo.update_activity_enrichment.assert_not_called()
+    service.token_store.persist.assert_called_once_with(service.token_file_path)
+
+
+def test_activity_response_backfill_rejects_partial_explicit_date_range():
+    service = GarminSyncService(
+        settings=Settings(app_user_id="test_uid_789"),
+        repository=MagicMock(),
+        provider=HrFidelityFakeProvider(),
+    )
+
+    with pytest.raises(ValueError, match="provided together"):
+        service.backfill_activity_response(start_date_str="2026-08-06")
+
+
 def test_backfill_issues_no_detail_calls_even_when_enabled():
     provider = DetailFakeProvider()
     service, repo = _detail_service(provider)

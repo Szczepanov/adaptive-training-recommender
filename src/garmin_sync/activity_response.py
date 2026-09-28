@@ -48,6 +48,11 @@ _CYCLING_TYPES = {
 }
 
 
+def supports_activity_response(activity_type: str) -> bool:
+    """Return whether bounded activity-response telemetry is defined for this activity type."""
+    return activity_type.strip().lower() in _CYCLING_TYPES
+
+
 def _finite_number(value: float | None) -> float | None:
     if value is None or not math.isfinite(value):
         return None
@@ -627,7 +632,7 @@ def derive_activity_response(
     evidence: FitActivityEvidence,
 ) -> CanonicalActivityResponseTelemetry | None:
     """Derive bounded session evidence from one already-decoded original FIT file."""
-    if activity_type.strip().lower() not in _CYCLING_TYPES:
+    if not supports_activity_response(activity_type):
         return None
     if not evidence.records and not evidence.laps:
         return None

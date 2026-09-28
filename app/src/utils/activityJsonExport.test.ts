@@ -188,4 +188,28 @@ describe('activityJsonExport', () => {
             globalThis.document = originalDocument;
         }
     });
+
+    it('preserves activityResponse in bundle export', () => {
+        const activityWithResponse: NormalizedGarminActivity = {
+            ...sampleActivity,
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1.0 },
+                segmentCountTotal: 1,
+                segmentsTruncated: false,
+                segments: [{
+                    segmentIndex: 1,
+                    segmentType: 'work',
+                    identitySource: 'fit_workout_step',
+                    durationSeconds: 600,
+                    evidenceConfidence: 'high',
+                    averagePowerWatts: 250,
+                }],
+                powerDurationPeaks: [{ durationSeconds: 5, powerWatts: 400, confidence: 'high' }],
+            },
+        };
+        const bundle = exportActivitiesBundleToJson([activityWithResponse]);
+        expect(bundle.activities[0].activityResponse?.segments[0].averagePowerWatts).toBe(250);
+        expect(bundle.activities[0].activityResponse?.powerDurationPeaks[0].powerWatts).toBe(400);
+    });
 });

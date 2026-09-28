@@ -20,6 +20,7 @@ import {
     round,
     signed,
 } from './contextBrief';
+import { renderMorningQualityActivityTelemetry } from './contextBriefActivityTelemetry';
 import {
     briefPurposeFor,
     findSectionHeading,
@@ -594,6 +595,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
             if (act.normalizedPower != null) pSum.push(`normalized power ${Math.round(act.normalizedPower)} W`);
             if (act.intensityFactor != null) pSum.push(`IF ${round(act.intensityFactor, 2)}`);
             if (pSum.length > 0) lines.push(`  - Power summary: ${pSum.join(' · ')}`);
+            lines.push(...renderMorningQualityActivityTelemetry(act));
         }
     } else {
         lines.push('- Recorded training: No recorded sessions in this window.');

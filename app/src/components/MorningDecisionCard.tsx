@@ -6,6 +6,7 @@ import { DecisionEvidenceSummary } from './DecisionEvidenceSummary';
 import { OneTapAlternatives } from './OneTapAlternatives';
 import { WorkoutExportMenu } from './WorkoutExportMenu';
 import type { MorningDecisionEvidence } from '../engine/decisionEvidence';
+import { capabilityMaintenanceReadout } from '../engine/capabilityMaintenance';
 import { prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
@@ -364,6 +365,17 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                 </div>
                             );
                         })()}
+
+                        {capabilityMaintenanceReadout(recommendation.capabilityMaintenance).length > 0 && (
+                            <section className="week-role-summary" aria-label="Capability maintenance status" role="status">
+                                <strong>Capability maintenance</strong>
+                                <ul>
+                                    {capabilityMaintenanceReadout(recommendation.capabilityMaintenance).map(note => (
+                                        <li key={note}>{note}</li>
+                                    ))}
+                                </ul>
+                            </section>
+                        )}
 
                         <div className="hero-cta-wrap">
                             {!clinicalEscalationActive && (

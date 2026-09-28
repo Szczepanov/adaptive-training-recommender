@@ -78,6 +78,7 @@ import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
 import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry } from './coverage';
 import { resolveEvergreenPlan } from './evergreenPlanning';
+import type { CapabilityMaintenanceResult } from './capabilityMaintenance';
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { hasCurrentClinicalSymptoms, isFreshSubjectiveWithAdverseWearables, isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { applyPlanningOverlays } from './planningOverlays';
@@ -176,6 +177,8 @@ export interface WeekAheadPlan {
     droppedContributorObjectives: DroppedContributorObjective[];
     /** ADR-0018 forecast-only evidence. This is not completed training or audit data. */
     allocationReport: WeeklyRoleAllocationReport;
+    /** Planner-owned capability cadence/fulfilment readout. Forecast-only; never persisted. */
+    capabilityMaintenance?: CapabilityMaintenanceResult | null;
 }
 
 export interface WeekAheadPlanSeed {
@@ -2485,7 +2488,7 @@ export async function generateWeekAheadPlanWithIntent(
             checkinHistory: mechanicalCheckinHistory,
         },
     );
-    return generateWeekAheadPlan(
+    const plan = await generateWeekAheadPlan(
         todayReadiness,
         context,
         preferences,
@@ -2512,4 +2515,5 @@ export async function generateWeekAheadPlanWithIntent(
             ...(evergreen ? { evergreenCapacity: evergreen.budget.capacity } : {}),
         },
     );
+    return { ...plan, capabilityMaintenance: evergreen?.capabilityMaintenance ?? null };
 }

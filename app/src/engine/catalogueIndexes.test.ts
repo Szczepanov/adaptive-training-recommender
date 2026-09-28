@@ -9,6 +9,12 @@ import {
 } from './templates';
 import { EXERCISES, EXERCISES_BY_ID } from '../workouts/exercises';
 import { WORKOUTS, WORKOUTS_BY_ID } from '../workouts/catalog';
+import {
+  ATHLETIC_CAPABILITY_IDENTITIES,
+  athleticCapabilitiesCreditedBy,
+  capabilityIdentitiesFor,
+  grantsAthleticCapabilityCredit,
+} from '../workouts/athleticCapability';
 import { PERFORMANCE_TEST_DEFINITIONS, PERFORMANCE_TEST_DEFINITIONS_BY_ID } from '../observations/performanceTestingCatalog';
 import {
   SPORTS_KNOWLEDGE_CLAIMS,
@@ -50,6 +56,40 @@ describe('catalogue lookup indexes', () => {
     }
 
     expect(ENRICHED_TEMPLATES_BY_MODALITY.size).toBe(seenModalities.size);
+  });
+
+  it('preserves athletic-capability grouped and first-match lookup semantics', () => {
+    for (const capability of new Set(ATHLETIC_CAPABILITY_IDENTITIES.map(identity => identity.capability))) {
+      const expected = ATHLETIC_CAPABILITY_IDENTITIES.filter(identity => identity.capability === capability);
+      const indexed = capabilityIdentitiesFor(capability);
+      expect(indexed).toHaveLength(expected.length);
+      expected.forEach((identity, index) => expect(indexed[index]).toBe(identity));
+    }
+
+    const variants = [undefined, 'full', 'reduced', 'return_to_training'] as const;
+    for (const identity of ATHLETIC_CAPABILITY_IDENTITIES) {
+      for (const variant of variants) {
+        const first = ATHLETIC_CAPABILITY_IDENTITIES.find(candidate =>
+          candidate.workoutId === identity.workoutId && candidate.capability === identity.capability);
+        const expected = Boolean(first && (variant === undefined || first.qualifyingVariants.includes(variant)));
+        expect(grantsAthleticCapabilityCredit({
+          workoutId: identity.workoutId,
+          capability: identity.capability,
+          ...(variant === undefined ? {} : { variant }),
+        })).toBe(expected);
+      }
+    }
+
+    for (const workoutId of new Set(ATHLETIC_CAPABILITY_IDENTITIES.map(identity => identity.workoutId))) {
+      const expected = [...new Set(ATHLETIC_CAPABILITY_IDENTITIES
+        .filter(identity => {
+          const first = ATHLETIC_CAPABILITY_IDENTITIES.find(candidate =>
+            candidate.workoutId === workoutId && candidate.capability === identity.capability);
+          return Boolean(first);
+        })
+        .map(identity => identity.capability))];
+      expect(athleticCapabilitiesCreditedBy({ workoutId })).toEqual(expected);
+    }
   });
 
   it('indexes every exercise by a unique id', () => {

@@ -109,7 +109,7 @@ the UI presets map onto them through `briefPurposeFor` (`daily` → `morning`, `
 fetched: `planning` and `diagnostic` share the same lookback and `ContextBriefService.build`
 issues identical reads for both.
 
-- `morning` — `buildMorningCoachBrief`: today's closed loop only; no multi-day plan.
+- `morning` — `buildMorningCoachBrief`: today's closed loop only; no multi-day plan. Yesterday's quality cycling/running session is expanded with bounded execution telemetry while ordinary endurance/recovery sessions stay compact.
 - `planning` — sections in decision-authority order (section 0 authority/data currency,
   constraints, current intent & goals, recovery, completed load with a bounded one-line
   telemetry digest per activity, recommendation feedback, upcoming commitments, compact long-term goals,
@@ -134,8 +134,15 @@ The completed-training section of the planning and diagnostic exports carries a
 **display-only**: only the brief telemetry renderer imports them, their constants have no
 recommendation authority (ADR-0033 display-only, so no claim or coverage item), and
 `POLICY_VERSION` is unaffected. Using them in policy would be a separately reviewed change.
-The morning export is rebuilt by `buildMorningCoachBrief`, so `ContextBriefService.build`
-does not derive them for `morning`.
+The morning export is rebuilt by `buildMorningCoachBrief`, so it does not run the historical
+comparison/next-day `deriveKeySessionSummaries` pipeline. Instead,
+`contextBriefActivityTelemetry.ts` `renderMorningQualityActivityTelemetry` expands only the
+previous day's quality cycling/running sessions (tempo, threshold, VO2, anaerobic, mixed or race).
+For historical records where `stimulusDomain` is absent, a hard `intensityTag` is the bounded
+legacy fallback; an explicit canonical `unknown` domain is not promoted through that fallback.
+Cycling uses bounded zones plus persisted `activityResponse` MMP, steady-half and semantic-segment
+evidence; running uses running dynamics and bounded lap pace/power/HR evidence. This remains
+display-only and ordinary endurance/recovery sessions keep the one-line morning summary.
 
 A session is a *key session* when at least one feature produced a value, or when it is a
 steady session with no comparable prior session (its rejection reasons are stated). In the
@@ -597,6 +604,16 @@ sport-neutral capabilities exist: `linear_speed_skill`, `acceleration_decelerati
   and `ResolvedEvergreenPlan.warnings` carry the typed readout; owed `blocked`/`unknown` capabilities raise
   `capability_maintenance_unfulfilled`, while deliberate suspension stays visible without a warning. Diagnostics are
   not persisted in the recommendation audit in v1.
+- **Athlete readouts (#856).** `Recommendation.capabilityMaintenance` and
+  `WeekAheadPlan.capabilityMaintenance` carry the planner's typed result to the morning decision and
+  `WeekAheadStrip`. The same-day result resolved by the daily recommendation is forwarded through the app to
+  `ContextBriefService` and the exposure ledger; the brief service never computes cadence. If no same-date planner
+  result exists (for example, a direct deep link before Home/Plan has resolved), the brief keeps cadence explicitly
+  unknown instead of redirecting through another screen or recomputing policy. The result is runtime-only and does
+  not extend the persisted recommendation audit. When a canonical fact has a known capability workout
+  identity but no recorded variant, and planner compatibility history counts it while the exact-variant ledger cannot,
+  the brief keeps its `unknown` evidence status and explains the provenance gap. The readout covers all four opted-in
+  capabilities: linear speed, acceleration/deceleration, change of direction, and sport skill.
 
 Policy is owned by `policy.evergreen.athletic_capability_maintenance_v1`, a product heuristic: no reviewed
 trained-adult evidence validates a 14-day (or 28-day) change-of-direction or ball-skill maintenance minimum.

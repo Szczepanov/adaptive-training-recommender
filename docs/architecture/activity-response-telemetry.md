@@ -42,7 +42,18 @@ workout-step linkage provide that semantic role.
 
 The existing optional original-FIT acquisition path decodes Records, Workout Steps and
 Laps in memory. Issue #850 extends that transient evidence with compact Lap timing,
-performed workout-step linkage and lap summary values. No new Garmin request is introduced.
+performed workout-step linkage and lap summary values. Normal live sync derives the response
+from the same original-FIT acquisition already used by HR-fidelity enrichment, so it adds no
+second request for an activity.
+
+Historical documents created before this response schema can be enriched explicitly with
+`uv run python -m garmin_sync backfill-activity-response`. That operator command necessarily
+makes one rate-paced original-FIT request per qualifying historical activity because the raw
+FIT trace was deliberately never persisted. It runs under the same per-user Garmin execution
+lease as other Garmin operations, uses the configured backfill pacing, persists refreshed
+token state on every exit path, and returns failure on a busy lease, rate limiting, or
+processing failure so an operator can retry deliberately. It is not part of scheduled daily
+ingestion.
 
 While the native trace is still in memory, activity_response.py derives:
 
@@ -81,6 +92,29 @@ A segment retains prescription and execution separately:
 The segment array is capped at 64. The MMP family is fixed-size. Historical activity
 documents without activityResponse degrade to the existing lap/session summary path.
 
+## Read-side hydration and athlete UI
+
+`trainingHistory.ts` treats `activityResponse` as one optional evidence sidecar. The base
+normalized activity remains available when the sidecar is absent or malformed, but the sidecar
+itself is accepted only when its derivation version is supported and its required shape plus any
+present nested evidence are internally valid. Unknown future derivation versions, invalid
+source-resolution fields, segment fields, prescribed targets, power-duration
+metadata, count/truncation bookkeeping, or steady-half values cause the complete
+`activityResponse` sidecar to be omitted rather than partially hydrating provenance that no
+longer matches the persisted contract.
+
+`ActivityTelemetry` exposes the capability badge in the recent-activity card and keeps the
+dense evidence behind a native `details` / `summary` disclosure. The expanded diagnostic view
+shows source cadence and derivation provenance, fixed MMP windows with confidence and activity-half
+context, steady-half summaries, semantic segment identity, prescribed-versus-performed telemetry,
+within-segment response and evidence confidence. Wide segment evidence remains inside a local
+horizontal-scroll container on narrow screens; it must not create page-level horizontal overflow.
+
+Recent-activity JSON export preserves the hydrated sidecar unchanged, and the context-brief
+consumer receives the same normalized activity object. This remains observational evidence:
+hydration, display and export do not grant the sidecar recommendation, readiness, load or safety
+authority.
+
 ## Context-brief consumers
 
 contextBriefResponseFeatures.ts consumes semantic work/sprint segments before any lap
@@ -104,6 +138,16 @@ Planning export is bounded: repetition lists are capped, only selected 5-second/
 5-minute MMP values are included in compact activity lines, and semantic summaries replace
 the raw lap digest when available. Diagnostic export can show all persisted semantic
 segments and fixed MMP windows, but still never contains native samples.
+
+The daily morning handoff has a separate bounded rule: it keeps ordinary endurance/recovery
+activities at the existing summary level, but expands the previous day's quality cycling or
+running session. Canonical quality selection uses the persisted stimulus domain; only historical
+records with no `stimulusDomain` may fall back to a hard legacy `intensityTag`. An explicit
+`stimulusDomain: unknown` remains compact. Cycling quality can expose power/HR zones, the fixed
+persisted MMP family, deterministic steady halves and up to the first 20 response segments in
+semantic segment-index order. Running quality exposes available running dynamics plus up to 20
+laps with duration, distance, pace, average power and average HR. The detail is observational/
+export-only; selecting it for display does not grant recommendation authority.
 
 All HR use continues through activityHrFidelity.ts. New segment-level HR does not create a
 new HR authority or bypass measurement-quality gating.

@@ -361,6 +361,163 @@ describe('training-history persistence parsers', () => {
         expect(parsed.data.exerciseSets).toBeUndefined();
     });
 
+    it('parses valid activityResponse with segments, peaks, and steadyHalves', () => {
+        const sampleResponse = {
+            derivationVersion: 'multi-resolution-v1',
+            segmentCountTotal: 2,
+            segmentsTruncated: false,
+            sourceResolution: { powerSeconds: 1.0, hrSeconds: 1.0, cadenceSeconds: 1.0 },
+            segments: [
+                {
+                    segmentIndex: 1,
+                    segmentType: 'work',
+                    identitySource: 'fit_workout_step',
+                    durationSeconds: 900,
+                    evidenceConfidence: 'high',
+                    averagePowerWatts: 230,
+                    peak1sPowerWatts: 300,
+                    peak5sPowerWatts: 280,
+                    peak10sPowerWatts: 260,
+                    averageHrBpm: 155,
+                    endHrBpm: 158,
+                    maxHrBpm: 162,
+                    averageCadenceRpm: 92,
+                    maxCadenceRpm: 102,
+                    firstThirdPowerWatts: 228,
+                    middleThirdPowerWatts: 231,
+                    lastThirdPowerWatts: 232,
+                    lastThirdHrBpm: 157,
+                    prescribedTarget: { kind: 'power_3s_target', low: 220, high: 240, value: 0 },
+                },
+                {
+                    segmentIndex: 2,
+                    segmentType: 'recovery',
+                    identitySource: 'fit_workout_step',
+                    durationSeconds: 300,
+                    evidenceConfidence: 'high',
+                    averagePowerWatts: 110,
+                },
+            ],
+            powerDurationPeaks: [
+                { durationSeconds: 5, powerWatts: 380, confidence: 'high', elapsedBeforeSeconds: 1200, activityHalf: 'first' },
+                { durationSeconds: 300, powerWatts: 240, confidence: 'high' },
+            ],
+            steadyHalves: {
+                firstPowerWatts: 190,
+                secondPowerWatts: 185,
+                firstHrBpm: 140,
+                secondHrBpm: 142,
+                firstCadenceRpm: 90,
+                secondCadenceRpm: 88,
+            },
+        };
+
+        const parsed = parseNormalizedGarminActivity({
+            ...activity,
+            activityResponse: sampleResponse,
+        }, 'users/u1/activities/a-1', 'a-1');
+
+        expect(parsed.status).toBe('AVAILABLE');
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available');
+        expect(parsed.data.activityResponse).toEqual(sampleResponse);
+    });
+
+    it('accepts the canonical 64-segment truncation boundary', () => {
+        const segments = Array.from({ length: 64 }, (_, index) => ({
+            segmentIndex: index + 1,
+            segmentType: 'work' as const,
+            identitySource: 'fit_workout_step' as const,
+            durationSeconds: 60,
+            evidenceConfidence: 'high' as const,
+            averagePowerWatts: 250,
+        }));
+        const parsed = parseNormalizedGarminActivity({
+            ...activity,
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                segmentCountTotal: 65,
+                segmentsTruncated: true,
+                sourceResolution: { powerSeconds: 1 },
+                segments,
+                powerDurationPeaks: [{ durationSeconds: 60, powerWatts: 320, confidence: 'high' }],
+            },
+        }, 'users/u1/activities/a-1', 'a-1');
+
+        expect(parsed.status).toBe('AVAILABLE');
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available');
+        expect(parsed.data.activityResponse?.segments).toHaveLength(64);
+        expect(parsed.data.activityResponse?.segmentsTruncated).toBe(true);
+        expect(parsed.data.activityResponse?.segmentCountTotal).toBe(65);
+    });
+
+    it('drops corrupt activityResponse while preserving base activity', () => {
+        const parsed = parseNormalizedGarminActivity({
+            ...activity,
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                segments: 'not-an-array',
+            },
+        }, 'users/u1/activities/a-1', 'a-1');
+
+        expect(parsed.status).toBe('AVAILABLE');
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available');
+        expect(parsed.data.activityResponse).toBeUndefined();
+    });
+
+    it('drops activityResponse when nested optional evidence is malformed', () => {
+        const validResponse = {
+            derivationVersion: 'multi-resolution-v1',
+            segmentCountTotal: 1,
+            segmentsTruncated: false,
+            sourceResolution: { powerSeconds: 1 },
+            segments: [{
+                segmentIndex: 1,
+                segmentType: 'work',
+                identitySource: 'fit_workout_step',
+                durationSeconds: 600,
+                evidenceConfidence: 'high',
+                averagePowerWatts: 250,
+                prescribedTarget: { kind: 'power_range_watts', low: 240, high: 260 },
+            }],
+            powerDurationPeaks: [{
+                durationSeconds: 5,
+                powerWatts: 400,
+                confidence: 'high',
+                activityHalf: 'first',
+            }],
+        };
+
+        const malformedResponses = [
+            { ...validResponse, derivationVersion: 'multi-resolution-v2' },
+            { ...validResponse, sourceResolution: { powerSeconds: '1' } },
+            { ...validResponse, segments: [{ ...validResponse.segments[0], averagePowerWatts: '250' }] },
+            { ...validResponse, segments: [{ ...validResponse.segments[0], prescribedTarget: { kind: 'power_range_watts', low: '240', high: 260 } }] },
+            { ...validResponse, powerDurationPeaks: [{ ...validResponse.powerDurationPeaks[0], activityHalf: 'middle' }] },
+            { ...validResponse, powerDurationPeaks: [{ ...validResponse.powerDurationPeaks[0], durationSeconds: 600 }] },
+            {
+                ...validResponse,
+                segmentCountTotal: 65,
+                segmentsTruncated: true,
+                segments: Array.from({ length: 65 }, (_, index) => ({
+                    ...validResponse.segments[0],
+                    segmentIndex: index + 1,
+                })),
+            },
+            { ...validResponse, segmentCountTotal: 2 },
+        ];
+
+        for (const activityResponse of malformedResponses) {
+            const parsed = parseNormalizedGarminActivity({
+                ...activity,
+                activityResponse,
+            }, 'users/u1/activities/a-1', 'a-1');
+
+            expect(parsed.status).toBe('AVAILABLE');
+            if (parsed.status !== 'AVAILABLE') throw new Error('expected available');
+            expect(parsed.data.activityResponse).toBeUndefined();
+        }
+    });
+
     it('parses supported recommendation schemas and rejects future ones', () => {
         expect(parseDailyRecommendation(recommendation, 'users/u1/daily_recommendations/2026-08-06')).toMatchObject({ status: 'AVAILABLE', data: { date: '2026-08-06' } });
         expect(parseDailyRecommendation({ ...recommendation, schemaVersion: 3 }, 'users/u1/daily_recommendations/2026-08-06'))

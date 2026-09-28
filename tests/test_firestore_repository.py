@@ -91,6 +91,41 @@ def test_firestore_repository_user_mismatch_raises_error():
         repo.upsert_snapshot("2026-08-06", invalid_payload)
 
 
+def test_update_activity_enrichment_replaces_response_and_merges_sibling_fields() -> None:
+    mock_db = MagicMock()
+    doc_ref = MagicMock()
+    activities_ref = mock_db.collection.return_value.document.return_value.collection.return_value
+    activities_ref.document.return_value = doc_ref
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+
+    repo.update_activity_enrichment(
+        "activity-1",
+        activity_response={
+            "derivationVersion": "multi-resolution-v1",
+            "segments": [],
+        },
+        merged_fields={
+            "hrMeasurement": {
+                "signalQuality": "good",
+                "artifactFlags": [],
+            },
+            "fitWorkoutFingerprint": "fingerprint-v1",
+        },
+    )
+
+    doc_ref.update.assert_called_once_with(
+        {
+            "activityResponse": {
+                "derivationVersion": "multi-resolution-v1",
+                "segments": [],
+            },
+            "hrMeasurement.signalQuality": "good",
+            "hrMeasurement.artifactFlags": [],
+            "fitWorkoutFingerprint": "fingerprint-v1",
+        }
+    )
+
+
 def test_get_snapshots_batch_chunks_merges_and_filters_user_id() -> None:
     mock_db = MagicMock()
     repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)

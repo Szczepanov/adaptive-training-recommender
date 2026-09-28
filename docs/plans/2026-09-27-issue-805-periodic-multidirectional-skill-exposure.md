@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | `In review` — Phase 0B and Phases 1–8 delivered by the #805 implementation PR; Phase 0A was delivered separately by PR #854 |
+| **Status** | `Implemented` — Phase 0A shipped in PR #854; Phase 0B and Phases 1–8 shipped in PR #855; athlete-facing diagnostics/context export shipped in follow-up #856 |
 | **Source** | [issue #805](https://github.com/Szczepanov/adaptive-training-recommender/issues/805) |
 | **Blocked by** | Nothing. |
 | **Unlocks** | Retires `cod_lateral` from the context-brief ledger's unmodelled list; first authoritative cadence for ledger `overdue` |
@@ -51,11 +51,14 @@ historical, not open work. What shipped, and where it deviated:
   so the athlete drops below #804's "established" volume after about three weeks (in both arms), and #804's
   consecutive-day `withheld` verdict on the weekly planning day blanks the whole seven-day horizon. Recurrence is
   therefore proven by the deterministic cycle test; both harness/#804 horizon effects are follow-ups.
-- **Diagnostics reach.** `ResolvedEvergreenPlan.capabilityMaintenance` and `warnings` are not yet threaded into the
-  recommendation explanation, so a stalled target is diagnosable at the engine API but not yet shown to the athlete.
-- **Context brief.** The ledger consumes a resolved `CapabilityMaintenanceResult` when supplied, but
-  `contextBriefService.ts` does not yet compute one, so the exported brief reports that no authoritative overdue
-  status is available. Surfacing the planner's result in the brief is follow-up work.
+- **Diagnostics reach — completed by #856.** `Recommendation.capabilityMaintenance` and
+  `WeekAheadPlan.capabilityMaintenance` surface planner-owned status in the morning/week-ahead readouts, including
+  typed blocked/unknown/deliberately-suspended reasons. The field remains runtime-only and is not added to
+  `RecommendationAudit`.
+- **Context brief — completed by #856.** The same-day planner-owned `CapabilityMaintenanceResult` is forwarded into
+  `ContextBriefService` and the exposure ledger when available. The brief never recomputes cadence; without a
+  same-date planner result it reports cadence as unknown. Legacy unknown-variant planner credit is explained when the
+  stricter ledger cannot confirm variant-specific credit.
 - **Persona judge.** `persona_cycling_hybrid_broad_athleticism` was added; the LLM persona-judge baseline was not
   re-run in this change.
 

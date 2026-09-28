@@ -8,6 +8,7 @@ from garmin_sync.cli import (
     main,
     run_audit_cmd,
     run_backfill,
+    run_backfill_activity_response,
     run_daily_sync,
     run_daily_sync_all,
     run_poll_manual_sync_all_cmd,
@@ -194,6 +195,66 @@ def test_run_backfill_exception(mock_settings: Any, mock_service: Any) -> None:
     exit_code = run_backfill([])
 
     assert exit_code == 1
+
+
+def test_run_backfill_activity_response_uses_lease_and_service(
+    mock_settings: Any,
+    mock_service: Any,
+    mock_execution_lease: Any,
+) -> None:
+    mock_service_instance = mock_service.return_value
+    mock_service_instance.backfill_activity_response.return_value = True
+
+    exit_code = run_backfill_activity_response(
+        [
+            "--days",
+            "20",
+            "--start-date",
+            "2026-09-01",
+            "--end-date",
+            "2026-09-20",
+            "--force",
+            "--dry-run",
+        ]
+    )
+
+    assert exit_code == 0
+    mock_service_instance.backfill_activity_response.assert_called_once_with(
+        days=20,
+        start_date_str="2026-09-01",
+        end_date_str="2026-09-20",
+        force=True,
+        dry_run=True,
+    )
+    mock_execution_lease.return_value.acquire.assert_called_once_with()
+    mock_execution_lease.return_value.release.assert_called_once_with()
+
+
+def test_run_backfill_activity_response_failure_returns_nonzero(
+    mock_settings: Any,
+    mock_service: Any,
+) -> None:
+    mock_service.return_value.backfill_activity_response.return_value = False
+
+    assert run_backfill_activity_response([]) == 1
+
+
+def test_run_backfill_activity_response_busy_lease_returns_nonzero(
+    mock_settings: Any,
+    mock_service: Any,
+    mock_execution_lease: Any,
+) -> None:
+    mock_execution_lease.return_value.acquire.return_value = False
+
+    assert run_backfill_activity_response([]) == 1
+
+    mock_service.return_value.backfill_activity_response.assert_not_called()
+    mock_execution_lease.return_value.release.assert_not_called()
+
+
+def test_run_backfill_activity_response_rejects_partial_range() -> None:
+    with pytest.raises(SystemExit):
+        run_backfill_activity_response(["--start-date", "2026-09-01"])
 
 
 def test_run_audit_cmd_success(

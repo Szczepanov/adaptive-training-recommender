@@ -1,6 +1,6 @@
 # Training occurrence reconciliation and structured strength session unification
 
-**Status:** In progress — canonical TO plan; PR #324 and PR #331 landed; #646 adds the offline TO4/TO5 export, canonical broad-history derivation (catalog executions and Garmin activities), two-pass recommendation counterfactual and report pipeline; representative real TO4/TO5 corpus evidence remains the open gate
+**Status:** In progress — canonical TO plan; PR #324 and PR #331 landed; #646 / PR #853 landed the offline TO4/TO5 export, canonical broad-history derivation, two-pass recommendation counterfactual and report pipeline, and recorded the real-data 90-day corpus evidence baseline (2026-09-27); broad-history activation remains blocked on pre-occurrence historical backfill and capability gaps 1 & 2; FIT activation remains blocked on an Adaptive-side template fingerprint generator
 **Reader note:** Historical companion checklists and the earlier strength-only cutover are not
 independent status boards. Current status is maintained in [`README.md`](./README.md).
 

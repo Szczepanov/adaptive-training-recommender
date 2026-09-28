@@ -642,6 +642,76 @@ describe('enhanceContextBriefForPlanning', () => {
             expect(text).not.toContain('Detailed activity telemetry');
         });
 
+        it('expands yesterday quality cycling telemetry without turning the morning brief into the diagnostic export', () => {
+            const yesterdayDate = '2026-08-19';
+            const text = enhanceContextBriefForPlanning(BASE, handoffInput({
+                preset: 'daily',
+                activities: [{
+                    activityId: 'quality-yesterday',
+                    date: yesterdayDate,
+                    type: 'road_biking',
+                    durationMin: 83,
+                    activityTrainingLoad: 122.6,
+                    trainingEffectAerobic: 3.7,
+                    trainingEffectAnaerobic: 0.8,
+                    averageHr: 140,
+                    maxHr: 168,
+                    intensityTag: 'moderate',
+                    stimulusDomain: 'tempo',
+                    sessionCost: 'high',
+                    normalizedPower: 203,
+                    intensityFactor: 0.8,
+                    variabilityIndex: 1.08,
+                    powerInZones: [
+                        { zoneNumber: 2, secondsInZone: 1200, lowBoundary: 142 },
+                        { zoneNumber: 3, secondsInZone: 2100, lowBoundary: 193 },
+                    ],
+                    activityResponse: {
+                        derivationVersion: 'multi-resolution-v1',
+                        sourceResolution: { powerSeconds: 1, hrSeconds: 1, cadenceSeconds: 1 },
+                        segmentCountTotal: 1,
+                        segmentsTruncated: false,
+                        powerDurationPeaks: [
+                            { durationSeconds: 5, powerWatts: 612, confidence: 'high' },
+                            { durationSeconds: 300, powerWatts: 251, confidence: 'high' },
+                        ],
+                        steadyHalves: {
+                            firstPowerWatts: 198,
+                            secondPowerWatts: 207,
+                            firstHrBpm: 136,
+                            secondHrBpm: 144,
+                            firstCadenceRpm: 87,
+                            secondCadenceRpm: 89,
+                        },
+                        segments: [{
+                            segmentIndex: 1,
+                            segmentType: 'work',
+                            identitySource: 'fit_workout_step',
+                            durationSeconds: 900,
+                            prescribedTarget: { kind: 'power_range_watts', low: 193, high: 229 },
+                            averagePowerWatts: 214,
+                            averageHrBpm: 147,
+                            endHrBpm: 153,
+                            averageCadenceRpm: 89,
+                            firstThirdPowerWatts: 211,
+                            middleThirdPowerWatts: 214,
+                            lastThirdPowerWatts: 217,
+                            evidenceConfidence: 'high',
+                        }],
+                    },
+                }],
+            }));
+
+            expect(text).toContain('Recorded training: Road cycling · 83 min · Load 122.6 · Aerobic TE 3.7 · Avg HR 140 bpm · moderate (tempo, cost high)');
+            expect(text).toContain('Power summary: normalized power 203 W · IF 0.8');
+            expect(text).toContain('Quality-session detail (display-only)');
+            expect(text).toContain('Session detail: VI 1.08 · max HR 168 bpm · anaerobic TE 0.8');
+            expect(text).toContain('Power-duration peaks: 5s 612 W');
+            expect(text).toContain('Deterministic halves: power 198→207 W');
+            expect(text).toContain('| 1 | work | fit_workout_step | 15:00 | 193–229 W |');
+            expect(text).not.toContain('### Detailed activity telemetry');
+        });
+
         it('reports appetite in the daily check-in section with its non-authority caveat', () => {
             const text = enhanceContextBriefForPlanning(BASE, handoffInput({
                 preset: 'daily',
