@@ -149,6 +149,40 @@ describe('prepareTo4Evidence', () => {
         expect(prepared.hardGates).toMatchObject({ structuredSemanticAuthorityPreserved: 'pass' });
     });
 
+    it('rejects malformed prescription modality metadata instead of throwing during derivation', () => {
+        const source = { kind: 'manual', definitionId: 'upper', revision: 1, contentHash: 'h' };
+        const raw = recordExport({
+            performedTrainingOccurrences: [{ id: 'pto-1', data: {
+                schemaVersion: 1, performedOccurrenceId: 'pto-1', userId: 'u1', status: 'active', localDate: '2026-08-06', modality: 'strength',
+                sourceRefs: [{ kind: 'structured_execution', executionId: 'e-1' }], reconciliation: { state: 'single_source' }, createdAt: 'x', updatedAt: 'x',
+            } }],
+            sessionExecutions: [{ id: 'e-1', data: {
+                userId: 'u1', executionId: 'e-1', date: '2026-08-06', sessionSource: source, prescriptionHash: 'ph-1', sessionRpe: 8,
+                startedAt: '2026-08-06T16:00:00Z', completedAt: '2026-08-06T16:45:00Z', updatedAt: '2026-08-06T16:45:00Z', state: 'completed', schemaVersion: 1,
+            } }],
+            sessionEntries: [{ id: 'set-1', data: {
+                id: 'set-1', executionId: 'e-1', stepId: 'press', completedAt: '2026-08-06T16:10:00Z', createdAt: 'x', updatedAt: 'x',
+                payload: { kind: 'repetition', setIndex: 1, reps: 8 },
+            } }],
+            executionPrescriptions: [{ id: 'ph-1', data: {
+                schemaVersion: 1, prescriptionHash: 'ph-1', sessionSource: source, definitionHash: 'dh',
+                displayMetadata: { title: 'Upper Maintenance', intent: 'training', dominantModality: { malformed: true }, duration: { min: 50, max: 60 } },
+                blocks: [{ id: 'main', role: 'main', executionMode: 'sequential', steps: [{ id: 'press', kind: 'exercise', dose: { kind: 'repetition', sets: 4, reps: 8 } }] }],
+                createdAt: 'x',
+            } }],
+            activities: [], dailyRecommendations: [],
+        });
+        expect(() => prepareTo4Evidence(raw, options)).not.toThrow();
+        expect(prepareTo4Evidence(raw, options).preparedInput).toMatchObject({
+            canonicalDerivation: {
+                invalidRecords: 1,
+                derived: 0,
+                unknownByReason: { non_catalog_execution_evidence_missing: 1 },
+            },
+            hardGates: { structuredSemanticAuthorityPreserved: 'not_evaluated' },
+        });
+    });
+
     it('rejects foreign-user records and fails the cross-user gate', () => {
         const raw = recordExport();
         const foreign = {
