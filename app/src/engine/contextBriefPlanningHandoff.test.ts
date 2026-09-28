@@ -890,7 +890,17 @@ describe('enhanceContextBriefForPlanning', () => {
         it('uses imported-plan rest authority for the adherence delta without treating athlete feedback as execution proof', () => {
             const text = enhanceContextBriefForPlanning(BASE, handoffInput({
                 preset: 'daily',
-                recommendations: [recommendation()],
+                recommendations: [
+                    {
+                        ...recommendation(),
+                        date: '2026-08-19',
+                        templateId: 'legacy-app-z2',
+                        templateTitle: 'Zone 2 app prompt',
+                        createdAt: '2026-08-19T06:00:00Z',
+                        updatedAt: '2026-08-19T06:00:00Z',
+                    },
+                    recommendation(),
+                ],
                 activities: [{
                     activityId: 'unplanned-rest-day-ride',
                     date: '2026-08-19',
@@ -913,6 +923,7 @@ describe('enhanceContextBriefForPlanning', () => {
             }));
 
             expect(text).toContain('Prescribed: Imported-plan rest/recovery directive.');
+            expect(text).not.toContain('Prescribed: Zone 2 app prompt');
             expect(text).toContain('Adherence Delta: **UNPLANNED_STRAIN**');
             expect(text).toContain('High unplanned strain executed on scheduled rest/recovery day (+70 load, IF 0.76).');
         });
