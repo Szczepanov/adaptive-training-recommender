@@ -1459,23 +1459,46 @@ def run_backfill_training_occurrences_cmd(args: list[str] | None = None) -> int:
     if (parsed_args.start_date is None) != (parsed_args.end_date is None):
         print("Error: --start-date and --end-date must be provided together.")
         return 1
-
-    start_date_str, end_date_str = _resolve_date_range(parsed_args, default_days=90)
-    start_dt = date.fromisoformat(start_date_str)
-    end_dt = date.fromisoformat(end_date_str)
-    if start_dt > end_dt:
-        print(f"Error: start_date ({start_date_str}) must be <= end_date ({end_date_str}).")
-        return 1
-
-    if (end_dt - start_dt).days > 366:
-        print("Error: Window exceeds 366-day safety maximum.")
+    if parsed_args.days < 1:
+        print("Error: --days must be at least 1.")
         return 1
 
     try:
+        # An explicit --user-id must be sufficient for this operator command. load_settings()
+        # otherwise requires APP_USER_ID before we ever get a chance to use the CLI value.
+        explicit_user_id = (parsed_args.user_id or "").strip()
+        if parsed_args.user_id is not None:
+            if (
+                not explicit_user_id
+                or "/" in explicit_user_id
+                or "\\" in explicit_user_id
+                or ".." in explicit_user_id
+            ):
+                print(f"Error: Invalid concrete user_id: {explicit_user_id!r}")
+                return 1
+            os.environ["APP_USER_ID"] = explicit_user_id
+
         settings = load_settings()
-        user_id = (parsed_args.user_id or settings.app_user_id or "").strip()
+        user_id = (explicit_user_id or settings.app_user_id or "").strip()
         if not user_id or "/" in user_id or "\\" in user_id or ".." in user_id:
             print(f"Error: Invalid concrete user_id: {user_id!r}")
+            return 1
+
+        try:
+            start_date_str, end_date_str = _resolve_date_range(parsed_args, default_days=90)
+            start_dt = date.fromisoformat(start_date_str)
+            end_dt = date.fromisoformat(end_date_str)
+        except ValueError as error:
+            print(f"Error: Invalid date window: {error}")
+            return 1
+
+        if start_dt > end_dt:
+            print(f"Error: start_date ({start_date_str}) must be <= end_date ({end_date_str}).")
+            return 1
+
+        window_days = (end_dt - start_dt).days + 1
+        if window_days > 366:
+            print("Error: Window exceeds 366-day safety maximum.")
             return 1
 
         db = init_firestore_client(settings.firebase_credentials_path)

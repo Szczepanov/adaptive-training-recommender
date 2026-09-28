@@ -636,3 +636,129 @@ def test_audit_failure_cases() -> None:
     assert not audit.audit_passed
     assert audit.missing_links == 1  # act3
     assert audit.invalid_links >= 2  # act1 and act2
+
+
+def test_any_preflight_anomaly_blocks_apply_without_partial_writes() -> None:
+    """A known corrupt link must block unrelated candidate writes, not fail only post-audit."""
+    corrupt_key = provider_activity_source_key("garmin", "act_corrupt")
+    corrupt_doc_id = encode_source_key_for_doc_id(corrupt_key)
+    db = _MockDb(
+        {
+            "user1": {
+                "activities": {
+                    "act_corrupt": {
+                        "activityId": "act_corrupt",
+                        "date": "2026-07-01",
+                        "type": "cycling",
+                    },
+                    "act_new": {
+                        "activityId": "act_new",
+                        "date": "2026-07-02",
+                        "type": "running",
+                    },
+                },
+                "performedOccurrenceSourceLinks": {
+                    corrupt_doc_id: {
+                        "schemaVersion": 1,
+                        "sourceKey": "provider_activity:garmin:different",
+                        "sourceKind": "provider_activity",
+                        "userId": "user1",
+                        "performedOccurrenceId": "pto-existing",
+                    }
+                },
+                "performedTrainingOccurrences": {
+                    "pto-existing": {
+                        "schemaVersion": 1,
+                        "performedOccurrenceId": "pto-existing",
+                        "userId": "user1",
+                        "status": "active",
+                        "localDate": "2026-07-01",
+                        "sourceRefs": [
+                            {
+                                "kind": "provider_activity",
+                                "provider": "garmin",
+                                "activityId": "act_corrupt",
+                            }
+                        ],
+                        "reconciliation": {"state": "single_source"},
+                    }
+                },
+            }
+        }
+    )
+
+    plan = plan_training_occurrence_backfill(db, "user1", "2026-07-01", "2026-07-02")
+    assert any(a.anomaly_type == "source_link_identity_mismatch" for a in plan.anomalies)
+    assert [candidate.activity_id for candidate in plan.eligible_candidates] == ["act_new"]
+
+    with pytest.raises(ValueError, match="blocking invariant anomalies"):
+        apply_training_occurrence_backfill(db, plan)
+
+    assert db.write_count == 0
+    assert "act_new" not in {
+        ref.get("activityId")
+        for occurrence in db.users["user1"]["performedTrainingOccurrences"].values()
+        for ref in occurrence.get("sourceRefs", [])
+        if isinstance(ref, dict)
+    }
+
+
+def test_duplicate_active_source_ownership_is_detected_preflight_and_audit() -> None:
+    """The audit must scan canonical occurrences independently of the unique link index."""
+    source_key = provider_activity_source_key("garmin", "act1")
+    source_doc_id = encode_source_key_for_doc_id(source_key)
+    source_ref = {"kind": "provider_activity", "provider": "garmin", "activityId": "act1"}
+
+    db = _MockDb(
+        {
+            "user1": {
+                "activities": {
+                    "act1": {"activityId": "act1", "date": "2026-07-01", "type": "cycling"},
+                },
+                "performedOccurrenceSourceLinks": {
+                    source_doc_id: {
+                        "schemaVersion": 1,
+                        "sourceKey": source_key,
+                        "sourceKind": "provider_activity",
+                        "userId": "user1",
+                        "performedOccurrenceId": "pto-1",
+                    }
+                },
+                "performedTrainingOccurrences": {
+                    "pto-1": {
+                        "schemaVersion": 1,
+                        "performedOccurrenceId": "pto-1",
+                        "userId": "user1",
+                        "status": "active",
+                        "localDate": "2026-07-01",
+                        "sourceRefs": [dict(source_ref)],
+                        "reconciliation": {"state": "single_source"},
+                    },
+                    "pto-2": {
+                        "schemaVersion": 1,
+                        "performedOccurrenceId": "pto-2",
+                        "userId": "user1",
+                        "status": "active",
+                        "localDate": "2026-07-01",
+                        "sourceRefs": [dict(source_ref)],
+                        "reconciliation": {"state": "single_source"},
+                    },
+                },
+            }
+        }
+    )
+
+    plan = plan_training_occurrence_backfill(db, "user1", "2026-07-01", "2026-07-01")
+    anomaly_types = {anomaly.anomaly_type for anomaly in plan.anomalies}
+    assert "source_link_target_mismatch" in anomaly_types
+    assert "duplicate_active_source_ref" in anomaly_types
+
+    with pytest.raises(ValueError, match="blocking invariant anomalies"):
+        apply_training_occurrence_backfill(db, plan)
+    assert db.write_count == 0
+
+    audit = audit_training_occurrence_backfill(db, "user1", "2026-07-01", "2026-07-01")
+    assert not audit.audit_passed
+    assert audit.invalid_links >= 2
+    assert any("multiple active occurrences" in issue for issue in audit.issues)
+

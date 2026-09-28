@@ -30,8 +30,8 @@ eligible for review, and only a separately written analysis belongs in `docs/ana
    - Scans `users/{uid}/activities` in the specified window (up to 366 days).
    - Treats `users/{uid}/performedOccurrenceSourceLinks` as the per-source cutover boundary: activities already linked to an occurrence (including manual unlinks, keep_separates, and merges) are never overwritten or re-linked.
    - Applies individual Firestore transactions per unlinked activity with create-only semantics to create `performedTrainingOccurrences` and `performedOccurrenceSourceLinks`.
-   - Normalizes Garmin modality (`cycling`, `running`, `swimming`, `walking`, `cardio`, `strength`).
-   - Runs a post-write verification audit to ensure 100% of eligible activities possess valid source links and target occurrences.
+   - Normalizes Garmin modality to the canonical reconciliation vocabulary (`cycling`, `running`, `strength`, `field`, `mobility`, `cross_training`); unknown types leave modality unset.
+   - Fails closed before writing when preflight finds any malformed/dangling/mismatched source claim or duplicate active source ownership, then runs an independent post-write audit over both activity-to-link resolution and active occurrence source ownership.
 
 1. **Export (Python, needs explicit user authorization).** From the repository root:
 

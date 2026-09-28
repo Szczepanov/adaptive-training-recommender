@@ -120,8 +120,8 @@ The remaining 7 un-paired live exposures comprise:
    - `2026-09-20` (`occ-0073`)
 2. **2 Non-catalog manual executions**:
    - `unknownByReason.non_catalog_structured_semantics: 2`
-3. **1 Multi-provider source**:
-   - `unknownByReason.multiple_provider_sources: 1`
+
+Separately, canonical derivation reported `unknownByReason.multiple_provider_sources: 1`; that is a derivation classification, not an eighth live-only exposure.
 
 No Garmin activity lacks canonical occurrence coverage.
 
@@ -149,3 +149,18 @@ No Garmin activity lacks canonical occurrence coverage.
 4. **Preservation of Manual Decisions**: The `performedOccurrenceSourceLinks` index serves as the cutover boundary; existing links (including manual unlinks, keep_separates, and merges) are never overwritten.
 5. **Decision Authority Isolation**: Zero changes to live recommendation authority. `POLICY_VERSION` remains untouched.
 6. **No Credential Leaks**: Artifact directories are git-ignored. No credentials, tokens, or PII committed.
+
+---
+
+## Post-review implementation hardening
+
+A code-review pass after the production execution above tightened the operator implementation without changing the historical execution record or recommendation authority:
+
+- apply now refuses **all** preflight anomalies before creating any new occurrence, rather than blocking only a subset of invariant failures;
+- preflight independently verifies that each active Garmin source ref owns the corresponding source-link claim and detects duplicate active source ownership;
+- the post-write audit independently scans active canonical occurrences, so a duplicate source ref cannot be hidden by the single unique source-link document;
+- a concurrently-created source link is validated before being accepted as an idempotent concurrent win;
+- explicit `--user-id` now works as the command's configuration identity even when `APP_USER_ID` was not already exported;
+- the documented modality vocabulary now matches the canonical TypeScript reconciliation vocabulary.
+
+The 73/73 production audit above predates these stricter checks; it remains a historical execution record and is not represented as a rerun under the hardened implementation.
