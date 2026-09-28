@@ -366,7 +366,6 @@ def plan_training_occurrence_backfill(
 
             plan.already_linked_count += 1
         else:
-            started_at = act_data.get("startedAt")        else:
             started_at = act_data.get("startedAt")
             ended_at = act_data.get("endedAt")
             act_type = str(act_data.get("type") or "")
@@ -506,8 +505,6 @@ def plan_training_occurrence_backfill(
                     source_key=source_key,
                 )
             )
-
-    return plan
 
     return plan
 
