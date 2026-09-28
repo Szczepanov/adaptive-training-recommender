@@ -8,6 +8,9 @@ import { executionPrescriptionService } from './executionPrescriptionService';
 import { sessionOccurrenceService } from './sessionOccurrenceService';
 import { hashExecutionPrescription, hashSessionDefinition } from '../sessions/sessionDefinitionHash';
 import { getLocalDateString } from '../utils/localDate';
+import { WORKOUTS_BY_ID } from '../workouts/catalog';
+import { exportWorkoutPrescriptionToJson } from '../utils/workoutJsonExport';
+import { computeWorkoutTemplateFingerprint } from '../training-occurrence/fitWorkoutIdentity';
 
 /**
  * Creates the evidence records required before a manually-owned definition may execute.
@@ -75,6 +78,25 @@ export async function prepareUnplannedSessionLaunch(
     };
 }
 
+async function computeCatalogFitIdentity(prescription: WorkoutPrescription) {
+    const workout = WORKOUTS_BY_ID.get(prescription.workoutId);
+    if (!workout) return null;
+
+    try {
+        // This is intentionally the same canonical payload shape that WorkoutExportMenu
+        // queues for Garmin. Never derive a hard-match fingerprint later from the
+        // SessionDefinition: catalogSessionAdapter is an execution adapter and may omit
+        // display-only targets such as cycling power/FTP guidance.
+        const canonicalExport = exportWorkoutPrescriptionToJson(prescription, workout.modality);
+        return await computeWorkoutTemplateFingerprint(canonicalExport);
+    } catch {
+        // Identity is optional evidence. If the exact Garmin canonicalization context is
+        // unavailable (for example unresolved %FTP), omit it rather than manufacture a
+        // semantic fingerprint that could become a hard false-negative.
+        return null;
+    }
+}
+
 /**
  * Evidence for a catalog-sourced session (M3.1/M3.4). Starting today's already-recommended
  * catalog session carries no new selection authority (D-MAUTH): the recommendation already
@@ -93,6 +115,7 @@ export async function prepareCatalogSessionLaunch(
     const definitionHash = await hashSessionDefinition(definition);
     const executionPrescription = await createExecutionPrescriptionFromCatalog(prescription, definitionHash);
     await executionPrescriptionService.savePrescription(userId, executionPrescription);
+    const fitIdentity = await computeCatalogFitIdentity(prescription);
 
     return {
         definition,
@@ -103,6 +126,12 @@ export async function prepareCatalogSessionLaunch(
                 catalogVersion: String(prescription.workoutVersion),
             },
             prescriptionHash: executionPrescription.prescriptionHash,
+            ...(fitIdentity
+                ? {
+                    fitWorkoutFingerprint: fitIdentity.fingerprint,
+                    fitWorkoutFingerprintKind: fitIdentity.kind,
+                }
+                : {}),
         },
     };
 }
