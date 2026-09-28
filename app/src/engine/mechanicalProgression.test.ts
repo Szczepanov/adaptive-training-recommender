@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   evaluateMechanicalStageProgression,
+  hasAdjacentMechanicalExposure,
   type CheckinRecord,
   type MechanicalExposureRecord,
 } from './mechanicalProgression.ts';
@@ -79,7 +80,7 @@ describe('evaluateMechanicalStageProgression', () => {
     expect(illnessVerdict.withheldReason).toContain('illness symptoms');
   });
 
-  it('keeps stage/tissue progression horizon-wide when the last exposure was yesterday', () => {
+  it('keeps stage/tissue progression eligible when the last exposure was yesterday', () => {
     const verdict = evaluateMechanicalStageProgression({
       asOfDate: '2026-09-20',
       exposureHistory: [{ date: '2026-09-19', workoutId: 'running_walk_run_01', stage: 1 }],
@@ -91,9 +92,25 @@ describe('evaluateMechanicalStageProgression', () => {
       }],
     });
 
-    expect(verdict.eligible).toBe(false);
-    expect(verdict.status).toBe('withheld');
-    expect(verdict.withheldReason).toContain('consecutive days');
+    expect(verdict.eligible).toBe(true);
+    expect(verdict.status).not.toBe('withheld');
+    expect(verdict.eligibleWorkoutIds.length).toBeGreaterThan(0);
+  });
+
+  it('detects adjacency from exact mechanical identity only', () => {
+    expect(hasAdjacentMechanicalExposure('2026-09-20', [
+      { date: '2026-09-19', workoutId: 'running_easy_continuous_01' },
+    ])).toBe(true);
+    expect(hasAdjacentMechanicalExposure('2026-09-20', [
+      { date: '2026-09-18', workoutId: 'running_easy_continuous_01' },
+    ])).toBe(false);
+    expect(hasAdjacentMechanicalExposure('2026-09-20', [
+      { date: '2026-09-20', workoutId: 'running_easy_continuous_01' },
+      { date: '2026-09-21', workoutId: 'running_easy_continuous_01' },
+    ])).toBe(false);
+    expect(hasAdjacentMechanicalExposure('2026-09-20', [
+      { date: '2026-09-19', workoutId: 'unknown_workout' },
+    ])).toBe(false);
   });
 
   it('enforces re-entry at Stage 1 when history is empty or gap is >= 14 days', () => {

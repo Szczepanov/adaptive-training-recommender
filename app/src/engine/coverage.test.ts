@@ -42,6 +42,19 @@ describe('Phase 6.2c explicit weekly coverage', () => {
         expect(coverageKeysForExposure({ workoutId: 'running_walk_run_01', durationMin: 40 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).not.toContain('aerobic_volume');
     });
 
+    it('does not activate #804 adjacency spacing when the active plan has no mechanical_exposure requirement', () => {
+        const planState = buildCyclingEventPlan(cyclingEvent());
+        if (planState.status !== 'AVAILABLE') throw new Error('cycling plan should be available');
+        const asOfDate = '2026-08-20';
+        const state = buildCoverageState(planState.data, asOfDate, [{
+            date: addDaysToLocalDateString(asOfDate, -1),
+            workoutId: 'running_easy_continuous_01',
+        }]);
+
+        expect(state.requirements.some(item => item.key === 'mechanical_exposure')).toBe(false);
+        expect(state.mechanicalSpacingBlocked).toBe(false);
+    });
+
     it('keeps the Running legacy bridge reachable without weakening the aerobic-volume duration floor', () => {
         const running = ENRICHED_TEMPLATES_BY_ID.get('end_easy_02');
         const cycling = ENRICHED_TEMPLATES_BY_ID.get('end_easy_01');

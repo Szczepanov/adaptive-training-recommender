@@ -271,6 +271,9 @@ function progressionWorkoutIds(verdict: MechanicalProgressionVerdict | null, gat
     return open.filter(workoutId => (mechanicalIdentityFor(workoutId)?.stage ?? 0) === highest).sort();
 }
 
+/** Resolve #805 capability fulfilment from cadence plus horizon-wide #804 source authority.
+ * Date-local adjacency is deliberately absent here; candidate feasibility handles it per date.
+ */
 function fulfilmentFor(
     cadence: CapabilityCadence,
     input: CapabilityMaintenanceInput,
@@ -293,8 +296,9 @@ function fulfilmentFor(
         return { fulfilment: { status: 'blocked', reason: 'mechanical_guardrail' }, ...none };
     }
     if (input.mechanicalVerdict && !input.mechanicalVerdict.eligible) {
-        // #804 blocked on a same-day pain flag / acute symptom, or withheld on spacing,
-        // illness or severe tissue response: a deliberate source suspension, not neglect.
+        // #804 blocked on a same-day pain flag / acute symptom, or withheld on illness
+        // or severe tissue response: a deliberate source suspension, not neglect.
+        // One-day adjacency is date-scoped downstream (#859), so it never reaches this branch.
         const reason: CapabilitySuspendedReason = input.mechanicalVerdict.status === 'blocked' ? 'clinical_symptoms' : 'mechanical_withheld';
         return { fulfilment: { status: 'deliberately_suspended', reason }, ...none };
     }

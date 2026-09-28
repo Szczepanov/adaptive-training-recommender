@@ -586,10 +586,16 @@ eligibility still apply. A target only ever raises the request, and the evaluato
 
 The progression verdict supplies an exact workout allow-list to both coverage ranking and weekly reservations.
 A blocked verdict therefore leaves the target visible with zero eligible candidates instead of silently widening
-to harder stages or substituting generic exercise. The conservative no-consecutive-mechanical-days rule remains
-inside the shared #804 progression verdict in this PR. That means a verdict computed on the day after a mechanical
-exposure can still suppress the wider planning horizon; correcting that pre-existing scoping issue is deliberately
-kept in follow-up #859 rather than changing non-opted-in recommendations inside #805. Policy is owned by
+to harder stages or substituting generic exercise. The conservative no-consecutive-mechanical-days rule is
+different: `mechanicalProgression.ts` `hasAdjacentMechanicalExposure` defines the exact-identity adjacency
+predicate, while `coverage.ts` activates it only when the current block carries the #804
+`mechanical_exposure` requirement. `optimizer.ts` then excludes exact mechanical candidates on that date with
+`CONSECUTIVE_MECHANICAL_DAYS`. Because the planner rebuilds `CoverageState` for each projected date from
+actual plus tentative projected history, a mechanical pick on D blocks D+1 but not D+2; the weekly allocator sees
+the same gate through its shared projected-date evaluator. Projected picks affect spacing feasibility only and do
+not become performed progression evidence. Plans without the #804 requirement, including ordinary endurance
+running plans, do not inherit this gate. True illness, tissue-response, pain and guardrail withholds/blocks remain
+horizon-wide in the progression verdict. Policy is owned by
 `policy.evergreen.mechanical_exposure_v1`; `biomechanics.impact.progressive_mechanical_loading` supplies only
 the narrower scientific rationale that bone and tendon adapt to mechanical loading. The registry explicitly
 documents that the exact scheduling/progression thresholds are product heuristics (ADR-0033).

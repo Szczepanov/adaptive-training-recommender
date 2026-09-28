@@ -2,6 +2,7 @@ import type { BodyRegion, GuardrailKey, DailySubjectiveCheckin, RegionTissueResp
 import { addDaysToLocalDateString } from '../utils/localDate.ts';
 import {
   MECHANICAL_QUALIFYING_IDENTITIES,
+  mechanicalIdentityFor,
   type MechanicalStage,
 } from '../workouts/mechanicalExposure.ts';
 
@@ -56,6 +57,25 @@ export interface EvaluateMechanicalProgressionInput {
  * read makes a recent exposure invisible and is indistinguishable from a real gap. */
 export const MECHANICAL_CONTINUITY_WINDOW_DAYS = 14;
 
+export interface MechanicalSpacingExposure {
+  date: string;
+  workoutId?: string;
+}
+
+/**
+ * Issue #859: date-scoped #804 adjacency guard. This checks exact mechanical
+ * identities only; it does not infer mechanical work from modality, category, or cost.
+ * Callers own policy scope (the active plan must carry `mechanical_exposure`).
+ */
+export function hasAdjacentMechanicalExposure(
+  asOfDate: string,
+  exposures: readonly MechanicalSpacingExposure[],
+): boolean {
+  const yesterday = addDaysToLocalDateString(asOfDate, -1);
+  return exposures.some(exposure =>
+    exposure.date === yesterday && mechanicalIdentityFor(exposure.workoutId) !== undefined);
+}
+
 const LOWER_BODY_REGIONS: ReadonlySet<BodyRegion> = new Set<BodyRegion>([
   'knee',
   'achilles',
@@ -81,12 +101,14 @@ function isGuardrailActive(
  *
  * Enforces:
  * 1. Hard safety gates: `avoid_high_impact`, knee swelling, acute pain block mechanical exposure.
- * 2. Spacing gate: No consecutive mechanical-impact calendar days. This is a product-policy
- *    guardrail, not a claim that a date boundary proves a fixed 48-hour biological interval.
- * 3. Gap re-entry gate: Absence of exposure for >= 14 days resets allowed stage to Stage 1.
- * 4. Response-gated progression: Stage advancement (K -> K+1) requires at least two recent
+ * 2. Gap re-entry gate: Absence of exposure for >= 14 days resets allowed stage to Stage 1.
+ * 3. Response-gated progression: Stage advancement (K -> K+1) requires at least two recent
  *    Stage-K exposures with explicit normal follow-up tissue evidence. Missing evidence fails closed.
- * 5. Symptom regression: Reported mild/moderate/severe tissue symptoms regress or withhold stage.
+ * 4. Symptom regression: Reported mild/moderate/severe tissue symptoms regress or withhold stage.
+ *
+ * Consecutive-calendar-day spacing is intentionally date-scoped through
+ * `hasAdjacentMechanicalExposure` and the coverage/ranking path (#859). It is not a
+ * horizon-wide stage/tissue verdict.
  */
 export function evaluateMechanicalStageProgression(
   input: EvaluateMechanicalProgressionInput,
@@ -130,23 +152,8 @@ export function evaluateMechanicalStageProgression(
   // continuity window: >=14 days without exposure is re-entry by policy.
   const recentExposures = pastExposures.filter(e => e.date > lookback14Days);
 
-  // Spacing rule: no high-impact on consecutive days
-  const yesterday = addDaysToLocalDateString(asOfDate, -1);
-  if (lastExposure && lastExposure.date === yesterday) {
-    return {
-      stage: lastExposure.stage,
-      eligible: false,
-      status: 'withheld',
-      withheldReason: 'Mechanical exposure is withheld on consecutive days to allow connective tissue remodeling.',
-      recentExposureCount: recentExposures.length,
-      lastExposureDate: lastExposure.date,
-      lastExposureStage: lastExposure.stage,
-      tissueResponse: { verdict: 'none_recent', affectedRegions: [], notes: ['Exposure occurred yesterday'] },
-      eligibleWorkoutIds: [],
-    };
-  }
-
-  // 3. Analyze tissue responses following recent exposures
+  // 3. Analyze tissue responses following recent exposures. Date-specific adjacency
+  // is enforced later from actual/projected coverage history so it cannot blank a week.
   const checkinsByDate = new Map(checkinHistory.map(c => [c.date, c.checkin]));
   const todayCheckin = checkinsByDate.get(asOfDate);
 
