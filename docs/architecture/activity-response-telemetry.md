@@ -42,7 +42,17 @@ workout-step linkage provide that semantic role.
 
 The existing optional original-FIT acquisition path decodes Records, Workout Steps and
 Laps in memory. Issue #850 extends that transient evidence with compact Lap timing,
-performed workout-step linkage and lap summary values. No new Garmin request is introduced.
+performed workout-step linkage and lap summary values. Normal live sync derives the response
+from the same original-FIT acquisition already used by HR-fidelity enrichment, so it adds no
+second request for an activity.
+
+Historical documents created before this response schema can be enriched explicitly with
+`uv run python -m garmin_sync backfill-activity-response`. That operator command necessarily
+makes one paced original-FIT request per qualifying historical activity because the raw FIT
+trace was deliberately never persisted. It runs under the same per-user Garmin execution
+lease as other Garmin operations, uses the configured backfill pacing, persists refreshed
+token state on every exit path, and returns failure on rate-limit/processing failures. It is
+not part of scheduled daily ingestion.
 
 While the native trace is still in memory, activity_response.py derives:
 
