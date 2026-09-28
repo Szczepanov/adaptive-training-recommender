@@ -64,7 +64,7 @@ describe('contextBriefExport', () => {
     });
     const body = { appendChild, removeChild };
     const link = { href: '', download: '', click, parentNode: null as unknown };
-    const createObjectURL = vi.fn((_blob: Blob) => 'blob:context-brief');
+    const createObjectURL = vi.fn((blob: Blob) => `blob:context-brief:${blob.type}`);
     const revokeObjectURL = vi.fn();
 
     vi.stubGlobal('document', {
@@ -78,7 +78,7 @@ describe('contextBriefExport', () => {
     expect(link.download).toBe('context-brief_diagnostic_2026-09-15_to_2026-09-28.md');
     expect(click).toHaveBeenCalledOnce();
     expect(removeChild).toHaveBeenCalledWith(link);
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:context-brief');
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:context-brief:text/markdown;charset=utf-8');
 
     const blob = createObjectURL.mock.calls[0]?.[0] as Blob;
     expect(blob.type).toBe('text/markdown;charset=utf-8');
