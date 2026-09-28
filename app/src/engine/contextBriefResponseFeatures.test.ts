@@ -303,12 +303,15 @@ describe('planning vs diagnostic export (#814)', () => {
     const brief = '# Brief\n\n## 2. Completed training (recorded by the wearable)\n\nrows\n\n## 3. Next\n';
     const context = { history: [session], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20' };
 
-    it('planning replaces the lap digest with the semantic summary', () => {
+    it('planning keeps the semantic summary plus bounded quality execution evidence, without the compact lap digest', () => {
         const text = injectActivityTelemetryIntoContextBrief(brief, [session], true, context);
         expect(text).toContain('### Training-response features');
-        expect(text).not.toContain('| Lap |');
+        expect(text).toContain('### Quality-session execution detail (bounded)');
+        expect(text).toContain('| Lap | Duration | Avg power | Avg HR |');
+        expect(text).toContain('| 7 | 20:00 | 130 W | 128 bpm |');
         expect(text).not.toContain('7 laps');
-        expect(text.indexOf('Training-response features')).toBeLessThan(text.indexOf('## 3. Next'));
+        expect(text.indexOf('Training-response features')).toBeLessThan(text.indexOf('Quality-session execution detail'));
+        expect(text.indexOf('Quality-session execution detail')).toBeLessThan(text.indexOf('## 3. Next'));
     });
 
     it('keeps the compact digest for a key session with no available feature', () => {
