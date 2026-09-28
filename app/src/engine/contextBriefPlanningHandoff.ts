@@ -143,6 +143,27 @@ function recommendationIntensityRank(recommendation: DailyRecommendation): numbe
     return null;
 }
 
+function canonicalActivityIntensityRank(activity: NormalizedGarminActivity): number | null {
+    if (activity.intensityClassificationVersion !== undefined && activity.intensityClassificationVersion >= 2) {
+        return ACTUAL_INTENSITY_RANK[activity.intensityTag.toLowerCase()] ?? null;
+    }
+    switch (activity.stimulusDomain) {
+        case 'recovery':
+        case 'endurance':
+            return 1;
+        case 'tempo':
+            return 2;
+        case 'threshold':
+        case 'vo2':
+        case 'anaerobic':
+        case 'mixed':
+        case 'race':
+            return 3;
+        default:
+            return null;
+    }
+}
+
 function externalIntensityRank(session: UpcomingExternalPlanSession): number {
     switch (session.intensity) {
         case 'recovery': return 0;
@@ -171,15 +192,17 @@ function deriveAdherenceDelta(
             : externalSession ? externalIntensityRank(externalSession) : null;
     const plannedRestOrRecovery = restDirective !== null || plannedIntensity === 0;
     const actualIntensity = activities.reduce<number | null>((highest, activity) => {
-        const rank = ACTUAL_INTENSITY_RANK[activity.intensityTag.toLowerCase()];
-        if (rank === undefined) return highest;
+        const rank = canonicalActivityIntensityRank(activity);
+        if (rank === null) return highest;
         return highest === null ? rank : Math.max(highest, rank);
     }, null);
     const highCost = activities.some(activity => activity.sessionCost === 'high' || activity.sessionCost === 'very_high');
+    const observedModerateOrHard = activities.some(activity =>
+        (ACTUAL_INTENSITY_RANK[activity.intensityTag.toLowerCase()] ?? 0) >= ACTUAL_INTENSITY_RANK.moderate);
 
     if (plannedRestOrRecovery) {
         if (activities.length === 0) return { delta: 'ON_PLAN', alert: null };
-        if (highCost || (actualIntensity !== null && actualIntensity >= ACTUAL_INTENSITY_RANK.moderate)) {
+        if (highCost || observedModerateOrHard) {
             const measuredLoads = activities
                 .map(activity => activity.activityTrainingLoad)
                 .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
