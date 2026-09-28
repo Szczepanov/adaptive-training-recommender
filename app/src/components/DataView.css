@@ -247,6 +247,7 @@
 }
 
 .brief-copy {
+  min-height: var(--touch-target-min, 44px);
   padding: 0.5rem 1rem;
   border-radius: 6px;
   cursor: pointer;
