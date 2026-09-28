@@ -142,11 +142,13 @@ function validPayload(value: unknown): value is Omit<DecisionContextRecord, 'con
     } else if (inputs !== null) return false;
 
     const facts = value.performedTrainingFacts;
-    if (facts !== null && (!isObject(facts) || !exactKeys(facts,
-        ['asOfDate', 'windowDays', 'revision', 'exposures', 'coverageCredits'])
-        || facts.asOfDate !== value.date || !Number.isSafeInteger(facts.windowDays)
-        || (facts.windowDays as number) < 1 || typeof facts.revision !== 'string' || !facts.revision
-        || !Array.isArray(facts.exposures) || !Array.isArray(facts.coverageCredits))) return false;
+    if (value.minimumSafetyStatus === 'complete') {
+        if (!isObject(facts) || !exactKeys(facts,
+            ['asOfDate', 'windowDays', 'revision', 'exposures', 'coverageCredits'])
+            || facts.asOfDate !== value.date || !Number.isSafeInteger(facts.windowDays)
+            || (facts.windowDays as number) < 1 || typeof facts.revision !== 'string' || !facts.revision
+            || !Array.isArray(facts.exposures) || !Array.isArray(facts.coverageCredits)) return false;
+    } else if (facts !== null) return false;
     if (value.mechanicalCheckinHistory !== undefined
         && (!Array.isArray(value.mechanicalCheckinHistory)
             || !value.mechanicalCheckinHistory.every(item => isObject(item)
