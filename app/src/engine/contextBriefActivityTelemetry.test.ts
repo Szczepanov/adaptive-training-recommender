@@ -79,7 +79,7 @@ describe('renderContextBriefActivityTelemetry', () => {
                     segmentCountTotal: 1,
                     segmentsTruncated: false,
                     powerDurationPeaks: [
-                        { durationSeconds: 5, powerWatts: 710, confidence: 'high', activityHalf: 'first' },
+                        { durationSeconds: 5, powerWatts: 710, confidence: 'high', activityHalf: 'first', elapsedBeforeSeconds: 420 },
                         { durationSeconds: 60, powerWatts: 320, confidence: 'high' },
                     ],
                     segments: [{
@@ -88,7 +88,7 @@ describe('renderContextBriefActivityTelemetry', () => {
                         identitySource: 'fit_workout_step',
                         startOffsetSeconds: 420,
                         durationSeconds: 10,
-                        prescribedTarget: { kind: 'power_watts', value: 700 },
+                        prescribedTarget: { kind: 'power_zone', value: 4 },
                         averagePowerWatts: 680,
                         peak5sPowerWatts: 710,
                         maxCadenceRpm: 122,
@@ -100,9 +100,9 @@ describe('renderContextBriefActivityTelemetry', () => {
         ]);
 
         expect(text).toContain('Source resolution: power ~1 s · HR ~1 s · cadence ~2 s');
-        expect(text).toContain('Power-duration peaks: 5s 710 W');
+        expect(text).toContain('Power-duration peaks: 5s 710 W (high, first half, after 7:00 elapsed)');
         expect(text).toContain('| # | Type | Identity | Start | Duration |');
-        expect(text).toContain('| 1 | sprint | fit_workout_step | 7:00 | 0:10 | 700 W |');
+        expect(text).toContain('| 1 | sprint | fit_workout_step | 7:00 | 0:10 | Power zone 4 |');
         expect(text).toContain('| 171 bpm | high |');
         expect(text).not.toContain('raw sample');
     });
