@@ -1416,6 +1416,120 @@ def run_export_training_occurrence_evidence_cmd(args: list[str] | None = None) -
         return 1
 
 
+def run_backfill_training_occurrences_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Backfill canonical single-source PerformedTrainingOccurrence records for historical "
+            "Garmin activities (Issue #870)."
+        )
+    )
+    parser.add_argument("--days", type=int, default=90, help="Trailing days (default 90)")
+    parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
+    parser.add_argument("--end-date", type=str, default=None, help="Inclusive end date YYYY-MM-DD")
+    parser.add_argument(
+        "--user-id",
+        type=str,
+        default=None,
+        help="Target application User ID (or APP_USER_ID env var)",
+    )
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Audit and plan without making writes (default)",
+    )
+    mode_group.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply backfill transactions with create-only semantics",
+    )
+
+    parsed_args = parser.parse_args(args)
+
+    from datetime import date
+
+    from .firestore_repository import init_firestore_client
+    from .training_occurrence_backfill import (
+        apply_training_occurrence_backfill,
+        audit_training_occurrence_backfill,
+        plan_training_occurrence_backfill,
+    )
+
+    # Date window validation
+    if (parsed_args.start_date is None) != (parsed_args.end_date is None):
+        print("Error: --start-date and --end-date must be provided together.")
+        return 1
+
+    start_date_str, end_date_str = _resolve_date_range(parsed_args, default_days=90)
+    start_dt = date.fromisoformat(start_date_str)
+    end_dt = date.fromisoformat(end_date_str)
+    if start_dt > end_dt:
+        print(f"Error: start_date ({start_date_str}) must be <= end_date ({end_date_str}).")
+        return 1
+
+    if (end_dt - start_dt).days > 366:
+        print("Error: Window exceeds 366-day safety maximum.")
+        return 1
+
+    try:
+        settings = load_settings()
+        user_id = (parsed_args.user_id or settings.app_user_id or "").strip()
+        if not user_id or "/" in user_id or "\\" in user_id or ".." in user_id:
+            print(f"Error: Invalid concrete user_id: {user_id!r}")
+            return 1
+
+        db = init_firestore_client(settings.firebase_credentials_path)
+        plan = plan_training_occurrence_backfill(db, user_id, start_date_str, end_date_str)
+
+        apply_mode = parsed_args.apply
+        if not apply_mode:
+            print("=== TRAINING OCCURRENCE BACKFILL (DRY RUN) ===")
+            print(f"window: {start_date_str} to {end_date_str}")
+            print(f"user: {user_id}")
+            print(f"activitiesScanned: {plan.activities_scanned}")
+            print(f"eligibleActivities: {len(plan.eligible_candidates)}")
+            print(f"alreadyLinked: {plan.already_linked_count}")
+            print(f"wouldCreate: {plan.would_create_count}")
+            print(f"anomalies: {len(plan.anomalies)}")
+            for anomaly in plan.anomalies:
+                print(f"  [{anomaly.anomaly_type}] {anomaly.message}")
+            if plan.anomalies:
+                return 1
+            return 0
+
+        print("=== APPLYING TRAINING OCCURRENCE BACKFILL ===")
+        print(f"window: {start_date_str} to {end_date_str}")
+        print(f"user: {user_id}")
+        apply_result = apply_training_occurrence_backfill(db, plan)
+
+        print(f"activitiesScanned: {apply_result.activities_scanned}")
+        print(f"plannedCandidates: {apply_result.planned_candidates}")
+        print(f"created: {apply_result.created}")
+        print(f"alreadyLinkedBeforeApply: {apply_result.already_linked_before_apply}")
+        print(f"concurrentlyLinked: {apply_result.concurrently_linked}")
+        print(f"failed: {apply_result.failed}")
+        print(f"anomalies: {len(apply_result.anomalies)}")
+        for anomaly in apply_result.anomalies:
+            print(f"  [{anomaly.anomaly_type}] {anomaly.message}")
+
+        print("=== POST-WRITE VERIFICATION AUDIT ===")
+        audit_result = audit_training_occurrence_backfill(db, user_id, start_date_str, end_date_str)
+        print(f"eligibleActivitiesChecked: {audit_result.eligible_activities_checked}")
+        print(f"verifiedLinks: {audit_result.verified_links}")
+        print(f"missingLinks: {audit_result.missing_links}")
+        print(f"invalidLinks: {audit_result.invalid_links}")
+        print(f"auditPassed: {audit_result.audit_passed}")
+        for issue in audit_result.issues:
+            print(f"  [audit_issue] {issue}")
+
+        if apply_result.failed > 0 or not audit_result.audit_passed:
+            return 1
+        return 0
+    except Exception as error:
+        log_exception(logger, "backfill training occurrences", error)
+        return 1
+
+
 def run_export_activities_cmd(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Export recent activity telemetry to JSON for AI agent planning."
@@ -1632,6 +1746,26 @@ def build_parser() -> argparse.ArgumentParser:
     export_occurrence_evidence_parser.add_argument("--with-fit", action="store_true")
     export_occurrence_evidence_parser.add_argument("--fit-output", type=str, default=None)
 
+    backfill_occurrences_parser = subparsers.add_parser(
+        "backfill-training-occurrences",
+        help="Backfill canonical single-source PerformedTrainingOccurrence records for historical Garmin activities (Issue #870)",
+    )
+    backfill_occurrences_parser.add_argument("--days", type=int, default=90)
+    backfill_occurrences_parser.add_argument("--start-date", type=str, default=None)
+    backfill_occurrences_parser.add_argument("--end-date", type=str, default=None)
+    backfill_occurrences_parser.add_argument("--user-id", type=str, default=None)
+    backfill_occurrences_mode = backfill_occurrences_parser.add_mutually_exclusive_group()
+    backfill_occurrences_mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Audit and plan without making writes (default)",
+    )
+    backfill_occurrences_mode.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply backfill transactions with create-only semantics",
+    )
+
     push_workout_parser = subparsers.add_parser("push-workout", help="Push one queued workout")
     push_workout_parser.add_argument("--date", type=str, default=None)
 
@@ -1685,6 +1819,8 @@ def dispatch_command(command: str) -> int:
         return run_compare_eight_sleep_transports_cmd(args_list)
     if command == "export-training-occurrence-evidence":
         return run_export_training_occurrence_evidence_cmd(args_list)
+    if command == "backfill-training-occurrences":
+        return run_backfill_training_occurrences_cmd(args_list)
     if command == "export-identity-replay":
         return run_export_identity_replay_cmd(args_list)
     if command == "audit":

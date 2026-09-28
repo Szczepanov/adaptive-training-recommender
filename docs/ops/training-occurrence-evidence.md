@@ -14,6 +14,25 @@ path, following symlinks before checking. Step 3 writes wherever it is told beca
 is allow-listed aggregates; keep it in the same directory until the aggregate has been reviewed. Only step 3's aggregate report is
 eligible for review, and only a separately written analysis belongs in `docs/analysis/`.
 
+0. **Pre-occurrence historical activity backfill (Python, idempotent data migration, issue #870).**
+   Historical activities created prior to occurrence ingestion lack canonical occurrence documents.
+   To eliminate the historical coverage gap without changing live recommendation authority:
+
+   ```bash
+   # Dry-run audit (default, zero writes):
+   uv run python -m garmin_sync backfill-training-occurrences --user-id <uid> --start-date 2026-06-30 --end-date 2026-09-27 --dry-run
+
+   # Apply transactions with create-only semantics:
+   uv run python -m garmin_sync backfill-training-occurrences --user-id <uid> --start-date 2026-06-30 --end-date 2026-09-27 --apply
+   ```
+
+   The backfill:
+   - Scans `users/{uid}/activities` in the specified window (up to 366 days).
+   - Treats `users/{uid}/performedOccurrenceSourceLinks` as the per-source cutover boundary: activities already linked to an occurrence (including manual unlinks, keep_separates, and merges) are never overwritten or re-linked.
+   - Applies individual Firestore transactions per unlinked activity with create-only semantics to create `performedTrainingOccurrences` and `performedOccurrenceSourceLinks`.
+   - Normalizes Garmin modality (`cycling`, `running`, `swimming`, `walking`, `cardio`, `strength`).
+   - Runs a post-write verification audit to ensure 100% of eligible activities possess valid source links and target occurrences.
+
 1. **Export (Python, needs explicit user authorization).** From the repository root:
 
    ```bash
