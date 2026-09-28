@@ -3,6 +3,7 @@ import type { NormalizedGarminActivity } from './models';
 import {
     injectActivityTelemetryIntoContextBrief,
     renderContextBriefActivityTelemetry,
+    renderMorningQualityActivityTelemetry,
 } from './contextBriefActivityTelemetry';
 
 function activity(
@@ -101,6 +102,24 @@ describe('renderContextBriefActivityTelemetry', () => {
         expect(text).not.toContain('raw sample');
     });
 
+    it('renders running dynamics in diagnostic detail even when no cycling power fields exist', () => {
+        const text = renderContextBriefActivityTelemetry([
+            activity({
+                type: 'running',
+                normalizedPower: undefined,
+                intensityFactor: undefined,
+                runningDynamics: {
+                    groundContactTimeMs: 241,
+                    strideLengthM: 1.28,
+                    avgRunningPowerWatts: 305,
+                },
+            }),
+        ]);
+
+        expect(text).toContain('#### 2026-08-19 — Running — hard');
+        expect(text).toContain('Running dynamics: avg running power 305 W · stride 1.28 m · GCT 241 ms');
+    });
+
     it('renders partial telemetry without inventing missing power data', () => {
         const text = renderContextBriefActivityTelemetry([
             activity({
@@ -112,6 +131,190 @@ describe('renderContextBriefActivityTelemetry', () => {
         expect(text).toContain('Heart-rate zones');
         expect(text).not.toContain('Power summary');
         expect(text).not.toContain('Power zones');
+    });
+});
+
+describe('renderMorningQualityActivityTelemetry', () => {
+    it('expands moderate tempo cycling with bounded multi-resolution power evidence', () => {
+        const lines = renderMorningQualityActivityTelemetry(activity({
+            intensityTag: 'moderate',
+            stimulusDomain: 'tempo',
+            variabilityIndex: 1.04,
+            powerInZones: [
+                { zoneNumber: 2, secondsInZone: 1200, lowBoundary: 150 },
+                { zoneNumber: 3, secondsInZone: 1800, lowBoundary: 193 },
+            ],
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1, hrSeconds: 1, cadenceSeconds: 1 },
+                segmentCountTotal: 2,
+                segmentsTruncated: false,
+                powerDurationPeaks: [
+                    { durationSeconds: 5, powerWatts: 640, confidence: 'high' },
+                    { durationSeconds: 300, powerWatts: 255, confidence: 'high' },
+                ],
+                steadyHalves: {
+                    firstPowerWatts: 201,
+                    secondPowerWatts: 205,
+                    firstHrBpm: 137,
+                    secondHrBpm: 143,
+                    firstCadenceRpm: 88,
+                    secondCadenceRpm: 90,
+                },
+                segments: [
+                    {
+                        segmentIndex: 1,
+                        segmentType: 'work',
+                        identitySource: 'fit_workout_step',
+                        durationSeconds: 900,
+                        prescribedTarget: { kind: 'power_range_watts', low: 193, high: 229 },
+                        averagePowerWatts: 211,
+                        averageHrBpm: 145,
+                        endHrBpm: 151,
+                        averageCadenceRpm: 89,
+                        firstThirdPowerWatts: 209,
+                        middleThirdPowerWatts: 212,
+                        lastThirdPowerWatts: 212,
+                        evidenceConfidence: 'high',
+                    },
+                    {
+                        segmentIndex: 2,
+                        segmentType: 'recovery',
+                        identitySource: 'fit_workout_step',
+                        durationSeconds: 300,
+                        averagePowerWatts: 130,
+                        evidenceConfidence: 'high',
+                    },
+                ],
+            },
+        }));
+
+        const text = lines.join('\n');
+        expect(text).toContain('Quality-session detail (display-only)');
+        expect(text).toContain('Session detail: VI 1.04');
+        expect(text).toContain('Power zones:');
+        expect(text).toContain('Power-duration peaks: 5s 640 W');
+        expect(text).toContain('5m 255 W');
+        expect(text).toContain('Deterministic halves: power 201→205 W');
+        expect(text).toContain('| 1 | work | fit_workout_step | 15:00 | 193–229 W |');
+    });
+
+    it('exports running interval pace, HR/power laps and running dynamics', () => {
+        const lines = renderMorningQualityActivityTelemetry(activity({
+            type: 'running',
+            intensityTag: 'hard',
+            stimulusDomain: 'vo2',
+            normalizedPower: undefined,
+            intensityFactor: undefined,
+            runningDynamics: {
+                groundContactTimeMs: 238,
+                groundContactBalanceLeftPct: 49.2,
+                verticalOscillationCm: 8.1,
+                verticalRatioPct: 7.4,
+                strideLengthM: 1.31,
+                avgRunningPowerWatts: 318,
+                maxRunningPowerWatts: 472,
+            },
+            laps: [
+                {
+                    lapIndex: 1,
+                    durationSeconds: 240,
+                    distanceMeters: 1000,
+                    averageSpeedMps: 1000 / 240,
+                    averagePowerWatts: 352,
+                    averageHrBpm: 166,
+                },
+                {
+                    lapIndex: 2,
+                    durationSeconds: 180,
+                    distanceMeters: 600,
+                    averageSpeedMps: 600 / 180,
+                    averagePowerWatts: 268,
+                    averageHrBpm: 148,
+                },
+            ],
+        }));
+
+        const text = lines.join('\n');
+        expect(text).toContain('Running dynamics: avg running power 318 W · max running power 472 W');
+        expect(text).toContain('GCT balance 49.2/50.8 L/R');
+        expect(text).toContain('Interval/lap detail:');
+        expect(text).toContain('| 1 | 4:00 | 1 km | 4:00/km | 352 W | 166 bpm |');
+    });
+
+    it('uses the hard tag only as a fallback when stimulusDomain is absent', () => {
+        expect(renderMorningQualityActivityTelemetry(activity({
+            intensityTag: 'hard',
+            stimulusDomain: 'unknown',
+            variabilityIndex: 1.08,
+        }))).toEqual([]);
+
+        const legacyText = renderMorningQualityActivityTelemetry(activity({
+            intensityTag: 'hard',
+            stimulusDomain: undefined,
+            variabilityIndex: 1.08,
+        })).join('\n');
+        expect(legacyText).toContain('Quality-session detail (display-only)');
+    });
+
+    it('caps response segments after sorting by semantic segment index', () => {
+        const segments = Array.from({ length: 25 }, (_, offset) => {
+            const segmentIndex = 25 - offset;
+            return {
+                segmentIndex,
+                segmentType: 'work' as const,
+                identitySource: 'fit_workout_step' as const,
+                durationSeconds: 60,
+                averagePowerWatts: 200 + segmentIndex,
+                evidenceConfidence: 'high' as const,
+            };
+        });
+        const text = renderMorningQualityActivityTelemetry(activity({
+            stimulusDomain: 'threshold',
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1 },
+                segmentCountTotal: 25,
+                segmentsTruncated: false,
+                powerDurationPeaks: [],
+                segments,
+            },
+        })).join('\n');
+
+        expect(text).toContain('| 1 | work | fit_workout_step |');
+        expect(text).toContain('| 20 | work | fit_workout_step |');
+        expect(text).not.toContain('| 21 | work | fit_workout_step |');
+        expect(text).toContain('this view shows first 20 persisted segments');
+    });
+
+    it('caps running lap detail and reports omitted laps', () => {
+        const laps = Array.from({ length: 25 }, (_, offset) => ({
+            lapIndex: offset + 1,
+            durationSeconds: 180,
+            distanceMeters: 600,
+            averageSpeedMps: 600 / 180,
+            averagePowerWatts: 280 + offset,
+            averageHrBpm: 150 + offset,
+        }));
+        const text = renderMorningQualityActivityTelemetry(activity({
+            type: 'running',
+            stimulusDomain: 'vo2',
+            laps,
+        })).join('\n');
+
+        expect(text).toContain('| 20 | 3:00 | 0.6 km | 5:00/km |');
+        expect(text).not.toContain('| 21 | 3:00 | 0.6 km | 5:00/km |');
+        expect(text).toContain('5 additional lap(s) omitted from the morning brief');
+    });
+
+    it('keeps ordinary endurance sessions compact even when detailed telemetry exists', () => {
+        expect(renderMorningQualityActivityTelemetry(activity({
+            // Canonical #809 domain wins over an inconsistent tag on modern records.
+            intensityTag: 'hard',
+            stimulusDomain: 'endurance',
+            variabilityIndex: 1.02,
+            powerInZones: [{ zoneNumber: 2, secondsInZone: 3000, lowBoundary: 150 }],
+        }))).toEqual([]);
     });
 });
 

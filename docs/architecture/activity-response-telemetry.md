@@ -139,6 +139,16 @@ Planning export is bounded: repetition lists are capped, only selected 5-second/
 the raw lap digest when available. Diagnostic export can show all persisted semantic
 segments and fixed MMP windows, but still never contains native samples.
 
+The daily morning handoff has a separate bounded rule: it keeps ordinary endurance/recovery
+activities at the existing summary level, but expands the previous day's quality cycling or
+running session. Canonical quality selection uses the persisted stimulus domain; only historical
+records with no `stimulusDomain` may fall back to a hard legacy `intensityTag`. An explicit
+`stimulusDomain: unknown` remains compact. Cycling quality can expose power/HR zones, the fixed
+persisted MMP family, deterministic steady halves and up to the first 20 response segments in
+semantic segment-index order. Running quality exposes available running dynamics plus up to 20
+laps with duration, distance, pace, average power and average HR. The detail is observational/
+export-only; selecting it for display does not grant recommendation authority.
+
 All HR use continues through activityHrFidelity.ts. New segment-level HR does not create a
 new HR authority or bypass measurement-quality gating.
 
