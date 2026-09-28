@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DailyRecommendation, Recommendation, RecommendationAudit } from '../engine/models';
 import { TEMPLATES } from '../engine/templates';
+import { POLICY_VERSION } from '../engine/policy';
 
 const firestore = vi.hoisted(() => {
     const deleteMarker = Symbol('delete-field');
@@ -94,7 +95,7 @@ describe('RecommendationService persistence', () => {
         const template = TEMPLATES[0];
         firestore.getDoc.mockResolvedValue({ exists: () => false });
         const audit: RecommendationAudit = {
-            policyVersion: 'policy-test', evaluatedAt: '2026-09-28T08:30:00.000Z',
+            policyVersion: POLICY_VERSION, evaluatedAt: '2026-09-28T08:30:00.000Z',
             decisionContextRevision: 'history-r1', safetyStatus: 'complete',
             history: { completedEventCount: 0, unmatchedEventCount: 0, sourceStatuses: { activities: 'AVAILABLE', recommendations: 'AVAILABLE', manualTraining: 'MISSING' } },
             envelope: { safetyRestrictedModalityCount: 0, planMaxAllowableTier: 'Hard' },
@@ -133,6 +134,46 @@ describe('RecommendationService persistence', () => {
         await service.saveRecommendation('athlete', '2026-09-28', recommendation, capture);
         expect(firestore.setDoc).toHaveBeenCalledOnce();
         expect(firestore.batch.set).not.toHaveBeenCalled();
+    });
+
+    it('refuses a context binding when its policy or evaluation instant differs from the audit', async () => {
+        const template = TEMPLATES[0];
+        const evaluatorInputs = {
+            userId: 'athlete', date: '2026-09-28', readiness: { subjective: {}, objective: {} }, context: {},
+            events: [], fixedActivities: [], authoredPlanBlocks: [], trainingIntentProfile: null,
+            preferences: null, externalPlan: null, externalRest: null, scheduleOverlays: [],
+            confirmedProgressionOverrides: new Map<string, number>(), mechanicalCheckinHistory: [],
+        } as never;
+        const baseAudit: RecommendationAudit = {
+            policyVersion: POLICY_VERSION, evaluatedAt: '2026-09-28T08:30:00.000Z',
+            decisionContextRevision: 'history-r1', safetyStatus: 'complete',
+            history: { completedEventCount: 0, unmatchedEventCount: 0, sourceStatuses: { activities: 'AVAILABLE', recommendations: 'AVAILABLE', manualTraining: 'MISSING' } },
+            envelope: { safetyRestrictedModalityCount: 0, planMaxAllowableTier: 'Hard' },
+            candidateScores: [], droppedContributorObjectives: [], knowledgeLineage: [],
+        };
+        const service = new RecommendationService();
+        firestore.getDoc.mockResolvedValue({ exists: () => false });
+
+        const wrongPolicy = await service.saveRecommendation('athlete', '2026-09-28', {
+            template, mode: 'train', rationale: 'Keep it easy.',
+            recommendationAudit: { ...baseAudit, policyVersion: 'different-policy' },
+        }, {
+            evaluatedAt: baseAudit.evaluatedAt, minimumSafetyStatus: 'complete', evaluatorInputs,
+            performedTrainingFacts: null, mechanicalCheckinHistory: [],
+        });
+        expect(wrongPolicy).toBeNull();
+        expect(firestore.batch.commit).not.toHaveBeenCalled();
+        expect(firestore.setDoc).not.toHaveBeenCalled();
+
+        const wrongInstant = await service.saveRecommendation('athlete', '2026-09-28', {
+            template, mode: 'train', rationale: 'Keep it easy.', recommendationAudit: baseAudit,
+        }, {
+            evaluatedAt: '2026-09-28T08:31:00.000Z', minimumSafetyStatus: 'complete', evaluatorInputs,
+            performedTrainingFacts: null, mechanicalCheckinHistory: [],
+        });
+        expect(wrongInstant).toBeNull();
+        expect(firestore.batch.commit).not.toHaveBeenCalled();
+        expect(firestore.setDoc).not.toHaveBeenCalled();
     });
 
     it('stores a write-once not-applicable gate record without evaluator history', async () => {

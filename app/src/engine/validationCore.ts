@@ -1525,11 +1525,15 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
         errors.push({ field: 'recommendationAudit.knowledgeLineage', message: 'Schema version 4 requires recommendation knowledge lineage' });
     }
     if (recommendationAudit?.decisionContext) {
-        const contextRevision = Number.isSafeInteger(raw.revision) && raw.revision >= 1 ? raw.revision : 1;
-        const expectedPath = `users/${raw.userId}/daily_recommendations/${raw.date}/decision_contexts/${contextRevision}`;
-        if (recommendationAudit.decisionContext.revision !== contextRevision
-            || recommendationAudit.decisionContext.path !== expectedPath) {
-            errors.push({ field: 'recommendationAudit.decisionContext', message: 'Decision context must bind this user, date, and recommendation revision' });
+        if (!Number.isSafeInteger(raw.revision) || raw.revision < 1) {
+            errors.push({ field: 'recommendationAudit.decisionContext', message: 'Decision context requires an explicit positive recommendation revision' });
+        } else {
+            const contextRevision = raw.revision;
+            const expectedPath = `users/${raw.userId}/daily_recommendations/${raw.date}/decision_contexts/${contextRevision}`;
+            if (recommendationAudit.decisionContext.revision !== contextRevision
+                || recommendationAudit.decisionContext.path !== expectedPath) {
+                errors.push({ field: 'recommendationAudit.decisionContext', message: 'Decision context must bind this user, date, and recommendation revision' });
+            }
         }
     }
 

@@ -146,6 +146,13 @@ export class RecommendationService {
             const contextPath = contextRecord
                 ? `users/${userId}/${this.collectionPath}/${date}/decision_contexts/${contextRecord.recommendationRevision}`
                 : undefined;
+            if (contextRecord && recommendationAudit && (
+                contextRecord.policyVersion !== recommendationAudit.policyVersion
+                || contextRecord.evaluatedAt !== recommendationAudit.evaluatedAt
+            )) {
+                console.warn('Refusing recommendation revision whose decision context does not match the audit policy/evaluation instant.');
+                return null;
+            }
             if (contextRecord && recommendationAudit && contextPath) {
                 recommendationAudit = {
                     ...recommendationAudit,
