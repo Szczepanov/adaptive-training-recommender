@@ -21,6 +21,31 @@ describe('Performed Session Comparison (M2.6 / ADR-0023)', () => {
         expect(paired.stepComparisons[0].entries).toHaveLength(2);
         expect(paired.summary.totalDurationSeconds).toBe(60);
     });
+    it('uses block rounds as the authoritative completion target when they differ from step sets', () => {
+        const definition: SessionDefinition = {
+            schemaVersion: 1, id: 'round-target', revision: 1, title: 'Circuit', intent: 'training',
+            blocks: [{
+                id: 'circuit', role: 'main', executionMode: 'circuit', rounds: 3,
+                steps: [{ id: 'row', kind: 'exercise', dose: { kind: 'repetition', sets: 1, reps: 8 } }],
+            }],
+        };
+        const entry = (id: string, setIndex: number): SessionEntry => ({
+            id, executionId: 'exec', stepId: 'row',
+            completedAt: `2026-09-01T12:0${setIndex}:00Z`,
+            createdAt: `2026-09-01T12:0${setIndex}:00Z`,
+            updatedAt: `2026-09-01T12:0${setIndex}:00Z`,
+            payload: { kind: 'repetition', setIndex, reps: 8 },
+        });
+
+        const partial = comparePlannedVsPerformed(definition, [entry('one', 1)]);
+        expect(partial.stepComparisons[0]).toMatchObject({ targetSets: 3, completedSets: 1, isComplete: false });
+        expect(partial.missingRequiredStepsCount).toBe(1);
+
+        const complete = comparePlannedVsPerformed(definition, [entry('one', 1), entry('two', 2), entry('three', 3)]);
+        expect(complete.stepComparisons[0]).toMatchObject({ targetSets: 3, completedSets: 3, isComplete: true });
+        expect(complete.missingRequiredStepsCount).toBe(0);
+    });
+
     it('compares planned definition against performed entries accurately', () => {
         const definition: SessionDefinition = {
             schemaVersion: 1,

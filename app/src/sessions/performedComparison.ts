@@ -5,6 +5,7 @@ import type {
     DurationEntryPayload,
     DistanceEntryPayload,
 } from './models';
+import { targetEntriesForGroupStep } from './groupProgression';
 import { completedPrescribedSets } from './workSets';
 
 export interface StepComparison {
@@ -70,15 +71,10 @@ export function comparePlannedVsPerformed(
             const stepEntries = entriesByStepId.get(step.id) ?? [];
             const isOptional = !!step.optional;
 
-            let targetSets = 1;
-            if (step.dose?.kind === 'repetition') {
-                targetSets = step.dose.sets;
-            } else if (step.dose?.kind === 'duration' && step.dose.sets) {
-                targetSets = step.dose.sets;
-            } else if (step.dose?.kind === 'distance' && step.dose.sets) {
-                targetSets = step.dose.sets;
-            }
-
+            // Keep completion accounting on the exact same target contract as runner
+            // progression. For rotating (and any imported) blocks, authored block rounds
+            // override a step's own set count.
+            const targetSets = targetEntriesForGroupStep(block, step);
             const completedSets = completedPrescribedSets(step, stepEntries);
             const isComplete = completedSets >= targetSets;
 
