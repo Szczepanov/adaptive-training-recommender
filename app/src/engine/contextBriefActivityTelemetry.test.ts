@@ -185,6 +185,21 @@ describe('renderMorningQualityActivityTelemetry', () => {
                 { zoneNumber: 2, secondsInZone: 1200, lowBoundary: 150 },
                 { zoneNumber: 3, secondsInZone: 1800, lowBoundary: 193 },
             ],
+            hrMeasurement: {
+                externalHrSensorPresent: null,
+                sourceForActivity: 'unknown',
+                provenanceConfidence: 'unknown',
+                sensorTechnology: 'unknown',
+                activityMotionRisk: 'unknown',
+                coveragePct: null,
+                longestGapSeconds: null,
+                signalQuality: 'unknown',
+                measurementConfidence: 'unknown',
+                summaryCompatibility: 'unknown',
+                artifactFlags: ['SUMMARY_LINEAGE_UNVERIFIED', 'SEGMENT_CONTEXT_UNVERIFIED'],
+                reasons: ['summary lineage is not verified'],
+                diagnosticVersion: 'hr-fidelity-v1',
+            },
             activityResponse: {
                 derivationVersion: 'multi-resolution-v1',
                 sourceResolution: { powerSeconds: 1, hrSeconds: 1, cadenceSeconds: 1 },
@@ -233,7 +248,13 @@ describe('renderMorningQualityActivityTelemetry', () => {
         const text = lines.join('\n');
         expect(text).toContain('Quality-session detail (display-only)');
         expect(text).toContain('Session detail: VI 1.04');
-        expect(text).toContain('Power zones:');
+        expect(text).not.toContain('Power zones:');
+        expect(text).not.toContain('Heart-rate zones:');
+        expect(text).toContain('HR Confidence: Unverified (Observational only)');
+        expect(text).not.toContain('multi-resolution-v1');
+        expect(text).not.toContain('SUMMARY_LINEAGE_UNVERIFIED');
+        expect(text).not.toContain('SEGMENT_CONTEXT_UNVERIFIED');
+        expect(text).not.toContain('Source resolution:');
         expect(text).toContain('Power-duration peaks: 5s 640 W');
         expect(text).toContain('5m 255 W');
         expect(text).toContain('Deterministic halves: power 201→205 W');
@@ -401,6 +422,8 @@ describe('renderPlanningQualityActivityTelemetry', () => {
         expect(text).toContain('### Quality-session execution detail (bounded)');
         expect(text).toContain('2026-08-19 — Road cycling — moderate · tempo · cost high');
         expect(text).toContain('Session detail: VI 1.08 · max HR 168 bpm · anaerobic TE 2.1');
+        expect(text).toContain('Power zones:');
+        expect(text).toContain('multi-resolution-v1');
         expect(text).toContain('Power-duration peaks: 5m 251 W');
         expect(text).toContain('Deterministic halves: power 198→207 W');
         expect(text).toContain('| 1 | work | fit_workout_step | 15:00 | 193–229 W |');
