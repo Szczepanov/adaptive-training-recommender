@@ -152,6 +152,131 @@ def test_threshold_fixture_keeps_exact_semantics_target_actual_and_thirds_separa
     assert five_seconds.confidence == "high"
 
 
+def test_terminal_low_target_active_step_is_reclassified_as_cooldown():
+    evidence = _structured_evidence(
+        [
+            {"duration": 600, "intensity": "warmup", "power": 150},
+            {"duration": 900, "intensity": "active", "power": 234, "target": 230},
+            {"duration": 300, "intensity": "recovery", "power": 120},
+            {"duration": 900, "intensity": "active", "power": 231, "target": 230},
+            {"duration": 300, "intensity": "recovery", "power": 120},
+            {"duration": 900, "intensity": "active", "power": 228, "target": 230},
+            {"duration": 300, "intensity": "recovery", "power": 120},
+            {"duration": 774, "intensity": "active", "power": 67, "target": 157.5},
+        ]
+    )
+    steps = list(evidence.workout_steps)
+    steps[-1] = replace(
+        steps[-1],
+        target_type="power_3s",
+        custom_target_value_low=140.0,
+        custom_target_value_high=175.0,
+        target_value=0.0,
+    )
+
+    response = derive_activity_response(
+        "road_biking",
+        replace(evidence, workout_steps=tuple(steps)),
+    )
+
+    assert response is not None
+    assert response.segments[-1].segment_type == "cooldown"
+    assert response.segments[-1].prescribed_target is not None
+    assert response.segments[-1].prescribed_target.kind == "power_3s_target"
+    assert response.segments[-1].prescribed_target.low == 140.0
+    assert response.segments[-1].prescribed_target.high == 175.0
+    work = [segment for segment in response.segments if segment.segment_type == "work"]
+    assert [round(segment.average_power_watts or 0) for segment in work] == [234, 231, 228]
+
+
+def test_explicit_cooldown_intensity_wins_over_bounded_power_target():
+    evidence = _structured_evidence(
+        [
+            {"duration": 900, "intensity": "active", "power": 230, "target": 230},
+            {"duration": 600, "intensity": "cooldown", "power": 145, "target": 157.5},
+        ]
+    )
+    steps = list(evidence.workout_steps)
+    steps[-1] = replace(
+        steps[-1],
+        custom_target_value_low=140.0,
+        custom_target_value_high=175.0,
+        target_value=0.0,
+    )
+
+    response = derive_activity_response(
+        "road_biking",
+        replace(evidence, workout_steps=tuple(steps)),
+    )
+
+    assert response is not None
+    assert [segment.segment_type for segment in response.segments] == ["work", "cooldown"]
+
+
+def test_terminal_zone2_active_step_after_zone4_work_is_reclassified_as_cooldown():
+    evidence = _structured_evidence(
+        [
+            {"duration": 900, "intensity": "active", "power": 234},
+            {"duration": 900, "intensity": "active", "power": 231},
+            {"duration": 774, "intensity": "active", "power": 110},
+        ]
+    )
+    steps = list(evidence.workout_steps)
+    for index in (0, 1):
+        steps[index] = replace(steps[index], target_type="power", target_value=4.0)
+    steps[-1] = replace(steps[-1], target_type="power", target_value=2.0)
+
+    response = derive_activity_response(
+        "road_biking",
+        replace(evidence, workout_steps=tuple(steps)),
+    )
+
+    assert response is not None
+    assert [segment.segment_type for segment in response.segments] == [
+        "work",
+        "work",
+        "cooldown",
+    ]
+
+
+def test_terminal_low_actual_without_target_uses_cooldown_fallback():
+    evidence = _structured_evidence(
+        [
+            {"duration": 900, "intensity": "active", "power": 234},
+            {"duration": 900, "intensity": "active", "power": 231},
+            {"duration": 774, "intensity": "active", "power": 67},
+        ]
+    )
+
+    response = derive_activity_response("road_biking", evidence)
+
+    assert response is not None
+    assert [segment.segment_type for segment in response.segments] == [
+        "work",
+        "work",
+        "cooldown",
+    ]
+
+
+def test_same_target_low_final_power_remains_real_work_failure():
+    evidence = _structured_evidence(
+        [
+            {"duration": 900, "intensity": "active", "power": 234, "target": 230},
+            {"duration": 900, "intensity": "active", "power": 231, "target": 230},
+            {"duration": 900, "intensity": "active", "power": 67, "target": 230},
+        ]
+    )
+
+    response = derive_activity_response("road_biking", evidence)
+
+    assert response is not None
+    assert [segment.segment_type for segment in response.segments] == [
+        "work",
+        "work",
+        "work",
+    ]
+
+
 def test_partial_semantic_lap_linkage_falls_back_instead_of_dropping_steps():
     evidence = _structured_evidence(
         [
