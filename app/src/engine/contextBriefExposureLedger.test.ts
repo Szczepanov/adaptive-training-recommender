@@ -321,6 +321,21 @@ describe('exposure ledger (#813)', () => {
             expect(sportSkill.status).toBe('unknown');
             expect(sportSkill.note).toContain('planner cadence counts historical exposure without a known workout variant');
 
+            const dueMaintenance = {
+                ...maintenance,
+                capabilities: [{
+                    ...maintenance.capabilities[0], status: 'due' as const,
+                    nextDueDate: AS_OF, notBeforeDate: AS_OF, targetDate: AS_OF,
+                    message: `due from ${AS_OF}; plannable`,
+                }],
+            };
+            const dueLedger = deriveExposureLedger(input({
+                performedFacts: [unknownVariantFact], capabilityMaintenance: dueMaintenance,
+            }));
+            expect(cap(dueLedger.capabilities, 'sport_skill').status).toBe('unknown');
+            expect(cap(dueLedger.capabilities, 'sport_skill').note)
+                .toContain('planner cadence counts historical exposure without a known workout variant');
+
             const noHistory = deriveExposureLedger(input({ capabilityMaintenance: maintenance }));
             expect(cap(noHistory.capabilities, 'sport_skill').note).not.toContain('planner cadence counts historical exposure');
             const unreadable = deriveExposureLedger(input({
