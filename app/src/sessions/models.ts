@@ -30,6 +30,13 @@ export interface SessionReferenceBinding {
     sessionSource: SessionSourceRef;
     occurrenceId?: string;
     prescriptionHash: string;
+    /**
+     * Optional 1:1 Garmin workout identity derived from the exact canonical export payload
+     * before any lossy execution adapter. These fields are a pair and are copied onto the
+     * SessionExecution when present.
+     */
+    fitWorkoutFingerprint?: string;
+    fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
 }
 
 export type ExerciseRef =
