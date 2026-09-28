@@ -78,7 +78,13 @@ function powerDurationLabel(seconds: number): string {
     return formatDuration(seconds);
 }
 
-function renderActivityResponse(activity: NormalizedGarminActivity, maxSegments?: number): string[] {
+type ActivityResponseRenderDetail = 'bounded' | 'diagnostic';
+
+function renderActivityResponse(
+    activity: NormalizedGarminActivity,
+    maxSegments?: number,
+    detail: ActivityResponseRenderDetail = 'bounded',
+): string[] {
     const response = activity.activityResponse;
     if (!response) return [];
     const intervalHr = hrEvidence(activity, 'INTERVAL_RESPONSE');
@@ -98,7 +104,12 @@ function renderActivityResponse(activity: NormalizedGarminActivity, maxSegments?
 
     if (response.powerDurationPeaks.length > 0) {
         lines.push(`  - Power-duration peaks: ${response.powerDurationPeaks
-            .map(peak => `${powerDurationLabel(peak.durationSeconds)} ${formatNumber(peak.powerWatts, 0)} W (${peak.confidence}${peak.activityHalf ? `, ${peak.activityHalf} half` : ''})`)
+            .map(peak => {
+                const timing = detail === 'diagnostic' && peak.elapsedBeforeSeconds !== undefined
+                    ? `, after ${formatDuration(peak.elapsedBeforeSeconds)} elapsed`
+                    : '';
+                return `${powerDurationLabel(peak.durationSeconds)} ${formatNumber(peak.powerWatts, 0)} W (${peak.confidence}${peak.activityHalf ? `, ${peak.activityHalf} half` : ''}${timing})`;
+            })
             .join(' · ')}`);
     }
     if (response.steadyHalves) {
@@ -119,12 +130,18 @@ function renderActivityResponse(activity: NormalizedGarminActivity, maxSegments?
         const viewLimit = visibleSegments.length < response.segments.length
             ? `; this view shows first ${visibleSegments.length} persisted segments`
             : '';
-        lines.push(
-            `  - Segments: ${response.segmentCountTotal}${response.segmentsTruncated ? ` total; persisted first ${response.segments.length}` : ''}${viewLimit}`,
-            '',
-            '  | # | Type | Identity | Duration | Target | Avg/peaks power | HR avg/end/max | Cadence avg/max | Power thirds | Confidence |',
-            '  |---:|---|---|---:|---|---|---|---|---|---|',
-        );
+        lines.push(`  - Segments: ${response.segmentCountTotal}${response.segmentsTruncated ? ` total; persisted first ${response.segments.length}` : ''}${viewLimit}`, '');
+        if (detail === 'diagnostic') {
+            lines.push(
+                '  | # | Type | Identity | Start | Duration | Target | Avg/peaks power | HR avg/end/max | Cadence avg/max | Power thirds | Final-third HR | Confidence |',
+                '  |---:|---|---|---:|---:|---|---|---|---|---|---|---|',
+            );
+        } else {
+            lines.push(
+                '  | # | Type | Identity | Duration | Target | Avg/peaks power | HR avg/end/max | Cadence avg/max | Power thirds | Confidence |',
+                '  |---:|---|---|---:|---|---|---|---|---|---|',
+            );
+        }
         for (const segment of visibleSegments) {
             const target = segment.prescribedTarget
                 ? segment.prescribedTarget.kind === 'power_watts' && segment.prescribedTarget.value !== undefined
@@ -149,30 +166,53 @@ function renderActivityResponse(activity: NormalizedGarminActivity, maxSegments?
                 .map(value => value === undefined ? '—' : formatNumber(value, 0)).join('/');
             const thirds = [segment.firstThirdPowerWatts, segment.middleThirdPowerWatts, segment.lastThirdPowerWatts]
                 .map(value => value === undefined ? '—' : formatNumber(value, 0)).join('/');
-            lines.push(`  | ${segment.segmentIndex} | ${segment.segmentType} | ${segment.identitySource} | ${formatDuration(segment.durationSeconds)} | ${target} | ${power || '—'} W | ${hr}${hr === 'withheld' ? '' : ' bpm'} | ${cadence} rpm | ${thirds} W | ${segment.evidenceConfidence} |`);
+            if (detail === 'diagnostic') {
+                const start = segment.startOffsetSeconds === undefined ? '—' : formatDuration(segment.startOffsetSeconds);
+                const finalThirdHr = intervalHr.withheld
+                    ? 'withheld'
+                    : segment.lastThirdHrBpm === undefined ? '—' : `${formatNumber(segment.lastThirdHrBpm, 0)} bpm`;
+                lines.push(`  | ${segment.segmentIndex} | ${segment.segmentType} | ${segment.identitySource} | ${start} | ${formatDuration(segment.durationSeconds)} | ${target} | ${power || '—'} W | ${hr}${hr === 'withheld' ? '' : ' bpm'} | ${cadence} rpm | ${thirds} W | ${finalThirdHr} | ${segment.evidenceConfidence} |`);
+            } else {
+                lines.push(`  | ${segment.segmentIndex} | ${segment.segmentType} | ${segment.identitySource} | ${formatDuration(segment.durationSeconds)} | ${target} | ${power || '—'} W | ${hr}${hr === 'withheld' ? '' : ' bpm'} | ${cadence} rpm | ${thirds} W | ${segment.evidenceConfidence} |`);
+            }
         }
     }
     return lines;
 }
 
-function renderLaps(laps: readonly ActivityLapSummary[]): string[] {
-    const lines = [
-        '- Laps:',
-        '',
-        '  | Lap | Duration | Avg power | Avg HR |',
-        '  |---:|---:|---:|---:|',
-    ];
-    for (const lap of [...laps].sort((a, b) => a.lapIndex - b.lapIndex)) {
+function renderDiagnosticLaps(activity: NormalizedGarminActivity): string[] {
+    const laps = [...(activity.laps ?? [])].sort((a, b) => a.lapIndex - b.lapIndex);
+    if (laps.length === 0) return [];
+    const running = normalizeModality(activity.type) === 'Running';
+    const lines = running
+        ? [
+            '- Laps:',
+            '',
+            '  | Lap | Duration | Distance | Pace | Avg power | Avg HR |',
+            '  |---:|---:|---:|---:|---:|---:|',
+        ]
+        : [
+            '- Laps:',
+            '',
+            '  | Lap | Duration | Avg power | Avg HR |',
+            '  |---:|---:|---:|---:|',
+        ];
+    for (const lap of laps) {
         const power = lap.averagePowerWatts === undefined ? '—' : `${formatNumber(lap.averagePowerWatts, 0)} W`;
         const hr = lap.averageHrBpm === undefined ? '—' : `${formatNumber(lap.averageHrBpm, 0)} bpm`;
-        lines.push(`  | ${lap.lapIndex} | ${formatDuration(lap.durationSeconds)} | ${power} | ${hr} |`);
+        if (running) {
+            const distance = lap.distanceMeters === undefined ? '—' : `${formatNumber(lap.distanceMeters / 1000, 2)} km`;
+            lines.push(`  | ${lap.lapIndex} | ${formatDuration(lap.durationSeconds)} | ${distance} | ${pacePerKm(lap.averageSpeedMps)} | ${power} | ${hr} |`);
+        } else {
+            lines.push(`  | ${lap.lapIndex} | ${formatDuration(lap.durationSeconds)} | ${power} | ${hr} |`);
+        }
     }
     return lines;
 }
 
-const MORNING_QUALITY_DOMAINS: ReadonlySet<ActivityStimulusDomain> = new Set(['tempo', 'threshold', 'vo2', 'anaerobic', 'mixed', 'race']);
-const MORNING_MAX_LAPS = 20;
-const MORNING_MAX_RESPONSE_SEGMENTS = 20;
+const QUALITY_SESSION_DOMAINS: ReadonlySet<ActivityStimulusDomain> = new Set(['tempo', 'threshold', 'vo2', 'anaerobic', 'mixed', 'race']);
+const QUALITY_DETAIL_MAX_LAPS = 20;
+const QUALITY_DETAIL_MAX_RESPONSE_SEGMENTS = 20;
 
 function isFiniteNumber(value: number | null | undefined): value is number {
     return typeof value === 'number' && Number.isFinite(value);
@@ -202,10 +242,10 @@ function renderRunningDynamics(activity: NormalizedGarminActivity): string[] {
     return parts.length > 0 ? [`- Running dynamics: ${parts.join(' · ')}`] : [];
 }
 
-function renderMorningLaps(activity: NormalizedGarminActivity): string[] {
+function renderBoundedQualityLaps(activity: NormalizedGarminActivity, viewLabel: string): string[] {
     const laps = [...(activity.laps ?? [])].sort((a, b) => a.lapIndex - b.lapIndex);
     if (laps.length === 0) return [];
-    const visible = laps.slice(0, MORNING_MAX_LAPS);
+    const visible = laps.slice(0, QUALITY_DETAIL_MAX_LAPS);
     const running = normalizeModality(activity.type) === 'Running';
     const lines = running
         ? [
@@ -234,9 +274,52 @@ function renderMorningLaps(activity: NormalizedGarminActivity): string[] {
         }
     }
     if (visible.length < laps.length) {
-        lines.push(`  - … ${laps.length - visible.length} additional lap(s) omitted from the morning brief; use diagnostic export for all laps.`);
+        lines.push(`  - … ${laps.length - visible.length} additional lap(s) omitted from the ${viewLabel}; use diagnostic export for all laps.`);
     }
     return lines;
+}
+
+function isQualityCyclingOrRunning(activity: NormalizedGarminActivity): boolean {
+    const modality = normalizeModality(activity.type);
+    if (modality !== 'Cycling' && modality !== 'Running') return false;
+    const domain = activity.stimulusDomain;
+    const canonicalQuality = domain !== undefined && QUALITY_SESSION_DOMAINS.has(domain);
+    const legacyHard = domain === undefined && activity.intensityTag === 'hard';
+    return canonicalQuality || legacyHard;
+}
+
+function renderSessionDetail(activity: NormalizedGarminActivity, includeVariabilityIndex: boolean): string[] {
+    const parts = [
+        includeVariabilityIndex && isFiniteNumber(activity.variabilityIndex) ? `VI ${formatNumber(activity.variabilityIndex, 2)}` : null,
+        isFiniteNumber(activity.maxHr) ? `max HR ${formatNumber(activity.maxHr, 0)} bpm` : null,
+        isFiniteNumber(activity.trainingEffectAnaerobic) ? `anaerobic TE ${formatNumber(activity.trainingEffectAnaerobic, 1)}` : null,
+        activity.primaryBenefit ? `primary benefit ${activity.primaryBenefit}` : null,
+    ].filter((part): part is string => part !== null);
+    return parts.length > 0 ? [`- Session detail: ${parts.join(' · ')}`] : [];
+}
+
+function renderBoundedQualityActivityDetail(activity: NormalizedGarminActivity, viewLabel: string): string[] {
+    if (!isQualityCyclingOrRunning(activity)) return [];
+    const modality = normalizeModality(activity.type);
+    const detail: string[] = [
+        ...renderSessionDetail(activity, true),
+    ];
+
+    if (activity.powerInZones?.length) detail.push(...renderZones('Power zones', activity.powerInZones, 'W'));
+    if (activity.hrInZones?.length) detail.push(...renderZones('Heart-rate zones', activity.hrInZones, 'bpm'));
+    detail.push(...renderRunningDynamics(activity));
+
+    if (activity.activityResponse) {
+        detail.push(...renderActivityResponse(activity, QUALITY_DETAIL_MAX_RESPONSE_SEGMENTS));
+    }
+
+    // For running, laps are the interval-resolution evidence currently persisted by this
+    // exporter. For cycling, prefer semantic/native response evidence; legacy quality rides
+    // fall back to bounded laps when the activityResponse sidecar is absent.
+    if (modality === 'Running' || !activity.activityResponse) {
+        detail.push(...renderBoundedQualityLaps(activity, viewLabel));
+    }
+    return detail;
 }
 
 /**
@@ -246,42 +329,47 @@ function renderMorningLaps(activity: NormalizedGarminActivity): string[] {
  * absent. This selection is display-only and has no recommendation authority.
  */
 export function renderMorningQualityActivityTelemetry(activity: NormalizedGarminActivity): string[] {
-    const modality = normalizeModality(activity.type);
-    if (modality !== 'Cycling' && modality !== 'Running') return [];
-    const domain = activity.stimulusDomain;
-    const canonicalQuality = domain !== undefined && MORNING_QUALITY_DOMAINS.has(domain);
-    const legacyHard = domain === undefined && activity.intensityTag === 'hard';
-    if (!canonicalQuality && !legacyHard) return [];
-
-    const detail: string[] = [];
-    const sessionParts = [
-        isFiniteNumber(activity.variabilityIndex) ? `VI ${formatNumber(activity.variabilityIndex, 2)}` : null,
-        isFiniteNumber(activity.maxHr) ? `max HR ${formatNumber(activity.maxHr, 0)} bpm` : null,
-        isFiniteNumber(activity.trainingEffectAnaerobic) ? `anaerobic TE ${formatNumber(activity.trainingEffectAnaerobic, 1)}` : null,
-        activity.primaryBenefit ? `primary benefit ${activity.primaryBenefit}` : null,
-    ].filter((part): part is string => part !== null);
-    if (sessionParts.length > 0) detail.push(`- Session detail: ${sessionParts.join(' · ')}`);
-
-    if (activity.powerInZones?.length) detail.push(...renderZones('Power zones', activity.powerInZones, 'W'));
-    if (activity.hrInZones?.length) detail.push(...renderZones('Heart-rate zones', activity.hrInZones, 'bpm'));
-    detail.push(...renderRunningDynamics(activity));
-
-    if (activity.activityResponse) {
-        detail.push(...renderActivityResponse(activity, MORNING_MAX_RESPONSE_SEGMENTS));
-    }
-
-    // For running, laps are the only interval-resolution evidence currently persisted.
-    // For cycling, prefer semantic/native response evidence; legacy quality rides fall back
-    // to bounded laps when the activityResponse sidecar is absent.
-    if (modality === 'Running' || !activity.activityResponse) {
-        detail.push(...renderMorningLaps(activity));
-    }
-
+    const detail = renderBoundedQualityActivityDetail(activity, 'morning brief');
     if (detail.length === 0) return [];
     return [
         '  - Quality-session detail (display-only):',
         ...detail.map(line => line.length === 0 ? '' : `    ${line}`),
     ];
+}
+
+/**
+ * Block planning keeps the #811 information budget for ordinary sessions, but quality
+ * cycling/running needs the same bounded execution evidence used to close the morning loop.
+ * The 20-row caps preserve bounded growth; diagnostic remains the uncapped persisted view.
+ */
+export function renderPlanningQualityActivityTelemetry(
+    activities: readonly NormalizedGarminActivity[],
+): string {
+    const rendered = [...activities]
+        .sort((a, b) => a.date.localeCompare(b.date) || a.activityId.localeCompare(b.activityId))
+        .map(activity => ({ activity, detail: renderBoundedQualityActivityDetail(activity, 'block-planning export') }))
+        .filter(item => item.detail.length > 0);
+    if (rendered.length === 0) return '';
+
+    const lines = [
+        '### Quality-session execution detail (bounded)',
+        '',
+        `Quality cycling/running sessions are expanded with the same execution evidence as the morning handoff, capped at ${QUALITY_DETAIL_MAX_RESPONSE_SEGMENTS} semantic segments or ${QUALITY_DETAIL_MAX_LAPS} running/legacy laps per activity. Ordinary endurance/recovery sessions remain compact; use diagnostic export for every persisted row.`,
+    ];
+    for (const { activity, detail } of rendered) {
+        const domain = activity.stimulusDomain && activity.stimulusDomain !== 'unknown'
+            ? ` · ${activity.stimulusDomain}`
+            : '';
+        const cost = activity.sessionCost && activity.sessionCost !== 'unknown'
+            ? ` · cost ${activity.sessionCost.replace('_', ' ')}`
+            : '';
+        lines.push(
+            '',
+            `#### ${activity.date} — ${formatActivityType(activity.type)} — ${activity.intensityTag}${domain}${cost}`,
+            ...detail,
+        );
+    }
+    return lines.join('\n');
 }
 
 /**
@@ -317,6 +405,7 @@ export function renderContextBriefActivityTelemetry(
             powerSummary.push(`VI ${formatNumber(activity.variabilityIndex, 2)}`);
         }
         if (powerSummary.length > 0) lines.push(`- Power summary: ${powerSummary.join(' · ')}`);
+        lines.push(...renderSessionDetail(activity, false));
 
         if (activity.powerInZones?.length) {
             lines.push(...renderZones('Power zones', activity.powerInZones, 'W'));
@@ -326,10 +415,10 @@ export function renderContextBriefActivityTelemetry(
         }
         lines.push(...renderRunningDynamics(activity));
         if (activity.laps?.length) {
-            lines.push(...renderLaps(activity.laps));
+            lines.push(...renderDiagnosticLaps(activity));
         }
         if (activity.activityResponse) {
-            lines.push(...renderActivityResponse(activity));
+            lines.push(...renderActivityResponse(activity, undefined, 'diagnostic'));
         }
     }
 
@@ -415,8 +504,9 @@ export function renderCompactActivityTelemetry(
 
 /** Insert activity telemetry as a subsection at the end of the completed-training section,
  * located by title so it works in either section order. `compact` selects the bounded
- * planning digest over the full diagnostic tables. The fallback append keeps the handoff
- * useful if the parent brief heading ever changes. */
+ * planning representation: one-line ordinary-session digests plus bounded quality-session
+ * execution detail. Diagnostic keeps the full persisted tables. The fallback append keeps
+ * the handoff useful if the parent brief heading ever changes. */
 export function injectActivityTelemetryIntoContextBrief(
     brief: string,
     activities: readonly NormalizedGarminActivity[],
@@ -430,7 +520,8 @@ export function injectActivityTelemetryIntoContextBrief(
     const summaryText = response ? renderKeySessionSummaries(summaries, response) : '';
     const summarizedIds = new Set(summaries.filter(hasAvailableFeature).map(summary => summary.activity.activityId));
     const raw = compact ? renderCompactActivityTelemetry(activities, summarizedIds) : renderContextBriefActivityTelemetry(activities);
-    const telemetry = [raw, summaryText].filter(Boolean).join('\n\n');
+    const qualityDetail = compact ? renderPlanningQualityActivityTelemetry(activities) : '';
+    const telemetry = [raw, summaryText, qualityDetail].filter(Boolean).join('\n\n');
     if (!telemetry) return brief;
 
     const trainingIndex = findSectionHeading(brief, SECTION_TITLE.training);
