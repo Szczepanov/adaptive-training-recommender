@@ -433,7 +433,7 @@ describe('multi-resolution semantic response (#850)', () => {
         expect(feature.state === 'available' && feature.pattern).toBe('repeatable');
     });
 
-    it('excludes a high-target outlier outside the dominant ±15% primary profile', () => {
+    it('preserves a high-target terminal work step instead of flattening mixed work', () => {
         const session = ride({
             stimulusDomain: 'threshold',
             activityResponse: {
@@ -452,7 +452,30 @@ describe('multi-resolution semantic response (#850)', () => {
 
         const feature = deriveIntervalRepetition(session);
         expect(feature.state === 'available' && feature.intervals.map(item => item.powerWatts))
-            .toEqual([234, 231]);
+            .toEqual([234, 231, 315]);
+    });
+
+    it('preserves an internal low-target work step when an explicit cooldown follows it', () => {
+        const session = ride({
+            stimulusDomain: 'threshold',
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1 },
+                segmentCountTotal: 4,
+                segmentsTruncated: false,
+                powerDurationPeaks: [],
+                segments: [
+                    { segmentIndex: 1, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 900, prescribedTarget: { kind: 'power_watts', value: 230 }, averagePowerWatts: 234, evidenceConfidence: 'high' },
+                    { segmentIndex: 2, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 900, prescribedTarget: { kind: 'power_watts', value: 230 }, averagePowerWatts: 231, evidenceConfidence: 'high' },
+                    { segmentIndex: 3, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 180, prescribedTarget: { kind: 'power_watts', value: 150 }, averagePowerWatts: 150, evidenceConfidence: 'high' },
+                    { segmentIndex: 4, segmentType: 'cooldown', identitySource: 'fit_workout_step', durationSeconds: 600, averagePowerWatts: 120, evidenceConfidence: 'high' },
+                ],
+            },
+        });
+
+        const feature = deriveIntervalRepetition(session);
+        expect(feature.state === 'available' && feature.intervals.map(item => item.powerWatts))
+            .toEqual([234, 231, 150]);
     });
 
     it('keeps a same-target final repetition eligible for a real late-collapse flag', () => {

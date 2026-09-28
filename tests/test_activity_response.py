@@ -239,7 +239,50 @@ def test_terminal_zone2_active_step_after_zone4_work_is_reclassified_as_cooldown
     ]
 
 
-def test_terminal_low_actual_without_target_uses_cooldown_fallback():
+def test_explicit_interval_intensity_is_not_reclassified_by_lower_target():
+    evidence = _structured_evidence(
+        [
+            {"duration": 900, "intensity": "active", "power": 234, "target": 230},
+            {"duration": 900, "intensity": "active", "power": 231, "target": 230},
+            {"duration": 180, "intensity": "interval", "power": 155, "target": 155},
+        ]
+    )
+
+    response = derive_activity_response("road_biking", evidence)
+
+    assert response is not None
+    assert [segment.segment_type for segment in response.segments] == [
+        "work",
+        "work",
+        "work",
+    ]
+
+
+def test_incomplete_record_linkage_does_not_reclassify_terminal_active_step():
+    evidence = _structured_evidence(
+        [
+            {"duration": 900, "intensity": "active", "power": 234, "target": 230},
+            {"duration": 900, "intensity": "active", "power": 231, "target": 230},
+            {"duration": 774, "intensity": "active", "power": 110, "target": 155},
+        ]
+    )
+    records = list(evidence.records)
+    records[0] = replace(records[0], workout_step_index=None)
+
+    response = derive_activity_response(
+        "road_biking",
+        replace(evidence, laps=(), records=tuple(records)),
+    )
+
+    assert response is not None
+    assert [segment.segment_type for segment in response.segments] == [
+        "work",
+        "work",
+        "work",
+    ]
+
+
+def test_terminal_low_actual_without_target_remains_work():
     evidence = _structured_evidence(
         [
             {"duration": 900, "intensity": "active", "power": 234},
@@ -254,7 +297,7 @@ def test_terminal_low_actual_without_target_uses_cooldown_fallback():
     assert [segment.segment_type for segment in response.segments] == [
         "work",
         "work",
-        "cooldown",
+        "work",
     ]
 
 

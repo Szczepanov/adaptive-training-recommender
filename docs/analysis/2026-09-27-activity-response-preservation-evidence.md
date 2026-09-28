@@ -1,14 +1,5 @@
 # Multi-Resolution Activity Response Preservation Evidence — 2026-09-27
 
-> **Erratum — 28 September 2026:** a subsequent review of the 27 September
-> `Aerobic Engine 3x15` activity found that its terminal 12:54 rollout
-> (67 W actual, 140–175 W prescribed) could be emitted with generic FIT
-> `active` semantics and was therefore promoted to a fourth `work` interval.
-> The "zero false-positive" claims below describe the pre-fix harness result and are not
-> valid as a general classification guarantee. PR #878 adds explicit FIT-role precedence,
-> conservative terminal fallback semantics, primary-set target-profile filtering, and
-> regression coverage for this case while preserving genuine same-target late collapse.
-
 ## Executive summary
 
 This report records empirical validation of the issue #850 resolution preservation harness
