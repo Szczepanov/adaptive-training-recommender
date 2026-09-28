@@ -1,4 +1,4 @@
-import type { ActivityLapSummary, ActivityZoneBucket, NormalizedGarminActivity } from './models';
+import type { ActivityLapSummary, ActivityStimulusDomain, ActivityZoneBucket, NormalizedGarminActivity } from './models';
 import { findSectionHeading, SECTION_TITLE } from './contextBrief';
 import { hrEvidence } from './contextBriefResponseFeatures';
 import { normalizeModality } from './performedTrainingFacts';
@@ -113,7 +113,8 @@ function renderActivityResponse(activity: NormalizedGarminActivity, maxSegments?
         ].filter((part): part is string => part !== null);
         if (halfParts.length > 0) lines.push(`  - Deterministic halves: ${halfParts.join(' · ')}`);
     }
-    const visibleSegments = maxSegments === undefined ? response.segments : response.segments.slice(0, maxSegments);
+    const orderedSegments = [...response.segments].sort((a, b) => a.segmentIndex - b.segmentIndex);
+    const visibleSegments = maxSegments === undefined ? orderedSegments : orderedSegments.slice(0, maxSegments);
     if (visibleSegments.length > 0) {
         const viewLimit = visibleSegments.length < response.segments.length
             ? `; this view shows first ${visibleSegments.length} persisted segments`
@@ -169,7 +170,7 @@ function renderLaps(laps: readonly ActivityLapSummary[]): string[] {
     return lines;
 }
 
-const MORNING_QUALITY_DOMAINS = new Set(['tempo', 'threshold', 'vo2', 'anaerobic', 'mixed', 'race']);
+const MORNING_QUALITY_DOMAINS: ReadonlySet<ActivityStimulusDomain> = new Set(['tempo', 'threshold', 'vo2', 'anaerobic', 'mixed', 'race']);
 const MORNING_MAX_LAPS = 20;
 const MORNING_MAX_RESPONSE_SEGMENTS = 20;
 
@@ -247,9 +248,9 @@ function renderMorningLaps(activity: NormalizedGarminActivity): string[] {
 export function renderMorningQualityActivityTelemetry(activity: NormalizedGarminActivity): string[] {
     const modality = normalizeModality(activity.type);
     if (modality !== 'Cycling' && modality !== 'Running') return [];
-    const domain = activity.stimulusDomain ?? 'unknown';
-    const canonicalQuality = MORNING_QUALITY_DOMAINS.has(domain);
-    const legacyHard = domain === 'unknown' && activity.intensityTag === 'hard';
+    const domain = activity.stimulusDomain;
+    const canonicalQuality = domain !== undefined && MORNING_QUALITY_DOMAINS.has(domain);
+    const legacyHard = domain === undefined && activity.intensityTag === 'hard';
     if (!canonicalQuality && !legacyHard) return [];
 
     const detail: string[] = [];

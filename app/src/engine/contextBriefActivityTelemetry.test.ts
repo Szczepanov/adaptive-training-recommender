@@ -242,6 +242,71 @@ describe('renderMorningQualityActivityTelemetry', () => {
         expect(text).toContain('| 1 | 4:00 | 1 km | 4:00/km | 352 W | 166 bpm |');
     });
 
+    it('uses the hard tag only as a fallback when stimulusDomain is absent', () => {
+        expect(renderMorningQualityActivityTelemetry(activity({
+            intensityTag: 'hard',
+            stimulusDomain: 'unknown',
+            variabilityIndex: 1.08,
+        }))).toEqual([]);
+
+        const legacyText = renderMorningQualityActivityTelemetry(activity({
+            intensityTag: 'hard',
+            stimulusDomain: undefined,
+            variabilityIndex: 1.08,
+        })).join('\n');
+        expect(legacyText).toContain('Quality-session detail (display-only)');
+    });
+
+    it('caps response segments after sorting by semantic segment index', () => {
+        const segments = Array.from({ length: 25 }, (_, offset) => {
+            const segmentIndex = 25 - offset;
+            return {
+                segmentIndex,
+                segmentType: 'work' as const,
+                identitySource: 'fit_workout_step' as const,
+                durationSeconds: 60,
+                averagePowerWatts: 200 + segmentIndex,
+                evidenceConfidence: 'high' as const,
+            };
+        });
+        const text = renderMorningQualityActivityTelemetry(activity({
+            stimulusDomain: 'threshold',
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1 },
+                segmentCountTotal: 25,
+                segmentsTruncated: false,
+                powerDurationPeaks: [],
+                segments,
+            },
+        })).join('\n');
+
+        expect(text).toContain('| 1 | work | fit_workout_step |');
+        expect(text).toContain('| 20 | work | fit_workout_step |');
+        expect(text).not.toContain('| 21 | work | fit_workout_step |');
+        expect(text).toContain('this view shows first 20 persisted segments');
+    });
+
+    it('caps running lap detail and reports omitted laps', () => {
+        const laps = Array.from({ length: 25 }, (_, offset) => ({
+            lapIndex: offset + 1,
+            durationSeconds: 180,
+            distanceMeters: 600,
+            averageSpeedMps: 600 / 180,
+            averagePowerWatts: 280 + offset,
+            averageHrBpm: 150 + offset,
+        }));
+        const text = renderMorningQualityActivityTelemetry(activity({
+            type: 'running',
+            stimulusDomain: 'vo2',
+            laps,
+        })).join('\n');
+
+        expect(text).toContain('| 20 | 3:00 | 0.6 km | 5:00/km |');
+        expect(text).not.toContain('| 21 | 3:00 | 0.6 km | 5:00/km |');
+        expect(text).toContain('5 additional lap(s) omitted from the morning brief');
+    });
+
     it('keeps ordinary endurance sessions compact even when detailed telemetry exists', () => {
         expect(renderMorningQualityActivityTelemetry(activity({
             // Canonical #809 domain wins over an inconsistent tag on modern records.
