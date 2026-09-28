@@ -220,6 +220,7 @@ app/src/engine/
   planner.ts           # Rolling 7-day projection & weekly anchor pre-pass (ADR-0008/0011)
   provenance.ts        # Builds the persisted RecommendationAudit
   replay.ts            # Verifies a persisted decision against its own audit
+  decisionContext.ts   # #872: write-once, content-hashed same-day decision-context capture (provenance only, not yet replayable)
   policy.ts            # POLICY_VERSION -- bump when a decision-affecting change lands
   stimulus.ts          # V2 fractional objective credit; the live credit authority (ADR-0014)
   planningMode.ts      # THE single authority for effective planning mode (ADR-0017)
