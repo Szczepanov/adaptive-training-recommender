@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { ContextBriefResult } from '../services/contextBriefService';
 import {
   buildContextBriefJsonExport,
   contextBriefExportFilename,
   downloadContextBriefFile,
   formatContextBriefExport,
+  type ContextBriefExportSource,
 } from './contextBriefExport';
 
-const BRIEF: ContextBriefResult = {
+const BRIEF: ContextBriefExportSource = {
   text: '# Training context brief\n\nHigh-signal content.',
   startDate: '2026-09-15',
   asOfDate: '2026-09-28',
@@ -64,7 +64,7 @@ describe('contextBriefExport', () => {
     });
     const body = { appendChild, removeChild };
     const link = { href: '', download: '', click, parentNode: null as unknown };
-    const createObjectURL = vi.fn(() => 'blob:context-brief');
+    const createObjectURL = vi.fn((_blob: Blob) => 'blob:context-brief');
     const revokeObjectURL = vi.fn();
 
     vi.stubGlobal('document', {
