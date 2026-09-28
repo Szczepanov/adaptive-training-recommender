@@ -299,12 +299,12 @@ test('captures grouped session runner rotation without horizontal overflow', asy
   await groupedFixture.getByRole('button', { name: 'Start Session →' }).click();
   await expect(page.locator('.group-progress')).toContainText('Circuit');
 
-  await page.getByRole('button', { name: 'Log Set ⏎' }).click();
+  await page.locator('.log-set-btn').click();
   await expect(page.getByRole('heading', { name: /scapular.push.up/i })).toBeVisible();
 
   await page.getByRole('button', { name: /bench.press/i }).click();
   await expect(page.getByRole('heading', { name: /bench.press/i })).toBeVisible();
-  await page.getByRole('button', { name: 'Log Set ⏎' }).click();
+  await page.locator('.log-set-btn').click();
   await expect(page.getByRole('heading', { name: /chest.supported.dumbbell.row/i })).toBeVisible();
 
   const nextBtn = page.locator('.group-next-button');
@@ -315,6 +315,28 @@ test('captures grouped session runner rotation without horizontal overflow', asy
 
   await capture(page, scenario, 'grouped-runner-active', [
     'The grouped runner presents clear superset/circuit context and large hit targets for mobile use.',
+  ]);
+});
+
+test('captures per-side hold controls without horizontal overflow', async ({ page }) => {
+  const scenario = VISUAL_SCENARIOS.find(candidate => candidate.id === 'session-runner-in-progress');
+  if (!scenario) throw new Error('Missing session runner visual scenario');
+  await visitScenario(page, scenario);
+
+  const newSessionBtn = page.getByRole('button', { name: '＋ New session' });
+  if (await newSessionBtn.count()) {
+    await newSessionBtn.click();
+    await page.getByRole('button', { name: 'From fixture' }).click();
+  }
+
+  const timedFixture = page.locator('.fixture-card').filter({ hasText: 'Timed Trunk & Tissue Preparation' });
+  await timedFixture.getByRole('button', { name: 'Start Session →' }).click();
+  await expect(page.getByRole('heading', { name: /soleus iso/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Log left hold' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Right side' })).toBeVisible();
+  expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true);
+  await capture(page, scenario, 'per-side-hold-controls', [
+    'Both side controls and the current hold action remain visible without horizontal page overflow.',
   ]);
 });
 
@@ -333,10 +355,10 @@ test('captures the primary catalog strength warm-up journey', async ({ page }) =
     'Warm-up repetition logging is enabled by default.',
   ]);
 
-  await page.getByRole('button', { name: /Log Set/ }).click();
+  await page.locator('.log-set-btn').click();
   await page.getByRole('button', { name: 'Dead bug', exact: true }).click();
   await expect(page.getByRole('heading', { name: /Dead Bug/i })).toBeVisible();
-  await page.getByRole('button', { name: /Log Set/ }).click();
+  await page.locator('.log-set-btn').click();
   await page.getByRole('button', { name: 'Hang power clean rehearsal', exact: true }).click();
   await expect(page.getByRole('heading', { name: /Hang Power Clean Rehearsal/i })).toBeVisible();
   await expect(page.getByText('Load: Empty bar, then light rehearsal load')).toBeVisible();

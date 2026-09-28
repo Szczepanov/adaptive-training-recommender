@@ -5,7 +5,7 @@ import type {
     DurationEntryPayload,
     DistanceEntryPayload,
 } from './models';
-import { countsTowardPrescribedSets } from './workSets';
+import { completedPrescribedSets } from './workSets';
 
 export interface StepComparison {
     stepId: string;
@@ -79,7 +79,7 @@ export function comparePlannedVsPerformed(
                 targetSets = step.dose.sets;
             }
 
-            const completedSets = stepEntries.filter(countsTowardPrescribedSets).length;
+            const completedSets = completedPrescribedSets(step, stepEntries);
             const isComplete = completedSets >= targetSets;
 
             if (isComplete) {

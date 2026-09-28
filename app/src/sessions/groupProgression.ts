@@ -1,5 +1,5 @@
 import type { RangeOrNumber, SessionBlock, SessionEntry, SessionStep } from './models';
-import { countsTowardPrescribedSets } from './workSets';
+import { completedPrescribedSets, hasUnpairedHoldSide } from './workSets';
 
 /** Execution modes whose steps are performed in a repeating rotation. */
 export type RotatingExecutionMode = 'circuit' | 'superset' | 'alternating';
@@ -46,12 +46,6 @@ function requiredSteps(block: SessionBlock): Array<{ step: SessionStep; index: n
     return required.length > 0 ? required : block.steps.map((step, index) => ({ step, index }));
 }
 
-function entryCount(entries: readonly SessionEntry[], stepId: string): number {
-    // Neither a recorded athlete choice (D-MCHOICE) nor a warm-up set is a prescribed
-    // set/round -- neither may advance rotation progress.
-    return entries.reduce((count, entry) => count + (entry.stepId === stepId && countsTowardPrescribedSets(entry) ? 1 : 0), 0);
-}
-
 function firstAfter(indices: readonly number[], afterIndex: number): number {
     return indices.find(index => index > afterIndex) ?? indices[0];
 }
@@ -70,7 +64,7 @@ export function getGroupProgress(
     const steps = requiredSteps(block);
     const states = steps.map(({ step, index }) => ({
         index,
-        completed: entryCount(entries, step.id),
+        completed: completedPrescribedSets(step, entries),
         target: targetEntriesForGroupStep(block, step),
     }));
     const totalRounds = Math.max(...states.map(state => state.target));
@@ -79,6 +73,12 @@ export function getGroupProgress(
 
     if (incomplete.length === 0) {
         return { mode: block.executionMode, completedRounds, totalRounds, isComplete: true, nextStepIndex: null };
+    }
+
+    const activeStep = block.steps[activeStepIndex];
+    if (activeStep && hasUnpairedHoldSide(activeStep, entries)
+        && completedPrescribedSets(activeStep, entries) < targetEntriesForGroupStep(block, activeStep)) {
+        return { mode: block.executionMode, completedRounds, totalRounds, isComplete: false, nextStepIndex: activeStepIndex };
     }
 
     // Keep the rotation balanced: the least-completed movement is due next.  If

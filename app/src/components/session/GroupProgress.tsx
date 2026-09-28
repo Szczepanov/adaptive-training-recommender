@@ -2,7 +2,7 @@ import React from 'react';
 import type { SessionBlock, SessionEntry } from '../../sessions/models';
 import { getGroupProgress, targetEntriesForGroupStep } from '../../sessions/groupProgression';
 import { stepName } from '../../sessions/stepDisplay';
-import { countsTowardPrescribedSets } from '../../sessions/workSets';
+import { completedPrescribedSets } from '../../sessions/workSets';
 
 interface GroupProgressProps {
     block: SessionBlock;
@@ -17,13 +17,14 @@ export const GroupProgress: React.FC<GroupProgressProps> = ({ block, entries, ac
     if (!progress) return null;
 
     const activeStep = block.steps[activeStepIndex];
-    const nextStep = progress.nextStepIndex === null ? null : block.steps[progress.nextStepIndex];
+    const nextStep = progress.nextStepIndex === null || progress.nextStepIndex === activeStepIndex
+        ? null : block.steps[progress.nextStepIndex];
     const label = progress.mode === 'superset' ? 'Superset' : progress.mode === 'alternating' ? 'Alternating pair' : 'Circuit';
 
-    const activeCompleted = activeStep ? entries.filter(e => e.stepId === activeStep.id && countsTowardPrescribedSets(e)).length : 0;
+    const activeCompleted = activeStep ? completedPrescribedSets(activeStep, entries) : 0;
     const activeTarget = activeStep ? targetEntriesForGroupStep(block, activeStep) : 1;
 
-    const nextCompleted = nextStep ? entries.filter(e => e.stepId === nextStep.id && countsTowardPrescribedSets(e)).length : 0;
+    const nextCompleted = nextStep ? completedPrescribedSets(nextStep, entries) : 0;
     const nextTarget = nextStep ? targetEntriesForGroupStep(block, nextStep) : 1;
 
     return (

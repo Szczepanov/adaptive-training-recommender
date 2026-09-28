@@ -87,4 +87,19 @@ describe('group progression', () => {
         expect(getGroupProgress(group, [warmup('press'), entry('press'), warmup('row'), entry('row')], 1))
             .toMatchObject({ completedRounds: 1, isComplete: true, nextStepIndex: null });
     });
+
+    it('holds rotation on a partial left/right hold and advances after the pair', () => {
+        const group: SessionBlock = {
+            ...block('superset', 1),
+            steps: [
+                { id: 'hold', kind: 'exercise', laterality: 'per_side', dose: { kind: 'duration', sets: 1, seconds: 30 } },
+                block('superset').steps[1],
+            ],
+        };
+        const left: SessionEntry = { ...entry('hold', 'left'), side: 'left', payload: { kind: 'duration', seconds: 30 } };
+        const right: SessionEntry = { ...entry('hold', 'right'), side: 'right', payload: { kind: 'duration', seconds: 30 } };
+        expect(getGroupProgress(group, [left], 0)).toMatchObject({ isComplete: false, nextStepIndex: 0 });
+        expect(getGroupProgress(group, [left, right], 0)).toMatchObject({ isComplete: false, nextStepIndex: 1 });
+        expect(getGroupProgress(group, [left, right, entry('row')], 1)).toMatchObject({ isComplete: true, nextStepIndex: null });
+    });
 });

@@ -62,8 +62,8 @@ export const DistanceInputCard: React.FC<DistanceInputCardProps> = ({
                 </label>
             </div>
 
-            <button type="submit" className="log-set-btn">
-                Log Repetition ⏎
+            <button type="submit" className="log-set-btn" aria-label="Log distance split">
+                Log
             </button>
         </form>
     );

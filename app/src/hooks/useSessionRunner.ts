@@ -23,6 +23,7 @@ import { playRestCompleteSound } from '../utils/audioFeedback';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { resolveEffectiveSession } from '../sessions/choiceResolution';
 import { resolvePostEntryRestSeconds } from '../sessions/restTiming';
+import { completesPrescribedSet } from '../sessions/workSets';
 import { adjustRest, closeRest, startRest, type ActiveRestState, type RestEventFields } from '../sessions/restEventTiming';
 import type { RestEndReason } from '../sessions/models';
 import { resolveEffectiveInjuryConstraints, resolveInjuryRestrictions } from '../engine/injuryPolicy';
@@ -451,7 +452,8 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         // close that prior rest as next_set_started (real elapsed time, not the prescribed
         // duration) before starting the new one.
         closeActiveRest('next_set_started')?.catch(err => console.warn('[useSessionRunner] Failed to persist rest event:', err));
-        const restSec = resolvePostEntryRestSeconds(activeStep, activeBlock?.role);
+        const restSec = completesPrescribedSet(activeStep, entries, entry)
+            ? resolvePostEntryRestSeconds(activeStep, activeBlock?.role) : 0;
         if (restSec > 0) {
             setRestSecondsRemaining(restSec);
             setIsRestRunning(true);

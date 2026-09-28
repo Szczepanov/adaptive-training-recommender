@@ -3,6 +3,24 @@ import type { SessionDefinition, SessionEntry } from './models';
 import { comparePlannedVsPerformed } from './performedComparison';
 
 describe('Performed Session Comparison (M2.6 / ADR-0023)', () => {
+    it('counts paired holds as sets and retains both side entries in the performed record', () => {
+        const definition: SessionDefinition = {
+            schemaVersion: 1, id: 'hold-def', revision: 1, title: 'Holds', intent: 'training',
+            blocks: [{ id: 'main', role: 'main', executionMode: 'sequential', steps: [
+                { id: 'hold', kind: 'exercise', laterality: 'per_side', dose: { kind: 'duration', sets: 1, seconds: 30 } },
+            ] }],
+        };
+        const entry: SessionEntry = {
+            id: 'left', executionId: 'exec', stepId: 'hold', side: 'left',
+            completedAt: '2026-09-01T12:00:00Z', createdAt: '2026-09-01T12:00:00Z', updatedAt: '2026-09-01T12:00:00Z',
+            payload: { kind: 'duration', seconds: 30 },
+        };
+        expect(comparePlannedVsPerformed(definition, [entry]).stepComparisons[0]).toMatchObject({ completedSets: 0, isComplete: false });
+        const paired = comparePlannedVsPerformed(definition, [entry, { ...entry, id: 'right', side: 'right' }]);
+        expect(paired.stepComparisons[0]).toMatchObject({ completedSets: 1, isComplete: true });
+        expect(paired.stepComparisons[0].entries).toHaveLength(2);
+        expect(paired.summary.totalDurationSeconds).toBe(60);
+    });
     it('compares planned definition against performed entries accurately', () => {
         const definition: SessionDefinition = {
             schemaVersion: 1,

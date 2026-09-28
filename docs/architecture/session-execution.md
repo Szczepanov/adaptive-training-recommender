@@ -67,6 +67,18 @@ no authored rest retains the runner's legacy 60-second advisory fallback. Inside
 omission means no countdown is invented: simple preparation drills flow directly into the next drill,
 while lift-specific rehearsal that needs recovery must carry an explicit authored rest value.
 
+The active exercise and its logging controls lead the runner; the authored step navigator follows
+them and remains available for manual navigation. In sequential blocks, completing the prescribed
+work selects the next step. In rotating blocks, each completed turn selects the next movement from
+persisted group progress. Completing the final movement opens the existing completion sheet, where
+the athlete still reviews and saves the session.
+
+For a duration step with `laterality: 'per_side'`, each hold is a separate `SessionEntry` carrying
+`side: 'left'` or `side: 'right'`. The runner reconstructs the next side from those entries after a
+resume. A lone side is retained but does not complete a prescribed set, start its rest, or advance
+the runner; the matching side completes one set. Older duration entries without a side remain one
+completed set.
+
 ## Custom-template lifecycle
 
 The collection document is a mutable `SessionDefinitionHeader`; definition revisions are
