@@ -15,7 +15,7 @@ import time
 import urllib.parse
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -183,7 +183,12 @@ def _validate_user_id(user_id: str) -> None:
 
 
 def _validate_date_window(start_date: str, end_date_inclusive: str) -> None:
-    if start_date > end_date_inclusive:
+    try:
+        start = date.fromisoformat(start_date)
+        end = date.fromisoformat(end_date_inclusive)
+    except ValueError as error:
+        raise ValueError(f"Invalid ISO date window: {error}") from error
+    if start > end:
         raise ValueError(
             f"start_date ({start_date}) must be before or equal to end_date_inclusive ({end_date_inclusive})"
         )
@@ -228,9 +233,11 @@ def plan_training_occurrence_backfill(
         activity_date = str(act_data.get("date") or "").strip()
         act_type = str(act_data.get("type") or "").strip()
 
-        is_valid_date = (
-            len(activity_date) == 10 and activity_date[4] == "-" and activity_date[7] == "-"
-        )
+        try:
+            date.fromisoformat(activity_date)
+            is_valid_date = True
+        except ValueError:
+            is_valid_date = False
         if not activity_id or not is_valid_date or not act_type:
             plan.anomalies.append(
                 BackfillAnomaly(

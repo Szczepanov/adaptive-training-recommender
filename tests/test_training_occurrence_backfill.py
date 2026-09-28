@@ -209,6 +209,8 @@ def test_user_id_and_date_validation() -> None:
         plan_training_occurrence_backfill(db, "user..1", "2026-06-30", "2026-09-27")
     with pytest.raises(ValueError, match="must be before or equal to"):
         plan_training_occurrence_backfill(db, "user1", "2026-09-28", "2026-06-30")
+    with pytest.raises(ValueError, match="Invalid ISO date window"):
+        plan_training_occurrence_backfill(db, "user1", "2026-02-30", "2026-03-01")
 
 
 def test_dry_run_makes_zero_writes() -> None:
@@ -761,4 +763,29 @@ def test_duplicate_active_source_ownership_is_detected_preflight_and_audit() -> 
     assert not audit.audit_passed
     assert audit.invalid_links >= 2
     assert any("multiple active occurrences" in issue for issue in audit.issues)
+
+
+def test_impossible_activity_date_is_rejected_before_migration() -> None:
+    db = _MockDb(
+        {
+            "user1": {
+                "activities": {
+                    "bad_date": {
+                        "activityId": "bad_date",
+                        "date": "2026-07-99",
+                        "type": "cycling",
+                    }
+                },
+                "performedOccurrenceSourceLinks": {},
+                "performedTrainingOccurrences": {},
+            }
+        }
+    )
+
+    plan = plan_training_occurrence_backfill(db, "user1", "2026-07-01", "2026-08-31")
+    assert plan.would_create_count == 0
+    assert any(anomaly.anomaly_type == "invalid_activity" for anomaly in plan.anomalies)
+    with pytest.raises(ValueError, match="blocking invariant anomalies"):
+        apply_training_occurrence_backfill(db, plan)
+    assert db.write_count == 0
 
