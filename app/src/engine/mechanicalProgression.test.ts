@@ -105,6 +105,10 @@ describe('evaluateMechanicalStageProgression', () => {
       { date: '2026-09-18', workoutId: 'running_easy_continuous_01' },
     ])).toBe(false);
     expect(hasAdjacentMechanicalExposure('2026-09-20', [
+      { date: '2026-09-20', workoutId: 'running_easy_continuous_01' },
+      { date: '2026-09-21', workoutId: 'running_easy_continuous_01' },
+    ])).toBe(false);
+    expect(hasAdjacentMechanicalExposure('2026-09-20', [
       { date: '2026-09-19', workoutId: 'unknown_workout' },
     ])).toBe(false);
   });

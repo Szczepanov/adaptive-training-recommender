@@ -121,7 +121,7 @@ describe('mechanical exposure policy alignment (ADR-0033, issue #804)', () => {
             floor: null,
             delivery: 'embedded',
             target: { unit: 'sessions', minimum: 0, target: 1, maximum: 2 },
-            evidence: { knowledgeClaimId: KNOWLEDGE_CLAIM_IDS.mechanicalExposurePolicy, knowledgeClaimVersion: 3 },
+            evidence: { knowledgeClaimId: KNOWLEDGE_CLAIM_IDS.mechanicalExposurePolicy, knowledgeClaimVersion: 4 },
         });
         expect(mechanical?.substitutionPolicy.permittedModalities).toEqual(['Running', 'Field', 'Strength']);
     });

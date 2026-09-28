@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | `Implemented` — delivered on PR #887; retained as the design and verification record |
+| **Status** | `In review` — implementation is complete on PR #887; merge remains the delivery gate |
 | **Source** | [issue #859](https://github.com/Szczepanov/adaptive-training-recommender/issues/859) |
 | **Analysis** | [2026-09-28 issue #859 date-scoped mechanical-spacing analysis](../analysis/2026-09-28-issue-859-date-scoped-mechanical-spacing-analysis.md) |
 | **Blocked by** | Nothing. #804 and #805 are merged; PR #855 explicitly left this as the independent follow-up. |
@@ -11,7 +11,7 @@
 
 All symbols below exist on the baseline unless marked **new**.
 
-> **Implementation note (28 September 2026):** PR #887 implements the work packages below. They are retained as the historical design/verification record rather than pending instructions. The delivered boundary is the active #804 `mechanical_exposure` requirement; non-#804 running plans remain unchanged.
+> **Implementation note (28 September 2026):** PR #887 implements the work packages below. They are retained as the review/verification record rather than pending implementation instructions. The implemented boundary is the active #804 `mechanical_exposure` requirement; non-#804 running plans remain unchanged. Mark this plan `Implemented` only after merge.
 
 ## Goal
 

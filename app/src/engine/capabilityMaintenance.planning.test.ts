@@ -191,6 +191,13 @@ describe('periodic capability maintenance in evergreen planning (#805 Phase 7)',
         );
         expect(tomorrow.accepted.map(item => item.template.id)).toContain('field_maint_01');
 
+        const templateOnlyState = buildCoverageState(optedIn.planDefinition, D, [{
+            date: at(-1),
+            templateId: 'field_maint_01',
+            source: 'projected' as const,
+        }]);
+        expect(templateOnlyState.mechanicalSpacingBlocked).toBe(true);
+
         const adjacentEvidence = [
             ...STAGE_4_READY,
             field(at(-1), 'strength_reactive_power_01'),
