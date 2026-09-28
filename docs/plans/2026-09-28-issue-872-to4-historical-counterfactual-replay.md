@@ -300,7 +300,7 @@ All exported documents remain raw private evidence under app/artifacts/training-
 
 Some current sources are mutable singleton/state documents and do not automatically prove their historical value.
 
-For every such source, define one of these statuses. A revisioned recommendation is a special case: for D-1 `previousMode`, select the latest persisted decision revision proven to exist no later than D's evaluation instant (using its archived/current audit provenance); if ordering cannot be proven, the date is `not_replayable` rather than defaulting to today's latest D-1 document.
+A revisioned recommendation is a special case: for D-1 `previousMode`, select the latest persisted decision revision proven to exist no later than D's evaluation instant (using its archived/current audit provenance); if ordering cannot be proven, the date is `not_replayable` rather than defaulting to today's latest D-1 document.
 
 For every mutable source, define one of these statuses:
 
