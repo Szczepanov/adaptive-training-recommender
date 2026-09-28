@@ -95,6 +95,7 @@ export interface TrainingIntent {
 const MAX_PLANNED_VOLUME = 1;
 const MAX_PLANNED_INTENSITY = 1.2;
 export const ATHLETE_STATE_HISTORY_WINDOW_DAYS = 28;
+export const DEFAULT_OPERATIONAL_HISTORY_WINDOW_DAYS = 7;
 const CANONICAL_FACT_REVISION_PREFIX = 'canonical-facts-v1:';
 
 function boundedPlannedDose(volume: number, intensity: number): PlannedDose {
@@ -150,6 +151,42 @@ export function preparedPerformedFactsForCoverageSet(
     return facts.revision.startsWith(`${CANONICAL_FACT_REVISION_PREFIX}${coverageSetId}:`)
         ? facts
         : null;
+}
+
+function resolveIntentAuthorities(
+    events: UserEvent[],
+    date: string,
+    authoredPlanBlocks: readonly AuthoredPlanBlock[],
+    trainingIntentProfile: TrainingIntentProfile | null,
+) {
+    const eventPeriodization = evaluatePeriodizationPhase(events, date);
+    const planningContext = resolvePlanningContext(trainingIntentProfile, eventPeriodization, date);
+    // PlanningContext is the sole authority for whether event periodization applies.
+    const periodization = planningContext.mode === 'event_directed'
+        ? eventPeriodization
+        : evaluatePeriodizationPhase([], date);
+    const strengthSupportSessions = eventStrengthSupportSessions(planningContext, trainingIntentProfile);
+    const planDefinition = resolvePlanDefinitionForEvent(
+        periodization.focusEvent, authoredPlanBlocks, strengthSupportSessions,
+    );
+    const performedFactsCoverageDescriptor = planDefinition
+        ? coverageSetFor(planDefinition.coverageSetId)
+        : EVERGREEN_GENERAL_COVERAGE_SET;
+    return { planningContext, periodization, strengthSupportSessions, planDefinition, performedFactsCoverageDescriptor };
+}
+
+/**
+ * Descriptor authority shared by online orchestration and resolveTrainingIntent. Canonical
+ * performed facts are semantic/coverage-set scoped, so provenance must preload them under
+ * the exact descriptor the live evaluator will consume rather than guessing evergreen.
+ */
+export function resolvePerformedTrainingFactsCoverageDescriptor(
+    events: UserEvent[],
+    date: string,
+    authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
+    trainingIntentProfile: TrainingIntentProfile | null = null,
+) {
+    return resolveIntentAuthorities(events, date, authoredPlanBlocks, trainingIntentProfile).performedFactsCoverageDescriptor;
 }
 
 /**
@@ -233,7 +270,7 @@ async function resolveMechanicalExposureEvidence(
 export async function prepareTrainingHistorySnapshot(
     userId: string,
     throughDateExclusive: string,
-    windowDays: number = 7,
+    windowDays: number = DEFAULT_OPERATIONAL_HISTORY_WINDOW_DAYS,
     historyProvider?: TrainingHistoryProvider,
 ): Promise<TrainingHistorySnapshot | null> {
     const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
@@ -250,7 +287,7 @@ export async function resolveTrainingIntent(
     events: UserEvent[],
     date: string,
     readiness: DailyReadiness,
-    windowDays: number = 7,
+    windowDays: number = DEFAULT_OPERATIONAL_HISTORY_WINDOW_DAYS,
     historyProvider?: TrainingHistoryProvider,
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
@@ -259,25 +296,13 @@ export async function resolveTrainingIntent(
     preparedRollingLoadBudgetSnapshot?: TrainingHistorySnapshot | null,
     carriedInternalStrain?: DimensionalFatigue,
 ): Promise<TrainingIntent> {
-    const eventPeriodization = evaluatePeriodizationPhase(events, date);
-    const planningContext = resolvePlanningContext(trainingIntentProfile, eventPeriodization, date);
-    // PlanningContext is the sole authority for whether event periodization applies.
-    // The profile-less event path retains the prior result exactly; an explicit evergreen
-    // profile intentionally receives the existing no-event baseline until its dedicated
-    // evergreen coverage policy arrives in Phase 7.5.
-    const periodization = planningContext.mode === 'event_directed'
-        ? eventPeriodization
-        : evaluatePeriodizationPhase([], date);
-    const strengthSupportSessions = eventStrengthSupportSessions(planningContext, trainingIntentProfile);
-    const planDefinition = resolvePlanDefinitionForEvent(
-        periodization.focusEvent, authoredPlanBlocks, strengthSupportSessions,
-    );
-    // CoverageCreditFact is descriptor-scoped. Derive canonical role facts against the same
-    // coverage set the live decision will consume; otherwise a workout whose role differs
-    // between evergreen and event plans can be silently reinterpreted at read time.
-    const performedFactsCoverageDescriptor = planDefinition
-        ? coverageSetFor(planDefinition.coverageSetId)
-        : EVERGREEN_GENERAL_COVERAGE_SET;
+    const {
+        planningContext,
+        periodization,
+        strengthSupportSessions,
+        planDefinition,
+        performedFactsCoverageDescriptor,
+    } = resolveIntentAuthorities(events, date, authoredPlanBlocks, trainingIntentProfile);
     const operationalSnapshot = preparedHistorySnapshot
         ?? await prepareTrainingHistorySnapshot(userId, date, windowDays, historyProvider);
     const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;

@@ -32,7 +32,7 @@ import { buildOptimizationContext, computeRankingCounterfactual, materializeEffe
 import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
-import { mechanicalEvidenceRequiredFor, resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
+import { DEFAULT_OPERATIONAL_HISTORY_WINDOW_DAYS, mechanicalEvidenceRequiredFor, resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolveMechanicalCheckinHistory } from './mechanicalCheckinHistory';
 import type { CheckinRecord } from './mechanicalProgression';
 import { POLICY_VERSION } from './policy';
@@ -680,7 +680,7 @@ export async function evaluateTrainingWithIntent(
         ?? (preferences && !historyProvider && mechanicalEvidenceRequiredFor(trainingIntentProfile, events, date)
             ? resolveMechanicalCheckinHistory(userId, date)
             : []);
-    let intent = await resolveTrainingIntent(userId, events, date, readiness, 7, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy, undefined, carriedInternalStrain);
+    let intent = await resolveTrainingIntent(userId, events, date, readiness, DEFAULT_OPERATIONAL_HISTORY_WINDOW_DAYS, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy, undefined, carriedInternalStrain);
 
     let externalEventAdvisory: {
         prescription: NonNullable<Recommendation['externalPrescription']>;

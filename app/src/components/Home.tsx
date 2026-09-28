@@ -5,7 +5,7 @@ import { evaluateSameDayRecommendation } from '../engine/sameDayRecommendation';
 import type { SameDayRecommendationInputs } from '../engine/sameDayRecommendation';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapGoalsToUserEvents } from '../engine/adapters';
 import { generateWeekAheadPlanWithIntent, type WeekAheadPlan } from '../engine/planner';
-import { mechanicalEvidenceRequiredFor, prepareTrainingHistorySnapshot } from '../engine/trainingIntent';
+import { DEFAULT_OPERATIONAL_HISTORY_WINDOW_DAYS, mechanicalEvidenceRequiredFor, prepareTrainingHistorySnapshot, resolvePerformedTrainingFactsCoverageDescriptor } from '../engine/trainingIntent';
 import { resolveMechanicalCheckinHistory } from '../engine/mechanicalCheckinHistory';
 import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
 import { buildRecommendationAudit } from '../engine/provenance';
@@ -19,6 +19,7 @@ import { isManualOccurrence, type SessionReferenceBinding } from '../sessions/mo
 import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
+import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
 import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch } from '../services/sessionAuthoringService';
 import { isV4Plan, type ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
@@ -584,6 +585,25 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date, bundleContext) : null;
         const externalRestContext = activeExternal ? externalRestContextForDate(activeExternal, input.date) : null;
 
+        // #872 prospective provenance: canonical performed facts are loaded once under
+        // the exact coverage descriptor the live intent resolver will use, then injected
+        // into the immutable prepared snapshot. This prevents the evaluator from doing a
+        // hidden second read whose bytes would be absent from the persisted context.
+        const performedFactsCoverageDescriptor = resolvePerformedTrainingFactsCoverageDescriptor(
+          events, input.date, todayAndTomorrowPlanBlocks, input.trainingIntentProfile,
+        );
+        const performedTrainingFacts = await getPerformedTrainingFactsInRange(
+          userId,
+          addDaysToLocalDateString(input.date, -DEFAULT_OPERATIONAL_HISTORY_WINDOW_DAYS),
+          input.date,
+          { coverageSetDescriptor: performedFactsCoverageDescriptor },
+        );
+        if (!isCurrent()) return;
+        const sameDayPreparedSnapshot: TrainingHistorySnapshot = {
+          ...preparedSnapshot,
+          performedTrainingFacts,
+        };
+
         const mechanicalCheckinHistory = input.preferences
           && mechanicalEvidenceRequiredFor(input.trainingIntentProfile, events, input.date)
           ? await resolveMechanicalCheckinHistory(userId, input.date)
@@ -596,7 +616,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           events,
           date: input.date,
           previousMode: yesterdayRec?.mode,
-          preparedHistorySnapshot: preparedSnapshot,
+          preparedHistorySnapshot: sameDayPreparedSnapshot,
           fixedActivities: todayAndTomorrowFixedActivities,
           authoredPlanBlocks: todayAndTomorrowPlanBlocks,
           trainingIntentProfile: input.trainingIntentProfile,
@@ -839,12 +859,12 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
 
         const todayRec = {
           ...recommendationWithSession,
-          recommendationAudit: buildRecommendationAudit(recommendationWithSession, preparedSnapshot, evaluatedAt) ?? undefined,
+          recommendationAudit: buildRecommendationAudit(recommendationWithSession, sameDayPreparedSnapshot, evaluatedAt) ?? undefined,
         };
         setDecisionContextCapture({
           evaluatedAt,
           evaluatorInputs,
-          performedTrainingFacts: preparedSnapshot.performedTrainingFacts ?? null,
+          performedTrainingFacts,
         });
         setRecommendation(todayRec);
 
@@ -865,7 +885,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           evaluatedAt,
           minimumSafetyStatus: safetyStatus,
           evaluatorInputs,
-          performedTrainingFacts: preparedSnapshot.performedTrainingFacts ?? null,
+          performedTrainingFacts,
           mechanicalCheckinHistory,
         })
           .then(saved => verifySessionBindingReplay(userId, saved))
