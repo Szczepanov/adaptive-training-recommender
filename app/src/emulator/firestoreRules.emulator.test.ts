@@ -2070,7 +2070,7 @@ emulatorDescribe('Firestore security rules', () => {
             minimumSafetyStatus: 'complete',
             evaluatorInputs: {},
             performedTrainingFacts: {
-                asOfDate: '2026-09-28', windowDays: 7, revision: 'canonical-facts-v1:evergreen_general:test',
+                asOfDate: '2026-08-07', windowDays: 7, revision: 'canonical-facts-v1:evergreen_general:test',
                 exposures: [], coverageCredits: [],
             },
             contentHash: 'a'.repeat(64),
@@ -2100,6 +2100,25 @@ emulatorDescribe('Firestore security rules', () => {
             ...context, date: '2026-08-08', contentHash: 'b'.repeat(64),
         });
         await assertFails(mismatch.commit());
+
+        const missingFactsPath = `users/${ownerId}/daily_recommendations/2026-08-09`;
+        const missingFactsContextPath = `${missingFactsPath}/decision_contexts/1`;
+        const missingFacts = writeBatch(ownerDb);
+        missingFacts.set(doc(ownerDb, missingFactsPath), {
+            ...recommendation,
+            date: '2026-08-09',
+            recommendationAudit: {
+                ...recommendation.recommendationAudit,
+                decisionContext: { path: missingFactsContextPath, revision: 1, contentHash: 'c'.repeat(64) },
+            },
+        });
+        missingFacts.set(doc(ownerDb, missingFactsContextPath), {
+            ...context,
+            date: '2026-08-09',
+            performedTrainingFacts: null,
+            contentHash: 'c'.repeat(64),
+        });
+        await assertFails(missingFacts.commit());
     });
 
     it('allows additionalSessions at the full 4-element bound without exceeding the rule-evaluation budget', async () => {
