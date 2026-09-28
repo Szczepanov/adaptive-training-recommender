@@ -287,6 +287,56 @@ describe('ContextBriefService', () => {
             expect(diagnostic.text).toContain('| 50 |');
         });
 
+        it('exports bounded quality execution detail for planning and the full persisted view for diagnostics', async () => {
+            const segments = Array.from({ length: 25 }, (_, offset) => ({
+                segmentIndex: offset + 1,
+                segmentType: 'work' as const,
+                identitySource: 'fit_workout_step' as const,
+                startOffsetSeconds: offset * 180,
+                durationSeconds: 180,
+                averagePowerWatts: 220 + offset,
+                averageHrBpm: 145 + offset,
+                lastThirdHrBpm: 150 + offset,
+                evidenceConfidence: 'high' as const,
+            }));
+            services.getActivitiesInRange.mockResolvedValue({
+                status: 'AVAILABLE',
+                data: [{
+                    ...telemetryRide,
+                    activityId: 'quality-tempo',
+                    intensityTag: 'moderate',
+                    stimulusDomain: 'tempo',
+                    sessionCost: 'high',
+                    variabilityIndex: 1.08,
+                    maxHr: 168,
+                    laps: [],
+                    activityResponse: {
+                        derivationVersion: 'multi-resolution-v1',
+                        sourceResolution: { powerSeconds: 1, hrSeconds: 1 },
+                        segmentCountTotal: 25,
+                        segmentsTruncated: false,
+                        powerDurationPeaks: [{ durationSeconds: 300, powerWatts: 251, confidence: 'high' as const }],
+                        segments,
+                    },
+                }],
+                revision: null,
+            });
+
+            const planning = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+            const diagnostic = await new ContextBriefService().build('u1', AS_OF, 14, 'diagnostic');
+
+            expect(planning.text).toContain('### Quality-session execution detail (bounded)');
+            expect(planning.text).toContain('Session detail: VI 1.08 · max HR 168 bpm');
+            expect(planning.text).toContain('| 20 | work | fit_workout_step |');
+            expect(planning.text).not.toContain('| 21 | work | fit_workout_step |');
+            expect(planning.text).toContain('this view shows first 20 persisted segments');
+
+            expect(diagnostic.text).toContain('### Detailed activity telemetry');
+            expect(diagnostic.text).toContain('| # | Type | Identity | Start | Duration |');
+            expect(diagnostic.text).toContain('| 25 | work | fit_workout_step | 1:12:00 | 3:00 |');
+            expect(diagnostic.text).toContain('| 174 bpm | high |');
+        });
+
         describe('training-response features (#814)', () => {
             const intervalRide = {
                 activityId: 'q1', date: '2026-08-13', type: 'road_biking', durationMin: 71,
