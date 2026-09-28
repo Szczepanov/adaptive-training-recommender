@@ -1,9 +1,9 @@
 # Issue #814 training-response completion analysis — 2026-09-28
 
-**Status:** Point-in-time architecture and evidence review  
-**Source:** [GitHub issue #814](https://github.com/Szczepanov/adaptive-training-recommender/issues/814)  
-**Baseline:** main at the start of this review, after PRs #829, #860, #878 and the training-occurrence backfill/replay work through #886  
-**Scope:** comparable-session response features, key-session summaries, canonical workout identity, strength progression, next-day response, running support, and contextual comparability  
+**Status:** Point-in-time architecture and evidence review
+**Source:** [GitHub issue #814](https://github.com/Szczepanov/adaptive-training-recommender/issues/814)
+**Baseline:** main at the start of this review, after PRs #829, #860, #878 and the training-occurrence backfill/replay work through #886
+**Scope:** comparable-session response features, key-session summaries, canonical workout identity, strength progression, next-day response, running support, and contextual comparability
 **Decision authority:** analysis only. Nothing in this document grants training-response features recommendation, readiness, fatigue, load, progression, or safety authority.
 
 ## Executive conclusion
@@ -104,6 +104,8 @@ The repository also has a separate canonical completed-workout path:
     CompletedWorkoutView / performed facts
 
 This second path has the stronger answer to “which physical workout was this?” and, when structured evidence exists, the stronger answer to “what exercise/workout was intended?”. The #814 layer currently does not use it.
+
+One boundary is critical: a `PerformedTrainingOccurrence` identifies **one performed physical workout and its source set**. It is not a repeated-protocol or cross-session family identifier. Longitudinal comparability must therefore use authored prescription/protocol identity, canonical exercise identity, or a conservative semantic protocol match after each session's sources have first been grouped by occurrence.
 
 ## 3. Detailed findings
 
@@ -255,7 +257,7 @@ The implementation should retain a compact overall confidence for rendering, but
 
 The overall confidence should be a **ceiling from the weakest required component**, not an average score.
 
-### F9 — Avoid creating a third occurrence-hydration implementation
+### F9 — Avoid creating a third occurrence-hydration implementation or coupling to the UI DTO
 
 There is already duplicated-but-related hydration logic in:
 
@@ -264,7 +266,9 @@ There is already duplicated-but-related hydration logic in:
 
 Adding a third custom “find structured execution for this Garmin activity” implementation in contextBriefService would increase divergence risk.
 
-The response feature should consume a shared provider-neutral occurrence projection or extract a reusable hydration primitive from the existing canonical read path.
+The current `CompletedWorkoutView` is also **not** a sufficient canonical response-evidence substrate as-is. By design it is a v1 UI DTO that surfaces one primary Garmin activity even though ADR-0034 models a source collection and permits multiple provider recordings. Building #814 directly on that collapsed DTO would make “multiple provider activities remain explicit” impossible and would push UI presentation constraints into an evidence boundary.
+
+The response feature should therefore consume or extract a shared provider-neutral occurrence-source hydration primitive that preserves the full source set. `CompletedWorkoutView` and `TrainingResponseSessionEvidence` can both derive from that primitive. Reusing `getCompletedWorkoutsInRange` is acceptable only if that lower shared source-set boundary is first exposed rather than treating the current single-Garmin UI DTO as canonical.
 
 ### F10 — The display-only boundary remains correct
 
@@ -383,7 +387,7 @@ Introduce a read-time, provider-neutral object conceptually equivalent to:
           prescribed dose/load/target
           performed rows
 
-      measured?
+      measuredSources[]
         provider
         activityId
         normalized activity summary
@@ -403,6 +407,13 @@ This should be a **projection**, not a new persisted canonical record. The sourc
 ### 5.2 Centralize comparability
 
 Introduce one pure comparison decision API instead of embedding family-specific matching ad hoc inside each feature.
+
+Keep two identity questions separate:
+
+1. `PerformedTrainingOccurrence` answers which records belong to **this one performed session**.
+2. Authored prescription/protocol identity (or a conservative semantic protocol match) answers whether **two different performed sessions** are comparable for a feature.
+
+Occurrence identity is therefore provenance and self-comparison protection, not a cross-session match tier.
 
 Conceptually:
 
@@ -429,10 +440,10 @@ Do not create one numeric “similarity score”. Hard incompatibilities should 
 
 Recommended semantic tiers:
 
-**Tier A — exact authored protocol / canonical occurrence family**
+**Tier A — exact authored protocol / prescription identity**
 
-- same canonical authored workout identity or prescription family;
-- compatible version/revision/prescription semantics;
+- same exact prescription identity, or a documented authored protocol family with compatible version/revision/target semantics;
+- each physical session independently resolved through its canonical occurrence when available;
 - compatible measurement evidence;
 - feature-specific required context.
 
