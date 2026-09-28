@@ -16,6 +16,7 @@ upload path. Observed-index fallbacks remain non-comparable execution evidence.
 import hashlib
 import json
 import math
+import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -348,9 +349,7 @@ def compute_workout_template_fingerprint(
 ) -> FitWorkoutIdentity:
     """Compute deterministic FitWorkoutIdentity from a canonical workout dictionary."""
     if canonical_workout_requires_athlete_ftp(workout) and not (
-        isinstance(athlete_ftp, (int, float))
-        and math.isfinite(athlete_ftp)
-        and athlete_ftp > 0
+        isinstance(athlete_ftp, (int, float)) and math.isfinite(athlete_ftp) and athlete_ftp > 0
     ):
         raise ValueError(
             "Cycling %FTP workout identity requires the athlete FTP used for Garmin export"
