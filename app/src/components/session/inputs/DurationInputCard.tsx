@@ -130,7 +130,6 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
             ...(parsedLoad !== undefined ? { loadKg: parsedLoad } : {}),
         }, step.laterality === 'per_side' ? selectedSide : undefined);
         setElapsed(0);
-        setSeconds(String(targetSeconds));
         setIsTimerRunning(false);
         setIsPrepCountdown(false);
     };
