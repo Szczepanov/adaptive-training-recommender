@@ -94,9 +94,7 @@ def test_firestore_repository_user_mismatch_raises_error():
 def test_update_activity_enrichment_replaces_response_and_merges_sibling_fields() -> None:
     mock_db = MagicMock()
     doc_ref = MagicMock()
-    activities_ref = (
-        mock_db.collection.return_value.document.return_value.collection.return_value
-    )
+    activities_ref = mock_db.collection.return_value.document.return_value.collection.return_value
     activities_ref.document.return_value = doc_ref
     repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
 
