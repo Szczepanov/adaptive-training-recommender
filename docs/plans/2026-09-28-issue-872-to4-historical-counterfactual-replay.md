@@ -5,7 +5,8 @@
 | Status | Implementation plan |
 | Issue | [#872](https://github.com/Szczepanov/adaptive-training-recommender/issues/872) |
 | Parent evidence work | [#646](https://github.com/Szczepanov/adaptive-training-recommender/issues/646), PR #853 |
-| Recent prerequisites | PR #877 historical occurrence backfill merged; PR #882 non-catalog exposure derivation merged; PR #883 legacy manual metadata verification is still in review at plan creation |
+| Recent prerequisites | PR #877 historical occurrence backfill merged; PR #882 non-catalog exposure derivation merged; PR #883 legacy manual metadata verification merged |
+| Latest private TO4 baseline | PR #883 rerun: 84 evaluated dates, 30 changed/30 unresolved; 71 canonical exposures; 1 multiple-provider-source occurrence remains unknown; athlete-label/false-positive gates were not evaluated |
 | Authority impact | None in this issue. TO4 remains shadow/offline evidence only |
 | Policy impact | No POLICY_VERSION bump if live behavior is unchanged. Any recommendation-policy delta introduced by this work is a defect or must be split into a separately reviewed policy PR |
 | Unlocks | A defensible TO4 evidence rerun and, only if its gates pass, a separate broad canonical-history activation design/PR |
@@ -22,7 +23,9 @@ The required experiment is:
 same current engine implementation
 same current policy version
 same historical date
+same real user identity and normal-recommendation gate outcome
 same recovery/check-in/profile/plan/schedule inputs
+same #804 mechanical check-in history when applicable
 same narrow canonical performed-training facts
 same previous-day recommendation mode
 same progression/external-plan context
@@ -67,11 +70,17 @@ A correct #872 implementation must solve both problems:
 
 ### 3.1 Only one variable may change
 
-For every replayable date D, compute a canonical digest over the complete non-history input bundle. The live-history pass and canonical-history pass must assert the same digest before evaluation.
+For every replayable date D, compute two canonical hashes:
 
-The digest must cover at least:
+1. a **decision-input digest** over every non-history value that can affect `evaluateTrainingWithIntent` or the production pre-evaluation gate; and
+2. an **experiment-revision digest** over source commit, `POLICY_VERSION`, export/parser/classifier versions and other replay provenance.
 
-- date and user scope;
+The live-history pass and canonical-history pass must assert both hashes are identical before evaluation. Broad history is excluded only from the decision-input digest because it is the experimental variable.
+
+The decision-input digest must cover at least:
+
+- date and the **real exported user id** used by the evaluator; do not substitute the current `EVIDENCE_USER` placeholder;
+- minimum-safety / normal-recommendation gate state;
 - mapped subjective/objective readiness;
 - subjective baseline and carried-region restrictions;
 - goals/events and planning context inputs;
@@ -84,11 +93,13 @@ The digest must cover at least:
 - previous recommendation mode;
 - external-plan/external-rest context;
 - confirmed progression overrides;
-- any same-day scheduling context that materially changes the evaluateTrainingWithIntent arguments;
-- descriptor-scoped PerformedTrainingFactsSnapshot;
-- current POLICY_VERSION and source commit.
+- any same-day scheduling context that materially changes the `evaluateTrainingWithIntent` arguments;
+- #804 `mechanicalCheckinHistory` when mechanical capability evaluation can run;
+- descriptor-scoped `PerformedTrainingFactsSnapshot`.
 
-The broad history snapshot/revision is deliberately excluded from this digest because it is the experimental variable.
+The experiment-revision digest covers at least current `POLICY_VERSION`, source commit, export schema version, replay implementation version, classifier version and the `evaluatedAt` provenance convention. `evaluatedAt`/data-confidence diagnostics are kept deterministic, but `DataConfidenceScore` is dashboard-only and must not be misrepresented as a recommendation decision input.
+
+The broad history snapshot/revision is deliberately excluded from the decision-input digest because it is the experimental variable.
 
 ### 3.2 Current-policy counterfactual, not historical-policy replay
 
@@ -96,7 +107,9 @@ The broad history snapshot/revision is deliberately excluded from this digest be
 
 > Under the current code and policy, what changes if broad history authority is switched from legacy to canonical, holding the athlete's date-specific non-history facts constant?
 
-It must **not** claim to recreate the exact recommendation originally shown on that historical date when that recommendation came from an older policy implementation. Existing recommendation audits are useful provenance and source references, but historical POLICY_VERSION implementations are intentionally not executable by the current bundle.
+It must **not** claim to recreate the exact recommendation originally shown on that historical date when that recommendation came from an older policy implementation. Existing recommendation audits are useful provenance and source references, but historical `POLICY_VERSION` implementations are intentionally not executable by the current bundle.
+
+The issue text says deterministic replay must respect historical `POLICY_VERSION`. For this TO4 experiment that requirement is interpreted as **validate and retain the historical audit version as provenance, while pinning both counterfactual passes to one current source commit / current `POLICY_VERSION`**. Executing old policy implementations would answer a different question and requires versioned historical bundles that the repository does not currently provide. This interpretation must be called out in the implementation PR so the issue is not silently treated as an exact historical-policy replay.
 
 ### 3.3 Missing historical truth fails closed
 
@@ -202,7 +215,10 @@ Suggested shape:
 
 ~~~ts
 interface HistoricalDecisionInputs {
+  userId: string;
   date: string;
+  evaluatedAt: string;
+  minimumSafetyCheckinStatus: MinimumSafetyCheckinStatus;
   readiness: {
     subjective: SubjectiveInput;
     objective: ObjectiveInput;
@@ -219,6 +235,7 @@ interface HistoricalDecisionInputs {
   externalContext: ExternalPlanContext | null;
   externalRestContext: ExternalRestContext | null;
   progressionOverrides: ProgressionOverride[];
+  mechanicalCheckinHistory: CheckinRecord[];
   performedTrainingFacts: PerformedTrainingFactsSnapshot;
   sourceEvidence: HistoricalInputProvenance;
 }
@@ -245,7 +262,9 @@ Add an invariant test that changing only the broad exposure array leaves perform
 
 ## 5. Export schema v2
 
-Bump TrainingOccurrenceRecordExport from schema version 1 to 2. Keep the existing user-scoped, read-only, at-most-366-day contract and artifact-directory protections.
+Bump `TrainingOccurrenceRecordExport` from schema version 1 to 2. Keep the existing user-scoped, read-only, at-most-366-day contract and artifact-directory protections.
+
+Schema v2 must distinguish the **evaluation window** (the denominator of historical dates being judged) from the wider **source evidence bounds** used only to hydrate lookback/horizon dependencies. Records fetched before/after the evaluation window must never silently enlarge or shrink the denominator. Persist the resolved per-source half-open bounds in the private export manifest so edge-date coverage is auditable.
 
 The exporter must capture enough source evidence for every decision date plus required lookback/horizon data.
 
@@ -258,7 +277,7 @@ The exporter must capture enough source evidence for every decision date plus re
 | session executions / entries / prescriptions / exact definition revisions | existing referenced reads | structured semantics |
 | daily_recommendations | main range plus at least D-1 | previousMode; structured ownership/readiness marker; historical audit references |
 | daily_recovery_snapshots | decision-date range | objective readiness |
-| daily_subjective_checkins | main range plus REFERENCE_SUBJECTIVE_BASELINE_POLICY.longWindowDays before start | today's subjective input, subjective baseline and D-1 tissue carry |
+| daily_subjective_checkins | main range plus the maximum required pre-window lookback for `REFERENCE_SUBJECTIVE_BASELINE_POLICY` and `MECHANICAL_CONTINUITY_WINDOW_DAYS` | today's subjective input, subjective baseline, D-1 tissue carry, and #804 mechanical progression/follow-up evidence |
 | fixed_activities | range needed by same-day evaluation and active-plan placement; include the same forward horizon Home uses | availability / planning / external placement |
 | schedule_overlays | all overlays intersecting the replay range plus required forward horizon | availability and reserved load |
 | plan_blocks | all blocks intersecting the replay range/horizon | plan-owned dose and sequencing |
@@ -322,7 +341,7 @@ No Date.now/new Date hidden inside pure replay assembly.
 
 For each historical date use an explicitly documented deterministic evaluatedAt convention, for example the persisted recommendation audit evaluatedAt when available. If that timestamp is absent, choose a fixed date-local deterministic timestamp and flag its provenance.
 
-Because data-confidence staleness may depend on evaluatedAt, this field belongs in the non-history digest.
+Because data-confidence staleness may depend on `evaluatedAt`, preserve it in deterministic composition/replay provenance. `DataConfidenceScore` is explicitly dashboard-only in current architecture, so `evaluatedAt` belongs in the experiment/provenance hash unless another decision-affecting consumer is introduced; do not make a dashboard-only timestamp an artificial causal input to TO4.
 
 ---
 
@@ -347,23 +366,25 @@ runHistoryCounterfactualSeries({
 })
 ~~~
 
-Each date either returns:
+Each candidate date returns exactly one of:
 
-- replayable + HistoricalDecisionInputs; or
-- not_replayable + reason(s).
+- `replayable` + `HistoricalDecisionInputs`;
+- `not_applicable` when the reconstructed production minimum-safety gate would not call the normal recommendation evaluator; or
+- `not_replayable` + reason(s) when a decision-affecting historical input cannot be proven.
 
-### 7.2 Snapshot window parity
+`not_applicable` dates stay in `candidateDates` and are reported explicitly; they are not silently dropped and do not count as successful recommendation comparisons.
 
-Do not pass one seven-day exposure slice if production may request wider state evidence.
+### 7.2 Exact Home call-shape and snapshot-window parity
 
-Build in-memory providers/snapshots that can answer the same windows requested by trainingIntent.ts, including:
+The replay must reproduce the **actual same-day Home call shape**, not an idealized one. Home currently prepares a normal revisioned history snapshot with the default operational window and passes that snapshot to `evaluateTrainingWithIntent`; the replay must do the same for each branch. Do not "improve" replay by passing a wider prepared rolling-load snapshot or another argument that Home does not currently pass. If that production behavior is wrong, fix it in a separate behavior/policy PR and rerun the evidence afterward.
 
-- normal operational history;
+At the same time, the injected in-memory providers must be capable of answering every wider window that current `trainingIntent.ts` legitimately requests after receiving that prepared snapshot, including:
+
 - athlete-state history when required;
-- rolling-load-budget history when required;
+- rolling-load-budget history **only when the current production call path requests it**;
 - mechanical establishment history when required.
 
-Both providers expose the same observation-span semantics and differ only in whether their CompletedExposure rows are legacy or canonical.
+Both providers expose identical observation-span/source-state semantics and differ only in their broad `CompletedExposure` rows/revision. Add a parity test that records provider calls from the online-shaped invocation and asserts the offline runner requests the same windows in the same circumstances.
 
 ### 7.3 Narrow performed facts are common input
 
@@ -375,7 +396,20 @@ Before the two passes:
 
 The test must fail if one pass falls back to live Firestore/service reads or if an injected provider causes facts to disappear.
 
-### 7.4 No hidden I/O
+### 7.4 Mechanical check-in history is also a common input
+
+`evaluateTrainingWithIntent` has a second injected-history edge: when `mechanicalCheckinHistory` is omitted, production may lazily resolve #804 structured tissue check-ins, but the presence of an injected broad-history provider suppresses that read and substitutes an empty list. The current TO4 runner therefore cannot claim full online/offline parity for mechanical-capability dates.
+
+For every applicable date:
+
+1. hydrate the same `DailySubjectiveCheckin` range used by `mechanicalCheckinRange(date)`;
+2. run the shared pure `toMechanicalCheckinRecords` adapter;
+3. pass the resulting `CheckinRecord[]` explicitly to **both** history branches; and
+4. include its digest in the decision-input equality assertion.
+
+Do not copy #804 progression logic into the evidence layer.
+
+### 7.5 No hidden I/O
 
 The offline replay path must have:
 
@@ -388,7 +422,7 @@ The offline replay path must have:
 
 Make this enforceable with dependency boundaries/tests rather than relying on comments.
 
-### 7.5 Per-date evidence output
+### 7.6 Per-date evidence output
 
 Private output should include enough detail to adjudicate a delta without exposing it in committed artifacts:
 
@@ -476,6 +510,7 @@ Recommended recommendationSeries aggregate:
   "referenceSource": "historical-user-scoped-inputs-v1",
   "candidateDates": 84,
   "evaluatedDates": 84,
+  "notApplicableDates": 0,
   "notReplayableDates": 0,
   "changedDates": 0,
   "expectedDates": 0,
@@ -538,7 +573,8 @@ Requirements:
 - no writes;
 - bounded reads;
 - exact referenced immutable revisions where available;
-- sufficient subjective-history lookback;
+- separate declared evaluation-window and per-source evidence bounds;
+- sufficient subjective/mechanical-check-in history lookback;
 - sufficient forward horizon for schedule/placement context;
 - raw output stays inside ignored artifacts.
 
@@ -548,10 +584,11 @@ Add Python tests for ownership, bounds, edge dates, referenced revisions and zer
 
 Add production-parser-backed hydration in to4EvidencePreparation.ts/offlineContextAssembler.ts.
 
-For each date emit either:
+For each candidate date emit exactly one of:
 
-- replayable HistoricalDecisionInputs, or
-- not_replayable with one or more reason codes.
+- `replayable` + `HistoricalDecisionInputs`;
+- `not_applicable` with the production gate reason; or
+- `not_replayable` with one or more stable provenance reason codes.
 
 Implement temporal proof rules before wiring the replay. Add a private source-coverage report so missing historical provenance is visible immediately.
 
@@ -578,7 +615,8 @@ Tests must cover:
 
 Wire:
 
-- objective/subjective/context/events;
+- real exported `userId` (never the synthetic evidence placeholder);
+- objective/subjective/context/events and the minimum-safety gate result;
 - previousMode;
 - fixed activities;
 - plan blocks;
@@ -587,11 +625,13 @@ Wire:
 - schedule overlays;
 - external session/rest context when reconstructable;
 - confirmed progression overrides;
-- common narrow performed facts.
+- explicit #804 mechanical check-in history when applicable;
+- common narrow performed facts;
+- the same prepared operational history-snapshot argument shape Home currently supplies.
 
-Avoid copying Home orchestration branches when a shared pure helper can own them.
+Avoid copying Home orchestration branches when a shared pure helper can own them. The implementation must have a call-shape parity test against the current Home invocation so adding a new decision argument later fails evidence tests rather than silently drifting.
 
-Dates whose external-plan or progression revision cannot be proven fail closed.
+Dates whose external-plan or progression revision cannot be proven fail closed. Dates where the minimum-safety gate would prevent a normal recommendation are reported as `not_applicable`, not fabricated into evaluator calls.
 
 ### TO4-R7 — Per-date replay and classifier
 
@@ -610,9 +650,9 @@ Remove the static scenario from the normal TO4 real-history command. It may rema
 
 ### TO4-R8 — Real-data rerun and evidence decision
 
-After syncing current main and the #883 outcome:
+PR #883 is already merged and its latest private rerun is the current pre-#872 baseline. After syncing current `main`:
 
-1. run a fresh 90-day user-scoped export;
+1. run a fresh 90-day user-scoped **schema-v2** export;
 2. prepare v2 evidence;
 3. review any private unresolved/adjudication rows;
 4. repeat from the same prepared bytes and prove deterministic equality;
@@ -681,7 +721,8 @@ A later **TO4 activation PR** is explicitly separate and must include rollout fl
 - data-confidence evaluatedAt;
 - invalid schedule overlay fails closed;
 - missing optional profile retains production semantics;
-- training-settings read path does not migrate/write in evidence mode.
+- training-settings read path does not migrate/write in evidence mode;
+- dashboard-only data-confidence/evaluatedAt changes do not masquerade as recommendation-input changes.
 
 ### 12.2 Temporal provenance
 
@@ -700,14 +741,19 @@ A later **TO4 activation PR** is explicitly separate and must include rollout fl
 - exact external-plan revision/hash;
 - authored rest;
 - schedule-window missing vs invalid;
-- confirmed intent-block revision/progression override.
+- confirmed intent-block revision/progression override;
+- production minimum-safety gate => replayable vs `not_applicable`;
+- #804 mechanical check-in range and duplicate-date/latest-submission semantics.
 
 ### 12.4 History experiment isolation
 
-- common non-history digest;
+- common decision-input digest and experiment-revision digest;
 - common performed-facts digest;
+- common mechanical-checkin digest when applicable;
 - live/canonical history digests differ only when data differ;
-- provider requests 7/28-day windows correctly;
+- real exported user id reaches both evaluator calls;
+- prepared operational snapshot presence/window matches Home;
+- provider requests wider windows only where the current production path requests them;
 - no Firestore/network/current clock;
 - no recommendation write;
 - identical prepared bytes => identical series.
@@ -726,7 +772,7 @@ A later **TO4 activation PR** is explicitly separate and must include rollout fl
 - cross-user record rejected;
 - user collection never enumerated;
 - no write methods;
-- range/lookback/horizon bounded;
+- evaluation denominator is distinct from bounded lookback/horizon source windows;
 - private artifacts cannot escape ignored artifact root;
 - committed report contains only allowed aggregates/aliases.
 
@@ -767,6 +813,8 @@ The implementation PR descriptions must record the exact focused tests and final
 - [ ] Production and offline replay share the pure source-state composition logic.
 - [ ] Historical replay has no React/browser, Firestore, network, current-clock or write dependency.
 - [ ] Same-day recommendation inputs are assembled through shared production semantics rather than a second hand-written engine.
+- [ ] The replay uses the real exported user id and preserves Home's current prepared-history call shape.
+- [ ] #804 mechanical check-in history is explicitly hydrated and identical between the two passes when applicable.
 - [ ] Narrow canonical performed facts are identical between the two passes.
 - [ ] Broad CompletedExposure history is the only varying decision input.
 
@@ -776,7 +824,7 @@ The implementation PR descriptions must record the exact focused tests and final
 - [ ] Every source is production-parsed/validated where a parser exists.
 - [ ] Historical mutable state is either proven or marked not_replayable.
 - [ ] No static simulation scenario participates in real-history replay.
-- [ ] Every candidate date is counted.
+- [ ] Every candidate date is counted as evaluated, `not_applicable`, or `not_replayable`; support lookback/horizon rows never change that denominator.
 - [ ] Every changed output field is classified per date with a stable reason/evidence trail.
 - [ ] Human labels are cryptographically bound to the exact evidence revision.
 
@@ -795,7 +843,8 @@ A non-zero changedDates value is acceptable. The purpose is to understand and va
 
 - [ ] Legacy broad history remains live authority throughout #872.
 - [ ] No production feature flag is enabled.
-- [ ] No POLICY_VERSION bump is made unless an accidental live behavior change is discovered and split out.
+- [ ] Both passes are pinned to one current source commit/current `POLICY_VERSION`; historical audit policy versions are retained/validated as provenance, not executed as old policy bundles.
+- [ ] No `POLICY_VERSION` bump is made unless an accidental live behavior change is discovered and split out.
 - [ ] TO5 FIT identity remains out of scope.
 - [ ] Provider refresh/deletion lifecycle requirements from ADR-0034 remain explicit prerequisites to any later TO4 activation review; #872 must not silently declare them solved.
 
@@ -817,6 +866,6 @@ A non-zero changedDates value is acceptable. The purpose is to understand and va
 
 ## 16. Definition of done
 
-#872 is done when the repository can take one immutable private export and, for every date in the declared corpus, deterministically reconstruct the decision context sufficiently to run the current recommendation engine twice with **only broad history authority swapped**, classify every resulting difference, and prove that the run is reproducible.
+#872 is done when the repository can take one immutable private export and, for every date in the declared corpus, deterministically reconstruct enough production context to either (a) prove that Home would not call the normal evaluator and report `not_applicable`, or (b) run the current recommendation engine twice with **only broad history authority swapped**, classify every resulting difference, and prove that the run is reproducible.
 
 Passing #872 does not mean TO4 is active. It means the project finally has evidence strong enough to make a separate TO4 activation decision.
