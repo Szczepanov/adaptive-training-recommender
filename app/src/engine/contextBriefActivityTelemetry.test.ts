@@ -107,6 +107,30 @@ describe('renderContextBriefActivityTelemetry', () => {
         expect(text).not.toContain('raw sample');
     });
 
+    it('keeps free-text prescribed targets inside the diagnostic markdown table cell', () => {
+        const text = renderContextBriefActivityTelemetry([
+            activity({
+                activityResponse: {
+                    derivationVersion: 'multi-resolution-v1',
+                    sourceResolution: { powerSeconds: 1 },
+                    segmentCountTotal: 1,
+                    segmentsTruncated: false,
+                    powerDurationPeaks: [],
+                    segments: [{
+                        segmentIndex: 1,
+                        segmentType: 'work',
+                        identitySource: 'fit_workout_step',
+                        durationSeconds: 300,
+                        prescribedTarget: { kind: 'custom', text: 'Build | controlled\nfinish' },
+                        evidenceConfidence: 'high',
+                    }],
+                },
+            }),
+        ]);
+
+        expect(text).toContain('| Build \\| controlled finish |');
+    });
+
     it('renders running dynamics in diagnostic detail even when no cycling power fields exist', () => {
         const text = renderContextBriefActivityTelemetry([
             activity({
