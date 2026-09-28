@@ -76,6 +76,7 @@ Full statements, with rationale and the checks that enforce them, are in
 | `sync [--date YYYY-MM-DD] [--force]` | Daily ingestion for `APP_USER_ID` |
 | `sync-all` | Daily ingestion for every active Garmin link |
 | `backfill --days 56 [--force]` | Historical backfill |
+| `backfill-activity-response --days 20 [--force] [--dry-run]` | Enrich historical cycling activities with bounded `activityResponse` telemetry |
 | `backfill-health --days 56` | Google Health backfill (Eight Sleep & Garmin) |
 | `backfill-eight-sleep-direct --days 56` | Direct Eight Sleep connector backfill (ES8/ES9) |
 | `rebuild --start-date X --end-date Y` | Offline snapshot rebuild from the raw archive |
