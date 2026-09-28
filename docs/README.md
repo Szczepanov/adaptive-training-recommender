@@ -114,6 +114,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 ### 🔍 Reviews & Analysis
 Point-in-time assessments of the system as built, including gaps between documented decisions and implemented behaviour:
 
+* [**2026-09-28 Issue #814 training-response completion analysis**](./analysis/2026-09-28-issue-814-training-response-completion-analysis.md) — Point-in-time audit of delivered #814 response features, canonical occurrence/source-authority gaps, comparability, strength, next-day linkage, controlled running scope, and evidence boundaries.
 * [**2026-09-26 Constraint-aware training requirement fulfilment**](./analysis/2026-09-26-constraint-aware-training-fulfilment.md) — Evidence and architecture review for multi-stimulus credit, maintenance microdoses, accumulated dose and bounded same-day packing without weakening exact-role semantics.
 * [**2026-09-24 Coding-agent evaluation baseline (capability & routing suite)**](./analysis/2026-09-24-coding-agent-eval-baseline.md) — initial isolated-worktree baseline trials for `external-library-version-routing`, `internal-architecture-no-external-docs`, and `firestore-targeted-prior-revision-query` (`3 / 3 PASS`), plus operational findings for Vite/Vitest worktree dependency installation and Serena project root binding.
 * [**2026-09-23 UI/UX foundation and documentation review**](./analysis/2026-09-23-ui-ux-foundation-review.md) — audit of the repository's fragmented UI/UX guidance against WCAG 2.2, mobile ergonomics, usability heuristics, and current test coverage; establishes the need for the living UI/UX standard.
@@ -238,6 +239,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 ### 🗺️ Implementation Plans
 How agreed changes get made. Mutable, status-tracked, and expected to go stale — see [`docs/plans/`](./plans/) for the index and conventions.
 
+* [**Issue #814 canonical comparable-session response completion**](./plans/2026-09-28-issue-814-training-response-completion.md) — *Draft.* WP0–WP8 plan to join canonical performed-session source reconciliation with bounded activity-response telemetry, centralize feature-family comparability, and preserve display-only authority.
 * [**Constraint-aware stimulus fulfilment**](./plans/constraint-aware-stimulus-fulfilment.md) — *In progress.* CF0–CF8 implementation plan for residual requirement views, microdose modules and bounded secondary-window packing, blocked on canonical decisions in #801–#806.
 * [**Multisource Health & Recovery Ingestion**](./plans/multisource-health-and-recovery-ingestion.md) — *Implemented (MS0–MS19).* Multi-source Google Health / Eight Sleep ingestion, OAuth connection management, historical backfill, empirical audits, candidate evidence-fusion engine, simulation comparator, and metric-by-metric production activation.
 * [**Phase 0: Instrumentation & developer baseline**](./plans/phase-0-instrumentation.md) — Coaching invariants as the CI gate; clean-clone runnability.
