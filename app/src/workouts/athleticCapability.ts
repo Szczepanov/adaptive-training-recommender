@@ -166,7 +166,7 @@ export function athleticCapabilitiesCreditedBy(
   for (const identity of identities) {
     if (seen.has(identity.capability)) continue;
     seen.add(identity.capability);
-    if (grantsAthleticCapabilityCredit({ ...evidence, capability: identity.capability })) {
+    if (evidence.variant === undefined || identity.qualifyingVariants.includes(evidence.variant)) {
       credited.push(identity.capability);
     }
   }
