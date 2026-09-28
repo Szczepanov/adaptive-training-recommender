@@ -3,6 +3,7 @@ import type { NormalizedGarminActivity } from './models';
 import {
     injectActivityTelemetryIntoContextBrief,
     renderContextBriefActivityTelemetry,
+    renderMorningQualityActivityTelemetry,
 } from './contextBriefActivityTelemetry';
 
 function activity(
@@ -112,6 +113,124 @@ describe('renderContextBriefActivityTelemetry', () => {
         expect(text).toContain('Heart-rate zones');
         expect(text).not.toContain('Power summary');
         expect(text).not.toContain('Power zones');
+    });
+});
+
+describe('renderMorningQualityActivityTelemetry', () => {
+    it('expands moderate tempo cycling with bounded multi-resolution power evidence', () => {
+        const lines = renderMorningQualityActivityTelemetry(activity({
+            intensityTag: 'moderate',
+            stimulusDomain: 'tempo',
+            variabilityIndex: 1.04,
+            powerInZones: [
+                { zoneNumber: 2, secondsInZone: 1200, lowBoundary: 150 },
+                { zoneNumber: 3, secondsInZone: 1800, lowBoundary: 193 },
+            ],
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1, hrSeconds: 1, cadenceSeconds: 1 },
+                segmentCountTotal: 2,
+                segmentsTruncated: false,
+                powerDurationPeaks: [
+                    { durationSeconds: 5, powerWatts: 640, confidence: 'high' },
+                    { durationSeconds: 300, powerWatts: 255, confidence: 'high' },
+                ],
+                steadyHalves: {
+                    firstPowerWatts: 201,
+                    secondPowerWatts: 205,
+                    firstHrBpm: 137,
+                    secondHrBpm: 143,
+                    firstCadenceRpm: 88,
+                    secondCadenceRpm: 90,
+                },
+                segments: [
+                    {
+                        segmentIndex: 1,
+                        segmentType: 'work',
+                        identitySource: 'fit_workout_step',
+                        durationSeconds: 900,
+                        prescribedTarget: { kind: 'power_range_watts', low: 193, high: 229 },
+                        averagePowerWatts: 211,
+                        averageHrBpm: 145,
+                        endHrBpm: 151,
+                        averageCadenceRpm: 89,
+                        firstThirdPowerWatts: 209,
+                        middleThirdPowerWatts: 212,
+                        lastThirdPowerWatts: 212,
+                        evidenceConfidence: 'high',
+                    },
+                    {
+                        segmentIndex: 2,
+                        segmentType: 'recovery',
+                        identitySource: 'fit_workout_step',
+                        durationSeconds: 300,
+                        averagePowerWatts: 130,
+                        evidenceConfidence: 'high',
+                    },
+                ],
+            },
+        }));
+
+        const text = lines.join('\n');
+        expect(text).toContain('Quality-session detail (display-only)');
+        expect(text).toContain('Session detail: VI 1.04');
+        expect(text).toContain('Power zones:');
+        expect(text).toContain('Power-duration peaks: 5s 640 W');
+        expect(text).toContain('5m 255 W');
+        expect(text).toContain('Deterministic halves: power 201→205 W');
+        expect(text).toContain('| 1 | work | fit_workout_step | 15:00 | 193–229 W |');
+    });
+
+    it('exports running interval pace, HR/power laps and running dynamics', () => {
+        const lines = renderMorningQualityActivityTelemetry(activity({
+            type: 'running',
+            intensityTag: 'hard',
+            stimulusDomain: 'vo2',
+            normalizedPower: undefined,
+            intensityFactor: undefined,
+            runningDynamics: {
+                groundContactTimeMs: 238,
+                groundContactBalanceLeftPct: 49.2,
+                verticalOscillationCm: 8.1,
+                verticalRatioPct: 7.4,
+                strideLengthM: 1.31,
+                avgRunningPowerWatts: 318,
+                maxRunningPowerWatts: 472,
+            },
+            laps: [
+                {
+                    lapIndex: 1,
+                    durationSeconds: 240,
+                    distanceMeters: 1000,
+                    averageSpeedMps: 1000 / 240,
+                    averagePowerWatts: 352,
+                    averageHrBpm: 166,
+                },
+                {
+                    lapIndex: 2,
+                    durationSeconds: 180,
+                    distanceMeters: 600,
+                    averageSpeedMps: 600 / 180,
+                    averagePowerWatts: 268,
+                    averageHrBpm: 148,
+                },
+            ],
+        }));
+
+        const text = lines.join('\n');
+        expect(text).toContain('Running dynamics: avg running power 318 W · max running power 472 W');
+        expect(text).toContain('GCT balance 49.2/50.8 L/R');
+        expect(text).toContain('Interval/lap detail:');
+        expect(text).toContain('| 1 | 4:00 | 1 km | 4:00/km | 352 W | 166 bpm |');
+    });
+
+    it('keeps ordinary endurance sessions compact even when detailed telemetry exists', () => {
+        expect(renderMorningQualityActivityTelemetry(activity({
+            intensityTag: 'moderate',
+            stimulusDomain: 'endurance',
+            variabilityIndex: 1.02,
+            powerInZones: [{ zoneNumber: 2, secondsInZone: 3000, lowBoundary: 150 }],
+        }))).toEqual([]);
     });
 });
 
