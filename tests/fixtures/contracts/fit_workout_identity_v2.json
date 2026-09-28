@@ -1,0 +1,148 @@
+{
+  "_comment": "Contract fixture for fit-workout-v2 identity matching between Python and TypeScript.",
+  "cases": [
+    {
+      "id": "cycling_vo2_canonical",
+      "workout": {
+        "schemaVersion": "canonical_workout_v1",
+        "title": "VO2 Max Intervals",
+        "workoutId": "cycling_vo2_intervals",
+        "modality": "cycling",
+        "targetDurationMin": 30,
+        "exportedAt": "2026-08-26T06:00:00Z",
+        "blocks": [
+          {
+            "id": "warmup",
+            "name": "Warm-up",
+            "role": "warmup",
+            "steps": [
+              {
+                "id": "wu_step",
+                "name": "Easy spin",
+                "durationSeconds": 600,
+                "targets": [
+                  "140-160 W"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "intervals",
+            "name": "VO2 Intervals",
+            "role": "main",
+            "steps": [
+              {
+                "id": "work_step",
+                "name": "VO2 Repeat",
+                "durationSeconds": 180,
+                "sets": 4,
+                "restAfterSec": 180,
+                "targets": [
+                  "300-320 W"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "cooldown",
+            "name": "Cool-down",
+            "role": "cooldown",
+            "steps": [
+              {
+                "id": "cd_step",
+                "name": "Easy spin",
+                "durationSeconds": 240,
+                "targets": [
+                  "110-130 W"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expectedFingerprint": "fit-workout-v2:5addcd19d07c82c3d91ba23484dc23bc",
+      "expectedKind": "semantic_definition"
+    },
+    {
+      "id": "cycling_ftp_context",
+      "athleteFtpWatts": 258,
+      "workout": {
+        "schemaVersion": "canonical_workout_v1",
+        "title": "FTP Endurance",
+        "workoutId": "ftp_endurance",
+        "modality": "cycling",
+        "targetDurationMin": 10,
+        "exportedAt": "2026-08-26T06:00:00Z",
+        "blocks": [
+          {
+            "id": "main",
+            "name": "Main",
+            "role": "main",
+            "steps": [
+              {
+                "id": "work",
+                "name": "Steady endurance",
+                "durationSeconds": 600,
+                "targets": [
+                  "65-75% FTP"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expectedFingerprint": "fit-workout-v2:11a0856117c27e5e99eb8a55551e4c8e",
+      "expectedKind": "semantic_definition"
+    },
+    {
+      "id": "strength_3x5_canonical",
+      "workout": {
+        "schemaVersion": "canonical_workout_v1",
+        "title": "Strength 3x5",
+        "workoutId": "strength_3x5",
+        "modality": "strength",
+        "targetDurationMin": 30,
+        "exportedAt": "2026-08-26T06:00:00Z",
+        "blocks": [
+          {
+            "id": "main",
+            "name": "Main Block",
+            "role": "main",
+            "steps": [
+              {
+                "id": "step1",
+                "name": "Barbell Back Squat",
+                "sets": 3,
+                "repetitions": 5,
+                "restAfterSec": 90,
+                "targets": [
+                  "100 kg"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expectedFingerprint": "fit-workout-v2:e043427091c5bb69d630e3ee0e552275",
+      "expectedKind": "semantic_definition"
+    },
+    {
+      "id": "index_fallback_execution",
+      "workoutName": "Morning Ride",
+      "observedStepIndices": [
+        0,
+        1,
+        2
+      ],
+      "expectedFingerprint": "fit-workout-v2:477594bf644808fe505884e02173c82e",
+      "expectedKind": "index_fallback"
+    },
+    {
+      "id": "empty_freeform",
+      "workoutName": null,
+      "observedStepIndices": [],
+      "expectedFingerprint": null,
+      "expectedKind": null
+    }
+  ]
+}

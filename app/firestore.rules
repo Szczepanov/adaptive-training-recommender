@@ -1437,13 +1437,16 @@ service cloud.firestore {
     function hasValidSessionExecution(userId, executionId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'executionId', 'occurrenceId', 'sessionSource', 'prescriptionHash', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sessionRpe', 'notes', 'schemaVersion'])
+        && data.keys().hasOnly(['userId', 'executionId', 'occurrenceId', 'sessionSource', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sessionRpe', 'notes', 'schemaVersion'])
         && data.keys().hasAll(['userId', 'executionId', 'sessionSource', 'date', 'startedAt', 'updatedAt', 'state', 'schemaVersion'])
         && data.executionId == executionId
         && isValidActivityDate(data.date)
         && hasValidSessionSource(data.sessionSource)
         && (!('occurrenceId' in data) || data.occurrenceId is string)
         && (!('prescriptionHash' in data) || data.prescriptionHash is string)
+        && (('fitWorkoutFingerprint' in data) == ('fitWorkoutFingerprintKind' in data))
+        && (!('fitWorkoutFingerprint' in data) || (data.fitWorkoutFingerprint is string && data.fitWorkoutFingerprint.matches('^fit-workout-v2:[0-9a-f]{32}$')))
+        && (!('fitWorkoutFingerprintKind' in data) || data.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback'])
         && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 1 && data.sessionRpe <= 10))
         && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))
         && data.state in ['in_progress', 'completed', 'abandoned']
@@ -1680,7 +1683,9 @@ service cloud.firestore {
         && keepsOwnership(userId)
         && resource.data.state == 'in_progress'
         && request.resource.data.date == resource.data.date
-        && request.resource.data.startedAt == resource.data.startedAt;
+        && request.resource.data.startedAt == resource.data.startedAt
+        && (!('fitWorkoutFingerprint' in resource.data) ? !('fitWorkoutFingerprint' in request.resource.data) : request.resource.data.fitWorkoutFingerprint == resource.data.fitWorkoutFingerprint)
+        && (!('fitWorkoutFingerprintKind' in resource.data) ? !('fitWorkoutFingerprintKind' in request.resource.data) : request.resource.data.fitWorkoutFingerprintKind == resource.data.fitWorkoutFingerprintKind);
       allow delete: if isOwner(userId);
 
       match /entries/{entryId} {
@@ -1726,17 +1731,23 @@ service cloud.firestore {
     function hasValidPerformedOccurrenceSourceRef(ref) {
       return ref is map && (
         (ref.kind == 'structured_execution'
-          && ref.keys().hasOnly(['kind', 'executionId', 'sessionOccurrenceId', 'prescriptionHash'])
+          && ref.keys().hasOnly(['kind', 'executionId', 'sessionOccurrenceId', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind'])
           && ref.keys().hasAll(['kind', 'executionId'])
           && ref.executionId is string
           && (!('sessionOccurrenceId' in ref) || ref.sessionOccurrenceId is string)
-          && (!('prescriptionHash' in ref) || ref.prescriptionHash is string))
+          && (!('prescriptionHash' in ref) || ref.prescriptionHash is string)
+          && (('fitWorkoutFingerprint' in ref) == ('fitWorkoutFingerprintKind' in ref))
+          && (!('fitWorkoutFingerprint' in ref) || (ref.fitWorkoutFingerprint is string && ref.fitWorkoutFingerprint.matches('^fit-workout-v2:[0-9a-f]{32}$')))
+          && (!('fitWorkoutFingerprintKind' in ref) || ref.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback']))
         || (ref.kind == 'provider_activity'
-          && ref.keys().hasOnly(['kind', 'provider', 'activityId', 'deviceId'])
+          && ref.keys().hasOnly(['kind', 'provider', 'activityId', 'deviceId', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind'])
           && ref.keys().hasAll(['kind', 'provider', 'activityId'])
           && ref.provider is string
           && ref.activityId is string
-          && (!('deviceId' in ref) || ref.deviceId is string))
+          && (!('deviceId' in ref) || ref.deviceId is string)
+          && (('fitWorkoutFingerprint' in ref) == ('fitWorkoutFingerprintKind' in ref))
+          && (!('fitWorkoutFingerprint' in ref) || (ref.fitWorkoutFingerprint is string && ref.fitWorkoutFingerprint.matches('^fit-workout-v2:[0-9a-f]{32}$')))
+          && (!('fitWorkoutFingerprintKind' in ref) || ref.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback']))
       );
     }
 

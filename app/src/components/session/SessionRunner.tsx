@@ -373,6 +373,12 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         runner.startSession(initialSession.definition, initialSession.binding.sessionSource, {
             occurrenceId: initialSession.binding.occurrenceId,
             prescriptionHash: initialSession.binding.prescriptionHash,
+            ...(initialSession.binding.fitWorkoutFingerprint && initialSession.binding.fitWorkoutFingerprintKind
+                ? {
+                    fitWorkoutFingerprint: initialSession.binding.fitWorkoutFingerprint,
+                    fitWorkoutFingerprintKind: initialSession.binding.fitWorkoutFingerprintKind,
+                }
+                : {}),
             allowDuplicateCompleted: initialSession.allowDuplicateCompleted,
         }).then(() => onInitialSessionHandled?.()).catch(() => {
             initialLaunchAttempted.current = false;

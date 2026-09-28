@@ -1,7 +1,7 @@
 import type { WorkoutPrescription, DisplayTarget, TechnicalRequirements } from '../workouts/models';
 import type { ExternalPlanSession } from '../engine/models';
 import type { ExternalPlanSessionV2 } from '../sessions/externalPlanV2';
-import type { RangeOrNumber, SessionEffort, SessionStep } from '../sessions/models';
+import type { RangeOrNumber, SessionDefinition, SessionEffort, SessionStep } from '../sessions/models';
 
 export interface CanonicalExportStep {
     id?: string;
@@ -491,15 +491,11 @@ function extractStepLoad(load: SessionStep['load']): { weightKg?: number; weight
     return {};
 }
 
-/**
- * v2 counterpart of `exportExternalSessionToJson`. Genuinely simpler: a v2 session's
- * content is already structured (`dose`/`effort`/`rest`), so this needs none of v1's
- * free-text parsing (`parseDoseToMetrics`, `extractRecoverySecondsFromText`, ...) -- it's a
- * direct field mapping, the same way `exportWorkoutPrescriptionToJson` maps a catalog
- * prescription's already-structured `displayBlocks` (M3.6).
- */
-export function exportExternalSessionV2ToJson(session: ExternalPlanSessionV2): CanonicalWorkoutExport {
-    const blocks: CanonicalExportBlock[] = session.definition.blocks.map(block => ({
+export function exportSessionDefinitionToJson(
+    definition: SessionDefinition,
+    options?: { workoutId?: string; modality?: string; targetDurationMin?: number },
+): CanonicalWorkoutExport {
+    const blocks: CanonicalExportBlock[] = definition.blocks.map(block => ({
         id: block.id,
         name: block.title ?? block.role,
         role: block.role,
@@ -530,14 +526,29 @@ export function exportExternalSessionV2ToJson(session: ExternalPlanSessionV2): C
 
     return {
         schemaVersion: 'canonical_workout_v1',
-        title: session.title,
-        workoutId: session.id,
-        modality: session.gating.modality,
-        targetDurationMin: session.gating.durationMin,
-        summary: session.definition.summary ?? session.definition.title,
+        title: definition.title,
+        workoutId: options?.workoutId ?? definition.id,
+        modality: options?.modality ?? definition.dominantModality ?? definition.modalities?.[0] ?? 'other',
+        targetDurationMin: options?.targetDurationMin ?? rangeMidpoint(definition.duration) ?? 0,
+        summary: definition.summary ?? definition.title,
         blocks,
         exportedAt: new Date().toISOString(),
     };
+}
+
+/**
+ * v2 counterpart of `exportExternalSessionToJson`. Genuinely simpler: a v2 session's
+ * content is already structured (`dose`/`effort`/`rest`), so this needs none of v1's
+ * free-text parsing (`parseDoseToMetrics`, `extractRecoverySecondsFromText`, ...) -- it's a
+ * direct field mapping, the same way `exportWorkoutPrescriptionToJson` maps a catalog
+ * prescription's already-structured `displayBlocks` (M3.6).
+ */
+export function exportExternalSessionV2ToJson(session: ExternalPlanSessionV2): CanonicalWorkoutExport {
+    return exportSessionDefinitionToJson(session.definition, {
+        workoutId: session.id,
+        modality: session.gating.modality,
+        targetDurationMin: session.gating.durationMin,
+    });
 }
 
 export function downloadJsonFile(filename: string, data: unknown): void {

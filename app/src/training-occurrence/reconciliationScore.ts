@@ -25,6 +25,7 @@ export interface ReconciliationFeatures {
     durationDiffMin: number | null;
     modalityCompatible: boolean | null;
     sameLocalDate: boolean;
+    fingerprintMatch: boolean | null;
 }
 
 export interface ReconciliationScore {
@@ -52,6 +53,36 @@ function explicitCorrelationMatches(
     if (!incoming.prescriptionHash) return false;
     return candidate.sourceRefs.some(
         ref => ref.kind === 'structured_execution' && ref.prescriptionHash === incoming.prescriptionHash,
+    );
+}
+
+/**
+ * Compares semantic FIT workout identities between incoming facts and candidate occurrence source refs.
+ * A comparable semantic definition mismatch is definitive negative evidence (different structured workout).
+ * A match is strong evidence when temporally plausible, but does not prove which repeated instance occurred.
+ * Index fallback, missing, or unknown kinds return null (incomparable).
+ */
+export function compareFitWorkoutIdentity(
+    incoming: ReconciliationSourceFacts,
+    candidate: PerformedTrainingOccurrence,
+): boolean | null {
+    const incomingFingerprint = incoming.fitWorkoutFingerprint ?? incoming.sourceRef.fitWorkoutFingerprint;
+    const incomingKind = incoming.fitWorkoutFingerprintKind ?? incoming.sourceRef.fitWorkoutFingerprintKind;
+
+    if (incomingKind !== 'semantic_definition' || !incomingFingerprint) {
+        return null;
+    }
+
+    const candidateSemanticRefs = candidate.sourceRefs.filter(
+        ref => ref.fitWorkoutFingerprintKind === 'semantic_definition' && typeof ref.fitWorkoutFingerprint === 'string',
+    );
+
+    if (candidateSemanticRefs.length === 0) {
+        return null;
+    }
+
+    return candidateSemanticRefs.some(
+        ref => ref.fitWorkoutFingerprint === incomingFingerprint,
     );
 }
 
@@ -94,6 +125,7 @@ export function scoreCandidate(
     const hasAbsoluteTimestamps = overlapSeconds !== null;
     const durationDelta = durationDiffMin(incoming, candidate);
     const sameLocalDate = incoming.localDate === candidate.localDate;
+    const fingerprintMatch = compareFitWorkoutIdentity(incoming, candidate);
 
     const features: ReconciliationFeatures = {
         explicitCorrelation,
@@ -103,6 +135,7 @@ export function scoreCandidate(
         durationDiffMin: durationDelta,
         modalityCompatible,
         sameLocalDate,
+        fingerprintMatch,
     };
 
     // Modality compatibility is required-when-known (ADR-0034): an incompatible pairing
@@ -110,6 +143,16 @@ export function scoreCandidate(
     // checked before explicit correlation so a coincidental/corrupted prescriptionHash
     // match can never auto-link across a known modality conflict.
     if (modalityCompatible === false) return { confidence: 0, features };
+
+    // A comparable semantic definition mismatch is definitive negative evidence (different structured workout)
+    // and disqualifies the candidate outright (hard negative gate).
+    if (fingerprintMatch === false) return { confidence: 0, features };
+
+    // A comparable semantic definition match combined with temporal overlap is auto-link grade evidence.
+    if (fingerprintMatch === true && hasAbsoluteTimestamps && overlapSeconds !== null && overlapSeconds > 0) {
+        return { confidence: 1, features };
+    }
+
     if (explicitCorrelation) return { confidence: 1, features };
 
     const temporalScore = !hasAbsoluteTimestamps

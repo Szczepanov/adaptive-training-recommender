@@ -349,6 +349,42 @@ describe('Session Validation (M2.1 / ADR-0023)', () => {
             expect(validateSessionExecution(execution).ok).toBe(true);
         });
 
+        it('accepts and validates fitWorkoutFingerprint and fitWorkoutFingerprintKind on execution', () => {
+            const validExec = {
+                userId: 'user-1',
+                executionId: 'exec-1',
+                sessionSource: { kind: 'unplanned_fixture', fixtureId: '01' },
+                date: '2026-08-18',
+                startedAt: '2026-08-18T10:00:00Z',
+                state: 'in_progress',
+                schemaVersion: 1,
+                updatedAt: '2026-08-18T10:00:00Z',
+                fitWorkoutFingerprint: 'fit-workout-v2:0123456789abcdef0123456789abcdef',
+                fitWorkoutFingerprintKind: 'semantic_definition',
+            };
+            expect(validateSessionExecution(validExec).ok).toBe(true);
+
+            const badFingerprint = validateSessionExecution({
+                ...validExec,
+                fitWorkoutFingerprint: 'fit-workout-v1:bad',
+            });
+            expect(badFingerprint.ok).toBe(false);
+
+            const badKind = validateSessionExecution({
+                ...validExec,
+                fitWorkoutFingerprintKind: 'unsupported_kind',
+            });
+            expect(badKind.ok).toBe(false);
+
+            const missingKind = { ...validExec } as Record<string, unknown>;
+            delete missingKind.fitWorkoutFingerprintKind;
+            expect(validateSessionExecution(missingKind).ok).toBe(false);
+
+            const missingFingerprint = { ...validExec } as Record<string, unknown>;
+            delete missingFingerprint.fitWorkoutFingerprint;
+            expect(validateSessionExecution(missingFingerprint).ok).toBe(false);
+        });
+
         it('validates discriminated entry payload', () => {
             const entry = {
                 id: 'entry-1',

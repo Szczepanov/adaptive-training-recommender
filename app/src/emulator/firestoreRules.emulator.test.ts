@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, writeBatch, updateDoc } from 'firebase/firestore';
 
 const emulatorDescribe = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 let testEnvironment: RulesTestEnvironment;
@@ -2133,6 +2133,78 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, `${sessionExecPath}/entries/entry-2`), {
             ...validSessionEntry(),
             id: 'entry-2',
+        }));
+    });
+
+    it('enforces fitWorkoutFingerprint validation and immutability on session_executions', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const validFp = 'fit-workout-v2:0123456789abcdef0123456789abcdef';
+        const fpExecPath = `users/${ownerId}/session_executions/exec-fp-1`;
+
+        // 1. Valid create with fitWorkoutFingerprint and kind
+        const execWithFp = {
+            ...validSessionExecution(),
+            executionId: 'exec-fp-1',
+            fitWorkoutFingerprint: validFp,
+            fitWorkoutFingerprintKind: 'semantic_definition',
+        };
+        await expect(assertSucceeds(setDoc(doc(ownerDb, fpExecPath), execWithFp))).resolves.toBeUndefined();
+
+        // 2. Transition state while keeping fitWorkoutFingerprint and kind unchanged succeeds
+        await expect(assertSucceeds(setDoc(doc(ownerDb, fpExecPath), {
+            ...execWithFp,
+            state: 'completed',
+            completedAt: '2026-08-18T10:45:00Z',
+            updatedAt: '2026-08-18T10:45:00Z',
+        }))).resolves.toBeUndefined();
+
+        // 3. Mutating fitWorkoutFingerprint fails (immutability)
+        const fpExec2Path = `users/${ownerId}/session_executions/exec-fp-2`;
+        const execWithFp2 = {
+            ...validSessionExecution(),
+            executionId: 'exec-fp-2',
+            fitWorkoutFingerprint: validFp,
+            fitWorkoutFingerprintKind: 'semantic_definition',
+        };
+        await expect(assertSucceeds(setDoc(doc(ownerDb, fpExec2Path), execWithFp2))).resolves.toBeUndefined();
+
+        await assertFails(updateDoc(doc(ownerDb, fpExec2Path), {
+            fitWorkoutFingerprint: 'fit-workout-v2:fedcba9876543210fedcba9876543210',
+            updatedAt: '2026-08-18T10:10:00Z',
+        }));
+
+        // 4. Mutating fitWorkoutFingerprintKind fails (immutability)
+        await assertFails(updateDoc(doc(ownerDb, fpExec2Path), {
+            fitWorkoutFingerprintKind: 'index_fallback',
+            updatedAt: '2026-08-18T10:10:00Z',
+        }));
+
+        // 5. Creating with malformed fingerprint fails
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/session_executions/exec-bad-fp`), {
+            ...validSessionExecution(),
+            executionId: 'exec-bad-fp',
+            fitWorkoutFingerprint: 'malformed-fp',
+            fitWorkoutFingerprintKind: 'semantic_definition',
+        }));
+
+        // 6. Creating with invalid kind fails
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/session_executions/exec-bad-kind`), {
+            ...validSessionExecution(),
+            executionId: 'exec-bad-kind',
+            fitWorkoutFingerprint: validFp,
+            fitWorkoutFingerprintKind: 'invalid_kind',
+        }));
+
+        // 7. Fingerprint provenance is atomic: neither half may be persisted alone.
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/session_executions/exec-fp-without-kind`), {
+            ...validSessionExecution(),
+            executionId: 'exec-fp-without-kind',
+            fitWorkoutFingerprint: validFp,
+        }));
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/session_executions/exec-kind-without-fp`), {
+            ...validSessionExecution(),
+            executionId: 'exec-kind-without-fp',
+            fitWorkoutFingerprintKind: 'semantic_definition',
         }));
     });
 

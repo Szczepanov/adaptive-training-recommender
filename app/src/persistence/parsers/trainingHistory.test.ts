@@ -44,14 +44,20 @@ describe('training-history persistence parsers', () => {
         expect(parsed).toMatchObject({ status: 'AVAILABLE', data: { activityId: 'a-1', durationMin: 45 } });
     });
 
-    it('accepts and passes through startedAt/endedAt/fitWorkoutFingerprint when present', () => {
+    it('accepts and passes through startedAt/endedAt/fitWorkoutFingerprint/fitWorkoutFingerprintKind when present', () => {
         const parsed = parseNormalizedGarminActivity({
             ...activity, startedAt: '2026-08-06T06:00:00Z', endedAt: '2026-08-06T06:45:00Z',
-            fitWorkoutFingerprint: 'fit-workout-v1:abc123',
+            fitWorkoutFingerprint: 'fit-workout-v2:0123456789abcdef0123456789abcdef',
+            fitWorkoutFingerprintKind: 'semantic_definition',
         }, 'users/u1/activities/a-1', 'a-1');
         expect(parsed).toMatchObject({
             status: 'AVAILABLE',
-            data: { startedAt: '2026-08-06T06:00:00Z', endedAt: '2026-08-06T06:45:00Z', fitWorkoutFingerprint: 'fit-workout-v1:abc123' },
+            data: {
+                startedAt: '2026-08-06T06:00:00Z',
+                endedAt: '2026-08-06T06:45:00Z',
+                fitWorkoutFingerprint: 'fit-workout-v2:0123456789abcdef0123456789abcdef',
+                fitWorkoutFingerprintKind: 'semantic_definition',
+            },
         });
     });
 
@@ -79,11 +85,45 @@ describe('training-history persistence parsers', () => {
         expect(parsed.data).not.toHaveProperty('startedAt');
         expect(parsed.data).not.toHaveProperty('endedAt');
         expect(parsed.data).not.toHaveProperty('fitWorkoutFingerprint');
+        expect(parsed.data).not.toHaveProperty('fitWorkoutFingerprintKind');
     });
 
     it('rejects a non-string fitWorkoutFingerprint', () => {
         const parsed = parseNormalizedGarminActivity({ ...activity, fitWorkoutFingerprint: 42 }, 'users/u1/activities/a-1', 'a-1');
         expect(parsed.status).toBe('INVALID');
+    });
+
+    it('rejects an invalid fitWorkoutFingerprintKind', () => {
+        const parsedInvalidString = parseNormalizedGarminActivity({ ...activity, fitWorkoutFingerprintKind: 'unknown_kind' }, 'users/u1/activities/a-1', 'a-1');
+        expect(parsedInvalidString.status).toBe('INVALID');
+        const parsedInvalidType = parseNormalizedGarminActivity({ ...activity, fitWorkoutFingerprintKind: 123 }, 'users/u1/activities/a-1', 'a-1');
+        expect(parsedInvalidType.status).toBe('INVALID');
+    });
+
+    it('requires a valid v2 fingerprint whenever a Garmin evidence kind is present', () => {
+        const missingFingerprint = parseNormalizedGarminActivity({
+            ...activity,
+            fitWorkoutFingerprintKind: 'semantic_definition',
+        }, 'users/u1/activities/a-1', 'a-1');
+        expect(missingFingerprint.status).toBe('INVALID');
+
+        const malformedFingerprint = parseNormalizedGarminActivity({
+            ...activity,
+            fitWorkoutFingerprint: 'fit-workout-v1:legacy',
+            fitWorkoutFingerprintKind: 'semantic_definition',
+        }, 'users/u1/activities/a-1', 'a-1');
+        expect(malformedFingerprint.status).toBe('INVALID');
+    });
+
+    it('keeps legacy fingerprint-only Garmin rows readable but non-promoted', () => {
+        const parsed = parseNormalizedGarminActivity({
+            ...activity,
+            fitWorkoutFingerprint: 'fit-workout-v1:legacy',
+        }, 'users/u1/activities/a-1', 'a-1');
+        expect(parsed.status).toBe('AVAILABLE');
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected AVAILABLE');
+        expect(parsed.data.fitWorkoutFingerprint).toBe('fit-workout-v1:legacy');
+        expect(parsed.data.fitWorkoutFingerprintKind).toBeUndefined();
     });
 
     it('rejects malformed activity dates instead of normalizing them', () => {

@@ -18,6 +18,7 @@ function occurrence(id: string): PerformedTrainingOccurrence {
 
 function features(overrides: Partial<ReconciliationFeatures> = {}): ReconciliationFeatures {
     return {
+        fingerprintMatch: null,
         explicitCorrelation: false,
         hasAbsoluteTimestamps: true,
         overlapSeconds: 600,

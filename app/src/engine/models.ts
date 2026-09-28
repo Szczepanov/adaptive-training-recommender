@@ -2038,9 +2038,13 @@ export interface NormalizedGarminActivity {
      * to Garmin devices, so nothing yet correlates against this field in reconciliation
      * scoring. Absence means no decodable workout structure, not "not yet computed". */
     fitWorkoutFingerprint?: string;
+    fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
     syncRunId?: string;
     syncedAt?: string;
 }
+
+export const FIT_WORKOUT_FINGERPRINT_KINDS = ['semantic_definition', 'index_fallback'] as const;
+export type FitWorkoutFingerprintKind = (typeof FIT_WORKOUT_FINGERPRINT_KINDS)[number];
 
 export interface ActivityOverride {
     activityId: string;

@@ -36,7 +36,7 @@ export interface ReconciliationResult {
 }
 
 export function structuredExecutionToFacts(
-    execution: Pick<SessionExecution, 'executionId' | 'occurrenceId' | 'prescriptionHash' | 'date' | 'startedAt' | 'completedAt'>,
+    execution: Pick<SessionExecution, 'executionId' | 'occurrenceId' | 'prescriptionHash' | 'fitWorkoutFingerprint' | 'fitWorkoutFingerprintKind' | 'date' | 'startedAt' | 'completedAt'>,
     modality?: string,
 ): ReconciliationSourceFacts {
     const durationMin = execution.completedAt
@@ -48,6 +48,12 @@ export function structuredExecutionToFacts(
             executionId: execution.executionId,
             ...(execution.occurrenceId ? { sessionOccurrenceId: execution.occurrenceId } : {}),
             ...(execution.prescriptionHash ? { prescriptionHash: execution.prescriptionHash } : {}),
+            ...(execution.fitWorkoutFingerprint && execution.fitWorkoutFingerprintKind
+                ? {
+                    fitWorkoutFingerprint: execution.fitWorkoutFingerprint,
+                    fitWorkoutFingerprintKind: execution.fitWorkoutFingerprintKind,
+                }
+                : {}),
         },
         localDate: execution.date,
         startedAt: execution.startedAt,
@@ -55,18 +61,40 @@ export function structuredExecutionToFacts(
         durationMin,
         ...(modality ? { modality } : {}),
         ...(execution.prescriptionHash ? { prescriptionHash: execution.prescriptionHash } : {}),
+        ...(execution.fitWorkoutFingerprint && execution.fitWorkoutFingerprintKind
+            ? {
+                fitWorkoutFingerprint: execution.fitWorkoutFingerprint,
+                fitWorkoutFingerprintKind: execution.fitWorkoutFingerprintKind,
+            }
+            : {}),
     };
 }
 
 export function garminActivityToFacts(activity: NormalizedGarminActivity, provider = 'garmin'): ReconciliationSourceFacts {
     const modality = normalizedGarminModality(activity.type);
     return {
-        sourceRef: { kind: 'provider_activity', provider, activityId: activity.activityId },
+        sourceRef: {
+            kind: 'provider_activity',
+            provider,
+            activityId: activity.activityId,
+            ...(activity.fitWorkoutFingerprint && activity.fitWorkoutFingerprintKind
+                ? {
+                    fitWorkoutFingerprint: activity.fitWorkoutFingerprint,
+                    fitWorkoutFingerprintKind: activity.fitWorkoutFingerprintKind,
+                }
+                : {}),
+        },
         localDate: activity.date,
         ...(activity.startedAt ? { startedAt: activity.startedAt } : {}),
         ...(activity.endedAt ? { endedAt: activity.endedAt } : {}),
         durationMin: activity.durationMin,
         ...(modality ? { modality } : {}),
+        ...(activity.fitWorkoutFingerprint && activity.fitWorkoutFingerprintKind
+            ? {
+                fitWorkoutFingerprint: activity.fitWorkoutFingerprint,
+                fitWorkoutFingerprintKind: activity.fitWorkoutFingerprintKind,
+            }
+            : {}),
     };
 }
 
@@ -161,7 +189,7 @@ export async function reconcileSourceFacts(userId: string, facts: Reconciliation
 
 export function reconcileStructuredCompletion(
     userId: string,
-    execution: Pick<SessionExecution, 'executionId' | 'occurrenceId' | 'prescriptionHash' | 'date' | 'startedAt' | 'completedAt'>,
+    execution: Pick<SessionExecution, 'executionId' | 'occurrenceId' | 'prescriptionHash' | 'fitWorkoutFingerprint' | 'fitWorkoutFingerprintKind' | 'date' | 'startedAt' | 'completedAt'>,
     modality?: string,
 ): Promise<ReconciliationResult> {
     return reconcileSourceFacts(userId, structuredExecutionToFacts(execution, modality));

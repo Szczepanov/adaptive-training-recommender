@@ -28,7 +28,7 @@ import type { RestEndReason } from '../sessions/models';
 import { resolveEffectiveInjuryConstraints, resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { ineligibleAlternativeOptionIds } from '../engine/sessionChoiceEligibility';
 import { EXERCISES_BY_ID } from '../workouts/exercises.ts';
-import type { BodyRegion, RegionTissueResponse } from '../engine/models';
+import type { BodyRegion, FitWorkoutFingerprintKind, RegionTissueResponse } from '../engine/models';
 import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
 import { reconcileStructuredCompletion } from '../training-occurrence';
 
@@ -302,7 +302,13 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const startSession = useCallback(async (
         nextDefinition: SessionDefinition,
         source: SessionSourceRef,
-        options: { occurrenceId?: string; prescriptionHash?: string; allowDuplicateCompleted?: boolean } = {},
+        options: {
+            occurrenceId?: string;
+            prescriptionHash?: string;
+            allowDuplicateCompleted?: boolean;
+            fitWorkoutFingerprint?: string;
+            fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
+        } = {},
     ) => {
         if (isRestoring || execution?.state === 'in_progress' || startInFlightRef.current) return;
         startInFlightRef.current = true;
@@ -315,6 +321,17 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         setLastRemovedEntry(null);
         setSyncStatus('pending');
 
+        let fitWorkoutFingerprint = options.fitWorkoutFingerprint;
+        let fitWorkoutFingerprintKind = options.fitWorkoutFingerprintKind;
+        if (!fitWorkoutFingerprint || !fitWorkoutFingerprintKind) {
+            // Semantic workout identity is only trustworthy when it comes from the exact
+            // canonical payload used for Garmin export. SessionDefinition is an executable
+            // adapter and can intentionally omit display/export-only targets, so deriving a
+            // hard-match fingerprint here could create a false mismatch.
+            fitWorkoutFingerprint = undefined;
+            fitWorkoutFingerprintKind = undefined;
+        }
+
         const executionId = `exec-${Date.now()}`;
         const today = getLocalDateString();
         try {
@@ -322,6 +339,8 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 sessionSource: source,
                 ...(options.occurrenceId ? { occurrenceId: options.occurrenceId } : {}),
                 ...(options.prescriptionHash ? { prescriptionHash: options.prescriptionHash } : {}),
+                ...(fitWorkoutFingerprint ? { fitWorkoutFingerprint } : {}),
+                ...(fitWorkoutFingerprintKind ? { fitWorkoutFingerprintKind } : {}),
                 date: today,
                 ...(options.allowDuplicateCompleted ? { allowDuplicateCompleted: true } : {}),
             });

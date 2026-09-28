@@ -6,7 +6,8 @@
  * have distinct lifecycles and ownership (D-MRECORDS).
  */
 
-import type { IntensityGauge } from '../engine/models';
+import type { FitWorkoutFingerprintKind, IntensityGauge } from '../engine/models';
+export type { FitWorkoutFingerprintKind };
 import type { MovementCompositionPattern, SessionMovementCompositionRequirement } from './movementCompositionContract';
 
 export const SESSION_SCHEMA_VERSION = 1;
@@ -29,6 +30,13 @@ export interface SessionReferenceBinding {
     sessionSource: SessionSourceRef;
     occurrenceId?: string;
     prescriptionHash: string;
+    /**
+     * Optional 1:1 Garmin workout identity derived from the exact canonical export payload
+     * before any lossy execution adapter. These fields are a pair and are copied onto the
+     * SessionExecution when present.
+     */
+    fitWorkoutFingerprint?: string;
+    fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
 }
 
 export type ExerciseRef =
@@ -357,6 +365,8 @@ export interface SessionExecution {
     occurrenceId?: string;
     sessionSource: SessionSourceRef;
     prescriptionHash?: string;
+    fitWorkoutFingerprint?: string;
+    fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
     date: string;
     startedAt: string;
     completedAt?: string | null;

@@ -163,6 +163,7 @@ def normalize_activity(
     hr_measurement: CanonicalHrMeasurementQuality | None = None,
     fit_workout_fingerprint: str | None = None,
     activity_response: CanonicalActivityResponseTelemetry | None = None,
+    fit_workout_fingerprint_kind: str | None = None,
 ) -> dict[str, Any]:
     """Normalize a canonical activity into the standalone per-activity record stored at
     users/{userId}/activities/{activityId} -- decoupled from any one day's recovery
@@ -214,10 +215,14 @@ def normalize_activity(
         # PR 5 (training-occurrence plan, ADR-0034): a device-recorded FIT workout
         # structure fingerprint, only when one was decodable (requires HR fidelity FIT
         # decode to be enabled and to have found workout_name/workout_step evidence).
-        # No reconciliation consumer reads this yet -- see fit_workout_identity.py.
         **(
             {"fitWorkoutFingerprint": fit_workout_fingerprint}
             if fit_workout_fingerprint is not None
+            else {}
+        ),
+        **(
+            {"fitWorkoutFingerprintKind": fit_workout_fingerprint_kind}
+            if fit_workout_fingerprint_kind is not None
             else {}
         ),
         "syncRunId": sync_run_id,
