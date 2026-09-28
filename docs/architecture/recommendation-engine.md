@@ -600,8 +600,10 @@ sport-neutral capabilities exist: `linear_speed_skill`, `acceleration_decelerati
 - **Athlete readouts (#856).** `Recommendation.capabilityMaintenance` and
   `WeekAheadPlan.capabilityMaintenance` carry the planner's typed result to the morning decision and
   `WeekAheadStrip`. The same-day result resolved by the daily recommendation is forwarded through the app to
-  `ContextBriefService` and the exposure ledger; the brief service never computes cadence. The result is runtime-only
-  and does not extend the persisted recommendation audit. When a canonical fact has a known capability workout
+  `ContextBriefService` and the exposure ledger; the brief service never computes cadence. If no same-date planner
+  result exists (for example, a direct deep link before Home/Plan has resolved), the brief keeps cadence explicitly
+  unknown instead of redirecting through another screen or recomputing policy. The result is runtime-only and does
+  not extend the persisted recommendation audit. When a canonical fact has a known capability workout
   identity but no recorded variant, and planner compatibility history counts it while the exact-variant ledger cannot,
   the brief keeps its `unknown` evidence status and explains the provenance gap. The readout covers all four opted-in
   capabilities: linear speed, acceleration/deceleration, change of direction, and sport skill.
