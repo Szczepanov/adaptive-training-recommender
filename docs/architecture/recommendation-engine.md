@@ -137,11 +137,12 @@ recommendation authority (ADR-0033 display-only, so no claim or coverage item), 
 The morning export is rebuilt by `buildMorningCoachBrief`, so it does not run the historical
 comparison/next-day `deriveKeySessionSummaries` pipeline. Instead,
 `contextBriefActivityTelemetry.ts` `renderMorningQualityActivityTelemetry` expands only the
-previous day's quality cycling/running sessions (tempo, threshold, VO2, anaerobic, mixed, race,
-or a legacy hard tag). Cycling uses bounded zones plus persisted `activityResponse` MMP,
-steady-half and semantic-segment evidence; running uses running dynamics and bounded lap
-pace/power/HR evidence. This remains display-only and ordinary endurance/recovery sessions keep
-the one-line morning summary.
+previous day's quality cycling/running sessions (tempo, threshold, VO2, anaerobic, mixed or race).
+For historical records where `stimulusDomain` is absent, a hard `intensityTag` is the bounded
+legacy fallback; an explicit canonical `unknown` domain is not promoted through that fallback.
+Cycling uses bounded zones plus persisted `activityResponse` MMP, steady-half and semantic-segment
+evidence; running uses running dynamics and bounded lap pace/power/HR evidence. This remains
+display-only and ordinary endurance/recovery sessions keep the one-line morning summary.
 
 A session is a *key session* when at least one feature produced a value, or when it is a
 steady session with no comparable prior session (its rejection reasons are stated). In the
