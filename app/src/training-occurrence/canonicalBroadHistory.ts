@@ -34,6 +34,7 @@ import { normalizeModality, recommendationOwnsExecution, templateIdForWorkoutId 
 import { ENRICHED_TEMPLATES_BY_ID } from '../engine/templates';
 import { workoutForTemplate } from '../workouts/prescription';
 import { getLocalDateString } from '../utils/localDate';
+import { isRotatingExecutionMode, targetEntriesForGroupStep } from '../sessions/groupProgression';
 import { countsTowardPrescribedSets } from '../sessions/workSets';
 import {
     isProviderActivityRef,
@@ -169,6 +170,25 @@ function modalityForOccurrence(value: string | undefined): SessionTemplate['moda
     return modality === 'Unknown' || modality === 'None' ? undefined : modality;
 }
 
+function sameNonCatalogSessionSource(
+    executionSource: SessionExecution['sessionSource'],
+    prescriptionSource: ExecutionPrescription['sessionSource'],
+): boolean {
+    if (executionSource.kind !== prescriptionSource.kind) return false;
+    if (executionSource.kind === 'manual' && prescriptionSource.kind === 'manual') {
+        return executionSource.definitionId === prescriptionSource.definitionId
+            && executionSource.revision === prescriptionSource.revision
+            && executionSource.contentHash === prescriptionSource.contentHash;
+    }
+    if (executionSource.kind === 'external_plan' && prescriptionSource.kind === 'external_plan') {
+        return executionSource.planId === prescriptionSource.planId
+            && executionSource.revision === prescriptionSource.revision
+            && executionSource.sessionId === prescriptionSource.sessionId
+            && executionSource.contentHash === prescriptionSource.contentHash;
+    }
+    return false;
+}
+
 function workEntriesForPrescription(
     execution: SessionExecution,
     prescription: ExecutionPrescription,
@@ -176,12 +196,50 @@ function workEntriesForPrescription(
 ): SessionEntry[] {
     const stepIds = new Set(prescription.blocks
         .filter(block => block.role !== 'warmup')
-        .flatMap(block => block.steps.map(step => step.id)));
+        .flatMap(block => block.steps.filter(step => step.dose !== undefined).map(step => step.id)));
     return (sources.entriesByExecutionId.get(execution.executionId) ?? []).filter(entry =>
-        entry.stepId !== undefined && stepIds.has(entry.stepId)
+        entry.executionId === execution.executionId
+        && entry.stepId !== undefined && stepIds.has(entry.stepId)
         && countsTowardPrescribedSets(entry)
         && (entry.payload.kind !== 'checkoff' || entry.payload.completed),
     );
+}
+
+function targetEntriesForStandaloneStep(step: ExecutionPrescription['blocks'][number]['steps'][number]): number {
+    const dose = step.dose;
+    if (!dose) return 0;
+    if (dose.kind === 'repetition') return dose.sets;
+    if (dose.kind === 'duration' || dose.kind === 'distance') return dose.sets ?? 1;
+    return dose.rounds ?? 1;
+}
+
+function completionRatioForPrescription(
+    prescription: ExecutionPrescription,
+    workEntries: readonly SessionEntry[],
+): number | undefined {
+    const completedByStep = new Map<string, number>();
+    for (const entry of workEntries) {
+        if (!entry.stepId) continue;
+        completedByStep.set(entry.stepId, (completedByStep.get(entry.stepId) ?? 0) + 1);
+    }
+
+    let expected = 0;
+    let completed = 0;
+    for (const block of prescription.blocks) {
+        if (block.role === 'warmup') continue;
+        for (const step of block.steps) {
+            // Optional work is real performed work, but it is not required completion and
+            // therefore cannot compensate for a missing required movement.
+            if (step.optional || !step.dose) continue;
+            const target = isRotatingExecutionMode(block.executionMode)
+                ? targetEntriesForGroupStep(block, step)
+                : targetEntriesForStandaloneStep(step);
+            if (!Number.isFinite(target) || target <= 0) continue;
+            expected += target;
+            completed += Math.min(target, completedByStep.get(step.id) ?? 0);
+        }
+    }
+    return expected > 0 ? Math.min(1, completed / expected) : undefined;
 }
 
 function nonCatalogStructuredExposure(
@@ -198,31 +256,27 @@ function nonCatalogStructuredExposure(
     const title = metadata?.title?.trim();
     const modality = modalityForOccurrence(metadata?.dominantModality);
     const workEntries = prescription ? workEntriesForPrescription(execution, prescription, sources) : [];
-    if (!prescription || !title || !modality || workEntries.length === 0) {
+    if (!prescription || !sameNonCatalogSessionSource(execution.sessionSource, prescription.sessionSource)
+        || !title || !modality || workEntries.length === 0) {
         return { status: 'unknown', reason: 'non_catalog_execution_evidence_missing' };
     }
 
     const garmin = activity ? liveGarminEvent(activity) : undefined;
-    // ponytail: uncalibrated CR-10 bands for this shadow fallback; require reviewed evidence before activation.
+    // Diagnostic-only CR-10 bands: uncalibrated until reviewed real-history evidence supports activation.
     const intensity = garmin?.costIntensity ?? garmin?.intensity ?? (
         execution.sessionRpe === undefined ? 'unknown'
             : execution.sessionRpe >= 7 ? 'hard'
                 : execution.sessionRpe >= 4 ? 'moderate' : 'easy'
     );
-    const plannedDurationMin = metadata?.duration?.min
-        ?? catalogReferenceDurationMin(modality, intensity);
+    const plannedDurationMin = metadata.duration
+        ? templateDurationReferenceMin({ durationMin: metadata.duration.min, durationMax: metadata.duration.max })
+        : catalogReferenceDurationMin(modality, intensity);
     const completedDurationMin = garmin?.durationMin ?? executionDurationMin(execution);
-    const expectedSets = prescription.blocks.filter(block => block.role !== 'warmup').flatMap(block => block.steps).reduce((total, step) => {
-        const dose = step.dose;
-        if (!dose) return total;
-        if (dose.kind === 'repetition') return total + dose.sets;
-        if (dose.kind === 'duration' || dose.kind === 'distance') return total + (dose.sets ?? 1);
-        return total + (dose.rounds ?? 1);
-    }, 0);
+    const completionRatio = completionRatioForPrescription(prescription, workEntries);
     const deliveredDose = {
         plannedDurationMin,
         completedDurationMin,
-        ...(expectedSets > 0 ? { completionRatio: Math.min(1, workEntries.length / expectedSets) } : {}),
+        ...(completionRatio !== undefined ? { completionRatio } : {}),
     };
     const cost = scaleCostByDeliveredDose(DEFAULT_COST_BY_MODALITY[modality][intensity], deliveredDose);
     const stimulus = garmin?.modality === modality
@@ -336,7 +390,9 @@ function auditDerivation(
     const prescription = execution?.prescriptionHash ? sources.prescriptionsByHash.get(execution.prescriptionHash) : undefined;
     const nonCatalogSupported = Boolean(execution && execution.state === 'completed'
         && (source?.kind === 'manual' || source?.kind === 'external_plan') && providerRefs.length <= 1
-        && prescription?.displayMetadata?.title && workEntriesForPrescription(execution, prescription, sources).length > 0);
+        && prescription?.displayMetadata?.title
+        && sameNonCatalogSessionSource(execution.sessionSource, prescription.sessionSource)
+        && workEntriesForPrescription(execution, prescription, sources).length > 0);
     const supported = catalogSupported || nonCatalogSupported;
     const exposure = derivation.exposure;
     const template = exposure.templateId ? ENRICHED_TEMPLATES_BY_ID.get(exposure.templateId) : undefined;
@@ -348,6 +404,8 @@ function auditDerivation(
             || exposure.category !== template.category
             || exposure.stimulusConfidence !== 'exact'
         : !prescription?.displayMetadata?.title
+            || !execution
+            || !sameNonCatalogSessionSource(execution.sessionSource, prescription.sessionSource)
             || exposure.trainingRecordLike.type !== prescription.displayMetadata.title.trim()
             || !exposure.modality
             || exposure.modality !== expectedNonCatalogModality
