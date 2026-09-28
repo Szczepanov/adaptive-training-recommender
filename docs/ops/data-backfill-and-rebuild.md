@@ -81,10 +81,12 @@ Operational properties:
 - original FIT bytes and per-record traces stay transient and are never written to Firestore;
 - the command updates enrichment fields only and preserves the activity's original
   `syncRunId` / `syncedAt` provenance;
+- forced re-derivation replaces `activityResponse` as one top-level map so omitted optional
+  fields cannot survive from an older derivation; optional sibling enrichments remain merged;
 - Garmin calls use the repository's configured jittered backfill pacing and shared per-user
   execution lease, so this command must not be run through an uncoordinated custom downloader;
-- a Garmin 429, authentication failure, malformed qualifying document, fetch failure, or
-  persistence failure produces a non-zero exit status;
+- a busy execution lease, Garmin 429, authentication failure, malformed qualifying document,
+  fetch failure, or persistence failure produces a non-zero exit status;
 - an unavailable original FIT file or source evidence that cannot derive a response is a
   supported skip, not fabricated telemetry.
 
