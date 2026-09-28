@@ -646,6 +646,21 @@ export type TrainingPriority =
 /** Persisted athlete-owned planning inputs. This is deliberately distinct from
  * `trainingIntent.ts`'s per-decision `TrainingIntent`, which resolves these inputs with
  * history and readiness for one date and is never persisted as this profile. */
+/** Issue #805: sport-neutral athletic capabilities that broad-athleticism maintenance can
+ * preserve. Future racket/court/field identities add workout mappings, not new keys. */
+export type AthleticCapabilityKey =
+    | 'linear_speed_skill'
+    | 'acceleration_deceleration'
+    | 'multidirectional_change_of_direction'
+    | 'sport_skill';
+
+/** Issue #805: explicit, default-off opt-in to periodic multidirectional/skill exposure.
+ * Independent of the `sport_readiness` priority (D-A); absent means opted out. */
+export interface CapabilityMaintenancePreference {
+    enabled: boolean;
+    capabilities: AthleticCapabilityKey[];
+}
+
 export interface TrainingIntentProfile {
     userId: string;
     planningMode: PlanningMode;
@@ -655,6 +670,9 @@ export interface TrainingIntentProfile {
         targetSessions: number;
         maxSessions: number;
     };
+    /** Optional so existing profiles need no migration. A merge-write cannot delete it, so
+     * opting out writes `enabled: false`. */
+    capabilityMaintenance?: CapabilityMaintenancePreference;
     organizationPreference: 'auto';
     schemaVersion: number;
     createdAt: string;
@@ -1846,6 +1864,72 @@ export interface ActivityLapSummary {
     averageSpeedMps?: number;
 }
 
+export type ActivitySegmentType = 'work' | 'recovery' | 'sprint' | 'steady' | 'surge' | 'warmup' | 'cooldown' | 'unknown';
+export type ActivitySegmentIdentitySource = 'reconciled_workout_step' | 'fit_workout_step' | 'manual_lap' | 'detected' | 'unknown';
+export type ActivityEvidenceConfidence = 'high' | 'moderate' | 'low';
+
+export interface ActivityPrescribedTarget {
+    kind: string;
+    value?: number;
+    low?: number;
+    high?: number;
+    text?: string;
+}
+
+export interface ActivitySegmentSummary {
+    segmentIndex: number;
+    segmentType: ActivitySegmentType;
+    identitySource: ActivitySegmentIdentitySource;
+    startOffsetSeconds?: number;
+    durationSeconds: number;
+    prescribedTarget?: ActivityPrescribedTarget;
+    averagePowerWatts?: number;
+    peak1sPowerWatts?: number;
+    peak5sPowerWatts?: number;
+    peak10sPowerWatts?: number;
+    averageHrBpm?: number;
+    endHrBpm?: number;
+    maxHrBpm?: number;
+    averageCadenceRpm?: number;
+    maxCadenceRpm?: number;
+    firstThirdPowerWatts?: number;
+    middleThirdPowerWatts?: number;
+    lastThirdPowerWatts?: number;
+    lastThirdHrBpm?: number;
+    evidenceConfidence: ActivityEvidenceConfidence;
+}
+
+export interface ActivityPowerDurationPeak {
+    durationSeconds: number;
+    powerWatts: number;
+    confidence: ActivityEvidenceConfidence;
+    elapsedBeforeSeconds?: number;
+    activityHalf?: 'first' | 'second';
+}
+
+export interface ActivitySteadyHalfSummary {
+    firstPowerWatts?: number;
+    secondPowerWatts?: number;
+    firstHrBpm?: number;
+    secondHrBpm?: number;
+    firstCadenceRpm?: number;
+    secondCadenceRpm?: number;
+}
+
+export interface ActivityResponseTelemetry {
+    derivationVersion: string;
+    sourceResolution: {
+        powerSeconds?: number;
+        hrSeconds?: number;
+        cadenceSeconds?: number;
+    };
+    segmentCountTotal: number;
+    segmentsTruncated: boolean;
+    segments: ActivitySegmentSummary[];
+    powerDurationPeaks: ActivityPowerDurationPeak[];
+    steadyHalves?: ActivitySteadyHalfSummary;
+}
+
 export type HrSensorTechnology = 'electrode_chest_strap' | 'optical_armband' | 'wrist_ppg' | 'external_unknown' | 'unknown';
 export type HrSourceForActivity = 'external' | 'wrist' | 'mixed_possible' | 'unknown';
 export type HrProvenanceConfidence = 'confirmed' | 'inferred' | 'ambiguous' | 'unknown';
@@ -1939,6 +2023,9 @@ export interface NormalizedGarminActivity {
     laps?: ActivityLapSummary[];
     runningDynamics?: RunningDynamics;
     exerciseSets?: ActivityExerciseSet[];
+    /** Issue #850: bounded, provider-neutral features derived from the transient native
+     * FIT trace. Raw samples are never persisted. Display/analysis evidence only. */
+    activityResponse?: ActivityResponseTelemetry;
     hrMeasurement?: HrMeasurement;
     /** PR 5 (training-occurrence plan, ADR-0034 "FIT structured-workout identity"): a
      * versioned fingerprint of a device-recorded FIT workout structure (workout name +

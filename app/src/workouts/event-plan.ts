@@ -1,5 +1,6 @@
 import type { WorkoutDefinition } from './models.ts';
 import { POWER_QUALIFYING_WORKOUT_IDS } from './powerExposure.ts';
+import { MECHANICAL_MAINTENANCE_WORKOUT_IDS } from './mechanicalExposure.ts';
 
 /** Generic planning vocabulary. The September cycling set is merely its first
  * descriptor; evergreen adds the `general` phase in Phase 7.5. */
@@ -8,6 +9,7 @@ export type PlanRequirement = 'required' | 'optional' | 'conditional';
 
 export type PlanCoverageKey =
   | 'aerobic_volume'
+  | 'long_aerobic_anchor'
   | 'recovery_spin'
   | 'sustained_quality'
   | 'short_surges'
@@ -16,6 +18,7 @@ export type PlanCoverageKey =
   | 'primary_strength'
   | 'compact_strength'
   | 'power_exposure'
+  | 'mechanical_exposure'
   | 'upper_body_trunk'
   | 'field_maintenance'
   | 'walk_run'
@@ -33,6 +36,8 @@ export interface PlanSessionCoverage {
   phases: PlanPhase[];
   requirement: PlanRequirement;
   workoutIds: string[];
+  /** Optional per-plan duration gate; used by the athlete-relative long aerobic anchor. */
+  minimumDurationMinutes?: number;
   notes: string;
 }
 
@@ -121,11 +126,13 @@ export const EVERGREEN_RECOVERY_WORKOUT_IDS = [
  * separate from the evidence metadata in evergreenStrategy.ts: it maps exact workout
  * identities to programming roles and makes no blanket scientific claim. */
 export const EVERGREEN_SESSION_COVERAGE: PlanSessionCoverage[] = [
-  { key: 'aerobic_volume', label: 'Continuous aerobic volume', phases: ['general'], requirement: 'required', workoutIds: ['cycling_zone2_standard_01', 'running_easy_continuous_01', 'walking_brisk_continuous_01'], notes: 'Counts only an authored continuous aerobic prescription at or above the athlete-relative aerobic-volume floor (the catalog minimum until 28-day history supports a higher one; one athlete-level floor for every aerobic modality, #757); walk-run and generic recovery walking are not equivalent -- only the purposeful brisk-walk identity earns this credit.' },
+  { key: 'aerobic_volume', label: 'Continuous aerobic volume', phases: ['general'], requirement: 'required', workoutIds: ['cycling_zone2_standard_01', 'running_easy_continuous_01', 'walking_brisk_continuous_01', 'swimming_easy_aerobic_01'], notes: 'Counts only an authored continuous aerobic prescription at or above the athlete-relative aerobic-volume floor (the catalog minimum until 28-day history supports a higher one; one athlete-level floor for every aerobic modality, #757); walk-run and generic recovery walking are not equivalent -- only the purposeful brisk-walk identity earns this credit.' },
+  { key: 'long_aerobic_anchor', label: 'Long continuous aerobic durability anchor', phases: ['general'], requirement: 'conditional', workoutIds: ['cycling_zone2_standard_01', 'running_easy_continuous_01', 'walking_brisk_continuous_01', 'swimming_easy_aerobic_01'], notes: 'Issue #806: one exact, primary-modality continuous session at the history-derived long-session duration; multiple shorter sessions do not satisfy this separate anchor.' },
   { key: 'sustained_quality', label: 'Optional sustained quality', phases: ['general'], requirement: 'optional', workoutIds: ['cycling_controlled_threshold_4x8_01', 'cycling_tempo_surges_01', 'running_tempo_01'], notes: 'Optional performance work; it is introduced only by an eligible evidence-backed strategy. The cycling tempo identity provides a 30-minute minimum for short windows.' },
   { key: 'primary_strength', label: 'Primary full-body strength', phases: ['general'], requirement: 'required', workoutIds: ['strength_full_body_maintenance_01', 'strength_bodyweight_full_body_01'], notes: 'Exact full-body resistance exposure for the strength role; the bodyweight identity is the zero-equipment floor so a no-equipment athlete has a reachable required-strength candidate.' },
   { key: 'compact_strength', label: 'Compact strength support', phases: ['general'], requirement: 'optional', workoutIds: ['strength_compact_power_01'], notes: 'Optional lower-time resistance alternative; never silently replaces a required full-body role.' },
   { key: 'power_exposure', label: 'Neuromuscular power exposure', phases: ['general'], requirement: 'conditional', workoutIds: [...POWER_QUALIFYING_WORKOUT_IDS], notes: 'Issue #802 embedded capability exposure: exact authored identities with Olympic-derivative, ballistic-throw or reactive-plyometric content at a full or reduced dose. A session may earn this key alongside primary_strength without counting as a second session; readiness-modified doses, threshold/VO2 work and generic strength never earn it. Only active when the evergreen strategy emits a power requirement.' },
+  { key: 'mechanical_exposure', label: 'Mechanical & impact exposure', phases: ['general'], requirement: 'conditional', workoutIds: [...MECHANICAL_MAINTENANCE_WORKOUT_IDS], notes: 'Issue #804 longitudinal mechanical-maintenance exposure: only exact low-cost authored identities may be selected specifically to repair this target. Higher-cost running/race sessions remain valid performed mechanical evidence through the canonical capability ledger but are not manufactured as catch-up work. Readiness-modified doses, non-impact work and generic strength never earn this exact planning key. Only active when the evergreen strategy emits a mechanical exposure requirement.' },
   { key: 'recovery_or_rest', label: 'Recovery or rest', phases: ['general'], requirement: 'required', workoutIds: [...EVERGREEN_RECOVERY_WORKOUT_IDS], notes: 'ADR-0038 baseline exact recovery identities. Recovery spin is recovery coverage only and does not earn aerobic-volume credit.' },
   { key: 'upper_body_trunk', label: 'Upper-body and trunk support', phases: ['general'], requirement: 'conditional', workoutIds: ['strength_upper_body_trunk_01'], notes: 'Conditional alternative when lower-body loading is inappropriate.' },
   { key: 'walk_run', label: 'Optional walk-run', phases: ['general'], requirement: 'optional', workoutIds: ['running_walk_run_01'], notes: 'A distinct low-impact entry; it is not credited as full continuous aerobic volume.' },

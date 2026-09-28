@@ -355,7 +355,16 @@ async function runRollingDailyScenario(definition, rulesModule, analyzeModule) {
       [],
       scenario.trainingIntentProfile ?? null,
       scenario.preferences ?? null,
-      'max'
+      'max',
+      null,
+      'off',
+      undefined,
+      null,
+      false,
+      [],
+      new Map(),
+      undefined,
+      scenario.mechanicalCheckinHistory
     );
     const trace = analyzeModule.traceFromRecommendation(Math.floor(dayIndex / 7), date, recommendation);
     decisionTraces.push(trace);

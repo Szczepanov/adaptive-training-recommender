@@ -419,18 +419,23 @@ export async function runScenario(
         const todayRec = await evaluateTrainingWithIntent(
             'sim-user', readiness, scenario.context, events, currentDate, undefined, historyProvider,
             null, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
-            null, subjectiveDriftPolicy, subjectiveDriftWeights,
+            null, subjectiveDriftPolicy, subjectiveDriftWeights, null, false, [], new Map(), undefined,
+            scenario.mechanicalCheckinHistory,
         );
         const nextDayPlan = await evaluateNextDayPlanWithIntent(
             'sim-user', events, readiness, scenario.context, currentDate, todayRec, historyProvider,
             null, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
-            subjectiveDriftPolicy, subjectiveDriftWeights,
+            subjectiveDriftPolicy, subjectiveDriftWeights, [], scenario.mechanicalCheckinHistory,
         );
         const tomorrowRec = nextDayPlan.branches.yellow.recommendation;
 
         const plan = await planGenerator(
             'sim-user', readiness, scenario.context, scenario.preferences ?? null, events, currentDate, todayRec, tomorrowRec,
-            { days: 6, fixedActivities, fatigueFusionPolicy }, historyProvider, null, scenario.trainingIntentProfile ?? null,
+            {
+                days: 6, fixedActivities, fatigueFusionPolicy,
+                ...(scenario.mechanicalCheckinHistory ? { mechanicalCheckinHistory: scenario.mechanicalCheckinHistory } : {}),
+            },
+            historyProvider, null, scenario.trainingIntentProfile ?? null,
         );
         const todayPhase = evaluatePeriodizationPhase(events, currentDate).phase.phaseName;
         const simulatedDays: WeekAheadDay[] = [recommendationAsDay(currentDate, todayRec, todayPhase), ...plan.days];
@@ -595,7 +600,8 @@ export async function runForecastDailyParityScenario(
         const recommendation = await evaluateTrainingWithIntent(
             'sim-user', readiness, scenario.context, events, date, previousMode, provider,
             null, scenario.fixedActivities ?? [], [], scenario.trainingIntentProfile ?? null,
-            scenario.preferences ?? null, 'max',
+            scenario.preferences ?? null, 'max', null, 'off', REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
+            null, false, [], new Map(), undefined, scenario.mechanicalCheckinHistory,
         );
         dailyTraces.push(traceFromRecommendation(weekIndex, date, recommendation));
         history.push(toCompletedExposure(recommendationAsDay(date, recommendation, 'rolling_daily')));
@@ -617,7 +623,8 @@ export async function runForecastDailyParityScenario(
             'sim-user', readiness, scenario.context, events, forecastTrace.date,
             index > 0 ? forecast.decisionTraces[index - 1].mode : undefined,
             forcedProvider, null, scenario.fixedActivities ?? [], [],
-            scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, 'max',
+            scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, 'max', null, 'off',
+            REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS, null, false, [], new Map(), undefined, scenario.mechanicalCheckinHistory,
         );
         forcedTraces.push(traceFromRecommendation(weekIndex, forecastTrace.date, recommendation));
         forcedHistory.push(traceAsExposure(forecastTrace));

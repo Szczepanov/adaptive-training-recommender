@@ -10,10 +10,12 @@
  *
  * Does not re-match sources. ADR-0034 canonical occurrence is the single deduplication authority.
  */
-import type { SessionTemplate, EvidenceTier, NormalizedGarminActivity, CompletedTrainingEvent } from './models';
+import type { SessionTemplate, EvidenceTier, NormalizedGarminActivity, CompletedTrainingEvent, DailyRecommendation } from './models';
+import type { SessionExecution } from '../sessions/models';
 import type { CoverageSetId, PlanCoverageKey, CoverageSetDescriptor } from '../workouts/event-plan';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { grantsPowerExposureCredit } from '../workouts/powerExposure';
+import { grantsMechanicalExposureCredit, type MechanicalDoseVariant } from '../workouts/mechanicalExposure';
 import type { WorkoutVariant } from '../workouts/models';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { getTemplateIdsForWorkoutId, getUniqueTemplateIdForWorkoutId } from './workoutTemplateIndex';
@@ -89,6 +91,19 @@ export interface FactsComparisonResult {
  */
 export function templateIdForWorkoutId(workoutId: string): string | undefined {
     return getUniqueTemplateIdForWorkoutId(workoutId);
+}
+
+/** True only when this persisted recommendation owns the structured execution. Modern
+ * records bind by prescription hash; the template fallback preserves pre-binding history. */
+export function recommendationOwnsExecution(
+    execution: SessionExecution,
+    templateId: string | undefined,
+    recommendation: DailyRecommendation | undefined,
+): boolean {
+    if (!recommendation) return false;
+    const boundHash = recommendation.primarySession?.prescriptionHash;
+    if (boundHash && execution.prescriptionHash) return boundHash === execution.prescriptionHash;
+    return templateId !== undefined && templateId === recommendation.templateId;
 }
 
 export function categoryForWorkoutId(workoutId: string): SessionTemplate['category'] | undefined {
@@ -294,6 +309,17 @@ export function deriveFactsFromOccurrence(
                 && grantsPowerExposureCredit({
                     workoutId,
                     variant: hydrated.structured.workoutVariantId,
+                    isReadinessModifiedDose: hydrated.structured.isReadinessModifiedDose,
+                })
+            ))
+            // Issue #804: completed mechanical credit requires both exact workout identity and
+            // the exact materialized dose variant. Unknown variants fail closed; this avoids
+            // treating a return-to-training prescription as full mechanical exposure.
+            .filter(item => item.key !== 'mechanical_exposure' || (
+                hydrated.structured?.workoutVariantId !== undefined
+                && grantsMechanicalExposureCredit({
+                    workoutId,
+                    variant: hydrated.structured.workoutVariantId as MechanicalDoseVariant,
                     isReadinessModifiedDose: hydrated.structured.isReadinessModifiedDose,
                 })
             ));

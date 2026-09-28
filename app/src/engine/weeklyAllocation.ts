@@ -30,8 +30,14 @@ export interface RequiredRoleOccurrence {
     windowEnd: string;
     ordinal: number;
     label: string;
+    minimumDurationMinutes?: number;
+    exactWorkoutIds?: string[];
     eligibleTemplateIds: string[];
     eligibleWorkoutIds: string[];
+    /** Optional capability-owned restriction applied before exact coverage identities are attached. */
+    candidateWorkoutAllowList?: string[];
+    /** Earliest reservation date by exact capability-owned workout identity. */
+    candidateWorkoutNotBeforeDates?: Readonly<Record<string, string>>;
     /** Issue #801: a support occurrence is placed only after, and around, the primary
      * allocation (see `resolveWeeklyRoleReservations`). Absent means primary. */
     reservationTier?: 'support';
@@ -103,6 +109,9 @@ export interface AllocationAssignment {
 export interface ProjectedDateOutcome {
     date: string;
     fatigueTier: 'train' | 'modify' | 'recover';
+    /** Real resolved exercise capacity for this date. Optional for legacy/test evaluators;
+     * when present, duration-gated exact roles cannot reserve a shorter window. */
+    availableMinutes?: number;
     /** Template ids that survive every production hard gate on this date. */
     acceptedTemplateIds: readonly string[];
     /** Template ids removed by the projected fatigue ceiling before ranking. */
@@ -135,6 +144,7 @@ export interface WeeklyRoleAllocationResult {
  * scheduling conflict. Anything unrecognised stays an observed blocker only. */
 const SAFETY_EXCLUSION_REASONS = new Set([
     'INJURY_RESTRICTION',
+    'UNAVAILABLE_MODALITY',
     'QUALITY_SPACING_VIOLATION',
     'HARD_LOWER_BODY_SPACING_VIOLATION',
     'ROLLING_HARD_CAP_EXCEEDED',
@@ -198,8 +208,16 @@ export function deriveRequiredRoleOccurrences(state: CoverageState): RequiredRol
                     windowEnd,
                     ordinal,
                     label: requirement.label,
+                    ...(requirement.minimumDurationMinutes !== undefined ? { minimumDurationMinutes: requirement.minimumDurationMinutes } : {}),
+                    ...(requirement.exactWorkoutIds?.length ? { exactWorkoutIds: requirement.exactWorkoutIds } : {}),
                     eligibleTemplateIds: [],
                     eligibleWorkoutIds: [],
+                    ...(requirement.eligibleWorkoutIds !== undefined
+                        ? { candidateWorkoutAllowList: [...requirement.eligibleWorkoutIds] }
+                        : {}),
+                    ...(requirement.candidateWorkoutNotBeforeDates
+                        ? { candidateWorkoutNotBeforeDates: { ...requirement.candidateWorkoutNotBeforeDates } }
+                        : {}),
                     ...(requirement.reservationTier === 'support' ? { reservationTier: 'support' as const } : {}),
                 };
             });
@@ -215,8 +233,18 @@ export function attachExactEligibleIdentities(
     aerobicVolumeFloor: AerobicVolumeFloor | null = null,
 ): RequiredRoleOccurrence[] {
     return occurrences.map(occurrence => {
+        const candidateWorkoutAllowList = occurrence.candidateWorkoutAllowList;
         const eligibleTemplateIds = templates
-            .filter(template => coverageKeysForTemplate(template, occurrence.phase, coverageSetFor(occurrence.coverageSetId), aerobicVolumeFloor).includes(occurrence.coverageKey))
+            .filter(template => (occurrence.minimumDurationMinutes === undefined
+                || template.durationMax >= occurrence.minimumDurationMinutes)
+                && (!occurrence.exactWorkoutIds?.length
+                    || occurrence.exactWorkoutIds.includes(workoutIdForTemplateId(template.id) ?? ''))
+                && coverageKeysForTemplate(template, occurrence.phase, coverageSetFor(occurrence.coverageSetId), aerobicVolumeFloor).includes(occurrence.coverageKey))
+            .filter(template => {
+                if (candidateWorkoutAllowList === undefined) return true;
+                const workoutId = workoutIdForTemplateId(template.id);
+                return workoutId !== undefined && candidateWorkoutAllowList.includes(workoutId);
+            })
             .map(template => template.id)
             .sort();
         return {
@@ -317,11 +345,23 @@ interface OccurrenceSearchState {
     sawRollingLoadBudgetExclusion: boolean;
 }
 
+function durationFitsOccurrence(outcome: ProjectedDateOutcome, occurrence: RequiredRoleOccurrence): boolean {
+    return occurrence.minimumDurationMinutes === undefined
+        || outcome.availableMinutes === undefined
+        || outcome.availableMinutes >= occurrence.minimumDurationMinutes;
+}
+
 function assignmentSignature(assignments: readonly AllocationAssignment[]): string {
     return [...assignments]
         .map(item => `${item.date}:${item.templateId}`)
         .sort()
         .join(',');
+}
+
+function candidateIsDueOnDate(occurrence: RequiredRoleOccurrence, templateId: string, date: string): boolean {
+    const workoutId = workoutIdForTemplateId(templateId);
+    const notBefore = workoutId ? occurrence.candidateWorkoutNotBeforeDates?.[workoutId] : undefined;
+    return notBefore === undefined || date >= notBefore;
 }
 
 function missReasonFor(state: OccurrenceSearchState): WeeklyRoleMissReason {
@@ -397,7 +437,13 @@ function resolveSinglePass(
         let sawRollingLoadBudgetExclusion = false;
         for (const date of dates) {
             const outcome = rootOutcomes.get(date)!;
+            if (!durationFitsOccurrence(outcome, occurrence)) {
+                sawLedgerCapacityExclusion = true;
+                blockers.add(`${date}:${DAILY_LEDGER_CAPACITY_BLOCKER}`);
+                continue;
+            }
             for (const templateId of occurrence.eligibleTemplateIds) {
+                if (!candidateIsDueOnDate(occurrence, templateId, date)) continue;
                 if (outcome.acceptedTemplateIds.includes(templateId)) {
                     all.push({ date, templateId });
                 } else if (outcome.fatigueExcludedTemplateIds.includes(templateId)) {
@@ -481,6 +527,11 @@ function resolveSinglePass(
             }
             transitionsUsed += 1;
             const outcome = evaluateCached(assignments, candidate.date);
+            if (!durationFitsOccurrence(outcome, next.occurrence)) {
+                next.sawLedgerCapacityExclusion = true;
+                next.blockers.add(`${candidate.date}:${DAILY_LEDGER_CAPACITY_BLOCKER}`);
+                continue;
+            }
             if (!outcome.acceptedTemplateIds.includes(candidate.templateId)) {
                 if (outcome.fatigueExcludedTemplateIds.includes(candidate.templateId)) {
                     next.sawFatigueExclusion = true;
@@ -651,17 +702,23 @@ export function resolveWeeklyRoleReservations(
     // (root state); a date removed by pass 1 that the support could never use proves nothing.
     const removedDates = evaluator.forecastDates.filter(date => primaryDates.has(date) && !(options.unavailableDates?.has(date)));
     const rootOutcomes = new Map(removedDates.map(date => [date, evaluator.evaluate([], date)] as const));
-    const primariesCostDate = (occurrence: RequiredRoleOccurrence) => removedDates.some(date =>
-        occurrence.eligibleTemplateIds.some(templateId => rootOutcomes.get(date)?.acceptedTemplateIds.includes(templateId)));
+    const primariesCostDate = (occurrence: RequiredRoleOccurrence) => removedDates.some(date => {
+        const outcome = rootOutcomes.get(date);
+        return Boolean(outcome
+            && durationFitsOccurrence(outcome, occurrence)
+            && occurrence.eligibleTemplateIds.some(templateId => outcome.acceptedTemplateIds.includes(templateId)));
+    });
     /** When pass 1 left no usable date, the gates on the removed dates are the real reason. */
     const removedDateGateReason = (occurrence: RequiredRoleOccurrence) => weeklyRoleMissReasonForBlockers(
-        removedDates.flatMap(date => occurrence.eligibleTemplateIds.flatMap(templateId => {
+        removedDates.flatMap(date => {
             const outcome = rootOutcomes.get(date);
             if (!outcome) return [];
-            return outcome.fatigueExcludedTemplateIds.includes(templateId)
-                ? [PROJECTED_FATIGUE_CEILING_BLOCKER]
-                : [...(outcome.exclusionReasons.get(templateId) ?? [])];
-        })),
+            if (!durationFitsOccurrence(outcome, occurrence)) return [DAILY_LEDGER_CAPACITY_BLOCKER];
+            return occurrence.eligibleTemplateIds.flatMap(templateId =>
+                outcome.fatigueExcludedTemplateIds.includes(templateId)
+                    ? [PROJECTED_FATIGUE_CEILING_BLOCKER]
+                    : [...(outcome.exclusionReasons.get(templateId) ?? [])]);
+        }),
     );
     const supportOutcomes = supportResult.outcomes.map((outcome): WeeklyRoleAllocationOutcome => {
         if (outcome.status !== 'missed' || outcome.occurrence.eligibleTemplateIds.length === 0) return outcome;

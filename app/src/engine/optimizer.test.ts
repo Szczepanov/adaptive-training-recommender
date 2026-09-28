@@ -241,6 +241,29 @@ describe('optimizer — preferred modality and safe strength fallback (#736)', (
         expect(unmarked.accepted.map(item => item.template.id)).toContain(unmarkedFutureFieldTemplate.id);
     });
 
+    it('hard-excludes an unavailable modality with a stable reason, even when it is also preferred (#805 Phase 0B)', () => {
+        const field = candidate('field_maint_01');
+        const cycling = candidate('end_easy_01');
+        const normal = rankCandidates([field, cycling], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], {
+            ...DEFAULT_PREFERENCES, preferredModalities: ['Field', 'Cycling'],
+        }, { date: '2026-03-05' });
+        expect(normal.accepted.map(item => item.template.id)).toEqual(expect.arrayContaining([field.id, cycling.id]));
+
+        const unavailable = rankCandidates([field, cycling], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], {
+            ...DEFAULT_PREFERENCES, preferredModalities: ['Cycling'], unavailableModalities: ['Field'],
+        }, { date: '2026-03-05' });
+        expect(unavailable.accepted.map(item => item.template.id)).toEqual([cycling.id]);
+        expect(unavailable.rejected.find(item => item.template.id === field.id)?.excludedReasons).toContain('UNAVAILABLE_MODALITY');
+
+        const preferredButUnavailable = rankCandidates([field, cycling], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], {
+            ...DEFAULT_PREFERENCES, preferredModalities: ['Field', 'Cycling'], unavailableModalities: ['Field'],
+        }, { date: '2026-03-05' });
+        const rejectedField = preferredButUnavailable.rejected.find(item => item.template.id === field.id);
+        expect(rejectedField?.excludedReasons).toContain('UNAVAILABLE_MODALITY');
+        expect(rejectedField?.excludedReasons).not.toContain('EXPLICIT_MODALITY_PREFERENCE_REQUIRED');
+        expect(preferredButUnavailable.accepted.map(item => item.template.id)).not.toContain(field.id);
+    });
+
     it('prefers an eligible cycling spin over unpreferred walking and running in a short window', () => {
         const preferences = { ...DEFAULT_PREFERENCES, preferredModalities: ['Cycling', 'Strength'] };
         const result = rankCandidates(

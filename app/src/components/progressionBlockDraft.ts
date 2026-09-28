@@ -28,13 +28,13 @@ export const adaptationScopeLabels: Record<(typeof SUPPORTED_ADAPTATION_SCOPES)[
 };
 
 export const coverageKeyLabels: Record<(typeof SUPPORTED_PLAN_COVERAGE_KEYS)[number], string> = {
-  aerobic_volume: 'Aerobic volume', recovery_spin: 'Recovery spin', sustained_quality: 'Sustained quality',
+  aerobic_volume: 'Aerobic volume', long_aerobic_anchor: 'Long aerobic anchor', recovery_spin: 'Recovery spin', sustained_quality: 'Sustained quality',
   short_surges: 'Short surges', gap_closing: 'Gap closing', outdoor_event_specific: 'Outdoor event-specific',
   primary_strength: 'Primary strength', compact_strength: 'Compact strength', upper_body_trunk: 'Upper body / trunk',
   field_maintenance: 'Field maintenance', walk_run: 'Walk/run', recovery_or_rest: 'Recovery or rest',
   travel_aerobic: 'Travel aerobic', travel_strength: 'Travel strength', taper_sharpening: 'Taper sharpening',
   pre_race_openers: 'Pre-race openers', race_week_strength: 'Race-week strength', race_day: 'Race day',
-  power_exposure: 'Neuromuscular power',
+  power_exposure: 'Neuromuscular power', mechanical_exposure: 'Mechanical & impact exposure',
 };
 
 export const priorityLabels: Record<(typeof SUPPORTED_OBJECTIVE_PRIORITIES)[number], string> = {

@@ -118,4 +118,27 @@ describe('diffCompletedTrainingHistory', () => {
         expect(diff.liveActivityIdsMissingFromCanonical).toEqual([]);
         expect(diff.canonicalActivityIdsMissingFromLive).toEqual([]);
     });
+
+    it('keeps broad canonical cost/dose comparisons unavailable until a semantic canonical exposure is provided', () => {
+        expect(diffCompletedTrainingHistory([liveEvent()], [workout()]).broadExposureComparison).toBeNull();
+    });
+
+    it('compares broad history only from explicitly supplied canonical exposures', () => {
+        const live = liveEvent({ estimatedCost: { systemic: 0.3, cardiovascular: 0.2, lowerBody: 0.4, upperBody: 0.1, impactTissue: 0.2, neuromuscular: 0.1 } });
+        const diff = diffCompletedTrainingHistory([live], [workout()], {
+            liveOccurrenceKeysByEventId: new Map([[live.id, 'fixture-pair']]),
+            canonicalExposures: [{
+                occurrenceKey: 'fixture-pair',
+                date: '2026-08-26',
+                costProfile: { systemic: 0.5, cardiovascular: 0.2, lowerBody: 0.4, upperBody: 0.1, impactTissue: 0.2, neuromuscular: 0.1 },
+                trainingRecordLike: { type: 'Strength', duration_min: 40, training_effect: 0, intensity_tag: 'moderate' },
+            }],
+            unknownCanonicalOccurrenceKeys: ['occ-unavailable'],
+        });
+
+        expect(diff.broadExposureComparison?.countDelta).toBe(0);
+        expect(diff.broadExposureComparison?.costTotals.systemic.delta).toBeCloseTo(0.2);
+        expect(diff.broadExposureComparison?.unknownCanonicalOccurrenceCount).toBe(1);
+        expect(diff.broadExposureComparison?.perOccurrence).toMatchObject([{ pairIndex: 0, status: 'matched' }]);
+    });
 });

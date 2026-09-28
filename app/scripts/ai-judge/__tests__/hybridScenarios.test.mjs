@@ -26,8 +26,8 @@ async function resultFor(definition) {
 
 describe('cycling hybrid targeted evaluation', () => {
   it('adds eleven cases in three comparison families without changing the reviewed active suite', () => {
-    expect(assertPersonaFixtureIntegrity(buildPersonaFamilies())).toEqual({ familyCount: 10, caseCount: 36 });
-    expect(assertPersonaFixtureIntegrity(families)).toEqual({ familyCount: 13, caseCount: 47 });
+    expect(assertPersonaFixtureIntegrity(buildPersonaFamilies())).toEqual({ familyCount: 10, caseCount: 37 });
+    expect(assertPersonaFixtureIntegrity(families)).toEqual({ familyCount: 13, caseCount: 48 });
     expect(definitions).toHaveLength(11);
     expect(new Set(definitions.map(({ persona }) => persona.personaId)).size).toBe(1);
   });

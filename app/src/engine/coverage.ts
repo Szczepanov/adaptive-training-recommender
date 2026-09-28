@@ -7,9 +7,11 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CoverageCreditFact, PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import type { CompletedExposure } from './trainingHistory';
 import { aerobicVolumeFloorForWorkout, type AerobicVolumeFloor } from './aerobicVolumeFloor';
+import { activeCapabilityPlacements, isCapabilityPlacementFulfilled, type CapabilityPlacement } from './capabilityMaintenance';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { grantsPowerExposureCredit } from '../workouts/powerExposure';
+import { grantsMechanicalExposureCredit } from '../workouts/mechanicalExposure';
 
 /**
  * Phase 6.2c / ADR-0016: physiological stimulus credit and programming-role coverage
@@ -58,6 +60,8 @@ export interface WeeklyCoverageRequirement {
     requirement: EventPlanRequirement;
     minimumSessions: number;
     targetSessions: number;
+    minimumDurationMinutes?: number;
+    exactWorkoutIds?: string[];
     completedSessions: number;
     projectedSessions: number;
     priority: ObjectivePriority;
@@ -67,6 +71,18 @@ export interface WeeklyCoverageRequirement {
     credits: CoverageCredit[];
     /** Issue #801: reserved only without displacing a primary required role. */
     reservationTier?: 'support';
+    /** Capability-owned candidate allow-list. `undefined` means unrestricted; an empty
+     * list is an explicit fail-closed block for this planning window. */
+    eligibleWorkoutIds?: readonly string[];
+    /** Issue #805: earliest date each capability-owned workout may satisfy/reserve this
+     * support occurrence. The allocator and current-date ranking both enforce it. */
+    candidateWorkoutNotBeforeDates?: Readonly<Record<string, string>>;
+    /** Issue #805: the plan's capability placements, as authored for the whole horizon. */
+    capabilityPlacements?: readonly CapabilityPlacement[];
+    /** Issue #805 (D-E): exact capability identities the athlete's opt-in consents to on this
+     * state's `asOfDate` -- only placements already due and not yet fulfilled. The optimizer
+     * may exempt exactly these from `requiresExplicitModalityPreference`; nothing else. */
+    capabilityConsentWorkoutIds?: readonly string[];
 }
 
 export interface CoverageState {
@@ -246,10 +262,11 @@ const DEFERRED_SUPPORT_COVERAGE_KEYS = new Set<EventPlanCoverageKey>([
     'recovery_or_rest',
 ]);
 
-/** Issue #802 / ADR-0044 D6: embedded capability keys are credited and reported but never
- * raise a candidate's coverage-need tier. An unmet power target must not promote a
- * standalone power or lower-body session as catch-up work; power rides only inside the
- * strength role that already earns its own tier. */
+/** Issue #802 / ADR-0044 D6: power remains an embedded-only capability: an unmet
+ * power target must not promote a standalone power/lower-body session as catch-up work.
+ * Mechanical exposure differs (#804): the evergreen plan keeps an explicit low-cost
+ * maintenance target, so the normal allocator may repair it with an exact authored
+ * maintenance identity when no already-planned session supplies the capability. */
 const EMBEDDED_ONLY_COVERAGE_KEYS = new Set<PlanCoverageKey>([
     'power_exposure',
 ]);
@@ -274,17 +291,15 @@ export function workoutIdForTemplateId(templateId: string | undefined): string |
     return workoutForTemplate(templateId)?.id;
 }
 
-/** Resolve the uncapped standard-template duration ceiling for planned or projected
- * exposures (`source` is `'projected'` or `'fixed_activity'`, or `durationMax` is
- * present), while returning `undefined` for completed exposures so completed sessions
- * remain governed by their actual duration against the athlete floor. */
+/** Resolve the uncapped standard-template duration ceiling only for explicitly planned
+ * exposures. A legacy completed record may still carry the original prescription's
+ * `durationMax`; that field alone must never convert performed history back into a plan. */
 function standardTemplateCeilingFor(
     identity: ExposureIdentity & { source?: CoverageCreditSource },
     workoutId: string,
 ): number | undefined {
-    const isCompletedExposure = identity.source === 'completed'
-        || (identity.source === undefined && identity.durationMax === undefined);
-    if (isCompletedExposure) return undefined;
+    const isPlannedExposure = identity.source === 'projected' || identity.source === 'fixed_activity';
+    if (!isPlannedExposure) return undefined;
 
     if (identity.templateId) {
         const directCeiling = ENRICHED_TEMPLATES_BY_ID.get(identity.templateId)?.durationMax;
@@ -300,6 +315,20 @@ function standardTemplateCeilingFor(
         }
     }
     return maxTemplateCeiling;
+}
+
+/** Exact coverage duration authority. Completed history is credited only from the
+ * performed duration; a stale/planned durationMax must never inflate completed work.
+ * Projected/fixed occurrences may use the upper bound of their prescribed range. */
+function coverageDurationReach(identity: ExposureIdentity & { source?: CoverageCreditSource }): number {
+    const lower = typeof identity.durationMin === 'number' && Number.isFinite(identity.durationMin)
+        ? identity.durationMin
+        : 0;
+    if (identity.source !== 'projected' && identity.source !== 'fixed_activity') return lower;
+    const upper = typeof identity.durationMax === 'number' && Number.isFinite(identity.durationMax)
+        ? identity.durationMax
+        : lower;
+    return Math.max(lower, upper);
 }
 
 /** The lower bound must reach the catalog minimum, as before #757. Issue #757 adds the
@@ -324,10 +353,7 @@ function hasRequiredAerobicDose(
     const athleteFloor = effectiveCeiling !== undefined
         ? Math.max(catalogMinimum, Math.min(rawAthleteFloor, effectiveCeiling))
         : rawAthleteFloor;
-    const reach = typeof identity.durationMax === 'number' && Number.isFinite(identity.durationMax)
-        ? Math.max(lower, identity.durationMax)
-        : lower;
-    return reach >= athleteFloor;
+    return coverageDurationReach(identity) >= athleteFloor;
 }
 
 /** Return all authored plan coverage keys satisfied by an exposure in the given phase. */
@@ -344,7 +370,10 @@ export function coverageKeysForExposure(
     return descriptor.coverage
         .filter(item => item.phases.includes(phase) && item.workoutIds.includes(workoutId))
         .filter(item => item.key !== 'aerobic_volume' || hasRequiredAerobicDose(identity, workoutId, floor, templateCeilingMin))
+        .filter(item => item.minimumDurationMinutes === undefined
+            || coverageDurationReach(identity) >= item.minimumDurationMinutes)
         .filter(item => item.key !== 'power_exposure' || grantsPowerExposureCredit({ workoutId, isReadinessModifiedDose: identity.isReadinessModifiedDose }))
+        .filter(item => item.key !== 'mechanical_exposure' || grantsMechanicalExposureCredit({ workoutId, isReadinessModifiedDose: identity.isReadinessModifiedDose }))
         .map(item => item.key);
 }
 
@@ -366,6 +395,7 @@ function canonicalCoverageKeysForExposure(
         .filter(key => {
             const definition = coverageFor(descriptor, key);
             if (!definition || !definition.phases.includes(phase)) return false;
+            if (workoutId === undefined || !definition.workoutIds.includes(workoutId)) return false;
             // Identity comes from the canonical semantic ledger; dose eligibility remains a
             // coverage-state concern so a short exact Z2 execution cannot satisfy the
             // authored aerobic-volume floor merely because its catalog id is known.
@@ -373,6 +403,11 @@ function canonicalCoverageKeysForExposure(
             if (key === 'power_exposure') {
                 return grantsPowerExposureCredit({ workoutId, isReadinessModifiedDose: exposure.isReadinessModifiedDose });
             }
+            if (key === 'mechanical_exposure') {
+                return grantsMechanicalExposureCredit({ workoutId, isReadinessModifiedDose: exposure.isReadinessModifiedDose });
+            }
+            if (definition.minimumDurationMinutes !== undefined
+                && coverageDurationReach(exposure) < definition.minimumDurationMinutes) return false;
             if (key !== 'aerobic_volume') return true;
             return workoutId !== undefined && hasRequiredAerobicDose(exposure, workoutId, floor);
         });
@@ -394,6 +429,7 @@ export function coverageKeysForTemplate(
         category: template.category,
         durationMin: template.durationMin,
         durationMax: template.durationMax,
+        source: 'projected',
         ...(template.isReadinessModifiedDose ? { isReadinessModifiedDose: true } : {}),
     }, phase, descriptor, floor, uncappedTemplateCeiling);
 }
@@ -455,6 +491,21 @@ export function buildCoverageState(
         return { asOfDate, phase: null, activeBlockId: null, coverageSetId: null, descriptor: null, requirements: [], aerobicVolumeFloor };
     }
 
+    const anchorRequirement = planDefinition.coverageRequirements?.find(requirement =>
+        requirement.coverageKey === 'long_aerobic_anchor' && requirement.blockId === block.id)?.minimumDurationMinutes;
+    const anchorPlanRequirement = planDefinition.coverageRequirements?.find(requirement =>
+        requirement.coverageKey === 'long_aerobic_anchor' && requirement.blockId === block.id);
+    const activeDescriptor: CoverageSetDescriptor = anchorPlanRequirement === undefined ? descriptor : {
+        ...descriptor,
+        coverage: descriptor.coverage.map(item => item.key === 'long_aerobic_anchor'
+            ? {
+                ...item,
+                ...(anchorRequirement !== undefined ? { minimumDurationMinutes: anchorRequirement } : {}),
+                ...(anchorPlanRequirement.exactWorkoutIds?.length ? { workoutIds: anchorPlanRequirement.exactWorkoutIds } : {}),
+            }
+            : item),
+    };
+
     const rollingWindowDays = 7;
     // `asOfDate` is exclusive, so the preceding seven calendar dates start seven days
     // back (not six). This keeps a full seven completed/projected exposures eligible.
@@ -464,7 +515,7 @@ export function buildCoverageState(
     const requirementsByKey = new Map<PlanCoverageKey, WeeklyCoverageRequirement>();
 
     activeDefinitions.forEach((definition, index) => {
-        const coverage = coverageFor(descriptor, definition.coverageKey);
+        const coverage = coverageFor(activeDescriptor, definition.coverageKey);
         if (!coverage || !coverage.phases.includes(block.phase)) return;
         const minimumSessions = Math.max(0, definition.coverageMinimumSessions
             ?? (definition.priority === 'must_have' ? Math.min(1, definition.requiredCredit) : 0));
@@ -492,7 +543,7 @@ export function buildCoverageState(
             return;
         }
         const requirement = newRequirement({
-            descriptor,
+            descriptor: activeDescriptor,
             blockId: block.id,
             key: definition.coverageKey,
             minimumSessions,
@@ -515,11 +566,11 @@ export function buildCoverageState(
     (planDefinition.coverageRequirements ?? [])
         .filter(definition => definition.blockId === block.id && !requirementsByKey.has(definition.coverageKey))
         .forEach((definition, index) => {
-            const coverage = coverageFor(descriptor, definition.coverageKey);
+            const coverage = coverageFor(activeDescriptor, definition.coverageKey);
             if (!coverage || !coverage.phases.includes(block.phase)) return;
             const minimumSessions = Math.max(0, definition.minimumSessions);
             const requirement = newRequirement({
-                descriptor,
+                descriptor: activeDescriptor,
                 blockId: block.id,
                 key: definition.coverageKey,
                 minimumSessions,
@@ -530,15 +581,26 @@ export function buildCoverageState(
                 windowEnd: block.endDate,
                 index: activeDefinitions.length + index,
             });
-            if (requirement) requirementsByKey.set(definition.coverageKey, requirement);
+            if (requirement) {
+                requirementsByKey.set(definition.coverageKey, {
+                    ...requirement,
+                    ...(definition.eligibleWorkoutIds !== undefined
+                        ? { eligibleWorkoutIds: [...definition.eligibleWorkoutIds] }
+                        : {}),
+                    ...(definition.reservationTier === 'support' ? { reservationTier: 'support' as const } : {}),
+                    ...(definition.minimumDurationMinutes !== undefined ? { minimumDurationMinutes: definition.minimumDurationMinutes } : {}),
+                    ...(definition.exactWorkoutIds?.length ? { exactWorkoutIds: definition.exactWorkoutIds } : {}),
+                    ...(definition.capabilityPlacements?.length ? { capabilityPlacements: definition.capabilityPlacements } : {}),
+                });
+            }
         });
 
-    const recoveryCoverage = coverageFor(descriptor, 'recovery_or_rest');
+    const recoveryCoverage = coverageFor(activeDescriptor, 'recovery_or_rest');
     if (recoveryCoverage?.requirement === 'required'
         && recoveryCoverage.phases.includes(block.phase)
         && !requirementsByKey.has('recovery_or_rest')) {
         const recoveryRequirement = newRequirement({
-            descriptor,
+            descriptor: activeDescriptor,
             blockId: block.id,
             key: 'recovery_or_rest',
             minimumSessions: 1,
@@ -560,8 +622,8 @@ export function buildCoverageState(
         if (seenOccurrences.has(occurrenceKey)) continue;
         seenOccurrences.add(occurrenceKey);
 
-        const canonicalKeys = canonicalCoverageKeysForExposure(exposure, block.phase, descriptor, workoutId, aerobicVolumeFloor);
-        const keys = canonicalKeys ?? coverageKeysForExposure(exposure, block.phase, descriptor, aerobicVolumeFloor);
+        const canonicalKeys = canonicalCoverageKeysForExposure(exposure, block.phase, activeDescriptor, workoutId, aerobicVolumeFloor);
+        const keys = canonicalKeys ?? coverageKeysForExposure(exposure, block.phase, activeDescriptor, aerobicVolumeFloor);
         for (const key of keys) {
             const requirement = requirementsByKey.get(key);
             if (!requirement) continue;
@@ -583,11 +645,69 @@ export function buildCoverageState(
         asOfDate,
         phase: block.phase,
         activeBlockId: block.id,
-        coverageSetId: descriptor.id,
-        descriptor,
-        requirements: Array.from(requirementsByKey.values()),
+        coverageSetId: activeDescriptor.id,
+        descriptor: activeDescriptor,
+        requirements: Array.from(requirementsByKey.values()).map(requirement => withActiveCapabilityPlacements(requirement, asOfDate)),
         aerobicVolumeFloor,
     };
+}
+
+/**
+ * Issue #805 (F12): resolve capability placements for one planning date. Pending placements
+ * expose only their exact delivery/progression identities plus per-workout not-before metadata;
+ * current-date consent and coverage urgency remain off until a placement becomes active.
+ * Active placements narrow the support requirement to their exact identities. A fulfilled set
+ * lapses the support minimum. This is a date-aware reuse of one occurrence, never an additional
+ * requirement, objective or session.
+ */
+function withActiveCapabilityPlacements(requirement: WeeklyCoverageRequirement, asOfDate: string): WeeklyCoverageRequirement {
+    if (!requirement.capabilityPlacements?.length) return requirement;
+    const touches = requirement.credits.map(credit => ({ date: credit.date, workoutId: credit.workoutId }));
+    const open = requirement.capabilityPlacements.filter(placement => !isCapabilityPlacementFulfilled(placement, asOfDate, touches));
+    if (open.length === 0) {
+        // Every owed touch is delivered: the support minimum the placements carried lapses.
+        return { ...requirement, minimumSessions: 0 };
+    }
+    const active = activeCapabilityPlacements(open, asOfDate, touches);
+    // Before the first due date expose every open placement identity to the allocator, but
+    // carry each identity's earliest not-before date so it cannot be reserved or gain coverage
+    // urgency early (including when Field is already preferred). Once something is active,
+    // narrow current-date coverage to the identities that settle the most active placements.
+    const pendingIds = open.flatMap(placement => placement.workoutIds);
+    const narrowed = [...new Set(active.length > 0 ? preferBroadestCoverage(active) : pendingIds)]
+        .filter(workoutId => requirement.eligibleWorkoutIds === undefined || requirement.eligibleWorkoutIds.includes(workoutId))
+        .sort();
+    const candidateWorkoutNotBeforeDates = Object.fromEntries(narrowed.map(workoutId => {
+        const earliest = open
+            .filter(placement => placement.workoutIds.includes(workoutId))
+            .map(placement => placement.notBeforeDate)
+            .sort()[0];
+        return [workoutId, earliest];
+    }));
+    const consent = [...new Set(active.flatMap(placement => placement.consentWorkoutIds))]
+        .filter(workoutId => narrowed.includes(workoutId))
+        .sort();
+    return {
+        ...requirement,
+        eligibleWorkoutIds: narrowed,
+        candidateWorkoutNotBeforeDates,
+        ...(consent.length > 0 ? { capabilityConsentWorkoutIds: consent } : {}),
+    };
+}
+
+/** One support occurrence should settle as many owed capabilities as possible: keep only the
+ * placement identities shared by the largest number of open placements (never widening). */
+function preferBroadestCoverage(placements: readonly CapabilityPlacement[]): string[] {
+    const ids = [...new Set(placements.flatMap(placement => placement.workoutIds))];
+    const coverage = (workoutId: string) => placements.filter(placement => placement.workoutIds.includes(workoutId)).length;
+    const best = Math.max(0, ...ids.map(coverage));
+    return ids.filter(workoutId => coverage(workoutId) === best);
+}
+
+/** Issue #805 (D-E): true only for an exact capability identity consented on this state's date. */
+export function hasCapabilityConsent(state: CoverageState | null | undefined, workoutId: string | undefined): boolean {
+    if (!state || !workoutId) return false;
+    return state.requirements.some(requirement => requirement.capabilityConsentWorkoutIds?.includes(workoutId));
 }
 
 function fulfilledSessions(requirement: WeeklyCoverageRequirement): number {
@@ -645,8 +765,16 @@ export function coverageNeedTierForTemplate(
     anchorRole: 'event-specific' | 'quality' | null = null,
     deferAnchorAdjacentHeavyStrength: boolean = false,
 ): 0 | 1 | 2 | 3 {
+    const workoutId = workoutIdForTemplateId(template.id);
     const keys = (state.descriptor ? coverageKeysForTemplate(template, state.phase, state.descriptor, state.aerobicVolumeFloor) : [])
-        .filter(key => !EMBEDDED_ONLY_COVERAGE_KEYS.has(key));
+        .filter(key => !EMBEDDED_ONLY_COVERAGE_KEYS.has(key))
+        .filter(key => {
+            const requirement = state.requirements.find(item => item.key === key);
+            const eligibleWorkoutIds = requirement?.eligibleWorkoutIds;
+            if (eligibleWorkoutIds !== undefined && (workoutId === undefined || !eligibleWorkoutIds.includes(workoutId))) return false;
+            const notBefore = workoutId ? requirement?.candidateWorkoutNotBeforeDates?.[workoutId] : undefined;
+            return notBefore === undefined || state.asOfDate >= notBefore;
+        });
     if (keys.length === 0) return 3;
 
     const anchorKey: PlanCoverageKey | null = anchorRole === 'event-specific'
@@ -703,6 +831,10 @@ export function coverageNeedTierForTemplate(
     for (const key of keys) {
         const requirement = state.requirements.find(item => item.key === key);
         if (requirement && fulfilledSessions(requirement) < requirement.targetSessions) return 2;
+        // Issue #805: an active, unfulfilled capability placement is owed even when generic
+        // #804 mechanical dose already met its weekly target -- ranking urgency only, never
+        // an extra requirement or reserved occurrence.
+        if (requirement && workoutId !== undefined && requirement.capabilityConsentWorkoutIds?.includes(workoutId)) return 2;
     }
     return 3;
 }

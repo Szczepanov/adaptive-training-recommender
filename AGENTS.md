@@ -85,6 +85,7 @@ Full statements, with rationale and the checks that enforce them, are in
 | `compare-transports --days 60` | Garmin direct vs Google Health transport equivalence (MS10) |
 | `compare-eight-sleep-transports --days 60` | Eight Sleep direct vs Google Health equivalence (ES9) |
 | `export-identity-replay --days 60` | Export real data in `identityReplay.ts`'s input shape (PI8) |
+| `export-training-occurrence-evidence --user-id <uid> --start-date ... --end-date ... [--with-fit]` | Bounded, user-scoped TO4 record export and transient TO5 FIT aggregates for #646; private output under `app/artifacts/training-occurrence/` only |
 | `export-activities --days 7` | Export recent activity telemetry as JSON for planning |
 | `push-workout`, `push-pending-workouts[-all]` | Push queued/pending structured workouts to Garmin |
 | `poll-manual-sync[-all]` | Poll manual sync status for one or every active link |
@@ -98,6 +99,7 @@ Full statements, with rationale and the checks that enforce them, are in
 * `npm run test:rules` — Firestore security-rule suite inside the Firebase emulator (needs Java)
 * `npm run test:e2e` — Playwright browser E2E suite inside the Auth + Firestore emulators (`playwright.e2e.config.ts`; `npm run e2e:serve` serves the E2E app at `http://127.0.0.1:4173`)
 * `npm run emulators:exec:rules -- "<cmd>"` / `npm run emulators:exec:e2e -- "<cmd>"` — run a command inside the same emulators `test:rules` / `test:e2e` use; CI shards with e.g. `npm run emulators:exec:rules -- "npm run test:rules:emulator -- --shard=1/2"` (`test:e2e:emulator` is the Playwright counterpart)
+* `npm run test:rules:shard -- <index>/<total>` — one rules shard on emulator ports of its own (`scripts/run-rules-shard.mjs`), so shards can run side by side with each other and with `test:e2e` on one machine; `make verify` uses it
 * `npm run build` — `npm run check && vite build`
 * `npm run dev` — Vite dev server (`predev` runs `npm run check` first)
 * `npm run validate:workouts` / `npm run validate:knowledge` / `npm run validate:knowledge-coverage` — catalog and registry validators, individually
@@ -108,7 +110,7 @@ Full statements, with rationale and the checks that enforce them, are in
 * `npm run replay:recommendation -- <audit.json>` — replay a persisted decision against its own audit
 * `npm run build:plan-judge-corpus && npm run report:sequencing` — deterministic sequencing collision/spacing/opportunity-cost diagnostics (issue #458; report only, no gate)
 * `judge:*` and `persona:*` are script-name families, **not executable npm wildcards**. Use concrete scripts such as `npm run judge:run`, `npm run judge:diff`, `npm run judge:update-baseline`, `npm run persona:run`, `npm run persona:diff`, and `npm run persona:update-baseline`; see `app/package.json` for local/quick/e2e/resume variants.
-* `npm run evidence:health-anomaly`, `npm run evidence:identity-replay`, `npm run measure:garmin-zone-credit` — shadow-mode evidence runs
+* `npm run evidence:health-anomaly`, `npm run evidence:identity-replay`, `npm run evidence:training-occurrence:prepare` / `npm run evidence:training-occurrence`, `npm run measure:garmin-zone-credit` — shadow-mode evidence runs
 * `npm run visual:install` → `npm run visual:refresh` — finalized Playwright review bundle for `visual-desktop` (1440 px) + `visual-mobile` (390 px) in `artifacts/visual-review/latest/`; `npx playwright test` can ad hoc capture `visual-mobile-narrow` (360 px) and `visual-mobile-wide` (412 px), but does not prepare/finalize the review bundle; `npm run visual:serve` runs the harness at `http://127.0.0.1:4174`
 
 ### What CI gates (`.github/workflows/ci.yml`)
@@ -183,6 +185,7 @@ src/garmin_sync/
   presence_filter.py   # @deprecated secondary-source concordance filter; superseded by PI
   identity_eligibility.py   # Fail-closed effective-identity eligibility projection (PI5, ADR-0028)
   identity_replay_export.py # Real-data exporter for the PI8 historical identity replay
+  training_occurrence_export.py # #646 TO4 record export + in-memory TO5 FIT identity aggregates
   eight_sleep_config.py    # Configuration for the opt-in direct Eight Sleep transport (ADR-0030)
   eight_sleep_client.py    # Minimal read-only client for Eight Sleep's private API
   eight_sleep_mapper.py    # Eight Sleep trends -> ADR-0027 source-aware observations

@@ -4,7 +4,8 @@ import type { EvidenceBackedStrategy } from './evergreenStrategy';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import type { WeeklyBudget } from './weeklyDosePacking';
 import { buildCoverageState, coverageNeedTierForTemplate } from './coverage';
-import { ENRICHED_TEMPLATES_BY_ID } from './templates';
+import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
+import { attachExactEligibleIdentities, deriveRequiredRoleOccurrences } from './weeklyAllocation';
 
 const strategy: EvidenceBackedStrategy = {
     requirements: [{
@@ -55,6 +56,89 @@ describe('evergreen plan definition', () => {
         const zone2 = ENRICHED_TEMPLATES_BY_ID.get('end_easy_01');
         if (!zone2) throw new Error('Zone 2 template fixture missing');
         expect(coverageNeedTierForTemplate(state, zone2)).not.toBe(3);
+    });
+
+    it('keeps a stage-gated mechanical target visible as subordinate support even without an embedded host', () => {
+        const mechanicalRequirement = {
+            ...strategy.requirements[0],
+            adaptation: 'mechanical_exposure' as const,
+            priority: 'target' as const,
+            floor: null,
+            target: { unit: 'sessions' as const, minimum: 0, target: 1, maximum: 2 },
+            substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Running', 'Field', 'Strength'] },
+        };
+        const mechanicalStrategy: EvidenceBackedStrategy = { requirements: [mechanicalRequirement], warnings: [] };
+        const mechanicalBudget: WeeklyBudget = {
+            ...budget,
+            requirements: [mechanicalRequirement],
+            requiredRoles: [],
+            targetRoles: [],
+            optionalRoles: [],
+        };
+
+        const result = buildEvergreenPlanDefinition(
+            mechanicalStrategy,
+            capacity,
+            mechanicalBudget,
+            '2026-08-10',
+            ['running_walk_run_01'],
+        );
+        expect(result.status).toBe('AVAILABLE');
+        if (result.status !== 'AVAILABLE') return;
+
+        expect(result.data.coverageRequirements).toEqual([
+            expect.objectContaining({
+                coverageKey: 'mechanical_exposure',
+                minimumSessions: 1,
+                targetSessions: 1,
+                priority: 'should_have',
+                reservationTier: 'support',
+                eligibleWorkoutIds: ['running_walk_run_01'],
+            }),
+        ]);
+        const state = buildCoverageState(result.data, '2026-08-10');
+        const mechanicalState = state.requirements.find(item => item.key === 'mechanical_exposure');
+        expect(mechanicalState).toMatchObject({
+            minimumSessions: 1,
+            targetSessions: 1,
+            reservationTier: 'support',
+            eligibleWorkoutIds: ['running_walk_run_01'],
+        });
+
+        const [occurrence] = attachExactEligibleIdentities(
+            deriveRequiredRoleOccurrences(state).filter(item => item.coverageKey === 'mechanical_exposure'),
+            ENRICHED_TEMPLATES,
+        );
+        expect(occurrence).toBeDefined();
+        expect(occurrence.reservationTier).toBe('support');
+        expect(occurrence.eligibleWorkoutIds).toEqual(['running_walk_run_01']);
+    });
+
+    it('keeps a blocked mechanical target visible with zero eligible candidates instead of widening stages', () => {
+        const mechanicalRequirement = {
+            ...strategy.requirements[0],
+            adaptation: 'mechanical_exposure' as const,
+            priority: 'target' as const,
+            floor: null,
+            target: { unit: 'sessions' as const, minimum: 0, target: 1, maximum: 2 },
+            substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Running', 'Field', 'Strength'] },
+        };
+        const mechanicalStrategy: EvidenceBackedStrategy = { requirements: [mechanicalRequirement], warnings: [] };
+        const mechanicalBudget: WeeklyBudget = {
+            ...budget, requirements: [mechanicalRequirement],
+            requiredRoles: [], targetRoles: [], optionalRoles: [],
+        };
+        const result = buildEvergreenPlanDefinition(mechanicalStrategy, capacity, mechanicalBudget, '2026-08-10', []);
+        expect(result.status).toBe('AVAILABLE');
+        if (result.status !== 'AVAILABLE') return;
+
+        const state = buildCoverageState(result.data, '2026-08-10');
+        const occurrences = deriveRequiredRoleOccurrences(state).filter(item => item.coverageKey === 'mechanical_exposure');
+        expect(occurrences).toHaveLength(1);
+        const [blocked] = attachExactEligibleIdentities(occurrences, ENRICHED_TEMPLATES);
+        expect(blocked.candidateWorkoutAllowList).toEqual([]);
+        expect(blocked.eligibleTemplateIds).toEqual([]);
+        expect(blocked.eligibleWorkoutIds).toEqual([]);
     });
 
     it('uses strength_development only for a packed evergreen strength requirement', () => {

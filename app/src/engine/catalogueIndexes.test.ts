@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { TEMPLATES, TEMPLATES_BY_ID, ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
+import {
+  TEMPLATES,
+  TEMPLATES_BY_ID,
+  ENRICHED_TEMPLATES,
+  ENRICHED_TEMPLATES_BY_ID,
+  ENRICHED_TEMPLATES_BY_MODALITY,
+} from './templates';
 import { EXERCISES, EXERCISES_BY_ID } from '../workouts/exercises';
 import { WORKOUTS, WORKOUTS_BY_ID } from '../workouts/catalog';
 import { PERFORMANCE_TEST_DEFINITIONS, PERFORMANCE_TEST_DEFINITIONS_BY_ID } from '../observations/performanceTestingCatalog';
@@ -32,6 +38,18 @@ describe('catalogue lookup indexes', () => {
 
   it('indexes every enriched session template by a unique id', () => {
     expectIndexMatchesSource(ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID);
+  });
+
+  it('indexes the first enriched session template for each modality', () => {
+    const seenModalities = new Set<string>();
+
+    for (const template of ENRICHED_TEMPLATES) {
+      if (seenModalities.has(template.modality)) continue;
+      seenModalities.add(template.modality);
+      expect(ENRICHED_TEMPLATES_BY_MODALITY.get(template.modality)).toBe(template);
+    }
+
+    expect(ENRICHED_TEMPLATES_BY_MODALITY.size).toBe(seenModalities.size);
   });
 
   it('indexes every exercise by a unique id', () => {

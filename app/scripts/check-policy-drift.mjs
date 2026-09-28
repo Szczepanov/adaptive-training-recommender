@@ -121,6 +121,7 @@ const decisionAffectingFiles = [
   // Findings 4 and 8 both changed live recommendations by editing only these files, and
   // the drift gate did not previously notice because none of them were listed here.
   'app/src/engine/evergreenStrategy.ts',
+  'app/src/engine/weeklyAerobicDose.ts',
   'app/src/engine/weeklyDosePacking.ts',
   'app/src/engine/coverage.ts',
   // #757: the athlete-relative aerobic_volume floor decides which sessions earn exact
@@ -141,6 +142,9 @@ const decisionAffectingFiles = [
   'app/src/workouts/prescription.ts',
   'app/src/workouts/models.ts',
   'app/src/sessions/catalogSessionAdapter.ts',
+  // #804: progressive mechanical and impact exposure capability and progression rules.
+  'app/src/engine/mechanicalProgression.ts',
+  'app/src/workouts/mechanicalExposure.ts',
   // Confirmed progression overrides alter the active dose of the selected catalog
   // workout, including authored event/taper roles that are outside evergreen packing.
   'app/src/engine/confirmedProgressionOverrides.ts',

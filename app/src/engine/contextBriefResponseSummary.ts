@@ -3,11 +3,13 @@ import {
     deriveDecoupling,
     deriveEfficiencyComparison,
     deriveIntervalRepetition,
+    deriveSprintRepetition,
     INTERVAL_COLLAPSE_RATIO,
     INTERVAL_FADE_PCT,
     type Decoupling,
     type EfficiencyComparison,
     type IntervalRepetition,
+    type SprintRepetition,
 } from './contextBriefResponseFeatures';
 import {
     deriveNextDayResponse,
@@ -36,6 +38,7 @@ export interface ResponseContext {
 export interface KeySessionSummary {
     activity: NormalizedGarminActivity;
     intervals: IntervalRepetition;
+    sprints: SprintRepetition;
     decoupling: Decoupling;
     efficiency: EfficiencyComparison;
     strength: StrengthProgression;
@@ -55,6 +58,7 @@ function signedPct(value: number): string {
  * telemetry digest line; a key session without any value keeps its digest. */
 export function hasAvailableFeature(summary: Omit<KeySessionSummary, 'nextDay'>): boolean {
     return summary.intervals.state === 'available'
+        || summary.sprints.state === 'available'
         || summary.decoupling.state === 'available'
         || summary.efficiency.state === 'available'
         || summary.strength.state === 'available';
@@ -76,6 +80,7 @@ export function deriveKeySessionSummaries(
         .map(activity => ({
             activity,
             intervals: deriveIntervalRepetition(activity),
+            sprints: deriveSprintRepetition(activity),
             decoupling: deriveDecoupling(activity),
             efficiency: deriveEfficiencyComparison(activity, context.history),
             strength: deriveStrengthProgression(activity, context.history),
@@ -93,18 +98,90 @@ const PATTERN_TEXT = {
     late_collapse: `late collapse (a second-half work interval below ${Math.round(INTERVAL_COLLAPSE_RATIO * 100)}% of the first)`,
 } as const;
 
+const MAX_RENDERED_REPS = 12;
+
+function boundedValues(values: readonly string[]): string {
+    if (values.length <= MAX_RENDERED_REPS) return values.join(' / ');
+    const head = values.slice(0, 8);
+    const tail = values.slice(-2);
+    return `${head.join(' / ')} / … +${values.length - head.length - tail.length} / ${tail.join(' / ')}`;
+}
+
+function workDurationText(seconds: number): string {
+    if (seconds < 60) return `${fmt(seconds)} s`;
+    const minutes = seconds / 60;
+    return Number.isInteger(minutes) ? `${fmt(minutes)} min` : `${fmt(minutes, 1)} min`;
+}
+
+function prescribedTargetText(target: { kind: string; value?: number; low?: number; high?: number }): string {
+    if (target.kind === 'power_watts' && target.value !== undefined) return `${fmt(target.value)} W`;
+    if (target.kind === 'power_range_watts') {
+        const low = target.low === undefined ? '—' : fmt(target.low);
+        const high = target.high === undefined ? '—' : fmt(target.high);
+        return `${low}–${high} W`;
+    }
+    if (target.kind === 'power_zone' && target.value !== undefined) return `power zone ${fmt(target.value)}`;
+    return target.value === undefined ? target.kind : `${target.kind} ${fmt(target.value)}`;
+}
+
 function intervalLines(feature: IntervalRepetition): string[] {
     if (feature.state !== 'available') return [];
-    const minutes = feature.intervals.reduce((sum, item) => sum + item.durationSeconds, 0) / feature.intervals.length / 60;
+    const durations = feature.intervals.map(item => item.durationSeconds);
+    const firstDuration = durations[0];
+    const sameDuration = durations.every(value => Math.abs(value - firstDuration) <= Math.max(1, firstDuration * 0.05));
+    const setLabel = sameDuration
+        ? `${feature.intervals.length} × ${workDurationText(firstDuration)}`
+        : `${feature.intervals.length} semantic work intervals`;
     const lines = [
-        `- Main set: ${feature.intervals.length} × ${fmt(minutes)} min @ ${feature.intervals.map(item => fmt(item.powerWatts)).join(' / ')} W`,
+        `- Main set: ${setLabel} @ ${boundedValues(feature.intervals.map(item => fmt(item.powerWatts)))} W actual`,
     ];
+
+    const targets = feature.intervals.map(item => item.prescribedTarget);
+    if (targets.every(target => target !== undefined)) {
+        const texts = targets.map(target => prescribedTargetText(target as NonNullable<typeof target>));
+        const first = texts[0];
+        lines.push(texts.every(text => text === first)
+            ? `- Prescription: ${first} (kept separate from performed power)`
+            : `- Prescription: ${boundedValues(texts)} (kept separate from performed power)`);
+    }
+
     if (feature.intervals.some(item => item.hrBpm !== undefined)) {
-        lines.push(`- HR: ${feature.intervals.map(item => (item.hrBpm === undefined ? '—' : fmt(item.hrBpm))).join(' / ')} bpm`);
+        lines.push(`- HR: ${boundedValues(feature.intervals.map(item => (item.hrBpm === undefined ? '—' : fmt(item.hrBpm))))} bpm`);
+    }
+    if (feature.intervals.some(item => item.lastThirdHrBpm !== undefined)) {
+        lines.push(`- HR final third: ${boundedValues(feature.intervals.map(item => item.lastThirdHrBpm === undefined ? '—' : fmt(item.lastThirdHrBpm)))} bpm`);
+    }
+    const withThirds = feature.intervals.filter(item =>
+        item.firstThirdPowerWatts !== undefined
+        && item.middleThirdPowerWatts !== undefined
+        && item.lastThirdPowerWatts !== undefined);
+    if (withThirds.length > 0) {
+        lines.push(`- Within-rep power thirds: ${boundedValues(withThirds.map((item, index) =>
+            `#${index + 1} ${fmt(item.firstThirdPowerWatts as number)}/${fmt(item.middleThirdPowerWatts as number)}/${fmt(item.lastThirdPowerWatts as number)} W`))}`);
     }
     if (feature.hrNote) lines.push(`- HR note: ${feature.hrNote}`);
     lines.push(`- First→last work interval: ${signedPct(feature.firstToLastPct)} · spread ${fmt(feature.spreadPct, 1)}% of mean`);
     lines.push(`- Response: ${PATTERN_TEXT[feature.pattern].replace('{n}', String(feature.intervals.length))}`);
+    return lines;
+}
+
+function sprintLines(feature: SprintRepetition): string[] {
+    if (feature.state !== 'available') return [];
+    const firstDuration = feature.sprints[0].durationSeconds;
+    const sameDuration = feature.sprints.every(item => Math.abs(item.durationSeconds - firstDuration) <= 1);
+    const lines = [
+        `- Sprints: ${feature.sprints.length} × ${sameDuration ? workDurationText(firstDuration) : 'short semantic efforts'} · mean performed power ${fmt(feature.meanPowerWatts)} W`,
+    ];
+    if (feature.sprints.every(item => item.peak5sPowerWatts !== undefined) && feature.meanPeak5sWatts !== undefined) {
+        lines.push(`- Sprint peak 5 s: ${boundedValues(feature.sprints.map(item => fmt(item.peak5sPowerWatts as number)))} W · mean ${fmt(feature.meanPeak5sWatts)} W`);
+    }
+    if (sameDuration && Math.abs(firstDuration - 10) <= 1) {
+        lines.push(`- Mean 10 s: ${boundedValues(feature.sprints.map(item => fmt(item.powerWatts)))} W`);
+    }
+    if (feature.sprints.some(item => item.maxCadenceRpm !== undefined)) {
+        lines.push(`- Peak cadence: ${boundedValues(feature.sprints.map(item => item.maxCadenceRpm === undefined ? '—' : fmt(item.maxCadenceRpm)))} rpm`);
+    }
+    lines.push(`- Sprint fade: last vs best ${signedPct(feature.lastToBestPct)} · ${feature.pattern === 'late_fade' ? 'late fade' : 'repeatable'}`);
     return lines;
 }
 
@@ -129,7 +206,7 @@ function efficiencyLines(feature: EfficiencyComparison): string[] {
 function decouplingLines(feature: Decoupling): string[] {
     if (feature.state !== 'available') return [];
     const note = feature.hrNote ? ` · ${feature.hrNote}` : '';
-    return [`- Pw:HR decoupling (lap averages, first vs second half): ${fmt(feature.decouplingPct, 1)}%${note}`];
+    return [`- Pw:HR decoupling (first vs second half): ${fmt(feature.decouplingPct, 1)}%${note}`];
 }
 
 function topSetText(set: { topWeightKg?: number; topReps?: number }): string {
@@ -177,7 +254,7 @@ export function renderKeySessionSummaries(summaries: readonly KeySessionSummary[
     const lines = [
         '### Training-response features (derived, display-only)',
         '',
-        `Derived from recorded laps, sets and check-ins; prior comparable sessions are searched only in activities fetched since ${context.historyStart}. `
+        `Derived from bounded semantic FIT-step/session telemetry when available, with legacy laps, sets and check-ins as fallbacks; prior comparable sessions are searched only in activities fetched since ${context.historyStart}. `
         + 'Features with missing or incomparable evidence are omitted or marked insufficient, never estimated. These features have no recommendation authority.',
     ];
     for (const summary of summaries) {
@@ -186,6 +263,7 @@ export function renderKeySessionSummaries(summaries: readonly KeySessionSummary[
             headerLine(summary.activity),
             ...powerLine(summary.activity),
             ...intervalLines(summary.intervals),
+            ...sprintLines(summary.sprints),
             ...decouplingLines(summary.decoupling),
             ...efficiencyLines(summary.efficiency),
             ...strengthLines(summary.strength),

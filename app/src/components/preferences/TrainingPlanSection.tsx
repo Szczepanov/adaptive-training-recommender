@@ -1,5 +1,5 @@
 
-import type { PlanningMode, TrainingPriority } from '../../engine/models';
+import type { AthleticCapabilityKey, PlanningMode, TrainingPriority } from '../../engine/models';
 import type { TrainingIntentProfileDraft } from './usePreferences';
 import { SettingsDisclosure } from '../SettingsDisclosure';
 
@@ -10,6 +10,11 @@ const TRAINING_PRIORITY_OPTIONS: Array<{ value: TrainingPriority; label: string 
   { value: 'strength_muscle', label: 'Strength and muscle' },
   { value: 'speed_power', label: 'Speed and power' },
   { value: 'sport_readiness', label: 'Sport readiness' },
+];
+
+/** v1 opts in to every capability together (#805); the schema also supports subsets. */
+const ALL_ATHLETIC_CAPABILITIES: AthleticCapabilityKey[] = [
+  'linear_speed_skill', 'acceleration_deceleration', 'multidirectional_change_of_direction', 'sport_skill',
 ];
 
 interface TrainingPlanSectionProps {
@@ -96,6 +101,24 @@ export function TrainingPlanSection({
           </div>
         ))}
       </div>
+      <label className="priority-option capability-maintenance-option">
+        <input
+          type="checkbox"
+          aria-describedby="capability-maintenance-desc"
+          checked={trainingIntentProfile.capabilityMaintenance?.enabled === true}
+          onChange={(event) => updateTrainingIntentProfile({
+            // A merge-write cannot delete the field, so opting out writes enabled: false.
+            capabilityMaintenance: { enabled: event.target.checked, capabilities: [...ALL_ATHLETIC_CAPABILITIES] },
+          })}
+        />
+        <span>Keep broad athletic skills: sprinting, braking, change of direction, ball skill</span>
+      </label>
+      <p id="capability-maintenance-desc" className="preference-desc">
+        Off by default. When on, an occasional field-skill session (about every two weeks) can replace
+        a mechanical-loading slot once your tissue tolerance allows it. It never changes your main sport
+        or increases your weekly session limit; its support occurrence stays subordinate to primary training,
+        and it pauses near events, during recovery, and whenever field work is avoided or unavailable.
+      </p>
     </SettingsDisclosure>
   );
 }

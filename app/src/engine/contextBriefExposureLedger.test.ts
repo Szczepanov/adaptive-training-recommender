@@ -124,7 +124,8 @@ describe('exposure ledger (#813)', () => {
         expect(cap(ledger.capabilities, 'running').status).toBe('unknown');
         expect(cap(ledger.capabilities, 'field').status).toBe('unknown');
         expect(cap(ledger.capabilities, 'impact_jump').status).toBe('unknown');
-        expect(cap(ledger.capabilities, 'cod_lateral').status).toBe('unknown');
+        expect(cap(ledger.capabilities, 'multidirectional_change_of_direction').status).toBe('unknown');
+        expect(cap(ledger.capabilities, 'sport_skill').status).toBe('unknown');
         expect(cap(ledger.capabilities, 'aerobic_endurance').lastConfirmed).toBe('2026-09-22');
         expect(cap(ledger.capabilities, 'cycling_quality').lastConfirmed).toBe('2026-09-18');
         expect(ledger.capabilities.some(entry => entry.status === 'overdue')).toBe(false);
@@ -133,7 +134,7 @@ describe('exposure ledger (#813)', () => {
     it('reports impact as deliberately suspended under an active safety limit, not neglected', () => {
         const guarded = settings({ injuries: [{ region: 'achilles', severity: 'limit' }] as TrainingSettings['injuries'] });
         const ledger = deriveExposureLedger(input({ trainingSettings: guarded }));
-        for (const key of ['running', 'field', 'impact_jump', 'cod_lateral']) {
+        for (const key of ['running', 'field', 'impact_jump', 'multidirectional_change_of_direction', 'sport_skill']) {
             expect(cap(ledger.capabilities, key).status).toBe('deliberately_suspended');
         }
         expect(cap(ledger.capabilities, 'strength').status).toBe('unknown');
@@ -229,5 +230,60 @@ describe('exposure ledger (#813)', () => {
         const followed = recommendation({ adherence: { respondedAt: 'x', followed: true, actualModality: null, actualDurationMin: 45, skipped: false, notes: null } });
         const withAdherence = deriveExposureLedger(input({ activitiesReadable: false, recommendations: [followed] }));
         expect(cap(withAdherence.capabilities, 'strength').status).toBe('confirmed');
+    });
+
+    it('confirms impact_jump from a canonical mechanical structured execution at qualifying dose', () => {
+        const fact: PerformedExposureFact = {
+            performedOccurrenceId: 'occ-mech', localDate: '2026-09-22', modality: 'Running', category: 'Easy Endurance',
+            workoutId: 'running_easy_continuous_01', workoutVariantId: 'full',
+            confidence: 'exact', sourceKinds: ['structured_execution'], evidenceTier: 'completedStructuredWorkout',
+        };
+        const ledger = deriveExposureLedger(input({ performedFacts: [fact] }));
+        const impact = cap(ledger.capabilities, 'impact_jump');
+        expect(impact.status).toBe('confirmed');
+        expect(impact.lastConfirmed).toBe('2026-09-22');
+
+        // Readiness-modified dose does not confirm impact_jump
+        const modifiedFact: PerformedExposureFact = { ...fact, isReadinessModifiedDose: true };
+        const ledgerModified = deriveExposureLedger(input({ performedFacts: [modifiedFact] }));
+        expect(cap(ledgerModified.capabilities, 'impact_jump').status).toBe('unknown');
+    });
+
+    describe('#805 change of direction and sport skill', () => {
+        const fieldFact = (variant: 'full' | 'reduced' | 'return_to_training', overrides: Partial<PerformedExposureFact> = {}): PerformedExposureFact => ({
+            performedOccurrenceId: `occ-field-${variant}`, localDate: '2026-09-20', modality: 'Field', category: 'Field Maintenance',
+            workoutId: 'field_controlled_maintenance_01', workoutVariantId: variant,
+            confidence: 'exact', sourceKinds: ['structured_execution'], evidenceTier: 'completedStructuredWorkout', ...overrides,
+        });
+
+        it('confirms only from exact identities whose defining steps were retained', () => {
+            const full = deriveExposureLedger(input({ performedFacts: [fieldFact('full')] }));
+            expect(cap(full.capabilities, 'multidirectional_change_of_direction').status).toBe('confirmed');
+            expect(cap(full.capabilities, 'sport_skill').status).toBe('confirmed');
+            const rtt = deriveExposureLedger(input({ performedFacts: [fieldFact('return_to_training')] }));
+            expect(cap(rtt.capabilities, 'multidirectional_change_of_direction').status).toBe('unknown');
+            expect(cap(rtt.capabilities, 'sport_skill').status).toBe('confirmed');
+            const running = deriveExposureLedger(input({ performedFacts: [fieldFact('full', { modality: 'Running', workoutId: 'running_easy_continuous_01' })] }));
+            expect(cap(running.capabilities, 'sport_skill').status).toBe('unknown');
+            expect(cap(full.capabilities, 'sport_skill').note).toContain('overdue status is not reported');
+        });
+
+        it('reads overdue and deliberate suspension from the resolved planner cadence, never recomputing it', () => {
+            const resolved = (fulfilmentStatus: 'blocked' | 'deliberately_suspended') => ({
+                enabled: true, intervalDays: 14, placements: [], softContext: [],
+                capabilities: [{
+                    capability: 'sport_skill' as const, status: 'overdue' as const, requiredStage: 4 as const,
+                    lastQualifyingDate: '2026-09-01', nextDueDate: '2026-09-15', notBeforeDate: AS_OF, targetDate: AS_OF,
+                    fulfilment: { status: fulfilmentStatus, reason: fulfilmentStatus === 'blocked' ? 'mechanical_guardrail' as const : 'adverse_recovery' as const },
+                    supportWorkoutIds: [], message: `overdue since 2026-09-15; ${fulfilmentStatus}`,
+                }],
+            });
+            const overdue = deriveExposureLedger(input({ capabilityMaintenance: resolved('blocked') }));
+            expect(cap(overdue.capabilities, 'sport_skill').status).toBe('overdue');
+            expect(cap(overdue.capabilities, 'sport_skill').note).toContain('capability maintenance: overdue since 2026-09-15');
+            const suspended = deriveExposureLedger(input({ capabilityMaintenance: resolved('deliberately_suspended') }));
+            expect(cap(suspended.capabilities, 'sport_skill').status).toBe('deliberately_suspended');
+            expect(cap(suspended.capabilities, 'multidirectional_change_of_direction').status).toBe('unknown');
+        });
     });
 });

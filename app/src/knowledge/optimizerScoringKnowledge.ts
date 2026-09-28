@@ -51,12 +51,12 @@ export const OPTIMIZER_SCORING_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.fieldCatalogExplicitPreferencePolicy,
-        statement: 'Product candidate-selection policy v1: an automatic catalog template marked requiresExplicitModalityPreference is ineligible unless the athlete explicitly prefers that template modality under canonical alias matching. The current marked catalog templates are Field Maintenance and Field technical/sprint-mechanics sessions.',
+        statement: 'Product candidate-selection policy v2: an automatic catalog template marked requiresExplicitModalityPreference is ineligible unless the athlete explicitly prefers that template modality under canonical alias matching, or (issue #805) the coverage state for the planning date carries explicit capability-maintenance consent for that exact workout identity. The consent is narrow: it covers only exact athletic-capability identities whose capability is currently due and enabled, never promotes the modality into preferred modalities, and never overrides the hard UNAVAILABLE_MODALITY exclusion from the unavailable training types setting, which is evaluated first and cannot be exempted. The current marked catalog templates are Field Maintenance and Field technical/sprint-mechanics sessions.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
         applicability: { contexts: ['candidate_selection', 'catalog_admission'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['catalog_candidate_eligibility'], horizon: 'acute' },
         evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
-        limitations: ['This is an explicit catalog opt-in rule for specialized automatic content, not a clinical safety restriction and not a general rule that preferences unlock ordinary training modalities. Event-specific demand remains a separate planning authority.'],
-        reviewedOn: '2026-09-23', version: 1,
+        limitations: ['This is an explicit catalog opt-in rule for specialized automatic content, not a clinical safety restriction and not a general rule that preferences unlock ordinary training modalities. Event-specific demand remains a separate planning authority.', 'Capability consent is owned and date-scoped by policy.evergreen.athletic_capability_maintenance_v1; this claim only states its precedence in candidate admission.'],
+        reviewedOn: '2026-09-27', version: 2,
     },
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.unpreferredModalityFallbackPolicy,

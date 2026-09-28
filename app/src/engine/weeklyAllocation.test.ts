@@ -67,6 +67,7 @@ interface StubRules {
     conflicts?: (assignments: readonly AllocationAssignment[], date: string) => string[];
     fatigueExcluded?: Record<string, string[]>;
     exclusionReasons?: Record<string, Record<string, string[]>>;
+    availableMinutesByDate?: Record<string, number>;
 }
 
 function stubEvaluator(rules: StubRules, dates: readonly string[] = DATES): AllocationDateEvaluator {
@@ -77,6 +78,9 @@ function stubEvaluator(rules: StubRules, dates: readonly string[] = DATES): Allo
             return {
                 date,
                 fatigueTier: 'train',
+                ...(rules.availableMinutesByDate?.[date] !== undefined
+                    ? { availableMinutes: rules.availableMinutesByDate[date] }
+                    : {}),
                 acceptedTemplateIds: (rules.acceptedByDate[date] ?? []).filter(id => !blocked.has(id)),
                 fatigueExcludedTemplateIds: rules.fatigueExcluded?.[date] ?? [],
                 exclusionReasons: new Map(Object.entries(rules.exclusionReasons?.[date] ?? {})),
@@ -192,6 +196,42 @@ describe('ADR-0018 stateful reservation search', () => {
         }, ['2026-08-11', '2026-08-12']));
         expect(result.fulfilledCount).toBe(2);
         expect([...result.reservationsByDate.keys()].sort()).toEqual(['2026-08-11', '2026-08-12']);
+    });
+
+    it('reserves a duration-gated exact role only on a date whose resolved window can fit it', () => {
+        const longAnchor = {
+            ...occurrence('long_aerobic_anchor', 0, ['zone2']),
+            minimumDurationMinutes: 60,
+        };
+        const result = resolveWeeklyRoleReservations([longAnchor], stubEvaluator({
+            acceptedByDate: {
+                '2026-08-11': ['zone2'],
+                '2026-08-12': ['zone2'],
+            },
+            availableMinutesByDate: {
+                '2026-08-11': 30,
+                '2026-08-12': 75,
+            },
+        }, ['2026-08-11', '2026-08-12']));
+
+        expect(result.fulfilledCount).toBe(1);
+        expect([...result.reservationsByDate.keys()]).toEqual(['2026-08-12']);
+        expect(result.outcomes[0]).toMatchObject({ status: 'reserved' });
+    });
+
+    it('reports daily capacity when every exact-role window is shorter than its duration gate', () => {
+        const longAnchor = {
+            ...occurrence('long_aerobic_anchor', 0, ['zone2']),
+            minimumDurationMinutes: 60,
+        };
+        const result = resolveWeeklyRoleReservations([longAnchor], stubEvaluator({
+            acceptedByDate: { '2026-08-11': ['zone2'] },
+            availableMinutesByDate: { '2026-08-11': 30 },
+        }, ['2026-08-11']));
+
+        expect(result.fulfilledCount).toBe(0);
+        expect(result.outcomes[0]).toMatchObject({ status: 'missed', reason: 'daily_ledger_capacity' });
+        expect(result.outcomes[0].observedBlockers).toContain('2026-08-11:DAILY_LEDGER_CAPACITY');
     });
 
     it('records a conflict-only loss as no_conflict_free_date', () => {
@@ -395,6 +435,25 @@ describe('issue #801 support-tier reservations (ADR-0018 D-SUPPORT)', () => {
             fatigueExcluded: { '2026-08-11': ['str_power_01'] },
         }, ['2026-08-11']));
         expect(result.outcomes[0]).toMatchObject({ status: 'missed', reason: 'projected_fatigue' });
+    });
+
+    it('never reserves a capability support identity before its exact not-before date', () => {
+        const capabilitySupport: RequiredRoleOccurrence = {
+            ...occurrence('mechanical_exposure', 0, ['field_maint_01']),
+            reservationTier: 'support',
+            candidateWorkoutNotBeforeDates: { field_controlled_maintenance_01: '2026-08-13' },
+        };
+        const result = resolveWeeklyRoleReservations([capabilitySupport], stubEvaluator({
+            acceptedByDate: {
+                '2026-08-11': ['field_maint_01'],
+                '2026-08-12': ['field_maint_01'],
+                '2026-08-13': ['field_maint_01'],
+            },
+        }, ['2026-08-11', '2026-08-12', '2026-08-13']));
+        expect(result.outcomes[0]).toMatchObject({
+            status: 'reserved',
+            reservation: { assignedDate: '2026-08-13', templateId: 'field_maint_01' },
+        });
     });
 
     it('keeps the original maximum-cardinality value when no support role exists', () => {

@@ -4,6 +4,8 @@ import { COVERAGE_SETS, validatePlanCoverage } from '../src/workouts/event-plan.
 import { WORKOUT_PARAMETER_BINDINGS } from '../src/workouts/parameter-bindings.ts';
 import { validateWorkoutLibrary } from '../src/workouts/validation.ts';
 import { validatePowerQualifyingIdentities } from '../src/workouts/powerExposure.ts';
+import { validateMechanicalQualifyingIdentities } from '../src/workouts/mechanicalExposure.ts';
+import { validateAthleticCapabilityIdentities } from '../src/workouts/athleticCapability.ts';
 
 const result = validateWorkoutLibrary(
   EXERCISES,
@@ -13,6 +15,8 @@ const result = validateWorkoutLibrary(
 const coverageErrors = [
   ...Object.values(COVERAGE_SETS).flatMap(descriptor => validatePlanCoverage(WORKOUTS, descriptor)),
   ...validatePowerQualifyingIdentities(WORKOUTS),
+  ...validateMechanicalQualifyingIdentities(WORKOUTS),
+  ...validateAthleticCapabilityIdentities(WORKOUTS),
 ];
 
 for (const warning of result.warnings) {

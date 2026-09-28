@@ -4,6 +4,7 @@ import {
     deriveDecoupling,
     deriveEfficiencyComparison,
     deriveIntervalRepetition,
+    deriveSprintRepetition,
     thresholdProvenance,
 } from './contextBriefResponseFeatures';
 import { deriveNextDayResponse, deriveStrengthProgression } from './contextBriefSessionResponse';
@@ -282,7 +283,7 @@ describe('next-day response (#814)', () => {
         const context = { history: [session], historyStart: '2026-08-22', checkins: { records: [checkin('2026-09-18', 3, 4), checkin('2026-09-19', 6, 5)], unreadableDates: [] }, asOfDate: '2026-09-20' };
         const text = renderKeySessionSummaries(deriveKeySessionSummaries([session], context), context);
         expect(text).toContain('Next morning (observational, not proof the session caused it): soreness 6 (session-day morning 3) · fatigue 5 (session-day morning 4)');
-        expect(text).toContain('Main set: 3 × 11 min @ 229 / 225 / 237 W');
+        expect(text).toContain('Main set: 3 × 11 min @ 229 / 225 / 237 W actual');
         expect(text).toContain('First→last work interval: +3.5%');
     });
 
@@ -323,5 +324,252 @@ describe('planning vs diagnostic export (#814)', () => {
         const text = injectActivityTelemetryIntoContextBrief(brief, [session], false, context);
         expect(text).toContain('| Lap |');
         expect(text).toContain('### Training-response features');
+    });
+});
+
+
+describe('multi-resolution semantic response (#850)', () => {
+    const semanticThreshold = ride({
+        durationMin: 85,
+        stimulusDomain: 'threshold',
+        normalizedPower: 205,
+        variabilityIndex: 1.08,
+        activityResponse: {
+            derivationVersion: 'multi-resolution-v1',
+            sourceResolution: { powerSeconds: 1, hrSeconds: 1, cadenceSeconds: 1 },
+            segmentCountTotal: 7,
+            segmentsTruncated: false,
+            powerDurationPeaks: [
+                { durationSeconds: 5, powerWatts: 610, confidence: 'high' },
+                { durationSeconds: 60, powerWatts: 330, confidence: 'high' },
+                { durationSeconds: 300, powerWatts: 270, confidence: 'high' },
+            ],
+            segments: [
+                { segmentIndex: 1, segmentType: 'warmup', identitySource: 'fit_workout_step', durationSeconds: 1200, averagePowerWatts: 150, evidenceConfidence: 'high' },
+                { segmentIndex: 2, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 900, prescribedTarget: { kind: 'power_watts', value: 230 }, averagePowerWatts: 229, averageHrBpm: 154, lastThirdHrBpm: 158, firstThirdPowerWatts: 232, middleThirdPowerWatts: 230, lastThirdPowerWatts: 225, evidenceConfidence: 'high' },
+                { segmentIndex: 3, segmentType: 'recovery', identitySource: 'fit_workout_step', durationSeconds: 300, averagePowerWatts: 120, evidenceConfidence: 'high' },
+                { segmentIndex: 4, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 900, prescribedTarget: { kind: 'power_watts', value: 230 }, averagePowerWatts: 231, averageHrBpm: 156, lastThirdHrBpm: 160, firstThirdPowerWatts: 233, middleThirdPowerWatts: 231, lastThirdPowerWatts: 228, evidenceConfidence: 'high' },
+                { segmentIndex: 5, segmentType: 'recovery', identitySource: 'fit_workout_step', durationSeconds: 300, averagePowerWatts: 119, evidenceConfidence: 'high' },
+                { segmentIndex: 6, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 900, prescribedTarget: { kind: 'power_watts', value: 230 }, averagePowerWatts: 226, averageHrBpm: 158, lastThirdHrBpm: 163, firstThirdPowerWatts: 230, middleThirdPowerWatts: 227, lastThirdPowerWatts: 221, evidenceConfidence: 'high' },
+                { segmentIndex: 7, segmentType: 'cooldown', identitySource: 'fit_workout_step', durationSeconds: 1200, averagePowerWatts: 130, evidenceConfidence: 'high' },
+            ],
+        },
+        // Deliberately misleading equal-duration laps: semantic FIT steps must win.
+        laps: [lap(1, 15, 120, 120), lap(2, 15, 400, 170), lap(3, 15, 110, 120)],
+    });
+
+    it('uses executed FIT workout-step identity ahead of lap heuristics', () => {
+        const feature = deriveIntervalRepetition(semanticThreshold);
+        expect(feature.state).toBe('available');
+        if (feature.state !== 'available') return;
+        expect(feature.intervals.map(item => item.powerWatts)).toEqual([229, 231, 226]);
+        expect(feature.intervals.every(item => item.identitySource === 'fit_workout_step')).toBe(true);
+        expect(feature.intervals.map(item => item.prescribedTarget?.value)).toEqual([230, 230, 230]);
+    });
+
+    it('keeps the prescribed target separate from actual power and renders within-rep trajectory', () => {
+        const context = { history: [semanticThreshold], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20' };
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries([semanticThreshold], context), context);
+        expect(text).toContain('3 × 15 min @ 229 / 231 / 226 W actual');
+        expect(text).toContain('Prescription: 230 W (kept separate from performed power)');
+        expect(text).toContain('Within-rep power thirds: #1 232/230/225 W');
+        expect(text).toContain('HR final third: 158 / 160 / 163 bpm');
+        expect(text).not.toContain('400 W actual');
+    });
+
+    it('represents 30/30 work and equal-duration recovery without confusing recoveries for work', () => {
+        const segments = Array.from({ length: 8 }, (_, index) => [
+            { segmentIndex: index * 2 + 1, segmentType: 'work' as const, identitySource: 'fit_workout_step' as const, durationSeconds: 30, averagePowerWatts: 360 - index * 2, evidenceConfidence: 'high' as const },
+            { segmentIndex: index * 2 + 2, segmentType: 'recovery' as const, identitySource: 'fit_workout_step' as const, durationSeconds: 30, averagePowerWatts: 120, evidenceConfidence: 'high' as const },
+        ]).flat();
+        const session = ride({
+            stimulusDomain: 'vo2',
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1 },
+                segmentCountTotal: segments.length,
+                segmentsTruncated: false,
+                segments,
+                powerDurationPeaks: [],
+            },
+        });
+        const feature = deriveIntervalRepetition(session);
+        expect(feature.state === 'available' && feature.intervals).toHaveLength(8);
+        expect(feature.state === 'available' && feature.intervals.every(item => item.powerWatts > 300)).toBe(true);
+    });
+
+    it('summarizes 4x4 from semantic steps even though the legacy 120 s gate is no longer the identity mechanism', () => {
+        const segments = [330, 326, 323, 319].map((power, index) => ({
+            segmentIndex: index + 1,
+            segmentType: 'work' as const,
+            identitySource: 'fit_workout_step' as const,
+            durationSeconds: 240,
+            averagePowerWatts: power,
+            evidenceConfidence: 'high' as const,
+        }));
+        const feature = deriveIntervalRepetition(ride({
+            stimulusDomain: 'vo2',
+            laps: undefined,
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1 },
+                segmentCountTotal: 4,
+                segmentsTruncated: false,
+                segments,
+                powerDurationPeaks: [],
+            },
+        }));
+        expect(feature.state === 'available' && feature.intervals.map(item => item.powerWatts)).toEqual([330, 326, 323, 319]);
+    });
+
+    it('summarizes 6x10 s sprints using power/cadence without HR as the primary signal', () => {
+        const powers = [720, 715, 700, 690, 680, 665];
+        const session = ride({
+            stimulusDomain: 'anaerobic',
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1, cadenceSeconds: 1 },
+                segmentCountTotal: 6,
+                segmentsTruncated: false,
+                powerDurationPeaks: [{ durationSeconds: 5, powerWatts: 760, confidence: 'high' }],
+                segments: powers.map((power, index) => ({
+                    segmentIndex: index + 1,
+                    segmentType: 'sprint' as const,
+                    identitySource: 'fit_workout_step' as const,
+                    durationSeconds: 10,
+                    averagePowerWatts: power,
+                    peak5sPowerWatts: power + 25,
+                    peak10sPowerWatts: power,
+                    maxCadenceRpm: 122 - index,
+                    averageHrBpm: 130 + index,
+                    evidenceConfidence: 'high' as const,
+                })),
+            },
+        });
+        const feature = deriveSprintRepetition(session);
+        expect(feature.state).toBe('available');
+        if (feature.state !== 'available') return;
+        expect(feature.sprints).toHaveLength(6);
+        expect(feature.sprints.every(item => item.hrBpm === undefined)).toBe(true);
+        expect(feature.meanPeak5sWatts).toBeGreaterThan(feature.meanPowerWatts);
+        const context = { history: [session], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20' };
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries([session], context), context);
+        expect(text).toContain('Sprints: 6 × 10 s');
+        expect(text).toContain('Sprint peak 5 s');
+        expect(text).toContain('Mean 10 s');
+        expect(text).toContain('Peak cadence');
+    });
+
+    it('uses deterministic continuous halves for steady decoupling when detailed laps are absent', () => {
+        const session = steady('steady-native', '2026-09-18', {
+            laps: undefined,
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1, hrSeconds: 1 },
+                segmentCountTotal: 0,
+                segmentsTruncated: false,
+                segments: [],
+                powerDurationPeaks: [],
+                steadyHalves: {
+                    firstPowerWatts: 180,
+                    secondPowerWatts: 180,
+                    firstHrBpm: 130,
+                    secondHrBpm: 136,
+                },
+            },
+        });
+        const feature = deriveDecoupling(session);
+        expect(feature.state).toBe('available');
+        expect(feature.state === 'available' && feature.decouplingPct).toBeGreaterThan(4);
+        const context = { history: [session], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20' };
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries([session], context), context);
+        expect(text).toContain('Pw:HR decoupling (first vs second half)');
+        expect(text).not.toContain('lap averages');
+    });
+
+    it('keeps planning output bounded for long microinterval protocols', () => {
+        const segments = Array.from({ length: 40 }, (_, index) => ({
+            segmentIndex: index + 1,
+            segmentType: 'work' as const,
+            identitySource: 'fit_workout_step' as const,
+            durationSeconds: 30,
+            averagePowerWatts: 350 - (index % 5),
+            prescribedTarget: { kind: 'power_watts', value: 350 },
+            firstThirdPowerWatts: 352,
+            middleThirdPowerWatts: 350,
+            lastThirdPowerWatts: 348,
+            evidenceConfidence: 'high' as const,
+        }));
+        const session = ride({
+            stimulusDomain: 'vo2',
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1 },
+                segmentCountTotal: 40,
+                segmentsTruncated: false,
+                segments,
+                powerDurationPeaks: [],
+            },
+        });
+        const context = { history: [session], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20' };
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries([session], context), context);
+        expect(text).toContain('… +30');
+        expect(text.length).toBeLessThan(5000);
+    });
+});
+
+
+describe('multi-resolution HR-fidelity propagation (#850)', () => {
+    it('withholds semantic interval HR when the existing HR authority rejects the measurement', () => {
+        const session = ride({
+            stimulusDomain: 'threshold',
+            hrMeasurement: {
+                measurementConfidence: 'low',
+                signalQuality: 'unreliable',
+                summaryCompatibility: 'verified_same_effective_trace',
+                artifactFlags: [],
+                reasons: ['synthetic low-confidence fixture'],
+            } as unknown as HrMeasurement,
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1, hrSeconds: 1 },
+                segmentCountTotal: 2,
+                segmentsTruncated: false,
+                powerDurationPeaks: [],
+                segments: [
+                    {
+                        segmentIndex: 1,
+                        segmentType: 'work',
+                        identitySource: 'fit_workout_step',
+                        durationSeconds: 900,
+                        averagePowerWatts: 230,
+                        averageHrBpm: 155,
+                        endHrBpm: 160,
+                        lastThirdHrBpm: 158,
+                        evidenceConfidence: 'high',
+                    },
+                    {
+                        segmentIndex: 2,
+                        segmentType: 'work',
+                        identitySource: 'fit_workout_step',
+                        durationSeconds: 900,
+                        averagePowerWatts: 228,
+                        averageHrBpm: 158,
+                        endHrBpm: 163,
+                        lastThirdHrBpm: 161,
+                        evidenceConfidence: 'high',
+                    },
+                ],
+            },
+        });
+
+        const feature = deriveIntervalRepetition(session);
+
+        expect(feature.state).toBe('available');
+        if (feature.state !== 'available') return;
+        expect(feature.intervals.every(interval => interval.hrBpm === undefined)).toBe(true);
+        expect(feature.intervals.every(interval => interval.endHrBpm === undefined)).toBe(true);
+        expect(feature.intervals.every(interval => interval.lastThirdHrBpm === undefined)).toBe(true);
+        expect(feature.hrNote).toContain('HR withheld');
     });
 });

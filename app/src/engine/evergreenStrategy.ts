@@ -3,6 +3,7 @@ import type { DailyReadiness, TrainingIntentProfile, TrainingPriority } from './
 import type { PhaseWeights } from './periodization';
 import type { EvidenceCertainty, KnowledgeMaturity, KnowledgeStatus } from '../knowledge/sportsKnowledge';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
+import type { WeeklyAerobicDoseEnvelope } from './weeklyAerobicDose';
 
 /** The one in-memory default for an athlete who has not yet saved an intent profile.
  * It is deliberately not persisted by planning-mode resolution. */
@@ -12,10 +13,10 @@ export const DEFAULT_TRAINING_INTENT_PROFILE: Omit<TrainingIntentProfile, 'userI
     organizationPreference: 'auto', schemaVersion: 1,
 };
 
-/** `neuromuscular_power` (#802) is deliberately distinct from metabolic `high_intensity`
- * and from `strength`: VO2/threshold work never satisfies it, and it is credited only by
- * exact authored power identities (`workouts/powerExposure.ts`). */
-export type AdaptationKey = 'aerobic_endurance' | 'strength' | 'high_intensity' | 'neuromuscular_power';
+/** `neuromuscular_power` (#802) and `mechanical_exposure` (#804) are deliberately distinct
+ * from metabolic `high_intensity` and generic `strength`: VO2/threshold work never satisfies them,
+ * and they are credited only by exact authored qualifying identities. */
+export type AdaptationKey = 'aerobic_endurance' | 'strength' | 'high_intensity' | 'neuromuscular_power' | 'mechanical_exposure';
 export type DoseUnit = 'minutes' | 'sessions';
 
 export interface DoseTarget {
@@ -100,6 +101,11 @@ export interface GoalOrEventContext {
     /** Current pain/injury, illness or red-flag symptoms reported for the planning day. */
     hasCurrentClinicalSymptoms?: boolean;
     phase?: PhaseWeights | null;
+    /** Issue #805 (D-A/D-B): explicit broad-athleticism opt-in. Independent of the
+     * `sport_readiness` priority; it only guarantees an optional #804 mechanical requirement
+     * exists (when #804 has not deliberately suspended it) so capability maintenance can reuse
+     * that support occurrence. It never increases the configured weekly session commitment. */
+    capabilityMaintenanceEnabled?: boolean;
 }
 
 /** True when today's check-in reports a current clinical symptom (pain/injury, illness or
@@ -161,7 +167,7 @@ export function isFreshSubjectiveWithAdverseWearables(readiness: DailyReadiness 
 }
 
 export interface PolicyWarning {
-    code: 'conditional_prior_withheld' | 'power_exposure_withheld';
+    code: 'conditional_prior_withheld' | 'power_exposure_withheld' | 'mechanical_exposure_withheld' | 'capability_maintenance_unfulfilled';
     message: string;
 }
 
@@ -283,15 +289,25 @@ export function inferAthleteTrainingState(
  * pre-credited into the evidence-backed requirement itself. */
 function aerobicRequirement(
     priority: AdaptationDoseRequirement['priority'],
+    envelope?: WeeklyAerobicDoseEnvelope,
 ): AdaptationDoseRequirement {
-    const primaryClaimId = KNOWLEDGE_CLAIM_IDS.adultAerobicHealthVolume;
+    const primaryClaimId = envelope?.source === 'athlete_history'
+        ? KNOWLEDGE_CLAIM_IDS.weeklyAerobicDoseEnvelopePolicy
+        : KNOWLEDGE_CLAIM_IDS.adultAerobicHealthVolume;
+    const floorMinutes = envelope?.floorMinutes ?? 150;
+    const targetMinutes = envelope?.targetMinutes ?? 150;
+    const upperMinutes = envelope?.upperMinutes ?? 300;
     return {
         adaptation: 'aerobic_endurance', priority,
-        floor: { dose: { unit: 'minutes', value: 150 }, semantics: 'guideline_recommended_minimum' },
-        target: { unit: 'minutes', minimum: 150, target: 150, maximum: 300 },
-        substitutionPolicy: { equivalentModalitiesAllowed: true, permittedModalities: ['Walking', 'Running', 'Cycling', 'Other'] },
-        knowledgeRefs: [primaryClaimId],
-        evidence: evidenceProvenance(primaryClaimId, 'guideline_target', 'high'),
+        floor: { dose: { unit: 'minutes', value: floorMinutes }, semantics: envelope?.source === 'athlete_history' ? 'evidence_supported_minimum' : 'guideline_recommended_minimum' },
+        target: { unit: 'minutes', minimum: floorMinutes, target: targetMinutes, maximum: upperMinutes },
+        substitutionPolicy: envelope?.source === 'athlete_history' && envelope.modality
+            ? { equivalentModalitiesAllowed: false, permittedModalities: [envelope.modality] }
+            : { equivalentModalitiesAllowed: true, permittedModalities: ['Walking', 'Running', 'Cycling', 'Swimming', 'Other'] },
+        knowledgeRefs: envelope?.source === 'athlete_history'
+            ? [primaryClaimId, KNOWLEDGE_CLAIM_IDS.adultAerobicHealthVolume]
+            : [primaryClaimId],
+        evidence: evidenceProvenance(primaryClaimId, envelope?.source === 'athlete_history' ? 'product_heuristic' : 'guideline_target', envelope?.source === 'athlete_history' ? 'low' : 'high'),
     };
 }
 
@@ -340,12 +356,72 @@ function powerWithheldReason(
     return null;
 }
 
+/** Build the progressive mechanical-exposure requirement (#804). The target and ceiling
+ * are product policy owned by `policy.evergreen.mechanical_exposure_v1`; progressive mechanical
+ * loading is supported by `biomechanics.impact.progressive_mechanical_loading`.
+ * Preferentially embedded/cross-credited when an already-planned exact identity supplies it.
+ * If no host exists, the explicit low-cost coverage target remains visible and may be repaired
+ * by the canonical allocator rather than disappearing silently (ADR-0044 D4/D5/D6). */
+function mechanicalRequirement(priority: AdaptationDoseRequirement['priority']): AdaptationDoseRequirement {
+    const primaryClaimId = KNOWLEDGE_CLAIM_IDS.mechanicalExposurePolicy;
+    return {
+        adaptation: 'mechanical_exposure', priority, delivery: 'embedded', floor: null,
+        target: { unit: 'sessions', minimum: 0, target: 1, maximum: 2 },
+        substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Running', 'Field', 'Strength'] },
+        knowledgeRefs: [primaryClaimId, KNOWLEDGE_CLAIM_IDS.progressiveMechanicalLoading],
+        evidence: evidenceProvenance(primaryClaimId, 'product_heuristic', 'low'),
+    };
+}
+
+/** Typed source of a deliberate #804 mechanical suspension (#805 reads it for ADR-0044 D9
+ * `deliberately_suspended` capability diagnostics). */
+export type MechanicalSuspensionSource = 'adverse_recovery' | 'clinical_symptoms' | 'event_phase' | 'mechanical_withheld';
+
+/** Why an otherwise-eligible mechanical exposure requirement is deliberately suspended, or null (#804). */
+export function mechanicalSuspensionFor(
+    goalOrEvent: GoalOrEventContext,
+    athleteState: AthleteTrainingState,
+): { source: MechanicalSuspensionSource; message: string } | null {
+    const phaseName = goalOrEvent.phase?.phaseName;
+    if (goalOrEvent.isAdverseRecovery) return { source: 'adverse_recovery', message: 'Mechanical exposure is withheld during acute adverse recovery; it is not owed as catch-up work.' };
+    if (goalOrEvent.hasCurrentClinicalSymptoms) return { source: 'clinical_symptoms', message: 'Mechanical exposure is withheld while pain, injury, illness or red-flag symptoms are reported.' };
+    if (phaseName === 'Peak/Taper') return { source: 'event_phase', message: 'Mechanical exposure is deliberately suspended during peak/taper; freshness takes priority.' };
+    if (phaseName === 'Post-Event Recovery') return { source: 'event_phase', message: 'Mechanical exposure is deliberately suspended during post-event recovery.' };
+    if (athleteState.inference.dataQuality !== 'high' || athleteState.trainingAgeProxy !== 'established') {
+        return { source: 'mechanical_withheld', message: 'Mechanical exposure is withheld until sufficient, consistent recent training evidence establishes the athlete as trained.' };
+    }
+    return null;
+}
+
+/** Whether an evergreen priority set can produce the #804 mechanical requirement.
+ * This is the single priority-level authority used both by strategy construction and by
+ * orchestration to decide whether the wider mechanical evidence streams are needed. An
+ * explicit #805 capability-maintenance opt-in (D-B) always can, independent of priorities. */
+export function canEmitMechanicalRequirement(
+    priorities: readonly TrainingPriority[],
+    capabilityMaintenanceEnabled: boolean = false,
+): boolean {
+    if (capabilityMaintenanceEnabled) return true;
+    const effectivePriorities: readonly TrainingPriority[] = priorities.length > 0
+        ? priorities
+        : ['balanced_performance'];
+    const prioritySet = new Set(effectivePriorities);
+    const directMechanicalPriority = prioritySet.has('sport_readiness') || prioritySet.has('speed_power');
+    const strengthPlanned = prioritySet.has('health')
+        || prioritySet.has('balanced_performance')
+        || prioritySet.has('strength_muscle');
+    return directMechanicalPriority || (prioritySet.has('endurance') && strengthPlanned);
+}
+
 /** Resolves dose before capacity. The result makes no assumption about the athlete's
  * available minutes or declared session count; those constraints belong to
  * `trainingCapacity.ts`. */
 export function resolveEvidenceBackedStrategy(
     goalOrEvent: GoalOrEventContext,
     athleteState: AthleteTrainingState,
+    weeklyAerobicDose?: WeeklyAerobicDoseEnvelope,
+    /** #857: #804 establishment evidence is independent from the broader performance state. */
+    mechanicalAthleteState: AthleteTrainingState = athleteState,
 ): EvidenceBackedStrategy {
     const priorities = new Set(goalOrEvent.priorities.length > 0 ? goalOrEvent.priorities : ['balanced_performance']);
     const requirements: AdaptationDoseRequirement[] = [];
@@ -371,8 +447,8 @@ export function resolveEvidenceBackedStrategy(
     // explicitly selected by the athlete, keep its evidence-backed floor non-droppable.
     // Capacity may still produce an explicit shortfall; it must not silently erase a whole
     // guideline-backed adaptation by relegating it to opportunistic leftover sessions.
-    if (healthOrBalanced || priorities.has('endurance')) {
-        requirements.push(aerobicRequirement('required'));
+    if (healthOrBalanced || priorities.has('endurance') || priorities.has('sport_readiness')) {
+        requirements.push(aerobicRequirement('required', weeklyAerobicDose));
     }
     if (healthOrBalanced || priorities.has('strength_muscle')) {
         requirements.push(strengthRequirement('required'));
@@ -410,6 +486,19 @@ export function resolveEvidenceBackedStrategy(
         const withheld = powerWithheldReason(goalOrEvent, athleteState);
         if (withheld) warnings.push({ code: 'power_exposure_withheld', message: withheld });
         else requirements.push(powerRequirement(priorities.has('speed_power') ? 'target' : 'optional'));
+    }
+
+    // Issue #804: progressive mechanical and impact exposure model. Sport-readiness/speed
+    // athletes target it directly. An endurance+strength hybrid retains it as an optional
+    // maintenance capability so cycling/endurance can stay primary
+    // without letting foot-ground exposure disappear for months.
+    // Issue #805 (D-B): an explicit capability-maintenance opt-in guarantees at least an
+    // optional mechanical requirement so capability work can reuse #804's support occurrence.
+    const directMechanicalPriority = priorities.has('sport_readiness') || priorities.has('speed_power');
+    if (canEmitMechanicalRequirement(goalOrEvent.priorities, goalOrEvent.capabilityMaintenanceEnabled)) {
+        const withheld = mechanicalSuspensionFor(goalOrEvent, mechanicalAthleteState);
+        if (withheld) warnings.push({ code: 'mechanical_exposure_withheld', message: withheld.message });
+        else requirements.push(mechanicalRequirement(directMechanicalPriority ? 'target' : 'optional'));
     }
     return { requirements, ...(canUseConditionalPrior ? { hardSessionCap } : {}), warnings };
 }

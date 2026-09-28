@@ -41,6 +41,7 @@ import type {
     TrainingIntentProfile,
     PlanningMode,
     TrainingPriority,
+    AthleticCapabilityKey,
     EquipmentKey,
     ObjectiveKey,
     ExternalTrainingPlan,
@@ -1729,6 +1730,32 @@ const TRAINING_INTENT_PROFILE_KEYS = [
     'userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference',
     'schemaVersion', 'createdAt', 'updatedAt',
 ] as const;
+/** Optional profile fields: allowed but never required (absent = default). */
+const OPTIONAL_TRAINING_INTENT_PROFILE_KEYS = ['capabilityMaintenance'] as const;
+export const ATHLETIC_CAPABILITY_KEYS: readonly AthleticCapabilityKey[] = [
+    'linear_speed_skill', 'acceleration_deceleration', 'multidirectional_change_of_direction', 'sport_skill',
+];
+
+function capabilityMaintenanceErrors(raw: unknown): ValidationError[] {
+    const field = 'capabilityMaintenance';
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [{ field, message: 'Capability maintenance must be an object' }];
+    const value = raw as Record<string, unknown>;
+    const keys = Object.keys(value);
+    if (keys.length !== 2 || !keys.includes('enabled') || !keys.includes('capabilities')) {
+        return [{ field, message: 'Capability maintenance must contain exactly enabled and capabilities' }];
+    }
+    const errors: ValidationError[] = [];
+    if (typeof value.enabled !== 'boolean') errors.push({ field, message: 'enabled must be a boolean' });
+    const capabilities = value.capabilities;
+    if (!Array.isArray(capabilities)
+        || capabilities.some(item => !ATHLETIC_CAPABILITY_KEYS.includes(item as AthleticCapabilityKey))
+        || new Set(capabilities).size !== capabilities.length) {
+        errors.push({ field, message: 'capabilities must be unique supported values' });
+    } else if (value.enabled === true && capabilities.length === 0) {
+        errors.push({ field, message: 'An enabled capability maintenance preference needs at least one capability' });
+    }
+    return errors;
+}
 const TRAINING_PRIORITIES: TrainingPriority[] = [
     'health', 'balanced_performance', 'endurance', 'strength_muscle', 'speed_power', 'sport_readiness',
 ];
@@ -1739,7 +1766,8 @@ export function validateTrainingIntentProfile(raw: any): ValidationResult<Traini
     const errors: ValidationError[] = [];
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { isValid: false, errors: [{ field: 'profile', message: 'Profile must be an object' }] };
     const keys = Object.keys(raw);
-    const extra = keys.filter(key => !(TRAINING_INTENT_PROFILE_KEYS as readonly string[]).includes(key));
+    const extra = keys.filter(key => !(TRAINING_INTENT_PROFILE_KEYS as readonly string[]).includes(key)
+        && !(OPTIONAL_TRAINING_INTENT_PROFILE_KEYS as readonly string[]).includes(key));
     const missing = TRAINING_INTENT_PROFILE_KEYS.filter(key => !(key in raw));
     if (extra.length) errors.push({ field: 'profile', message: `Unrecognized profile field(s): ${extra.join(', ')}` });
     if (missing.length) errors.push({ field: 'profile', message: `Missing profile field(s): ${missing.join(', ')}` });
@@ -1763,6 +1791,7 @@ export function validateTrainingIntentProfile(raw: any): ValidationResult<Traini
         }
     }
     if (raw.organizationPreference !== 'auto') errors.push({ field: 'organizationPreference', message: 'Only auto organization is supported' });
+    if ('capabilityMaintenance' in raw) errors.push(...capabilityMaintenanceErrors(raw.capabilityMaintenance));
     if (!Number.isInteger(raw.schemaVersion) || raw.schemaVersion < 1) errors.push({ field: 'schemaVersion', message: 'Schema version must be a positive integer' });
     if (typeof raw.createdAt !== 'string' || typeof raw.updatedAt !== 'string') errors.push({ field: 'timestamps', message: 'createdAt and updatedAt must be strings' });
     if (errors.length > 0) return { isValid: false, errors };
