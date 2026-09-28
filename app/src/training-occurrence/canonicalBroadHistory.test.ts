@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DailyRecommendation, NormalizedGarminActivity } from '../engine/models';
-import type { SessionExecution } from '../sessions/models';
+import type { ExecutionPrescription, SessionEntry, SessionExecution } from '../sessions/models';
 import { buildTrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
 import { workoutForTemplate } from '../workouts/prescription';
 import type { PerformedOccurrenceSourceRef, PerformedTrainingOccurrence } from './models';
@@ -56,10 +56,24 @@ function occurrence(sourceRefs: PerformedOccurrenceSourceRef[], overrides: Parti
 
 const structuredRef: PerformedOccurrenceSourceRef = { kind: 'structured_execution', executionId: 'e-1' };
 const garminRef: PerformedOccurrenceSourceRef = { kind: 'provider_activity', provider: 'garmin', activityId: 'a-1' };
+const strengthPrescription: ExecutionPrescription = {
+    schemaVersion: 1, prescriptionHash: 'ph-1', sessionSource: { kind: 'manual', definitionId: 'upper', revision: 1, contentHash: 'h' },
+    definitionHash: 'dh', displayMetadata: { title: ' Upper Maintenance ', intent: 'training', dominantModality: 'Strength', duration: { min: 50, max: 60 } },
+    blocks: [
+        { id: 'warmup', role: 'warmup', executionMode: 'sequential', steps: [{ id: 'warmup-press', kind: 'exercise', dose: { kind: 'repetition', sets: 2, reps: 8 } }] },
+        { id: 'main', role: 'main', executionMode: 'sequential', steps: [{ id: 'press', kind: 'exercise', dose: { kind: 'repetition', sets: 4, reps: 8 } }] },
+    ],
+    createdAt: 'x',
+};
+function setEntry(id: string, executionId = 'e-1', isWarmup = false): SessionEntry {
+    return { id, executionId, stepId: 'press', completedAt: '2026-08-06T16:10:00Z', createdAt: 'x', updatedAt: 'x', payload: { kind: 'repetition', setIndex: Number(id), reps: 8, isWarmup } };
+}
 
 function sources(overrides: Partial<CanonicalHistorySources> = {}): CanonicalHistorySources {
     return {
         executionsById: new Map([['e-1', execution()]]),
+        entriesByExecutionId: new Map(),
+        prescriptionsByHash: new Map(),
         activitiesById: new Map([['a-1', activity()]]),
         recommendationsByDate: new Map([['2026-08-06', recommendation()]]),
         ...overrides,
@@ -103,11 +117,118 @@ describe('deriveCanonicalBroadExposure', () => {
         ['unsupported_provider', [{ kind: 'provider_activity', provider: 'polar', activityId: 'p-1' }] as PerformedOccurrenceSourceRef[], sources()],
         ['structured_source_unavailable', [structuredRef], sources({ executionsById: new Map() })],
         ['structured_source_not_completed', [structuredRef], sources({ executionsById: new Map([['e-1', execution({ state: 'abandoned' })]]) })],
-        ['non_catalog_structured_semantics', [structuredRef], sources({ executionsById: new Map([['e-1', execution({ sessionSource: { kind: 'manual', definitionId: 'd', revision: 1, contentHash: 'h' } })]]) })],
+        ['non_catalog_execution_evidence_missing', [structuredRef], sources({ executionsById: new Map([['e-1', execution({ sessionSource: { kind: 'manual', definitionId: 'd', revision: 1, contentHash: 'h' } })]]) })],
         ['legacy_strength_semantics_not_derived', [structuredRef], sources({ executionsById: new Map([['e-1', execution({ sessionSource: { kind: 'catalog', workoutId: 'legacy_strength', catalogVersion: 'v1' } })]]) })],
         ['provider_source_unavailable', [garminRef], sources({ activitiesById: new Map() })],
     ])('reports %s as unknown instead of fabricating semantics', (reason, refs, hydrated) => {
         expect(deriveCanonicalBroadExposure(occurrence(refs), hydrated)).toEqual({ status: 'unknown', reason });
+    });
+
+    it('derives manual strength from performed sets, session duration and RPE', () => {
+        const manual = execution({ sessionSource: strengthPrescription.sessionSource, prescriptionHash: 'ph-1', sessionRpe: 8 });
+        const hydrated = sources({
+            executionsById: new Map([['e-1', manual]]),
+            entriesByExecutionId: new Map([['e-1', [setEntry('1'), setEntry('2'), setEntry('3', 'e-1', true), { ...setEntry('4'), stepId: 'warmup-press' }]]]),
+            prescriptionsByHash: new Map([['ph-1', strengthPrescription]]),
+        });
+        const derived = deriveCanonicalBroadExposure(occurrence([structuredRef], { modality: 'strength' }), hydrated);
+        expect(derived.status).toBe('derived');
+        if (derived.status !== 'derived') return;
+        expect(derived.exposure).toMatchObject({
+            trainingRecordLike: { type: 'Upper Maintenance', duration_min: 45 }, modality: 'Strength',
+            deliveredDose: { plannedDurationMin: 55, completionRatio: 0.5 }, stimulusConfidence: 'inferred',
+        });
+        expect(Object.values(derived.exposure.costProfile).every(value => Number.isFinite(value) && value > 0)).toBe(true);
+        expect(Object.values(derived.exposure.stimulusProfile ?? {}).every(value => Number.isFinite(value) && value >= 0)).toBe(true);
+        const audit = pairLiveAndCanonicalHistory({
+            liveEvents: [], liveExposures: [], occurrences: [occurrence([structuredRef], { modality: 'strength' })], sources: hydrated,
+        }).audit;
+        expect(audit).toMatchObject({ derived: 1, unsupportedDerivations: 0, structuredAuthorityViolations: 0 });
+    });
+
+    it('computes completion from required per-step targets without optional or excess work masking misses', () => {
+        const manual = execution({ sessionSource: strengthPrescription.sessionSource, prescriptionHash: 'ph-1', sessionRpe: 8 });
+        const rotatingPrescription: ExecutionPrescription = {
+            ...strengthPrescription,
+            blocks: [{
+                id: 'main', role: 'main', executionMode: 'superset', rounds: 3,
+                steps: [
+                    { id: 'press', kind: 'exercise', dose: { kind: 'repetition', sets: 1, reps: 8 } },
+                    { id: 'row', kind: 'exercise', dose: { kind: 'repetition', sets: 1, reps: 8 } },
+                    { id: 'carry', kind: 'exercise', optional: true, dose: { kind: 'duration', seconds: 30 } },
+                ],
+            }],
+        };
+        const entries = [
+            setEntry('1'), setEntry('2'), setEntry('3'), setEntry('4'),
+            { ...setEntry('5'), stepId: 'row' },
+            { ...setEntry('6'), stepId: 'carry', payload: { kind: 'duration', seconds: 30 } as const },
+            { ...setEntry('7'), stepId: 'carry', payload: { kind: 'duration', seconds: 30 } as const },
+            { ...setEntry('8'), stepId: 'carry', payload: { kind: 'duration', seconds: 30 } as const },
+        ];
+        const derived = deriveCanonicalBroadExposure(occurrence([structuredRef], { modality: 'strength' }), sources({
+            executionsById: new Map([['e-1', manual]]),
+            entriesByExecutionId: new Map([['e-1', entries]]),
+            prescriptionsByHash: new Map([['ph-1', rotatingPrescription]]),
+        }));
+        expect(derived.status).toBe('derived');
+        if (derived.status !== 'derived') return;
+        // Superset rounds prescribe 3 press + 3 row entries. Four press entries cap at 3;
+        // optional carries do not compensate for the two missing row entries.
+        expect(derived.exposure.deliveredDose?.completionRatio).toBeCloseTo(4 / 6);
+    });
+
+    it('fails closed when prescription source identity does not match the completed execution', () => {
+        const manual = execution({ sessionSource: strengthPrescription.sessionSource, prescriptionHash: 'ph-1' });
+        const mismatched: ExecutionPrescription = {
+            ...strengthPrescription,
+            sessionSource: { kind: 'manual', definitionId: 'different', revision: 1, contentHash: 'h' },
+        };
+        expect(deriveCanonicalBroadExposure(occurrence([structuredRef], { modality: 'strength' }), sources({
+            executionsById: new Map([['e-1', manual]]),
+            entriesByExecutionId: new Map([['e-1', [setEntry('1')]]]),
+            prescriptionsByHash: new Map([['ph-1', mismatched]]),
+        }))).toEqual({ status: 'unknown', reason: 'non_catalog_execution_evidence_missing' });
+    });
+
+    it('ignores a foreign execution entry even if it is placed under the hydrated execution key', () => {
+        const manual = execution({ sessionSource: strengthPrescription.sessionSource, prescriptionHash: 'ph-1' });
+        expect(deriveCanonicalBroadExposure(occurrence([structuredRef], { modality: 'strength' }), sources({
+            executionsById: new Map([['e-1', manual]]),
+            entriesByExecutionId: new Map([['e-1', [setEntry('1', 'e-foreign')]]]),
+            prescriptionsByHash: new Map([['ph-1', strengthPrescription]]),
+        }))).toEqual({ status: 'unknown', reason: 'non_catalog_execution_evidence_missing' });
+    });
+
+    it('lets Garmin duration and Training Effect enrich an authored execution without replacing its identity', () => {
+        const authoredSource = { kind: 'external_plan', planId: 'p-1', revision: 1, sessionId: 's-1', contentHash: 'h' } as const;
+        const authoredPrescription: ExecutionPrescription = {
+            ...strengthPrescription, sessionSource: authoredSource,
+            displayMetadata: { ...strengthPrescription.displayMetadata!, title: 'Plan Upper', duration: { min: 50, max: 60 } },
+        };
+        const hydrated = sources({
+            executionsById: new Map([['e-1', execution({ sessionSource: authoredSource, prescriptionHash: 'ph-1', sessionRpe: 4 })]]),
+            entriesByExecutionId: new Map([['e-1', [setEntry('1'), setEntry('2'), setEntry('3'), setEntry('4')]]]),
+            prescriptionsByHash: new Map([['ph-1', authoredPrescription]]),
+        });
+        const authoredOccurrence = occurrence([structuredRef, garminRef], { modality: 'cycling' });
+        const derived = deriveCanonicalBroadExposure(authoredOccurrence, hydrated);
+        expect(derived.status).toBe('derived');
+        if (derived.status !== 'derived') return;
+        expect(derived.exposure).toMatchObject({ trainingRecordLike: { type: 'Plan Upper', duration_min: 50, training_effect: 3.2 }, modality: 'Strength' });
+        const audit = pairLiveAndCanonicalHistory({ liveEvents: [], liveExposures: [], occurrences: [authoredOccurrence], sources: hydrated }).audit;
+        expect(audit).toMatchObject({ derived: 1, unsupportedDerivations: 0, structuredAuthorityViolations: 0 });
+    });
+
+    it('fails closed when the immutable prescription cannot establish structured modality', () => {
+        const manual = execution({ sessionSource: strengthPrescription.sessionSource, prescriptionHash: 'ph-1' });
+        const hydrated = sources({
+            executionsById: new Map([['e-1', manual]]),
+            entriesByExecutionId: new Map([['e-1', [setEntry('1')]]]),
+            prescriptionsByHash: new Map([['ph-1', { ...strengthPrescription, displayMetadata: { ...strengthPrescription.displayMetadata!, dominantModality: 'unknown' } }]]),
+        });
+        expect(deriveCanonicalBroadExposure(occurrence([structuredRef], { modality: 'strength' }), hydrated))
+            .toEqual({ status: 'unknown', reason: 'non_catalog_execution_evidence_missing' });
     });
 });
 

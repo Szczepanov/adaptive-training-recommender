@@ -40,9 +40,10 @@ eligible for review, and only a separately written analysis belongs in `docs/ana
    ```
 
    `export_training_occurrence_records` (`src/garmin_sync/training_occurrence_export.py`) reads
-   only `users/{uid}/performedTrainingOccurrences`, the `session_executions` those occurrences
-   reference, `activities` and `daily_recommendations` for the window (at most 366 days). It
-   never lists `users`. The output `raw/records.json` is **raw personal data**. With
+   only `users/{uid}/performedTrainingOccurrences`, the referenced `session_executions`, their
+   `entries` and immutable `execution_prescriptions`, `activities` and `daily_recommendations`
+   for the window (at most 366 days). It never lists `users`. The output `raw/records.json` is
+   **raw personal data**. With
    `--with-fit`, `collect_fit_identity_evidence` re-downloads each Garmin original, decodes it
    twice in memory with the production decoder, drops the bytes, and writes
    `raw/fit-evidence.json`: an aggregate plus private per-file rows (salted alias, date,
@@ -85,8 +86,9 @@ Hard gates with a zero denominator are `not_evaluated`, never a vacuous pass. Th
 re-checks every derived row against its own hydrated sources (`DerivationAudit`). Missing detail
 passes only when no derived row lacks the sources its authority requires; this re-implements the
 derivation preconditions, so it is a regression guard rather than independent data-quality
-evidence. Structured authority passes only when every structured-derived row keeps the
-execution's catalog workout, template, modality and category.
+evidence. Structured authority passes only when catalog rows keep the execution's workout,
+template, modality and category, and non-catalog rows preserve the immutable prescription's
+title and modality with valid nonnegative cost and stimulus profiles.
 
 ### Canonical derivation rules
 
@@ -101,10 +103,23 @@ execution's catalog workout, template, modality and category.
   in the live merge; structured identity and modality are never replaced by Garmin's. A
   workout shared by several templates resolves only through the recommendation that owns the
   execution. As in the live Firestore path, `recoveryHours` is not set.
+- **Completed manual or external-plan execution:** requires its exported immutable
+  `execution_prescription`, an exact source-identity match to the completed execution, and at
+  least one performed entry owned by that execution and linked to a prescribed work step. The
+  prescription title and modality stay authoritative. Authored duration ranges use the same
+  midpoint reference semantics as catalog ranges. Logged completion is computed per required
+  prescribed step, capped at each step's target; rotating block rounds are honored, while
+  optional or excess work cannot compensate for missing required work. Existing modality
+  profiles are then scaled by completed duration and that independent completion ratio. Session
+  RPE selects the diagnostic fallback intensity when Garmin is absent. A linked Garmin activity
+  contributes measured duration and Training Effect stimulus while keeping the structured
+  identity. Malformed prescription metadata fails closed. This remains offline evidence only;
+  its RPE bands and generic non-catalog profiles need reviewed real-history evidence before any
+  activation.
 - **Unknown, never guessed:** more than one structured or provider source, a non-Garmin
-  provider, a missing or non-completed execution, a manual/authored, external-plan or
-  `legacy_strength` execution, an ambiguous template, a missing provider record, or no
-  performed date. Each is counted by reason in `canonicalDerivation.unknownByReason`.
+  provider, a missing or non-completed execution, missing non-catalog prescription/entry
+  evidence, a `legacy_strength` execution, an ambiguous template, a missing provider record, or
+  no performed date. Each is counted by reason in `canonicalDerivation.unknownByReason`.
 
 Planned `SessionOccurrence` documents are never read. Merged occurrences are excluded.
 

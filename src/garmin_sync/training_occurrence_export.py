@@ -88,10 +88,29 @@ def export_training_occurrence_records(
                 referenced_activity_ids.add(str(ref["activityId"]))
 
     executions = []
+    execution_entries: list[dict[str, Any]] = []
+    execution_prescriptions: list[dict[str, Any]] = []
     for execution_id in sorted(execution_ids):
         snapshot = user.collection("session_executions").document(execution_id).get()
         if snapshot.exists:
-            executions.append(_document(snapshot))
+            execution = _document(snapshot)
+            executions.append(execution)
+            entries = (
+                user.collection("session_executions")
+                .document(execution_id)
+                .collection("entries")
+                .stream()
+            )
+            execution_entries.extend(_document(entry) for entry in entries)
+            prescription_hash = execution["data"].get("prescriptionHash")
+            if prescription_hash:
+                prescription = (
+                    user.collection("execution_prescriptions")
+                    .document(str(prescription_hash))
+                    .get()
+                )
+                if prescription.exists:
+                    execution_prescriptions.append(_document(prescription))
 
     # An occurrence near the window edge may reference an activity whose provider date falls
     # just outside it; fetch those by ID so hydration does not report a false missing source.
@@ -107,6 +126,8 @@ def export_training_occurrence_records(
         "window": {"startDate": start_date, "endDateExclusive": end_date_exclusive},
         "performedTrainingOccurrences": occurrences,
         "sessionExecutions": executions,
+        "sessionEntries": execution_entries,
+        "executionPrescriptions": execution_prescriptions,
         "activities": activities,
         "dailyRecommendations": recommendations,
     }

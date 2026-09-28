@@ -11,10 +11,10 @@
  */
 import type { DailyRecommendation, NormalizedGarminActivity } from '../engine/models';
 import type { CompletedExposure } from '../engine/trainingHistory';
-import type { SessionExecution } from '../sessions/models';
+import type { ExecutionPrescription, SessionEntry, SessionExecution } from '../sessions/models';
 import { buildTrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
 import { parseDailyRecommendation, parseNormalizedGarminActivity } from '../persistence/parsers/trainingHistory';
-import { parseSessionExecutionDocument } from '../persistence/parsers/sessionExecution';
+import { parseSessionEntryDocument, parseSessionExecutionDocument } from '../persistence/parsers/sessionExecution';
 import { getLocalDateString } from '../utils/localDate';
 import {
     PERFORMED_OCCURRENCE_SCHEMA_VERSION,
@@ -45,6 +45,8 @@ export interface TrainingOccurrenceRecordExport {
     window: { startDate: string; endDateExclusive: string };
     performedTrainingOccurrences: RawRecordDocument[];
     sessionExecutions: RawRecordDocument[];
+    sessionEntries?: RawRecordDocument[];
+    executionPrescriptions?: RawRecordDocument[];
     activities: RawRecordDocument[];
     dailyRecommendations: RawRecordDocument[];
 }
@@ -77,6 +79,8 @@ function daysBetween(start: string, endExclusive: string): number {
 interface ParsedRecords {
     occurrences: PerformedTrainingOccurrence[];
     executions: SessionExecution[];
+    entries: SessionEntry[];
+    prescriptions: ExecutionPrescription[];
     activities: NormalizedGarminActivity[];
     recommendations: DailyRecommendation[];
     crossUserRecords: number;
@@ -84,11 +88,68 @@ interface ParsedRecords {
 }
 
 function parseRecords(raw: TrainingOccurrenceRecordExport): ParsedRecords {
-    const parsed: ParsedRecords = { occurrences: [], executions: [], activities: [], recommendations: [], crossUserRecords: 0, invalidRecords: 0 };
+    const parsed: ParsedRecords = { occurrences: [], executions: [], entries: [], prescriptions: [], activities: [], recommendations: [], crossUserRecords: 0, invalidRecords: 0 };
     const ownerOf = (data: unknown): unknown => (data && typeof data === 'object' ? (data as Record<string, unknown>).userId : undefined);
     const foreign = (data: unknown): boolean => {
         const owner = ownerOf(data);
         return owner !== undefined && owner !== raw.userId;
+    };
+    const validSource = (data: unknown): boolean => {
+        if (!data || typeof data !== 'object') return false;
+        const source = data as Record<string, unknown>;
+        const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
+        const revision = (value: unknown): boolean => typeof value === 'number' && Number.isInteger(value) && value >= 0;
+        if (source.kind === 'catalog') return nonEmpty(source.workoutId) && nonEmpty(source.catalogVersion);
+        if (source.kind === 'manual') return nonEmpty(source.definitionId) && revision(source.revision) && nonEmpty(source.contentHash);
+        if (source.kind === 'external_plan') {
+            return nonEmpty(source.planId) && revision(source.revision) && nonEmpty(source.sessionId) && nonEmpty(source.contentHash);
+        }
+        return source.kind === 'unplanned_fixture' && nonEmpty(source.fixtureId);
+    };
+    const validDuration = (value: unknown): boolean => {
+        if (!value || typeof value !== 'object') return false;
+        const range = value as Record<string, unknown>;
+        return typeof range.min === 'number' && Number.isFinite(range.min) && range.min > 0
+            && typeof range.max === 'number' && Number.isFinite(range.max) && range.max >= range.min;
+    };
+    const validPrescription = (data: unknown, documentId: string): data is ExecutionPrescription => {
+        if (!data || typeof data !== 'object') return false;
+        const candidate = data as Record<string, unknown>;
+        const metadata = candidate.displayMetadata as Record<string, unknown> | undefined;
+        if (candidate.prescriptionHash !== documentId
+            || typeof candidate.schemaVersion !== 'number' || !Number.isInteger(candidate.schemaVersion)
+            || typeof candidate.definitionHash !== 'string' || !candidate.definitionHash
+            || typeof candidate.createdAt !== 'string'
+            || !validSource(candidate.sessionSource)
+            || !Array.isArray(candidate.blocks)
+            || !metadata || typeof metadata.title !== 'string' || !metadata.title.trim()
+            || typeof metadata.intent !== 'string'
+            || (metadata.dominantModality !== undefined && typeof metadata.dominantModality !== 'string')
+            || (metadata.duration !== undefined && !validDuration(metadata.duration))) return false;
+        const validRoles = new Set(['warmup', 'main', 'cooldown', 'accessory', 'test', 'recovery']);
+        const validModes = new Set(['sequential', 'circuit', 'superset', 'density', 'amrap', 'alternating']);
+        return candidate.blocks.every(block => {
+            if (!block || typeof block !== 'object') return false;
+            const fields = block as Record<string, unknown>;
+            if (typeof fields.id !== 'string' || !validRoles.has(String(fields.role))
+                || !validModes.has(String(fields.executionMode)) || !Array.isArray(fields.steps)) return false;
+            return (fields.steps as unknown[]).every(step => {
+                if (!step || typeof step !== 'object') return false;
+                const stepFields = step as Record<string, unknown>;
+                if (typeof stepFields.id !== 'string'
+                    || (stepFields.optional !== undefined && typeof stepFields.optional !== 'boolean')) return false;
+                const dose = stepFields.dose;
+                if (dose === undefined) return true;
+                if (!dose || typeof dose !== 'object') return false;
+                const doseFields = dose as Record<string, unknown>;
+                if (!['repetition', 'duration', 'distance', 'checkoff'].includes(String(doseFields.kind))) return false;
+                const count = doseFields.kind === 'repetition' ? doseFields.sets
+                    : doseFields.kind === 'checkoff' ? doseFields.rounds
+                        : doseFields.kind === 'duration' || doseFields.kind === 'distance' ? doseFields.sets : undefined;
+                return (doseFields.kind !== 'repetition' || (typeof count === 'number' && Number.isFinite(count) && count >= 0))
+                    && (count === undefined || (typeof count === 'number' && Number.isFinite(count) && count >= 0));
+            });
+        });
     };
     for (const document of raw.performedTrainingOccurrences) {
         if (foreign(document.data)) { parsed.crossUserRecords += 1; continue; }
@@ -103,6 +164,18 @@ function parseRecords(raw: TrainingOccurrenceRecordExport): ParsedRecords {
         const state = parseSessionExecutionDocument(document.data, `session_executions/${document.id}`);
         if (state.status === 'AVAILABLE') parsed.executions.push(state.data);
         else parsed.invalidRecords += 1;
+    }
+    for (const document of raw.sessionEntries ?? []) {
+        if (foreign(document.data)) { parsed.crossUserRecords += 1; continue; }
+        const state = parseSessionEntryDocument(document.data, `session_executions/*/entries/${document.id}`);
+        if (state.status === 'AVAILABLE') parsed.entries.push(state.data);
+        else parsed.invalidRecords += 1;
+    }
+    for (const document of raw.executionPrescriptions ?? []) {
+        if (foreign(document.data)) { parsed.crossUserRecords += 1; continue; }
+        if (validPrescription(document.data, document.id)) {
+            parsed.prescriptions.push(document.data);
+        } else parsed.invalidRecords += 1;
     }
     for (const document of raw.activities) {
         if (foreign(document.data)) { parsed.crossUserRecords += 1; continue; }
@@ -192,6 +265,10 @@ function pair(parsed: ParsedRecords, window: TrainingOccurrenceRecordExport['win
         // can reference an activity whose provider date is just outside it).
         activitiesById: new Map(parsed.activities.map(activity => [activity.activityId, activity])),
         executionsById: new Map(parsed.executions.map(execution => [execution.executionId, execution])),
+        entriesByExecutionId: new Map(parsed.executions.map(execution => [
+            execution.executionId, parsed.entries.filter(entry => entry.executionId === execution.executionId),
+        ])),
+        prescriptionsByHash: new Map(parsed.prescriptions.map(prescription => [prescription.prescriptionHash, prescription])),
         recommendationsByDate: new Map(parsed.recommendations.map(recommendation => [recommendation.date, recommendation])),
     };
     const occurrences = occurrencesInWindow(parsed.occurrences, window);
@@ -248,6 +325,7 @@ export function prepareTo4Evidence(raw: TrainingOccurrenceRecordExport, options:
     for (const row of first.pairing.canonicalExposures) canonicalAliasCounts.set(row.occurrenceKey ?? '', (canonicalAliasCounts.get(row.occurrenceKey ?? '') ?? 0) + 1);
     const audit = first.pairing.audit;
     const totalRecords = raw.performedTrainingOccurrences.length + raw.sessionExecutions.length
+        + (raw.sessionEntries?.length ?? 0) + (raw.executionPrescriptions?.length ?? 0)
         + raw.activities.length + raw.dailyRecommendations.length;
     const evaluated = (denominator: number, ok: boolean): GateState => (denominator === 0 ? 'not_evaluated' : ok ? 'pass' : 'fail');
 
