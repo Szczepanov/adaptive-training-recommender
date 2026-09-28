@@ -398,8 +398,6 @@ def test_sync_daily_lookback_resync_forwards_hr_fidelity_flag():
     assert provider.hr_fidelity_calls == ["lookback-day", "target-day"]
 
 
-
-
 def test_activity_response_backfill_uses_provider_boundary_and_preserves_sync_provenance():
     provider = HrFidelityFakeProvider(
         workout_name="Threshold",

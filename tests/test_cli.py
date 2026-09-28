@@ -197,8 +197,6 @@ def test_run_backfill_exception(mock_settings: Any, mock_service: Any) -> None:
     assert exit_code == 1
 
 
-
-
 def test_run_backfill_activity_response_uses_lease_and_service(
     mock_settings: Any,
     mock_service: Any,
