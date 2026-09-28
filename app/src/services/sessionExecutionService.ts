@@ -177,6 +177,10 @@ export class SessionExecutionService {
         executionId: string,
         params: StartExecutionParams,
     ): Promise<SessionExecution> {
+        if (Boolean(params.fitWorkoutFingerprint) !== Boolean(params.fitWorkoutFingerprintKind)) {
+            throw new Error('fitWorkoutFingerprint and fitWorkoutFingerprintKind must be provided together');
+        }
+
         // Fast path: catches the common case (and legacy executions written before this
         // lock scheme existed) without opening a transaction. This alone is still racy --
         // two concurrent callers can both pass it -- so it is not the guard; see

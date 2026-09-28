@@ -173,6 +173,27 @@ emulatorDescribe('Performed training occurrence rules (ADR-0034)', () => {
                 },
             ],
         }));
+
+        // Fingerprint and evidence kind are one provenance unit.
+        await assertFails(updateDoc(ref, {
+            sourceRefs: [
+                {
+                    kind: 'structured_execution',
+                    executionId: 'exec-1',
+                    fitWorkoutFingerprint: validFp,
+                },
+            ],
+        }));
+        await assertFails(updateDoc(ref, {
+            sourceRefs: [
+                {
+                    kind: 'provider_activity',
+                    provider: 'garmin',
+                    activityId: 'act-1',
+                    fitWorkoutFingerprintKind: 'semantic_definition',
+                },
+            ],
+        }));
     });
 
     it('keeps performedOccurrenceId, createdAt and schemaVersion immutable on update', async () => {

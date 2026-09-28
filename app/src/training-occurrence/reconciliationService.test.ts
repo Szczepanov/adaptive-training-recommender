@@ -261,6 +261,25 @@ describe('structuredExecutionToFacts / garminActivityToFacts', () => {
             fitWorkoutFingerprintKind: 'semantic_definition',
         });
     });
+
+    it('does not promote a legacy fingerprint-only Garmin row into comparable occurrence evidence', () => {
+        const facts = garminActivityToFacts({
+            activityId: 'act-legacy-fp',
+            date: '2026-08-26',
+            type: 'cycling',
+            durationMin: 45,
+            trainingEffectAerobic: null,
+            trainingEffectAnaerobic: null,
+            averageHr: null,
+            activityTrainingLoad: null,
+            intensityTag: 'moderate',
+            fitWorkoutFingerprint: 'fit-workout-v1:legacy',
+        });
+        expect(facts.fitWorkoutFingerprint).toBeUndefined();
+        expect(facts.fitWorkoutFingerprintKind).toBeUndefined();
+        expect(facts.sourceRef).not.toHaveProperty('fitWorkoutFingerprint');
+        expect(facts.sourceRef).not.toHaveProperty('fitWorkoutFingerprintKind');
+    });
 });
 
 describe('reconciliation with fit-workout-v2 fingerprints', () => {
@@ -361,6 +380,19 @@ describe('reconcileStructuredCompletion / reconcileGarminActivity', () => {
             completedAt: '2026-08-26T06:40:00.000Z',
         });
         expect(result.outcome).toBe('already_linked');
+    });
+
+    it('reconcileStructuredCompletion preserves a complete semantic FIT identity', async () => {
+        vi.mocked(repo.getBySourceKey).mockResolvedValue(occurrence());
+        await reconcileStructuredCompletion('user-1', {
+            executionId: 'exec-fp',
+            date: '2026-08-26',
+            startedAt: '2026-08-26T06:00:00.000Z',
+            completedAt: '2026-08-26T06:40:00.000Z',
+            fitWorkoutFingerprint: 'fit-workout-v2:0123456789abcdef0123456789abcdef',
+            fitWorkoutFingerprintKind: 'semantic_definition',
+        });
+        expect(repo.getBySourceKey).toHaveBeenCalledWith('user-1', 'structured_execution:exec-fp');
     });
 
     it('reconcileGarminActivity delegates through reconcileSourceFacts', async () => {

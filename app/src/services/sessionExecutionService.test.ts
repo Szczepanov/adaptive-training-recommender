@@ -352,6 +352,17 @@ describe('SessionExecutionService', () => {
     });
 
     describe('startExecution guards', () => {
+        it('rejects a partial FIT identity before any persistence work starts', async () => {
+            await expect(service.startExecution(USER_ID, 'exec-partial-fp', {
+                sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+                date: '2026-08-17',
+                fitWorkoutFingerprint: 'fit-workout-v2:0123456789abcdef0123456789abcdef',
+            })).rejects.toThrow('fitWorkoutFingerprint and fitWorkoutFingerprintKind must be provided together');
+
+            expect(firestore.getDocs).not.toHaveBeenCalled();
+            expect(firestore.runTransaction).not.toHaveBeenCalled();
+        });
+
         it('creates a new execution when none exists', async () => {
             firestore.getDocs.mockResolvedValueOnce({ docs: [] });
             const tx = makeTransactionMock();

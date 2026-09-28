@@ -2194,6 +2194,18 @@ emulatorDescribe('Firestore security rules', () => {
             fitWorkoutFingerprint: validFp,
             fitWorkoutFingerprintKind: 'invalid_kind',
         }));
+
+        // 7. Fingerprint provenance is atomic: neither half may be persisted alone.
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/session_executions/exec-fp-without-kind`), {
+            ...validSessionExecution(),
+            executionId: 'exec-fp-without-kind',
+            fitWorkoutFingerprint: validFp,
+        }));
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/session_executions/exec-kind-without-fp`), {
+            ...validSessionExecution(),
+            executionId: 'exec-kind-without-fp',
+            fitWorkoutFingerprintKind: 'semantic_definition',
+        }));
     });
 
     it('allows a rest event while in_progress, rejects it once terminal, and enforces retry-only-same-instance updates (PR 3, training-occurrence plan)', async () => {

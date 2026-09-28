@@ -627,6 +627,12 @@ export function validateSessionExecution(raw: unknown): ValidationResult<Session
             issues.push({ path: 'fitWorkoutFingerprintKind', message: 'fitWorkoutFingerprintKind must be semantic_definition or index_fallback' });
         }
     }
+    if ((raw.fitWorkoutFingerprint === undefined) !== (raw.fitWorkoutFingerprintKind === undefined)) {
+        issues.push({
+            path: 'fitWorkoutFingerprint',
+            message: 'fitWorkoutFingerprint and fitWorkoutFingerprintKind must be provided together',
+        });
+    }
 
     if (issues.length > 0) return { ok: false, issues };
     return { ok: true, value: raw as unknown as SessionExecution };

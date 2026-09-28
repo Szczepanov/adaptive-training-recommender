@@ -325,14 +325,20 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
 
         let fitWorkoutFingerprint = options.fitWorkoutFingerprint;
         let fitWorkoutFingerprintKind = options.fitWorkoutFingerprintKind;
-        if (!fitWorkoutFingerprint) {
+        if (!fitWorkoutFingerprint || !fitWorkoutFingerprintKind) {
+            // A fingerprint without its evidence kind (or vice versa) is not usable
+            // reconciliation provenance. Discard any partial caller input and attempt to
+            // derive one complete pair from the exact session definition instead.
+            fitWorkoutFingerprint = undefined;
+            fitWorkoutFingerprintKind = undefined;
             try {
                 const canonicalExport = exportSessionDefinitionToJson(nextDefinition);
                 const identity = await computeWorkoutTemplateFingerprint(canonicalExport);
                 fitWorkoutFingerprint = identity.fingerprint;
                 fitWorkoutFingerprintKind = identity.kind;
             } catch {
-                // Best effort; continue if fingerprint derivation does not apply
+                // Best effort; continue without FIT identity when exact canonicalization
+                // context (notably athlete FTP for %FTP cycling targets) is unavailable.
             }
         }
 

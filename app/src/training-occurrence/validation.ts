@@ -37,6 +37,9 @@ function parseFingerprintFields(value: Record<string, unknown>): {
     fitWorkoutFingerprint?: string;
     fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
 } {
+    if ((value.fitWorkoutFingerprint === undefined) !== (value.fitWorkoutFingerprintKind === undefined)) {
+        throw new Error('Performed-occurrence FIT fingerprint and kind must be provided together');
+    }
     if (value.fitWorkoutFingerprint !== undefined) {
         if (typeof value.fitWorkoutFingerprint !== 'string' || !FIT_WORKOUT_FINGERPRINT_PATTERN.test(value.fitWorkoutFingerprint)) {
             throw new Error('Invalid performed-occurrence source ref fitWorkoutFingerprint');

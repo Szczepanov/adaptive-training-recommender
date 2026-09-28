@@ -855,10 +855,43 @@ export function canonicalWorkoutToFitIdentitySteps(
     return garminPayloadToFitSteps(payload);
 }
 
+const FTP_RELATIVE_TARGET_PATTERN = /(?:\d+(?:\.\d+)?\s*[-–—]\s*\d+(?:\.\d+)?\s*%\s*(?:FTP)?|\d+(?:\.\d+)?\s*%\s*FTP\b)/i;
+
+/**
+ * Garmin's upload path resolves cycling %FTP prescriptions with the athlete FTP when
+ * available. Generating a semantic fingerprint without that same context would instead
+ * encode a zone target and could turn the *same* workout into a hard reconciliation
+ * mismatch. Fail closed so callers can fall back to the ordinary matcher until the exact
+ * upload context is available.
+ */
+export function canonicalWorkoutRequiresAthleteFtp(workout: CanonicalWorkoutExport): boolean {
+    const modality = String(workout.modality || '').toLowerCase();
+    if (modality !== 'cycling' && modality !== 'bike') return false;
+
+    return (workout.blocks || []).some(block =>
+        (block.steps || []).some(step => {
+            const texts = [
+                ...(Array.isArray(step.targets) ? step.targets : []),
+                step.recoveryTarget,
+                step.notes,
+                step.name,
+            ];
+            return texts.some(value => typeof value === 'string' && FTP_RELATIVE_TARGET_PATTERN.test(value));
+        }),
+    );
+}
+
 export async function computeWorkoutTemplateFingerprint(
     workout: CanonicalWorkoutExport,
     context?: { athleteFtpWatts?: number },
 ): Promise<FitWorkoutIdentity> {
+    if (canonicalWorkoutRequiresAthleteFtp(workout)
+        && !(typeof context?.athleteFtpWatts === 'number'
+            && Number.isFinite(context.athleteFtpWatts)
+            && context.athleteFtpWatts > 0)) {
+        throw new Error('Cycling %FTP workout identity requires the athlete FTP used for Garmin export');
+    }
+
     const steps = canonicalWorkoutToFitIdentitySteps(workout, context);
     const workoutName = workout.title;
     const identity = await computeFitWorkoutIdentity(workoutName, [], steps);
