@@ -878,10 +878,10 @@ class GarminSyncService:
                     evidence = fetch_fidelity(activity_id)
                 except GarminConnectTooManyRequestsError as error:
                     logger.error(
-                        "Garmin rate limit stopped activity-response backfill after %d/%d items: %s",
+                        "Garmin rate limit stopped activity-response backfill after %d/%d items (%s).",
                         index - 1,
                         len(qualifying),
-                        error,
+                        type(error).__name__,
                     )
                     failed_count += 1
                     break
@@ -889,10 +889,10 @@ class GarminSyncService:
                     raise
                 except Exception as error:
                     logger.warning(
-                        "Activity FIT evidence fetch failed for item %d/%d: %s",
+                        "Activity FIT evidence fetch failed for item %d/%d (%s).",
                         index,
                         len(qualifying),
-                        error,
+                        type(error).__name__,
                     )
                     failed_count += 1
                     continue
@@ -931,10 +931,10 @@ class GarminSyncService:
                             updates["hrMeasurement"] = serialize_hr_measurement(fidelity.quality)
                         except Exception as error:
                             logger.debug(
-                                "Optional HR-fidelity enrichment failed for item %d/%d: %s",
+                                "Optional HR-fidelity enrichment failed for item %d/%d (%s).",
                                 index,
                                 len(qualifying),
-                                error,
+                                type(error).__name__,
                             )
 
                     if activity.get("fitWorkoutFingerprint") is None:
@@ -947,10 +947,10 @@ class GarminSyncService:
                                 updates["fitWorkoutFingerprint"] = fingerprint
                         except Exception as error:
                             logger.debug(
-                                "Optional FIT workout fingerprint failed for item %d/%d: %s",
+                                "Optional FIT workout fingerprint failed for item %d/%d (%s).",
                                 index,
                                 len(qualifying),
-                                error,
+                                type(error).__name__,
                             )
 
                     if not dry_run:
@@ -958,10 +958,10 @@ class GarminSyncService:
                     derived_count += 1
                 except Exception as error:
                     logger.warning(
-                        "Activity-response derivation/persistence failed for item %d/%d: %s",
+                        "Activity-response derivation/persistence failed for item %d/%d (%s).",
                         index,
                         len(qualifying),
-                        error,
+                        type(error).__name__,
                     )
                     failed_count += 1
 
