@@ -485,7 +485,7 @@ function capabilityEntry(spec: CapabilitySpec, events: readonly ResolvedEvent[],
                 isReadinessModifiedDose: fact.isReadinessModifiedDose,
             }).includes(spec.athleticCapability!),
         );
-        if (resolved.status === 'satisfied' && !lastDate && unknownVariantEvidence) {
+        if (resolved.lastQualifyingDate && !lastDate && unknownVariantEvidence) {
             notes.push('planner cadence counts historical exposure without a known workout variant; this ledger cannot confirm variant-specific credit');
         }
     }
