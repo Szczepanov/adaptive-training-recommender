@@ -7,6 +7,7 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CoverageCreditFact, PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import type { CompletedExposure } from './trainingHistory';
 import { aerobicVolumeFloorForWorkout, type AerobicVolumeFloor } from './aerobicVolumeFloor';
+import { hasAdjacentMechanicalExposure } from './mechanicalProgression';
 import { activeCapabilityPlacements, isCapabilityPlacementFulfilled, type CapabilityPlacement } from './capabilityMaintenance';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
@@ -99,6 +100,9 @@ export interface CoverageState {
     /** Issue #757: athlete-level `aerobic_volume` duration floor applied to both completed
      * history and candidate templates. Absent means the catalog minimum. */
     aerobicVolumeFloor?: AerobicVolumeFloor | null;
+    /** Issue #859: #804-owned date-local adjacency state. True only when this active
+     * plan carries `mechanical_exposure` and yesterday has an exact mechanical identity. */
+    mechanicalSpacingBlocked?: boolean;
 }
 
 export interface CoverageHistoryEntry extends ExposureIdentity {
@@ -479,6 +483,10 @@ function newRequirement(args: {
     };
 }
 
+/** Build the date-local coverage ledger from the active plan and actual/projected history.
+ * Issue #859 adjacency state is derived here because callers rebuild this state for each
+ * projected date, while source progression/tissue authority remains outside coverage.
+ */
 export function buildCoverageState(
     planDefinition: PlanDefinition | null | undefined,
     asOfDate: string,
@@ -488,7 +496,10 @@ export function buildCoverageState(
 ): CoverageState {
     const block = activePlanBlock(planDefinition, asOfDate);
     if (!planDefinition || !block || !descriptor) {
-        return { asOfDate, phase: null, activeBlockId: null, coverageSetId: null, descriptor: null, requirements: [], aerobicVolumeFloor };
+        return {
+            asOfDate, phase: null, activeBlockId: null, coverageSetId: null, descriptor: null,
+            requirements: [], aerobicVolumeFloor, mechanicalSpacingBlocked: false,
+        };
     }
 
     const anchorRequirement = planDefinition.coverageRequirements?.find(requirement =>
@@ -641,6 +652,12 @@ export function buildCoverageState(
         }
     }
 
+    const mechanicalSpacingBlocked = requirementsByKey.has('mechanical_exposure')
+        && hasAdjacentMechanicalExposure(asOfDate, history.map(exposure => ({
+            date: exposure.date,
+            workoutId: exposure.workoutId ?? workoutIdForTemplateId(exposure.templateId),
+        })));
+
     return {
         asOfDate,
         phase: block.phase,
@@ -649,6 +666,7 @@ export function buildCoverageState(
         descriptor: activeDescriptor,
         requirements: Array.from(requirementsByKey.values()).map(requirement => withActiveCapabilityPlacements(requirement, asOfDate)),
         aerobicVolumeFloor,
+        mechanicalSpacingBlocked,
     };
 }
 

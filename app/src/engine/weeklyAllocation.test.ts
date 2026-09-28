@@ -289,6 +289,9 @@ describe('ADR-0018 stateful reservation search', () => {
             PROJECTED_RECOVERY_POLICY_BLOCKER,
             'PROJECTED_FATIGUE_CEILING',
         ])).toBe('hard_safety_or_recovery');
+        expect(weeklyRoleMissReasonForBlockers([
+            'CONSECUTIVE_MECHANICAL_DAYS',
+        ])).toBe('hard_safety_or_recovery');
     });
 
     it('never seeds a reservation onto an immutable today/tomorrow date', () => {

@@ -35,6 +35,7 @@ import {
     type CoverageState,
 } from './coverage';
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
+import { mechanicalIdentityFor } from '../workouts/mechanicalExposure';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveEventTaper } from './taperPolicy';
 import { olympicTriathlonTaperBenefitBoost, olympicTriathlonTaperCandidateCap, olympicTriathlonTaperExclusion, resolveOlympicTriathlonTaperBudget, resolvePriorityAOlympicTriathlonTaper, type OlympicTriathlonTaperBudget } from './taperPlanBudget';
@@ -1129,6 +1130,10 @@ export function buildOptimizationContext(
     };
 }
 
+/** Apply hard feasibility/safety gates and deterministic utility ranking for one date.
+ * Date-scoped coverage constraints such as #859 mechanical adjacency must enter through
+ * `CoverageState` so actual forecast and weekly allocation use the same ranking path.
+ */
 export function rankCandidates(
     candidates: SessionTemplate[],
     unresolvedObjectives: WeeklyObjective[],
@@ -1242,6 +1247,12 @@ export function rankCandidates(
         }
         if (injuryConstraints.some(inj => inj.toLowerCase() === lowerMod || inj.toLowerCase().includes(lowerMod))) {
             excludedReasons.push('INJURY_RESTRICTION');
+        }
+        // #859: #804's no-consecutive-mechanical-days rule is a hard, date-scoped
+        // exclusion. CoverageState owns scope, so non-#804 running plans are unchanged.
+        if (coverageState?.mechanicalSpacingBlocked
+            && mechanicalIdentityFor(workoutIdForTemplateId(template.id))) {
+            excludedReasons.push('CONSECUTIVE_MECHANICAL_DAYS');
         }
         if (options.plannedDose && !isIntensityClassAdmissible(intensityClassForTemplate(template), options.plannedDose.intensity)) {
             excludedReasons.push('INTENSITY_SCALE_INADMISSIBLE');
