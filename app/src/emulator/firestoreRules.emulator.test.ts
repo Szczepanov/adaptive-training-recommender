@@ -2069,7 +2069,10 @@ emulatorDescribe('Firestore security rules', () => {
             appSource: { gitSha: 'abc123', dirty: false },
             minimumSafetyStatus: 'complete',
             evaluatorInputs: {},
-            performedTrainingFacts: null,
+            performedTrainingFacts: {
+                asOfDate: '2026-09-28', windowDays: 7, revision: 'canonical-facts-v1:evergreen_general:test',
+                exposures: [], coverageCredits: [],
+            },
             contentHash: 'a'.repeat(64),
         };
 
