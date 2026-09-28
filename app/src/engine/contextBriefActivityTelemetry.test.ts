@@ -226,7 +226,8 @@ describe('renderMorningQualityActivityTelemetry', () => {
 
     it('keeps ordinary endurance sessions compact even when detailed telemetry exists', () => {
         expect(renderMorningQualityActivityTelemetry(activity({
-            intensityTag: 'moderate',
+            // Canonical #809 domain wins over an inconsistent tag on modern records.
+            intensityTag: 'hard',
             stimulusDomain: 'endurance',
             variabilityIndex: 1.02,
             powerInZones: [{ zoneNumber: 2, secondsInZone: 3000, lowBoundary: 150 }],
