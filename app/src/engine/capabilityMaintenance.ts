@@ -293,8 +293,9 @@ function fulfilmentFor(
         return { fulfilment: { status: 'blocked', reason: 'mechanical_guardrail' }, ...none };
     }
     if (input.mechanicalVerdict && !input.mechanicalVerdict.eligible) {
-        // #804 blocked on a same-day pain flag / acute symptom, or withheld on spacing,
-        // illness or severe tissue response: a deliberate source suspension, not neglect.
+        // #804 blocked on a same-day pain flag / acute symptom, or withheld on illness
+        // or severe tissue response: a deliberate source suspension, not neglect.
+        // One-day adjacency is date-scoped downstream (#859), so it never reaches this branch.
         const reason: CapabilitySuspendedReason = input.mechanicalVerdict.status === 'blocked' ? 'clinical_symptoms' : 'mechanical_withheld';
         return { fulfilment: { status: 'deliberately_suspended', reason }, ...none };
     }

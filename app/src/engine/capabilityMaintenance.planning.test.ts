@@ -165,6 +165,41 @@ describe('periodic capability maintenance in evergreen planning (#805 Phase 7)',
         expect(optedIn.knowledgeRefs).toContain('policy.evergreen.athletic_capability_maintenance_v1');
     });
 
+    it('applies #804 adjacency per date from projected history without suspending #805 for the horizon (#859)', () => {
+        const optedIn = plan();
+        const projectedMechanical = [{
+            date: at(-1),
+            workoutId: 'field_controlled_maintenance_01',
+            source: 'projected' as const,
+        }];
+
+        const todayState = buildCoverageState(optedIn.planDefinition, D, projectedMechanical);
+        expect(todayState.mechanicalSpacingBlocked).toBe(true);
+        const today = rankCandidates(
+            [template('field_maint_01')], [], FATIGUE, availability(D), [], basePreferences,
+            { date: D, coverageState: todayState },
+        );
+        expect(today.rejected.find(item => item.template.id === 'field_maint_01')?.excludedReasons)
+            .toContain('CONSECUTIVE_MECHANICAL_DAYS');
+
+        const tomorrowDate = at(1);
+        const tomorrowState = buildCoverageState(optedIn.planDefinition, tomorrowDate, projectedMechanical);
+        expect(tomorrowState.mechanicalSpacingBlocked).toBe(false);
+        const tomorrow = rankCandidates(
+            [template('field_maint_01')], [], FATIGUE, availability(tomorrowDate), [], basePreferences,
+            { date: tomorrowDate, coverageState: tomorrowState },
+        );
+        expect(tomorrow.accepted.map(item => item.template.id)).toContain('field_maint_01');
+
+        const adjacentEvidence = [
+            ...STAGE_4_READY,
+            field(at(-1), 'strength_reactive_power_01'),
+        ].sort((left, right) => left.date.localeCompare(right.date));
+        const resolvedAdjacent = plan({ evidence: adjacentEvidence });
+        expect(resolvedAdjacent.mechanicalProgression.eligible).toBe(true);
+        expect(capability(resolvedAdjacent, 'sport_skill').fulfilment).toEqual({ status: 'plannable' });
+    });
+
     it('adds no session, objective or requirement compared with the opted-out plan', () => {
         const optedIn = plan();
         const optedOut = plan({ optedIn: false });

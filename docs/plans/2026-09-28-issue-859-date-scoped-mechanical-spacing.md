@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | `Ready` — design is resolved by issue #859 plus the analysis below; implementation can start from current `main` |
+| **Status** | `Implemented` — delivered on PR #887; retained as the design and verification record |
 | **Source** | [issue #859](https://github.com/Szczepanov/adaptive-training-recommender/issues/859) |
 | **Analysis** | [2026-09-28 issue #859 date-scoped mechanical-spacing analysis](../analysis/2026-09-28-issue-859-date-scoped-mechanical-spacing-analysis.md) |
 | **Blocked by** | Nothing. #804 and #805 are merged; PR #855 explicitly left this as the independent follow-up. |
@@ -10,6 +10,8 @@
 | **Baseline** | Reviewed against `main` @ `616f7fe9`. Rebase before implementation and use the then-current `POLICY_VERSION`. |
 
 All symbols below exist on the baseline unless marked **new**.
+
+> **Implementation note (28 September 2026):** PR #887 implements the work packages below. They are retained as the historical design/verification record rather than pending instructions. The delivered boundary is the active #804 `mechanical_exposure` requirement; non-#804 running plans remain unchanged.
 
 ## Goal
 
@@ -107,7 +109,7 @@ through the same `CoverageState` and `rankCandidates` hard-gate path as the actu
 
 ## Work package M859-0 — lock current behavior with failing/negative regressions
 
-**Depends on:** nothing.  
+**Depends on:** nothing.
 **Purpose:** prevent implementation from accidentally broadening #804 or weakening other source gates.
 
 ### M859-0.1 — progression evaluator tests
@@ -155,7 +157,7 @@ than retaining a test whose expected value is known-bad.
 
 ## Work package M859-1 — separate adjacency from `MechanicalProgressionVerdict`
 
-**Depends on:** M859-0.  
+**Depends on:** M859-0.
 **Files:** `app/src/engine/mechanicalProgression.ts`, `mechanicalProgression.test.ts`.
 
 ### M859-1.1 — remove the adjacency early return
@@ -199,7 +201,7 @@ Cover:
 
 ## Work package M859-2 — derive #804-scoped date state in coverage
 
-**Depends on:** M859-1.  
+**Depends on:** M859-1.
 **Files:** `app/src/engine/coverage.ts` plus focused tests.
 
 ### M859-2.1 — extend `CoverageState`
@@ -259,7 +261,7 @@ Prove:
 
 ## Work package M859-3 — enforce the scoped date gate in the canonical rank/allocation path
 
-**Depends on:** M859-2.  
+**Depends on:** M859-2.
 **Files:** `optimizer.ts`, `weeklyAllocation.ts`, planner/allocation tests.
 
 ### M859-3.1 — stable hard exclusion in `rankCandidates`
@@ -312,7 +314,7 @@ than duplicating the rule in `rules.ts`.
 
 ## Work package M859-4 — align #805 fulfilment and recurrence
 
-**Depends on:** M859-3.  
+**Depends on:** M859-3.
 **Files:** #805 capability maintenance planning/tests, potentially comments only in production code.
 
 ### M859-4.1 — one-day spacing is no longer a capability suspension
@@ -355,7 +357,7 @@ Do not claim this fixes #858's duration-fidelity limitation; keep that follow-up
 
 ## Work package M859-5 — knowledge lineage, policy version and architecture docs
 
-**Depends on:** M859-1 through M859-4 behavior finalized.  
+**Depends on:** M859-1 through M859-4 behavior finalized.
 **Files:** `mechanicalExposureKnowledge.ts`, `mechanicalExposurePolicyAlignment.test.ts`,
 `engine/policy.ts`, `docs/architecture/recommendation-engine.md`.
 

@@ -1,8 +1,8 @@
 # Issue #859 analysis — date-scoped #804 mechanical spacing
 
-**Date:** 2026-09-28  
-**Issue:** [#859](https://github.com/Szczepanov/adaptive-training-recommender/issues/859)  
-**Baseline:** `main` @ `616f7fe9` (`feat(training-occurrence): add historical TO4 replay path (#886)`)  
+**Date:** 2026-09-28
+**Issue:** [#859](https://github.com/Szczepanov/adaptive-training-recommender/issues/859)
+**Baseline:** `main` @ `616f7fe9` (`feat(training-occurrence): add historical TO4 replay path (#886)`)
 **Related:** [#804](https://github.com/Szczepanov/adaptive-training-recommender/issues/804), [#805](https://github.com/Szczepanov/adaptive-training-recommender/issues/805), [PR #855](https://github.com/Szczepanov/adaptive-training-recommender/pull/855), [ADR-0018](../adr/0018-weekly-allocation-and-role-reservations.md), [ADR-0033](../adr/0033-sports-knowledge-registry.md), [ADR-0044](../adr/0044-constraint-aware-requirement-fulfilment.md)
 
 This document is a point-in-time architecture/code audit. The executable work order is
