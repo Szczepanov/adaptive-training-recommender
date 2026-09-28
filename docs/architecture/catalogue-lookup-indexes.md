@@ -25,12 +25,26 @@ References:
 
 A duplicate ID therefore fails tests instead of silently changing lookup semantics.
 
+## Non-unique indexes: preserve ordered first-match semantics
+
+A non-ID key such as modality is intentionally not unique. If a repeated predicate lookup is indexed, the index must preserve the source array's ordering semantics rather than silently adopting Map's last-write-wins behavior.
+
+`ENRICHED_TEMPLATES_BY_MODALITY` is used by `trainingHistory.ts` for modified-adherence reconstruction. It is built once in source order and only sets a modality that has not been seen yet, so its result is object-identical to the previous ordered `Array.find(...)` fallback.
+
+The same rule applies to composite keys. `athleticCapability.ts` now indexes the first `workoutId + capability` identity while also maintaining source-ordered groups by workout and by capability. This removes repeated scans from capability-maintenance evaluation without changing first-match or grouping order if the registry grows.
+
+`catalogueIndexes.test.ts` protects both contracts. Do not construct a non-unique index with a plain `new Map(array.map(...))` unless last-match semantics are explicitly intended.
+
+## What not to index
+
+Do not mechanically replace every `.find()`. Keep direct scans when the collection is already a dynamically filtered candidate set, when the lookup is one-off on a tiny per-object list (for example workout variants), or when indexing would require rebuilding the index per render/call. The repository review for PR #849 intentionally leaves those cases unchanged.
+
 ## Usage rules
 
 - Prefer `*_BY_ID.get(id)` for repeated exact-ID lookups when an index already exists.
 - Keep the index at module scope. Do not rebuild a `Map` inside a component render, loop, or event handler; that would replace repeated lookup cost with repeated index-construction cost.
 - Keep arrays as the source of truth for ordered iteration, filtering, and predicate searches.
-- Do **not** mechanically replace non-ID predicates such as `TEMPLATES.find(t => t.modality === 'Mobility')`. Add another index only when there is a repeated access pattern and a meaningful reason to maintain it.
+- Do **not** mechanically replace non-ID predicates such as `TEMPLATES.find(t => t.modality === 'Mobility')`. Add another index only when there is a repeated access pattern and a meaningful reason to maintain it, and explicitly preserve ordering/duplicate-key semantics.
 - Describe the benefit as avoiding repeated linear scans or using indexed lookup, rather than promising a particular constant-time complexity.
 
 ## Trade-off

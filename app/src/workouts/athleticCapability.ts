@@ -74,12 +74,56 @@ export const ATHLETIC_CAPABILITY_IDENTITIES: readonly AthleticCapabilityIdentity
   },
 ];
 
+interface AthleticCapabilityIdentityIndexes {
+  byCapability: ReadonlyMap<AthleticCapabilityKey, readonly AthleticCapabilityIdentity[]>;
+  byWorkoutId: ReadonlyMap<string, readonly AthleticCapabilityIdentity[]>;
+  firstByWorkoutAndCapability: ReadonlyMap<string, ReadonlyMap<AthleticCapabilityKey, AthleticCapabilityIdentity>>;
+}
+
+function buildAthleticCapabilityIdentityIndexes(
+  identities: readonly AthleticCapabilityIdentity[],
+): AthleticCapabilityIdentityIndexes {
+  const byCapability = new Map<AthleticCapabilityKey, AthleticCapabilityIdentity[]>();
+  const byWorkoutId = new Map<string, AthleticCapabilityIdentity[]>();
+  const firstByWorkoutAndCapability = new Map<string, Map<AthleticCapabilityKey, AthleticCapabilityIdentity>>();
+
+  for (const identity of identities) {
+    const capabilityGroup = byCapability.get(identity.capability);
+    if (capabilityGroup) capabilityGroup.push(identity);
+    else byCapability.set(identity.capability, [identity]);
+
+    const workoutGroup = byWorkoutId.get(identity.workoutId);
+    if (workoutGroup) workoutGroup.push(identity);
+    else byWorkoutId.set(identity.workoutId, [identity]);
+
+    let capabilityIndex = firstByWorkoutAndCapability.get(identity.workoutId);
+    if (!capabilityIndex) {
+      capabilityIndex = new Map<AthleticCapabilityKey, AthleticCapabilityIdentity>();
+      firstByWorkoutAndCapability.set(identity.workoutId, capabilityIndex);
+    }
+    // Preserve the previous Array.find contract if a duplicate pair is ever introduced.
+    if (!capabilityIndex.has(identity.capability)) capabilityIndex.set(identity.capability, identity);
+  }
+
+  return {
+    byCapability,
+    byWorkoutId,
+    firstByWorkoutAndCapability,
+  };
+}
+
+const ATHLETIC_CAPABILITY_IDENTITY_INDEXES = buildAthleticCapabilityIdentityIndexes(
+  ATHLETIC_CAPABILITY_IDENTITIES,
+);
+const EMPTY_ATHLETIC_CAPABILITY_IDENTITIES: readonly AthleticCapabilityIdentity[] = Object.freeze([]);
+
 export const ATHLETIC_CAPABILITY_WORKOUT_IDS: readonly string[] = [
-  ...new Set(ATHLETIC_CAPABILITY_IDENTITIES.map(identity => identity.workoutId)),
+  ...ATHLETIC_CAPABILITY_IDENTITY_INDEXES.byWorkoutId.keys(),
 ];
 
 export function capabilityIdentitiesFor(capability: AthleticCapabilityKey): readonly AthleticCapabilityIdentity[] {
-  return ATHLETIC_CAPABILITY_IDENTITIES.filter(identity => identity.capability === capability);
+  return ATHLETIC_CAPABILITY_IDENTITY_INDEXES.byCapability.get(capability)
+    ?? EMPTY_ATHLETIC_CAPABILITY_IDENTITIES;
 }
 
 /** The #804 stage an athlete must be eligible for before this capability workout. */
@@ -102,8 +146,9 @@ export interface AthleticCapabilityEvidence {
  */
 export function grantsAthleticCapabilityCredit(evidence: AthleticCapabilityEvidence): boolean {
   if (!evidence.workoutId || evidence.isReadinessModifiedDose) return false;
-  const identity = ATHLETIC_CAPABILITY_IDENTITIES.find(item =>
-    item.workoutId === evidence.workoutId && item.capability === evidence.capability);
+  const identity = ATHLETIC_CAPABILITY_IDENTITY_INDEXES.firstByWorkoutAndCapability
+    .get(evidence.workoutId)
+    ?.get(evidence.capability);
   if (!identity) return false;
   return evidence.variant === undefined || identity.qualifyingVariants.includes(evidence.variant);
 }
@@ -112,9 +157,20 @@ export function grantsAthleticCapabilityCredit(evidence: AthleticCapabilityEvide
 export function athleticCapabilitiesCreditedBy(
   evidence: Omit<AthleticCapabilityEvidence, 'capability'>,
 ): AthleticCapabilityKey[] {
-  return [...new Set(ATHLETIC_CAPABILITY_IDENTITIES
-    .filter(identity => grantsAthleticCapabilityCredit({ ...evidence, capability: identity.capability }))
-    .map(identity => identity.capability))];
+  if (!evidence.workoutId || evidence.isReadinessModifiedDose) return [];
+  const identities = ATHLETIC_CAPABILITY_IDENTITY_INDEXES.byWorkoutId.get(evidence.workoutId)
+    ?? EMPTY_ATHLETIC_CAPABILITY_IDENTITIES;
+  const credited: AthleticCapabilityKey[] = [];
+  const seen = new Set<AthleticCapabilityKey>();
+
+  for (const identity of identities) {
+    if (seen.has(identity.capability)) continue;
+    seen.add(identity.capability);
+    if (evidence.variant === undefined || identity.qualifyingVariants.includes(evidence.variant)) {
+      credited.push(identity.capability);
+    }
+  }
+  return credited;
 }
 
 /**

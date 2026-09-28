@@ -889,5 +889,14 @@ export const ENRICHED_TEMPLATES: SessionTemplate[] = TEMPLATES.map(t => {
     };
 });
 
+function buildFirstEnrichedTemplateByModalityIndex(): ReadonlyMap<SessionTemplate['modality'], SessionTemplate> {
+    const byModality = new Map<SessionTemplate['modality'], SessionTemplate>();
+    for (const template of ENRICHED_TEMPLATES) {
+        if (!byModality.has(template.modality)) byModality.set(template.modality, template);
+    }
+    return byModality;
+}
+
 export const ENRICHED_TEMPLATES_BY_ID: Map<string, SessionTemplate> = new Map(ENRICHED_TEMPLATES.map(t => [t.id, t]));
+export const ENRICHED_TEMPLATES_BY_MODALITY = buildFirstEnrichedTemplateByModalityIndex();
 export const TEMPLATES_BY_ID = new Map(TEMPLATES.map(t => [t.id, t]));
