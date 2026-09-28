@@ -2046,6 +2046,59 @@ emulatorDescribe('Firestore security rules', () => {
         await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recWithBindings))).resolves.toBeUndefined();
     });
 
+    it('binds a recommendation to an owner-only, write-once decision context', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        const contextPath = `${recommendationPath}/decision_contexts/1`;
+        const recommendation = {
+            ...validRecommendation(),
+            revision: 1,
+            recommendationAudit: {
+                ...validRecommendation().recommendationAudit,
+                decisionContext: { path: contextPath, revision: 1, contentHash: 'a'.repeat(64) },
+            },
+        };
+        const context = {
+            schemaVersion: 1,
+            userId: ownerId,
+            date: '2026-08-07',
+            recommendationRevision: 1,
+            evaluatedAt: '2026-08-07T08:00:00Z',
+            policyVersion: 'policy-test',
+            captureVersion: 'same-day-capture-v1',
+            appSource: { gitSha: 'abc123', dirty: false },
+            minimumSafetyStatus: 'complete',
+            evaluatorInputs: {},
+            performedTrainingFacts: null,
+            contentHash: 'a'.repeat(64),
+        };
+
+        const batch = writeBatch(ownerDb);
+        batch.set(doc(ownerDb, recommendationPath), recommendation);
+        batch.set(doc(ownerDb, contextPath), context);
+        await assertSucceeds(batch.commit());
+        await assertFails(updateDoc(doc(ownerDb, contextPath), { policyVersion: 'changed' }));
+        await assertFails(deleteDoc(doc(ownerDb, contextPath)));
+        await assertFails(getDoc(doc(otherDb, contextPath)));
+        await assertFails(setDoc(doc(ownerDb, `${recommendationPath}/decision_contexts/2`), {
+            ...context, recommendationRevision: 2,
+        }));
+        const mismatchPath = `users/${ownerId}/daily_recommendations/2026-08-08`;
+        const mismatch = writeBatch(ownerDb);
+        mismatch.set(doc(ownerDb, mismatchPath), {
+            ...recommendation,
+            date: '2026-08-08',
+            recommendationAudit: {
+                ...recommendation.recommendationAudit,
+                decisionContext: { path: `${mismatchPath}/decision_contexts/1`, revision: 1, contentHash: 'a'.repeat(64) },
+            },
+        });
+        mismatch.set(doc(ownerDb, `${mismatchPath}/decision_contexts/1`), {
+            ...context, date: '2026-08-08', contentHash: 'b'.repeat(64),
+        });
+        await assertFails(mismatch.commit());
+    });
+
     it('allows additionalSessions at the full 4-element bound without exceeding the rule-evaluation budget', async () => {
         // Regression test: a prior attempt at real per-element validation at the schema's
         // historical 16-element bound blew the emulator's ~1000-expression budget. This

@@ -147,13 +147,13 @@ service cloud.firestore {
         && lineage.size() <= 64;
     }
 
-    function hasValidRecommendationAudit(userId, audit, version) {
+    function hasValidRecommendationAudit(userId, audit, version, date, revision) {
       let history = audit.history;
       let statuses = history.sourceStatuses;
       let envelope = audit.envelope;
       let hasLineage = 'knowledgeLineage' in audit;
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'decisionContext', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'])
         && (
           (version < 4 && !hasLineage)
           || (version == 4 && hasLineage && hasValidKnowledgeLineage(audit.knowledgeLineage))
@@ -161,6 +161,17 @@ service cloud.firestore {
         && audit.policyVersion is string
         && audit.evaluatedAt is string
         && audit.decisionContextRevision is string
+        && (!('decisionContext' in audit) || (
+          audit.decisionContext is map
+          && audit.decisionContext.keys().hasOnly(['path', 'revision', 'contentHash'])
+          && audit.decisionContext.path is string
+          && audit.decisionContext.path == 'users/' + userId + '/daily_recommendations/' + date + '/decision_contexts/' + string(audit.decisionContext.revision)
+          && audit.decisionContext.revision is int && audit.decisionContext.revision == revision
+          && audit.decisionContext.contentHash is string
+          && audit.decisionContext.contentHash.matches('^[a-f0-9]{64}$')
+          && existsAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/decision_contexts/$(string(audit.decisionContext.revision)))
+          && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/decision_contexts/$(string(audit.decisionContext.revision))).data.contentHash == audit.decisionContext.contentHash
+        ))
         && audit.safetyStatus == 'complete'
         && history is map
         && history.keys().hasOnly(['completedEventCount', 'unmatchedEventCount', 'sourceStatuses'])
@@ -262,7 +273,7 @@ service cloud.firestore {
         && (!('additionalSessions' in data) || hasValidAdditionalSessions(data.additionalSessions))
         && (data.schemaVersion < 3
           || ('recommendationAudit' in data
-            && hasValidRecommendationAudit(userId, data.recommendationAudit, data.schemaVersion)
+            && hasValidRecommendationAudit(userId, data.recommendationAudit, data.schemaVersion, date, data.revision)
             // ADR-0035: the canonical-Rest binding applies only to the default (non-
             // overridden) authored-rest path. An explicit athlete override runs the
             // ordinary ranked planner and may legitimately persist any template.
@@ -1907,6 +1918,51 @@ service cloud.firestore {
         allow create: if isOwner(userId)
           && request.resource.data.revision is int
           && string(request.resource.data.revision) == revId;
+        allow update, delete: if false;
+      }
+
+      match /decision_contexts/{revision} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && hasOwnedUserId(userId)
+          && request.resource.data.keys().hasAll([
+            'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',
+            'policyVersion', 'captureVersion', 'appSource', 'minimumSafetyStatus',
+            'evaluatorInputs', 'performedTrainingFacts', 'contentHash'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',
+            'policyVersion', 'captureVersion', 'appSource', 'minimumSafetyStatus',
+            'evaluatorInputs', 'performedTrainingFacts', 'mechanicalCheckinHistory', 'contentHash'
+          ])
+          && request.resource.data.schemaVersion == 1
+          && request.resource.data.userId == userId
+          && request.resource.data.date == date
+          && request.resource.data.recommendationRevision is int
+          && request.resource.data.recommendationRevision >= 0
+          && string(request.resource.data.recommendationRevision) == revision
+          && (request.resource.data.recommendationRevision == 0 || (
+            existsAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date))
+            && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data.revision == request.resource.data.recommendationRevision
+            && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data.recommendationAudit.decisionContext.path == 'users/' + userId + '/daily_recommendations/' + date + '/decision_contexts/' + revision
+            && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data.recommendationAudit.decisionContext.revision == request.resource.data.recommendationRevision
+            && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data.recommendationAudit.decisionContext.contentHash == request.resource.data.contentHash
+          ))
+          && request.resource.data.evaluatedAt is string
+          && request.resource.data.policyVersion is string
+          && request.resource.data.captureVersion == 'same-day-capture-v1'
+          && request.resource.data.appSource is map
+          && request.resource.data.minimumSafetyStatus in ['complete', 'missing', 'incomplete']
+          && ((request.resource.data.minimumSafetyStatus == 'complete'
+              && request.resource.data.recommendationRevision >= 1
+              && request.resource.data.evaluatorInputs is map
+              && (request.resource.data.performedTrainingFacts is map || request.resource.data.performedTrainingFacts == null))
+            || (request.resource.data.minimumSafetyStatus in ['missing', 'incomplete']
+              && request.resource.data.recommendationRevision == 0
+              && request.resource.data.evaluatorInputs == null
+              && request.resource.data.performedTrainingFacts == null))
+          && request.resource.data.contentHash is string
+          && request.resource.data.contentHash.matches('^[a-f0-9]{64}$');
         allow update, delete: if false;
       }
     }

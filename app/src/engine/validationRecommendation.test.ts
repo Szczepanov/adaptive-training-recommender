@@ -48,6 +48,27 @@ function validV4Recommendation() {
 }
 
 describe('recommendation validation boundary', () => {
+    it('accepts a content-addressed context binding only for the same user, date, and revision', () => {
+        const base = validV4Recommendation();
+        const raw = {
+            ...base,
+            recommendationAudit: {
+                ...base.recommendationAudit,
+                decisionContext: {
+                    path: 'users/athlete-a/daily_recommendations/2026-08-31/decision_contexts/1',
+                    revision: 1,
+                    contentHash: 'a'.repeat(64),
+                },
+            },
+        };
+        expect(validateRecommendation(raw).isValid).toBe(true);
+
+        raw.recommendationAudit.decisionContext.path = 'users/other/daily_recommendations/2026-08-31/decision_contexts/1';
+        const invalid = validateRecommendation(raw);
+        expect(invalid.isValid).toBe(false);
+        expect(invalid.errors.some(error => error.field === 'recommendationAudit.decisionContext')).toBe(true);
+    });
+
     it('rejects a null recommendation audit without throwing', () => {
         const raw = { ...validV4Recommendation(), recommendationAudit: null };
         expect(() => validateRecommendation(raw)).not.toThrow();

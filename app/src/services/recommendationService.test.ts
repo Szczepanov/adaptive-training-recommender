@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DailyRecommendation, Recommendation } from '../engine/models';
+import type { DailyRecommendation, Recommendation, RecommendationAudit } from '../engine/models';
 import { TEMPLATES } from '../engine/templates';
 
 const firestore = vi.hoisted(() => {
@@ -88,6 +88,67 @@ describe('RecommendationService persistence', () => {
         const writeData = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
         expect(writeData.engineVerdict).toBe('advisory');
         expect(writeData.mode).toBe('train');
+    });
+
+    it('atomically binds a new recommendation revision to one immutable context record', async () => {
+        const template = TEMPLATES[0];
+        firestore.getDoc.mockResolvedValue({ exists: () => false });
+        const audit: RecommendationAudit = {
+            policyVersion: 'policy-test', evaluatedAt: '2026-09-28T08:30:00.000Z',
+            decisionContextRevision: 'history-r1', safetyStatus: 'complete',
+            history: { completedEventCount: 0, unmatchedEventCount: 0, sourceStatuses: { activities: 'AVAILABLE', recommendations: 'AVAILABLE', manualTraining: 'MISSING' } },
+            envelope: { safetyRestrictedModalityCount: 0, planMaxAllowableTier: 'Hard' },
+            candidateScores: [], droppedContributorObjectives: [], knowledgeLineage: [],
+        };
+        const evaluatorInputs = {
+            userId: 'athlete', date: '2026-09-28', readiness: { subjective: {}, objective: {} }, context: {},
+            events: [], fixedActivities: [], authoredPlanBlocks: [], trainingIntentProfile: null,
+            preferences: null, externalPlan: null, externalRest: null, scheduleOverlays: [],
+            confirmedProgressionOverrides: new Map<string, number>(), mechanicalCheckinHistory: [],
+        } as never;
+        const recommendation: Recommendation = { template, mode: 'train', rationale: 'Keep it easy.', recommendationAudit: audit };
+        const capture = {
+            evaluatedAt: audit.evaluatedAt, minimumSafetyStatus: 'complete' as const,
+            evaluatorInputs, performedTrainingFacts: null, mechanicalCheckinHistory: [],
+        };
+
+        const service = new RecommendationService();
+        const saved = await service.saveRecommendation('athlete', '2026-09-28', recommendation, capture);
+
+        expect(firestore.batch.commit).toHaveBeenCalledOnce();
+        expect(firestore.batch.set).toHaveBeenCalledTimes(2);
+        const context = firestore.batch.set.mock.calls[1][1] as Record<string, unknown>;
+        expect(context).toMatchObject({ userId: 'athlete', date: '2026-09-28', recommendationRevision: 1 });
+        expect(context).not.toHaveProperty('preparedHistorySnapshot');
+        expect(context).not.toHaveProperty('historyProvider');
+        expect(saved?.recommendationAudit?.decisionContext).toEqual({
+            path: 'users/athlete/daily_recommendations/2026-09-28/decision_contexts/1',
+            revision: 1,
+            contentHash: context.contentHash,
+        });
+
+        firestore.setDoc.mockClear();
+        firestore.batch.set.mockClear();
+        firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => saved });
+        await service.saveRecommendation('athlete', '2026-09-28', recommendation, capture);
+        expect(firestore.setDoc).toHaveBeenCalledOnce();
+        expect(firestore.batch.set).not.toHaveBeenCalled();
+    });
+
+    it('stores a write-once not-applicable gate record without evaluator history', async () => {
+        firestore.getDoc.mockResolvedValue({ exists: () => false });
+        const saved = await new RecommendationService().saveNotApplicableContext(
+            'athlete', '2026-09-28', 'incomplete', '2026-09-28T08:30:00.000Z',
+        );
+
+        expect(saved).toBe(true);
+        expect(firestore.setDoc).toHaveBeenCalledOnce();
+        const context = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
+        expect(context).toMatchObject({
+            userId: 'athlete', date: '2026-09-28', recommendationRevision: 0,
+            minimumSafetyStatus: 'incomplete', evaluatorInputs: null, performedTrainingFacts: null,
+        });
+        expect(context).not.toHaveProperty('mechanicalCheckinHistory');
     });
 
     it('backfills a logical verdict onto a legacy recommendation without manufacturing a decision revision', async () => {

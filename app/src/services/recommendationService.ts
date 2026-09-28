@@ -7,8 +7,11 @@ import type { DataIssue, DataState } from '../engine/dataState';
 import { parseDailyRecommendation } from '../persistence/parsers/trainingHistory';
 import { isPermissionDeniedError } from '../utils/errors';
 import { deepEqual } from '../utils/deepEqual';
+import { createDecisionContext, validateDecisionContext, type CreateDecisionContextInput } from '../engine/decisionContext';
+import type { MinimumSafetyCheckinStatus } from '../engine/safetyCheckin';
 
 type PersistedRecommendationWithVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
+type DecisionContextCapture = Omit<CreateDecisionContextInput, 'userId' | 'date' | 'recommendationRevision'>;
 
 /**
  * Persists what the engine actually prescribed each day, and captures whether the user
@@ -27,16 +30,47 @@ export class RecommendationService {
     // decisions from a getDoc snapshot the other has since invalidated.
     private readonly inFlightSaves = new Map<string, Promise<DailyRecommendation | null>>();
 
+    /** Persist the minimum-safety outcome even when Home correctly skips the evaluator. */
+    async saveNotApplicableContext(
+        userId: string,
+        date: string,
+        minimumSafetyStatus: Exclude<MinimumSafetyCheckinStatus, 'complete'>,
+        evaluatedAt = new Date().toISOString(),
+    ): Promise<boolean> {
+        try {
+            const contextRef = doc(getDb(), 'users', userId, this.collectionPath, date, 'decision_contexts', '0');
+            const existing = await getDoc(contextRef);
+            if (existing.exists()) {
+                await validateDecisionContext(existing.data(), { userId, date, recommendationRevision: 0 });
+                return true;
+            }
+            const record = await createDecisionContext({
+                userId, date, recommendationRevision: 0, evaluatedAt, minimumSafetyStatus,
+                evaluatorInputs: null, performedTrainingFacts: null,
+            });
+            await setDoc(contextRef, record);
+            return true;
+        } catch (error: unknown) {
+            if (!isPermissionDeniedError(error)) console.error('Could not persist minimum-safety decision context.');
+            return false;
+        }
+    }
+
     /**
      * Save (or re-save) the recommendation generated for a given date. Safe to call
      * every time the dashboard computes one -- merge:true means an already-answered
      * adherence field is preserved (see validateRecommendation), and re-saving the same
      * template/rationale for a date that hasn't changed is a no-op in effect.
      */
-    async saveRecommendation(userId: string, date: string, rec: Recommendation): Promise<DailyRecommendation | null> {
+    async saveRecommendation(
+        userId: string,
+        date: string,
+        rec: Recommendation,
+        decisionContextCapture?: DecisionContextCapture,
+    ): Promise<DailyRecommendation | null> {
         const key = `${userId}:${date}`;
         const previous = this.inFlightSaves.get(key) ?? Promise.resolve(null);
-        const run = previous.catch(() => null).then(() => this.saveRecommendationInternal(userId, date, rec));
+        const run = previous.catch(() => null).then(() => this.saveRecommendationInternal(userId, date, rec, decisionContextCapture));
         this.inFlightSaves.set(key, run);
         try {
             return await run;
@@ -45,7 +79,12 @@ export class RecommendationService {
         }
     }
 
-    private async saveRecommendationInternal(userId: string, date: string, rec: Recommendation): Promise<DailyRecommendation | null> {
+    private async saveRecommendationInternal(
+        userId: string,
+        date: string,
+        rec: Recommendation,
+        decisionContextCapture?: DecisionContextCapture,
+    ): Promise<DailyRecommendation | null> {
         const docPath = `users/${userId}/${this.collectionPath}/${date}`;
         let decisionChanged: boolean | undefined;
         let priorRevision: number | undefined;
@@ -88,9 +127,35 @@ export class RecommendationService {
             decisionChanged = decisionChangedThisSave;
 
             nextRevision = isNewDoc ? 1 : (decisionChangedThisSave ? priorRevision + 1 : priorRevision);
-            const recommendationAudit = rec.recommendationAudit && (isNewDoc || decisionChangedThisSave || !existing?.recommendationAudit)
+            const captureThisRevision = Boolean(decisionContextCapture && rec.recommendationAudit && (isNewDoc || decisionChangedThisSave));
+            if (decisionChangedThisSave && existing?.recommendationAudit?.decisionContext && !captureThisRevision) {
+                console.warn('Refusing recommendation revision without matching immutable decision context.');
+                return null;
+            }
+            const contextRecord = captureThisRevision
+                ? await createDecisionContext({
+                    ...decisionContextCapture!,
+                    userId,
+                    date,
+                    recommendationRevision: nextRevision!,
+                })
+                : undefined;
+            let recommendationAudit = rec.recommendationAudit && (isNewDoc || decisionChangedThisSave || !existing?.recommendationAudit)
                 ? rec.recommendationAudit
                 : existing?.recommendationAudit;
+            const contextPath = contextRecord
+                ? `users/${userId}/${this.collectionPath}/${date}/decision_contexts/${contextRecord.recommendationRevision}`
+                : undefined;
+            if (contextRecord && recommendationAudit && contextPath) {
+                recommendationAudit = {
+                    ...recommendationAudit,
+                    decisionContext: {
+                        path: contextPath,
+                        revision: contextRecord.recommendationRevision,
+                        contentHash: contextRecord.contentHash,
+                    },
+                };
+            }
 
             const rawData = {
                 userId,
@@ -158,6 +223,14 @@ export class RecommendationService {
 
                 batch.set(archiveRef, archiveData);
                 batch.set(docRef, writeData, { merge: true });
+                if (contextRecord && contextPath) {
+                    batch.set(doc(getDb(), 'users', userId, this.collectionPath, date, 'decision_contexts', String(contextRecord.recommendationRevision)), contextRecord);
+                }
+                await batch.commit();
+            } else if (contextRecord && contextPath) {
+                const batch = writeBatch(getDb());
+                batch.set(docRef, writeData, { merge: true });
+                batch.set(doc(getDb(), 'users', userId, this.collectionPath, date, 'decision_contexts', String(contextRecord.recommendationRevision)), contextRecord);
                 await batch.commit();
             } else {
                 await setDoc(docRef, writeData, { merge: true });

@@ -98,6 +98,13 @@ function recommendation(
             policyVersion: 'synthetic',
             evaluatedAt: '2026-09-01T06:00:00Z',
             decisionContextRevision: 'history-v1:synthetic',
+            ...(combined ? {
+                decisionContext: {
+                    path: `${path}/decision_contexts/1`,
+                    revision: 1,
+                    contentHash: 'a'.repeat(64),
+                },
+            } : {}),
             safetyStatus: 'complete',
             history: {
                 completedEventCount: 0,
@@ -287,7 +294,23 @@ emulatorDescribe('Recommendation audit budget', () => {
     it('headroom proof: combined=true size=64 create succeeds (worst-case positive control)', async () => {
         await environment.clearFirestore();
         const db = environment.authenticatedContext(owner).firestore();
-        await assertSucceeds(setDoc(doc(db, path), recommendation(64, true)));
+        const batch = writeBatch(db);
+        batch.set(doc(db, path), recommendation(64, true));
+        batch.set(doc(db, `${path}/decision_contexts/1`), {
+            schemaVersion: 1,
+            userId: owner,
+            date,
+            recommendationRevision: 1,
+            evaluatedAt: '2026-09-01T06:00:00Z',
+            policyVersion: 'synthetic',
+            captureVersion: 'same-day-capture-v1',
+            appSource: { gitSha: 'abc123', dirty: false },
+            minimumSafetyStatus: 'complete',
+            evaluatorInputs: {},
+            performedTrainingFacts: null,
+            contentHash: 'a'.repeat(64),
+        });
+        await assertSucceeds(batch.commit());
         console.log('PASS headroom proof: combined=true size=64');
     });
 });
