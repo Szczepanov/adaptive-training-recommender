@@ -26,6 +26,8 @@ import type { CompletedWorkoutView } from '../training-occurrence/completedWorko
 import { SCREEN_LABELS } from '../types/navigation';
 import './DataView.css';
 import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
+import { downloadContextBriefFile, type ContextBriefExportFormat } from '../utils/contextBriefExport';
+import { ContextBriefExportActions } from './ContextBriefExportActions';
 
 interface DataViewProps {
   decisionInput: DailyDecisionInput | null;
@@ -232,6 +234,19 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
       // Clipboard permission can be denied; the textarea below is always selectable.
       setBriefCopied(false);
       setBriefError({ date: brief.asOfDate, message: 'Copy was blocked. Select the text below and copy it manually.' });
+    }
+  };
+
+  const downloadBrief = (format: ContextBriefExportFormat) => {
+    if (!brief) return;
+    try {
+      downloadContextBriefFile(brief, format);
+      setBriefError(null);
+    } catch {
+      setBriefError({
+        date: brief.asOfDate,
+        message: 'Download could not start. Try Copy to clipboard or select the text below.',
+      });
     }
   };
 
@@ -924,9 +939,12 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
               </p>
             )}
             <div className="brief-actions">
-              <button className="brief-copy" onClick={copyBrief}>
-                {briefCopied ? 'Copied' : 'Copy to clipboard'}
-              </button>
+              <ContextBriefExportActions
+                copied={briefCopied}
+                onCopy={copyBrief}
+                onDownloadMarkdown={() => downloadBrief('markdown')}
+                onDownloadJson={() => downloadBrief('json')}
+              />
               <span className="brief-range">{brief.startDate} → {brief.asOfDate}</span>
               <span className="brief-size">
                 {brief.text.length.toLocaleString()} chars · ~{approxTokens?.toLocaleString()} tokens

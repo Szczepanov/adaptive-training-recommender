@@ -386,11 +386,15 @@ Activities AI-export action deep-link to it (`App.tsx` `handleNavigate('brief')`
 `DataView` `onNavigateToBrief`) instead of duplicating its export. On the canonical `brief`
 screen, the same Activities action returns to the local Context brief tab, so the legacy raw
 clipboard exporter is not reachable there either. Only the `brief` screen renders the daily
-(2-day) / full (14-day) brief with char and token counts. The Data and brief navigation
-entries refresh decision input before navigating. If `decisionInput` is null, DataView shows
-`No data available` with Retry (recomposes via `App` `loadDecisionInput`) and Back to Home,
-so the empty state is never a dead end even though the global navigation chrome also
-remains available.
+(2-day) / full (14-day) / diagnostic (14-day) brief with char and token counts. The canonical
+surface supports clipboard copy plus direct Markdown (`.md`) and JSON (`.json`) downloads.
+Markdown contains the exact rendered brief. JSON is a versioned transport envelope around that
+same Markdown content with preset, purpose, date-range, and unavailable-source metadata; it is
+not a second context schema and does not trigger additional athlete-data reads. The Data and
+brief navigation entries refresh decision input before navigating. If `decisionInput` is null,
+DataView shows `No data available` with Retry (recomposes via `App` `loadDecisionInput`) and
+Back to Home, so the empty state is never a dead end even though the global navigation chrome
+also remains available.
 
 ### 10. Protocol testing
 
