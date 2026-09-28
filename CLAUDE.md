@@ -60,10 +60,8 @@ when it affects confidence. See
 
 **Before writing code**
 - For source-code discovery, use text search plus direct reads; for type-level ripple, run the
-  compiler (`cd app && npx tsc -b`, `uv run mypy`). Serena is an optional precision tool for
-  concrete reference/implementation questions those miss, and is off in a worktree unless it can
-  be verified against that worktree — see
-  [`AGENTS.md` § Code navigation with Serena](./AGENTS.md#code-navigation-with-serena).
+  compiler (`cd app && npx tsc -b`, `uv run mypy`). See
+  [`AGENTS.md` § Code navigation](./AGENTS.md#code-navigation).
 - Check [`docs/plans/README.md`](./docs/plans/README.md) — the authoritative status board.
   It says what is in progress, what shipped, and what is deliberately shadow-mode only.
   Never infer delivery status from a file's existence or from this file.
@@ -160,4 +158,4 @@ cd app && npm test                     # vitest only — the fast inner loop
 | Garmin OAuth bootstrap | `scripts/bootstrap_garmin_tokens.py` |
 | Warsaw date helper / user-scoped Firestore reader / security rules | `app/src/utils/localDate.ts`, `app/src/services/recoverySnapshotService.ts`, `app/firestore.rules` |
 | Which document to trust | [`docs/README.md`](./docs/README.md) — routing table and precedence |
-| Semantic symbol navigation (Serena when available) and `.serena/memories/` policy | [`AGENTS.md` § Code navigation with Serena](./AGENTS.md#code-navigation-with-serena) |
+| Code navigation (text search, direct reads, compiler impact list) | [`AGENTS.md` § Code navigation](./AGENTS.md#code-navigation) |

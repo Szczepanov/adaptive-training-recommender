@@ -29,10 +29,6 @@ result. Do not duplicate the repository's verification matrix here and do not sa
 Use narrower or additional checks when required by the change (for example engine/policy simulations,
 Firestore rules, UI/E2E/visual evidence, or a focused regression test). See CLAUDE.md §3 and AGENTS.md
 "What CI gates" for the current contract.
-
-For code PRs, record Serena usage exactly as required by AGENTS.md:
-- Serena: not used
-- Serena: used — <specific question it answered that text search/compiler did not>
 -->
 
 - [ ] `make verify` — pass, or blocked with the exact reason
@@ -42,7 +38,6 @@ For code PRs, record Serena usage exactly as required by AGENTS.md:
 Results:
 - `command`: pass/fail — what it covered
 - Manual check: scenario and observed result
-- Serena: not used | used — <specific question answered>
 
 ## Risk and reviewer guidance
 

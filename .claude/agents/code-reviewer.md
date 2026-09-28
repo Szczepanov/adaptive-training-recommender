@@ -23,10 +23,9 @@ implementation summary, changed-file list and diff whenever possible.
    `make verify`. Do not rerun the full gate by default. Run a narrow command only when it directly
    tests a suspected defect, contradicts a relayed claim, or the caller explicitly delegates that
    check. Report exactly what you ran.
-4. **Escalate semantic uncertainty instead of exploring indefinitely** — if correctness hinges on a
+4. **Escalate uncertainty instead of exploring indefinitely** — if correctness hinges on a
    non-obvious cross-module caller/implementation relationship that the diff and targeted Grep
-   cannot establish cheaply, report that exact uncertainty for the primary agent to resolve with
-   Serena. The normal reviewer intentionally has no Serena tools.
+   cannot establish cheaply, report that exact uncertainty for the primary agent to resolve.
 5. **Report** using the format below.
 
 Known false-pass trap: `app/tsconfig.json` is solution-style (`"files": []` with references), so
@@ -88,7 +87,7 @@ failure scenario, and the fix. Then:
 - **Reviewed** — changed areas and acceptance criteria checked.
 - **Verified** — any narrow commands actually run, with working directory and exit code.
 - **Claims contradicted** — any relayed claim disproved by evidence.
-- **Needs primary-agent semantic check** — concrete cross-module questions that require Serena.
+- **Needs primary-agent check** — concrete cross-module questions left for the primary agent.
 - **Not verified** — what was intentionally left to the primary deterministic gate.
 - **Verdict** — Block (any CRITICAL/HIGH), Approve with notes (MEDIUM only), or Approve.
 

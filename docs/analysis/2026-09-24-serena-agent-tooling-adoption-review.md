@@ -1,6 +1,17 @@
 # 2026-09-24 Serena agent-tooling adoption review
 
-> **Follow-up (2026-09-26):** the adoption recommendations below were intentionally revised after
+> **Follow-up (2026-09-28):** the Serena experiment is terminated. The `.serena/` project
+> config was deleted and the active navigation guidance was removed from `AGENTS.md`,
+> `CLAUDE.md`, `docs/standards/agent-tooling.md`, the shared skills, the reviewer
+> definitions, and the PR template. Reason: the retention evidence showed text search plus
+> direct reads, with the compiler (`tsc -b`/`mypy`) as the type-level impact list, answered
+> every question asked of Serena — including the #802 implementation's only type-level
+> impact question — while Serena added language-server startup cost, worktree-binding risk
+> (a server bound to one checkout silently answers for the wrong tree), and duplicated
+> discovery across subagents (#801: 85 Serena calls for an already-scoped issue). This
+> document is kept as a historical record; it is no longer live policy.
+>
+> **Earlier follow-up (2026-09-26):** the adoption recommendations below were intentionally revised after
 > observing duplicated Serena discovery across independent review/validation subagents. Normal
 > reviewers are now diff-first and do not receive Serena by default; the primary agent owns the
 > semantic discovery pass. See

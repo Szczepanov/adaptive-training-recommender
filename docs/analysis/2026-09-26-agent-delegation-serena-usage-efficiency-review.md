@@ -1,5 +1,11 @@
 # 2026-09-26 Agent delegation and Serena usage-efficiency review
 
+> **Follow-up (2026-09-28):** the Serena experiment is terminated — the `.serena/` config
+> was deleted and the active guidance now routes all navigation through text search, direct
+> reads, and the compiler. The one-discovery-pass and diff-first reviewer rules from this
+> review are kept (reworded without Serena); the semantic-tooling specifics are history.
+> This document is kept as a historical record; it is no longer live policy.
+
 ## Scope
 
 This follow-up reviews a concrete failure mode in the repository's coding-agent workflow:

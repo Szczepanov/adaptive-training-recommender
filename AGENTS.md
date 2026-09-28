@@ -427,12 +427,12 @@ Cross-agent workflow skills live in `.agents/skills/` (single source of truth):
 Claude Code only discovers skills under `.claude/skills/`, so a Claude-visible skill there is a
 thin pointer to the `.agents/skills/` file. Edit the shared file, never the pointer.
 
-## Code navigation with Serena
+## Code navigation
 
-The repository ships a [Serena](https://github.com/oraios/serena) project config in
-`.serena/` (TypeScript and Python language servers). Serena is an **optional, question-driven
-precision tool**, not the default discovery layer and not a startup ritual. Do not block a task
-because Serena is unavailable, and do not call it to satisfy a process rule.
+Code navigation uses text search plus direct reads, with the compiler as the
+type-level impact list. Do not block a task on tool setup, and do not perform
+ceremonial navigation calls for docs-only work or a known tiny edit whose target
+is already established.
 
 ### Retrieval policy
 
@@ -446,78 +446,26 @@ Pick the cheapest tool that answers the actual question:
    (`cd app && npx tsc -b`; `uv run mypy` for Python). Its errors are the complete,
    authoritative impact list at no extra cost. In `app/`, `tsc -p .` checks nothing; use
    `tsc -b`.
-3. **Serena:** use `find_referencing_symbols` / `find_implementations` / `find_symbol` for a
-   concrete question the first two answer poorly: callers of a generically named symbol
-   (`requirements`, `coverage`, `budget`) that text search would drown in, implementations of an
-   interface, or value-level wiring the compiler does not flag. Before changing an engine
-   decision-authority constant, one reference query can show the constant, its claim/coverage
-   ownership and the `*PolicyAlignment.test.ts` assertions together.
-4. If the language server cannot answer reliably, fall back rather than forcing a semantic query.
+3. If a cross-module caller/implementation question resists both, use exact text search and
+   targeted reads of tests and call sites rather than a broad source-reading sweep.
 
-Do not make ceremonial Serena calls for docs-only work or a known tiny edit whose target is already
-established. The objective is better evidence with less broad reading, not tool-call count.
+The objective is better evidence with less broad reading, not tool-call count.
 
-### Semantic-navigation economy
+### Review economy
 
-For one cohesive issue, refactor, or review, prefer **one semantic-discovery pass by the primary
-agent**. Serena is a precision tool for answering concrete symbol/reference questions, not a second
-way to exhaustively read the repository.
+For one cohesive issue, refactor, or review, prefer **one discovery pass by the primary
+agent**.
 
 - Once the target file/symbol and its relevant callers are established, read the code directly
-  instead of repeatedly calling `find_symbol` for already-known locations.
+  instead of rediscovering already-known locations.
 - Do not have multiple subagents independently reconstruct the same call graph or architecture.
   Give reviewers the issue acceptance criteria, implementation summary, changed-file list and diff
-  first; semantic lookup is only for a specific unresolved wiring/impact question.
-- Use `find_referencing_symbols` / `find_implementations` when caller/implementation evidence is
-  actually needed, not as a routine follow-up to every symbol lookup.
-- Treat Serena project/language-service initialization as a transient startup state. If an early
-  semantic call cannot run because initialization is still in progress, do the minimum useful
-  fallback work and retry Serena before starting a broad source-reading sweep.
-- As a soft tripwire, if semantic navigation reaches roughly 10–15 Serena calls for a single
-  cohesive issue without materially narrowing the change surface, stop and reassess the retrieval
-  strategy. This is not a hard correctness limit; larger refactors can legitimately exceed it.
+  first; further lookup is only for a specific unresolved wiring/impact question.
 
 This matters especially before changing an engine constant
-([`CLAUDE.md` § 2](./CLAUDE.md#2-before-you-change-a-number-in-the-engine)): one reference
-query can expose the implemented constant, its knowledge claim/coverage ownership, and the
-`*PolicyAlignment.test.ts` assertions that must remain aligned.
-
-### Worktree safety
-
-Serena is stateful around an active project. A shell `workdir` change does not prove that a
-long-lived Serena server is reading the same checkout. **In a worktree created after the session
-started, Serena is off by default.** Use it there only when:
-
-- the client exposes a project-activation tool (`activate_project`) and **one** activation call to
-  the absolute worktree path succeeds and is verified; or
-- the Serena server was itself started from that worktree (per-session `--project-from-cwd`).
-
-A client that exposes no activation tool is pinned to the checkout it started in; its semantic
-results describe a different tree, so do not use it in that worktree. Do not spend more than one
-activation attempt; fall back to text search plus the compiler.
-
-See the dated tooling review
-[`docs/analysis/2026-09-24-serena-agent-tooling-adoption-review.md`](./docs/analysis/2026-09-24-serena-agent-tooling-adoption-review.md)
-for client-specific Claude Code/Codex/Antigravity guidance and the original rationale.
-
-### Retention review
-
-Serena is kept on evidence, not by default. Code PRs record one line under **Validation**:
-`Serena: not used` or `Serena: used — <question it answered that text search/compiler did not>`.
-Review that record at the checkpoint in
-[`docs/standards/agent-tooling.md`](./docs/standards/agent-tooling.md#semantic-navigation-retention);
-if it shows no answered question that the cheaper tools missed, remove the `.serena/` config and
-this section.
-
-### Memory and edit policy
-
-* **Memories are an index, not a source.** `.serena/memories/` holds only pointers into
-  `CLAUDE.md`, this file and `docs/`, plus Serena-specific notes. Do not copy invariants,
-  command lists, package maps or version pins into a memory. When a memory disagrees with
-  repository docs, the docs win; fix the memory.
-* **Serena edits pass the same gates.** Edits made with `replace_symbol_body`,
-  `rename_symbol` or `replace_content` get the same verification as any other change
-  ([`CLAUDE.md` § 3](./CLAUDE.md#3-working-loop)). Review the diff before finishing.
+([`CLAUDE.md` § 2](./CLAUDE.md#2-before-you-change-a-number-in-the-engine)): the constant, its
+knowledge claim/coverage ownership, and the `*PolicyAlignment.test.ts` assertions must remain
+aligned.
 
 ---
 

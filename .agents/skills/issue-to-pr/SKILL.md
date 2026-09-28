@@ -39,10 +39,6 @@ You take a GitHub issue number as input and drive it to an opened PR: issue inta
    - Knowledge lineage (ADR-0033): every engine threshold, weight, cadence or policy constant with decision authority is owned by a registered claim. Check the registry before changing one (Phase 3).
    - Reference symbols, never line numbers, in docs and plans (e.g. `` `rules.ts` `evaluateEnvelopes` ``).
    - Work in `WORKTREE` on its feature branch, never directly on `main` and never in the main checkout. One issue = one worktree = one branch unless the user says otherwise.
-   - Serena is off by default in `WORKTREE`: a server started before the worktree existed reads a
-     different checkout. Use it only if the client exposes `activate_project` and one activation
-     call to the absolute `WORKTREE` path succeeds and is verified; otherwise (including clients
-     with no activation tool) skip it for this run. See `AGENTS.md` § Worktree safety.
    - For a single cohesive issue, keep issue discovery, planning, implementation and deterministic
      verification in the primary agent. Do not spawn research/planning/validator subagents merely
      to repeat repository discovery. The default independent delegation is one diff-first review
@@ -87,9 +83,7 @@ Follow the `docs/README.md` precedence: **code wins, then `architecture/`, then 
 - Locate affected modules using the `AGENTS.md` package-architecture map (`src/garmin_sync/`, `app/src/engine/`, `app/src/sessions/`, `app/src/responses/`, `app/src/observations/`, `app/src/outcomes/`, `app/src/knowledge/` — directory wins over the map).
 - Discover with text search plus direct reads. For type-level ripple (new union member or
   `Record` key, new required field, changed exported signature), make the change and run
-  `cd app && npx tsc -b` (or `uv run mypy`): the errors are the impact list. Use Serena only for a
-  concrete reference/implementation question those miss, and only when it is verified against
-  `WORKTREE` (Phase 0). Never use semantic results from a different checkout.
+  `cd app && npx tsc -b` (or `uv run mypy`): the errors are the impact list.
 - Identify: reusable utilities, existing test fixtures (`tests/fixtures/`, engine `tests/`, `simulation/`), schema validators, and the `TrainingHistoryProvider` / Firestore boundaries if history or persistence is involved.
 - When correctness depends on an external library/API contract, use Context7 for current,
   version-appropriate documentation as defined by `docs/standards/agent-tooling.md`. Do not use
@@ -162,7 +156,7 @@ analysis either.
   changed-file list and branch diff. It starts from that evidence and reads surrounding code only
   where needed. Address CRITICAL/HIGH findings.
 - The reviewer must not recreate the implementation plan or independently remap the whole
-  repository. Semantic/caller lookup is justified only by a concrete unresolved review question;
+  repository. Follow-up lookup is justified only by a concrete unresolved review question;
   routine repository rediscovery is not.
 - Keep deterministic validation (`make verify`, targeted tests, simulations, policy-drift checks)
   in the primary agent. A separate validator subagent is **not** the default; use one only when
@@ -189,7 +183,6 @@ analysis either.
    ## Validation
    - [x] `command`: pass — what it covered
    - Manual check: scenario + observed result (or why N/A)
-   - Serena: not used | used — <question it answered that text search/compiler did not>
    ## Risk and reviewer guidance
    - What to inspect closely, what could regress, migration/deployment/rollback notes.
    ## Domain invariants

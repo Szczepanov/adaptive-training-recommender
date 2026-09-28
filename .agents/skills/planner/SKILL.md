@@ -22,16 +22,11 @@ When acting as or using the **planner** skill:
 
 ### Navigation strategy
 
-Follow `AGENTS.md` § Code navigation with Serena:
+Discover with Grep/text search plus direct reads; see `AGENTS.md` § Code navigation.
 
-- Discover with Grep/text search plus direct reads.
 - For type-level impact (union members, `Record` keys, exported signatures), name the compiler
   check (`cd app && npx tsc -b`, `uv run mypy`) as the impact evidence in the plan rather than
   enumerating call sites by hand.
-- Use Serena (`find_referencing_symbols`, `find_implementations`) only for a concrete cross-module
-  reference question the above answer poorly, and only when it is verified against the
-  checkout/worktree being planned.
-- Do not call Serena merely to satisfy a process rule.
 
 ### 1. Requirements Analysis
 - Understand the feature request completely.

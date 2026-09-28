@@ -32,7 +32,7 @@ def test_docs_only_diff_uses_hygiene_contract() -> None:
 
 
 def test_agent_config_yaml_fails_safe_to_code_contract() -> None:
-    assert classify_paths([".serena/project.yml"]) == "code"
+    assert classify_paths([".agents/project.yml"]) == "code"
 
 
 def test_code_contract_contains_ci_critical_local_gates() -> None:
