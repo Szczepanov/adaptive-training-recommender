@@ -234,6 +234,12 @@ export class ContextBriefService {
             { length: UPCOMING_CONTEXT_DAYS },
             (_, offset) => addDaysToLocalDateString(targetDate, offset),
         );
+        // Morning closed-loop debrief needs yesterday's imported authority as well as
+        // D0..D+6 future placement. Planning/diagnostic keep their existing read set.
+        const yesterdayPlanDate = addDaysToLocalDateString(targetDate, -1);
+        const externalPlanDates = purpose === 'morning'
+            ? [yesterdayPlanDate, ...upcomingDates]
+            : upcomingDates;
         // External-plan placement spreads flexible sessions within their whole plan week.
         // A fixed activity just before or after the 7-day handoff horizon can therefore
         // change which date a session resolves onto inside the horizon. Six calendar days
@@ -434,7 +440,9 @@ export class ContextBriefService {
 
         const upcomingExternalSessions: UpcomingExternalPlanSession[] = [];
         let currentExternalSession: AnyExternalPlanSession | null = null;
+        let yesterdayExternalSession: UpcomingExternalPlanSession | null = null;
         let restDirectiveToday: BriefRestDirective | null = null;
+        let restDirectiveYesterday: BriefRestDirective | null = null;
         // Whether "no session placed today" can be asserted as a confirmed fact. Starts
         // false whenever occupancy itself is unreadable (the else branch below), and is
         // also cleared if today's own plan-state read specifically fails, so a resolved
@@ -448,11 +456,11 @@ export class ContextBriefService {
             // padded occupancy set above, not only visible future commitments, because an
             // earlier/later fixed day in the same plan week can move a flexible session.
             const activePlanResults = await Promise.allSettled(
-                upcomingDates.map(date => activeExternalPlanService.getActivePlanState(userId, date, placementFixedActivities)),
+                externalPlanDates.map(date => activeExternalPlanService.getActivePlanState(userId, date, placementFixedActivities)),
             );
             let unreadablePlanDays = 0;
             for (let index = 0; index < activePlanResults.length; index++) {
-                const date = upcomingDates[index];
+                const date = externalPlanDates[index];
                 const settled = activePlanResults[index];
                 if (settled.status === 'rejected') {
                     unreadablePlanDays += 1;
@@ -466,6 +474,33 @@ export class ContextBriefService {
                     if (date === targetDate) externalScheduleTodayConfirmed = false;
                     continue;
                 }
+                if (date === yesterdayPlanDate && purpose === 'morning') {
+                    const primary = placedSessionForDate(state.data, date);
+                    if (primary) {
+                        yesterdayExternalSession = {
+                            date,
+                            planId: state.data.header.planId,
+                            planTitle: state.data.header.title,
+                            revision: state.data.header.revision,
+                            sessionId: primary.session.id,
+                            title: primary.session.title,
+                            priority: primary.session.priority,
+                            modality: primary.session.gating.modality,
+                            intensity: primary.session.gating.intensity,
+                            durationMin: primary.session.gating.durationMin,
+                            durationMax: primary.session.gating.durationMax,
+                            flexibility: primary.session.placement.flexibility,
+                            status: primary.status === 'moved' ? 'moved' : 'planned',
+                            moved: primary.moved,
+                            isEvent: primary.session.isEvent === true,
+                            prescription: externalSessionDisplayPrescription(primary.session),
+                        };
+                    }
+                    const rest = externalRestContextForDate(state.data, date);
+                    restDirectiveYesterday = rest
+                        ? { planId: rest.planId, revision: rest.revision, restDirectiveId: rest.directive.id }
+                        : null;
+                }
                 if (date === targetDate) {
                     currentExternalSession = placedSessionForDate(state.data, date)?.session ?? null;
                     const rest = externalRestContextForDate(state.data, date);
@@ -473,6 +508,7 @@ export class ContextBriefService {
                         ? { planId: rest.planId, revision: rest.revision, restDirectiveId: rest.directive.id }
                         : null;
                 }
+                if (date < targetDate) continue;
                 for (const placed of state.data.placed.filter(item =>
                     item.date === date && (item.status === 'planned' || item.status === 'moved'))) {
                     upcomingExternalSessions.push({
@@ -616,6 +652,8 @@ export class ContextBriefService {
             upcomingExternalSessions,
             recommendationsReadable: recommendationResult.status === 'fulfilled' && recommendationResult.value.status === 'AVAILABLE',
             restDirectiveToday,
+            yesterdayExternalSession,
+            restDirectiveYesterday,
             unavailableSources,
             preset,
             purpose,
