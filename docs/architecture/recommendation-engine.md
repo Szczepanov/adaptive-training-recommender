@@ -182,9 +182,17 @@ fallbacks. This remains display-only, so `POLICY_VERSION` is unaffected.
   which is dated and not edited): interval-response and decoupling now have display-only
   consumers routed through the authority.
 - **Interval repetition** — executed semantic `work` segments from FIT Workout Step
-  definitions plus performed step linkage are authoritative when available. This supports
-  long intervals, 4x4 and structured microintervals without confusing equal-duration
-  recovery with work. Prescription is rendered separately from actual power, and native
+  definitions plus performed step linkage are authoritative when available. Specific FIT
+  warm-up/recovery/cool-down intensity flags outrank bounded targets. Generic `active`
+  terminal steps are conservatively downgraded upstream only when their prescription (or,
+  without a usable prescription, their performed power) is clearly below an established
+  preceding work set. The response feature then keeps the dominant prescribed-power profile
+  (±15% for watt targets, including bounded FIT `power_3s_target` variants; lower Z1/Z2
+  outliers after Z3+ work are excluded) only when a clear
+  majority cluster exists before calculating first-to-last fade/collapse. This supports long
+  intervals, 4x4 and structured microintervals without confusing a lower-target cooldown or
+  recovery rollout with work, while preserving a same-target low-power final repetition as
+  a genuine collapse. Prescription is rendered separately from actual power, and native
   evidence can add within-repetition power thirds plus final-third HR (still gated by the
   HR authority). If semantic segments are absent, the legacy #814 heuristic remains for
   tempo/threshold/VO2/anaerobic activities: the first >=`WORK_INTERVAL_MIN_SECONDS` lap
