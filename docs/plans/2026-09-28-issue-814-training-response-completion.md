@@ -46,7 +46,7 @@ The target pipeline is:
 
 The critical design constraint is:
 
-> **Canonical workout identity determines what may be compared; measured telemetry determines what happened. Neither source gets blanket authority over the other.**
+> **Canonical occurrence identity determines which source records describe each performed workout; authored protocol/exercise identity plus measurement/context evidence determines whether different workouts may be compared. Measured telemetry determines what happened. No source gets blanket authority outside its role.**
 
 ## 2. Non-goals
 
@@ -68,9 +68,11 @@ This plan does not:
 
 ## 3. Decisions fixed by this plan
 
-### D1 — PerformedTrainingOccurrence is the session-identity root
+### D1 — PerformedTrainingOccurrence is the source-reconciliation root for one performed session
 
-When an active canonical occurrence exists, response derivation uses its source graph to understand which structured execution and provider activity represent the physical workout.
+When an active canonical occurrence exists, response derivation uses its source graph to understand which structured execution and provider activities represent the same physical workout.
+
+The occurrence identity is **not** a cross-session protocol-family identity. Two different occurrences become longitudinally comparable only through feature-appropriate authored prescription/protocol identity, canonical exercise identity, or a conservative semantic protocol match.
 
 A raw Garmin activity remains usable as a fallback when canonical occurrence evidence is unavailable, but fallback provenance must remain explicit.
 
@@ -146,8 +148,8 @@ If WP6 discovers that useful environment fields require a new Garmin endpoint/re
 
 ## WP0 — Freeze the current response contract
 
-**Status:** Ready once plan is approved  
-**Blocked by:** None  
+**Status:** Ready once plan is approved
+**Blocked by:** None
 **Purpose:** protect the useful behavior already delivered by #829/#850/#878 before changing identity/comparability plumbing.
 
 ### Changes
@@ -182,8 +184,8 @@ Add/extend fixtures proving current behavior for:
 
 ## WP1 — Add the canonical training-response evidence projection
 
-**Status:** Planned  
-**Blocked by:** WP0  
+**Status:** Planned
+**Blocked by:** WP0
 **Purpose:** expose one physical workout, structured identity and measured telemetry to the response layer without changing source authority.
 
 ### 1.1 New projection
@@ -211,27 +213,26 @@ Introduce a provider-neutral type, for example:
         steps[]
       }
 
-      measured?: {
+      measuredSources: Array<{
         provider
         activityId
         activity
-      }
+      }>
 
       sourceCompleteness
     }
 
 The exact name can differ; the semantic boundary must not.
 
-### 1.2 Reuse canonical hydration
+### 1.2 Reuse canonical hydration without inheriting the UI DTO's source collapse
 
 Do not add a third hand-written occurrence join.
 
-Preferred implementation direction:
+The implementation should extract/reuse a shared provider-neutral occurrence-source hydration primitive used by `activitiesReadModelService.ts`, `performedTrainingFactsService.ts` where appropriate, and the new response projection. That primitive must preserve the full occurrence source set.
 
-1. extract/reuse the common occurrence hydration needed by activitiesReadModelService.ts and performedTrainingFactsService.ts; or
-2. build the response projection from getCompletedWorkoutsInRange with preloaded activities, while keeping UI-specific policy flags out of this server/read path.
+Do **not** build the canonical response projection directly from the current `CompletedWorkoutView` / `getCompletedWorkoutsInRange` result as-is: ADR-0034 deliberately permits multiple provider recordings, while the v1 UI DTO intentionally exposes only one primary Garmin activity. Reusing that DTO unchanged would silently collapse evidence before feature-specific source selection.
 
-The first option is architecturally cleaner if the refactor remains bounded.
+It is acceptable for `getCompletedWorkoutsInRange` to reuse the same lower primitive, and callers should still pass preloaded activities to avoid duplicate provider reads.
 
 ### 1.3 Preserve canonical exercise identity
 
@@ -261,6 +262,7 @@ Requirements:
 - matched structured + Garmin occurrence hydrates one response evidence object;
 - Garmin-only occurrence hydrates measured-only evidence;
 - structured-only occurrence can support strength response even with no Garmin activity;
+- two provider recordings attached to one occurrence remain two explicit measured sources until a feature-specific selector chooses one;
 - merged/tombstoned occurrences are excluded;
 - source uniqueness is preserved;
 - occurrence read failure degrades rather than fabricates exact identity;
@@ -274,8 +276,8 @@ The feature layer can receive one canonical response object per physical workout
 
 ## WP2 — Centralize the comparability contract
 
-**Status:** Planned  
-**Blocked by:** WP1  
+**Status:** Planned
+**Blocked by:** WP1
 **Purpose:** make “may these sessions be compared for this feature?” a named pure decision instead of scattered conditionals.
 
 ### 2.1 New module
@@ -305,11 +307,13 @@ The result should distinguish:
 
 **match basis**
 
-- exact_authored_protocol;
-- exact_canonical_session_family;
+- exact_prescription_identity;
+- authored_protocol_family;
 - semantic_protocol_match;
 - controlled_steady_match;
 - provider_fallback.
+
+`performedOccurrenceId` is provenance and self-comparison protection, not a cross-session match basis.
 
 **provenance components**
 
@@ -406,8 +410,8 @@ Every longitudinal response feature obtains eligibility/confidence from one cent
 
 ## WP3 — Wire authored identity without inventing step correspondence
 
-**Status:** Planned  
-**Blocked by:** WP1, WP2  
+**Status:** Planned
+**Blocked by:** WP1, WP2
 **Purpose:** complete the original #814 / #850 deferred identity integration.
 
 ### 3.1 Session-level identity
@@ -420,7 +424,7 @@ For canonical occurrences with structured execution, expose:
 - catalog workout ID/variant where applicable;
 - sessionOccurrenceId when present.
 
-Same prescription identity can establish a stronger cross-session family match than same Garmin fingerprint.
+An identical `prescriptionHash` can establish exact authored-content identity across sessions. A catalog workout/source-definition identity may establish an authored protocol family only when revision, variant and target semantics are compatible. Neither case is inferred from the occurrence ID itself, and both are stronger than a matching Garmin device fingerprint.
 
 ### 3.2 Segment-level identity overlay
 
@@ -464,8 +468,8 @@ The reconciled_workout_step identity value is emitted only when its name is true
 
 ## WP4 — Correct strength progression authority and marker semantics
 
-**Status:** Planned  
-**Blocked by:** WP1, WP2  
+**Status:** Planned
+**Blocked by:** WP1, WP2
 **Purpose:** replace Garmin-name matching with canonical structured identity where available.
 
 ### 4.1 Identity precedence
@@ -545,8 +549,8 @@ Strength response follows ADR-0034 source authority and never relies on title fu
 
 ## WP5 — Improve next-morning response linkage
 
-**Status:** Planned  
-**Blocked by:** WP1  
+**Status:** Planned
+**Blocked by:** WP1
 **Purpose:** separate exact tissue linkage from day-level observational recovery.
 
 ### 5.1 Map sourceSessionRef
@@ -593,8 +597,8 @@ The output is more specific when exact linkage exists and more honest when it do
 
 ## WP6 — Harden steady cycling context and add controlled running pace–HR response
 
-**Status:** Planned, with WP6.3 conditional  
-**Blocked by:** WP2; running also depends on HR-fidelity compatibility for running use  
+**Status:** Planned, with WP6.3 conditional
+**Blocked by:** WP2; running also depends on HR-fidelity compatibility for running use
 **Purpose:** finish the two longitudinal aerobic-response families without pretending field context is controlled when it is not.
 
 ### 6.1 Rename cycling output semantics
@@ -702,8 +706,8 @@ Cycling steady comparison no longer overstates its meaning, and issue #814 has a
 
 ## WP7 — Render provenance compactly and keep the information budget
 
-**Status:** Planned  
-**Blocked by:** WP2–WP6  
+**Status:** Planned
+**Blocked by:** WP2–WP6
 **Purpose:** make stronger semantics visible without recreating diagnostic bloat.
 
 ### Planning output
@@ -763,14 +767,15 @@ The planning brief becomes more semantically precise without reversing #811's in
 
 ## WP8 — Documentation, governance and issue closure
 
-**Status:** Planned  
-**Blocked by:** WP1–WP7  
+**Status:** Planned
+**Blocked by:** WP1–WP7
 **Purpose:** update living architecture and make the authority boundary difficult to regress.
 
 ### Update
 
 - docs/architecture/recommendation-engine.md
 - docs/architecture/activity-response-telemetry.md
+- docs/plans/README.md status board and docs/README.md hub index
 - ADR-0034 status/documentation only if the repository separately decides its shipped state warrants an ADR status transition; do not silently edit an accepted immutable ADR.
 - issue #814 acceptance checklist/comment.
 
@@ -873,6 +878,7 @@ Expected or likely files; exact names may evolve during implementation.
 - app/src/training-occurrence/performedTrainingFactsService.ts
 - app/src/training-occurrence/structuredSetDetail.ts
 - app/src/training-occurrence/completedWorkoutView.ts
+- new/refactored shared occurrence-source hydration primitive (name decided during WP1)
 - new app/src/training-occurrence/trainingResponseEvidence.ts
 - associated tests
 
@@ -900,6 +906,8 @@ Expected or likely files; exact names may evolve during implementation.
 
 - docs/architecture/recommendation-engine.md
 - docs/architecture/activity-response-telemetry.md
+- docs/plans/README.md status board
+- docs/README.md documentation hub
 - this plan and linked analysis
 
 ## 7. Candidate-selection rules
