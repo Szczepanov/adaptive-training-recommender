@@ -629,7 +629,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         };
         const evaluatorInputs: SameDayRecommendationInputs = {
           ...sameDayInputs,
-          preparedHistorySnapshot: preparedSnapshot,
+          preparedHistorySnapshot: sameDayPreparedSnapshot,
         };
         const baseRecommendation = await evaluateSameDayRecommendation(evaluatorInputs);
         if (!isCurrent()) return;
