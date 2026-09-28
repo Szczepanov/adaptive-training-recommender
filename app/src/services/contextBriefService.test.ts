@@ -48,6 +48,7 @@ vi.mock('./activeExternalPlanService', () => ({
     activeExternalPlanService: { getActivePlanState: services.getActivePlanState },
     placedSessionForDate: (active: { placed: Array<{ date: string; status: string }> }, date: string) =>
         active.placed.find(item => item.date === date && (item.status === 'planned' || item.status === 'moved')) ?? null,
+    externalRestContextForDate: () => null,
 }));
 vi.mock('./anthropometryService', () => ({ anthropometryService: { getEntriesInRange: services.getEntriesInRange } }));
 
@@ -170,6 +171,17 @@ describe('ContextBriefService', () => {
             // #816: activities reach back over the 28-day sensor-evidence horizon (2026-07-19).
             expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-07-19', '2026-08-16');
             expect(services.getRecommendationsInRange).toHaveBeenCalledWith('u1', '2026-08-14', '2026-08-16');
+        });
+
+        it('resolves imported-plan authority from D-1 through D+6 so the morning brief cannot miss D+1..D+3 or yesterday rest/session context', async () => {
+            await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+
+            expect(services.getActivePlanState).toHaveBeenCalledTimes(8);
+            expect(services.getActivePlanState).toHaveBeenNthCalledWith(1, 'u1', '2026-08-14', []);
+            expect(services.getActivePlanState).toHaveBeenNthCalledWith(2, 'u1', AS_OF, []);
+            expect(services.getActivePlanState).toHaveBeenNthCalledWith(3, 'u1', '2026-08-16', []);
+            expect(services.getActivePlanState).toHaveBeenNthCalledWith(5, 'u1', '2026-08-18', []);
+            expect(services.getActivePlanState).toHaveBeenNthCalledWith(8, 'u1', '2026-08-21', []);
         });
 
         it('does not widen the fetch for the full 14-day window, since it already exceeds the timeline horizon', async () => {
