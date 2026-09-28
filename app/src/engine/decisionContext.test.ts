@@ -134,6 +134,12 @@ describe('decision context record', () => {
         expect(record).not.toHaveProperty('mechanicalCheckinHistory');
         await expect(validateDecisionContext(record, gateIdentity)).resolves.toEqual(record);
         await expect(createDecisionContext(input({ minimumSafetyStatus: 'incomplete' }))).rejects.toThrow();
+        await expect(createDecisionContext(input({
+            recommendationRevision: 0,
+            minimumSafetyStatus: 'incomplete', evaluatorInputs: null,
+            performedTrainingFacts: facts(), mechanicalCheckinHistory: undefined,
+        }))).rejects.toThrow();
+        await expect(createDecisionContext(input({ performedTrainingFacts: null }))).rejects.toThrow();
     });
 
     it('rejects a context larger than the reserved Firestore payload budget', async () => {
