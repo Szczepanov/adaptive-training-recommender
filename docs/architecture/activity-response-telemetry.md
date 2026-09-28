@@ -35,8 +35,16 @@ step identity remains a future integration with ADR-0034 occurrence reconciliati
 Detected segments are not manufactured merely from a workout fingerprint.
 
 A FIT workout fingerprint is session identity evidence only. It does not prove which lap is
-work, recovery, warm-up or cooldown. Garmin FIT Workout Step intensity and executed
-workout-step linkage provide that semantic role.
+work, recovery, warm-up or cooldown. Specific Garmin FIT Workout Step intensity roles and
+executed workout-step linkage provide that semantic role. A bounded target never promotes a
+step to work. Garmin's generic `active` role is weaker: an explicit step name may refine it,
+and on a complete untruncated semantic sequence only the terminal active/work step may be
+downgraded to cooldown when at least two preceding work segments establish a primary set and
+the terminal prescription is more than 15% below that set (including bounded FIT variants
+such as `power_3s_target`), or is power Z1/Z2 after Z3+ work.
+When no usable power prescription exists, terminal performed power below 65% of the preceding
+work median is a final fallback. The same-target case is deliberately not downgraded, so a
+genuine failed final repetition remains visible as failure rather than being relabelled cooldown.
 
 ## Ingestion boundary
 
@@ -126,7 +134,11 @@ heuristic:
 - repeated 10-second sprints use short-window power and cadence; HR is not used to classify
   sprint quality;
 - threshold/VO2 summaries may include within-repetition thirds and final-third HR, subject
-  to the existing HR-fidelity authority;
+  to the existing HR-fidelity authority; semantic work is additionally reduced to the
+  dominant prescribed-power profile before first-to-last fade/collapse is calculated, using
+  a ±15% power-target band (or the corresponding higher-zone cluster) only when a clear
+  majority cluster exists. Clearly lower prescribed recovery/rollout steps are excluded,
+  while a same-target low-power repetition remains eligible for a genuine collapse flag;
 - steady decoupling can use deterministic continuous halves before falling back to lap
   averages.
 
