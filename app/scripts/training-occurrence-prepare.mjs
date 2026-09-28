@@ -93,11 +93,37 @@ const server = await createServer({
 });
 try {
     const { prepareTo4Evidence } = await server.ssrLoadModule('/src/training-occurrence/to4EvidencePreparation.ts');
+    const { hashSessionDefinition } = await server.ssrLoadModule('/src/sessions/sessionDefinitionHash.ts');
+    const { parseSessionDefinitionRevisionDocument } = await server.ssrLoadModule('/src/persistence/parsers/sessionDefinition.ts');
     const { runHistoryCounterfactualSeries } = await server.ssrLoadModule('/src/training-occurrence/historyRecommendationCounterfactual.ts');
     const { SCENARIOS } = await server.ssrLoadModule('/src/engine/simulation/scenarios.ts');
 
+    const manualSources = (records.sessionExecutions ?? [])
+        .map(({ data }) => data?.sessionSource)
+        .filter(source => source?.kind === 'manual');
+    const manualDefinitionRevisions = [];
+    for (const document of records.sessionDefinitionRevisions ?? []) {
+        const data = document.data;
+        const source = manualSources.find(candidate => candidate.definitionId === data?.definitionId
+            && candidate.revision === data?.revision
+            && candidate.contentHash === data?.contentHash);
+        if (!source || document.id !== String(source.revision)) continue;
+        const parsed = parseSessionDefinitionRevisionDocument(data, {
+            userId: records.userId,
+            definitionId: source.definitionId,
+            revision: source.revision,
+        }, `session_definitions/${source.definitionId}/revisions/${source.revision}`);
+        if (parsed.status !== 'AVAILABLE' || parsed.data.contentHash !== source.contentHash) continue;
+        if (await hashSessionDefinition(parsed.data.definition) !== source.contentHash) continue;
+        manualDefinitionRevisions.push({ definition: parsed.data.definition, contentHash: parsed.data.contentHash });
+    }
+
     const prepared = prepareTo4Evidence(records, {
-        sourceCommit, coveragePolicyVersion: COVERAGE_POLICY_VERSION, fitFingerprintVersion: FIT_FINGERPRINT_VERSION, labels,
+        sourceCommit,
+        coveragePolicyVersion: COVERAGE_POLICY_VERSION,
+        fitFingerprintVersion: FIT_FINGERPRINT_VERSION,
+        labels,
+        manualDefinitionRevisions,
     });
 
     if (!process.argv.includes('--no-replay')) {

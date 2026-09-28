@@ -5,8 +5,9 @@ Two bounded, read-only extractors that feed the TypeScript preparation step
 
 - ``export_training_occurrence_records`` reads exactly one user's subtree
   (``users/{user_id}/...``) for a date window: performed occurrences, the session executions
-  they reference, activities and daily recommendations. It never lists ``users`` and never
-  writes. The output is raw private data and belongs only under the git-ignored
+  they reference, their entries and prescriptions, exact manual definition revisions,
+  activities and daily recommendations. It never lists ``users`` and never writes. The output
+  is raw private data and belongs only under the git-ignored
   ``app/artifacts/training-occurrence/`` directory.
 - ``collect_fit_identity_evidence`` re-downloads Garmin originals one at a time, decodes them
   in memory through the production decoder, and keeps only classifications and fingerprints.
@@ -90,6 +91,7 @@ def export_training_occurrence_records(
     executions = []
     execution_entries: list[dict[str, Any]] = []
     execution_prescriptions: list[dict[str, Any]] = []
+    session_definition_revisions: list[dict[str, Any]] = []
     for execution_id in sorted(execution_ids):
         snapshot = user.collection("session_executions").document(execution_id).get()
         if snapshot.exists:
@@ -111,6 +113,20 @@ def export_training_occurrence_records(
                 )
                 if prescription.exists:
                     execution_prescriptions.append(_document(prescription))
+            source = execution["data"].get("sessionSource") or {}
+            if source.get("kind") == "manual":
+                definition_id = str(source.get("definitionId") or "")
+                revision = source.get("revision")
+                if definition_id and isinstance(revision, int) and revision >= 0:
+                    definition = (
+                        user.collection("session_definitions")
+                        .document(definition_id)
+                        .collection("revisions")
+                        .document(str(revision))
+                        .get()
+                    )
+                    if definition.exists:
+                        session_definition_revisions.append(_document(definition))
 
     # An occurrence near the window edge may reference an activity whose provider date falls
     # just outside it; fetch those by ID so hydration does not report a false missing source.
@@ -128,6 +144,7 @@ def export_training_occurrence_records(
         "sessionExecutions": executions,
         "sessionEntries": execution_entries,
         "executionPrescriptions": execution_prescriptions,
+        "sessionDefinitionRevisions": session_definition_revisions,
         "activities": activities,
         "dailyRecommendations": recommendations,
     }
