@@ -307,6 +307,11 @@ FTP_RELATIVE_TARGET_PATTERN = re.compile(
     r"|\d+(?:\.\d+)?\s*%\s*FTP\b)",
     re.IGNORECASE,
 )
+EXACT_WATT_TARGET_PATTERN = re.compile(
+    r"(?:\d+(?:\.\d+)?\s*[-–—]\s*\d+(?:\.\d+)?\s*W\b"
+    r"|\d+(?:\.\d+)?\s*W\b)",
+    re.IGNORECASE,
+)
 
 
 def canonical_workout_requires_athlete_ftp(workout: dict[str, Any]) -> bool:
@@ -329,7 +334,9 @@ def canonical_workout_requires_athlete_ftp(workout: dict[str, Any]) -> bool:
                 ]
             )
             if any(
-                isinstance(value, str) and FTP_RELATIVE_TARGET_PATTERN.search(value)
+                isinstance(value, str)
+                and FTP_RELATIVE_TARGET_PATTERN.search(value)
+                and not EXACT_WATT_TARGET_PATTERN.search(value)
                 for value in values
             ):
                 return True
