@@ -134,10 +134,22 @@ For legacy activities without semantic segments, the issue #814 >=120-second rel
 lap heuristic remains available for tempo/threshold/VO2/anaerobic sessions. A workout
 fingerprint alone no longer upgrades race/auto-laps into interval identity.
 
-Planning export is bounded: repetition lists are capped, only selected 5-second/1-minute/
-5-minute MMP values are included in compact activity lines, and semantic summaries replace
-the raw lap digest when available. Diagnostic export can show all persisted semantic
-segments and fixed MMP windows, but still never contains native samples.
+Planning export remains bounded but no longer reduces every quality session to a one-line
+digest. Ordinary endurance/recovery activities keep the compact activity line; quality
+cycling/running (tempo, threshold, VO2, anaerobic, mixed or race, plus the historical
+absent-domain hard fallback) additionally receives bounded execution detail using the same
+evidence family as the morning handoff. That detail is capped at the first 20 semantic
+response segments in segment-index order, or the first 20 running/legacy laps when lap
+evidence is used, so output stops growing with lap/segment count after the cap. Existing
+derived training-response summaries remain available and may coexist with the bounded
+execution evidence because they answer a different question: interpretation versus the
+underlying performed rows.
+
+Diagnostic export is the full persisted forensic view: all stored laps and all persisted
+semantic segments (the persisted segment array itself is bounded upstream), every fixed MMP
+window, source cadence/provenance, deterministic halves, segment start offsets and final-third
+HR when present. Running laps retain distance and pace as well as average power/HR. Native FIT
+samples still never enter any context brief.
 
 The daily morning handoff has a separate bounded rule: it keeps ordinary endurance/recovery
 activities at the existing summary level, but expands the previous day's quality cycling or
