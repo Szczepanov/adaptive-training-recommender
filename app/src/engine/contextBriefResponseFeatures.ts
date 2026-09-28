@@ -26,7 +26,6 @@ export const INTERVAL_FADE_PCT = 5;
 export const INTERVAL_COLLAPSE_RATIO = 0.9;
 /** Lower prescribed-target outliers outside this band are not primary-set reps. */
 const PRIMARY_TARGET_TOLERANCE_RATIO = 0.15;
-const PRIMARY_TARGET_MIN_SHARE = 0.6;
 /** A session is "steady" only when Garmin's variability index is at most this value. */
 export const STEADY_MAX_VARIABILITY_INDEX = 1.05;
 /** Pw:HR decoupling needs at least this much recorded session time. */
@@ -192,35 +191,45 @@ function medianValue(values: readonly number[]): number {
 /** Keep performed failure visible when the prescription matches the main set, while
  * excluding clearly lower prescribed recovery/rollout steps that arrived mislabeled as
  * semantic work. The filter is activated only when a dominant target cluster exists. */
-function primarySetSegments(segments: ActivitySegmentSummary[]): ActivitySegmentSummary[] {
+function primarySetSegments(
+    segments: ActivitySegmentSummary[],
+    allSegments: readonly ActivitySegmentSummary[],
+): ActivitySegmentSummary[] {
     if (segments.length < 3) return segments;
 
-    for (const family of ['watts', 'zone'] as const) {
-        const anchored = segments
-            .map(segment => ({ segment, anchor: targetAnchor(segment.prescribedTarget) }))
-            .filter((item): item is { segment: ActivitySegmentSummary; anchor: TargetAnchor } =>
-                item.anchor !== null && item.anchor.family === family);
-        if (anchored.length < 3) continue;
+    // Compatibility guard for already-persisted telemetry: trim only a final
+    // lower-prescription tail. Internal or higher-target work may be deliberate.
+    const terminal = segments[segments.length - 1];
+    const finalSegmentIndex = allSegments.reduce(
+        (latest, segment) => Math.max(latest, segment.segmentIndex),
+        Number.NEGATIVE_INFINITY,
+    );
+    if (terminal.segmentIndex !== finalSegmentIndex) return segments;
 
-        const center = medianValue(anchored.map(item => item.anchor.value));
-        if (center <= 0) continue;
-        const inPrimaryBand = (value: number) => {
-            if (family === 'watts') {
-                return Math.abs(value - center) / center <= PRIMARY_TARGET_TOLERANCE_RATIO;
-            }
-            return Math.abs(value - center) <= 1 && (center < 3 || value >= 3);
-        };
-        const primaryCount = anchored.filter(item => inPrimaryBand(item.anchor.value)).length;
-        const required = Math.max(2, Math.ceil(anchored.length * PRIMARY_TARGET_MIN_SHARE));
-        if (primaryCount < required) continue;
+    const terminalAnchor = targetAnchor(terminal.prescribedTarget);
+    if (terminalAnchor === null) return segments;
 
-        const filtered = segments.filter(segment => {
-            const anchor = targetAnchor(segment.prescribedTarget);
-            return anchor === null || anchor.family !== family || inPrimaryBand(anchor.value);
-        });
-        if (filtered.length >= 2 && filtered.length < segments.length) return filtered;
+    const preceding = segments.slice(0, -1);
+    const anchored = preceding
+        .map(segment => targetAnchor(segment.prescribedTarget))
+        .filter((anchor): anchor is TargetAnchor =>
+            anchor !== null && anchor.family === terminalAnchor.family);
+    const requiredCoverage = Math.max(2, Math.ceil(preceding.length * 0.6));
+    if (anchored.length < requiredCoverage) return segments;
+
+    const center = medianValue(anchored.map(anchor => anchor.value));
+    if (terminalAnchor.family === 'watts') {
+        if (center <= 0) return segments;
+        const coherentPrecedingSet = anchored.every(anchor =>
+            Math.abs(anchor.value - center) / center <= PRIMARY_TARGET_TOLERANCE_RATIO);
+        if (!coherentPrecedingSet) return segments;
+        return terminalAnchor.value < center * (1 - PRIMARY_TARGET_TOLERANCE_RATIO)
+            ? preceding
+            : segments;
     }
-    return segments;
+
+    const coherentHighZoneSet = anchored.every(anchor => anchor.value >= 3);
+    return coherentHighZoneSet && terminalAnchor.value <= 2 ? preceding : segments;
 }
 
 function semanticSegments(
@@ -238,7 +247,7 @@ function semanticSegments(
     if (response.segmentsTruncated) {
         return { state: 'insufficient_evidence', reason: 'semantic segment list was truncated; repeatability not judged' };
     }
-    const primary = segmentType === 'work' ? primarySetSegments(structured) : structured;
+    const primary = segmentType === 'work' ? primarySetSegments(structured, response.segments) : structured;
     if (primary.some(segment => segment.averagePowerWatts === undefined)) {
         return { state: 'insufficient_evidence', reason: 'semantic work segment lacks performed power' };
     }
