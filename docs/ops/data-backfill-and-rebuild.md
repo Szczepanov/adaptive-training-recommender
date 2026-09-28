@@ -52,6 +52,44 @@ Staleness policy is shared across the browser and account-link backend:
 This parity matters because account linking and the browser both write the same fixed
 request document; one path must not supersede work that the other still considers live.
 
+
+## 🧩 1.1 Historical Activity-Response Enrichment
+
+Activities persisted before the multi-resolution response schema can be enriched without
+rebuilding recovery snapshots:
+
+```bash
+# Inspect the trailing 20 calendar days without writing Firestore.
+# Dry-run still downloads eligible original FIT files from Garmin.
+uv run python -m garmin_sync backfill-activity-response --days 20 --dry-run
+
+# Persist missing activityResponse telemetry.
+uv run python -m garmin_sync backfill-activity-response --days 20
+
+# Explicit inclusive date range.
+uv run python -m garmin_sync backfill-activity-response \
+  --start-date 2026-09-01 --end-date 2026-09-20
+
+# Re-derive an already-populated response after a derivation-version change.
+uv run python -m garmin_sync backfill-activity-response --days 20 --force
+```
+
+Operational properties:
+
+- only cycling activity types supported by the canonical activity-response derivation are fetched;
+- existing `activityResponse` values are skipped unless `--force` is supplied;
+- original FIT bytes and per-record traces stay transient and are never written to Firestore;
+- the command updates enrichment fields only and preserves the activity's original
+  `syncRunId` / `syncedAt` provenance;
+- forced re-derivation replaces `activityResponse` as one top-level map so omitted optional
+  fields cannot survive from an older derivation; optional sibling enrichments remain merged;
+- Garmin calls use the repository's configured jittered backfill pacing and shared per-user
+  execution lease, so this command must not be run through an uncoordinated custom downloader;
+- a busy execution lease, Garmin 429, authentication failure, malformed qualifying document,
+  fetch failure, or persistence failure produces a non-zero exit status;
+- an unavailable original FIT file or source evidence that cannot derive a response is a
+  supported skip, not fabricated telemetry.
+
 ---
 
 ## 🔍 2. Ingestion Audit

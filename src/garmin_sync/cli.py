@@ -23,13 +23,16 @@ def _run_with_user_lease(
     operation_name: str,
     service: GarminSyncService,
     operation: Callable[[GarminSyncService], bool],
+    *,
+    busy_is_success: bool = True,
 ) -> bool:
     """Run one Garmin operation while holding the shared per-user Firestore lease.
 
-    A busy lease is a successful no-op: another process is already doing Garmin work for
-    this user, and the next scheduled tick will pick up anything still pending. Lease release
-    errors intentionally propagate so Cloud Run records a failure instead of silently leaving
-    the user blocked until expiry.
+    Scheduled operations treat a busy lease as a successful no-op because a later tick will
+    retry pending work. Explicit operator commands can pass busy_is_success=False so a
+    skipped run returns non-zero and can be retried deliberately. Lease release errors
+    intentionally propagate so Cloud Run records a failure instead of silently leaving the
+    user blocked until expiry.
     """
     lease = GarminExecutionLease(
         service.repository.db,
@@ -40,7 +43,7 @@ def _run_with_user_lease(
         logger.info(
             "%s: skipped because another Garmin operation is already running", operation_name
         )
-        return True
+        return busy_is_success
 
     try:
         return operation(service)
@@ -214,6 +217,67 @@ def run_backfill(args: list[str] | None = None) -> int:
                 "end_date": parsed_args.end_date,
                 "force": parsed_args.force,
                 "include_details": parsed_args.include_details,
+            },
+        )
+        return 1
+
+
+def run_backfill_activity_response(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Backfill bounded activityResponse telemetry for historical activities."
+    )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=20,
+        help="Number of trailing calendar days to scan (default 20)",
+    )
+    parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
+    parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-derive even when activityResponse is already present",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Fetch and derive telemetry without writing Firestore",
+    )
+    parsed_args = parser.parse_args(args)
+
+    if bool(parsed_args.start_date) != bool(parsed_args.end_date):
+        parser.error("--start-date and --end-date must be provided together.")
+    if parsed_args.days < 1:
+        parser.error("--days must be at least 1.")
+
+    try:
+        settings = load_settings()
+        service = GarminSyncService(settings)
+        success = _run_with_user_lease(
+            "activity response backfill",
+            service,
+            lambda current_service: current_service.backfill_activity_response(
+                days=parsed_args.days,
+                start_date_str=parsed_args.start_date,
+                end_date_str=parsed_args.end_date,
+                force=parsed_args.force,
+                dry_run=parsed_args.dry_run,
+            ),
+            busy_is_success=False,
+        )
+        return 0 if success else 1
+    except Exception as error:
+        log_exception(
+            logger,
+            "activity response backfill",
+            error,
+            context={
+                "days": parsed_args.days,
+                "start_date": parsed_args.start_date,
+                "end_date": parsed_args.end_date,
+                "force": parsed_args.force,
+                "dry_run": parsed_args.dry_run,
             },
         )
         return 1
@@ -1455,6 +1519,16 @@ def build_parser() -> argparse.ArgumentParser:
     backfill_parser.add_argument("--force", action="store_true", help="Force re-fetch")
     backfill_parser.add_argument("--include-details", action="store_true")
 
+    backfill_activity_response_parser = subparsers.add_parser(
+        "backfill-activity-response",
+        help="Backfill bounded activityResponse telemetry for existing activity documents",
+    )
+    backfill_activity_response_parser.add_argument("--days", type=int, default=20)
+    backfill_activity_response_parser.add_argument("--start-date", type=str, default=None)
+    backfill_activity_response_parser.add_argument("--end-date", type=str, default=None)
+    backfill_activity_response_parser.add_argument("--force", action="store_true")
+    backfill_activity_response_parser.add_argument("--dry-run", action="store_true")
+
     backfill_health_parser = subparsers.add_parser(
         "backfill-health", help="Run historical backfill for Google Health (Eight Sleep & Garmin)"
     )
@@ -1597,6 +1671,8 @@ def dispatch_command(command: str) -> int:
         return run_daily_sync_all(args_list)
     if command == "backfill":
         return run_backfill(args_list)
+    if command == "backfill-activity-response":
+        return run_backfill_activity_response(args_list)
     if command == "backfill-health":
         return run_backfill_health_cmd(args_list)
     if command == "compare-transports":

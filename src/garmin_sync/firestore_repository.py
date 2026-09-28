@@ -254,6 +254,50 @@ class FirestoreRecoveryRepository:
         )
         doc_ref.set(payload, merge=True)
 
+    def update_activity_enrichment(
+        self,
+        activity_id: str | int,
+        *,
+        activity_response: dict[str, Any],
+        merged_fields: Mapping[str, Any] | None = None,
+    ) -> None:
+        """Replace activityResponse while merging optional sibling enrichment fields.
+
+        Firestore set(..., merge=True) recursively merges nested maps and can retain stale
+        optional response fields during forced re-derivation. The response is therefore
+        written as one top-level field, while optional sibling maps are expanded to dotted
+        field paths so unrelated nested values remain intact.
+
+        This update-only path is for existing activity documents selected by historical
+        enrichment. If the document disappears concurrently, Firestore raises and the
+        operator backfill reports failure rather than recreating an incomplete activity.
+        """
+        db = self._get_db()
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("activities")
+            .document(str(activity_id))
+        )
+
+        field_updates: dict[str, Any] = {"activityResponse": activity_response}
+        for field_name, field_value in (merged_fields or {}).items():
+            if field_name == "activityResponse" or "." in field_name:
+                raise ValueError(
+                    "Merged activity enrichment fields must be top-level and exclude activityResponse."
+                )
+            if isinstance(field_value, Mapping):
+                for nested_name, nested_value in field_value.items():
+                    if not isinstance(nested_name, str) or "." in nested_name:
+                        raise ValueError(
+                            "Nested activity enrichment field names must be simple strings."
+                        )
+                    field_updates[f"{field_name}.{nested_name}"] = nested_value
+            else:
+                field_updates[field_name] = field_value
+
+        doc_ref.update(field_updates)
+
     def upsert_activities(self, activities: list[tuple[str | int, dict[str, Any]]]) -> None:
         """Batch upsert normalized activity records.
         Handles Firestore's 500 document limit per batch automatically."""

@@ -15,7 +15,7 @@ from garminconnect import (
 )
 
 from ._hr_fidelity_devices import source_evidence_from_fit_devices
-from .activity_response import derive_activity_response
+from .activity_response import derive_activity_response, supports_activity_response
 from .archive import ArchiveRecord, RawArchiveStore, create_archive_store
 from .canonical import (
     CanonicalActivity,
@@ -41,7 +41,12 @@ from .garmin_provider import (
     qualifies_for_strength_exercise_sets,
 )
 from .hr_fidelity import assess_activity_hr_fidelity
-from .mapper import build_snapshot_from_canonical, normalize_activity
+from .mapper import (
+    build_snapshot_from_canonical,
+    normalize_activity,
+    serialize_activity_response,
+    serialize_hr_measurement,
+)
 from .metrics import compute_derived_metrics
 from .models import DailyRecoverySnapshot, NutritionDayDTO
 from .provider import WearableProvider
@@ -775,6 +780,211 @@ class GarminSyncService:
 
         target_dates = get_date_range(start_d, end_d)
         return start_d, end_d, target_dates
+
+    def backfill_activity_response(
+        self,
+        days: int | None = 20,
+        start_date_str: str | None = None,
+        end_date_str: str | None = None,
+        force: bool = False,
+        dry_run: bool = False,
+    ) -> bool:
+        """Backfill bounded activity-response telemetry for existing activity documents.
+
+        Original FIT bytes stay behind the provider boundary and are decoded only in
+        memory. This operation intentionally updates enrichment fields only: it preserves
+        the activity document's normal syncRunId/syncedAt provenance.
+        """
+        if bool(start_date_str) != bool(end_date_str):
+            raise ValueError("start_date_str and end_date_str must be provided together.")
+        if days is not None and days < 1:
+            raise ValueError("days must be at least 1.")
+
+        start_d, end_d, target_dates = self._resolve_backfill_date_range(
+            days, start_date_str, end_date_str
+        )
+        if not target_dates:
+            logger.error("Activity-response backfill target date range is empty.")
+            return False
+
+        start_iso = get_date_string(start_d)
+        end_iso = get_date_string(end_d)
+        logger.info(
+            "Scanning activity-response backfill for user=<UID-redacted> range %s -> %s.",
+            start_iso,
+            end_iso,
+        )
+        activities = self.repository.get_activities_in_range(start_iso, end_iso)
+
+        qualifying: list[dict[str, Any]] = []
+        malformed_count = 0
+        for activity in activities:
+            activity_type = str(activity.get("type", ""))
+            if not supports_activity_response(activity_type):
+                continue
+            if not force and activity.get("activityResponse") is not None:
+                continue
+            activity_id = activity.get("activityId")
+            if activity_id is None or not str(activity_id).strip():
+                malformed_count += 1
+                logger.warning(
+                    "Skipping malformed cycling activity without activityId in %s -> %s range.",
+                    start_iso,
+                    end_iso,
+                )
+                continue
+            qualifying.append(activity)
+
+        logger.info(
+            "Activity-response backfill found %d qualifying activities (%d already/non-cycling omitted).",
+            len(qualifying),
+            len(activities) - len(qualifying) - malformed_count,
+        )
+        if not qualifying:
+            return malformed_count == 0
+
+        provider = self._init_provider()
+        if not provider.capabilities.activity_hr_fidelity:
+            logger.error("Configured provider cannot fetch transient activity FIT evidence.")
+            return False
+        fetch_fidelity: Any = getattr(provider, "fetch_activity_hr_fidelity", None)
+        if not callable(fetch_fidelity):
+            logger.error("Configured provider has no activity FIT evidence fetch method.")
+            return False
+
+        provider.clear_cache()
+        client = (
+            provider.client if isinstance(provider, GarminProviderAdapter) else self.garmin_client
+        )
+        if isinstance(client, GarminClientWrapper):
+            client.configure_backfill_pacing(
+                self.settings.garmin_backfill_delay_min_seconds,
+                self.settings.garmin_backfill_delay_max_seconds,
+            )
+
+        derived_count = 0
+        skipped_count = 0
+        failed_count = malformed_count
+        try:
+            for index, activity in enumerate(qualifying, start=1):
+                activity_id = str(activity["activityId"])
+                activity_type = str(activity.get("type", ""))
+                logger.info(
+                    "[%d/%d] Deriving bounded activity-response telemetry.",
+                    index,
+                    len(qualifying),
+                )
+                try:
+                    evidence = fetch_fidelity(activity_id)
+                except GarminConnectTooManyRequestsError as error:
+                    logger.error(
+                        "Garmin rate limit stopped activity-response backfill after %d/%d items (%s).",
+                        index - 1,
+                        len(qualifying),
+                        type(error).__name__,
+                    )
+                    failed_count += 1
+                    break
+                except GarminConnectAuthenticationError:
+                    raise
+                except Exception as error:
+                    logger.warning(
+                        "Activity FIT evidence fetch failed for item %d/%d (%s).",
+                        index,
+                        len(qualifying),
+                        type(error).__name__,
+                    )
+                    failed_count += 1
+                    continue
+
+                if evidence is None:
+                    logger.info(
+                        "Original FIT unavailable for item %d/%d; leaving enrichment absent.",
+                        index,
+                        len(qualifying),
+                    )
+                    skipped_count += 1
+                    continue
+
+                try:
+                    response = derive_activity_response(activity_type, evidence)
+                    if response is None:
+                        logger.info(
+                            "No bounded activity response derivable for item %d/%d.",
+                            index,
+                            len(qualifying),
+                        )
+                        skipped_count += 1
+                        continue
+
+                    activity_response_payload = serialize_activity_response(response)
+                    merged_updates: dict[str, Any] = {}
+
+                    if activity.get("hrMeasurement") is None and evidence.records:
+                        try:
+                            fidelity = assess_activity_hr_fidelity(
+                                activity_type,
+                                evidence,
+                                _source_evidence_from_fit_devices(evidence.devices),
+                            )
+                            merged_updates["hrMeasurement"] = serialize_hr_measurement(
+                                fidelity.quality
+                            )
+                        except Exception as error:
+                            logger.debug(
+                                "Optional HR-fidelity enrichment failed for item %d/%d (%s).",
+                                index,
+                                len(qualifying),
+                                type(error).__name__,
+                            )
+
+                    if activity.get("fitWorkoutFingerprint") is None:
+                        try:
+                            fingerprint = compute_fit_workout_fingerprint(
+                                evidence.workout_name,
+                                evidence.workout_step_indices,
+                            )
+                            if fingerprint is not None:
+                                merged_updates["fitWorkoutFingerprint"] = fingerprint
+                        except Exception as error:
+                            logger.debug(
+                                "Optional FIT workout fingerprint failed for item %d/%d (%s).",
+                                index,
+                                len(qualifying),
+                                type(error).__name__,
+                            )
+
+                    if not dry_run:
+                        self.repository.update_activity_enrichment(
+                            activity_id,
+                            activity_response=activity_response_payload,
+                            merged_fields=merged_updates,
+                        )
+                    derived_count += 1
+                except Exception as error:
+                    logger.warning(
+                        "Activity-response derivation/persistence failed for item %d/%d (%s).",
+                        index,
+                        len(qualifying),
+                        type(error).__name__,
+                    )
+                    failed_count += 1
+
+            logger.info(
+                "Activity-response backfill finished: derived=%d skipped=%d failed=%d qualifying=%d dry_run=%s.",
+                derived_count,
+                skipped_count,
+                failed_count,
+                len(qualifying),
+                dry_run,
+            )
+            return failed_count == 0
+        finally:
+            # Garmin login/refresh can rotate token state even when a later item fails.
+            # Persist it on every exit path, matching the historical backfill contract.
+            self.token_store.persist(self.token_file_path)
+            if isinstance(client, GarminClientWrapper):
+                client.configure_backfill_pacing(0.0, 0.0)
 
     def _fetch_and_archive_backfill_activities(
         self,
