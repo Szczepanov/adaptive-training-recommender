@@ -272,7 +272,7 @@ function nonCatalogStructuredExposure(
             : validSessionRpe >= 7 ? 'hard'
                 : validSessionRpe >= 4 ? 'moderate' : 'easy'
     );
-    const plannedDurationMin = metadata.duration
+    const plannedDurationMin = metadata?.duration
         ? templateDurationReferenceMin({ durationMin: metadata.duration.min, durationMax: metadata.duration.max })
         : catalogReferenceDurationMin(modality, intensity);
     const completedDurationMin = garmin?.durationMin ?? executionDurationMin(execution);
