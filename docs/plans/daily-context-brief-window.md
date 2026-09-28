@@ -205,13 +205,16 @@ presets now map to explicit purposes (`contextBrief.ts` `BriefPurpose`, `briefPu
 `daily` → `morning`, `full` → `planning`, and a new `diagnostic` preset (same 14-day
 lookback, so no wider fetch) → `diagnostic`.
 
-* `planning` orders sections by decision authority, replaces the uncapped lap/zone tables
-  with a bounded one-line digest per detailed activity
-  (`contextBriefActivityTelemetry.ts` `renderCompactActivityTelemetry`), omits the
-  median/MAD candidate baselines and the respiration candidate, groups vendor composites as
-  secondary context, and compresses long-term goals (no demand vectors).
-* `diagnostic` keeps everything the `full` brief exported before this change.
-* `morning` is unchanged.
+* `planning` orders sections by decision authority and keeps ordinary sessions compact
+  with `renderCompactActivityTelemetry`. Quality cycling/running is the deliberate exception:
+  block planning also gets the same execution-evidence family used in the morning handoff,
+  bounded to 20 semantic response segments or 20 running/legacy laps per activity. This
+  preserves the original information-budget rule—no unbounded growth with lap count—while
+  retaining enough performed detail to design the next block.
+* `diagnostic` is the forensic persisted view: all stored laps/zones/response segments plus
+  richer running lap distance/pace and response provenance/timing fields where available.
+* `morning` remains today-focused, but since #873 it expands D-1 quality cycling/running
+  with the same 20-row bounded execution-evidence contract.
 
 Current behaviour is described in `docs/architecture/recommendation-engine.md`
 ("Context-brief export purposes"). Tests: `contextBriefPurpose.test.ts` and the

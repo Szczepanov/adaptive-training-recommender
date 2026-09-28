@@ -4,6 +4,7 @@ import {
     injectActivityTelemetryIntoContextBrief,
     renderContextBriefActivityTelemetry,
     renderMorningQualityActivityTelemetry,
+    renderPlanningQualityActivityTelemetry,
 } from './contextBriefActivityTelemetry';
 
 function activity(
@@ -78,18 +79,20 @@ describe('renderContextBriefActivityTelemetry', () => {
                     segmentCountTotal: 1,
                     segmentsTruncated: false,
                     powerDurationPeaks: [
-                        { durationSeconds: 5, powerWatts: 710, confidence: 'high', activityHalf: 'first' },
+                        { durationSeconds: 5, powerWatts: 710, confidence: 'high', activityHalf: 'first', elapsedBeforeSeconds: 420 },
                         { durationSeconds: 60, powerWatts: 320, confidence: 'high' },
                     ],
                     segments: [{
                         segmentIndex: 1,
                         segmentType: 'sprint',
                         identitySource: 'fit_workout_step',
+                        startOffsetSeconds: 420,
                         durationSeconds: 10,
-                        prescribedTarget: { kind: 'power_watts', value: 700 },
+                        prescribedTarget: { kind: 'power_zone', value: 4 },
                         averagePowerWatts: 680,
                         peak5sPowerWatts: 710,
                         maxCadenceRpm: 122,
+                        lastThirdHrBpm: 171,
                         evidenceConfidence: 'high',
                     }],
                 },
@@ -97,9 +100,35 @@ describe('renderContextBriefActivityTelemetry', () => {
         ]);
 
         expect(text).toContain('Source resolution: power ~1 s · HR ~1 s · cadence ~2 s');
-        expect(text).toContain('Power-duration peaks: 5s 710 W');
-        expect(text).toContain('| 1 | sprint | fit_workout_step | 0:10 | 700 W |');
+        expect(text).toContain('Power-duration peaks: 5s 710 W (high, first half, after 7:00 elapsed)');
+        expect(text).toContain('| # | Type | Identity | Start | Duration |');
+        expect(text).toContain('| 1 | sprint | fit_workout_step | 7:00 | 0:10 | Power zone 4 |');
+        expect(text).toContain('| 171 bpm | high |');
         expect(text).not.toContain('raw sample');
+    });
+
+    it('keeps free-text prescribed targets inside the diagnostic markdown table cell', () => {
+        const text = renderContextBriefActivityTelemetry([
+            activity({
+                activityResponse: {
+                    derivationVersion: 'multi-resolution-v1',
+                    sourceResolution: { powerSeconds: 1 },
+                    segmentCountTotal: 1,
+                    segmentsTruncated: false,
+                    powerDurationPeaks: [],
+                    segments: [{
+                        segmentIndex: 1,
+                        segmentType: 'work',
+                        identitySource: 'fit_workout_step',
+                        durationSeconds: 300,
+                        prescribedTarget: { kind: 'custom', text: 'Build | controlled\nfinish' },
+                        evidenceConfidence: 'high',
+                    }],
+                },
+            }),
+        ]);
+
+        expect(text).toContain('| Build \\| controlled finish |');
     });
 
     it('renders running dynamics in diagnostic detail even when no cycling power fields exist', () => {
@@ -108,16 +137,28 @@ describe('renderContextBriefActivityTelemetry', () => {
                 type: 'running',
                 normalizedPower: undefined,
                 intensityFactor: undefined,
+                maxHr: 181,
+                primaryBenefit: 'VO2 Max',
                 runningDynamics: {
                     groundContactTimeMs: 241,
                     strideLengthM: 1.28,
                     avgRunningPowerWatts: 305,
                 },
+                laps: [{
+                    lapIndex: 1,
+                    durationSeconds: 240,
+                    distanceMeters: 1000,
+                    averageSpeedMps: 1000 / 240,
+                    averagePowerWatts: 352,
+                    averageHrBpm: 166,
+                }],
             }),
         ]);
 
         expect(text).toContain('#### 2026-08-19 — Running — hard');
+        expect(text).toContain('Session detail: max HR 181 bpm · anaerobic TE 2.1 · primary benefit VO2 Max');
         expect(text).toContain('Running dynamics: avg running power 305 W · stride 1.28 m · GCT 241 ms');
+        expect(text).toContain('| 1 | 4:00 | 1 km | 4:00/km | 352 W | 166 bpm |');
     });
 
     it('renders partial telemetry without inventing missing power data', () => {
@@ -318,6 +359,92 @@ describe('renderMorningQualityActivityTelemetry', () => {
     });
 });
 
+describe('renderPlanningQualityActivityTelemetry', () => {
+    it('carries bounded quality cycling execution evidence into block planning', () => {
+        const text = renderPlanningQualityActivityTelemetry([
+            activity({
+                intensityTag: 'moderate',
+                stimulusDomain: 'tempo',
+                sessionCost: 'high',
+                variabilityIndex: 1.08,
+                maxHr: 168,
+                powerInZones: [
+                    { zoneNumber: 2, secondsInZone: 1200, lowBoundary: 142 },
+                    { zoneNumber: 3, secondsInZone: 2100, lowBoundary: 193 },
+                ],
+                activityResponse: {
+                    derivationVersion: 'multi-resolution-v1',
+                    sourceResolution: { powerSeconds: 1, hrSeconds: 1, cadenceSeconds: 1 },
+                    segmentCountTotal: 1,
+                    segmentsTruncated: false,
+                    powerDurationPeaks: [{ durationSeconds: 300, powerWatts: 251, confidence: 'high' }],
+                    steadyHalves: {
+                        firstPowerWatts: 198,
+                        secondPowerWatts: 207,
+                        firstHrBpm: 136,
+                        secondHrBpm: 144,
+                    },
+                    segments: [{
+                        segmentIndex: 1,
+                        segmentType: 'work',
+                        identitySource: 'fit_workout_step',
+                        durationSeconds: 900,
+                        prescribedTarget: { kind: 'power_range_watts', low: 193, high: 229 },
+                        averagePowerWatts: 214,
+                        averageHrBpm: 147,
+                        evidenceConfidence: 'high',
+                    }],
+                },
+            }),
+        ]);
+
+        expect(text).toContain('### Quality-session execution detail (bounded)');
+        expect(text).toContain('2026-08-19 — Road cycling — moderate · tempo · cost high');
+        expect(text).toContain('Session detail: VI 1.08 · max HR 168 bpm · anaerobic TE 2.1');
+        expect(text).toContain('Power-duration peaks: 5m 251 W');
+        expect(text).toContain('Deterministic halves: power 198→207 W');
+        expect(text).toContain('| 1 | work | fit_workout_step | 15:00 | 193–229 W |');
+    });
+
+    it('keeps block-planning lap growth bounded while preserving running pace/power/HR', () => {
+        const laps = Array.from({ length: 100 }, (_, offset) => ({
+            lapIndex: offset + 1,
+            durationSeconds: 180,
+            distanceMeters: 600,
+            averageSpeedMps: 600 / 180,
+            averagePowerWatts: 280 + offset,
+            averageHrBpm: 150 + offset,
+        }));
+        const text = renderPlanningQualityActivityTelemetry([
+            activity({
+                type: 'running',
+                stimulusDomain: 'vo2',
+                laps,
+            }),
+        ]);
+
+        expect(text).toContain('| 20 | 3:00 | 0.6 km | 5:00/km |');
+        expect(text).not.toContain('| 21 | 3:00 | 0.6 km | 5:00/km |');
+        expect(text).toContain('80 additional lap(s) omitted from the block-planning export');
+    });
+
+    it('does not promote endurance or explicit unknown sessions into detailed planning telemetry', () => {
+        expect(renderPlanningQualityActivityTelemetry([
+            activity({
+                intensityTag: 'hard',
+                stimulusDomain: 'endurance',
+                variabilityIndex: 1.02,
+            }),
+            activity({
+                activityId: 'unknown',
+                intensityTag: 'hard',
+                stimulusDomain: 'unknown',
+                variabilityIndex: 1.04,
+            }),
+        ])).toBe('');
+    });
+});
+
 describe('injectActivityTelemetryIntoContextBrief', () => {
     it('keeps section 4 after the detailed telemetry subsection', () => {
         const brief = '# Training context brief\n\n## 3. Completed training (recorded by the wearable)\n\nSummary\n\n## 4. Subjective check-ins';
@@ -330,6 +457,37 @@ describe('injectActivityTelemetryIntoContextBrief', () => {
         const subjectiveIndex = text.indexOf('## 4. Subjective check-ins');
         expect(telemetryIndex).toBeGreaterThan(-1);
         expect(subjectiveIndex).toBeGreaterThan(telemetryIndex);
+    });
+
+    it('adds bounded quality execution evidence to compact/block-planning injection', () => {
+        const brief = '# Training context brief\n\n## 5. Completed training (recorded by the wearable)\n\nSummary\n\n## 6. Recommendation feedback';
+        const text = injectActivityTelemetryIntoContextBrief(
+            brief,
+            [activity({
+                stimulusDomain: 'threshold',
+                variabilityIndex: 1.03,
+                activityResponse: {
+                    derivationVersion: 'multi-resolution-v1',
+                    sourceResolution: { powerSeconds: 1 },
+                    segmentCountTotal: 1,
+                    segmentsTruncated: false,
+                    powerDurationPeaks: [{ durationSeconds: 300, powerWatts: 260, confidence: 'high' }],
+                    segments: [{
+                        segmentIndex: 1,
+                        segmentType: 'work',
+                        identitySource: 'fit_workout_step',
+                        durationSeconds: 600,
+                        averagePowerWatts: 250,
+                        evidenceConfidence: 'high',
+                    }],
+                },
+            })],
+            true,
+        );
+
+        expect(text).toContain('### Quality-session execution detail (bounded)');
+        expect(text).toContain('Power-duration peaks: 5m 260 W');
+        expect(text).not.toContain('### Detailed activity telemetry');
     });
 
     it('leaves an ordinary brief byte-for-byte unchanged when no detail exists', () => {

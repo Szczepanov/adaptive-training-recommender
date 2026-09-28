@@ -111,15 +111,20 @@ issues identical reads for both.
 
 - `morning` — `buildMorningCoachBrief`: today's closed loop only; no multi-day plan. Yesterday's quality cycling/running session is expanded with bounded execution telemetry while ordinary endurance/recovery sessions stay compact.
 - `planning` — sections in decision-authority order (section 0 authority/data currency,
-  constraints, current intent & goals, recovery, completed load with a bounded one-line
-  telemetry digest per activity, recommendation feedback, upcoming commitments, compact long-term goals,
-  handoff contract). Candidate median/MAD baselines and the respiration candidate are
-  omitted with a pointer to the diagnostic export; vendor composites are grouped as
-  secondary context; goals keep target, timing and description but omit the event demand
-  vector; the handoff instructions do not reference the omitted fields. Lap count does not
-  change its size.
-- `diagnostic` — the full data-source-ordered brief with per-lap/per-zone telemetry,
-  every observation-only candidate baseline and full goal demand vectors. It states that
+  constraints, current intent & goals, recovery, completed load, recommendation feedback,
+  upcoming commitments, compact long-term goals, handoff contract). Ordinary detailed
+  activities keep the bounded one-line digest. Quality cycling/running additionally gets a
+  bounded execution-evidence subsection: power/HR zones, session detail, fixed persisted MMP
+  and steady-half evidence, and at most the first 20 semantic segments or 20 running/legacy
+  laps per activity. Thus lap/segment count can grow the planning export only up to the
+  per-activity cap; it never becomes an uncapped forensic table. Candidate median/MAD
+  baselines and the respiration candidate remain omitted with a pointer to diagnostic;
+  vendor composites are secondary context; goals keep target, timing and description but
+  omit the event demand vector.
+- `diagnostic` — the full data-source-ordered brief with every persisted lap, zone and
+  activity-response row plus observation-only candidate baselines and full goal demand
+  vectors. Running laps include distance/pace/power/HR; response rows include persisted
+  start offsets, final-third HR and MMP timing/provenance where available. It states that
   none of this detail has recommendation authority. It is also the pure builder's default
   so a caller that names no purpose never silently loses evidence.
 
@@ -147,8 +152,10 @@ display-only and ordinary endurance/recovery sessions keep the one-line morning 
 A session is a *key session* when at least one feature produced a value, or when it is a
 steady session with no comparable prior session (its rejection reasons are stated). In the
 planning export a key session's semantic summary replaces its one-line telemetry digest only
-when at least one feature produced a value; the diagnostic export keeps every lap and zone
-table and adds the summaries after them. Prior sessions are searched only in the activities
+when at least one feature produced a value; for quality cycling/running the bounded execution
+detail can still follow because it exposes the performed evidence behind that interpretation.
+The diagnostic export keeps every persisted lap/zone/response row and adds the summaries
+after them. Prior sessions are searched only in the activities
 `ContextBriefService.build` already fetched (from `activityStart`, at least the 28-day
 sensor-evidence horizon), and the output states that start date. Missing or incomparable
 evidence produces `insufficient_evidence` with a reason, never an estimate.

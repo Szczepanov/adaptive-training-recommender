@@ -208,14 +208,28 @@ describe('planning export (#811)', () => {
         expect([...order].sort((a, b) => a - b)).toEqual(order);
     });
 
-    it('does not emit a lap table, and a 100-lap activity costs the same as a 3-lap one', () => {
+    it('caps quality-session lap detail at 20 rows so planning growth stops with lap count', () => {
         const small = exportFor('planning', 3);
+        const capped = exportFor('planning', 20);
         const huge = exportFor('planning', 100);
-        expect(huge).not.toContain('| Lap | Duration |');
-        expect(huge).toContain('### Key-session telemetry (compact)');
-        expect(huge).toContain('100 laps');
-        // Only digits in the lap digest may differ; growth is bounded, not linear.
-        expect(Math.abs(huge.length - small.length)).toBeLessThan(40);
+        expect(huge).toContain('### Quality-session execution detail (bounded)');
+        expect(huge).toContain('| Lap | Duration | Avg power | Avg HR |');
+        expect(huge).toContain('| 20 |');
+        expect(huge).not.toContain('| 21 |');
+        expect(huge).toContain('80 additional lap(s) omitted from the block-planning export');
+        expect(huge.length).toBeGreaterThan(small.length);
+        // Once the 20-row cap is reached, only bounded digest/omission-count text can differ.
+        expect(Math.abs(huge.length - capped.length)).toBeLessThan(180);
+    });
+
+    it('keeps ordinary endurance telemetry compact even with many laps', () => {
+        const activities = [{ ...ride(100), stimulusDomain: 'endurance' as const }];
+        const base = buildContextBrief(briefInput('planning', activities));
+        const withTelemetry = injectActivityTelemetryIntoContextBrief(base, activities, true);
+        const text = enhanceContextBriefForPlanning(withTelemetry, handoffInput('planning', activities));
+        expect(text).toContain('100 laps');
+        expect(text).not.toContain('### Quality-session execution detail (bounded)');
+        expect(text).not.toContain('| Lap | Duration |');
     });
 
     it('puts authority state and current intent before load telemetry, and commitments before compact goals', () => {
@@ -232,6 +246,7 @@ describe('planning export (#811)', () => {
         expect(upcomingSession).toBeGreaterThan(commitments);
         expect(upcomingSession).toBeLessThan(goals);
         expect(text).not.toContain('### Detailed activity telemetry');
+        expect(text).toContain('### Quality-session execution detail (bounded)');
     });
 
     it('keeps section 2 when no goals or intent exist, so numbering has no gap', () => {
