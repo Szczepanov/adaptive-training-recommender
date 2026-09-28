@@ -1,4 +1,19 @@
-import type { ActivitySessionCost, ActivityStimulusDomain, DailyRecommendation, HrMeasurement, NormalizedGarminActivity, RunningDynamics, ShadowVerdict } from '../../engine/models';
+import type {
+    ActivityPowerDurationPeak,
+    ActivityPrescribedTarget,
+    ActivityResponseTelemetry,
+    ActivitySegmentIdentitySource,
+    ActivitySegmentSummary,
+    ActivitySegmentType,
+    ActivitySessionCost,
+    ActivitySteadyHalfSummary,
+    ActivityStimulusDomain,
+    DailyRecommendation,
+    HrMeasurement,
+    NormalizedGarminActivity,
+    RunningDynamics,
+    ShadowVerdict,
+} from '../../engine/models';
 import { SHADOW_VERDICTS } from '../../engine/models';
 import type { DataIssue, DataState } from '../../engine/dataState';
 import { validateRecommendation, isValidDate } from '../../engine/validation';
@@ -238,6 +253,242 @@ function parseHrMeasurement(value: unknown): HrMeasurement | undefined {
     };
 }
 
+const SEGMENT_TYPES: readonly ActivitySegmentType[] = ['work', 'recovery', 'sprint', 'steady', 'surge', 'warmup', 'cooldown', 'unknown'];
+const SEGMENT_IDENTITY_SOURCES: readonly ActivitySegmentIdentitySource[] = ['reconciled_workout_step', 'fit_workout_step', 'manual_lap', 'detected', 'unknown'];
+const EVIDENCE_CONFIDENCES = ['high', 'moderate', 'low'] as const;
+const ACTIVITY_RESPONSE_DERIVATION_VERSION = 'multi-resolution-v1';
+const MAX_ACTIVITY_RESPONSE_SEGMENTS = 64;
+const ACTIVITY_RESPONSE_POWER_WINDOWS_SECONDS = new Set([1, 5, 10, 30, 60, 180, 300, 1200]);
+
+function parsePrescribedTarget(value: unknown): ActivityPrescribedTarget | undefined {
+    if (!isObject(value) || typeof value.kind !== 'string' || value.kind.trim() === '') return undefined;
+
+    const targetValue = value.value === undefined ? undefined : telemetryNumber(value.value);
+    const low = value.low === undefined ? undefined : telemetryNumber(value.low);
+    const high = value.high === undefined ? undefined : telemetryNumber(value.high);
+
+    if (
+        (value.value !== undefined && targetValue === undefined)
+        || (value.low !== undefined && low === undefined)
+        || (value.high !== undefined && high === undefined)
+        || (value.text !== undefined && typeof value.text !== 'string')
+    ) return undefined;
+
+    return {
+        kind: value.kind,
+        ...(targetValue !== undefined ? { value: targetValue } : {}),
+        ...(low !== undefined ? { low } : {}),
+        ...(high !== undefined ? { high } : {}),
+        ...(typeof value.text === 'string' ? { text: value.text } : {}),
+    };
+}
+
+function parseActivitySegments(value: unknown): ActivitySegmentSummary[] | undefined {
+    if (!Array.isArray(value) || value.length > MAX_ACTIVITY_RESPONSE_SEGMENTS) return undefined;
+    const parsed = value.map((entry): ActivitySegmentSummary | undefined => {
+        if (!isObject(entry)) return undefined;
+
+        const segmentIndex = telemetryNumber(entry.segmentIndex);
+        const segmentType = enumValue(entry.segmentType, SEGMENT_TYPES);
+        const identitySource = enumValue(entry.identitySource, SEGMENT_IDENTITY_SOURCES);
+        const durationSeconds = telemetryNumber(entry.durationSeconds);
+        const evidenceConfidence = enumValue(entry.evidenceConfidence, EVIDENCE_CONFIDENCES);
+
+        if (
+            segmentIndex === undefined
+            || !Number.isInteger(segmentIndex)
+            || segmentIndex < 1
+            || segmentType === undefined
+            || identitySource === undefined
+            || durationSeconds === undefined
+            || durationSeconds <= 0
+            || evidenceConfidence === undefined
+        ) return undefined;
+
+        const startOffset = entry.startOffsetSeconds === undefined ? undefined : telemetryNumber(entry.startOffsetSeconds);
+        const target = entry.prescribedTarget === undefined ? undefined : parsePrescribedTarget(entry.prescribedTarget);
+        const avgPwr = entry.averagePowerWatts === undefined ? undefined : telemetryNumber(entry.averagePowerWatts);
+        const p1s = entry.peak1sPowerWatts === undefined ? undefined : telemetryNumber(entry.peak1sPowerWatts);
+        const p5s = entry.peak5sPowerWatts === undefined ? undefined : telemetryNumber(entry.peak5sPowerWatts);
+        const p10s = entry.peak10sPowerWatts === undefined ? undefined : telemetryNumber(entry.peak10sPowerWatts);
+        const avgHr = entry.averageHrBpm === undefined ? undefined : telemetryNumber(entry.averageHrBpm);
+        const endHr = entry.endHrBpm === undefined ? undefined : telemetryNumber(entry.endHrBpm);
+        const maxHr = entry.maxHrBpm === undefined ? undefined : telemetryNumber(entry.maxHrBpm);
+        const avgCad = entry.averageCadenceRpm === undefined ? undefined : telemetryNumber(entry.averageCadenceRpm);
+        const maxCad = entry.maxCadenceRpm === undefined ? undefined : telemetryNumber(entry.maxCadenceRpm);
+        const firstPwr = entry.firstThirdPowerWatts === undefined ? undefined : telemetryNumber(entry.firstThirdPowerWatts);
+        const midPwr = entry.middleThirdPowerWatts === undefined ? undefined : telemetryNumber(entry.middleThirdPowerWatts);
+        const lastPwr = entry.lastThirdPowerWatts === undefined ? undefined : telemetryNumber(entry.lastThirdPowerWatts);
+        const lastHr = entry.lastThirdHrBpm === undefined ? undefined : telemetryNumber(entry.lastThirdHrBpm);
+
+        if (
+            (entry.startOffsetSeconds !== undefined && startOffset === undefined)
+            || (entry.prescribedTarget !== undefined && target === undefined)
+            || (entry.averagePowerWatts !== undefined && avgPwr === undefined)
+            || (entry.peak1sPowerWatts !== undefined && p1s === undefined)
+            || (entry.peak5sPowerWatts !== undefined && p5s === undefined)
+            || (entry.peak10sPowerWatts !== undefined && p10s === undefined)
+            || (entry.averageHrBpm !== undefined && avgHr === undefined)
+            || (entry.endHrBpm !== undefined && endHr === undefined)
+            || (entry.maxHrBpm !== undefined && maxHr === undefined)
+            || (entry.averageCadenceRpm !== undefined && avgCad === undefined)
+            || (entry.maxCadenceRpm !== undefined && maxCad === undefined)
+            || (entry.firstThirdPowerWatts !== undefined && firstPwr === undefined)
+            || (entry.middleThirdPowerWatts !== undefined && midPwr === undefined)
+            || (entry.lastThirdPowerWatts !== undefined && lastPwr === undefined)
+            || (entry.lastThirdHrBpm !== undefined && lastHr === undefined)
+        ) return undefined;
+
+        return {
+            segmentIndex,
+            segmentType,
+            identitySource,
+            durationSeconds,
+            evidenceConfidence,
+            ...(startOffset !== undefined ? { startOffsetSeconds: startOffset } : {}),
+            ...(target !== undefined ? { prescribedTarget: target } : {}),
+            ...(avgPwr !== undefined ? { averagePowerWatts: avgPwr } : {}),
+            ...(p1s !== undefined ? { peak1sPowerWatts: p1s } : {}),
+            ...(p5s !== undefined ? { peak5sPowerWatts: p5s } : {}),
+            ...(p10s !== undefined ? { peak10sPowerWatts: p10s } : {}),
+            ...(avgHr !== undefined ? { averageHrBpm: avgHr } : {}),
+            ...(endHr !== undefined ? { endHrBpm: endHr } : {}),
+            ...(maxHr !== undefined ? { maxHrBpm: maxHr } : {}),
+            ...(avgCad !== undefined ? { averageCadenceRpm: avgCad } : {}),
+            ...(maxCad !== undefined ? { maxCadenceRpm: maxCad } : {}),
+            ...(firstPwr !== undefined ? { firstThirdPowerWatts: firstPwr } : {}),
+            ...(midPwr !== undefined ? { middleThirdPowerWatts: midPwr } : {}),
+            ...(lastPwr !== undefined ? { lastThirdPowerWatts: lastPwr } : {}),
+            ...(lastHr !== undefined ? { lastThirdHrBpm: lastHr } : {}),
+        };
+    });
+
+    if (!parsed.every((entry): entry is ActivitySegmentSummary => entry !== undefined)) return undefined;
+    if (new Set(parsed.map((entry) => entry.segmentIndex)).size !== parsed.length) return undefined;
+    return parsed;
+}
+
+function parsePowerDurationPeaks(value: unknown): ActivityPowerDurationPeak[] | undefined {
+    if (!Array.isArray(value) || value.length > ACTIVITY_RESPONSE_POWER_WINDOWS_SECONDS.size) return undefined;
+    const parsed = value.map((entry): ActivityPowerDurationPeak | undefined => {
+        if (!isObject(entry)) return undefined;
+        const durationSeconds = telemetryNumber(entry.durationSeconds);
+        const powerWatts = telemetryNumber(entry.powerWatts);
+        const confidence = enumValue(entry.confidence, EVIDENCE_CONFIDENCES);
+        const elapsed = entry.elapsedBeforeSeconds === undefined ? undefined : telemetryNumber(entry.elapsedBeforeSeconds);
+        const half = entry.activityHalf === undefined
+            ? undefined
+            : entry.activityHalf === 'first' || entry.activityHalf === 'second'
+                ? entry.activityHalf
+                : null;
+
+        if (
+            durationSeconds === undefined
+            || !Number.isInteger(durationSeconds)
+            || !ACTIVITY_RESPONSE_POWER_WINDOWS_SECONDS.has(durationSeconds)
+            || powerWatts === undefined
+            || confidence === undefined
+            || (entry.elapsedBeforeSeconds !== undefined && elapsed === undefined)
+            || half === null
+        ) return undefined;
+
+        return {
+            durationSeconds,
+            powerWatts,
+            confidence,
+            ...(elapsed !== undefined ? { elapsedBeforeSeconds: elapsed } : {}),
+            ...(half !== undefined ? { activityHalf: half } : {}),
+        };
+    });
+
+    if (!parsed.every((entry): entry is ActivityPowerDurationPeak => entry !== undefined)) return undefined;
+    if (new Set(parsed.map((entry) => entry.durationSeconds)).size !== parsed.length) return undefined;
+    return parsed;
+}
+
+function parseSteadyHalves(value: unknown): ActivitySteadyHalfSummary | undefined {
+    if (!isObject(value)) return undefined;
+
+    const firstPwr = value.firstPowerWatts === undefined ? undefined : telemetryNumber(value.firstPowerWatts);
+    const secPwr = value.secondPowerWatts === undefined ? undefined : telemetryNumber(value.secondPowerWatts);
+    const firstHr = value.firstHrBpm === undefined ? undefined : telemetryNumber(value.firstHrBpm);
+    const secHr = value.secondHrBpm === undefined ? undefined : telemetryNumber(value.secondHrBpm);
+    const firstCad = value.firstCadenceRpm === undefined ? undefined : telemetryNumber(value.firstCadenceRpm);
+    const secCad = value.secondCadenceRpm === undefined ? undefined : telemetryNumber(value.secondCadenceRpm);
+
+    if (
+        (value.firstPowerWatts !== undefined && firstPwr === undefined)
+        || (value.secondPowerWatts !== undefined && secPwr === undefined)
+        || (value.firstHrBpm !== undefined && firstHr === undefined)
+        || (value.secondHrBpm !== undefined && secHr === undefined)
+        || (value.firstCadenceRpm !== undefined && firstCad === undefined)
+        || (value.secondCadenceRpm !== undefined && secCad === undefined)
+    ) return undefined;
+
+    return {
+        ...(firstPwr !== undefined ? { firstPowerWatts: firstPwr } : {}),
+        ...(secPwr !== undefined ? { secondPowerWatts: secPwr } : {}),
+        ...(firstHr !== undefined ? { firstHrBpm: firstHr } : {}),
+        ...(secHr !== undefined ? { secondHrBpm: secHr } : {}),
+        ...(firstCad !== undefined ? { firstCadenceRpm: firstCad } : {}),
+        ...(secCad !== undefined ? { secondCadenceRpm: secCad } : {}),
+    };
+}
+
+function parseSourceResolution(value: unknown): ActivityResponseTelemetry['sourceResolution'] | undefined {
+    if (!isObject(value)) return undefined;
+
+    const powerSeconds = value.powerSeconds === undefined ? undefined : telemetryNumber(value.powerSeconds);
+    const hrSeconds = value.hrSeconds === undefined ? undefined : telemetryNumber(value.hrSeconds);
+    const cadenceSeconds = value.cadenceSeconds === undefined ? undefined : telemetryNumber(value.cadenceSeconds);
+
+    if (
+        (value.powerSeconds !== undefined && (powerSeconds === undefined || powerSeconds <= 0))
+        || (value.hrSeconds !== undefined && (hrSeconds === undefined || hrSeconds <= 0))
+        || (value.cadenceSeconds !== undefined && (cadenceSeconds === undefined || cadenceSeconds <= 0))
+    ) return undefined;
+
+    return {
+        ...(powerSeconds !== undefined ? { powerSeconds } : {}),
+        ...(hrSeconds !== undefined ? { hrSeconds } : {}),
+        ...(cadenceSeconds !== undefined ? { cadenceSeconds } : {}),
+    };
+}
+
+function parseActivityResponse(value: unknown): ActivityResponseTelemetry | undefined {
+    if (!isObject(value)) return undefined;
+    if (value.derivationVersion !== ACTIVITY_RESPONSE_DERIVATION_VERSION) return undefined;
+
+    const segmentCountTotal = telemetryNumber(value.segmentCountTotal);
+    if (segmentCountTotal === undefined || !Number.isInteger(segmentCountTotal)) return undefined;
+    if (typeof value.segmentsTruncated !== 'boolean') return undefined;
+
+    const sourceResolution = parseSourceResolution(value.sourceResolution);
+    const segments = parseActivitySegments(value.segments);
+    const powerDurationPeaks = parsePowerDurationPeaks(value.powerDurationPeaks);
+    if (sourceResolution === undefined || segments === undefined || powerDurationPeaks === undefined) return undefined;
+
+    if (segments.length > segmentCountTotal) return undefined;
+    if (!value.segmentsTruncated && segments.length !== segmentCountTotal) return undefined;
+    if (
+        value.segmentsTruncated
+        && (segmentCountTotal <= MAX_ACTIVITY_RESPONSE_SEGMENTS || segments.length !== MAX_ACTIVITY_RESPONSE_SEGMENTS)
+    ) return undefined;
+
+    const steadyHalves = value.steadyHalves === undefined ? undefined : parseSteadyHalves(value.steadyHalves);
+    if (value.steadyHalves !== undefined && steadyHalves === undefined) return undefined;
+
+    return {
+        derivationVersion: value.derivationVersion,
+        segmentCountTotal,
+        segmentsTruncated: value.segmentsTruncated,
+        sourceResolution,
+        segments,
+        powerDurationPeaks,
+        ...(steadyHalves !== undefined ? { steadyHalves } : {}),
+    };
+}
+
 const STIMULUS_DOMAINS: readonly ActivityStimulusDomain[] = ['recovery', 'endurance', 'tempo', 'threshold', 'vo2', 'anaerobic', 'mixed', 'race', 'strength', 'unknown'];
 const SESSION_COSTS: readonly ActivitySessionCost[] = ['low', 'moderate', 'high', 'very_high', 'unknown'];
 
@@ -303,6 +554,7 @@ export function parseNormalizedGarminActivity(
     const maxHr = optionalNonNegativeNumber(raw.maxHr);
     const exerciseSets = parseExerciseSets(raw.exerciseSets);
     const hrMeasurement = parseHrMeasurement(raw.hrMeasurement);
+    const activityResponse = parseActivityResponse(raw.activityResponse);
     const stimulusDomain = parseEnumValue(raw.stimulusDomain, STIMULUS_DOMAINS);
     const sessionCost = parseEnumValue(raw.sessionCost, SESSION_COSTS);
     const intensityEvidence = parseOptionalString(raw.intensityEvidence) ?? undefined;
@@ -341,6 +593,7 @@ export function parseNormalizedGarminActivity(
             ...(runningDynamics !== undefined ? { runningDynamics } : {}),
             ...(exerciseSets !== undefined ? { exerciseSets } : {}),
             ...(hrMeasurement !== undefined ? { hrMeasurement } : {}),
+            ...(activityResponse !== undefined ? { activityResponse } : {}),
             ...(typeof raw.syncRunId === 'string' ? { syncRunId: raw.syncRunId } : {}),
             ...(typeof raw.syncedAt === 'string' ? { syncedAt: raw.syncedAt } : {}),
         },
