@@ -204,8 +204,9 @@ export class ContextBriefService {
         capabilityMaintenance?: CapabilityMaintenanceResult | null,
     ): Promise<ContextBriefResult> {
         const targetDate = asOfDate ?? getLocalDateString();
-        // Purpose selects what is rendered, never what is fetched: every read below
-        // depends only on windowDays, so diagnostic cannot widen a data read.
+        // Purpose selects the output contract. Planning and diagnostic deliberately share
+        // identical reads; the morning path skips planning-only ledgers and additionally
+        // resolves D-1 imported authority for its closed-loop adherence debrief.
         const purpose = briefPurposeFor(preset);
         const startDate = briefWindowStart(targetDate, windowDays);
         // Strictly longer than the window, so there is always prior history to compare
