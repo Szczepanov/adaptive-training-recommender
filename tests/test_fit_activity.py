@@ -241,6 +241,44 @@ def test_decode_activity_original_extracts_distinct_ordered_workout_step_indices
     assert evidence.workout_name == "5x5 Squat"
 
 
+def test_decode_activity_original_accepts_wkt_step_intensity_alias() -> None:
+    start = datetime(2026, 1, 1, 10, 0)
+    messages = [
+        FakeDataMessage(
+            "workout_step",
+            message_index=7,
+            wkt_step_name="Cooldown",
+            duration_type="time",
+            duration_value=600,
+            target_type="power_3s",
+            target_value=0,
+            custom_target_value_low=140,
+            custom_target_value_high=175,
+            wkt_step_intensity="cooldown",
+            equipment="bike",
+        ),
+        FakeDataMessage(
+            "record",
+            timestamp=start,
+            heart_rate=120,
+            cadence=80,
+            power=100,
+            workout_step=7,
+        ),
+    ]
+
+    with patch(
+        "garmin_sync.fit_activity.fitdecode.FitReader",
+        return_value=_reader_with(messages),
+    ):
+        evidence = decode_activity_original(_synthetic_original_zip())
+
+    assert evidence.workout_steps[0].intensity == "cooldown"
+    assert evidence.workout_steps[0].target_type == "power_3s"
+    assert evidence.workout_steps[0].custom_target_value_low == 140.0
+    assert evidence.workout_steps[0].custom_target_value_high == 175.0
+
+
 def test_decode_activity_original_retains_transient_lap_execution_linkage() -> None:
     start = datetime(2026, 1, 1, 10, 0)
     messages = [

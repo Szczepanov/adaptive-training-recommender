@@ -370,6 +370,118 @@ describe('multi-resolution semantic response (#850)', () => {
         expect(feature.intervals.map(item => item.prescribedTarget?.value)).toEqual([230, 230, 230]);
     });
 
+    it('excludes the 2026-09-27 low-target terminal rollout from the primary work set', () => {
+        const session = ride({
+            activityId: '2026-09-27-aerobic-engine',
+            date: '2026-09-27',
+            stimulusDomain: 'threshold',
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1 },
+                segmentCountTotal: 8,
+                segmentsTruncated: false,
+                powerDurationPeaks: [],
+                segments: [
+                    { segmentIndex: 1, segmentType: 'warmup', identitySource: 'fit_workout_step', durationSeconds: 600, averagePowerWatts: 150, evidenceConfidence: 'high' },
+                    { segmentIndex: 2, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 900, prescribedTarget: { kind: 'power_3s_target', low: 220, high: 240 }, averagePowerWatts: 234, evidenceConfidence: 'high' },
+                    { segmentIndex: 3, segmentType: 'recovery', identitySource: 'fit_workout_step', durationSeconds: 300, averagePowerWatts: 120, evidenceConfidence: 'high' },
+                    { segmentIndex: 4, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 900, prescribedTarget: { kind: 'power_3s_target', low: 220, high: 240 }, averagePowerWatts: 231, evidenceConfidence: 'high' },
+                    { segmentIndex: 5, segmentType: 'recovery', identitySource: 'fit_workout_step', durationSeconds: 300, averagePowerWatts: 120, evidenceConfidence: 'high' },
+                    { segmentIndex: 6, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 900, prescribedTarget: { kind: 'power_3s_target', low: 220, high: 240 }, averagePowerWatts: 228, evidenceConfidence: 'high' },
+                    { segmentIndex: 7, segmentType: 'recovery', identitySource: 'fit_workout_step', durationSeconds: 300, averagePowerWatts: 120, evidenceConfidence: 'high' },
+                    { segmentIndex: 8, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 774, prescribedTarget: { kind: 'power_3s_target', low: 140, high: 175 }, averagePowerWatts: 67, evidenceConfidence: 'high' },
+                ],
+            },
+        });
+
+        const feature = deriveIntervalRepetition(session);
+        expect(feature.state).toBe('available');
+        if (feature.state !== 'available') return;
+        expect(feature.intervals.map(item => item.powerWatts)).toEqual([234, 231, 228]);
+        expect(feature.firstToLastPct).toBe(-2.6);
+        expect(feature.spreadPct).toBe(2.6);
+        expect(feature.pattern).toBe('repeatable');
+
+        const context = { history: [session], historyStart: '2026-09-01', checkins: NO_CHECKINS, asOfDate: '2026-09-28' };
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries([session], context), context);
+        expect(text).toContain('Main set: 3 × 15 min @ 234 / 231 / 228 W actual');
+        expect(text).toContain('First→last work interval: -2.6% · spread 2.6% of mean');
+        expect(text).not.toContain('67 W actual');
+        expect(text).not.toContain('late collapse');
+    });
+
+    it('excludes a Z2 recovery target from a dominant Z3+ semantic work set', () => {
+        const session = ride({
+            stimulusDomain: 'tempo',
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1 },
+                segmentCountTotal: 3,
+                segmentsTruncated: false,
+                powerDurationPeaks: [],
+                segments: [
+                    { segmentIndex: 1, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 900, prescribedTarget: { kind: 'power_zone', value: 3 }, averagePowerWatts: 234, evidenceConfidence: 'high' },
+                    { segmentIndex: 2, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 900, prescribedTarget: { kind: 'power_zone', value: 3 }, averagePowerWatts: 231, evidenceConfidence: 'high' },
+                    { segmentIndex: 3, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 774, prescribedTarget: { kind: 'power_zone', value: 2 }, averagePowerWatts: 110, evidenceConfidence: 'high' },
+                ],
+            },
+        });
+
+        const feature = deriveIntervalRepetition(session);
+        expect(feature.state === 'available' && feature.intervals.map(item => item.powerWatts))
+            .toEqual([234, 231]);
+        expect(feature.state === 'available' && feature.pattern).toBe('repeatable');
+    });
+
+    it('excludes a high-target outlier outside the dominant ±15% primary profile', () => {
+        const session = ride({
+            stimulusDomain: 'threshold',
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1 },
+                segmentCountTotal: 3,
+                segmentsTruncated: false,
+                powerDurationPeaks: [],
+                segments: [
+                    { segmentIndex: 1, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 900, prescribedTarget: { kind: 'power_watts', value: 230 }, averagePowerWatts: 234, evidenceConfidence: 'high' },
+                    { segmentIndex: 2, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 900, prescribedTarget: { kind: 'power_watts', value: 230 }, averagePowerWatts: 231, evidenceConfidence: 'high' },
+                    { segmentIndex: 3, segmentType: 'work', identitySource: 'fit_workout_step', durationSeconds: 180, prescribedTarget: { kind: 'power_watts', value: 320 }, averagePowerWatts: 315, evidenceConfidence: 'high' },
+                ],
+            },
+        });
+
+        const feature = deriveIntervalRepetition(session);
+        expect(feature.state === 'available' && feature.intervals.map(item => item.powerWatts))
+            .toEqual([234, 231]);
+    });
+
+    it('keeps a same-target final repetition eligible for a real late-collapse flag', () => {
+        const session = ride({
+            stimulusDomain: 'threshold',
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                sourceResolution: { powerSeconds: 1 },
+                segmentCountTotal: 3,
+                segmentsTruncated: false,
+                powerDurationPeaks: [],
+                segments: [234, 231, 67].map((power, index) => ({
+                    segmentIndex: index + 1,
+                    segmentType: 'work' as const,
+                    identitySource: 'fit_workout_step' as const,
+                    durationSeconds: 900,
+                    prescribedTarget: { kind: 'power_3s_target', low: 220, high: 240 },
+                    averagePowerWatts: power,
+                    evidenceConfidence: 'high' as const,
+                })),
+            },
+        });
+
+        const feature = deriveIntervalRepetition(session);
+        expect(feature.state === 'available' && feature.intervals.map(item => item.powerWatts))
+            .toEqual([234, 231, 67]);
+        expect(feature.state === 'available' && feature.pattern).toBe('late_collapse');
+    });
+
     it('keeps the prescribed target separate from actual power and renders within-rep trajectory', () => {
         const context = { history: [semanticThreshold], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20' };
         const text = renderKeySessionSummaries(deriveKeySessionSummaries([semanticThreshold], context), context);
