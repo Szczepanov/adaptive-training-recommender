@@ -344,8 +344,8 @@ if (input.recommendationSeries !== undefined) {
         || expectedDates + explainableDates + unresolvedDates !== changedDates) {
         throw new Error('recommendationSeries date accounting is inconsistent.');
     }
-    if (series.status === 'compared' && notReplayableDates !== 0) {
-        throw new Error('A compared recommendationSeries cannot contain not-replayable dates.');
+    if (series.status === 'compared' && (evaluatedDates === 0 || notReplayableDates !== 0)) {
+        throw new Error('A compared recommendationSeries requires at least one evaluated date and cannot contain not-replayable dates.');
     }
     recommendationSeries = {
         status: series.status,

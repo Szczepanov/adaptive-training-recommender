@@ -146,7 +146,7 @@ try {
     const repeatRunIdentical = canonicalJson(series) === canonicalJson(repeat);
     const seriesDigest = createHash('sha256').update(canonicalJson(series), 'utf8').digest('hex');
     prepared.preparedInput.recommendationSeries = {
-        status: series.notReplayableDates === 0 && repeatRunIdentical ? 'compared' : 'blocked',
+        status: series.evaluatedDates > 0 && series.notReplayableDates === 0 && repeatRunIdentical ? 'compared' : 'blocked',
         referenceSource: series.referenceSource,
         seriesDigest,
         candidateDates: series.candidateDates,

@@ -291,6 +291,24 @@ describe('training-occurrence evidence runner', () => {
         expect(run().stderr).toContain('unsupported fields: free_text_reason');
     });
 
+    it('rejects a compared recommendation series when no recommendation was actually evaluated', async () => {
+        const { inputPath } = await makeInput();
+        const input = JSON.parse(await readFile(inputPath, 'utf8'));
+        input.recommendationSeries = {
+            status: 'compared', referenceSource: 'historical-user-scoped-inputs-v2',
+            seriesDigest: 'a'.repeat(64), candidateDates: 1, evaluatedDates: 0, notApplicableDates: 1,
+            notReplayableDates: 0, changedDates: 0, expectedDates: 0, explainableDates: 0, unresolvedDates: 0,
+            changedFieldCounts: {}, notReplayableByReason: {}, classificationReasonCounts: {}, repeatRunIdentical: true,
+        };
+        await writeFile(inputPath, JSON.stringify(input), 'utf8');
+        const run = spawnSync(process.execPath, [
+            '--experimental-strip-types', 'scripts/training-occurrence-evidence.mjs', inputPath,
+        ], { cwd: appRoot, encoding: 'utf8' });
+
+        expect(run.status).not.toBe(0);
+        expect(run.stderr).toContain('requires at least one evaluated date');
+    });
+
     it('rejects equal-count broad-history readiness when occurrence aliases are not paired one-to-one', async () => {
         const { inputPath } = await makeInput();
         const input = JSON.parse(await readFile(inputPath, 'utf8'));
