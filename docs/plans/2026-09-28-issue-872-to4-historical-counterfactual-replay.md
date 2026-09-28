@@ -275,7 +275,7 @@ The exporter must capture enough source evidence for every decision date plus re
 | performedTrainingOccurrences | existing bounded range plus required history lookback | canonical broad history and narrow performed facts |
 | activities | existing range + referenced edge activities | canonical/provider hydration |
 | session executions / entries / prescriptions / exact definition revisions | existing referenced reads | structured semantics |
-| daily_recommendations | main range plus at least D-1 | previousMode; structured ownership/readiness marker; historical audit references |
+| daily_recommendations + archived `revisions/*` needed for the replay window | main range plus at least D-1; include prior decision revisions where the current document was rewritten | reconstruct D-1 `previousMode` from the decision revision that existed at D; current recommendation rows still support structured ownership/readiness facts; audits provide evaluated-at/policy provenance |
 | daily_recovery_snapshots | decision-date range | objective readiness |
 | daily_subjective_checkins | main range plus the maximum required pre-window lookback for `REFERENCE_SUBJECTIVE_BASELINE_POLICY` and `MECHANICAL_CONTINUITY_WINDOW_DAYS` | today's subjective input, subjective baseline, D-1 tissue carry, and #804 mechanical progression/follow-up evidence |
 | fixed_activities | range needed by same-day evaluation and active-plan placement; include the same forward horizon Home uses | availability / planning / external placement |
@@ -300,7 +300,9 @@ All exported documents remain raw private evidence under app/artifacts/training-
 
 Some current sources are mutable singleton/state documents and do not automatically prove their historical value.
 
-For every such source, define one of these statuses:
+For every such source, define one of these statuses. A revisioned recommendation is a special case: for D-1 `previousMode`, select the latest persisted decision revision proven to exist no later than D's evaluation instant (using its archived/current audit provenance); if ordering cannot be proven, the date is `not_replayable` rather than defaulting to today's latest D-1 document.
+
+For every mutable source, define one of these statuses:
 
 - exact_revision: immutable/versioned historical bytes prove date D;
 - stable_across_window: current document can be proven unchanged across the whole evaluated interval;
@@ -572,7 +574,7 @@ Requirements:
 - no users collection enumeration;
 - no writes;
 - bounded reads;
-- exact referenced immutable revisions where available;
+- exact referenced immutable revisions where available, including archived recommendation decision revisions needed for historical D-1 mode;
 - separate declared evaluation-window and per-source evidence bounds;
 - sufficient subjective/mechanical-check-in history lookback;
 - sufficient forward horizon for schedule/placement context;
@@ -734,7 +736,7 @@ A later **TO4 activation PR** is explicitly separate and must include rollout fl
 
 ### 12.3 Planning context
 
-- D-1 previous mode;
+- D-1 previous mode from the historically correct recommendation revision, including later-rewritten D-1 documents;
 - fixed activity today/tomorrow semantics;
 - overlapping schedule overlay;
 - overlapping plan block;
