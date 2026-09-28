@@ -48,11 +48,12 @@ second request for an activity.
 
 Historical documents created before this response schema can be enriched explicitly with
 `uv run python -m garmin_sync backfill-activity-response`. That operator command necessarily
-makes one paced original-FIT request per qualifying historical activity because the raw FIT
-trace was deliberately never persisted. It runs under the same per-user Garmin execution
+makes one rate-paced original-FIT request per qualifying historical activity because the raw
+FIT trace was deliberately never persisted. It runs under the same per-user Garmin execution
 lease as other Garmin operations, uses the configured backfill pacing, persists refreshed
-token state on every exit path, and returns failure on rate-limit/processing failures. It is
-not part of scheduled daily ingestion.
+token state on every exit path, and returns failure on a busy lease, rate limiting, or
+processing failure so an operator can retry deliberately. It is not part of scheduled daily
+ingestion.
 
 While the native trace is still in memory, activity_response.py derives:
 
