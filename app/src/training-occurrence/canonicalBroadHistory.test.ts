@@ -162,9 +162,9 @@ describe('deriveCanonicalBroadExposure', () => {
         const entries = [
             setEntry('1'), setEntry('2'), setEntry('3'), setEntry('4'),
             { ...setEntry('5'), stepId: 'row' },
-            { ...setEntry('6'), stepId: 'carry', payload: { kind: 'duration', setIndex: 1, seconds: 30 } as const },
-            { ...setEntry('7'), stepId: 'carry', payload: { kind: 'duration', setIndex: 2, seconds: 30 } as const },
-            { ...setEntry('8'), stepId: 'carry', payload: { kind: 'duration', setIndex: 3, seconds: 30 } as const },
+            { ...setEntry('6'), stepId: 'carry', payload: { kind: 'duration', seconds: 30 } as const },
+            { ...setEntry('7'), stepId: 'carry', payload: { kind: 'duration', seconds: 30 } as const },
+            { ...setEntry('8'), stepId: 'carry', payload: { kind: 'duration', seconds: 30 } as const },
         ];
         const derived = deriveCanonicalBroadExposure(occurrence([structuredRef], { modality: 'strength' }), sources({
             executionsById: new Map([['e-1', manual]]),
