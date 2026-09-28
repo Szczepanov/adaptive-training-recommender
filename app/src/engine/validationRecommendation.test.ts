@@ -67,6 +67,22 @@ describe('recommendation validation boundary', () => {
         const invalid = validateRecommendation(raw);
         expect(invalid.isValid).toBe(false);
         expect(invalid.errors.some(error => error.field === 'recommendationAudit.decisionContext')).toBe(true);
+
+        const missingRevision = {
+            ...base,
+            revision: undefined,
+            recommendationAudit: {
+                ...base.recommendationAudit,
+                decisionContext: {
+                    path: 'users/athlete-a/daily_recommendations/2026-08-31/decision_contexts/1',
+                    revision: 1,
+                    contentHash: 'a'.repeat(64),
+                },
+            },
+        };
+        const invalidMissingRevision = validateRecommendation(missingRevision);
+        expect(invalidMissingRevision.isValid).toBe(false);
+        expect(invalidMissingRevision.errors.some(error => error.field === 'recommendationAudit.decisionContext')).toBe(true);
     });
 
     it('rejects a null recommendation audit without throwing', () => {
