@@ -395,9 +395,9 @@ export function renderPlanningQualityActivityTelemetry(
 }
 
 /**
- * Compact, paste-ready activity detail for an external training analysis. The daily
- * context brief already carries load/recovery context; this section preserves the
- * workout-specific evidence that would otherwise be discarded by the summary table.
+ * Full persisted activity detail for diagnostic analysis. Raw native samples remain outside
+ * this boundary; this renderer exposes only the bounded normalized fields already hydrated
+ * on the activity document.
  */
 export function renderContextBriefActivityTelemetry(
     activities: readonly NormalizedGarminActivity[],
@@ -492,8 +492,8 @@ export function renderCompactActivityTelemetry(
         '### Key-session telemetry (compact)',
         '',
         summarizedIds.size > 0
-            ? 'One line per activity with Garmin detail telemetry that has no semantic summary below. Full per-lap/per-zone tables are in the diagnostic export; bounded quality-session execution detail may appear later in this planning section.'
-            : 'One line per activity with Garmin detail telemetry. Full per-lap/per-zone tables are in the diagnostic export; bounded quality-session execution detail may appear later in this planning section.',
+            ? 'One line per activity with Garmin detail telemetry that has no semantic summary below. The uncapped persisted lap/response view is in the diagnostic export; bounded quality-session zones and execution detail may appear later in this planning section.'
+            : 'One line per activity with Garmin detail telemetry. The uncapped persisted lap/response view is in the diagnostic export; bounded quality-session zones and execution detail may appear later in this planning section.',
     ];
     for (const activity of detailed) {
         const parts: string[] = [];
