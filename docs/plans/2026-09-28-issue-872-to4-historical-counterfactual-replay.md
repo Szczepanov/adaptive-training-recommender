@@ -262,7 +262,7 @@ Add an invariant test that changing only the broad exposure array leaves perform
 
 ## 5. Export schema v2
 
-Bump `TrainingOccurrenceRecordExport` from schema version 1 to 2. Keep the existing user-scoped, read-only, at-most-366-day contract and artifact-directory protections.
+Bump `TrainingOccurrenceRecordExport` from schema version 1 to 2. Keep the existing user-scoped, read-only contract, the **evaluation window** capped at 366 days, and the artifact-directory protections. Fixed policy lookbacks/forward horizons may extend individual source reads outside that window only by their explicitly declared bounded amount; they do not expand the evaluation denominator.
 
 Schema v2 must distinguish the **evaluation window** (the denominator of historical dates being judged) from the wider **source evidence bounds** used only to hydrate lookback/horizon dependencies. Records fetched before/after the evaluation window must never silently enlarge or shrink the denominator. Persist the resolved per-source half-open bounds in the private export manifest so edge-date coverage is auditable.
 
