@@ -39,7 +39,7 @@ def _mock_repo_with_existing_doc(
         "revision": existing_rev,
     }
     doc_ref.get.return_value = doc_snap
-    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = doc_ref
+    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = (\n        doc_ref\n    )
 
     repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
     return repo, doc_ref
