@@ -382,6 +382,32 @@ describe('resolveNextDueStep', () => {
             .toEqual({ blockIndex: 1, stepIndex: 0 });
     });
 
+    it('skips untouched optional sequential work while following later required work', () => {
+        const first = repetitionStep('press', 1);
+        const optional = { ...repetitionStep('bonus', 2), optional: true };
+        const last = repetitionStep('row', 1);
+        const definition = definitionWithBlock('sequential', [first, optional, last]);
+        expect(resolveNextDueStep(definition, [repetitionEntry('press', 1)], 0, 0))
+            .toEqual({ blockIndex: 0, stepIndex: 2 });
+        expect(resolveNextDueStep(definition, [repetitionEntry('press', 1), repetitionEntry('row', 1)], 0, 2))
+            .toBeNull();
+    });
+
+    it('does not auto-enter an all-optional rotating block', () => {
+        const required = definitionWithBlock('sequential', [repetitionStep('press', 1)]).blocks[0];
+        const optionalGroup = definitionWithBlock('superset', [
+            { ...repetitionStep('bonus-a', 2), optional: true },
+            { ...repetitionStep('bonus-b', 2), optional: true },
+        ]).blocks[0];
+        const cooldown = { id: 'cooldown', role: 'cooldown' as const, executionMode: 'sequential' as const, steps: [repetitionStep('stretch', 1)] };
+        const definition: SessionDefinition = {
+            ...definitionWithBlock('sequential', required.steps),
+            blocks: [required, optionalGroup, cooldown],
+        };
+        expect(resolveNextDueStep(definition, [repetitionEntry('press', 1)], 0, 0))
+            .toEqual({ blockIndex: 2, stepIndex: 0 });
+    });
+
     it('waits for both sides of a final hold before returning completion', () => {
         const holdStep: SessionStep = { id: 'hold', kind: 'exercise', laterality: 'per_side', dose: { kind: 'duration', sets: 1, seconds: 30 } };
         const definition = definitionWithBlock('sequential', [holdStep]);

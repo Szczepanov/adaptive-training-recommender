@@ -136,6 +136,9 @@ export function resolveNextDueStep(
     }
     for (let nextBlockIndex = progress ? blockIndex + 1 : blockIndex; nextBlockIndex < definition.blocks.length; nextBlockIndex++) {
         const nextBlock = definition.blocks[nextBlockIndex];
+        // Optional work remains manually executable, but automatic progression follows only
+        // required prescription. This also preserves D-MCHOICE omit/end_block semantics.
+        if (!nextBlock.steps.some(step => !step.optional)) continue;
         const nextGroup = getGroupProgress(nextBlock, entries, -1);
         if (nextGroup) {
             if (!nextGroup.isComplete && nextGroup.nextStepIndex !== null) {
@@ -145,6 +148,7 @@ export function resolveNextDueStep(
         }
         for (let nextStepIndex = nextBlockIndex === blockIndex ? stepIndex + 1 : 0; nextStepIndex < nextBlock.steps.length; nextStepIndex++) {
             const step = nextBlock.steps[nextStepIndex];
+            if (step.optional) continue;
             if (completedPrescribedSets(step, entries) < targetEntriesForGroupStep(nextBlock, step)) {
                 return { blockIndex: nextBlockIndex, stepIndex: nextStepIndex };
             }
@@ -153,6 +157,7 @@ export function resolveNextDueStep(
     // Manual navigation can land on the last authored step before earlier required work is done.
     for (let earlierBlockIndex = 0; earlierBlockIndex <= blockIndex; earlierBlockIndex++) {
         const earlierBlock = definition.blocks[earlierBlockIndex];
+        if (!earlierBlock.steps.some(step => !step.optional)) continue;
         const earlierGroup = getGroupProgress(earlierBlock, entries, -1);
         if (earlierGroup) {
             if (!earlierGroup.isComplete && earlierGroup.nextStepIndex !== null) {
@@ -1091,6 +1096,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                     suggestedLoadKg={suggestedLoadKg}
                                     suggestedSeconds={suggestedSeconds}
                                     nextSide={nextHoldSide(activeStep, entries)}
+                                    performedEntryCount={activeStepEntries.filter(entry => entry.payload.kind === 'duration').length}
                                     onSubmit={handleEntrySubmit}
                                 />
                             ) : inputProfile === 'distance_split' ? (

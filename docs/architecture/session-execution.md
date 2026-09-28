@@ -68,9 +68,12 @@ omission means no countdown is invented: simple preparation drills flow directly
 while lift-specific rehearsal that needs recovery must carry an explicit authored rest value.
 
 The active exercise and its logging controls lead the runner; the authored step navigator follows
-them and remains available for manual navigation. In sequential blocks, completing the prescribed
-work selects the next step. In rotating blocks, each completed turn selects the next movement from
-persisted group progress. Completing the final movement opens the existing completion sheet, where
+them and remains available for manual navigation. Automatic progression follows required
+prescription only: untouched optional steps remain available from the navigator but are never made
+required merely by auto-selection. In sequential blocks, completing the prescribed required work
+selects the next required step. In rotating blocks, each completed turn selects the next required
+movement from persisted group progress; an all-optional rotating block is entered only by explicit
+manual selection. Completing the final required movement opens the existing completion sheet, where
 the athlete still reviews and saves the session.
 
 For a duration step with `laterality: 'per_side'`, each hold is a separate `SessionEntry` carrying

@@ -51,14 +51,19 @@ test('session runner logs both hold sides before rotating and keeps controls usa
   await page.getByRole('button', { name: 'Left side', exact: true }).click();
   await expect(holdTime).toHaveValue('1');
 
-  await logLeft.click();
-  await expect(activeHeading).toContainText(/soleus/i);
-  await expect(page.getByRole('button', { name: 'Log right hold', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Skip Rest' })).toHaveCount(0);
+  // Right-first must still resume the missing left side even though nextSide was already
+  // "left" before this submission; the unlogged left stopwatch value must survive.
+  await page.getByRole('button', { name: 'Right side', exact: true }).click();
   await expect(holdTime).toHaveValue('1');
   await page.getByRole('button', { name: 'Log right hold', exact: true }).click();
+  await expect(activeHeading).toContainText(/soleus/i);
+  await expect(page.getByRole('button', { name: 'Log left hold', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Skip Rest' })).toHaveCount(0);
+  await expect(holdTime).toHaveValue('1');
+  await page.getByRole('button', { name: 'Log left hold', exact: true }).click();
   await expect(activeHeading).toContainText(/copenhagen/i);
   await expect(activeHeading).toBeFocused();
+  await expect(holdTime).toHaveValue('20');
   const skipRest = page.getByRole('button', { name: 'Skip Rest' });
   if (await skipRest.isVisible()) {
     await assertEffectiveTarget(page.getByRole('button', { name: '+30s' }));

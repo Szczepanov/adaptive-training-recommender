@@ -7,6 +7,8 @@ interface DurationInputCardProps {
     suggestedLoadKg?: number;
     suggestedSeconds?: number;
     nextSide?: 'left' | 'right';
+    /** Changes whenever a duration entry for this step is added/removed, even if nextSide is unchanged. */
+    performedEntryCount?: number;
     onSubmit: (payload: DurationEntryPayload, side?: 'left' | 'right') => void | Promise<void>;
 }
 
@@ -15,6 +17,7 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
     suggestedLoadKg,
     suggestedSeconds,
     nextSide,
+    performedEntryCount = 0,
     onSubmit,
 }) => {
     const dose = step.dose;
@@ -51,7 +54,7 @@ export const DurationInputCard: React.FC<DurationInputCardProps> = ({
         setSelectedSide(nextSide);
         setIsPrepCountdown(false);
         setIsTimerRunning(false);
-    }, [nextSide]);
+    }, [nextSide, performedEntryCount, step.id]);
 
     // 5-second lead-in countdown before hold starts
     useEffect(() => {
