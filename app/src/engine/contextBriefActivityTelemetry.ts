@@ -82,13 +82,17 @@ function humanizeTelemetryToken(value: string): string {
     return value.replaceAll('_', ' ');
 }
 
+function escapeMarkdownTableCell(value: string): string {
+    return value.replaceAll('|', '\\|').replace(/\r?\n/g, ' ').trim();
+}
+
 function formatPrescribedTarget(target: ActivityPrescribedTarget | undefined): string {
     if (target === undefined) return '—';
     const normalizedKind = target.kind.toLowerCase();
     if (normalizedKind === 'power_zone' && target.value !== undefined) {
         return `Power zone ${Math.round(target.value)}`;
     }
-    if (target.text?.trim()) return target.text.trim();
+    if (target.text?.trim()) return escapeMarkdownTableCell(target.text);
 
     const unit = normalizedKind === 'power_watts' || normalizedKind === 'power_range_watts'
         ? ' W'
