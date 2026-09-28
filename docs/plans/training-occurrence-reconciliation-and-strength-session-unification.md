@@ -1,6 +1,6 @@
 # Training occurrence reconciliation and structured strength session unification
 
-**Status:** In progress — canonical TO plan; PR #324 and PR #331 landed; #646 / PR #853 landed the offline TO4/TO5 export, canonical broad-history derivation, two-pass recommendation counterfactual and report pipeline, and recorded the real-data 90-day corpus evidence baseline (2026-09-27); broad-history activation remains blocked on pre-occurrence historical backfill and capability gaps 1 & 2; FIT activation remains blocked on an Adaptive-side template fingerprint generator
+**Status:** In progress — canonical TO plan; PR #324 and PR #331 landed; #646 / PR #853 landed the offline TO4/TO5 evidence harness; PR #877 completed the pre-occurrence historical backfill; PR #882 added non-catalog shadow derivation; PR #883 verified legacy manual definition metadata and recorded the latest private rerun (84 evaluated dates, 30 changed/30 unresolved, 71 canonical exposures, one remaining multiple-provider-source unknown). The next TO4 capability is #872: real per-date non-history replay with strict replayability/provenance gates. Broad-history activation remains separate and still requires reviewed counterfactual evidence plus ADR-0034 lifecycle/rollback gates; FIT activation remains blocked on an Adaptive-side template fingerprint generator
 **Reader note:** Historical companion checklists and the earlier strength-only cutover are not
 independent status boards. Current status is maintained in [`README.md`](./README.md).
 
