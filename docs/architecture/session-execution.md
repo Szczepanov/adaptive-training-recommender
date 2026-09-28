@@ -74,7 +74,9 @@ required merely by auto-selection. In sequential blocks, completing the prescrib
 selects the next required step. In rotating blocks, each completed turn selects the next required
 movement from persisted group progress; an all-optional rotating block is entered only by explicit
 manual selection. Completing the final required movement opens the existing completion sheet, where
-the athlete still reviews and saves the session.
+the athlete still reviews and saves the session. The runner and performed-vs-planned completion
+summary share the same prescribed-target resolver: when a block declares `rounds`, that block-level
+round count is authoritative over an individual step's set count.
 
 For a duration step with `laterality: 'per_side'`, each hold is a separate `SessionEntry` carrying
 `side: 'left'` or `side: 'right'`. The runner reconstructs the next side from those entries after a
