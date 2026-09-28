@@ -13,11 +13,15 @@ import type {
 import type { CheckinRecord } from '../engine/mechanicalProgression';
 import type { CompletedExposure, TrainingHistoryProvider } from '../engine/trainingHistory';
 import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
-import { preparedPerformedFactsForCoverageSet, resolveTrainingPlanContext } from '../engine/trainingIntent';
+import { eventStrengthSupportSessions, preparedPerformedFactsForCoverageSet } from '../engine/trainingIntent';
 import { evaluateSameDayRecommendation } from '../engine/sameDayRecommendation';
 import type { ExternalPlanContext, ExternalRestContext } from '../engine/rules';
 import { computeContentHash } from '../engine/externalPlanHash';
+import { evaluatePeriodizationPhase } from '../engine/periodization';
+import { resolvePlanningContext } from '../engine/planningMode';
+import { resolvePlanDefinitionForEvent } from '../engine/planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
+import { coverageSetFor, EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { workoutForTemplate } from '../workouts/prescription';
 import {
     compareCompletedExposureSets,
@@ -383,9 +387,18 @@ async function assertPassParity(
     if (inputs.normalRecommendationEligible !== true) throw new Error('normal_recommendation_gate_not_proven');
     if (!Array.isArray(inputs.mechanicalCheckinHistory)) throw new Error('mechanical_checkin_history_not_hydrated');
     if (!inputs.preparedHistorySnapshot.performedTrainingFacts) throw new Error('performed_training_facts_not_prepared');
-    const expectedDescriptor = resolveTrainingPlanContext(
-        inputs.events, inputs.date, inputs.authoredPlanBlocks, inputs.trainingIntentProfile,
-    ).performedFactsCoverageDescriptor;
+    const eventPeriodization = evaluatePeriodizationPhase(inputs.events, inputs.date);
+    const planningContext = resolvePlanningContext(inputs.trainingIntentProfile, eventPeriodization, inputs.date);
+    const periodization = planningContext.mode === 'event_directed'
+        ? eventPeriodization
+        : evaluatePeriodizationPhase([], inputs.date);
+    const strengthSupportSessions = eventStrengthSupportSessions(planningContext, inputs.trainingIntentProfile);
+    const planDefinition = resolvePlanDefinitionForEvent(
+        periodization.focusEvent, inputs.authoredPlanBlocks, strengthSupportSessions,
+    );
+    const expectedDescriptor = planDefinition
+        ? coverageSetFor(planDefinition.coverageSetId)
+        : EVERGREEN_GENERAL_COVERAGE_SET;
     const facts = preparedPerformedFactsForCoverageSet(
         inputs.preparedHistorySnapshot.performedTrainingFacts,
         expectedDescriptor.id,

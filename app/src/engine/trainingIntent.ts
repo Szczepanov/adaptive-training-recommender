@@ -9,7 +9,7 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 import { resolvePlanningContext, type PlanningContext } from './planningMode';
 import { applyPlanningOverlays } from './planningOverlays';
 import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
-import { coverageSetFor, EVERGREEN_GENERAL_COVERAGE_SET, type CoverageSetDescriptor } from '../workouts/event-plan';
+import { coverageSetFor, EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { resolveSequenceIntent, type SequenceIntentPolicy } from './sequenceIntent';
 import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS } from './rollingLoadBudget';
 import { resolvePriorityAOlympicTriathlonTaper } from './taperPlanBudget';
@@ -33,39 +33,6 @@ export function eventStrengthSupportSessions(
     const floor = strengthRequirement('required').floor;
     const authoredPrimaryStrengthRoles = 1;
     return floor?.dose.unit === 'sessions' ? Math.max(0, floor.dose.value - authoredPrimaryStrengthRoles) : 0;
-}
-
-export interface ResolvedTrainingPlanContext {
-    periodization: PeriodizationResult;
-    planningContext: PlanningContext;
-    strengthSupportSessions: number;
-    planDefinition: PlanDefinition | null;
-    performedFactsCoverageDescriptor: CoverageSetDescriptor;
-}
-
-/** Shared pure context resolution for online planning and historical facts hydration. */
-export function resolveTrainingPlanContext(
-    events: UserEvent[],
-    date: string,
-    authoredPlanBlocks: readonly AuthoredPlanBlock[],
-    trainingIntentProfile: TrainingIntentProfile | null,
-): ResolvedTrainingPlanContext {
-    const eventPeriodization = evaluatePeriodizationPhase(events, date);
-    const planningContext = resolvePlanningContext(trainingIntentProfile, eventPeriodization, date);
-    const periodization = planningContext.mode === 'event_directed'
-        ? eventPeriodization
-        : evaluatePeriodizationPhase([], date);
-    const strengthSupportSessions = eventStrengthSupportSessions(planningContext, trainingIntentProfile);
-    const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks, strengthSupportSessions);
-    return {
-        periodization,
-        planningContext,
-        strengthSupportSessions,
-        planDefinition,
-        performedFactsCoverageDescriptor: planDefinition
-            ? coverageSetFor(planDefinition.coverageSetId)
-            : EVERGREEN_GENERAL_COVERAGE_SET,
-    };
 }
 
 export type PlannedRecoveryReason =
@@ -292,8 +259,25 @@ export async function resolveTrainingIntent(
     preparedRollingLoadBudgetSnapshot?: TrainingHistorySnapshot | null,
     carriedInternalStrain?: DimensionalFatigue,
 ): Promise<TrainingIntent> {
-    const resolvedPlan = resolveTrainingPlanContext(events, date, authoredPlanBlocks, trainingIntentProfile);
-    const { periodization, planningContext, strengthSupportSessions, planDefinition, performedFactsCoverageDescriptor } = resolvedPlan;
+    const eventPeriodization = evaluatePeriodizationPhase(events, date);
+    const planningContext = resolvePlanningContext(trainingIntentProfile, eventPeriodization, date);
+    // PlanningContext is the sole authority for whether event periodization applies.
+    // The profile-less event path retains the prior result exactly; an explicit evergreen
+    // profile intentionally receives the existing no-event baseline until its dedicated
+    // evergreen coverage policy arrives in Phase 7.5.
+    const periodization = planningContext.mode === 'event_directed'
+        ? eventPeriodization
+        : evaluatePeriodizationPhase([], date);
+    const strengthSupportSessions = eventStrengthSupportSessions(planningContext, trainingIntentProfile);
+    const planDefinition = resolvePlanDefinitionForEvent(
+        periodization.focusEvent, authoredPlanBlocks, strengthSupportSessions,
+    );
+    // CoverageCreditFact is descriptor-scoped. Derive canonical role facts against the same
+    // coverage set the live decision will consume; otherwise a workout whose role differs
+    // between evergreen and event plans can be silently reinterpreted at read time.
+    const performedFactsCoverageDescriptor = planDefinition
+        ? coverageSetFor(planDefinition.coverageSetId)
+        : EVERGREEN_GENERAL_COVERAGE_SET;
     const operationalSnapshot = preparedHistorySnapshot
         ?? await prepareTrainingHistorySnapshot(userId, date, windowDays, historyProvider);
     const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
