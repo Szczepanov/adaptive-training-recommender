@@ -1,4 +1,4 @@
-import type { ActivityLapSummary, ActivityStimulusDomain, ActivityZoneBucket, NormalizedGarminActivity } from './models';
+import type { ActivityLapSummary, ActivityPrescribedTarget, ActivityStimulusDomain, ActivityZoneBucket, NormalizedGarminActivity } from './models';
 import { findSectionHeading, SECTION_TITLE } from './contextBrief';
 import { hrEvidence } from './contextBriefResponseFeatures';
 import { normalizeModality } from './performedTrainingFacts';
@@ -78,6 +78,36 @@ function powerDurationLabel(seconds: number): string {
     return formatDuration(seconds);
 }
 
+function humanizeTelemetryToken(value: string): string {
+    return value.replaceAll('_', ' ');
+}
+
+function formatPrescribedTarget(target: ActivityPrescribedTarget | undefined): string {
+    if (target === undefined) return '—';
+    const normalizedKind = target.kind.toLowerCase();
+    if (normalizedKind === 'power_zone' && target.value !== undefined) {
+        return `Power zone ${Math.round(target.value)}`;
+    }
+    if (target.text?.trim()) return target.text.trim();
+
+    const unit = normalizedKind === 'power_watts' || normalizedKind === 'power_range_watts'
+        ? ' W'
+        : normalizedKind.includes('cadence')
+            ? ' rpm'
+            : '';
+    const label = humanizeTelemetryToken(target.kind);
+    if (target.low !== undefined || target.high !== undefined) {
+        const low = target.low === undefined ? '—' : formatNumber(target.low, 0);
+        const high = target.high === undefined ? '—' : formatNumber(target.high, 0);
+        return unit ? `${low}–${high}${unit}` : `${label}: ${low}–${high}`;
+    }
+    if (target.value !== undefined) {
+        const value = formatNumber(target.value, 0);
+        return unit ? `${value}${unit}` : `${label}: ${value}`;
+    }
+    return label;
+}
+
 type ActivityResponseRenderDetail = 'bounded' | 'diagnostic';
 
 function renderActivityResponse(
@@ -143,15 +173,7 @@ function renderActivityResponse(
             );
         }
         for (const segment of visibleSegments) {
-            const target = segment.prescribedTarget
-                ? segment.prescribedTarget.kind === 'power_watts' && segment.prescribedTarget.value !== undefined
-                    ? `${formatNumber(segment.prescribedTarget.value, 0)} W`
-                    : segment.prescribedTarget.kind === 'power_range_watts'
-                        ? `${segment.prescribedTarget.low === undefined ? '—' : formatNumber(segment.prescribedTarget.low, 0)}–${segment.prescribedTarget.high === undefined ? '—' : formatNumber(segment.prescribedTarget.high, 0)} W`
-                        : segment.prescribedTarget.value === undefined
-                            ? segment.prescribedTarget.kind
-                            : `${segment.prescribedTarget.kind} ${formatNumber(segment.prescribedTarget.value, 0)}`
-                : '—';
+            const target = formatPrescribedTarget(segment.prescribedTarget);
             const power = [
                 segment.averagePowerWatts === undefined ? null : `avg ${formatNumber(segment.averagePowerWatts, 0)}`,
                 segment.peak1sPowerWatts === undefined ? null : `1s ${formatNumber(segment.peak1sPowerWatts, 0)}`,
@@ -470,8 +492,8 @@ export function renderCompactActivityTelemetry(
         '### Key-session telemetry (compact)',
         '',
         summarizedIds.size > 0
-            ? 'One line per activity with Garmin detail telemetry that has no semantic summary below. Per-lap and per-zone tables are in the diagnostic export.'
-            : 'One line per activity with Garmin detail telemetry. Per-lap and per-zone tables are in the diagnostic export.',
+            ? 'One line per activity with Garmin detail telemetry that has no semantic summary below. Full per-lap/per-zone tables are in the diagnostic export; bounded quality-session execution detail may appear later in this planning section.'
+            : 'One line per activity with Garmin detail telemetry. Full per-lap/per-zone tables are in the diagnostic export; bounded quality-session execution detail may appear later in this planning section.',
     ];
     for (const activity of detailed) {
         const parts: string[] = [];
@@ -514,8 +536,9 @@ export function injectActivityTelemetryIntoContextBrief(
     response?: ResponseContext,
 ): string {
     // Issue #814: key sessions get a semantic summary. In the compact (planning) export it
-    // replaces that session's digest line only when at least one feature produced a value;
-    // diagnostic keeps every raw table and adds the summaries after them.
+    // replaces that session's one-line digest when at least one feature produced a value;
+    // the bounded quality-session execution view may still follow as supporting evidence.
+    // Diagnostic keeps every persisted table and adds the summaries after them.
     const summaries = response ? deriveKeySessionSummaries(activities, response) : [];
     const summaryText = response ? renderKeySessionSummaries(summaries, response) : '';
     const summarizedIds = new Set(summaries.filter(hasAvailableFeature).map(summary => summary.activity.activityId));
