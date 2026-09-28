@@ -323,6 +323,7 @@ export function renderContextBriefActivityTelemetry(
         if (activity.hrInZones?.length) {
             lines.push(...renderZones('Heart-rate zones', activity.hrInZones, 'bpm'));
         }
+        lines.push(...renderRunningDynamics(activity));
         if (activity.laps?.length) {
             lines.push(...renderLaps(activity.laps));
         }
