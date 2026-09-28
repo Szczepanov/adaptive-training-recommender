@@ -90,6 +90,10 @@ export interface ContextBriefPlanningHandoffInput {
     recommendationsReadable: boolean;
     /** Today's authored rest directive from the active imported plan, if any. */
     restDirectiveToday: BriefRestDirective | null;
+    /** Yesterday's imported session/rest state is carried only for the morning closed loop.
+     * It is planning authority for D-1, not a second source of performed-training truth. */
+    yesterdayExternalSession: UpcomingExternalPlanSession | null;
+    restDirectiveYesterday: BriefRestDirective | null;
     unavailableSources: readonly string[];
     preset?: BriefWindowPreset;
     /** Issue #811. When absent it is derived from `preset`; an absent preset keeps the
@@ -139,14 +143,33 @@ function recommendationIntensityRank(recommendation: DailyRecommendation): numbe
     return null;
 }
 
+function externalIntensityRank(session: UpcomingExternalPlanSession): number {
+    switch (session.intensity) {
+        case 'recovery': return 0;
+        case 'easy': return 1;
+        case 'moderate': return 2;
+        case 'hard':
+        case 'max':
+            return 3;
+        default:
+            return 0;
+    }
+}
+
 function deriveAdherenceDelta(
     recommendation: DailyRecommendation | null,
+    externalSession: UpcomingExternalPlanSession | null,
+    restDirective: BriefRestDirective | null,
     activities: readonly NormalizedGarminActivity[],
 ): AdherenceDeltaSummary | null {
-    if (!recommendation) return null;
+    if (!recommendation && !externalSession && !restDirective) return null;
 
-    const plannedIntensity = recommendationIntensityRank(recommendation);
-    const plannedRestOrRecovery = plannedIntensity === 0;
+    const plannedIntensity = recommendation
+        ? recommendationIntensityRank(recommendation)
+        : restDirective
+            ? 0
+            : externalSession ? externalIntensityRank(externalSession) : null;
+    const plannedRestOrRecovery = restDirective !== null || plannedIntensity === 0;
     const actualIntensity = activities.reduce<number | null>((highest, activity) => {
         const rank = ACTUAL_INTENSITY_RANK[activity.intensityTag.toLowerCase()];
         if (rank === undefined) return highest;
@@ -186,14 +209,18 @@ function deriveAdherenceDelta(
         }
     }
 
-    const prescribedDuration = recommendation.prescription?.targetDurationMin;
-    if (typeof prescribedDuration === 'number' && prescribedDuration > 0) {
-        const actualDuration = activities.reduce((sum, activity) => sum + (activity.durationMin ?? 0), 0);
+    const actualDuration = activities.reduce((sum, activity) => sum + (activity.durationMin ?? 0), 0);
+    if (recommendation?.prescription?.targetDurationMin) {
+        const prescribedDuration = recommendation.prescription.targetDurationMin;
         // Display-only tolerance: distinguish material duration drift from normal device/start-stop noise.
         const materialDifference = Math.max(10, prescribedDuration * 0.2);
         if (Math.abs(actualDuration - prescribedDuration) >= materialDifference) {
             return { delta: 'VOLUME_DISCREPANCY', alert: null };
         }
+    } else if (externalSession) {
+        const below = actualDuration < Math.max(0, externalSession.durationMin - 10);
+        const above = actualDuration > externalSession.durationMax + 10;
+        if (below || above) return { delta: 'VOLUME_DISCREPANCY', alert: null };
     }
 
     return { delta: 'ON_PLAN', alert: null };
@@ -689,10 +716,18 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
     lines.push('', `## 3. Yesterday's Closed-Loop Debrief (${yesterdayDate})`, '');
     if (yesterdayRecommendation) {
         lines.push(`- Prescribed: ${yesterdayRecommendation.templateTitle} (${yesterdayRecommendation.modality} · ${yesterdayRecommendation.mode})`);
+    } else if (input.restDirectiveYesterday) {
+        lines.push('- Prescribed: Imported-plan rest/recovery directive.');
+    } else if (input.yesterdayExternalSession) {
+        const session = input.yesterdayExternalSession;
+        const duration = session.durationMax === session.durationMin
+            ? `${session.durationMin} min`
+            : `${session.durationMin}–${session.durationMax} min`;
+        lines.push(`- Prescribed: Imported session — ${session.title} (${session.modality} · ${duration} · ${session.intensity})`);
     } else if (!input.recommendationsReadable) {
         lines.push('- Prescribed: unavailable (read failed) — unknown, not none.');
     } else {
-        lines.push('- Prescribed: No app recommendation recorded for yesterday.');
+        lines.push('- Prescribed: No app/imported prescription recorded for yesterday.');
     }
 
     if (yesterdayActivities.length > 0) {
@@ -718,12 +753,17 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         lines.push('- Manual physical work: none reported');
     }
 
-    const adherenceDelta = deriveAdherenceDelta(yesterdayRecommendation, yesterdayActivities);
+    const adherenceDelta = deriveAdherenceDelta(
+        yesterdayRecommendation,
+        input.yesterdayExternalSession,
+        input.restDirectiveYesterday,
+        yesterdayActivities,
+    );
     if (adherenceDelta) {
         lines.push(`- Adherence Delta: **${adherenceDelta.delta}**`);
         if (adherenceDelta.alert) lines.push(`> **⚠️ ADHERENCE ALERT:** ${adherenceDelta.alert}`);
     } else if (input.recommendationsReadable) {
-        lines.push('- Adherence Delta: not computable — no executable app prescription recorded for yesterday.');
+        lines.push('- Adherence Delta: not computable — no executable app/imported prescription recorded for yesterday.');
     } else {
         lines.push('- Adherence Delta: not computable — yesterday\'s prescription read failed.');
     }
