@@ -5,8 +5,9 @@ import { resolve } from 'node:path';
 
 export function historicalSourceTreeSha256(repoRoot) {
     const root = resolve(repoRoot);
-    const trackedDiff = execFileSync('git', ['diff', '--binary', 'HEAD'], { cwd: root });
-    const untrackedPaths = execFileSync('git', ['ls-files', '--others', '--exclude-standard', '-z'], { cwd: root })
+    const gitEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')));
+    const trackedDiff = execFileSync('git', ['diff', '--binary', 'HEAD'], { cwd: root, env: gitEnv });
+    const untrackedPaths = execFileSync('git', ['ls-files', '--others', '--exclude-standard', '-z'], { cwd: root, env: gitEnv })
         .toString('utf8')
         .split('\0')
         .filter(Boolean)

@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { assertEvidenceLabelsMatchProvenance, historicalSourceTreeSha256 } from './training-occurrence-source-tree.mjs';
 
 const roots = [];
+// Git hooks export repository paths; fixture commands must use only the temporary repo.
+const fixtureGitEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')));
 
 afterEach(() => {
     for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -15,7 +17,7 @@ describe('historicalSourceTreeSha256', () => {
     it('binds tracked and untracked source while excluding ignored private artifacts', () => {
         const root = mkdtempSync(path.join(os.tmpdir(), 'to4-source-tree-'));
         roots.push(root);
-        const git = (...args) => execFileSync('git', args, { cwd: root, stdio: 'ignore' });
+        const git = (...args) => execFileSync('git', args, { cwd: root, env: fixtureGitEnv, stdio: 'ignore' });
         writeFileSync(path.join(root, '.gitignore'), 'artifacts/\n', 'utf8');
         writeFileSync(path.join(root, 'source.ts'), 'export const value = 1;\n', 'utf8');
         git('init');
