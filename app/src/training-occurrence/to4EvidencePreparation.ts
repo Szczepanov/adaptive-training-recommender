@@ -94,26 +94,59 @@ function parseRecords(raw: TrainingOccurrenceRecordExport): ParsedRecords {
         const owner = ownerOf(data);
         return owner !== undefined && owner !== raw.userId;
     };
+    const validSource = (data: unknown): boolean => {
+        if (!data || typeof data !== 'object') return false;
+        const source = data as Record<string, unknown>;
+        const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
+        const revision = (value: unknown): boolean => typeof value === 'number' && Number.isInteger(value) && value >= 0;
+        if (source.kind === 'catalog') return nonEmpty(source.workoutId) && nonEmpty(source.catalogVersion);
+        if (source.kind === 'manual') return nonEmpty(source.definitionId) && revision(source.revision) && nonEmpty(source.contentHash);
+        if (source.kind === 'external_plan') {
+            return nonEmpty(source.planId) && revision(source.revision) && nonEmpty(source.sessionId) && nonEmpty(source.contentHash);
+        }
+        return source.kind === 'unplanned_fixture' && nonEmpty(source.fixtureId);
+    };
+    const validDuration = (value: unknown): boolean => {
+        if (!value || typeof value !== 'object') return false;
+        const range = value as Record<string, unknown>;
+        return typeof range.min === 'number' && Number.isFinite(range.min) && range.min > 0
+            && typeof range.max === 'number' && Number.isFinite(range.max) && range.max >= range.min;
+    };
     const validPrescription = (data: unknown, documentId: string): data is ExecutionPrescription => {
         if (!data || typeof data !== 'object') return false;
         const candidate = data as Record<string, unknown>;
         const metadata = candidate.displayMetadata as Record<string, unknown> | undefined;
-        if (candidate.prescriptionHash !== documentId || !Array.isArray(candidate.blocks)
-            || !metadata || typeof metadata.title !== 'string' || !metadata.title.trim()) return false;
+        if (candidate.prescriptionHash !== documentId
+            || typeof candidate.schemaVersion !== 'number' || !Number.isInteger(candidate.schemaVersion)
+            || typeof candidate.definitionHash !== 'string' || !candidate.definitionHash
+            || typeof candidate.createdAt !== 'string'
+            || !validSource(candidate.sessionSource)
+            || !Array.isArray(candidate.blocks)
+            || !metadata || typeof metadata.title !== 'string' || !metadata.title.trim()
+            || typeof metadata.intent !== 'string'
+            || (metadata.dominantModality !== undefined && typeof metadata.dominantModality !== 'string')
+            || (metadata.duration !== undefined && !validDuration(metadata.duration))) return false;
+        const validRoles = new Set(['warmup', 'main', 'cooldown', 'accessory', 'test', 'recovery']);
+        const validModes = new Set(['sequential', 'circuit', 'superset', 'density', 'amrap', 'alternating']);
         return candidate.blocks.every(block => {
-            if (!block || typeof block !== 'object' || typeof (block as Record<string, unknown>).id !== 'string'
-                || !Array.isArray((block as Record<string, unknown>).steps)) return false;
-            return ((block as Record<string, unknown>).steps as unknown[]).every(step => {
-                if (!step || typeof step !== 'object' || typeof (step as Record<string, unknown>).id !== 'string') return false;
-                const dose = (step as Record<string, unknown>).dose;
+            if (!block || typeof block !== 'object') return false;
+            const fields = block as Record<string, unknown>;
+            if (typeof fields.id !== 'string' || !validRoles.has(String(fields.role))
+                || !validModes.has(String(fields.executionMode)) || !Array.isArray(fields.steps)) return false;
+            return (fields.steps as unknown[]).every(step => {
+                if (!step || typeof step !== 'object') return false;
+                const stepFields = step as Record<string, unknown>;
+                if (typeof stepFields.id !== 'string'
+                    || (stepFields.optional !== undefined && typeof stepFields.optional !== 'boolean')) return false;
+                const dose = stepFields.dose;
                 if (dose === undefined) return true;
                 if (!dose || typeof dose !== 'object') return false;
-                const fields = dose as Record<string, unknown>;
-                if (!['repetition', 'duration', 'distance', 'checkoff'].includes(String(fields.kind))) return false;
-                const count = fields.kind === 'repetition' ? fields.sets
-                    : fields.kind === 'checkoff' ? fields.rounds
-                        : fields.kind === 'duration' || fields.kind === 'distance' ? fields.sets : undefined;
-                return (fields.kind !== 'repetition' || (typeof count === 'number' && Number.isFinite(count) && count >= 0))
+                const doseFields = dose as Record<string, unknown>;
+                if (!['repetition', 'duration', 'distance', 'checkoff'].includes(String(doseFields.kind))) return false;
+                const count = doseFields.kind === 'repetition' ? doseFields.sets
+                    : doseFields.kind === 'checkoff' ? doseFields.rounds
+                        : doseFields.kind === 'duration' || doseFields.kind === 'distance' ? doseFields.sets : undefined;
+                return (doseFields.kind !== 'repetition' || (typeof count === 'number' && Number.isFinite(count) && count >= 0))
                     && (count === undefined || (typeof count === 'number' && Number.isFinite(count) && count >= 0));
             });
         });
