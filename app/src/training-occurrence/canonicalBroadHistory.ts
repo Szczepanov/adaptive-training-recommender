@@ -256,17 +256,21 @@ function nonCatalogStructuredExposure(
     const title = metadata?.title?.trim();
     const modality = modalityForOccurrence(metadata?.dominantModality);
     const workEntries = prescription ? workEntriesForPrescription(execution, prescription, sources) : [];
-    if (!prescription || !sameNonCatalogSessionSource(execution.sessionSource, prescription.sessionSource)
+    if (!prescription || prescription.prescriptionHash !== execution.prescriptionHash
+        || !sameNonCatalogSessionSource(execution.sessionSource, prescription.sessionSource)
         || !title || !modality || workEntries.length === 0) {
         return { status: 'unknown', reason: 'non_catalog_execution_evidence_missing' };
     }
 
     const garmin = activity ? liveGarminEvent(activity) : undefined;
+    const sessionRpe = execution.sessionRpe;
+    const validSessionRpe = typeof sessionRpe === 'number' && Number.isFinite(sessionRpe)
+        && sessionRpe >= 0 && sessionRpe <= 10 ? sessionRpe : undefined;
     // Diagnostic-only CR-10 bands: uncalibrated until reviewed real-history evidence supports activation.
     const intensity = garmin?.costIntensity ?? garmin?.intensity ?? (
-        execution.sessionRpe === undefined ? 'unknown'
-            : execution.sessionRpe >= 7 ? 'hard'
-                : execution.sessionRpe >= 4 ? 'moderate' : 'easy'
+        validSessionRpe === undefined ? 'unknown'
+            : validSessionRpe >= 7 ? 'hard'
+                : validSessionRpe >= 4 ? 'moderate' : 'easy'
     );
     const plannedDurationMin = metadata.duration
         ? templateDurationReferenceMin({ durationMin: metadata.duration.min, durationMax: metadata.duration.max })
@@ -391,6 +395,7 @@ function auditDerivation(
     const nonCatalogSupported = Boolean(execution && execution.state === 'completed'
         && (source?.kind === 'manual' || source?.kind === 'external_plan') && providerRefs.length <= 1
         && prescription?.displayMetadata?.title
+        && prescription.prescriptionHash === execution.prescriptionHash
         && sameNonCatalogSessionSource(execution.sessionSource, prescription.sessionSource)
         && workEntriesForPrescription(execution, prescription, sources).length > 0);
     const supported = catalogSupported || nonCatalogSupported;
@@ -405,6 +410,7 @@ function auditDerivation(
             || exposure.stimulusConfidence !== 'exact'
         : !prescription?.displayMetadata?.title
             || !execution
+            || prescription.prescriptionHash !== execution.prescriptionHash
             || !sameNonCatalogSessionSource(execution.sessionSource, prescription.sessionSource)
             || exposure.trainingRecordLike.type !== prescription.displayMetadata.title.trim()
             || !exposure.modality
