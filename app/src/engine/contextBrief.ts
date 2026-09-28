@@ -260,9 +260,14 @@ function renderTraining(activities: readonly NormalizedGarminActivity[], asOfDat
         lines.push(`| ${activity.date} | ${typeLabel} | ${activity.durationMin ?? '—'} | ${round(activity.activityTrainingLoad, 1)} | ${round(activity.trainingEffectAerobic, 1)} | ${round(activity.trainingEffectAnaerobic, 1)} | ${activity.averageHr ?? '—'} | ${formatIntensityCell(activity)} |`);
     }
 
-    const totalMinutes = activities.reduce((sum, activity) => sum + (activity.durationMin ?? 0), 0);
-    const hardCount = activities.filter(activity => activity.intensityTag === 'hard').length;
-    const highCostCount = activities.filter(activity => activity.sessionCost === 'high' || activity.sessionCost === 'very_high').length;
+    let totalMinutes = 0;
+    let hardCount = 0;
+    let highCostCount = 0;
+    for (const activity of activities) {
+        totalMinutes += activity.durationMin ?? 0;
+        if (activity.intensityTag === 'hard') hardCount++;
+        if (activity.sessionCost === 'high' || activity.sessionCost === 'very_high') highCostCount++;
+    }
     lines.push('');
     // Issue #809: "tagged hard" counts high-intensity stimulus only; costly aerobic sessions
     // are reported separately so dose is not read as intensity.
@@ -296,8 +301,12 @@ function renderTraining(activities: readonly NormalizedGarminActivity[], asOfDat
         const rawStart = addDaysToLocalDateString(bucketEnd, -6);
         const bucketStart = rawStart < windowStart ? windowStart : rawStart;
         const inBucket = activities.filter(activity => withinWindow(activity.date, bucketStart, bucketEnd));
-        const minutes = inBucket.reduce((sum, activity) => sum + (activity.durationMin ?? 0), 0);
-        const hard = inBucket.filter(activity => activity.intensityTag === 'hard').length;
+        let minutes = 0;
+        let hard = 0;
+        for (const activity of inBucket) {
+            minutes += activity.durationMin ?? 0;
+            if (activity.intensityTag === 'hard') hard++;
+        }
         const dayCount = getDayDiff(bucketEnd, bucketStart) + 1;
         const span = dayCount === 7 ? '' : ` (${dayCount} days)`;
         lines.push(`- ${bucketStart} → ${bucketEnd}${span}: ${inBucket.length} sessions · ${minutes} min · ${hard} hard`);
@@ -555,11 +564,18 @@ function renderSubjective(
     lines.push(...renderHungerRetrospective(hunger.morning, hunger.other, baselineDays));
     lines.push('');
     lines.push('Flags:');
-    const painDays = checkins.filter(c => c.painOrInjury).map(c => c.date);
-    const illnessDays = checkins.filter(c => c.illnessSymptoms).map(c => c.date);
-    const limitedDays = checkins.filter(c => c.unusuallyLimitedTime).map(c => c.date);
-    const alreadyTrainedDays = checkins.filter(c => c.alreadyTrainedToday).map(c => c.date);
-    const physicalWorkDays = checkins.filter(c => c.physicalWork?.performed).map(c => c.date);
+    const painDays: string[] = [];
+    const illnessDays: string[] = [];
+    const limitedDays: string[] = [];
+    const alreadyTrainedDays: string[] = [];
+    const physicalWorkDays: string[] = [];
+    for (const c of checkins) {
+        if (c.painOrInjury) painDays.push(c.date);
+        if (c.illnessSymptoms) illnessDays.push(c.date);
+        if (c.unusuallyLimitedTime) limitedDays.push(c.date);
+        if (c.alreadyTrainedToday) alreadyTrainedDays.push(c.date);
+        if (c.physicalWork?.performed) physicalWorkDays.push(c.date);
+    }
     lines.push(`- Pain or injury flagged: ${painDays.length > 0 ? `${painDays.length} day(s) — ${painDays.join(', ')}` : 'none'}`);
     lines.push(`- Illness symptoms flagged: ${illnessDays.length > 0 ? `${illnessDays.length} day(s) — ${illnessDays.join(', ')}` : 'none'}`);
     if (limitedDays.length > 0) lines.push(`- Unusually limited time: ${limitedDays.length} day(s) — ${limitedDays.join(', ')}`);
