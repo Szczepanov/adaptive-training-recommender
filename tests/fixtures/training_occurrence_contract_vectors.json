@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "sourceIdentityVectors": [
+    {
+      "description": "normal Garmin numeric ID",
+      "provider": "garmin",
+      "activityId": "1234567890",
+      "expectedSourceKey": "provider_activity:garmin:1234567890",
+      "expectedDocId": "provider_activity%253Agarmin%253A1234567890"
+    },
+    {
+      "description": "provider casing and outer whitespace",
+      "provider": "  GarMin  ",
+      "activityId": "98765",
+      "expectedSourceKey": "provider_activity:garmin:98765",
+      "expectedDocId": "provider_activity%253Agarmin%253A98765"
+    },
+    {
+      "description": "forward slash in activity id",
+      "provider": "garmin",
+      "activityId": "2026/09/28/act-1",
+      "expectedSourceKey": "provider_activity:garmin:2026/09/28/act-1",
+      "expectedDocId": "provider_activity%253Agarmin%253A2026%252F09%252F28%252Fact-1"
+    },
+    {
+      "description": "percent in activity id",
+      "provider": "garmin",
+      "activityId": "act%100",
+      "expectedSourceKey": "provider_activity:garmin:act%100",
+      "expectedDocId": "provider_activity%253Agarmin%253Aact%2525100"
+    },
+    {
+      "description": "dot in activity id",
+      "provider": "garmin",
+      "activityId": "act.123",
+      "expectedSourceKey": "provider_activity:garmin:act.123",
+      "expectedDocId": "provider_activity%253Agarmin%253Aact%2E123"
+    },
+    {
+      "description": "double dot in activity id",
+      "provider": "garmin",
+      "activityId": "act..123",
+      "expectedSourceKey": "provider_activity:garmin:act..123",
+      "expectedDocId": "provider_activity%253Agarmin%253Aact%2E%2E123"
+    },
+    {
+      "description": "literal dot alone",
+      "rawKey": ".",
+      "expectedSourceKey": ".",
+      "expectedDocId": "%2E"
+    },
+    {
+      "description": "literal double dot alone",
+      "rawKey": "..",
+      "expectedSourceKey": "..",
+      "expectedDocId": "%2E%2E"
+    },
+    {
+      "description": "Unicode characters in activity id",
+      "provider": "garmin",
+      "activityId": "bieg_świętochłowice_🏃_1",
+      "expectedSourceKey": "provider_activity:garmin:bieg_świętochłowice_🏃_1",
+      "expectedDocId": "provider_activity%253Agarmin%253Abieg_%25C5%259Bwi%25C4%2599toch%25C5%2582owice_%25F0%259F%258F%2583_1"
+    },
+    {
+      "description": "long source key triggering hash fallback",
+      "rawKey": "provider_activity:garmin:long_key_exceeding_400_characters_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "expectedSourceKey": "provider_activity:garmin:long_key_exceeding_400_characters_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "expectedDocId": "h-418c91da16745864"
+    }
+  ],
+  "modalityVectors": [
+    { "activityType": "cycling", "expectedModality": "cycling" },
+    { "activityType": "road_biking", "expectedModality": "cycling" },
+    { "activityType": "virtual_ride", "expectedModality": "cycling" },
+    { "activityType": "mountain_biking", "expectedModality": "cycling" },
+    { "activityType": "gravel_cycling", "expectedModality": "cycling" },
+    { "activityType": "indoor_cycling", "expectedModality": "cycling" },
+    { "activityType": "cyclocross", "expectedModality": "cycling" },
+    { "activityType": "running", "expectedModality": "running" },
+    { "activityType": "trail_running", "expectedModality": "running" },
+    { "activityType": "treadmill_running", "expectedModality": "running" },
+    { "activityType": "strength_training", "expectedModality": "strength" },
+    { "activityType": "weight_lifting", "expectedModality": "strength" },
+    { "activityType": "soccer", "expectedModality": "field" },
+    { "activityType": "football", "expectedModality": "field" },
+    { "activityType": "yoga", "expectedModality": "mobility" },
+    { "activityType": "mobility", "expectedModality": "mobility" },
+    { "activityType": "swimming", "expectedModality": "cross_training" },
+    { "activityType": "rowing", "expectedModality": "cross_training" },
+    { "activityType": "elliptical", "expectedModality": "cross_training" },
+    { "activityType": "cardio", "expectedModality": "cross_training" },
+    { "activityType": "sky_diving", "expectedModality": null },
+    { "activityType": "other", "expectedModality": null }
+  ]
+}
