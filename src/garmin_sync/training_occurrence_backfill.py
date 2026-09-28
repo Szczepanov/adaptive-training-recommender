@@ -714,9 +714,7 @@ def audit_training_occurrence_backfill(
             )
             continue
 
-        occ_snap = (
-            user_ref.collection("performedTrainingOccurrences").document(target_occ_id).get()
-        )
+        occ_snap = user_ref.collection("performedTrainingOccurrences").document(target_occ_id).get()
         if not occ_snap.exists:
             audit.invalid_links += 1
             audit.issues.append(
