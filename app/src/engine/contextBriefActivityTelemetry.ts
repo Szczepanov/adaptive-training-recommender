@@ -1,6 +1,7 @@
 import type { ActivityLapSummary, ActivityZoneBucket, NormalizedGarminActivity } from './models';
 import { findSectionHeading, SECTION_TITLE } from './contextBrief';
 import { hrEvidence } from './contextBriefResponseFeatures';
+import { normalizeModality } from './performedTrainingFacts';
 import {
     deriveKeySessionSummaries,
     hasAvailableFeature,
@@ -16,6 +17,9 @@ const ACTIVITY_TYPE_LABELS: Record<string, string> = {
     mountain_biking: 'Mountain biking',
     cyclocross: 'Cyclocross',
     indoor_cycling: 'Indoor cycling',
+    running: 'Running',
+    trail_running: 'Trail running',
+    treadmill_running: 'Treadmill running',
 };
 
 function formatActivityType(typeKey: string): string {
@@ -32,6 +36,7 @@ function hasDetailedTelemetry(activity: NormalizedGarminActivity): boolean {
         || (activity.powerInZones?.length ?? 0) > 0
         || (activity.hrInZones?.length ?? 0) > 0
         || (activity.laps?.length ?? 0) > 0
+        || activity.runningDynamics !== undefined
         || activity.activityResponse !== undefined;
 }
 
@@ -73,7 +78,7 @@ function powerDurationLabel(seconds: number): string {
     return formatDuration(seconds);
 }
 
-function renderActivityResponse(activity: NormalizedGarminActivity): string[] {
+function renderActivityResponse(activity: NormalizedGarminActivity, maxSegments?: number): string[] {
     const response = activity.activityResponse;
     if (!response) return [];
     const intervalHr = hrEvidence(activity, 'INTERVAL_RESPONSE');
@@ -108,14 +113,18 @@ function renderActivityResponse(activity: NormalizedGarminActivity): string[] {
         ].filter((part): part is string => part !== null);
         if (halfParts.length > 0) lines.push(`  - Deterministic halves: ${halfParts.join(' · ')}`);
     }
-    if (response.segments.length > 0) {
+    const visibleSegments = maxSegments === undefined ? response.segments : response.segments.slice(0, maxSegments);
+    if (visibleSegments.length > 0) {
+        const viewLimit = visibleSegments.length < response.segments.length
+            ? `; this view shows first ${visibleSegments.length} persisted segments`
+            : '';
         lines.push(
-            `  - Segments: ${response.segmentCountTotal}${response.segmentsTruncated ? ` total; persisted first ${response.segments.length}` : ''}`,
+            `  - Segments: ${response.segmentCountTotal}${response.segmentsTruncated ? ` total; persisted first ${response.segments.length}` : ''}${viewLimit}`,
             '',
             '  | # | Type | Identity | Duration | Target | Avg/peaks power | HR avg/end/max | Cadence avg/max | Power thirds | Confidence |',
             '  |---:|---|---|---:|---|---|---|---|---|---|',
         );
-        for (const segment of response.segments) {
+        for (const segment of visibleSegments) {
             const target = segment.prescribedTarget
                 ? segment.prescribedTarget.kind === 'power_watts' && segment.prescribedTarget.value !== undefined
                     ? `${formatNumber(segment.prescribedTarget.value, 0)} W`
@@ -158,6 +167,118 @@ function renderLaps(laps: readonly ActivityLapSummary[]): string[] {
         lines.push(`  | ${lap.lapIndex} | ${formatDuration(lap.durationSeconds)} | ${power} | ${hr} |`);
     }
     return lines;
+}
+
+const MORNING_QUALITY_DOMAINS = new Set(['tempo', 'threshold', 'vo2', 'anaerobic', 'mixed', 'race']);
+const MORNING_MAX_LAPS = 20;
+const MORNING_MAX_RESPONSE_SEGMENTS = 20;
+
+function isFiniteNumber(value: number | null | undefined): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function pacePerKm(speedMps: number | undefined): string {
+    if (!isFiniteNumber(speedMps) || speedMps <= 0) return '—';
+    const seconds = Math.round(1000 / speedMps);
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes}:${String(seconds % 60).padStart(2, '0')}/km`;
+}
+
+function renderRunningDynamics(activity: NormalizedGarminActivity): string[] {
+    const dynamics = activity.runningDynamics;
+    if (!dynamics) return [];
+    const parts = [
+        isFiniteNumber(dynamics.avgRunningPowerWatts) ? `avg running power ${formatNumber(dynamics.avgRunningPowerWatts, 0)} W` : null,
+        isFiniteNumber(dynamics.maxRunningPowerWatts) ? `max running power ${formatNumber(dynamics.maxRunningPowerWatts, 0)} W` : null,
+        isFiniteNumber(dynamics.strideLengthM) ? `stride ${formatNumber(dynamics.strideLengthM, 2)} m` : null,
+        isFiniteNumber(dynamics.groundContactTimeMs) ? `GCT ${formatNumber(dynamics.groundContactTimeMs, 0)} ms` : null,
+        isFiniteNumber(dynamics.groundContactBalanceLeftPct)
+            ? `GCT balance ${formatNumber(dynamics.groundContactBalanceLeftPct, 1)}/${formatNumber(100 - dynamics.groundContactBalanceLeftPct, 1)} L/R`
+            : null,
+        isFiniteNumber(dynamics.verticalOscillationCm) ? `vertical oscillation ${formatNumber(dynamics.verticalOscillationCm, 1)} cm` : null,
+        isFiniteNumber(dynamics.verticalRatioPct) ? `vertical ratio ${formatNumber(dynamics.verticalRatioPct, 1)}%` : null,
+    ].filter((part): part is string => part !== null);
+    return parts.length > 0 ? [`- Running dynamics: ${parts.join(' · ')}`] : [];
+}
+
+function renderMorningLaps(activity: NormalizedGarminActivity): string[] {
+    const laps = [...(activity.laps ?? [])].sort((a, b) => a.lapIndex - b.lapIndex);
+    if (laps.length === 0) return [];
+    const visible = laps.slice(0, MORNING_MAX_LAPS);
+    const running = normalizeModality(activity.type) === 'Running';
+    const lines = running
+        ? [
+            '- Interval/lap detail:',
+            '',
+            '  | Lap | Duration | Distance | Pace | Avg power | Avg HR |',
+            '  |---:|---:|---:|---:|---:|---:|',
+        ]
+        : [
+            '- Interval/lap detail:',
+            '',
+            '  | Lap | Duration | Avg power | Avg HR |',
+            '  |---:|---:|---:|---:|',
+        ];
+
+    for (const lap of visible) {
+        const power = lap.averagePowerWatts === undefined ? '—' : `${formatNumber(lap.averagePowerWatts, 0)} W`;
+        const hr = lap.averageHrBpm === undefined ? '—' : `${formatNumber(lap.averageHrBpm, 0)} bpm`;
+        if (running) {
+            const distance = lap.distanceMeters === undefined ? '—' : `${formatNumber(lap.distanceMeters / 1000, 2)} km`;
+            lines.push(
+                `  | ${lap.lapIndex} | ${formatDuration(lap.durationSeconds)} | ${distance} | ${pacePerKm(lap.averageSpeedMps)} | ${power} | ${hr} |`,
+            );
+        } else {
+            lines.push(`  | ${lap.lapIndex} | ${formatDuration(lap.durationSeconds)} | ${power} | ${hr} |`);
+        }
+    }
+    if (visible.length < laps.length) {
+        lines.push(`  - … ${laps.length - visible.length} additional lap(s) omitted from the morning brief; use diagnostic export for all laps.`);
+    }
+    return lines;
+}
+
+/**
+ * The morning handoff is intentionally compact except for yesterday's quality endurance
+ * session. Tempo is quality even when #809 labels its stimulus intensity only "moderate";
+ * hard-tagged cycling/running is also expanded for legacy records whose stimulusDomain is
+ * absent. This selection is display-only and has no recommendation authority.
+ */
+export function renderMorningQualityActivityTelemetry(activity: NormalizedGarminActivity): string[] {
+    const modality = normalizeModality(activity.type);
+    if (modality !== 'Cycling' && modality !== 'Running') return [];
+    const domain = activity.stimulusDomain ?? 'unknown';
+    if (!MORNING_QUALITY_DOMAINS.has(domain) && activity.intensityTag !== 'hard') return [];
+
+    const detail: string[] = [];
+    const sessionParts = [
+        activity.variabilityIndex === undefined ? null : `VI ${formatNumber(activity.variabilityIndex, 2)}`,
+        activity.maxHr === undefined ? null : `max HR ${formatNumber(activity.maxHr, 0)} bpm`,
+        activity.trainingEffectAnaerobic === null ? null : `anaerobic TE ${formatNumber(activity.trainingEffectAnaerobic, 1)}`,
+        activity.primaryBenefit ? `primary benefit ${activity.primaryBenefit}` : null,
+    ].filter((part): part is string => part !== null);
+    if (sessionParts.length > 0) detail.push(`- Session detail: ${sessionParts.join(' · ')}`);
+
+    if (activity.powerInZones?.length) detail.push(...renderZones('Power zones', activity.powerInZones, 'W'));
+    if (activity.hrInZones?.length) detail.push(...renderZones('Heart-rate zones', activity.hrInZones, 'bpm'));
+    detail.push(...renderRunningDynamics(activity));
+
+    if (activity.activityResponse) {
+        detail.push(...renderActivityResponse(activity, MORNING_MAX_RESPONSE_SEGMENTS));
+    }
+
+    // For running, laps are the only interval-resolution evidence currently persisted.
+    // For cycling, prefer semantic/native response evidence; legacy quality rides fall back
+    // to bounded laps when the activityResponse sidecar is absent.
+    if (modality === 'Running' || !activity.activityResponse) {
+        detail.push(...renderMorningLaps(activity));
+    }
+
+    if (detail.length === 0) return [];
+    return [
+        '  - Quality-session detail (display-only):',
+        ...detail.map(line => line.length === 0 ? '' : `    ${line}`),
+    ];
 }
 
 /**
