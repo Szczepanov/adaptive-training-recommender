@@ -105,11 +105,25 @@ session on a multi-session day follows `placedSessionForDate` ordering (priority
 
 The brief is exported for one of three explicit purposes (`contextBrief.ts` `BriefPurpose`);
 the UI presets map onto them through `briefPurposeFor` (`daily` → `morning`, `full` →
-`planning`, `diagnostic` → `diagnostic`). Purpose selects what is rendered, never what is
-fetched: `planning` and `diagnostic` share the same lookback and `ContextBriefService.build`
-issues identical reads for both.
+`planning`, `diagnostic` → `diagnostic`). `planning` and `diagnostic` share the same
+lookback and `ContextBriefService.build` issues identical reads for both. `morning` is a
+smaller closed-loop contract: it skips planning-only ledger reads but additionally resolves
+D-1 imported-plan authority so yesterday's planned-vs-performed comparison can distinguish an
+authored rest/session from "no prescription."
 
-- `morning` — `buildMorningCoachBrief`: today's closed loop only; no multi-day plan. Yesterday's quality cycling/running session is expanded with bounded execution telemetry while ordinary endurance/recovery sessions stay compact.
+- `morning` — `buildMorningCoachBrief`: today's closed loop rather than a multi-day block.
+  Recovery is one current HRV/RHR/sleep line plus the existing 7-day timeline. Yesterday's
+  app/imported prescription is compared with recorded training to emit the display-only
+  `Adherence Delta` signal and a prominent alert when moderate/hard or high-cost work was
+  recorded on an authored rest/recovery day. Athlete recommendation feedback remains a
+  separate response signal and is never treated as execution proof. Section 4 elevates an
+  optimizer `Sequence soft preference` embedded in the persisted rationale into an
+  `ENGINE CONFLICT` banner without changing selection. Section 5 always names D+1, D+2 and
+  D+3 and includes imported-session modality, duration and intensity. Yesterday's quality
+  cycling/running session keeps bounded execution telemetry while ordinary endurance/recovery
+  sessions stay compact; when interval/segment rows exist, morning omits redundant zone tables
+  and raw derivation/provenance/debug tokens. Unverified HR evidence is summarized only as
+  `HR Confidence: Unverified (Observational only)`.
 - `planning` — sections in decision-authority order (section 0 authority/data currency,
   constraints, current intent & goals, recovery, completed load, recommendation feedback,
   upcoming commitments, compact long-term goals, handoff contract). Ordinary detailed
@@ -145,9 +159,12 @@ comparison/next-day `deriveKeySessionSummaries` pipeline. Instead,
 previous day's quality cycling/running sessions (tempo, threshold, VO2, anaerobic, mixed or race).
 For historical records where `stimulusDomain` is absent, a hard `intensityTag` is the bounded
 legacy fallback; an explicit canonical `unknown` domain is not promoted through that fallback.
-Cycling uses bounded zones plus persisted `activityResponse` MMP, steady-half and semantic-segment
-evidence; running uses running dynamics and bounded lap pace/power/HR evidence. This remains
-display-only and ordinary endurance/recovery sessions keep the one-line morning summary.
+Cycling uses persisted `activityResponse` MMP, steady-half and semantic-segment evidence;
+full zone tables are retained only when there is no interval/segment table to make them
+redundant. Running uses running dynamics and bounded lap pace/power/HR evidence with the same
+morning zone-suppression rule. The `planning` and `diagnostic` purposes retain their existing
+richer provenance/zone contracts, with diagnostic remaining the uncapped persisted view. This
+remains display-only and ordinary endurance/recovery sessions keep the one-line morning summary.
 
 A session is a *key session* when at least one feature produced a value, or when it is a
 steady session with no comparable prior session (its rejection reasons are stated). In the
