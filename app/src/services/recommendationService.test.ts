@@ -110,7 +110,7 @@ describe('RecommendationService persistence', () => {
         const recommendation: Recommendation = { template, mode: 'train', rationale: 'Keep it easy.', recommendationAudit: audit };
         const capture = {
             evaluatedAt: audit.evaluatedAt, minimumSafetyStatus: 'complete' as const,
-            evaluatorInputs, performedTrainingFacts: null, mechanicalCheckinHistory: [],
+            evaluatorInputs, performedTrainingFacts: { asOfDate: '2026-09-28', windowDays: 7, revision: 'facts-r1', exposures: [], coverageCredits: [] }, mechanicalCheckinHistory: [],
         };
 
         const service = new RecommendationService();
@@ -159,7 +159,7 @@ describe('RecommendationService persistence', () => {
             recommendationAudit: { ...baseAudit, policyVersion: 'different-policy' },
         }, {
             evaluatedAt: baseAudit.evaluatedAt, minimumSafetyStatus: 'complete', evaluatorInputs,
-            performedTrainingFacts: null, mechanicalCheckinHistory: [],
+            performedTrainingFacts: { asOfDate: '2026-09-28', windowDays: 7, revision: 'facts-r1', exposures: [], coverageCredits: [] }, mechanicalCheckinHistory: [],
         });
         expect(wrongPolicy).toBeNull();
         expect(firestore.batch.commit).not.toHaveBeenCalled();
@@ -169,7 +169,7 @@ describe('RecommendationService persistence', () => {
             template, mode: 'train', rationale: 'Keep it easy.', recommendationAudit: baseAudit,
         }, {
             evaluatedAt: '2026-09-28T08:31:00.000Z', minimumSafetyStatus: 'complete', evaluatorInputs,
-            performedTrainingFacts: null, mechanicalCheckinHistory: [],
+            performedTrainingFacts: { asOfDate: '2026-09-28', windowDays: 7, revision: 'facts-r1', exposures: [], coverageCredits: [] }, mechanicalCheckinHistory: [],
         });
         expect(wrongInstant).toBeNull();
         expect(firestore.batch.commit).not.toHaveBeenCalled();
