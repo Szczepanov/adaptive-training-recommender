@@ -1956,7 +1956,7 @@ service cloud.firestore {
           && ((request.resource.data.minimumSafetyStatus == 'complete'
               && request.resource.data.recommendationRevision >= 1
               && request.resource.data.evaluatorInputs is map
-              && (request.resource.data.performedTrainingFacts is map || request.resource.data.performedTrainingFacts == null))
+              && request.resource.data.performedTrainingFacts is map)
             || (request.resource.data.minimumSafetyStatus in ['missing', 'incomplete']
               && request.resource.data.recommendationRevision == 0
               && request.resource.data.evaluatorInputs == null
