@@ -239,6 +239,19 @@ def test_run_backfill_activity_response_failure_returns_nonzero(
     assert run_backfill_activity_response([]) == 1
 
 
+def test_run_backfill_activity_response_busy_lease_returns_nonzero(
+    mock_settings: Any,
+    mock_service: Any,
+    mock_execution_lease: Any,
+) -> None:
+    mock_execution_lease.return_value.acquire.return_value = False
+
+    assert run_backfill_activity_response([]) == 1
+
+    mock_service.return_value.backfill_activity_response.assert_not_called()
+    mock_execution_lease.return_value.release.assert_not_called()
+
+
 def test_run_backfill_activity_response_rejects_partial_range() -> None:
     with pytest.raises(SystemExit):
         run_backfill_activity_response(["--start-date", "2026-09-01"])
