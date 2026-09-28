@@ -7,7 +7,7 @@ body:
       value: |
         Use this form for implementation-oriented work that should be clear enough for a human or coding agent to take from issue to PR.
 
-        **Security:** do not report vulnerabilities, credentials, tokens, service-account data, or sensitive/raw health data in a public issue. Follow [SECURITY.md](../../SECURITY.md) instead.
+        **Security:** do not report vulnerabilities, credentials, tokens, service-account data, or sensitive/raw health data in a public issue. Follow [SECURITY.md](https://github.com/Szczepanov/adaptive-training-recommender/blob/main/SECURITY.md) instead.
 
   - type: dropdown
     id: work_type
