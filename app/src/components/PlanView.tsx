@@ -56,11 +56,13 @@ import { ScheduleWindowsCard } from './schedule/ScheduleWindowsCard';
 import { PlanAuthorityBanner } from './PlanAuthorityBanner';
 import type { AuthorityBannerInput } from './planAuthorityBannerRule';
 import './PlanView.css';
+import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
 
 interface PlanViewProps {
   userId: string;
   onNavigate?: (screen: Screen) => void;
   onPlanChanged?: () => void;
+  onCapabilityMaintenanceResolved?: (userId: string, date: string, result: CapabilityMaintenanceResult | null) => void;
 }
 
 const WEEKDAY_FORMATTER = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -77,7 +79,7 @@ function formatSourceList(items: string[]): string {
   return `${items.slice(0, -1).join(', ')}, and ${items.at(-1)}`;
 }
 
-export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanChanged }) => {
+export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanChanged, onCapabilityMaintenanceResolved }) => {
   const today = useMemo(() => getLocalDateString(), []);
   const [activePlan, setActivePlan] = useState<ActiveExternalPlan | null>(null);
   const [critique, setCritique] = useState<ExternalWeekCritique | null>(null);
@@ -304,6 +306,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             input.scheduleOverlays,
           );
           setAdaptiveTodayRecommendation(baseRec);
+          onCapabilityMaintenanceResolved?.(userId, today, baseRec.capabilityMaintenance ?? null);
           setClinicalEscalationRequired(baseRec.envelopes?.safety.clinicalEscalationRequired === true);
 
           const tomorrowPlan = await evaluateNextDayPlanWithIntent(
@@ -365,7 +368,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
     } finally {
       setLoading(false);
     }
-  }, [userId, today, selectedNextDayTier]);
+  }, [userId, today, selectedNextDayTier, onCapabilityMaintenanceResolved]);
 
   useEffect(() => {
     loadPlanData();

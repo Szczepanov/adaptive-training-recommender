@@ -30,6 +30,7 @@ import { decisionJournalService } from '../services/decisionJournalService';
 import { resolveEngineShadowVerdict } from '../engine/shadowAgreement';
 import { getPreviousLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { resolveWorkoutPrescription } from '../workouts';
+import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
 
 function formatEventTiming(daysToEvent: number | null): string {
   if (daysToEvent === 0) return 'Today';
@@ -103,6 +104,7 @@ interface HomeProps {
   userId: string;
   onNavigate: (screen: Screen) => void;
   onViewData?: () => void;
+  onCapabilityMaintenanceResolved?: (userId: string, date: string, result: CapabilityMaintenanceResult | null) => void;
   /** Launches today's immutable session binding through the source-neutral runner. */
   onStartSession?: (binding: SessionReferenceBinding, options?: { allowDuplicateCompleted?: boolean }) => void | Promise<void>;
 }
@@ -119,7 +121,7 @@ function verifySessionBindingReplay(userId: string, saved: DailyRecommendation |
     .catch(err => console.warn(`Failed to verify session-binding replay for ${saved.date}:`, err));
 }
 
-export function Home({ userId, onNavigate, onViewData, onStartSession }: HomeProps) {
+export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabilityMaintenanceResolved }: HomeProps) {
   const [decisionInput, setDecisionInput] = useState<ComposedDailyDecisionInput | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
   const [adjustmentDirection, setAdjustmentDirection] = useState<'easier' | 'harder' | null>(null);
@@ -577,6 +579,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           confirmedProgressionOverrides,
         );
         if (!isCurrent()) return;
+        onCapabilityMaintenanceResolved?.(userId, input.date, baseRecommendation.capabilityMaintenance ?? null);
         const recommendationWithPrescription = {
           ...baseRecommendation,
           prescription: resolveWorkoutPrescription(baseRecommendation, userId, input.date, input.preferences?.performanceProfile, baseRecommendation.executionDose, input.trainingSettings) ?? undefined
@@ -847,7 +850,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     } finally {
       if (isCurrent()) setLoading(false);
     }
-  }, [userId, clearExternalPlanState]);
+  }, [userId, clearExternalPlanState, onCapabilityMaintenanceResolved]);
 
   /**
    * ADR-0036 (H4) plan step 11: claim capacity atomically, then launch. The claim is the

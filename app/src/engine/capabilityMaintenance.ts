@@ -115,6 +115,24 @@ export interface CapabilityMaintenanceResult {
     softContext: string[];
 }
 
+/** Concise readout for recommendations and forecasts. The evaluator remains the owner
+ * of cadence and fulfilment; this only selects statuses worth explaining to the athlete. */
+export function capabilityMaintenanceReadout(result: CapabilityMaintenanceResult | null | undefined): string[] {
+    if (!result?.enabled) return [];
+    const labels: Record<AthleticCapabilityKey, string> = {
+        linear_speed_skill: 'Linear speed',
+        acceleration_deceleration: 'Acceleration and deceleration',
+        multidirectional_change_of_direction: 'Change of direction',
+        sport_skill: 'Sport skill',
+    };
+    return result.capabilities
+        .filter(item => item.status === 'due' || item.status === 'overdue'
+            || item.fulfilment?.status === 'blocked'
+            || item.fulfilment?.status === 'unknown'
+            || item.fulfilment?.status === 'deliberately_suspended')
+        .map(item => `${labels[item.capability]}: ${item.message}`);
+}
+
 export interface CapabilityCadenceInput {
     asOfDate: string;
     /** Dates `[asOfDate, asOfDate + planningHorizonDays - 1]` are plannable. */

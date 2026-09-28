@@ -56,10 +56,56 @@ describe('WeekAheadStrip weekly role visibility', () => {
         expect(html).toContain('Strength roles: 1/2 planned; 1 blocked (hard safety or recovery).');
     });
 
-    it('does not invent a strength summary when no primary-strength role exists', () => {
+  it('does not invent a strength summary when no primary-strength role exists', () => {
         const html = renderToStaticMarkup(<WeekAheadStrip plan={weekAheadPlan('Easy aerobic day.')} />);
         expect(html).not.toContain('Strength role');
-    });
+  });
+
+  it('shows due capability maintenance and its typed block reason from the planner result', () => {
+    const plan = weekAheadPlan('Easy aerobic day.');
+    plan.capabilityMaintenance = {
+      enabled: true,
+      intervalDays: 14,
+      placements: [],
+      softContext: [],
+      capabilities: [{
+        capability: 'sport_skill',
+        status: 'overdue',
+        requiredStage: 4,
+        fulfilment: { status: 'blocked', reason: 'modality_avoided' },
+        supportWorkoutIds: [],
+        message: 'overdue since 2026-09-15; blocked (modality_avoided): every otherwise eligible qualifying identity is in a training type the athlete avoids',
+      }],
+    };
+
+    const html = renderToStaticMarkup(<WeekAheadStrip plan={plan} />);
+    expect(html).toContain('Capability maintenance');
+    expect(html).toContain('Sport skill:');
+    expect(html).toContain('overdue since 2026-09-15');
+    expect(html).toContain('modality_avoided');
+  });
+
+  it('labels deliberate capability suspension as intentional', () => {
+    const plan = weekAheadPlan('Recovery day.');
+    plan.capabilityMaintenance = {
+      enabled: true,
+      intervalDays: 14,
+      placements: [],
+      softContext: [],
+      capabilities: [{
+        capability: 'sport_skill',
+        status: 'overdue',
+        requiredStage: 4,
+        fulfilment: { status: 'deliberately_suspended', reason: 'adverse_recovery' },
+        supportWorkoutIds: [],
+        message: 'overdue since 2026-09-15; deliberately suspended (adverse_recovery): suspended for adverse recovery',
+      }],
+    };
+
+    const html = renderToStaticMarkup(<WeekAheadStrip plan={plan} />);
+    expect(html).toContain('deliberately suspended');
+    expect(html).toContain('adverse_recovery');
+  });
 });
 
 describe('WeekAheadStrip rationale display (UX review follow-up)', () => {

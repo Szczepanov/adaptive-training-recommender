@@ -25,6 +25,7 @@ import { loadCanonicalActivitiesWindow } from '../training-occurrence/canonicalA
 import type { CompletedWorkoutView } from '../training-occurrence/completedWorkoutView';
 import { SCREEN_LABELS } from '../types/navigation';
 import './DataView.css';
+import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
 
 interface DataViewProps {
   decisionInput: DailyDecisionInput | null;
@@ -39,6 +40,9 @@ interface DataViewProps {
    * `brief` screen. The canonical `brief` screen omits this prop so it renders the full
    * brief while still routing any in-view AI export action back to that brief tab. */
   onNavigateToBrief?: () => void;
+  /** Same-date result from the app's planner resolution; absent means the brief must keep
+   * capability cadence unknown rather than deriving it independently. */
+  capabilityMaintenance?: CapabilityMaintenanceResult | null;
 }
 
 type DataViewTab = 'recovery' | 'activities' | 'strength' | 'nutrition' | 'body' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief';
@@ -81,9 +85,10 @@ function formatCandidateBaseline(
 // actionable, so every gated field uses this one neutral label instead.
 const VERSION_GATED_NOT_AVAILABLE = 'Not available yet';
 
-export function DataView({ decisionInput, userId, initialTab = 'recovery', onNavigateToBrief, onRetry, onBack }: DataViewProps) {
+export function DataView({ decisionInput, userId, initialTab = 'recovery', onNavigateToBrief, onRetry, onBack, capabilityMaintenance }: DataViewProps) {
   const [activeTab, setActiveTab] = useState<DataViewTab>(initialTab);
   const [brief, setBrief] = useState<ContextBriefResult | null>(null);
+  const [briefCapabilityMaintenanceKey, setBriefCapabilityMaintenanceKey] = useState<string | null>(null);
   // Tagged with the date it belongs to, so a failure for one date is not rendered
   // against another. Deriving visibility this way avoids clearing state from inside
   // the effect body, which react-hooks/set-state-in-effect correctly rejects.
@@ -133,6 +138,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
   }, [activeTab, userId, adherenceStats]);
 
   const briefDate = decisionInput?.date;
+  const capabilityMaintenanceKey = JSON.stringify(capabilityMaintenance ?? null);
   useEffect(() => {
     // Both userId and asOfDate must match the cached window, or a user switch on the same
     // calendar date would skip the fetch and later render the previous user's activities.
@@ -180,10 +186,24 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
     // re-trigger this effect on every render.
     // When this view only links to the canonical export surface (#491), never fetch
     // the brief here -- the `brief` screen builds it.
-    if (onNavigateToBrief || activeTab !== 'brief' || !briefDate || (brief?.asOfDate === briefDate && brief.preset === briefPreset)) return;
+    if (onNavigateToBrief || activeTab !== 'brief' || !briefDate
+      || (brief?.asOfDate === briefDate && brief.preset === briefPreset
+        && briefCapabilityMaintenanceKey === capabilityMaintenanceKey)) return;
     let cancelled = false;
-    buildBriefForPreset(userId, briefDate, briefPreset)
-      .then(result => { if (!cancelled) { setBrief(result); setBriefError(null); } })
+    buildBriefForPreset(
+      userId,
+      briefDate,
+      briefPreset,
+      undefined,
+      decisionInput?.date === briefDate ? capabilityMaintenance : undefined,
+    )
+      .then(result => {
+        if (!cancelled) {
+          setBrief(result);
+          setBriefCapabilityMaintenanceKey(capabilityMaintenanceKey);
+          setBriefError(null);
+        }
+      })
       .catch(() => {
         if (cancelled) return;
         // Drop the stale result rather than leaving the previous date's brief and range on
@@ -194,7 +214,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
         setBriefError({ date: briefDate, message: 'Could not assemble the brief. Retry the dashboard refresh.' });
       });
     return () => { cancelled = true; };
-  }, [onNavigateToBrief, activeTab, userId, brief?.asOfDate, brief?.preset, briefDate, briefPreset]);
+  }, [onNavigateToBrief, activeTab, userId, brief?.asOfDate, brief?.preset, briefDate, briefPreset, briefCapabilityMaintenanceKey, capabilityMaintenanceKey, capabilityMaintenance, decisionInput?.date]);
 
   const selectBriefPreset = (preset: BriefWindowPreset) => {
     setBriefPreset(preset);

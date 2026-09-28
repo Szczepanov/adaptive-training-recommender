@@ -1,5 +1,6 @@
 import { briefWindowDaysFor, type BriefWindowPreset } from '../engine/contextBrief';
 import { contextBriefService, type ContextBriefResult } from '../services/contextBriefService';
+import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
 
 export const BRIEF_PRESET_STORAGE_KEY = 'adaptive-training:context-brief:preset';
 
@@ -35,6 +36,9 @@ export function buildBriefForPreset(
   asOfDate: string,
   preset: BriefWindowPreset,
   service: BriefBuilder = contextBriefService,
+  capabilityMaintenance?: CapabilityMaintenanceResult | null,
 ): Promise<ContextBriefResult> {
-  return service.build(userId, asOfDate, briefWindowDaysFor(preset), preset);
+  return capabilityMaintenance === undefined
+    ? service.build(userId, asOfDate, briefWindowDaysFor(preset), preset)
+    : service.build(userId, asOfDate, briefWindowDaysFor(preset), preset, capabilityMaintenance);
 }

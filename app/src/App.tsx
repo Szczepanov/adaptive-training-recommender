@@ -7,6 +7,7 @@ import { decisionComposer } from './engine/composer';
 import { hasCompletedSubjectiveCheckinForDecision } from './engine/checkinCompletion';
 import type { HealthAnomalyAssessmentRevision } from './engine/healthAnomalyModels';
 import type { DailyDecisionInput } from './engine/models';
+import type { CapabilityMaintenanceResult } from './engine/capabilityMaintenance';
 import type { SessionDefinition, SessionExecution, SessionIntent } from './sessions/models';
 import type { Screen } from './types/navigation';
 import { readScreenRoute, requiresCurrentCheckin, screenRouteUrl } from './types/screenRoute';
@@ -42,6 +43,14 @@ function App() {
   const { userId, authPhase } = useAuth();
   const [screen, setScreen] = useState<Screen>('home');
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
+  const [capabilityMaintenanceResolution, setCapabilityMaintenanceResolution] = useState<{
+    userId: string;
+    date: string;
+    result: CapabilityMaintenanceResult | null;
+  } | null>(null);
+  const recordCapabilityMaintenance = useCallback((resolvedUserId: string, date: string, result: CapabilityMaintenanceResult | null) => {
+    setCapabilityMaintenanceResolution({ userId: resolvedUserId, date, result });
+  }, []);
   const [healthAnomalyShadowRevision, setHealthAnomalyShadowRevision] = useState<HealthAnomalyAssessmentRevision | null>(null);
   const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
@@ -153,6 +162,7 @@ function App() {
     lastRoutedDate.current = null;
     setInitialRouteUserId(null);
     setDecisionInput(null);
+    setCapabilityMaintenanceResolution(null);
     setHealthAnomalyShadowRevision(null);
 
     // Clear synchronously on every identity change so a resolved session from a previous
@@ -370,6 +380,7 @@ function App() {
               key={`${userId}:${dailyViewDate}`}
               userId={userId!}
               onNavigate={handleNavigate}
+              onCapabilityMaintenanceResolved={recordCapabilityMaintenance}
               onViewData={() => {
                 void loadDecisionInput();
                 handleNavigate('data');
@@ -406,6 +417,10 @@ function App() {
               <DataView
                 key={userId}
                 decisionInput={decisionInput}
+                capabilityMaintenance={capabilityMaintenanceResolution?.userId === userId
+                  && capabilityMaintenanceResolution.date === decisionInput?.date
+                  ? capabilityMaintenanceResolution.result
+                  : undefined}
                 userId={userId!}
                 onBack={() => handleNavigate('home')}
                 onRetry={() => { void loadDecisionInput(); }}
@@ -428,6 +443,10 @@ function App() {
             <DataView
               key={userId}
               decisionInput={decisionInput}
+              capabilityMaintenance={capabilityMaintenanceResolution?.userId === userId
+                && capabilityMaintenanceResolution.date === decisionInput?.date
+                ? capabilityMaintenanceResolution.result
+                : undefined}
               userId={userId!}
               initialTab="brief"
               onBack={() => handleNavigate('home')}
@@ -536,6 +555,7 @@ function App() {
               key={userId}
               userId={userId!}
               onNavigate={handleNavigate}
+              onCapabilityMaintenanceResolved={recordCapabilityMaintenance}
               onPlanChanged={() => {
                 void loadDecisionInput();
               }}

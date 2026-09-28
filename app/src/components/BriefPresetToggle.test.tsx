@@ -9,6 +9,7 @@ import {
   persistBriefPreset,
 } from './briefPreset';
 import type { BriefWindowPreset } from '../engine/contextBrief';
+import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
 
 vi.mock('../services/contextBriefService', () => ({
   contextBriefService: { build: vi.fn() },
@@ -70,5 +71,21 @@ describe('BriefPresetToggle (#811)', () => {
     const store = stubStorage();
     store.set(BRIEF_PRESET_STORAGE_KEY, 'weekly');
     expect(loadStoredBriefPreset()).toBe('daily');
+  });
+
+  it('forwards the planner-resolved capability result into context brief generation', async () => {
+    const capabilityMaintenance: CapabilityMaintenanceResult = {
+      enabled: true, intervalDays: 14, placements: [], softContext: [],
+      capabilities: [{
+        capability: 'sport_skill', status: 'overdue', requiredStage: 4,
+        fulfilment: { status: 'blocked', reason: 'modality_avoided' },
+        supportWorkoutIds: [], message: 'sport_skill overdue: modality_avoided',
+      }],
+    };
+    const build = vi.fn(async () => ({}) as never);
+
+    await buildBriefForPreset('u1', '2026-08-20', 'full', { build }, capabilityMaintenance);
+
+    expect(build).toHaveBeenCalledWith('u1', '2026-08-20', 14, 'full', capabilityMaintenance);
   });
 });
