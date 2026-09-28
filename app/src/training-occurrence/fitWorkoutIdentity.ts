@@ -856,6 +856,7 @@ export function canonicalWorkoutToFitIdentitySteps(
 }
 
 const FTP_RELATIVE_TARGET_PATTERN = /(?:\d+(?:\.\d+)?\s*[-–—]\s*\d+(?:\.\d+)?\s*%\s*(?:FTP)?|\d+(?:\.\d+)?\s*%\s*FTP\b)/i;
+const EXACT_WATT_TARGET_PATTERN = /(?:\d+(?:\.\d+)?\s*[-–—]\s*\d+(?:\.\d+)?\s*W\b|\d+(?:\.\d+)?\s*W\b)/i;
 
 /**
  * Garmin's upload path resolves cycling %FTP prescriptions with the athlete FTP when
@@ -876,7 +877,11 @@ export function canonicalWorkoutRequiresAthleteFtp(workout: CanonicalWorkoutExpo
                 step.notes,
                 step.name,
             ];
-            return texts.some(value => typeof value === 'string' && FTP_RELATIVE_TARGET_PATTERN.test(value));
+            return texts.some(value =>
+                typeof value === 'string'
+                && FTP_RELATIVE_TARGET_PATTERN.test(value)
+                && !EXACT_WATT_TARGET_PATTERN.test(value),
+            );
         }),
     );
 }
