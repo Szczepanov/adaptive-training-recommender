@@ -737,9 +737,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
 
     // 3. Yesterday's Closed-Loop Debrief
     lines.push('', `## 3. Yesterday's Closed-Loop Debrief (${yesterdayDate})`, '');
-    if (yesterdayRecommendation) {
-        lines.push(`- Prescribed: ${yesterdayRecommendation.templateTitle} (${yesterdayRecommendation.modality} · ${yesterdayRecommendation.mode})`);
-    } else if (input.restDirectiveYesterday) {
+    if (input.restDirectiveYesterday) {
         lines.push('- Prescribed: Imported-plan rest/recovery directive.');
     } else if (input.yesterdayExternalSession) {
         const session = input.yesterdayExternalSession;
@@ -747,6 +745,8 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
             ? `${session.durationMin} min`
             : `${session.durationMin}–${session.durationMax} min`;
         lines.push(`- Prescribed: Imported session — ${session.title} (${session.modality} · ${duration} · ${session.intensity})`);
+    } else if (yesterdayRecommendation) {
+        lines.push(`- Prescribed: ${yesterdayRecommendation.templateTitle} (${yesterdayRecommendation.modality} · ${yesterdayRecommendation.mode})`);
     } else if (!input.recommendationsReadable) {
         lines.push('- Prescribed: unavailable (read failed) — unknown, not none.');
     } else {
@@ -776,8 +776,10 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         lines.push('- Manual physical work: none reported');
     }
 
+    const importedAuthorityYesterday = input.yesterdayExternalSession !== undefined
+        || input.restDirectiveYesterday !== undefined;
     const adherenceDelta = deriveAdherenceDelta(
-        yesterdayRecommendation,
+        importedAuthorityYesterday ? null : yesterdayRecommendation,
         input.yesterdayExternalSession ?? null,
         input.restDirectiveYesterday ?? null,
         yesterdayActivities,
