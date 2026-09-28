@@ -248,13 +248,15 @@ export function renderMorningQualityActivityTelemetry(activity: NormalizedGarmin
     const modality = normalizeModality(activity.type);
     if (modality !== 'Cycling' && modality !== 'Running') return [];
     const domain = activity.stimulusDomain ?? 'unknown';
-    if (!MORNING_QUALITY_DOMAINS.has(domain) && activity.intensityTag !== 'hard') return [];
+    const canonicalQuality = MORNING_QUALITY_DOMAINS.has(domain);
+    const legacyHard = domain === 'unknown' && activity.intensityTag === 'hard';
+    if (!canonicalQuality && !legacyHard) return [];
 
     const detail: string[] = [];
     const sessionParts = [
-        activity.variabilityIndex === undefined ? null : `VI ${formatNumber(activity.variabilityIndex, 2)}`,
-        activity.maxHr === undefined ? null : `max HR ${formatNumber(activity.maxHr, 0)} bpm`,
-        activity.trainingEffectAnaerobic === null ? null : `anaerobic TE ${formatNumber(activity.trainingEffectAnaerobic, 1)}`,
+        isFiniteNumber(activity.variabilityIndex) ? `VI ${formatNumber(activity.variabilityIndex, 2)}` : null,
+        isFiniteNumber(activity.maxHr) ? `max HR ${formatNumber(activity.maxHr, 0)} bpm` : null,
+        isFiniteNumber(activity.trainingEffectAnaerobic) ? `anaerobic TE ${formatNumber(activity.trainingEffectAnaerobic, 1)}` : null,
         activity.primaryBenefit ? `primary benefit ${activity.primaryBenefit}` : null,
     ].filter((part): part is string => part !== null);
     if (sessionParts.length > 0) detail.push(`- Session detail: ${sessionParts.join(' · ')}`);
