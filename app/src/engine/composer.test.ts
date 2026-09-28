@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import type { DailySubjectiveCheckin, ScheduleOverlay } from './models';
+import type { DailySubjectiveCheckin, ScheduleOverlay, TrainingSettings } from './models';
 
 const services = vi.hoisted(() => ({
     recovery: { getRecoverySnapshotState: vi.fn() },
@@ -20,6 +20,7 @@ vi.mock('../services/trainingIntentProfileService', () => ({ trainingIntentProfi
 vi.mock('../services/scheduleOverlayService', () => ({ scheduleOverlayService: services.overlays }));
 
 import { DecisionComposer } from './composer';
+import { composeDailyDecisionInputFromSources } from './decisionInputComposition';
 
 const settings = {
     userId: 'u1', schemaVersion: 2,
@@ -141,6 +142,49 @@ describe('DecisionComposer Phase 9.4 subjective baseline boundary', () => {
         });
         const input = await new DecisionComposer().composeDailyDecisionInput('u1', date);
         expect(input.subjectiveBaseline).toBeNull();
+    });
+
+    it('composes the same decision input online and from source states at a fixed evaluation time', async () => {
+        const date = '2026-08-10';
+        const evaluatedAt = '2026-08-10T06:00:00.000Z';
+        const history = matureHistory(date);
+        history[27] = {
+            ...history[27],
+            tissueResponses: { shoulder: { region: 'shoulder', morningState: 'moderate' } },
+        };
+        const historyIssue = { code: 'invalid-checkin-field', documentPath: 'users/u1/daily_subjective_checkins/bad' };
+        const historyState = { status: 'AVAILABLE' as const, data: history, revision: 'history-r5', issues: [historyIssue] };
+        const checkinState = { status: 'AVAILABLE' as const, data: scoredCheckin(date), revision: 'checkin-r1' };
+        const goalsState = { status: 'AVAILABLE' as const, data: [], revision: 'goals-r1' };
+        const settingsState = { status: 'AVAILABLE' as const, data: settings as TrainingSettings, revision: 'settings-r1' };
+        const overlaysState = { status: 'AVAILABLE' as const, data: [], revision: 'overlays-r1' };
+        services.checkin.getCheckinState.mockResolvedValue(checkinState);
+        services.checkin.getCheckinsInRangeState.mockResolvedValue(historyState);
+        services.goals.getActiveGoalsState.mockResolvedValue(goalsState);
+        services.settings.getTrainingSettingsState.mockResolvedValue(settingsState);
+        services.overlays.getOverlaysInRangeState.mockResolvedValue(overlaysState);
+
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(evaluatedAt));
+        try {
+            const online = await new DecisionComposer().composeDailyDecisionInput('u1', date);
+            const offline = composeDailyDecisionInputFromSources({
+                userId: 'u1', date, evaluatedAt,
+                recoveryState: { status: 'MISSING' },
+                checkinState,
+                goalsState,
+                trainingSettingsState: settingsState,
+                preferencesState: { status: 'MISSING' },
+                trainingIntentProfileState: { status: 'MISSING' },
+                subjectiveHistoryState: historyState,
+                scheduleOverlaysState: overlaysState,
+            });
+            expect(offline).toEqual(online);
+            expect(offline).not.toHaveProperty('subjectiveHistoryState.data');
+            expect(offline.carriedRegionRestrictions).toEqual([{ region: 'shoulder', severity: 'limit' }]);
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
 

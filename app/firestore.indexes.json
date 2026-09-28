@@ -58,6 +58,22 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "localDate", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "schedule_overlays",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "endDate", "order": "ASCENDING" },
+        { "fieldPath": "startDate", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "plan_blocks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "endDate", "order": "ASCENDING" },
+        { "fieldPath": "startDate", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

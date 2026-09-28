@@ -278,7 +278,6 @@ function stableJson(value: unknown): string {
 export function compareRecommendationOutputs(
     live: Readonly<Record<string, unknown>>,
     canonical: Readonly<Record<string, unknown>>,
-    classifications: Readonly<Record<string, 'expected' | 'explainable' | 'unresolved'>> = {},
 ): RecommendationDelta {
     const fields = [...new Set([...Object.keys(live), ...Object.keys(canonical)])].sort();
     const changedFields = fields
@@ -298,7 +297,7 @@ export function compareRecommendationOutputs(
         guardrails: has('guardrails'),
         changedFields,
     };
-    const fieldClassifications = Object.fromEntries(changedFields.map(field => [field, classifications[field] ?? 'unresolved'])) as RecommendationDelta['fieldClassifications'];
+    const fieldClassifications = Object.fromEntries(changedFields.map(field => [field, 'unresolved'])) as RecommendationDelta['fieldClassifications'];
     const observedClassifications = Object.values(fieldClassifications);
     const classification = changedFields.length === 0 ? 'unchanged'
         : observedClassifications.includes('unresolved') ? 'unresolved'

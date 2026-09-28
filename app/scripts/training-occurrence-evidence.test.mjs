@@ -22,6 +22,7 @@ async function makeInput() {
         schemaVersion: 1,
         metadata: {
             sourceCommit: 'synthetic-fixture',
+            sourceTreeSha256: 'a'.repeat(64),
             occurrenceSchemaVersion: 1,
             matcherVersion: 'matcher-v1',
             reconciliationPolicyVersion: 'policy-v1',
@@ -39,6 +40,54 @@ async function makeInput() {
     };
     await writeFile(inputPath, JSON.stringify(input), 'utf8');
     return { inputPath, outputPath };
+}
+
+function addDays(date, days) {
+    const value = new Date(`${date}T00:00:00.000Z`);
+    value.setUTCDate(value.getUTCDate() + days);
+    return value.toISOString().slice(0, 10);
+}
+
+function schemaV2RecordExport(userId, startDate, endDateExclusive) {
+    const evaluationWindow = { startDate, endDateExclusive };
+    const history = { startDate: addDays(startDate, -49), endDateExclusive };
+    const subjective = { startDate: addDays(startDate, -28), endDateExclusive };
+    const forward = { startDate, endDateExclusive: addDays(endDateExclusive, 7) };
+    const mutableSources = [
+        'performedTrainingOccurrences', 'activities', 'dailyRecommendations', 'dailyRecoverySnapshots',
+        'dailySubjectiveCheckins', 'fixedActivities', 'scheduleOverlays', 'planBlocks',
+        'scheduleWindowManifests', 'sessionOccurrences', 'trainingSettings', 'preferences',
+        'trainingIntentProfiles', 'externalPlans', 'goals', 'intentBlocks',
+    ];
+    const sourceProvenance = Object.fromEntries(mutableSources.map(key => [key, { status: 'unprovable', reason: 'fixture' }]));
+    Object.assign(sourceProvenance, {
+        dailyRecommendationRevisions: { status: 'exact_revision' },
+        externalPlanRevisions: { status: 'exact_revision' },
+        sessionDefinitionRevisions: { status: 'exact_revision' },
+        executionPrescriptions: { status: 'exact_revision' },
+    });
+    return {
+        schemaVersion: 2,
+        userId,
+        window: evaluationWindow,
+        evaluationWindow,
+        sourceEvidenceBounds: {
+            performedTrainingOccurrences: history, activities: history, dailyRecommendations: history,
+            dailyRecommendationRevisions: history, dailyRecoverySnapshots: evaluationWindow,
+            dailySubjectiveCheckins: subjective, fixedActivities: forward, scheduleOverlays: forward,
+            planBlocks: forward, scheduleWindowManifests: forward, sessionOccurrences: forward,
+            sessionExecutions: history, sessionEntries: history, executionPrescriptions: history,
+            sessionDefinitionRevisions: history, externalPlanRevisions: forward,
+        },
+        sourceProvenance,
+        performedTrainingOccurrences: [], activities: [], dailyRecommendations: [], sessionExecutions: [],
+        sessionEntries: [], executionPrescriptions: [], sessionDefinitionRevisions: [],
+        dailyRecommendationRevisions: [], dailyRecoverySnapshots: [], dailySubjectiveCheckins: [],
+        fixedActivities: [], scheduleOverlays: [], planBlocks: [], scheduleWindowManifests: [],
+        sessionOccurrences: [], externalPlanHeaders: [], externalPlanRevisions: [], externalPlanPlacements: [],
+        goals: [], intentBlockHeaders: [], intentBlockRevisions: [], trainingSettings: [], preferences: [],
+        trainingIntentProfiles: [],
+    };
 }
 
 describe('training-occurrence evidence runner', () => {
@@ -210,9 +259,11 @@ describe('training-occurrence evidence runner', () => {
         const input = JSON.parse(await readFile(inputPath, 'utf8'));
         input.canonicalDerivation = { windowDays: 7, parsedOccurrences: 2, invalidRecords: 0, crossUserRecordsRejected: 0, derived: 1, unknownByReason: { provider_source_unavailable: 1 } };
         input.recommendationSeries = {
-            status: 'compared', referenceSource: 'simulation-scenario:evergreen_balanced_four_sessions',
-            nonHistoryInputsHash: 'a'.repeat(64), evaluatedDates: 3, changedDates: 1, unresolvedDates: 1,
-            changedFieldCounts: { fatigue: 1 }, repeatRunIdentical: true,
+            status: 'blocked', referenceSource: 'historical-user-scoped-inputs-v2',
+            seriesDigest: 'a'.repeat(64), candidateDates: 3, evaluatedDates: 1, notApplicableDates: 1,
+            notReplayableDates: 1, changedDates: 1, expectedDates: 0, explainableDates: 0, unresolvedDates: 1,
+            changedFieldCounts: { fatigue: 1 }, notReplayableByReason: { goal_history_unprovable: 1 },
+            classificationReasonCounts: { history_delta_requires_review: 1 }, repeatRunIdentical: true,
         };
         await writeFile(inputPath, JSON.stringify(input), 'utf8');
         const run = () => spawnSync(process.execPath, [
@@ -221,8 +272,12 @@ describe('training-occurrence evidence runner', () => {
         expect(run().status).toBe(0);
         expect(JSON.parse(await readFile(outputPath, 'utf8'))).toMatchObject({
             canonicalDerivation: { status: 'prepared', derived: 1, unknownByReason: { provider_source_unavailable: 1 } },
-            recommendationSeries: { status: 'compared', unresolvedDates: 1, changedFieldCounts: { fatigue: 1 } },
+            recommendationSeries: { status: 'blocked', candidateDates: 3, notReplayableDates: 1, unresolvedDates: 1, changedFieldCounts: { fatigue: 1 } },
         });
+
+        input.recommendationSeries.unresolvedDates = 0;
+        await writeFile(inputPath, JSON.stringify(input), 'utf8');
+        expect(run().stderr).toContain('recommendationSeries date accounting is inconsistent');
 
         input.canonicalDerivation.derived = 2;
         await writeFile(inputPath, JSON.stringify(input), 'utf8');
@@ -234,6 +289,24 @@ describe('training-occurrence evidence runner', () => {
         input.canonicalDerivation.unknownByReason = { free_text_reason: 1 };
         await writeFile(inputPath, JSON.stringify(input), 'utf8');
         expect(run().stderr).toContain('unsupported fields: free_text_reason');
+    });
+
+    it('rejects a compared recommendation series when no recommendation was actually evaluated', async () => {
+        const { inputPath } = await makeInput();
+        const input = JSON.parse(await readFile(inputPath, 'utf8'));
+        input.recommendationSeries = {
+            status: 'compared', referenceSource: 'historical-user-scoped-inputs-v2',
+            seriesDigest: 'a'.repeat(64), candidateDates: 1, evaluatedDates: 0, notApplicableDates: 1,
+            notReplayableDates: 0, changedDates: 0, expectedDates: 0, explainableDates: 0, unresolvedDates: 0,
+            changedFieldCounts: {}, notReplayableByReason: {}, classificationReasonCounts: {}, repeatRunIdentical: true,
+        };
+        await writeFile(inputPath, JSON.stringify(input), 'utf8');
+        const run = spawnSync(process.execPath, [
+            '--experimental-strip-types', 'scripts/training-occurrence-evidence.mjs', inputPath,
+        ], { cwd: appRoot, encoding: 'utf8' });
+
+        expect(run.status).not.toBe(0);
+        expect(run.stderr).toContain('requires at least one evaluated date');
     });
 
     it('rejects equal-count broad-history readiness when occurrence aliases are not paired one-to-one', async () => {
@@ -281,7 +354,7 @@ describe('training-occurrence evidence runner', () => {
         };
         const activity = (activityId, date) => ({ id: activityId, data: { activityId, date, type: 'cycling', durationMin: 45, trainingEffectAerobic: 3, trainingEffectAnaerobic: null, averageHr: 140, activityTrainingLoad: 90, intensityTag: 'moderate' } });
         const prepared = prepareTo4Evidence({
-            schemaVersion: 1, userId: 'u1', window: { startDate: '2026-08-01', endDateExclusive: '2026-08-08' },
+            ...schemaV2RecordExport('u1', '2026-08-01', '2026-08-08'),
             performedTrainingOccurrences: [
                 { id: 'p1', data: occurrence },
                 { id: 'p3', data: { ...occurrence, performedOccurrenceId: 'p3', localDate: '2026-08-05', sourceRefs: [{ kind: 'structured_execution', executionId: 'e3' }, { kind: 'provider_activity', provider: 'garmin', activityId: 'a3' }] } },
@@ -291,7 +364,7 @@ describe('training-occurrence evidence runner', () => {
                 startedAt: '2026-08-05T16:00:00Z', completedAt: '2026-08-05T16:45:00Z', updatedAt: 'x', state: 'completed', schemaVersion: 1,
             } }],
             activities: [activity('a1', '2026-08-06'), activity('a1b', '2026-08-06'), activity('a2', '2026-08-07'), activity('a3', '2026-08-05')], dailyRecommendations: [],
-        }, { sourceCommit: 'synthetic-fixture', coveragePolicyVersion: 'coverage-v1', fitFingerprintVersion: 'fit-workout-v2' });
+        }, { sourceCommit: 'synthetic-fixture', sourceTreeSha256: 'a'.repeat(64), coveragePolicyVersion: 'coverage-v1', fitFingerprintVersion: 'fit-workout-v2' });
         await writeFile(inputPath, JSON.stringify(prepared.preparedInput), 'utf8');
         const run = spawnSync(process.execPath, [
             '--experimental-strip-types', 'scripts/training-occurrence-evidence.mjs', inputPath, outputPath,

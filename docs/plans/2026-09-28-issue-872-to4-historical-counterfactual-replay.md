@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Status | Implementation plan |
+| Status | In progress — schema-v2 and fail-closed accounting landed; replay capability is blocked on historical context provenance |
 | Issue | [#872](https://github.com/Szczepanov/adaptive-training-recommender/issues/872) |
 | Parent evidence work | [#646](https://github.com/Szczepanov/adaptive-training-recommender/issues/646), PR #853 |
 | Recent prerequisites | PR #877 historical occurrence backfill merged; PR #882 non-catalog exposure derivation merged; PR #883 legacy manual metadata verification merged |
@@ -97,7 +97,7 @@ The decision-input digest must cover at least:
 - #804 `mechanicalCheckinHistory` when mechanical capability evaluation can run;
 - descriptor-scoped `PerformedTrainingFactsSnapshot`.
 
-The experiment-revision digest covers at least current `POLICY_VERSION`, source commit, export schema version, replay implementation version, classifier version and the `evaluatedAt` provenance convention. `evaluatedAt`/data-confidence diagnostics are kept deterministic, but `DataConfidenceScore` is dashboard-only and must not be misrepresented as a recommendation decision input.
+The experiment-revision digest covers at least current `POLICY_VERSION`, source commit, source-tree SHA-256, export schema version, replay implementation version, classifier version and the `evaluatedAt` provenance convention. For an uncommitted run, the source-tree digest binds the tracked diff from `HEAD` plus the contents of non-ignored untracked files; ignored private evidence artifacts are excluded. `evaluatedAt`/data-confidence diagnostics are kept deterministic, but `DataConfidenceScore` is dashboard-only and must not be misrepresented as a recommendation decision input.
 
 The broad history snapshot/revision is deliberately excluded from the decision-input digest because it is the experimental variable.
 
@@ -662,6 +662,14 @@ PR #883 is already merged and its latest private rerun is the current pre-#872 b
 6. update the dated TO4 analysis/current plan status.
 
 #872 closes only when its replay capability is complete and the real corpus has been honestly evaluated. If mutable historical source state prevents full replay, keep the blocker visible and create the smallest prospective-provenance follow-up instead of weakening the gate.
+
+## Implementation checkpoint — 2026-09-28
+
+Implemented in this worktree: schema-v2 export bounds/source matrices; production-parser validation for exported records; shared pure daily composition and same-day Home evaluator entry; per-date status accounting; source-commit plus source-tree provenance; actual-value SHA-256 parity checks; field-label validation; evaluation-window-only denominators; and removal of the legacy static replay as a readiness path. A present incomplete safety check-in is `not_applicable` only when valid creation/update timestamps prove it predates the Warsaw-local date boundary.
+
+**#872 remains incomplete.** After deploying the `schedule_overlays` and `plan_blocks` indexes declared in `app/firestore.indexes.json`, the fresh 90-day user-scoped export completed: 72 occurrences, 3 executions, 107 activities, and 45 recommendations. Preparation retained the full 90-date denominator, but all 90 dates were `not_replayable` because mutable date-D settings, goals, preferences, intent, recovery, check-ins, plans, and related history remain unprovable. One date also had an invalid subjective check-in. The two preparation runs were deterministic, but no recommendation evaluator ran. The runner's `replayable` branch is exercised with fully hydrated synthetic fixtures; `assembleOfflineHistoricalContext` intentionally cannot emit that state from current historical exports and never substitutes today's mutable state. The current implementation therefore cannot satisfy R5, R6, or the R8 real-data gate. The report remains blocked and cannot unlock TO4.
+
+The smallest next step is the prospective immutable decision-context record described in [2026-09-28-prospective-decision-context-provenance.md](./2026-09-28-prospective-decision-context-provenance.md). Do not backfill guessed source versions. Resume R5–R8 only after that record can prove each normal recommendation's exact date-D inputs.
 
 ---
 

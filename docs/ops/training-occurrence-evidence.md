@@ -39,11 +39,17 @@ eligible for review, and only a separately written analysis belongs in `docs/ana
    uv run python -m garmin_sync export-training-occurrence-evidence --user-id <uid> --start-date 2026-06-01 --end-date 2026-09-26 --with-fit
    ```
 
-   `export_training_occurrence_records` (`src/garmin_sync/training_occurrence_export.py`) reads
-   only `users/{uid}/performedTrainingOccurrences`, the referenced `session_executions`, their
-   `entries` and immutable `execution_prescriptions`, exact referenced manual
-   `session_definitions/{definitionId}/revisions/{revision}` documents, `activities` and `daily_recommendations`
-   for the window (at most 366 days). It never lists `users`. The output `raw/records.json` is
+   `export_training_occurrence_records` (`src/garmin_sync/training_occurrence_export.py`) is a
+   schema-v2, read-only export under one explicit `users/{uid}` subtree. It keeps the requested
+   evaluation window (at most 366 days) separate from declared bounded source-evidence windows.
+   In addition to performed occurrences, activities, recommendations and referenced immutable
+   execution/definition evidence, it exports the date-D inputs needed to assess historical
+   replayability: recovery snapshots, subjective check-ins, fixed activities, schedule overlays,
+   authored plan blocks, schedule-window manifests, session occurrences, current settings /
+   preferences / training-intent state, archived recommendation revisions, and exact referenced
+   external-plan revisions where available. It never lists `users` and never writes Firestore.
+   Mutable current-state sources whose date-D bytes cannot be established are tagged
+   `unprovable`; the exporter does not invent an older value. The output `raw/records.json` is
    **raw personal data**. With
    `--with-fit`, `collect_fit_identity_evidence` re-downloads each Garmin original, decodes it
    twice in memory with the production decoder, drops the bytes, and writes
@@ -61,25 +67,30 @@ eligible for review, and only a separately written analysis belongs in `docs/ana
    npm run evidence:training-occurrence:prepare -- --records artifacts/training-occurrence/raw/records.json --fit-evidence artifacts/training-occurrence/raw/fit-evidence.json
    ```
 
-   `prepareTo4Evidence` (`src/training-occurrence/to4EvidencePreparation.ts`) parses every
-   document with the production parsers, rejects and counts records owned by another user,
+   `prepareTo4Evidence` (`src/training-occurrence/to4EvidencePreparation.ts`) validates the
+   schema-v2 envelope and production-parses the broad-history evidence, rejects cross-user data,
    builds the live side with `buildTrainingHistorySnapshot` (manual-training policy off, as in
-   production) and the canonical side with `canonicalBroadHistory.ts`, pairs them by shared
-   Garmin activity or owning recommendation into opaque `occ-NNNN` aliases, derives identity
-   metrics and strata, and evaluates the hard gates it can evaluate. It then runs
-   `runHistoryCounterfactualSeries` for every date from window start + 7 days through the
-   window end, twice, and records whether both runs were identical. It writes the sanitized
-   `prepared-input.json` plus two **private** files: `private-review-sheet.json` (aliases with
-   their source keys, for labelling) and `private-recommendation-series.json` (per-date
-   projections).
+   production) and the canonical side with `canonicalBroadHistory.ts`, pairs them into opaque
+   `occ-NNNN` aliases, and evaluates the broad-history hard gates. Then
+   `assembleOfflineHistoricalContext` production-validates the exported date-D sources and
+   accounts for every evaluation date as `not_applicable`, `not_replayable`, or
+   `replayable`. `runHistoryCounterfactualSeries` invokes the shared same-day evaluator only
+   for an explicitly fully-hydrated `replayable` input and runs the series twice to verify
+   determinism. Known provenance gaps are ordinary `not_replayable` states; unexpected
+   parser/assembler exceptions fail preparation rather than being disguised as missing history.
+   There is no simulation-scenario fallback in the real-history command. At the current
+   checkpoint, historical mutable source state is not provable, so the real schema-v2 export
+   produces a blocked series and the evaluator does not run. It writes sanitized
+   `prepared-input.json` plus private review/source-coverage/recommendation-series files under
+   the ignored artifact directory.
 3. **Report (offline).** `npm run evidence:training-occurrence -- artifacts/training-occurrence/prepared-input.json artifacts/training-occurrence/report.json`
    validates the allow-listed prepared input and renders the aggregate report.
 
-To record reviewed match labels, write `{ "recordsSha256": "<from the review sheet>", "labels":
-{ "occ-0007": "correct_merge" } }` (values `correct_merge`, `false_positive_merge`,
+To record reviewed match labels, copy `recordsSha256`, `sourceCommit`, and `sourceTreeSha256`
+from the private review sheet into `{ "recordsSha256": "...", "sourceCommit": "...",
+"sourceTreeSha256": "...", "labels": { "occ-0007": "correct_merge" } }` (values `correct_merge`, `false_positive_merge`,
 `correct_separate`, `false_negative_split`) under the artifact directory and rerun step 2 with
-`--labels <path>`. Aliases are deterministic only for one exact export, so labels carrying a
-different `recordsSha256`, or naming an alias outside the review sheet, are refused. The
+`--labels <path>`. Aliases are deterministic only for one exact export and source tree, so labels carrying different provenance or naming an alias outside the review sheet are refused. The
 false-positive gate evaluates only when every multi-source (automatically merged) group is
 labelled; any `false_positive_merge` fails it.
 
@@ -130,17 +141,28 @@ Planned `SessionOccurrence` documents are never read. Merged occurrences are exc
 
 ### Recommendation counterfactual boundary
 
-`historyRecommendationCounterfactual.ts` calls the production `evaluateTrainingWithIntent`
-twice per date through an in-memory `TrainingHistoryProvider` with fixed metadata, so no
-Firestore read, persistence or wall-clock input enters the decision. The non-history input is a
-fixed reference day from a simulation scenario (default `evergreen_balanced_four_sessions`),
-hashed into `recommendationSeries.nonHistoryInputsHash`. This isolates the engine's sensitivity
-to the history swap; it is **not** a replay of the athlete's real readiness, check-in, plan or
-preferences for each date, which production assembles in the UI composition layer. Because
-history is injected, the production canonical `performedTrainingFacts` read (the live narrow
-recency/spacing/coverage cutover) and mechanical check-in reads are skipped on both passes; the
-comparison is symmetric but does not exercise those cutovers. Every changed projection field is
-`unresolved` until a reviewer classifies it.
+The schema-v2 path is a **current-policy historical-context counterfactual**, not a recreation of
+the policy bundle that originally ran on date D. `DecisionComposer` and offline evidence share
+the pure daily source-state composition boundary, while `Home.tsx` and replay share
+`evaluateSameDayRecommendation` for the same evaluator argument shape.
+
+For a date to reach the evaluator, `HistoricalDecisionInputs` must already contain the real
+exported user id, mapped readiness/context/events, previous mode, fixed activities, authored plan
+blocks, planning/profile/preferences state, external session/rest context, schedule overlays,
+confirmed progression overrides, explicit #804 mechanical check-in history, and the same
+descriptor-scoped narrow `performedTrainingFacts` carried in Home's 7-day prepared operational
+snapshot. SHA-256 digests bind those non-broad-history values plus the source commit/tree and
+current `POLICY_VERSION`. The live and canonical passes must match every common digest before
+evaluation; only broad `CompletedExposure` rows/revision may differ. Both passes use in-memory
+history providers and must make the same wider-window provider requests.
+
+The current `assembleOfflineHistoricalContext` deliberately does **not** manufacture a
+`replayable` input from mutable present-day documents. It returns `not_replayable` while a
+required date-D source is unprovable (and can prove only a narrow `not_applicable` safety-gate
+case). The replayable branch is therefore exercised by fully hydrated test fixtures today and is
+reserved for evidence that can actually prove the complete historical context. The prospective
+immutable decision-context plan is the intended source of that proof for future dates. Any
+changed projection field without a provenance-bound per-date review label remains `unresolved`.
 
 ## Prepared-input contract
 

@@ -1,10 +1,8 @@
 import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin, ScheduleOverlay, TrainingIntentProfile, TrainingSettings, UserGoal, UserPreferences } from './models';
-import type { DataIssue, DataState, DataStateSummary } from './dataState';
-import { summarizeDataState } from './dataState';
+import type { DataState } from './dataState';
 import { isSupportedTrainingSettingsSchemaVersion } from './trainingSettingsSchema';
-import { computeSubjectiveBaseline, REFERENCE_SUBJECTIVE_BASELINE_POLICY, type SubjectiveBaseline } from './subjectiveBaseline';
-import { evaluateDataConfidence } from './dataConfidence';
-import { deriveCarriedRegionRestrictions, type CarriedRegionRestriction } from './injuryPolicy';
+import { REFERENCE_SUBJECTIVE_BASELINE_POLICY } from './subjectiveBaseline';
+import { composeDailyDecisionInputFromSources, type ComposedDailyDecisionInput } from './decisionInputComposition';
 import { checkinService } from '../services/checkinService';
 import { goalService } from '../services/goalService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
@@ -14,27 +12,7 @@ import { trainingIntentProfileService } from '../services/trainingIntentProfileS
 import { scheduleOverlayService } from '../services/scheduleOverlayService';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 
-/** Composition-only extension. Subjective history is intentionally not part of the
- * persisted DailyDecisionInput contract; raw historical check-ins remain local to this
- * function and only normalized baseline evidence plus compact status/issues escape the
- * composition boundary (ADR-0020/D-SUBJPURE/D-SUBJAUDIT).
- *
- * Schedule overlays are decision-affecting constraints, so the composed input also retains
- * their source-state evidence. Unlike optional context such as preferences, an unavailable
- * or invalid overlay source fails closed before a recommendation can be produced. */
-export interface ComposedDailyDecisionInput extends DailyDecisionInput {
-    sourceStates: DailyDecisionInput['sourceStates'] & { scheduleOverlays: DataStateSummary };
-    subjectiveBaseline: SubjectiveBaseline | null;
-    subjectiveHistoryState: DataStateSummary;
-    subjectiveHistoryIssues: DataIssue[];
-    /** Compact one-day pending-recheck carry (issue #680), derived from yesterday's raw
-     * tissue check-in already fetched for the subjective-history range read above -- never
-     * an extra read. Region + severity only, never a raw check-in, matching this module's
-     * existing "compact evidence only" composition-boundary policy. Pass to
-     * mapContextFromGoalsAndTrainingSettings only for the actual next calendar day's real
-     * context, never for a provisional/forecast day (see that function's own doc comment). */
-    carriedRegionRestrictions: CarriedRegionRestriction[];
-}
+export type { ComposedDailyDecisionInput } from './decisionInputComposition';
 
 export class DecisionComposer {
     /**
@@ -71,10 +49,7 @@ export class DecisionComposer {
             const checkinState: DataState<DailySubjectiveCheckin> = results[1].status === 'fulfilled'
                 ? results[1].value
                 : unavailable<DailySubjectiveCheckin>('read subjective check-in');
-            const recoverySnapshot = recoveryState.status === 'AVAILABLE' ? recoveryState.data : null;
-            const subjectiveCheckin = checkinState.status === 'AVAILABLE' ? checkinState.data : null;
             const goalsState = results[2].status === 'fulfilled' ? results[2].value : unavailable<UserGoal[]>('read active goals');
-            const activeGoals = goalsState.status === 'AVAILABLE' ? goalsState.data : [];
             const trainingSettingsState = results[3].status === 'fulfilled'
                 ? results[3].value
                 : unavailable<TrainingSettings>('read training settings');
@@ -83,39 +58,13 @@ export class DecisionComposer {
                     ? 'Training settings are invalid. Please review and save them again.'
                     : 'Training settings are temporarily unavailable. Please retry.');
             }
-            const trainingSettings = trainingSettingsState.data;
             const preferencesState = results[4].status === 'fulfilled' ? results[4].value : unavailable<UserPreferences>('read preferences');
-            const preferences = preferencesState.status === 'AVAILABLE' ? preferencesState.data : null;
             const trainingIntentProfileState = results[5].status === 'fulfilled'
                 ? results[5].value
                 : unavailable<TrainingIntentProfile>('read training intent profile');
-            const trainingIntentProfile = trainingIntentProfileState.status === 'AVAILABLE' ? trainingIntentProfileState.data : null;
             const subjectiveHistoryRawState: DataState<DailySubjectiveCheckin[]> = results[6].status === 'fulfilled'
                 ? results[6].value
                 : unavailable<DailySubjectiveCheckin[]>('read subjective check-in history');
-            const subjectiveBaseline = subjectiveHistoryRawState.status === 'AVAILABLE'
-                ? computeSubjectiveBaseline(subjectiveHistoryRawState.data, targetDate, REFERENCE_SUBJECTIVE_BASELINE_POLICY)
-                : null;
-            // The one-day pending-recheck carry needs only yesterday's raw tissue response,
-            // already present in the subjective-history range read above (no extra read).
-            // An unavailable/missing history range fails open to no carry -- the same
-            // fail-open posture this module already uses for the relative subjective
-            // baseline above -- rather than blocking today's decision.
-            const priorDay = addDaysToLocalDateString(targetDate, -1);
-            const priorDayCheckin = subjectiveHistoryRawState.status === 'AVAILABLE'
-                ? subjectiveHistoryRawState.data.find(checkin => checkin.date === priorDay) ?? null
-                : null;
-            const carriedRegionRestrictions = deriveCarriedRegionRestrictions(
-                trainingSettings.injuries,
-                priorDayCheckin?.tissueResponses,
-                priorDay,
-            );
-            const subjectiveHistoryIssues = subjectiveHistoryRawState.status === 'AVAILABLE'
-                ? [...(subjectiveHistoryRawState.issues ?? [])]
-                : subjectiveHistoryRawState.status === 'INVALID'
-                    ? [...subjectiveHistoryRawState.issues]
-                    : [];
-            const subjectiveHistoryState = summarizeDataState(subjectiveHistoryRawState);
             const overlaysState: DataState<ScheduleOverlay[]> = results[7].status === 'fulfilled'
                 ? results[7].value
                 : unavailable<ScheduleOverlay[]>('read schedule overlays');
@@ -124,21 +73,6 @@ export class DecisionComposer {
                     ? 'Schedule overlays are invalid. Please review or remove the affected schedule block.'
                     : 'Schedule overlays are temporarily unavailable. Please retry.');
             }
-            const scheduleOverlays = overlaysState.data;
-
-            const sourceStates = {
-                recoverySnapshot: recoveryState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: recoveryState.revision } : recoveryState,
-                subjectiveCheckin: checkinState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: checkinState.revision } : checkinState,
-                activeGoals: goalsState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: goalsState.revision } : goalsState,
-                trainingSettings: { status: 'AVAILABLE' as const, revision: trainingSettingsState.revision },
-                preferences: preferencesState.status === 'AVAILABLE'
-                    ? { status: 'AVAILABLE' as const, revision: preferencesState.revision }
-                    : preferencesState,
-                trainingIntentProfile: trainingIntentProfileState.status === 'AVAILABLE'
-                    ? { status: 'AVAILABLE' as const, revision: trainingIntentProfileState.revision }
-                    : trainingIntentProfileState,
-                scheduleOverlays: summarizeDataState(overlaysState),
-            };
 
             results.forEach((result, index) => {
                 if (result.status === 'rejected') {
@@ -149,48 +83,25 @@ export class DecisionComposer {
                     }
                 }
             });
-            if (subjectiveHistoryIssues.length > 0) {
-                console.warn('Subjective history contains invalid rows excluded from the baseline:', subjectiveHistoryIssues);
+            const input = composeDailyDecisionInputFromSources({
+                userId,
+                date: targetDate,
+                evaluatedAt: new Date().toISOString(),
+                recoveryState,
+                checkinState,
+                goalsState,
+                trainingSettingsState,
+                preferencesState,
+                trainingIntentProfileState,
+                subjectiveHistoryState: subjectiveHistoryRawState,
+                scheduleOverlaysState: overlaysState,
+            });
+            if (input.subjectiveHistoryIssues.length > 0) {
+                console.warn('Subjective history contains invalid rows excluded from the baseline:', input.subjectiveHistoryIssues);
             } else if (subjectiveHistoryRawState.status === 'UNAVAILABLE') {
                 console.warn('Subjective history is unavailable; relative subjective baseline disabled for this decision.');
             }
-
-            const dataQuality = {
-                hasRecoverySnapshot: recoverySnapshot !== null,
-                hasSubjectiveCheckin: subjectiveCheckin !== null,
-                subjectiveCheckinComplete: subjectiveCheckin?.dataQuality.isComplete ?? false,
-                profileReady: preferences !== null
-            };
-
-            // `satisfies` verifies the persisted decision contract without erasing the
-            // composition-only scheduleOverlays source state needed for audit/debugging.
-            const baseInput = {
-                userId,
-                date: targetDate,
-                recoverySnapshot,
-                subjectiveCheckin,
-                activeGoals,
-                trainingSettings,
-                preferences,
-                trainingIntentProfile,
-                scheduleOverlays,
-                sourceStates,
-                dataQuality,
-            } satisfies DailyDecisionInput;
-
-            // Keep wall-clock evaluation at the composition boundary. The pure evaluator
-            // accepts this timestamp explicitly so tests and historical inspection remain
-            // deterministic.
-            const dataConfidence = evaluateDataConfidence(baseInput, new Date().toISOString());
-
-            return {
-                ...baseInput,
-                dataConfidence,
-                subjectiveBaseline,
-                subjectiveHistoryState,
-                subjectiveHistoryIssues,
-                carriedRegionRestrictions,
-            };
+            return input;
         } catch (error) {
             console.error('Error composing daily decision input:', error);
             throw error;

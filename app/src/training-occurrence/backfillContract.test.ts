@@ -75,6 +75,7 @@ describe('backfillContract - Python/TypeScript schema & pairing integration', ()
     it('demonstrates closure of historical pairedLiveOnly gap when backfilled occurrences are present', () => {
         const options = {
             sourceCommit: 'synthetic-fixture',
+            sourceTreeSha256: 'a'.repeat(64),
             coveragePolicyVersion: 'coverage-v1',
             fitFingerprintVersion: 'fit-workout-v2',
         };
@@ -111,14 +112,69 @@ describe('backfillContract - Python/TypeScript schema & pairing integration', ()
         ];
 
         // 1. Unbackfilled historical export: only activities exist, occurrences are empty
+        const evaluationWindow = { startDate: '2026-07-01', endDateExclusive: '2026-07-31' };
+        const historyWindow = { startDate: '2026-05-13', endDateExclusive: evaluationWindow.endDateExclusive };
+        const forwardWindow = { startDate: evaluationWindow.startDate, endDateExclusive: '2026-08-07' };
         const unbackfilledExport: TrainingOccurrenceRecordExport = {
-            schemaVersion: 1,
+            schemaVersion: 2,
             userId: testUserId,
-            window: { startDate: '2026-07-01', endDateExclusive: '2026-07-31' },
+            window: evaluationWindow,
+            evaluationWindow,
+            sourceEvidenceBounds: {
+                performedTrainingOccurrences: historyWindow, activities: historyWindow, dailyRecommendations: historyWindow,
+                dailyRecommendationRevisions: historyWindow, dailyRecoverySnapshots: evaluationWindow,
+                dailySubjectiveCheckins: { startDate: '2026-06-03', endDateExclusive: evaluationWindow.endDateExclusive },
+                fixedActivities: forwardWindow, scheduleOverlays: forwardWindow, planBlocks: forwardWindow,
+                scheduleWindowManifests: forwardWindow, sessionOccurrences: forwardWindow,
+                sessionExecutions: historyWindow, sessionEntries: historyWindow, executionPrescriptions: historyWindow,
+                sessionDefinitionRevisions: historyWindow, externalPlanRevisions: forwardWindow,
+            },
+            sourceProvenance: {
+                performedTrainingOccurrences: { status: 'unprovable', reason: 'mutable evidence' },
+                activities: { status: 'unprovable', reason: 'mutable evidence' },
+                dailyRecommendations: { status: 'unprovable', reason: 'mutable evidence' },
+                dailyRecoverySnapshots: { status: 'unprovable', reason: 'mutable evidence' },
+                dailySubjectiveCheckins: { status: 'unprovable', reason: 'mutable evidence' },
+                fixedActivities: { status: 'unprovable', reason: 'mutable evidence' },
+                scheduleOverlays: { status: 'unprovable', reason: 'mutable evidence' },
+                planBlocks: { status: 'unprovable', reason: 'mutable evidence' },
+                scheduleWindowManifests: { status: 'unprovable', reason: 'mutable evidence' },
+                sessionOccurrences: { status: 'unprovable', reason: 'mutable evidence' },
+                trainingSettings: { status: 'unprovable', reason: 'mutable evidence' },
+                preferences: { status: 'unprovable', reason: 'mutable evidence' },
+                trainingIntentProfiles: { status: 'unprovable', reason: 'mutable evidence' },
+                externalPlans: { status: 'unprovable', reason: 'mutable evidence' },
+                goals: { status: 'unprovable', reason: 'mutable evidence' },
+                intentBlocks: { status: 'unprovable', reason: 'mutable evidence' },
+                dailyRecommendationRevisions: { status: 'exact_revision' },
+                externalPlanRevisions: { status: 'exact_revision' },
+                sessionDefinitionRevisions: { status: 'exact_revision' },
+                executionPrescriptions: { status: 'exact_revision' },
+            },
             performedTrainingOccurrences: [],
             sessionExecutions: [],
+            sessionEntries: [],
+            executionPrescriptions: [],
+            sessionDefinitionRevisions: [],
             activities,
             dailyRecommendations: [],
+            dailyRecommendationRevisions: [],
+            dailyRecoverySnapshots: [],
+            dailySubjectiveCheckins: [],
+            fixedActivities: [],
+            scheduleOverlays: [],
+            planBlocks: [],
+            scheduleWindowManifests: [],
+            sessionOccurrences: [],
+            externalPlanHeaders: [],
+            externalPlanRevisions: [],
+            externalPlanPlacements: [],
+            goals: [],
+            intentBlockHeaders: [],
+            intentBlockRevisions: [],
+            trainingSettings: [],
+            preferences: [],
+            trainingIntentProfiles: [],
         };
 
         const unbackfilledPrepared = prepareTo4Evidence(unbackfilledExport, options);

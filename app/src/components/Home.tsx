@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { decisionComposer, type ComposedDailyDecisionInput } from '../engine/composer';
-import { evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateReadinessAndSafetyEnvelope } from '../engine/rules';
+import { evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateReadinessAndSafetyEnvelope } from '../engine/rules';
+import { evaluateSameDayRecommendation } from '../engine/sameDayRecommendation';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapGoalsToUserEvents } from '../engine/adapters';
 import { generateWeekAheadPlanWithIntent, type WeekAheadPlan } from '../engine/planner';
 import { prepareTrainingHistorySnapshot } from '../engine/trainingIntent';
@@ -572,12 +573,23 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date, bundleContext) : null;
         const externalRestContext = activeExternal ? externalRestContextForDate(activeExternal, input.date) : null;
 
-        const baseRecommendation = await evaluateTrainingWithIntent(
-          userId, { subjective, objective, subjectiveBaseline: input.subjectiveBaseline }, context, events, input.date, yesterdayRec?.mode, undefined, preparedSnapshot,
-          todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
-          'max', externalContext, undefined, undefined, externalRestContext, false, input.scheduleOverlays,
+        const baseRecommendation = await evaluateSameDayRecommendation({
+          userId,
+          readiness: { subjective, objective, subjectiveBaseline: input.subjectiveBaseline },
+          context,
+          events,
+          date: input.date,
+          previousMode: yesterdayRec?.mode,
+          preparedHistorySnapshot: preparedSnapshot,
+          fixedActivities: todayAndTomorrowFixedActivities,
+          authoredPlanBlocks: todayAndTomorrowPlanBlocks,
+          trainingIntentProfile: input.trainingIntentProfile,
+          preferences: input.preferences,
+          externalPlan: externalContext,
+          externalRest: externalRestContext,
+          scheduleOverlays: input.scheduleOverlays,
           confirmedProgressionOverrides,
-        );
+        });
         if (!isCurrent()) return;
         onCapabilityMaintenanceResolved?.(userId, input.date, baseRecommendation.capabilityMaintenance ?? null);
         const recommendationWithPrescription = {
