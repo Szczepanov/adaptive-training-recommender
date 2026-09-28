@@ -317,7 +317,7 @@ describe('objective floors mirror rules.ts (#812 parity)', () => {
 });
 
 describe('context brief integration (#812)', () => {
-    it('places the synthesis in the morning brief before the vendor composites', () => {
+    it('surfaces the synthesized recovery pattern in the condensed morning brief while omitting verbose synthesis boilerplate', () => {
         const input = {
             asOfDate: AS_OF, snapshots: [poorNight], checkins: [checkin()], activities: [], recommendations: [],
             trainingSettings: null, preferences: null, effectivePlanningMode: 'externally_planned', externalFallback: false,
@@ -325,9 +325,10 @@ describe('context brief integration (#812)', () => {
             upcomingExternalSessions: [], recommendationsReadable: true, restDirectiveToday: null, unavailableSources: [], purpose: 'morning',
         } as ContextBriefPlanningHandoffInput;
         const text = buildMorningCoachBrief(input);
-        const at = text.indexOf('### Recovery evidence synthesis');
-        expect(at).toBeGreaterThan(text.indexOf('## 2. Overnight Recovery'));
-        expect(at).toBeLessThan(text.indexOf('Body battery on waking'));
+        expect(text).toContain('## 2. Overnight Recovery (Wearable)');
+        expect(text).toContain('Pattern: DIVERGENT');
+        expect(text).not.toContain('### Recovery evidence synthesis');
+        expect(text).not.toContain('Body battery on waking');
     });
 
     it('places the synthesis ahead of secondary vendor composites in planning and diagnostic exports', () => {

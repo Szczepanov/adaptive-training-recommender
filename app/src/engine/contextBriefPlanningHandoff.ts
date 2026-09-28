@@ -39,7 +39,7 @@ import {
     type BriefRestDirective,
 } from './briefPlanAuthority';
 import { renderSensorEvidence } from './contextBriefSensorEvidence';
-import { renderRecoveryEvidenceSynthesis, synthesizeRecoveryEvidence } from './contextBriefRecoverySynthesis';
+import { synthesizeRecoveryEvidence } from './contextBriefRecoverySynthesis';
 
 export const UPCOMING_CONTEXT_DAYS = 7;
 export const RECOVERY_TIMELINE_DAYS = 7;
@@ -90,6 +90,10 @@ export interface ContextBriefPlanningHandoffInput {
     recommendationsReadable: boolean;
     /** Today's authored rest directive from the active imported plan, if any. */
     restDirectiveToday: BriefRestDirective | null;
+    /** Yesterday's imported session/rest state is carried only for the morning closed loop.
+     * It is planning authority for D-1, not a second source of performed-training truth. */
+    yesterdayExternalSession?: UpcomingExternalPlanSession | null;
+    restDirectiveYesterday?: BriefRestDirective | null;
     unavailableSources: readonly string[];
     preset?: BriefWindowPreset;
     /** Issue #811. When absent it is derived from `preset`; an absent preset keeps the
@@ -113,6 +117,174 @@ function textNumber(value: number | null | undefined): string {
 
 function compactText(value: string): string {
     return value.replace(/\s+/g, ' ').trim();
+}
+
+type AdherenceDelta = 'ON_PLAN' | 'UNPLANNED_STRAIN' | 'MISSED_INTENSITY' | 'VOLUME_DISCREPANCY';
+type MorningRecoveryPattern = 'CONVERGENT_REASSURING' | 'DIVERGENT' | 'STRAINED' | 'INSUFFICIENT';
+
+interface AdherenceDeltaSummary {
+    delta: AdherenceDelta;
+    alert: string | null;
+}
+
+const ACTUAL_INTENSITY_RANK: Readonly<Record<string, number>> = {
+    easy: 1,
+    moderate: 2,
+    hard: 3,
+};
+
+function recommendationIntensityRank(recommendation: DailyRecommendation): number | null {
+    if (recommendation.mode === 'recover' || recommendation.category === 'Rest' || recommendation.category === 'Mobility/Recovery') {
+        return 0;
+    }
+    if (recommendation.category === 'Easy Endurance') return 1;
+    if (recommendation.category === 'Moderate Endurance') return 2;
+    if (recommendation.category === 'Hard Endurance' || recommendation.category === 'Race-Specific Endurance') return 3;
+    return null;
+}
+
+function canonicalActivityIntensityRank(activity: NormalizedGarminActivity): number | null {
+    if (activity.intensityClassificationVersion !== undefined && activity.intensityClassificationVersion >= 2) {
+        return ACTUAL_INTENSITY_RANK[activity.intensityTag.toLowerCase()] ?? null;
+    }
+    switch (activity.stimulusDomain) {
+        case 'recovery':
+        case 'endurance':
+            return 1;
+        case 'tempo':
+            return 2;
+        case 'threshold':
+        case 'vo2':
+        case 'anaerobic':
+        case 'mixed':
+        case 'race':
+            return 3;
+        default:
+            return null;
+    }
+}
+
+function externalIntensityRank(session: UpcomingExternalPlanSession): number {
+    switch (session.intensity) {
+        case 'recovery': return 0;
+        case 'easy': return 1;
+        case 'moderate': return 2;
+        case 'hard':
+        case 'max':
+            return 3;
+        default:
+            return 0;
+    }
+}
+
+function deriveAdherenceDelta(
+    recommendation: DailyRecommendation | null,
+    externalSession: UpcomingExternalPlanSession | null,
+    restDirective: BriefRestDirective | null,
+    activities: readonly NormalizedGarminActivity[],
+): AdherenceDeltaSummary | null {
+    if (!recommendation && !externalSession && !restDirective) return null;
+
+    const plannedIntensity = recommendation
+        ? recommendationIntensityRank(recommendation)
+        : restDirective
+            ? 0
+            : externalSession ? externalIntensityRank(externalSession) : null;
+    const plannedRestOrRecovery = restDirective !== null || plannedIntensity === 0;
+    const actualIntensity = activities.reduce<number | null>((highest, activity) => {
+        const rank = canonicalActivityIntensityRank(activity);
+        if (rank === null) return highest;
+        return highest === null ? rank : Math.max(highest, rank);
+    }, null);
+    const highCost = activities.some(activity => activity.sessionCost === 'high' || activity.sessionCost === 'very_high');
+    const observedModerateOrHard = activities.some(activity =>
+        (ACTUAL_INTENSITY_RANK[activity.intensityTag.toLowerCase()] ?? 0) >= ACTUAL_INTENSITY_RANK.moderate);
+
+    if (plannedRestOrRecovery) {
+        if (activities.length === 0) return { delta: 'ON_PLAN', alert: null };
+        if (highCost || observedModerateOrHard) {
+            const measuredLoads = activities
+                .map(activity => activity.activityTrainingLoad)
+                .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+            const totalLoad = measuredLoads.length > 0
+                ? measuredLoads.reduce((sum, value) => sum + value, 0)
+                : null;
+            const intensityFactors = activities
+                .map(activity => activity.intensityFactor)
+                .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+            const peakIf = intensityFactors.length > 0 ? Math.max(...intensityFactors) : null;
+            const loadLabel = totalLoad === null ? 'load unavailable' : `+${round(totalLoad, 1)} load`;
+            const ifLabel = peakIf === null ? 'IF unavailable' : `IF ${round(peakIf, 2)}`;
+            return {
+                delta: 'UNPLANNED_STRAIN',
+                alert: `High unplanned strain executed on scheduled rest/recovery day (${loadLabel}, ${ifLabel}).`,
+            };
+        }
+        return { delta: 'VOLUME_DISCREPANCY', alert: null };
+    }
+
+    if (activities.length === 0) return { delta: 'MISSED_INTENSITY', alert: null };
+
+    if (plannedIntensity !== null && actualIntensity !== null) {
+        if (actualIntensity < plannedIntensity) return { delta: 'MISSED_INTENSITY', alert: null };
+        if (actualIntensity > plannedIntensity && plannedIntensity <= ACTUAL_INTENSITY_RANK.easy) {
+            return { delta: 'UNPLANNED_STRAIN', alert: null };
+        }
+    }
+
+    const actualDuration = activities.reduce((sum, activity) => sum + (activity.durationMin ?? 0), 0);
+    if (recommendation?.prescription?.targetDurationMin) {
+        const prescribedDuration = recommendation.prescription.targetDurationMin;
+        // Display-only tolerance: distinguish material duration drift from normal device/start-stop noise.
+        const materialDifference = Math.max(10, prescribedDuration * 0.2);
+        if (Math.abs(actualDuration - prescribedDuration) >= materialDifference) {
+            return { delta: 'VOLUME_DISCREPANCY', alert: null };
+        }
+    } else if (externalSession) {
+        const below = actualDuration < Math.max(0, externalSession.durationMin - 10);
+        const above = actualDuration > externalSession.durationMax + 10;
+        if (below || above) return { delta: 'VOLUME_DISCREPANCY', alert: null };
+    }
+
+    return { delta: 'ON_PLAN', alert: null };
+}
+
+function mapMorningRecoveryPattern(pattern: ReturnType<typeof synthesizeRecoveryEvidence>['pattern']): MorningRecoveryPattern {
+    switch (pattern) {
+        case 'CONVERGENT_REASSURING': return 'CONVERGENT_REASSURING';
+        case 'CONVERGENT_ADVERSE': return 'STRAINED';
+        case 'MIXED': return 'DIVERGENT';
+        case 'INSUFFICIENT': return 'INSUFFICIENT';
+    }
+}
+
+function formatSleepDurationCompact(seconds: number | null): string {
+    if (seconds === null || !Number.isFinite(seconds)) return '—';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.round((seconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
+}
+
+function renderEngineConflictWarning(
+    recommendation: DailyRecommendation,
+    yesterdayActivities: readonly NormalizedGarminActivity[],
+): string | null {
+    const match = recommendation.rationale.match(/Sequence soft preference x([0-9.]+): ([^)]+)\)/i);
+    if (!match) return null;
+
+    const multiplier = match[1];
+    const reasons = match[2].replace(/[.\s]+$/, '');
+    const gapMatch = reasons.match(/key-session gap (\d+)d is below preferred (\d+)d/i);
+    if (gapMatch) {
+        const gapDays = Number(gapMatch[1]);
+        const preferredDays = Number(gapMatch[2]);
+        const priorDomain = yesterdayActivities
+            .map(activity => activity.stimulusDomain)
+            .find(domain => domain && domain !== 'unknown' && domain !== 'recovery' && domain !== 'endurance');
+        const priorLabel = priorDomain ? ` post-${priorDomain.replace(/_/g, '-')}` : '';
+        return `> **⚠️ ENGINE CONFLICT:** Recommended key session conflicts with preferred ${preferredDays}-day key-session spacing (current gap: ${gapDays} day${gapDays === 1 ? '' : 's'}${priorLabel}). Sequence preference x${multiplier} was applied. Coach review recommended.`;
+    }
+    return `> **⚠️ ENGINE CONFLICT:** Recommended session triggered sequence soft preference x${multiplier}: ${reasons}. Coach review recommended.`;
 }
 
 function latestRecommendationFor(recommendations: readonly DailyRecommendation[], date: string): DailyRecommendation | null {
@@ -436,10 +608,10 @@ function renderMorningCoachInstructions(): string[] {
  * (equipment inventories, candidate median/MAD baselines, 1-click plan import markdown
  * schemas) and emphasizes:
  * 1. Today's status, subjective check-in, and acute flags
- * 2. Overnight wearable recovery and recent 7-day timeline
- * 3. Yesterday's closed loop (planned vs completed training + unlogged physical work + adherence)
- * 4. Today's engine recommendation with full rationale and prescription steps
- * 5. Short-term 48–72h horizon
+ * 2. One consolidated overnight recovery line plus the recent 7-day timeline
+ * 3. Yesterday's closed loop with an explicit planned-vs-performed adherence delta
+ * 4. Today's engine recommendation, including elevated sequence-conflict signals
+ * 5. Explicit D+1/D+2/D+3 commitments and imported-plan demand
  * 6. Morning coach conversational instructions
  */
 export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput): string {
@@ -540,48 +712,45 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
 
     // 2. Overnight Recovery (Wearable)
     lines.push('', '## 2. Overnight Recovery (Wearable)', '');
-    lines.push(...renderRecoveryEvidenceSynthesis(synthesizeRecoveryEvidence({ asOfDate: targetDate, snapshots: input.snapshots, checkins: input.checkins })), '');
+    const recoverySynthesis = synthesizeRecoveryEvidence({ asOfDate: targetDate, snapshots: input.snapshots, checkins: input.checkins });
+    const recoveryPattern = mapMorningRecoveryPattern(recoverySynthesis.pattern);
     if (activeSnapshot) {
         const raw = activeSnapshot.raw;
         const der = activeSnapshot.derived;
-        lines.push(`Most recent reading — ${activeSnapshot.date} (Garmin synced at ${activeSnapshot.source.garminSyncedAt}):`);
         if (activeSnapshot.date < targetDate) {
             lines.push(`> Wearable caution: no snapshot for ${targetDate}; the newest wearable state is ${activeSnapshot.date}. Do not treat it as current-day readiness.`);
         }
-        lines.push(`- HRV (overnight avg): ${textNumber(raw.hrvOvernightAvg)} ms (7d avg ${round(der.hrv7dAvg)}, 28d avg ${round(der.hrv28dAvg)}) — ${signed(der.deltas.hrvVs7d)} vs 7d, ${signed(der.deltas.hrvVs28d)} vs 28d`);
-        lines.push(`- Resting HR: ${textNumber(raw.restingHr)} bpm (7d avg ${round(der.restingHr7dAvg)}, 28d avg ${round(der.restingHr28dAvg)}) — ${signed(der.deltas.restingHrVs7d)} vs 7d, ${signed(der.deltas.restingHrVs28d)} vs 28d`);
-        lines.push(`- Sleep score: ${textNumber(raw.sleepScore)} pts (7d avg ${round(der.sleepScore7dAvg)}, 28d avg ${round(der.sleepScore28dAvg)}) — ${signed(der.deltas.sleepScoreVs7d)} vs 7d, ${signed(der.deltas.sleepScoreVs28d)} vs 28d`);
-        if (raw.sleepDurationSec != null) {
-            const sleepHours = Math.floor(raw.sleepDurationSec / 3600);
-            const sleepMins = Math.round((raw.sleepDurationSec % 3600) / 60);
-            lines.push(`- Sleep duration: ${sleepHours}h ${sleepMins}m`);
-        }
-        if (raw.bodyBatteryWake != null) {
-            lines.push(`- Body battery on waking: ${raw.bodyBatteryWake}`);
-        }
-        if (raw.stress?.avg != null) {
-            lines.push(`- Device stress: avg ${raw.stress.avg}${raw.stress.max != null ? ` · max ${raw.stress.max}` : ''}`);
-        }
-        if (raw.totalSteps != null) {
-            lines.push(`- Steps yesterday (D-1): ${raw.totalSteps.toLocaleString()} (7d avg ${der.steps7dAvg ? Math.round(der.steps7dAvg).toLocaleString() : '—'})`);
-        }
+        lines.push(
+            `- HRV: ${textNumber(raw.hrvOvernightAvg)} ms (${signed(der.deltas.hrvVs7d)} vs 7d), `
+            + `RHR: ${textNumber(raw.restingHr)} bpm (${signed(der.deltas.restingHrVs7d)} vs 7d), `
+            + `Sleep: ${formatSleepDurationCompact(raw.sleepDurationSec)} (${textNumber(raw.sleepScore)} pts) | Pattern: ${recoveryPattern}`,
+        );
 
         const timeline = renderRecoveryTimeline(input);
         if (timeline) {
             lines.push('', timeline);
         }
     } else {
+        lines.push(`- HRV: — ms (— vs 7d), RHR: — bpm (— vs 7d), Sleep: — (— pts) | Pattern: ${recoveryPattern}`);
         lines.push('> Wearable caution: No wearable data in this window.');
     }
 
     // 3. Yesterday's Closed-Loop Debrief
     lines.push('', `## 3. Yesterday's Closed-Loop Debrief (${yesterdayDate})`, '');
-    if (yesterdayRecommendation) {
+    if (input.restDirectiveYesterday) {
+        lines.push('- Prescribed: Imported-plan rest/recovery directive.');
+    } else if (input.yesterdayExternalSession) {
+        const session = input.yesterdayExternalSession;
+        const duration = session.durationMax === session.durationMin
+            ? `${session.durationMin} min`
+            : `${session.durationMin}–${session.durationMax} min`;
+        lines.push(`- Prescribed: Imported session — ${session.title} (${session.modality} · ${duration} · ${session.intensity})`);
+    } else if (yesterdayRecommendation) {
         lines.push(`- Prescribed: ${yesterdayRecommendation.templateTitle} (${yesterdayRecommendation.modality} · ${yesterdayRecommendation.mode})`);
     } else if (!input.recommendationsReadable) {
         lines.push('- Prescribed: unavailable (read failed) — unknown, not none.');
     } else {
-        lines.push('- Prescribed: No app recommendation recorded for yesterday.');
+        lines.push('- Prescribed: No app/imported prescription recorded for yesterday.');
     }
 
     if (yesterdayActivities.length > 0) {
@@ -607,16 +776,28 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         lines.push('- Manual physical work: none reported');
     }
 
+    const importedAuthorityYesterday = input.yesterdayExternalSession != null
+        || input.restDirectiveYesterday != null;
+    const adherenceDelta = deriveAdherenceDelta(
+        importedAuthorityYesterday ? null : yesterdayRecommendation,
+        input.yesterdayExternalSession ?? null,
+        input.restDirectiveYesterday ?? null,
+        yesterdayActivities,
+    );
+    if (adherenceDelta) {
+        lines.push(`- Adherence Delta: **${adherenceDelta.delta}**`);
+        if (adherenceDelta.alert) lines.push(`> **⚠️ ADHERENCE ALERT:** ${adherenceDelta.alert}`);
+    } else if (input.recommendationsReadable) {
+        lines.push('- Adherence Delta: not computable — no executable app/imported prescription recorded for yesterday.');
+    } else {
+        lines.push('- Adherence Delta: not computable — yesterday\'s prescription read failed.');
+    }
+
     lines.push(renderRecommendationFeedbackLine(
         yesterdayRecommendation ?? null,
         input.recommendationsReadable,
         input.effectivePlanningMode === 'externally_planned',
     ));
-
-    if (activeSnapshot) {
-        const der = activeSnapshot.derived;
-        lines.push(`- Overnight reaction: HRV ${signed(der.deltas.hrvVs7d)} ms vs 7d avg · Resting HR ${signed(der.deltas.restingHrVs7d)} bpm vs 7d avg · Sleep score ${signed(der.deltas.sleepScoreVs7d)} pts vs 7d avg.`);
-    }
 
     // 4. Today's App Recommendation & Engine Stance
     lines.push('', '## 4. Today\'s App Recommendation & Engine Stance', '');
@@ -626,6 +807,8 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         lines.push(`> Not independently actionable: today's authority is ${todayAuthority.authority.outcome} (see *Resolved planning authority* above); this recommendation is shown as engine context only.`);
     }
     if (todayRecommendation) {
+        const engineConflict = renderEngineConflictWarning(todayRecommendation, yesterdayActivities);
+        if (engineConflict) lines.push(engineConflict, '');
         lines.push(`- Mode: ${todayRecommendation.mode.toUpperCase()}`);
         lines.push(`- Recommended workout: ${todayRecommendation.templateTitle} (${todayRecommendation.modality} · ${todayRecommendation.category})`);
         lines.push(`- Engine rationale: "${todayRecommendation.rationale}"`);
@@ -676,27 +859,29 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         addDaysToLocalDateString(targetDate, 2),
         addDaysToLocalDateString(targetDate, 3),
     ];
-    const fixed = input.upcomingFixedActivities.filter(a => !a.isCompleted && lookaheadDates.includes(a.date));
-    const blocks = input.upcomingPlanBlocks.filter(b => b.startDate <= lookaheadDates[2] && b.endDate >= lookaheadDates[0]);
-    const external = input.upcomingExternalSessions.filter(s => lookaheadDates.includes(s.date));
 
-    const events: Array<{ date: string; summary: string }> = [];
-    for (const f of fixed) {
-        events.push({ date: f.date, summary: `Fixed activity: ${f.title} (${f.durationMin} min · ${f.fixed ? 'fixed' : 'movable'})` });
-    }
-    for (const b of blocks) {
-        events.push({ date: `${b.startDate}→${b.endDate}`, summary: `Travel block: volume ×${b.volumeScale} · intensity ×${b.intensityScale}` });
-    }
-    for (const e of external) {
-        events.push({ date: e.date, summary: `Imported session: ${e.title} (${e.modality} · ${e.durationMin} min · priority: ${e.priority.toUpperCase()})` });
-    }
-    if (events.length > 0) {
-        events.sort((a, b) => a.date.localeCompare(b.date));
-        for (const ev of events) {
-            lines.push(`- ${ev.date}: ${ev.summary}`);
+    for (let index = 0; index < lookaheadDates.length; index++) {
+        const date = lookaheadDates[index];
+        const summaries: string[] = [];
+        for (const fixedActivity of input.upcomingFixedActivities.filter(item => !item.isCompleted && item.date === date)) {
+            summaries.push(`Fixed activity: ${fixedActivity.title} (${fixedActivity.durationMin} min · ${fixedActivity.fixed ? 'fixed' : 'movable'})`);
         }
-    } else {
-        lines.push('No fixed activities, travel blocks, or imported sessions in the next 72 hours.');
+        for (const block of input.upcomingPlanBlocks.filter(item => item.startDate <= date && item.endDate >= date)) {
+            summaries.push(`Travel block: volume ×${block.volumeScale} · intensity ×${block.intensityScale}`);
+        }
+        for (const session of input.upcomingExternalSessions.filter(item => item.date === date)) {
+            const duration = session.durationMax === session.durationMin
+                ? `${session.durationMin} min`
+                : `${session.durationMin}–${session.durationMax} min`;
+            summaries.push(
+                `Imported session: ${session.title} (${session.modality} · ${duration} · ${session.intensity} · priority: ${session.priority.toUpperCase()})`,
+            );
+        }
+        lines.push(
+            `- D+${index + 1} · ${date}: ${summaries.length > 0
+                ? summaries.join('; ')
+                : 'No app-held fixed activity, travel block, or imported session.'}`,
+        );
     }
 
     // 6. Morning Coach Instructions
