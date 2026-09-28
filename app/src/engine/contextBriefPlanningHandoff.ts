@@ -92,8 +92,8 @@ export interface ContextBriefPlanningHandoffInput {
     restDirectiveToday: BriefRestDirective | null;
     /** Yesterday's imported session/rest state is carried only for the morning closed loop.
      * It is planning authority for D-1, not a second source of performed-training truth. */
-    yesterdayExternalSession: UpcomingExternalPlanSession | null;
-    restDirectiveYesterday: BriefRestDirective | null;
+    yesterdayExternalSession?: UpcomingExternalPlanSession | null;
+    restDirectiveYesterday?: BriefRestDirective | null;
     unavailableSources: readonly string[];
     preset?: BriefWindowPreset;
     /** Issue #811. When absent it is derived from `preset`; an absent preset keeps the
@@ -778,8 +778,8 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
 
     const adherenceDelta = deriveAdherenceDelta(
         yesterdayRecommendation,
-        input.yesterdayExternalSession,
-        input.restDirectiveYesterday,
+        input.yesterdayExternalSession ?? null,
+        input.restDirectiveYesterday ?? null,
         yesterdayActivities,
     );
     if (adherenceDelta) {
