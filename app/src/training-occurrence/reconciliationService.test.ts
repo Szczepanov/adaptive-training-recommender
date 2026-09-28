@@ -222,6 +222,133 @@ describe('structuredExecutionToFacts / garminActivityToFacts', () => {
         });
         expect(facts.modality).toBe('strength');
     });
+
+    it('forwards fitWorkoutFingerprint and fitWorkoutFingerprintKind on structured execution facts', () => {
+        const facts = structuredExecutionToFacts({
+            executionId: 'exec-fp',
+            date: '2026-08-26',
+            startedAt: '2026-08-26T06:00:00.000Z',
+            completedAt: '2026-08-26T06:40:00.000Z',
+            fitWorkoutFingerprint: 'fit-workout-v2:0123456789abcdef0123456789abcdef',
+            fitWorkoutFingerprintKind: 'semantic_definition',
+        });
+        expect(facts.fitWorkoutFingerprint).toBe('fit-workout-v2:0123456789abcdef0123456789abcdef');
+        expect(facts.fitWorkoutFingerprintKind).toBe('semantic_definition');
+        expect(facts.sourceRef).toMatchObject({
+            fitWorkoutFingerprint: 'fit-workout-v2:0123456789abcdef0123456789abcdef',
+            fitWorkoutFingerprintKind: 'semantic_definition',
+        });
+    });
+
+    it('forwards fitWorkoutFingerprint and fitWorkoutFingerprintKind on Garmin activity facts', () => {
+        const facts = garminActivityToFacts({
+            activityId: 'act-fp',
+            date: '2026-08-26',
+            type: 'cycling',
+            durationMin: 45,
+            trainingEffectAerobic: null,
+            trainingEffectAnaerobic: null,
+            averageHr: null,
+            activityTrainingLoad: null,
+            intensityTag: 'moderate',
+            fitWorkoutFingerprint: 'fit-workout-v2:0123456789abcdef0123456789abcdef',
+            fitWorkoutFingerprintKind: 'semantic_definition',
+        });
+        expect(facts.fitWorkoutFingerprint).toBe('fit-workout-v2:0123456789abcdef0123456789abcdef');
+        expect(facts.fitWorkoutFingerprintKind).toBe('semantic_definition');
+        expect(facts.sourceRef).toMatchObject({
+            fitWorkoutFingerprint: 'fit-workout-v2:0123456789abcdef0123456789abcdef',
+            fitWorkoutFingerprintKind: 'semantic_definition',
+        });
+    });
+});
+
+describe('reconciliation with fit-workout-v2 fingerprints', () => {
+    const FP_A = 'fit-workout-v2:0123456789abcdef0123456789abcdef';
+    const FP_B = 'fit-workout-v2:fedcba9876543210fedcba9876543210';
+
+    it('disqualifies candidate and creates single source when semantic fingerprints mismatch', async () => {
+        const existingOccurrence = occurrence({
+            sourceRefs: [{
+                kind: 'structured_execution',
+                executionId: 'exec-1',
+                fitWorkoutFingerprint: FP_A,
+                fitWorkoutFingerprintKind: 'semantic_definition',
+            }],
+        });
+        vi.mocked(repo.getBySourceKey).mockResolvedValue(null);
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([existingOccurrence]);
+        vi.mocked(repo.createOrGetForSource).mockResolvedValue({
+            occurrence: occurrence({
+                performedOccurrenceId: 'pto-new',
+                sourceRefs: [{
+                    kind: 'provider_activity',
+                    provider: 'garmin',
+                    activityId: 'act-2',
+                    fitWorkoutFingerprint: FP_B,
+                    fitWorkoutFingerprintKind: 'semantic_definition',
+                }],
+            }),
+            created: true,
+        });
+
+        const incomingGarmin = {
+            ...garminFacts,
+            fitWorkoutFingerprint: FP_B,
+            fitWorkoutFingerprintKind: 'semantic_definition' as const,
+            sourceRef: {
+                ...garminFacts.sourceRef,
+                fitWorkoutFingerprint: FP_B,
+                fitWorkoutFingerprintKind: 'semantic_definition' as const,
+            },
+        };
+
+        const result = await reconcileSourceFacts('user-1', incomingGarmin);
+
+        expect(result.outcome).toBe('created_single_source');
+        expect(repo.attachSource).not.toHaveBeenCalled();
+    });
+
+    it('auto-links when semantic fingerprints match with temporal overlap', async () => {
+        const existingOccurrence = occurrence({
+            sourceRefs: [{
+                kind: 'structured_execution',
+                executionId: 'exec-1',
+                fitWorkoutFingerprint: FP_A,
+                fitWorkoutFingerprintKind: 'semantic_definition',
+            }],
+        });
+        vi.mocked(repo.getBySourceKey).mockResolvedValue(null);
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([existingOccurrence]);
+        vi.mocked(repo.attachSource).mockResolvedValue(existingOccurrence);
+
+        const incomingGarmin = {
+            ...garminFacts,
+            fitWorkoutFingerprint: FP_A,
+            fitWorkoutFingerprintKind: 'semantic_definition' as const,
+            sourceRef: {
+                ...garminFacts.sourceRef,
+                fitWorkoutFingerprint: FP_A,
+                fitWorkoutFingerprintKind: 'semantic_definition' as const,
+            },
+        };
+
+        const result = await reconcileSourceFacts('user-1', incomingGarmin);
+
+        expect(result.outcome).toBe('attached_auto_link');
+        expect(repo.attachSource).toHaveBeenCalledWith(
+            'user-1',
+            existingOccurrence.performedOccurrenceId,
+            incomingGarmin,
+            expect.objectContaining({
+                matcherVersion: 'matcher-v2',
+                confidence: 1.0,
+                features: expect.objectContaining({
+                    fingerprintMatch: true,
+                }),
+            }),
+        );
+    });
 });
 
 describe('reconcileStructuredCompletion / reconcileGarminActivity', () => {

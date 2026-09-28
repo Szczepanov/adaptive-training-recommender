@@ -9,12 +9,13 @@ import type {
     ActivitySteadyHalfSummary,
     ActivityStimulusDomain,
     DailyRecommendation,
+    FitWorkoutFingerprintKind,
     HrMeasurement,
     NormalizedGarminActivity,
     RunningDynamics,
     ShadowVerdict,
 } from '../../engine/models';
-import { SHADOW_VERDICTS } from '../../engine/models';
+import { FIT_WORKOUT_FINGERPRINT_KINDS, SHADOW_VERDICTS } from '../../engine/models';
 import type { DataIssue, DataState } from '../../engine/dataState';
 import { validateRecommendation, isValidDate } from '../../engine/validation';
 
@@ -539,6 +540,9 @@ export function parseNormalizedGarminActivity(
     if (raw.startedAt !== undefined && typeof raw.startedAt !== 'string') return invalid(documentPath, 'invalid-type', 'startedAt');
     if (raw.endedAt !== undefined && typeof raw.endedAt !== 'string') return invalid(documentPath, 'invalid-type', 'endedAt');
     if (raw.fitWorkoutFingerprint !== undefined && typeof raw.fitWorkoutFingerprint !== 'string') return invalid(documentPath, 'invalid-type', 'fitWorkoutFingerprint');
+    if (raw.fitWorkoutFingerprintKind !== undefined && (typeof raw.fitWorkoutFingerprintKind !== 'string' || !FIT_WORKOUT_FINGERPRINT_KINDS.includes(raw.fitWorkoutFingerprintKind as FitWorkoutFingerprintKind))) {
+        return invalid(documentPath, 'invalid-type', 'fitWorkoutFingerprintKind');
+    }
 
     const powerInZones = parseZoneBuckets(raw.powerInZones);
     const hrInZones = parseZoneBuckets(raw.hrInZones);
@@ -568,6 +572,7 @@ export function parseNormalizedGarminActivity(
             ...(typeof raw.startedAt === 'string' ? { startedAt: raw.startedAt } : {}),
             ...(typeof raw.endedAt === 'string' ? { endedAt: raw.endedAt } : {}),
             ...(typeof raw.fitWorkoutFingerprint === 'string' ? { fitWorkoutFingerprint: raw.fitWorkoutFingerprint } : {}),
+            ...(typeof raw.fitWorkoutFingerprintKind === 'string' && FIT_WORKOUT_FINGERPRINT_KINDS.includes(raw.fitWorkoutFingerprintKind as FitWorkoutFingerprintKind) ? { fitWorkoutFingerprintKind: raw.fitWorkoutFingerprintKind as FitWorkoutFingerprintKind } : {}),
             type: raw.type,
             durationMin: durationMin ?? null,
             trainingEffectAerobic: trainingEffectAerobic ?? null,

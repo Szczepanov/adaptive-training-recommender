@@ -112,6 +112,69 @@ emulatorDescribe('Performed training occurrence rules (ADR-0034)', () => {
         await assertFails(setDoc(ref, { ...validOccurrence(), schemaVersion: 2 }));
     });
 
+    it('validates fitWorkoutFingerprint and fitWorkoutFingerprintKind on sourceRefs', async () => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        const ref = doc(db, occurrencePath);
+        const validFp = 'fit-workout-v2:0123456789abcdef0123456789abcdef';
+
+        // Valid creation with fingerprint
+        await assertSucceeds(setDoc(ref, {
+            ...validOccurrence(),
+            sourceRefs: [
+                {
+                    kind: 'structured_execution',
+                    executionId: 'exec-1',
+                    fitWorkoutFingerprint: validFp,
+                    fitWorkoutFingerprintKind: 'semantic_definition',
+                },
+            ],
+        }));
+
+        // Valid update with provider_activity fingerprint
+        await assertSucceeds(updateDoc(ref, {
+            sourceRefs: [
+                {
+                    kind: 'structured_execution',
+                    executionId: 'exec-1',
+                    fitWorkoutFingerprint: validFp,
+                    fitWorkoutFingerprintKind: 'semantic_definition',
+                },
+                {
+                    kind: 'provider_activity',
+                    provider: 'garmin',
+                    activityId: 'act-1',
+                    fitWorkoutFingerprint: validFp,
+                    fitWorkoutFingerprintKind: 'index_fallback',
+                },
+            ],
+            updatedAt: '2026-08-26T07:45:00.000Z',
+        }));
+
+        // Rejects malformed fingerprint format
+        await assertFails(updateDoc(ref, {
+            sourceRefs: [
+                {
+                    kind: 'structured_execution',
+                    executionId: 'exec-1',
+                    fitWorkoutFingerprint: 'invalid-fingerprint',
+                    fitWorkoutFingerprintKind: 'semantic_definition',
+                },
+            ],
+        }));
+
+        // Rejects invalid kind
+        await assertFails(updateDoc(ref, {
+            sourceRefs: [
+                {
+                    kind: 'structured_execution',
+                    executionId: 'exec-1',
+                    fitWorkoutFingerprint: validFp,
+                    fitWorkoutFingerprintKind: 'unsupported_kind',
+                },
+            ],
+        }));
+    });
+
     it('keeps performedOccurrenceId, createdAt and schemaVersion immutable on update', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         const ref = doc(db, occurrencePath);

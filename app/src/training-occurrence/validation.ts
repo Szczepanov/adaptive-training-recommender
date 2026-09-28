@@ -5,6 +5,7 @@
  * DataState/UI-consumed) collection: malformed data throws inside a transaction rather
  * than degrading to a DataState -- this collection has no public read API in PR 1.
  */
+import type { FitWorkoutFingerprintKind } from '../engine/models';
 import type {
     ManualReconciliationDecision,
     PerformedOccurrenceSourceKind,
@@ -21,12 +22,35 @@ const RECONCILIATION_STATES: readonly ReconciliationStatus[] = ['single_source',
 const SOURCE_KINDS: readonly PerformedOccurrenceSourceKind[] = ['structured_execution', 'provider_activity'];
 const MANUAL_DECISIONS: readonly ManualReconciliationDecision['decision'][] = ['link', 'unlink', 'keep_separate'];
 
+const FIT_WORKOUT_FINGERPRINT_PATTERN = /^fit-workout-v2:[0-9a-f]{32}$/;
+const FIT_WORKOUT_FINGERPRINT_KINDS = new Set(['semantic_definition', 'index_fallback']);
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
 function isNonEmptyString(value: unknown): value is string {
     return typeof value === 'string' && value.length > 0;
+}
+
+function parseFingerprintFields(value: Record<string, unknown>): {
+    fitWorkoutFingerprint?: string;
+    fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
+} {
+    if (value.fitWorkoutFingerprint !== undefined) {
+        if (typeof value.fitWorkoutFingerprint !== 'string' || !FIT_WORKOUT_FINGERPRINT_PATTERN.test(value.fitWorkoutFingerprint)) {
+            throw new Error('Invalid performed-occurrence source ref fitWorkoutFingerprint');
+        }
+    }
+    if (value.fitWorkoutFingerprintKind !== undefined) {
+        if (typeof value.fitWorkoutFingerprintKind !== 'string' || !FIT_WORKOUT_FINGERPRINT_KINDS.has(value.fitWorkoutFingerprintKind)) {
+            throw new Error('Invalid performed-occurrence source ref fitWorkoutFingerprintKind');
+        }
+    }
+    return {
+        ...(typeof value.fitWorkoutFingerprint === 'string' ? { fitWorkoutFingerprint: value.fitWorkoutFingerprint } : {}),
+        ...(typeof value.fitWorkoutFingerprintKind === 'string' ? { fitWorkoutFingerprintKind: value.fitWorkoutFingerprintKind as FitWorkoutFingerprintKind } : {}),
+    };
 }
 
 function parseSourceRef(value: unknown): PerformedOccurrenceSourceRef {
@@ -40,6 +64,7 @@ function parseSourceRef(value: unknown): PerformedOccurrenceSourceRef {
             executionId: value.executionId,
             ...(typeof value.sessionOccurrenceId === 'string' ? { sessionOccurrenceId: value.sessionOccurrenceId } : {}),
             ...(typeof value.prescriptionHash === 'string' ? { prescriptionHash: value.prescriptionHash } : {}),
+            ...parseFingerprintFields(value),
         };
     }
     if (!isNonEmptyString(value.provider) || !isNonEmptyString(value.activityId)) {
@@ -50,6 +75,7 @@ function parseSourceRef(value: unknown): PerformedOccurrenceSourceRef {
         provider: value.provider,
         activityId: value.activityId,
         ...(typeof value.deviceId === 'string' ? { deviceId: value.deviceId } : {}),
+        ...parseFingerprintFields(value),
     };
 }
 

@@ -28,9 +28,11 @@ import type { RestEndReason } from '../sessions/models';
 import { resolveEffectiveInjuryConstraints, resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { ineligibleAlternativeOptionIds } from '../engine/sessionChoiceEligibility';
 import { EXERCISES_BY_ID } from '../workouts/exercises.ts';
-import type { BodyRegion, RegionTissueResponse } from '../engine/models';
+import type { BodyRegion, FitWorkoutFingerprintKind, RegionTissueResponse } from '../engine/models';
 import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
 import { reconcileStructuredCompletion } from '../training-occurrence';
+import { computeWorkoutTemplateFingerprint } from '../training-occurrence/fitWorkoutIdentity';
+import { exportSessionDefinitionToJson } from '../utils/workoutJsonExport';
 
 /** Two `ExerciseRef`s identify the same performed exercise. Used to scope a step's
  * per-exercise `setIndex` so a mid-session swap (`substituteStepExercise`) starts the
@@ -302,7 +304,13 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const startSession = useCallback(async (
         nextDefinition: SessionDefinition,
         source: SessionSourceRef,
-        options: { occurrenceId?: string; prescriptionHash?: string; allowDuplicateCompleted?: boolean } = {},
+        options: {
+            occurrenceId?: string;
+            prescriptionHash?: string;
+            allowDuplicateCompleted?: boolean;
+            fitWorkoutFingerprint?: string;
+            fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
+        } = {},
     ) => {
         if (isRestoring || execution?.state === 'in_progress' || startInFlightRef.current) return;
         startInFlightRef.current = true;
@@ -315,6 +323,19 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         setLastRemovedEntry(null);
         setSyncStatus('pending');
 
+        let fitWorkoutFingerprint = options.fitWorkoutFingerprint;
+        let fitWorkoutFingerprintKind = options.fitWorkoutFingerprintKind;
+        if (!fitWorkoutFingerprint) {
+            try {
+                const canonicalExport = exportSessionDefinitionToJson(nextDefinition);
+                const identity = await computeWorkoutTemplateFingerprint(canonicalExport);
+                fitWorkoutFingerprint = identity.fingerprint;
+                fitWorkoutFingerprintKind = identity.kind;
+            } catch {
+                // Best effort; continue if fingerprint derivation does not apply
+            }
+        }
+
         const executionId = `exec-${Date.now()}`;
         const today = getLocalDateString();
         try {
@@ -322,6 +343,8 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 sessionSource: source,
                 ...(options.occurrenceId ? { occurrenceId: options.occurrenceId } : {}),
                 ...(options.prescriptionHash ? { prescriptionHash: options.prescriptionHash } : {}),
+                ...(fitWorkoutFingerprint ? { fitWorkoutFingerprint } : {}),
+                ...(fitWorkoutFingerprintKind ? { fitWorkoutFingerprintKind } : {}),
                 date: today,
                 ...(options.allowDuplicateCompleted ? { allowDuplicateCompleted: true } : {}),
             });

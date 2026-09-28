@@ -617,6 +617,17 @@ export function validateSessionExecution(raw: unknown): ValidationResult<Session
         issues.push({ path: 'completedAt', message: 'Only completed executions may have completedAt' });
     }
 
+    if (raw.fitWorkoutFingerprint !== undefined) {
+        if (typeof raw.fitWorkoutFingerprint !== 'string' || !/^fit-workout-v2:[0-9a-f]{32}$/.test(raw.fitWorkoutFingerprint)) {
+            issues.push({ path: 'fitWorkoutFingerprint', message: 'fitWorkoutFingerprint must match fit-workout-v2:[0-9a-f]{32}' });
+        }
+    }
+    if (raw.fitWorkoutFingerprintKind !== undefined) {
+        if (typeof raw.fitWorkoutFingerprintKind !== 'string' || !['semantic_definition', 'index_fallback'].includes(raw.fitWorkoutFingerprintKind)) {
+            issues.push({ path: 'fitWorkoutFingerprintKind', message: 'fitWorkoutFingerprintKind must be semantic_definition or index_fallback' });
+        }
+    }
+
     if (issues.length > 0) return { ok: false, issues };
     return { ok: true, value: raw as unknown as SessionExecution };
 }

@@ -21,6 +21,7 @@ import type {
     SessionRestEvent,
     SessionSourceRef,
     SessionExecutionState,
+    FitWorkoutFingerprintKind,
 } from '../sessions/models';
 import type { NormalizedExecutionRecord } from '../sessions/legacyStrengthAdapter';
 import {
@@ -69,6 +70,16 @@ interface SessionExecutionLock {
     allowCompletedReplacement: boolean;
     updatedAt: string;
     schemaVersion: 1;
+}
+
+export interface StartExecutionParams {
+    sessionSource: SessionSourceRef;
+    occurrenceId?: string;
+    prescriptionHash?: string;
+    fitWorkoutFingerprint?: string;
+    fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
+    date: string;
+    allowDuplicateCompleted?: boolean;
 }
 
 export class SessionExecutionService {
@@ -164,13 +175,7 @@ export class SessionExecutionService {
     async startExecution(
         userId: string,
         executionId: string,
-        params: {
-            sessionSource: SessionSourceRef;
-            occurrenceId?: string;
-            prescriptionHash?: string;
-            date: string;
-            allowDuplicateCompleted?: boolean;
-        },
+        params: StartExecutionParams,
     ): Promise<SessionExecution> {
         // Fast path: catches the common case (and legacy executions written before this
         // lock scheme existed) without opening a transaction. This alone is still racy --
@@ -237,13 +242,7 @@ export class SessionExecutionService {
     private buildExecutionClaim(
         userId: string,
         executionId: string,
-        params: {
-            sessionSource: SessionSourceRef;
-            occurrenceId?: string;
-            prescriptionHash?: string;
-            date: string;
-            allowDuplicateCompleted?: boolean;
-        },
+        params: StartExecutionParams,
     ): { execution: SessionExecution; lock: SessionExecutionLock } {
         const now = new Date().toISOString();
         const execution: SessionExecution = {
@@ -252,6 +251,8 @@ export class SessionExecutionService {
             sessionSource: params.sessionSource,
             ...(params.occurrenceId ? { occurrenceId: params.occurrenceId } : {}),
             ...(params.prescriptionHash ? { prescriptionHash: params.prescriptionHash } : {}),
+            ...(params.fitWorkoutFingerprint ? { fitWorkoutFingerprint: params.fitWorkoutFingerprint } : {}),
+            ...(params.fitWorkoutFingerprintKind ? { fitWorkoutFingerprintKind: params.fitWorkoutFingerprintKind } : {}),
             date: params.date,
             startedAt: now,
             updatedAt: now,
@@ -289,13 +290,7 @@ export class SessionExecutionService {
     private async queueOfflineExecutionClaim(
         userId: string,
         executionId: string,
-        params: {
-            sessionSource: SessionSourceRef;
-            occurrenceId?: string;
-            prescriptionHash?: string;
-            date: string;
-            allowDuplicateCompleted?: boolean;
-        },
+        params: StartExecutionParams,
     ): Promise<SessionExecution> {
         const lockDocRef = this.lockRef(userId, this.executionSlotKey(params));
         const { execution, lock } = this.buildExecutionClaim(userId, executionId, params);
@@ -338,13 +333,7 @@ export class SessionExecutionService {
     private async claimExecutionSlot(
         userId: string,
         executionId: string,
-        params: {
-            sessionSource: SessionSourceRef;
-            occurrenceId?: string;
-            prescriptionHash?: string;
-            date: string;
-            allowDuplicateCompleted?: boolean;
-        },
+        params: StartExecutionParams,
     ): Promise<SessionExecution> {
         const lockDocRef = this.lockRef(userId, this.executionSlotKey(params));
 

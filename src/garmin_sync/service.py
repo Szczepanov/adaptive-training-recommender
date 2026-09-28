@@ -30,7 +30,7 @@ from .dates import get_date_range, get_date_string, local_today, n_days_ago, par
 from .error_reporting import log_exception
 from .firestore_repository import FirestoreRecoveryRepository
 from .fit_activity import FitDeviceInventoryEntry
-from .fit_workout_identity import compute_fit_workout_fingerprint
+from .fit_workout_identity import compute_fit_workout_identity
 from .garmin_client import GarminClientConfig, GarminClientWrapper
 from .garmin_provider import (
     GarminProviderAdapter,
@@ -195,6 +195,7 @@ class GarminSyncService:
         fit_workout_fingerprints_by_activity_id: dict[str, str] | None = None,
         activity_responses_by_activity_id: dict[str, CanonicalActivityResponseTelemetry]
         | None = None,
+        fit_workout_fingerprint_kinds_by_activity_id: dict[str, str] | None = None,
     ) -> None:
         """Write a normalized standalone record per activity to users/{userId}/activities/.
         Safe to call unconditionally (no-op for an empty list). Activities without a
@@ -212,6 +213,9 @@ class GarminSyncService:
                 (hr_measurements_by_activity_id or {}).get(activity.activity_id),
                 (fit_workout_fingerprints_by_activity_id or {}).get(activity.activity_id),
                 (activity_responses_by_activity_id or {}).get(activity.activity_id),
+                fit_workout_fingerprint_kind=(
+                    fit_workout_fingerprint_kinds_by_activity_id or {}
+                ).get(activity.activity_id),
             )
             activities_to_upsert.append((activity.activity_id, payload))
 
@@ -290,6 +294,7 @@ class GarminSyncService:
         dict[str, CanonicalHrMeasurementQuality],
         dict[str, str],
         dict[str, CanonicalActivityResponseTelemetry],
+        dict[str, str],
     ]:
         """Assess target-date FIT evidence without letting enrichment failures block sync.
 
@@ -302,13 +307,14 @@ class GarminSyncService:
         plan) from the exact same already-decoded evidence -- no additional API calls.
         """
         if not provider.capabilities.activity_hr_fidelity:
-            return {}, {}, {}
+            return {}, {}, {}, {}
         fetch_fidelity: Any = getattr(provider, "fetch_activity_hr_fidelity", None)
         if not callable(fetch_fidelity):
-            return {}, {}, {}
+            return {}, {}, {}, {}
 
         assessments: dict[str, CanonicalHrMeasurementQuality] = {}
         fit_workout_fingerprints: dict[str, str] = {}
+        fit_workout_fingerprint_kinds: dict[str, str] = {}
         activity_responses: dict[str, CanonicalActivityResponseTelemetry] = {}
         for activity in canonical_activities:
             if activity.date != target_iso or activity.activity_id is None:
@@ -321,11 +327,12 @@ class GarminSyncService:
                         evidence,
                         _source_evidence_from_fit_devices(evidence.devices),
                     ).quality
-                    fingerprint = compute_fit_workout_fingerprint(
+                    identity = compute_fit_workout_identity(
                         evidence.workout_name, evidence.workout_step_indices
                     )
-                    if fingerprint is not None:
-                        fit_workout_fingerprints[activity.activity_id] = fingerprint
+                    if identity is not None:
+                        fit_workout_fingerprints[activity.activity_id] = identity.fingerprint
+                        fit_workout_fingerprint_kinds[activity.activity_id] = identity.kind
                     response = derive_activity_response(activity.type, evidence)
                     if response is not None:
                         activity_responses[activity.activity_id] = response
@@ -340,7 +347,12 @@ class GarminSyncService:
                     f"[{target_iso}] Garmin HR-fidelity enrichment failed for "
                     f"activity=<ID-redacted>, continuing with the base record: {error}"
                 )
-        return assessments, fit_workout_fingerprints, activity_responses
+        return (
+            assessments,
+            fit_workout_fingerprints,
+            activity_responses,
+            fit_workout_fingerprint_kinds,
+        )
 
     def _seed_prehistory(
         self, raw_memory_store: dict[str, dict[str, Any]], range_start: Any
@@ -495,10 +507,11 @@ class GarminSyncService:
             hr_measurements_by_activity_id,
             fit_workout_fingerprints_by_activity_id,
             activity_responses_by_activity_id,
+            fit_workout_fingerprint_kinds_by_activity_id,
         ) = (
             self._fetch_activity_hr_fidelity(provider, activities_result.canonical, target_iso)
             if include_activity_hr_fidelity
-            else ({}, {}, {})
+            else ({}, {}, {}, {})
         )
         self._archive_activities(
             activities_result.canonical,
@@ -507,6 +520,7 @@ class GarminSyncService:
             hr_measurements_by_activity_id=hr_measurements_by_activity_id,
             fit_workout_fingerprints_by_activity_id=fit_workout_fingerprints_by_activity_id,
             activity_responses_by_activity_id=activity_responses_by_activity_id,
+            fit_workout_fingerprint_kinds_by_activity_id=fit_workout_fingerprint_kinds_by_activity_id,
         )
 
         # Persist refreshed tokens after API calls
@@ -940,12 +954,13 @@ class GarminSyncService:
 
                     if activity.get("fitWorkoutFingerprint") is None:
                         try:
-                            fingerprint = compute_fit_workout_fingerprint(
+                            identity = compute_fit_workout_identity(
                                 evidence.workout_name,
                                 evidence.workout_step_indices,
                             )
-                            if fingerprint is not None:
-                                merged_updates["fitWorkoutFingerprint"] = fingerprint
+                            if identity is not None:
+                                merged_updates["fitWorkoutFingerprint"] = identity.fingerprint
+                                merged_updates["fitWorkoutFingerprintKind"] = identity.kind
                         except Exception as error:
                             logger.debug(
                                 "Optional FIT workout fingerprint failed for item %d/%d (%s).",

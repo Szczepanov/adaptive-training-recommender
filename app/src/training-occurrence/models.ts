@@ -14,8 +14,10 @@
  * are never destructively merged -- this module only links them.
  */
 
+import type { FitWorkoutFingerprintKind } from '../engine/models';
+
 export const PERFORMED_OCCURRENCE_SCHEMA_VERSION = 1;
-export const RECONCILIATION_MATCHER_VERSION = 'matcher-v1';
+export const RECONCILIATION_MATCHER_VERSION = 'matcher-v2';
 export const RECONCILIATION_POLICY_VERSION = 'policy-v1';
 
 /**
@@ -31,12 +33,16 @@ export type PerformedOccurrenceSourceRef =
           executionId: string;
           sessionOccurrenceId?: string;
           prescriptionHash?: string;
+          fitWorkoutFingerprint?: string;
+          fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
       }
     | {
           kind: 'provider_activity';
           provider: string;
           activityId: string;
           deviceId?: string;
+          fitWorkoutFingerprint?: string;
+          fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
       };
 
 export type PerformedOccurrenceSourceKind = PerformedOccurrenceSourceRef['kind'];
@@ -153,4 +159,6 @@ export interface ReconciliationSourceFacts {
     durationMin: number | null;
     modality?: string;
     prescriptionHash?: string;
+    fitWorkoutFingerprint?: string;
+    fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
 }

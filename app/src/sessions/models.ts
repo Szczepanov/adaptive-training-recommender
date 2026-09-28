@@ -6,7 +6,8 @@
  * have distinct lifecycles and ownership (D-MRECORDS).
  */
 
-import type { IntensityGauge } from '../engine/models';
+import type { FitWorkoutFingerprintKind, IntensityGauge } from '../engine/models';
+export type { FitWorkoutFingerprintKind };
 import type { MovementCompositionPattern, SessionMovementCompositionRequirement } from './movementCompositionContract';
 
 export const SESSION_SCHEMA_VERSION = 1;
@@ -357,6 +358,8 @@ export interface SessionExecution {
     occurrenceId?: string;
     sessionSource: SessionSourceRef;
     prescriptionHash?: string;
+    fitWorkoutFingerprint?: string;
+    fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
     date: string;
     startedAt: string;
     completedAt?: string | null;

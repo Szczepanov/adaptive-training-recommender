@@ -1,7 +1,33 @@
+import json
+from pathlib import Path
+
 from garmin_sync.fit_workout_identity import (
     FIT_WORKOUT_FINGERPRINT_VERSION,
     compute_fit_workout_fingerprint,
+    compute_fit_workout_identity,
+    compute_workout_template_fingerprint,
 )
+
+
+def test_cross_language_contract_fixture_parity() -> None:
+    fixture_path = (
+        Path(__file__).resolve().parent / "fixtures" / "contracts" / "fit_workout_identity_v2.json"
+    )
+    data = json.loads(fixture_path.read_text(encoding="utf-8"))
+    for case in data["cases"]:
+        if "workout" in case:
+            identity = compute_workout_template_fingerprint(case["workout"])
+            assert identity.fingerprint == case["expectedFingerprint"]
+            assert identity.kind == case["expectedKind"]
+        else:
+            indices = tuple(case["observedStepIndices"])
+            identity = compute_fit_workout_identity(case["workoutName"], indices, ())
+            if case["expectedFingerprint"] is None:
+                assert identity is None
+            else:
+                assert identity is not None
+                assert identity.fingerprint == case["expectedFingerprint"]
+                assert identity.kind == case["expectedKind"]
 
 
 def test_returns_none_for_a_freeform_recording_with_no_workout_evidence() -> None:
