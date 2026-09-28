@@ -7,7 +7,7 @@ body:
       value: |
         Provide enough evidence to reproduce the defect without exposing private data.
 
-        **Security:** do not report vulnerabilities, credentials, tokens, service-account data, or sensitive/raw health data in a public issue. Follow [SECURITY.md](../../SECURITY.md) instead.
+        **Security:** do not report vulnerabilities, credentials, tokens, service-account data, or sensitive/raw health data in a public issue. Follow [SECURITY.md](https://github.com/Szczepanov/adaptive-training-recommender/blob/main/SECURITY.md) instead.
 
   - type: dropdown
     id: area
