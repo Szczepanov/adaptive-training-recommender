@@ -5,7 +5,13 @@ import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver'
 import type { SessionSourceRef } from '../sessions/models';
 import { buildStructuredStepDetails, type StructuredStepDetail } from './structuredSetDetail';
 import { hydrateOccurrenceSourcesInRange } from './occurrenceSourcesHydration';
-import { isStructuredExecutionRef, type PerformedOccurrenceSourceKind, type ReconciliationStatus } from './models';
+import {
+    isStructuredExecutionRef,
+    type PerformedOccurrenceSourceKind,
+    type ProviderActivitySourceRef,
+    type ReconciliationStatus,
+    type StructuredExecutionSourceRef,
+} from './models';
 
 export interface TrainingResponseSessionEvidence {
     performedOccurrenceId?: string;
@@ -17,6 +23,7 @@ export interface TrainingResponseSessionEvidence {
         sourceKinds: PerformedOccurrenceSourceKind[];
     };
     structured?: {
+        sourceRef: StructuredExecutionSourceRef;
         executionId: string;
         sessionOccurrenceId?: string;
         prescriptionHash?: string;
@@ -25,6 +32,7 @@ export interface TrainingResponseSessionEvidence {
         steps: StructuredStepDetail[];
     };
     measuredSources: Array<{
+        sourceRef: ProviderActivitySourceRef;
         provider: string;
         activityId: string;
         activity?: NormalizedGarminActivity;
@@ -52,7 +60,12 @@ function activityOnlyEvidence(
         localDate: activity.date,
         modality: modality === 'Unknown' ? activity.type : modality,
         identity: { level: 'provider_activity_only', sourceKinds: ['provider_activity'] },
-        measuredSources: [{ provider: 'garmin', activityId: activity.activityId, activity }],
+        measuredSources: [{
+            sourceRef: { kind: 'provider_activity', provider: 'garmin', activityId: activity.activityId },
+            provider: 'garmin',
+            activityId: activity.activityId,
+            activity,
+        }],
         sourceCompleteness: {
             occurrenceRead,
             structuredExecution: occurrenceRead === 'unavailable' ? 'unavailable' : 'not_linked',
@@ -104,6 +117,7 @@ export async function getTrainingResponseEvidenceInRange(
                         const entries = await sessionExecutionService.getEntries(userId, execution.executionId);
                         const source = execution.sessionSource;
                         structured = {
+                            sourceRef: structuredRef,
                             executionId: execution.executionId,
                             ...(structuredRef.sessionOccurrenceId ? { sessionOccurrenceId: structuredRef.sessionOccurrenceId } : {}),
                             ...(structuredRef.prescriptionHash ?? execution.prescriptionHash
@@ -127,7 +141,7 @@ export async function getTrainingResponseEvidenceInRange(
 
         const measuredSources = providerSources.map(({ ref, activity }) => {
             if (activity) seenActivityIds.add(activity.activityId);
-            return { provider: ref.provider, activityId: ref.activityId, ...(activity ? { activity } : {}) };
+            return { sourceRef: ref, provider: ref.provider, activityId: ref.activityId, ...(activity ? { activity } : {}) };
         });
         const availableSources = measuredSources.filter(source => source.activity).length;
         const providerActivities = measuredSources.length > 1

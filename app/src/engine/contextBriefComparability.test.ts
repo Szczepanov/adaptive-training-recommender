@@ -43,8 +43,9 @@ describe('decideSessionComparability', () => {
         expect(decide(current, prior, { protocolFamily: 'f1' }, { protocolFamily: 'f1' }).matchBasis)
             .toBe('authored_protocol_family');
         expect(decide(current, prior).matchBasis).toBe('provider_fallback');
-        expect(decide(activity(), activity({ activityId: 'prior', date: '2026-09-10' })).matchBasis)
-            .toBe('controlled_steady_match');
+        const controlled = decide(activity(), activity({ activityId: 'prior', date: '2026-09-10' }));
+        expect(controlled.matchBasis).toBe('controlled_steady_match');
+        expect(controlled.provenance.protocolIdentity).toBe('unknown');
     });
 
     it('never compares one physical occurrence with itself', () => {
@@ -77,6 +78,18 @@ describe('decideSessionComparability', () => {
         expect(result.state).toBe('comparable');
         expect(result.confidenceCeiling).toBe('low');
         expect(result.provenance.venueEnvironmentEvidence).toBe('unknown');
+    });
+
+    it('uses the weakest required provenance component as the confidence ceiling', () => {
+        const result = decide(
+            activity(),
+            activity({ activityId: 'prior', date: '2026-09-10' }),
+            { sourceCompleteness: 'canonical' },
+            { sourceCompleteness: 'canonical' },
+        );
+        expect(result.provenance.measurementSensorEvidence).toBe('observational');
+        expect(result.confidenceCeiling).toBe('low');
+        expect(result.limitations).toContain('measurement/sensor authority observational');
     });
 
     it('treats missing comparison measurements as insufficient evidence', () => {

@@ -3,6 +3,7 @@ import { normalizeModality } from './performedTrainingFacts';
 import { getHrUseAuthority, type HrAuthorityReason, type HrUseCase } from './activityHrFidelity';
 import {
     decideSessionComparability,
+    type ComparisonMatchBasis,
     type Confidence,
     type ResponseSessionIdentity,
     STEADY_MAX_VARIABILITY_INDEX,
@@ -473,9 +474,20 @@ export function deriveDecoupling(activity: NormalizedGarminActivity): Decoupling
     return { state: 'available', decouplingPct: round(((first - second) / first) * 100, 1), hrNote: hr.note, observational: hr.observational };
 }
 
+function comparisonBasisLabel(basis: ComparisonMatchBasis | undefined): string {
+    switch (basis) {
+        case 'exact_prescription_identity': return 'same authored prescription';
+        case 'authored_protocol_family': return 'same authored protocol family';
+        case 'provider_fallback': return 'same device structured workout';
+        case 'semantic_protocol_match': return 'semantic protocol match';
+        case 'controlled_steady_match':
+        default: return 'matched steady protocol (type, stimulus, duration)';
+    }
+}
+
 /** Power–HR response ratio against the highest-ranked comparable prior steady
  * session in `history`. Never compares across a changed threshold definition; confidence
- * is `low` whenever either session's HR is only observational under the HR authority. */
+ * comes from the centralized comparability contract's weakest required provenance component. */
 export function deriveEfficiencyComparison(
     activity: NormalizedGarminActivity,
     history: readonly NormalizedGarminActivity[],
@@ -503,12 +515,10 @@ export function deriveEfficiencyComparison(
             if (isCycling(prior)) rejected.push(`${prior.date}: ${comparison.hardRejections[0] ?? 'insufficient comparison evidence'}`);
             continue;
         }
-        const hrNow = hrEvidence(activity, 'AEROBIC_DECOUPLING');
-        const hrPrior = hrEvidence(prior, 'AEROBIC_DECOUPLING');
         comparable.push({
             prior,
             comparison,
-            confidence: hrNow.observational || hrPrior.observational ? 'low' : comparison.confidenceCeiling ?? 'low',
+            confidence: comparison.confidenceCeiling ?? 'low',
         });
     }
     const matchRank: Record<NonNullable<ReturnType<typeof decideSessionComparability>['matchBasis']>, number> = {
@@ -529,7 +539,6 @@ export function deriveEfficiencyComparison(
         const priorEfficiency = (prior.normalizedPower as number) / (prior.averageHr as number);
         const thresholdEvidence = comparison.provenance.thresholdUnitEvidence;
         const provenance: ThresholdProvenance = thresholdEvidence === 'not_required' ? 'unknown' : thresholdEvidence;
-        const sameWorkout = comparison.matchBasis === 'provider_fallback';
         const hrNow = hrEvidence(activity, 'AEROBIC_DECOUPLING');
         const hrPrior = hrEvidence(prior, 'AEROBIC_DECOUPLING');
         return {
@@ -540,7 +549,7 @@ export function deriveEfficiencyComparison(
             priorEfficiencyFactor: round(priorEfficiency, 2),
             changePct: round(((efficiency - priorEfficiency) / priorEfficiency) * 100, 1),
             confidence,
-            basis: sameWorkout ? 'same device structured workout' : 'matched steady protocol (type, stimulus, duration)',
+            basis: comparisonBasisLabel(comparison.matchBasis),
             thresholdProvenance: provenance,
             hrNote: hrNow.note ?? (hrPrior.note ? `prior session ${hrPrior.note}` : null),
         };

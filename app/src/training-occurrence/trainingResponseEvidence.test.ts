@@ -100,6 +100,7 @@ describe('getTrainingResponseEvidenceInRange', () => {
             performedOccurrenceId: 'pto-1',
             identity: { level: 'canonical_occurrence', reconciliationStatus: 'matched', sourceKinds: ['structured_execution', 'provider_activity'] },
             structured: {
+                sourceRef: { kind: 'structured_execution', executionId: 'e1', sessionOccurrenceId: 'so1', prescriptionHash: 'hash1' },
                 executionId: 'e1', sessionOccurrenceId: 'so1', prescriptionHash: 'hash1', workoutId: 'w1',
                 steps: [{
                     stepId: 'step1', exerciseRef: { kind: 'catalog', exerciseId: 'barbell_back_squat' },
@@ -113,7 +114,7 @@ describe('getTrainingResponseEvidenceInRange', () => {
     it('preserves every provider recording until a feature-specific selector chooses one', async () => {
         vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([occurrence({
             sourceRefs: [
-                { kind: 'provider_activity', provider: 'garmin', activityId: 'a1' },
+                { kind: 'provider_activity', provider: 'garmin', activityId: 'a1', deviceId: 'edge-1' },
                 { kind: 'provider_activity', provider: 'other', activityId: 'a1' },
             ],
         })]);
@@ -122,6 +123,8 @@ describe('getTrainingResponseEvidenceInRange', () => {
 
         expect(result.evidence[0].measuredSources.map(source => [source.provider, source.activityId]))
             .toEqual([['garmin', 'a1'], ['other', 'a1']]);
+        expect(result.evidence[0].measuredSources[0].sourceRef)
+            .toMatchObject({ kind: 'provider_activity', provider: 'garmin', activityId: 'a1', deviceId: 'edge-1' });
         expect(result.evidence[0].measuredSources[1].activity).toBeUndefined();
         expect(result.evidence[0].sourceCompleteness.providerActivities).toBe('ambiguous');
     });

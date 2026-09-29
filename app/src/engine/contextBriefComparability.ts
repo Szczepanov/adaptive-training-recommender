@@ -116,8 +116,10 @@ function decision(
             : current.identity?.sourceCompleteness === 'partial' || prior.identity?.sourceCompleteness === 'partial' ? 'partial'
                 : current.identity?.sourceCompleteness === 'canonical' && prior.identity?.sourceCompleteness === 'canonical' ? 'canonical'
                     : 'provider_fallback';
+    const measurement = measurementSensorEvidence(a, b);
     const limits: string[] = [];
     if (threshold === 'unknown') limits.push('power-zone threshold signature unknown');
+    if (measurement === 'observational') limits.push('measurement/sensor authority observational');
     // No current provider activity exposes stable venue/environment evidence. Matching
     // duration or a device fingerprint therefore cannot earn high confidence alone.
     limits.push('venue/environment context unknown');
@@ -134,14 +136,20 @@ function decision(
             protocolIdentity: basis === 'exact_prescription_identity' ? 'exact'
                 : basis === 'authored_protocol_family' ? 'family'
                     : basis === 'provider_fallback' ? 'provider_fingerprint'
-                        : state === 'comparable' ? 'semantic' : 'unknown',
-            measurementSensorEvidence: measurementSensorEvidence(a, b),
+                        : basis === 'semantic_protocol_match' ? 'semantic' : 'unknown',
+            measurementSensorEvidence: measurement,
             thresholdUnitEvidence: threshold,
             venueEnvironmentEvidence: 'unknown',
             sourceCompleteness,
         },
         ...(state === 'comparable'
-            ? { confidenceCeiling: threshold !== 'same' || sourceCompleteness !== 'canonical' ? 'low' : 'moderate' }
+            ? {
+                confidenceCeiling: threshold !== 'same'
+                    || sourceCompleteness !== 'canonical'
+                    || measurement !== 'sufficient'
+                    ? 'low'
+                    : 'moderate',
+            }
             : {}),
     };
     return decision;
@@ -216,7 +224,5 @@ export function decideSessionComparability(input: {
     if (threshold === 'changed') {
         return decision('not_comparable', current, prior, ['power-zone (FTP) definition changed between sessions'], featureFamily);
     }
-    const result = decision('comparable', current, prior, [], featureFamily);
-    if (threshold !== 'same') result.confidenceCeiling = 'low';
-    return result;
+    return decision('comparable', current, prior, [], featureFamily);
 }

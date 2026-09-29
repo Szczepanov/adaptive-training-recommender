@@ -213,6 +213,7 @@ describe('aerobic-efficiency comparison (#814)', () => {
             ]),
         );
         expect(feature.state === 'available' && feature.priorActivityId).toBe('older-exact');
+        expect(feature.state === 'available' && feature.basis).toBe('same authored prescription');
     });
 
     it('keeps provider-only comparison available when canonical occurrence reads fail', () => {
