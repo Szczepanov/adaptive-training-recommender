@@ -223,7 +223,12 @@ describe('aerobic-efficiency comparison (#814)', () => {
             evidence: [{
                 localDate: current.date, modality: 'Cycling',
                 identity: { level: 'provider_activity_only', sourceKinds: ['provider_activity'] },
-                measuredSources: [{ provider: 'garmin', activityId: current.activityId, activity: current }],
+                measuredSources: [{
+                    sourceRef: { kind: 'provider_activity', provider: 'garmin', activityId: current.activityId },
+                    provider: 'garmin',
+                    activityId: current.activityId,
+                    activity: current,
+                }],
                 sourceCompleteness: {
                     occurrenceRead: 'unavailable', structuredExecution: 'unavailable', providerActivities: 'available',
                 },
