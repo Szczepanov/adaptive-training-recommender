@@ -4,9 +4,11 @@ The Context Brief is the read-only handoff between the athlete record and an ext
 It is treated as a versioned API even though the wire format remains human/LLM-readable
 Markdown.
 
-This document describes the contract identity implemented by issue #894. The broader #894
-work on canonical completed training, missingness states, per-source currency, size budgets,
-golden fixtures and end-to-end regression coverage remains open until those slices land.
+This document describes the contract implemented incrementally by issue #894. Contract
+identity/versioning and the canonical completed-training representation are implemented. The
+broader #894 work on full missingness states outside completed training, per-source currency,
+size budgets, golden fixtures and end-to-end regression coverage remains open until those
+slices land.
 
 ## Export boundary
 
@@ -53,7 +55,7 @@ create a second planning engine.
 
 ## Contract identity block
 
-Contract version `2026-09-context-brief-contract-v1` currently exposes one field per line so
+Contract version `2026-09-context-brief-contract-v2` currently exposes one field per line so
 each field is independently machine-readable:
 
 - `Contract version`;
@@ -76,6 +78,31 @@ It identifies the engine-policy build present when the export was generated. It 
 read as the historical decision policy of every persisted recommendation in the retrospective
 window; decision-specific provenance remains on `DailyRecommendation.recommendationAudit`.
 Surfacing all decision/source/knowledge lineage is part of the remaining #894 provenance work.
+
+## Completed-training authority
+
+Planning and diagnostic retrospective completed-training sections prefer ADR-0034 canonical
+performed-training facts. One canonical occurrence renders once even when a structured execution
+and Garmin activity are linked to the same physical workout. Structured-only occurrences remain
+visible, and readiness-modified, partial, inferred and otherwise unverified facts are labelled
+rather than dropped.
+
+Duration missingness is preserved through aggregates: an occurrence with unknown duration is not
+silently treated as zero minutes in totals, discipline summaries or rolling buckets.
+
+If canonical facts are unreadable, the renderer does not assert an empty window. Raw provider
+activities may be shown as an explicitly non-canonical fallback with a double-count warning; when
+there are no raw fallback rows either, completed training is reported as indeterminate. If the
+canonical set is empty while raw provider rows exist, the export calls out possible pending
+reconciliation.
+
+Diagnostic mode may additionally show raw provider activity rows as provenance. Those rows are
+never added to canonical totals. A count mismatch between canonical occurrences carrying provider
+evidence and raw provider rows is not independently interpreted as an extra or missing physical
+workout because one canonical occurrence can legitimately have zero or multiple provider records.
+
+This authority change is the semantic reason the contract advanced from v1 to v2; the engine
+`POLICY_VERSION` is unchanged because recommendation selection and safety policy did not change.
 
 ## Determinism
 
@@ -110,5 +137,4 @@ decision. Do not silently repurpose an existing label.
 Adding or changing body sections also requires checking #894's contract requirements so that
 missingness, provenance, authority and information-budget guarantees are not weakened.
 
-The remaining acceptance criteria of #894 stay tracked by that issue; merging a partial slice
-must not auto-close it.
+The remaining acceptance criteria of #894 stay tracked by that issue; canonical completed training is no longer listed as outstanding, and merging this partial slice must not auto-close it.

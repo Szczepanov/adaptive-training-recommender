@@ -267,6 +267,7 @@ function factDetail(fact: PerformedExposureFact): string {
     const flags: string[] = [];
     if (fact.isReadinessModifiedDose) flags.push('readiness-modified dose');
     if (fact.startedAt && !fact.endedAt) flags.push('started, completion unrecorded');
+    if (fact.durationMin === undefined) flags.push('duration unrecorded');
     if (fact.confidence === 'inferred') flags.push('identity inferred from provider');
     else if (fact.confidence === 'unknown') flags.push('identity unverified');
     return flags.length > 0 ? flags.join('; ') : '—';
@@ -284,6 +285,20 @@ function renderRawActivityTable(activities: readonly NormalizedGarminActivity[])
     return lines;
 }
 
+function summarizeCanonicalDuration(facts: readonly PerformedExposureFact[]): string {
+    let knownMinutes = 0;
+    let knownCount = 0;
+    for (const fact of facts) {
+        if (fact.durationMin === undefined) continue;
+        knownMinutes += fact.durationMin;
+        knownCount += 1;
+    }
+    const unknownCount = facts.length - knownCount;
+    if (unknownCount === 0) return `${knownMinutes} min`;
+    const unknownLabel = `${unknownCount} session${unknownCount === 1 ? '' : 's'} with duration unknown`;
+    return knownCount > 0 ? `${knownMinutes} known min · ${unknownLabel}` : unknownLabel;
+}
+
 function renderCanonicalTrainingTable(facts: readonly PerformedExposureFact[], rawRecordCount: number): string[] {
     const lines: string[] = [
         '| Date | Modality | Min | Sources | Detail |',
@@ -294,30 +309,46 @@ function renderCanonicalTrainingTable(facts: readonly PerformedExposureFact[], r
         lines.push(`| ${fact.localDate} | ${fact.modality} | ${fact.durationMin ?? '—'} | ${sources} | ${factDetail(fact)} |`);
     }
 
-    let totalMinutes = 0;
-    for (const fact of facts) totalMinutes += fact.durationMin ?? 0;
     lines.push('');
-    // The raw-record count keeps the dedupe honest: a linked structured + provider
-    // pair counts once here, and any unreconciled provider record is visible as the
-    // difference rather than silently dropped or double-counted.
-    lines.push(`Totals: ${facts.length} sessions · ${totalMinutes} min (canonical, deduped across structured and provider sources; ${rawRecordCount} raw activity records in window).`);
+    const rawLabel = `${rawRecordCount} raw provider activity row${rawRecordCount === 1 ? '' : 's'} in window`;
+    lines.push(`Totals: ${facts.length} sessions · ${summarizeCanonicalDuration(facts)} (canonical, deduped across structured and provider sources; ${rawLabel}).`);
 
-    const modalityMinutes: Record<string, { sessions: number; minutes: number }> = {};
+    const providerFactCount = facts.filter(fact => fact.sourceKinds.includes('provider_activity')).length;
+    if (providerFactCount !== rawRecordCount) {
+        lines.push(
+            `Provider-count note: ${providerFactCount} canonical session${providerFactCount === 1 ? '' : 's'} carry provider evidence vs ${rawRecordCount} raw provider row${rawRecordCount === 1 ? '' : 's'}. `
+            + 'Raw rows are never added directly to canonical totals; inspect diagnostic provenance if the mismatch affects load interpretation.',
+        );
+    }
+
+    const modalityMinutes: Record<string, { sessions: number; knownMinutes: number; knownDurations: number }> = {};
     for (const fact of facts) {
-        if (!modalityMinutes[fact.modality]) modalityMinutes[fact.modality] = { sessions: 0, minutes: 0 };
+        if (!modalityMinutes[fact.modality]) {
+            modalityMinutes[fact.modality] = { sessions: 0, knownMinutes: 0, knownDurations: 0 };
+        }
         modalityMinutes[fact.modality].sessions += 1;
-        modalityMinutes[fact.modality].minutes += fact.durationMin ?? 0;
+        if (fact.durationMin !== undefined) {
+            modalityMinutes[fact.modality].knownMinutes += fact.durationMin;
+            modalityMinutes[fact.modality].knownDurations += 1;
+        }
     }
     const breakdown = Object.entries(modalityMinutes)
-        .sort((a, b) => b[1].minutes - a[1].minutes)
-        .map(([sport, stat]) => `${sport}: ${stat.sessions} session${stat.sessions === 1 ? '' : 's'} (${stat.minutes} min)`)
+        .sort((a, b) => b[1].knownMinutes - a[1].knownMinutes || b[1].sessions - a[1].sessions || a[0].localeCompare(b[0]))
+        .map(([sport, stat]) => {
+            const unknown = stat.sessions - stat.knownDurations;
+            const duration = unknown === 0
+                ? `${stat.knownMinutes} min`
+                : stat.knownDurations > 0
+                    ? `${stat.knownMinutes} known min; ${unknown} duration unknown`
+                    : 'duration unknown';
+            return `${sport}: ${stat.sessions} session${stat.sessions === 1 ? '' : 's'} (${duration})`;
+        })
         .join(' · ');
     if (breakdown) {
         lines.push(`Discipline volume: ${breakdown}`);
     }
     return lines;
 }
-
 function renderTraining(
     activities: readonly NormalizedGarminActivity[],
     asOfDate: string,
@@ -343,6 +374,14 @@ function renderTraining(
     // the raw table with a caution rather than asserting an empty window.
     const canonical = options?.performedFacts != null && (windowFacts.length > 0 || activities.length === 0);
 
+    // A canonical read failure is an unknown completed-training state even when the raw
+    // provider table is empty: structured-only work may exist and an empty provider read
+    // cannot prove that no training occurred.
+    if (options?.performedFacts === null && activities.length === 0) {
+        lines.push('> Canonical performed-training facts were unreadable for this window and no raw provider activity rows are available as fallback. Completed training cannot be determined for this window.');
+        return lines;
+    }
+
     if (canonical) {
         if (windowFacts.length === 0) {
             lines.push('No recorded sessions in this window (canonical performed-training facts).');
@@ -359,15 +398,18 @@ function renderTraining(
             const rawStart = addDaysToLocalDateString(bucketEnd, -6);
             const bucketStart = rawStart < windowStart ? windowStart : rawStart;
             const inBucket = windowFacts.filter(fact => withinWindow(fact.localDate, bucketStart, bucketEnd));
-            let minutes = 0;
-            for (const fact of inBucket) minutes += fact.durationMin ?? 0;
             const dayCount = getDayDiff(bucketEnd, bucketStart) + 1;
             const span = dayCount === 7 ? '' : ` (${dayCount} days)`;
-            lines.push(`- ${bucketStart} → ${bucketEnd}${span}: ${inBucket.length} sessions · ${minutes} min`);
+            lines.push(`- ${bucketStart} → ${bucketEnd}${span}: ${inBucket.length} sessions · ${summarizeCanonicalDuration(inBucket)}`);
         }
 
         if (options?.planningOrder === false && activities.length > 0) {
-            lines.push('', 'Raw activity provenance (diagnostic only — the same sessions as above, not additional volume):', '', ...renderRawActivityTable(activities));
+            lines.push(
+                '',
+                'Raw activity provenance (diagnostic only — source rows are not added to canonical totals; unmatched or multiple provider rows may reflect reconciliation state):',
+                '',
+                ...renderRawActivityTable(activities),
+            );
         }
         return lines;
     }

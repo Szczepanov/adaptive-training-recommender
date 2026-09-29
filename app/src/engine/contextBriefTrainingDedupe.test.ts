@@ -71,7 +71,7 @@ describe('contextBrief canonical training table (#894)', () => {
         const text = buildContextBrief(withFacts(linkedFacts, { purpose: 'planning' }));
         expect(text).toContain(`| ${D1} | Cycling | 60 | structured + Garmin | — |`);
         expect(text).toContain(`| ${D2} | Strength | 45 | structured | readiness-modified dose |`);
-        expect(text).toContain('Totals: 2 sessions · 105 min (canonical, deduped across structured and provider sources; 1 raw activity records in window).');
+        expect(text).toContain('Totals: 2 sessions · 105 min (canonical, deduped across structured and provider sources; 1 raw provider activity row in window).');
         expect(text).not.toContain('Aerobic TE');
         expect(text).not.toContain('Raw activity provenance');
     });
@@ -79,7 +79,7 @@ describe('contextBrief canonical training table (#894)', () => {
     it('diagnostic keeps raw provider rows as provenance, not additional volume', () => {
         const text = buildContextBrief(withFacts(linkedFacts, { purpose: 'diagnostic' }));
         expect(text).toContain(`| ${D1} | Cycling | 60 | structured + Garmin | — |`);
-        expect(text).toContain('Raw activity provenance (diagnostic only — the same sessions as above, not additional volume)');
+        expect(text).toContain('Raw activity provenance (diagnostic only — source rows are not added to canonical totals; unmatched or multiple provider rows may reflect reconciliation state)');
         expect(text).toContain('| Date | Type | Min | Load | Aerobic TE | Anaerobic TE | Avg HR | Intensity |');
     });
 
@@ -89,8 +89,10 @@ describe('contextBrief canonical training table (#894)', () => {
             fact(D2, { performedOccurrenceId: 'occ-inferred', confidence: 'inferred', sourceKinds: ['provider_activity'], evidenceTier: 'genericModalityFallback' }),
         ];
         const text = buildContextBrief(withFacts(facts, { purpose: 'planning' }));
-        expect(text).toContain('started, completion unrecorded');
+        expect(text).toContain('started, completion unrecorded; duration unrecorded');
         expect(text).toContain('identity inferred from provider');
+        expect(text).toContain('Totals: 2 sessions · 60 known min · 1 session with duration unknown');
+        expect(text).toContain('Discipline volume: Cycling: 2 sessions (60 known min; 1 duration unknown)');
     });
 
     it('filters facts outside the render window', () => {
@@ -110,6 +112,22 @@ describe('contextBrief canonical training table (#894)', () => {
         const text = buildContextBrief(withFacts([], { purpose: 'planning' }));
         expect(text).toContain('reconciliation pending?');
         expect(text).not.toContain('No recorded sessions in this window.');
+    });
+
+    it('canonical read failure with no raw rows stays unknown instead of asserting no training', () => {
+        const unreadable = withFacts(null, { purpose: 'planning', activities: [] });
+        const text = buildContextBrief(unreadable);
+        expect(text).toContain('Completed training cannot be determined for this window.');
+        expect(text).not.toContain('No recorded sessions in this window.');
+    });
+
+    it('flags raw/canonical provider-count mismatches without adding raw rows to canonical totals', () => {
+        const text = buildContextBrief(withFacts(linkedFacts, {
+            purpose: 'planning',
+            activities: [activity(D1), activity(D2, { activityId: 'unreconciled-provider-row' })],
+        }));
+        expect(text).toContain('1 canonical session carry provider evidence vs 2 raw provider rows');
+        expect(text).toContain('Raw rows are never added directly to canonical totals');
     });
 
     it('empty facts with no raw records still report an empty window', () => {
