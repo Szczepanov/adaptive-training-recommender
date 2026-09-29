@@ -263,8 +263,8 @@
         "type": "synthetic",
         "ref": "P0-jev-routing"
       },
-      "start_ref": "6882918d203f689e87c7dc7dd4251aae7d4fd127",
-      "prompt": "Without changing code, determine whether ContextBriefService.build hydrates performedFacts for the morning, planning, and diagnostic brief purposes, and state whether a change that needs performedFacts in the morning brief requires service-layer wiring first. Keep the three purpose checks separate and ground the conclusion in repository source.",
+      "start_ref": "4855dd48fb9cf8c0d28505ceed6e3afe657e0393",
+      "prompt": "Without changing code, determine whether the morning ContextBriefService.build path hydrates completed-training exposure facts from the historical fact read, compare that behavior with the planning and diagnostic brief purposes, and state whether a morning feature that depends on those facts needs service-layer wiring first. Keep the three purpose checks separate and ground the conclusion in repository source.",
       "success_criteria": [
         "The exact ContextBriefService implementation is located without a broad repository semantic sweep.",
         "The answer identifies that morning leaves performedFacts unhydrated while planning and diagnostic hydrate it.",
@@ -282,12 +282,12 @@
         {
           "capability": "lexical_search",
           "expectation": "recommended",
-          "reason": "The exact ContextBriefService symbol is known, so locate its implementation with rg/text search first."
+          "reason": "The exact ContextBriefService symbol is known, so locate its implementation with rg/text search first; the semantic fact-hydration property itself is not given as an internal identifier."
         },
         {
           "capability": "jev",
           "expectation": "recommended",
-          "reason": "ContextBriefService is a large implementation and the three purpose branches are semantic properties, so atomic jev ask checks can avoid loading the full file before source verification."
+          "reason": "ContextBriefService is a large implementation and the requested purpose-specific fact-hydration behavior is semantic rather than an exact internal symbol, so atomic jev ask checks can narrow the relevant source before verification."
         },
         {
           "capability": "context7",
@@ -303,7 +303,7 @@
         "type": "synthetic",
         "ref": "P0-jev-routing-negative"
       },
-      "start_ref": "6882918d203f689e87c7dc7dd4251aae7d4fd127",
+      "start_ref": "4855dd48fb9cf8c0d28505ceed6e3afe657e0393",
       "prompt": "Without changing code, locate the definition of POLICY_VERSION, report its file and symbol, and summarize the repository rule for when it must be bumped. Use repository evidence only.",
       "success_criteria": [
         "The answer identifies app/src/engine/policy.ts and POLICY_VERSION.",
