@@ -650,11 +650,18 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           activeExternal &&
           isV4Plan(activeExternal.plan) &&
           recommendationWithPrescription.externalVerdict?.decision === 'proceed' &&
+          recommendationWithPrescription.externalPrescription?.isEvent !== true &&
           recommendationWithPrescription.template.id !== 'rest_01' &&
           externalContext &&
           'definition' in externalContext.session
         ) {
           try {
+            // #909: only `proceed` can bind the imported structured definition as-is.
+            // A `scale` verdict currently carries a reduced summary/dose but no structured
+            // reduced SessionDefinition. Binding the original definition would execute the
+            // full authored dose; deriving executable steps from free text would violate
+            // ADR-0019's no-parse boundary. Scaled days therefore remain display-only until
+            // the external-plan schema explicitly carries a reduced executable definition.
             const launch = await prepareExternalPlanSessionLaunch(
               userId,
               {

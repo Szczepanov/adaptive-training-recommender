@@ -3,6 +3,7 @@ import type { Recommendation, SessionTemplate } from '../engine/models';
 import type { SessionExecution, SessionReferenceBinding } from '../sessions/models';
 import type { WorkoutPrescription } from '../workouts';
 import { DecisionEvidenceSummary } from './DecisionEvidenceSummary';
+import { ExternalVerdictBanner } from './ExternalVerdictBanner';
 import { OneTapAlternatives } from './OneTapAlternatives';
 import { WorkoutExportMenu } from './WorkoutExportMenu';
 import type { MorningDecisionEvidence } from '../engine/decisionEvidence';
@@ -132,6 +133,36 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     const clinicalReason = recommendation?.envelopes?.safety.clinicalReason
         ?? 'Red-flag symptoms reported. Training recommendations are paused until medical evaluation.';
 
+    // #909: the adjudication of today's imported session, when present. The banner owns
+    // the verdict presentation (proceed/scale/defer/skip/advisory); this card only decides
+    // which launch affordances stay available around it. `skip`/`defer` never offer a Start
+    // path for the imported prescription, even if a binding were present.
+    const externalVerdict = recommendation?.externalVerdict ?? null;
+    const externalPrescription = recommendation?.externalPrescription ?? null;
+    const hasExternalVerdict = externalVerdict !== null && externalPrescription !== null;
+    const isExternalExcluded = hasExternalVerdict
+        && (externalVerdict.decision === 'skip' || externalVerdict.decision === 'defer');
+    // A scaled imported session is still today's authoritative prescription, but v1-v4
+    // external plans do not carry a structured reduced SessionDefinition. Never launch a
+    // raw imported binding under `scale`: it points at the full authored definition.
+    // Separately selected/constructed catalog alternatives remain governed by their own
+    // launch path and gates.
+    const isExternalPrimaryBindingUnavailable = isExternalExcluded
+        || (hasExternalVerdict && externalVerdict.decision === 'scale');
+    // #909: an adjudicated imported session carries the verdict rationale as the
+    // recommendation rationale verbatim, so the hero "Why today" callout would repeat
+    // the banner word for word. Suppress it there; the banner owns the explanation and
+    // the full evidence stays under "Why & Invalidation Rules". An event-advisory day
+    // keeps its callout: its rationale belongs to the ranked pick, not the verdict.
+    const heroRepeatsVerdict = hasExternalVerdict && recommendation?.rationale === externalVerdict.rationale;
+    const externalScaleDuration = recommendation && hasExternalVerdict
+        && externalVerdict.decision === 'scale' && externalVerdict.executionDose
+        ? {
+            min: Math.max(1, Math.round(recommendation.template.durationMin * externalVerdict.executionDose.volume)),
+            max: Math.max(1, Math.round(recommendation.template.durationMax * externalVerdict.executionDose.volume)),
+        }
+        : null;
+
     const handleTabToggle = (tab: 'why' | 'alternatives' | 'workout') => {
         // Keep the rationale/evidence surface available, but do not expose executable
         // prescription or adjustment surfaces while clinical escalation is active.
@@ -206,7 +237,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
         // adjustment, launch the currently displayed prescription instead of silently
         // executing that stale binding.
         const needsAdjustedBinding = Boolean(activeAlternativeId || adjustmentDirection !== null);
-        if (onStartSession && needsAdjustedBinding && prescription) {
+        if (onStartSession && needsAdjustedBinding && prescription && !isExternalExcluded) {
             setLaunching(true);
             try {
                 const launch = await prepareCatalogSessionLaunch(userId, prescription);
@@ -219,7 +250,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
             return;
         }
 
-        if (recommendation.primarySession && onStartSession) {
+        if (recommendation.primarySession && onStartSession && !isExternalPrimaryBindingUnavailable) {
             setLaunching(true);
             try {
                 await onStartSession(recommendation.primarySession, options);
@@ -253,8 +284,14 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     };
 
     const isHardGateActive = clinicalEscalationActive || isGateLocked || !evidence.boundaries.harderAdjustmentAllowed;
+    // #909: on an excluded imported day the verdict banner owns the day ("nothing from
+    // this session is prescribed today"), so no adjusted/alternative catalog binding gets
+    // a hero Start either. Unreachable through today's engine paths (every alternative
+    // and adjustment branch leaves `prescription` undefined for synthetic templates),
+    // but the card must not depend on that chain to keep its own promise.
     const canLaunchCurrentPrescription = Boolean(
         !clinicalEscalationActive
+        && !isExternalExcluded
         && onStartSession
         && prescription
         && (activeAlternativeId || adjustmentDirection !== null),
@@ -324,6 +361,9 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                             </div>
                         ) : (
                             <>
+                                {hasExternalVerdict && (
+                                    <ExternalVerdictBanner prescription={externalPrescription} verdict={externalVerdict} />
+                                )}
                                 <div className="headline-meta-row">
                                     <h2 className="hero-headline">
                                         {recommendation.template.title}
@@ -337,9 +377,11 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                     <span className="metric-tag">{recommendation.template.modality}</span>
                                     <span className="metric-dot">·</span>
                                     <span className="metric-tag">
-                                        {recommendation.activeDose
-                                            ? `${recommendation.activeDose.durationMin}–${recommendation.activeDose.durationMax} min`
-                                            : `${recommendation.template.durationMin}–${recommendation.template.durationMax} min`}
+                                        {externalScaleDuration
+                                            ? `${externalScaleDuration.min === externalScaleDuration.max ? externalScaleDuration.min : `${externalScaleDuration.min}–${externalScaleDuration.max}`} min · reduced`
+                                            : recommendation.activeDose
+                                                ? `${recommendation.activeDose.durationMin}–${recommendation.activeDose.durationMax} min`
+                                                : `${recommendation.template.durationMin}–${recommendation.template.durationMax} min`}
                                     </span>
                                     <span className="metric-dot">·</span>
                                     <span className="metric-tag">{recommendation.template.category}</span>
@@ -347,7 +389,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                             </>
                         )}
 
-                        {(() => {
+                        {!heroRepeatsVerdict && (() => {
                             const rawRationale = clinicalEscalationActive ? clinicalReason : recommendation.rationale;
                             const { coachingNarrative, technicalDetail } = splitCoachingRationale(rawRationale);
 
@@ -395,6 +437,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                                     📋 View Targets
                                                 </button>
                                             )}
+                                            {!isExternalPrimaryBindingUnavailable && (
                                             <button
                                                 type="button"
                                                 className="btn-redo-session"
@@ -404,8 +447,9 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                             >
                                                 ↻ Redo Session
                                             </button>
+                                            )}
                                         </div>
-                                    ) : (canLaunchCurrentPrescription || (recommendation.primarySession && onStartSession)) ? (
+                                    ) : (canLaunchCurrentPrescription || (recommendation.primarySession && onStartSession && !isExternalPrimaryBindingUnavailable)) ? (
                                         <button
                                             type="button"
                                             className="btn-hero-primary"

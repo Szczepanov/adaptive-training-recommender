@@ -23,6 +23,22 @@ resolution, and active-session restoration. Existing correctly written revisions
 migration: their storage shape is decoded as an envelope rather than mistaken for domain
 content.
 
+## Imported-plan scale verdicts and structured Start
+
+An external-plan `proceed` verdict may bind the imported v2–v4 `SessionDefinition` as written.
+A `scale` verdict is different: the current import contract carries an adjudicated
+`executionDose` plus optional free-text `reducedSummary`/`reducedDurationMin`, but no second
+structured reduced definition. Home must therefore present that reduced prescription and dose
+without creating a structured runner binding. Executing the original blocks would silently run
+the full authored dose, while deriving replacement steps from free text would violate ADR-0019's
+no-parse/candidate boundary.
+
+Accordingly, structured **Start** is withheld for an imported `scale` verdict and the banner
+does not show the original detailed step list as if it were the reduced workout. A future
+executable reduced form requires a versioned external-plan schema/ADR that carries the reduced
+`SessionDefinition` explicitly. This is an execution-snapshot boundary, not a new recommendation
+rule, so it does not change `POLICY_VERSION`.
+
 ## Catalog warm-ups and execution logging
 
 Catalog strength prescriptions begin with an explicit `warmup` block. The catalog adapter preserves
