@@ -42,11 +42,14 @@ export interface ResponseContext {
     windowEnd?: string;
     /** Canonical occurrence/source projection; consumers migrate from activity-only input by work package. */
     evidence?: readonly TrainingResponseSessionEvidence[];
+    /** Diagnostic exports include the bounded comparison decision and source identity. */
+    diagnostic?: boolean;
 }
 
 export interface KeySessionSummary {
     activity?: NormalizedGarminActivity;
     evidence?: TrainingResponseSessionEvidence;
+    sourceSelectionAmbiguous?: boolean;
     omittedStructuredOnlyCount?: number;
     intervals: IntervalRepetition;
     sprints: SprintRepetition;
@@ -101,7 +104,8 @@ function isExplicitStructuredStrengthEvidence(
 /** Key: a feature is available, or the session is steady-eligible but had no comparable
  * prior session (its rejection reasons are worth stating). */
 function isKey(summary: Omit<KeySessionSummary, 'nextDay'>): boolean {
-    return hasAvailableFeature(summary)
+    return summary.sourceSelectionAmbiguous === true
+        || hasAvailableFeature(summary)
         || (isExplicitStructuredStrengthEvidence(summary.evidence) && summary.strength.state === 'insufficient_evidence')
         || (summary.efficiency.state === 'insufficient_evidence' && summary.efficiency.kind === 'no_comparable');
 }
@@ -112,10 +116,21 @@ export function deriveKeySessionSummaries(
 ): KeySessionSummary[] {
     const identities = new Map<string, ResponseSessionIdentity>();
     const evidenceByActivityId = new Map<string, TrainingResponseSessionEvidence>();
+    const localDateByActivityId = new Map<string, string>();
+    const ambiguousActivityIds = new Set<string>();
+    const ambiguousEvidence = new Set<TrainingResponseSessionEvidence>();
     for (const session of context.evidence ?? []) {
         const protocolFamily = authoredProtocolFamily(session);
+        const providerSelectionAmbiguous = session.sourceCompleteness.providerActivities === 'ambiguous'
+            || session.sourceCompleteness.providerActivities === 'partial';
+        if (providerSelectionAmbiguous) ambiguousEvidence.add(session);
         for (const source of session.measuredSources) {
             if (source.provider.toLowerCase() !== 'garmin') continue;
+            localDateByActivityId.set(source.activityId, session.localDate);
+            if (providerSelectionAmbiguous) {
+                ambiguousActivityIds.add(source.activityId);
+                continue;
+            }
             evidenceByActivityId.set(source.activityId, session);
             identities.set(source.activityId, {
                 ...(session.performedOccurrenceId ? { performedOccurrenceId: session.performedOccurrenceId } : {}),
@@ -134,7 +149,9 @@ export function deriveKeySessionSummaries(
             });
         }
     }
-    const summaries: Omit<KeySessionSummary, 'nextDay'>[] = [...windowActivities]
+    const comparisonHistory = context.history.filter(activity => !ambiguousActivityIds.has(activity.activityId));
+    const summaries: Omit<KeySessionSummary, 'nextDay'>[] = windowActivities
+        .filter(activity => !ambiguousActivityIds.has(activity.activityId))
         .sort((a, b) => a.date.localeCompare(b.date) || a.activityId.localeCompare(b.activityId))
         .map(activity => {
             const evidence = evidenceByActivityId.get(activity.activityId);
@@ -144,23 +161,31 @@ export function deriveKeySessionSummaries(
                 intervals: deriveIntervalRepetition(activity),
                 sprints: deriveSprintRepetition(activity),
                 decoupling: deriveDecoupling(activity),
-                efficiency: deriveEfficiencyComparison(activity, context.history, identities),
+                efficiency: deriveEfficiencyComparison(activity, comparisonHistory, identities),
                 strength: evidence?.structured
                     ? deriveStructuredStrengthProgression(evidence, context.evidence ?? [])
-                    : deriveStrengthProgression(activity, context.history, evidenceByActivityId, identities),
+                    : deriveStrengthProgression(activity, comparisonHistory, evidenceByActivityId, identities),
             };
         });
 
-    const windowActivityIds = new Set(windowActivities.map(activity => activity.activityId));
-    const windowStart = context.windowStart ?? windowActivities.map(item => item.date).sort()[0];
-    const windowEnd = context.windowEnd ?? windowActivities.map(item => item.date).sort().at(-1);
+    const windowActivityIds = new Set(windowActivities
+        .filter(activity => !ambiguousActivityIds.has(activity.activityId))
+        .map(activity => activity.activityId));
+    const renderDates = (windowActivities.length > 0
+        ? windowActivities.map(item => localDateByActivityId.get(item.activityId) ?? item.date)
+        : (context.evidence ?? []).map(item => item.localDate))
+        .sort();
+    const windowStart = context.windowStart ?? renderDates[0];
+    const windowEnd = context.windowEnd ?? renderDates.at(-1);
     const structuredOnly = (context.evidence ?? [])
         .filter(session =>
             isStructuredExecutionEvidence(session)
             && (!windowStart || session.localDate >= windowStart)
             && (!windowEnd || session.localDate <= windowEnd)
             && !session.measuredSources.some(source => source.provider.toLowerCase() === 'garmin'
-                && windowActivityIds.has(source.activityId)))
+                && (ambiguousEvidence.has(session)
+                    ? windowActivities.some(activity => activity.activityId === source.activityId)
+                    : windowActivityIds.has(source.activityId))))
         .map(evidence => ({
             evidence,
             strength: deriveStructuredStrengthProgression(evidence, context.evidence ?? []),
@@ -181,6 +206,26 @@ export function deriveKeySessionSummaries(
             decoupling: { state: 'insufficient_evidence', reason: 'provider activity telemetry unavailable' },
             efficiency: { state: 'insufficient_evidence', reason: 'provider activity telemetry unavailable', kind: 'ineligible', rejected: [] },
             strength,
+        });
+    }
+
+    for (const evidence of ambiguousEvidence) {
+        const hasActivityInWindow = evidence.measuredSources.some(source =>
+            source.provider.toLowerCase() === 'garmin'
+            && windowActivities.some(activity => activity.activityId === source.activityId));
+        if (!hasActivityInWindow
+            || (windowStart !== undefined && evidence.localDate < windowStart)
+            || (windowEnd !== undefined && evidence.localDate > windowEnd)) continue;
+        summaries.push({
+            evidence,
+            sourceSelectionAmbiguous: true,
+            intervals: { state: 'insufficient_evidence', reason: 'multiple provider recordings lack a deterministic primary selection' },
+            sprints: { state: 'insufficient_evidence', reason: 'multiple provider recordings lack a deterministic primary selection' },
+            decoupling: { state: 'insufficient_evidence', reason: 'multiple provider recordings lack a deterministic primary selection' },
+            efficiency: { state: 'insufficient_evidence', kind: 'ineligible', reason: 'multiple provider recordings lack a deterministic primary selection', rejected: [] },
+            strength: evidence.structured
+                ? deriveStructuredStrengthProgression(evidence, context.evidence ?? [])
+                : { state: 'insufficient_evidence', reason: 'multiple provider recordings lack a deterministic primary selection' },
         });
     }
 
@@ -306,7 +351,10 @@ function efficiencyLines(feature: EfficiencyComparison): string[] {
     }
     if (feature.kind !== 'no_comparable') return [];
     const rejected = feature.rejected.slice(0, 3);
-    const more = feature.rejected.length > rejected.length ? `; +${feature.rejected.length - rejected.length} more` : '';
+    const omitted = feature.rejectedOmittedCount ?? 0;
+    const more = feature.rejected.length > rejected.length || omitted > 0
+        ? `; +${feature.rejected.length - rejected.length + omitted} more`
+        : '';
     return [`- Steady power–HR response: insufficient evidence — ${feature.reason}${rejected.length > 0 ? ` (rejected ${rejected.join('; ')}${more})` : ''}`];
 }
 
@@ -375,7 +423,10 @@ function headerLine(activity: NormalizedGarminActivity): string {
 
 function structuredHeaderLine(evidence: TrainingResponseSessionEvidence): string {
     const modality = normalizeModality(evidence.modality);
-    return `#### ${evidence.localDate} — ${modality === 'Unknown' ? evidence.modality || 'Strength' : modality} — structured execution`;
+    const label = evidence.identity.sourceKinds.includes('structured_execution')
+        ? 'structured execution'
+        : 'provider evidence';
+    return `#### ${evidence.localDate} — ${modality === 'Unknown' ? evidence.modality || 'Strength' : modality} — ${label}`;
 }
 
 function powerLine(activity: NormalizedGarminActivity): string[] {
@@ -406,6 +457,29 @@ export function renderKeySessionSummaries(summaries: readonly KeySessionSummary[
             ...strengthLines(summary.strength, isExplicitStructuredStrengthEvidence(summary.evidence)),
             ...nextDayLines(summary.nextDay),
         );
+        if (summary.sourceSelectionAmbiguous) {
+            lines.push('- Provider response: insufficient evidence — multiple recordings represent this occurrence and no deterministic primary source is available');
+        }
+        if (context.diagnostic) {
+            const evidence = summary.evidence;
+            if (evidence) {
+                const sources = evidence.measuredSources
+                    .map(source => `${source.provider}:${source.activityId}`)
+                    .slice(0, 8);
+                const sourceKinds = evidence.identity.sourceKinds.slice(0, 8);
+                const omittedSources = Math.max(0, evidence.measuredSources.length - sources.length);
+                lines.push(`- Diagnostic provenance: occurrence ${evidence.performedOccurrenceId ?? 'unavailable'}; identity ${evidence.identity.level}; source kinds ${sourceKinds.join(', ') || 'unknown'}; sources ${sources.join(', ') || 'none'}${omittedSources ? `; ${omittedSources} additional sources omitted` : ''}; provider selection ${evidence.sourceCompleteness.providerActivities}`);
+            }
+            if (summary.efficiency.state === 'available') {
+                const decision = summary.efficiency.decision;
+                if (decision) {
+                    lines.push(`- Diagnostic comparison: ${decision.featureFamily} ${decision.state} via ${decision.matchBasis ?? 'none'}; occurrence ${decision.provenance.occurrenceIdentity}; protocol ${decision.provenance.protocolIdentity}; measurement ${decision.provenance.measurementSensorEvidence}; threshold ${decision.provenance.thresholdUnitEvidence}; venue/environment ${decision.provenance.venueEnvironmentEvidence}; source completeness ${decision.provenance.sourceCompleteness}; limitations ${decision.limitations.join(', ') || 'none'}`);
+                }
+            } else if (summary.efficiency.kind === 'no_comparable' && summary.efficiency.rejected.length > 0) {
+                const rejected = summary.efficiency.rejected.slice(0, 8);
+                lines.push(`- Diagnostic rejected comparisons: ${rejected.join('; ')}${summary.efficiency.rejectedOmittedCount ? `; ${summary.efficiency.rejectedOmittedCount} additional candidate(s) omitted` : ''}`);
+            }
+        }
     }
     const omittedStructuredOnlyCount = summaries.reduce((count, summary) => count + (summary.omittedStructuredOnlyCount ?? 0), 0);
     if (omittedStructuredOnlyCount > 0) lines.push('', `- ${omittedStructuredOnlyCount} additional structured-only strength occurrences omitted`);

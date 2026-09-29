@@ -2,11 +2,11 @@
 
 | | |
 |---|---|
-| **Status** | **In progress** — WP0–WP2, WP4 and WP5 are implemented for their shipped paths; WP8 documentation and structural guards are updated in this continuation; WP3, WP6.4, WP7, WP8 issue reconciliation and closure remain open |
+| **Status** | **In progress** — WP0–WP2, WP4 and WP5 are implemented for their shipped paths; WP7 now fails closed for ambiguous provider recordings and retains bounded diagnostic comparison provenance; WP8 structural guards remain active; WP3, WP6.4 and final issue reconciliation remain open |
 | **Source** | [Issue #814](https://github.com/Szczepanov/adaptive-training-recommender/issues/814) and [2026-09-28 completion analysis](../analysis/2026-09-28-issue-814-training-response-completion-analysis.md) |
-| **Baseline** | fresh managed worktree at fetched `origin/main` `2ec78e5444e6c0b329707294cf6a46cbd7368b1f`; includes #907 (`56b38e1`, merged) and subsequent main commits |
-| **Baseline reconciliation** | The requested `56b38e1` was no longer the fetched `origin/main` tip when this continuation started; `origin/main` had advanced to `2ec78e5`. This work uses the newer tip, including #907 and commits after it. |
-| **Blocked by** | WP3 lacks a deterministic execution-to-response-segment alignment contract. WP6.4 lacks stable retained running-context fields plus compatible running HR-use authority. WP7 still lacks deterministic provider occurrence selection/provenance. WP8 closure depends on those remaining work packages. |
+| **Baseline** | fresh managed worktree at fetched `origin/main` `fcf4e80cb95cb4c66dcedcda7b2504c62a56e520`; includes PR #910 merge `5b25faf83c95fed73433122627e35a104af2f107` and all commits through the fetched tip |
+| **Baseline reconciliation** | The prior documented `2ec78e5` baseline advanced when `git fetch origin` moved `origin/main` to `fcf4e80`. PR #910's architecture test, docs and status updates are present in the merge ancestry and working tree. This continuation uses the fetched tip. |
+| **Blocked by** | WP3 has no shared deterministic execution-to-response-segment alignment contract. WP6.4 lacks captured running venue/protocol context and running-specific HR-use authority. WP7 now fails closed for ambiguous provider selection and exposes bounded diagnostics; final issue closure remains blocked by WP3 and WP6.4 evidence gaps. |
 | **Unlocks** | Closure of #814; a clean evidence surface for future adaptation/progression research. It does **not** itself unlock recommendation authority. |
 | **Policy effect** | None. All work in this plan remains display/observability context. POLICY_VERSION must not change unless scope is explicitly widened in a separately reviewed policy change. |
 
@@ -17,10 +17,10 @@
 | WP0–WP2 | `[x]` | Shipped contracts and current comparison paths are covered. |
 | WP3 | `[-]` | Session identity is wired; segment-to-step identity is blocked until a deterministic shared alignment contract exists. |
 | WP4–WP5 | `[x]` | Structured strength and next-morning response render from canonical response evidence. |
-| WP6.1–WP6.3 | `[x]` | Power–HR wording and source audit are complete; WP6.3 ended with no stable retained context fields. |
-| WP6.4 | `[-]` | Controlled running pace–HR remains blocked by absent stable venue/distance-quality evidence and running HR-use compatibility. |
-| WP7 | `[-]` | Provider occurrence deduplication, diagnostic decision provenance and remaining boundedness acceptance remain open. |
-| WP8 | `[-]` | Architecture docs and structural guards are updated; final acceptance reconciliation is blocked by WP3, WP6.4 and WP7. Issue #814 stays open. |
+| WP6.1–WP6.3 | `[x]` | Power–HR wording and a fresh current-main source audit are complete; current normalized evidence has lap distance/speed but no stable venue, temperature, grade/route or distance-quality context. No provider request or source was added. |
+| WP6.4 | `[-]` | Controlled running pace–HR remains unsupported: no recorded controlled venue or standardized executed running protocol, and no running-specific HR-use policy. Outdoor/trail comparison stays excluded; running economy remains unclaimed. |
+| WP7 | `[~]` | Provider-derived summaries emit once per occurrence only when source selection is deterministic. Ambiguous/partial multi-recording evidence now produces one insufficient-evidence occurrence row. Diagnostic output includes bounded source/comparison provenance; at most eight rejection reasons are retained plus an omitted count. |
+| WP8 | `[-]` | PR #910 structural guards remain present. Plan/status/architecture references are reconciled to the current implementation; issue #814 stays open because WP3 and WP6.4 acceptance remain blocked. |
 
 WP headings below carry the same status as this board. A negative source audit completes the audit task, but does not satisfy the unmet data-dependent acceptance criterion.
 
@@ -699,9 +699,11 @@ If a new endpoint/request would be required:
 - document the gap;
 - open a separate request-budget/privacy design issue.
 
-**Audit result (2026-09-29):** the frontend's `NormalizedGarminActivity` and `ActivityResponseTelemetry` retain activity type, laps and bounded sensor summaries, but no stable indoor/outdoor venue, temperature, elevation/grade, route or distance-quality evidence. No already-hydrated field supports the proposed context enrichment. Stop WP6.3 here; adding a Garmin request or expanding persisted provider data needs the separate request-budget/privacy review above.
+**Rechecked on fetched `origin/main` `fcf4e80` (2026-09-29):** the current `NormalizedGarminActivity`, Garmin mapper and bounded `ActivityResponseTelemetry` expose activity type, lap duration/distance/average speed and sensor summaries. They do not retain stable indoor/outdoor venue, ambient temperature, elevation/grade, route identity or a running distance-quality indicator. Lap distance/speed alone cannot establish controlled pace comparability. No already-acquired source supports the context projection proposed above. WP6.3 is complete with this negative result; any new provider source/request or persisted payload expansion requires a separate request-budget/privacy review.
 
 ### 6.4 Running pace–HR response
+
+**Evidence assessment (2026-09-29): blocked.** Running laps may carry distance and average speed, and activities may carry running dynamics, but current evidence does not establish treadmill/track venue or a repeated standardized executed protocol. HR fidelity has general `AEROBIC_DECOUPLING` and interval use cases, not a running pace–HR use case; its shadow authority also requires verified input lineage and segment context. Reusing it would not establish running eligibility. Do not implement a comparison from current evidence; do not infer outdoor/trail control or claim running economy.
 
 Initial eligibility:
 
@@ -761,7 +763,7 @@ Cycling steady comparison no longer overstates its meaning, and issue #814 has a
 
 ## WP7 — Render provenance compactly and keep the information budget
 
-**Status:** In progress — planning output names the selected comparison basis, bounds rejected candidates and caps structured-only strength output at eight occurrences/exercises with omission counts; provider-backed occurrence deduplication, diagnostic provenance and full boundedness acceptance remain open because provider source selection is not yet deterministic.
+**Status:** In progress — provider-backed summaries fail closed on ambiguous selection; selected comparisons now expose bounded diagnostic provenance and rejected candidates retain eight details plus an omitted count. Remaining issue closure depends on the independent WP3 and WP6.4 evidence gaps.
 **Blocked by:** WP2–WP6
 **Purpose:** make stronger semantics visible without recreating diagnostic bloat.
 
@@ -797,8 +799,10 @@ The steady power–HR summary now distinguishes exact authored prescription, aut
 - no full occurrence source dump;
 - no linear growth with all history candidates;
 - structured-only strength summaries are capped at eight rendered occurrences and eight exercises per occurrence, with omission counts;
-- render one canonical performed occurrence once even when it carries multiple provider recordings; the current activity-driven summary has not completed this deduplication yet;
+- render one canonical performed occurrence once when provider selection is deterministic; ambiguous/partial multi-recording occurrences fail closed with one insufficient-evidence occurrence row;
 - diagnostic may show the full persisted comparison decision/evidence needed to debug selection.
+
+The continuation retains at most eight rejected candidate reasons and reports omissions. Diagnostic output includes the selected comparison decision's match basis, occurrence/protocol identity, sensor and threshold evidence, venue/environment evidence, source completeness and limitations; provider sources are bounded to eight IDs.
 
 ### Diagnostic output
 
@@ -826,7 +830,7 @@ The planning brief becomes more semantically precise without reversing #811's in
 
 ## WP8 — Documentation, governance and issue closure
 
-**Status:** In progress — recommendation-engine and telemetry references plus structural authority guards are updated; final issue acceptance reconciliation remains open because WP3, WP6.4 and WP7 are incomplete.
+**Status:** In progress — recommendation-engine and telemetry references plus PR #910 structural authority guards are retained; WP7 ambiguity handling and bounded diagnostic provenance are implemented. Final issue acceptance reconciliation remains open because WP3 and WP6.4 are unsupported by current evidence.
 **Blocked by:** WP1–WP7
 **Purpose:** update living architecture and make the authority boundary difficult to regress.
 

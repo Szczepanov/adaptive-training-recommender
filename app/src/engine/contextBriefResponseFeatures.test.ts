@@ -75,6 +75,143 @@ function steady(id: string, date: string, overrides: Partial<NormalizedGarminAct
     });
 }
 
+function responseEvidence(activity: NormalizedGarminActivity, occurrenceId: string): TrainingResponseSessionEvidence {
+    return {
+        performedOccurrenceId: occurrenceId,
+        localDate: activity.date,
+        modality: 'Cycling',
+        identity: { level: 'canonical_occurrence', sourceKinds: ['provider_activity'] },
+        measuredSources: [{
+            sourceRef: { kind: 'provider_activity', provider: 'garmin', activityId: activity.activityId },
+            provider: 'garmin',
+            activityId: activity.activityId,
+            activity,
+        }],
+        sourceCompleteness: { occurrenceRead: 'available', structuredExecution: 'not_linked', providerActivities: 'available' },
+    };
+}
+
+describe('response summary provenance and bounds (#814 WP7)', () => {
+    it('fails closed for provider response features when an occurrence has multiple Garmin recordings', () => {
+        const first = steady('recording-a', '2026-09-18');
+        const second = steady('recording-b', '2026-09-18');
+        const evidence: TrainingResponseSessionEvidence = {
+            performedOccurrenceId: 'pto-ambiguous',
+            localDate: '2026-09-18',
+            modality: 'Cycling',
+            identity: { level: 'canonical_occurrence', sourceKinds: ['provider_activity'] },
+            measuredSources: [first, second].map(activity => ({
+                sourceRef: { kind: 'provider_activity' as const, provider: 'garmin', activityId: activity.activityId },
+                provider: 'garmin',
+                activityId: activity.activityId,
+                activity,
+            })),
+            sourceCompleteness: { occurrenceRead: 'available', structuredExecution: 'not_linked', providerActivities: 'ambiguous' },
+        };
+        const context = {
+            history: [first, second], historyStart: '2026-08-22', checkins: NO_CHECKINS,
+            asOfDate: '2026-09-20', windowStart: '2026-09-18', windowEnd: '2026-09-18', evidence: [evidence],
+        };
+
+        const summaries = deriveKeySessionSummaries([first, second], context);
+        expect(summaries).toHaveLength(1);
+        expect(summaries[0].activity).toBeUndefined();
+        expect(summaries[0].efficiency.state).toBe('insufficient_evidence');
+        expect(renderKeySessionSummaries(summaries, context)).toContain('multiple recordings represent this occurrence');
+    });
+
+    it('does not use ambiguous prior recordings through the provider fallback', () => {
+        const current = steady('current', '2026-09-18');
+        const priorA = steady('prior-a', '2026-09-11');
+        const priorB = steady('prior-b', '2026-09-11');
+        const ambiguousPrior: TrainingResponseSessionEvidence = {
+            ...responseEvidence(priorA, 'pto-prior'),
+            measuredSources: [priorA, priorB].map(activity => ({
+                sourceRef: { kind: 'provider_activity' as const, provider: 'garmin', activityId: activity.activityId },
+                provider: 'garmin',
+                activityId: activity.activityId,
+                activity,
+            })),
+            sourceCompleteness: { occurrenceRead: 'available', structuredExecution: 'not_linked', providerActivities: 'ambiguous' },
+        };
+        const context = {
+            history: [current, priorA, priorB], historyStart: '2026-08-22', checkins: NO_CHECKINS,
+            asOfDate: '2026-09-20', windowStart: current.date, windowEnd: current.date,
+            evidence: [responseEvidence(current, 'pto-current'), ambiguousPrior],
+        };
+        const summaries = deriveKeySessionSummaries([current], context);
+
+        expect(summaries).toHaveLength(1);
+        expect(summaries[0].efficiency).toMatchObject({ state: 'insufficient_evidence', kind: 'no_comparable', rejected: [] });
+    });
+
+    it('keeps canonical structured strength when ambiguous provider rows are unavailable', () => {
+        const evidence: TrainingResponseSessionEvidence = {
+            ...structuredStrengthEvidence({
+                activityId: 'missing-garmin-a', occurrenceId: 'pto-strength', localDate: '2026-09-18',
+                executionId: 'exec-strength', performedExerciseId: 'front_squat', reps: 5, weightKg: 80,
+            }),
+            measuredSources: ['missing-garmin-a', 'missing-garmin-b'].map(activityId => ({
+                sourceRef: { kind: 'provider_activity' as const, provider: 'garmin', activityId },
+                provider: 'garmin',
+                activityId,
+            })),
+            sourceCompleteness: { occurrenceRead: 'available', structuredExecution: 'available', providerActivities: 'ambiguous' },
+        };
+        const context = {
+            history: [], historyStart: '2026-08-22', checkins: NO_CHECKINS,
+            asOfDate: '2026-09-20', windowStart: '2026-09-18', windowEnd: '2026-09-18', evidence: [evidence],
+        };
+        const summaries = deriveKeySessionSummaries([], context);
+        const text = renderKeySessionSummaries(summaries, context);
+
+        expect(summaries).toHaveLength(1);
+        expect(summaries[0].strength.state).toBe('available');
+        expect(text).toContain('Strength front_squat: Adaptive structured identity');
+    });
+
+    it('does not widen an implicit render window to older comparison evidence', () => {
+        const current = ride({ activityId: 'current', date: '2026-09-18', stimulusDomain: 'unknown' });
+        const oldStructured = structuredStrengthEvidence({
+            activityId: 'old-structured', occurrenceId: 'pto-old', localDate: '2026-08-01',
+            executionId: 'exec-old', performedExerciseId: 'front_squat', reps: 5, weightKg: 80,
+        });
+        const context = {
+            history: [current], historyStart: '2026-08-01', checkins: NO_CHECKINS,
+            asOfDate: '2026-09-20', evidence: [oldStructured],
+        };
+
+        expect(deriveKeySessionSummaries([current], context)).toEqual([]);
+    });
+
+    it('renders bounded diagnostic identity and the selected comparison provenance', () => {
+        const current = steady('current', '2026-09-18', { hrMeasurement: HIGH_HR });
+        const prior = steady('prior', '2026-09-11', { hrMeasurement: HIGH_HR });
+        const currentEvidence = responseEvidence(current, 'pto-current');
+        currentEvidence.identity.sourceKinds = ['structured_execution', 'provider_activity'];
+        const context = {
+            history: [current, prior], historyStart: '2026-08-22', checkins: NO_CHECKINS,
+            asOfDate: '2026-09-20', windowStart: current.date, windowEnd: current.date,
+            evidence: [currentEvidence, responseEvidence(prior, 'pto-prior')],
+            diagnostic: true,
+        };
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries([current], context), context);
+
+        expect(text).toContain('Diagnostic provenance: occurrence pto-current; identity canonical_occurrence; source kinds structured_execution, provider_activity; sources garmin:current; provider selection available');
+        expect(text).toContain('Diagnostic comparison: cycling_steady_power_hr comparable via controlled_steady_match; occurrence distinct; protocol unknown; measurement observational; threshold same; venue/environment unknown; source completeness canonical; limitations measurement/sensor authority observational, venue/environment context unknown');
+    });
+
+    it('caps retained comparison rejections and reports omitted candidates', () => {
+        const current = steady('current', '2026-09-18');
+        const priors = Array.from({ length: 12 }, (_, index) => steady(`prior-${index}`, `2026-09-${String(index + 1).padStart(2, '0')}`, { stimulusDomain: 'vo2' }));
+        const result = deriveEfficiencyComparison(current, priors);
+
+        expect(result.state).toBe('insufficient_evidence');
+        expect(result.state === 'insufficient_evidence' && result.kind === 'no_comparable' ? result.rejected : []).toHaveLength(8);
+        expect(result.state === 'insufficient_evidence' && result.kind === 'no_comparable' ? result.rejectedOmittedCount : 0).toBe(4);
+    });
+});
+
 describe('interval repetition (#814)', () => {
     it('uses legacy-lap fallback for a 3-interval ride with first-to-last change', () => {
         const feature = deriveIntervalRepetition(intervalRide([229, 225, 237]));
