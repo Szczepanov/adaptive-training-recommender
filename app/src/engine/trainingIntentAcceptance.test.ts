@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateTraining, evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent } from './rules';
-import { resolveTrainingIntent } from './trainingIntent';
+import { resolvePerformedTrainingFactsCoverageDescriptor, resolveTrainingIntent } from './trainingIntent';
 import type { AuthoredPlanBlock, DailyReadiness, FixedActivity, TrainingIntentProfile, UserContext, UserEvent, UserPreferences, WorkoutCostProfile } from './models';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
@@ -61,6 +61,32 @@ const cyclingPlanFixture: UserEvent = {
 };
 
 describe('day-0 event-intent acceptance', () => {
+    it('derives the performed-facts descriptor from the same intent authorities as the live resolver', async () => {
+        const evergreenDescriptor = resolvePerformedTrainingFactsCoverageDescriptor([], '2026-08-07', [], evergreenProfile);
+        const eventDescriptor = resolvePerformedTrainingFactsCoverageDescriptor([roadRace], '2026-08-07', [], null);
+
+        const evergreenFacts = {
+            asOfDate: '2026-08-07', windowDays: 7,
+            revision: `canonical-facts-v1:${evergreenDescriptor.id}:2026-07-31:2026-08-07:test`,
+            exposures: [], coverageCredits: [],
+        };
+        const prepared: TrainingHistorySnapshot = {
+            throughDateExclusive: '2026-08-07', windowDays: 7, completedEvents: [], exposures: [],
+            sourceStates: {
+                activities: { status: 'AVAILABLE', revision: 'a' },
+                recommendations: { status: 'AVAILABLE', revision: 'r' },
+                manualTraining: { status: 'MISSING' },
+            },
+            generatedAt: '2026-08-07T06:00:00.000Z', revision: 'history-r1',
+            performedTrainingFacts: evergreenFacts,
+        };
+        const intent = await resolveTrainingIntent(
+            'u1', [], '2026-08-07', readiness(), 7, fixtureHistory, prepared, [], evergreenProfile,
+        );
+
+        expect(evergreenDescriptor.id).not.toBe(eventDescriptor.id);
+        expect(intent.performedTrainingFacts).toEqual(evergreenFacts);
+    });
     it('retains a wider history view for the rolling load budget without widening operational fatigue history', async () => {
         const readHistory = async (throughDateExclusive: string, windowDays: number) => {
             const start = new Date(`${throughDateExclusive}T00:00:00Z`);

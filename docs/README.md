@@ -108,6 +108,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0042: Nutrition Ingestion, Provenance, and Decision Authority**](./adr/0042-nutrition-ingestion-provenance-and-decision-authority.md) — *Accepted.* Provider-neutral energy intake and macro ingestion, strict separation from energy expenditure, tripartite provenance identity, and strictly retrospective zero recommendation authority.
 * [**ADR-0043: Individualized Rolling Catalog-Load Budget**](./adr/0043-rolling-catalog-load-budget.md) — *Accepted.* Versioned, user-history-derived catalog-load envelope to week-ahead planning.
 * [**ADR-0044: Constraint-Aware Requirement Fulfilment and Bounded Multi-Stimulus Packing**](./adr/0044-constraint-aware-requirement-fulfilment.md) — *Accepted.* Defines the requirement-class boundary for constrained planning while preserving canonical coverage, objective-credit, load and intraday authorities.
+* [**ADR-0045: Athlete-Relative Weekly Aerobic Dose Envelope**](./adr/0045-athlete-relative-weekly-aerobic-dose.md) — *Accepted.* 28-day history-derived easy-aerobic weekly envelope with a public-health fallback, no intensity equivalence, and a conditional exact long aerobic anchor.
 
 ---
 

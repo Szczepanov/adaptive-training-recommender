@@ -2145,6 +2145,12 @@ export interface RecommendationAudit {
     policyVersion: string;
     evaluatedAt: string;
     decisionContextRevision: string;
+    /** Private, immutable same-day input record bound to this recommendation revision. */
+    decisionContext?: {
+        path: string;
+        revision: number;
+        contentHash: string;
+    };
     safetyStatus: 'complete';
     history: {
         completedEventCount: number;

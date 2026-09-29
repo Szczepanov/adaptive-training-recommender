@@ -1460,10 +1460,18 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
                 && Number.isInteger(ref.version) && ref.version >= 1)
             && new Set(audit.knowledgeLineage.map((ref: any) => ref.claimId)).size === audit.knowledgeLineage.length
         );
-        const validAudit = hasExactKeys(audit, ['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'].filter(key => audit?.[key] !== undefined))
+        const validDecisionContext = audit.decisionContext === undefined || (
+            audit.decisionContext && typeof audit.decisionContext === 'object'
+            && hasExactKeys(audit.decisionContext, ['path', 'revision', 'contentHash'])
+            && typeof audit.decisionContext.path === 'string' && audit.decisionContext.path.length > 0
+            && Number.isSafeInteger(audit.decisionContext.revision) && audit.decisionContext.revision >= 1
+            && typeof audit.decisionContext.contentHash === 'string' && /^[a-f0-9]{64}$/.test(audit.decisionContext.contentHash)
+        );
+        const validAudit = hasExactKeys(audit, ['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'decisionContext', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'].filter(key => audit?.[key] !== undefined))
             && typeof audit.policyVersion === 'string'
             && typeof audit.evaluatedAt === 'string'
             && typeof audit.decisionContextRevision === 'string'
+            && validDecisionContext
             && audit.safetyStatus === 'complete'
             && audit.history && typeof audit.history === 'object'
             && Number.isInteger(audit.history.completedEventCount) && audit.history.completedEventCount >= 0
@@ -1515,6 +1523,18 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
     }
     if (raw.schemaVersion === 4 && !Array.isArray(recommendationAudit?.knowledgeLineage)) {
         errors.push({ field: 'recommendationAudit.knowledgeLineage', message: 'Schema version 4 requires recommendation knowledge lineage' });
+    }
+    if (recommendationAudit?.decisionContext) {
+        if (!Number.isSafeInteger(raw.revision) || raw.revision < 1) {
+            errors.push({ field: 'recommendationAudit.decisionContext', message: 'Decision context requires an explicit positive recommendation revision' });
+        } else {
+            const contextRevision = raw.revision;
+            const expectedPath = `users/${raw.userId}/daily_recommendations/${raw.date}/decision_contexts/${contextRevision}`;
+            if (recommendationAudit.decisionContext.revision !== contextRevision
+                || recommendationAudit.decisionContext.path !== expectedPath) {
+                errors.push({ field: 'recommendationAudit.decisionContext', message: 'Decision context must bind this user, date, and recommendation revision' });
+            }
+        }
     }
 
     if (raw.revision !== undefined) {
