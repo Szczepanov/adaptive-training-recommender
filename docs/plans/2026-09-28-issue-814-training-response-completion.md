@@ -2,9 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | **In progress** — WP0–WP2 are implemented for shipped comparison paths; WP3–WP8 and issue closure remain open |
+| **Status** | **In progress** — WP0–WP2, WP4 and WP5 are implemented for their shipped paths; WP3, WP6–WP8 and issue closure remain open |
 | **Source** | [Issue #814](https://github.com/Szczepanov/adaptive-training-recommender/issues/814) and [2026-09-28 completion analysis](../analysis/2026-09-28-issue-814-training-response-completion-analysis.md) |
-| **Baseline** | fresh `origin/main` after PR #892 merged; HEAD `6882918d203f689e87c7dc7dd4251aae7d4fd127` |
+| **Baseline** | fresh `origin/main` at `9208d2b351f4673ad10c4ed03ca6532b22cbb697`; includes PR #898 merge `43c83b6b173cc8da57182c24f70bb96cd12939f6` (merged 2026-09-29) |
+| **Baseline reconciliation** | The plan's prior baseline (`6882918d…`, after #892) and the prompt's observed `d0205da…` were both superseded when `git fetch origin` advanced `origin/main` to `9208d2b…` (#904). This continuation starts from that fetched tip. |
 | **Blocked by** | No blocker for WP0–WP5. WP6 environmental enrichment is conditional on the source audit proving stable already-acquired provider fields. Individual work-item dependencies are listed below. |
 | **Unlocks** | Closure of #814; a clean evidence surface for future adaptation/progression research. It does **not** itself unlock recommendation authority. |
 | **Policy effect** | None. All work in this plan remains display/observability context. POLICY_VERSION must not change unless scope is explicitly widened in a separately reviewed policy change. |
@@ -268,7 +269,7 @@ Requirements:
 
 - matched structured + Garmin occurrence hydrates one response evidence object;
 - Garmin-only occurrence hydrates measured-only evidence;
-- structured-only occurrence retains the structured strength evidence needed for a future activity-independent renderer even with no Garmin activity; WP1 projection support does not by itself claim that the current activity-driven summary renders it;
+- structured-only occurrence retains the structured strength evidence needed by the activity-independent renderer, with no Garmin activity required;
 - two provider recordings attached to one occurrence remain two explicit measured sources until a feature-specific selector chooses one;
 - merged/tombstoned occurrences are excluded;
 - source uniqueness is preserved;
@@ -292,7 +293,7 @@ The feature layer can receive one canonical response object per physical workout
 - WP0 and WP1 are implemented.
 - WP2 is integrated for steady power–HR and strength comparisons.
 - This continuation routes the existing strength comparison through the same contract using explicit exercise identity, load type and repetitions. Same exercise, same load type and same repetitions are required for a `comparable` / like-for-like result; raw top-set values remain visible with rejection reasons when mechanics differ.
-- `ComparableSession` now accepts strength evidence independently of `NormalizedGarminActivity`. This is the smallest input-contract widening needed for structured evidence; the current activity-driven summary still renders only provider-activity-backed sessions, and no synthetic Garmin activity is created for a structured-only occurrence.
+- `ComparableSession` accepts strength evidence independently of `NormalizedGarminActivity`; the response summary now also renders structured-only strength occurrences from this projection, and no synthetic Garmin activity is created.
 - Provider-recognized exercise identity remains a `provider_fallback` basis with a low confidence ceiling. Strength source completeness follows source role: structured exercise/load/repetition evidence remains canonical despite unrelated provider-record multiplicity, while provider-only strength fails closed when provider-source selection is ambiguous or incomplete. Structured/provider identity-source mismatches fail closed.
 - Canonical performed-occurrence local dates now govern steady-comparison chronology/date labels when available; provider dates remain fallback.
 - `semantic_protocol_match` is reserved vocabulary only; the current steady matcher selects exact prescription, authored family, provider fingerprint or controlled-steady matching.
@@ -494,7 +495,7 @@ The reconciled_workout_step identity value is emitted only when its name is true
 
 ## WP4 — Correct strength progression authority and marker semantics
 
-**Status:** In progress — performed entry exercise refs override authored step refs when present; structured unavailability, canonical chronology and like-for-like marker selection have regression coverage. Structured-only response rendering remains open.
+**Status:** Implemented — structured-only occurrences now render strength markers directly from `TrainingResponseSessionEvidence`; unavailable structured execution remains explicitly insufficient and cannot fall back to provider exercise names.
 **Blocked by:** WP1, WP2
 **Purpose:** replace Garmin-name matching with canonical structured identity where available.
 
@@ -569,7 +570,9 @@ Garmin-only strength may retain the current name-based output if:
 - same exercise/different reps does not claim direct progression;
 - warm-up sets do not become the marker;
 - provider-only fallback remains functional;
-- structured execution with missing provider data still produces a structured response.
+- structured execution with missing provider data still produces a structured response;
+- a structured-only occurrence renders its same-exercise/load-type/reps prior comparison without a Garmin activity;
+- a linked but unavailable structured execution renders insufficient evidence without provider-name fallback.
 
 ### Exit criteria
 
@@ -579,7 +582,7 @@ Strength response follows ADR-0034 source authority and never relies on title fu
 
 ## WP5 — Improve next-morning response linkage
 
-**Status:** In progress — exact execution-source linkage, occurrence-deduplicated D-1 counts and canonical dates have regression coverage; strength-source resolution and remaining structured-only/failure cases are open.
+**Status:** Implemented — exact execution-source linkage, occurrence-deduplicated D-1 counts, canonical dates, and structured-only next-morning rendering have regression coverage; unresolved check-in/linkage states remain explicit.
 **Blocked by:** WP1
 **Purpose:** separate exact tissue linkage from day-level observational recovery.
 
@@ -621,6 +624,8 @@ Keep the current distinctions:
 - one D-1 occurrence;
 - two D-1 occurrences;
 - multiple same-day provider records reconciled into one occurrence count as one workout;
+- structured-only occurrence receives the D+1 check-in and exact execution-linked tissue response;
+- unavailable structured execution retains an insufficient-evidence strength result and does not fabricate provider identity;
 - unreadable check-in state remains distinct.
 
 ### Exit criteria
@@ -742,7 +747,7 @@ Cycling steady comparison no longer overstates its meaning, and issue #814 has a
 
 ## WP7 — Render provenance compactly and keep the information budget
 
-**Status:** In progress — planning output now names the selected comparison basis and bounds rejected candidates; diagnostic provenance and full boundedness acceptance remain open.
+**Status:** In progress — planning output names the selected comparison basis, bounds rejected candidates and caps structured-only strength output at eight occurrences/exercises with omission counts; provider-backed occurrence deduplication, diagnostic provenance and full boundedness acceptance remain open.
 **Blocked by:** WP2–WP6
 **Purpose:** make stronger semantics visible without recreating diagnostic bloat.
 
@@ -777,6 +782,7 @@ The steady power–HR summary now distinguishes exact authored prescription, aut
 - no raw traces;
 - no full occurrence source dump;
 - no linear growth with all history candidates;
+- structured-only strength summaries are capped at eight rendered occurrences and eight exercises per occurrence, with omission counts;
 - render one canonical performed occurrence once even when it carries multiple provider recordings; the current activity-driven summary has not completed this deduplication yet;
 - diagnostic may show the full persisted comparison decision/evidence needed to debug selection.
 

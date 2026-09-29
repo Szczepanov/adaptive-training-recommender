@@ -659,6 +659,8 @@ export class ContextBriefService {
                     ? { records: checkins, unreadableDates: unreadableCheckinDates, undatedUnreadable: undatedUnreadableCheckins }
                     : null,
                 asOfDate: targetDate,
+                windowStart: startDate,
+                windowEnd: targetDate,
                 evidence: responseEvidence?.evidence,
             },
         );
