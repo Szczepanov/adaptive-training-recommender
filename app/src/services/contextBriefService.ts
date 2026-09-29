@@ -588,6 +588,7 @@ export class ContextBriefService {
             }
         }
 
+        const generatedAt = new Date().toISOString();
         const input: ContextBriefInput = {
             asOfDate: targetDate,
             windowDays,
@@ -603,7 +604,7 @@ export class ContextBriefService {
             goals,
             bodyComposition,
             purpose,
-            generatedAt: new Date().toISOString(),
+            generatedAt,
             effectivePlanningMode: planningContext.mode,
             isExternalPlanAuthority: planningContext.mode === 'externally_planned' || planningContext.externalFallback,
             exposureLedger: {
@@ -684,13 +685,13 @@ export class ContextBriefService {
             unavailableSources,
             preset,
             purpose,
-            generatedAt: input.generatedAt,
+            generatedAt,
         });
 
         assertRenderedBriefContract(text, {
             purpose,
             asOfDate: targetDate,
-            generatedAt: input.generatedAt!,
+            generatedAt,
         });
 
         return {
