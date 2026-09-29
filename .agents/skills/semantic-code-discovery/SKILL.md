@@ -5,8 +5,9 @@ description: Route repository discovery between exact lexical search and optiona
 
 # Semantic Code Discovery
 
-Use the cheapest evidence source that answers the question. Jev is optional: never block work because
-it is unavailable.
+Use the cheapest evidence source that answers the question. In this skill, `jev` means the
+BorisLeMeec/jev code-navigation CLI backed by TypeSafe Jev, not TypeSafe's general typed-decision
+design skill. Jev is optional: never block work because it is unavailable.
 
 ## Routing
 
