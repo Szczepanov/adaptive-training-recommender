@@ -486,7 +486,7 @@ export function renderKeySessionSummaries(summaries: readonly KeySessionSummary[
             if (summary.efficiency.state === 'available') {
                 const decision = summary.efficiency.decision;
                 if (decision) {
-                    lines.push(`- Diagnostic comparison: ${decision.featureFamily} ${decision.state} via ${decision.matchBasis ?? 'none'}; occurrence ${decision.provenance.occurrenceIdentity}; protocol ${decision.provenance.protocolIdentity}; measurement ${decision.provenance.measurementSensorEvidence}; threshold ${decision.provenance.thresholdUnitEvidence}; venue/environment ${decision.provenance.venueEnvironmentEvidence}; source completeness ${decision.provenance.sourceCompleteness}; limitations ${decision.limitations.join(', ') || 'none'}`);
+                    lines.push(`- Diagnostic comparison: selected prior ${summary.efficiency.priorActivityId} (${summary.efficiency.priorDate}); ${decision.featureFamily} ${decision.state} via ${decision.matchBasis ?? 'none'}; occurrence ${decision.provenance.occurrenceIdentity}; protocol ${decision.provenance.protocolIdentity}; measurement ${decision.provenance.measurementSensorEvidence}; threshold ${decision.provenance.thresholdUnitEvidence}; venue/environment ${decision.provenance.venueEnvironmentEvidence}; source completeness ${decision.provenance.sourceCompleteness}; limitations ${decision.limitations.join(', ') || 'none'}`);
                 }
             } else if (summary.efficiency.kind === 'no_comparable' && summary.efficiency.rejected.length > 0) {
                 const rejected = summary.efficiency.rejected.slice(0, 8);
