@@ -291,7 +291,8 @@ are not retained in the normalized activity/response data, so environmental enri
 separate request-budget/privacy review. Segment-level execution-to-step reconciliation is not
 established by occurrence identity alone; running pace–HR comparison and diagnostic comparator
 provenance remain incomplete. Structural tests keep response-comparability imports on the display
-path, but WP3, WP6.4 and WP7 still block issue closure. Structured-only strength and next-morning
+path, cover dynamic imports, and reject transitive reachability from non-context-brief engine modules;
+WP3, WP6.4 and WP7 still block issue closure. Structured-only strength and next-morning
 evidence render from the canonical response projection, and a linked but unavailable structured
 execution is surfaced as insufficient evidence without provider-name fallback. The renderer also
 still starts from provider activity rows, so a canonical occurrence with multiple provider recordings
