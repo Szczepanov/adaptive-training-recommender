@@ -1,6 +1,6 @@
 import type { BriefPurpose, BriefWindowPreset } from '../engine/contextBrief';
 
-export const CONTEXT_BRIEF_EXPORT_SCHEMA_VERSION = 'context_brief_export_v1' as const;
+export const CONTEXT_BRIEF_EXPORT_SCHEMA_VERSION = 'context_brief_export_v2' as const;
 
 export type ContextBriefExportFormat = 'markdown' | 'json';
 
@@ -11,6 +11,8 @@ export interface ContextBriefExportSource {
   windowDays: number;
   preset: BriefWindowPreset;
   purpose: BriefPurpose;
+  /** Semantic Markdown contract version; distinct from the JSON transport envelope schema. */
+  contractVersion: string;
   unavailableSources: readonly string[];
 }
 
@@ -20,6 +22,8 @@ export interface ContextBriefJsonExport {
   source: 'adaptive-training-recommender';
   preset: BriefWindowPreset;
   purpose: BriefPurpose;
+  /** Semantic contract of `content`; `schemaVersion` above versions only this JSON envelope. */
+  contractVersion: string;
   dateRange: {
     startDate: string;
     asOfDate: string;
@@ -45,6 +49,7 @@ export function buildContextBriefJsonExport(
     source: 'adaptive-training-recommender',
     preset: brief.preset,
     purpose: brief.purpose,
+    contractVersion: brief.contractVersion,
     dateRange: {
       startDate: brief.startDate,
       asOfDate: brief.asOfDate,
