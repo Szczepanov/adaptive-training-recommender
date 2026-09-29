@@ -542,7 +542,7 @@ export function deriveEfficiencyComparison(
     comparable.sort((left, right) =>
         matchRank[left.comparison.matchBasis ?? 'controlled_steady_match'] - matchRank[right.comparison.matchBasis ?? 'controlled_steady_match']
         || confidenceRank[left.confidence] - confidenceRank[right.confidence]
-        || right.prior.date.localeCompare(left.prior.date)
+        || responseLocalDate(right.prior, identities).localeCompare(responseLocalDate(left.prior, identities))
         || left.prior.activityId.localeCompare(right.prior.activityId));
     for (const { prior, comparison, confidence } of comparable) {
         const efficiency = (activity.normalizedPower as number) / (activity.averageHr as number);
