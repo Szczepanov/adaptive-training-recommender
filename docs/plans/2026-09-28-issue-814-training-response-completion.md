@@ -268,7 +268,7 @@ Requirements:
 
 - matched structured + Garmin occurrence hydrates one response evidence object;
 - Garmin-only occurrence hydrates measured-only evidence;
-- structured-only occurrence can support strength response even with no Garmin activity;
+- structured-only occurrence retains the structured strength evidence needed for a future activity-independent renderer even with no Garmin activity; WP1 projection support does not by itself claim that the current activity-driven summary renders it;
 - two provider recordings attached to one occurrence remain two explicit measured sources until a feature-specific selector chooses one;
 - merged/tombstoned occurrences are excluded;
 - source uniqueness is preserved;
@@ -293,7 +293,7 @@ The feature layer can receive one canonical response object per physical workout
 - WP2 is integrated for steady power–HR and strength comparisons.
 - This continuation routes the existing strength comparison through the same contract using explicit exercise identity, load type and repetitions. Same exercise, same load type and same repetitions are required for a `comparable` / like-for-like result; raw top-set values remain visible with rejection reasons when mechanics differ.
 - `ComparableSession` now accepts strength evidence independently of `NormalizedGarminActivity`. This is the smallest input-contract widening needed for structured evidence; the current activity-driven summary still renders only provider-activity-backed sessions, and no synthetic Garmin activity is created for a structured-only occurrence.
-- Provider-recognized exercise identity remains a `provider_fallback` basis with a low confidence ceiling. Ambiguous, incomplete, or mismatched structured/provider identity evidence fails closed.
+- Provider-recognized exercise identity remains a `provider_fallback` basis with a low confidence ceiling. Strength source completeness follows source role: structured exercise/load/repetition evidence remains canonical despite unrelated provider-record multiplicity, while provider-only strength fails closed when provider-source selection is ambiguous or incomplete. Structured/provider identity-source mismatches fail closed.
 - Canonical performed-occurrence local dates now govern steady-comparison chronology/date labels when available; provider dates remain fallback.
 - `semantic_protocol_match` is reserved vocabulary only; the current steady matcher selects exact prescription, authored family, provider fingerprint or controlled-steady matching.
 - The 2026-09-29 source audit found no shipped longitudinal comparator outside the contract, so WP2 is complete for current behavior. The reserved `running_steady_pace_hr` family still returns not-wired if called; controlled running comparison is planned but not an existing delivered comparison, and must enter through this contract if implemented. WP3–WP8 remain in this follow-up plan; this continuation does not complete issue #814.
@@ -388,7 +388,9 @@ Examples:
 
 - canonical exercise identity when structured;
 - same exercise, load type, and repetition count for comparable / like-for-like status;
-- provider-only identity is confidence-limited;
+- provider-only identity is confidence-limited and requires an unambiguous provider source for the mechanical facts;
+- structured mechanics do not inherit unrelated wearable-source ambiguity;
+- venue/environment evidence is not required for strength-set comparability;
 - raw top-set load/repetition reporting may remain visible when the central result rejects a like-for-like comparison.
 
 **next_day_response**
