@@ -1,6 +1,16 @@
 import type { ActivityLapSummary, ActivityPrescribedTarget, ActivitySegmentSummary, ActivityStimulusDomain, NormalizedGarminActivity } from './models';
 import { normalizeModality } from './performedTrainingFacts';
 import { getHrUseAuthority, type HrAuthorityReason, type HrUseCase } from './activityHrFidelity';
+import {
+    decideSessionComparability,
+    type Confidence,
+    type ResponseSessionIdentity,
+    STEADY_MAX_VARIABILITY_INDEX,
+    type ThresholdProvenance,
+} from './contextBriefComparability';
+
+export { COMPARABLE_DURATION_MAX_RATIO, STEADY_MAX_VARIABILITY_INDEX, thresholdProvenance } from './contextBriefComparability';
+export type { Confidence, ThresholdProvenance } from './contextBriefComparability';
 
 /* Issue #814: conservative, display-only training-response features for the context brief.
  *
@@ -27,15 +37,12 @@ export const INTERVAL_COLLAPSE_RATIO = 0.9;
 /** Lower prescribed-target outliers outside this band are not primary-set reps. */
 const PRIMARY_TARGET_TOLERANCE_RATIO = 0.15;
 /** A session is "steady" only when Garmin's variability index is at most this value. */
-export const STEADY_MAX_VARIABILITY_INDEX = 1.05;
 /** Pw:HR decoupling needs at least this much recorded session time. */
 export const DECOUPLING_MIN_DURATION_MIN = 45;
 /** Laps must cover at least this share of the session for a decoupling split. */
 export const DECOUPLING_MIN_LAP_COVERAGE = 0.9;
 /** Each decoupling half must hold between this share and its complement of lap time. */
 export const DECOUPLING_MIN_HALF_SHARE = 0.4;
-/** Comparable steady sessions must be within this duration ratio of each other. */
-export const COMPARABLE_DURATION_MAX_RATIO = 1.25;
 
 const STEADY_DOMAINS: ReadonlySet<ActivityStimulusDomain> = new Set(['endurance', 'recovery']);
 /* `mixed` and `race` are deliberately absent: their auto-laps are not a protocol, so they
@@ -43,7 +50,6 @@ const STEADY_DOMAINS: ReadonlySet<ActivityStimulusDomain> = new Set(['endurance'
 const STRUCTURED_DOMAINS: ReadonlySet<ActivityStimulusDomain> = new Set(['tempo', 'threshold', 'vo2', 'anaerobic']);
 
 export type Insufficient = { state: 'insufficient_evidence'; reason: string };
-export type Confidence = 'high' | 'moderate' | 'low';
 
 export interface WorkInterval {
     durationSeconds: number;
@@ -86,8 +92,6 @@ export type IntervalRepetition =
 export type Decoupling =
     | { state: 'available'; decouplingPct: number; hrNote: string | null; observational: boolean }
     | Insufficient;
-
-export type ThresholdProvenance = 'same' | 'changed' | 'unknown';
 
 export type EfficiencyComparison =
     | {
@@ -469,41 +473,13 @@ export function deriveDecoupling(activity: NormalizedGarminActivity): Decoupling
     return { state: 'available', decouplingPct: round(((first - second) / first) * 100, 1), hrNote: hr.note, observational: hr.observational };
 }
 
-/** Garmin's power-zone low boundaries are derived from the FTP in force when the session
- * was recorded; identical boundaries mean the threshold definition did not change. */
-export function thresholdProvenance(a: NormalizedGarminActivity, b: NormalizedGarminActivity): ThresholdProvenance {
-    const signature = (activity: NormalizedGarminActivity) => {
-        const bounds = (activity.powerInZones ?? [])
-            .filter(zone => zone.lowBoundary !== undefined)
-            .sort((x, y) => x.zoneNumber - y.zoneNumber)
-            .map(zone => `${zone.zoneNumber}:${Math.round(zone.lowBoundary as number)}`);
-        return bounds.length > 0 ? bounds.join(',') : null;
-    };
-    const left = signature(a);
-    const right = signature(b);
-    if (left === null || right === null) return 'unknown';
-    return left === right ? 'same' : 'changed';
-}
-
-function comparisonRejection(current: NormalizedGarminActivity, prior: NormalizedGarminActivity): string | null {
-    if (prior.type !== current.type) return `different activity type (${prior.type})`;
-    const priorReasons = steadyIneligibility(prior);
-    if (priorReasons.length > 0) return priorReasons[0];
-    if (stimulusDomainOf(prior) !== stimulusDomainOf(current)) return `different stimulus (${stimulusDomainOf(prior)})`;
-    const [a, b] = [current.durationMin ?? 0, prior.durationMin ?? 0];
-    if (a <= 0 || b <= 0 || Math.max(a, b) / Math.min(a, b) > COMPARABLE_DURATION_MAX_RATIO) {
-        return `different protocol duration (${Math.round(b)} vs ${Math.round(a)} min)`;
-    }
-    if (thresholdProvenance(current, prior) === 'changed') return 'power-zone (FTP) definition changed between sessions';
-    return null;
-}
-
-/** Aerobic efficiency (NP ÷ average HR) against the most recent comparable prior steady
+/** Power–HR response ratio against the highest-ranked comparable prior steady
  * session in `history`. Never compares across a changed threshold definition; confidence
  * is `low` whenever either session's HR is only observational under the HR authority. */
 export function deriveEfficiencyComparison(
     activity: NormalizedGarminActivity,
     history: readonly NormalizedGarminActivity[],
+    identities: ReadonlyMap<string, ResponseSessionIdentity> = new Map(),
 ): EfficiencyComparison {
     const own = steadyIneligibility(activity);
     if (own.length > 0) return { state: 'insufficient_evidence', kind: 'ineligible', reason: own.join('; '), rejected: [] };
@@ -511,23 +487,51 @@ export function deriveEfficiencyComparison(
         .filter(item => item.activityId !== activity.activityId && item.date < activity.date)
         .sort((a, b) => b.date.localeCompare(a.date) || a.activityId.localeCompare(b.activityId));
     const rejected: string[] = [];
+    const comparable: Array<{
+        prior: NormalizedGarminActivity;
+        comparison: ReturnType<typeof decideSessionComparability>;
+        confidence: Confidence;
+    }> = [];
     for (const prior of priors) {
-        const rejection = comparisonRejection(activity, prior);
-        if (rejection) {
-            if (isCycling(prior)) rejected.push(`${prior.date}: ${rejection}`);
+        const comparison = decideSessionComparability({
+            featureFamily: 'cycling_steady_power_hr',
+            current: { activity, identity: identities.get(activity.activityId) },
+            prior: { activity: prior, identity: identities.get(prior.activityId) },
+            priorIneligibility: steadyIneligibility(prior),
+        });
+        if (comparison.state !== 'comparable') {
+            if (isCycling(prior)) rejected.push(`${prior.date}: ${comparison.hardRejections[0] ?? 'insufficient comparison evidence'}`);
             continue;
         }
-        const efficiency = (activity.normalizedPower as number) / (activity.averageHr as number);
-        const priorEfficiency = (prior.normalizedPower as number) / (prior.averageHr as number);
-        const provenance = thresholdProvenance(activity, prior);
-        const sameWorkout = activity.fitWorkoutFingerprint !== undefined
-            && activity.fitWorkoutFingerprint === prior.fitWorkoutFingerprint;
         const hrNow = hrEvidence(activity, 'AEROBIC_DECOUPLING');
         const hrPrior = hrEvidence(prior, 'AEROBIC_DECOUPLING');
-        const observational = hrNow.observational || hrPrior.observational;
-        const confidence: Confidence = provenance !== 'same' || observational
-            ? 'low'
-            : sameWorkout ? 'high' : 'moderate';
+        comparable.push({
+            prior,
+            comparison,
+            confidence: hrNow.observational || hrPrior.observational ? 'low' : comparison.confidenceCeiling ?? 'low',
+        });
+    }
+    const matchRank: Record<NonNullable<ReturnType<typeof decideSessionComparability>['matchBasis']>, number> = {
+        exact_prescription_identity: 0,
+        authored_protocol_family: 1,
+        provider_fallback: 2,
+        semantic_protocol_match: 3,
+        controlled_steady_match: 3,
+    };
+    const confidenceRank: Record<Confidence, number> = { high: 0, moderate: 1, low: 2 };
+    comparable.sort((left, right) =>
+        matchRank[left.comparison.matchBasis ?? 'controlled_steady_match'] - matchRank[right.comparison.matchBasis ?? 'controlled_steady_match']
+        || confidenceRank[left.confidence] - confidenceRank[right.confidence]
+        || right.prior.date.localeCompare(left.prior.date)
+        || left.prior.activityId.localeCompare(right.prior.activityId));
+    for (const { prior, comparison, confidence } of comparable) {
+        const efficiency = (activity.normalizedPower as number) / (activity.averageHr as number);
+        const priorEfficiency = (prior.normalizedPower as number) / (prior.averageHr as number);
+        const thresholdEvidence = comparison.provenance.thresholdUnitEvidence;
+        const provenance: ThresholdProvenance = thresholdEvidence === 'not_required' ? 'unknown' : thresholdEvidence;
+        const sameWorkout = comparison.matchBasis === 'provider_fallback';
+        const hrNow = hrEvidence(activity, 'AEROBIC_DECOUPLING');
+        const hrPrior = hrEvidence(prior, 'AEROBIC_DECOUPLING');
         return {
             state: 'available',
             priorActivityId: prior.activityId,

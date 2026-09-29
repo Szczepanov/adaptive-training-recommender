@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **Draft** — implementation-ready proposal; promote to Ready when this plan PR is accepted |
+| **Status** | **In progress** — design accepted in PR #888; WP0 regression contract frozen |
 | **Source** | [Issue #814](https://github.com/Szczepanov/adaptive-training-recommender/issues/814) and [2026-09-28 completion analysis](../analysis/2026-09-28-issue-814-training-response-completion-analysis.md) |
 | **Baseline** | main after #829, #860, #878 and training-occurrence backfill/replay work through #886 |
 | **Blocked by** | No blocker for WP0–WP5. WP6 environmental enrichment is conditional on the source audit proving stable already-acquired provider fields. Individual work-item dependencies are listed below. |
@@ -148,7 +148,7 @@ If WP6 discovers that useful environment fields require a new Garmin endpoint/re
 
 ## WP0 — Freeze the current response contract
 
-**Status:** Ready once plan is approved
+**Status:** Implemented
 **Blocked by:** None
 **Purpose:** protect the useful behavior already delivered by #829/#850/#878 before changing identity/comparability plumbing.
 
@@ -184,7 +184,7 @@ Add/extend fixtures proving current behavior for:
 
 ## WP1 — Add the canonical training-response evidence projection
 
-**Status:** Planned
+**Status:** Implemented
 **Blocked by:** WP0
 **Purpose:** expose one physical workout, structured identity and measured telemetry to the response layer without changing source authority.
 
@@ -276,7 +276,7 @@ The feature layer can receive one canonical response object per physical workout
 
 ## WP2 — Centralize the comparability contract
 
-**Status:** Planned
+**Status:** In progress
 **Blocked by:** WP1
 **Purpose:** make “may these sessions be compared for this feature?” a named pure decision instead of scattered conditionals.
 

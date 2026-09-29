@@ -10,13 +10,9 @@ import type { CoverageSetDescriptor } from '../workouts/event-plan';
 import type { WorkoutVariant } from '../workouts/models';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
-import {
-    isProviderActivityRef,
-    isStructuredExecutionRef,
-} from './models';
-import { performedTrainingOccurrenceRepository as repository } from './repository';
+import { isStructuredExecutionRef } from './models';
+import { hydrateOccurrenceSourcesInRange } from './occurrenceSourcesHydration';
 import { sessionExecutionService } from '../services/sessionExecutionService';
-import { activityService } from '../services/activityService';
 import { recommendationService } from '../services/recommendationService';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { addDaysToLocalDateString, getPreviousLocalDateString } from '../utils/localDate';
@@ -94,16 +90,11 @@ export async function getPerformedTrainingFactsInRange(
         };
     }
 
-    const activeOccurrences = await repository.queryActiveInDateWindow(userId, fromDateInclusive, toDateInclusive);
-
-    let activitiesById: Map<string, NormalizedGarminActivity>;
-    if (options.preloadedActivities) {
-        activitiesById = new Map(options.preloadedActivities.map(a => [a.activityId, a]));
-    } else {
-        const activitiesState = await activityService.getActivitiesInRange(userId, fromDateInclusive, toDateExclusive);
-        const activities = activitiesState.status === 'AVAILABLE' ? activitiesState.data : [];
-        activitiesById = new Map(activities.map(a => [a.activityId, a]));
-    }
+    const sourceHydration = await hydrateOccurrenceSourcesInRange(userId, fromDateInclusive, toDateExclusive, {
+        preloadedActivities: options.preloadedActivities,
+    });
+    const activeOccurrences = sourceHydration.rows.map(row => row.occurrence);
+    const activitiesById = new Map(sourceHydration.activities.map(activity => [activity.activityId, activity]));
 
     // Only structured executions need the recommendation lookup. An unavailable read
     // degrades to no readiness marker rather than failing the whole facts snapshot.
@@ -120,11 +111,10 @@ export async function getPerformedTrainingFactsInRange(
     const exposures: PerformedExposureFact[] = [];
     const coverageCredits: CoverageCreditFact[] = [];
 
-    for (const occurrence of activeOccurrences) {
+    for (const { occurrence, providerSources } of sourceHydration.rows) {
         const structuredRef = occurrence.sourceRefs.find(isStructuredExecutionRef);
-        const garminRef = occurrence.sourceRefs
-            .filter(isProviderActivityRef)
-            .find(ref => ref.provider.toLowerCase() === 'garmin');
+        const garminSource = providerSources.find(source => source.ref.provider.toLowerCase() === 'garmin');
+        const garminRef = garminSource?.ref;
 
         const hydrated: HydratedOccurrenceContext = {};
 
@@ -197,7 +187,7 @@ export async function getPerformedTrainingFactsInRange(
         }
 
         if (garminRef) {
-            const garminActivity = activitiesById.get(garminRef.activityId);
+            const garminActivity = garminSource?.activity ?? activitiesById.get(garminRef.activityId);
             const providerModality = garminActivity ? normalizeModality(garminActivity.type) : undefined;
             const duration = garminActivity?.durationMin;
             hydrated.provider = {

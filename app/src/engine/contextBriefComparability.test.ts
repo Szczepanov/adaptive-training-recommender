@@ -1,0 +1,119 @@
+import { describe, expect, it } from 'vitest';
+import type { NormalizedGarminActivity } from './models';
+import { decideSessionComparability, type ResponseSessionIdentity } from './contextBriefComparability';
+
+const zones = [
+    { zoneNumber: 1, secondsInZone: 100, lowBoundary: 0 },
+    { zoneNumber: 2, secondsInZone: 1000, lowBoundary: 140 },
+];
+
+function activity(overrides: Partial<NormalizedGarminActivity> = {}): NormalizedGarminActivity {
+    return {
+        activityId: 'a', date: '2026-09-18', type: 'road_biking', durationMin: 90,
+        trainingEffectAerobic: 2, trainingEffectAnaerobic: 0, averageHr: 135,
+        activityTrainingLoad: 50, intensityTag: 'easy', stimulusDomain: 'endurance',
+        normalizedPower: 180, variabilityIndex: 1.02, powerInZones: zones,
+        hrMeasurement: {
+            measurementConfidence: 'high', signalQuality: 'clean',
+            summaryCompatibility: 'verified_same_effective_trace', artifactFlags: [], reasons: [],
+        } as never,
+        ...overrides,
+    };
+}
+
+function decide(
+    current: NormalizedGarminActivity,
+    prior: NormalizedGarminActivity,
+    currentIdentity?: ResponseSessionIdentity,
+    priorIdentity?: ResponseSessionIdentity,
+) {
+    return decideSessionComparability({
+        featureFamily: 'cycling_steady_power_hr',
+        current: { activity: current, ...(currentIdentity ? { identity: currentIdentity } : {}) },
+        prior: { activity: prior, ...(priorIdentity ? { identity: priorIdentity } : {}) },
+    });
+}
+
+describe('decideSessionComparability', () => {
+    it('ranks exact authored identity above family, provider fingerprint, then semantic match', () => {
+        const current = activity({ fitWorkoutFingerprint: 'same-fit' });
+        const prior = activity({ activityId: 'prior', date: '2026-09-10', fitWorkoutFingerprint: 'same-fit' });
+        expect(decide(current, prior, { prescriptionHash: 'p1' }, { prescriptionHash: 'p1' }).matchBasis)
+            .toBe('exact_prescription_identity');
+        expect(decide(current, prior, { protocolFamily: 'f1' }, { protocolFamily: 'f1' }).matchBasis)
+            .toBe('authored_protocol_family');
+        expect(decide(current, prior).matchBasis).toBe('provider_fallback');
+        expect(decide(activity(), activity({ activityId: 'prior', date: '2026-09-10' })).matchBasis)
+            .toBe('controlled_steady_match');
+    });
+
+    it('never compares one physical occurrence with itself', () => {
+        const result = decide(activity(), activity({ activityId: 'prior', date: '2026-09-10' }),
+            { performedOccurrenceId: 'pto-1' }, { performedOccurrenceId: 'pto-1' });
+        expect(result).toMatchObject({ state: 'not_comparable', hardRejections: ['same performed occurrence'] });
+    });
+
+    it('rejects different activity types, materially different duration and changed threshold', () => {
+        expect(decide(activity(), activity({ type: 'running' })).hardRejections[0]).toContain('different activity type');
+        expect(decide(activity(), activity({ activityId: 'long', date: '2026-09-10', durationMin: 240 }))
+            .hardRejections[0]).toContain('different protocol duration');
+        expect(decide(activity(), activity({ activityId: 'ftp', date: '2026-09-10', powerInZones: [{ ...zones[1], lowBoundary: 150 }] }))
+            .hardRejections[0]).toContain('FTP');
+    });
+
+    it('owns steady eligibility for both sessions, including variability evidence', () => {
+        expect(decide(activity(), activity({ activityId: 'no-vi', date: '2026-09-10', variabilityIndex: undefined })).state)
+            .toBe('insufficient_evidence');
+        expect(decide(activity(), activity({ activityId: 'variable', date: '2026-09-10', variabilityIndex: 1.12 })).state)
+            .toBe('not_comparable');
+        expect(decide(activity({ stimulusDomain: 'mixed' }), activity({ activityId: 'prior', date: '2026-09-10' })).state)
+            .toBe('insufficient_evidence');
+    });
+
+    it('caps unknown threshold and venue context, even with a matching provider fingerprint', () => {
+        const current = activity({ fitWorkoutFingerprint: 'same-fit', powerInZones: undefined });
+        const prior = activity({ activityId: 'prior', date: '2026-09-10', fitWorkoutFingerprint: 'same-fit', powerInZones: undefined });
+        const result = decide(current, prior);
+        expect(result.state).toBe('comparable');
+        expect(result.confidenceCeiling).toBe('low');
+        expect(result.provenance.venueEnvironmentEvidence).toBe('unknown');
+    });
+
+    it('treats missing comparison measurements as insufficient evidence', () => {
+        const result = decideSessionComparability({
+            featureFamily: 'cycling_steady_power_hr',
+            current: { activity: activity() },
+            prior: { activity: activity({ activityId: 'prior', date: '2026-09-10', normalizedPower: undefined }) },
+        });
+        expect(result.state).toBe('insufficient_evidence');
+        expect(result.hardRejections).toEqual(['power or HR evidence unavailable or withheld']);
+        expect(decide(activity({ normalizedPower: undefined }), activity({ activityId: 'prior', date: '2026-09-10' })).state)
+            .toBe('insufficient_evidence');
+        expect(decide(activity(), activity({ activityId: 'prior', date: '2026-09-10', averageHr: null })).state)
+            .toBe('insufficient_evidence');
+        expect(decide(activity(), activity({ activityId: 'prior', date: '2026-09-10', normalizedPower: 0 })).state)
+            .toBe('insufficient_evidence');
+        expect(decide(activity(), activity({ activityId: 'prior', date: '2026-09-10', averageHr: 0 })).state)
+            .toBe('insufficient_evidence');
+    });
+
+    it('preserves source completeness instead of inferring it from occurrence IDs', () => {
+        const result = decide(
+            activity(), activity({ activityId: 'prior', date: '2026-09-10' }),
+            { performedOccurrenceId: 'now', sourceCompleteness: 'partial' },
+            { performedOccurrenceId: 'prior', sourceCompleteness: 'canonical' },
+        );
+        expect(result.provenance.sourceCompleteness).toBe('partial');
+    });
+
+    it('withholds comparison when multiple provider sources have no primary selection', () => {
+        const result = decide(
+            activity(), activity({ activityId: 'prior', date: '2026-09-10' }),
+            { performedOccurrenceId: 'now', sourceCompleteness: 'ambiguous' },
+            { performedOccurrenceId: 'prior', sourceCompleteness: 'canonical' },
+        );
+        expect(result.state).toBe('insufficient_evidence');
+        expect(result.hardRejections).toEqual(['multiple provider sources lack a primary selection']);
+        expect(result.provenance.sourceCompleteness).toBe('ambiguous');
+    });
+});

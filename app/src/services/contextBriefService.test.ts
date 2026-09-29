@@ -20,6 +20,7 @@ const services = vi.hoisted(() => ({
     getEntriesInRange: vi.fn(),
     getOverridesSinceState: vi.fn(),
     getPerformedTrainingFactsInRange: vi.fn(),
+    getTrainingResponseEvidenceInRange: vi.fn(),
 }));
 
 vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: {
@@ -32,6 +33,9 @@ vi.mock('./activityOverrideService', () => ({ activityOverrideService: {
 } }));
 vi.mock('../training-occurrence/performedTrainingFactsService', () => ({
     getPerformedTrainingFactsInRange: services.getPerformedTrainingFactsInRange,
+}));
+vi.mock('../training-occurrence/trainingResponseEvidence', () => ({
+    getTrainingResponseEvidenceInRange: services.getTrainingResponseEvidenceInRange,
 }));
 vi.mock('./activityService', () => ({ activityService: { getActivitiesInRange: services.getActivitiesInRange } }));
 vi.mock('./recommendationService', () => ({ recommendationService: { getRecommendationsInRange: services.getRecommendationsInRange } }));
@@ -105,6 +109,7 @@ describe('ContextBriefService', () => {
         services.getRecoverySnapshotsInRangeState.mockResolvedValue({ status: 'MISSING' });
         services.getOverridesSinceState.mockResolvedValue({ status: 'AVAILABLE', data: {}, revision: null });
         services.getPerformedTrainingFactsInRange.mockResolvedValue({ asOfDate: '', windowDays: 0, revision: 'r', exposures: [], coverageCredits: [] });
+        services.getTrainingResponseEvidenceInRange.mockResolvedValue({ evidence: [], occurrenceRead: 'available', providerActivityRead: 'available' });
     });
 
     it('passes the supplied planner resolution into the exposure ledger without recalculating cadence', async () => {
@@ -121,6 +126,21 @@ describe('ContextBriefService', () => {
         const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full', resolved);
 
         expect(result.text).toContain('sport_skill: overdue since 2026-08-01; blocked (modality_avoided)');
+    });
+
+    it('passes the already-fetched activity history to response evidence without another provider read', async () => {
+        const activity = {
+            activityId: 'activity-1', date: '2026-08-14', type: 'cycling', durationMin: 60,
+            trainingEffectAerobic: 2, trainingEffectAnaerobic: 0, averageHr: 130,
+            activityTrainingLoad: 50, intensityTag: 'easy',
+        };
+        services.getActivitiesInRange.mockResolvedValue({ status: 'AVAILABLE', data: [activity], revision: null });
+
+        await new ContextBriefService().build('u1', AS_OF, 14);
+
+        expect(services.getTrainingResponseEvidenceInRange).toHaveBeenCalledWith(
+            'u1', '2026-07-19', '2026-08-16', [activity], 'available',
+        );
     });
 
     it('renders the #813 exposure ledgers and says when reclassifications or activities were unreadable', async () => {
@@ -168,8 +188,8 @@ describe('ContextBriefService', () => {
 
         it('widens the activity fetch the same way, but keeps recommendations scoped to the render window', async () => {
             await new ContextBriefService().build('u1', AS_OF, 2);
-            // #816: activities reach back over the 28-day sensor-evidence horizon (2026-07-19).
-            expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-07-19', '2026-08-16');
+            // #816: activities reach back over the 28-day sensor-evidence horizon, plus one-day occurrence hydration padding.
+            expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-07-18', '2026-08-17');
             expect(services.getRecommendationsInRange).toHaveBeenCalledWith('u1', '2026-08-14', '2026-08-16');
         });
 
@@ -217,14 +237,14 @@ describe('ContextBriefService', () => {
         it('does not widen the fetch for the full 14-day window, since it already exceeds the timeline horizon', async () => {
             await new ContextBriefService().build('u1', AS_OF, 14);
             expect(services.getRecoverySnapshotState).toHaveBeenCalledTimes(14);
-            expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-07-19', '2026-08-16');
+            expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-07-18', '2026-08-17');
         });
 
         it('pins the activity fetch to the 28-day sensor-evidence horizon and keeps a longer window (#816)', async () => {
             await new ContextBriefService().build('u1', AS_OF, 28);
-            expect(services.getActivitiesInRange).toHaveBeenLastCalledWith('u1', '2026-07-19', '2026-08-16');
+            expect(services.getActivitiesInRange).toHaveBeenLastCalledWith('u1', '2026-07-18', '2026-08-17');
             await new ContextBriefService().build('u1', AS_OF, 42);
-            expect(services.getActivitiesInRange).toHaveBeenLastCalledWith('u1', '2026-07-05', '2026-08-16');
+            expect(services.getActivitiesInRange).toHaveBeenLastCalledWith('u1', '2026-07-04', '2026-08-17');
         });
 
         it('keeps an activity outside the render window in the fixed recovery timeline, but excludes its detail telemetry from the retrospective appendix', async () => {

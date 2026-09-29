@@ -26,6 +26,7 @@ import {
     type RawProviderWeightRecord,
 } from '../anthropometry/trends';
 import { injectActivityTelemetryIntoContextBrief } from '../engine/contextBriefActivityTelemetry';
+import { getTrainingResponseEvidenceInRange } from '../training-occurrence/trainingResponseEvidence';
 import { SENSOR_OBSERVATION_HORIZON_DAYS } from '../engine/contextBriefSensorEvidence';
 import {
     enhanceContextBriefForPlanning,
@@ -227,9 +228,14 @@ export class ContextBriefService {
         // Every other consumer slices activities to its own window (buildContextBrief
         // `filterRange`, the telemetry appendix `windowActivities`, the dated handoff views).
         const activityStart = [contextStart, briefWindowStart(targetDate, SENSOR_OBSERVATION_HORIZON_DAYS)].sort()[0];
+        // Provider-local activity dates may fall one calendar day either side of the
+        // canonical Warsaw occurrence date. Widen this one existing read so response
+        // evidence can hydrate boundary occurrences without issuing another Garmin query.
+        const activityFetchStart = addDaysToLocalDateString(activityStart, -1);
         // Activity and recommendation range queries are end-exclusive; the brief window
         // is inclusive of targetDate, so the fetch reaches one day further.
         const throughExclusive = addDaysToLocalDateString(targetDate, 1);
+        const activityThroughExclusive = addDaysToLocalDateString(throughExclusive, 1);
         const upcomingEndDate = addDaysToLocalDateString(targetDate, UPCOMING_CONTEXT_DAYS - 1);
         const upcomingDates = Array.from(
             { length: UPCOMING_CONTEXT_DAYS },
@@ -286,7 +292,7 @@ export class ContextBriefService {
             // Widened to contextStart (see contextDays above) so the recovery timeline
             // always has real activity flags; recommendations stay at windowDays since
             // only the render-window adherence section and the current-day row use them.
-            activityService.getActivitiesInRange(userId, activityStart, throughExclusive),
+            activityService.getActivitiesInRange(userId, activityFetchStart, activityThroughExclusive),
             recommendationService.getRecommendationsInRange(userId, startDate, throughExclusive),
             // peek, not get: the brief is read-only and must not create a settings
             // profile as a side effect of being looked at (DataView presents it as
@@ -611,6 +617,18 @@ export class ContextBriefService {
                 capabilityMaintenance,
             },
         };
+        const responseEvidence = purpose === 'morning' ? null : await getTrainingResponseEvidenceInRange(
+            userId,
+            activityStart,
+            throughExclusive,
+            activities,
+            activityResult.status === 'fulfilled' && activityResult.value.status === 'AVAILABLE'
+                ? 'available'
+                : 'unavailable',
+        );
+        if (responseEvidence?.occurrenceRead === 'unavailable') {
+            unavailableSources.push('canonical response occurrence evidence');
+        }
         // `activities` was fetched over contextDays (>= windowDays) to feed the fixed
         // 7-day recovery timeline below; the detailed telemetry appendix must not inherit
         // that wider range or a `daily` export would silently regain the per-lap detail
@@ -627,12 +645,13 @@ export class ContextBriefService {
             // export is rebuilt by buildMorningCoachBrief and never shows this text, so
             // the features are not derived for it.
             purpose === 'morning' ? undefined : {
-                history: activities,
+                history: activities.filter(activity => activity.date >= activityStart && activity.date < throughExclusive),
                 historyStart: activityStart,
                 checkins: checkinResult.status === 'fulfilled'
                     ? { records: checkins, unreadableDates: unreadableCheckinDates, undatedUnreadable: undatedUnreadableCheckins }
                     : null,
                 asOfDate: targetDate,
+                evidence: responseEvidence?.evidence,
             },
         );
         const text = enhanceContextBriefForPlanning(retrospectiveText, {
