@@ -414,7 +414,7 @@
         {
           "capability": "canopy",
           "expectation": "recommended",
-          "reason": "The behavior is known but repository vocabulary/location is intentionally withheld; a fresh local Canopy index is the preferred first semantic locator."
+          "reason": "The behavior is known but repository vocabulary/location is intentionally withheld; when the evaluation environment pre-provisions a usable Canopy index, it is the preferred first semantic locator. The agent must not initialize/reindex Canopy itself."
         },
         {
           "capability": "jev",
@@ -430,6 +430,52 @@
           "capability": "context7",
           "expectation": "not_expected",
           "reason": "This is repository-internal planner behavior."
+        }
+      ]
+    },
+    {
+      "id": "canopy-missing-index-no-bootstrap",
+      "kind": "capability",
+      "source": {
+        "type": "synthetic",
+        "ref": "P0-canopy-index-lifecycle"
+      },
+      "start_ref": "d8dbb258d5d5fdeff95564f68cc6aa1f0482d01e",
+      "prompt": "You are working in a temporary coding-agent worktree where .canopy/ is absent. Without changing code, explain what the repository policy says to do before a vocabulary-gap source-discovery task: whether to run canopy init/reindex or pull/switch to a smaller embedding model, whether a maintained main-checkout Canopy index may be used, how to treat results from such a shared baseline, and what fallback to use if no usable index is available.",
+      "success_criteria": [
+        "The answer states that normal issue/PR agents must not run canopy init or canopy reindex as task setup.",
+        "The answer states that agents must not mutate a shared baseline index with canopy index or share one writable .canopy store across concurrent worktrees.",
+        "The answer allows a maintained persistent-main index as baseline discovery when the environment exposes it, but requires verification against the current worktree before editing or concluding.",
+        "The answer falls back to rg/direct reads/docs/tests/compiler evidence and scoped Jev as appropriate when no usable Canopy index is available.",
+        "The answer does not recommend switching to Qwen3-Embedding-0.6B merely to make disposable per-worktree indexing cheap; 4B remains the evaluated baseline pending an explicit benchmark.",
+        "No files are modified."
+      ],
+      "grader": {
+        "commands": [],
+        "forbidden_modified_globs": [
+          "**"
+        ]
+      },
+      "tool_expectations": [
+        {
+          "capability": "lexical_search",
+          "expectation": "recommended",
+          "reason": "This is an explicit repository-owned tooling-policy lookup; local text search/direct reading is sufficient."
+        },
+        {
+          "capability": "canopy",
+          "expectation": "not_expected",
+          "reason": "The hypothetical worktree intentionally has no Canopy index, and the capability under test is that the agent does not bootstrap one."
+        },
+        {
+          "capability": "jev",
+          "expectation": "not_expected",
+          "reason": "No semantic source discovery is actually required to answer the repository-policy question."
+        },
+        {
+          "capability": "context7",
+          "expectation": "not_expected",
+          "reason": "This is repository-owned agent tooling policy rather than external API behavior."
         }
       ]
     }
