@@ -142,6 +142,40 @@ describe('response summary provenance and bounds (#814 WP7)', () => {
         expect(text).not.toContain('Steady power–HR response ratio');
     });
 
+    it('suppresses failed provider-source detail in planning but retains it in diagnostic output', () => {
+        const first = steady('ambiguous-detail-a', '2026-09-18');
+        const second = steady('ambiguous-detail-b', '2026-09-18');
+        const evidence: TrainingResponseSessionEvidence = {
+            ...responseEvidence(first, 'pto-ambiguous-detail'),
+            measuredSources: [first, second].map(activity => ({
+                sourceRef: { kind: 'provider_activity' as const, provider: 'garmin', activityId: activity.activityId },
+                provider: 'garmin',
+                activityId: activity.activityId,
+                activity,
+            })),
+            sourceCompleteness: { occurrenceRead: 'available', structuredExecution: 'not_linked', providerActivities: 'ambiguous' },
+        };
+        const brief = '# Brief\n\n## 2. Completed training (recorded by the wearable)\n\nrows\n\n## 3. Next\n';
+        const context = {
+            history: [first, second], historyStart: '2026-08-22', checkins: NO_CHECKINS,
+            asOfDate: '2026-09-20', windowStart: '2026-09-18', windowEnd: '2026-09-18', evidence: [evidence],
+        };
+
+        const planning = injectActivityTelemetryIntoContextBrief(brief, [first, second], true, context);
+        const diagnostic = injectActivityTelemetryIntoContextBrief(
+            brief,
+            [first, second],
+            false,
+            { ...context, diagnostic: true },
+        );
+
+        expect(planning).toContain('multiple recordings represent this occurrence');
+        expect(planning).not.toContain('### Key-session telemetry (compact)');
+        expect(planning).not.toContain('### Quality-session execution detail (bounded)');
+        expect(diagnostic).toContain('### Detailed activity telemetry');
+        expect(diagnostic.match(/- Power summary:/g)).toHaveLength(2);
+    });
+
     it('does not use ambiguous prior recordings through the provider fallback', () => {
         const current = steady('current', '2026-09-18');
         const priorA = steady('prior-a', '2026-09-11');
