@@ -24,9 +24,7 @@ JSCPD_VERSION = "5.3.1"
 VULTURE_VERSION = "2.16"
 
 _PLAN_REF_RE = re.compile(r"\]\(\./([^#?)]+\.md)(?:[?#][^)]+)?\)")
-_STATUS_RE = re.compile(
-    r"^\s*[-*]?\s*\*{0,2}Status:\*{0,2}\s*(.+?)\s*$", re.IGNORECASE
-)
+_STATUS_RE = re.compile(r"^\s*[-*]?\s*\*{0,2}Status:\*{0,2}\s*(.+?)\s*$", re.IGNORECASE)
 
 
 class FileMetric(TypedDict):
