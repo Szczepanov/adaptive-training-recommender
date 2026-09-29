@@ -75,7 +75,7 @@ egress, not as a purely local search.
 - Never scan `artifacts/`, `app/artifacts/`, health exports, provider archives, credentials,
   token stores, service-account material, `.env*`, or other local/production data.
 - Do not assume `.gitignore` is a security boundary. Before using a directory whose contents may
-  include ignored/untracked files, run `jev scan <scope>` locally and inspect the candidate paths,
+  include ignored/untracked files, run `jev scan --list <scope>` locally and inspect the candidate paths,
   or narrow to explicit safe files instead.
 - If source disclosure to the configured provider is not acceptable for the task/repository, do not
   use Jev; fall back to local lexical search, targeted reads, tests, and compiler output.

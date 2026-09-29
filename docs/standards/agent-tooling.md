@@ -107,7 +107,7 @@ That makes the scan scope a data-governance boundary.
   credentials, service-account material, `.env*`, or any path containing personal/production data.
 - Do **not** treat `.gitignore` as a DLP mechanism. The upstream CLI intentionally implements only
   a subset of ignore syntax, so an ignored local file can still be eligible for scanning.
-- If a directory might contain ignored/untracked data, run local-only `jev scan <scope>` and inspect
+- If a directory might contain ignored/untracked data, run local-only `jev scan --list <scope>` and inspect
   the candidate paths before any remote `jev find`/`jev ask`, or narrow to explicit safe files.
 - If sending the relevant source to the configured provider is not acceptable, Jev is unavailable
   for that task; use local lexical search, targeted reads, tests, and compiler output instead.
