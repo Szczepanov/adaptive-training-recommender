@@ -62,7 +62,9 @@ developer/client; this repository only defines when and how it should be used.
 
 ## 2. Repository semantic discovery: lexical search + optional Jev
 
-Jev is an **optional developer-local capability**, not a repository dependency. The CLI, API key,
+Jev is an **optional developer-local capability**, not a repository dependency. Here, `jev`
+means the [BorisLeMeec/jev](https://github.com/BorisLeMeec/jev) code-navigation CLI backed by
+TypeSafe Jev; it is distinct from TypeSafe's general typed-decision/design skill. The CLI, API key,
 and any client/plugin configuration stay outside the repository. When installed, verify the local
 client once with `jev probe`; never commit `TYPE_SAFE_AI_KEY` or another provider credential.
 
