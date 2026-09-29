@@ -59,17 +59,19 @@ when it affects confidence. See
 ## 3. Working loop
 
 **Before writing code**
-- For source-code discovery, use `rg`/text search for exact identifiers and strings. For a known
+- For source-code discovery, use `rg`/text search for exact identifiers and strings. When
+  repository vocabulary/location is genuinely unknown, use a fresh local `canopy search` first
+  when available; use tightly scoped `jev find` only as a second opinion/fallback. For a known
   file/subsystem, read directly when the relevant evidence is already small/localized; when answering
   an atomic semantic property would otherwise require a broad/large read or multi-file scan and
-  `jev` is available, use a narrowly scoped `jev ask`. Use `jev find` only when repository
-  vocabulary/location is genuinely unknown. Treat Jev output as candidate evidence and read the
-  cited line/window plus only the surrounding source needed to verify it before changing code. For
-  type-level ripple, run the compiler (`cd app && npx tsc -b`, `uv run mypy`). See
+  `jev` is available, use a narrowly scoped `jev ask`. Treat Canopy/Jev outputs as candidate
+  evidence and verify the relevant source before changing code; Canopy graph misses are not absence
+  proof. For type-level ripple, run the compiler (`cd app && npx tsc -b`, `uv run mypy`). See
   [`AGENTS.md` § Code navigation](./AGENTS.md#code-navigation) and
-  [`docs/standards/agent-tooling.md`](./docs/standards/agent-tooling.md). Jev sends selected source
-  to an external provider: never scan repository root, artifacts/raw-health/provider-data paths, or
-  credential/token material, and do not treat `.gitignore` as a DLP boundary.
+  [`docs/standards/agent-tooling.md`](./docs/standards/agent-tooling.md). Canopy is local only when
+  configured against a local provider such as Ollama; Jev sends selected source to an external
+  provider. Never send repository-root, artifacts/raw-health/provider-data, or credential/token
+  material to a remote semantic provider, and do not treat `.gitignore` as a DLP boundary.
 - Check [`docs/plans/README.md`](./docs/plans/README.md) — the authoritative status board.
   It says what is in progress, what shipped, and what is deliberately shadow-mode only.
   Never infer delivery status from a file's existence or from this file.
