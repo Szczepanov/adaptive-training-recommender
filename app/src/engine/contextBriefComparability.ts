@@ -14,9 +14,11 @@ export type ResponseFeatureFamily =
     | 'strength_set_response'
     | 'next_day_response';
 export type ComparisonState = 'comparable' | 'not_comparable' | 'insufficient_evidence';
+export type ComparisonSourceCompleteness = 'canonical' | 'provider_fallback' | 'partial' | 'ambiguous' | 'unavailable';
 export type ComparisonMatchBasis =
     | 'exact_prescription_identity'
     | 'authored_protocol_family'
+    | 'canonical_exercise_identity'
     | 'semantic_protocol_match'
     | 'controlled_steady_match'
     | 'provider_fallback';
@@ -27,12 +29,21 @@ export interface ResponseSessionIdentity {
     localDate?: string;
     prescriptionHash?: string;
     protocolFamily?: string;
-    sourceCompleteness?: 'canonical' | 'provider_fallback' | 'partial' | 'ambiguous' | 'unavailable';
+    sourceCompleteness?: ComparisonSourceCompleteness;
 }
 
 export interface ComparableSession {
     activity?: NormalizedGarminActivity;
     identity?: ResponseSessionIdentity;
+    strength?: {
+        exerciseIdentity: string;
+        identitySource: 'canonical' | 'unresolved_structured' | 'provider';
+        loadType: 'external_load' | 'repetition_only';
+        repetitions?: number;
+        /** Completeness of the evidence that owns strength mechanics. Structured set evidence
+         * is independent of unrelated provider-record selection; provider fallback is not. */
+        sourceCompleteness: ComparisonSourceCompleteness;
+    };
 }
 
 export interface ComparisonDecision {
@@ -43,11 +54,11 @@ export interface ComparisonDecision {
     limitations: string[];
     provenance: {
         occurrenceIdentity: 'distinct' | 'same' | 'unknown';
-        protocolIdentity: 'exact' | 'family' | 'provider_fingerprint' | 'semantic' | 'unknown';
+        protocolIdentity: 'exact' | 'family' | 'canonical_exercise' | 'provider_fingerprint' | 'provider_exercise' | 'semantic' | 'unknown';
         measurementSensorEvidence: 'sufficient' | 'missing' | 'observational';
         thresholdUnitEvidence: ThresholdProvenance | 'not_required';
-        venueEnvironmentEvidence: 'known' | 'unknown';
-        sourceCompleteness: 'canonical' | 'provider_fallback' | 'partial' | 'ambiguous' | 'unavailable';
+        venueEnvironmentEvidence: 'known' | 'unknown' | 'not_required';
+        sourceCompleteness: ComparisonSourceCompleteness;
     };
     confidenceCeiling?: Confidence;
 }
@@ -87,7 +98,14 @@ export function thresholdProvenance(a: NormalizedGarminActivity, b: NormalizedGa
     return left === right ? 'same' : 'changed';
 }
 
-function matchBasis(current: ComparableSession, prior: ComparableSession): ComparisonMatchBasis {
+function matchBasis(
+    featureFamily: ResponseFeatureFamily,
+    current: ComparableSession,
+    prior: ComparableSession,
+): ComparisonMatchBasis {
+    if (featureFamily === 'strength_set_response' && current.strength && prior.strength) {
+        return current.strength.identitySource === 'canonical' ? 'canonical_exercise_identity' : 'provider_fallback';
+    }
     if (current.identity?.prescriptionHash && current.identity.prescriptionHash === prior.identity?.prescriptionHash) {
         return 'exact_prescription_identity';
     }
@@ -110,21 +128,37 @@ function decision(
 ): ComparisonDecision {
     const a = current.activity;
     const b = prior.activity;
-    const threshold = a && b ? thresholdProvenance(a, b) : 'not_required';
-    const basis = state === 'comparable' ? matchBasis(current, prior) : undefined;
-    const sourceCompleteness: ComparisonDecision['provenance']['sourceCompleteness'] = !a || !b
-        || current.identity?.sourceCompleteness === 'unavailable' || prior.identity?.sourceCompleteness === 'unavailable' ? 'unavailable'
-        : current.identity?.sourceCompleteness === 'ambiguous' || prior.identity?.sourceCompleteness === 'ambiguous' ? 'ambiguous'
-            : current.identity?.sourceCompleteness === 'partial' || prior.identity?.sourceCompleteness === 'partial' ? 'partial'
-                : current.identity?.sourceCompleteness === 'canonical' && prior.identity?.sourceCompleteness === 'canonical' ? 'canonical'
-                    : 'provider_fallback';
-    const measurement = measurementSensorEvidence(a, b);
+    const threshold = featureFamily === 'cycling_steady_power_hr' && a && b ? thresholdProvenance(a, b) : 'not_required';
+    const basis = state === 'comparable' ? matchBasis(featureFamily, current, prior) : undefined;
+    const sourceCompletenessFor = (session: ComparableSession): ComparisonSourceCompleteness => {
+        if (featureFamily === 'strength_set_response') {
+            return session.strength?.sourceCompleteness ?? 'unavailable';
+        }
+        if (!session.activity) return 'unavailable';
+        return session.identity?.sourceCompleteness ?? 'provider_fallback';
+    };
+    const leftSourceCompleteness = sourceCompletenessFor(current);
+    const rightSourceCompleteness = sourceCompletenessFor(prior);
+    const sourceCompleteness: ComparisonDecision['provenance']['sourceCompleteness'] =
+        leftSourceCompleteness === 'unavailable' || rightSourceCompleteness === 'unavailable' ? 'unavailable'
+            : leftSourceCompleteness === 'ambiguous' || rightSourceCompleteness === 'ambiguous' ? 'ambiguous'
+                : leftSourceCompleteness === 'partial' || rightSourceCompleteness === 'partial' ? 'partial'
+                    : leftSourceCompleteness === 'canonical' && rightSourceCompleteness === 'canonical' ? 'canonical'
+                        : 'provider_fallback';
+    const measurement = featureFamily === 'strength_set_response'
+        ? current.strength?.repetitions !== undefined && prior.strength?.repetitions !== undefined ? 'sufficient' : 'missing'
+        : measurementSensorEvidence(a, b);
     const limits: string[] = [];
-    if (threshold === 'unknown') limits.push('power-zone threshold signature unknown');
-    if (measurement === 'observational') limits.push('measurement/sensor authority observational');
-    // No current provider activity exposes stable venue/environment evidence. Matching
-    // duration or a device fingerprint therefore cannot earn high confidence alone.
-    limits.push('venue/environment context unknown');
+    if (featureFamily === 'cycling_steady_power_hr') {
+        if (threshold === 'unknown') limits.push('power-zone threshold signature unknown');
+        if (measurement === 'observational') limits.push('measurement/sensor authority observational');
+        // No current provider activity exposes stable venue/environment evidence. Matching
+        // duration or a device fingerprint therefore cannot earn high confidence alone.
+        limits.push('venue/environment context unknown');
+    } else if (featureFamily === 'strength_set_response'
+        && (current.strength?.identitySource === 'provider' || prior.strength?.identitySource === 'provider')) {
+        limits.push('provider-recognized exercise identity limits confidence');
+    }
     const decision: ComparisonDecision = {
         state,
         featureFamily,
@@ -137,18 +171,21 @@ function decision(
                 : 'unknown',
             protocolIdentity: basis === 'exact_prescription_identity' ? 'exact'
                 : basis === 'authored_protocol_family' ? 'family'
-                    : basis === 'provider_fallback' ? 'provider_fingerprint'
+                    : basis === 'canonical_exercise_identity' ? 'canonical_exercise'
+                        : basis === 'provider_fallback' ? featureFamily === 'strength_set_response' ? 'provider_exercise' : 'provider_fingerprint'
                         : basis === 'semantic_protocol_match' ? 'semantic' : 'unknown',
             measurementSensorEvidence: measurement,
             thresholdUnitEvidence: threshold,
-            venueEnvironmentEvidence: 'unknown',
+            venueEnvironmentEvidence: featureFamily === 'cycling_steady_power_hr' ? 'unknown' : 'not_required',
             sourceCompleteness,
         },
         ...(state === 'comparable'
             ? {
-                confidenceCeiling: threshold !== 'same'
+                confidenceCeiling: (threshold !== 'same' && featureFamily === 'cycling_steady_power_hr')
                     || sourceCompleteness !== 'canonical'
                     || measurement !== 'sufficient'
+                    || (featureFamily === 'strength_set_response'
+                        && (current.strength?.identitySource === 'provider' || prior.strength?.identitySource === 'provider'))
                     ? 'low'
                     : 'moderate',
             }
@@ -172,7 +209,40 @@ export function decideSessionComparability(input: {
         && current.identity.performedOccurrenceId === prior.identity?.performedOccurrenceId) {
         return decision('not_comparable', current, prior, ['same performed occurrence'], featureFamily);
     }
-    if (!a || !b) return decision('insufficient_evidence', current, prior, ['activity evidence unavailable'], featureFamily);
+    if (featureFamily === 'strength_set_response') {
+        const left = current.strength;
+        const right = prior.strength;
+        if (!left || !right) return decision('insufficient_evidence', current, prior, ['strength set evidence unavailable'], featureFamily);
+        if (left.sourceCompleteness === 'ambiguous' || right.sourceCompleteness === 'ambiguous') {
+            return decision('insufficient_evidence', current, prior, ['strength evidence source selection is ambiguous'], featureFamily);
+        }
+        if (left.sourceCompleteness === 'partial' || right.sourceCompleteness === 'partial'
+            || left.sourceCompleteness === 'unavailable' || right.sourceCompleteness === 'unavailable') {
+            return decision('insufficient_evidence', current, prior, ['strength evidence source graph is incomplete'], featureFamily);
+        }
+        if (left.identitySource !== right.identitySource) {
+            return decision('insufficient_evidence', current, prior, ['exercise identity sources do not align'], featureFamily);
+        }
+        if (left.identitySource === 'unresolved_structured') {
+            return decision('insufficient_evidence', current, prior, ['canonical exercise identity unavailable'], featureFamily);
+        }
+        if (!left.exerciseIdentity || !right.exerciseIdentity) {
+            return decision('insufficient_evidence', current, prior, ['exercise identity unavailable'], featureFamily);
+        }
+        if (left.exerciseIdentity !== right.exerciseIdentity) {
+            return decision('not_comparable', current, prior, ['different exercise identity'], featureFamily);
+        }
+        if (left.repetitions === undefined || right.repetitions === undefined) {
+            return decision('insufficient_evidence', current, prior, ['repetition evidence unavailable'], featureFamily);
+        }
+        const reasons = [
+            ...(left.loadType !== right.loadType ? ['different load type'] : []),
+            ...(left.repetitions !== right.repetitions ? ['different repetition count'] : []),
+        ];
+        return reasons.length
+            ? decision('not_comparable', current, prior, reasons, featureFamily)
+            : decision('comparable', current, prior, [], featureFamily);
+    }
     if (current.identity?.sourceCompleteness === 'ambiguous' || prior.identity?.sourceCompleteness === 'ambiguous') {
         return decision('insufficient_evidence', current, prior, ['multiple provider sources lack a primary selection'], featureFamily);
     }
@@ -180,6 +250,7 @@ export function decideSessionComparability(input: {
         || current.identity?.sourceCompleteness === 'unavailable' || prior.identity?.sourceCompleteness === 'unavailable') {
         return decision('insufficient_evidence', current, prior, ['comparison source graph is incomplete'], featureFamily);
     }
+    if (!a || !b) return decision('insufficient_evidence', current, prior, ['activity evidence unavailable'], featureFamily);
     if (featureFamily !== 'cycling_steady_power_hr') {
         return decision('insufficient_evidence', current, prior, [featureFamily + ' comparison is not wired yet'], featureFamily);
     }

@@ -534,6 +534,7 @@ export function deriveEfficiencyComparison(
     const matchRank: Record<NonNullable<ReturnType<typeof decideSessionComparability>['matchBasis']>, number> = {
         exact_prescription_identity: 0,
         authored_protocol_family: 1,
+        canonical_exercise_identity: 0,
         provider_fallback: 2,
         semantic_protocol_match: 3,
         controlled_steady_match: 3,

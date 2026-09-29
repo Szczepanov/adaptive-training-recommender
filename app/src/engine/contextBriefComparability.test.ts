@@ -129,4 +129,124 @@ describe('decideSessionComparability', () => {
         expect(result.hardRejections).toEqual(['multiple provider sources lack a primary selection']);
         expect(result.provenance.sourceCompleteness).toBe('ambiguous');
     });
+
+    it('keeps match basis scoped to the requested feature family', () => {
+        const current = activity({ fitWorkoutFingerprint: 'same-fit' });
+        const prior = activity({ activityId: 'prior', date: '2026-09-10', fitWorkoutFingerprint: 'same-fit' });
+        const result = decideSessionComparability({
+            featureFamily: 'cycling_steady_power_hr',
+            current: {
+                activity: current,
+                strength: {
+                    exerciseIdentity: 'catalog:front_squat',
+                    identitySource: 'canonical',
+                    loadType: 'external_load',
+                    repetitions: 5,
+                    sourceCompleteness: 'canonical',
+                },
+            },
+            prior: {
+                activity: prior,
+                strength: {
+                    exerciseIdentity: 'catalog:front_squat',
+                    identitySource: 'canonical',
+                    loadType: 'external_load',
+                    repetitions: 5,
+                    sourceCompleteness: 'canonical',
+                },
+            },
+        });
+        expect(result).toMatchObject({
+            state: 'comparable',
+            matchBasis: 'provider_fallback',
+            provenance: { protocolIdentity: 'provider_fingerprint' },
+        });
+    });
+
+    it('centralizes strength mechanics without requiring a synthetic Garmin activity', () => {
+        const current = {
+            identity: { sourceCompleteness: 'canonical' as const },
+            strength: { exerciseIdentity: 'catalog:front_squat', identitySource: 'canonical' as const, loadType: 'external_load' as const, repetitions: 5, sourceCompleteness: 'canonical' as const },
+        };
+        const prior = {
+            identity: { sourceCompleteness: 'canonical' as const },
+            strength: { exerciseIdentity: 'catalog:front_squat', identitySource: 'canonical' as const, loadType: 'external_load' as const, repetitions: 5, sourceCompleteness: 'canonical' as const },
+        };
+        const comparable = decideSessionComparability({ featureFamily: 'strength_set_response', current, prior });
+        expect(comparable).toMatchObject({
+            state: 'comparable',
+            matchBasis: 'canonical_exercise_identity',
+            confidenceCeiling: 'moderate',
+            provenance: { sourceCompleteness: 'canonical', measurementSensorEvidence: 'sufficient' },
+        });
+
+        const differentReps = decideSessionComparability({
+            featureFamily: 'strength_set_response', current,
+            prior: { ...prior, strength: { ...prior.strength, repetitions: 3 } },
+        });
+        expect(differentReps).toMatchObject({ state: 'not_comparable', hardRejections: ['different repetition count'] });
+
+        const differentLoadType = decideSessionComparability({
+            featureFamily: 'strength_set_response', current,
+            prior: { ...prior, strength: { ...prior.strength, loadType: 'repetition_only' } },
+        });
+        expect(differentLoadType).toMatchObject({ state: 'not_comparable', hardRejections: ['different load type'] });
+
+        const missingReps = decideSessionComparability({
+            featureFamily: 'strength_set_response', current,
+            prior: { ...prior, strength: { exerciseIdentity: 'catalog:front_squat', identitySource: 'canonical', loadType: 'external_load', sourceCompleteness: 'canonical' } },
+        });
+        expect(missingReps).toMatchObject({ state: 'insufficient_evidence', hardRejections: ['repetition evidence unavailable'] });
+
+        const providerOnly = decideSessionComparability({
+            featureFamily: 'strength_set_response',
+            current: { strength: { ...current.strength, identitySource: 'provider', sourceCompleteness: 'provider_fallback' } },
+            prior: { strength: { ...prior.strength, identitySource: 'provider', sourceCompleteness: 'provider_fallback' } },
+        });
+        expect(providerOnly).toMatchObject({
+            state: 'comparable', matchBasis: 'provider_fallback', confidenceCeiling: 'low',
+        });
+
+        const structuredWithAmbiguousProviderSelection = decideSessionComparability({
+            featureFamily: 'strength_set_response',
+            current: { ...current, identity: { sourceCompleteness: 'ambiguous' } },
+            prior,
+        });
+        expect(structuredWithAmbiguousProviderSelection).toMatchObject({
+            state: 'comparable',
+            matchBasis: 'canonical_exercise_identity',
+            confidenceCeiling: 'moderate',
+            provenance: { sourceCompleteness: 'canonical', venueEnvironmentEvidence: 'not_required' },
+        });
+
+        const ambiguousProviderOnly = decideSessionComparability({
+            featureFamily: 'strength_set_response',
+            current: { strength: { ...current.strength, identitySource: 'provider', sourceCompleteness: 'ambiguous' } },
+            prior: { strength: { ...prior.strength, identitySource: 'provider', sourceCompleteness: 'provider_fallback' } },
+        });
+        expect(ambiguousProviderOnly).toMatchObject({
+            state: 'insufficient_evidence',
+            hardRejections: ['strength evidence source selection is ambiguous'],
+        });
+
+        const unresolvedStructured = decideSessionComparability({
+            featureFamily: 'strength_set_response',
+            current: { strength: { ...current.strength, identitySource: 'unresolved_structured' } },
+            prior,
+        });
+        expect(unresolvedStructured).toMatchObject({
+            state: 'insufficient_evidence',
+            hardRejections: ['exercise identity sources do not align'],
+        });
+
+        const differentExercise = decideSessionComparability({
+            featureFamily: 'strength_set_response',
+            current,
+            prior: { ...prior, strength: { ...prior.strength, exerciseIdentity: 'catalog:back_squat' } },
+        });
+        expect(differentExercise).toMatchObject({
+            state: 'not_comparable',
+            hardRejections: ['different exercise identity'],
+        });
+    });
 });
