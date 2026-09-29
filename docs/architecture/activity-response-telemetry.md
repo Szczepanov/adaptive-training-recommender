@@ -126,9 +126,12 @@ structured step produced an individual FIT/manual response segment. Execution en
 completion instants while segments expose elapsed offsets; no shared step identifier or
 guaranteed clock-alignment contract currently exists. Segments therefore retain their FIT/manual
 identity, and the response layer does not join timestamps heuristically. The centralized
-comparability decision is consumed only by context-brief response renderers; recommendation,
-ranking and readiness modules must not import it. `semantic_protocol_match` is reserved and is
-not selected by the current matcher.
+comparability decision is consumed only by the context-brief display chain. The architecture guard
+checks both static and dynamic relative imports, includes the response renderers through the planning
+handoff boundary, and walks the production import graph so non-context-brief engine modules cannot
+reach response comparability transitively. Recommendation, ranking and readiness modules therefore
+remain isolated from it. `semantic_protocol_match` is reserved and is not selected by the current
+matcher.
 
 Provider-backed summaries still start from provider activity rows, so multiple recordings linked
 to one occurrence may yield more than one response-summary row until a deterministic,
