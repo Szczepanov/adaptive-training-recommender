@@ -7,8 +7,11 @@ import type { DataIssue, DataState } from '../engine/dataState';
 import { parseDailyRecommendation } from '../persistence/parsers/trainingHistory';
 import { isPermissionDeniedError } from '../utils/errors';
 import { deepEqual } from '../utils/deepEqual';
+import { createDecisionContext, validateDecisionContext, type CreateDecisionContextInput, type DecisionContextRecord } from '../engine/decisionContext';
+import type { MinimumSafetyCheckinStatus } from '../engine/safetyCheckin';
 
 type PersistedRecommendationWithVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
+type DecisionContextCapture = Omit<CreateDecisionContextInput, 'userId' | 'date' | 'recommendationRevision'>;
 
 /**
  * Persists what the engine actually prescribed each day, and captures whether the user
@@ -27,16 +30,47 @@ export class RecommendationService {
     // decisions from a getDoc snapshot the other has since invalidated.
     private readonly inFlightSaves = new Map<string, Promise<DailyRecommendation | null>>();
 
+    /** Persist the minimum-safety outcome even when Home correctly skips the evaluator. */
+    async saveNotApplicableContext(
+        userId: string,
+        date: string,
+        minimumSafetyStatus: Exclude<MinimumSafetyCheckinStatus, 'complete'>,
+        evaluatedAt = new Date().toISOString(),
+    ): Promise<boolean> {
+        try {
+            const contextRef = doc(getDb(), 'users', userId, this.collectionPath, date, 'decision_contexts', '0');
+            const existing = await getDoc(contextRef);
+            if (existing.exists()) {
+                await validateDecisionContext(existing.data(), { userId, date, recommendationRevision: 0 });
+                return true;
+            }
+            const record = await createDecisionContext({
+                userId, date, recommendationRevision: 0, evaluatedAt, minimumSafetyStatus,
+                evaluatorInputs: null, performedTrainingFacts: null,
+            });
+            await setDoc(contextRef, record);
+            return true;
+        } catch (error: unknown) {
+            if (!isPermissionDeniedError(error)) console.error('Could not persist minimum-safety decision context.');
+            return false;
+        }
+    }
+
     /**
      * Save (or re-save) the recommendation generated for a given date. Safe to call
      * every time the dashboard computes one -- merge:true means an already-answered
      * adherence field is preserved (see validateRecommendation), and re-saving the same
      * template/rationale for a date that hasn't changed is a no-op in effect.
      */
-    async saveRecommendation(userId: string, date: string, rec: Recommendation): Promise<DailyRecommendation | null> {
+    async saveRecommendation(
+        userId: string,
+        date: string,
+        rec: Recommendation,
+        decisionContextCapture?: DecisionContextCapture,
+    ): Promise<DailyRecommendation | null> {
         const key = `${userId}:${date}`;
         const previous = this.inFlightSaves.get(key) ?? Promise.resolve(null);
-        const run = previous.catch(() => null).then(() => this.saveRecommendationInternal(userId, date, rec));
+        const run = previous.catch(() => null).then(() => this.saveRecommendationInternal(userId, date, rec, decisionContextCapture));
         this.inFlightSaves.set(key, run);
         try {
             return await run;
@@ -45,7 +79,12 @@ export class RecommendationService {
         }
     }
 
-    private async saveRecommendationInternal(userId: string, date: string, rec: Recommendation): Promise<DailyRecommendation | null> {
+    private async saveRecommendationInternal(
+        userId: string,
+        date: string,
+        rec: Recommendation,
+        decisionContextCapture?: DecisionContextCapture,
+    ): Promise<DailyRecommendation | null> {
         const docPath = `users/${userId}/${this.collectionPath}/${date}`;
         let decisionChanged: boolean | undefined;
         let priorRevision: number | undefined;
@@ -88,82 +127,151 @@ export class RecommendationService {
             decisionChanged = decisionChangedThisSave;
 
             nextRevision = isNewDoc ? 1 : (decisionChangedThisSave ? priorRevision + 1 : priorRevision);
-            const recommendationAudit = rec.recommendationAudit && (isNewDoc || decisionChangedThisSave || !existing?.recommendationAudit)
+            const captureThisRevision = Boolean(decisionContextCapture && rec.recommendationAudit && (isNewDoc || decisionChangedThisSave));
+            if (decisionChangedThisSave && existing?.recommendationAudit?.decisionContext && !captureThisRevision) {
+                // The new revision is still the athlete's current decision; it is persisted
+                // unbound (not replayable) rather than leaving the stored record stale.
+                console.warn('Recommendation revision has no immutable decision context; it will be stored as not replayable.');
+            }
+            // Capture is provenance only (plan: prospective decision-context provenance).
+            // A capture that cannot be built must never cost the athlete the recommendation
+            // record itself: the revision is persisted without a binding and therefore
+            // stays `not_replayable`, which is the fail-closed replay outcome.
+            let contextRecord: DecisionContextRecord | undefined;
+            if (captureThisRevision) {
+                try {
+                    contextRecord = await createDecisionContext({
+                        ...decisionContextCapture!,
+                        userId,
+                        date,
+                        recommendationRevision: nextRevision,
+                    });
+                } catch (error: unknown) {
+                    console.warn(
+                        'Decision context capture failed; persisting this recommendation revision without an immutable context binding:',
+                        error instanceof Error ? error.message : error,
+                    );
+                }
+            }
+            const freshAudit = rec.recommendationAudit && (isNewDoc || decisionChangedThisSave || !existing?.recommendationAudit)
                 ? rec.recommendationAudit
                 : existing?.recommendationAudit;
-
-            const rawData = {
-                userId,
-                date,
-                templateId: rec.template.id,
-                templateTitle: rec.template.title,
-                category: rec.template.category,
-                modality: rec.template.modality,
-                mode: rec.mode,
-                rationale: rec.rationale,
-                ...(rec.prescription ? { prescription: rec.prescription } : {}),
-                ...(rec.primarySession ? { primarySession: rec.primarySession } : {}),
-                ...(rec.additionalSessions ? { additionalSessions: rec.additionalSessions } : {}),
-                ...(rec.adjustment ? { adjustment: rec.adjustment } : {}),
-                ...(existing?.adherence ? { adherence: existing.adherence } : {}),
-                // Audit is write-once per decision (firestore.rules: auditWriteOnce()):
-                // a freshly recomputed audit is only written when it actually describes a
-                // new decision (or none was stored yet). Re-saving the same template/mode/
-                // rationale later the same day must keep the original audit -- overwriting
-                // it every recompute (evaluatedAt always differs) would fail the immutability
-                // rule on every save after the first.
-                ...(recommendationAudit ? { recommendationAudit } : {}),
-                schemaVersion: recommendationAudit
-                    ? Math.max(existing?.schemaVersion ?? 1, Array.isArray(recommendationAudit.knowledgeLineage) ? 4 : 3)
-                    : (rec.prescription ? Math.max(existing?.schemaVersion ?? 1, 2) : (existing?.schemaVersion ?? 1)),
-                createdAt: existing?.createdAt,
-                revision: nextRevision,
-            };
-
-            const validation = validateRecommendation(rawData);
-            if (!validation.isValid) {
-                console.warn('Recommendation validation failed:', validation.errors);
+            if (contextRecord && freshAudit && (
+                contextRecord.policyVersion !== freshAudit.policyVersion
+                || contextRecord.evaluatedAt !== freshAudit.evaluatedAt
+            )) {
+                console.warn('Refusing recommendation revision whose decision context does not match the audit policy/evaluation instant.');
                 return null;
             }
+            const revision = nextRevision;
 
-            // `engineVerdict` is evidence-only metadata added in Phase 9.0. It is kept
-            // outside validateRecommendation's historical v1-v3 shape so old documents
-            // remain backward-compatible; Firestore rules validate the optional enum.
-            // Persist the adjudicator's exact external decision when present instead of
-            // reconstructing it later from train/modify/recover (which cannot represent
-            // skip/advisory and is not equivalent on every imported-plan day).
-            const validated = { ...validation.data!, engineVerdict } as PersistedRecommendationWithVerdict;
-            const writeData: Record<string, unknown> = { ...validated };
-            if (!rec.prescription && existing?.prescription) writeData.prescription = deleteField();
-            if (!rec.primarySession && existing?.primarySession) writeData.primarySession = deleteField();
-            if (!rec.additionalSessions && existing?.additionalSessions) writeData.additionalSessions = deleteField();
+            const persist = async (boundContext: DecisionContextRecord | undefined): Promise<DailyRecommendation | null> => {
+                const contextRef = boundContext
+                    ? doc(getDb(), 'users', userId, this.collectionPath, date, 'decision_contexts', String(boundContext.recommendationRevision))
+                    : undefined;
+                const recommendationAudit = boundContext && freshAudit
+                    ? {
+                        ...freshAudit,
+                        decisionContext: {
+                            path: `users/${userId}/${this.collectionPath}/${date}/decision_contexts/${boundContext.recommendationRevision}`,
+                            revision: boundContext.recommendationRevision,
+                            contentHash: boundContext.contentHash,
+                        },
+                    }
+                    : freshAudit;
 
-            if (decisionChangedThisSave) {
-                const batch = writeBatch(getDb());
-                const archiveRef = doc(getDb(), 'users', userId, this.collectionPath, date, 'revisions', String(priorRevision));
-                const archiveData: Record<string, unknown> = {
-                    revision: priorRevision,
-                    templateId: existing.templateId,
-                    templateTitle: existing.templateTitle,
-                    category: existing.category,
-                    modality: existing.modality,
-                    mode: existing.mode,
-                    rationale: existing.rationale,
+                const rawData = {
+                    userId,
+                    date,
+                    templateId: rec.template.id,
+                    templateTitle: rec.template.title,
+                    category: rec.template.category,
+                    modality: rec.template.modality,
+                    mode: rec.mode,
+                    rationale: rec.rationale,
+                    ...(rec.prescription ? { prescription: rec.prescription } : {}),
+                    ...(rec.primarySession ? { primarySession: rec.primarySession } : {}),
+                    ...(rec.additionalSessions ? { additionalSessions: rec.additionalSessions } : {}),
+                    ...(rec.adjustment ? { adjustment: rec.adjustment } : {}),
+                    ...(existing?.adherence ? { adherence: existing.adherence } : {}),
+                    // Audit is write-once per decision (firestore.rules: auditWriteOnce()):
+                    // a freshly recomputed audit is only written when it actually describes a
+                    // new decision (or none was stored yet). Re-saving the same template/mode/
+                    // rationale later the same day must keep the original audit -- overwriting
+                    // it every recompute (evaluatedAt always differs) would fail the immutability
+                    // rule on every save after the first.
+                    ...(recommendationAudit ? { recommendationAudit } : {}),
+                    schemaVersion: recommendationAudit
+                        ? Math.max(existing?.schemaVersion ?? 1, Array.isArray(recommendationAudit.knowledgeLineage) ? 4 : 3)
+                        : (rec.prescription ? Math.max(existing?.schemaVersion ?? 1, 2) : (existing?.schemaVersion ?? 1)),
+                    createdAt: existing?.createdAt,
+                    revision,
                 };
-                if (existing.engineVerdict) archiveData.engineVerdict = existing.engineVerdict;
-                if (existing.prescription) archiveData.prescription = existing.prescription;
-                if (existing.primarySession) archiveData.primarySession = existing.primarySession;
-                if (existing.additionalSessions) archiveData.additionalSessions = existing.additionalSessions;
-                if (existing.recommendationAudit) archiveData.recommendationAudit = existing.recommendationAudit;
 
-                batch.set(archiveRef, archiveData);
-                batch.set(docRef, writeData, { merge: true });
-                await batch.commit();
-            } else {
-                await setDoc(docRef, writeData, { merge: true });
+                const validation = validateRecommendation(rawData);
+                if (!validation.isValid) {
+                    console.warn('Recommendation validation failed:', validation.errors);
+                    return null;
+                }
+
+                // `engineVerdict` is evidence-only metadata added in Phase 9.0. It is kept
+                // outside validateRecommendation's historical v1-v3 shape so old documents
+                // remain backward-compatible; Firestore rules validate the optional enum.
+                // Persist the adjudicator's exact external decision when present instead of
+                // reconstructing it later from train/modify/recover (which cannot represent
+                // skip/advisory and is not equivalent on every imported-plan day).
+                const validated = { ...validation.data!, engineVerdict } as PersistedRecommendationWithVerdict;
+                const writeData: Record<string, unknown> = { ...validated };
+                if (!rec.prescription && existing?.prescription) writeData.prescription = deleteField();
+                if (!rec.primarySession && existing?.primarySession) writeData.primarySession = deleteField();
+                if (!rec.additionalSessions && existing?.additionalSessions) writeData.additionalSessions = deleteField();
+
+                if (decisionChangedThisSave) {
+                    const batch = writeBatch(getDb());
+                    const archiveRef = doc(getDb(), 'users', userId, this.collectionPath, date, 'revisions', String(priorRevision));
+                    const archiveData: Record<string, unknown> = {
+                        revision: priorRevision,
+                        templateId: existing.templateId,
+                        templateTitle: existing.templateTitle,
+                        category: existing.category,
+                        modality: existing.modality,
+                        mode: existing.mode,
+                        rationale: existing.rationale,
+                    };
+                    if (existing.engineVerdict) archiveData.engineVerdict = existing.engineVerdict;
+                    if (existing.prescription) archiveData.prescription = existing.prescription;
+                    if (existing.primarySession) archiveData.primarySession = existing.primarySession;
+                    if (existing.additionalSessions) archiveData.additionalSessions = existing.additionalSessions;
+                    if (existing.recommendationAudit) archiveData.recommendationAudit = existing.recommendationAudit;
+
+                    batch.set(archiveRef, archiveData);
+                    batch.set(docRef, writeData, { merge: true });
+                    if (boundContext && contextRef) batch.set(contextRef, boundContext);
+                    await batch.commit();
+                } else if (boundContext && contextRef) {
+                    const batch = writeBatch(getDb());
+                    batch.set(docRef, writeData, { merge: true });
+                    batch.set(contextRef, boundContext);
+                    await batch.commit();
+                } else {
+                    await setDoc(docRef, writeData, { merge: true });
+                }
+                return validated;
+            };
+
+            if (!contextRecord) return await persist(undefined);
+            try {
+                return await persist(contextRecord);
+            } catch (error: unknown) {
+                // The batch is atomic, so a rejected commit wrote nothing. Retry once without
+                // the binding so a context-specific rejection (payload shape, size, rules)
+                // degrades to an unbound, not-replayable revision instead of a lost record.
+                console.warn(
+                    'Immutable decision context could not be committed; retrying the recommendation without the binding:',
+                    error instanceof Error ? error.message : error,
+                );
+                return await persist(undefined);
             }
-
-            return validated;
         } catch (error: unknown) {
             // Non-fatal by design: failing to persist a recommendation record shouldn't
             // block the dashboard from showing today's recommendation.

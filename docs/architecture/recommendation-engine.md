@@ -1784,6 +1784,33 @@ its SHA-256 through `externalPlanHash.ts`. Without the revision the decision is 
 **not reproducible** rather than quietly passing, and a revision whose content has changed
 under the same revision number fails with an explicit hash-mismatch reason (D-IMMUT).
 
+### Prospective decision-context capture (#872)
+
+Each newly evaluated same-day recommendation revision also writes one owner-only,
+write-once record at `users/{userId}/daily_recommendations/{date}/decision_contexts/{revision}`
+([`decisionContext.ts`](../../app/src/engine/decisionContext.ts) `createDecisionContext`).
+It holds the composition inputs Home handed to `evaluateSameDayRecommendation`, the
+minimum-safety gate outcome, the descriptor-scoped canonical performed-training facts the
+evaluator consumed (Home preloads them under `resolvePerformedTrainingFactsCoverageDescriptor`
+and injects the same snapshot into the evaluator, so there is no hidden second read), and only
+the mechanical check-in signals the evaluator reads -- never check-in notes, source refs, or
+broad completed-training history. A canonical SHA-256 `contentHash` covers every field.
+
+`RecommendationAudit.decisionContext` binds the recommendation to the record by path,
+revision, and hash. `RecommendationService.saveRecommendation` writes both in one batch, and
+`firestore.rules` checks both directions: the path/revision/hash on the audit, and the record's
+revision, hash, `policyVersion`, and `evaluatedAt` against the bound audit. A date on which the
+minimum-safety gate prevented a normal evaluation stores a revision-`0` record with no
+evaluator inputs (`saveNotApplicableContext`). `validateDecisionContext` rejects a foreign,
+malformed, or hash-mismatched record.
+
+Capture is provenance, not decision authority. If a record cannot be built or its batch is
+rejected, the recommendation is still persisted, without a binding, and that revision stays
+`not_replayable`. The record deliberately omits the bounded training-history snapshot the
+engine also consumed, so no captured record is replayable yet; offline hydration and
+same-day replay are the remaining #872 work in
+[the plan](../plans/2026-09-28-prospective-decision-context-provenance.md).
+
 ### Sequence-search comparison (`compare:sequence-search`)
 Executed via `cd app && npm run compare:sequence-search`. Runs every scenario through both the production greedy planner and the Phase 5.1 beam-search prototype ([`app/src/engine/sequenceSearch.ts`](../../app/src/engine/sequenceSearch.ts)) using the identical `runScenario` harness, and reports the comparison (rest-day share, constraint violations, golden-week invariants, per-scenario deltas, timing). Outputs `comparison.json` to `app/artifacts/sequence-search-comparison/` (gitignored, regenerable). See [ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md).
 

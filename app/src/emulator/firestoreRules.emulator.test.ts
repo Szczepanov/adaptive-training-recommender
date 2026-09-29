@@ -2046,6 +2046,108 @@ emulatorDescribe('Firestore security rules', () => {
         await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recWithBindings))).resolves.toBeUndefined();
     });
 
+    it('binds a recommendation to an owner-only, write-once decision context', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        const contextPath = `${recommendationPath}/decision_contexts/1`;
+        const recommendation = {
+            ...validRecommendation(),
+            revision: 1,
+            recommendationAudit: {
+                ...validRecommendation().recommendationAudit,
+                decisionContext: { path: contextPath, revision: 1, contentHash: 'a'.repeat(64) },
+            },
+        };
+        const context = {
+            schemaVersion: 1,
+            userId: ownerId,
+            date: '2026-08-07',
+            recommendationRevision: 1,
+            // Must equal the bound audit's evaluation (validRecommendation's audit).
+            evaluatedAt: '2026-08-07T08:00:00Z',
+            policyVersion: '2026-08-decision-provenance-v1',
+            captureVersion: 'same-day-capture-v1',
+            appSource: { gitSha: 'abc123', dirty: false },
+            minimumSafetyStatus: 'complete',
+            evaluatorInputs: {},
+            performedTrainingFacts: {
+                asOfDate: '2026-08-07', windowDays: 7, revision: 'canonical-facts-v1:evergreen_general:test',
+                exposures: [], coverageCredits: [],
+            },
+            contentHash: 'a'.repeat(64),
+        };
+
+        const batch = writeBatch(ownerDb);
+        batch.set(doc(ownerDb, recommendationPath), recommendation);
+        batch.set(doc(ownerDb, contextPath), context);
+        await assertSucceeds(batch.commit());
+        await assertFails(updateDoc(doc(ownerDb, contextPath), { policyVersion: 'changed' }));
+        await assertFails(deleteDoc(doc(ownerDb, contextPath)));
+        await assertFails(getDoc(doc(otherDb, contextPath)));
+        await assertFails(setDoc(doc(ownerDb, `${recommendationPath}/decision_contexts/2`), {
+            ...context, recommendationRevision: 2,
+        }));
+        const mismatchPath = `users/${ownerId}/daily_recommendations/2026-08-08`;
+        const mismatch = writeBatch(ownerDb);
+        mismatch.set(doc(ownerDb, mismatchPath), {
+            ...recommendation,
+            date: '2026-08-08',
+            recommendationAudit: {
+                ...recommendation.recommendationAudit,
+                decisionContext: { path: `${mismatchPath}/decision_contexts/1`, revision: 1, contentHash: 'a'.repeat(64) },
+            },
+        });
+        mismatch.set(doc(ownerDb, `${mismatchPath}/decision_contexts/1`), {
+            ...context, date: '2026-08-08', contentHash: 'b'.repeat(64),
+        });
+        await assertFails(mismatch.commit());
+
+        const missingFactsPath = `users/${ownerId}/daily_recommendations/2026-08-09`;
+        const missingFactsContextPath = `${missingFactsPath}/decision_contexts/1`;
+        const missingFacts = writeBatch(ownerDb);
+        missingFacts.set(doc(ownerDb, missingFactsPath), {
+            ...recommendation,
+            date: '2026-08-09',
+            recommendationAudit: {
+                ...recommendation.recommendationAudit,
+                decisionContext: { path: missingFactsContextPath, revision: 1, contentHash: 'c'.repeat(64) },
+            },
+        });
+        missingFacts.set(doc(ownerDb, missingFactsContextPath), {
+            ...context,
+            date: '2026-08-09',
+            performedTrainingFacts: null,
+            contentHash: 'c'.repeat(64),
+        });
+        await assertFails(missingFacts.commit());
+
+        // The capture must describe the same evaluation as the audit it is bound to. The
+        // first (drift-free) entry is the positive control for the three rejections.
+        for (const [day, drift, expected] of [
+            ['2026-08-13', {}, 'succeeds'],
+            ['2026-08-10', { policyVersion: 'some-other-policy' }, 'fails'],
+            ['2026-08-11', { evaluatedAt: '2026-08-11T09:15:00.000Z' }, 'fails'],
+            ['2026-08-12', { appSource: { gitSha: 'abc123', dirty: false, extra: true } }, 'fails'],
+        ] as const) {
+            const driftPath = `users/${ownerId}/daily_recommendations/${day}`;
+            const driftContextPath = `${driftPath}/decision_contexts/1`;
+            const driftBatch = writeBatch(ownerDb);
+            driftBatch.set(doc(ownerDb, driftPath), {
+                ...recommendation,
+                date: day,
+                recommendationAudit: {
+                    ...recommendation.recommendationAudit,
+                    decisionContext: { path: driftContextPath, revision: 1, contentHash: 'd'.repeat(64) },
+                },
+            });
+            driftBatch.set(doc(ownerDb, driftContextPath), {
+                ...context, date: day, contentHash: 'd'.repeat(64), ...drift,
+            });
+            if (expected === 'succeeds') await assertSucceeds(driftBatch.commit());
+            else await assertFails(driftBatch.commit());
+        }
+    });
+
     it('allows additionalSessions at the full 4-element bound without exceeding the rule-evaluation budget', async () => {
         // Regression test: a prior attempt at real per-element validation at the schema's
         // historical 16-element bound blew the emulator's ~1000-expression budget. This

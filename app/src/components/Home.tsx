@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { decisionComposer, type ComposedDailyDecisionInput } from '../engine/composer';
 import { evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateReadinessAndSafetyEnvelope } from '../engine/rules';
 import { evaluateSameDayRecommendation } from '../engine/sameDayRecommendation';
+import type { SameDayRecommendationInputs } from '../engine/sameDayRecommendation';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapGoalsToUserEvents } from '../engine/adapters';
 import { generateWeekAheadPlanWithIntent, type WeekAheadPlan } from '../engine/planner';
-import { prepareTrainingHistorySnapshot } from '../engine/trainingIntent';
+import { DEFAULT_OPERATIONAL_HISTORY_WINDOW_DAYS, mechanicalEvidenceRequiredFor, prepareTrainingHistorySnapshot, resolvePerformedTrainingFactsCoverageDescriptor } from '../engine/trainingIntent';
+import { resolveMechanicalCheckinHistory } from '../engine/mechanicalCheckinHistory';
 import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
 import { buildRecommendationAudit } from '../engine/provenance';
 import { evaluatePeriodizationPhase, getDaysToEvent } from '../engine/periodization';
@@ -17,6 +19,7 @@ import { isManualOccurrence, type SessionReferenceBinding } from '../sessions/mo
 import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
+import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
 import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch } from '../services/sessionAuthoringService';
 import { isV4Plan, type ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
@@ -125,6 +128,11 @@ function verifySessionBindingReplay(userId: string, saved: DailyRecommendation |
 export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabilityMaintenanceResolved }: HomeProps) {
   const [decisionInput, setDecisionInput] = useState<ComposedDailyDecisionInput | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
+  const [decisionContextCapture, setDecisionContextCapture] = useState<{
+    evaluatedAt: string;
+    evaluatorInputs: SameDayRecommendationInputs;
+    performedTrainingFacts: Exclude<TrainingHistorySnapshot['performedTrainingFacts'], undefined> | null;
+  } | null>(null);
   const [adjustmentDirection, setAdjustmentDirection] = useState<'easier' | 'harder' | null>(null);
   const [nextDayPlan, setNextDayPlan] = useState<NextDayPotentialPlan | null>(null);
   const [loading, setLoading] = useState(true);
@@ -310,6 +318,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
       setError(null);
       setErrorRepairTargets([]);
       setHistorySnapshot(null);
+      setDecisionContextCapture(null);
       const input = await decisionComposer.composeDailyDecisionInput(userId);
       if (!isCurrent()) return;
       setDecisionInput(input);
@@ -436,6 +445,9 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
       );
 
       const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
+      if (safetyStatus !== 'complete') {
+        void recommendationService.saveNotApplicableContext(userId, input.date, safetyStatus);
+      }
       if (canGenerateNormalRecommendation(safetyStatus)) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
@@ -573,14 +585,38 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date, bundleContext) : null;
         const externalRestContext = activeExternal ? externalRestContextForDate(activeExternal, input.date) : null;
 
-        const baseRecommendation = await evaluateSameDayRecommendation({
+        // #872 prospective provenance: canonical performed facts are loaded once under
+        // the exact coverage descriptor the live intent resolver will use, then injected
+        // into the immutable prepared snapshot. This prevents the evaluator from doing a
+        // hidden second read whose bytes would be absent from the persisted context.
+        const performedFactsCoverageDescriptor = resolvePerformedTrainingFactsCoverageDescriptor(
+          events, input.date, todayAndTomorrowPlanBlocks, input.trainingIntentProfile,
+        );
+        const performedTrainingFacts = await getPerformedTrainingFactsInRange(
+          userId,
+          addDaysToLocalDateString(input.date, -DEFAULT_OPERATIONAL_HISTORY_WINDOW_DAYS),
+          input.date,
+          { coverageSetDescriptor: performedFactsCoverageDescriptor },
+        );
+        if (!isCurrent()) return;
+        const sameDayPreparedSnapshot: TrainingHistorySnapshot = {
+          ...preparedSnapshot,
+          performedTrainingFacts,
+        };
+
+        const mechanicalCheckinHistory = input.preferences
+          && mechanicalEvidenceRequiredFor(input.trainingIntentProfile, events, input.date)
+          ? await resolveMechanicalCheckinHistory(userId, input.date)
+          : [];
+        const evaluatedAt = new Date().toISOString();
+        const evaluatorInputs: SameDayRecommendationInputs = {
           userId,
           readiness: { subjective, objective, subjectiveBaseline: input.subjectiveBaseline },
           context,
           events,
           date: input.date,
           previousMode: yesterdayRec?.mode,
-          preparedHistorySnapshot: preparedSnapshot,
+          preparedHistorySnapshot: sameDayPreparedSnapshot,
           fixedActivities: todayAndTomorrowFixedActivities,
           authoredPlanBlocks: todayAndTomorrowPlanBlocks,
           trainingIntentProfile: input.trainingIntentProfile,
@@ -589,7 +625,9 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           externalRest: externalRestContext,
           scheduleOverlays: input.scheduleOverlays,
           confirmedProgressionOverrides,
-        });
+          mechanicalCheckinHistory,
+        };
+        const baseRecommendation = await evaluateSameDayRecommendation(evaluatorInputs);
         if (!isCurrent()) return;
         onCapabilityMaintenanceResolved?.(userId, input.date, baseRecommendation.capabilityMaintenance ?? null);
         const recommendationWithPrescription = {
@@ -817,8 +855,13 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
 
         const todayRec = {
           ...recommendationWithSession,
-          recommendationAudit: buildRecommendationAudit(recommendationWithSession, preparedSnapshot) ?? undefined,
+          recommendationAudit: buildRecommendationAudit(recommendationWithSession, sameDayPreparedSnapshot, evaluatedAt) ?? undefined,
         };
+        setDecisionContextCapture({
+          evaluatedAt,
+          evaluatorInputs,
+          performedTrainingFacts,
+        });
         setRecommendation(todayRec);
 
         // ADR-0037 D-DOSE: confirmedProgressionOverrides is derived for input.date only
@@ -834,16 +877,24 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         if (!isCurrent()) return;
         setNextDayPlan(tomorrowPlan);
 
-        recommendationService.saveRecommendation(userId, input.date, todayRec)
+        recommendationService.saveRecommendation(userId, input.date, todayRec, {
+          evaluatedAt,
+          minimumSafetyStatus: safetyStatus,
+          evaluatorInputs,
+          performedTrainingFacts,
+          mechanicalCheckinHistory,
+        })
           .then(saved => verifySessionBindingReplay(userId, saved))
           .catch(err => console.warn('Failed to persist recommendation:', err));
       } else if (input.recoverySnapshot && safetyStatus !== 'complete') {
+        setDecisionContextCapture(null);
         setRecommendation(createProvisionalSafetyRecommendation(safetyStatus));
         setAdjustmentDirection(null);
         setNextDayPlan(null);
         setHistorySnapshot(null);
         clearExternalPlanState();
       } else {
+        setDecisionContextCapture(null);
         setRecommendation(null);
         setNextDayPlan(null);
         setHistorySnapshot(null);
@@ -1085,10 +1136,14 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
     recommendationService.saveRecommendation(userId, decisionInput.date, {
       ...recommendation,
       adjustment: direction ? adjusted?.adjustment : undefined,
-    })
+    }, decisionContextCapture ? {
+      ...decisionContextCapture,
+      minimumSafetyStatus: 'complete',
+      mechanicalCheckinHistory: decisionContextCapture.evaluatorInputs.mechanicalCheckinHistory,
+    } : undefined)
       .then(saved => verifySessionBindingReplay(userId, saved))
       .catch(err => console.warn('Failed to persist adjusted recommendation:', err));
-  }, [recommendation, canGenerateNormalPlan, decisionInput, computeAdjustedRecommendation, activeAlternativeId, userId]);
+  }, [recommendation, canGenerateNormalPlan, decisionInput, computeAdjustedRecommendation, activeAlternativeId, userId, decisionContextCapture]);
 
   const handleSelectTimeCrunch = useCallback((minutes: number) => {
     const nextId = activeAlternativeId === `time-${minutes}` ? null : `time-${minutes}`;
