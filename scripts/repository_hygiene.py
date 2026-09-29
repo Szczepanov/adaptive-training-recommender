@@ -14,7 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PLAN_DIR = "docs/plans/"
 PLAN_INDEX = "docs/plans/README.md"
 SOURCE_SUFFIXES = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
-SOURCE_PREFIXES = ("app/src/", "src/garmin_sync/", "scripts/", "app/scripts/")
+SOURCE_PREFIXES = ("app/src/", "src/garmin_sync/")
+TOOLING_PREFIXES = ("scripts/", "app/scripts/")
 TEST_MARKERS = (".test.", ".spec.", ".pw.", ".perf.test.")
 
 KNIP_VERSION = "6.38.0"
@@ -78,6 +79,8 @@ def classify_tracked_path(path: str) -> str:
         return "test"
     if path.startswith(SOURCE_PREFIXES) and Path(path).suffix.lower() in SOURCE_SUFFIXES:
         return "production_source"
+    if path.startswith(TOOLING_PREFIXES) and Path(path).suffix.lower() in SOURCE_SUFFIXES:
+        return "tooling_source"
     if path.startswith("docs/"):
         return "docs"
     return "other"
@@ -142,10 +145,15 @@ def build_inventory(root: Path) -> dict[str, object]:
     metrics: list[FileMetric] = [
         file_metric(root, path, kind)
         for path in paths
-        if (kind := classify_tracked_path(path)) in {"production_source", "test"}
+        if (kind := classify_tracked_path(path))
+        in {"production_source", "tooling_source", "test"}
     ]
     production = sorted(
         (item for item in metrics if item["kind"] == "production_source"),
+        key=lambda item: (-item["lines"], -item["bytes"], item["path"]),
+    )
+    tooling = sorted(
+        (item for item in metrics if item["kind"] == "tooling_source"),
         key=lambda item: (-item["lines"], -item["bytes"], item["path"]),
     )
     tests = sorted(
@@ -188,8 +196,10 @@ def build_inventory(root: Path) -> dict[str, object]:
         },
         "source": {
             "productionFileCount": len(production),
+            "toolingFileCount": len(tooling),
             "testFileCount": len(tests),
             "largestProductionFiles": production[:20],
+            "largestToolingFiles": tooling[:20],
             "largestTestFiles": tests[:20],
             "largeFileHotspots": hotspots,
         },
@@ -220,6 +230,7 @@ def render_markdown(inventory: dict[str, object]) -> str:
         f"- Plan Markdown files: **{docs['planMarkdownCount']}**",
         f"- Unindexed plan files: **{docs['unindexedPlanCount']}**",
         f"- Production source files: **{source['productionFileCount']}**",
+        f"- Tooling source files: **{source['toolingFileCount']}**",
         f"- Test files: **{source['testFileCount']}**",
         "",
         "## Unindexed plan files",
