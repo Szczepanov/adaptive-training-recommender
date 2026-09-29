@@ -7,10 +7,12 @@ def test_parse_plan_references_normalizes_plan_paths() -> None:
     text = """
     | [Current](./current.md) | In progress |
     prose [Historical](./nested/history.md)
+    prose [Anchored](./anchored.md#decision)
     """
     assert hygiene.parse_plan_references(text) == {
         "docs/plans/current.md",
         "docs/plans/nested/history.md",
+        "docs/plans/anchored.md",
     }
 
 
