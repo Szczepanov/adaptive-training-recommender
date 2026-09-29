@@ -1,0 +1,10 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/main.tsx",
+    "src/visual/main.tsx",
+    ".dependency-cruiser.cjs",
+    "src/engine/simulation/blindComparison.ts",
+    "src/engine/simulation/runForecastDailyParity.mjs"
+  ]
+}

@@ -256,6 +256,49 @@ all-`Ready` table became unusable.
 | #859 | [Date-scoped #804 consecutive-day mechanical spacing](./2026-09-28-issue-859-date-scoped-mechanical-spacing.md) | **In review (implementation complete)** | PR #887 review/CI | implementation is complete on PR #887; merge remains the delivery gate | #804 stage/tissue verdict remains horizon-wide while exact mechanical adjacency is enforced per projected date only when active `mechanical_exposure` exists; non-#804 running is unchanged; knowledge lineage and `POLICY_VERSION` are aligned |
 | CF | [Constraint-aware stimulus fulfilment](./constraint-aware-stimulus-fulfilment.md) | **In progress** | CF1–CF8 remain gated by their canonical work-package dependencies | ADR-0044 accepted; #801–#806 canonical models per work package | shared residual-fulfilment layer, microdose/module contract and bounded automatic secondary-window packing without duplicating exact coverage, objective credit, load or intraday ledgers |
 
+### Historical companion documents
+
+These are historical records. They record slices, reviews, handover notes, or pre-implementation
+decisions whose delivery status is owned elsewhere (the status-board row or ADR named in
+each line). They are indexed here so the plan inventory stays complete; none of them is
+an independent task board.
+
+**Training occurrence (status owner: the TO row above; domain: ADR-0034):**
+
+- [PR 1 scope](./training-occurrence-pr1-scope.md) — historical implementation slice, delivered in PR #324.
+- [Implementation checklist](./training-occurrence-implementation-checklist.md) — historical checklist; PR #324 delivered the scoped implementation.
+- [Open questions](./training-occurrence-open-questions.md) — historical pre-implementation decisions, resolved or superseded by ADR-0034 and PR #324.
+- [Review checklist](./training-occurrence-review-checklist.md) — historical pre-PR324 review checklist; unchecked boxes are review history, not live work.
+- [Reviewer focus notes](./training-occurrence-review-notes.md) — historical review aid, superseded for delivery status by ADR-0034 and PR #324.
+- [PR #324 hardening review](./training-occurrence-pr324-hardening-review.md) — post-implementation correctness review separating fixed defects from deliberate rollout gates.
+- [PR #324 second-pass review](./training-occurrence-pr324-second-pass-review.md) — second independent pass on transaction read sets, merge determinism, and timezone hydration.
+- [Architecture summary](./training-occurrence-summary.md) — historical architecture summary; not an independent plan or task board.
+- [Canonical strength occurrence cutover](./strength-recommendation-canonical-occurrence-cutover-plan.md) — **Superseded** by the TO plan and its README row; PR 1–3 history retained.
+
+**Issue #458 diagnostics (status owner: the sequencing work merged in PR #464):**
+
+- [Sequencing and ranking diagnostics](./issue-458-sequencing-and-ranking-diagnostics.md) — **Implemented** 2026-09-08, merged in PR #464.
+- [Review follow-up](./issue-458-review-followup.md) — final-review errata and implementation addendum to the diagnostics above.
+
+**H4 intraday handover/analysis (status owner: the H4 narrative in Current plans):**
+
+- [D-AUDIT analysis](./h4-daudit-analysis.md) — analysis only; no code changes in its commit.
+- [D-REASSESS analysis](./h4-dreassess-analysis.md) — analysis only; no code changes in its commit.
+- [Execution-binding pipeline](./h4-external-plan-execution-binding-pipeline.md) — PR 1 implemented in PR #440, PR 2 in PR #445.
+- [PR 3 Phase 3 handover](./h4-434-pr3-phase3-handover.md) — **Superseded**; Phase 3 is delivered.
+
+**Other historical slices/logs (status owner is the cited plan/README row; no independent live work):**
+
+- [SKR3 completion](./2026-09-02-skr3-completion-plan.md) — **Implemented**; remaining training-policy migration is complete.
+- [SKR4 athlete-evidence boundary](./2026-09-02-skr4-athlete-evidence-boundary.md) — foundation implemented; production persistence/composition and outcome calibration deferred.
+- [Health anomaly causality cleanup](./health-anomaly-causality-cleanup.md) — **Implemented** on PR #181 (stacked follow-up to PR #179).
+- [H5c PR #517 review hardening](./h5c-pr517-review-hardening.md) — implemented review follow-up; the write-once review-snapshot boundary remains future work.
+- [Daily context brief window](./daily-context-brief-window.md) — shipped; W1–W6 implemented in one PR.
+- [Nutrition ingestion](./nutrition-ingestion.md) — completed.
+- [Persona coverage expansion](./persona-coverage-expansion.md) — **Implemented**.
+- [Allergy and cause-aware symptom reporting](./allergy-and-cause-aware-symptom-reporting.md) — implemented.
+- [Real Google Health ingestion log](./2026-08-27-real-google-health-ingestion.md) — verification and fix log, in progress at the time of writing.
+
 
 Rows G, HRF, S, M, CT, WU, UX, UX-R, OV, HA, SV, MS, PI, ES, TO, SEP, SKR, BC, NTA, SAW, TC, AF, CF, RP, and PG are **not phases**. They are capability/surface plans whose work items are
 prefixed `G*`, `HRF*`, `S*`, `M*`, `CT*`, `WU*`, `UX*`, `UX-R*`, `OV*`, `HA*`, `SV*`, `MS*`, `PI*`, `ES*`, `TO*`, `SEP-*`, `SKR*`, `BC*`, `SAW*`, `TC*`, `AF*`, `CF*`, `RP*`, and `PG*` precisely so they cannot be mistaken for the `Phase 0`–`9`

@@ -334,6 +334,22 @@ from the "More" drawer in `MobileNav.tsx`. Not added to the primary bottom-nav b
 than assumed here; the drawer entry is the same tier `Import Training Plan` and
 `Export Context for AI` already occupy.
 
+> **Errata (2026-09-29).** `components/StrengthSessionRunner.tsx` was later removed
+> (`be17e098`, "remove legacy strength execution UI"). Its successor is the source-neutral
+> `components/session/SessionRunner.tsx` backed by `hooks/useSessionRunner.ts`. The legacy
+> `hooks/useStrengthSessionRunner.ts` and `hooks/useElapsedSeconds.ts` orchestration layer was
+> not migrated and is deleted by the hygiene cleanup. `workouts/strengthSessionEntry.ts`
+> remains production-consumed by the source-neutral runner; `workouts/restTimer.ts` remains a
+> tested legacy utility but is not the current runner's timer authority.
+>
+> The S1.6 outcome below is therefore **historical**, not a statement of current runner
+> semantics. The source-neutral runner has its own timer/rest model
+> (`hooks/useSessionRunner.ts`, `sessions/restTiming.ts`, `sessions/restEventTiming.ts`):
+> elapsed/rest displays are runner state, while persisted rest-event duration is derived from
+> rest start/end timestamps, and an in-flight rest is intentionally not reconstructed after
+> reload. Any current background-throttling behavior belongs to that source-neutral path and
+> should be fixed there rather than by retaining the deleted legacy hook.
+
 **Prescription matching, scoped deliberately.** `WorkoutPrescription` carries both
 `adjustedBlocks` (the original structured `WorkoutBlock[]`, with typed `exerciseId`/`sets`/
 `target: IntensityTarget`) and `displayBlocks` (rendered presentation strings). Matching
