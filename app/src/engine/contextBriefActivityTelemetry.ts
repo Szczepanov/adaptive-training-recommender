@@ -567,9 +567,14 @@ export function injectActivityTelemetryIntoContextBrief(
     // Diagnostic keeps every persisted table and adds the summaries after them.
     const summaries = response ? deriveKeySessionSummaries(activities, response) : [];
     const summaryText = response ? renderKeySessionSummaries(summaries, response) : '';
-    const failedProviderIds = new Set(summaries
-        .filter(summary => summary.providerSelectionFailure !== undefined)
-        .flatMap(summary => summary.evidence?.measuredSources ?? [])
+    // Planning suppression must follow canonical response evidence directly rather than
+    // the rendered summary list. A reconciled occurrence can sit just outside the canonical
+    // render window while one of its provider rows still falls inside by provider-local date;
+    // failed provider evidence must not leak back through compact/quality telemetry in that case.
+    const failedProviderIds = new Set((response?.evidence ?? [])
+        .filter(session => session.sourceCompleteness.providerActivities === 'ambiguous'
+            || session.sourceCompleteness.providerActivities === 'partial')
+        .flatMap(session => session.measuredSources)
         .filter(source => source.provider.toLowerCase() === 'garmin')
         .map(source => source.activityId));
     const summarizedIds = new Set(summaries
