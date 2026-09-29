@@ -138,6 +138,7 @@ def file_metric(root: Path, relative: str, kind: str) -> FileMetric:
 
 def build_inventory(root: Path) -> dict[str, object]:
     paths = tracked_paths(root)
+    history_complete = run_git(root, ["rev-parse", "--is-shallow-repository"]).strip() != "true"
     index_text = (root / PLAN_INDEX).read_text(encoding="utf-8")
     unindexed, missing = find_plan_index_gaps(paths, index_text)
 
@@ -177,6 +178,7 @@ def build_inventory(root: Path) -> dict[str, object]:
 
     return {
         "gitHead": run_git(root, ["rev-parse", "HEAD"]).strip(),
+        "gitHistoryComplete": history_complete,
         "trackedFileCount": len(paths),
         "topLevelFileCounts": dict(
             sorted(Counter(path.split("/", 1)[0] for path in paths).items())
@@ -220,6 +222,7 @@ def render_markdown(inventory: dict[str, object]) -> str:
         "# Repository hygiene inventory",
         "",
         f"Git head: `{inventory['gitHead']}`",
+        f"Full Git history available: **{inventory['gitHistoryComplete']}**",
         "",
         "## Scope",
         "",
@@ -406,14 +409,13 @@ def run_external_tools(root: Path) -> list[ToolResult]:
             {0, 3},
         ),
         (
-            "vulture-production",
+            "vulture-runtime",
             [
                 "uvx",
                 "--from",
                 f"vulture=={VULTURE_VERSION}",
                 "vulture",
                 "src/garmin_sync",
-                "scripts",
                 "--min-confidence",
                 "100",
                 "--sort-by-size",
