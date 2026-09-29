@@ -3,6 +3,7 @@ import type { TrainingResponseSessionEvidence } from '../training-occurrence/tra
 import {
     decideSessionComparability,
     type ComparisonDecision,
+    type ComparisonSourceCompleteness,
     type ResponseSessionIdentity,
 } from './contextBriefComparability';
 import type { Insufficient } from './contextBriefResponseFeatures';
@@ -137,8 +138,20 @@ function responseLocalDate(
     return evidenceByActivityId.get(activity.activityId)?.localDate || activity.date;
 }
 
-/** Top-set load/reps per identified exercise, against the most recent prior session in
- * `history` with the same exercise identity. No estimated 1RM: the canonical estimator
+function strengthSourceCompleteness(
+    identitySource: StrengthSet['identitySource'],
+    identity: ResponseSessionIdentity | undefined,
+): ComparisonSourceCompleteness {
+    // ADR-0034: structured execution owns exercise/load/reps. Provider-record multiplicity
+    // is irrelevant to those mechanical facts; it matters only when provider recognition
+    // is the strength evidence source.
+    if (identitySource !== 'provider') return 'canonical';
+    return identity?.sourceCompleteness ?? 'provider_fallback';
+}
+
+/** Top-set load/reps per identified exercise, against the highest-ranked prior candidate
+ * in `history`: comparable mechanics first, then identity/confidence, then recency.
+ * No estimated 1RM: the canonical estimator
  * (`workouts/oneRepMax.ts`) needs near-failure effort evidence that device sets lack. */
 export function deriveStrengthProgression(
     activity: NormalizedGarminActivity,
@@ -190,6 +203,7 @@ export function deriveStrengthProgression(
                             identitySource: top.identitySource,
                             loadType: top.loadType,
                             ...(top.repetitionCount !== undefined ? { repetitions: top.repetitionCount } : {}),
+                            sourceCompleteness: strengthSourceCompleteness(top.identitySource, identities.get(activity.activityId)),
                         },
                     },
                     prior: {
@@ -200,6 +214,7 @@ export function deriveStrengthProgression(
                             identitySource: marker.top.identitySource,
                             loadType: marker.top.loadType,
                             ...(marker.top.repetitionCount !== undefined ? { repetitions: marker.top.repetitionCount } : {}),
+                            sourceCompleteness: strengthSourceCompleteness(marker.top.identitySource, identities.get(prior.activityId)),
                         },
                     },
                 }) : null;
