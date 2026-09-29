@@ -9,6 +9,7 @@
         simulate-calibrate simulate-fatigue-fusion simulate-subjective-drift \
         compare-sequence-search build build-frontend \
         deploy deploy-hosting deploy-all deploy-rules deploy-indexes \
+        hygiene hygiene-tools hygiene-all \
         install clean \
         docker-build docker-up docker-down docker-smoke
 
@@ -26,6 +27,17 @@ verify:
 ## Validate the provider-neutral coding-agent evaluation corpus
 agent-evals:
 	uv run python scripts/agent_eval.py validate
+
+## Generate the dependency-free repository hygiene inventory
+hygiene:
+	uv run python scripts/repository_hygiene.py
+
+## Run the inventory plus pinned external static-analysis tools (network required for tool fetch)
+hygiene-tools:
+	uv run python scripts/repository_hygiene.py --external
+
+## Alias for the complete repository hygiene audit
+hygiene-all: hygiene-tools
 
 ## Run full test suites for both backend and frontend
 test: test-python test-frontend
@@ -223,6 +235,7 @@ clean:
 	-rmdir /s /q .ruff_cache 2>nul || rm -rf .ruff_cache 2>/dev/null || true
 	-rmdir /s /q .mypy_cache 2>nul || rm -rf .mypy_cache 2>/dev/null || true
 	-rmdir /s /q app\dist 2>nul || rm -rf app/dist 2>/dev/null || true
+	-rmdir /s /q artifacts\hygiene 2>nul || rm -rf artifacts/hygiene 2>/dev/null || true
 
 ## Display list of available targets
 help:
