@@ -60,7 +60,60 @@ confidence.
 Do not commit Context7 credentials or personal MCP configuration. The MCP server is configured per
 developer/client; this repository only defines when and how it should be used.
 
-## 2. Verification contract
+## 2. Repository semantic discovery: lexical search + optional Jev
+
+Jev is an **optional developer-local capability**, not a repository dependency. Here, `jev`
+means the [BorisLeMeec/jev](https://github.com/BorisLeMeec/jev) code-navigation CLI backed by
+TypeSafe Jev; it is distinct from TypeSafe's general typed-decision/design skill. The CLI, API key,
+and any client/plugin configuration stay outside the repository. When installed, verify the local
+client once with `jev probe`; never commit `TYPE_SAFE_AI_KEY` or another provider credential.
+
+Route repository questions by evidence shape:
+
+| Question | Preferred route |
+|---|---|
+| Exact symbol/string/error/path is known | `rg`/text search, then direct read |
+| Known file/subsystem; need a semantic yes/no property | narrowly scoped `jev ask` |
+| Behavior is known but repository vocabulary/location is unknown | tightly scoped `jev find`, then source verification |
+| Type/signature change; need complete impact list | compiler (`tsc -b` / `mypy`) |
+| External package/API behavior | Context7 / official upstream docs |
+
+### Jev question discipline
+
+- Prefer one independently testable semantic property per `jev ask`. Split compound questions
+  such as "does A/B/C already work or is wiring needed?" into separate A, B and C checks.
+- If the exact symbol is already known, locate it lexically first and scope Jev to the implementation
+  file or smallest relevant subsystem. Do not pay for a repository-wide semantic sweep to rediscover
+  a known symbol.
+- For `jev find`, start with the smallest plausible subsystem. The CLI's file-count guard is a
+  useful signal to narrow the search; do not raise `--max-files` merely to bypass that guard.
+- Jev probabilities/rankings are evidence, not proof. Open the cited source and verify important
+  conclusions with exact callers/tests/compiler output as appropriate.
+- A failed or low-confidence Jev search must not become an absence proof unless the source/test
+  evidence independently supports absence.
+
+### Agent and hook economy
+
+Broad semantic discovery belongs to the primary agent. Subagents/reviewers should not repeat the
+same Jev sweep; give them the established target symbols/files and let them query further only for
+a concrete unresolved question.
+
+The automatic Jev large-read narrowing hook is **not** a repository default. It can reduce context,
+but it can also hide source. Treat it as a client-local experiment and compare correctness against
+full-source runs before enabling it broadly. Explicit `jev ask`/`jev find` remains the shared
+workflow.
+
+`jev gain` may be used as a local diagnostic for query count, examined tokens and provider spend,
+but leverage is not the same as measured agent-token savings. Repository evals should prioritize
+end-state correctness and then compare turns/context/tool usage across repeated trials.
+
+If Jev is unavailable, use lexical search, direct reads, tests and compiler output. No task may
+block on Jev setup.
+
+The shared operational workflow is in
+[`.agents/skills/semantic-code-discovery/SKILL.md`](../../.agents/skills/semantic-code-discovery/SKILL.md).
+
+## 3. Verification contract
 
 **`make verify` is the canonical "ready to hand off / ready for PR review" command for agents.**
 
@@ -103,7 +156,7 @@ Before completion, run `make verify`.
 
 This separation keeps iteration fast without letting an agent redefine "done" per task.
 
-## 3. Delegation and context economy
+## 4. Delegation and context economy
 
 Subagents are useful when work is genuinely separable, but every delegated agent has its own
 reasoning/context budget and can duplicate repository discovery. For a single cohesive GitHub issue,
@@ -139,7 +192,7 @@ Current OpenAI multi-agent guidance also treats concurrency as an explicit budge
 tuning when the root model should delegate:
 <https://developers.openai.com/api/docs/guides/responses-multi-agent>.
 
-## 4. Coding-agent evaluations
+## 5. Coding-agent evaluations
 
 Product recommendation evaluation (simulation, plan judge, persona judge) and **coding-agent
 evaluation** answer different questions and must remain separate.
