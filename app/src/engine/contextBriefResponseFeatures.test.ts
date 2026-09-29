@@ -477,6 +477,33 @@ describe('strength progression (#814)', () => {
         });
     });
 
+    it('keeps structured strength comparable when unrelated provider-source selection is ambiguous', () => {
+        const current = lift('now-structured-ambiguous', '2026-09-18', 80);
+        const prior = lift('prior-structured-ambiguous', '2026-09-11', 75);
+        const currentEvidence = structuredStrengthEvidence({
+            activityId: current.activityId, occurrenceId: 'pto-now-ambiguous', localDate: '2026-09-18',
+            executionId: 'exec-now-ambiguous', performedExerciseId: 'front_squat', reps: 5, weightKg: 80,
+        });
+        const priorEvidence = structuredStrengthEvidence({
+            activityId: prior.activityId, occurrenceId: 'pto-prior-ambiguous', localDate: '2026-09-11',
+            executionId: 'exec-prior-ambiguous', performedExerciseId: 'front_squat', reps: 5, weightKg: 75,
+        });
+        const feature = deriveStrengthProgression(current, [prior], new Map([
+            [current.activityId, currentEvidence],
+            [prior.activityId, priorEvidence],
+        ]), new Map([
+            [current.activityId, { performedOccurrenceId: 'pto-now-ambiguous', localDate: '2026-09-18', sourceCompleteness: 'ambiguous' }],
+            [prior.activityId, { performedOccurrenceId: 'pto-prior-ambiguous', localDate: '2026-09-11', sourceCompleteness: 'ambiguous' }],
+        ]));
+        expect(feature.state).toBe('available');
+        if (feature.state !== 'available') return;
+        expect(feature.exercises[0].prior?.decision).toMatchObject({
+            state: 'comparable',
+            matchBasis: 'canonical_exercise_identity',
+            confidenceCeiling: 'moderate',
+        });
+    });
+
     it('selects a same-rep prior working set even when a heavier different-rep set exists', () => {
         const current = lift('now-structured', '2026-09-18', 82.5);
         const prior = lift('prior-structured', '2026-09-11', 90);
