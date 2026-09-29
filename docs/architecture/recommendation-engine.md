@@ -304,9 +304,9 @@ work. Comparisons cannot reach beyond the fetched lookback.
 The recovery section of the planning/diagnostic brief, and section 2 of the morning brief,
 open with a deterministic synthesis (`contextBriefRecoverySynthesis.ts`
 `synthesizeRecoveryEvidence` / `renderRecoveryEvidenceSynthesis`). It is **explanatory
-observability support, not a readiness authority**: no engine module imports it, it
-produces no score, and `rules.ts` `evaluateReadinessAndSafetyEnvelope` remains the sole
-decision authority. `POLICY_VERSION` is unaffected.
+observability support, not a readiness authority**: it is consumed only by context-brief
+rendering paths, not by recommendation/readiness authority modules; it produces no score, and
+`rules.ts` `evaluateReadinessAndSafetyEnvelope` remains the sole decision authority. `POLICY_VERSION` is unaffected.
 
 - Evidence is grouped into four independent families that each cast at most one vote:
   athlete-reported state (listed first), HRV, resting HR and sleep score. Objective
