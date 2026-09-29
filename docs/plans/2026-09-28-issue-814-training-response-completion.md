@@ -284,6 +284,8 @@ The feature layer can receive one canonical response object per physical workout
 
 - WP0 and WP1 are implemented.
 - WP2 is integrated for steady power–HR comparison.
+- Canonical performed-occurrence local dates now govern steady-comparison chronology/date labels when available; provider dates remain fallback.
+- `semantic_protocol_match` is reserved vocabulary only; the current steady matcher selects exact prescription, authored family, provider fingerprint or controlled-steady matching.
 - WP3–WP8 remain in this documented follow-up plan; this PR does not complete issue #814.
 
 ### 2.1 New module
@@ -520,7 +522,7 @@ For a different rep count:
 - state “not like-for-like for direct load comparison”;
 - do not manufacture improvement.
 
-The current summary labels prior top sets with different reps, load types or missing reps as not like-for-like; only equal-rep, equal-load-type top sets are marked like-for-like.
+The current summary labels prior top sets with different reps, load types or missing reps as not like-for-like; only equal-rep, equal-load-type top sets are marked like-for-like. Strength-history chronology and displayed prior dates prefer the canonical performed-occurrence local date over an adjacent provider-local recording date.
 
 ### 4.4 Estimated strength
 
@@ -575,7 +577,7 @@ For each RegionTissueResponse with sourceSessionRef:
 - render the region, nextMorningReaction and linkage provenance;
 - do not translate “linked to session” into “caused by session”.
 
-The current response summary resolves exact `execution` refs against the matched structured execution. Unresolved refs remain explicitly unlinked.
+The current response summary resolves exact `execution` refs against the matched structured execution. A response explicitly linked to another known execution is omitted from this session's tissue detail; unresolved refs remain visible as not linked to this session rather than being mislabeled as belonging here.
 
 ### 5.2 General soreness/fatigue
 
