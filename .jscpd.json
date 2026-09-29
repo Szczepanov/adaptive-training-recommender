@@ -1,0 +1,24 @@
+{
+  "path": [
+    "app/src",
+    "app/scripts",
+    "src/garmin_sync",
+    "scripts"
+  ],
+  "reporters": [
+    "json",
+    "markdown"
+  ],
+  "output": "artifacts/hygiene/jscpd",
+  "ignore": [
+    "**/*.test.*",
+    "**/*.spec.*",
+    "**/*.pw.*",
+    "**/__tests__/**",
+    "**/fixtures/**",
+    "**/node_modules/**",
+    "**/dist/**"
+  ],
+  "gitignore": true,
+  "mode": "mild"
+}
