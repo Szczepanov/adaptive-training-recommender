@@ -443,18 +443,18 @@ Pick the cheapest tool that answers the actual question:
 1. **Exact lookup:** when a symbol, string, error, path, configuration key, or other repository
    vocabulary is known, use text search (`Grep`/`rg`) and direct reads. This remains the default
    for literals, docs, YAML/JSON, generated files, and exact callers.
-2. **Unknown repository vocabulary/location:** when behavior is understood but its implementation
-   name/location is not, use `canopy search` first only when a **pre-existing usable index** is
-   already available. It is a fast local semantic locator; treat results as candidates and verify
-   them in source. If the current worktree has no usable index, do not initialize/reindex Canopy as
-   task setup; use lexical/direct evidence and a tightly scoped `jev find` as the fallback.
-3. **Semantic property on a known target:** use a targeted direct read when the relevant evidence is
-   already small/localized. When answering "does this file/symbol/subsystem do X?" would otherwise
-   require a broad/large read or scanning multiple files and `jev` is available, prefer a narrowly
-   scoped `jev ask`. Keep each question atomic (one independently testable property); split compound
-   "A/B/C or wiring?" questions into separate checks. Read the cited line/window and only the
-   surrounding source needed to verify it before relying on the answer; do not automatically re-read
-   the whole large file. Do not call Jev after direct evidence has already answered the question.
+2. **Unknown repository vocabulary/location:** for a non-trivial task, make one read-only
+   `python scripts/agent_canopy.py search "<behavior>"` attempt before broad lexical exploration.
+   The wrapper locates the maintained main-checkout index and never provisions/mutates it. Exit code
+   3 / `CANOPY_UNAVAILABLE` means fall back immediately. Treat hits as candidates and verify them
+   in the current worktree. If the result is materially ambiguous and location remains unknown, use
+   one tightly scoped `jev find` as a second opinion before escalating to broader search.
+3. **Semantic property on a known target:** use a targeted direct read when one small/localized
+   source region answers the question. If one semantic property would otherwise require inspecting
+   multiple substantial regions/files, use **one atomic, narrowly scoped `jev ask`** before broad
+   reading. Keep each question independently testable; split compound "A/B/C or wiring?" questions.
+   Verify the cited source in the current worktree. Do not call Jev after direct evidence already
+   answered the question.
 4. **Graph orientation:** after a useful Canopy result, `canopy map`/`canopy trace` may cheaply
    orient callers/callees. The graph is advisory: a missing/ambiguous entity is not evidence that a
    real source symbol is absent.
@@ -468,10 +468,24 @@ Pick the cheapest tool that answers the actual question:
 
 ### Canopy index lifecycle
 
+Normal coding-agent work is **consumer-only** for Canopy indexes. The supported agent entry point is:
+
+```bash
+python scripts/agent_canopy.py search "where is this behavior implemented?"
+python scripts/agent_canopy.py map SomeSymbol
+python scripts/agent_canopy.py trace Caller Callee
+python scripts/agent_canopy.py status
+```
+
+The wrapper discovers a maintained main/master checkout (or
+`AGENT_CANOPY_BASELINE_WORKTREE` / `--baseline-worktree` override) and exposes only read-only
+Canopy commands. `CANOPY_UNAVAILABLE` / exit code 3 is a routing signal to fall back, not a setup
+failure to repair.
+
 Normal coding-agent work is **consumer-only** for Canopy indexes.
 
 - Do not run `canopy init`, `canopy reindex`, switch/pull embedding models, or rebuild an index
-  because a temporary worktree lacks `.canopy/`.
+  because a temporary worktree lacks `.canopy/`; use the read-only wrapper and fall back if it is unavailable.
 - Do not mutate a shared index with `canopy index` from a temporary worktree. A persistent
   primary/main checkout may maintain its own index through an explicit developer/tool-maintenance
   workflow.
