@@ -296,15 +296,15 @@ fallbacks. This remains display-only, so `POLICY_VERSION` is unaffected.
 Known limitations: stable venue, temperature, elevation/grade, route and distance-quality fields
 are not retained in the normalized activity/response data, so environmental enrichment requires
 separate request-budget/privacy review. Segment-level execution-to-step reconciliation is not
-established by occurrence identity alone; running pace–HR comparison and diagnostic comparator
-provenance remain incomplete. Structural tests keep response-comparability imports on the display
-path, cover dynamic imports, and reject transitive reachability from non-context-brief engine modules;
-WP3, WP6.4 and WP7 still block issue closure. Structured-only strength and next-morning
+established by occurrence identity alone, and running pace–HR comparison remains unwired.
+Diagnostic comparator provenance is bounded. Structural tests keep response-comparability imports
+on the display path, cover dynamic imports, and reject transitive reachability from non-context-brief
+engine modules; WP3 and WP6.4 still block issue closure. Structured-only strength and next-morning
 evidence render from the canonical response projection, and a linked but unavailable structured
-execution is surfaced as insufficient evidence without provider-name fallback. The renderer also
-still starts from provider activity rows, so a canonical occurrence with multiple provider recordings
-can yield more than one response-summary row; occurrence-level render deduplication remains follow-up
-work. Comparisons cannot reach beyond the fetched lookback.
+execution is surfaced as insufficient evidence without provider-name fallback. When provider
+selection is ambiguous or partial, the response layer emits one occurrence-level insufficient-evidence
+row and does not select a recording for provider-derived features; planning suppresses the rejected
+provider detail while diagnostic mode retains it. Comparisons cannot reach beyond the fetched lookback.
 
 #### Recovery evidence synthesis (issue #812)
 
