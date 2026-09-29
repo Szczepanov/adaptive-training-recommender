@@ -95,6 +95,28 @@ describe('contextBrief canonical training table (#894)', () => {
         expect(text).toContain('Discipline volume: Cycling: 2 sessions (60 known min; 1 duration unknown)');
     });
 
+    it('keeps two legitimate same-day canonical workouts distinct', () => {
+        const facts = [
+            fact(D1, { performedOccurrenceId: 'occ-am', durationMin: 50 }),
+            fact(D1, { performedOccurrenceId: 'occ-pm', durationMin: 40, modality: 'Strength', sourceKinds: ['structured_execution'] }),
+        ];
+        const text = buildContextBrief(withFacts(facts, { purpose: 'planning' }));
+        expect(text).toContain(`| ${D1} | Cycling | 50 |`);
+        expect(text).toContain(`| ${D1} | Strength | 40 |`);
+        expect(text).toContain('Totals: 2 sessions · 90 min');
+    });
+
+    it('distinguishes explicit zero duration from unknown duration in aggregates', () => {
+        const facts = [
+            fact(D1, { performedOccurrenceId: 'occ-zero', durationMin: 0 }),
+            fact(D2, { performedOccurrenceId: 'occ-unknown', durationMin: undefined }),
+        ];
+        const text = buildContextBrief(withFacts(facts, { purpose: 'planning' }));
+        expect(text).toContain(`| ${D1} | Cycling | 0 |`);
+        expect(text).toContain(`| ${D2} | Cycling | — |`);
+        expect(text).toContain('Totals: 2 sessions · 0 known min · 1 session with duration unknown');
+    });
+
     it('filters facts outside the render window', () => {
         const facts = [fact('2026-08-01'), fact(D1)];
         const text = buildContextBrief(withFacts(facts, { purpose: 'planning' }));
@@ -126,7 +148,7 @@ describe('contextBrief canonical training table (#894)', () => {
             purpose: 'planning',
             activities: [activity(D1), activity(D2, { activityId: 'unreconciled-provider-row' })],
         }));
-        expect(text).toContain('1 canonical session carry provider evidence vs 2 raw provider rows');
+        expect(text).toContain('1 canonical session carries provider evidence vs 2 raw provider rows');
         expect(text).toContain('Raw rows are never added directly to canonical totals');
     });
 
