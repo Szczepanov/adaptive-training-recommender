@@ -72,8 +72,9 @@ Canopy and Jev are **optional developer-local capabilities**, not repository dep
   selected source to the configured provider.
 
 The Canopy index/model/runtime state, Jev CLI/API key, and personal client/plugin configuration stay
-outside the repository. When installed, use `canopy status` to check index freshness and `jev probe`
-to verify Jev connectivity; never commit generated indexes, model files, `TYPE_SAFE_AI_KEY`, or
+outside the repository. Coding agents access an already-maintained Canopy index only through
+`scripts/agent_canopy.py`; they do not initialize or mutate it. Use `jev probe` to verify Jev
+connectivity when needed. Never commit generated indexes, model files, `TYPE_SAFE_AI_KEY`, or
 another provider credential.
 
 Route repository questions by evidence shape:
@@ -82,7 +83,6 @@ Route repository questions by evidence shape:
 |---|---|
 | Exact symbol/string/error/path is known | `rg`/text search, then direct read |
 | Behavior is known but repository vocabulary/location is unknown | one read-only `scripts/agent_canopy.py search` attempt; then scoped `jev find` if still ambiguous |
-
 | Known file/subsystem; one semantic property needs multiple substantial reads | one narrowly scoped atomic `jev ask`; otherwise targeted direct read |
 | Call-graph orientation after discovery | `canopy map` / `canopy trace` as advisory hints |
 | Type/signature change; need complete impact list | compiler (`tsc -b` / `mypy`) |
@@ -108,8 +108,9 @@ already exists, and then runs only read-only Canopy commands from that baseline 
 creates/mutates the index. Exit code 3 plus `CANOPY_UNAVAILABLE` explicitly means: **continue with
 fallback evidence and do not troubleshoot/provision Canopy during the task**.
 
-- Use `canopy search "<behavior>"` for vocabulary-gap questions where the implementation name is
-  unknown. Do not use it for exact-symbol lookups that `rg` answers precisely.
+- Use `python scripts/agent_canopy.py search "<behavior>"` for vocabulary-gap questions where the
+  implementation name is unknown. Do not use raw Canopy from a temporary worktree, and do not use
+  semantic retrieval for exact-symbol lookups that `rg` answers precisely.
 - The current repository evaluation favors `top_k = 15` and `test_penalty = 0.5` in the
   developer-local `.canopy/canopy.toml`. The larger candidate set avoids losing known-correct
   implementations just below the default top 10; the stronger test penalty keeps regression tests
