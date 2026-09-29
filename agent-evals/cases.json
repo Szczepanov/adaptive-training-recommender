@@ -290,6 +290,11 @@
           "reason": "ContextBriefService is a large implementation and the requested purpose-specific fact-hydration behavior is semantic rather than an exact internal symbol, so atomic jev ask checks can narrow the relevant source before verification."
         },
         {
+          "capability": "canopy",
+          "expectation": "not_expected",
+          "reason": "The exact service implementation is already known and the task asks for a semantic yes/no property; Canopy retrieval would be an unnecessary locator hop."
+        },
+        {
           "capability": "context7",
           "expectation": "not_expected",
           "reason": "The question is entirely repository-internal behavior."
@@ -323,6 +328,11 @@
           "capability": "lexical_search",
           "expectation": "recommended",
           "reason": "The exact exported symbol is known; rg/text search is the cheapest and most precise route."
+        },
+        {
+          "capability": "canopy",
+          "expectation": "not_expected",
+          "reason": "The exact exported symbol is known; local semantic retrieval is less precise than rg/text search."
         },
         {
           "capability": "jev",
@@ -374,6 +384,52 @@
           "capability": "context7",
           "expectation": "not_expected",
           "reason": "This is repository-owned privacy/tooling policy, not an external API behavior question."
+        }
+      ]
+    },
+    {
+      "id": "semantic-location-canopy-routing",
+      "kind": "capability",
+      "source": {
+        "type": "synthetic",
+        "ref": "P0-canopy-routing"
+      },
+      "start_ref": "508d5ba23eccb1981fa4eb45eab7ac608ab19015",
+      "prompt": "Without changing code, locate where the week-ahead planner proves that an existing allocation survives before it fails closed because allocation search remains unresolved. Explain the proof order and identify the implementation symbol(s). The prompt intentionally does not provide internal symbol names.",
+      "success_criteria": [
+        "The answer identifies app/src/engine/planner.ts as the implementation location.",
+        "The answer identifies classifyAllocationPreservation and/or incumbentAssignmentsRemainingAfterSelection as the relevant implementation symbols.",
+        "The answer explains that incumbent-survival proof is considered before unresolved-search-budget failure.",
+        "Semantic retrieval is treated as discovery evidence and the conclusion is verified in source.",
+        "No external library documentation is used.",
+        "No files are modified."
+      ],
+      "grader": {
+        "commands": [],
+        "forbidden_modified_globs": [
+          "**"
+        ]
+      },
+      "tool_expectations": [
+        {
+          "capability": "canopy",
+          "expectation": "recommended",
+          "reason": "The behavior is known but repository vocabulary/location is intentionally withheld; a fresh local Canopy index is the preferred first semantic locator."
+        },
+        {
+          "capability": "jev",
+          "expectation": "optional",
+          "reason": "A tightly scoped jev find is a valid second opinion/fallback if Canopy is unavailable, stale, or materially ambiguous."
+        },
+        {
+          "capability": "lexical_search",
+          "expectation": "optional",
+          "reason": "Lexical search is useful after candidate vocabulary is discovered, but the prompt intentionally provides no exact internal symbol."
+        },
+        {
+          "capability": "context7",
+          "expectation": "not_expected",
+          "reason": "This is repository-internal planner behavior."
         }
       ]
     }
