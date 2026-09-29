@@ -278,7 +278,7 @@ Known limitations: stable venue, temperature, elevation/grade, route and distanc
 are not retained in the normalized activity/response data, so environmental enrichment requires
 separate request-budget/privacy review. Segment-level execution-to-step reconciliation is not
 established by occurrence identity alone; running pace–HR comparison and diagnostic provenance
-remain incomplete; comparisons cannot reach beyond the fetched lookback.
+remain incomplete; structured-only strength occurrences are projected but are not yet rendered by the activity-driven response summary; comparisons cannot reach beyond the fetched lookback.
 
 #### Recovery evidence synthesis (issue #812)
 
