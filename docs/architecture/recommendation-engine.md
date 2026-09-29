@@ -258,13 +258,16 @@ fallbacks. This remains display-only, so `POLICY_VERSION` is unaffected.
   blocks provider-name fallback. Provider
   exercise recognition remains available with limited confidence when structured identity is
   absent. Direct top-set comparison is marked like-for-like only when load type and repetitions
-  match; different reps/load types are reported without estimated 1RM. Prior-session chronology
+  match; the selected prior session first searches for its best same-rep/same-load-type working
+  set before falling back to a non-like-for-like top set. Different reps/load types are reported
+  without estimated 1RM. Prior-session chronology
   likewise uses the canonical occurrence date when it is available.
 - **Next morning** — the check-in dated the day after the session vs the session-day morning
   (soreness, fatigue, pain flag). Same-day sessions are deduplicated by performed occurrence
   where available; multi-session response is labeled day-level and ambiguous. Tissue reactions
   with a recorded reaction or source ref are rendered up to three, with an exact linked response
-  prioritized; linkage requires an execution source reference that exactly matches this session.
+  prioritized; linkage uses the structured execution source ref carried by the canonical
+  performed occurrence and therefore does not require the execution definition to hydrate.
   A tissue response explicitly linked to another known execution is omitted from the current
   session summary; unresolved source refs may remain visible as not linked to this session.
   All readings remain observational. A failed check-in read is reported as unavailable, and a
