@@ -125,7 +125,11 @@ Occurrence membership identifies the physical workout, but it does not identify 
 structured step produced an individual FIT/manual response segment. Execution entries expose
 completion instants while segments expose elapsed offsets; no shared step identifier or
 guaranteed clock-alignment contract currently exists. Segments therefore retain their FIT/manual
-identity, and the response layer does not join timestamps heuristically. The centralized
+identity, and the response layer does not join timestamps heuristically. The
+`reconciled_workout_step` identity is reserved for a future deterministic alignment contract:
+the current TypeScript read-side identity union and persistence parser do not accept it, so stale
+or prematurely-written persisted values fail closed with the optional `activityResponse` sidecar
+omitted rather than gaining semantic-step authority. The centralized
 comparability decision is consumed only by the context-brief display chain. The architecture guard
 checks both static and dynamic relative imports, includes the response renderers through the planning
 handoff boundary, and walks the production import graph so non-context-brief engine modules cannot
@@ -151,7 +155,10 @@ omission counts; planning renders at most three rejection examples. This provena
 display-only. Current provider rows include lap duration, distance and average speed, but no
 stable venue, temperature, grade/route or running distance-quality evidence. Running pace–HR
 comparison therefore remains unwired, including for apparently treadmill-like or repeated
-activities. Planning uses normalized, bounded summaries and never includes native FIT samples.
+activities. The HR-fidelity policy also has no running pace–HR use case; its existing aerobic
+decoupling authority requires verified input lineage and segment context, which do not establish
+controlled running conditions. Outdoor and trail comparisons remain excluded, and pace–HR is not
+running economy. Planning uses normalized, bounded summaries and never includes native FIT samples.
 
 ## Read-side hydration and athlete UI
 

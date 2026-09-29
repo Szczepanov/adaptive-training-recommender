@@ -178,7 +178,8 @@ legacy fallback; an explicit canonical `unknown` domain is not promoted through 
 Cycling uses persisted `activityResponse` MMP, steady-half and semantic-segment evidence;
 full zone tables are retained only when there is no interval/segment table to make them
 redundant. Running uses running dynamics and bounded lap pace/power/HR evidence with the same
-morning zone-suppression rule. The `planning` and `diagnostic` purposes retain their existing
+morning zone-suppression rule. This running telemetry is observational and does not establish a
+controlled longitudinal pace–HR comparison. The `planning` and `diagnostic` purposes retain their existing
 richer provenance/zone contracts, with diagnostic remaining the uncapped persisted view. This
 remains display-only and ordinary endurance/recovery sessions keep the one-line morning summary.
 

@@ -462,6 +462,31 @@ describe('training-history persistence parsers', () => {
         expect(parsed.data.activityResponse).toEqual(sampleResponse);
     });
 
+    it('rejects reserved reconciled step identity until a deterministic alignment contract exists', () => {
+        const parsed = parseNormalizedGarminActivity({
+            ...activity,
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1',
+                segmentCountTotal: 1,
+                segmentsTruncated: false,
+                sourceResolution: { powerSeconds: 1 },
+                segments: [{
+                    segmentIndex: 1,
+                    segmentType: 'work',
+                    identitySource: 'reconciled_workout_step',
+                    durationSeconds: 600,
+                    evidenceConfidence: 'high',
+                    averagePowerWatts: 250,
+                }],
+                powerDurationPeaks: [],
+            },
+        }, 'users/u1/activities/a-1', 'a-1');
+
+        expect(parsed.status).toBe('AVAILABLE');
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available');
+        expect(parsed.data.activityResponse).toBeUndefined();
+    });
+
     it('accepts the canonical 64-segment truncation boundary', () => {
         const segments = Array.from({ length: 64 }, (_, index) => ({
             segmentIndex: index + 1,
