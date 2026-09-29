@@ -159,7 +159,7 @@ describe('contextBrief canonical training table (#894)', () => {
             purpose: 'planning',
             activities: [activity(D1), activity(D2, { activityId: 'unreconciled-provider-row' })],
         }));
-        expect(text).toContain('1 canonical session carries provider evidence vs 2 raw provider rows');
+        expect(text).toContain('Provider-count note: canonical sessions carrying provider evidence = 1; raw provider rows = 2.');
         expect(text).toContain('Raw rows are never added directly to canonical totals');
     });
 
