@@ -522,7 +522,7 @@ For a different rep count:
 - state “not like-for-like for direct load comparison”;
 - do not manufacture improvement.
 
-The current summary labels prior top sets with different reps, load types or missing reps as not like-for-like; only equal-rep, equal-load-type top sets are marked like-for-like. Strength-history chronology and displayed prior dates prefer the canonical performed-occurrence local date over an adjacent provider-local recording date.
+The current summary first searches the selected prior session for the best same-rep/same-load-type working set. Only that path is marked like-for-like; if none exists, a fallback top set may be shown but is explicitly labeled different-rep/load-type/missing-reps. Strength-history chronology and displayed prior dates prefer the canonical performed-occurrence local date over an adjacent provider-local recording date.
 
 ### 4.4 Estimated strength
 
@@ -577,7 +577,7 @@ For each RegionTissueResponse with sourceSessionRef:
 - render the region, nextMorningReaction and linkage provenance;
 - do not translate “linked to session” into “caused by session”.
 
-The current response summary resolves exact `execution` refs against the matched structured execution. A response explicitly linked to another known execution is omitted from this session's tissue detail; unresolved refs remain visible as not linked to this session rather than being mislabeled as belonging here.
+The current response summary resolves exact `execution` refs from the canonical occurrence's structured source ref even if structured execution/definition hydration is unavailable. A response explicitly linked to another known execution is omitted from this session's tissue detail; unresolved refs remain visible as not linked to this session rather than being mislabeled as belonging here.
 
 ### 5.2 General soreness/fatigue
 
