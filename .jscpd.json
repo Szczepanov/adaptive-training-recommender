@@ -1,6 +1,14 @@
 {
-  "path": ["app/src", "src/garmin_sync", "scripts"],
-  "reporters": ["json", "markdown"],
+  "path": [
+    "app/src",
+    "app/scripts",
+    "src/garmin_sync",
+    "scripts"
+  ],
+  "reporters": [
+    "json",
+    "markdown"
+  ],
   "output": "artifacts/hygiene/jscpd",
   "ignore": [
     "**/*.test.*",
