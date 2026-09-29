@@ -13,8 +13,10 @@ design skill. Jev is optional: never block work because it is unavailable.
 
 1. **Exact vocabulary known** — use `rg`/Grep and direct reads for symbols, strings, errors, paths,
    configuration keys and exact callers.
-2. **Known target, semantic property unknown** — when `jev` is available, use `jev ask` against
-   the implementation file or smallest relevant subsystem.
+2. **Known target, semantic property unknown** — use a targeted direct read when the relevant
+   evidence is already small/localized. When answering would otherwise require a broad/large read or
+   scanning multiple files and `jev` is available, use `jev ask` against the implementation file
+   or smallest relevant subsystem.
 3. **Behavior known, repository vocabulary/location unknown** — use a tightly scoped `jev find`
    as a discovery hint, then verify the returned source.
 4. **Type/signature ripple** — use the compiler (`cd app && npx tsc -b`, `uv run mypy`) as the
@@ -23,12 +25,14 @@ design skill. Jev is optional: never block work because it is unavailable.
 
 ## Jev ask
 
-Keep questions atomic: one independently testable semantic property per call.
+Keep questions atomic: one independently testable semantic property per call. Do not call Jev
+ceremonially after a targeted source read already answers the question; the purpose is to avoid
+unnecessary context loading, not to add another required hop.
 
 Prefer:
 
 ```bash
-rg -n "contextBriefService" app/src
+rg -n "ContextBriefService" app/src
 jev ask "does ContextBriefService.build hydrate performedFacts for the morning brief?" \
   app/src/services/contextBriefService.ts -q
 ```

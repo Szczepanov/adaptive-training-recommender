@@ -73,7 +73,7 @@ Route repository questions by evidence shape:
 | Question | Preferred route |
 |---|---|
 | Exact symbol/string/error/path is known | `rg`/text search, then direct read |
-| Known file/subsystem; need a semantic yes/no property | narrowly scoped `jev ask` |
+| Known file/subsystem; semantic property needs broad/large reading | narrowly scoped `jev ask`; otherwise targeted direct read |
 | Behavior is known but repository vocabulary/location is unknown | tightly scoped `jev find`, then source verification |
 | Type/signature change; need complete impact list | compiler (`tsc -b` / `mypy`) |
 | External package/API behavior | Context7 / official upstream docs |
@@ -82,6 +82,9 @@ Route repository questions by evidence shape:
 
 - Prefer one independently testable semantic property per `jev ask`. Split compound questions
   such as "does A/B/C already work or is wiring needed?" into separate A, B and C checks.
+- Do not invoke Jev ceremonially when a small targeted read already answers the question. Its value
+  is avoiding broad/large context loading or multi-file semantic inspection, not adding a mandatory
+  tool hop.
 - If the exact symbol is already known, locate it lexically first and scope Jev to the implementation
   file or smallest relevant subsystem. Do not pay for a repository-wide semantic sweep to rediscover
   a known symbol.
@@ -178,8 +181,9 @@ questions and must not independently reconstruct the whole repository architectu
 The same economy applies to code navigation (full policy in
 [`AGENTS.md` § Code navigation](../../AGENTS.md#code-navigation)):
 
-- discover with text search plus direct reads, and use the compiler (`tsc -b`, `mypy`) as the
-  impact list for type-level changes;
+- follow the routing policy in §2: exact lookup stays lexical, small/localized evidence is read
+  directly, Jev is optional for broad/large semantic inspection or genuine vocabulary gaps, and the
+  compiler (`tsc -b`, `mypy`) remains the impact list for type-level changes;
 - once target symbols and relevant callers are known, read them directly rather than repeatedly
   rediscovering them;
 - do not have multiple agents independently rebuild the same call graph.

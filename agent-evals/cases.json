@@ -287,7 +287,7 @@
         {
           "capability": "jev",
           "expectation": "recommended",
-          "reason": "Atomic jev ask checks on the known implementation file are a good fit for the three semantic purpose properties."
+          "reason": "ContextBriefService is a large implementation and the three purpose branches are semantic properties, so atomic jev ask checks can avoid loading the full file before source verification."
         },
         {
           "capability": "context7",

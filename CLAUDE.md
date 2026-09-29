@@ -59,10 +59,12 @@ when it affects confidence. See
 ## 3. Working loop
 
 **Before writing code**
-- For source-code discovery, use `rg`/text search for exact identifiers and strings. When
-  `jev` is available, use a narrowly scoped `jev ask` for an atomic semantic property on a known
-  file/subsystem, and `jev find` only when repository vocabulary/location is genuinely unknown.
-  Treat Jev output as candidate evidence and read the cited source before changing code. For
+- For source-code discovery, use `rg`/text search for exact identifiers and strings. For a known
+  file/subsystem, read directly when the relevant evidence is already small/localized; when answering
+  an atomic semantic property would otherwise require a broad/large read or multi-file scan and
+  `jev` is available, use a narrowly scoped `jev ask`. Use `jev find` only when repository
+  vocabulary/location is genuinely unknown. Treat Jev output as candidate evidence and read the
+  cited source before changing code. For
   type-level ripple, run the compiler (`cd app && npx tsc -b`, `uv run mypy`). See
   [`AGENTS.md` § Code navigation](./AGENTS.md#code-navigation) and
   [`docs/standards/agent-tooling.md`](./docs/standards/agent-tooling.md).
