@@ -14,6 +14,7 @@ const BRIEF: ContextBriefExportSource = {
   windowDays: 14,
   preset: 'diagnostic',
   purpose: 'diagnostic',
+  contractVersion: '2026-09-context-brief-contract-v1',
   unavailableSources: ['recovery:2026-09-20'],
 };
 
@@ -33,11 +34,12 @@ describe('contextBriefExport', () => {
     const payload = buildContextBriefJsonExport(BRIEF, exportedAt);
 
     expect(payload).toEqual({
-      schemaVersion: 'context_brief_export_v1',
+      schemaVersion: 'context_brief_export_v2',
       exportedAt,
       source: 'adaptive-training-recommender',
       preset: 'diagnostic',
       purpose: 'diagnostic',
+      contractVersion: '2026-09-context-brief-contract-v1',
       dateRange: {
         startDate: '2026-09-15',
         asOfDate: '2026-09-28',

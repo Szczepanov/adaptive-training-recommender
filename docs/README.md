@@ -48,6 +48,7 @@ Two conventions apply to every document here, both added after being violated (s
 | Changing saved or authored session templates | [`architecture/session-execution.md`](./architecture/session-execution.md) → [ADR-0023](./adr/0023-multidomain-session-authoring-execution-and-evidence.md) → [`plans/custom-template-read-integrity-and-lifecycle.md`](./plans/custom-template-read-integrity-and-lifecycle.md) |
 | Changing performance-outcome evidence | [`architecture/performance-outcome-evidence.md`](./architecture/performance-outcome-evidence.md) → [ADR-0023](./adr/0023-multidomain-session-authoring-execution-and-evidence.md) → [`plans/performance-outcome-validation.md`](./plans/performance-outcome-validation.md) |
 | Changing dates or step semantics | [ADR-0003](./adr/0003-timezone-semantics-and-d1-step-window.md) — these are hard invariants, not preferences |
+| Changing the Context Brief / external-coach export contract | [`architecture/context-brief-contract.md`](./architecture/context-brief-contract.md) → [ADR-0003](./adr/0003-timezone-semantics-and-d1-step-window.md) for date semantics → [ADR-0010](./adr/0010-decision-provenance-and-audit-replay.md) for decision provenance → [ADR-0034](./adr/0034-canonical-performed-training-occurrence-and-multisource-reconciliation.md) for completed-training authority |
 | Adding or editing workouts | [`workout-library.md`](./workout-library.md) → [ADR-0004](./adr/0004-workout-library-architecture.md) |
 | Deploying or backfilling | [`ops/`](./ops/) |
 

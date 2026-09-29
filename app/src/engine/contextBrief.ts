@@ -16,6 +16,8 @@ import { mean, renderBodyComposition, renderObjective, round, signed } from './c
 import { SECTION_TITLE, type BriefPurpose, type BriefWindowPreset } from './contextBriefPurpose';
 import { renderRecoveryEvidenceSynthesis, synthesizeRecoveryEvidence } from './contextBriefRecoverySynthesis';
 import { deriveExposureLedger, renderExposureLedger, type ExposureLedgerInput } from './contextBriefExposureLedger';
+import { briefContractHeaderLines } from './contextBriefContract';
+import { SENSOR_OBSERVATION_HORIZON_DAYS } from './contextBriefSensorEvidence';
 
 // Re-exported so existing importers keep one entry point for the brief.
 export { round, signed } from './contextBriefRecovery';
@@ -71,6 +73,9 @@ export interface ContextBriefInput {
     effectivePlanningMode?: PlanningMode;
     /** Explicit override or convenience flag for whether an imported/external plan is the planning authority. */
     isExternalPlanAuthority?: boolean;
+    /** Issue #894: ISO generation timestamp. Ephemeral — omitted from semantic
+     * determinism checks. Supplied by the service layer; the pure builder never clocks. */
+    generatedAt?: string;
 }
 
 /** See the isolation note on `ContextBriefInput.bodyComposition` above: intentionally not
@@ -616,9 +621,11 @@ function renderGoalsAndIntent(goals: readonly UserGoal[] | undefined, profile: T
 }
 
 /**
- * Renders a compact, paste-ready summary of the athlete's recent training and recovery
- * for an external planner. Deliberately excludes identifiers, raw wearable payloads, and
- * anything not needed to design the next block.
+ * Pure retrospective renderer used by `ContextBriefService.build`.
+ *
+ * This function deliberately excludes identifiers and raw wearable payloads, but it is
+ * not the complete external-coach export boundary: planning/diagnostic handoff sections
+ * and the service-owned generation timestamp are finalized by `ContextBriefService`.
  */
 export function buildContextBrief(input: ContextBriefInput): string {
     const { asOfDate, windowDays } = input;
@@ -720,6 +727,16 @@ export function buildContextBrief(input: ContextBriefInput): string {
     const sections: string[][] = [
         [
             '# Training context brief',
+            '',
+            ...briefContractHeaderLines({
+                purpose,
+                asOfDate,
+                windowDays,
+                subjectiveBaselineDays: baselineDays,
+                recoveryTimelineDays: 7,
+                sensorHorizonDays: SENSOR_OBSERVATION_HORIZON_DAYS,
+                ...(input.generatedAt ? { generatedAt: input.generatedAt } : {}),
+            }),
             '',
             `Window: ${startDate} → ${asOfDate} (${windowDays} days). All dates are Europe/Warsaw calendar dates.`,
             'Blank values ("—") mean not measured, not zero. This brief contains no raw device payloads.',
