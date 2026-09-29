@@ -64,6 +64,22 @@ After a Jev result:
 
 A low-confidence or empty Jev result is not by itself proof that behavior is absent.
 
+## Data boundary
+
+Jev sends selected repository content to an external TypeSafe service. Treat every Jev scope as data
+egress, not as a purely local search.
+
+- Never run Jev over the repository root `.` in this project.
+- Scope to explicit source files or narrow source-only directories such as `app/src/`, `src/`, or
+  another directory established by the architecture map.
+- Never scan `artifacts/`, `app/artifacts/`, health exports, provider archives, credentials,
+  token stores, service-account material, `.env*`, or other local/production data.
+- Do not assume `.gitignore` is a security boundary. Before using a directory whose contents may
+  include ignored/untracked files, run `jev scan <scope>` locally and inspect the candidate paths,
+  or narrow to explicit safe files instead.
+- If source disclosure to the configured provider is not acceptable for the task/repository, do not
+  use Jev; fall back to local lexical search, targeted reads, tests, and compiler output.
+
 ## Agent economy
 
 The primary agent owns broad discovery. Do not ask multiple subagents to repeat the same Jev sweep.

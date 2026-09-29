@@ -96,6 +96,25 @@ Route repository questions by evidence shape:
 - A failed or low-confidence Jev search must not become an absence proof unless the source/test
   evidence independently supports absence.
 
+### Data egress and privacy
+
+Jev is not a local-only index: selected source content is sent to the configured TypeSafe service.
+That makes the scan scope a data-governance boundary.
+
+- Never run Jev over repository root `.` in this project. Start from an explicit source file or a
+  narrow source-only directory identified from the architecture map.
+- Never scan `artifacts/`, `app/artifacts/`, raw health exports, provider archives, token stores,
+  credentials, service-account material, `.env*`, or any path containing personal/production data.
+- Do **not** treat `.gitignore` as a DLP mechanism. The upstream CLI intentionally implements only
+  a subset of ignore syntax, so an ignored local file can still be eligible for scanning.
+- If a directory might contain ignored/untracked data, run local-only `jev scan <scope>` and inspect
+  the candidate paths before any remote `jev find`/`jev ask`, or narrow to explicit safe files.
+- If sending the relevant source to the configured provider is not acceptable, Jev is unavailable
+  for that task; use local lexical search, targeted reads, tests, and compiler output instead.
+
+These rules extend the repository's existing no-secrets/no-raw-health-data boundary to agent tooling;
+developer-local installation does not make provider data egress local.
+
 ### Agent and hook economy
 
 Broad semantic discovery belongs to the primary agent. Subagents/reviewers should not repeat the

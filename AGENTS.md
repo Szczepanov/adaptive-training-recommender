@@ -467,6 +467,12 @@ The automatic Jev large-read narrowing hook is not a repository default because 
 Client-local experiments may enable it, but correctness must be compared against full-source runs
 before adopting it broadly.
 
+Jev sends selected content to an external provider. Never scan repository root `.`, `artifacts/`,
+`app/artifacts/`, raw health/provider exports, credentials/token stores, service-account material,
+or other personal/production data. Do not treat `.gitignore` as a DLP boundary; for any directory
+that may contain ignored/untracked data, use local-only `jev scan` to inspect candidates first or
+narrow to explicit safe files. See `docs/standards/agent-tooling.md` for the full data-egress rule.
+
 The objective is better evidence with less broad reading, not tool-call count.
 
 ### Review economy

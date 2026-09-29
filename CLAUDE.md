@@ -67,7 +67,9 @@ when it affects confidence. See
   cited line/window plus only the surrounding source needed to verify it before changing code. For
   type-level ripple, run the compiler (`cd app && npx tsc -b`, `uv run mypy`). See
   [`AGENTS.md` § Code navigation](./AGENTS.md#code-navigation) and
-  [`docs/standards/agent-tooling.md`](./docs/standards/agent-tooling.md).
+  [`docs/standards/agent-tooling.md`](./docs/standards/agent-tooling.md). Jev sends selected source
+  to an external provider: never scan repository root, artifacts/raw-health/provider-data paths, or
+  credential/token material, and do not treat `.gitignore` as a DLP boundary.
 - Check [`docs/plans/README.md`](./docs/plans/README.md) — the authoritative status board.
   It says what is in progress, what shipped, and what is deliberately shadow-mode only.
   Never infer delivery status from a file's existence or from this file.
