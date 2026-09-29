@@ -44,7 +44,10 @@ import { activeExternalPlanService, externalRestContextForDate, placedSessionFor
 import type { BriefRestDirective } from '../engine/briefPlanAuthority';
 import { activityOverrideService } from './activityOverrideService';
 import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
-import { CONTEXT_BRIEF_CONTRACT_VERSION } from '../engine/contextBriefContract';
+import {
+    assertRenderedBriefContract,
+    CONTEXT_BRIEF_CONTRACT_VERSION,
+} from '../engine/contextBriefContract';
 import type { PerformedExposureFact } from '../engine/performedTrainingFacts';
 import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
 import { activityService } from './activityService';
@@ -682,6 +685,12 @@ export class ContextBriefService {
             preset,
             purpose,
             generatedAt: input.generatedAt,
+        });
+
+        assertRenderedBriefContract(text, {
+            purpose,
+            asOfDate: targetDate,
+            generatedAt: input.generatedAt!,
         });
 
         return {
