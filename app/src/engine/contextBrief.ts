@@ -330,7 +330,7 @@ function renderCanonicalTrainingTable(facts: readonly PerformedExposureFact[], r
     const providerFactCount = facts.filter(fact => fact.sourceKinds.includes('provider_activity')).length;
     if (providerFactCount !== rawRecordCount) {
         lines.push(
-            `Provider-count note: ${providerFactCount} canonical session${providerFactCount === 1 ? '' : 's'} carry provider evidence vs ${rawRecordCount} raw provider row${rawRecordCount === 1 ? '' : 's'}. `
+            `Provider-count note: canonical sessions carrying provider evidence = ${providerFactCount}; raw provider rows = ${rawRecordCount}. `
             + 'Raw rows are never added directly to canonical totals; inspect diagnostic provenance if the mismatch affects load interpretation.',
         );
     }
