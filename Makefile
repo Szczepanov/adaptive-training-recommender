@@ -243,6 +243,9 @@ help:
 	@echo --------------------------------------------------------------------------------
 	@echo Main Targets:
 	@echo   make verify            - Canonical scope-aware handoff/PR verification contract\n\t@echo   make all               - Alias for make verify\n\t@echo   make agent-evals       - Validate the coding-agent evaluation corpus
+	@echo   make hygiene           - Generate the dependency-free repository hygiene inventory
+	@echo   make hygiene-tools     - Run pinned Knip/dependency-cruiser/jscpd/Vulture audits
+	@echo   make hygiene-all       - Alias for make hygiene-tools
 	@echo   make check             - Run all Python and Frontend checks and tests
 	@echo   make test              - Run backend and frontend test suites
 	@echo   make test-rules        - Run Firestore security-rule tests against the emulator
