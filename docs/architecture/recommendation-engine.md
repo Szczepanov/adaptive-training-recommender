@@ -256,7 +256,7 @@ fallbacks. This remains display-only, so `POLICY_VERSION` is unaffected.
 - **Strength** — longitudinal strength comparison uses the central `strength_set_response`
   comparability decision with explicit exercise identity, load type and repetitions. The
   contract accepts this evidence without requiring a normalized Garmin activity, while the
-  context-brief summary also renders structured-only strength occurrences directly from `TrainingResponseSessionEvidence`, including their next-morning observational response.
+  context-brief summary also renders structured-only occurrences directly from `TrainingResponseSessionEvidence` when canonical structured exercise/set evidence produces a strength marker; explicitly Strength occurrences also surface unavailable structured execution as insufficient evidence. Hybrid occurrences therefore do not lose valid canonical strength sets merely because the session-level modality is broader than Strength.
   No synthetic activity is constructed. Structured executions use performed entry exercise identity when present, then
   authored step identity, with performed working sets; a linked but unavailable structured execution
   blocks provider-name fallback. Provider

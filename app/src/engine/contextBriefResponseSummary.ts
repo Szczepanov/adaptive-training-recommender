@@ -86,18 +86,23 @@ function authoredProtocolFamily(session: TrainingResponseSessionEvidence): strin
     ]);
 }
 
-function isStructuredStrengthEvidence(
+function isStructuredExecutionEvidence(
     evidence: TrainingResponseSessionEvidence | undefined,
 ): evidence is TrainingResponseSessionEvidence {
-    return evidence?.identity.sourceKinds.includes('structured_execution') === true
-        && normalizeModality(evidence.modality) === 'Strength';
+    return evidence?.identity.sourceKinds.includes('structured_execution') === true;
+}
+
+function isExplicitStructuredStrengthEvidence(
+    evidence: TrainingResponseSessionEvidence | undefined,
+): evidence is TrainingResponseSessionEvidence {
+    return isStructuredExecutionEvidence(evidence) && normalizeModality(evidence.modality) === 'Strength';
 }
 
 /** Key: a feature is available, or the session is steady-eligible but had no comparable
  * prior session (its rejection reasons are worth stating). */
 function isKey(summary: Omit<KeySessionSummary, 'nextDay'>): boolean {
     return hasAvailableFeature(summary)
-        || (isStructuredStrengthEvidence(summary.evidence) && summary.strength.state === 'insufficient_evidence')
+        || (isExplicitStructuredStrengthEvidence(summary.evidence) && summary.strength.state === 'insufficient_evidence')
         || (summary.efficiency.state === 'insufficient_evidence' && summary.efficiency.kind === 'no_comparable');
 }
 
@@ -149,23 +154,33 @@ export function deriveKeySessionSummaries(
     const windowActivityIds = new Set(windowActivities.map(activity => activity.activityId));
     const windowStart = context.windowStart ?? windowActivities.map(item => item.date).sort()[0];
     const windowEnd = context.windowEnd ?? windowActivities.map(item => item.date).sort().at(-1);
-    const structuredOnly = (context.evidence ?? []).filter(session =>
-        isStructuredStrengthEvidence(session)
-        && (!windowStart || session.localDate >= windowStart)
-        && (!windowEnd || session.localDate <= windowEnd)
-        && !session.measuredSources.some(source => source.provider.toLowerCase() === 'garmin'
-            && windowActivityIds.has(source.activityId)))
-        .sort((a, b) => a.localDate.localeCompare(b.localDate)
-            || (a.performedOccurrenceId ?? '').localeCompare(b.performedOccurrenceId ?? ''));
+    const structuredOnly = (context.evidence ?? [])
+        .filter(session =>
+            isStructuredExecutionEvidence(session)
+            && (!windowStart || session.localDate >= windowStart)
+            && (!windowEnd || session.localDate <= windowEnd)
+            && !session.measuredSources.some(source => source.provider.toLowerCase() === 'garmin'
+                && windowActivityIds.has(source.activityId)))
+        .map(evidence => ({
+            evidence,
+            strength: deriveStructuredStrengthProgression(evidence, context.evidence ?? []),
+        }))
+        // Hydrated structured exercise/set evidence is authoritative even in a hybrid
+        // session. An unavailable execution is rendered only when the occurrence itself is
+        // explicitly Strength, avoiding noisy "strength unavailable" rows for other modes.
+        .filter(item => item.strength.state === 'available'
+            || isExplicitStructuredStrengthEvidence(item.evidence))
+        .sort((a, b) => a.evidence.localDate.localeCompare(b.evidence.localDate)
+            || (a.evidence.performedOccurrenceId ?? '').localeCompare(b.evidence.performedOccurrenceId ?? ''));
     const omittedStructuredOnlyCount = Math.max(0, structuredOnly.length - MAX_STRUCTURED_ONLY_SESSIONS);
-    for (const evidence of structuredOnly.slice(-MAX_STRUCTURED_ONLY_SESSIONS)) {
+    for (const { evidence, strength } of structuredOnly.slice(-MAX_STRUCTURED_ONLY_SESSIONS)) {
         summaries.push({
             evidence,
             intervals: { state: 'insufficient_evidence', reason: 'provider activity telemetry unavailable' },
             sprints: { state: 'insufficient_evidence', reason: 'provider activity telemetry unavailable' },
             decoupling: { state: 'insufficient_evidence', reason: 'provider activity telemetry unavailable' },
             efficiency: { state: 'insufficient_evidence', reason: 'provider activity telemetry unavailable', kind: 'ineligible', rejected: [] },
-            strength: deriveStructuredStrengthProgression(evidence, context.evidence ?? []),
+            strength,
         });
     }
 
@@ -388,7 +403,7 @@ export function renderKeySessionSummaries(summaries: readonly KeySessionSummary[
             ...sprintLines(summary.sprints),
             ...decouplingLines(summary.decoupling),
             ...efficiencyLines(summary.efficiency),
-            ...strengthLines(summary.strength, isStructuredStrengthEvidence(summary.evidence)),
+            ...strengthLines(summary.strength, isExplicitStructuredStrengthEvidence(summary.evidence)),
             ...nextDayLines(summary.nextDay),
         );
     }

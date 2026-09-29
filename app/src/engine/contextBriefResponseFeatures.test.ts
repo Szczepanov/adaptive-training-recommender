@@ -461,6 +461,40 @@ describe('strength progression (#814)', () => {
         expect(text).not.toContain('NormalizedGarminActivity');
     });
 
+
+    it('renders canonical structured strength evidence inside a hybrid occurrence', () => {
+        const evidence: TrainingResponseSessionEvidence = {
+            ...structuredStrengthEvidence({
+                activityId: 'not-loaded-hybrid', occurrenceId: 'structured-hybrid', localDate: '2026-09-18',
+                executionId: 'exec-hybrid', performedExerciseId: 'front_squat', reps: 5, weightKg: 80,
+            }),
+            modality: 'Cross Training',
+        };
+        const context = {
+            history: [], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20',
+            windowStart: '2026-09-18', windowEnd: '2026-09-20', evidence: [evidence],
+        };
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries([], context), context);
+        expect(text).toContain('2026-09-18 — Cross Training — structured execution');
+        expect(text).toContain('Strength front_squat: Adaptive structured identity · 1 working set · top 80 kg × 5');
+    });
+
+    it('does not emit a strength-unavailable row for a non-strength structured occurrence', () => {
+        const unavailable: TrainingResponseSessionEvidence = {
+            performedOccurrenceId: 'structured-cross-unavailable',
+            localDate: '2026-09-18', modality: 'Cross Training',
+            identity: { level: 'canonical_occurrence', sourceKinds: ['structured_execution'] },
+            structuredSourceRef: { kind: 'structured_execution', executionId: 'exec-cross-unavailable' },
+            measuredSources: [],
+            sourceCompleteness: { occurrenceRead: 'available', structuredExecution: 'unavailable', providerActivities: 'not_linked' },
+        };
+        const context = {
+            history: [], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20',
+            windowStart: '2026-09-18', windowEnd: '2026-09-20', evidence: [unavailable],
+        };
+        expect(deriveKeySessionSummaries([], context)).toHaveLength(0);
+    });
+
     it('shows structured-only unavailable execution and does not fall back to a provider activity', () => {
         const unavailable: TrainingResponseSessionEvidence = {
             performedOccurrenceId: 'structured-only-unavailable',
