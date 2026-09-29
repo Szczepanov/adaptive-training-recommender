@@ -244,8 +244,11 @@ fallbacks. This remains display-only, so `POLICY_VERSION` is unaffected.
   variable-power sessions never get a drift value.
 - **Steady power–HR response ratio** — NP ÷ average HR against one selected prior session
   admitted by the centralized comparability contract. Exact authored prescription and protocol
-  family identity are rendered when available; otherwise the selected semantic, controlled
-  steady, or provider fallback basis is named. Power-zone low boundaries identify the FTP
+  family identity are rendered when available; otherwise the selected controlled-steady or
+  provider-fallback basis is named. Comparison chronology and displayed prior dates use the
+  canonical performed-occurrence local date when available, falling back to the provider
+  activity date. The `semantic_protocol_match` vocabulary remains reserved for future
+  deterministic matching and is not selected by the current matcher. Power-zone low boundaries identify the FTP
   definition in force: if both sessions report them and they differ, comparison is rejected
   without normalization. HR authority and threshold provenance cap confidence; heat, terrain,
   fuelling and accumulated fatigue remain uncontrolled. Up to three rejected candidates are
@@ -255,13 +258,16 @@ fallbacks. This remains display-only, so `POLICY_VERSION` is unaffected.
   blocks provider-name fallback. Provider
   exercise recognition remains available with limited confidence when structured identity is
   absent. Direct top-set comparison is marked like-for-like only when load type and repetitions
-  match; different reps/load types are reported without estimated 1RM.
+  match; different reps/load types are reported without estimated 1RM. Prior-session chronology
+  likewise uses the canonical occurrence date when it is available.
 - **Next morning** — the check-in dated the day after the session vs the session-day morning
   (soreness, fatigue, pain flag). Same-day sessions are deduplicated by performed occurrence
   where available; multi-session response is labeled day-level and ambiguous. Tissue reactions
   with a recorded reaction or source ref are rendered up to three, with an exact linked response
-  prioritized; linkage requires an execution source reference that exactly matches this session;
-  all readings remain observational. A failed check-in read is reported as unavailable, and a
+  prioritized; linkage requires an execution source reference that exactly matches this session.
+  A tissue response explicitly linked to another known execution is omitted from the current
+  session summary; unresolved source refs may remain visible as not linked to this session.
+  All readings remain observational. A failed check-in read is reported as unavailable, and a
   stored record that failed validation as unreadable (or "possibly unreadable" when such a
   record has no readable date), never as a missing check-in.
 
