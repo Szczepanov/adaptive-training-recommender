@@ -252,8 +252,9 @@ fallbacks. This remains display-only, so `POLICY_VERSION` is unaffected.
   definition in force: if both sessions report them and they differ, comparison is rejected
   without normalization. HR authority and threshold provenance cap confidence; heat, terrain,
   fuelling and accumulated fatigue remain uncontrolled. Planning lists up to three rejected
-  examples plus an omitted count; diagnostic output retains at most eight rejection reasons and
-  reports omissions, along with the selected decision provenance.
+  examples plus an omitted count; diagnostic output identifies the selected prior provider
+  activity/date, retains at most eight rejection reasons, and reports omissions along with the
+  selected decision provenance.
 - **Running pace–HR** — not wired. Current activity evidence may include lap distance/speed and
   running dynamics, but it does not prove controlled venue or standardized executed protocol.
   HR fidelity has no running pace–HR use case, and its shadow authority requires verified input
