@@ -17,6 +17,39 @@ test('an athlete can launch and complete a reviewed session', async ({ page }) =
   }).toBe(1);
 });
 
+test('the live session clock is wall-clock correct after a background-style time jump (#908)', async ({ page }) => {
+  const athlete = await provisionAthlete();
+
+  await signInThroughUi(page, athlete);
+  await openFixturePicker(page);
+  await page.getByRole('button', { name: 'Start Session →', exact: true }).first().click();
+
+  const timer = page.locator('.session-timer');
+  await expect(timer).toBeVisible();
+
+  // Simulate a backgrounded tab: the wall clock jumps five minutes with no
+  // interval callback firing in between, then the tab becomes visible again.
+  // The wall-clock runner must show the jumped value on resync; a
+  // callback-counting clock would still read near zero.
+  await timer.evaluate(() => {
+    const realNow = Date.now;
+    const jumpMs = 5 * 60 * 1000;
+    Date.now = () => realNow() + jumpMs;
+    (window as unknown as { __restoreDateNow908?: () => void }).__restoreDateNow908 = () => {
+      Date.now = realNow;
+    };
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+
+  try {
+    await expect(timer).toContainText('5:', { timeout: 10_000 });
+  } finally {
+    await page.evaluate(() => {
+      (window as unknown as { __restoreDateNow908?: () => void }).__restoreDateNow908?.();
+    });
+  }
+});
+
 test('a rapid duplicate start leaves exactly one in-progress execution', async ({ page }) => {
   const athlete = await provisionAthlete();
 

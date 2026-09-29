@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { adjustRest, closeRest, startRest } from './restEventTiming';
+import {
+    adjustRest,
+    closeRest,
+    restDeadlineMs,
+    restSecondsRemainingAt,
+    restTotalSeconds,
+    sessionElapsedSecondsAt,
+    startRest,
+} from './restEventTiming';
 
 describe('restEventTiming', () => {
     it('timer elapsed normally: actualSeconds reflects real elapsed time, endReason timer_elapsed', () => {
@@ -77,5 +85,61 @@ describe('restEventTiming', () => {
         const active = startRest('entry-1', '2026-08-26T06:00:00.000Z');
         const event = closeRest(active, '2026-08-26T06:00:30.000Z', 'skipped');
         expect(event).not.toHaveProperty('prescribedSeconds');
+    });
+});
+
+describe('wall-clock derivation (#908)', () => {
+    const startIso = '2026-08-26T06:00:00.000Z';
+    const startMs = Date.parse(startIso);
+
+    it('derives the countdown remainder from the deadline, not from callback count', () => {
+        const active = startRest('entry-1', startIso, 90);
+        expect(restTotalSeconds(active)).toBe(90);
+        expect(restDeadlineMs(active)).toBe(startMs + 90_000);
+        // Halfway through, whatever ticks did or did not fire.
+        expect(restSecondsRemainingAt(active, startMs + 45_000)).toBe(45);
+        expect(restSecondsRemainingAt(active, startMs + 89_100)).toBe(1);
+    });
+
+    it('a multi-minute background jump lands on zero, never negative, exactly once at the boundary', () => {
+        const active = startRest('entry-1', startIso, 90);
+        // The deadline instant itself has just elapsed.
+        expect(restSecondsRemainingAt(active, startMs + 90_000)).toBe(0);
+        // A tab throttled for five minutes observes the same terminal zero.
+        expect(restSecondsRemainingAt(active, startMs + 5 * 60_000)).toBe(0);
+        // Closing that far past the deadline still persists real elapsed time.
+        const event = closeRest(active, new Date(startMs + 5 * 60_000).toISOString(), 'timer_elapsed');
+        expect(event.actualSeconds).toBe(300);
+        expect(event.endReason).toBe('timer_elapsed');
+    });
+
+    it('a +30s extension moves the deadline deterministically', () => {
+        let active = startRest('entry-1', startIso, 60);
+        active = adjustRest(active, 30);
+        expect(restTotalSeconds(active)).toBe(90);
+        expect(restDeadlineMs(active)).toBe(startMs + 90_000);
+        expect(restSecondsRemainingAt(active, startMs + 75_000)).toBe(15);
+        expect(adjustRest(active, 0).adjustmentSeconds).toBe(30);
+    });
+
+    it('skip and next-set-started close at the real wall-clock age, not the prescription', () => {
+        const skipped = startRest('entry-1', startIso, 90);
+        expect(restSecondsRemainingAt(skipped, startMs + 10_000)).toBe(80);
+        expect(closeRest(skipped, new Date(startMs + 10_000).toISOString(), 'skipped').actualSeconds).toBe(10);
+
+        const interrupted = startRest('entry-2', startIso, 90);
+        expect(restSecondsRemainingAt(interrupted, startMs + 45_000)).toBe(45);
+        const event = closeRest(interrupted, new Date(startMs + 45_000).toISOString(), 'next_set_started');
+        expect(event.actualSeconds).toBe(45);
+        expect(event.endReason).toBe('next_set_started');
+    });
+
+    it('derives session elapsed from startedAt across a background-style clock jump', () => {
+        expect(sessionElapsedSecondsAt(startIso, startMs + 5_000)).toBe(5);
+        // Ten minutes pass with no callback firing in between.
+        expect(sessionElapsedSecondsAt(startIso, startMs + 10 * 60_000)).toBe(600);
+        // Clock skew or out-of-order reads never display negative time.
+        expect(sessionElapsedSecondsAt(startIso, startMs - 1_000)).toBe(0);
+        expect(sessionElapsedSecondsAt('not-a-date', startMs)).toBe(0);
     });
 });

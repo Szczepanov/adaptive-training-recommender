@@ -24,7 +24,8 @@ import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver'
 import { resolveEffectiveSession } from '../sessions/choiceResolution';
 import { resolvePostEntryRestSeconds } from '../sessions/restTiming';
 import { completesPrescribedSet } from '../sessions/workSets';
-import { adjustRest, closeRest, startRest, type ActiveRestState, type RestEventFields } from '../sessions/restEventTiming';
+import { adjustRest, closeRest, restSecondsRemainingAt, sessionElapsedSecondsAt, startRest } from '../sessions/restEventTiming';
+import type { ActiveRestState, RestEventFields } from '../sessions/restEventTiming';
 import type { RestEndReason } from '../sessions/models';
 import { resolveEffectiveInjuryConstraints, resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { ineligibleAlternativeOptionIds } from '../engine/sessionChoiceEligibility';
@@ -151,6 +152,13 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     // interruption/resume does not fabricate duration".
     const activeRestRef = useRef<ActiveRestState | null>(null);
 
+    // Local-only manual countdown started via `startRestTimer` (no durable rest
+    // event to attribute it to). Stored as a wall-clock deadline so a throttled
+    // tab derives the same remainder a durable rest does. Null when no manual
+    // countdown is armed; a durable `activeRestRef` rest always wins when both
+    // are somehow set.
+    const manualRestDeadlineRef = useRef<number | null>(null);
+
     /** Closes the active rest (if any) into a durable event and persists it with a
      * deterministic id derived from the rest's own identity (afterEntryId + startedAt),
      * so a retried write overwrites the same document rather than duplicating it. Returns
@@ -169,9 +177,13 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         const active = activeRestRef.current;
         if (!active || !execution) return undefined;
         activeRestRef.current = null;
-        const fields: RestEventFields = closeRest(active, new Date().toISOString(), endReason);
+        // `Date.now()`-based so the persisted end instant agrees with the same
+        // wall clock the live remainder is derived from (identical to `new
+        // Date()` in production; consistent under a `Date.now` mock in tests).
+        const endedAt = new Date(Date.now()).toISOString();
+        const fields: RestEventFields = closeRest(active, endedAt, endReason);
         const restEventId = `rest-${Date.parse(fields.startedAt)}-${fields.afterEntryId}`;
-        const now = new Date().toISOString();
+        const now = new Date(Date.now()).toISOString();
         const restEvent = {
             id: restEventId,
             executionId: execution.executionId,
@@ -192,6 +204,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         // running before reload is simply lost, not reconstructed, so no fabricated
         // duration can ever be persisted for it.
         activeRestRef.current = null;
+        manualRestDeadlineRef.current = null;
+        setRestSecondsRemaining(0);
+        setIsRestRunning(false);
         sessionExecutionService.findInProgressExecution(userId)
             .then(async existing => {
                 if (!existing) return;
@@ -210,7 +225,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 else if (!fixture) setSyncStatus('unavailable');
                 setExecution(existing);
                 setEntries(existingEntries);
-                setElapsedSeconds(Math.max(0, Math.floor((Date.now() - Date.parse(existing.startedAt)) / 1000)));
+                setElapsedSeconds(sessionElapsedSecondsAt(existing.startedAt, Date.now()));
             })
             .catch(() => {
                 if (!cancelled) setSyncStatus('unavailable');
@@ -223,39 +238,64 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         };
     }, [fixtures, userId]);
 
-    // Elapsed session timer
-    useEffect(() => {
-        let interval: NodeJS.Timeout | null = null;
-        if (execution && execution.state === 'in_progress') {
-            interval = setInterval(() => {
-                setElapsedSeconds(prev => prev + 1);
-            }, 1000);
+    // Wall-clock timers: the interval is only a repaint trigger. Both the session
+    // elapsed display and the rest countdown are re-derived from timestamps on
+    // every tick, so a backgrounded/throttled tab that missed callbacks shows
+    // the correct value on its next repaint instead of a callback count that
+    // drifted low. A rest whose deadline passed while backgrounded completes
+    // exactly once: `closeActiveRest` clears `activeRestRef` synchronously, so
+    // a second tick in the same quiescence window finds no active rest.
+    const resyncWallClockTimers = useCallback(() => {
+        if (!execution || execution.state !== 'in_progress') return;
+        const nowMs = Date.now();
+        setElapsedSeconds(sessionElapsedSecondsAt(execution.startedAt, nowMs));
+        const active = activeRestRef.current;
+        if (active) {
+            const remaining = restSecondsRemainingAt(active, nowMs);
+            setRestSecondsRemaining(remaining);
+            if (remaining <= 0) {
+                manualRestDeadlineRef.current = null;
+                setIsRestRunning(false);
+                playRestCompleteSound();
+                closeActiveRest('timer_elapsed')?.catch(err => console.warn('[useSessionRunner] Failed to persist rest event:', err));
+            }
+            return;
         }
-        return () => {
-            if (interval) clearInterval(interval);
-        };
-    }, [execution]);
+        const manualDeadline = manualRestDeadlineRef.current;
+        if (manualDeadline !== null) {
+            const remaining = Number.isFinite(manualDeadline)
+                ? Math.max(0, Math.ceil((manualDeadline - nowMs) / 1000))
+                : 0;
+            setRestSecondsRemaining(remaining);
+            if (remaining <= 0) {
+                manualRestDeadlineRef.current = null;
+                setIsRestRunning(false);
+                playRestCompleteSound();
+            }
+        }
+    }, [execution, closeActiveRest]);
 
-    // Rest countdown timer
+    // Repaint trigger while a session is in progress.
     useEffect(() => {
-        let interval: NodeJS.Timeout | null = null;
-        if (isRestRunning && restSecondsRemaining > 0) {
-            interval = setInterval(() => {
-                setRestSecondsRemaining(prev => {
-                    if (prev <= 1) {
-                        playRestCompleteSound();
-                        setIsRestRunning(false);
-                        closeActiveRest('timer_elapsed')?.catch(err => console.warn('[useSessionRunner] Failed to persist rest event:', err));
-                        return 0;
-                    }
-                    return prev - 1;
-                });
-            }, 1000);
-        }
+        if (!execution || execution.state !== 'in_progress') return;
+        resyncWallClockTimers();
+        const interval = setInterval(resyncWallClockTimers, 1000);
         return () => {
-            if (interval) clearInterval(interval);
+            clearInterval(interval);
         };
-    }, [isRestRunning, restSecondsRemaining, closeActiveRest]);
+    }, [execution, resyncWallClockTimers]);
+
+    // A throttled tab may not fire the interval at all while hidden; resync
+    // immediately on visibility/focus return instead of waiting for the next tick.
+    useEffect(() => {
+        if (!execution || execution.state !== 'in_progress') return undefined;
+        document.addEventListener('visibilitychange', resyncWallClockTimers);
+        window.addEventListener('focus', resyncWallClockTimers);
+        return () => {
+            document.removeEventListener('visibilitychange', resyncWallClockTimers);
+            window.removeEventListener('focus', resyncWallClockTimers);
+        };
+    }, [execution, resyncWallClockTimers]);
 
     // The athlete-facing effective view: recorded choices folded onto the raw, immutable
     // definition. `resolveEffectiveSession` always resolves actions from `rawDefinition`
@@ -314,6 +354,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         if (isRestoring || execution?.state === 'in_progress' || startInFlightRef.current) return;
         startInFlightRef.current = true;
         activeRestRef.current = null;
+        manualRestDeadlineRef.current = null;
         setRawDefinition(nextDefinition);
         setActiveBlockIndex(0);
         setActiveStepIndex(0);
@@ -350,7 +391,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             if (exec.executionId !== executionId) {
                 const existingEntries = await sessionExecutionService.getEntries(userId, exec.executionId);
                 setEntries(existingEntries);
-                setElapsedSeconds(Math.max(0, Math.floor((Date.now() - Date.parse(exec.startedAt)) / 1000)));
+                setElapsedSeconds(sessionElapsedSecondsAt(exec.startedAt, Date.now()));
             }
         } catch (error) {
             setRawDefinition(null);
@@ -372,7 +413,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         const existingEntries = await sessionExecutionService.getEntries(userId, execution.executionId);
         setRawDefinition(nextDefinition);
         setEntries(existingEntries);
-        setElapsedSeconds(Math.max(0, Math.floor((Date.now() - Date.parse(execution.startedAt)) / 1000)));
+        setElapsedSeconds(sessionElapsedSecondsAt(execution.startedAt, Date.now()));
     }, [execution, userId]);
 
     const selectStep = useCallback((blockIndex: number, stepIndex: number) => {
@@ -455,6 +496,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         const restSec = completesPrescribedSet(activeStep, entries, entry)
             ? resolvePostEntryRestSeconds(activeStep, activeBlock?.role) : 0;
         if (restSec > 0) {
+            manualRestDeadlineRef.current = null;
             setRestSecondsRemaining(restSec);
             setIsRestRunning(true);
             activeRestRef.current = startRest(entryId, now, restSec);
@@ -548,19 +590,40 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     // rest event to) -- left as local-only countdown state, matching its existing
     // behavior, rather than fabricating a rest-event association it has no evidence for.
     const startRestTimer = useCallback((seconds: number) => {
-        setRestSecondsRemaining(Math.max(1, seconds));
+        const total = Math.max(1, Math.round(seconds));
+        manualRestDeadlineRef.current = Date.now() + total * 1000;
+        setRestSecondsRemaining(total);
         setIsRestRunning(true);
     }, []);
 
     const skipRestTimer = useCallback(() => {
+        manualRestDeadlineRef.current = null;
         setRestSecondsRemaining(0);
         setIsRestRunning(false);
         closeActiveRest('skipped')?.catch(err => console.warn('[useSessionRunner] Failed to persist rest event:', err));
     }, [closeActiveRest]);
 
     const addRestSeconds = useCallback((seconds: number) => {
+        const active = activeRestRef.current;
+        if (active) {
+            const next = adjustRest(active, seconds);
+            activeRestRef.current = next;
+            // The deadline moved deterministically: repaint the derived remainder
+            // now rather than waiting for the next one-second tick.
+            setRestSecondsRemaining(restSecondsRemainingAt(next, Date.now()));
+            return;
+        }
+        const manualDeadline = manualRestDeadlineRef.current;
+        if (manualDeadline !== null) {
+            const nextDeadline = manualDeadline + seconds * 1000;
+            manualRestDeadlineRef.current = nextDeadline;
+            const nowMs = Date.now();
+            setRestSecondsRemaining(Number.isFinite(nextDeadline)
+                ? Math.max(0, Math.ceil((nextDeadline - nowMs) / 1000))
+                : 0);
+            return;
+        }
         setRestSecondsRemaining(prev => Math.max(0, prev + seconds));
-        if (activeRestRef.current) activeRestRef.current = adjustRest(activeRestRef.current, seconds);
     }, []);
 
     const substituteStepExercise = useCallback((
@@ -630,6 +693,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         // A rest still running when the session ends must be closed and persisted before
         // the execution's own 'completed' transition below -- firestore.rules gates
         // restEvents writes on the execution still being 'in_progress'.
+        manualRestDeadlineRef.current = null;
         setIsRestRunning(false);
         try {
             await closeActiveRest('session_ended');
@@ -750,6 +814,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
 
     const abandonSession = useCallback(async (notes?: string) => {
         if (!execution || execution.state !== 'in_progress') return;
+        manualRestDeadlineRef.current = null;
         setIsRestRunning(false);
         try {
             await closeActiveRest('session_ended');
