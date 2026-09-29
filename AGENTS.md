@@ -482,15 +482,13 @@ The wrapper discovers a maintained main/master checkout (or
 Canopy commands. `CANOPY_UNAVAILABLE` / exit code 3 is a routing signal to fall back, not a setup
 failure to repair.
 
-Normal coding-agent work is **consumer-only** for Canopy indexes.
-
 - Do not run `canopy init`, `canopy reindex`, switch/pull embedding models, or rebuild an index
   because a temporary worktree lacks `.canopy/`; use the read-only wrapper and fall back if it is unavailable.
 - Do not mutate a shared index with `canopy index` from a temporary worktree. A persistent
   primary/main checkout may maintain its own index through an explicit developer/tool-maintenance
   workflow.
-- If a shared persistent-main Canopy search is exposed by the client/environment, use it only as
-  baseline-main discovery. Verify all located behavior against the current branch/worktree before
+- The read-only wrapper exposes the maintained persistent-main index as baseline-main discovery when
+  such an index exists. Verify all located behavior against the current branch/worktree before
   editing or concluding.
 - Never share one writable `.canopy/` directory across concurrent worktrees.
 - Missing Canopy is a normal fallback condition, not a reason to substitute a smaller embedding
