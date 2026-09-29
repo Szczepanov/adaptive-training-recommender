@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | **In progress** — design accepted in PR #888; WP0 regression contract frozen |
+| **Status** | **In progress** — WP0–WP2 are implemented for shipped comparison paths; WP3–WP8 and issue closure remain open |
 | **Source** | [Issue #814](https://github.com/Szczepanov/adaptive-training-recommender/issues/814) and [2026-09-28 completion analysis](../analysis/2026-09-28-issue-814-training-response-completion-analysis.md) |
-| **Baseline** | main after PR #891 (#814), including #829, #860, #878 and training-occurrence backfill/replay work through #886 |
+| **Baseline** | fresh `origin/main` after PR #892 merged; HEAD `6882918d203f689e87c7dc7dd4251aae7d4fd127` |
 | **Blocked by** | No blocker for WP0–WP5. WP6 environmental enrichment is conditional on the source audit proving stable already-acquired provider fields. Individual work-item dependencies are listed below. |
 | **Unlocks** | Closure of #814; a clean evidence surface for future adaptation/progression research. It does **not** itself unlock recommendation authority. |
 | **Policy effect** | None. All work in this plan remains display/observability context. POLICY_VERSION must not change unless scope is explicitly widened in a separately reviewed policy change. |
@@ -283,17 +283,20 @@ The feature layer can receive one canonical response object per physical workout
 
 ## WP2 — Centralize the comparability contract
 
-**Status:** In progress — integrated for steady power–HR comparison in PR #891; broader feature-family migration remains follow-up.
+**Status:** Implemented for all shipped longitudinal comparison paths — central decisions gate steady power–HR and strength. The 2026-09-29 source audit found no other shipped cross-session comparator: interval/sprint are within-session, next-day is observational, and controlled running comparison is not implemented.
 **Blocked by:** WP1
 **Purpose:** make “may these sessions be compared for this feature?” a named pure decision instead of scattered conditionals.
 
-### Delivery boundary (PR #891)
+### Delivery boundary (PR #891 plus this continuation)
 
 - WP0 and WP1 are implemented.
-- WP2 is integrated for steady power–HR comparison.
+- WP2 is integrated for steady power–HR and strength comparisons.
+- This continuation routes the existing strength comparison through the same contract using explicit exercise identity, load type and repetitions. Same exercise, same load type and same repetitions are required for a `comparable` / like-for-like result; raw top-set values remain visible with rejection reasons when mechanics differ.
+- `ComparableSession` now accepts strength evidence independently of `NormalizedGarminActivity`. This is the smallest input-contract widening needed for structured evidence; the current activity-driven summary still renders only provider-activity-backed sessions, and no synthetic Garmin activity is created for a structured-only occurrence.
+- Provider-recognized exercise identity remains a `provider_fallback` basis with a low confidence ceiling. Ambiguous, incomplete, or mismatched structured/provider identity evidence fails closed.
 - Canonical performed-occurrence local dates now govern steady-comparison chronology/date labels when available; provider dates remain fallback.
 - `semantic_protocol_match` is reserved vocabulary only; the current steady matcher selects exact prescription, authored family, provider fingerprint or controlled-steady matching.
-- WP3–WP8 remain in this documented follow-up plan; this PR does not complete issue #814.
+- The 2026-09-29 source audit found no shipped longitudinal comparator outside the contract, so WP2 is complete for current behavior. The reserved `running_steady_pace_hr` family still returns not-wired if called; controlled running comparison is planned but not an existing delivered comparison, and must enter through this contract if implemented. WP3–WP8 remain in this follow-up plan; this continuation does not complete issue #814.
 
 ### 2.1 New module
 
@@ -384,7 +387,9 @@ Examples:
 **strength_set_response**
 
 - canonical exercise identity when structured;
-- like-for-like marker.
+- same exercise, load type, and repetition count for comparable / like-for-like status;
+- provider-only identity is confidence-limited;
+- raw top-set load/repetition reporting may remain visible when the central result rejects a like-for-like comparison.
 
 **next_day_response**
 
@@ -419,7 +424,7 @@ At minimum:
 
 ### Exit criteria
 
-Every longitudinal response feature obtains eligibility/confidence from one central contract.
+Every shipped longitudinal response comparison obtains eligibility/confidence from one central contract. The 2026-09-29 source audit found the shipped steady power–HR and strength paths both use it; interval/sprint are within-session and next-day remains observational. Future controlled-running comparison must enter through this contract when implemented.
 
 ---
 

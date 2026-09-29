@@ -253,14 +253,21 @@ fallbacks. This remains display-only, so `POLICY_VERSION` is unaffected.
   without normalization. HR authority and threshold provenance cap confidence; heat, terrain,
   fuelling and accumulated fatigue remain uncontrolled. Up to three rejected candidates are
   listed with reasons.
-- **Strength** — structured executions use performed entry exercise identity when present, then
+- **Strength** — longitudinal strength comparison uses the central `strength_set_response`
+  comparability decision with explicit exercise identity, load type and repetitions. The
+  contract accepts this evidence without requiring a normalized Garmin activity, while the
+  current activity-driven summary still has no structured-only occurrence rendering path.
+  No synthetic activity is constructed. Structured executions use performed entry exercise identity when present, then
   authored step identity, with performed working sets; a linked but unavailable structured execution
   blocks provider-name fallback. Provider
   exercise recognition remains available with limited confidence when structured identity is
-  absent. Direct top-set comparison is marked like-for-like only when load type and repetitions
+  absent and receives the `provider_fallback` basis with a low confidence ceiling. The central
+  decision is comparable only for the same exercise identity, load type and repetitions; mismatched
+  mechanics retain the raw prior top-set values with a not-comparable reason. Direct top-set comparison is marked like-for-like only when load type and repetitions
   match; the selected prior session first searches for its best same-rep/same-load-type working
   set before falling back to a non-like-for-like top set. Different reps/load types are reported
-  without estimated 1RM. Prior-session chronology
+  without estimated 1RM. The canonical exercise basis is distinct from `semantic_protocol_match`,
+  which remains unselected. Prior-session chronology
   likewise uses the canonical occurrence date when it is available.
 - **Next morning** — the check-in dated the day after the session vs the session-day morning
   (soreness, fatigue, pain flag). Same-day sessions are deduplicated by performed occurrence
