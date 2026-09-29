@@ -222,7 +222,7 @@ describe('response summary provenance and bounds (#814 WP7)', () => {
         const planningText = renderKeySessionSummaries(summaries, { ...context, diagnostic: false });
 
         expect(text).toContain('Diagnostic provenance: occurrence pto-current; identity canonical_occurrence; source kinds provider_activity, structured_execution; sources garmin:current; provider selection available');
-        expect(text).toContain('Diagnostic comparison: cycling_steady_power_hr comparable via controlled_steady_match; occurrence distinct; protocol unknown; measurement observational; threshold same; venue/environment unknown; source completeness canonical; limitations measurement/sensor authority observational, venue/environment context unknown');
+        expect(text).toContain('Diagnostic comparison: selected prior prior (2026-09-11); cycling_steady_power_hr comparable via controlled_steady_match; occurrence distinct; protocol unknown; measurement observational; threshold same; venue/environment unknown; source completeness canonical; limitations measurement/sensor authority observational, venue/environment context unknown');
         expect(planningText).not.toContain('Diagnostic provenance');
         expect(planningText).not.toContain('garmin:current');
     });
