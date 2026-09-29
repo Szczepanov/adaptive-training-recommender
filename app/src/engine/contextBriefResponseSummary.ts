@@ -46,10 +46,15 @@ export interface ResponseContext {
     diagnostic?: boolean;
 }
 
+type ProviderSelectionFailure = Extract<
+    TrainingResponseSessionEvidence['sourceCompleteness']['providerActivities'],
+    'ambiguous' | 'partial'
+>;
+
 export interface KeySessionSummary {
     activity?: NormalizedGarminActivity;
     evidence?: TrainingResponseSessionEvidence;
-    sourceSelectionAmbiguous?: boolean;
+    providerSelectionFailure?: ProviderSelectionFailure;
     omittedStructuredOnlyCount?: number;
     intervals: IntervalRepetition;
     sprints: SprintRepetition;
@@ -104,7 +109,7 @@ function isExplicitStructuredStrengthEvidence(
 /** Key: a feature is available, or the session is steady-eligible but had no comparable
  * prior session (its rejection reasons are worth stating). */
 function isKey(summary: Omit<KeySessionSummary, 'nextDay'>): boolean {
-    return summary.sourceSelectionAmbiguous === true
+    return summary.providerSelectionFailure !== undefined
         || hasAvailableFeature(summary)
         || (isExplicitStructuredStrengthEvidence(summary.evidence) && summary.strength.state === 'insufficient_evidence')
         || (summary.efficiency.state === 'insufficient_evidence' && summary.efficiency.kind === 'no_comparable');
@@ -117,18 +122,20 @@ export function deriveKeySessionSummaries(
     const identities = new Map<string, ResponseSessionIdentity>();
     const evidenceByActivityId = new Map<string, TrainingResponseSessionEvidence>();
     const localDateByActivityId = new Map<string, string>();
-    const ambiguousActivityIds = new Set<string>();
-    const ambiguousEvidence = new Set<TrainingResponseSessionEvidence>();
+    const excludedProviderActivityIds = new Set<string>();
+    const failedProviderSelectionEvidence = new Map<TrainingResponseSessionEvidence, ProviderSelectionFailure>();
     for (const session of context.evidence ?? []) {
         const protocolFamily = authoredProtocolFamily(session);
-        const providerSelectionAmbiguous = session.sourceCompleteness.providerActivities === 'ambiguous'
-            || session.sourceCompleteness.providerActivities === 'partial';
-        if (providerSelectionAmbiguous) ambiguousEvidence.add(session);
+        const providerSelectionFailure = session.sourceCompleteness.providerActivities === 'ambiguous'
+            || session.sourceCompleteness.providerActivities === 'partial'
+            ? session.sourceCompleteness.providerActivities
+            : undefined;
+        if (providerSelectionFailure) failedProviderSelectionEvidence.set(session, providerSelectionFailure);
         for (const source of session.measuredSources) {
             if (source.provider.toLowerCase() !== 'garmin') continue;
             localDateByActivityId.set(source.activityId, session.localDate);
-            if (providerSelectionAmbiguous) {
-                ambiguousActivityIds.add(source.activityId);
+            if (providerSelectionFailure) {
+                excludedProviderActivityIds.add(source.activityId);
                 continue;
             }
             evidenceByActivityId.set(source.activityId, session);
@@ -149,9 +156,9 @@ export function deriveKeySessionSummaries(
             });
         }
     }
-    const comparisonHistory = context.history.filter(activity => !ambiguousActivityIds.has(activity.activityId));
+    const comparisonHistory = context.history.filter(activity => !excludedProviderActivityIds.has(activity.activityId));
     const summaries: Omit<KeySessionSummary, 'nextDay'>[] = windowActivities
-        .filter(activity => !ambiguousActivityIds.has(activity.activityId))
+        .filter(activity => !excludedProviderActivityIds.has(activity.activityId))
         .sort((a, b) => a.date.localeCompare(b.date) || a.activityId.localeCompare(b.activityId))
         .map(activity => {
             const evidence = evidenceByActivityId.get(activity.activityId);
@@ -169,7 +176,7 @@ export function deriveKeySessionSummaries(
         });
 
     const windowActivityIds = new Set(windowActivities
-        .filter(activity => !ambiguousActivityIds.has(activity.activityId))
+        .filter(activity => !excludedProviderActivityIds.has(activity.activityId))
         .map(activity => activity.activityId));
     const renderDates = (windowActivities.length > 0
         ? windowActivities.map(item => localDateByActivityId.get(item.activityId) ?? item.date)
@@ -183,7 +190,7 @@ export function deriveKeySessionSummaries(
             && (!windowStart || session.localDate >= windowStart)
             && (!windowEnd || session.localDate <= windowEnd)
             && !session.measuredSources.some(source => source.provider.toLowerCase() === 'garmin'
-                && (ambiguousEvidence.has(session)
+                && (failedProviderSelectionEvidence.has(session)
                     ? windowActivities.some(activity => activity.activityId === source.activityId)
                     : windowActivityIds.has(source.activityId))))
         .map(evidence => ({
@@ -209,23 +216,26 @@ export function deriveKeySessionSummaries(
         });
     }
 
-    for (const evidence of ambiguousEvidence) {
+    for (const [evidence, providerSelectionFailure] of failedProviderSelectionEvidence) {
         const hasActivityInWindow = evidence.measuredSources.some(source =>
             source.provider.toLowerCase() === 'garmin'
             && windowActivities.some(activity => activity.activityId === source.activityId));
         if (!hasActivityInWindow
             || (windowStart !== undefined && evidence.localDate < windowStart)
             || (windowEnd !== undefined && evidence.localDate > windowEnd)) continue;
+        const reason = providerSelectionFailure === 'ambiguous'
+            ? 'multiple provider recordings lack a deterministic primary selection'
+            : 'provider activity evidence is only partially available';
         summaries.push({
             evidence,
-            sourceSelectionAmbiguous: true,
-            intervals: { state: 'insufficient_evidence', reason: 'multiple provider recordings lack a deterministic primary selection' },
-            sprints: { state: 'insufficient_evidence', reason: 'multiple provider recordings lack a deterministic primary selection' },
-            decoupling: { state: 'insufficient_evidence', reason: 'multiple provider recordings lack a deterministic primary selection' },
-            efficiency: { state: 'insufficient_evidence', kind: 'ineligible', reason: 'multiple provider recordings lack a deterministic primary selection', rejected: [] },
+            providerSelectionFailure,
+            intervals: { state: 'insufficient_evidence', reason },
+            sprints: { state: 'insufficient_evidence', reason },
+            decoupling: { state: 'insufficient_evidence', reason },
+            efficiency: { state: 'insufficient_evidence', kind: 'ineligible', reason, rejected: [] },
             strength: evidence.structured
                 ? deriveStructuredStrengthProgression(evidence, context.evidence ?? [])
-                : { state: 'insufficient_evidence', reason: 'multiple provider recordings lack a deterministic primary selection' },
+                : { state: 'insufficient_evidence', reason },
         });
     }
 
@@ -457,16 +467,19 @@ export function renderKeySessionSummaries(summaries: readonly KeySessionSummary[
             ...strengthLines(summary.strength, isExplicitStructuredStrengthEvidence(summary.evidence)),
             ...nextDayLines(summary.nextDay),
         );
-        if (summary.sourceSelectionAmbiguous) {
-            lines.push('- Provider response: insufficient evidence — multiple recordings represent this occurrence and no deterministic primary source is available');
+        if (summary.providerSelectionFailure) {
+            lines.push(summary.providerSelectionFailure === 'ambiguous'
+                ? '- Provider response: insufficient evidence — multiple recordings represent this occurrence and no deterministic primary source is available'
+                : '- Provider response: insufficient evidence — provider activity evidence is only partially available');
         }
         if (context.diagnostic) {
             const evidence = summary.evidence;
             if (evidence) {
                 const sources = evidence.measuredSources
                     .map(source => `${source.provider}:${source.activityId}`)
+                    .sort()
                     .slice(0, 8);
-                const sourceKinds = evidence.identity.sourceKinds.slice(0, 8);
+                const sourceKinds = [...evidence.identity.sourceKinds].sort().slice(0, 8);
                 const omittedSources = Math.max(0, evidence.measuredSources.length - sources.length);
                 lines.push(`- Diagnostic provenance: occurrence ${evidence.performedOccurrenceId ?? 'unavailable'}; identity ${evidence.identity.level}; source kinds ${sourceKinds.join(', ') || 'unknown'}; sources ${sources.join(', ') || 'none'}${omittedSources ? `; ${omittedSources} additional sources omitted` : ''}; provider selection ${evidence.sourceCompleteness.providerActivities}`);
             }
