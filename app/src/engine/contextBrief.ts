@@ -621,9 +621,11 @@ function renderGoalsAndIntent(goals: readonly UserGoal[] | undefined, profile: T
 }
 
 /**
- * Renders a compact, paste-ready summary of the athlete's recent training and recovery
- * for an external planner. Deliberately excludes identifiers, raw wearable payloads, and
- * anything not needed to design the next block.
+ * Pure retrospective renderer used by `ContextBriefService.build`.
+ *
+ * This function deliberately excludes identifiers and raw wearable payloads, but it is
+ * not the complete external-coach export boundary: planning/diagnostic handoff sections
+ * and the service-owned generation timestamp are finalized by `ContextBriefService`.
  */
 export function buildContextBrief(input: ContextBriefInput): string {
     const { asOfDate, windowDays } = input;
