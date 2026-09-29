@@ -105,6 +105,10 @@ bounded set facts already available to the context brief. It does not add fields
 activityResponse, synthesize a Garmin activity for structured-only work, or change the
 provider request/persistence contract. Comparability requires the same exercise identity,
 load type and repetitions; provider-recognized exercise names retain a low confidence ceiling.
+Because ADR-0034 assigns exercise/load/repetition authority to a linked structured execution,
+multiple wearable recordings on that occurrence do not make those structured mechanics
+ambiguous. Provider-only strength still fails closed when the provider source needed for the
+mechanical facts is ambiguous, partial or unavailable.
 
 ## Read-side hydration and athlete UI
 
