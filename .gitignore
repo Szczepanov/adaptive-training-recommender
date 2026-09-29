@@ -236,3 +236,6 @@ artifacts/activity-response-preservation*.json
 app/artifacts/*
 # Per-shard emulator configs written (and removed) by app/scripts/run-rules-shard.mjs
 app/.rules-shard-*.firebase.json
+
+# Canopy semantic index is generated, mutable developer-local state.
+.canopy/
