@@ -186,8 +186,16 @@ That is blunt. `scaling` lets the plan's author say how their own session should
 does not.
 
 This is the external equivalent of the catalog's authored `easierDose`/`harderDose`
-`DoseVariation`, and it is what turns a `scale` verdict from a multiplier into a real
-prescription.
+`DoseVariation`, and it is what turns a `scale` verdict from a multiplier into an
+athlete-facing reduced prescription.
+
+For `external-plan@2`–`@4`, however, `reducedSummary` and `reducedDurationMin` do **not**
+constitute a second executable `SessionDefinition`. The runner must not parse free text into
+steps, and it must not bind the original full-dose definition under a reduced verdict. Today,
+Home therefore shows the adjudicated reduced summary/dose but withholds structured **Start**
+for `scale`. Executable scaled imports require a future versioned schema/ADR that carries the
+reduced structured definition explicitly; `proceed` remains executable from the imported
+definition as written.
 
 `minimumUsefulDurationMin` is the floor below which the session stops being worth doing —
 under it, the verdict becomes `defer` or `skip` rather than a pointless fragment.

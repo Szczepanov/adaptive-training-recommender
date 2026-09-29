@@ -40,6 +40,16 @@ export function ExternalVerdictBanner({ prescription, verdict }: ExternalVerdict
         ? null
         : gateSentence(verdict.gateFailures);
     const steps = prescription.prescription.steps ?? [];
+    const scalePercent = verdict.decision === 'scale' && verdict.executionDose
+        ? Math.round(verdict.executionDose.volume * 100)
+        : null;
+    const displayedSummary = verdict.decision === 'scale'
+        ? verdict.scaledSummary
+            ?? (scalePercent !== null
+                ? `Keep the session intent, but cap total volume at ${scalePercent}% of the written dose.`
+                : 'Keep the session intent, but use only the reduced volume cleared for today.')
+        : prescription.prescription.summary;
+    const showAuthoredSteps = verdict.decision !== 'scale' && steps.length > 0;
 
     return (
         <section className={`external-verdict verdict-${verdict.decision}`} aria-label="Imported plan session">
@@ -61,13 +71,9 @@ export function ExternalVerdictBanner({ prescription, verdict }: ExternalVerdict
 
             {actionable ? (
                 <div className="external-prescription">
-                    <h5>{verdict.decision === 'scale' && verdict.scaledSummary ? 'Reduced version, as your plan wrote it' : 'As your plan wrote it'}</h5>
-                    <p className="external-prescription-summary">
-                        {verdict.decision === 'scale' && verdict.scaledSummary
-                            ? verdict.scaledSummary
-                            : prescription.prescription.summary}
-                    </p>
-                    {steps.length > 0 && (
+                    <h5>{verdict.decision === 'scale' && verdict.scaledSummary ? 'Reduced version, as your plan wrote it' : verdict.decision === 'scale' ? 'Reduced volume for today' : 'As your plan wrote it'}</h5>
+                    <p className="external-prescription-summary">{displayedSummary}</p>
+                    {showAuthoredSteps && (
                         <ol className="external-prescription-steps">
                             {steps.map((step, index) => (
                                 <li key={`${step.name}-${index}`}>
@@ -82,6 +88,13 @@ export function ExternalVerdictBanner({ prescription, verdict }: ExternalVerdict
                     {verdict.executionDose && verdict.executionDose.volume < 1 && (
                         <p className="external-prescription-dose">
                             Today&apos;s ceiling puts this at {Math.round(verdict.executionDose.volume * 100)}% of the written volume.
+                        </p>
+                    )}
+                    {verdict.decision === 'scale' && (
+                        <p className="external-prescription-dose">
+                            Start is unavailable for this reduced form because the imported plan does not include
+                            executable reduced steps. The app will not launch the original full-dose steps under a
+                            reduced verdict.
                         </p>
                     )}
                 </div>

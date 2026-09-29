@@ -7,9 +7,12 @@ import type { Page } from '@playwright/test';
 import { getLocalDateString } from '../../../src/utils/localDate';
 
 export const E2E_PROJECT_ID = 'demo-adaptive-training-e2e';
-const EMULATOR_HOST = '127.0.0.1';
-const AUTH_EMULATOR_URL = `http://${EMULATOR_HOST}:9099`;
-const FIRESTORE_EMULATOR_PORT = 8080;
+export const E2E_EMULATOR_HOST = process.env.E2E_EMULATOR_HOST ?? '127.0.0.1';
+export const E2E_AUTH_PORT = Number(process.env.E2E_AUTH_PORT ?? 9099);
+export const E2E_FIRESTORE_PORT = Number(process.env.E2E_FIRESTORE_PORT ?? 8080);
+const EMULATOR_HOST = E2E_EMULATOR_HOST;
+const AUTH_EMULATOR_URL = `http://${EMULATOR_HOST}:${E2E_AUTH_PORT}`;
+const FIRESTORE_EMULATOR_PORT = E2E_FIRESTORE_PORT;
 const password = 'E2ePassword!42';
 
 const firebaseConfig = {
@@ -62,7 +65,10 @@ export async function provisionAthlete(): Promise<E2EAthlete> {
   return { email, password, userId: created.localId };
 }
 
-export async function seedRecoverySnapshot(athlete: E2EAthlete): Promise<string> {
+export async function seedRecoverySnapshot(
+  athlete: E2EAthlete,
+  overrides: Partial<{ sleepScore: number; bodyBatteryWake: number; hrvOvernightAvg: number; restingHr: number }> = {},
+): Promise<string> {
   const date = getLocalDateString();
   const environment = await initializeTestEnvironment({
     projectId: E2E_PROJECT_ID,
@@ -76,13 +82,13 @@ export async function seedRecoverySnapshot(athlete: E2EAthlete): Promise<string>
         date,
         source: { garminSyncedAt: `${date}T06:00:00.000Z`, sourceSchemaVersion: 3 },
         raw: {
-          sleepScore: 85,
+          sleepScore: overrides.sleepScore ?? 85,
           sleepDurationSec: 28_800,
-          restingHr: 50,
-          hrvOvernightAvg: 65,
+          restingHr: overrides.restingHr ?? 50,
+          hrvOvernightAvg: overrides.hrvOvernightAvg ?? 65,
           hrvStatus: 'BALANCED',
           respirationAvg: 14,
-          bodyBatteryWake: 90,
+          bodyBatteryWake: overrides.bodyBatteryWake ?? 90,
           bodyBatteryChange: 50,
           totalSteps: 8_000,
           last3DaysHardSessionsCount: 1,
