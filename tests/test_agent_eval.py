@@ -35,6 +35,22 @@ def test_context7_routing_corpus_is_balanced() -> None:
     assert "not_expected" in expectations
 
 
+def test_semantic_navigation_routing_corpus_has_required_and_negative_cases() -> None:
+    corpus = load_and_validate_corpus()
+
+    expectations: dict[str, set[str]] = {"canopy": set(), "jev": set()}
+    for case in corpus["cases"]:
+        for tool in case["tool_expectations"]:
+            capability = tool["capability"]
+            if capability in expectations:
+                expectations[capability].add(tool["expectation"])
+
+    assert "required" in expectations["canopy"]
+    assert "not_expected" in expectations["canopy"]
+    assert "required" in expectations["jev"]
+    assert "not_expected" in expectations["jev"]
+
+
 def test_result_template_round_trips_validation() -> None:
     corpus = load_and_validate_corpus()
     result = create_result_template(
