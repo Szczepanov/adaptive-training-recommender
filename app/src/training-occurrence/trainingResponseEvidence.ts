@@ -22,6 +22,8 @@ export interface TrainingResponseSessionEvidence {
         reconciliationStatus?: ReconciliationStatus;
         sourceKinds: PerformedOccurrenceSourceKind[];
     };
+    /** Canonical occurrence linkage survives even when structured execution hydration is unavailable. */
+    structuredSourceRef?: StructuredExecutionSourceRef;
     structured?: {
         sourceRef: StructuredExecutionSourceRef;
         executionId: string;
@@ -165,6 +167,7 @@ export async function getTrainingResponseEvidenceInRange(
                 reconciliationStatus: occurrence.reconciliation.state,
                 sourceKinds: [...new Set(occurrence.sourceRefs.map(ref => ref.kind))],
             },
+            ...(structuredRef ? { structuredSourceRef: structuredRef } : {}),
             ...(structured ? { structured } : {}),
             measuredSources,
             sourceCompleteness: {
