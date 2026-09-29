@@ -285,6 +285,20 @@ function renderRawActivityTable(activities: readonly NormalizedGarminActivity[])
     return lines;
 }
 
+function summarizeRawActivityDuration(activities: readonly NormalizedGarminActivity[]): string {
+    let knownMinutes = 0;
+    let knownCount = 0;
+    for (const activity of activities) {
+        if (activity.durationMin === null || activity.durationMin === undefined) continue;
+        knownMinutes += activity.durationMin;
+        knownCount += 1;
+    }
+    const unknownCount = activities.length - knownCount;
+    if (unknownCount === 0) return `${knownMinutes} min`;
+    const unknownLabel = `${unknownCount} session${unknownCount === 1 ? '' : 's'} with duration unknown`;
+    return knownCount > 0 ? `${knownMinutes} known min · ${unknownLabel}` : unknownLabel;
+}
+
 function summarizeCanonicalDuration(facts: readonly PerformedExposureFact[]): string {
     let knownMinutes = 0;
     let knownCount = 0;
@@ -429,11 +443,9 @@ function renderTraining(
 
     lines.push(...renderRawActivityTable(activities));
 
-    let totalMinutes = 0;
     let hardCount = 0;
     let highCostCount = 0;
     for (const activity of activities) {
-        totalMinutes += activity.durationMin ?? 0;
         if (activity.intensityTag === 'hard') hardCount++;
         if (activity.sessionCost === 'high' || activity.sessionCost === 'very_high') highCostCount++;
     }
@@ -441,18 +453,31 @@ function renderTraining(
     // Issue #809: "tagged hard" counts high-intensity stimulus only; costly aerobic sessions
     // are reported separately so dose is not read as intensity.
     const costSuffix = highCostCount > 0 ? ` · ${highCostCount} high session cost` : '';
-    lines.push(`Totals: ${activities.length} sessions · ${totalMinutes} min · ${hardCount} tagged hard${costSuffix}.`);
+    lines.push(`Totals: ${activities.length} sessions · ${summarizeRawActivityDuration(activities)} · ${hardCount} tagged hard${costSuffix}.`);
 
-    const modalityMinutes: Record<string, { sessions: number; minutes: number }> = {};
+    const modalityMinutes: Record<string, { sessions: number; knownMinutes: number; knownDurations: number }> = {};
     for (const act of activities) {
         const label = formatActivityType(act.type);
-        if (!modalityMinutes[label]) modalityMinutes[label] = { sessions: 0, minutes: 0 };
+        if (!modalityMinutes[label]) {
+            modalityMinutes[label] = { sessions: 0, knownMinutes: 0, knownDurations: 0 };
+        }
         modalityMinutes[label].sessions += 1;
-        modalityMinutes[label].minutes += act.durationMin ?? 0;
+        if (act.durationMin !== null && act.durationMin !== undefined) {
+            modalityMinutes[label].knownMinutes += act.durationMin;
+            modalityMinutes[label].knownDurations += 1;
+        }
     }
     const breakdown = Object.entries(modalityMinutes)
-        .sort((a, b) => b[1].minutes - a[1].minutes)
-        .map(([sport, stat]) => `${sport}: ${stat.sessions} session${stat.sessions === 1 ? '' : 's'} (${stat.minutes} min)`)
+        .sort((a, b) => b[1].knownMinutes - a[1].knownMinutes || b[1].sessions - a[1].sessions || a[0].localeCompare(b[0]))
+        .map(([sport, stat]) => {
+            const unknown = stat.sessions - stat.knownDurations;
+            const duration = unknown === 0
+                ? `${stat.knownMinutes} min`
+                : stat.knownDurations > 0
+                    ? `${stat.knownMinutes} known min; ${unknown} duration unknown`
+                    : 'duration unknown';
+            return `${sport}: ${stat.sessions} session${stat.sessions === 1 ? '' : 's'} (${duration})`;
+        })
         .join(' · ');
     if (breakdown) {
         lines.push(`Discipline volume: ${breakdown}`);
@@ -469,15 +494,13 @@ function renderTraining(
         const rawStart = addDaysToLocalDateString(bucketEnd, -6);
         const bucketStart = rawStart < windowStart ? windowStart : rawStart;
         const inBucket = activities.filter(activity => withinWindow(activity.date, bucketStart, bucketEnd));
-        let minutes = 0;
         let hard = 0;
         for (const activity of inBucket) {
-            minutes += activity.durationMin ?? 0;
             if (activity.intensityTag === 'hard') hard++;
         }
         const dayCount = getDayDiff(bucketEnd, bucketStart) + 1;
         const span = dayCount === 7 ? '' : ` (${dayCount} days)`;
-        lines.push(`- ${bucketStart} → ${bucketEnd}${span}: ${inBucket.length} sessions · ${minutes} min · ${hard} hard`);
+        lines.push(`- ${bucketStart} → ${bucketEnd}${span}: ${inBucket.length} sessions · ${summarizeRawActivityDuration(inBucket)} · ${hard} hard`);
     }
     return lines;
 }
