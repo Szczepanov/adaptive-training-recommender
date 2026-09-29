@@ -297,7 +297,7 @@ def test_probe_nutrition_cmd(
         "totalKilocalories": 2500.0,
     }
 
-    monkeypatch.setattr("garmin_sync.garmin_client.GarminClientWrapper", lambda **kw: mock_wrapper)
+    monkeypatch.setattr("garmin_sync.garmin_client.GarminClientWrapper", lambda **_kw: mock_wrapper)
     monkeypatch.setattr(
         "garmin_sync.garmin_provider.GarminProviderAdapter", lambda client: mock_adapter
     )
