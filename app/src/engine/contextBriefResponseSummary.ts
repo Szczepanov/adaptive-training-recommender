@@ -86,13 +86,18 @@ function authoredProtocolFamily(session: TrainingResponseSessionEvidence): strin
     ]);
 }
 
+function isStructuredStrengthEvidence(
+    evidence: TrainingResponseSessionEvidence | undefined,
+): evidence is TrainingResponseSessionEvidence {
+    return evidence?.identity.sourceKinds.includes('structured_execution') === true
+        && normalizeModality(evidence.modality) === 'Strength';
+}
+
 /** Key: a feature is available, or the session is steady-eligible but had no comparable
  * prior session (its rejection reasons are worth stating). */
 function isKey(summary: Omit<KeySessionSummary, 'nextDay'>): boolean {
     return hasAvailableFeature(summary)
-        || (summary.evidence?.identity.sourceKinds.includes('structured_execution') === true
-            && normalizeModality(summary.evidence.modality) === 'Strength'
-            && summary.strength.state === 'insufficient_evidence')
+        || (isStructuredStrengthEvidence(summary.evidence) && summary.strength.state === 'insufficient_evidence')
         || (summary.efficiency.state === 'insufficient_evidence' && summary.efficiency.kind === 'no_comparable');
 }
 
@@ -145,8 +150,7 @@ export function deriveKeySessionSummaries(
     const windowStart = context.windowStart ?? windowActivities.map(item => item.date).sort()[0];
     const windowEnd = context.windowEnd ?? windowActivities.map(item => item.date).sort().at(-1);
     const structuredOnly = (context.evidence ?? []).filter(session =>
-        session.identity.sourceKinds.includes('structured_execution')
-        && normalizeModality(session.modality) === 'Strength'
+        isStructuredStrengthEvidence(session)
         && (!windowStart || session.localDate >= windowStart)
         && (!windowEnd || session.localDate <= windowEnd)
         && !session.measuredSources.some(source => source.provider.toLowerCase() === 'garmin'
@@ -308,7 +312,8 @@ function strengthLines(feature: StrengthProgression, showInsufficient: boolean):
         const prior = exercise.prior
             ? ` (prior ${exercise.prior.date}: ${topSetText(exercise.prior)}; ${strengthDecisionText(exercise.prior.decision)}${exercise.prior.comparison === 'like-for-like' ? '' : `; not like-for-like: ${exercise.prior.comparison}`})`
             : ' (no prior session with this exercise in the fetched history)';
-        return `- Strength ${exercise.exercise}: ${exercise.identitySource} · ${exercise.workingSets} working sets · top ${topSetText(exercise)}${prior}`;
+        const setCount = `${exercise.workingSets} working ${exercise.workingSets === 1 ? 'set' : 'sets'}`;
+        return `- Strength ${exercise.exercise}: ${exercise.identitySource} · ${setCount} · top ${topSetText(exercise)}${prior}`;
     });
     if (feature.exercises.length > lines.length) lines.push(`- ${feature.exercises.length - lines.length} additional exercises omitted`);
     return lines;
@@ -354,7 +359,8 @@ function headerLine(activity: NormalizedGarminActivity): string {
 }
 
 function structuredHeaderLine(evidence: TrainingResponseSessionEvidence): string {
-    return `#### ${evidence.localDate} — ${evidence.modality || 'Strength'} — structured execution`;
+    const modality = normalizeModality(evidence.modality);
+    return `#### ${evidence.localDate} — ${modality === 'Unknown' ? evidence.modality || 'Strength' : modality} — structured execution`;
 }
 
 function powerLine(activity: NormalizedGarminActivity): string[] {
@@ -382,8 +388,7 @@ export function renderKeySessionSummaries(summaries: readonly KeySessionSummary[
             ...sprintLines(summary.sprints),
             ...decouplingLines(summary.decoupling),
             ...efficiencyLines(summary.efficiency),
-            ...strengthLines(summary.strength, summary.evidence?.identity.sourceKinds.includes('structured_execution') === true
-                && normalizeModality(summary.evidence.modality) === 'Strength'),
+            ...strengthLines(summary.strength, isStructuredStrengthEvidence(summary.evidence)),
             ...nextDayLines(summary.nextDay),
         );
     }

@@ -429,10 +429,13 @@ describe('strength progression (#814)', () => {
             activityId: 'not-loaded-prior', occurrenceId: 'structured-prior', localDate: '2026-09-11',
             executionId: 'exec-prior', performedExerciseId: 'front_squat', reps: 5, weightKg: 77.5,
         });
-        const current = structuredStrengthEvidence({
-            activityId: 'not-loaded-current', occurrenceId: 'structured-current', localDate: '2026-09-18',
-            executionId: 'exec-current', performedExerciseId: 'front_squat', reps: 5, weightKg: 80,
-        });
+        const current: TrainingResponseSessionEvidence = {
+            ...structuredStrengthEvidence({
+                activityId: 'not-loaded-current', occurrenceId: 'structured-current', localDate: '2026-09-18',
+                executionId: 'exec-current', performedExerciseId: 'front_squat', reps: 5, weightKg: 80,
+            }),
+            modality: 'strength_training',
+        };
         const nextDay = {
             ...checkin('2026-09-19', 4, 5),
             tissueResponses: {
@@ -451,7 +454,7 @@ describe('strength progression (#814)', () => {
         const text = renderKeySessionSummaries(summaries, context);
         expect(summaries).toHaveLength(1);
         expect(text).toContain('2026-09-18 — Strength — structured execution');
-        expect(text).toContain('Strength front_squat: Adaptive structured identity · 1 working sets · top 80 kg × 5');
+        expect(text).toContain('Strength front_squat: Adaptive structured identity · 1 working set · top 80 kg × 5');
         expect(text).toContain('prior 2026-09-11: 77.5 kg × 5; comparison comparable via canonical exercise identity; moderate confidence');
         expect(text).toContain('Next morning (observational, not proof the session caused it)');
         expect(text).toContain('right_knee moderate (linked to this session)');
