@@ -374,7 +374,9 @@ function executionEvidence(
     localDate: string,
     executionId: string,
     extraActivityIds: readonly string[] = [],
+    structuredAvailable = true,
 ): TrainingResponseSessionEvidence {
+    const structuredSourceRef = { kind: 'structured_execution' as const, executionId };
     return {
         performedOccurrenceId: occurrenceId,
         localDate,
@@ -384,12 +386,13 @@ function executionEvidence(
             reconciliationStatus: 'matched',
             sourceKinds: ['structured_execution', 'provider_activity'],
         },
-        structured: {
-            sourceRef: { kind: 'structured_execution', executionId },
+        structuredSourceRef,
+        ...(structuredAvailable ? { structured: {
+            sourceRef: structuredSourceRef,
             executionId,
-            sessionSource: { kind: 'catalog', workoutId: 'cycling-fixture', catalogVersion: 'v1' },
+            sessionSource: { kind: 'catalog' as const, workoutId: 'cycling-fixture', catalogVersion: 'v1' },
             steps: [],
-        },
+        } } : {}),
         measuredSources: [activityId, ...extraActivityIds].map(id => ({
             sourceRef: { kind: 'provider_activity' as const, provider: 'garmin', activityId: id },
             provider: 'garmin',
@@ -397,8 +400,8 @@ function executionEvidence(
         })),
         sourceCompleteness: {
             occurrenceRead: 'available',
-            structuredExecution: 'available',
-            providerActivities: 'available',
+            structuredExecution: structuredAvailable ? 'available' : 'unavailable',
+            providerActivities: extraActivityIds.length > 0 ? 'ambiguous' : 'available',
         },
     };
 }
@@ -442,6 +445,37 @@ describe('strength progression (#814)', () => {
                 topReps: 5,
                 prior: { date: '2026-09-11', topWeightKg: 75, topReps: 5, comparison: 'like-for-like' },
             }],
+        });
+    });
+
+    it('selects a same-rep prior working set even when a heavier different-rep set exists', () => {
+        const current = lift('now-structured', '2026-09-18', 82.5);
+        const prior = lift('prior-structured', '2026-09-11', 90);
+        const currentEvidence = structuredStrengthEvidence({
+            activityId: current.activityId, occurrenceId: 'pto-now', localDate: '2026-09-18',
+            executionId: 'exec-now', performedExerciseId: 'front_squat', reps: 5, weightKg: 82.5,
+        });
+        const priorEvidence = structuredStrengthEvidence({
+            activityId: prior.activityId, occurrenceId: 'pto-prior', localDate: '2026-09-11',
+            executionId: 'exec-prior', performedExerciseId: 'front_squat', reps: 3, weightKg: 90,
+        });
+        if (!priorEvidence.structured) throw new Error('fixture requires structured evidence');
+        priorEvidence.structured.steps[0].sets.push({
+            entryId: 'pto-prior-work-5',
+            setNumber: 2,
+            isWarmup: false,
+            completedAt: '2026-09-11T07:15:00Z',
+            payload: { kind: 'repetition', setIndex: 1, reps: 5, weightKg: 80 },
+            exerciseRef: { kind: 'catalog', exerciseId: 'front_squat' },
+        });
+        const feature = deriveStrengthProgression(current, [prior], new Map([
+            [current.activityId, currentEvidence],
+            [prior.activityId, priorEvidence],
+        ]));
+        expect(feature.state).toBe('available');
+        if (feature.state !== 'available') return;
+        expect(feature.exercises[0].prior).toEqual({
+            date: '2026-09-11', topWeightKg: 80, topReps: 5, comparison: 'like-for-like',
         });
     });
 
@@ -571,6 +605,32 @@ describe('next-day response (#814)', () => {
         expect(text).toContain('right_knee moderate (linked to this session)');
         expect(text).toContain('right_achilles mild (not linked to this session)');
         expect(text).not.toContain('left_knee');
+    });
+
+    it('links an execution source ref even when structured execution hydration is unavailable', () => {
+        const adjacent = { ...session, activityId: 'unavailable-structured', date: '2026-09-17' };
+        const currentEvidence = executionEvidence(
+            adjacent.activityId, 'pto-unavailable', '2026-09-18', 'exec-linked', [], false,
+        );
+        const next = {
+            ...checkin('2026-09-19', 4, 4),
+            tissueResponses: {
+                right_knee: {
+                    region: 'right_knee', morningState: 'mild', nextMorningReaction: 'mild',
+                    sourceSessionRef: { kind: 'execution', id: 'exec-linked', date: '2026-09-18' },
+                },
+            },
+        } as unknown as DailySubjectiveCheckin;
+        const response = deriveNextDayResponse(
+            adjacent,
+            { records: [next], unreadableDates: [] },
+            [adjacent],
+            '2026-09-20',
+            [currentEvidence],
+        );
+        expect(response.state === 'available' && response.tissueResponses).toEqual([
+            { region: 'right_knee', reaction: 'mild', linkedToSession: true },
+        ]);
     });
 
     it('distinguishes an unreadable check-in history from a missing check-in', () => {
