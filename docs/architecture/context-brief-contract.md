@@ -25,6 +25,19 @@ The engine renderers stay pure:
 
 Pure builders may omit `generatedAt` in unit tests. A service-level export may not.
 
+### File/transport envelopes
+
+Markdown export is the canonical rendered contract. JSON export is a transport envelope around
+that same Markdown and has its own, separate schema version:
+
+- `CONTEXT_BRIEF_CONTRACT_VERSION` versions the semantic Context Brief contract;
+- `CONTEXT_BRIEF_EXPORT_SCHEMA_VERSION` versions the JSON wrapper shape.
+
+JSON transport schema `context_brief_export_v2` exposes `contractVersion` explicitly at the
+top level as well as inside the Markdown content. This prevents a JSON consumer from confusing
+transport-envelope versioning with Context Brief semantic versioning. The v1 → v2 bump is an
+explicit schema decision because the envelope gained a required semantic-contract field.
+
 ## Purpose mapping
 
 The existing UI presets remain compatibility names with one semantic purpose each:
