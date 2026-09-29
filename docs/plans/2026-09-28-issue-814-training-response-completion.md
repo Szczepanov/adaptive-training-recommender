@@ -6,7 +6,7 @@
 | **Source** | [Issue #814](https://github.com/Szczepanov/adaptive-training-recommender/issues/814) and [2026-09-28 completion analysis](../analysis/2026-09-28-issue-814-training-response-completion-analysis.md) |
 | **Baseline** | fresh managed worktree at fetched `origin/main` `2ec78e5444e6c0b329707294cf6a46cbd7368b1f`; includes #907 (`56b38e1`, merged) and subsequent main commits |
 | **Baseline reconciliation** | The requested `56b38e1` was no longer the fetched `origin/main` tip when this continuation started; `origin/main` had advanced to `2ec78e5`. This work uses the newer tip, including #907 and commits after it. |
-| **Blocked by** | No blocker for WP0–WP5. WP6 environmental enrichment is conditional on the source audit proving stable already-acquired provider fields. Individual work-item dependencies are listed below. |
+| **Blocked by** | WP3 lacks a deterministic execution-to-response-segment alignment contract. WP6.4 lacks stable retained running-context fields plus compatible running HR-use authority. WP7 still lacks deterministic provider occurrence selection/provenance. WP8 closure depends on those remaining work packages. |
 | **Unlocks** | Closure of #814; a clean evidence surface for future adaptation/progression research. It does **not** itself unlock recommendation authority. |
 | **Policy effect** | None. All work in this plan remains display/observability context. POLICY_VERSION must not change unless scope is explicitly widened in a separately reviewed policy change. |
 
