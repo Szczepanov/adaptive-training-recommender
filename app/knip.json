@@ -3,8 +3,6 @@
   "entry": [
     "src/main.tsx",
     "src/visual/main.tsx",
-    "scripts/**/*.mjs",
-    "scripts/**/*.ts",
     ".dependency-cruiser.cjs",
     "src/engine/simulation/blindComparison.ts",
     "src/engine/simulation/runForecastDailyParity.mjs"

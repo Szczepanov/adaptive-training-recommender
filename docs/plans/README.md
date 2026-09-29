@@ -287,7 +287,7 @@ an independent task board.
 - [Execution-binding pipeline](./h4-external-plan-execution-binding-pipeline.md) — PR 1 implemented in PR #440, PR 2 in PR #445.
 - [PR 3 Phase 3 handover](./h4-434-pr3-phase3-handover.md) — **Superseded**; Phase 3 is delivered.
 
-**Other completed slices (status as stated; no live work):**
+**Other historical slices/logs (status owner is the cited plan/README row; no independent live work):**
 
 - [SKR3 completion](./2026-09-02-skr3-completion-plan.md) — **Implemented**; remaining training-policy migration is complete.
 - [SKR4 athlete-evidence boundary](./2026-09-02-skr4-athlete-evidence-boundary.md) — foundation implemented; production persistence/composition and outcome calibration deferred.
