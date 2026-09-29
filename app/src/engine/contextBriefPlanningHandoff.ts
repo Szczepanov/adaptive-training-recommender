@@ -41,8 +41,6 @@ import {
 import { renderSensorEvidence } from './contextBriefSensorEvidence';
 import { synthesizeRecoveryEvidence } from './contextBriefRecoverySynthesis';
 import { briefContractHeaderLines } from './contextBriefContract';
-import { SENSOR_OBSERVATION_HORIZON_DAYS } from './contextBriefSensorEvidence';
-import { SUBJECTIVE_BASELINE_DAYS } from './contextBrief';
 
 export const UPCOMING_CONTEXT_DAYS = 7;
 export const RECOVERY_TIMELINE_DAYS = 7;
@@ -642,9 +640,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
             purpose: 'morning',
             asOfDate: targetDate,
             windowDays: 2,
-            subjectiveBaselineDays: SUBJECTIVE_BASELINE_DAYS,
             recoveryTimelineDays: RECOVERY_TIMELINE_DAYS,
-            sensorHorizonDays: SENSOR_OBSERVATION_HORIZON_DAYS,
             ...(input.generatedAt ? { generatedAt: input.generatedAt } : {}),
         }),
         '',
