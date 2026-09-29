@@ -443,7 +443,7 @@ Pick the cheapest tool that answers the actual question:
 1. **Exact lookup:** when a symbol, string, error, path, configuration key, or other repository
    vocabulary is known, use text search (`Grep`/`rg`) and direct reads. This remains the default
    for literals, docs, YAML/JSON, generated files, and exact callers.
-2. **Unknown repository vocabulary/location:** for a non-trivial task, make one read-only
+2. **Unknown repository vocabulary/location:** for a non-trivial task, make one query-only
    `python scripts/agent_canopy.py search "<behavior>"` attempt before broad lexical exploration.
    The wrapper locates the maintained main-checkout index and never provisions/mutates it. Exit code
    3 / `CANOPY_UNAVAILABLE` means fall back immediately. Treat hits as candidates and verify them
@@ -478,19 +478,21 @@ python scripts/agent_canopy.py status
 ```
 
 The wrapper discovers a maintained main/master checkout (or
-`AGENT_CANOPY_BASELINE_WORKTREE` / `--baseline-worktree` override) and exposes only read-only
+`AGENT_CANOPY_BASELINE_WORKTREE` / `--baseline-worktree` override) and exposes only query/non-maintenance
 Canopy commands. `CANOPY_UNAVAILABLE` / exit code 3 is a routing signal to fall back, not a setup
 failure to repair.
 
 - Do not run `canopy init`, `canopy reindex`, switch/pull embedding models, or rebuild an index
-  because a temporary worktree lacks `.canopy/`; use the read-only wrapper and fall back if it is unavailable.
+  because a temporary worktree lacks `.canopy/`; use the query-only wrapper and fall back if it is unavailable.
 - Do not mutate a shared index with `canopy index` from a temporary worktree. A persistent
   primary/main checkout may maintain its own index through an explicit developer/tool-maintenance
   workflow.
-- The read-only wrapper exposes the maintained persistent-main index as baseline-main discovery when
+- The query-only wrapper exposes the maintained persistent-main index as baseline-main discovery when
   such an index exists. Verify all located behavior against the current branch/worktree before
   editing or concluding.
-- Never share one writable `.canopy/` directory across concurrent worktrees.
+- Never share one writable `.canopy/` directory across concurrent worktrees. The wrapper
+  serializes query consumers because upstream Canopy opens the redb store through a write-capable
+  initialization path even for query commands; explicit index maintenance must not overlap them.
 - Missing Canopy is a normal fallback condition, not a reason to substitute a smaller embedding
   model. Qwen3-Embedding-4B remains the evaluated baseline; smaller models belong in explicit
   retrieval benchmarks.

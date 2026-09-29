@@ -16,7 +16,7 @@ unavailable.
 1. **Exact vocabulary known** — use `rg`/Grep and direct reads for symbols, strings, errors, paths,
    configuration keys and exact callers. Do not use semantic retrieval to rediscover a known name.
 2. **Behavior known, repository vocabulary/location unknown** — for a non-trivial task, make one
-   read-only baseline discovery attempt with
+   query-only baseline discovery attempt with
    `python scripts/agent_canopy.py search "<behavior>"` **before a broad lexical sweep**. The
    wrapper discovers the maintained main-checkout index and never provisions or mutates it. Exit
    code 3 / `CANOPY_UNAVAILABLE` means fall back immediately without troubleshooting Canopy. Treat
@@ -63,7 +63,7 @@ B and C and combine the verified results yourself.
 Use Canopy primarily for **local vocabulary-gap discovery**: natural-language behavior → likely
 implementation files/symbols.
 
-The repository-owned entry point for agents is the **read-only worktree bridge**:
+The repository-owned entry point for agents is the **query-only worktree bridge**:
 
 ```bash
 python scripts/agent_canopy.py search "where is this behavior implemented?"
@@ -72,9 +72,12 @@ python scripts/agent_canopy.py trace Caller Callee
 ```
 
 The wrapper locates the checked-out `main`/`master` worktree (or
-`AGENT_CANOPY_BASELINE_WORKTREE` / `--baseline-worktree` override), requires an already-built
-`.canopy/` index there, and exposes only read-only Canopy commands. It never initializes,
-indexes, reindexes, pulls a model, or changes configuration. `CANOPY_UNAVAILABLE` with exit code 3
+`AGENT_CANOPY_BASELINE_WORKTREE` / `--baseline-worktree` override), requires a complete already-built
+`.canopy/` index there, and exposes only query/non-maintenance Canopy commands. It never
+initializes, indexes, reindexes, pulls a model, or changes configuration. The wrapper serializes
+its consumers because upstream Canopy opens its redb store through a write-capable initialization
+path even for query commands; query-only describes the allowed CLI surface, not filesystem
+immutability. `CANOPY_UNAVAILABLE` with exit code 3
 means **fall back; do not repair/provision Canopy during the task**.
 
 - Prefer the wrapper's `search` command when you do not know the repository's symbol vocabulary; do not call raw Canopy from a temporary worktree.
@@ -110,7 +113,8 @@ Normal issue/PR agents **consume an existing index; they do not provision one**.
   client/environment exposes that checkout as a shared semantic-search baseline, agents may query it
   for **baseline-main discovery** without copying its mutable index into their worktree.
 - Never symlink or otherwise share one writable `.canopy/` store among concurrent worktrees. The
-  index/store and indexed-SHA state are mutable and must have one maintenance owner.
+  index/store and indexed-SHA state are mutable and must have one maintenance owner. Wrapper-based
+  query consumers are serialized; explicit index maintenance must not overlap those queries.
 - A shared main index is not branch-current evidence. After it locates likely files/symbols, verify
   the current worktree with `rg`, direct reads, callers/tests, compiler output, and normal
   verification before relying on behavior.

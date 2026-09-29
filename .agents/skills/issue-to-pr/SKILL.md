@@ -83,7 +83,7 @@ Follow the `docs/README.md` precedence: **code wins, then `architecture/`, then 
 - Locate affected modules using the `AGENTS.md` package-architecture map (`src/garmin_sync/`, `app/src/engine/`, `app/src/sessions/`, `app/src/responses/`, `app/src/observations/`, `app/src/outcomes/`, `app/src/knowledge/` — directory wins over the map).
 - Follow `.agents/skills/semantic-code-discovery/SKILL.md` with an explicit discovery budget:
   exact identifiers/strings use `rg`; if a non-trivial issue does **not** provide the implementation
-  vocabulary/location, make one read-only
+  vocabulary/location, make one query-only
   `python scripts/agent_canopy.py search "<behavior>"` attempt before broad lexical exploration.
   Exit code 3 / `CANOPY_UNAVAILABLE` means fall back immediately—never initialize/reindex Canopy
   during the issue. If Canopy remains ambiguous, one scoped `jev find` is the second opinion.
