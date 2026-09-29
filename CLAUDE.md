@@ -64,7 +64,7 @@ when it affects confidence. See
   an atomic semantic property would otherwise require a broad/large read or multi-file scan and
   `jev` is available, use a narrowly scoped `jev ask`. Use `jev find` only when repository
   vocabulary/location is genuinely unknown. Treat Jev output as candidate evidence and read the
-  cited source before changing code. For
+  cited line/window plus only the surrounding source needed to verify it before changing code. For
   type-level ripple, run the compiler (`cd app && npx tsc -b`, `uv run mypy`). See
   [`AGENTS.md` § Code navigation](./AGENTS.md#code-navigation) and
   [`docs/standards/agent-tooling.md`](./docs/standards/agent-tooling.md).

@@ -18,7 +18,7 @@ design skill. Jev is optional: never block work because it is unavailable.
    scanning multiple files and `jev` is available, use `jev ask` against the implementation file
    or smallest relevant subsystem.
 3. **Behavior known, repository vocabulary/location unknown** — use a tightly scoped `jev find`
-   as a discovery hint, then verify the returned source.
+   as a discovery hint, then verify the returned line/window in source.
 4. **Type/signature ripple** — use the compiler (`cd app && npx tsc -b`, `uv run mypy`) as the
    authoritative impact list.
 5. **External library/API behavior** — use the `external-library-docs` skill / Context7 instead.
@@ -56,7 +56,8 @@ Jev probabilities and rankings are not source authority.
 
 After a Jev result:
 
-1. Open/read the cited source.
+1. Read the cited line/window and enough surrounding source to verify the claim; do not automatically
+   re-read the entire large file.
 2. Verify important callers, tests, and exact strings with normal repository tools.
 3. Use the compiler for type/signature impact.
 4. For high-impact changes, rely on deterministic tests/verification rather than a semantic score.

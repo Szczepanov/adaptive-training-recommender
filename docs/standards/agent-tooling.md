@@ -90,8 +90,9 @@ Route repository questions by evidence shape:
   a known symbol.
 - For `jev find`, start with the smallest plausible subsystem. The CLI's file-count guard is a
   useful signal to narrow the search; do not raise `--max-files` merely to bypass that guard.
-- Jev probabilities/rankings are evidence, not proof. Open the cited source and verify important
-  conclusions with exact callers/tests/compiler output as appropriate.
+- Jev probabilities/rankings are evidence, not proof. Read the cited line/window and only the
+  surrounding source needed to verify it; do not automatically re-read the whole large file. Verify
+  important conclusions with exact callers/tests/compiler output as appropriate.
 - A failed or low-confidence Jev search must not become an absence proof unless the source/test
   evidence independently supports absence.
 

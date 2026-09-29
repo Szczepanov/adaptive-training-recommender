@@ -447,8 +447,9 @@ Pick the cheapest tool that answers the actual question:
    already small/localized. When answering "does this file/symbol/subsystem do X?" would otherwise
    require a broad/large read or scanning multiple files and `jev` is available, prefer a narrowly
    scoped `jev ask`. Keep each question atomic (one independently testable property); split compound
-   "A/B/C or wiring?" questions into separate checks. Open/read the cited source before relying on
-   the answer. Do not call Jev after direct evidence has already answered the question.
+   "A/B/C or wiring?" questions into separate checks. Read the cited line/window and only the surrounding source needed to verify it before
+   relying on the answer; do not automatically re-read the whole large file. Do not call Jev after
+   direct evidence has already answered the question.
 3. **Unknown repository vocabulary/location:** when the behavior is understood but its name/location
    is not, a tightly scoped `jev find` may be used as a discovery hint. Start with the smallest
    plausible subsystem rather than the repository root, and do not raise `--max-files` merely to

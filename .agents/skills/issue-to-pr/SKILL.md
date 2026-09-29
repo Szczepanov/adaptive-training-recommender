@@ -84,8 +84,9 @@ Follow the `docs/README.md` precedence: **code wins, then `architecture/`, then 
 - Follow `.agents/skills/semantic-code-discovery/SKILL.md`: exact identifiers/strings use
   `rg`, and small/localized evidence is read directly. When a semantic property would otherwise
   require broad/large reading and Jev is available, use an atomic, narrowly scoped `jev ask`;
-  use `jev find` only for genuine vocabulary/location gaps. Open the cited source before drawing
-  a conclusion, and do not duplicate the same semantic sweep across subagents.
+  use `jev find` only for genuine vocabulary/location gaps. Read the cited line/window and only
+  the surrounding source needed to verify it before drawing a conclusion; do not automatically
+  re-read the whole large file, and do not duplicate the same semantic sweep across subagents.
 - For type-level ripple (new union member or `Record` key, new required field, changed exported
   signature), make the change and run `cd app && npx tsc -b` (or `uv run mypy`): the errors
   are the impact list.
