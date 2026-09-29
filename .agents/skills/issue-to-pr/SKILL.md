@@ -81,12 +81,15 @@ Follow the `docs/README.md` precedence: **code wins, then `architecture/`, then 
 ## Phase 3 — Analyze the code and related artifacts
 
 - Locate affected modules using the `AGENTS.md` package-architecture map (`src/garmin_sync/`, `app/src/engine/`, `app/src/sessions/`, `app/src/responses/`, `app/src/observations/`, `app/src/outcomes/`, `app/src/knowledge/` — directory wins over the map).
-- Follow `.agents/skills/semantic-code-discovery/SKILL.md`: exact identifiers/strings use
-  `rg`, and small/localized evidence is read directly. When a semantic property would otherwise
-  require broad/large reading and Jev is available, use an atomic, narrowly scoped `jev ask`;
-  use `jev find` only for genuine vocabulary/location gaps. Read the cited line/window and only
-  the surrounding source needed to verify it before drawing a conclusion; do not automatically
-  re-read the whole large file, and do not duplicate the same semantic sweep across subagents.
+- Follow `.agents/skills/semantic-code-discovery/SKILL.md` with an explicit discovery budget:
+  exact identifiers/strings use `rg`; if a non-trivial issue does **not** provide the implementation
+  vocabulary/location, make one read-only
+  `python scripts/agent_canopy.py search "<behavior>"` attempt before broad lexical exploration.
+  Exit code 3 / `CANOPY_UNAVAILABLE` means fall back immediately—never initialize/reindex Canopy
+  during the issue. If Canopy remains ambiguous, one scoped `jev find` is the second opinion.
+  For a known target, if one semantic property would otherwise require reading multiple substantial
+  regions/files, use one atomic `jev ask` before broad reading. Verify all semantic-tool results in
+  the current worktree and do not duplicate the same sweep across subagents.
 - For type-level ripple (new union member or `Record` key, new required field, changed exported
   signature), make the change and run `cd app && npx tsc -b` (or `uv run mypy`): the errors
   are the impact list.
@@ -189,6 +192,7 @@ analysis either.
    ## Validation
    - [x] `command`: pass — what it covered
    - Manual check: scenario + observed result (or why N/A)
+   - Navigation: `Canopy=<used N | unavailable | not applicable> · Jev=<used N | unavailable | not applicable> · Context7=<used N | unavailable | not applicable>` — report actual calls, not intended routing
    ## Risk and reviewer guidance
    - What to inspect closely, what could regress, migration/deployment/rollback notes.
    ## Domain invariants
