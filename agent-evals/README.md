@@ -85,10 +85,15 @@ requires a full reindex.
 
 Normal isolated agent-eval worktrees must not provision Canopy themselves. A Canopy-specific
 benchmark harness may deliberately pre-provision a dedicated index before the timed/graded agent
-trial, or expose a maintained baseline index as an external read-only discovery capability. If no
-usable index is supplied, record Canopy as unavailable and let the agent follow the normal fallback
-route. Do not include `canopy init`, `canopy reindex`, model pulls, or shared-index mutation in an
-ordinary task's measured agent behavior.
+trial, or expose a maintained baseline index through the repository's query-only
+`scripts/agent_canopy.py` bridge. If no usable index is supplied, record Canopy as unavailable and
+let the agent follow the normal fallback route. Do not include `canopy init`, `canopy reindex`,
+model pulls, or shared-index mutation in an ordinary task's measured agent behavior.
+
+Capability cases may mark Canopy or Jev `required` when the capability itself is what the case
+tests. That does **not** make the tool mandatory in ordinary regression cases: those remain
+outcome-first, and routing expectations are diagnostic unless the case explicitly exercises the
+tool boundary.
 
 For Jev trials, when useful copy the local `jev gain` summary into the outcome notes or experiment
 artifact. Treat its examined-token "leverage" and provider spend as diagnostics, not as measured

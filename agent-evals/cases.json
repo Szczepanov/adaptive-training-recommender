@@ -478,6 +478,98 @@
           "reason": "This is repository-owned agent tooling policy rather than external API behavior."
         }
       ]
+    },
+    {
+      "id": "canopy-worktree-bridge-routing-required",
+      "kind": "capability",
+      "source": {
+        "type": "synthetic",
+        "ref": "P1-canopy-operational-routing"
+      },
+      "start_ref": "e1d72e79be0997c74301dcbc0ef5c68db8c4c5a6",
+      "prompt": "You are in a temporary feature worktree. The evaluation environment has a maintained main-checkout Canopy index available through the repository-supported agent tooling. Without changing code, locate where the week-ahead planner proves that an incumbent allocation survives before failing closed on unresolved allocation search, identify the relevant implementation symbols, and verify the conclusion in the current worktree. The prompt intentionally does not provide internal symbol names.",
+      "success_criteria": [
+        "The repository-supported query-only Canopy worktree bridge is used before broad lexical exploration.",
+        "The answer identifies app/src/engine/planner.ts as the implementation location.",
+        "The answer identifies classifyAllocationPreservation and/or incumbentAssignmentsRemainingAfterSelection as relevant implementation symbols.",
+        "Canopy output is treated as baseline discovery evidence and the final conclusion is verified against current-worktree source.",
+        "No Canopy init/index/reindex/model provisioning is attempted.",
+        "No files are modified."
+      ],
+      "grader": {
+        "commands": [],
+        "forbidden_modified_globs": [
+          "**"
+        ]
+      },
+      "tool_expectations": [
+        {
+          "capability": "canopy",
+          "expectation": "required",
+          "reason": "This capability case specifically verifies that a pre-provisioned maintained Canopy baseline is actually reached through the repository's query-only worktree bridge for a vocabulary-gap location task."
+        },
+        {
+          "capability": "lexical_search",
+          "expectation": "recommended",
+          "reason": "After Canopy discovers candidate vocabulary/location, current-worktree source should be verified with lexical/direct evidence."
+        },
+        {
+          "capability": "jev",
+          "expectation": "optional",
+          "reason": "Jev find is only a second opinion if the Canopy result remains materially ambiguous."
+        },
+        {
+          "capability": "context7",
+          "expectation": "not_expected",
+          "reason": "The task is entirely repository-internal behavior."
+        }
+      ]
+    },
+    {
+      "id": "jev-known-target-semantic-routing-required",
+      "kind": "capability",
+      "source": {
+        "type": "synthetic",
+        "ref": "P1-jev-operational-routing"
+      },
+      "start_ref": "e1d72e79be0997c74301dcbc0ef5c68db8c4c5a6",
+      "prompt": "Without changing code, determine whether ContextBriefService.build hydrates performedFacts for morning, planning, and diagnostic purposes, and whether a morning feature that depends on performedFacts needs service-layer wiring. The implementation target is intentionally named, but the requested behavior is semantic and spans multiple purpose branches. Verify the final conclusion in source.",
+      "success_criteria": [
+        "The exact ContextBriefService implementation is located lexically rather than through broad semantic location search.",
+        "An atomic Jev semantic judgment is used for the purpose-specific performedFacts behavior before broad multi-region reading.",
+        "The answer identifies that morning leaves performedFacts unhydrated while planning and diagnostic hydrate it.",
+        "The answer concludes that a morning feature depending on performedFacts requires service-layer wiring.",
+        "Jev output is verified against repository source rather than treated as authority.",
+        "No files are modified."
+      ],
+      "grader": {
+        "commands": [],
+        "forbidden_modified_globs": [
+          "**"
+        ]
+      },
+      "tool_expectations": [
+        {
+          "capability": "lexical_search",
+          "expectation": "recommended",
+          "reason": "The exact ContextBriefService symbol is given, so lexical lookup should establish the implementation target first."
+        },
+        {
+          "capability": "jev",
+          "expectation": "required",
+          "reason": "This capability case specifically tests the known-target semantic-property trigger where multiple substantial source branches would otherwise need inspection."
+        },
+        {
+          "capability": "canopy",
+          "expectation": "not_expected",
+          "reason": "The implementation target is already named; semantic location retrieval would be redundant."
+        },
+        {
+          "capability": "context7",
+          "expectation": "not_expected",
+          "reason": "The task is entirely repository-internal behavior."
+        }
+      ]
     }
   ]
 }

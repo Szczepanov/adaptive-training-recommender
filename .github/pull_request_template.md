@@ -38,6 +38,7 @@ Firestore rules, UI/E2E/visual evidence, or a focused regression test). See CLAU
 Results:
 - `command`: pass/fail — what it covered
 - Manual check: scenario and observed result
+- Agent navigation (when coding-agent-assisted): `Canopy=<used N | unavailable | not applicable> · Jev=<used N | unavailable | not applicable> · Context7=<used N | unavailable | not applicable>` — actual calls only; omit for human-only work
 
 ## Risk and reviewer guidance
 

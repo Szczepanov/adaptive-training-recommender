@@ -59,17 +59,16 @@ when it affects confidence. See
 ## 3. Working loop
 
 **Before writing code**
-- For source-code discovery, use `rg`/text search for exact identifiers and strings. When
-  repository vocabulary/location is genuinely unknown, use `canopy search` first only if a
-  pre-existing usable index is already available; **never run `canopy init`/`reindex` as normal
-  task setup**. If no usable index exists, fall back to lexical/direct evidence and tightly scoped
-  `jev find`. A shared persistent-main Canopy index, when exposed by the environment, is
-  baseline-discovery evidence only: verify the current worktree before editing/concluding. For a
-  known file/subsystem, read directly when the relevant evidence is already small/localized; when
-  answering an atomic semantic property would otherwise require a broad/large read or multi-file
-  scan and `jev` is available, use a narrowly scoped `jev ask`. Treat Canopy/Jev outputs as
-  candidate evidence and verify the relevant source before changing code; Canopy graph misses are
-  not absence proof. For type-level ripple, run the compiler (`cd app && npx tsc -b`, `uv run mypy`). See
+- For source-code discovery, exact identifiers/strings use `rg`. For a non-trivial
+  vocabulary/location gap, make one
+  `python scripts/agent_canopy.py search "<behavior>"` attempt before broad lexical exploration.
+  The query-only wrapper uses a maintained baseline index without exposing maintenance commands;
+  `CANOPY_UNAVAILABLE` / exit code 3
+  means fall back immediately and **never** init/reindex/pull models as task setup. If the result is
+  still ambiguous, one scoped `jev find` is the second opinion. For a known implementation target,
+  when one semantic property would otherwise require multiple substantial source reads, use one
+  atomic `jev ask` before broad reading. Treat all Canopy/Jev output as candidate evidence and
+  verify current-worktree source before changing code; Canopy graph misses are not absence proof. For type-level ripple, run the compiler (`cd app && npx tsc -b`, `uv run mypy`). See
   [`AGENTS.md` § Code navigation](./AGENTS.md#code-navigation) and
   [`docs/standards/agent-tooling.md`](./docs/standards/agent-tooling.md). Canopy is local only when
   configured against a local provider such as Ollama; Jev sends selected source to an external

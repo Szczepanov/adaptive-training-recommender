@@ -1,6 +1,6 @@
 ---
 name: semantic-code-discovery
-description: Route repository discovery between exact lexical search and optional Jev semantic judgment/search while minimizing agent context.
+description: Route repository discovery between exact lexical search, the query-only shared Canopy baseline, and Jev semantic judgment/search while minimizing agent context.
 ---
 
 # Semantic Code Discovery (Claude Code entry point)

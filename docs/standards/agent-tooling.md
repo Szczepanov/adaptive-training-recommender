@@ -72,8 +72,9 @@ Canopy and Jev are **optional developer-local capabilities**, not repository dep
   selected source to the configured provider.
 
 The Canopy index/model/runtime state, Jev CLI/API key, and personal client/plugin configuration stay
-outside the repository. When installed, use `canopy status` to check index freshness and `jev probe`
-to verify Jev connectivity; never commit generated indexes, model files, `TYPE_SAFE_AI_KEY`, or
+outside the repository. Coding agents access an already-maintained Canopy index only through
+`scripts/agent_canopy.py`; they do not initialize or mutate it. Use `jev probe` to verify Jev
+connectivity when needed. Never commit generated indexes, model files, `TYPE_SAFE_AI_KEY`, or
 another provider credential.
 
 Route repository questions by evidence shape:
@@ -81,8 +82,8 @@ Route repository questions by evidence shape:
 | Question | Preferred route |
 |---|---|
 | Exact symbol/string/error/path is known | `rg`/text search, then direct read |
-| Behavior is known but repository vocabulary/location is unknown | pre-existing usable `canopy search`; otherwise lexical/direct evidence + scoped `jev find` fallback |
-| Known file/subsystem; semantic property needs broad/large reading | narrowly scoped atomic `jev ask`; otherwise targeted direct read |
+| Behavior is known but repository vocabulary/location is unknown | one query-only `scripts/agent_canopy.py search` attempt; then scoped `jev find` if still ambiguous |
+| Known file/subsystem; one semantic property needs multiple substantial reads | one narrowly scoped atomic `jev ask`; otherwise targeted direct read |
 | Call-graph orientation after discovery | `canopy map` / `canopy trace` as advisory hints |
 | Type/signature change; need complete impact list | compiler (`tsc -b` / `mypy`) |
 | External package/API behavior | Context7 / official upstream docs |
@@ -92,8 +93,24 @@ Route repository questions by evidence shape:
 Canopy is primarily a **local semantic locator**, not source authority and not a replacement for
 lexical lookup.
 
-- Use `canopy search "<behavior>"` for vocabulary-gap questions where the implementation name is
-  unknown. Do not use it for exact-symbol lookups that `rg` answers precisely.
+Coding agents should invoke Canopy through the repository-owned query-only bridge:
+
+```bash
+python scripts/agent_canopy.py search "where is this behavior implemented?"
+python scripts/agent_canopy.py map SomeSymbol
+python scripts/agent_canopy.py trace Caller Callee
+python scripts/agent_canopy.py status
+```
+
+The bridge discovers a checked-out `main`/`master` worktree, or accepts
+`AGENT_CANOPY_BASELINE_WORKTREE` / `--baseline-worktree`, validates that the complete generated index already exists (including the HNSW sidecar), and
+then runs only query/non-maintenance Canopy commands from that baseline checkout. It never invokes
+`init`, `index`, `reindex`, `clean`, or configuration/model mutation. Exit code 3 plus `CANOPY_UNAVAILABLE` explicitly means: **continue with
+fallback evidence and do not troubleshoot/provision Canopy during the task**.
+
+- Use `python scripts/agent_canopy.py search "<behavior>"` for vocabulary-gap questions where the
+  implementation name is unknown. Do not use raw Canopy from a temporary worktree, and do not use
+  semantic retrieval for exact-symbol lookups that `rg` answers precisely.
 - The current repository evaluation favors `top_k = 15` and `test_penalty = 0.5` in the
   developer-local `.canopy/canopy.toml`. The larger candidate set avoids losing known-correct
   implementations just below the default top 10; the stronger test penalty keeps regression tests
@@ -136,6 +153,13 @@ Index provisioning is infrastructure maintenance, not issue/PR setup.
 - Never symlink/copy one **writable** `.canopy/` directory across concurrent worktrees. Canopy's
   store, vector indexes, configuration/indexed SHA, and incremental updates are mutable state; give
   one maintenance owner exclusive write responsibility.
+- Upstream Canopy currently opens `store.redb` with `Database::create` and an initialization write
+  transaction even for query/status/map/trace paths. Therefore **query-only is a command-surface
+  guarantee, not an OS/filesystem read-only guarantee**. `agent_canopy.py` serializes its consumers
+  with a baseline-scoped lock; explicit index maintenance must not overlap those queries.
+- A usable search index requires both the `vectors.idx` dimensions header and
+  `vectors.idx.chunks.usearch` HNSW sidecar. The wrapper treats either missing artifact as
+  `CANOPY_UNAVAILABLE` rather than allowing an apparently successful empty search.
 - If no pre-existing usable Canopy index is available, proceed immediately with `rg`, direct
   reads, repository docs/tests, compiler evidence, and scoped Jev where appropriate. Missing Canopy
   must never block a task.
@@ -153,6 +177,14 @@ If Canopy is configured with a remote/OpenAI-compatible embedding provider inste
 treat its source upload as data egress and apply the same prohibited-path/privacy rules below.
 
 ### Jev question discipline
+
+The trigger for `jev ask` is operational: if the implementation target is known but one semantic
+property would otherwise require inspecting multiple substantial source regions/files, ask one
+atomic Jev question before doing that broad reading. Typical issue work should use 0–3 Jev calls;
+additional calls should correspond to distinct unresolved properties, not repeated discovery.
+
+For unknown implementation location, Jev `find` is the second opinion after the query-only Canopy
+attempt is unavailable or materially ambiguous—not a mandatory duplicate search.
 
 - Prefer one independently testable semantic property per `jev ask`. Split compound questions
   such as "does A/B/C already work or is wiring needed?" into separate A, B and C checks.
