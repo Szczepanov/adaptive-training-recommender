@@ -81,7 +81,7 @@ Route repository questions by evidence shape:
 | Question | Preferred route |
 |---|---|
 | Exact symbol/string/error/path is known | `rg`/text search, then direct read |
-| Behavior is known but repository vocabulary/location is unknown | fresh local `canopy search`; scoped `jev find` as second opinion/fallback |
+| Behavior is known but repository vocabulary/location is unknown | pre-existing usable `canopy search`; otherwise lexical/direct evidence + scoped `jev find` fallback |
 | Known file/subsystem; semantic property needs broad/large reading | narrowly scoped atomic `jev ask`; otherwise targeted direct read |
 | Call-graph orientation after discovery | `canopy map` / `canopy trace` as advisory hints |
 | Type/signature change; need complete impact list | compiler (`tsc -b` / `mypy`) |
@@ -115,6 +115,39 @@ lexical lookup.
   not absence proof.
 - Always verify important Canopy hits against source, exact callers/tests, and compiler output as
   appropriate.
+
+#### Index lifecycle and agent worktrees
+
+Index provisioning is infrastructure maintenance, not issue/PR setup.
+
+- Normal coding agents MUST NOT run `canopy init`, `canopy reindex`, change the embedding
+  model/quantization, or pull an Ollama embedding model just because their worktree has no index.
+- Normal coding agents MUST NOT run `canopy index` against a shared/baseline index. Incremental
+  index maintenance belongs to a designated persistent checkout or an explicit developer/tooling
+  maintenance workflow.
+- A persistent primary/main checkout may own a long-lived Qwen3-Embedding-4B index and keep it
+  incrementally current. The one-time full-index cost is acceptable because measured interactive
+  queries are already fast; do not optimize normal agent startup by rebuilding smaller disposable
+  indexes in every worktree.
+- If a client/environment exposes the persistent-main index for queries, its results describe the
+  indexed baseline. Use them to discover likely files/symbols, then inspect the current worktree
+  directly. Branch changes, uncommitted edits, and commits newer than the indexed SHA are outside
+  that baseline.
+- Never symlink/copy one **writable** `.canopy/` directory across concurrent worktrees. Canopy's
+  store, vector indexes, configuration/indexed SHA, and incremental updates are mutable state; give
+  one maintenance owner exclusive write responsibility.
+- If no pre-existing usable Canopy index is available, proceed immediately with `rg`, direct
+  reads, repository docs/tests, compiler evidence, and scoped Jev where appropriate. Missing Canopy
+  must never block a task.
+- Do not switch the normal baseline to Qwen3-Embedding-0.6B merely to make per-worktree indexing
+  cheap. The evaluated 4B Q4 baseline is already fast during actual search and should be preferred
+  until a fixed retrieval benchmark shows that a smaller model preserves the required correctness.
+  A smaller model remains a valid explicit experiment if disposable/per-worktree indexing later
+  becomes a real product requirement.
+
+These lifecycle rules deliberately separate **querying** from **index maintenance**. The primary
+agent may use a maintained semantic baseline for broad discovery; delegated agents/worktrees should
+receive established files/symbols instead of rebuilding the same semantic corpus.
 
 If Canopy is configured with a remote/OpenAI-compatible embedding provider instead of local Ollama,
 treat its source upload as data egress and apply the same prohibited-path/privacy rules below.
