@@ -6,19 +6,18 @@
  * `CompletedWorkoutView`. Read-only -- never writes reconciliation state itself (that
  * remains `reconciliationService.ts`'s job).
  */
-import { activityService } from '../services/activityService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { comparePlannedVsPerformed } from '../sessions/performedComparison';
-import { addDaysToLocalDateString, getPreviousLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString } from '../utils/localDate';
 import type { NormalizedGarminActivity } from '../engine/models';
 import type { CompletedWorkoutView, PerformedRestAvailability } from './completedWorkoutView';
 import { sourceBadgeFor } from './completedWorkoutView';
 import { buildStructuredStepDetails } from './structuredSetDetail';
 import { compareActivitiesReadModels, recordActivitiesReadModelComparison } from './activitiesReadModelDiagnostics';
 import { isProviderActivityRef, isStructuredExecutionRef, type PerformedTrainingOccurrence } from './models';
-import { performedTrainingOccurrenceRepository as repository } from './repository';
 import { sourceKeyForRef } from './sourceIdentity';
+import { hydrateOccurrenceSourcesInRange, type HydratedProviderSource } from './occurrenceSourcesHydration';
 
 async function resolveStructuredDetail(
     userId: string,
@@ -51,7 +50,7 @@ async function resolveStructuredDetail(
 async function hydrateOccurrence(
     userId: string,
     occurrence: PerformedTrainingOccurrence,
-    activitiesById: Map<string, NormalizedGarminActivity>,
+    providerSources: readonly HydratedProviderSource[],
 ): Promise<CompletedWorkoutView> {
     const structuredRef = occurrence.sourceRefs.find(isStructuredExecutionRef);
     // The domain is provider-neutral and may contain multiple provider sources, but the
@@ -65,7 +64,10 @@ async function hydrateOccurrence(
         .find(ref => ref.provider.toLowerCase() === 'garmin');
 
     const structured = structuredRef ? await resolveStructuredDetail(userId, structuredRef.executionId) : undefined;
-    const garmin = garminRef ? activitiesById.get(garminRef.activityId) : undefined;
+    const garmin = garminRef
+        ? providerSources.find(source => source.ref.provider.toLowerCase() === 'garmin'
+            && source.ref.activityId === garminRef.activityId)?.activity
+        : undefined;
 
     return {
         performedOccurrenceId: occurrence.performedOccurrenceId,
@@ -113,22 +115,12 @@ export async function getCompletedWorkoutsInRange(
     toDateExclusive: string,
     preloadedActivities?: readonly NormalizedGarminActivity[],
 ): Promise<CompletedWorkoutView[]> {
-    const toDateInclusiveForOccurrenceQuery = getPreviousLocalDateString(toDateExclusive);
-    const hydrationWindow = hydrationWindowFor(fromDateInclusive, toDateExclusive);
-
-    const [occurrences, activitiesState] = await Promise.all([
-        repository.queryActiveInDateWindow(userId, fromDateInclusive, toDateInclusiveForOccurrenceQuery),
-        preloadedActivities !== undefined
-            ? Promise.resolve({ status: 'AVAILABLE' as const, data: [...preloadedActivities], revision: null })
-            : activityService.getActivitiesInRange(userId, hydrationWindow.from, hydrationWindow.to),
-    ]);
-
-    const availableActivities = activitiesState.status === 'AVAILABLE' ? activitiesState.data : [];
-    const activitiesById = new Map<string, NormalizedGarminActivity>(
-        availableActivities.map(activity => [activity.activityId, activity] as const),
-    );
-
-    const views = await Promise.all(occurrences.map(occurrence => hydrateOccurrence(userId, occurrence, activitiesById)));
+    const sourceHydration = await hydrateOccurrenceSourcesInRange(userId, fromDateInclusive, toDateExclusive, {
+        preloadedActivities,
+        activityDatePaddingDays: 1,
+    });
+    const views = await Promise.all(sourceHydration.rows.map(({ occurrence, providerSources }) =>
+        hydrateOccurrence(userId, occurrence, providerSources)));
     const sortedViews = views.sort((a, b) => (b.startedAt ?? b.localDate ?? '').localeCompare(a.startedAt ?? a.localDate ?? ''));
 
     // Own the dual-read comparison where both inputs are guaranteed to be available. The
@@ -136,8 +128,8 @@ export async function getCompletedWorkoutsInRange(
     // request resolved before the separate raw-activity request. Filter the widened
     // hydration payload back to the caller's exact range so diagnostic counts remain
     // apples-to-apples with the current Activities read model.
-    if (activitiesState.status === 'AVAILABLE') {
-        const currentRangeActivities = availableActivities.filter(
+    if (sourceHydration.activitiesReadable) {
+        const currentRangeActivities = sourceHydration.activities.filter(
             activity => activity.date >= fromDateInclusive && activity.date < toDateExclusive,
         );
         recordActivitiesReadModelComparison(

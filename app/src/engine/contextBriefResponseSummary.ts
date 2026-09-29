@@ -1,4 +1,6 @@
 import type { NormalizedGarminActivity } from './models';
+import type { TrainingResponseSessionEvidence } from '../training-occurrence/trainingResponseEvidence';
+import type { ResponseSessionIdentity } from './contextBriefComparability';
 import {
     deriveDecoupling,
     deriveEfficiencyComparison,
@@ -33,6 +35,8 @@ export interface ResponseContext {
     /** `null` when check-in history could not be read. */
     checkins: CheckinHistory | null;
     asOfDate: string;
+    /** Canonical occurrence/source projection; consumers migrate from activity-only input by work package. */
+    evidence?: readonly TrainingResponseSessionEvidence[];
 }
 
 export interface KeySessionSummary {
@@ -75,6 +79,25 @@ export function deriveKeySessionSummaries(
     windowActivities: readonly NormalizedGarminActivity[],
     context: ResponseContext,
 ): KeySessionSummary[] {
+    const identities = new Map<string, ResponseSessionIdentity>();
+    for (const session of context.evidence ?? []) {
+        for (const source of session.measuredSources) {
+            if (source.provider.toLowerCase() !== 'garmin') continue;
+            identities.set(source.activityId, {
+                ...(session.performedOccurrenceId ? { performedOccurrenceId: session.performedOccurrenceId } : {}),
+                ...(session.structured?.prescriptionHash ? { prescriptionHash: session.structured.prescriptionHash } : {}),
+                sourceCompleteness: session.identity.level === 'provider_activity_only'
+                    ? session.sourceCompleteness.providerActivities === 'available' ? 'provider_fallback' : 'unavailable'
+                    : session.sourceCompleteness.providerActivities === 'ambiguous' ? 'ambiguous'
+                    : session.sourceCompleteness.occurrenceRead === 'unavailable'
+                        || session.sourceCompleteness.providerActivities === 'unavailable'
+                        || session.sourceCompleteness.structuredExecution === 'unavailable'
+                        ? 'unavailable'
+                        : session.sourceCompleteness.providerActivities === 'partial' ? 'partial'
+                            : session.identity.level === 'canonical_occurrence' ? 'canonical' : 'provider_fallback',
+            });
+        }
+    }
     return [...windowActivities]
         .sort((a, b) => a.date.localeCompare(b.date) || a.activityId.localeCompare(b.activityId))
         .map(activity => ({
@@ -82,7 +105,7 @@ export function deriveKeySessionSummaries(
             intervals: deriveIntervalRepetition(activity),
             sprints: deriveSprintRepetition(activity),
             decoupling: deriveDecoupling(activity),
-            efficiency: deriveEfficiencyComparison(activity, context.history),
+            efficiency: deriveEfficiencyComparison(activity, context.history, identities),
             strength: deriveStrengthProgression(activity, context.history),
         }))
         .filter(isKey)

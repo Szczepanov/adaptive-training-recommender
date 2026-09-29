@@ -9,6 +9,7 @@
  * gap between two `completedAt` values (see `sessions/restEventTiming.ts`).
  */
 import type {
+    ExerciseRef,
     RangeOrNumber,
     RestEndReason,
     SessionDefinition,
@@ -50,6 +51,7 @@ export interface PerformedSetRow {
 
 export interface StructuredStepDetail {
     stepId: string;
+    exerciseRef?: ExerciseRef;
     title: string;
     isOptional: boolean;
     prescribed: PrescribedStepTarget;
@@ -131,6 +133,7 @@ export function buildStructuredStepDetails(
 
             details.push({
                 stepId: step.id,
+                ...(step.exerciseRef ? { exerciseRef: step.exerciseRef } : {}),
                 title: stepName(step),
                 isOptional: !!step.optional,
                 prescribed: prescribedTarget(step),

@@ -74,7 +74,7 @@ function steady(id: string, date: string, overrides: Partial<NormalizedGarminAct
 }
 
 describe('interval repetition (#814)', () => {
-    it('summarises a structured 3-interval ride with first-to-last change', () => {
+    it('uses legacy-lap fallback for a 3-interval ride with first-to-last change', () => {
         const feature = deriveIntervalRepetition(intervalRide([229, 225, 237]));
         expect(feature.state).toBe('available');
         if (feature.state !== 'available') return;
@@ -199,6 +199,44 @@ describe('aerobic-efficiency comparison (#814)', () => {
         expect(feature.confidence).toBe('low');
         expect(feature.hrNote).toContain('HR observational only: HR authority BLOCKED');
         expect(feature.changePct).toBeCloseTo(((185 / 134) / (180 / 135) - 1) * 100, 0);
+    });
+
+    it('ranks exact prescription identity ahead of a newer provider fingerprint match', () => {
+        const recentFingerprint = steady('recent-fit', '2026-09-15', { fitWorkoutFingerprint: 'fit-1' });
+        const olderExact = steady('older-exact', '2026-09-08');
+        const feature = deriveEfficiencyComparison(
+            current,
+            [recentFingerprint, olderExact],
+            new Map([
+                ['now', { prescriptionHash: 'rx-1' }],
+                ['older-exact', { prescriptionHash: 'rx-1' }],
+            ]),
+        );
+        expect(feature.state === 'available' && feature.priorActivityId).toBe('older-exact');
+        expect(feature.state === 'available' && feature.basis).toBe('same authored prescription');
+    });
+
+    it('keeps provider-only comparison available when canonical occurrence reads fail', () => {
+        const prior = steady('prior', '2026-09-10');
+        const summaries = deriveKeySessionSummaries([current], {
+            history: [current, prior], historyStart: '2026-09-01', checkins: NO_CHECKINS, asOfDate: '2026-09-20',
+            evidence: [{
+                localDate: current.date, modality: 'Cycling',
+                identity: { level: 'provider_activity_only', sourceKinds: ['provider_activity'] },
+                measuredSources: [{
+                    sourceRef: { kind: 'provider_activity', provider: 'garmin', activityId: current.activityId },
+                    provider: 'garmin',
+                    activityId: current.activityId,
+                    activity: current,
+                }],
+                sourceCompleteness: {
+                    occurrenceRead: 'unavailable', structuredExecution: 'unavailable', providerActivities: 'available',
+                },
+            }],
+        });
+        const comparison = summaries.find(summary => summary.activity.activityId === current.activityId)?.efficiency;
+        expect(comparison?.state).toBe('available');
+        expect(comparison?.state === 'available' && comparison.confidence).toBe('low');
     });
 
     it('never reports high confidence while the HR authority keeps HR observational', () => {
@@ -361,7 +399,7 @@ describe('multi-resolution semantic response (#850)', () => {
         laps: [lap(1, 15, 120, 120), lap(2, 15, 400, 170), lap(3, 15, 110, 120)],
     });
 
-    it('uses executed FIT workout-step identity ahead of lap heuristics', () => {
+    it('uses executed FIT-semantic workout-step identity ahead of misleading lap heuristics', () => {
         const feature = deriveIntervalRepetition(semanticThreshold);
         expect(feature.state).toBe('available');
         if (feature.state !== 'available') return;
@@ -536,7 +574,7 @@ describe('multi-resolution semantic response (#850)', () => {
         expect(feature.state === 'available' && feature.intervals.every(item => item.powerWatts > 300)).toBe(true);
     });
 
-    it('summarizes 4x4 from semantic steps even though the legacy 120 s gate is no longer the identity mechanism', () => {
+    it('uses FIT-semantic steps for 4x4 even though the legacy 120 s gate is no longer the identity mechanism', () => {
         const segments = [330, 326, 323, 319].map((power, index) => ({
             segmentIndex: index + 1,
             segmentType: 'work' as const,
@@ -560,7 +598,7 @@ describe('multi-resolution semantic response (#850)', () => {
         expect(feature.state === 'available' && feature.intervals.map(item => item.powerWatts)).toEqual([330, 326, 323, 319]);
     });
 
-    it('summarizes 6x10 s sprints using power/cadence without HR as the primary signal', () => {
+    it('uses FIT-semantic steps for 6x10 s sprints, with power/cadence as the primary signal', () => {
         const powers = [720, 715, 700, 690, 680, 665];
         const session = ride({
             stimulusDomain: 'anaerobic',
