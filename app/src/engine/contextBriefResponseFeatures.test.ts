@@ -289,6 +289,23 @@ describe('aerobic-efficiency comparison (#814)', () => {
         expect(feature.state).toBe('available');
         expect(feature.state === 'available' && feature.priorDate).toBe('2026-09-10');
     });
+
+    it('uses canonical occurrence dates when ranking equally strong prior comparators', () => {
+        const providerNewerButCanonicalOlder = steady('provider-newer', '2026-09-16');
+        const providerOlderButCanonicalNewer = steady('provider-older', '2026-09-15');
+        const identities = new Map<string, ResponseSessionIdentity>([
+            ['now', { localDate: '2026-09-19' }],
+            ['provider-newer', { localDate: '2026-09-10' }],
+            ['provider-older', { localDate: '2026-09-11' }],
+        ]);
+        const feature = deriveEfficiencyComparison(
+            current,
+            [providerNewerButCanonicalOlder, providerOlderButCanonicalNewer],
+            identities,
+        );
+        expect(feature.state === 'available' && feature.priorActivityId).toBe('provider-older');
+        expect(feature.state === 'available' && feature.priorDate).toBe('2026-09-11');
+    });
 });
 
 function lift(id: string, date: string, weight: number, named = true): NormalizedGarminActivity {
