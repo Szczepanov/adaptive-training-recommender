@@ -273,6 +273,98 @@ export function deriveStrengthProgression(
     return { state: 'available', exercises: exercises.sort((a, b) => a.exercise.localeCompare(b.exercise)) };
 }
 
+/** Structured strength evidence can be rendered when no provider activity exists. This
+ * path deliberately consumes the same hydrated occurrence projection and comparability
+ * contract as the activity-backed summary. */
+export function deriveStructuredStrengthProgression(
+    current: TrainingResponseSessionEvidence,
+    priorEvidence: readonly TrainingResponseSessionEvidence[],
+): StrengthProgression {
+    if (!current.structured) {
+        return { state: 'insufficient_evidence', reason: 'structured execution linked but unavailable; provider exercise identity not used' };
+    }
+    const currentSets = structuredSets(current.structured).filter(set => !set.isWarmup);
+    if (currentSets.length === 0) return { state: 'insufficient_evidence', reason: 'no working sets recorded' };
+    const unidentified = currentSets.filter(set => !set.identity || UNIDENTIFIED.has(set.identity.trim().toUpperCase())).length;
+    if (unidentified > 0) return { state: 'insufficient_evidence', reason: `${unidentified} of ${currentSets.length} working sets lack an exercise identity` };
+
+    const exercises: ExerciseTopSet[] = [];
+    for (const [identity, exerciseSets] of setsByExercise(currentSets)) {
+        const top = topSet(exerciseSets);
+        if (!top) continue;
+        const priors = priorEvidence
+            .filter(prior => prior.performedOccurrenceId !== current.performedOccurrenceId
+                && prior.localDate < current.localDate
+                && !!prior.structured)
+            .flatMap(prior => {
+                const priorSets = structuredSets(prior.structured as NonNullable<typeof prior.structured>).filter(set => !set.isWarmup);
+                const marker = priorStrengthMarker(top, setsByExercise(priorSets).get(identity) ?? []);
+                if (!marker) return [];
+                const decision = decideSessionComparability({
+                    featureFamily: 'strength_set_response',
+                    current: {
+                        identity: {
+                            ...(current.performedOccurrenceId ? { performedOccurrenceId: current.performedOccurrenceId } : {}),
+                            localDate: current.localDate,
+                        },
+                        strength: {
+                            exerciseIdentity: identity,
+                            identitySource: top.identitySource,
+                            loadType: top.loadType,
+                            ...(top.repetitionCount !== undefined ? { repetitions: top.repetitionCount } : {}),
+                            sourceCompleteness: 'canonical',
+                        },
+                    },
+                    prior: {
+                        identity: {
+                            ...(prior.performedOccurrenceId ? { performedOccurrenceId: prior.performedOccurrenceId } : {}),
+                            localDate: prior.localDate,
+                        },
+                        strength: {
+                            exerciseIdentity: identity,
+                            identitySource: marker.top.identitySource,
+                            loadType: marker.top.loadType,
+                            ...(marker.top.repetitionCount !== undefined ? { repetitions: marker.top.repetitionCount } : {}),
+                            sourceCompleteness: 'canonical',
+                        },
+                    },
+                });
+                return [{ prior, marker, decision }];
+            })
+            .sort((a, b) => Number(b.decision.state === 'comparable') - Number(a.decision.state === 'comparable')
+                || b.prior.localDate.localeCompare(a.prior.localDate)
+                || (a.prior.performedOccurrenceId ?? '').localeCompare(b.prior.performedOccurrenceId ?? ''));
+        const previous = priors[0];
+        exercises.push({
+            exercise: top.label || identity,
+            identitySource: top.identitySource === 'canonical'
+                ? 'Adaptive structured identity'
+                : 'Adaptive structured step identity; comparison unavailable',
+            workingSets: exerciseSets.length,
+            ...(top.topWeightKg !== undefined ? { topWeightKg: top.topWeightKg } : {}),
+            ...(top.topReps !== undefined ? { topReps: top.topReps } : {}),
+            ...(previous ? { prior: {
+                date: previous.prior.localDate,
+                ...(previous.marker.top.topWeightKg !== undefined ? { topWeightKg: previous.marker.top.topWeightKg } : {}),
+                ...(previous.marker.top.topReps !== undefined ? { topReps: previous.marker.top.topReps } : {}),
+                comparison: previous.decision.state === 'comparable' ? previous.marker.comparison
+                    : previous.decision.state === 'not_comparable'
+                        ? previous.marker.comparison === 'like-for-like' ? 'not comparable' : previous.marker.comparison
+                        : 'insufficient evidence',
+                decision: {
+                    state: previous.decision.state,
+                    ...(previous.decision.matchBasis ? { matchBasis: previous.decision.matchBasis } : {}),
+                    hardRejections: previous.decision.hardRejections,
+                    limitations: previous.decision.limitations,
+                    ...(previous.decision.confidenceCeiling ? { confidenceCeiling: previous.decision.confidenceCeiling } : {}),
+                },
+            } } : {}),
+        });
+    }
+    return exercises.length > 0 ? { state: 'available', exercises: exercises.sort((a, b) => a.exercise.localeCompare(b.exercise)) }
+        : { state: 'insufficient_evidence', reason: 'no load or repetitions recorded' };
+}
+
 export interface CheckinReading {
     soreness: number | null;
     fatigue: number | null;
@@ -305,16 +397,19 @@ export interface CheckinHistory {
 /** Observational link from a session to the following morning's check-in. `checkins`
  * `null` means the check-in history could not be read, which is not the same as "none". */
 export function deriveNextDayResponse(
-    activity: NormalizedGarminActivity,
+    session: NormalizedGarminActivity | TrainingResponseSessionEvidence,
     checkins: CheckinHistory | null,
     sameWindowActivities: readonly NormalizedGarminActivity[],
     asOfDate: string,
     evidence?: readonly TrainingResponseSessionEvidence[],
 ): NextDayResponse {
     if (checkins === null) return { state: 'insufficient_evidence', reason: 'check-in history unavailable' };
-    const sessionEvidence = evidence?.find(item => item.measuredSources.some(source =>
-        source.provider.toLowerCase() === 'garmin' && source.activityId === activity.activityId));
-    const sessionDate = sessionEvidence?.localDate || activity.date;
+    const activity = 'activityId' in session ? session : undefined;
+    const sessionEvidence = 'activityId' in session
+        ? evidence?.find(item => item.measuredSources.some(source =>
+            source.provider.toLowerCase() === 'garmin' && source.activityId === session.activityId))
+        : session;
+    const sessionDate = sessionEvidence?.localDate || ('activityId' in session ? session.date : '');
     const nextDate = addDaysToLocalDateString(sessionDate, 1);
     if (nextDate > asOfDate) return { state: 'insufficient_evidence', reason: 'next morning not yet reached' };
     const next = checkins.records.find(checkin => checkin.date === nextDate);
@@ -333,10 +428,10 @@ export function deriveNextDayResponse(
         : item.measuredSources.filter(source => source.provider.toLowerCase() === 'garmin').map(source => `activity:${source.activityId}`)));
     const currentSessionId = sessionEvidence?.performedOccurrenceId
         ? `occurrence:${sessionEvidence.performedOccurrenceId}`
-        : sessionEvidence ? `activity:${activity.activityId}` : undefined;
+        : sessionEvidence ? `activity:${activity?.activityId ?? sessionEvidence.measuredSources[0]?.activityId ?? ''}` : undefined;
     const otherActivitiesSameDay = evidenceSessionIds.size > 0
         ? Math.max(0, evidenceSessionIds.size - (currentSessionId && evidenceSessionIds.has(currentSessionId) ? 1 : 0))
-        : sameWindowActivities.filter(item => item.date === sessionDate && item.activityId !== activity.activityId).length;
+        : sameWindowActivities.filter(item => item.date === sessionDate && item.activityId !== activity?.activityId).length;
     const currentExecutionId = sessionEvidence?.structuredSourceRef?.executionId
         ?? sessionEvidence?.structured?.executionId;
     const knownExecutionIds = new Set((evidence ?? []).flatMap(item => {

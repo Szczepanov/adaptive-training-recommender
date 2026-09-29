@@ -42,6 +42,15 @@ under `artifacts/hygiene/`; the directory is gitignored.
 
 `make hygiene-all` is an alias for the full `make hygiene-tools` scan.
 
+### Default Knip entry scope
+
+`app/knip.json` deliberately keeps explicit entry points narrow. Knip already discovers
+`package.json` scripts and supported tool/config entry points; treating every
+`scripts/**/*.mjs` or `scripts/**/*.ts` file as an entry would make an actually orphaned
+script look reachable by definition. Add an explicit entry only when the repository has a
+real dynamic/manual entry point that Knip cannot infer (for example the visual harness or a
+Vite-SSR-loaded simulation module), and document why it is exceptional.
+
 ## Why two Knip and Vulture views?
 
 A normal static-analysis run includes tests and tooling. That is useful for finding code unused by
