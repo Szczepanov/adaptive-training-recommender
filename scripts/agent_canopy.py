@@ -127,7 +127,7 @@ def baseline_query_lock(
                 raise TimeoutError(
                     f"Canopy baseline is busy: {worktree} "
                     f"(waited {timeout_seconds:.1f}s)"
-                )
+                ) from None
             time.sleep(0.05)
             continue
 

@@ -4,7 +4,6 @@ import argparse
 from pathlib import Path
 
 import pytest
-
 from agent_canopy import (
     Worktree,
     baseline_query_lock,
@@ -128,7 +127,7 @@ def test_explicit_baseline_requires_existing_index(tmp_path: Path) -> None:
     assert ".canopy/canopy.toml" in reason.replace("\\", "/")
 
 
-def test_read_only_command_surface() -> None:
+def test_query_only_command_surface() -> None:
     search = argparse.Namespace(
         command="search",
         query="where is allocation preservation implemented",
