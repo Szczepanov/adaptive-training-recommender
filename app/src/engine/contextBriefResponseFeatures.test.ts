@@ -327,7 +327,7 @@ function structuredStrengthEvidence(input: {
     occurrenceId: string;
     localDate: string;
     executionId: string;
-    performedExerciseId: string;
+    performedExerciseId?: string;
     reps: number;
     weightKg: number;
     warmupWeightKg?: number;
@@ -339,7 +339,7 @@ function structuredStrengthEvidence(input: {
         isWarmup: false,
         completedAt: `${input.localDate}T07:10:00Z`,
         payload: { kind: 'repetition' as const, setIndex: 0, reps: input.reps, weightKg: input.weightKg },
-        exerciseRef: { kind: 'catalog' as const, exerciseId: input.performedExerciseId },
+        ...(input.performedExerciseId ? { exerciseRef: { kind: 'catalog' as const, exerciseId: input.performedExerciseId } } : {}),
     };
     const warmupSet = input.warmupWeightKg === undefined ? [] : [{
         entryId: `${input.occurrenceId}-warmup`,
@@ -347,7 +347,7 @@ function structuredStrengthEvidence(input: {
         isWarmup: true,
         completedAt: `${input.localDate}T07:00:00Z`,
         payload: { kind: 'repetition' as const, setIndex: 0, reps: input.reps, weightKg: input.warmupWeightKg, isWarmup: true },
-        exerciseRef: { kind: 'catalog' as const, exerciseId: input.performedExerciseId },
+        ...(input.performedExerciseId ? { exerciseRef: { kind: 'catalog' as const, exerciseId: input.performedExerciseId } } : {}),
     }];
     return {
         performedOccurrenceId: input.occurrenceId,
@@ -365,7 +365,7 @@ function structuredStrengthEvidence(input: {
             sessionSource: { kind: 'catalog', workoutId: 'strength-fixture', catalogVersion: 'v1' },
             steps: [{
                 stepId: 'main-lift',
-                exerciseRef: { kind: 'catalog', exerciseId: 'barbell_back_squat' },
+                ...(input.performedExerciseId ? { exerciseRef: { kind: 'catalog', exerciseId: input.performedExerciseId } } : {}),
                 title: 'Back Squat',
                 isOptional: false,
                 prescribed: { sets: 1, reps: input.reps },
@@ -428,7 +428,13 @@ describe('strength progression (#814)', () => {
         const feature = deriveStrengthProgression(lift('now', '2026-09-18', 80), [lift('prior', '2026-09-11', 77.5)]);
         expect(feature).toEqual({
             state: 'available',
-            exercises: [{ exercise: 'BARBELL_BACK_SQUAT', identitySource: 'provider-recognized identity; confidence limited', workingSets: 2, topWeightKg: 80, topReps: 5, prior: { date: '2026-09-11', topWeightKg: 77.5, topReps: 5, comparison: 'like-for-like' } }],
+            exercises: [{ exercise: 'BARBELL_BACK_SQUAT', identitySource: 'provider-recognized identity; confidence limited', workingSets: 2, topWeightKg: 80, topReps: 5, prior: {
+                date: '2026-09-11', topWeightKg: 77.5, topReps: 5, comparison: 'like-for-like',
+                decision: {
+                    state: 'comparable', matchBasis: 'provider_fallback', hardRejections: [],
+                    limitations: ['provider-recognized exercise identity limits confidence'], confidenceCeiling: 'low',
+                },
+            } }],
         });
     });
 
@@ -451,6 +457,9 @@ describe('strength progression (#814)', () => {
         const feature = deriveStrengthProgression(current, [prior], new Map([
             [current.activityId, currentEvidence],
             [prior.activityId, priorEvidence],
+        ]), new Map([
+            [current.activityId, { performedOccurrenceId: 'pto-now', localDate: '2026-09-18', sourceCompleteness: 'canonical' }],
+            [prior.activityId, { performedOccurrenceId: 'pto-prior', localDate: '2026-09-11', sourceCompleteness: 'canonical' }],
         ]));
         expect(feature).toEqual({
             state: 'available',
@@ -460,8 +469,38 @@ describe('strength progression (#814)', () => {
                 workingSets: 1,
                 topWeightKg: 80,
                 topReps: 5,
-                prior: { date: '2026-09-11', topWeightKg: 75, topReps: 5, comparison: 'like-for-like' },
+                prior: { date: '2026-09-11', topWeightKg: 75, topReps: 5, comparison: 'like-for-like', decision: {
+                    state: 'comparable', matchBasis: 'canonical_exercise_identity', hardRejections: [],
+                    limitations: [], confidenceCeiling: 'moderate',
+                } },
             }],
+        });
+    });
+
+    it('keeps structured strength comparable when unrelated provider-source selection is ambiguous', () => {
+        const current = lift('now-structured-ambiguous', '2026-09-18', 80);
+        const prior = lift('prior-structured-ambiguous', '2026-09-11', 75);
+        const currentEvidence = structuredStrengthEvidence({
+            activityId: current.activityId, occurrenceId: 'pto-now-ambiguous', localDate: '2026-09-18',
+            executionId: 'exec-now-ambiguous', performedExerciseId: 'front_squat', reps: 5, weightKg: 80,
+        });
+        const priorEvidence = structuredStrengthEvidence({
+            activityId: prior.activityId, occurrenceId: 'pto-prior-ambiguous', localDate: '2026-09-11',
+            executionId: 'exec-prior-ambiguous', performedExerciseId: 'front_squat', reps: 5, weightKg: 75,
+        });
+        const feature = deriveStrengthProgression(current, [prior], new Map([
+            [current.activityId, currentEvidence],
+            [prior.activityId, priorEvidence],
+        ]), new Map([
+            [current.activityId, { performedOccurrenceId: 'pto-now-ambiguous', localDate: '2026-09-18', sourceCompleteness: 'ambiguous' }],
+            [prior.activityId, { performedOccurrenceId: 'pto-prior-ambiguous', localDate: '2026-09-11', sourceCompleteness: 'ambiguous' }],
+        ]));
+        expect(feature.state).toBe('available');
+        if (feature.state !== 'available') return;
+        expect(feature.exercises[0].prior?.decision).toMatchObject({
+            state: 'comparable',
+            matchBasis: 'canonical_exercise_identity',
+            confidenceCeiling: 'moderate',
         });
     });
 
@@ -488,11 +527,18 @@ describe('strength progression (#814)', () => {
         const feature = deriveStrengthProgression(current, [prior], new Map([
             [current.activityId, currentEvidence],
             [prior.activityId, priorEvidence],
+        ]), new Map([
+            [current.activityId, { performedOccurrenceId: 'pto-now', localDate: '2026-09-18', sourceCompleteness: 'canonical' }],
+            [prior.activityId, { performedOccurrenceId: 'pto-prior', localDate: '2026-09-11', sourceCompleteness: 'canonical' }],
         ]));
         expect(feature.state).toBe('available');
         if (feature.state !== 'available') return;
         expect(feature.exercises[0].prior).toEqual({
             date: '2026-09-11', topWeightKg: 80, topReps: 5, comparison: 'like-for-like',
+            decision: {
+                state: 'comparable', matchBasis: 'canonical_exercise_identity', hardRejections: [],
+                limitations: [], confidenceCeiling: 'moderate',
+            },
         });
     });
 
@@ -512,6 +558,60 @@ describe('strength progression (#814)', () => {
             [prior.activityId, priorEvidence],
         ]));
         expect(feature.state === 'available' && feature.exercises[0].prior?.comparison).toBe('different reps');
+        expect(feature.state === 'available' && feature.exercises[0].prior?.decision).toMatchObject({
+            state: 'not_comparable', hardRejections: ['different repetition count'],
+        });
+    });
+
+    it('selects an older comparable set over a newer mechanically mismatched set', () => {
+        const current = lift('now', '2026-09-18', 80);
+        const recent = lift('recent', '2026-09-15', 90);
+        const older = lift('older', '2026-09-11', 75);
+        const evidence = new Map([
+            [current.activityId, structuredStrengthEvidence({ activityId: current.activityId, occurrenceId: 'now-occ', localDate: '2026-09-18', executionId: 'now-exec', performedExerciseId: 'front_squat', reps: 5, weightKg: 80 })],
+            [recent.activityId, structuredStrengthEvidence({ activityId: recent.activityId, occurrenceId: 'recent-occ', localDate: '2026-09-15', executionId: 'recent-exec', performedExerciseId: 'front_squat', reps: 3, weightKg: 90 })],
+            [older.activityId, structuredStrengthEvidence({ activityId: older.activityId, occurrenceId: 'older-occ', localDate: '2026-09-11', executionId: 'older-exec', performedExerciseId: 'front_squat', reps: 5, weightKg: 75 })],
+        ]);
+        const identities = new Map([
+            [current.activityId, { performedOccurrenceId: 'now-occ', localDate: '2026-09-18', sourceCompleteness: 'canonical' as const }],
+            [recent.activityId, { performedOccurrenceId: 'recent-occ', localDate: '2026-09-15', sourceCompleteness: 'canonical' as const }],
+            [older.activityId, { performedOccurrenceId: 'older-occ', localDate: '2026-09-11', sourceCompleteness: 'canonical' as const }],
+        ]);
+        const feature = deriveStrengthProgression(current, [recent, older], evidence, identities);
+        expect(feature.state === 'available' && feature.exercises[0].prior).toMatchObject({
+            date: '2026-09-11', topWeightKg: 75, topReps: 5, comparison: 'like-for-like',
+            decision: { state: 'comparable', confidenceCeiling: 'moderate' },
+        });
+    });
+
+    it('keeps structured step-only sets visible but withholds longitudinal identity comparison', () => {
+        const current = lift('now-step-only', '2026-09-18', 80);
+        const prior = lift('prior-step-only', '2026-09-11', 75);
+        const currentEvidence = structuredStrengthEvidence({
+            activityId: current.activityId, occurrenceId: 'pto-now-step', localDate: '2026-09-18',
+            executionId: 'exec-now-step', reps: 5, weightKg: 80,
+        });
+        const priorEvidence = structuredStrengthEvidence({
+            activityId: prior.activityId, occurrenceId: 'pto-prior-step', localDate: '2026-09-11',
+            executionId: 'exec-prior-step', reps: 5, weightKg: 75,
+        });
+        const feature = deriveStrengthProgression(current, [prior], new Map([
+            [current.activityId, currentEvidence], [prior.activityId, priorEvidence],
+        ]), new Map([
+            [current.activityId, { performedOccurrenceId: 'pto-now-step', localDate: '2026-09-18', sourceCompleteness: 'canonical' }],
+            [prior.activityId, { performedOccurrenceId: 'pto-prior-step', localDate: '2026-09-11', sourceCompleteness: 'canonical' }],
+        ]));
+        expect(feature.state).toBe('available');
+        if (feature.state !== 'available') return;
+        expect(feature.exercises[0]).toMatchObject({
+            identitySource: 'Adaptive structured step identity; comparison unavailable',
+            topWeightKg: 80,
+            prior: {
+                topWeightKg: 75,
+                comparison: 'insufficient evidence',
+                decision: { state: 'insufficient_evidence', hardRejections: ['canonical exercise identity unavailable'] },
+            },
+        });
     });
 
     it('fails closed when a structured execution is linked but unavailable', () => {

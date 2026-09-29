@@ -122,7 +122,7 @@ export function deriveKeySessionSummaries(
             sprints: deriveSprintRepetition(activity),
             decoupling: deriveDecoupling(activity),
             efficiency: deriveEfficiencyComparison(activity, context.history, identities),
-            strength: deriveStrengthProgression(activity, context.history, evidenceByActivityId),
+            strength: deriveStrengthProgression(activity, context.history, evidenceByActivityId, identities),
         }))
         .filter(isKey)
         .map(summary => ({
@@ -257,10 +257,22 @@ function strengthLines(feature: StrengthProgression): string[] {
     if (feature.state !== 'available') return [];
     return feature.exercises.map((exercise: ExerciseTopSet) => {
         const prior = exercise.prior
-            ? ` (prior ${exercise.prior.date}: ${topSetText(exercise.prior)}${exercise.prior.comparison === 'like-for-like' ? '' : `; not like-for-like: ${exercise.prior.comparison}`})`
+            ? ` (prior ${exercise.prior.date}: ${topSetText(exercise.prior)}; ${strengthDecisionText(exercise.prior.decision)}${exercise.prior.comparison === 'like-for-like' ? '' : `; not like-for-like: ${exercise.prior.comparison}`})`
             : ' (no prior session with this exercise in the fetched history)';
         return `- Strength ${exercise.exercise}: ${exercise.identitySource} · ${exercise.workingSets} working sets · top ${topSetText(exercise)}${prior}`;
     });
+}
+
+function strengthDecisionText(decision: NonNullable<ExerciseTopSet['prior']>['decision']): string {
+    if (decision.state !== 'comparable') {
+        return `comparison ${decision.state}: ${decision.hardRejections.join(', ')}`;
+    }
+    const basis = decision.matchBasis === 'provider_fallback'
+        ? 'provider exercise identity'
+        : decision.matchBasis === 'canonical_exercise_identity' ? 'canonical exercise identity' : 'matched identity';
+    const confidence = decision.confidenceCeiling ?? 'low';
+    const limitation = decision.limitations.length ? `; ${decision.limitations.join(', ')}` : '';
+    return `comparison comparable via ${basis}; ${confidence} confidence${limitation}`;
 }
 
 function readingText(label: 'soreness' | 'fatigue', next: CheckinReading, prior: CheckinReading | null): string {

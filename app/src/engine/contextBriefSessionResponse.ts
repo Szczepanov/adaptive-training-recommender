@@ -1,5 +1,11 @@
 import type { DailySubjectiveCheckin, NormalizedGarminActivity } from './models';
 import type { TrainingResponseSessionEvidence } from '../training-occurrence/trainingResponseEvidence';
+import {
+    decideSessionComparability,
+    type ComparisonDecision,
+    type ComparisonSourceCompleteness,
+    type ResponseSessionIdentity,
+} from './contextBriefComparability';
 import type { Insufficient } from './contextBriefResponseFeatures';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
@@ -9,11 +15,17 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 
 export interface ExerciseTopSet {
     exercise: string;
-    identitySource: 'Adaptive structured identity' | 'provider-recognized identity; confidence limited';
+    identitySource: 'Adaptive structured identity' | 'Adaptive structured step identity; comparison unavailable' | 'provider-recognized identity; confidence limited';
     workingSets: number;
     topWeightKg?: number;
     topReps?: number;
-    prior?: { date: string; topWeightKg?: number; topReps?: number; comparison: 'like-for-like' | 'different reps' | 'different load type' | 'missing reps' };
+    prior?: {
+        date: string;
+        topWeightKg?: number;
+        topReps?: number;
+        comparison: 'like-for-like' | 'different reps' | 'different load type' | 'missing reps' | 'not comparable' | 'insufficient evidence';
+        decision: Pick<ComparisonDecision, 'state' | 'matchBasis' | 'hardRejections' | 'limitations' | 'confidenceCeiling'>;
+    };
 }
 
 export type StrengthProgression =
@@ -25,6 +37,7 @@ const UNIDENTIFIED = new Set(['', 'UNKNOWN']);
 interface StrengthSet {
     identity: string;
     label: string;
+    identitySource: 'canonical' | 'unresolved_structured' | 'provider';
     weightKg?: number;
     repetitionCount?: number;
     isWarmup?: boolean;
@@ -38,7 +51,7 @@ function providerSets(activity: NormalizedGarminActivity): StrengthSet[] {
             const label = set.exerciseName?.trim() ?? '';
             const identity = label.toUpperCase();
             return {
-                identity, label,
+                identity, label, identitySource: 'provider',
                 ...(set.weightKg !== undefined ? { weightKg: set.weightKg } : {}),
                 ...(set.repetitionCount !== undefined ? { repetitionCount: set.repetitionCount } : {}),
                 loadType: set.weightKg !== undefined && set.weightKg > 0 ? 'external_load' : 'repetition_only',
@@ -60,6 +73,7 @@ function structuredSets(evidence: NonNullable<TrainingResponseSessionEvidence['s
         return {
             identity,
             label,
+            identitySource: exerciseRef?.kind === 'catalog' ? 'canonical' : 'unresolved_structured',
             ...(set.payload.kind === 'repetition' && set.payload.weightKg !== undefined ? { weightKg: set.payload.weightKg } : {}),
             ...(set.payload.kind === 'repetition' ? { repetitionCount: set.payload.reps } : {}),
             ...(set.payload.kind === 'duration' && set.payload.loadKg !== undefined ? { weightKg: set.payload.loadKg } : {}),
@@ -124,13 +138,26 @@ function responseLocalDate(
     return evidenceByActivityId.get(activity.activityId)?.localDate || activity.date;
 }
 
-/** Top-set load/reps per identified exercise, against the most recent prior session in
- * `history` with the same exercise identity. No estimated 1RM: the canonical estimator
+function strengthSourceCompleteness(
+    identitySource: StrengthSet['identitySource'],
+    identity: ResponseSessionIdentity | undefined,
+): ComparisonSourceCompleteness {
+    // ADR-0034: structured execution owns exercise/load/reps. Provider-record multiplicity
+    // is irrelevant to those mechanical facts; it matters only when provider recognition
+    // is the strength evidence source.
+    if (identitySource !== 'provider') return 'canonical';
+    return identity?.sourceCompleteness ?? 'provider_fallback';
+}
+
+/** Top-set load/reps per identified exercise, against the highest-ranked prior candidate
+ * in `history`: comparable mechanics first, then identity/confidence, then recency.
+ * No estimated 1RM: the canonical estimator
  * (`workouts/oneRepMax.ts`) needs near-failure effort evidence that device sets lack. */
 export function deriveStrengthProgression(
     activity: NormalizedGarminActivity,
     history: readonly NormalizedGarminActivity[],
     evidenceByActivityId: ReadonlyMap<string, TrainingResponseSessionEvidence> = new Map(),
+    identities: ReadonlyMap<string, ResponseSessionIdentity> = new Map(),
 ): StrengthProgression {
     const currentEvidence = evidenceByActivityId.get(activity.activityId);
     const structuredLinked = currentEvidence?.identity.sourceKinds.includes('structured_execution') ?? false;
@@ -155,28 +182,71 @@ export function deriveStrengthProgression(
     for (const [identity, exerciseSets] of setsByExercise(sets)) {
         const top = topSet(exerciseSets);
         if (!top) continue;
-        const priorSession = priors
+        const priorSessions = priors
             .map(prior => {
                 const priorEvidence = evidenceByActivityId.get(prior.activityId);
                 const priorStructuredLinked = priorEvidence?.identity.sourceKinds.includes('structured_execution') ?? false;
                 const priorDate = responseLocalDate(prior, evidenceByActivityId);
                 if (Boolean(currentEvidence?.structured) !== Boolean(priorEvidence?.structured)
-                    || (priorStructuredLinked && !priorEvidence?.structured)) return { prior, priorDate, marker: null };
+                    || (priorStructuredLinked && !priorEvidence?.structured)) return { prior, priorDate, marker: null, decision: null };
                 const priorSets = priorEvidence?.structured
                     ? structuredSets(priorEvidence.structured).filter(set => !set.isWarmup)
                     : providerSets(prior);
+                const marker = priorStrengthMarker(top, setsByExercise(priorSets).get(identity) ?? []);
+                const decision = marker ? decideSessionComparability({
+                    featureFamily: 'strength_set_response',
+                    current: {
+                        activity,
+                        identity: identities.get(activity.activityId),
+                        strength: {
+                            exerciseIdentity: identity,
+                            identitySource: top.identitySource,
+                            loadType: top.loadType,
+                            ...(top.repetitionCount !== undefined ? { repetitions: top.repetitionCount } : {}),
+                            sourceCompleteness: strengthSourceCompleteness(top.identitySource, identities.get(activity.activityId)),
+                        },
+                    },
+                    prior: {
+                        activity: prior,
+                        identity: identities.get(prior.activityId),
+                        strength: {
+                            exerciseIdentity: identity,
+                            identitySource: marker.top.identitySource,
+                            loadType: marker.top.loadType,
+                            ...(marker.top.repetitionCount !== undefined ? { repetitions: marker.top.repetitionCount } : {}),
+                            sourceCompleteness: strengthSourceCompleteness(marker.top.identitySource, identities.get(prior.activityId)),
+                        },
+                    },
+                }) : null;
                 return {
                     prior,
                     priorDate,
-                    marker: priorStrengthMarker(top, setsByExercise(priorSets).get(identity) ?? []),
+                    marker,
+                    decision,
                 };
             })
-            .find(entry => entry.marker !== null);
+            .filter((entry): entry is { prior: NormalizedGarminActivity; priorDate: string; marker: PriorStrengthMarker; decision: ComparisonDecision } =>
+                entry.marker !== null && entry.decision !== null)
+            .sort((left, right) => {
+                const comparable = Number(right.decision.state === 'comparable') - Number(left.decision.state === 'comparable');
+                const basisRank = (basis: ComparisonDecision['matchBasis']) => basis === 'canonical_exercise_identity' ? 0
+                    : basis === 'provider_fallback' ? 1 : 2;
+                const confidenceRank = (confidence: ComparisonDecision['confidenceCeiling']) => confidence === 'high' ? 0
+                    : confidence === 'moderate' ? 1 : 2;
+                return comparable
+                    || basisRank(left.decision.matchBasis) - basisRank(right.decision.matchBasis)
+                    || confidenceRank(left.decision.confidenceCeiling) - confidenceRank(right.decision.confidenceCeiling)
+                    || right.priorDate.localeCompare(left.priorDate)
+                    || left.prior.activityId.localeCompare(right.prior.activityId);
+            });
+        const priorSession = priorSessions[0];
         exercises.push({
             exercise: top.label || identity,
-            identitySource: currentEvidence?.structured
+            identitySource: top.identitySource === 'canonical'
                 ? 'Adaptive structured identity'
-                : 'provider-recognized identity; confidence limited',
+                : top.identitySource === 'unresolved_structured'
+                    ? 'Adaptive structured step identity; comparison unavailable'
+                    : 'provider-recognized identity; confidence limited',
             workingSets: exerciseSets.length,
             ...(top.topWeightKg !== undefined ? { topWeightKg: top.topWeightKg } : {}),
             ...(top.topReps !== undefined ? { topReps: top.topReps } : {}),
@@ -184,7 +254,18 @@ export function deriveStrengthProgression(
                 date: priorSession.priorDate,
                 ...(priorSession.marker.top.topWeightKg !== undefined ? { topWeightKg: priorSession.marker.top.topWeightKg } : {}),
                 ...(priorSession.marker.top.topReps !== undefined ? { topReps: priorSession.marker.top.topReps } : {}),
-                comparison: priorSession.marker.comparison,
+                comparison: priorSession.decision.state === 'comparable' ? priorSession.marker.comparison
+                    : priorSession.decision.state === 'not_comparable'
+                        ? priorSession.marker.comparison === 'like-for-like' ? 'not comparable' : priorSession.marker.comparison
+                        : 'insufficient evidence',
+                decision: {
+                    state: priorSession.decision.state,
+                    ...(priorSession.decision.matchBasis ? { matchBasis: priorSession.decision.matchBasis } : {}),
+                    hardRejections: priorSession.decision.hardRejections,
+                    limitations: priorSession.decision.limitations,
+                    ...(priorSession.decision.confidenceCeiling
+                        ? { confidenceCeiling: priorSession.decision.confidenceCeiling } : {}),
+                },
             } } : {}),
         });
     }

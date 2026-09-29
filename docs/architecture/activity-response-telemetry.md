@@ -100,6 +100,16 @@ A segment retains prescription and execution separately:
 The segment array is capped at 64. The MMP family is fixed-size. Historical activity
 documents without activityResponse degrade to the existing lap/session summary path.
 
+Cross-session strength comparison consumes existing performed-session evidence and the
+bounded set facts already available to the context brief. It does not add fields to
+activityResponse, synthesize a Garmin activity for structured-only work, or change the
+provider request/persistence contract. Comparability requires the same exercise identity,
+load type and repetitions; provider-recognized exercise names retain a low confidence ceiling.
+Because ADR-0034 assigns exercise/load/repetition authority to a linked structured execution,
+multiple wearable recordings on that occurrence do not make those structured mechanics
+ambiguous. Provider-only strength still fails closed when the provider source needed for the
+mechanical facts is ambiguous, partial or unavailable.
+
 ## Read-side hydration and athlete UI
 
 `trainingHistory.ts` treats `activityResponse` as one optional evidence sidecar. The base
