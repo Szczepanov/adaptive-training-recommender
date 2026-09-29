@@ -148,8 +148,7 @@ def build_inventory(root: Path) -> dict[str, object]:
     metrics: list[FileMetric] = [
         file_metric(root, path, kind)
         for path in paths
-        if (kind := classify_tracked_path(path))
-        in {"production_source", "tooling_source", "test"}
+        if (kind := classify_tracked_path(path)) in {"production_source", "tooling_source", "test"}
     ]
     production = sorted(
         (item for item in metrics if item["kind"] == "production_source"),
