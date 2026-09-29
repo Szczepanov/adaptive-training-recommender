@@ -444,10 +444,10 @@ Pick the cheapest tool that answers the actual question:
    vocabulary is known, use text search (`Grep`/`rg`) and direct reads. This remains the default
    for literals, docs, YAML/JSON, generated files, and exact callers.
 2. **Unknown repository vocabulary/location:** when behavior is understood but its implementation
-   name/location is not, use a fresh local `canopy search` first when available. It is a fast,
-   local semantic locator; treat results as candidates and verify them in source. If Canopy is
-   unavailable/stale or the result is materially ambiguous, use a tightly scoped `jev find` as a
-   second opinion/fallback.
+   name/location is not, use `canopy search` first only when a **pre-existing usable index** is
+   already available. It is a fast local semantic locator; treat results as candidates and verify
+   them in source. If the current worktree has no usable index, do not initialize/reindex Canopy as
+   task setup; use lexical/direct evidence and a tightly scoped `jev find` as the fallback.
 3. **Semantic property on a known target:** use a targeted direct read when the relevant evidence is
    already small/localized. When answering "does this file/symbol/subsystem do X?" would otherwise
    require a broad/large read or scanning multiple files and `jev` is available, prefer a narrowly
@@ -465,6 +465,26 @@ Pick the cheapest tool that answers the actual question:
    `tsc -b`.
 6. If Canopy/Jev are unavailable or uncertain, fall back to exact text search and targeted reads;
    the repository must never require optional semantic tooling to make progress.
+
+### Canopy index lifecycle
+
+Normal coding-agent work is **consumer-only** for Canopy indexes.
+
+- Do not run `canopy init`, `canopy reindex`, switch/pull embedding models, or rebuild an index
+  because a temporary worktree lacks `.canopy/`.
+- Do not mutate a shared index with `canopy index` from a temporary worktree. A persistent
+  primary/main checkout may maintain its own index through an explicit developer/tool-maintenance
+  workflow.
+- If a shared persistent-main Canopy search is exposed by the client/environment, use it only as
+  baseline-main discovery. Verify all located behavior against the current branch/worktree before
+  editing or concluding.
+- Never share one writable `.canopy/` directory across concurrent worktrees.
+- Missing Canopy is a normal fallback condition, not a reason to substitute a smaller embedding
+  model. Qwen3-Embedding-4B remains the evaluated baseline; smaller models belong in explicit
+  retrieval benchmarks.
+
+Generated Canopy state remains ignored/local. See `docs/standards/agent-tooling.md` for the
+normative lifecycle and evidence rules.
 
 The automatic Jev large-read narrowing hook is not a repository default because it can hide source.
 Client-local experiments may enable it, but correctness must be compared against full-source runs
