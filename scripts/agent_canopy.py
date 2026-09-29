@@ -125,8 +125,7 @@ def baseline_query_lock(
 
             if time.monotonic() >= deadline:
                 raise TimeoutError(
-                    f"Canopy baseline is busy: {worktree} "
-                    f"(waited {timeout_seconds:.1f}s)"
+                    f"Canopy baseline is busy: {worktree} (waited {timeout_seconds:.1f}s)"
                 ) from None
             time.sleep(0.05)
             continue

@@ -18,7 +18,7 @@ unavailable.
 2. **Behavior known, repository vocabulary/location unknown** — for a non-trivial task, make one
    query-only baseline discovery attempt with
    `python scripts/agent_canopy.py search "<behavior>"` **before a broad lexical sweep**. The
-   wrapper discovers the maintained main-checkout index and never provisions or mutates it. Exit
+   wrapper discovers the maintained main-checkout index and never invokes index-maintenance commands. Exit
    code 3 / `CANOPY_UNAVAILABLE` means fall back immediately without troubleshooting Canopy. Treat
    returned files/chunks as candidates, not proof. If the result is materially ambiguous and the
    location is still unknown, use one tightly scoped `jev find` as a second opinion before

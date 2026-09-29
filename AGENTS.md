@@ -445,7 +445,7 @@ Pick the cheapest tool that answers the actual question:
    for literals, docs, YAML/JSON, generated files, and exact callers.
 2. **Unknown repository vocabulary/location:** for a non-trivial task, make one query-only
    `python scripts/agent_canopy.py search "<behavior>"` attempt before broad lexical exploration.
-   The wrapper locates the maintained main-checkout index and never provisions/mutates it. Exit code
+   The wrapper locates the maintained main-checkout index and never invokes index-maintenance commands. Exit code
    3 / `CANOPY_UNAVAILABLE` means fall back immediately. Treat hits as candidates and verify them
    in the current worktree. If the result is materially ambiguous and location remains unknown, use
    one tightly scoped `jev find` as a second opinion before escalating to broader search.
