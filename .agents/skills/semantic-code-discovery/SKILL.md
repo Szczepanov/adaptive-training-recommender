@@ -15,17 +15,20 @@ unavailable.
 
 1. **Exact vocabulary known** — use `rg`/Grep and direct reads for symbols, strings, errors, paths,
    configuration keys and exact callers. Do not use semantic retrieval to rediscover a known name.
-2. **Behavior known, repository vocabulary/location unknown** — when a **pre-existing** Canopy
-   index is already available and sufficiently current for the question, use `canopy search` as
-   the first semantic locator. Treat the returned files/chunks as candidates, not proof. Do not
-   bootstrap or rebuild Canopy as task setup. If no usable index is available, or its result is
-   materially ambiguous, use lexical/direct evidence and a tightly scoped `jev find` as a second
-   opinion/fallback.
-3. **Known target, semantic property unknown** — use a targeted direct read when the relevant
-   evidence is already small/localized. When answering would otherwise require a broad/large read or
-   scanning multiple files and `jev` is available, use an atomic `jev ask` against the
-   implementation file or smallest relevant subsystem. Canopy search is retrieval, not a substitute
-   for a semantic yes/no judgment.
+2. **Behavior known, repository vocabulary/location unknown** — for a non-trivial task, make one
+   read-only baseline discovery attempt with
+   `python scripts/agent_canopy.py search "<behavior>"` **before a broad lexical sweep**. The
+   wrapper discovers the maintained main-checkout index and never provisions or mutates it. Exit
+   code 3 / `CANOPY_UNAVAILABLE` means fall back immediately without troubleshooting Canopy. Treat
+   returned files/chunks as candidates, not proof. If the result is materially ambiguous and the
+   location is still unknown, use one tightly scoped `jev find` as a second opinion before
+   escalating to broader repository search.
+3. **Known target, semantic property unknown** — use a targeted direct read when one small,
+   localized source region answers the question. If one semantic yes/no/property question would
+   otherwise require inspecting multiple substantial regions/files, use **one atomic `jev ask`**
+   against the implementation file or smallest relevant subsystem before broad reading. If Jev is
+   unavailable, fall back immediately. Canopy search is retrieval, not a substitute for semantic
+   judgment.
 4. **Call-graph orientation** — after a useful Canopy search hit, `canopy map`/`canopy trace`
    may provide cheap local graph context. Treat graph output as advisory: if a known symbol is not
    resolved, fall back to `rg`/source rather than inferring absence.
@@ -34,6 +37,11 @@ unavailable.
 6. **External library/API behavior** — use the `external-library-docs` skill / Context7 instead.
 
 ## Jev ask
+
+For a known implementation target, use Jev when one semantic property would otherwise make you read
+multiple substantial source regions/files. This is an explicit trigger, not a ceremonial extra hop:
+normally ask **one** atomic question, verify its cited source, and stop. A typical issue should need
+0–3 Jev calls; more calls require distinct unresolved properties rather than repeated discovery.
 
 Keep questions atomic: one independently testable semantic property per call. Do not call Jev
 ceremonially after a targeted source read already answers the question; the purpose is to avoid
@@ -55,7 +63,21 @@ B and C and combine the verified results yourself.
 Use Canopy primarily for **local vocabulary-gap discovery**: natural-language behavior → likely
 implementation files/symbols.
 
-- Prefer `canopy search "<behavior>"` when you do not know the repository's symbol vocabulary.
+The repository-owned entry point for agents is the **read-only worktree bridge**:
+
+```bash
+python scripts/agent_canopy.py search "where is this behavior implemented?"
+python scripts/agent_canopy.py map SomeSymbol
+python scripts/agent_canopy.py trace Caller Callee
+```
+
+The wrapper locates the checked-out `main`/`master` worktree (or
+`AGENT_CANOPY_BASELINE_WORKTREE` / `--baseline-worktree` override), requires an already-built
+`.canopy/` index there, and exposes only read-only Canopy commands. It never initializes,
+indexes, reindexes, pulls a model, or changes configuration. `CANOPY_UNAVAILABLE` with exit code 3
+means **fall back; do not repair/provision Canopy during the task**.
+
+- Prefer the wrapper's `search` command when you do not know the repository's symbol vocabulary; do not call raw Canopy from a temporary worktree.
 - The current evaluated repository setup favors `top_k = 15` and `test_penalty = 0.5`: returning
   a few extra source candidates is cheaper than missing the implementation, while tests remain
   visible but are demoted below production code. These are retrieval-tuning defaults, not
@@ -80,7 +102,8 @@ implementation files/symbols.
 Normal issue/PR agents **consume an existing index; they do not provision one**.
 
 - Never run `canopy init`, `canopy reindex`, change the embedding model/quantization, or pull an
-  Ollama embedding model merely because the current worktree lacks `.canopy/`.
+  Ollama embedding model merely because the current worktree lacks `.canopy/`. Use
+  `scripts/agent_canopy.py`; if it reports unavailable, fall back.
 - Do not run `canopy index` against a shared/baseline index from a temporary agent worktree. Index
   mutation belongs to an explicit developer/tool-maintenance workflow, not normal task execution.
 - A persistent primary/main checkout may maintain a Qwen3-Embedding-4B index incrementally. If the
