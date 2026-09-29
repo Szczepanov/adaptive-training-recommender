@@ -2,13 +2,27 @@
 
 | | |
 |---|---|
-| **Status** | **In progress** — WP0–WP2, WP4 and WP5 are implemented for their shipped paths; WP3, WP6–WP8 and issue closure remain open |
+| **Status** | **In progress** — WP0–WP2, WP4 and WP5 are implemented for their shipped paths; WP8 documentation and structural guards are updated in this continuation; WP3, WP6.4, WP7, WP8 issue reconciliation and closure remain open |
 | **Source** | [Issue #814](https://github.com/Szczepanov/adaptive-training-recommender/issues/814) and [2026-09-28 completion analysis](../analysis/2026-09-28-issue-814-training-response-completion-analysis.md) |
-| **Baseline** | fresh `origin/main` at `9208d2b351f4673ad10c4ed03ca6532b22cbb697`; includes PR #898 merge `43c83b6b173cc8da57182c24f70bb96cd12939f6` (merged 2026-09-29) |
-| **Baseline reconciliation** | The plan's prior baseline (`6882918d…`, after #892) and the prompt's observed `d0205da…` were both superseded when `git fetch origin` advanced `origin/main` to `9208d2b…` (#904). This continuation starts from that fetched tip. |
-| **Blocked by** | No blocker for WP0–WP5. WP6 environmental enrichment is conditional on the source audit proving stable already-acquired provider fields. Individual work-item dependencies are listed below. |
+| **Baseline** | fresh managed worktree at fetched `origin/main` `2ec78e5444e6c0b329707294cf6a46cbd7368b1f`; includes #907 (`56b38e1`, merged) and subsequent main commits |
+| **Baseline reconciliation** | The requested `56b38e1` was no longer the fetched `origin/main` tip when this continuation started; `origin/main` had advanced to `2ec78e5`. This work uses the newer tip, including #907 and commits after it. |
+| **Blocked by** | WP3 lacks a deterministic execution-to-response-segment alignment contract. WP6.4 lacks stable retained running-context fields plus compatible running HR-use authority. WP7 still lacks deterministic provider occurrence selection/provenance. WP8 closure depends on those remaining work packages. |
 | **Unlocks** | Closure of #814; a clean evidence surface for future adaptation/progression research. It does **not** itself unlock recommendation authority. |
 | **Policy effect** | None. All work in this plan remains display/observability context. POLICY_VERSION must not change unless scope is explicitly widened in a separately reviewed policy change. |
+
+## Task board
+
+| Work package | Status | Current boundary |
+|---|---|---|
+| WP0–WP2 | `[x]` | Shipped contracts and current comparison paths are covered. |
+| WP3 | `[-]` | Session identity is wired; segment-to-step identity is blocked until a deterministic shared alignment contract exists. |
+| WP4–WP5 | `[x]` | Structured strength and next-morning response render from canonical response evidence. |
+| WP6.1–WP6.3 | `[x]` | Power–HR wording and source audit are complete; WP6.3 ended with no stable retained context fields. |
+| WP6.4 | `[-]` | Controlled running pace–HR remains blocked by absent stable venue/distance-quality evidence and running HR-use compatibility. |
+| WP7 | `[-]` | Provider occurrence deduplication, diagnostic decision provenance and remaining boundedness acceptance remain open. |
+| WP8 | `[-]` | Architecture docs and structural guards are updated; final acceptance reconciliation is blocked by WP3, WP6.4 and WP7. Issue #814 stays open. |
+
+WP headings below carry the same status as this board. A negative source audit completes the audit task, but does not satisfy the unmet data-dependent acceptance criterion.
 
 ## 1. Goal
 
@@ -433,7 +447,7 @@ Every shipped longitudinal response comparison obtains eligibility/confidence fr
 
 ## WP3 — Wire authored identity without inventing step correspondence
 
-**Status:** In progress — authored protocol identity now reaches the steady power–HR comparator; segment-level reconciliation remains open.
+**Status:** In progress (blocked) — authored protocol identity now reaches the steady power–HR comparator; segment-level reconciliation has no deterministic cross-source alignment contract.
 **Blocked by:** WP1, WP2
 **Purpose:** complete the original #814 / #850 deferred identity integration.
 
@@ -466,7 +480,7 @@ Potential mapping evidence, strongest first:
 
 Occurrence membership alone is insufficient.
 
-**Current boundary:** execution entries provide completion times, while response segments provide elapsed offsets; the current records expose no shared step ID or guaranteed timing-alignment contract. Do not join those timestamps heuristically or upgrade segment identity until deterministic evidence is available.
+**Current boundary:** execution entries provide completion times, while response segments provide elapsed offsets; the current records expose no shared step ID or guaranteed timing-alignment contract. Do not infer linkage from occurrence membership or join those timestamps heuristically. WP3 remains blocked until deterministic shared alignment evidence is available.
 
 ### 3.3 Failure behavior
 
@@ -636,7 +650,7 @@ The output is more specific when exact linkage exists and more honest when it do
 
 ## WP6 — Harden steady cycling context and add controlled running pace–HR response
 
-**Status:** In progress — response terminology is now power–HR based; context enrichment and controlled running remain open. WP6.3 is conditional.
+**Status:** In progress — response terminology is power–HR based and the WP6.3 provider audit is complete with a negative result; controlled running remains open and blocked. No new provider source/request is in this issue scope.
 **Blocked by:** WP2; running also depends on HR-fidelity compatibility for running use
 **Purpose:** finish the two longitudinal aerobic-response families without pretending field context is controlled when it is not.
 
@@ -747,7 +761,7 @@ Cycling steady comparison no longer overstates its meaning, and issue #814 has a
 
 ## WP7 — Render provenance compactly and keep the information budget
 
-**Status:** In progress — planning output names the selected comparison basis, bounds rejected candidates and caps structured-only strength output at eight occurrences/exercises with omission counts; provider-backed occurrence deduplication, diagnostic provenance and full boundedness acceptance remain open.
+**Status:** In progress — planning output names the selected comparison basis, bounds rejected candidates and caps structured-only strength output at eight occurrences/exercises with omission counts; provider-backed occurrence deduplication, diagnostic provenance and full boundedness acceptance remain open because provider source selection is not yet deterministic.
 **Blocked by:** WP2–WP6
 **Purpose:** make stronger semantics visible without recreating diagnostic bloat.
 
@@ -812,7 +826,7 @@ The planning brief becomes more semantically precise without reversing #811's in
 
 ## WP8 — Documentation, governance and issue closure
 
-**Status:** In progress — the recommendation-engine reference reflects the current comparison, strength and next-day output; telemetry documentation, structural guards and issue closure remain open.
+**Status:** In progress — recommendation-engine and telemetry references plus structural authority guards are updated; final issue acceptance reconciliation remains open because WP3, WP6.4 and WP7 are incomplete.
 **Blocked by:** WP1–WP7
 **Purpose:** update living architecture and make the authority boundary difficult to regress.
 
@@ -824,7 +838,7 @@ The planning brief becomes more semantically precise without reversing #811's in
 - ADR-0034 status/documentation only if the repository separately decides its shipped state warrants an ADR status transition; do not silently edit an accepted immutable ADR.
 - issue #814 acceptance checklist/comment.
 
-`docs/architecture/recommendation-engine.md` now reflects the current power–HR terminology, structured strength authority, and exact-versus-day-level next-morning linkage. The remaining architecture and governance items are not complete.
+`docs/architecture/recommendation-engine.md` and `docs/architecture/activity-response-telemetry.md` reflect the current power–HR terminology, structured strength authority, exact-versus-day-level next-morning linkage, and deterministic identity/provider-data cutlines. Structural guards cover static and dynamic imports, keep the response-renderer chain inside the context-brief display boundary, reject transitive reachability from non-context-brief engine modules, and lock the normalized response schema (including nested source-resolution and prescribed-target shapes) against accidental raw-trace expansion. Cardinality bounds remain enforced by the existing ingestion/read-side validation and tests rather than by this structural test alone. These updates do not close the remaining data-dependent acceptance items or issue #814.
 
 ### Document explicitly
 

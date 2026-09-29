@@ -289,17 +289,24 @@ fallbacks. This remains display-only, so `POLICY_VERSION` is unaffected.
 Known limitations: stable venue, temperature, elevation/grade, route and distance-quality fields
 are not retained in the normalized activity/response data, so environmental enrichment requires
 separate request-budget/privacy review. Segment-level execution-to-step reconciliation is not
-established by occurrence identity alone; running pace–HR comparison and diagnostic provenance
-remain incomplete. Structured-only strength and next-morning evidence now render from the canonical response projection, and a linked but unavailable structured execution is surfaced as insufficient evidence without provider-name fallback. The renderer also still starts from provider activity rows, so a canonical occurrence with multiple provider recordings can yield more than one response-summary row; occurrence-level render deduplication remains follow-up work. Comparisons cannot reach beyond the fetched lookback.
+established by occurrence identity alone; running pace–HR comparison and diagnostic comparator
+provenance remain incomplete. Structural tests keep response-comparability imports on the display
+path, cover dynamic imports, and reject transitive reachability from non-context-brief engine modules;
+WP3, WP6.4 and WP7 still block issue closure. Structured-only strength and next-morning
+evidence render from the canonical response projection, and a linked but unavailable structured
+execution is surfaced as insufficient evidence without provider-name fallback. The renderer also
+still starts from provider activity rows, so a canonical occurrence with multiple provider recordings
+can yield more than one response-summary row; occurrence-level render deduplication remains follow-up
+work. Comparisons cannot reach beyond the fetched lookback.
 
 #### Recovery evidence synthesis (issue #812)
 
 The recovery section of the planning/diagnostic brief, and section 2 of the morning brief,
 open with a deterministic synthesis (`contextBriefRecoverySynthesis.ts`
 `synthesizeRecoveryEvidence` / `renderRecoveryEvidenceSynthesis`). It is **explanatory
-observability support, not a readiness authority**: no engine module imports it, it
-produces no score, and `rules.ts` `evaluateReadinessAndSafetyEnvelope` remains the sole
-decision authority. `POLICY_VERSION` is unaffected.
+observability support, not a readiness authority**: it is consumed only by context-brief
+rendering paths, not by recommendation/readiness authority modules; it produces no score, and
+`rules.ts` `evaluateReadinessAndSafetyEnvelope` remains the sole decision authority. `POLICY_VERSION` is unaffected.
 
 - Evidence is grouped into four independent families that each cast at most one vote:
   athlete-reported state (listed first), HRV, resting HR and sleep score. Objective
