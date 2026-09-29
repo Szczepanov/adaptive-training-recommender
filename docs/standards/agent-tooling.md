@@ -81,8 +81,9 @@ Route repository questions by evidence shape:
 | Question | Preferred route |
 |---|---|
 | Exact symbol/string/error/path is known | `rg`/text search, then direct read |
-| Behavior is known but repository vocabulary/location is unknown | pre-existing usable `canopy search`; otherwise lexical/direct evidence + scoped `jev find` fallback |
-| Known file/subsystem; semantic property needs broad/large reading | narrowly scoped atomic `jev ask`; otherwise targeted direct read |
+| Behavior is known but repository vocabulary/location is unknown | one read-only `scripts/agent_canopy.py search` attempt; then scoped `jev find` if still ambiguous |
+
+| Known file/subsystem; one semantic property needs multiple substantial reads | one narrowly scoped atomic `jev ask`; otherwise targeted direct read |
 | Call-graph orientation after discovery | `canopy map` / `canopy trace` as advisory hints |
 | Type/signature change; need complete impact list | compiler (`tsc -b` / `mypy`) |
 | External package/API behavior | Context7 / official upstream docs |
@@ -91,6 +92,21 @@ Route repository questions by evidence shape:
 
 Canopy is primarily a **local semantic locator**, not source authority and not a replacement for
 lexical lookup.
+
+Coding agents should invoke Canopy through the repository-owned read-only bridge:
+
+```bash
+python scripts/agent_canopy.py search "where is this behavior implemented?"
+python scripts/agent_canopy.py map SomeSymbol
+python scripts/agent_canopy.py trace Caller Callee
+python scripts/agent_canopy.py status
+```
+
+The bridge discovers a checked-out `main`/`master` worktree, or accepts
+`AGENT_CANOPY_BASELINE_WORKTREE` / `--baseline-worktree`, validates that the generated index
+already exists, and then runs only read-only Canopy commands from that baseline checkout. It never
+creates/mutates the index. Exit code 3 plus `CANOPY_UNAVAILABLE` explicitly means: **continue with
+fallback evidence and do not troubleshoot/provision Canopy during the task**.
 
 - Use `canopy search "<behavior>"` for vocabulary-gap questions where the implementation name is
   unknown. Do not use it for exact-symbol lookups that `rg` answers precisely.
@@ -153,6 +169,14 @@ If Canopy is configured with a remote/OpenAI-compatible embedding provider inste
 treat its source upload as data egress and apply the same prohibited-path/privacy rules below.
 
 ### Jev question discipline
+
+The trigger for `jev ask` is operational: if the implementation target is known but one semantic
+property would otherwise require inspecting multiple substantial source regions/files, ask one
+atomic Jev question before doing that broad reading. Typical issue work should use 0–3 Jev calls;
+additional calls should correspond to distinct unresolved properties, not repeated discovery.
+
+For unknown implementation location, Jev `find` is the second opinion after the read-only Canopy
+attempt is unavailable or materially ambiguous—not a mandatory duplicate search.
 
 - Prefer one independently testable semantic property per `jev ask`. Split compound questions
   such as "does A/B/C already work or is wiring needed?" into separate A, B and C checks.
