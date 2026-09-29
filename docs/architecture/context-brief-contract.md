@@ -5,10 +5,10 @@ It is treated as a versioned API even though the wire format remains human/LLM-r
 Markdown.
 
 This document describes the contract implemented incrementally by issue #894. Contract
-identity/versioning and the canonical completed-training representation are implemented. The
-broader #894 work on full missingness states outside completed training, per-source currency,
-size budgets, golden fixtures and end-to-end regression coverage remains open until those
-slices land.
+identity/versioning and the planning/diagnostic canonical completed-training table are
+implemented. Morning D-1 adherence still uses its separate raw-activity debrief path and remains
+part of the broader #894 follow-up, alongside full missingness states outside completed training,
+per-source currency, size budgets, golden fixtures and end-to-end regression coverage.
 
 ## Export boundary
 
@@ -137,4 +137,4 @@ decision. Do not silently repurpose an existing label.
 Adding or changing body sections also requires checking #894's contract requirements so that
 missingness, provenance, authority and information-budget guarantees are not weakened.
 
-The remaining acceptance criteria of #894 stay tracked by that issue; canonical completed training is no longer listed as outstanding, and merging this partial slice must not auto-close it.
+The remaining acceptance criteria of #894 stay tracked by that issue. This slice completes the planning/diagnostic canonical table only; morning D-1 canonicalization and the other open contract gates remain outstanding, so merging it must not auto-close #894.
