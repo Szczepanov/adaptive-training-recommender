@@ -255,6 +255,86 @@
           "reason": "No source-symbol discovery is needed."
         }
       ]
+    },
+    {
+      "id": "semantic-property-jev-routing",
+      "kind": "capability",
+      "source": {
+        "type": "synthetic",
+        "ref": "P0-jev-routing"
+      },
+      "start_ref": "6882918d203f689e87c7dc7dd4251aae7d4fd127",
+      "prompt": "Without changing code, determine whether ContextBriefService.build hydrates performedFacts for the morning, planning, and diagnostic brief purposes, and state whether a change that needs performedFacts in the morning brief requires service-layer wiring first. Keep the three purpose checks separate and ground the conclusion in repository source.",
+      "success_criteria": [
+        "The exact ContextBriefService implementation is located without a broad repository semantic sweep.",
+        "The answer identifies that morning leaves performedFacts unhydrated while planning and diagnostic hydrate it.",
+        "The answer concludes that a morning feature requiring performedFacts needs service-layer wiring first.",
+        "The cited/inspected source is treated as authority rather than a semantic score alone.",
+        "No files are modified."
+      ],
+      "grader": {
+        "commands": [],
+        "forbidden_modified_globs": [
+          "**"
+        ]
+      },
+      "tool_expectations": [
+        {
+          "capability": "lexical_search",
+          "expectation": "recommended",
+          "reason": "The exact ContextBriefService symbol is known, so locate its implementation with rg/text search first."
+        },
+        {
+          "capability": "jev",
+          "expectation": "recommended",
+          "reason": "Atomic jev ask checks on the known implementation file are a good fit for the three semantic purpose properties."
+        },
+        {
+          "capability": "context7",
+          "expectation": "not_expected",
+          "reason": "The question is entirely repository-internal behavior."
+        }
+      ]
+    },
+    {
+      "id": "exact-symbol-no-jev",
+      "kind": "capability",
+      "source": {
+        "type": "synthetic",
+        "ref": "P0-jev-routing-negative"
+      },
+      "start_ref": "6882918d203f689e87c7dc7dd4251aae7d4fd127",
+      "prompt": "Without changing code, locate the definition of POLICY_VERSION, report its file and symbol, and summarize the repository rule for when it must be bumped. Use repository evidence only.",
+      "success_criteria": [
+        "The answer identifies app/src/engine/policy.ts and POLICY_VERSION.",
+        "The policy-version bump rule is derived from repository instructions/source.",
+        "Exact lexical lookup is sufficient; no broad semantic discovery is needed.",
+        "No external library documentation is used.",
+        "No files are modified."
+      ],
+      "grader": {
+        "commands": [],
+        "forbidden_modified_globs": [
+          "**"
+        ]
+      },
+      "tool_expectations": [
+        {
+          "capability": "lexical_search",
+          "expectation": "recommended",
+          "reason": "The exact exported symbol is known; rg/text search is the cheapest and most precise route."
+        },
+        {
+          "capability": "jev",
+          "expectation": "not_expected",
+          "reason": "Semantic discovery adds cost and ambiguity to an exact-symbol lookup."
+        },
+        {
+          "capability": "context7",
+          "expectation": "not_expected",
+          "reason": "The requested rule is repository-owned, not an external API contract."
+        }
+      ]
     }
   ]
 }
