@@ -44,6 +44,7 @@ import { activeExternalPlanService, externalRestContextForDate, placedSessionFor
 import type { BriefRestDirective } from '../engine/briefPlanAuthority';
 import { activityOverrideService } from './activityOverrideService';
 import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
+import { CONTEXT_BRIEF_CONTRACT_VERSION } from '../engine/contextBriefContract';
 import type { PerformedExposureFact } from '../engine/performedTrainingFacts';
 import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
 import { activityService } from './activityService';
@@ -70,6 +71,8 @@ export interface ContextBriefResult {
     preset: BriefWindowPreset;
     /** Issue #811: the consumer intent the preset maps to (morning / planning / diagnostic). */
     purpose: BriefPurpose;
+    /** Issue #894: versioned contract identity rendered into `text`. */
+    contractVersion: string;
     /** Sources that could not be read. The brief still renders; it says what is missing
      * rather than presenting a partial window as complete. */
     unavailableSources: string[];
@@ -597,6 +600,7 @@ export class ContextBriefService {
             goals,
             bodyComposition,
             purpose,
+            generatedAt: new Date().toISOString(),
             effectivePlanningMode: planningContext.mode,
             isExternalPlanAuthority: planningContext.mode === 'externally_planned' || planningContext.externalFallback,
             exposureLedger: {
@@ -677,6 +681,7 @@ export class ContextBriefService {
             unavailableSources,
             preset,
             purpose,
+            generatedAt: input.generatedAt,
         });
 
         return {
@@ -686,6 +691,7 @@ export class ContextBriefService {
             windowDays,
             preset,
             purpose,
+            contractVersion: CONTEXT_BRIEF_CONTRACT_VERSION,
             unavailableSources,
         };
     }

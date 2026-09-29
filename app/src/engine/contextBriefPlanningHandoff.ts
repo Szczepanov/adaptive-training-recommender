@@ -40,6 +40,9 @@ import {
 } from './briefPlanAuthority';
 import { renderSensorEvidence } from './contextBriefSensorEvidence';
 import { synthesizeRecoveryEvidence } from './contextBriefRecoverySynthesis';
+import { briefContractHeaderLines } from './contextBriefContract';
+import { SENSOR_OBSERVATION_HORIZON_DAYS } from './contextBriefSensorEvidence';
+import { SUBJECTIVE_BASELINE_DAYS } from './contextBrief';
 
 export const UPCOMING_CONTEXT_DAYS = 7;
 export const RECOVERY_TIMELINE_DAYS = 7;
@@ -99,6 +102,8 @@ export interface ContextBriefPlanningHandoffInput {
     /** Issue #811. When absent it is derived from `preset`; an absent preset keeps the
      * legacy full-detail rendering (`diagnostic`). */
     purpose?: BriefPurpose;
+    /** Issue #894: ISO generation timestamp. Ephemeral — omitted from semantic determinism. */
+    generatedAt?: string;
 }
 
 function resolvePurpose(input: ContextBriefPlanningHandoffInput): BriefPurpose {
@@ -632,6 +637,16 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
 
     const lines: string[] = [
         '# Morning Training & Readiness Brief',
+        '',
+        ...briefContractHeaderLines({
+            purpose: 'morning',
+            asOfDate: targetDate,
+            windowDays: 2,
+            subjectiveBaselineDays: SUBJECTIVE_BASELINE_DAYS,
+            recoveryTimelineDays: RECOVERY_TIMELINE_DAYS,
+            sensorHorizonDays: SENSOR_OBSERVATION_HORIZON_DAYS,
+            ...(input.generatedAt ? { generatedAt: input.generatedAt } : {}),
+        }),
         '',
         `Date: ${targetDate} (Europe/Warsaw) · Mode: Daily Morning Coach Handoff`,
         'Context: This brief is shared daily in an ongoing chat. Focus on today\'s session, yesterday\'s debrief, and acute adaptations.',
