@@ -203,6 +203,12 @@ Introduce a provider-neutral type, for example:
         sourceKinds[]
       }
 
+      structuredSourceRef?: {
+        executionId
+        sessionOccurrenceId?
+        prescriptionHash?
+      }
+
       structured?: {
         executionId
         sessionOccurrenceId?
@@ -255,6 +261,7 @@ Requirements:
 - no extra Garmin request;
 - canonical occurrence read failure does not erase raw activity evidence;
 - an unavailable occurrence source produces explicit degraded provenance;
+- a linked structured-execution source ref remains available even when execution/definition hydration fails, so occurrence-level linkage is not erased by a read failure;
 - multiple provider activities remain explicit rather than silently selecting arbitrary identity for comparisons.
 
 ### Tests
@@ -480,7 +487,7 @@ The reconciled_workout_step identity value is emitted only when its name is true
 
 ## WP4 — Correct strength progression authority and marker semantics
 
-**Status:** In progress — performed entry exercise refs override authored step refs when present; structured unavailability and non-like-for-like markers are surfaced. Remaining acceptance and regression coverage are open.
+**Status:** In progress — performed entry exercise refs override authored step refs when present; structured unavailability, canonical chronology and like-for-like marker selection have regression coverage. Structured-only response rendering remains open.
 **Blocked by:** WP1, WP2
 **Purpose:** replace Garmin-name matching with canonical structured identity where available.
 
@@ -565,7 +572,7 @@ Strength response follows ADR-0034 source authority and never relies on title fu
 
 ## WP5 — Improve next-morning response linkage
 
-**Status:** In progress — exact execution-linked tissue reactions and occurrence-deduplicated D-1 counts use the canonical occurrence date when available; strength-source resolution and remaining failure cases are open.
+**Status:** In progress — exact execution-source linkage, occurrence-deduplicated D-1 counts and canonical dates have regression coverage; strength-source resolution and remaining structured-only/failure cases are open.
 **Blocked by:** WP1
 **Purpose:** separate exact tissue linkage from day-level observational recovery.
 
