@@ -251,8 +251,15 @@ fallbacks. This remains display-only, so `POLICY_VERSION` is unaffected.
   deterministic matching and is not selected by the current matcher. Power-zone low boundaries identify the FTP
   definition in force: if both sessions report them and they differ, comparison is rejected
   without normalization. HR authority and threshold provenance cap confidence; heat, terrain,
-  fuelling and accumulated fatigue remain uncontrolled. Up to three rejected candidates are
-  listed with reasons.
+  fuelling and accumulated fatigue remain uncontrolled. Planning lists up to three rejected
+  examples plus an omitted count; diagnostic output identifies the selected prior provider
+  activity/date, retains at most eight rejection reasons, and reports omissions along with the
+  selected decision provenance.
+- **Running pace–HR** — not wired. Current activity evidence may include lap distance/speed and
+  running dynamics, but it does not prove controlled venue or standardized executed protocol.
+  HR fidelity has no running pace–HR use case, and its shadow authority requires verified input
+  lineage and segment context. Outdoor/trail pace–HR comparisons remain excluded; running
+  economy is not claimed.
 - **Strength** — longitudinal strength comparison uses the central `strength_set_response`
   comparability decision with explicit exercise identity, load type and repetitions. The
   contract accepts this evidence without requiring a normalized Garmin activity, while the
@@ -289,15 +296,17 @@ fallbacks. This remains display-only, so `POLICY_VERSION` is unaffected.
 Known limitations: stable venue, temperature, elevation/grade, route and distance-quality fields
 are not retained in the normalized activity/response data, so environmental enrichment requires
 separate request-budget/privacy review. Segment-level execution-to-step reconciliation is not
-established by occurrence identity alone; running pace–HR comparison and diagnostic comparator
-provenance remain incomplete. Structural tests keep response-comparability imports on the display
-path, cover dynamic imports, and reject transitive reachability from non-context-brief engine modules;
-WP3, WP6.4 and WP7 still block issue closure. Structured-only strength and next-morning
+established by occurrence identity alone, and controlled running pace–HR comparison remains
+unsupported by the current evidence. Structural tests keep response-comparability imports on the
+display path, cover dynamic imports, and reject transitive reachability from non-context-brief engine
+modules; WP3 and WP6.4 remain the blockers to issue closure. WP7 is complete for the current evidence
+surface: diagnostic comparator provenance is bounded. `deriveKeySessionSummaries` emits one
+occurrence-level insufficient-evidence row when provider selection is ambiguous or partial, without
+selecting a recording for provider-derived features. Structured-only strength and next-morning
 evidence render from the canonical response projection, and a linked but unavailable structured
-execution is surfaced as insufficient evidence without provider-name fallback. The renderer also
-still starts from provider activity rows, so a canonical occurrence with multiple provider recordings
-can yield more than one response-summary row; occurrence-level render deduplication remains follow-up
-work. Comparisons cannot reach beyond the fetched lookback.
+execution is surfaced as insufficient evidence without provider-name fallback; planning suppresses
+rejected provider detail while diagnostic mode retains it. Comparisons cannot reach beyond the fetched
+lookback.
 
 #### Recovery evidence synthesis (issue #812)
 

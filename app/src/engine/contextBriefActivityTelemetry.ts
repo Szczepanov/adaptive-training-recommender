@@ -567,11 +567,19 @@ export function injectActivityTelemetryIntoContextBrief(
     // Diagnostic keeps every persisted table and adds the summaries after them.
     const summaries = response ? deriveKeySessionSummaries(activities, response) : [];
     const summaryText = response ? renderKeySessionSummaries(summaries, response) : '';
+    const failedProviderIds = new Set(summaries
+        .filter(summary => summary.providerSelectionFailure !== undefined)
+        .flatMap(summary => summary.evidence?.measuredSources ?? [])
+        .filter(source => source.provider.toLowerCase() === 'garmin')
+        .map(source => source.activityId));
     const summarizedIds = new Set(summaries
         .filter((summary): summary is typeof summary & { activity: NormalizedGarminActivity } => !!summary.activity && hasAvailableFeature(summary))
         .map(summary => summary.activity.activityId));
-    const raw = compact ? renderCompactActivityTelemetry(activities, summarizedIds) : renderContextBriefActivityTelemetry(activities);
-    const qualityDetail = compact ? renderPlanningQualityActivityTelemetry(activities) : '';
+    const planningActivities = compact
+        ? activities.filter(activity => !failedProviderIds.has(activity.activityId))
+        : activities;
+    const raw = compact ? renderCompactActivityTelemetry(planningActivities, summarizedIds) : renderContextBriefActivityTelemetry(activities);
+    const qualityDetail = compact ? renderPlanningQualityActivityTelemetry(planningActivities) : '';
     const telemetry = [raw, summaryText, qualityDetail].filter(Boolean).join('\n\n');
     if (!telemetry) return brief;
 

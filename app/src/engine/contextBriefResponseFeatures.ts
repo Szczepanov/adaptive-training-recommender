@@ -4,6 +4,7 @@ import { getHrUseAuthority, type HrAuthorityReason, type HrUseCase } from './act
 import {
     decideSessionComparability,
     type ComparisonMatchBasis,
+    type ComparisonDecision,
     type Confidence,
     type ResponseSessionIdentity,
     STEADY_MAX_VARIABILITY_INDEX,
@@ -104,12 +105,15 @@ export type EfficiencyComparison =
         changePct: number;
         confidence: Confidence;
         basis: string;
+        decision: ComparisonDecision;
         thresholdProvenance: ThresholdProvenance;
         hrNote: string | null;
     }
     /** `ineligible`: the session itself is not a steady power+HR session; `no_comparable`:
      * it is, but no prior session passed the comparability contract. */
-    | (Insufficient & { kind: 'ineligible' | 'no_comparable'; rejected: string[] });
+    | (Insufficient & { kind: 'ineligible' | 'no_comparable'; rejected: string[]; rejectedOmittedCount?: number });
+
+const MAX_COMPARISON_REJECTIONS = 8;
 
 function round(value: number, places: number): number {
     const factor = 10 ** places;
@@ -561,9 +565,16 @@ export function deriveEfficiencyComparison(
             changePct: round(((efficiency - priorEfficiency) / priorEfficiency) * 100, 1),
             confidence,
             basis: comparisonBasisLabel(comparison.matchBasis),
+            decision: comparison,
             thresholdProvenance: provenance,
             hrNote: hrNow.note ?? (hrPrior.note ? `prior session ${hrPrior.note}` : null),
         };
     }
-    return { state: 'insufficient_evidence', kind: 'no_comparable', reason: 'no comparable prior steady session in the fetched history', rejected };
+    return {
+        state: 'insufficient_evidence',
+        kind: 'no_comparable',
+        reason: 'no comparable prior steady session in the fetched history',
+        rejected: rejected.slice(0, MAX_COMPARISON_REJECTIONS),
+        ...(rejected.length > MAX_COMPARISON_REJECTIONS ? { rejectedOmittedCount: rejected.length - MAX_COMPARISON_REJECTIONS } : {}),
+    };
 }

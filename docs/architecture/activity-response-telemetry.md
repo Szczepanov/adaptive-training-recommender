@@ -133,11 +133,23 @@ reach response comparability transitively. Recommendation, ranking and readiness
 remain isolated from it. `semantic_protocol_match` is reserved and is not selected by the current
 matcher.
 
-Provider-backed summaries still start from provider activity rows, so multiple recordings linked
-to one occurrence may yield more than one response-summary row until a deterministic,
-feature-specific provider selector is available. Diagnostic comparator decision provenance and
-that occurrence-level deduplication remain open. Planning uses normalized, bounded summaries and
-never includes native FIT samples.
+Provider-backed response summaries use the canonical occurrence source set. A single available
+Garmin recording is deterministic and may supply response features. If provider sources are
+ambiguous or partial, the response layer emits one occurrence-level insufficient-evidence row and
+does not select a recording for provider-derived features; structured strength and exact
+execution-linked next-morning evidence remain independently usable. Planning also suppresses
+compact/quality telemetry for those failed provider selections so the same ambiguous evidence
+cannot re-enter through a lower-level detail path. Diagnostic mode retains the underlying
+provider activity telemetry for investigation.
+
+Diagnostic response summaries identify the selected prior provider activity/date and include the
+comparison's feature family, match basis, occurrence/protocol identity, sensor/threshold/context
+evidence, source completeness and limitations. At most eight provider IDs and eight rejected candidate reasons are retained, with
+omission counts; planning renders at most three rejection examples. This provenance remains
+display-only. Current provider rows include lap duration, distance and average speed, but no
+stable venue, temperature, grade/route or running distance-quality evidence. Running pace–HR
+comparison therefore remains unwired, including for apparently treadmill-like or repeated
+activities. Planning uses normalized, bounded summaries and never includes native FIT samples.
 
 ## Read-side hydration and athlete UI
 

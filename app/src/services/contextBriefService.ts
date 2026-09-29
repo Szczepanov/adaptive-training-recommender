@@ -662,6 +662,7 @@ export class ContextBriefService {
                 windowStart: startDate,
                 windowEnd: targetDate,
                 evidence: responseEvidence?.evidence,
+                diagnostic: purpose === 'diagnostic',
             },
         );
         const text = enhanceContextBriefForPlanning(retrospectiveText, {
