@@ -120,6 +120,28 @@ describe('response summary provenance and bounds (#814 WP7)', () => {
         expect(renderKeySessionSummaries(summaries, context)).toContain('multiple recordings represent this occurrence');
     });
 
+    it('fails closed with accurate provenance when provider activity evidence is partial', () => {
+        const activity = steady('partial-recording', '2026-09-18');
+        const evidence: TrainingResponseSessionEvidence = {
+            ...responseEvidence(activity, 'pto-partial'),
+            sourceCompleteness: { occurrenceRead: 'available', structuredExecution: 'not_linked', providerActivities: 'partial' },
+        };
+        const context = {
+            history: [activity], historyStart: '2026-08-22', checkins: NO_CHECKINS,
+            asOfDate: '2026-09-20', windowStart: activity.date, windowEnd: activity.date, evidence: [evidence],
+        };
+
+        const summaries = deriveKeySessionSummaries([activity], context);
+        const text = renderKeySessionSummaries(summaries, context);
+
+        expect(summaries).toHaveLength(1);
+        expect(summaries[0].activity).toBeUndefined();
+        expect(summaries[0].providerSelectionFailure).toBe('partial');
+        expect(text).toContain('provider activity evidence is only partially available');
+        expect(text).not.toContain('multiple recordings represent this occurrence');
+        expect(text).not.toContain('Steady power–HR response ratio');
+    });
+
     it('does not use ambiguous prior recordings through the provider fallback', () => {
         const current = steady('current', '2026-09-18');
         const priorA = steady('prior-a', '2026-09-11');
@@ -197,8 +219,33 @@ describe('response summary provenance and bounds (#814 WP7)', () => {
         };
         const text = renderKeySessionSummaries(deriveKeySessionSummaries([current], context), context);
 
-        expect(text).toContain('Diagnostic provenance: occurrence pto-current; identity canonical_occurrence; source kinds structured_execution, provider_activity; sources garmin:current; provider selection available');
+        expect(text).toContain('Diagnostic provenance: occurrence pto-current; identity canonical_occurrence; source kinds provider_activity, structured_execution; sources garmin:current; provider selection available');
         expect(text).toContain('Diagnostic comparison: cycling_steady_power_hr comparable via controlled_steady_match; occurrence distinct; protocol unknown; measurement observational; threshold same; venue/environment unknown; source completeness canonical; limitations measurement/sensor authority observational, venue/environment context unknown');
+    });
+
+    it('sorts and caps diagnostic provider source provenance', () => {
+        const activities = Array.from({ length: 10 }, (_, index) =>
+            steady(`source-${String(index).padStart(2, '0')}`, '2026-09-18'));
+        const evidence: TrainingResponseSessionEvidence = {
+            ...responseEvidence(activities[9], 'pto-many-sources'),
+            measuredSources: [...activities].reverse().map(activity => ({
+                sourceRef: { kind: 'provider_activity' as const, provider: 'garmin', activityId: activity.activityId },
+                provider: 'garmin',
+                activityId: activity.activityId,
+                activity,
+            })),
+            sourceCompleteness: { occurrenceRead: 'available', structuredExecution: 'not_linked', providerActivities: 'ambiguous' },
+        };
+        const context = {
+            history: activities, historyStart: '2026-08-22', checkins: NO_CHECKINS,
+            asOfDate: '2026-09-20', windowStart: '2026-09-18', windowEnd: '2026-09-18',
+            evidence: [evidence], diagnostic: true,
+        };
+
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries([activities[9]], context), context);
+
+        expect(text).toContain('sources garmin:source-00, garmin:source-01, garmin:source-02, garmin:source-03, garmin:source-04, garmin:source-05, garmin:source-06, garmin:source-07; 2 additional sources omitted; provider selection ambiguous');
+        expect(text).not.toContain('garmin:source-08');
     });
 
     it('caps retained comparison rejections and reports omitted candidates', () => {
@@ -209,6 +256,21 @@ describe('response summary provenance and bounds (#814 WP7)', () => {
         expect(result.state).toBe('insufficient_evidence');
         expect(result.state === 'insufficient_evidence' && result.kind === 'no_comparable' ? result.rejected : []).toHaveLength(8);
         expect(result.state === 'insufficient_evidence' && result.kind === 'no_comparable' ? result.rejectedOmittedCount : 0).toBe(4);
+    });
+
+    it('keeps planning rejection output bounded with 100 historical candidates', () => {
+        const current = steady('current-bounded', '2026-09-18');
+        const priors = Array.from({ length: 100 }, (_, index) =>
+            steady(`prior-bounded-${String(index).padStart(3, '0')}`, '2026-09-01', { stimulusDomain: 'vo2' }));
+        const context = {
+            history: [current, ...priors], historyStart: '2026-08-22', checkins: NO_CHECKINS,
+            asOfDate: '2026-09-20', windowStart: current.date, windowEnd: current.date,
+        };
+
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries([current], context), context);
+
+        expect(text).toContain('+97 more');
+        expect(text.length).toBeLessThan(2500);
     });
 });
 
