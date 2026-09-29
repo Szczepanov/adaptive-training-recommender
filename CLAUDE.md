@@ -59,9 +59,13 @@ when it affects confidence. See
 ## 3. Working loop
 
 **Before writing code**
-- For source-code discovery, use text search plus direct reads; for type-level ripple, run the
-  compiler (`cd app && npx tsc -b`, `uv run mypy`). See
-  [`AGENTS.md` § Code navigation](./AGENTS.md#code-navigation).
+- For source-code discovery, use `rg`/text search for exact identifiers and strings. When
+  `jev` is available, use a narrowly scoped `jev ask` for an atomic semantic property on a known
+  file/subsystem, and `jev find` only when repository vocabulary/location is genuinely unknown.
+  Treat Jev output as candidate evidence and read the cited source before changing code. For
+  type-level ripple, run the compiler (`cd app && npx tsc -b`, `uv run mypy`). See
+  [`AGENTS.md` § Code navigation](./AGENTS.md#code-navigation) and
+  [`docs/standards/agent-tooling.md`](./docs/standards/agent-tooling.md).
 - Check [`docs/plans/README.md`](./docs/plans/README.md) — the authoritative status board.
   It says what is in progress, what shipped, and what is deliberately shadow-mode only.
   Never infer delivery status from a file's existence or from this file.
