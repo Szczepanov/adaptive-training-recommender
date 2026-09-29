@@ -170,7 +170,7 @@ describe('decideSessionComparability', () => {
         };
         const prior = {
             identity: { sourceCompleteness: 'canonical' as const },
-            strength: { exerciseIdentity: 'catalog:front_squat', identitySource: 'canonical' as const, loadType: 'external_load' as const, repetitions: 5 },
+            strength: { exerciseIdentity: 'catalog:front_squat', identitySource: 'canonical' as const, loadType: 'external_load' as const, repetitions: 5, sourceCompleteness: 'canonical' as const },
         };
         const comparable = decideSessionComparability({ featureFamily: 'strength_set_response', current, prior });
         expect(comparable).toMatchObject({
