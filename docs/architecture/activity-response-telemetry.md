@@ -137,8 +137,9 @@ Provider-backed response summaries use the canonical occurrence source set. A si
 Garmin recording is deterministic and may supply response features. If provider sources are
 ambiguous or partial, the response layer emits one occurrence-level insufficient-evidence row and
 does not select a recording for provider-derived features; structured strength and exact
-execution-linked next-morning evidence remain independently usable. Planning suppresses compact/quality telemetry for those failed provider selections directly
-from the canonical response-evidence projection, not from whether an occurrence-level summary is
+execution-linked next-morning evidence remain independently usable. Planning suppresses
+compact/quality telemetry for those failed provider selections directly from the canonical
+response-evidence projection, not from whether an occurrence-level summary is
 rendered. This keeps rejected provider detail out of planning even when a provider-local activity
 date and the reconciled canonical occurrence date fall on opposite sides of the requested render
 window. Diagnostic mode retains the underlying provider activity telemetry for investigation.
