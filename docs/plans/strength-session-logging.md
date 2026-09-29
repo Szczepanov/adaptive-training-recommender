@@ -334,6 +334,15 @@ from the "More" drawer in `MobileNav.tsx`. Not added to the primary bottom-nav b
 than assumed here; the drawer entry is the same tier `Import Training Plan` and
 `Export Context for AI` already occupy.
 
+> **Errata (2026-09-29).** `components/StrengthSessionRunner.tsx` was later removed
+> (`be17e098`, "remove legacy strength execution UI"); its successor is the source-neutral
+> `components/session/SessionRunner.tsx`, which reimplemented timer/orchestration and imports
+> only the `SessionStepSummary` type from `workouts/strengthSessionEntry.ts`. The
+> `hooks/useStrengthSessionRunner.ts` and `hooks/useElapsedSeconds.ts` orchestration layer was
+> not migrated and has been deleted; the pure modules (`strengthSessionEntry.ts`,
+> `restTimer.ts`) and their tests remain live, as does S1.6's "wired into" behaviour via the
+> new runner.
+
 **Prescription matching, scoped deliberately.** `WorkoutPrescription` carries both
 `adjustedBlocks` (the original structured `WorkoutBlock[]`, with typed `exerciseId`/`sets`/
 `target: IntensityTarget`) and `displayBlocks` (rendered presentation strings). Matching
