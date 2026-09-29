@@ -777,6 +777,7 @@ The steady power–HR summary now distinguishes exact authored prescription, aut
 - no raw traces;
 - no full occurrence source dump;
 - no linear growth with all history candidates;
+- render one canonical performed occurrence once even when it carries multiple provider recordings; the current activity-driven summary has not completed this deduplication yet;
 - diagnostic may show the full persisted comparison decision/evidence needed to debug selection.
 
 ### Diagnostic output
