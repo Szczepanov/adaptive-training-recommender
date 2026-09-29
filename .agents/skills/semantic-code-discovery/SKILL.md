@@ -1,0 +1,75 @@
+---
+name: semantic-code-discovery
+description: Route repository discovery between exact lexical search and optional Jev semantic judgment/search while minimizing agent context. Use for source-code navigation, semantic audits, impact discovery, and questions about where behavior lives.
+---
+
+# Semantic Code Discovery
+
+Use the cheapest evidence source that answers the question. Jev is optional: never block work because
+it is unavailable.
+
+## Routing
+
+1. **Exact vocabulary known** — use `rg`/Grep and direct reads for symbols, strings, errors, paths,
+   configuration keys and exact callers.
+2. **Known target, semantic property unknown** — when `jev` is available, use `jev ask` against
+   the implementation file or smallest relevant subsystem.
+3. **Behavior known, repository vocabulary/location unknown** — use a tightly scoped `jev find`
+   as a discovery hint, then verify the returned source.
+4. **Type/signature ripple** — use the compiler (`cd app && npx tsc -b`, `uv run mypy`) as the
+   authoritative impact list.
+5. **External library/API behavior** — use the `external-library-docs` skill / Context7 instead.
+
+## Jev ask
+
+Keep questions atomic: one independently testable semantic property per call.
+
+Prefer:
+
+```bash
+rg -n "contextBriefService" app/src
+jev ask "does ContextBriefService.build hydrate performedFacts for the morning brief?" \
+  app/src/services/contextBriefService.ts -q
+```
+
+over a compound question such as "does A/B/C already work or does slice 1 need wiring?" Split A,
+B and C and combine the verified results yourself.
+
+## Jev find
+
+Use `jev find` only when the implementation name/location is genuinely unknown.
+
+- Start with the smallest plausible subsystem, not the repository root.
+- Treat the CLI file-count guard as a signal to narrow the scope.
+- Do not raise `--max-files` merely to avoid choosing a subsystem.
+- Treat rankings as candidate locations, not proof. A plausible top result can still miss the real
+  implementation.
+
+## Evidence contract
+
+Jev probabilities and rankings are not source authority.
+
+After a Jev result:
+
+1. Open/read the cited source.
+2. Verify important callers, tests, and exact strings with normal repository tools.
+3. Use the compiler for type/signature impact.
+4. For high-impact changes, rely on deterministic tests/verification rather than a semantic score.
+
+A low-confidence or empty Jev result is not by itself proof that behavior is absent.
+
+## Agent economy
+
+The primary agent owns broad discovery. Do not ask multiple subagents to repeat the same Jev sweep.
+Give reviewers the established files/symbols and let them query further only for a concrete
+unresolved question.
+
+The automatic Jev large-read narrowing hook is not part of the shared repository workflow because it
+can hide source. It may be evaluated client-locally, but explicit `jev ask`/`jev find` is the
+portable default.
+
+Local setup, credentials and API keys are developer-owned. `jev probe` verifies a local install;
+`jev gain` is useful for cost/token diagnostics. Never commit provider credentials or personal
+client/plugin configuration.
+
+The normative policy is `docs/standards/agent-tooling.md`.
