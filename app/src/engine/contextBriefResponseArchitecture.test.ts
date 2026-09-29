@@ -46,7 +46,7 @@ function sourceRelative(path: string): string {
 function importedSpecifiers(source: string): string[] {
     const staticImports = [...source.matchAll(/\b(?:from\s*|import\s*)['"]([^'"]+)['"]/g)]
         .map(match => match[1]);
-    const dynamicImports = [...source.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g)]
+    const dynamicImports = [...source.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]/g)]
         .map(match => match[1]);
     return [...new Set([...staticImports, ...dynamicImports])];
 }
