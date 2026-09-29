@@ -45,6 +45,8 @@ export interface PerformedSetRow {
     isWarmup: boolean;
     completedAt: string;
     payload: SessionEntryPayload;
+    /** Actual performed exercise identity, which may differ from the authored step after a swap. */
+    exerciseRef?: ExerciseRef;
     /** The performed rest that started when this set was completed, when one was recorded. */
     rest?: PerformedRestDetail;
 }
@@ -127,6 +129,7 @@ export function buildStructuredStepDetails(
                     isWarmup,
                     completedAt: entry.completedAt,
                     payload: entry.payload,
+                    ...(entry.exerciseRef ? { exerciseRef: entry.exerciseRef } : {}),
                     ...(rest ? { rest } : {}),
                 };
             });

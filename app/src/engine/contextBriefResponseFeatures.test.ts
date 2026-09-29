@@ -297,7 +297,7 @@ describe('strength progression (#814)', () => {
         const feature = deriveStrengthProgression(lift('now', '2026-09-18', 80), [lift('prior', '2026-09-11', 77.5)]);
         expect(feature).toEqual({
             state: 'available',
-            exercises: [{ exercise: 'BARBELL_BACK_SQUAT', workingSets: 2, topWeightKg: 80, topReps: 5, prior: { date: '2026-09-11', topWeightKg: 77.5, topReps: 5 } }],
+            exercises: [{ exercise: 'BARBELL_BACK_SQUAT', identitySource: 'provider-recognized identity; confidence limited', workingSets: 2, topWeightKg: 80, topReps: 5, prior: { date: '2026-09-11', topWeightKg: 77.5, topReps: 5, comparison: 'like-for-like' } }],
         });
     });
 
