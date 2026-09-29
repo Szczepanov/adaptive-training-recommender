@@ -14,7 +14,7 @@ const BRIEF: ContextBriefExportSource = {
   windowDays: 14,
   preset: 'diagnostic',
   purpose: 'diagnostic',
-  contractVersion: '2026-09-context-brief-contract-v1',
+  contractVersion: '2026-09-context-brief-contract-v2',
   unavailableSources: ['recovery:2026-09-20'],
 };
 
@@ -39,7 +39,7 @@ describe('contextBriefExport', () => {
       source: 'adaptive-training-recommender',
       preset: 'diagnostic',
       purpose: 'diagnostic',
-      contractVersion: '2026-09-context-brief-contract-v1',
+      contractVersion: '2026-09-context-brief-contract-v2',
       dateRange: {
         startDate: '2026-09-15',
         asOfDate: '2026-09-28',

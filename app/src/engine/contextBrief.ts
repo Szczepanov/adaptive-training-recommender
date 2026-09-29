@@ -17,6 +17,7 @@ import { SECTION_TITLE, type BriefPurpose, type BriefWindowPreset } from './cont
 import { renderRecoveryEvidenceSynthesis, synthesizeRecoveryEvidence } from './contextBriefRecoverySynthesis';
 import { deriveExposureLedger, renderExposureLedger, type ExposureLedgerInput } from './contextBriefExposureLedger';
 import { briefContractHeaderLines } from './contextBriefContract';
+import type { PerformedExposureFact } from './performedTrainingFacts';
 import { SENSOR_OBSERVATION_HORIZON_DAYS } from './contextBriefSensorEvidence';
 
 // Re-exported so existing importers keep one entry point for the brief.
@@ -251,25 +252,200 @@ export function formatActivityType(typeKey: string): string {
     return typeKey.replace(/_/g, ' ');
 }
 
-function renderTraining(activities: readonly NormalizedGarminActivity[], asOfDate: string, windowDays: number, heading: string): string[] {
-    const lines: string[] = [heading, ''];
-    if (activities.length === 0) {
-        lines.push('No recorded sessions in this window.');
-        return lines;
+function sourceKindLabel(kind: PerformedExposureFact['sourceKinds'][number]): string {
+    switch (kind) {
+        case 'structured_execution': return 'structured';
+        case 'provider_activity': return 'Garmin';
+        case 'legacy_strength': return 'legacy strength';
     }
+}
 
-    lines.push('| Date | Type | Min | Load | Aerobic TE | Anaerobic TE | Avg HR | Intensity |');
-    lines.push('|---|---|---|---|---|---|---|---|');
+/** Issue #894: one row per canonical occurrence. A structured session and its linked
+ * provider activity dedupe to a single row; partial, modified and unverified rows are
+ * flagged rather than silently dropped. */
+function factDetail(fact: PerformedExposureFact): string {
+    const flags: string[] = [];
+    if (fact.isReadinessModifiedDose) flags.push('readiness-modified dose');
+    if (fact.startedAt && !fact.endedAt) flags.push('started, completion unrecorded');
+    if (fact.durationMin === undefined) flags.push('duration unrecorded');
+    if (fact.confidence === 'inferred') flags.push('identity inferred from provider');
+    else if (fact.confidence === 'unknown') flags.push('identity unverified');
+    return flags.length > 0 ? flags.join('; ') : '—';
+}
+
+function renderRawActivityTable(activities: readonly NormalizedGarminActivity[]): string[] {
+    const lines: string[] = [
+        '| Date | Type | Min | Load | Aerobic TE | Anaerobic TE | Avg HR | Intensity |',
+        '|---|---|---|---|---|---|---|---|',
+    ];
     for (const activity of activities) {
         const typeLabel = formatActivityType(activity.type);
         lines.push(`| ${activity.date} | ${typeLabel} | ${activity.durationMin ?? '—'} | ${round(activity.activityTrainingLoad, 1)} | ${round(activity.trainingEffectAerobic, 1)} | ${round(activity.trainingEffectAnaerobic, 1)} | ${activity.averageHr ?? '—'} | ${formatIntensityCell(activity)} |`);
     }
+    return lines;
+}
 
-    let totalMinutes = 0;
+function summarizeRawActivityDuration(activities: readonly NormalizedGarminActivity[]): string {
+    let knownMinutes = 0;
+    let knownCount = 0;
+    for (const activity of activities) {
+        if (activity.durationMin === null || activity.durationMin === undefined) continue;
+        knownMinutes += activity.durationMin;
+        knownCount += 1;
+    }
+    const unknownCount = activities.length - knownCount;
+    if (unknownCount === 0) return `${knownMinutes} min`;
+    const unknownLabel = `${unknownCount} session${unknownCount === 1 ? '' : 's'} with duration unknown`;
+    return knownCount > 0 ? `${knownMinutes} known min · ${unknownLabel}` : unknownLabel;
+}
+
+function summarizeCanonicalDuration(facts: readonly PerformedExposureFact[]): string {
+    let knownMinutes = 0;
+    let knownCount = 0;
+    for (const fact of facts) {
+        if (fact.durationMin === undefined) continue;
+        knownMinutes += fact.durationMin;
+        knownCount += 1;
+    }
+    const unknownCount = facts.length - knownCount;
+    if (unknownCount === 0) return `${knownMinutes} min`;
+    const unknownLabel = `${unknownCount} session${unknownCount === 1 ? '' : 's'} with duration unknown`;
+    return knownCount > 0 ? `${knownMinutes} known min · ${unknownLabel}` : unknownLabel;
+}
+
+function renderCanonicalTrainingTable(facts: readonly PerformedExposureFact[], rawRecordCount: number): string[] {
+    const lines: string[] = [
+        '| Date | Modality | Min | Sources | Detail |',
+        '|---|---|---|---|---|',
+    ];
+    for (const fact of facts) {
+        const sources = fact.sourceKinds.map(sourceKindLabel).join(' + ') || '—';
+        lines.push(`| ${fact.localDate} | ${fact.modality} | ${fact.durationMin ?? '—'} | ${sources} | ${factDetail(fact)} |`);
+    }
+
+    lines.push('');
+    const rawLabel = `${rawRecordCount} raw provider activity row${rawRecordCount === 1 ? '' : 's'} in window`;
+    lines.push(`Totals: ${facts.length} sessions · ${summarizeCanonicalDuration(facts)} (canonical, deduped across structured and provider sources; ${rawLabel}).`);
+
+    const providerFactCount = facts.filter(fact => fact.sourceKinds.includes('provider_activity')).length;
+    if (providerFactCount !== rawRecordCount) {
+        lines.push(
+            `Provider-count note: canonical sessions carrying provider evidence = ${providerFactCount}; raw provider rows = ${rawRecordCount}. `
+            + 'Raw rows are never added directly to canonical totals; inspect diagnostic provenance if the mismatch affects load interpretation.',
+        );
+    }
+
+    const modalityMinutes: Record<string, { sessions: number; knownMinutes: number; knownDurations: number }> = {};
+    for (const fact of facts) {
+        if (!modalityMinutes[fact.modality]) {
+            modalityMinutes[fact.modality] = { sessions: 0, knownMinutes: 0, knownDurations: 0 };
+        }
+        modalityMinutes[fact.modality].sessions += 1;
+        if (fact.durationMin !== undefined) {
+            modalityMinutes[fact.modality].knownMinutes += fact.durationMin;
+            modalityMinutes[fact.modality].knownDurations += 1;
+        }
+    }
+    const breakdown = Object.entries(modalityMinutes)
+        .sort((a, b) => b[1].knownMinutes - a[1].knownMinutes || b[1].sessions - a[1].sessions || a[0].localeCompare(b[0]))
+        .map(([sport, stat]) => {
+            const unknown = stat.sessions - stat.knownDurations;
+            const duration = unknown === 0
+                ? `${stat.knownMinutes} min`
+                : stat.knownDurations > 0
+                    ? `${stat.knownMinutes} known min; ${unknown} duration unknown`
+                    : 'duration unknown';
+            return `${sport}: ${stat.sessions} session${stat.sessions === 1 ? '' : 's'} (${duration})`;
+        })
+        .join(' · ');
+    if (breakdown) {
+        lines.push(`Discipline volume: ${breakdown}`);
+    }
+    return lines;
+}
+
+function renderTraining(
+    activities: readonly NormalizedGarminActivity[],
+    asOfDate: string,
+    windowDays: number,
+    heading: string,
+    options?: {
+        /** False = diagnostic: raw provider rows stay visible as provenance. */
+        planningOrder?: boolean;
+        /** Undefined = ledgers absent (legacy callers): raw table, no caution.
+         * Null = hydration failed: raw table with an explicit double-count caution.
+         * Array = canonical deduped table, with raw provenance in diagnostic. */
+        performedFacts?: readonly PerformedExposureFact[] | null;
+    },
+): string[] {
+    const lines: string[] = [heading, ''];
+    const windowStart = addDaysToLocalDateString(asOfDate, -(windowDays - 1));
+    const windowFacts = (options?.performedFacts ?? [])
+        .filter(fact => withinWindow(fact.localDate, windowStart, asOfDate))
+        .sort((a, b) => a.localDate.localeCompare(b.localDate) || a.performedOccurrenceId.localeCompare(b.performedOccurrenceId));
+    // Canonical facts hydrate from occurrence records without reconciling first, so a
+    // provider record that has not reconciled yet has no fact. An empty fact set next
+    // to real raw records is a hydration gap, not proof of no training — fall back to
+    // the raw table with a caution rather than asserting an empty window.
+    const canonical = options?.performedFacts != null && (windowFacts.length > 0 || activities.length === 0);
+
+    // A canonical read failure is an unknown completed-training state even when the raw
+    // provider table is empty: structured-only work may exist and an empty provider read
+    // cannot prove that no training occurred.
+    if (options?.performedFacts === null && activities.length === 0) {
+        lines.push('> Canonical performed-training facts were unreadable for this window and no raw provider activity rows are available as fallback. Completed training cannot be determined for this window.');
+        return lines;
+    }
+
+    if (canonical) {
+        if (windowFacts.length === 0) {
+            lines.push('No recorded sessions in this window (canonical performed-training facts).');
+            return lines;
+        }
+        lines.push(...renderCanonicalTrainingTable(windowFacts, activities.length));
+
+        // Rolling 7-day buckets ending on asOfDate (same convention as the legacy table
+        // below): canonical facts carry no intensity tag, so buckets count sessions and
+        // minutes only. The final bucket is clamped to the window start.
+        const bucketCount = Math.ceil(windowDays / 7);
+        for (let bucket = 0; bucket < bucketCount; bucket++) {
+            const bucketEnd = addDaysToLocalDateString(asOfDate, -7 * bucket);
+            const rawStart = addDaysToLocalDateString(bucketEnd, -6);
+            const bucketStart = rawStart < windowStart ? windowStart : rawStart;
+            const inBucket = windowFacts.filter(fact => withinWindow(fact.localDate, bucketStart, bucketEnd));
+            const dayCount = getDayDiff(bucketEnd, bucketStart) + 1;
+            const span = dayCount === 7 ? '' : ` (${dayCount} days)`;
+            lines.push(`- ${bucketStart} → ${bucketEnd}${span}: ${inBucket.length} sessions · ${summarizeCanonicalDuration(inBucket)}`);
+        }
+
+        if (options?.planningOrder === false && activities.length > 0) {
+            lines.push(
+                '',
+                'Raw activity provenance (diagnostic only — source rows are not added to canonical totals; unmatched or multiple provider rows may reflect reconciliation state):',
+                '',
+                ...renderRawActivityTable(activities),
+            );
+        }
+        return lines;
+    }
+
+    if (activities.length === 0) {
+        lines.push('No recorded sessions in this window.');
+        return lines;
+    }
+    if (options?.performedFacts === null) {
+        lines.push('> Canonical performed-training facts were unreadable for this window, so the table below counts raw activity records: a structured session and its linked provider activity may appear as two rows.');
+        lines.push('');
+    } else if (options?.performedFacts !== undefined) {
+        lines.push(`> Canonical performed-training facts are empty for this window but ${activities.length} raw activity record(s) exist (reconciliation pending?) — the table below counts raw records and may double-count linked sessions.`);
+        lines.push('');
+    }
+
+    lines.push(...renderRawActivityTable(activities));
+
     let hardCount = 0;
     let highCostCount = 0;
     for (const activity of activities) {
-        totalMinutes += activity.durationMin ?? 0;
         if (activity.intensityTag === 'hard') hardCount++;
         if (activity.sessionCost === 'high' || activity.sessionCost === 'very_high') highCostCount++;
     }
@@ -277,18 +453,31 @@ function renderTraining(activities: readonly NormalizedGarminActivity[], asOfDat
     // Issue #809: "tagged hard" counts high-intensity stimulus only; costly aerobic sessions
     // are reported separately so dose is not read as intensity.
     const costSuffix = highCostCount > 0 ? ` · ${highCostCount} high session cost` : '';
-    lines.push(`Totals: ${activities.length} sessions · ${totalMinutes} min · ${hardCount} tagged hard${costSuffix}.`);
+    lines.push(`Totals: ${activities.length} sessions · ${summarizeRawActivityDuration(activities)} · ${hardCount} tagged hard${costSuffix}.`);
 
-    const modalityMinutes: Record<string, { sessions: number; minutes: number }> = {};
+    const modalityMinutes: Record<string, { sessions: number; knownMinutes: number; knownDurations: number }> = {};
     for (const act of activities) {
         const label = formatActivityType(act.type);
-        if (!modalityMinutes[label]) modalityMinutes[label] = { sessions: 0, minutes: 0 };
+        if (!modalityMinutes[label]) {
+            modalityMinutes[label] = { sessions: 0, knownMinutes: 0, knownDurations: 0 };
+        }
         modalityMinutes[label].sessions += 1;
-        modalityMinutes[label].minutes += act.durationMin ?? 0;
+        if (act.durationMin !== null && act.durationMin !== undefined) {
+            modalityMinutes[label].knownMinutes += act.durationMin;
+            modalityMinutes[label].knownDurations += 1;
+        }
     }
     const breakdown = Object.entries(modalityMinutes)
-        .sort((a, b) => b[1].minutes - a[1].minutes)
-        .map(([sport, stat]) => `${sport}: ${stat.sessions} session${stat.sessions === 1 ? '' : 's'} (${stat.minutes} min)`)
+        .sort((a, b) => b[1].knownMinutes - a[1].knownMinutes || b[1].sessions - a[1].sessions || a[0].localeCompare(b[0]))
+        .map(([sport, stat]) => {
+            const unknown = stat.sessions - stat.knownDurations;
+            const duration = unknown === 0
+                ? `${stat.knownMinutes} min`
+                : stat.knownDurations > 0
+                    ? `${stat.knownMinutes} known min; ${unknown} duration unknown`
+                    : 'duration unknown';
+            return `${sport}: ${stat.sessions} session${stat.sessions === 1 ? '' : 's'} (${duration})`;
+        })
         .join(' · ');
     if (breakdown) {
         lines.push(`Discipline volume: ${breakdown}`);
@@ -299,22 +488,19 @@ function renderTraining(activities: readonly NormalizedGarminActivity[], asOfDat
     // that matters and it needs no week-numbering convention to interpret. The final
     // bucket is clamped to the window start, so a window that is not a multiple of 7
     // cannot report unmeasured days as measured-and-empty.
-    const windowStart = addDaysToLocalDateString(asOfDate, -(windowDays - 1));
     const bucketCount = Math.ceil(windowDays / 7);
     for (let bucket = 0; bucket < bucketCount; bucket++) {
         const bucketEnd = addDaysToLocalDateString(asOfDate, -7 * bucket);
         const rawStart = addDaysToLocalDateString(bucketEnd, -6);
         const bucketStart = rawStart < windowStart ? windowStart : rawStart;
         const inBucket = activities.filter(activity => withinWindow(activity.date, bucketStart, bucketEnd));
-        let minutes = 0;
         let hard = 0;
         for (const activity of inBucket) {
-            minutes += activity.durationMin ?? 0;
             if (activity.intensityTag === 'hard') hard++;
         }
         const dayCount = getDayDiff(bucketEnd, bucketStart) + 1;
         const span = dayCount === 7 ? '' : ` (${dayCount} days)`;
-        lines.push(`- ${bucketStart} → ${bucketEnd}${span}: ${inBucket.length} sessions · ${minutes} min · ${hard} hard`);
+        lines.push(`- ${bucketStart} → ${bucketEnd}${span}: ${inBucket.length} sessions · ${summarizeRawActivityDuration(inBucket)} · ${hard} hard`);
     }
     return lines;
 }
@@ -688,7 +874,10 @@ export function buildContextBrief(input: ContextBriefInput): string {
     const synthesis = renderRecoveryEvidenceSynthesis(synthesizeRecoveryEvidence({ asOfDate, snapshots, checkins }));
     const objective = [...objectiveLines.slice(0, 2), ...synthesis, '', ...objectiveLines.slice(2)];
     const bodyComposition = renderBodyComposition(input.bodyComposition, planningOrder);
-    const trainingTable = renderTraining(activities, asOfDate, windowDays, `## ${n(5, 3)}. ${SECTION_TITLE.training}`);
+    const trainingTable = renderTraining(activities, asOfDate, windowDays, `## ${n(5, 3)}. ${SECTION_TITLE.training}`, {
+        planningOrder,
+        performedFacts: input.exposureLedger?.performedFacts,
+    });
     const ledgerLines = input.exposureLedger
         ? renderExposureLedger(deriveExposureLedger({
             ...input.exposureLedger,
