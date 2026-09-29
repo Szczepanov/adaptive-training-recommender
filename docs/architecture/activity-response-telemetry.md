@@ -121,6 +121,21 @@ At most eight qualifying structured-only occurrences and eight exercises per occ
 rendered, with omitted counts. The output uses per-exercise markers rather than exporting full
 execution records.
 
+Occurrence membership identifies the physical workout, but it does not identify which
+structured step produced an individual FIT/manual response segment. Execution entries expose
+completion instants while segments expose elapsed offsets; no shared step identifier or
+guaranteed clock-alignment contract currently exists. Segments therefore retain their FIT/manual
+identity, and the response layer does not join timestamps heuristically. The centralized
+comparability decision is consumed only by context-brief response renderers; recommendation,
+ranking and readiness modules must not import it. `semantic_protocol_match` is reserved and is
+not selected by the current matcher.
+
+Provider-backed summaries still start from provider activity rows, so multiple recordings linked
+to one occurrence may yield more than one response-summary row until a deterministic,
+feature-specific provider selector is available. Diagnostic comparator decision provenance and
+that occurrence-level deduplication remain open. Planning uses normalized, bounded summaries and
+never includes native FIT samples.
+
 ## Read-side hydration and athlete UI
 
 `trainingHistory.ts` treats `activityResponse` as one optional evidence sidecar. The base
