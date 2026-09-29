@@ -76,10 +76,17 @@ uv run python scripts/agent_eval.py validate-result /tmp/constructor-signature-c
    client exposes them, and a short outcome note.
 8. Validate the result JSON and retain it outside the repo or in an experiment artifact store.
 
-When evaluating Jev-enabled workflows, record Jev calls in `tool_usage` and, when useful, copy the
-local `jev gain` summary into the outcome notes or experiment artifact. Treat its examined-token
-"leverage" and provider spend as diagnostics, not as measured agent-token savings; compare agent
-turns/input-context and correctness across repeated baseline-vs-Jev trials.
+When evaluating semantic-navigation workflows, record Canopy/Jev calls in `tool_usage`.
+
+For Canopy retrieval trials, capture the correct implementation's rank (top-1/top-3/top-5/top-15),
+warm query latency, and whether the failure was retrieval, ranking/chunking, or graph resolution.
+Use a fixed historical case set before comparing embedding models/quantizations; changing the model
+requires a full reindex.
+
+For Jev trials, when useful copy the local `jev gain` summary into the outcome notes or experiment
+artifact. Treat its examined-token "leverage" and provider spend as diagnostics, not as measured
+agent-token savings. Across both tools, end-state correctness comes first; compare agent
+turns/input-context/tool usage only after correctness is established.
 
 The checked-in corpus is stable input. Raw transcripts/results are intentionally not committed by
 default: they can contain large traces, environment details, or model-generated content that would
