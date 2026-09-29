@@ -92,9 +92,8 @@ def status_signal(path: Path) -> str | None:
     except UnicodeDecodeError:
         return None
     for line in text.splitlines():
-        cleaned = line.strip().replace("**", "")
-        if cleaned.lower().startswith("status:"):
-            return cleaned.split(":", 1)[1].strip() or None
+        if match := _STATUS_RE.match(line):
+            return match.group(1).strip() or None
     return None
 
 
