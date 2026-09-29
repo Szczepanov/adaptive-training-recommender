@@ -60,23 +60,64 @@ confidence.
 Do not commit Context7 credentials or personal MCP configuration. The MCP server is configured per
 developer/client; this repository only defines when and how it should be used.
 
-## 2. Repository semantic discovery: lexical search + optional Jev
+## 2. Repository semantic discovery: lexical search + local Canopy + optional Jev
 
-Jev is an **optional developer-local capability**, not a repository dependency. Here, `jev`
-means the [BorisLeMeec/jev](https://github.com/BorisLeMeec/jev) code-navigation CLI backed by
-TypeSafe Jev; it is distinct from TypeSafe's general typed-decision/design skill. The CLI, API key,
-and any client/plugin configuration stay outside the repository. When installed, verify the local
-client once with `jev probe`; never commit `TYPE_SAFE_AI_KEY` or another provider credential.
+Canopy and Jev are **optional developer-local capabilities**, not repository dependencies.
+
+- `canopy` means the local tree-sitter/vector/graph index from
+  [LioraLabs/canopy](https://github.com/LioraLabs/canopy). Prefer a local embedding provider such as
+  Ollama so repository source stays local.
+- `jev` means the [BorisLeMeec/jev](https://github.com/BorisLeMeec/jev) code-navigation CLI backed
+  by TypeSafe Jev; it is distinct from TypeSafe's general typed-decision/design skill. Jev sends
+  selected source to the configured provider.
+
+The Canopy index/model/runtime state, Jev CLI/API key, and personal client/plugin configuration stay
+outside the repository. When installed, use `canopy status` to check index freshness and `jev probe`
+to verify Jev connectivity; never commit generated indexes, model files, `TYPE_SAFE_AI_KEY`, or
+another provider credential.
 
 Route repository questions by evidence shape:
 
 | Question | Preferred route |
 |---|---|
 | Exact symbol/string/error/path is known | `rg`/text search, then direct read |
-| Known file/subsystem; semantic property needs broad/large reading | narrowly scoped `jev ask`; otherwise targeted direct read |
-| Behavior is known but repository vocabulary/location is unknown | tightly scoped `jev find`, then source verification |
+| Behavior is known but repository vocabulary/location is unknown | fresh local `canopy search`; scoped `jev find` as second opinion/fallback |
+| Known file/subsystem; semantic property needs broad/large reading | narrowly scoped atomic `jev ask`; otherwise targeted direct read |
+| Call-graph orientation after discovery | `canopy map` / `canopy trace` as advisory hints |
 | Type/signature change; need complete impact list | compiler (`tsc -b` / `mypy`) |
 | External package/API behavior | Context7 / official upstream docs |
+
+### Canopy operating policy
+
+Canopy is primarily a **local semantic locator**, not source authority and not a replacement for
+lexical lookup.
+
+- Use `canopy search "<behavior>"` for vocabulary-gap questions where the implementation name is
+  unknown. Do not use it for exact-symbol lookups that `rg` answers precisely.
+- The current repository evaluation favors `top_k = 15` and `test_penalty = 0.5` in the
+  developer-local `.canopy/canopy.toml`. The larger candidate set avoids losing known-correct
+  implementations just below the default top 10; the stronger test penalty keeps regression tests
+  visible without letting them routinely outrank production code.
+- Do **not** standardize an embedding query instruction prefix yet. In the initial controlled trial
+  it improved one known implementation from rank 9 to rank 4 but did not consistently repair harder
+  retrieval misses. Revisit only through a fixed benchmark.
+- Current baseline: Qwen3-Embedding-4B Q4 via local Ollama is already fast enough for interactive
+  agent search in the evaluated workstation. Do not optimize for full-reindex speed at the expense
+  of retrieval quality. Test Q6/Q8 only after a fixed benchmark demonstrates true embedding-recall
+  failures rather than ranking, chunking, or graph extraction issues.
+- A model or quantization change requires a full `canopy reindex`; document and query embeddings
+  must use the same embedding model/quantization.
+- `canopy map` and `canopy trace` are supplemental. Tree-sitter/entity extraction can fail to
+  resolve a real symbol or produce ambiguous generic edges, so a graph miss never proves source
+  absence.
+- In the currently evaluated Canopy implementation, `--path` filters after broad vector retrieval
+  and graph reranking. It narrows output but is not an exhaustive subtree search; a filtered miss is
+  not absence proof.
+- Always verify important Canopy hits against source, exact callers/tests, and compiler output as
+  appropriate.
+
+If Canopy is configured with a remote/OpenAI-compatible embedding provider instead of local Ollama,
+treat its source upload as data egress and apply the same prohibited-path/privacy rules below.
 
 ### Jev question discipline
 
@@ -118,7 +159,7 @@ developer-local installation does not make provider data egress local.
 ### Agent and hook economy
 
 Broad semantic discovery belongs to the primary agent. Subagents/reviewers should not repeat the
-same Jev sweep; give them the established target symbols/files and let them query further only for
+same Canopy search or Jev sweep; give them the established target symbols/files and let them query further only for
 a concrete unresolved question.
 
 The automatic Jev large-read narrowing hook is **not** a repository default. It can reduce context,
