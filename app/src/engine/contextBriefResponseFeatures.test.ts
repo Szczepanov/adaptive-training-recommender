@@ -176,6 +176,34 @@ describe('response summary provenance and bounds (#814 WP7)', () => {
         expect(diagnostic.match(/- Power summary:/g)).toHaveLength(2);
     });
 
+    it('suppresses failed provider detail when provider and canonical dates straddle the render-window boundary', () => {
+        const activity = steady('partial-boundary', '2026-09-18');
+        const evidence: TrainingResponseSessionEvidence = {
+            ...responseEvidence(activity, 'pto-partial-boundary'),
+            localDate: '2026-09-17',
+            sourceCompleteness: { occurrenceRead: 'available', structuredExecution: 'not_linked', providerActivities: 'partial' },
+        };
+        const brief = '# Brief\n\n## 2. Completed training (recorded by the wearable)\n\nrows\n\n## 3. Next\n';
+        const context = {
+            history: [activity], historyStart: '2026-08-22', checkins: NO_CHECKINS,
+            asOfDate: '2026-09-20', windowStart: '2026-09-18', windowEnd: '2026-09-18', evidence: [evidence],
+        };
+
+        expect(deriveKeySessionSummaries([activity], context)).toEqual([]);
+
+        const planning = injectActivityTelemetryIntoContextBrief(brief, [activity], true, context);
+        const diagnostic = injectActivityTelemetryIntoContextBrief(
+            brief,
+            [activity],
+            false,
+            { ...context, diagnostic: true },
+        );
+
+        expect(planning).toBe(brief);
+        expect(diagnostic).toContain('### Detailed activity telemetry');
+        expect(diagnostic).toContain('- Power summary:');
+    });
+
     it('does not use ambiguous prior recordings through the provider fallback', () => {
         const current = steady('current', '2026-09-18');
         const priorA = steady('prior-a', '2026-09-11');
