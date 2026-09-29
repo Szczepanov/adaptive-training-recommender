@@ -85,6 +85,28 @@ function topSet(sets: readonly StrengthSet[]): (StrengthSet & { topWeightKg?: nu
     };
 }
 
+type RankedStrengthSet = NonNullable<ReturnType<typeof topSet>>;
+type PriorStrengthMarker = {
+    top: RankedStrengthSet;
+    comparison: 'like-for-like' | 'different reps' | 'different load type' | 'missing reps';
+};
+
+function priorStrengthMarker(current: RankedStrengthSet, sets: readonly StrengthSet[]): PriorStrengthMarker | null {
+    if (current.topReps !== undefined) {
+        const likeForLike = topSet(sets.filter(set =>
+            set.loadType === current.loadType && set.repetitionCount === current.topReps));
+        if (likeForLike) return { top: likeForLike, comparison: 'like-for-like' };
+    }
+    const fallback = topSet(sets);
+    if (!fallback) return null;
+    return {
+        top: fallback,
+        comparison: current.loadType !== fallback.loadType ? 'different load type'
+            : current.topReps === undefined || fallback.topReps === undefined ? 'missing reps'
+            : 'different reps',
+    };
+}
+
 function setsByExercise(sets: readonly StrengthSet[]): Map<string, StrengthSet[]> {
     const grouped = new Map<string, StrengthSet[]>();
     for (const set of sets) {
@@ -139,13 +161,17 @@ export function deriveStrengthProgression(
                 const priorStructuredLinked = priorEvidence?.identity.sourceKinds.includes('structured_execution') ?? false;
                 const priorDate = responseLocalDate(prior, evidenceByActivityId);
                 if (Boolean(currentEvidence?.structured) !== Boolean(priorEvidence?.structured)
-                    || (priorStructuredLinked && !priorEvidence?.structured)) return { prior, priorDate, top: null };
+                    || (priorStructuredLinked && !priorEvidence?.structured)) return { prior, priorDate, marker: null };
                 const priorSets = priorEvidence?.structured
                     ? structuredSets(priorEvidence.structured).filter(set => !set.isWarmup)
                     : providerSets(prior);
-                return { prior, priorDate, top: topSet(setsByExercise(priorSets).get(identity) ?? []) };
+                return {
+                    prior,
+                    priorDate,
+                    marker: priorStrengthMarker(top, setsByExercise(priorSets).get(identity) ?? []),
+                };
             })
-            .find(entry => entry.top !== null);
+            .find(entry => entry.marker !== null);
         exercises.push({
             exercise: top.label || identity,
             identitySource: currentEvidence?.structured
@@ -154,13 +180,11 @@ export function deriveStrengthProgression(
             workingSets: exerciseSets.length,
             ...(top.topWeightKg !== undefined ? { topWeightKg: top.topWeightKg } : {}),
             ...(top.topReps !== undefined ? { topReps: top.topReps } : {}),
-            ...(priorSession?.top ? { prior: {
+            ...(priorSession?.marker ? { prior: {
                 date: priorSession.priorDate,
-                ...(priorSession.top.topWeightKg !== undefined ? { topWeightKg: priorSession.top.topWeightKg } : {}),
-                ...(priorSession.top.topReps !== undefined ? { topReps: priorSession.top.topReps } : {}),
-                comparison: top.loadType !== priorSession.top.loadType ? 'different load type'
-                    : top.topReps === undefined || priorSession.top.topReps === undefined ? 'missing reps'
-                    : top.topReps !== priorSession.top.topReps ? 'different reps' : 'like-for-like',
+                ...(priorSession.marker.top.topWeightKg !== undefined ? { topWeightKg: priorSession.marker.top.topWeightKg } : {}),
+                ...(priorSession.marker.top.topReps !== undefined ? { topReps: priorSession.marker.top.topReps } : {}),
+                comparison: priorSession.marker.comparison,
             } } : {}),
         });
     }
@@ -232,9 +256,12 @@ export function deriveNextDayResponse(
     const otherActivitiesSameDay = evidenceSessionIds.size > 0
         ? Math.max(0, evidenceSessionIds.size - (currentSessionId && evidenceSessionIds.has(currentSessionId) ? 1 : 0))
         : sameWindowActivities.filter(item => item.date === sessionDate && item.activityId !== activity.activityId).length;
-    const currentExecutionId = sessionEvidence?.structured?.executionId;
-    const knownExecutionIds = new Set((evidence ?? []).flatMap(item =>
-        item.structured?.executionId ? [item.structured.executionId] : []));
+    const currentExecutionId = sessionEvidence?.structuredSourceRef?.executionId
+        ?? sessionEvidence?.structured?.executionId;
+    const knownExecutionIds = new Set((evidence ?? []).flatMap(item => {
+        const executionId = item.structuredSourceRef?.executionId ?? item.structured?.executionId;
+        return executionId ? [executionId] : [];
+    }));
     const tissueResponses = Object.entries(next.tissueResponses ?? {})
         .filter(([, response]) => response.nextMorningReaction || response.sourceSessionRef)
         .flatMap(([region, response]) => {
