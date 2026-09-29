@@ -811,6 +811,7 @@ Include:
 - performedOccurrenceId;
 - source kinds;
 - structured/provider identity basis;
+- selected prior provider activity/date for longitudinal comparisons;
 - component provenance;
 - full bounded rejection reason list;
 - underlying persisted telemetry already available today.
