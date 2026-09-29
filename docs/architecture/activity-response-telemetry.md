@@ -140,9 +140,9 @@ does not select a recording for provider-derived features; structured strength a
 execution-linked next-morning evidence remain independently usable. The ordinary activity
 telemetry section may still show each provider activity as recorded.
 
-Diagnostic response summaries include the selected comparison's feature family, match basis,
-occurrence/protocol identity, sensor/threshold/context evidence, source completeness and
-limitations. At most eight provider IDs and eight rejected candidate reasons are retained, with
+Diagnostic response summaries identify the selected prior provider activity/date and include the
+comparison's feature family, match basis, occurrence/protocol identity, sensor/threshold/context
+evidence, source completeness and limitations. At most eight provider IDs and eight rejected candidate reasons are retained, with
 omission counts; planning renders at most three rejection examples. This provenance remains
 display-only. Current provider rows include lap duration, distance and average speed, but no
 stable venue, temperature, grade/route or running distance-quality evidence. Running pace–HR
