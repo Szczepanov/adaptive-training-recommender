@@ -48,3 +48,10 @@ def test_duplicate_groups_only_returns_nonempty_duplicates(tmp_path: Path) -> No
     )
 
     assert groups == [["a.txt", "b.txt"]]
+
+
+def test_status_signal_accepts_bulleted_markdown_status(tmp_path: Path) -> None:
+    plan = tmp_path / "plan.md"
+    plan.write_text("* **Status:** Superseded — historical only\n", encoding="utf-8")
+
+    assert hygiene.status_signal(plan) == "Superseded — historical only"
