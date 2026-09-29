@@ -130,6 +130,17 @@ describe('contextBrief canonical training table (#894)', () => {
         expect(text).toContain('| Date | Type | Min | Load | Aerobic TE | Anaerobic TE | Avg HR | Intensity |');
     });
 
+    it('raw fallback preserves unknown duration instead of converting it to zero', () => {
+        const text = buildContextBrief(withFacts(null, {
+            purpose: 'planning',
+            activities: [activity(D1, { durationMin: null })],
+        }));
+        expect(text).toContain(`| ${D1} | Cycling | — |`);
+        expect(text).toContain('Totals: 1 sessions · 1 session with duration unknown · 0 tagged hard');
+        expect(text).toContain('Discipline volume: Cycling: 1 session (duration unknown)');
+        expect(text).not.toContain('Totals: 1 sessions · 0 min');
+    });
+
     it('empty facts next to raw records warn about pending reconciliation instead of asserting no training', () => {
         const text = buildContextBrief(withFacts([], { purpose: 'planning' }));
         expect(text).toContain('reconciliation pending?');
