@@ -30,6 +30,13 @@ export interface PersistedSessionExecution {
   state: string;
 }
 
+export interface PersistedSessionRestEvent {
+  id: string;
+  executionId: string;
+  endReason: string;
+  actualSeconds: number;
+}
+
 async function authEmulatorRequest<T>(path: string, body: Record<string, unknown>): Promise<T> {
   const response = await fetch(`${AUTH_EMULATOR_URL}${path}?key=fake-api-key`, {
     method: 'POST',
@@ -189,6 +196,39 @@ export async function readSessionExecutions(athlete: E2EAthlete): Promise<Persis
       executionId: item.id,
       state: typeof item.data().state === 'string' ? item.data().state : 'invalid',
     }));
+  } finally {
+    await deleteApp(app);
+  }
+}
+
+export async function readSessionRestEvents(
+  athlete: E2EAthlete,
+  executionId: string,
+): Promise<PersistedSessionRestEvent[]> {
+  const app = initializeApp(firebaseConfig, `e2e-rest-inspector-${randomUUID()}`);
+  try {
+    const auth = getAuth(app);
+    connectAuthEmulator(auth, AUTH_EMULATOR_URL);
+    const credential = await signInWithEmailAndPassword(auth, athlete.email, athlete.password);
+    const db = getFirestore(app);
+    connectFirestoreEmulator(db, EMULATOR_HOST, FIRESTORE_EMULATOR_PORT);
+    const snapshot = await getDocs(collection(
+      db,
+      'users',
+      credential.user.uid,
+      'session_executions',
+      executionId,
+      'restEvents',
+    ));
+    return snapshot.docs.map(item => {
+      const data = item.data();
+      return {
+        id: item.id,
+        executionId: typeof data.executionId === 'string' ? data.executionId : 'invalid',
+        endReason: typeof data.endReason === 'string' ? data.endReason : 'invalid',
+        actualSeconds: typeof data.actualSeconds === 'number' ? data.actualSeconds : Number.NaN,
+      };
+    });
   } finally {
     await deleteApp(app);
   }

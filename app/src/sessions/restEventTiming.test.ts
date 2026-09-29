@@ -101,13 +101,15 @@ describe('wall-clock derivation (#908)', () => {
         expect(restSecondsRemainingAt(active, startMs + 89_100)).toBe(1);
     });
 
-    it('a multi-minute background jump lands on zero, never negative, exactly once at the boundary', () => {
+    it('a multi-minute background jump lands on zero and never negative', () => {
         const active = startRest('entry-1', startIso, 90);
         // The deadline instant itself has just elapsed.
         expect(restSecondsRemainingAt(active, startMs + 90_000)).toBe(0);
         // A tab throttled for five minutes observes the same terminal zero.
         expect(restSecondsRemainingAt(active, startMs + 5 * 60_000)).toBe(0);
         // Closing that far past the deadline still persists real elapsed time.
+        // The one-shot close side effect itself is covered by the browser E2E,
+        // where repeated visibility/focus resyncs must create one durable event.
         const event = closeRest(active, new Date(startMs + 5 * 60_000).toISOString(), 'timer_elapsed');
         expect(event.actualSeconds).toBe(300);
         expect(event.endReason).toBe('timer_elapsed');
