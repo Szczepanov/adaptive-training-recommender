@@ -62,7 +62,8 @@ when it affects confidence. See
 - For source-code discovery, exact identifiers/strings use `rg`. For a non-trivial
   vocabulary/location gap, make one
   `python scripts/agent_canopy.py search "<behavior>"` attempt before broad lexical exploration.
-  The wrapper queries a maintained baseline index read-only; `CANOPY_UNAVAILABLE` / exit code 3
+  The query-only wrapper uses a maintained baseline index without exposing maintenance commands;
+  `CANOPY_UNAVAILABLE` / exit code 3
   means fall back immediately and **never** init/reindex/pull models as task setup. If the result is
   still ambiguous, one scoped `jev find` is the second opinion. For a known implementation target,
   when one semantic property would otherwise require multiple substantial source reads, use one

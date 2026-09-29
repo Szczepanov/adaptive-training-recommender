@@ -489,7 +489,7 @@
       "start_ref": "e1d72e79be0997c74301dcbc0ef5c68db8c4c5a6",
       "prompt": "You are in a temporary feature worktree. The evaluation environment has a maintained main-checkout Canopy index available through the repository-supported agent tooling. Without changing code, locate where the week-ahead planner proves that an incumbent allocation survives before failing closed on unresolved allocation search, identify the relevant implementation symbols, and verify the conclusion in the current worktree. The prompt intentionally does not provide internal symbol names.",
       "success_criteria": [
-        "The repository-supported read-only Canopy worktree bridge is used before broad lexical exploration.",
+        "The repository-supported query-only Canopy worktree bridge is used before broad lexical exploration.",
         "The answer identifies app/src/engine/planner.ts as the implementation location.",
         "The answer identifies classifyAllocationPreservation and/or incumbentAssignmentsRemainingAfterSelection as relevant implementation symbols.",
         "Canopy output is treated as baseline discovery evidence and the final conclusion is verified against current-worktree source.",
@@ -506,7 +506,7 @@
         {
           "capability": "canopy",
           "expectation": "required",
-          "reason": "This capability case specifically verifies that a pre-provisioned maintained Canopy baseline is actually reached through the repository's read-only worktree bridge for a vocabulary-gap location task."
+          "reason": "This capability case specifically verifies that a pre-provisioned maintained Canopy baseline is actually reached through the repository's query-only worktree bridge for a vocabulary-gap location task."
         },
         {
           "capability": "lexical_search",

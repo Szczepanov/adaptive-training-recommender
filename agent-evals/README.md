@@ -85,7 +85,7 @@ requires a full reindex.
 
 Normal isolated agent-eval worktrees must not provision Canopy themselves. A Canopy-specific
 benchmark harness may deliberately pre-provision a dedicated index before the timed/graded agent
-trial, or expose a maintained baseline index through the repository's read-only
+trial, or expose a maintained baseline index through the repository's query-only
 `scripts/agent_canopy.py` bridge. If no usable index is supplied, record Canopy as unavailable and
 let the agent follow the normal fallback route. Do not include `canopy init`, `canopy reindex`,
 model pulls, or shared-index mutation in an ordinary task's measured agent behavior.
