@@ -236,6 +236,9 @@ artifacts/activity-response-preservation*.json
 app/artifacts/*
 # Per-shard emulator configs written (and removed) by app/scripts/run-rules-shard.mjs
 app/.rules-shard-*.firebase.json
+.canopy
 
-# Canopy semantic index is generated, mutable developer-local state.
-.canopy/
+# Per-agent worktree checkouts (.claude/worktrees, .codex/worktrees). Claude Code writes
+# **/.claude/worktrees/ into .git/info/exclude, but that file is local-only and unregistered
+# checkouts are invisible to git status -- so orphans accumulate with no signal to clean them.
+.claude/worktrees/

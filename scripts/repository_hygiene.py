@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import sys
 from collections import Counter, defaultdict
@@ -290,6 +291,15 @@ def write_inventory(root: Path, inventory: dict[str, object]) -> None:
     (report_dir / "summary.md").write_text(render_markdown(inventory), encoding="utf-8")
 
 
+def resolve_command(executable: str) -> str:
+    # Windows package-manager shims (e.g. npx.cmd) are not resolvable by
+    # CreateProcess under subprocess.run without shell=True; resolve to the
+    # full path so external tools launch. POSIX manifests keep bare names.
+    if sys.platform == "win32":
+        return shutil.which(executable) or executable
+    return executable
+
+
 def run_tool(
     root: Path,
     name: str,
@@ -334,11 +344,13 @@ def run_tool(
 
 def run_external_tools(root: Path) -> list[ToolResult]:
     app = root / "app"
+    npx = resolve_command("npx")
+    uvx = resolve_command("uvx")
     specs: list[tuple[str, list[str], Path, set[int]]] = [
         (
             "knip-default",
             [
-                "npx",
+                npx,
                 "--yes",
                 f"knip@{KNIP_VERSION}",
                 "--reporter",
@@ -351,7 +363,7 @@ def run_external_tools(root: Path) -> list[ToolResult]:
         (
             "knip-production",
             [
-                "npx",
+                npx,
                 "--yes",
                 f"knip@{KNIP_VERSION}",
                 "--config",
@@ -367,7 +379,7 @@ def run_external_tools(root: Path) -> list[ToolResult]:
         (
             "dependency-cruiser",
             [
-                "npx",
+                npx,
                 "--yes",
                 f"dependency-cruiser@{DEPENDENCY_CRUISER_VERSION}",
                 "--config",
@@ -382,7 +394,7 @@ def run_external_tools(root: Path) -> list[ToolResult]:
         (
             "jscpd",
             [
-                "npx",
+                npx,
                 "--yes",
                 f"jscpd@{JSCPD_VERSION}",
                 "--config",
@@ -394,7 +406,7 @@ def run_external_tools(root: Path) -> list[ToolResult]:
         (
             "vulture-all",
             [
-                "uvx",
+                uvx,
                 "--from",
                 f"vulture=={VULTURE_VERSION}",
                 "vulture",
@@ -411,7 +423,7 @@ def run_external_tools(root: Path) -> list[ToolResult]:
         (
             "vulture-runtime",
             [
-                "uvx",
+                uvx,
                 "--from",
                 f"vulture=={VULTURE_VERSION}",
                 "vulture",
