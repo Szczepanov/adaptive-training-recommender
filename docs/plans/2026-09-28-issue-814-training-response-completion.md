@@ -800,7 +800,8 @@ The steady power–HR summary now distinguishes exact authored prescription, aut
 - no linear growth with all history candidates;
 - structured-only strength summaries are capped at eight rendered occurrences and eight exercises per occurrence, with omission counts;
 - render one canonical performed occurrence once when provider selection is deterministic; ambiguous multi-recording occurrences or partial provider evidence fail closed with one accurately labelled insufficient-evidence occurrence row;
-- diagnostic may show the full persisted comparison decision/evidence needed to debug selection.
+- planning suppresses compact/quality provider telemetry for those failed selections rather than leaking the rejected source rows back into the handoff;
+- diagnostic may show the full persisted provider telemetry and bounded comparison decision/evidence needed to debug selection.
 
 The continuation retains at most eight rejected candidate reasons and reports omissions. Diagnostic output includes the selected comparison decision's match basis, occurrence/protocol identity, sensor and threshold evidence, venue/environment evidence, source completeness and limitations; provider sources are bounded to eight IDs.
 
