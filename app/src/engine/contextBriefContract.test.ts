@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { buildContextBrief, SUBJECTIVE_BASELINE_DAYS, type ContextBriefInput } from './contextBrief';
 import { buildMorningCoachBrief, type ContextBriefPlanningHandoffInput } from './contextBriefPlanningHandoff';
 import {
+    assertRenderedBriefContract,
     CONTEXT_BRIEF_CONTRACT_VERSION,
     parseBriefContractField,
     stripBriefContractEphemeral,
 } from './contextBriefContract';
+import { SENSOR_OBSERVATION_HORIZON_DAYS } from './contextBriefSensorEvidence';
 import { POLICY_VERSION } from './policy';
 
 const AS_OF = '2026-09-10';
@@ -66,18 +68,23 @@ describe('context brief contract identity (#894)', () => {
         expect(parseBriefContractField(text, 'Purpose')).toBe('morning');
     });
 
-    it('states as-of date, windows, and policy version', () => {
+    it('states planning horizons as independently machine-readable fields', () => {
         const text = buildContextBrief(baseInput({ purpose: 'planning' }));
         expect(parseBriefContractField(text, 'As-of date')).toContain(AS_OF);
         expect(parseBriefContractField(text, 'As-of date')).toContain('Europe/Warsaw');
         expect(parseBriefContractField(text, 'Retrospective detail window')).toContain('14 days');
         expect(parseBriefContractField(text, 'Subjective baseline window')).toContain(`${SUBJECTIVE_BASELINE_DAYS} days`);
-        expect(parseBriefContractField(text, 'Policy version')).toBe(POLICY_VERSION);
+        expect(parseBriefContractField(text, 'Recovery timeline')).toBe('7 days');
+        expect(parseBriefContractField(text, 'Sensor evidence horizon')).toBe(`${SENSOR_OBSERVATION_HORIZON_DAYS} days`);
+        expect(parseBriefContractField(text, 'Engine policy version')).toBe(POLICY_VERSION);
     });
 
-    it('reports the short morning retrospective window honestly', () => {
+    it('reports only horizons actually used by the morning renderer', () => {
         const text = buildMorningCoachBrief(morningInput());
         expect(parseBriefContractField(text, 'Retrospective detail window')).toContain('2 days');
+        expect(parseBriefContractField(text, 'Recovery timeline')).toBe('7 days');
+        expect(parseBriefContractField(text, 'Subjective baseline window')).toBe('not used by this export');
+        expect(parseBriefContractField(text, 'Sensor evidence horizon')).toBe('not used by this export');
     });
 
     it('is deterministic for identical inputs ignoring the generation timestamp', () => {
@@ -92,5 +99,22 @@ describe('context brief contract identity (#894)', () => {
     it('omits the generation line when the pure builder gets no timestamp', () => {
         const text = buildContextBrief(baseInput({ purpose: 'diagnostic' }));
         expect(parseBriefContractField(text, 'Generated at')).toBeNull();
+    });
+
+    it('fails closed when a service-level export loses required identity metadata', () => {
+        const generatedAt = '2026-09-10T06:00:00.000Z';
+        const text = buildContextBrief(baseInput({ purpose: 'planning', generatedAt }));
+        expect(() => assertRenderedBriefContract(text, {
+            purpose: 'planning',
+            asOfDate: AS_OF,
+            generatedAt,
+        })).not.toThrow();
+
+        const withoutTimestamp = stripBriefContractEphemeral(text);
+        expect(() => assertRenderedBriefContract(withoutTimestamp, {
+            purpose: 'planning',
+            asOfDate: AS_OF,
+            generatedAt,
+        })).toThrow(/generation timestamp mismatch/);
     });
 });
