@@ -2,12 +2,12 @@
 
 | | |
 |---|---|
-| **Status** | **In progress** — WP0–WP2, WP4–WP5 and WP7 are implemented for their shipped paths; WP8 structural guards remain active; WP3, WP6.4 and final issue reconciliation remain open |
+| **Status** | **Closure-ready pending PR #917** — the issue #814 acceptance surface is implemented and reconciled through current `main`; deterministic Adaptive step-to-segment alignment and controlled running pace–HR remain deliberately unavailable, fail-closed follow-up extensions rather than issue-closure blockers |
 | **Source** | [Issue #814](https://github.com/Szczepanov/adaptive-training-recommender/issues/814) and [2026-09-28 completion analysis](../analysis/2026-09-28-issue-814-training-response-completion-analysis.md) |
-| **Baseline** | fresh managed worktree at fetched `origin/main` `fcf4e80cb95cb4c66dcedcda7b2504c62a56e520`; includes PR #910 merge `5b25faf83c95fed73433122627e35a104af2f107` and all commits through the fetched tip |
-| **Baseline reconciliation** | The prior documented `2ec78e5` baseline advanced when `git fetch origin` moved `origin/main` to `fcf4e80`. PR #910's architecture test, docs and status updates are present in the merge ancestry and working tree. This continuation uses the fetched tip. |
-| **Blocked by** | WP3 has no shared deterministic execution-to-response-segment alignment contract. WP6.4 lacks captured running venue/protocol context and running-specific HR-use authority. WP7 is complete for the current evidence surface: ambiguous multi-recording and partial provider evidence fail closed, and diagnostic provenance is bounded; final issue closure remains blocked by WP3 and WP6.4 evidence gaps. |
-| **Unlocks** | Closure of #814; a clean evidence surface for future adaptation/progression research. It does **not** itself unlock recommendation authority. |
+| **Baseline** | current `origin/main` `9f62bbc0a532309be51bc6aa3eecf34c384498ea`; includes PR #910/#914, #916's cross-date provider-evidence suppression, and all commits through the fetched tip |
+| **Baseline reconciliation** | The prior documented baseline advanced through #910/#914 and then #916. PR #910's structural guards remain in the tree; #914 closed WP7's ambiguous/partial provider-source and bounded-diagnostic gaps; #916 closed the cross-date leak where a rejected provider recording could re-enter planning when provider-local and canonical dates straddled the render window. None of those changes added provider fields, transport requests or privacy scope. PR #917 is rebased onto `9f62bbc`. |
+| **Blocked by** | No remaining #814 acceptance blocker after PR #917 merges. A future `reconciled_workout_step` projection still requires a shared deterministic execution-to-segment alignment contract, and controlled running pace–HR still requires captured venue/protocol context plus compatible HR-use authority; current code fails closed for both. |
+| **Unlocks** | Closure of #814 after PR #917 merges; a clean evidence surface for future adaptation/progression research. It does **not** itself unlock recommendation authority. |
 | **Policy effect** | None. All work in this plan remains display/observability context. POLICY_VERSION must not change unless scope is explicitly widened in a separately reviewed policy change. |
 
 ## Task board
@@ -15,14 +15,14 @@
 | Work package | Status | Current boundary |
 |---|---|---|
 | WP0–WP2 | `[x]` | Shipped contracts and current comparison paths are covered. |
-| WP3 | `[-]` | Session identity is wired; segment-to-step identity is blocked until a deterministic shared alignment contract exists. |
+| WP3 segment overlay | **Deferred extension / fail-closed** | FIT-step identity is available inside provider telemetry, but there is no shared Adaptive execution-to-segment key or guaranteed clock alignment. PR #917 removes `reconciled_workout_step` from the selectable read-side identity type and persistence allowlist, so unsupported persisted values cannot gain semantic-step authority. |
 | WP4–WP5 | `[x]` | Structured strength and next-morning response render from canonical response evidence. |
-| WP6.1–WP6.3 | `[x]` | Power–HR wording and a fresh current-main source audit are complete; current normalized evidence has lap distance/speed but no stable venue, temperature, grade/route or distance-quality context. No provider request or source was added. |
-| WP6.4 | `[-]` | Controlled running pace–HR remains unsupported: no recorded controlled venue or standardized executed running protocol, and no running-specific HR-use policy. Outdoor/trail comparison stays excluded; running economy remains unclaimed. |
-| WP7 | `[x]` | Provider-derived summaries emit once per occurrence only when source selection is deterministic. Ambiguous multi-recording or partial provider evidence produces one accurately labelled insufficient-evidence occurrence row. Diagnostic source/comparison provenance is deterministically ordered and bounded; at most eight provider IDs and eight rejection reasons are retained plus omission counts, while planning renders only bounded rejection examples. |
-| WP8 | `[-]` | PR #910 structural guards remain present. Plan/status/architecture references are reconciled to the current implementation; issue #814 stays open because WP3 and WP6.4 acceptance remain blocked. |
+| WP6.1–WP6.3 | `[x]` | Rechecked on `9f62bbc` after #914: provider activity/response evidence has lap duration, distance and average speed, but no stable venue, temperature, grade/route or distance-quality context. No provider request or source was added. |
+| WP6.4 controlled running | **Deferred extension / fail-closed** | Controlled running pace–HR remains unsupported: no recorded controlled venue or standardized executed running protocol, and no running-specific HR-use policy. The comparator stays unwired/insufficient-evidence; outdoor/trail comparison stays excluded and running economy remains unclaimed. |
+| WP7 | `[x]` | Provider-derived summaries emit once per occurrence only when source selection is deterministic. Ambiguous/partial provider evidence produces one accurately labelled insufficient-evidence occurrence row and, after #916, cannot leak through lower-level planning telemetry across a canonical/provider date boundary. Diagnostic provenance is deterministically ordered and bounded. |
+| WP8 | `[x]` in PR #917 | PR #910 structural guards are preserved. PR #917 removes unsupported `reconciled_workout_step` from the read-side type/parser contract with a hydration regression, removes `semantic_protocol_match` from the selectable comparison-basis type, and reconciles plan/status/architecture references to current `main`. |
 
-WP headings below carry the same status as this board. A negative source audit completes the audit task, but does not satisfy the unmet data-dependent acceptance criterion.
+WP headings below carry the same status as this board. The two deferred extensions remain intentionally unavailable until their evidence contracts exist; that fail-closed state satisfies #814's requirement not to invent results from insufficient evidence.
 
 ## 1. Goal
 
@@ -447,9 +447,9 @@ Every shipped longitudinal response comparison obtains eligibility/confidence fr
 
 ## WP3 — Wire authored identity without inventing step correspondence
 
-**Status:** In progress (blocked) — authored protocol identity now reaches the steady power–HR comparator; segment-level reconciliation has no deterministic cross-source alignment contract.
-**Blocked by:** WP1, WP2
-**Purpose:** complete the original #814 / #850 deferred identity integration.
+**Status:** Deferred extension / fail-closed — authored protocol identity already reaches the steady power–HR comparator; segment-level Adaptive reconciliation has no deterministic cross-source alignment contract and is not required for #814 closure while unsupported identity is rejected.
+**Prerequisites for future activation:** WP1/WP2 plus a deterministic shared execution-to-segment alignment contract.
+**Purpose:** preserve the future authored segment-identity extension without inventing correspondence in the shipped #814 surface.
 
 ### 3.1 Session-level identity
 
@@ -480,7 +480,7 @@ Potential mapping evidence, strongest first:
 
 Occurrence membership alone is insufficient.
 
-**Current boundary:** execution entries provide completion times, while response segments provide elapsed offsets; the current records expose no shared step ID or guaranteed timing-alignment contract. Do not infer linkage from occurrence membership or join those timestamps heuristically. WP3 remains blocked until deterministic shared alignment evidence is available.
+**Current boundary (rechecked on `9f62bbc`, 2026-09-29):** `activity_response.py` preserves FIT Workout Step-to-Lap linkage within the provider FIT source, but the canonical response projection has no shared Adaptive execution/step identifier on a segment. Structured execution entries provide completion instants, while response segments provide elapsed offsets; the current records expose no shared key or guaranteed timing-alignment contract. Do not infer linkage from occurrence membership or join those timestamps heuristically. The future segment overlay remains unavailable until deterministic shared alignment evidence exists; this does not block #814 closure because unsupported identity now fails closed.
 
 ### 3.3 Failure behavior
 
@@ -650,9 +650,9 @@ The output is more specific when exact linkage exists and more honest when it do
 
 ## WP6 — Harden steady cycling context and add controlled running pace–HR response
 
-**Status:** In progress — response terminology is power–HR based and the WP6.3 provider audit is complete with a negative result; controlled running remains open and blocked. No new provider source/request is in this issue scope.
-**Blocked by:** WP2; running also depends on HR-fidelity compatibility for running use
-**Purpose:** finish the two longitudinal aerobic-response families without pretending field context is controlled when it is not.
+**Status:** Implemented for the #814 acceptance surface; controlled running is a deferred fail-closed extension. Response terminology is power–HR based and the WP6.3 provider audit is complete with a negative result. No new provider source/request is in this issue scope.
+**Blocked by:** None for the shipped #814 surface; the future controlled-running extension depends on suitable context evidence and HR-fidelity compatibility.
+**Purpose:** harden the shipped steady-cycling family and preserve a fail-closed boundary for future controlled running rather than pretending field context is controlled.
 
 ### 6.1 Rename cycling output semantics
 
@@ -699,11 +699,11 @@ If a new endpoint/request would be required:
 - document the gap;
 - open a separate request-budget/privacy design issue.
 
-**Rechecked on fetched `origin/main` `fcf4e80` (2026-09-29):** the current `NormalizedGarminActivity`, Garmin mapper and bounded `ActivityResponseTelemetry` expose activity type, lap duration/distance/average speed and sensor summaries. They do not retain stable indoor/outdoor venue, ambient temperature, elevation/grade, route identity or a running distance-quality indicator. Lap distance/speed alone cannot establish controlled pace comparability. No already-acquired source supports the context projection proposed above. WP6.3 is complete with this negative result; any new provider source/request or persisted payload expansion requires a separate request-budget/privacy review.
+**Rechecked on fetched `origin/main` `9f62bbc` (2026-09-29), after #914 and #916:** the current `NormalizedGarminActivity`, Garmin mapper and bounded `ActivityResponseTelemetry` expose activity type, lap duration/distance/average speed and sensor summaries. They do not retain stable indoor/outdoor venue, ambient temperature, elevation/grade, route identity or a running distance-quality indicator. Lap distance/speed alone cannot establish controlled pace comparability. #914 changed app-side source selection, fail-closed behavior and bounded diagnostic output; it added no provider evidence or request. No already-acquired source supports the context projection proposed above. WP6.3 is complete with this negative result; any new provider source/request or persisted payload expansion requires a separate request-budget/privacy review.
 
 ### 6.4 Running pace–HR response
 
-**Evidence assessment (2026-09-29): blocked.** Running laps may carry distance and average speed, and activities may carry running dynamics, but current evidence does not establish treadmill/track venue or a repeated standardized executed protocol. HR fidelity has general `AEROBIC_DECOUPLING` and interval use cases, not a running pace–HR use case; its shadow authority also requires verified input lineage and segment context. Reusing it would not establish running eligibility. Do not implement a comparison from current evidence; do not infer outdoor/trail control or claim running economy.
+**Evidence assessment (rechecked on `9f62bbc`, 2026-09-29): deferred / fail-closed.** Running laps may carry distance and average speed, and activities may carry running dynamics, but current evidence does not establish treadmill/track venue or a repeated standardized executed protocol. HR fidelity has general `AEROBIC_DECOUPLING` and interval use cases, not a running pace–HR use case; its shadow authority also requires verified input lineage and segment context. Reusing it would not establish running eligibility. Do not implement a comparison from current evidence; do not infer outdoor/trail control or claim running economy.
 
 Initial eligibility:
 
@@ -832,7 +832,7 @@ The planning brief becomes more semantically precise without reversing #811's in
 
 ## WP8 — Documentation, governance and issue closure
 
-**Status:** In progress — recommendation-engine and telemetry references plus PR #910 structural authority guards are retained; WP7 ambiguity handling and bounded diagnostic provenance are implemented. Final issue acceptance reconciliation remains open because WP3 and WP6.4 are unsupported by current evidence.
+**Status:** Complete in PR #917 — PR #910 structural authority guards are preserved; #914/#916 ambiguity handling and planning-suppression fixes are incorporated; acceptance reconciliation is complete. The live issue remains Open only until this PR merges.
 **Blocked by:** WP1–WP7
 **Purpose:** update living architecture and make the authority boundary difficult to regress.
 
@@ -844,7 +844,7 @@ The planning brief becomes more semantically precise without reversing #811's in
 - ADR-0034 status/documentation only if the repository separately decides its shipped state warrants an ADR status transition; do not silently edit an accepted immutable ADR.
 - issue #814 acceptance checklist/comment.
 
-`docs/architecture/recommendation-engine.md` and `docs/architecture/activity-response-telemetry.md` reflect the current power–HR terminology, structured strength authority, exact-versus-day-level next-morning linkage, and deterministic identity/provider-data cutlines. Structural guards cover static and dynamic imports, keep the response-renderer chain inside the context-brief display boundary, reject transitive reachability from non-context-brief engine modules, and lock the normalized response schema (including nested source-resolution and prescribed-target shapes) against accidental raw-trace expansion. Cardinality bounds remain enforced by the existing ingestion/read-side validation and tests rather than by this structural test alone. These updates do not close the remaining data-dependent acceptance items or issue #814.
+`docs/architecture/recommendation-engine.md` and `docs/architecture/activity-response-telemetry.md` reflect the current power–HR terminology, structured strength authority, exact-versus-day-level next-morning linkage, running-evidence limit and deterministic identity/provider-data cutlines. PR #910 structural guards remain in `contextBriefResponseArchitecture.test.ts`: static and literal dynamic imports are scanned across production TypeScript, the response-renderer chain stays inside the context-brief display boundary, non-context-brief engine modules cannot reach it transitively, and the normalized response schema (including nested source-resolution and prescribed-target shapes) cannot expand accidentally. Cardinality bounds remain enforced by ingestion/read-side validation and tests, not by this structural test alone. Focused regression checks make `reconciled_workout_step` unavailable in the read-side identity type, reject it during persisted activity-response hydration, and exclude `semantic_protocol_match` from the selectable comparison-basis type. These updates complete the #814 acceptance surface once PR #917 merges; the separately evidence-gated segment-alignment and controlled-running extensions remain unavailable.
 
 ### Document explicitly
 
@@ -858,18 +858,36 @@ The planning brief becomes more semantically precise without reversing #811's in
 - environmental unknown behavior;
 - display-only authority.
 
-### Architecture tests
+### Current guard coverage
 
-Add structural tests that fail if:
+- PR #910's import-graph and normalized-schema structural guards are present and retained.
+- response comparability remains isolated from recommendation/ranking/readiness engine paths;
+- structured exercise identity and provider fallback authority remain covered by response tests;
+- raw FIT samples remain outside the normalized response schema and planning payload.
+- WP3 keeps `reconciled_workout_step` out of the read-side identity type and persistence allowlist until a shared deterministic alignment contract exists; a parser regression proves unsupported persisted values fail closed.
+- the `ComparisonMatchBasis` type excludes `semantic_protocol_match` until an implementation actually selects that basis.
 
-- recommendation/ranking/readiness modules import response comparability outputs;
-- a policy consumer starts reading them without explicit activation work;
-- response code reintroduces provider exercise-name authority over structured exercise identity;
-- raw native FIT samples appear in planning payloads.
+### Issue #814 acceptance reconciliation (current `origin/main` `9f62bbc`, including #916)
+
+| Issue acceptance criterion | Current result |
+|---|---|
+| Structured 3-interval fixture yields a compact summary and first-to-last change | Satisfied by interval-repeatability fixtures. |
+| Variable unstructured ride receives no misleading cardiac-drift value | Satisfied; variable sessions fail steady eligibility. |
+| Comparable steady rides can produce an efficiency comparison with confidence and provenance | Satisfied when supplied power/HR evidence supports it; observational/low-confidence evidence stays labeled and cannot become high-confidence. |
+| Materially different protocols are rejected | Satisfied by the centralized comparability contract. |
+| FTP/zone changes are detected and rejected or safely normalized | Satisfied by threshold-signature rejection; no normalization formula is claimed. |
+| Strength requires sufficiently reliable exercise/set identity | Satisfied; comparable structured sets require matching exercise identity, load type and reps; provider-only evidence is low-confidence and ambiguity fails closed. |
+| Next-day response is observational, not causal | Satisfied through exact tissue links or explicitly day-level observational evidence. |
+| Planning uses compact semantic summaries for eligible key sessions | Satisfied with existing bounded per-activity/per-occurrence output limits. |
+| Diagnostic retains underlying telemetry | Satisfied for persisted normalized telemetry; native FIT samples are transient and are not retained. |
+| Unit tests cover eligible/ineligible comparison, missing sensors, thresholds, intervals and strength | Satisfied by current focused feature/comparability suites plus this continuation's blocker regressions. |
+| Documentation states comparability rules and limitations | Satisfied by the living architecture and this plan; segment alignment and controlled running are documented as deferred fail-closed extensions. |
+
+The issue page was verified Open on 2026-09-29. The listed issue acceptance criteria are reconciled as implemented, and PR #917 hardens the two unsupported extensions so they fail closed. Close #814 after this PR merges with required CI green; deterministic Adaptive segment-to-step identity and controlled running pace–HR can proceed later only under separately reviewed evidence contracts.
 
 ### Close #814 only when
 
-All issue-closure conditions in the linked analysis are met and no TODO is being hidden behind a misleading “high confidence” fallback.
+PR #917 is merged with required CI green and the issue acceptance checklist is reconciled to the merged behavior. The deferred segment-alignment and controlled-running extensions are not closure prerequisites because current behavior explicitly withholds those claims rather than estimating them.
 
 ---
 

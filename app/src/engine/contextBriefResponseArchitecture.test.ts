@@ -5,6 +5,7 @@ import type {
     ActivityPowerDurationPeak,
     ActivityPrescribedTarget,
     ActivityResponseTelemetry,
+    ActivitySegmentIdentitySource,
     ActivitySegmentSummary,
     ActivitySteadyHalfSummary,
 } from './models';
@@ -117,6 +118,9 @@ const PEAK_HAS_ONLY_NORMALIZED_FIELDS: HasOnlyKeys<ActivityPowerDurationPeak,
     'durationSeconds' | 'powerWatts' | 'confidence' | 'elapsedBeforeSeconds' | 'activityHalf'> = true;
 const HALVES_HAVE_ONLY_NORMALIZED_FIELDS: HasOnlyKeys<ActivitySteadyHalfSummary,
     'firstPowerWatts' | 'secondPowerWatts' | 'firstHrBpm' | 'secondHrBpm' | 'firstCadenceRpm' | 'secondCadenceRpm'> = true;
+type ReconciledStepIdentityIsNotSelectable =
+    Extract<ActivitySegmentIdentitySource, 'reconciled_workout_step'> extends never ? true : never;
+const RECONCILED_STEP_IDENTITY_IS_NOT_SELECTABLE: ReconciledStepIdentityIsNotSelectable = true;
 
 describe('training-response architecture (#814)', () => {
     it('keeps response comparability inside the display-only context-brief boundary', () => {
@@ -155,5 +159,9 @@ describe('training-response architecture (#814)', () => {
         expect(SEGMENT_HAS_ONLY_NORMALIZED_FIELDS).toBe(true);
         expect(PEAK_HAS_ONLY_NORMALIZED_FIELDS).toBe(true);
         expect(HALVES_HAVE_ONLY_NORMALIZED_FIELDS).toBe(true);
+    });
+
+    it('keeps reconciled step identity unavailable until a shared alignment contract exists', () => {
+        expect(RECONCILED_STEP_IDENTITY_IS_NOT_SELECTABLE).toBe(true);
     });
 });

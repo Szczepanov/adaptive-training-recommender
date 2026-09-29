@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { NormalizedGarminActivity } from './models';
-import { decideSessionComparability, type ResponseSessionIdentity } from './contextBriefComparability';
+import {
+    decideSessionComparability,
+    type ComparisonMatchBasis,
+    type ResponseSessionIdentity,
+} from './contextBriefComparability';
+
+type SemanticMatchBasisIsNotSelectable = Extract<ComparisonMatchBasis, 'semantic_protocol_match'> extends never ? true : never;
+const SEMANTIC_MATCH_BASIS_IS_NOT_SELECTABLE: SemanticMatchBasisIsNotSelectable = true;
 
 const zones = [
     { zoneNumber: 1, secondsInZone: 100, lowBoundary: 0 },
@@ -46,6 +53,10 @@ describe('decideSessionComparability', () => {
         const controlled = decide(activity(), activity({ activityId: 'prior', date: '2026-09-10' }));
         expect(controlled.matchBasis).toBe('controlled_steady_match');
         expect(controlled.provenance.protocolIdentity).toBe('unknown');
+    });
+
+    it('keeps semantic protocol matching out of the selectable match-basis type', () => {
+        expect(SEMANTIC_MATCH_BASIS_IS_NOT_SELECTABLE).toBe(true);
     });
 
     it('never compares one physical occurrence with itself', () => {

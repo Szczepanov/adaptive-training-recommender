@@ -1868,7 +1868,7 @@ export interface ActivityLapSummary {
 }
 
 export type ActivitySegmentType = 'work' | 'recovery' | 'sprint' | 'steady' | 'surge' | 'warmup' | 'cooldown' | 'unknown';
-export type ActivitySegmentIdentitySource = 'reconciled_workout_step' | 'fit_workout_step' | 'manual_lap' | 'detected' | 'unknown';
+export type ActivitySegmentIdentitySource = 'fit_workout_step' | 'manual_lap' | 'detected' | 'unknown';
 export type ActivityEvidenceConfidence = 'high' | 'moderate' | 'low';
 
 export interface ActivityPrescribedTarget {

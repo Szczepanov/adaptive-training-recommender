@@ -542,7 +542,7 @@ export function renderCompactActivityTelemetry(
         if (activity.activityResponse) {
             const response = activity.activityResponse;
             const semantic = response.segments.filter(segment =>
-                segment.identitySource === 'reconciled_workout_step' || segment.identitySource === 'fit_workout_step').length;
+                segment.identitySource === 'fit_workout_step').length;
             if (semantic > 0) parts.push(`${semantic} semantic segments (${response.derivationVersion})`);
         }
         lines.push(`- ${activity.date} — ${formatActivityType(activity.type)} — ${activity.intensityTag}: ${parts.length > 0 ? parts.join(' · ') : 'no usable power, zone or lap detail reported'}`);

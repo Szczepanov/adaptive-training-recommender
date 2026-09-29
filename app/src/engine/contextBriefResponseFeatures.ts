@@ -250,7 +250,7 @@ function semanticSegments(
     const structured = response.segments
         .filter(segment =>
             segment.segmentType === segmentType
-            && (segment.identitySource === 'reconciled_workout_step' || segment.identitySource === 'fit_workout_step'))
+            && segment.identitySource === 'fit_workout_step')
         .sort((a, b) => a.segmentIndex - b.segmentIndex);
     if (structured.length === 0) return null;
     if (response.segmentsTruncated) {
@@ -490,7 +490,6 @@ function comparisonBasisLabel(basis: ComparisonMatchBasis | undefined): string {
         case 'exact_prescription_identity': return 'same authored prescription';
         case 'authored_protocol_family': return 'same authored protocol family';
         case 'provider_fallback': return 'same device structured workout';
-        case 'semantic_protocol_match': return 'semantic protocol match';
         case 'controlled_steady_match':
         default: return 'matched steady protocol (type, stimulus, duration)';
     }
@@ -540,7 +539,6 @@ export function deriveEfficiencyComparison(
         authored_protocol_family: 1,
         canonical_exercise_identity: 0,
         provider_fallback: 2,
-        semantic_protocol_match: 3,
         controlled_steady_match: 3,
     };
     const confidenceRank: Record<Confidence, number> = { high: 0, moderate: 1, low: 2 };

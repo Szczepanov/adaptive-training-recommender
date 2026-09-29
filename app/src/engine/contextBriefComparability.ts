@@ -19,7 +19,6 @@ export type ComparisonMatchBasis =
     | 'exact_prescription_identity'
     | 'authored_protocol_family'
     | 'canonical_exercise_identity'
-    | 'semantic_protocol_match'
     | 'controlled_steady_match'
     | 'provider_fallback';
 
@@ -173,7 +172,7 @@ function decision(
                 : basis === 'authored_protocol_family' ? 'family'
                     : basis === 'canonical_exercise_identity' ? 'canonical_exercise'
                         : basis === 'provider_fallback' ? featureFamily === 'strength_set_response' ? 'provider_exercise' : 'provider_fingerprint'
-                        : basis === 'semantic_protocol_match' ? 'semantic' : 'unknown',
+                        : 'unknown',
             measurementSensorEvidence: measurement,
             thresholdUnitEvidence: threshold,
             venueEnvironmentEvidence: featureFamily === 'cycling_steady_power_hr' ? 'unknown' : 'not_required',

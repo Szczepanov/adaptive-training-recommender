@@ -256,7 +256,7 @@ function parseHrMeasurement(value: unknown): HrMeasurement | undefined {
 }
 
 const SEGMENT_TYPES: readonly ActivitySegmentType[] = ['work', 'recovery', 'sprint', 'steady', 'surge', 'warmup', 'cooldown', 'unknown'];
-const SEGMENT_IDENTITY_SOURCES: readonly ActivitySegmentIdentitySource[] = ['reconciled_workout_step', 'fit_workout_step', 'manual_lap', 'detected', 'unknown'];
+const SEGMENT_IDENTITY_SOURCES: readonly ActivitySegmentIdentitySource[] = ['fit_workout_step', 'manual_lap', 'detected', 'unknown'];
 const EVIDENCE_CONFIDENCES = ['high', 'moderate', 'low'] as const;
 const ACTIVITY_RESPONSE_DERIVATION_VERSION = 'multi-resolution-v1';
 const MAX_ACTIVITY_RESPONSE_SEGMENTS = 64;
