@@ -261,8 +261,13 @@ fallbacks. This remains display-only, so `POLICY_VERSION` is unaffected.
   authored step identity, with performed working sets; a linked but unavailable structured execution
   blocks provider-name fallback. Provider
   exercise recognition remains available with limited confidence when structured identity is
-  absent and receives the `provider_fallback` basis with a low confidence ceiling. The central
-  decision is comparable only for the same exercise identity, load type and repetitions; mismatched
+  absent and receives the `provider_fallback` basis with a low confidence ceiling. Source
+  completeness is evaluated for the evidence that owns the strength mechanics: structured
+  exercise/load/repetition evidence remains canonical even when the same performed occurrence has
+  multiple wearable recordings, while provider-only strength fails closed when provider-source
+  selection is ambiguous or incomplete. Venue/environment evidence is not a strength-comparison
+  requirement. The central decision is comparable only for the same exercise identity, load type
+  and repetitions; mismatched
   mechanics retain the raw prior top-set values with a not-comparable reason. Direct top-set comparison is marked like-for-like only when load type and repetitions
   match; the selected prior session first searches for its best same-rep/same-load-type working
   set before falling back to a non-like-for-like top set. Different reps/load types are reported
