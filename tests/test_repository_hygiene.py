@@ -45,9 +45,7 @@ def test_duplicate_groups_only_returns_nonempty_duplicates(tmp_path: Path) -> No
     (tmp_path / "c.txt").write_text("different\n", encoding="utf-8")
     (tmp_path / "empty.txt").write_text("", encoding="utf-8")
 
-    groups = hygiene.duplicate_groups(
-        tmp_path, ["a.txt", "b.txt", "c.txt", "empty.txt"]
-    )
+    groups = hygiene.duplicate_groups(tmp_path, ["a.txt", "b.txt", "c.txt", "empty.txt"])
 
     assert groups == [["a.txt", "b.txt"]]
 

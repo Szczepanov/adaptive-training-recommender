@@ -24,9 +24,7 @@ JSCPD_VERSION = "5.3.1"
 VULTURE_VERSION = "2.16"
 
 _PLAN_REF_RE = re.compile(r"\]\(\./([^#?)]+\.md)(?:[?#][^)]+)?\)")
-_STATUS_RE = re.compile(
-    r"^\s*[-*]?\s*\*{0,2}Status:\*{0,2}\s*(.+?)\s*$", re.IGNORECASE
-)
+_STATUS_RE = re.compile(r"^\s*[-*]?\s*\*{0,2}Status:\*{0,2}\s*(.+?)\s*$", re.IGNORECASE)
 
 
 class FileMetric(TypedDict):
@@ -148,8 +146,7 @@ def build_inventory(root: Path) -> dict[str, object]:
     metrics: list[FileMetric] = [
         file_metric(root, path, kind)
         for path in paths
-        if (kind := classify_tracked_path(path))
-        in {"production_source", "tooling_source", "test"}
+        if (kind := classify_tracked_path(path)) in {"production_source", "tooling_source", "test"}
     ]
     production = sorted(
         (item for item in metrics if item["kind"] == "production_source"),
