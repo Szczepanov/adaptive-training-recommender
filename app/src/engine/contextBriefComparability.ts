@@ -23,6 +23,8 @@ export type ComparisonMatchBasis =
 
 export interface ResponseSessionIdentity {
     performedOccurrenceId?: string;
+    /** Canonical performed-occurrence local date when available; provider activity date is fallback only. */
+    localDate?: string;
     prescriptionHash?: string;
     protocolFamily?: string;
     sourceCompleteness?: 'canonical' | 'provider_fallback' | 'partial' | 'ambiguous' | 'unavailable';

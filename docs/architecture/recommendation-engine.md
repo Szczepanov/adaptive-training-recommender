@@ -242,29 +242,43 @@ fallbacks. This remains display-only, so `POLICY_VERSION` is unaffected.
   first/second-half power and HR are used. Otherwise the legacy lap path requires power+HR
   lap coverage ≥`DECOUPLING_MIN_LAP_COVERAGE` and a balanced lap layout. Interval and
   variable-power sessions never get a drift value.
-- **Aerobic-efficiency comparison** — NP ÷ average HR against the most recent prior session
-  with the same activity type, the same steady stimulus, duration within
-  `COMPARABLE_DURATION_MAX_RATIO`, power and non-withheld HR. Power-zone low boundaries
-  identify the FTP definition in force: if both sessions report them and they differ, the
-  comparison is **rejected** (no normalization). Confidence is `low` if either side lacks
-  boundaries or either side's HR is only observational under the HR authority (currently
-  always, since no lineage/segment context is verified); otherwise `high` for the same device
-  structured workout, else `moderate`. Up to three rejected candidates are listed with reasons.
-- **Strength** — only when every working (non-rest) set carries an exercise name; per
-  exercise, top set (heaviest, then most reps) vs the most recent prior session with the same
-  exercise. No estimated 1RM: `workouts/oneRepMax.ts` needs near-failure effort evidence
-  that device sets lack.
+- **Steady power–HR response ratio** — NP ÷ average HR against one selected prior session
+  admitted by the centralized comparability contract. Exact authored prescription and protocol
+  family identity are rendered when available; otherwise the selected controlled-steady or
+  provider-fallback basis is named. Comparison chronology and displayed prior dates use the
+  canonical performed-occurrence local date when available, falling back to the provider
+  activity date. The `semantic_protocol_match` vocabulary remains reserved for future
+  deterministic matching and is not selected by the current matcher. Power-zone low boundaries identify the FTP
+  definition in force: if both sessions report them and they differ, comparison is rejected
+  without normalization. HR authority and threshold provenance cap confidence; heat, terrain,
+  fuelling and accumulated fatigue remain uncontrolled. Up to three rejected candidates are
+  listed with reasons.
+- **Strength** — structured executions use performed entry exercise identity when present, then
+  authored step identity, with performed working sets; a linked but unavailable structured execution
+  blocks provider-name fallback. Provider
+  exercise recognition remains available with limited confidence when structured identity is
+  absent. Direct top-set comparison is marked like-for-like only when load type and repetitions
+  match; the selected prior session first searches for its best same-rep/same-load-type working
+  set before falling back to a non-like-for-like top set. Different reps/load types are reported
+  without estimated 1RM. Prior-session chronology
+  likewise uses the canonical occurrence date when it is available.
 - **Next morning** — the check-in dated the day after the session vs the session-day morning
-  (soreness, fatigue, pain flag, count of other activities that day). Labelled observational.
-  A failed check-in read is reported as unavailable, and a stored record that failed
-  validation as unreadable (or "possibly unreadable" when such a record has no readable
-  date), never as a missing check-in.
+  (soreness, fatigue, pain flag). Same-day sessions are deduplicated by performed occurrence
+  where available; multi-session response is labeled day-level and ambiguous. Tissue reactions
+  with a recorded reaction or source ref are rendered up to three, with an exact linked response
+  prioritized; linkage uses the structured execution source ref carried by the canonical
+  performed occurrence and therefore does not require the execution definition to hydrate.
+  A tissue response explicitly linked to another known execution is omitted from the current
+  session summary; unresolved source refs may remain visible as not linked to this session.
+  All readings remain observational. A failed check-in read is reported as unavailable, and a
+  stored record that failed validation as unreadable (or "possibly unreadable" when such a
+  record has no readable date), never as a missing check-in.
 
-Known limitations: heat, terrain, fuelling and accumulated fatigue are not controlled;
-lap-average power is not NP on legacy records; reconciled Adaptive-authored step identity
-(ADR-0034) is not yet connected to the #850 hierarchy; deterministic unstructured-segment
-detection is deliberately conservative; running pace efficiency is not implemented; and
-comparisons cannot reach beyond the fetched lookback.
+Known limitations: stable venue, temperature, elevation/grade, route and distance-quality fields
+are not retained in the normalized activity/response data, so environmental enrichment requires
+separate request-budget/privacy review. Segment-level execution-to-step reconciliation is not
+established by occurrence identity alone; running pace–HR comparison and diagnostic provenance
+remain incomplete; structured-only strength occurrences are projected but are not yet rendered by the activity-driven response summary; comparisons cannot reach beyond the fetched lookback.
 
 #### Recovery evidence synthesis (issue #812)
 

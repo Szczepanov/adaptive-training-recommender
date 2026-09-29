@@ -68,6 +68,17 @@ export function hasAvailableFeature(summary: Omit<KeySessionSummary, 'nextDay'>)
         || summary.strength.state === 'available';
 }
 
+function authoredProtocolFamily(session: TrainingResponseSessionEvidence): string | undefined {
+    const structured = session.structured;
+    if (!structured || structured.steps.length === 0) return undefined;
+    const source = structured.sessionSource;
+    if (source.kind === 'unplanned_fixture') return undefined;
+    return JSON.stringify([
+        source,
+        structured.steps.map(step => [step.stepId, step.exerciseRef, step.prescribed, step.isOptional]),
+    ]);
+}
+
 /** Key: a feature is available, or the session is steady-eligible but had no comparable
  * prior session (its rejection reasons are worth stating). */
 function isKey(summary: Omit<KeySessionSummary, 'nextDay'>): boolean {
@@ -80,12 +91,17 @@ export function deriveKeySessionSummaries(
     context: ResponseContext,
 ): KeySessionSummary[] {
     const identities = new Map<string, ResponseSessionIdentity>();
+    const evidenceByActivityId = new Map<string, TrainingResponseSessionEvidence>();
     for (const session of context.evidence ?? []) {
+        const protocolFamily = authoredProtocolFamily(session);
         for (const source of session.measuredSources) {
             if (source.provider.toLowerCase() !== 'garmin') continue;
+            evidenceByActivityId.set(source.activityId, session);
             identities.set(source.activityId, {
                 ...(session.performedOccurrenceId ? { performedOccurrenceId: session.performedOccurrenceId } : {}),
+                ...(session.localDate ? { localDate: session.localDate } : {}),
                 ...(session.structured?.prescriptionHash ? { prescriptionHash: session.structured.prescriptionHash } : {}),
+                ...(protocolFamily ? { protocolFamily } : {}),
                 sourceCompleteness: session.identity.level === 'provider_activity_only'
                     ? session.sourceCompleteness.providerActivities === 'available' ? 'provider_fallback' : 'unavailable'
                     : session.sourceCompleteness.providerActivities === 'ambiguous' ? 'ambiguous'
@@ -106,12 +122,12 @@ export function deriveKeySessionSummaries(
             sprints: deriveSprintRepetition(activity),
             decoupling: deriveDecoupling(activity),
             efficiency: deriveEfficiencyComparison(activity, context.history, identities),
-            strength: deriveStrengthProgression(activity, context.history),
+            strength: deriveStrengthProgression(activity, context.history, evidenceByActivityId),
         }))
         .filter(isKey)
         .map(summary => ({
             ...summary,
-            nextDay: deriveNextDayResponse(summary.activity, context.checkins, context.history, context.asOfDate),
+            nextDay: deriveNextDayResponse(summary.activity, context.checkins, context.history, context.asOfDate, context.evidence),
         }));
 }
 
@@ -217,13 +233,13 @@ const PROVENANCE_TEXT = {
 function efficiencyLines(feature: EfficiencyComparison): string[] {
     if (feature.state === 'available') {
         return [
-            `- Aerobic efficiency (NP ÷ avg HR): ${fmt(feature.efficiencyFactor, 2)} vs ${fmt(feature.priorEfficiencyFactor, 2)} on ${feature.priorDate} (${signedPct(feature.changePct)}) · comparison confidence ${feature.confidence} (${feature.basis}; ${PROVENANCE_TEXT[feature.thresholdProvenance]}; heat, terrain and fatigue not controlled)${feature.hrNote ? ` · ${feature.hrNote}` : ''}`,
+            `- Steady power–HR response ratio (NP ÷ avg HR): ${fmt(feature.efficiencyFactor, 2)} vs ${fmt(feature.priorEfficiencyFactor, 2)} on ${feature.priorDate} (${signedPct(feature.changePct)}) · comparison confidence ${feature.confidence} (${feature.basis}; ${PROVENANCE_TEXT[feature.thresholdProvenance]}; heat, terrain and fatigue not controlled)${feature.hrNote ? ` · ${feature.hrNote}` : ''}`,
         ];
     }
     if (feature.kind !== 'no_comparable') return [];
     const rejected = feature.rejected.slice(0, 3);
     const more = feature.rejected.length > rejected.length ? `; +${feature.rejected.length - rejected.length} more` : '';
-    return [`- Aerobic efficiency: insufficient evidence — ${feature.reason}${rejected.length > 0 ? ` (rejected ${rejected.join('; ')}${more})` : ''}`];
+    return [`- Steady power–HR response: insufficient evidence — ${feature.reason}${rejected.length > 0 ? ` (rejected ${rejected.join('; ')}${more})` : ''}`];
 }
 
 function decouplingLines(feature: Decoupling): string[] {
@@ -240,8 +256,10 @@ function topSetText(set: { topWeightKg?: number; topReps?: number }): string {
 function strengthLines(feature: StrengthProgression): string[] {
     if (feature.state !== 'available') return [];
     return feature.exercises.map((exercise: ExerciseTopSet) => {
-        const prior = exercise.prior ? ` (prior ${exercise.prior.date}: ${topSetText(exercise.prior)})` : ' (no prior session with this exercise in the fetched history)';
-        return `- Strength ${exercise.exercise}: ${exercise.workingSets} working sets · top ${topSetText(exercise)}${prior}`;
+        const prior = exercise.prior
+            ? ` (prior ${exercise.prior.date}: ${topSetText(exercise.prior)}${exercise.prior.comparison === 'like-for-like' ? '' : `; not like-for-like: ${exercise.prior.comparison}`})`
+            : ' (no prior session with this exercise in the fetched history)';
+        return `- Strength ${exercise.exercise}: ${exercise.identitySource} · ${exercise.workingSets} working sets · top ${topSetText(exercise)}${prior}`;
     });
 }
 
@@ -255,7 +273,15 @@ function nextDayLines(feature: NextDayResponse): string[] {
     if (feature.state !== 'available') return [`- Next morning: ${feature.reason}`];
     const parts = [readingText('soreness', feature.nextDay, feature.sessionDay), readingText('fatigue', feature.nextDay, feature.sessionDay)];
     if (feature.nextDay.painOrInjury) parts.push('pain/injury flagged');
-    if (feature.otherActivitiesSameDay > 0) parts.push(`${feature.otherActivitiesSameDay} other recorded activit${feature.otherActivitiesSameDay === 1 ? 'y' : 'ies'} that day`);
+    if (feature.otherActivitiesSameDay > 0) {
+        const count = feature.otherActivitiesSameDay + 1;
+        parts.push(`day-level response after ${count} recorded sessions; attribution ambiguous`);
+    } else {
+        parts.push('next morning after the recorded session; observational');
+    }
+    for (const response of feature.tissueResponses) {
+        parts.push(`${response.region} ${response.reaction ?? 'reaction not recorded'} (${response.linkedToSession ? 'linked to this session' : 'not linked to this session'})`);
+    }
     return [`- Next morning (observational, not proof the session caused it): ${parts.join(' · ')}`];
 }
 

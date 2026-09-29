@@ -474,6 +474,13 @@ export function deriveDecoupling(activity: NormalizedGarminActivity): Decoupling
     return { state: 'available', decouplingPct: round(((first - second) / first) * 100, 1), hrNote: hr.note, observational: hr.observational };
 }
 
+function responseLocalDate(
+    activity: NormalizedGarminActivity,
+    identities: ReadonlyMap<string, ResponseSessionIdentity>,
+): string {
+    return identities.get(activity.activityId)?.localDate || activity.date;
+}
+
 function comparisonBasisLabel(basis: ComparisonMatchBasis | undefined): string {
     switch (basis) {
         case 'exact_prescription_identity': return 'same authored prescription';
@@ -495,9 +502,12 @@ export function deriveEfficiencyComparison(
 ): EfficiencyComparison {
     const own = steadyIneligibility(activity);
     if (own.length > 0) return { state: 'insufficient_evidence', kind: 'ineligible', reason: own.join('; '), rejected: [] };
+    const currentDate = responseLocalDate(activity, identities);
     const priors = history
-        .filter(item => item.activityId !== activity.activityId && item.date < activity.date)
-        .sort((a, b) => b.date.localeCompare(a.date) || a.activityId.localeCompare(b.activityId));
+        .filter(item => item.activityId !== activity.activityId && responseLocalDate(item, identities) < currentDate)
+        .sort((a, b) =>
+            responseLocalDate(b, identities).localeCompare(responseLocalDate(a, identities))
+            || a.activityId.localeCompare(b.activityId));
     const rejected: string[] = [];
     const comparable: Array<{
         prior: NormalizedGarminActivity;
@@ -512,7 +522,7 @@ export function deriveEfficiencyComparison(
             priorIneligibility: steadyIneligibility(prior),
         });
         if (comparison.state !== 'comparable') {
-            if (isCycling(prior)) rejected.push(`${prior.date}: ${comparison.hardRejections[0] ?? 'insufficient comparison evidence'}`);
+            if (isCycling(prior)) rejected.push(`${responseLocalDate(prior, identities)}: ${comparison.hardRejections[0] ?? 'insufficient comparison evidence'}`);
             continue;
         }
         comparable.push({
@@ -532,7 +542,7 @@ export function deriveEfficiencyComparison(
     comparable.sort((left, right) =>
         matchRank[left.comparison.matchBasis ?? 'controlled_steady_match'] - matchRank[right.comparison.matchBasis ?? 'controlled_steady_match']
         || confidenceRank[left.confidence] - confidenceRank[right.confidence]
-        || right.prior.date.localeCompare(left.prior.date)
+        || responseLocalDate(right.prior, identities).localeCompare(responseLocalDate(left.prior, identities))
         || left.prior.activityId.localeCompare(right.prior.activityId));
     for (const { prior, comparison, confidence } of comparable) {
         const efficiency = (activity.normalizedPower as number) / (activity.averageHr as number);
@@ -544,7 +554,7 @@ export function deriveEfficiencyComparison(
         return {
             state: 'available',
             priorActivityId: prior.activityId,
-            priorDate: prior.date,
+            priorDate: responseLocalDate(prior, identities),
             efficiencyFactor: round(efficiency, 2),
             priorEfficiencyFactor: round(priorEfficiency, 2),
             changePct: round(((efficiency - priorEfficiency) / priorEfficiency) * 100, 1),

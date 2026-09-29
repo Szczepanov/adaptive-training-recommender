@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | **In progress** — design accepted in PR #888; WP0 regression contract frozen |
 | **Source** | [Issue #814](https://github.com/Szczepanov/adaptive-training-recommender/issues/814) and [2026-09-28 completion analysis](../analysis/2026-09-28-issue-814-training-response-completion-analysis.md) |
-| **Baseline** | main after #829, #860, #878 and training-occurrence backfill/replay work through #886 |
+| **Baseline** | main after PR #891 (#814), including #829, #860, #878 and training-occurrence backfill/replay work through #886 |
 | **Blocked by** | No blocker for WP0–WP5. WP6 environmental enrichment is conditional on the source audit proving stable already-acquired provider fields. Individual work-item dependencies are listed below. |
 | **Unlocks** | Closure of #814; a clean evidence surface for future adaptation/progression research. It does **not** itself unlock recommendation authority. |
 | **Policy effect** | None. All work in this plan remains display/observability context. POLICY_VERSION must not change unless scope is explicitly widened in a separately reviewed policy change. |
@@ -203,6 +203,12 @@ Introduce a provider-neutral type, for example:
         sourceKinds[]
       }
 
+      structuredSourceRef?: {
+        executionId
+        sessionOccurrenceId?
+        prescriptionHash?
+      }
+
       structured?: {
         executionId
         sessionOccurrenceId?
@@ -255,6 +261,7 @@ Requirements:
 - no extra Garmin request;
 - canonical occurrence read failure does not erase raw activity evidence;
 - an unavailable occurrence source produces explicit degraded provenance;
+- a linked structured-execution source ref remains available even when execution/definition hydration fails, so occurrence-level linkage is not erased by a read failure;
 - multiple provider activities remain explicit rather than silently selecting arbitrary identity for comparisons.
 
 ### Tests
@@ -276,9 +283,17 @@ The feature layer can receive one canonical response object per physical workout
 
 ## WP2 — Centralize the comparability contract
 
-**Status:** In progress
+**Status:** In progress — integrated for steady power–HR comparison in PR #891; broader feature-family migration remains follow-up.
 **Blocked by:** WP1
 **Purpose:** make “may these sessions be compared for this feature?” a named pure decision instead of scattered conditionals.
+
+### Delivery boundary (PR #891)
+
+- WP0 and WP1 are implemented.
+- WP2 is integrated for steady power–HR comparison.
+- Canonical performed-occurrence local dates now govern steady-comparison chronology/date labels when available; provider dates remain fallback.
+- `semantic_protocol_match` is reserved vocabulary only; the current steady matcher selects exact prescription, authored family, provider fingerprint or controlled-steady matching.
+- WP3–WP8 remain in this documented follow-up plan; this PR does not complete issue #814.
 
 ### 2.1 New module
 
@@ -410,7 +425,7 @@ Every longitudinal response feature obtains eligibility/confidence from one cent
 
 ## WP3 — Wire authored identity without inventing step correspondence
 
-**Status:** Planned
+**Status:** In progress — authored protocol identity now reaches the steady power–HR comparator; segment-level reconciliation remains open.
 **Blocked by:** WP1, WP2
 **Purpose:** complete the original #814 / #850 deferred identity integration.
 
@@ -426,6 +441,8 @@ For canonical occurrences with structured execution, expose:
 
 An identical `prescriptionHash` can establish exact authored-content identity across sessions. A catalog workout/source-definition identity may establish an authored protocol family only when revision, variant and target semantics are compatible. Neither case is inferred from the occurrence ID itself, and both are stronger than a matching Garmin device fingerprint.
 
+The response summary now passes the structured source identity and ordered step IDs, exercise refs, prescribed targets and optionality into the existing comparator as an authored protocol family. Only identical source identity and step semantics qualify; `unplanned_fixture` sources do not. This enables the steady power–HR comparison to prefer authored identity over a provider fingerprint.
+
 ### 3.2 Segment-level identity overlay
 
 Build a read-time resolved segment view.
@@ -440,6 +457,8 @@ Potential mapping evidence, strongest first:
 4. otherwise do not upgrade.
 
 Occurrence membership alone is insufficient.
+
+**Current boundary:** execution entries provide completion times, while response segments provide elapsed offsets; the current records expose no shared step ID or guaranteed timing-alignment contract. Do not join those timestamps heuristically or upgrade segment identity until deterministic evidence is available.
 
 ### 3.3 Failure behavior
 
@@ -468,7 +487,7 @@ The reconciled_workout_step identity value is emitted only when its name is true
 
 ## WP4 — Correct strength progression authority and marker semantics
 
-**Status:** Planned
+**Status:** In progress — performed entry exercise refs override authored step refs when present; structured unavailability, canonical chronology and like-for-like marker selection have regression coverage. Structured-only response rendering remains open.
 **Blocked by:** WP1, WP2
 **Purpose:** replace Garmin-name matching with canonical structured identity where available.
 
@@ -481,6 +500,8 @@ For each strength response:
 3. provider exerciseName fallback only for provider-only evidence.
 
 If a structured execution is present, Garmin exercise recognition must not compete as an equal source.
+
+The response summary now uses performed entry exercise refs when present, falling back to the authored structured step ref only when the entry omits one. Unresolved free-text identity remains scoped to the source definition and step, so matching names across different plans do not establish equivalence. If a linked structured execution cannot be read, provider exercise names are not used as a fallback. Provider-only evidence retains the existing recognized-name path.
 
 ### 4.2 Working-set semantics
 
@@ -507,6 +528,8 @@ For a different rep count:
 - show current and prior performed sets if useful;
 - state “not like-for-like for direct load comparison”;
 - do not manufacture improvement.
+
+The current summary first searches the selected prior session for the best same-rep/same-load-type working set. Only that path is marked like-for-like; if none exists, a fallback top set may be shown but is explicitly labeled different-rep/load-type/missing-reps. Strength-history chronology and displayed prior dates prefer the canonical performed-occurrence local date over an adjacent provider-local recording date.
 
 ### 4.4 Estimated strength
 
@@ -549,7 +572,7 @@ Strength response follows ADR-0034 source authority and never relies on title fu
 
 ## WP5 — Improve next-morning response linkage
 
-**Status:** Planned
+**Status:** In progress — exact execution-source linkage, occurrence-deduplicated D-1 counts and canonical dates have regression coverage; strength-source resolution and remaining structured-only/failure cases are open.
 **Blocked by:** WP1
 **Purpose:** separate exact tissue linkage from day-level observational recovery.
 
@@ -561,6 +584,8 @@ For each RegionTissueResponse with sourceSessionRef:
 - render the region, nextMorningReaction and linkage provenance;
 - do not translate “linked to session” into “caused by session”.
 
+The current response summary resolves exact `execution` refs from the canonical occurrence's structured source ref even if structured execution/definition hydration is unavailable. A response explicitly linked to another known execution is omitted from this session's tissue detail; unresolved refs remain visible as not linked to this session rather than being mislabeled as belonging here.
+
 ### 5.2 General soreness/fatigue
 
 Continue to show D+1 soreness/fatigue as observational.
@@ -570,6 +595,8 @@ Add D-1 occurrence count:
 - 0 recorded sessions: do not imply a session response;
 - 1: “next morning after the recorded session; observational”;
 - >1: “next-morning day-level response after N recorded sessions; attribution ambiguous”.
+
+When canonical response evidence is available, same-day provider records attached to one occurrence count once.
 
 ### 5.3 Preserve current data-state honesty
 
@@ -597,7 +624,7 @@ The output is more specific when exact linkage exists and more honest when it do
 
 ## WP6 — Harden steady cycling context and add controlled running pace–HR response
 
-**Status:** Planned, with WP6.3 conditional
+**Status:** In progress — response terminology is now power–HR based; context enrichment and controlled running remain open. WP6.3 is conditional.
 **Blocked by:** WP2; running also depends on HR-fidelity compatibility for running use
 **Purpose:** finish the two longitudinal aerobic-response families without pretending field context is controlled when it is not.
 
@@ -645,6 +672,8 @@ If a new endpoint/request would be required:
 - stop this subtask;
 - document the gap;
 - open a separate request-budget/privacy design issue.
+
+**Audit result (2026-09-29):** the frontend's `NormalizedGarminActivity` and `ActivityResponseTelemetry` retain activity type, laps and bounded sensor summaries, but no stable indoor/outdoor venue, temperature, elevation/grade, route or distance-quality evidence. No already-hydrated field supports the proposed context enrichment. Stop WP6.3 here; adding a Garmin request or expanding persisted provider data needs the separate request-budget/privacy review above.
 
 ### 6.4 Running pace–HR response
 
@@ -706,7 +735,7 @@ Cycling steady comparison no longer overstates its meaning, and issue #814 has a
 
 ## WP7 — Render provenance compactly and keep the information budget
 
-**Status:** Planned
+**Status:** In progress — planning output now names the selected comparison basis and bounds rejected candidates; diagnostic provenance and full boundedness acceptance remain open.
 **Blocked by:** WP2–WP6
 **Purpose:** make stronger semantics visible without recreating diagnostic bloat.
 
@@ -731,6 +760,8 @@ Or for strength:
     - Next morning: right knee normal (linked tissue response); general soreness 4/10 is day-level observational
 
 Exact wording is not normative.
+
+The steady power–HR summary now distinguishes exact authored prescription, authored protocol family, provider fingerprint and generic steady-protocol matches instead of rendering them all as one generic basis.
 
 ### Boundedness
 
@@ -767,7 +798,7 @@ The planning brief becomes more semantically precise without reversing #811's in
 
 ## WP8 — Documentation, governance and issue closure
 
-**Status:** Planned
+**Status:** In progress — the recommendation-engine reference reflects the current comparison, strength and next-day output; telemetry documentation, structural guards and issue closure remain open.
 **Blocked by:** WP1–WP7
 **Purpose:** update living architecture and make the authority boundary difficult to regress.
 
@@ -778,6 +809,8 @@ The planning brief becomes more semantically precise without reversing #811's in
 - docs/plans/README.md status board and docs/README.md hub index
 - ADR-0034 status/documentation only if the repository separately decides its shipped state warrants an ADR status transition; do not silently edit an accepted immutable ADR.
 - issue #814 acceptance checklist/comment.
+
+`docs/architecture/recommendation-engine.md` now reflects the current power–HR terminology, structured strength authority, and exact-versus-day-level next-morning linkage. The remaining architecture and governance items are not complete.
 
 ### Document explicitly
 

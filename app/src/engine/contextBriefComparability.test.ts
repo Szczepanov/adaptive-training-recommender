@@ -35,7 +35,7 @@ function decide(
 }
 
 describe('decideSessionComparability', () => {
-    it('ranks exact authored identity above family, provider fingerprint, then semantic match', () => {
+    it('ranks exact authored identity above family, provider fingerprint, then controlled steady match', () => {
         const current = activity({ fitWorkoutFingerprint: 'same-fit' });
         const prior = activity({ activityId: 'prior', date: '2026-09-10', fitWorkoutFingerprint: 'same-fit' });
         expect(decide(current, prior, { prescriptionHash: 'p1' }, { prescriptionHash: 'p1' }).matchBasis)

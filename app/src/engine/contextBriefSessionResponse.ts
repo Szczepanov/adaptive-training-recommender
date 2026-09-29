@@ -1,4 +1,5 @@
-import type { ActivityExerciseSet, DailySubjectiveCheckin, NormalizedGarminActivity } from './models';
+import type { DailySubjectiveCheckin, NormalizedGarminActivity } from './models';
+import type { TrainingResponseSessionEvidence } from '../training-occurrence/trainingResponseEvidence';
 import type { Insufficient } from './contextBriefResponseFeatures';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
@@ -8,10 +9,11 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 
 export interface ExerciseTopSet {
     exercise: string;
+    identitySource: 'Adaptive structured identity' | 'provider-recognized identity; confidence limited';
     workingSets: number;
     topWeightKg?: number;
     topReps?: number;
-    prior?: { date: string; topWeightKg?: number; topReps?: number };
+    prior?: { date: string; topWeightKg?: number; topReps?: number; comparison: 'like-for-like' | 'different reps' | 'different load type' | 'missing reps' };
 }
 
 export type StrengthProgression =
@@ -20,35 +22,106 @@ export type StrengthProgression =
 
 const UNIDENTIFIED = new Set(['', 'UNKNOWN']);
 
-function workingSets(activity: NormalizedGarminActivity): ActivityExerciseSet[] {
-    return (activity.exerciseSets ?? []).filter(set => (set.setType ?? 'ACTIVE').toUpperCase() !== 'REST');
+interface StrengthSet {
+    identity: string;
+    label: string;
+    weightKg?: number;
+    repetitionCount?: number;
+    isWarmup?: boolean;
+    loadType: 'external_load' | 'repetition_only';
 }
 
-function identityOf(set: ActivityExerciseSet): string | null {
-    const name = set.exerciseName?.trim().toUpperCase() ?? '';
-    return UNIDENTIFIED.has(name) ? null : name;
+function providerSets(activity: NormalizedGarminActivity): StrengthSet[] {
+    return (activity.exerciseSets ?? [])
+        .filter(set => !['REST', 'WARMUP'].includes((set.setType ?? 'ACTIVE').toUpperCase()))
+        .map(set => {
+            const label = set.exerciseName?.trim() ?? '';
+            const identity = label.toUpperCase();
+            return {
+                identity, label,
+                ...(set.weightKg !== undefined ? { weightKg: set.weightKg } : {}),
+                ...(set.repetitionCount !== undefined ? { repetitionCount: set.repetitionCount } : {}),
+                loadType: set.weightKg !== undefined && set.weightKg > 0 ? 'external_load' : 'repetition_only',
+            };
+        });
 }
 
-/** Heaviest set, ties broken by more reps; bodyweight sets rank by reps alone. */
-function topSet(sets: readonly ActivityExerciseSet[]): { topWeightKg?: number; topReps?: number } | null {
+function structuredSets(evidence: NonNullable<TrainingResponseSessionEvidence['structured']>): StrengthSet[] {
+    const sourceKey = JSON.stringify(evidence.sessionSource);
+    return evidence.steps.flatMap(step => step.sets.map(set => {
+        const exerciseRef = set.exerciseRef ?? step.exerciseRef;
+        const identity = exerciseRef?.kind === 'catalog'
+            ? `catalog:${exerciseRef.exerciseId}`
+            : exerciseRef?.kind === 'unresolved_free_text' ? `step:${sourceKey}:${step.stepId}:free-text:${exerciseRef.name}`
+            : `step:${sourceKey}:${step.stepId}`;
+        const label = exerciseRef?.kind === 'catalog'
+            ? exerciseRef.exerciseId
+            : exerciseRef?.kind === 'unresolved_free_text' ? exerciseRef.name : step.title || step.stepId;
+        return {
+            identity,
+            label,
+            ...(set.payload.kind === 'repetition' && set.payload.weightKg !== undefined ? { weightKg: set.payload.weightKg } : {}),
+            ...(set.payload.kind === 'repetition' ? { repetitionCount: set.payload.reps } : {}),
+            ...(set.payload.kind === 'duration' && set.payload.loadKg !== undefined ? { weightKg: set.payload.loadKg } : {}),
+            isWarmup: set.isWarmup,
+            loadType: (set.payload.kind === 'repetition' && set.payload.weightKg !== undefined && set.payload.weightKg > 0)
+                || (set.payload.kind === 'duration' && set.payload.loadKg !== undefined && set.payload.loadKg > 0)
+                ? 'external_load' : 'repetition_only',
+        };
+    }));
+}
+
+/** Heaviest set, ties broken by more reps; unloaded sets rank by reps alone. */
+function topSet(sets: readonly StrengthSet[]): (StrengthSet & { topWeightKg?: number; topReps?: number }) | null {
     const ranked = sets
-        .filter(set => set.weightKg !== undefined || set.repetitionCount !== undefined)
+        .filter(set => !set.isWarmup && (set.weightKg !== undefined || set.repetitionCount !== undefined))
         .sort((a, b) => (b.weightKg ?? 0) - (a.weightKg ?? 0) || (b.repetitionCount ?? 0) - (a.repetitionCount ?? 0));
     if (ranked.length === 0) return null;
     const best = ranked[0];
     return {
+        ...best,
         ...(best.weightKg !== undefined && best.weightKg > 0 ? { topWeightKg: best.weightKg } : {}),
         ...(best.repetitionCount !== undefined ? { topReps: best.repetitionCount } : {}),
     };
 }
 
-function setsByExercise(activity: NormalizedGarminActivity): Map<string, ActivityExerciseSet[]> {
-    const grouped = new Map<string, ActivityExerciseSet[]>();
-    for (const set of workingSets(activity)) {
-        const identity = identityOf(set);
-        if (identity) grouped.set(identity, [...(grouped.get(identity) ?? []), set]);
+type RankedStrengthSet = NonNullable<ReturnType<typeof topSet>>;
+type PriorStrengthMarker = {
+    top: RankedStrengthSet;
+    comparison: 'like-for-like' | 'different reps' | 'different load type' | 'missing reps';
+};
+
+function priorStrengthMarker(current: RankedStrengthSet, sets: readonly StrengthSet[]): PriorStrengthMarker | null {
+    if (current.topReps !== undefined) {
+        const likeForLike = topSet(sets.filter(set =>
+            set.loadType === current.loadType && set.repetitionCount === current.topReps));
+        if (likeForLike) return { top: likeForLike, comparison: 'like-for-like' };
+    }
+    const fallback = topSet(sets);
+    if (!fallback) return null;
+    return {
+        top: fallback,
+        comparison: current.loadType !== fallback.loadType ? 'different load type'
+            : current.topReps === undefined || fallback.topReps === undefined ? 'missing reps'
+            : 'different reps',
+    };
+}
+
+function setsByExercise(sets: readonly StrengthSet[]): Map<string, StrengthSet[]> {
+    const grouped = new Map<string, StrengthSet[]>();
+    for (const set of sets) {
+        if (set.identity && !UNIDENTIFIED.has(set.identity.trim().toUpperCase())) {
+            grouped.set(set.identity, [...(grouped.get(set.identity) ?? []), set]);
+        }
     }
     return grouped;
+}
+
+function responseLocalDate(
+    activity: NormalizedGarminActivity,
+    evidenceByActivityId: ReadonlyMap<string, TrainingResponseSessionEvidence>,
+): string {
+    return evidenceByActivityId.get(activity.activityId)?.localDate || activity.date;
 }
 
 /** Top-set load/reps per identified exercise, against the most recent prior session in
@@ -57,28 +130,62 @@ function setsByExercise(activity: NormalizedGarminActivity): Map<string, Activit
 export function deriveStrengthProgression(
     activity: NormalizedGarminActivity,
     history: readonly NormalizedGarminActivity[],
+    evidenceByActivityId: ReadonlyMap<string, TrainingResponseSessionEvidence> = new Map(),
 ): StrengthProgression {
-    const sets = workingSets(activity);
+    const currentEvidence = evidenceByActivityId.get(activity.activityId);
+    const structuredLinked = currentEvidence?.identity.sourceKinds.includes('structured_execution') ?? false;
+    if (structuredLinked && !currentEvidence?.structured) {
+        return { state: 'insufficient_evidence', reason: 'structured execution linked but unavailable; provider exercise identity not used' };
+    }
+    const sets = currentEvidence?.structured
+        ? structuredSets(currentEvidence.structured).filter(set => !set.isWarmup)
+        : providerSets(activity);
     if (sets.length === 0) return { state: 'insufficient_evidence', reason: 'no working sets recorded' };
-    const unidentified = sets.filter(set => identityOf(set) === null).length;
+    const unidentified = sets.filter(set => !set.identity || UNIDENTIFIED.has(set.identity.trim().toUpperCase())).length;
     if (unidentified > 0) {
         return { state: 'insufficient_evidence', reason: `${unidentified} of ${sets.length} working sets lack an exercise identity` };
     }
+    const currentDate = responseLocalDate(activity, evidenceByActivityId);
     const priors = history
-        .filter(item => item.activityId !== activity.activityId && item.date < activity.date)
-        .sort((a, b) => b.date.localeCompare(a.date) || a.activityId.localeCompare(b.activityId));
+        .filter(item => item.activityId !== activity.activityId && responseLocalDate(item, evidenceByActivityId) < currentDate)
+        .sort((a, b) =>
+            responseLocalDate(b, evidenceByActivityId).localeCompare(responseLocalDate(a, evidenceByActivityId))
+            || a.activityId.localeCompare(b.activityId));
     const exercises: ExerciseTopSet[] = [];
-    for (const [exercise, exerciseSets] of setsByExercise(activity)) {
+    for (const [identity, exerciseSets] of setsByExercise(sets)) {
         const top = topSet(exerciseSets);
         if (!top) continue;
         const priorSession = priors
-            .map(prior => ({ prior, top: topSet(setsByExercise(prior).get(exercise) ?? []) }))
-            .find(entry => entry.top !== null);
+            .map(prior => {
+                const priorEvidence = evidenceByActivityId.get(prior.activityId);
+                const priorStructuredLinked = priorEvidence?.identity.sourceKinds.includes('structured_execution') ?? false;
+                const priorDate = responseLocalDate(prior, evidenceByActivityId);
+                if (Boolean(currentEvidence?.structured) !== Boolean(priorEvidence?.structured)
+                    || (priorStructuredLinked && !priorEvidence?.structured)) return { prior, priorDate, marker: null };
+                const priorSets = priorEvidence?.structured
+                    ? structuredSets(priorEvidence.structured).filter(set => !set.isWarmup)
+                    : providerSets(prior);
+                return {
+                    prior,
+                    priorDate,
+                    marker: priorStrengthMarker(top, setsByExercise(priorSets).get(identity) ?? []),
+                };
+            })
+            .find(entry => entry.marker !== null);
         exercises.push({
-            exercise,
+            exercise: top.label || identity,
+            identitySource: currentEvidence?.structured
+                ? 'Adaptive structured identity'
+                : 'provider-recognized identity; confidence limited',
             workingSets: exerciseSets.length,
-            ...top,
-            ...(priorSession ? { prior: { date: priorSession.prior.date, ...priorSession.top } } : {}),
+            ...(top.topWeightKg !== undefined ? { topWeightKg: top.topWeightKg } : {}),
+            ...(top.topReps !== undefined ? { topReps: top.topReps } : {}),
+            ...(priorSession?.marker ? { prior: {
+                date: priorSession.priorDate,
+                ...(priorSession.marker.top.topWeightKg !== undefined ? { topWeightKg: priorSession.marker.top.topWeightKg } : {}),
+                ...(priorSession.marker.top.topReps !== undefined ? { topReps: priorSession.marker.top.topReps } : {}),
+                comparison: priorSession.marker.comparison,
+            } } : {}),
         });
     }
     if (exercises.length === 0) return { state: 'insufficient_evidence', reason: 'no load or repetitions recorded' };
@@ -97,6 +204,7 @@ export type NextDayResponse =
         sessionDay: CheckinReading | null;
         nextDay: CheckinReading;
         otherActivitiesSameDay: number;
+        tissueResponses: Array<{ region: string; reaction?: string; linkedToSession: boolean }>;
     }
     | Insufficient;
 
@@ -120,9 +228,13 @@ export function deriveNextDayResponse(
     checkins: CheckinHistory | null,
     sameWindowActivities: readonly NormalizedGarminActivity[],
     asOfDate: string,
+    evidence?: readonly TrainingResponseSessionEvidence[],
 ): NextDayResponse {
     if (checkins === null) return { state: 'insufficient_evidence', reason: 'check-in history unavailable' };
-    const nextDate = addDaysToLocalDateString(activity.date, 1);
+    const sessionEvidence = evidence?.find(item => item.measuredSources.some(source =>
+        source.provider.toLowerCase() === 'garmin' && source.activityId === activity.activityId));
+    const sessionDate = sessionEvidence?.localDate || activity.date;
+    const nextDate = addDaysToLocalDateString(sessionDate, 1);
     if (nextDate > asOfDate) return { state: 'insufficient_evidence', reason: 'next morning not yet reached' };
     const next = checkins.records.find(checkin => checkin.date === nextDate);
     if (!next) {
@@ -133,12 +245,46 @@ export function deriveNextDayResponse(
             ? { state: 'insufficient_evidence', reason: 'next-morning check-in possibly unreadable (an invalid stored record has no readable date)' }
             : { state: 'insufficient_evidence', reason: 'no next-morning check-in recorded' };
     }
-    const sessionDay = checkins.records.find(checkin => checkin.date === activity.date);
+    const sessionDay = checkins.records.find(checkin => checkin.date === sessionDate);
+    const sameDayEvidence = evidence?.filter(item => item.localDate === sessionDate) ?? [];
+    const evidenceSessionIds = new Set(sameDayEvidence.flatMap(item => item.performedOccurrenceId
+        ? [`occurrence:${item.performedOccurrenceId}`]
+        : item.measuredSources.filter(source => source.provider.toLowerCase() === 'garmin').map(source => `activity:${source.activityId}`)));
+    const currentSessionId = sessionEvidence?.performedOccurrenceId
+        ? `occurrence:${sessionEvidence.performedOccurrenceId}`
+        : sessionEvidence ? `activity:${activity.activityId}` : undefined;
+    const otherActivitiesSameDay = evidenceSessionIds.size > 0
+        ? Math.max(0, evidenceSessionIds.size - (currentSessionId && evidenceSessionIds.has(currentSessionId) ? 1 : 0))
+        : sameWindowActivities.filter(item => item.date === sessionDate && item.activityId !== activity.activityId).length;
+    const currentExecutionId = sessionEvidence?.structuredSourceRef?.executionId
+        ?? sessionEvidence?.structured?.executionId;
+    const knownExecutionIds = new Set((evidence ?? []).flatMap(item => {
+        const executionId = item.structuredSourceRef?.executionId ?? item.structured?.executionId;
+        return executionId ? [executionId] : [];
+    }));
+    const tissueResponses = Object.entries(next.tissueResponses ?? {})
+        .filter(([, response]) => response.nextMorningReaction || response.sourceSessionRef)
+        .flatMap(([region, response]) => {
+            const sourceRef = response.sourceSessionRef;
+            // An exact ref to another known execution belongs to that session's summary, not this one.
+            if (sourceRef?.kind === 'execution'
+                && sourceRef.id !== currentExecutionId
+                && knownExecutionIds.has(sourceRef.id)) {
+                return [];
+            }
+            return [{
+                region,
+                ...(response.nextMorningReaction ? { reaction: response.nextMorningReaction } : {}),
+                linkedToSession: sourceRef?.kind === 'execution' && sourceRef.id === currentExecutionId,
+            }];
+        })
+        .sort((a, b) => Number(b.linkedToSession) - Number(a.linkedToSession))
+        .slice(0, 3);
     return {
         state: 'available',
         sessionDay: sessionDay ? reading(sessionDay) : null,
         nextDay: reading(next),
-        otherActivitiesSameDay: sameWindowActivities
-            .filter(item => item.date === activity.date && item.activityId !== activity.activityId).length,
+        otherActivitiesSameDay,
+        tissueResponses,
     };
 }

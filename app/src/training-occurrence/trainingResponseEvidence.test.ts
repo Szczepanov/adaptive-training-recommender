@@ -111,6 +111,27 @@ describe('getTrainingResponseEvidenceInRange', () => {
         });
     });
 
+    it('preserves the structured occurrence source ref when execution hydration is unavailable', async () => {
+        vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([occurrence({
+            sourceRefs: [
+                { kind: 'structured_execution', executionId: 'e-unavailable', prescriptionHash: 'hash-unavailable' },
+                { kind: 'provider_activity', provider: 'garmin', activityId: 'a1' },
+            ],
+        })]);
+
+        const result = await getTrainingResponseEvidenceInRange('u1', '2026-09-01', '2026-09-19', [activity('a1')]);
+
+        expect(result.evidence[0]).toMatchObject({
+            structuredSourceRef: {
+                kind: 'structured_execution',
+                executionId: 'e-unavailable',
+                prescriptionHash: 'hash-unavailable',
+            },
+            sourceCompleteness: { structuredExecution: 'unavailable' },
+        });
+        expect(result.evidence[0].structured).toBeUndefined();
+    });
+
     it('preserves every provider recording until a feature-specific selector chooses one', async () => {
         vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([occurrence({
             sourceRefs: [

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ActivityLapSummary, DailySubjectiveCheckin, HrMeasurement, NormalizedGarminActivity } from './models';
+import type { ResponseSessionIdentity } from './contextBriefComparability';
+import type { TrainingResponseSessionEvidence } from '../training-occurrence/trainingResponseEvidence';
 import {
     deriveDecoupling,
     deriveEfficiencyComparison,
@@ -276,6 +278,34 @@ describe('aerobic-efficiency comparison (#814)', () => {
         const feature = deriveEfficiencyComparison(current, [steady('later', '2026-09-19')]);
         expect(feature.state).toBe('insufficient_evidence');
     });
+
+    it('uses canonical occurrence dates for chronology and the rendered prior date', () => {
+        const prior = steady('prior-adjacent', '2026-09-18');
+        const identities = new Map<string, ResponseSessionIdentity>([
+            ['now', { localDate: '2026-09-19' }],
+            ['prior-adjacent', { localDate: '2026-09-10' }],
+        ]);
+        const feature = deriveEfficiencyComparison(current, [prior], identities);
+        expect(feature.state).toBe('available');
+        expect(feature.state === 'available' && feature.priorDate).toBe('2026-09-10');
+    });
+
+    it('uses canonical occurrence dates when ranking equally strong prior comparators', () => {
+        const providerNewerButCanonicalOlder = steady('provider-newer', '2026-09-16');
+        const providerOlderButCanonicalNewer = steady('provider-older', '2026-09-15');
+        const identities = new Map<string, ResponseSessionIdentity>([
+            ['now', { localDate: '2026-09-19' }],
+            ['provider-newer', { localDate: '2026-09-10' }],
+            ['provider-older', { localDate: '2026-09-11' }],
+        ]);
+        const feature = deriveEfficiencyComparison(
+            current,
+            [providerNewerButCanonicalOlder, providerOlderButCanonicalNewer],
+            identities,
+        );
+        expect(feature.state === 'available' && feature.priorActivityId).toBe('provider-older');
+        expect(feature.state === 'available' && feature.priorDate).toBe('2026-09-11');
+    });
 });
 
 function lift(id: string, date: string, weight: number, named = true): NormalizedGarminActivity {
@@ -292,18 +322,234 @@ function lift(id: string, date: string, weight: number, named = true): Normalize
     });
 }
 
+function structuredStrengthEvidence(input: {
+    activityId: string;
+    occurrenceId: string;
+    localDate: string;
+    executionId: string;
+    performedExerciseId: string;
+    reps: number;
+    weightKg: number;
+    warmupWeightKg?: number;
+}): TrainingResponseSessionEvidence {
+    const prescriptionHash = `rx-${input.occurrenceId}`;
+    const workSet = {
+        entryId: `${input.occurrenceId}-work`,
+        setNumber: 1,
+        isWarmup: false,
+        completedAt: `${input.localDate}T07:10:00Z`,
+        payload: { kind: 'repetition' as const, setIndex: 0, reps: input.reps, weightKg: input.weightKg },
+        exerciseRef: { kind: 'catalog' as const, exerciseId: input.performedExerciseId },
+    };
+    const warmupSet = input.warmupWeightKg === undefined ? [] : [{
+        entryId: `${input.occurrenceId}-warmup`,
+        setNumber: 1,
+        isWarmup: true,
+        completedAt: `${input.localDate}T07:00:00Z`,
+        payload: { kind: 'repetition' as const, setIndex: 0, reps: input.reps, weightKg: input.warmupWeightKg, isWarmup: true },
+        exerciseRef: { kind: 'catalog' as const, exerciseId: input.performedExerciseId },
+    }];
+    return {
+        performedOccurrenceId: input.occurrenceId,
+        localDate: input.localDate,
+        modality: 'Strength',
+        identity: {
+            level: 'canonical_occurrence',
+            reconciliationStatus: 'matched',
+            sourceKinds: ['structured_execution', 'provider_activity'],
+        },
+        structured: {
+            sourceRef: { kind: 'structured_execution', executionId: input.executionId, prescriptionHash },
+            executionId: input.executionId,
+            prescriptionHash,
+            sessionSource: { kind: 'catalog', workoutId: 'strength-fixture', catalogVersion: 'v1' },
+            steps: [{
+                stepId: 'main-lift',
+                exerciseRef: { kind: 'catalog', exerciseId: 'barbell_back_squat' },
+                title: 'Back Squat',
+                isOptional: false,
+                prescribed: { sets: 1, reps: input.reps },
+                sets: [...warmupSet, workSet],
+            }],
+        },
+        measuredSources: [{
+            sourceRef: { kind: 'provider_activity', provider: 'garmin', activityId: input.activityId },
+            provider: 'garmin',
+            activityId: input.activityId,
+        }],
+        sourceCompleteness: {
+            occurrenceRead: 'available',
+            structuredExecution: 'available',
+            providerActivities: 'available',
+        },
+    };
+}
+
+function executionEvidence(
+    activityId: string,
+    occurrenceId: string,
+    localDate: string,
+    executionId: string,
+    extraActivityIds: readonly string[] = [],
+    structuredAvailable = true,
+): TrainingResponseSessionEvidence {
+    const structuredSourceRef = { kind: 'structured_execution' as const, executionId };
+    return {
+        performedOccurrenceId: occurrenceId,
+        localDate,
+        modality: 'Cycling',
+        identity: {
+            level: 'canonical_occurrence',
+            reconciliationStatus: 'matched',
+            sourceKinds: ['structured_execution', 'provider_activity'],
+        },
+        structuredSourceRef,
+        ...(structuredAvailable ? { structured: {
+            sourceRef: structuredSourceRef,
+            executionId,
+            sessionSource: { kind: 'catalog' as const, workoutId: 'cycling-fixture', catalogVersion: 'v1' },
+            steps: [],
+        } } : {}),
+        measuredSources: [activityId, ...extraActivityIds].map(id => ({
+            sourceRef: { kind: 'provider_activity' as const, provider: 'garmin', activityId: id },
+            provider: 'garmin',
+            activityId: id,
+        })),
+        sourceCompleteness: {
+            occurrenceRead: 'available',
+            structuredExecution: structuredAvailable ? 'available' : 'unavailable',
+            providerActivities: extraActivityIds.length > 0 ? 'ambiguous' : 'available',
+        },
+    };
+}
+
 describe('strength progression (#814)', () => {
     it('reports top set against the prior same-exercise session', () => {
         const feature = deriveStrengthProgression(lift('now', '2026-09-18', 80), [lift('prior', '2026-09-11', 77.5)]);
         expect(feature).toEqual({
             state: 'available',
-            exercises: [{ exercise: 'BARBELL_BACK_SQUAT', workingSets: 2, topWeightKg: 80, topReps: 5, prior: { date: '2026-09-11', topWeightKg: 77.5, topReps: 5 } }],
+            exercises: [{ exercise: 'BARBELL_BACK_SQUAT', identitySource: 'provider-recognized identity; confidence limited', workingSets: 2, topWeightKg: 80, topReps: 5, prior: { date: '2026-09-11', topWeightKg: 77.5, topReps: 5, comparison: 'like-for-like' } }],
         });
     });
 
     it('is withheld when any working set lacks an exercise identity', () => {
         const feature = deriveStrengthProgression(lift('now', '2026-09-18', 80, false), []);
         expect(feature.state).toBe('insufficient_evidence');
+    });
+
+    it('uses performed structured identity, canonical dates and excludes warm-up sets from the marker', () => {
+        const current = lift('now-structured', '2026-09-17', 80);
+        const prior = lift('prior-structured', '2026-09-17', 75);
+        const currentEvidence = structuredStrengthEvidence({
+            activityId: current.activityId, occurrenceId: 'pto-now', localDate: '2026-09-18',
+            executionId: 'exec-now', performedExerciseId: 'front_squat', reps: 5, weightKg: 80, warmupWeightKg: 100,
+        });
+        const priorEvidence = structuredStrengthEvidence({
+            activityId: prior.activityId, occurrenceId: 'pto-prior', localDate: '2026-09-11',
+            executionId: 'exec-prior', performedExerciseId: 'front_squat', reps: 5, weightKg: 75,
+        });
+        const feature = deriveStrengthProgression(current, [prior], new Map([
+            [current.activityId, currentEvidence],
+            [prior.activityId, priorEvidence],
+        ]));
+        expect(feature).toEqual({
+            state: 'available',
+            exercises: [{
+                exercise: 'front_squat',
+                identitySource: 'Adaptive structured identity',
+                workingSets: 1,
+                topWeightKg: 80,
+                topReps: 5,
+                prior: { date: '2026-09-11', topWeightKg: 75, topReps: 5, comparison: 'like-for-like' },
+            }],
+        });
+    });
+
+    it('selects a same-rep prior working set even when a heavier different-rep set exists', () => {
+        const current = lift('now-structured', '2026-09-18', 82.5);
+        const prior = lift('prior-structured', '2026-09-11', 90);
+        const currentEvidence = structuredStrengthEvidence({
+            activityId: current.activityId, occurrenceId: 'pto-now', localDate: '2026-09-18',
+            executionId: 'exec-now', performedExerciseId: 'front_squat', reps: 5, weightKg: 82.5,
+        });
+        const priorEvidence = structuredStrengthEvidence({
+            activityId: prior.activityId, occurrenceId: 'pto-prior', localDate: '2026-09-11',
+            executionId: 'exec-prior', performedExerciseId: 'front_squat', reps: 3, weightKg: 90,
+        });
+        if (!priorEvidence.structured) throw new Error('fixture requires structured evidence');
+        priorEvidence.structured.steps[0].sets.push({
+            entryId: 'pto-prior-work-5',
+            setNumber: 2,
+            isWarmup: false,
+            completedAt: '2026-09-11T07:15:00Z',
+            payload: { kind: 'repetition', setIndex: 1, reps: 5, weightKg: 80 },
+            exerciseRef: { kind: 'catalog', exerciseId: 'front_squat' },
+        });
+        const feature = deriveStrengthProgression(current, [prior], new Map([
+            [current.activityId, currentEvidence],
+            [prior.activityId, priorEvidence],
+        ]));
+        expect(feature.state).toBe('available');
+        if (feature.state !== 'available') return;
+        expect(feature.exercises[0].prior).toEqual({
+            date: '2026-09-11', topWeightKg: 80, topReps: 5, comparison: 'like-for-like',
+        });
+    });
+
+    it('does not call different-rep structured top sets like-for-like', () => {
+        const current = lift('now-structured', '2026-09-18', 80);
+        const prior = lift('prior-structured', '2026-09-11', 85);
+        const currentEvidence = structuredStrengthEvidence({
+            activityId: current.activityId, occurrenceId: 'pto-now', localDate: '2026-09-18',
+            executionId: 'exec-now', performedExerciseId: 'front_squat', reps: 5, weightKg: 80,
+        });
+        const priorEvidence = structuredStrengthEvidence({
+            activityId: prior.activityId, occurrenceId: 'pto-prior', localDate: '2026-09-11',
+            executionId: 'exec-prior', performedExerciseId: 'front_squat', reps: 3, weightKg: 85,
+        });
+        const feature = deriveStrengthProgression(current, [prior], new Map([
+            [current.activityId, currentEvidence],
+            [prior.activityId, priorEvidence],
+        ]));
+        expect(feature.state === 'available' && feature.exercises[0].prior?.comparison).toBe('different reps');
+    });
+
+    it('fails closed when a structured execution is linked but unavailable', () => {
+        const current = lift('now-structured', '2026-09-18', 80);
+        const unavailable: TrainingResponseSessionEvidence = {
+            performedOccurrenceId: 'pto-now',
+            localDate: '2026-09-18',
+            modality: 'Strength',
+            identity: { level: 'canonical_occurrence', sourceKinds: ['structured_execution', 'provider_activity'] },
+            measuredSources: [{
+                sourceRef: { kind: 'provider_activity', provider: 'garmin', activityId: current.activityId },
+                provider: 'garmin',
+                activityId: current.activityId,
+            }],
+            sourceCompleteness: {
+                occurrenceRead: 'available',
+                structuredExecution: 'unavailable',
+                providerActivities: 'available',
+            },
+        };
+        const feature = deriveStrengthProgression(current, [], new Map([[current.activityId, unavailable]]));
+        expect(feature).toEqual({
+            state: 'insufficient_evidence',
+            reason: 'structured execution linked but unavailable; provider exercise identity not used',
+        });
+    });
+
+    it('treats provider zero-weight sets as repetition-only rather than a different load type', () => {
+        const current = ride({
+            activityId: 'bw-now', date: '2026-09-18', type: 'strength_training', stimulusDomain: 'strength',
+            exerciseSets: [{ setOrder: 1, setType: 'ACTIVE', repetitionCount: 10, weightKg: 0, exerciseName: 'PUSH_UP' }],
+        });
+        const prior = ride({
+            activityId: 'bw-prior', date: '2026-09-11', type: 'strength_training', stimulusDomain: 'strength',
+            exerciseSets: [{ setOrder: 1, setType: 'ACTIVE', repetitionCount: 10, exerciseName: 'PUSH_UP' }],
+        });
+        const feature = deriveStrengthProgression(current, [prior]);
+        expect(feature.state === 'available' && feature.exercises[0].prior?.comparison).toBe('like-for-like');
     });
 });
 
@@ -323,6 +569,85 @@ describe('next-day response (#814)', () => {
         expect(text).toContain('Next morning (observational, not proof the session caused it): soreness 6 (session-day morning 3) · fatigue 5 (session-day morning 4)');
         expect(text).toContain('Main set: 3 × 11 min @ 229 / 225 / 237 W actual');
         expect(text).toContain('First→last work interval: +3.5%');
+    });
+
+    it('uses the canonical date, deduplicates occurrences and keeps tissue linkage session-specific', () => {
+        const adjacent = { ...session, activityId: 'adjacent-session', date: '2026-09-17' };
+        const currentEvidence = executionEvidence(adjacent.activityId, 'pto-current', '2026-09-18', 'exec-current', ['adjacent-duplicate']);
+        const otherEvidence = executionEvidence('other-activity', 'pto-other', '2026-09-18', 'exec-other');
+        const next = {
+            ...checkin('2026-09-19', 6, 5),
+            painOrInjury: true,
+            tissueResponses: {
+                right_knee: {
+                    region: 'right_knee', morningState: 'mild', nextMorningReaction: 'moderate',
+                    sourceSessionRef: { kind: 'execution', id: 'exec-current', date: '2026-09-18' },
+                },
+                left_knee: {
+                    region: 'left_knee', morningState: 'mild', nextMorningReaction: 'mild',
+                    sourceSessionRef: { kind: 'execution', id: 'exec-other', date: '2026-09-18' },
+                },
+                right_achilles: {
+                    region: 'right_achilles', morningState: 'mild', nextMorningReaction: 'mild',
+                    sourceSessionRef: { kind: 'execution', id: 'exec-unresolved', date: '2026-09-18' },
+                },
+            },
+        } as unknown as DailySubjectiveCheckin;
+        const checkins = {
+            records: [checkin('2026-09-18', 3, 4), next],
+            unreadableDates: [],
+        };
+        const response = deriveNextDayResponse(
+            adjacent,
+            checkins,
+            [adjacent],
+            '2026-09-20',
+            [currentEvidence, otherEvidence],
+        );
+        expect(response.state).toBe('available');
+        if (response.state !== 'available') return;
+        expect(response.sessionDay?.soreness).toBe(3);
+        expect(response.otherActivitiesSameDay).toBe(1);
+        expect(response.tissueResponses).toEqual([
+            { region: 'right_knee', reaction: 'moderate', linkedToSession: true },
+            { region: 'right_achilles', reaction: 'mild', linkedToSession: false },
+        ]);
+
+        const context = {
+            history: [adjacent], historyStart: '2026-09-01', checkins, asOfDate: '2026-09-20',
+            evidence: [currentEvidence, otherEvidence],
+        };
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries([adjacent], context), context);
+        expect(text).toContain('day-level response after 2 recorded sessions; attribution ambiguous');
+        expect(text).toContain('right_knee moderate (linked to this session)');
+        expect(text).toContain('right_achilles mild (not linked to this session)');
+        expect(text).not.toContain('left_knee');
+    });
+
+    it('links an execution source ref even when structured execution hydration is unavailable', () => {
+        const adjacent = { ...session, activityId: 'unavailable-structured', date: '2026-09-17' };
+        const currentEvidence = executionEvidence(
+            adjacent.activityId, 'pto-unavailable', '2026-09-18', 'exec-linked', [], false,
+        );
+        const next = {
+            ...checkin('2026-09-19', 4, 4),
+            tissueResponses: {
+                right_knee: {
+                    region: 'right_knee', morningState: 'mild', nextMorningReaction: 'mild',
+                    sourceSessionRef: { kind: 'execution', id: 'exec-linked', date: '2026-09-18' },
+                },
+            },
+        } as unknown as DailySubjectiveCheckin;
+        const response = deriveNextDayResponse(
+            adjacent,
+            { records: [next], unreadableDates: [] },
+            [adjacent],
+            '2026-09-20',
+            [currentEvidence],
+        );
+        expect(response.state === 'available' && response.tissueResponses).toEqual([
+            { region: 'right_knee', reaction: 'mild', linkedToSession: true },
+        ]);
     });
 
     it('distinguishes an unreadable check-in history from a missing check-in', () => {

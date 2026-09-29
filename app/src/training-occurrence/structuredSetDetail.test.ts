@@ -27,7 +27,14 @@ const definition: SessionDefinition = {
     }],
 } as SessionDefinition;
 
-function repEntry(id: string, completedAt: string, reps: number, weightKg: number, isWarmup = false): SessionEntry {
+function repEntry(
+    id: string,
+    completedAt: string,
+    reps: number,
+    weightKg: number,
+    isWarmup = false,
+    exerciseRef?: SessionEntry['exerciseRef'],
+): SessionEntry {
     return {
         id,
         executionId: 'exec-1',
@@ -36,6 +43,7 @@ function repEntry(id: string, completedAt: string, reps: number, weightKg: numbe
         createdAt: completedAt,
         updatedAt: completedAt,
         payload: { kind: 'repetition', setIndex: 0, reps, weightKg, ...(isWarmup ? { isWarmup: true } : {}) },
+        ...(exerciseRef ? { exerciseRef } : {}),
     };
 }
 
@@ -57,7 +65,7 @@ function restEvent(afterEntryId: string, actualSeconds: number, prescribedSecond
 describe('buildStructuredStepDetails', () => {
     it('keeps the prescription, numbers warm-up and work sets separately, and attaches performed rest', () => {
         const entries = [
-            repEntry('e-work-2', '2026-08-26T07:10:00.000Z', 5, 100),
+            repEntry('e-work-2', '2026-08-26T07:10:00.000Z', 5, 100, false, { kind: 'catalog', exerciseId: 'front_squat' }),
             repEntry('e-warm-1', '2026-08-26T07:00:00.000Z', 5, 60, true),
             repEntry('e-work-1', '2026-08-26T07:05:00.000Z', 4, 100),
         ];
@@ -78,6 +86,7 @@ describe('buildStructuredStepDetails', () => {
         ]);
         expect(squat.sets[1].rest).toEqual({ prescribedSeconds: 180, actualSeconds: 205, endReason: 'next_set_started' });
         expect(squat.sets[0].rest).toBeUndefined();
+        expect(squat.sets[2].exerciseRef).toEqual({ kind: 'catalog', exerciseId: 'front_squat' });
     });
 
     it('omits unlogged non-exercise steps but keeps unlogged exercise steps as missed prescriptions', () => {
