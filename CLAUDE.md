@@ -60,13 +60,16 @@ when it affects confidence. See
 
 **Before writing code**
 - For source-code discovery, use `rg`/text search for exact identifiers and strings. When
-  repository vocabulary/location is genuinely unknown, use a fresh local `canopy search` first
-  when available; use tightly scoped `jev find` only as a second opinion/fallback. For a known
-  file/subsystem, read directly when the relevant evidence is already small/localized; when answering
-  an atomic semantic property would otherwise require a broad/large read or multi-file scan and
-  `jev` is available, use a narrowly scoped `jev ask`. Treat Canopy/Jev outputs as candidate
-  evidence and verify the relevant source before changing code; Canopy graph misses are not absence
-  proof. For type-level ripple, run the compiler (`cd app && npx tsc -b`, `uv run mypy`). See
+  repository vocabulary/location is genuinely unknown, use `canopy search` first only if a
+  pre-existing usable index is already available; **never run `canopy init`/`reindex` as normal
+  task setup**. If no usable index exists, fall back to lexical/direct evidence and tightly scoped
+  `jev find`. A shared persistent-main Canopy index, when exposed by the environment, is
+  baseline-discovery evidence only: verify the current worktree before editing/concluding. For a
+  known file/subsystem, read directly when the relevant evidence is already small/localized; when
+  answering an atomic semantic property would otherwise require a broad/large read or multi-file
+  scan and `jev` is available, use a narrowly scoped `jev ask`. Treat Canopy/Jev outputs as
+  candidate evidence and verify the relevant source before changing code; Canopy graph misses are
+  not absence proof. For type-level ripple, run the compiler (`cd app && npx tsc -b`, `uv run mypy`). See
   [`AGENTS.md` § Code navigation](./AGENTS.md#code-navigation) and
   [`docs/standards/agent-tooling.md`](./docs/standards/agent-tooling.md). Canopy is local only when
   configured against a local provider such as Ollama; Jev sends selected source to an external

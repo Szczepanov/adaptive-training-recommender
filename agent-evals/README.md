@@ -83,6 +83,13 @@ warm query latency, and whether the failure was retrieval, ranking/chunking, or 
 Use a fixed historical case set before comparing embedding models/quantizations; changing the model
 requires a full reindex.
 
+Normal isolated agent-eval worktrees must not provision Canopy themselves. A Canopy-specific
+benchmark harness may deliberately pre-provision a dedicated index before the timed/graded agent
+trial, or expose a maintained baseline index as an external read-only discovery capability. If no
+usable index is supplied, record Canopy as unavailable and let the agent follow the normal fallback
+route. Do not include `canopy init`, `canopy reindex`, model pulls, or shared-index mutation in an
+ordinary task's measured agent behavior.
+
 For Jev trials, when useful copy the local `jev gain` summary into the outcome notes or experiment
 artifact. Treat its examined-token "leverage" and provider spend as diagnostics, not as measured
 agent-token savings. Across both tools, end-state correctness comes first; compare agent
