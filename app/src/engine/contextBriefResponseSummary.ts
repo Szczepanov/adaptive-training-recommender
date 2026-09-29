@@ -99,6 +99,7 @@ export function deriveKeySessionSummaries(
             evidenceByActivityId.set(source.activityId, session);
             identities.set(source.activityId, {
                 ...(session.performedOccurrenceId ? { performedOccurrenceId: session.performedOccurrenceId } : {}),
+                ...(session.localDate ? { localDate: session.localDate } : {}),
                 ...(session.structured?.prescriptionHash ? { prescriptionHash: session.structured.prescriptionHash } : {}),
                 ...(protocolFamily ? { protocolFamily } : {}),
                 sourceCompleteness: session.identity.level === 'provider_activity_only'
@@ -279,7 +280,7 @@ function nextDayLines(feature: NextDayResponse): string[] {
         parts.push('next morning after the recorded session; observational');
     }
     for (const response of feature.tissueResponses) {
-        parts.push(`${response.region} ${response.reaction ?? 'reaction not recorded'} (${response.linkedToSession ? 'linked to this session' : 'unlinked'})`);
+        parts.push(`${response.region} ${response.reaction ?? 'reaction not recorded'} (${response.linkedToSession ? 'linked to this session' : 'not linked to this session'})`);
     }
     return [`- Next morning (observational, not proof the session caused it): ${parts.join(' · ')}`];
 }
