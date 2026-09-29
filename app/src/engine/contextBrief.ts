@@ -349,6 +349,7 @@ function renderCanonicalTrainingTable(facts: readonly PerformedExposureFact[], r
     }
     return lines;
 }
+
 function renderTraining(
     activities: readonly NormalizedGarminActivity[],
     asOfDate: string,
