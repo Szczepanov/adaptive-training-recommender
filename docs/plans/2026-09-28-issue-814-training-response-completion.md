@@ -838,7 +838,7 @@ The planning brief becomes more semantically precise without reversing #811's in
 - ADR-0034 status/documentation only if the repository separately decides its shipped state warrants an ADR status transition; do not silently edit an accepted immutable ADR.
 - issue #814 acceptance checklist/comment.
 
-`docs/architecture/recommendation-engine.md` and `docs/architecture/activity-response-telemetry.md` reflect the current power–HR terminology, structured strength authority, exact-versus-day-level next-morning linkage, and deterministic identity/provider-data cutlines. Structural guards restrict response-comparability imports to the display path and exercise bounded normalized rendering. These updates do not close the remaining data-dependent acceptance items or issue #814.
+`docs/architecture/recommendation-engine.md` and `docs/architecture/activity-response-telemetry.md` reflect the current power–HR terminology, structured strength authority, exact-versus-day-level next-morning linkage, and deterministic identity/provider-data cutlines. Structural guards cover static and dynamic imports, keep the response-renderer chain inside the context-brief display boundary, reject transitive reachability from non-context-brief engine modules, and lock the normalized response schema (including nested source-resolution and prescribed-target shapes) against accidental raw-trace expansion. Cardinality bounds remain enforced by the existing ingestion/read-side validation and tests rather than by this structural test alone. These updates do not close the remaining data-dependent acceptance items or issue #814.
 
 ### Document explicitly
 
