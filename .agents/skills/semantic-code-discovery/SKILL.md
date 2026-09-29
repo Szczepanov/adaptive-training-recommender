@@ -21,14 +21,14 @@ unavailable.
    wrapper discovers the maintained main-checkout index and never invokes index-maintenance commands. Exit
    code 3 / `CANOPY_UNAVAILABLE` means fall back immediately without troubleshooting Canopy. Treat
    returned files/chunks as candidates, not proof. If the result is materially ambiguous and the
-   location is still unknown, use one tightly scoped `jev find` as a second opinion before
-   escalating to broader repository search.
+   location is still unknown, use one tightly scoped `python scripts/agent_jev.py find` as a
+   second opinion before escalating to broader repository search.
 3. **Known target, semantic property unknown** — use a targeted direct read when one small,
    localized source region answers the question. If one semantic yes/no/property question would
-   otherwise require inspecting multiple substantial regions/files, use **one atomic `jev ask`**
-   against the implementation file or smallest relevant subsystem before broad reading. If Jev is
-   unavailable, fall back immediately. Canopy search is retrieval, not a substitute for semantic
-   judgment.
+   otherwise require inspecting multiple substantial regions/files, use **one atomic
+   `python scripts/agent_jev.py ask`** against the implementation file or smallest relevant
+   subsystem before broad reading. If Jev is unavailable, fall back immediately. Canopy search
+   is retrieval, not a substitute for semantic judgment.
 4. **Call-graph orientation** — after a useful Canopy search hit, `canopy map`/`canopy trace`
    may provide cheap local graph context. Treat graph output as advisory: if a known symbol is not
    resolved, fall back to `rg`/source rather than inferring absence.
@@ -51,7 +51,8 @@ Prefer:
 
 ```bash
 rg -n "ContextBriefService" app/src
-jev ask "does ContextBriefService.build hydrate performedFacts for the morning brief?" \
+python scripts/agent_jev.py ask \
+  "does ContextBriefService.build hydrate performedFacts for the morning brief?" \
   app/src/services/contextBriefService.ts -q
 ```
 
@@ -106,7 +107,8 @@ Normal issue/PR agents **consume an existing index; they do not provision one**.
 
 - Never run `canopy init`, `canopy reindex`, change the embedding model/quantization, or pull an
   Ollama embedding model merely because the current worktree lacks `.canopy/`. Use
-  `scripts/agent_canopy.py`; if it reports unavailable, fall back.
+  `scripts/agent_canopy.py`; if it reports unavailable, fall back. Jev is reached the same way
+  through `scripts/agent_jev.py`, which refuses out-of-policy scopes before egress.
 - Do not run `canopy index` against a shared/baseline index from a temporary agent worktree. Index
   mutation belongs to an explicit developer/tool-maintenance workflow, not normal task execution.
 - A persistent primary/main checkout may maintain a Qwen3-Embedding-4B index incrementally. If the
@@ -127,7 +129,8 @@ Ollama model files, or machine-specific runtime state.
 
 ## Jev find
 
-Use `jev find` only when the implementation name/location is genuinely unknown.
+Use `python scripts/agent_jev.py find` only when the implementation name/location is
+genuinely unknown.
 
 - Start with the smallest plausible subsystem, not the repository root.
 - Treat the CLI file-count guard as a signal to narrow the scope.
@@ -160,8 +163,8 @@ egress, not as a purely local search.
 - Never scan `artifacts/`, `app/artifacts/`, health exports, provider archives, credentials,
   token stores, service-account material, `.env*`, or other local/production data.
 - Do not assume `.gitignore` is a security boundary. Before using a directory whose contents may
-  include ignored/untracked files, run `jev scan --list <scope>` locally and inspect the candidate paths,
-  or narrow to explicit safe files instead.
+  include ignored/untracked files, run `python scripts/agent_jev.py scan --list <scope>` locally
+  and inspect the candidate paths, or narrow to explicit safe files instead.
 - If source disclosure to the configured provider is not acceptable for the task/repository, do not
   use Jev; fall back to local lexical search, targeted reads, tests, and compiler output.
 
@@ -177,8 +180,9 @@ portable default.
 
 Local setup, index maintenance, model choice, credentials and API keys are developer-owned. When a
 local index already exists, `canopy status` checks its freshness; absence is a fallback condition,
-not permission for an agent to initialize/reindex it. `jev probe` verifies a Jev install; `jev
-gain` is useful for cost/token diagnostics. Never commit generated Canopy state, provider credentials, Ollama model files, or
+not permission for an agent to initialize/reindex it. `python scripts/agent_jev.py probe`
+verifies a Jev install. `jev gain` stays a developer-local diagnostic outside the agent
+bridge. Never commit generated Canopy state, provider credentials, Ollama model files, or
 personal client/plugin configuration.
 
 The normative policy is `docs/standards/agent-tooling.md`.

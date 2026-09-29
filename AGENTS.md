@@ -448,11 +448,13 @@ Pick the cheapest tool that answers the actual question:
    The wrapper locates the maintained main-checkout index and never invokes index-maintenance commands. Exit code
    3 / `CANOPY_UNAVAILABLE` means fall back immediately. Treat hits as candidates and verify them
    in the current worktree. If the result is materially ambiguous and location remains unknown, use
-   one tightly scoped `jev find` as a second opinion before escalating to broader search.
+   one tightly scoped `python scripts/agent_jev.py find` as a second opinion before escalating
+   to broader search.
 3. **Semantic property on a known target:** use a targeted direct read when one small/localized
    source region answers the question. If one semantic property would otherwise require inspecting
-   multiple substantial regions/files, use **one atomic, narrowly scoped `jev ask`** before broad
-   reading. Keep each question independently testable; split compound "A/B/C or wiring?" questions.
+   multiple substantial regions/files, use **one atomic, narrowly scoped
+   `python scripts/agent_jev.py ask`** before broad reading. Keep each question independently
+   testable; split compound "A/B/C or wiring?" questions.
    Verify the cited source in the current worktree. Do not call Jev after direct evidence already
    answered the question.
 4. **Graph orientation:** after a useful Canopy result, `canopy map`/`canopy trace` may cheaply
@@ -507,8 +509,9 @@ before adopting it broadly.
 Jev sends selected content to an external provider. Never scan repository root `.`, `artifacts/`,
 `app/artifacts/`, raw health/provider exports, credentials/token stores, service-account material,
 or other personal/production data. Do not treat `.gitignore` as a DLP boundary; for any directory
-that may contain ignored/untracked data, use local-only `jev scan --list <scope>` to inspect candidates first or
-narrow to explicit safe files. See `docs/standards/agent-tooling.md` for the full data-egress rule.
+that may contain ignored/untracked data, inspect candidates first with
+`python scripts/agent_jev.py scan --list <scope>`, or narrow to explicit safe files. See
+`docs/standards/agent-tooling.md` for the full data-egress rule.
 
 The objective is better evidence with less broad reading, not tool-call count.
 

@@ -73,17 +73,18 @@ Canopy and Jev are **optional developer-local capabilities**, not repository dep
 
 The Canopy index/model/runtime state, Jev CLI/API key, and personal client/plugin configuration stay
 outside the repository. Coding agents access an already-maintained Canopy index only through
-`scripts/agent_canopy.py`; they do not initialize or mutate it. Use `jev probe` to verify Jev
-connectivity when needed. Never commit generated indexes, model files, `TYPE_SAFE_AI_KEY`, or
-another provider credential.
+`scripts/agent_canopy.py`; they do not initialize or mutate it. Agents reach Jev only through
+`scripts/agent_jev.py`, which refuses out-of-policy scopes before any request leaves the
+machine. Never commit generated indexes, model files, `TYPE_SAFE_AI_KEY`, or another provider
+credential.
 
 Route repository questions by evidence shape:
 
 | Question | Preferred route |
 |---|---|
 | Exact symbol/string/error/path is known | `rg`/text search, then direct read |
-| Behavior is known but repository vocabulary/location is unknown | one query-only `scripts/agent_canopy.py search` attempt; then scoped `jev find` if still ambiguous |
-| Known file/subsystem; one semantic property needs multiple substantial reads | one narrowly scoped atomic `jev ask`; otherwise targeted direct read |
+| Behavior is known but repository vocabulary/location is unknown | one query-only `scripts/agent_canopy.py search` attempt; then scoped `scripts/agent_jev.py find` if still ambiguous |
+| Known file/subsystem; one semantic property needs multiple substantial reads | one narrowly scoped atomic `scripts/agent_jev.py ask`; otherwise targeted direct read |
 | Call-graph orientation after discovery | `canopy map` / `canopy trace` as advisory hints |
 | Type/signature change; need complete impact list | compiler (`tsc -b` / `mypy`) |
 | External package/API behavior | Context7 / official upstream docs |
@@ -213,13 +214,44 @@ That makes the scan scope a data-governance boundary.
   credentials, service-account material, `.env*`, or any path containing personal/production data.
 - Do **not** treat `.gitignore` as a DLP mechanism. The upstream CLI intentionally implements only
   a subset of ignore syntax, so an ignored local file can still be eligible for scanning.
-- If a directory might contain ignored/untracked data, run local-only `jev scan --list <scope>` and inspect
-  the candidate paths before any remote `jev find`/`jev ask`, or narrow to explicit safe files.
+- If a directory might contain ignored/untracked data, run local-only
+  `python scripts/agent_jev.py scan --list <scope>` and inspect the candidate paths before any
+  remote `scripts/agent_jev.py find`/`ask`, or narrow to explicit safe files.
 - If sending the relevant source to the configured provider is not acceptable, Jev is unavailable
   for that task; use local lexical search, targeted reads, tests, and compiler output instead.
 
 These rules extend the repository's existing no-secrets/no-raw-health-data boundary to agent tooling;
 developer-local installation does not make provider data egress local.
+
+### Executable Jev egress guard
+
+The rules above are prose, so `scripts/agent_jev.py` makes the boundary enforceable. It resolves the
+`jev` CLI and exposes only `probe`, `scan`, `ask` and `find`:
+
+```bash
+python scripts/agent_jev.py probe                        # install check, no source sent
+python scripts/agent_jev.py scan --list app/src          # local candidate inspection, no egress
+python scripts/agent_jev.py ask "<atomic question>" app/src/services/contextBriefService.ts -q
+python scripts/agent_jev.py find "<behavior>" app/src/engine
+```
+
+Canopy can borrow a maintained baseline, but Jev has none: its scope is whatever the caller names, so
+the guard is the only thing between a repository-root sweep and the provider. Argument parsing binds
+scope positions explicitly, so a question is never mistaken for a path.
+
+- Scope arguments are resolved to absolute paths and refused when they resolve to the repository
+  root, sit inside a blocked tree (`artifacts/`, `app/artifacts/`, `.garmin_archive`,
+  `.garmin_tokens`, `.garth`, `node_modules/`, `.git/`, `.canopy/`, `.venv/`, `__pycache__/`,
+  `dist/`, `build/`), or carry a credential-shaped leaf name (`.env*`, `service-account*`,
+  `*secret*`, `*token*`, `*.pem`, `*.key`, `id_rsa`).
+- Refusal is fail-closed: the process exits `4` (`JEV_REFUSED`) without executing `jev` at all. That
+  is deliberately distinct from `3` (`JEV_UNAVAILABLE`, missing CLI or a failed call) so a caller can
+  tell a policy boundary from a missing tool.
+- `scan --list` stays permitted at any breadth because it only enumerates candidate paths
+  locally. A `scan` without `--list` performs a remote scan and is guarded like `find`/`ask`.
+  Use it to vet a directory before scoping a remote call to it.
+- The guard is a floor, not a substitute for judgment: a permitted `app/src` scope is still source
+  leaving the machine, so scope as narrowly as the question allows.
 
 ### Agent and hook economy
 
