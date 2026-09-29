@@ -24,6 +24,44 @@ export type RestEventFields = Pick<
     'afterEntryId' | 'startedAt' | 'endedAt' | 'actualSeconds' | 'endReason' | 'prescribedSeconds' | 'adjustmentSeconds'
 >;
 
+/**
+ * Total countdown length for one active rest: prescribed plus net adjustments.
+ * Clamped to >= 0 so a net-negative adjustment (or a missing prescription on a
+ * local-only manual timer) can never produce a negative deadline. Pure.
+ */
+export function restTotalSeconds(active: ActiveRestState): number {
+    return Math.max(0, (active.prescribedSeconds ?? 0) + active.adjustmentSeconds);
+}
+
+/** Wall-clock deadline (epoch ms) for one active rest. Pure. */
+export function restDeadlineMs(active: ActiveRestState): number {
+    return Date.parse(active.startedAt) + restTotalSeconds(active) * 1000;
+}
+
+/**
+ * Whole seconds remaining until the rest deadline at `nowMs`, never negative.
+ * Uses `ceil` so a rest with 900 ms left still displays `1s` instead of
+ * flipping to `0s` (and firing completion) almost a second early. A throttled
+ * tab that missed ticks simply observes a smaller (or zero) remainder on its
+ * next repaint -- the value is derived, never accumulated. Pure.
+ */
+export function restSecondsRemainingAt(active: ActiveRestState, nowMs: number): number {
+    const deadline = restDeadlineMs(active);
+    if (!Number.isFinite(deadline) || !Number.isFinite(nowMs)) return 0;
+    return Math.max(0, Math.ceil((deadline - nowMs) / 1000));
+}
+
+/**
+ * Whole session-elapsed seconds between a session `startedAt` instant and
+ * `nowMs`, floored and never negative. The live display derives from this on
+ * every repaint rather than counting interval callbacks. Pure.
+ */
+export function sessionElapsedSecondsAt(startedAt: string, nowMs: number): number {
+    const startMs = Date.parse(startedAt);
+    if (!Number.isFinite(startMs) || !Number.isFinite(nowMs)) return 0;
+    return Math.max(0, Math.floor((nowMs - startMs) / 1000));
+}
+
 export function startRest(afterEntryId: string, startedAt: string, prescribedSeconds?: number): ActiveRestState {
     return {
         afterEntryId,

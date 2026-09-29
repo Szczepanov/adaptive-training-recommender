@@ -60,7 +60,11 @@ from deriving the same ordinal `setIndex` from one rendered entry snapshot. Rest
 separate from persistence timing: the countdown starts when the set is optimistically accepted into
 the execution UI, before the asynchronous write. A delayed write completion therefore cannot restart
 a timer that the athlete has already skipped or adjusted. The timer remains advisory and does not lock
-the set form.
+the set form. The live elapsed and rest displays are re-derived from wall-clock timestamps on every
+repaint -- the one-second interval is only a repaint trigger, and a visibility/focus return resyncs
+immediately -- so a backgrounded tab that missed callbacks shows the correct value instead of a
+callback count that drifted low. A rest deadline that passed while hidden completes exactly once with
+its real elapsed time; reloading never resumes an in-flight rest.
 
 Rest omission is block-aware. Authored rest is always preserved. Outside warm-up blocks, a step with
 no authored rest retains the runner's legacy 60-second advisory fallback. Inside a structured warm-up,
