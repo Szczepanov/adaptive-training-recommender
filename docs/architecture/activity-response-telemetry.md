@@ -110,6 +110,14 @@ multiple wearable recordings on that occurrence do not make those structured mec
 ambiguous. Provider-only strength still fails closed when the provider source needed for the
 mechanical facts is ambiguous, partial or unavailable.
 
+The context-brief response summary also renders structured occurrences in the requested
+window when no provider activity backs them. Strength markers and next-morning check-in/
+tissue evidence come directly from `TrainingResponseSessionEvidence`; no
+`NormalizedGarminActivity` is manufactured. A linked execution that cannot be hydrated is
+shown as insufficient evidence, with no provider exercise-name fallback. At most eight
+structured-only occurrences and eight exercises per occurrence are rendered, with omitted
+counts. The output uses per-exercise markers rather than exporting full execution records.
+
 ## Read-side hydration and athlete UI
 
 `trainingHistory.ts` treats `activityResponse` as one optional evidence sidecar. The base

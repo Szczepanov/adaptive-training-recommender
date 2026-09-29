@@ -256,7 +256,7 @@ fallbacks. This remains display-only, so `POLICY_VERSION` is unaffected.
 - **Strength** — longitudinal strength comparison uses the central `strength_set_response`
   comparability decision with explicit exercise identity, load type and repetitions. The
   contract accepts this evidence without requiring a normalized Garmin activity, while the
-  current activity-driven summary still has no structured-only occurrence rendering path.
+  context-brief summary also renders structured-only strength occurrences directly from `TrainingResponseSessionEvidence`, including their next-morning observational response.
   No synthetic activity is constructed. Structured executions use performed entry exercise identity when present, then
   authored step identity, with performed working sets; a linked but unavailable structured execution
   blocks provider-name fallback. Provider
@@ -290,7 +290,7 @@ Known limitations: stable venue, temperature, elevation/grade, route and distanc
 are not retained in the normalized activity/response data, so environmental enrichment requires
 separate request-budget/privacy review. Segment-level execution-to-step reconciliation is not
 established by occurrence identity alone; running pace–HR comparison and diagnostic provenance
-remain incomplete; structured-only strength occurrences are projected but are not yet rendered by the activity-driven response summary. The renderer also still starts from provider activity rows, so a canonical occurrence with multiple provider recordings can yield more than one response-summary row; occurrence-level render deduplication remains follow-up work. Comparisons cannot reach beyond the fetched lookback.
+remain incomplete. Structured-only strength and next-morning evidence now render from the canonical response projection, and a linked but unavailable structured execution is surfaced as insufficient evidence without provider-name fallback. The renderer also still starts from provider activity rows, so a canonical occurrence with multiple provider recordings can yield more than one response-summary row; occurrence-level render deduplication remains follow-up work. Comparisons cannot reach beyond the fetched lookback.
 
 #### Recovery evidence synthesis (issue #812)
 

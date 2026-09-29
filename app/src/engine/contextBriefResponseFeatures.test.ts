@@ -236,7 +236,7 @@ describe('aerobic-efficiency comparison (#814)', () => {
                 },
             }],
         });
-        const comparison = summaries.find(summary => summary.activity.activityId === current.activityId)?.efficiency;
+        const comparison = summaries.find(summary => summary.activity?.activityId === current.activityId)?.efficiency;
         expect(comparison?.state).toBe('available');
         expect(comparison?.state === 'available' && comparison.confidence).toBe('low');
     });
@@ -424,6 +424,143 @@ function executionEvidence(
 }
 
 describe('strength progression (#814)', () => {
+    it('renders structured-only strength and next-day evidence without a Garmin activity', () => {
+        const prior = structuredStrengthEvidence({
+            activityId: 'not-loaded-prior', occurrenceId: 'structured-prior', localDate: '2026-09-11',
+            executionId: 'exec-prior', performedExerciseId: 'front_squat', reps: 5, weightKg: 77.5,
+        });
+        const current = structuredStrengthEvidence({
+            activityId: 'not-loaded-current', occurrenceId: 'structured-current', localDate: '2026-09-18',
+            executionId: 'exec-current', performedExerciseId: 'front_squat', reps: 5, weightKg: 80,
+        });
+        const nextDay = {
+            ...checkin('2026-09-19', 4, 5),
+            tissueResponses: {
+                right_knee: {
+                    region: 'right_knee', nextMorningReaction: 'moderate',
+                    sourceSessionRef: { kind: 'execution', id: 'exec-current', date: '2026-09-18' },
+                },
+            },
+        } as unknown as DailySubjectiveCheckin;
+        const context = {
+            history: [], historyStart: '2026-08-22', checkins: {
+                records: [checkin('2026-09-18', 3, 4), nextDay], unreadableDates: [],
+            }, asOfDate: '2026-09-20', windowStart: '2026-09-18', windowEnd: '2026-09-20', evidence: [prior, current],
+        };
+        const summaries = deriveKeySessionSummaries([], context);
+        const text = renderKeySessionSummaries(summaries, context);
+        expect(summaries).toHaveLength(1);
+        expect(text).toContain('2026-09-18 — Strength — structured execution');
+        expect(text).toContain('Strength front_squat: Adaptive structured identity · 1 working sets · top 80 kg × 5');
+        expect(text).toContain('prior 2026-09-11: 77.5 kg × 5; comparison comparable via canonical exercise identity; moderate confidence');
+        expect(text).toContain('Next morning (observational, not proof the session caused it)');
+        expect(text).toContain('right_knee moderate (linked to this session)');
+        expect(text).not.toContain('NormalizedGarminActivity');
+    });
+
+    it('shows structured-only unavailable execution and does not fall back to a provider activity', () => {
+        const unavailable: TrainingResponseSessionEvidence = {
+            performedOccurrenceId: 'structured-only-unavailable',
+            localDate: '2026-09-18', modality: 'Strength',
+            identity: { level: 'canonical_occurrence', sourceKinds: ['structured_execution'] },
+            structuredSourceRef: { kind: 'structured_execution', executionId: 'exec-unavailable' },
+            measuredSources: [],
+            sourceCompleteness: { occurrenceRead: 'available', structuredExecution: 'unavailable', providerActivities: 'not_linked' },
+        };
+        const context = {
+            history: [], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20',
+            windowStart: '2026-09-18', windowEnd: '2026-09-20', evidence: [unavailable],
+        };
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries([], context), context);
+        expect(text).toContain('Strength response: insufficient evidence — structured execution linked but unavailable; provider exercise identity not used');
+        expect(text).not.toContain('provider-recognized identity');
+    });
+
+    it('caps structured-only strength output at eight exercises', () => {
+        const base = structuredStrengthEvidence({
+            activityId: 'not-loaded', occurrenceId: 'structured-many', localDate: '2026-09-18',
+            executionId: 'exec-many', reps: 5, weightKg: 80,
+        });
+        const step = base.structured!.steps[0];
+        const evidence: TrainingResponseSessionEvidence = {
+            ...base,
+            structured: {
+                ...base.structured!,
+                steps: Array.from({ length: 12 }, (_, index) => ({
+                    ...step,
+                    stepId: `step-${index}`,
+                    exerciseRef: { kind: 'catalog' as const, exerciseId: `exercise-${index}` },
+                    sets: step.sets.map(set => ({
+                        ...set,
+                        exerciseRef: { kind: 'catalog' as const, exerciseId: `exercise-${index}` },
+                    })),
+                })),
+            },
+        };
+        const context = {
+            history: [], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20',
+            windowStart: '2026-09-18', windowEnd: '2026-09-20', evidence: [evidence],
+        };
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries([], context), context);
+        expect(text.match(/^- Strength /gm)).toHaveLength(8);
+        expect(text).toContain('- 4 additional exercises omitted');
+    });
+
+    it('does not let a non-Garmin source ID hide a structured-only Garmin summary', () => {
+        const activity = ride({ activityId: 'provider-id-collision', type: 'road_biking', stimulusDomain: 'unknown' });
+        const base = structuredStrengthEvidence({
+            activityId: activity.activityId, occurrenceId: 'structured-collision', localDate: activity.date,
+            executionId: 'exec-collision', performedExerciseId: 'front_squat', reps: 5, weightKg: 80,
+        });
+        const evidence: TrainingResponseSessionEvidence = {
+            ...base,
+            measuredSources: [{
+                sourceRef: { kind: 'provider_activity', provider: 'other_provider', activityId: activity.activityId },
+                provider: 'other_provider', activityId: activity.activityId,
+            }],
+        };
+        const context = {
+            history: [activity], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20',
+            windowStart: '2026-09-18', windowEnd: '2026-09-20', evidence: [evidence],
+        };
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries([activity], context), context);
+        expect(text).toContain('2026-09-18 — Strength — structured execution');
+        expect(text).toContain('Strength front_squat');
+    });
+
+    it('compares an activity-backed structured lift with a structured-only prior', () => {
+        const activity = lift('loaded-current', '2026-09-18', 80);
+        const current = structuredStrengthEvidence({
+            activityId: activity.activityId, occurrenceId: 'loaded-current-occurrence', localDate: '2026-09-18',
+            executionId: 'loaded-current-execution', performedExerciseId: 'front_squat', reps: 5, weightKg: 80,
+        });
+        const prior = structuredStrengthEvidence({
+            activityId: 'not-loaded-prior', occurrenceId: 'structured-only-prior', localDate: '2026-09-11',
+            executionId: 'structured-prior-execution', performedExerciseId: 'front_squat', reps: 5, weightKg: 77.5,
+        });
+        const context = {
+            history: [activity], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20',
+            windowStart: '2026-09-18', windowEnd: '2026-09-20', evidence: [current, prior],
+        };
+        const text = renderKeySessionSummaries(deriveKeySessionSummaries([activity], context), context);
+        expect(text).toContain('prior 2026-09-11: 77.5 kg × 5; comparison comparable via canonical exercise identity; moderate confidence');
+    });
+
+    it('caps structured-only occurrence summaries at eight and reports omissions', () => {
+        const evidence = Array.from({ length: 10 }, (_, index) => structuredStrengthEvidence({
+            activityId: `not-loaded-${index}`, occurrenceId: `structured-${index}`, localDate: `2026-09-${String(10 + index).padStart(2, '0')}`,
+            executionId: `exec-${index}`, performedExerciseId: 'front_squat', reps: 5, weightKg: 80,
+        }));
+        const context = {
+            history: [], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20',
+            windowStart: '2026-09-01', windowEnd: '2026-09-20', evidence,
+        };
+        const summaries = deriveKeySessionSummaries([], context);
+        const text = renderKeySessionSummaries(summaries, context);
+        expect(summaries).toHaveLength(8);
+        expect(text).toContain('- 2 additional structured-only strength occurrences omitted');
+    });
+
     it('reports top set against the prior same-exercise session', () => {
         const feature = deriveStrengthProgression(lift('now', '2026-09-18', 80), [lift('prior', '2026-09-11', 77.5)]);
         expect(feature).toEqual({
@@ -1056,6 +1193,7 @@ describe('multi-resolution semantic response (#850)', () => {
         const context = { history: [session], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20' };
         const text = renderKeySessionSummaries(deriveKeySessionSummaries([session], context), context);
         expect(text).toContain('Sprints: 6 × 10 s');
+        expect(text).not.toContain('Strength response: insufficient evidence');
         expect(text).toContain('Sprint peak 5 s');
         expect(text).toContain('Mean 10 s');
         expect(text).toContain('Peak cadence');

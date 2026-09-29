@@ -1,6 +1,7 @@
 import type { NormalizedGarminActivity } from './models';
 import type { TrainingResponseSessionEvidence } from '../training-occurrence/trainingResponseEvidence';
 import type { ResponseSessionIdentity } from './contextBriefComparability';
+import { normalizeModality } from './performedTrainingFacts';
 import {
     deriveDecoupling,
     deriveEfficiencyComparison,
@@ -16,6 +17,7 @@ import {
 import {
     deriveNextDayResponse,
     deriveStrengthProgression,
+    deriveStructuredStrengthProgression,
     type CheckinHistory,
     type CheckinReading,
     type ExerciseTopSet,
@@ -35,12 +37,17 @@ export interface ResponseContext {
     /** `null` when check-in history could not be read. */
     checkins: CheckinHistory | null;
     asOfDate: string;
+    /** Requested render window, which can include dates with no provider activities. */
+    windowStart?: string;
+    windowEnd?: string;
     /** Canonical occurrence/source projection; consumers migrate from activity-only input by work package. */
     evidence?: readonly TrainingResponseSessionEvidence[];
 }
 
 export interface KeySessionSummary {
-    activity: NormalizedGarminActivity;
+    activity?: NormalizedGarminActivity;
+    evidence?: TrainingResponseSessionEvidence;
+    omittedStructuredOnlyCount?: number;
     intervals: IntervalRepetition;
     sprints: SprintRepetition;
     decoupling: Decoupling;
@@ -83,6 +90,9 @@ function authoredProtocolFamily(session: TrainingResponseSessionEvidence): strin
  * prior session (its rejection reasons are worth stating). */
 function isKey(summary: Omit<KeySessionSummary, 'nextDay'>): boolean {
     return hasAvailableFeature(summary)
+        || (summary.evidence?.identity.sourceKinds.includes('structured_execution') === true
+            && normalizeModality(summary.evidence.modality) === 'Strength'
+            && summary.strength.state === 'insufficient_evidence')
         || (summary.efficiency.state === 'insufficient_evidence' && summary.efficiency.kind === 'no_comparable');
 }
 
@@ -114,20 +124,58 @@ export function deriveKeySessionSummaries(
             });
         }
     }
-    return [...windowActivities]
+    const summaries: Omit<KeySessionSummary, 'nextDay'>[] = [...windowActivities]
         .sort((a, b) => a.date.localeCompare(b.date) || a.activityId.localeCompare(b.activityId))
-        .map(activity => ({
-            activity,
-            intervals: deriveIntervalRepetition(activity),
-            sprints: deriveSprintRepetition(activity),
-            decoupling: deriveDecoupling(activity),
-            efficiency: deriveEfficiencyComparison(activity, context.history, identities),
-            strength: deriveStrengthProgression(activity, context.history, evidenceByActivityId, identities),
-        }))
+        .map(activity => {
+            const evidence = evidenceByActivityId.get(activity.activityId);
+            return {
+                activity,
+                ...(evidence ? { evidence } : {}),
+                intervals: deriveIntervalRepetition(activity),
+                sprints: deriveSprintRepetition(activity),
+                decoupling: deriveDecoupling(activity),
+                efficiency: deriveEfficiencyComparison(activity, context.history, identities),
+                strength: evidence?.structured
+                    ? deriveStructuredStrengthProgression(evidence, context.evidence ?? [])
+                    : deriveStrengthProgression(activity, context.history, evidenceByActivityId, identities),
+            };
+        });
+
+    const windowActivityIds = new Set(windowActivities.map(activity => activity.activityId));
+    const windowStart = context.windowStart ?? windowActivities.map(item => item.date).sort()[0];
+    const windowEnd = context.windowEnd ?? windowActivities.map(item => item.date).sort().at(-1);
+    const structuredOnly = (context.evidence ?? []).filter(session =>
+        session.identity.sourceKinds.includes('structured_execution')
+        && normalizeModality(session.modality) === 'Strength'
+        && (!windowStart || session.localDate >= windowStart)
+        && (!windowEnd || session.localDate <= windowEnd)
+        && !session.measuredSources.some(source => source.provider.toLowerCase() === 'garmin'
+            && windowActivityIds.has(source.activityId)))
+        .sort((a, b) => a.localDate.localeCompare(b.localDate)
+            || (a.performedOccurrenceId ?? '').localeCompare(b.performedOccurrenceId ?? ''));
+    const omittedStructuredOnlyCount = Math.max(0, structuredOnly.length - MAX_STRUCTURED_ONLY_SESSIONS);
+    for (const evidence of structuredOnly.slice(-MAX_STRUCTURED_ONLY_SESSIONS)) {
+        summaries.push({
+            evidence,
+            intervals: { state: 'insufficient_evidence', reason: 'provider activity telemetry unavailable' },
+            sprints: { state: 'insufficient_evidence', reason: 'provider activity telemetry unavailable' },
+            decoupling: { state: 'insufficient_evidence', reason: 'provider activity telemetry unavailable' },
+            efficiency: { state: 'insufficient_evidence', reason: 'provider activity telemetry unavailable', kind: 'ineligible', rejected: [] },
+            strength: deriveStructuredStrengthProgression(evidence, context.evidence ?? []),
+        });
+    }
+
+    const selected = summaries
         .filter(isKey)
+        .sort((a, b) => (a.evidence?.localDate ?? a.activity?.date ?? '').localeCompare(b.evidence?.localDate ?? b.activity?.date ?? '')
+            || (a.evidence?.performedOccurrenceId ?? a.activity?.activityId ?? '').localeCompare(b.evidence?.performedOccurrenceId ?? b.activity?.activityId ?? ''));
+    if (omittedStructuredOnlyCount > 0 && selected.length > 0) {
+        selected[0] = { ...selected[0], omittedStructuredOnlyCount };
+    }
+    return selected
         .map(summary => ({
             ...summary,
-            nextDay: deriveNextDayResponse(summary.activity, context.checkins, context.history, context.asOfDate, context.evidence),
+            nextDay: deriveNextDayResponse(summary.activity ?? summary.evidence!, context.checkins, context.history, context.asOfDate, context.evidence),
         }));
 }
 
@@ -138,6 +186,7 @@ const PATTERN_TEXT = {
 } as const;
 
 const MAX_RENDERED_REPS = 12;
+const MAX_STRUCTURED_ONLY_SESSIONS = 8;
 
 function boundedValues(values: readonly string[]): string {
     if (values.length <= MAX_RENDERED_REPS) return values.join(' / ');
@@ -253,14 +302,16 @@ function topSetText(set: { topWeightKg?: number; topReps?: number }): string {
     return set.topReps !== undefined ? `${set.topReps} reps` : 'no load/reps';
 }
 
-function strengthLines(feature: StrengthProgression): string[] {
-    if (feature.state !== 'available') return [];
-    return feature.exercises.map((exercise: ExerciseTopSet) => {
+function strengthLines(feature: StrengthProgression, showInsufficient: boolean): string[] {
+    if (feature.state !== 'available') return showInsufficient ? [`- Strength response: insufficient evidence — ${feature.reason}`] : [];
+    const lines = feature.exercises.slice(0, 8).map((exercise: ExerciseTopSet) => {
         const prior = exercise.prior
             ? ` (prior ${exercise.prior.date}: ${topSetText(exercise.prior)}; ${strengthDecisionText(exercise.prior.decision)}${exercise.prior.comparison === 'like-for-like' ? '' : `; not like-for-like: ${exercise.prior.comparison}`})`
             : ' (no prior session with this exercise in the fetched history)';
         return `- Strength ${exercise.exercise}: ${exercise.identitySource} · ${exercise.workingSets} working sets · top ${topSetText(exercise)}${prior}`;
     });
+    if (feature.exercises.length > lines.length) lines.push(`- ${feature.exercises.length - lines.length} additional exercises omitted`);
+    return lines;
 }
 
 function strengthDecisionText(decision: NonNullable<ExerciseTopSet['prior']>['decision']): string {
@@ -302,6 +353,10 @@ function headerLine(activity: NormalizedGarminActivity): string {
     return `#### ${activity.date} — ${activity.type} — ${activity.intensityTag}${duration}`;
 }
 
+function structuredHeaderLine(evidence: TrainingResponseSessionEvidence): string {
+    return `#### ${evidence.localDate} — ${evidence.modality || 'Strength'} — structured execution`;
+}
+
 function powerLine(activity: NormalizedGarminActivity): string[] {
     const parts: string[] = [];
     if (activity.normalizedPower !== undefined) parts.push(`NP ${fmt(activity.normalizedPower)} W`);
@@ -315,21 +370,24 @@ export function renderKeySessionSummaries(summaries: readonly KeySessionSummary[
     const lines = [
         '### Training-response features (derived, display-only)',
         '',
-        `Derived from bounded semantic FIT-step/session telemetry when available, with legacy laps, sets and check-ins as fallbacks; prior comparable sessions are searched only in activities fetched since ${context.historyStart}. `
+        `Derived from bounded provider telemetry and canonical structured occurrence/set evidence when available, with legacy laps and check-ins as fallbacks; prior sessions are searched only in the fetched ${context.historyStart}–${context.asOfDate} evidence window. `
         + 'Features with missing or incomparable evidence are omitted or marked insufficient, never estimated. These features have no recommendation authority.',
     ];
     for (const summary of summaries) {
         lines.push(
             '',
-            headerLine(summary.activity),
-            ...powerLine(summary.activity),
+            summary.activity ? headerLine(summary.activity) : structuredHeaderLine(summary.evidence!),
+            ...(summary.activity ? powerLine(summary.activity) : []),
             ...intervalLines(summary.intervals),
             ...sprintLines(summary.sprints),
             ...decouplingLines(summary.decoupling),
             ...efficiencyLines(summary.efficiency),
-            ...strengthLines(summary.strength),
+            ...strengthLines(summary.strength, summary.evidence?.identity.sourceKinds.includes('structured_execution') === true
+                && normalizeModality(summary.evidence.modality) === 'Strength'),
             ...nextDayLines(summary.nextDay),
         );
     }
+    const omittedStructuredOnlyCount = summaries.reduce((count, summary) => count + (summary.omittedStructuredOnlyCount ?? 0), 0);
+    if (omittedStructuredOnlyCount > 0) lines.push('', `- ${omittedStructuredOnlyCount} additional structured-only strength occurrences omitted`);
     return lines.join('\n');
 }
