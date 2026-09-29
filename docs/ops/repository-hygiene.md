@@ -18,7 +18,8 @@ reads Git-tracked files and Git history and writes ignored reports under `artifa
 - `inventory.json` — machine-readable counts and candidates;
 - `summary.md` — review-oriented summary;
 - unindexed `docs/plans/*.md` files relative to the authoritative `docs/plans/README.md` board;
-- largest production/test files and large-file churn hotspots;
+- largest runtime/tooling/test files and large-file churn hotspots;
+- whether full Git history is available (shallow clones make churn counts lower bounds);
 - byte-identical tracked-file groups.
 
 For the full static-analysis pass:
@@ -34,7 +35,7 @@ This runs the same inventory and then downloads/runs pinned CLI versions locally
 | Knip | Unused TS/TSX files, exports and dependencies | Compare the normal scan with the production-only scan. Code kept alive only by tests is a review candidate, not automatic dead code. |
 | dependency-cruiser | Dependency graph, cycles, orphans and layer-boundary drift | Rules are warnings in this first pass so existing architecture debt is visible without becoming a new merge gate. |
 | jscpd | Token-level copy/paste duplication | Use clone groups to locate consolidation candidates; it does not prove semantic equivalence. |
-| Vulture | Python unused/unreachable code | Both full and production-only scans use `--min-confidence 100`; findings still require caller/config/dynamic-use review. |
+| Vulture | Python unused/unreachable code | Both full-repository and runtime-package scans use `--min-confidence 100`; findings still require caller/config/dynamic-use review. |
 
 Pinned versions live in `scripts/repository_hygiene.py`. Reports and tool stdout/stderr are written
 under `artifacts/hygiene/`; the directory is gitignored.
@@ -44,10 +45,11 @@ under `artifacts/hygiene/`; the directory is gitignored.
 ## Why two Knip and Vulture views?
 
 A normal static-analysis run includes tests and tooling. That is useful for finding code unused by
-anything in the repository. A production-only view answers a different question: which production
-files or exports are reachable only from tests/tooling? Knip explicitly documents production mode
-as complementary to the default run rather than a replacement for it. Vulture is run the same way
-for Python so test-only reachability is visible instead of silently classifying it one way.
+anything in the repository. A production-only Knip view answers a different question: which shipped
+TS/TSX files or exports are reachable only from tests/tooling? Knip explicitly documents production
+mode as complementary to the default run rather than a replacement for it. Vulture uses the same
+comparison idea but calls the narrow scan `runtime`: it scans `src/garmin_sync/` only, while the
+full scan also includes root scripts and tests.
 
 ## Review protocol for the cleanup PR
 
