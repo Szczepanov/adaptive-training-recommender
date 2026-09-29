@@ -76,6 +76,11 @@ uv run python scripts/agent_eval.py validate-result /tmp/constructor-signature-c
    client exposes them, and a short outcome note.
 8. Validate the result JSON and retain it outside the repo or in an experiment artifact store.
 
+When evaluating Jev-enabled workflows, record Jev calls in `tool_usage` and, when useful, copy the
+local `jev gain` summary into the outcome notes or experiment artifact. Treat its examined-token
+"leverage" and provider spend as diagnostics, not as measured agent-token savings; compare agent
+turns/input-context and correctness across repeated baseline-vs-Jev trials.
+
 The checked-in corpus is stable input. Raw transcripts/results are intentionally not committed by
 default: they can contain large traces, environment details, or model-generated content that would
 turn the repository into a log store.

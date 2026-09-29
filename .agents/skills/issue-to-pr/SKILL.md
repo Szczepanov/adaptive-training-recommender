@@ -81,9 +81,15 @@ Follow the `docs/README.md` precedence: **code wins, then `architecture/`, then 
 ## Phase 3 — Analyze the code and related artifacts
 
 - Locate affected modules using the `AGENTS.md` package-architecture map (`src/garmin_sync/`, `app/src/engine/`, `app/src/sessions/`, `app/src/responses/`, `app/src/observations/`, `app/src/outcomes/`, `app/src/knowledge/` — directory wins over the map).
-- Discover with text search plus direct reads. For type-level ripple (new union member or
-  `Record` key, new required field, changed exported signature), make the change and run
-  `cd app && npx tsc -b` (or `uv run mypy`): the errors are the impact list.
+- Follow `.agents/skills/semantic-code-discovery/SKILL.md`: exact identifiers/strings use
+  `rg`, and small/localized evidence is read directly. When a semantic property would otherwise
+  require broad/large reading and Jev is available, use an atomic, narrowly scoped `jev ask`;
+  use `jev find` only for genuine vocabulary/location gaps. Read the cited line/window and only
+  the surrounding source needed to verify it before drawing a conclusion; do not automatically
+  re-read the whole large file, and do not duplicate the same semantic sweep across subagents.
+- For type-level ripple (new union member or `Record` key, new required field, changed exported
+  signature), make the change and run `cd app && npx tsc -b` (or `uv run mypy`): the errors
+  are the impact list.
 - Identify: reusable utilities, existing test fixtures (`tests/fixtures/`, engine `tests/`, `simulation/`), schema validators, and the `TrainingHistoryProvider` / Firestore boundaries if history or persistence is involved.
 - When correctness depends on an external library/API contract, use Context7 for current,
   version-appropriate documentation as defined by `docs/standards/agent-tooling.md`. Do not use

@@ -424,31 +424,54 @@ Cross-agent workflow skills live in `.agents/skills/` (single source of truth):
 - `issue-to-pr` — GitHub issue number → plan → implementation → verification → linked PR.
 - `planner` — implementation planning.
 - `external-library-docs` — Context7-first third-party documentation lookup.
+- `semantic-code-discovery` — route exact lookup vs Jev semantic judgment/discovery without broad source loading.
 
 Claude Code only discovers skills under `.claude/skills/`, so a Claude-visible skill there is a
 thin pointer to the `.agents/skills/` file. Edit the shared file, never the pointer.
 
 ## Code navigation
 
-Code navigation uses text search plus direct reads, with the compiler as the
-type-level impact list. Do not block a task on tool setup, and do not perform
-ceremonial navigation calls for docs-only work or a known tiny edit whose target
-is already established.
+Code navigation uses lexical search, optional semantic judgment/discovery, direct source reads, and
+the compiler as the type-level impact list. Do not block a task on optional tool setup, and do not
+perform ceremonial navigation calls for docs-only work or a known tiny edit whose target is already
+established.
 
 ### Retrieval policy
 
 Pick the cheapest tool that answers the actual question:
 
-1. **Discovery (default):** text search (`Grep`/`rg`) plus direct reads of the files it finds.
-   This also covers literals, error messages, configuration keys, docs, YAML/JSON and generated
-   files.
-2. **Type-level ripple:** when a change adds a union member or `Record` key, adds a required
+1. **Exact lookup:** when a symbol, string, error, path, configuration key, or other repository
+   vocabulary is known, use text search (`Grep`/`rg`) and direct reads. This remains the default
+   for literals, docs, YAML/JSON, generated files, and exact callers.
+2. **Semantic property on a known target:** use a targeted direct read when the relevant evidence is
+   already small/localized. When answering "does this file/symbol/subsystem do X?" would otherwise
+   require a broad/large read or scanning multiple files and `jev` is available, prefer a narrowly
+   scoped `jev ask`. Keep each question atomic (one independently testable property); split compound
+   "A/B/C or wiring?" questions into separate checks. Read the cited line/window and only the surrounding source needed to verify it before
+   relying on the answer; do not automatically re-read the whole large file. Do not call Jev after
+   direct evidence has already answered the question.
+3. **Unknown repository vocabulary/location:** when the behavior is understood but its name/location
+   is not, a tightly scoped `jev find` may be used as a discovery hint. Start with the smallest
+   plausible subsystem rather than the repository root, and do not raise `--max-files` merely to
+   avoid scoping. Treat rankings as candidates, not proof; verify with source, lexical search,
+   callers/tests, and the compiler as appropriate.
+4. **Type-level ripple:** when a change adds a union member or `Record` key, adds a required
    field, or changes an exported signature, make the change and run the compiler
    (`cd app && npx tsc -b`; `uv run mypy` for Python). Its errors are the complete,
    authoritative impact list at no extra cost. In `app/`, `tsc -p .` checks nothing; use
    `tsc -b`.
-3. If a cross-module caller/implementation question resists both, use exact text search and
-   targeted reads of tests and call sites rather than a broad source-reading sweep.
+5. If Jev is unavailable or uncertain, fall back to exact text search and targeted reads; the
+   repository must never require Jev to make progress.
+
+The automatic Jev large-read narrowing hook is not a repository default because it can hide source.
+Client-local experiments may enable it, but correctness must be compared against full-source runs
+before adopting it broadly.
+
+Jev sends selected content to an external provider. Never scan repository root `.`, `artifacts/`,
+`app/artifacts/`, raw health/provider exports, credentials/token stores, service-account material,
+or other personal/production data. Do not treat `.gitignore` as a DLP boundary; for any directory
+that may contain ignored/untracked data, use local-only `jev scan --list <scope>` to inspect candidates first or
+narrow to explicit safe files. See `docs/standards/agent-tooling.md` for the full data-egress rule.
 
 The objective is better evidence with less broad reading, not tool-call count.
 
@@ -459,9 +482,10 @@ agent**.
 
 - Once the target file/symbol and its relevant callers are established, read the code directly
   instead of rediscovering already-known locations.
-- Do not have multiple subagents independently reconstruct the same call graph or architecture.
-  Give reviewers the issue acceptance criteria, implementation summary, changed-file list and diff
-  first; further lookup is only for a specific unresolved wiring/impact question.
+- Do not have multiple subagents independently reconstruct the same call graph or architecture,
+  including by repeating the same Jev sweeps. The primary agent owns broad discovery; give reviewers
+  the issue acceptance criteria, implementation summary, changed-file list and diff first. Further
+  lookup is only for a specific unresolved wiring/impact question.
 
 This matters especially before changing an engine constant
 ([`CLAUDE.md` § 2](./CLAUDE.md#2-before-you-change-a-number-in-the-engine)): the constant, its

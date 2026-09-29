@@ -109,6 +109,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
+      - name: Validate coding-agent evaluation corpus
+        run: uv run python scripts/agent_eval.py validate
+
       - name: Run repository hygiene pre-commit checks
         env:
           # Dedicated CI steps below own these checks. Skip their pre-commit copies so

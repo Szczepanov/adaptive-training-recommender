@@ -60,7 +60,83 @@ confidence.
 Do not commit Context7 credentials or personal MCP configuration. The MCP server is configured per
 developer/client; this repository only defines when and how it should be used.
 
-## 2. Verification contract
+## 2. Repository semantic discovery: lexical search + optional Jev
+
+Jev is an **optional developer-local capability**, not a repository dependency. Here, `jev`
+means the [BorisLeMeec/jev](https://github.com/BorisLeMeec/jev) code-navigation CLI backed by
+TypeSafe Jev; it is distinct from TypeSafe's general typed-decision/design skill. The CLI, API key,
+and any client/plugin configuration stay outside the repository. When installed, verify the local
+client once with `jev probe`; never commit `TYPE_SAFE_AI_KEY` or another provider credential.
+
+Route repository questions by evidence shape:
+
+| Question | Preferred route |
+|---|---|
+| Exact symbol/string/error/path is known | `rg`/text search, then direct read |
+| Known file/subsystem; semantic property needs broad/large reading | narrowly scoped `jev ask`; otherwise targeted direct read |
+| Behavior is known but repository vocabulary/location is unknown | tightly scoped `jev find`, then source verification |
+| Type/signature change; need complete impact list | compiler (`tsc -b` / `mypy`) |
+| External package/API behavior | Context7 / official upstream docs |
+
+### Jev question discipline
+
+- Prefer one independently testable semantic property per `jev ask`. Split compound questions
+  such as "does A/B/C already work or is wiring needed?" into separate A, B and C checks.
+- Do not invoke Jev ceremonially when a small targeted read already answers the question. Its value
+  is avoiding broad/large context loading or multi-file semantic inspection, not adding a mandatory
+  tool hop.
+- If the exact symbol is already known, locate it lexically first and scope Jev to the implementation
+  file or smallest relevant subsystem. Do not pay for a repository-wide semantic sweep to rediscover
+  a known symbol.
+- For `jev find`, start with the smallest plausible subsystem. The CLI's file-count guard is a
+  useful signal to narrow the search; do not raise `--max-files` merely to bypass that guard.
+- Jev probabilities/rankings are evidence, not proof. Read the cited line/window and only the
+  surrounding source needed to verify it; do not automatically re-read the whole large file. Verify
+  important conclusions with exact callers/tests/compiler output as appropriate.
+- A failed or low-confidence Jev search must not become an absence proof unless the source/test
+  evidence independently supports absence.
+
+### Data egress and privacy
+
+Jev is not a local-only index: selected source content is sent to the configured TypeSafe service.
+That makes the scan scope a data-governance boundary.
+
+- Never run Jev over repository root `.` in this project. Start from an explicit source file or a
+  narrow source-only directory identified from the architecture map.
+- Never scan `artifacts/`, `app/artifacts/`, raw health exports, provider archives, token stores,
+  credentials, service-account material, `.env*`, or any path containing personal/production data.
+- Do **not** treat `.gitignore` as a DLP mechanism. The upstream CLI intentionally implements only
+  a subset of ignore syntax, so an ignored local file can still be eligible for scanning.
+- If a directory might contain ignored/untracked data, run local-only `jev scan --list <scope>` and inspect
+  the candidate paths before any remote `jev find`/`jev ask`, or narrow to explicit safe files.
+- If sending the relevant source to the configured provider is not acceptable, Jev is unavailable
+  for that task; use local lexical search, targeted reads, tests, and compiler output instead.
+
+These rules extend the repository's existing no-secrets/no-raw-health-data boundary to agent tooling;
+developer-local installation does not make provider data egress local.
+
+### Agent and hook economy
+
+Broad semantic discovery belongs to the primary agent. Subagents/reviewers should not repeat the
+same Jev sweep; give them the established target symbols/files and let them query further only for
+a concrete unresolved question.
+
+The automatic Jev large-read narrowing hook is **not** a repository default. It can reduce context,
+but it can also hide source. Treat it as a client-local experiment and compare correctness against
+full-source runs before enabling it broadly. Explicit `jev ask`/`jev find` remains the shared
+workflow.
+
+`jev gain` may be used as a local diagnostic for query count, examined tokens and provider spend,
+but leverage is not the same as measured agent-token savings. Repository evals should prioritize
+end-state correctness and then compare turns/context/tool usage across repeated trials.
+
+If Jev is unavailable, use lexical search, direct reads, tests and compiler output. No task may
+block on Jev setup.
+
+The shared operational workflow is in
+[`.agents/skills/semantic-code-discovery/SKILL.md`](../../.agents/skills/semantic-code-discovery/SKILL.md).
+
+## 3. Verification contract
 
 **`make verify` is the canonical "ready to hand off / ready for PR review" command for agents.**
 
@@ -103,7 +179,7 @@ Before completion, run `make verify`.
 
 This separation keeps iteration fast without letting an agent redefine "done" per task.
 
-## 3. Delegation and context economy
+## 4. Delegation and context economy
 
 Subagents are useful when work is genuinely separable, but every delegated agent has its own
 reasoning/context budget and can duplicate repository discovery. For a single cohesive GitHub issue,
@@ -125,8 +201,9 @@ questions and must not independently reconstruct the whole repository architectu
 The same economy applies to code navigation (full policy in
 [`AGENTS.md` § Code navigation](../../AGENTS.md#code-navigation)):
 
-- discover with text search plus direct reads, and use the compiler (`tsc -b`, `mypy`) as the
-  impact list for type-level changes;
+- follow the routing policy in §2: exact lookup stays lexical, small/localized evidence is read
+  directly, Jev is optional for broad/large semantic inspection or genuine vocabulary gaps, and the
+  compiler (`tsc -b`, `mypy`) remains the impact list for type-level changes;
 - once target symbols and relevant callers are known, read them directly rather than repeatedly
   rediscovering them;
 - do not have multiple agents independently rebuild the same call graph.
@@ -139,7 +216,7 @@ Current OpenAI multi-agent guidance also treats concurrency as an explicit budge
 tuning when the root model should delegate:
 <https://developers.openai.com/api/docs/guides/responses-multi-agent>.
 
-## 4. Coding-agent evaluations
+## 5. Coding-agent evaluations
 
 Product recommendation evaluation (simulation, plan judge, persona judge) and **coding-agent
 evaluation** answer different questions and must remain separate.

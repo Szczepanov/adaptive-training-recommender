@@ -22,7 +22,11 @@ When acting as or using the **planner** skill:
 
 ### Navigation strategy
 
-Discover with Grep/text search plus direct reads; see `AGENTS.md` § Code navigation.
+Follow `.agents/skills/semantic-code-discovery/SKILL.md` and `AGENTS.md` § Code navigation:
+use `rg` for exact identifiers/strings and direct reads when evidence is already small/localized;
+when a semantic property would otherwise require broad/large reading and Jev is available, use an
+atomic, narrowly scoped `jev ask`; use `jev find` only for genuine vocabulary/location gaps.
+Read the cited line/window and only the surrounding source needed to verify it before relying on the result.
 
 - For type-level impact (union members, `Record` keys, exported signatures), name the compiler
   check (`cd app && npx tsc -b`, `uv run mypy`) as the impact evidence in the plan rather than
