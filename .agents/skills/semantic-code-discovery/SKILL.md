@@ -15,10 +15,12 @@ unavailable.
 
 1. **Exact vocabulary known** — use `rg`/Grep and direct reads for symbols, strings, errors, paths,
    configuration keys and exact callers. Do not use semantic retrieval to rediscover a known name.
-2. **Behavior known, repository vocabulary/location unknown** — when a local Canopy index is
-   available and current, use `canopy search` as the first semantic locator. Treat the returned
-   files/chunks as candidates, not proof. If Canopy is unavailable, stale, or materially ambiguous,
-   use a tightly scoped `jev find` as a second opinion/fallback.
+2. **Behavior known, repository vocabulary/location unknown** — when a **pre-existing** Canopy
+   index is already available and sufficiently current for the question, use `canopy search` as
+   the first semantic locator. Treat the returned files/chunks as candidates, not proof. Do not
+   bootstrap or rebuild Canopy as task setup. If no usable index is available, or its result is
+   materially ambiguous, use lexical/direct evidence and a tightly scoped `jev find` as a second
+   opinion/fallback.
 3. **Known target, semantic property unknown** — use a targeted direct read when the relevant
    evidence is already small/localized. When answering would otherwise require a broad/large read or
    scanning multiple files and `jev` is available, use an atomic `jev ask` against the
@@ -73,6 +75,26 @@ implementation files/symbols.
   is already fast enough for interactive agent use; only test Q6/Q8 after a fixed benchmark shows
   genuine embedding-recall failures rather than ranking/chunking/graph issues.
 
+### Canopy index lifecycle
+
+Normal issue/PR agents **consume an existing index; they do not provision one**.
+
+- Never run `canopy init`, `canopy reindex`, change the embedding model/quantization, or pull an
+  Ollama embedding model merely because the current worktree lacks `.canopy/`.
+- Do not run `canopy index` against a shared/baseline index from a temporary agent worktree. Index
+  mutation belongs to an explicit developer/tool-maintenance workflow, not normal task execution.
+- A persistent primary/main checkout may maintain a Qwen3-Embedding-4B index incrementally. If the
+  client/environment exposes that checkout as a shared semantic-search baseline, agents may query it
+  for **baseline-main discovery** without copying its mutable index into their worktree.
+- Never symlink or otherwise share one writable `.canopy/` store among concurrent worktrees. The
+  index/store and indexed-SHA state are mutable and must have one maintenance owner.
+- A shared main index is not branch-current evidence. After it locates likely files/symbols, verify
+  the current worktree with `rg`, direct reads, callers/tests, compiler output, and normal
+  verification before relying on behavior.
+- If no pre-existing usable index is available, fall back immediately. Do not downgrade to
+  Qwen3-Embedding-0.6B simply to make disposable per-worktree indexing cheap; compare smaller models
+  only in an explicit retrieval benchmark if per-worktree indexing ever becomes a real requirement.
+
 Canopy's local index is developer-owned state. Do not commit `.canopy/`, generated vector stores,
 Ollama model files, or machine-specific runtime state.
 
@@ -126,9 +148,10 @@ The automatic Jev large-read narrowing hook is not part of the shared repository
 can hide source. It may be evaluated client-locally, but explicit `jev ask`/`jev find` is the
 portable default.
 
-Local setup, indexes, model choice, credentials and API keys are developer-owned. `canopy status`
-checks index freshness; `jev probe` verifies a Jev install; `jev gain` is useful for cost/token
-diagnostics. Never commit generated Canopy state, provider credentials, Ollama model files, or
+Local setup, index maintenance, model choice, credentials and API keys are developer-owned. When a
+local index already exists, `canopy status` checks its freshness; absence is a fallback condition,
+not permission for an agent to initialize/reindex it. `jev probe` verifies a Jev install; `jev
+gain` is useful for cost/token diagnostics. Never commit generated Canopy state, provider credentials, Ollama model files, or
 personal client/plugin configuration.
 
 The normative policy is `docs/standards/agent-tooling.md`.
