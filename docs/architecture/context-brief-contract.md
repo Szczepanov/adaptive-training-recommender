@@ -56,7 +56,7 @@ each field is independently machine-readable:
 A horizon that the selected renderer does not use is written explicitly as
 `not used by this export`; it is not populated merely because the service happened to fetch a
 wider source range. In particular, the morning artifact uses the 7-day recovery timeline but
-does not claim the planning/diagnostic 28-day subjective-baseline or sensor-evidence sections.
+does not claim the longer planning/diagnostic subjective-baseline or sensor-evidence sections.
 
 `Engine policy version` is the current `POLICY_VERSION` bundled with the application build.
 It identifies the engine-policy build present when the export was generated. It must not be
