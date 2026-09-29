@@ -32,6 +32,7 @@ def test_classify_tracked_path_separates_tests_from_production() -> None:
     assert hygiene.classify_tracked_path("app/src/engine/planner.ts") == "production_source"
     assert hygiene.classify_tracked_path("app/src/engine/planner.test.ts") == "test"
     assert hygiene.classify_tracked_path("app/scripts/ai-judge/__tests__/runner.test.mjs") == "test"
+    assert hygiene.classify_tracked_path("app/scripts/run-ai-judge.mjs") == "tooling_source"
     assert hygiene.classify_tracked_path("tests/test_sync_service.py") == "test"
     assert hygiene.classify_tracked_path("docs/README.md") == "docs"
 
