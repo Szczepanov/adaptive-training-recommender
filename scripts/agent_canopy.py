@@ -1,25 +1,32 @@
 #!/usr/bin/env python3
-"""Read-only bridge from agent worktrees to a maintained Canopy baseline index."""
+"""Query-only bridge from agent worktrees to a maintained Canopy baseline index."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 import tomllib
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
+from typing import Iterator, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE_ENV = "AGENT_CANOPY_BASELINE_WORKTREE"
 UNAVAILABLE_EXIT = 3
+QUERY_LOCK_TIMEOUT_SECONDS = 5.0
+QUERY_LOCK_STALE_SECONDS = 300.0
 _REQUIRED_INDEX_FILES = (
     Path(".canopy/canopy.toml"),
     Path(".canopy/store.redb"),
     Path(".canopy/vectors.idx"),
+    Path(".canopy/vectors.idx.chunks.usearch"),
 )
 
 
@@ -69,9 +76,7 @@ def _git_worktrees(repo_root: Path) -> list[Worktree]:
         text=True,
     )
     if completed.returncode != 0:
-        raise RuntimeError(
-            completed.stderr.strip() or "git worktree list --porcelain failed"
-        )
+        raise RuntimeError(completed.stderr.strip() or "git worktree list --porcelain failed")
     return parse_worktree_porcelain(completed.stdout)
 
 
@@ -84,6 +89,64 @@ def _resolve_explicit_path(raw: str, repo_root: Path) -> Path:
     if not candidate.is_absolute():
         candidate = repo_root / candidate
     return candidate.resolve()
+
+
+def _query_lock_path(worktree: Path) -> Path:
+    digest = hashlib.sha256(str(worktree.resolve()).encode("utf-8")).hexdigest()[:16]
+    return Path(tempfile.gettempdir()) / f"adaptive-training-canopy-{digest}.lock"
+
+
+@contextmanager
+def baseline_query_lock(
+    worktree: Path,
+    *,
+    timeout_seconds: float = QUERY_LOCK_TIMEOUT_SECONDS,
+    stale_seconds: float = QUERY_LOCK_STALE_SECONDS,
+) -> Iterator[None]:
+    """Serialize query-only Canopy consumers of one maintained mutable baseline."""
+    lock_path = _query_lock_path(worktree)
+    deadline = time.monotonic() + timeout_seconds
+
+    while True:
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            try:
+                age_seconds = max(0.0, time.time() - lock_path.stat().st_mtime)
+            except FileNotFoundError:
+                continue
+
+            if age_seconds > stale_seconds:
+                try:
+                    lock_path.unlink()
+                except FileNotFoundError:
+                    pass
+                continue
+
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Canopy baseline is busy: {worktree} "
+                    f"(waited {timeout_seconds:.1f}s)"
+                )
+            time.sleep(0.05)
+            continue
+
+        try:
+            os.write(
+                fd,
+                f"pid={os.getpid()} baseline={worktree.resolve()}\n".encode("utf-8"),
+            )
+        finally:
+            os.close(fd)
+        break
+
+    try:
+        yield
+    finally:
+        try:
+            lock_path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def find_baseline_worktree(
@@ -112,7 +175,10 @@ def find_baseline_worktree(
             if not missing:
                 return record.path.resolve(), None
             joined = ", ".join(str(path) for path in missing)
-            return None, f"{record.path} is the {branch.removeprefix('refs/heads/')} worktree but is missing {joined}"
+            return (
+                None,
+                f"{record.path} is the {branch.removeprefix('refs/heads/')} worktree but is missing {joined}",
+            )
 
     return None, "no checked-out main/master worktree with a maintained Canopy index was found"
 
@@ -147,7 +213,7 @@ def _indexed_sha(worktree: Path) -> str | None:
 
 
 def build_canopy_command(args: argparse.Namespace) -> list[str]:
-    """Build only read-only Canopy commands exposed by this wrapper."""
+    """Build only query/non-maintenance Canopy commands exposed by this wrapper."""
     if args.command == "status":
         return ["canopy", "status"]
     if args.command == "search":
@@ -161,7 +227,7 @@ def build_canopy_command(args: argparse.Namespace) -> list[str]:
         return ["canopy", "map", args.symbol]
     if args.command == "trace":
         return ["canopy", "trace", args.from_symbol, args.to_symbol]
-    raise ValueError(f"Unsupported read-only Canopy command: {args.command}")
+    raise ValueError(f"Unsupported Canopy query command: {args.command}")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -207,7 +273,7 @@ def _print_baseline_state(worktree: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run a read-only Canopy query against a maintained baseline checkout."""
+    """Run a query-only Canopy command against a maintained baseline checkout."""
     args = _build_parser().parse_args(argv)
 
     if shutil.which("canopy") is None:
@@ -238,10 +304,19 @@ def main(argv: list[str] | None = None) -> int:
 
     _print_baseline_state(baseline)
     command = build_canopy_command(args)
-    completed = subprocess.run(command, cwd=baseline, check=False)
+    try:
+        with baseline_query_lock(baseline):
+            completed = subprocess.run(command, cwd=baseline, check=False)
+    except TimeoutError as exc:
+        print(
+            f"CANOPY_UNAVAILABLE: {exc}; fall back without provisioning it.",
+            file=sys.stderr,
+        )
+        return UNAVAILABLE_EXIT
+
     if completed.returncode != 0:
         print(
-            "CANOPY_UNAVAILABLE: read-only Canopy query failed; "
+            "CANOPY_UNAVAILABLE: query-only Canopy command failed; "
             "fall back without init/index/reindex/model changes.",
             file=sys.stderr,
         )

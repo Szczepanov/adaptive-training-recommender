@@ -3,8 +3,11 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import pytest
+
 from agent_canopy import (
     Worktree,
+    baseline_query_lock,
     build_canopy_command,
     find_baseline_worktree,
     parse_worktree_porcelain,
@@ -14,9 +17,10 @@ from agent_canopy import (
 def _make_index(worktree: Path) -> None:
     canopy = worktree / ".canopy"
     canopy.mkdir(parents=True)
-    (canopy / "canopy.toml").write_text("[indexing]\nlast_sha = \"abc\"\n", encoding="utf-8")
+    (canopy / "canopy.toml").write_text('[indexing]\nlast_sha = "abc"\n', encoding="utf-8")
     (canopy / "store.redb").write_bytes(b"store")
     (canopy / "vectors.idx").write_bytes(b"vectors")
+    (canopy / "vectors.idx.chunks.usearch").write_bytes(b"hnsw")
 
 
 def test_parse_worktree_porcelain_preserves_paths_and_branches() -> None:
@@ -74,6 +78,37 @@ def test_find_baseline_does_not_bootstrap_missing_main_index(tmp_path: Path) -> 
     assert reason is not None
     assert "missing" in reason
     assert not (main / ".canopy").exists()
+
+
+def test_find_baseline_rejects_missing_vector_sidecar(tmp_path: Path) -> None:
+    main = tmp_path / "main"
+    feature = tmp_path / "feature"
+    main.mkdir()
+    feature.mkdir()
+    _make_index(main)
+    (main / ".canopy" / "vectors.idx.chunks.usearch").unlink()
+
+    baseline, reason = find_baseline_worktree(
+        feature,
+        worktrees=[
+            Worktree(feature, "feature-sha", "refs/heads/feature"),
+            Worktree(main, "main-sha", "refs/heads/main"),
+        ],
+    )
+
+    assert baseline is None
+    assert reason is not None
+    assert "vectors.idx.chunks.usearch" in reason
+
+
+def test_baseline_query_lock_serializes_consumers(tmp_path: Path) -> None:
+    with baseline_query_lock(tmp_path):
+        with pytest.raises(TimeoutError, match="Canopy baseline is busy"):
+            with baseline_query_lock(tmp_path, timeout_seconds=0.01):
+                pass
+
+    with baseline_query_lock(tmp_path, timeout_seconds=0.01):
+        pass
 
 
 def test_explicit_baseline_requires_existing_index(tmp_path: Path) -> None:

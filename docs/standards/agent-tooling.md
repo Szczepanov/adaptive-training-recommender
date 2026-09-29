@@ -82,7 +82,7 @@ Route repository questions by evidence shape:
 | Question | Preferred route |
 |---|---|
 | Exact symbol/string/error/path is known | `rg`/text search, then direct read |
-| Behavior is known but repository vocabulary/location is unknown | one read-only `scripts/agent_canopy.py search` attempt; then scoped `jev find` if still ambiguous |
+| Behavior is known but repository vocabulary/location is unknown | one query-only `scripts/agent_canopy.py search` attempt; then scoped `jev find` if still ambiguous |
 | Known file/subsystem; one semantic property needs multiple substantial reads | one narrowly scoped atomic `jev ask`; otherwise targeted direct read |
 | Call-graph orientation after discovery | `canopy map` / `canopy trace` as advisory hints |
 | Type/signature change; need complete impact list | compiler (`tsc -b` / `mypy`) |
@@ -93,7 +93,7 @@ Route repository questions by evidence shape:
 Canopy is primarily a **local semantic locator**, not source authority and not a replacement for
 lexical lookup.
 
-Coding agents should invoke Canopy through the repository-owned read-only bridge:
+Coding agents should invoke Canopy through the repository-owned query-only bridge:
 
 ```bash
 python scripts/agent_canopy.py search "where is this behavior implemented?"
@@ -103,9 +103,9 @@ python scripts/agent_canopy.py status
 ```
 
 The bridge discovers a checked-out `main`/`master` worktree, or accepts
-`AGENT_CANOPY_BASELINE_WORKTREE` / `--baseline-worktree`, validates that the generated index
-already exists, and then runs only read-only Canopy commands from that baseline checkout. It never
-creates/mutates the index. Exit code 3 plus `CANOPY_UNAVAILABLE` explicitly means: **continue with
+`AGENT_CANOPY_BASELINE_WORKTREE` / `--baseline-worktree`, validates that the complete generated index already exists (including the HNSW sidecar), and
+then runs only query/non-maintenance Canopy commands from that baseline checkout. It never invokes
+`init`, `index`, `reindex`, `clean`, or configuration/model mutation. Exit code 3 plus `CANOPY_UNAVAILABLE` explicitly means: **continue with
 fallback evidence and do not troubleshoot/provision Canopy during the task**.
 
 - Use `python scripts/agent_canopy.py search "<behavior>"` for vocabulary-gap questions where the
@@ -153,6 +153,13 @@ Index provisioning is infrastructure maintenance, not issue/PR setup.
 - Never symlink/copy one **writable** `.canopy/` directory across concurrent worktrees. Canopy's
   store, vector indexes, configuration/indexed SHA, and incremental updates are mutable state; give
   one maintenance owner exclusive write responsibility.
+- Upstream Canopy currently opens `store.redb` with `Database::create` and an initialization write
+  transaction even for query/status/map/trace paths. Therefore **query-only is a command-surface
+  guarantee, not an OS/filesystem read-only guarantee**. `agent_canopy.py` serializes its consumers
+  with a baseline-scoped lock; explicit index maintenance must not overlap those queries.
+- A usable search index requires both the `vectors.idx` dimensions header and
+  `vectors.idx.chunks.usearch` HNSW sidecar. The wrapper treats either missing artifact as
+  `CANOPY_UNAVAILABLE` rather than allowing an apparently successful empty search.
 - If no pre-existing usable Canopy index is available, proceed immediately with `rg`, direct
   reads, repository docs/tests, compiler evidence, and scoped Jev where appropriate. Missing Canopy
   must never block a task.
@@ -176,7 +183,7 @@ property would otherwise require inspecting multiple substantial source regions/
 atomic Jev question before doing that broad reading. Typical issue work should use 0–3 Jev calls;
 additional calls should correspond to distinct unresolved properties, not repeated discovery.
 
-For unknown implementation location, Jev `find` is the second opinion after the read-only Canopy
+For unknown implementation location, Jev `find` is the second opinion after the query-only Canopy
 attempt is unavailable or materially ambiguous—not a mandatory duplicate search.
 
 - Prefer one independently testable semantic property per `jev ask`. Split compound questions
