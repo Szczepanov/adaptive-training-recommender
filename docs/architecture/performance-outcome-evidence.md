@@ -302,8 +302,8 @@ $$\text{Series} = (\text{protocolId}, \text{protocolRevision}, \text{metricId}, 
 ## Exports and body-mass-relative context (WP7.1, WP3.4, D8)
 
 * **Normalized CSV export (`app/src/observations/assessmentCsvExport.ts`):** Emits standard CSV rows with
-  deterministic sorting and 23 canonical columns, including comparison series keys, validity, deltas,
-  and relative context.
+  deterministic sorting and 24 canonical columns, including comparison series keys, validity, deltas,
+  and relative context with the exact body-mass source reference.
 * **Diagnostic JSON export (`assessment_diagnostic_export_v2`):** Schema version 2 groups progress per series
   rather than per protocol revision, preventing multi-setup comparisons from collapsing into a single series.
 * **Body-mass-relative context (`app/src/anthropometry/bodyMass.ts`):** Relative metrics (sprint W/kg and
@@ -311,7 +311,9 @@ $$\text{Series} = (\text{protocolId}, \text{protocolRevision}, \text{metricId}, 
   source choice never silently switches. With no explicit choice, `D-BC-WEIGHT` is provider-first and uses manual
   only when no usable provider series exists; once a source is selected for the read, a missing same-day point does
   **not** fall back to the other source. Values are never averaged and stale provider carry-forwards are never used.
-  If no acceptable same-day record exists, relative context renders `"unavailable"`.
+  The chosen context retains a stable canonical source reference (`anthropometry_entry:<id>` or
+  `daily_recovery_snapshot:<date>`) for audit/export. If no acceptable same-day record exists, relative context
+  renders `"unavailable"`.
 
 ## Not implemented yet
 
