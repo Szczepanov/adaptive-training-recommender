@@ -173,6 +173,7 @@ describe('TrialCaptureTable', () => {
     it('renders raw-video reminder on strength protocols without implying cloud video storage', () => {
         const html = renderToStaticMarkup(
             <TrialCaptureTable
+                userId="user-1"
                 protocol={BENCH_PRESS_1RM_PROTOCOL}
                 attempt={attempt}
                 contextValues={{ grip_style: 'standard', rack_setting: 'pin-5' }}
@@ -200,6 +201,7 @@ describe('TrialCaptureTable', () => {
 
         const html = renderToStaticMarkup(
             <TrialCaptureTable
+                userId="user-1"
                 protocol={WALL_TOUCH_CMJ_PROTOCOL}
                 attempt={cmjAttempt}
                 contextValues={{ wall_surface: 'smooth-brick' }}
@@ -237,6 +239,7 @@ describe('TrialCaptureTable', () => {
 
         const html = renderToStaticMarkup(
             <TrialCaptureTable
+                userId="user-1"
                 protocol={STANDING_BROAD_JUMP_PROTOCOL}
                 attempt={jumpAttempt}
                 contextValues={{ test_environment: 'indoor-gym-floor' }}

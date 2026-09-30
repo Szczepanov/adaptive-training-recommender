@@ -209,7 +209,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                 if (openAttempt.state !== 'abandoned') {
                     await assessmentAttemptService.abandonAttempt(userId, openAttempt.id, 'Linked execution was abandoned.');
                 }
-                clearAssessmentDraft(openAttempt.id);
+                clearAssessmentDraft(userId, openAttempt.id);
                 setAttempt({ ...openAttempt, state: 'abandoned' });
                 setStage('abandoned');
             })
@@ -336,7 +336,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
             terminalHandled.current = next.executionId;
             try {
                 await assessmentAttemptService.abandonAttempt(userId, attempt.id, 'Session execution abandoned.');
-                clearAssessmentDraft(attempt.id);
+                clearAssessmentDraft(userId, attempt.id);
                 setAttempt(current => current ? { ...current, state: 'abandoned' } : current);
             } catch (reason) {
                 setError(reason instanceof Error ? reason.message : 'Could not abandon assessment attempt.');
@@ -519,7 +519,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
         // startTest builds a brand-new attempt id (createAssessmentAttemptId mints
         // Date.now()/random entropy), so the abandoned attempt stays abandoned -- no
         // execution or persistence semantic change.
-        if (attempt) clearAssessmentDraft(attempt.id);
+        if (attempt) clearAssessmentDraft(userId, attempt.id);
         setAttempt(null);
         setExecution(null);
         setSaved([]);
@@ -661,6 +661,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
             {protocol && attempt && stage === 'capture' && (
                 protocol.capture ? (
                     <TrialCaptureTable
+                        userId={userId}
                         protocol={protocol}
                         attempt={attempt}
                         contextValues={contextValues}

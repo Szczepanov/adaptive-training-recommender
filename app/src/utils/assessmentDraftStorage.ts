@@ -6,7 +6,8 @@ import type {
 
 /**
  * Unsaved trial-capture rows for one assessment attempt. Drafts hold personal performance data,
- * so they live only until the attempt is saved or abandoned, or the user signs out.
+ * so persisted keys are Firebase-UID-scoped and live only until the attempt is saved or abandoned,
+ * or the user signs out.
  */
 export interface DraftTrialRow {
     ordinal: number;
@@ -19,8 +20,9 @@ export interface DraftTrialRow {
 
 const STORAGE_PREFIX = 'assessment_draft_';
 
-function draftStorageKey(attemptId: string): string {
-    return `${STORAGE_PREFIX}${attemptId}`;
+function draftStorageKey(userId: string, attemptId: string): string {
+    // ':' is percent-encoded by encodeURIComponent, so '::' is an unambiguous separator.
+    return `${STORAGE_PREFIX}${encodeURIComponent(userId)}::${encodeURIComponent(attemptId)}`;
 }
 
 const VALID_DRAFT_VALIDITIES = new Set<ObservationValidity>(['valid', 'invalid', 'practice', 'questionable']);
@@ -54,9 +56,9 @@ function isDraftRow(value: unknown): value is DraftTrialRow {
 }
 
 /** Storage can be blocked or cleared (private mode, previews); every accessor degrades to "no draft". */
-export function loadAssessmentDraft(attemptId: string): DraftTrialRow[] | null {
+export function loadAssessmentDraft(userId: string, attemptId: string): DraftTrialRow[] | null {
     try {
-        const raw = localStorage.getItem(draftStorageKey(attemptId));
+        const raw = localStorage.getItem(draftStorageKey(userId, attemptId));
         if (!raw) return null;
         const parsed: unknown = JSON.parse(raw);
         if (Array.isArray(parsed) && parsed.length > 0 && parsed.every(isDraftRow)) return parsed;
@@ -66,17 +68,17 @@ export function loadAssessmentDraft(attemptId: string): DraftTrialRow[] | null {
     return null;
 }
 
-export function saveAssessmentDraft(attemptId: string, rows: readonly DraftTrialRow[]): void {
+export function saveAssessmentDraft(userId: string, attemptId: string, rows: readonly DraftTrialRow[]): void {
     try {
-        localStorage.setItem(draftStorageKey(attemptId), JSON.stringify(rows));
+        localStorage.setItem(draftStorageKey(userId, attemptId), JSON.stringify(rows));
     } catch {
         // Storage unavailable: the draft simply does not survive a reload.
     }
 }
 
-export function clearAssessmentDraft(attemptId: string): void {
+export function clearAssessmentDraft(userId: string, attemptId: string): void {
     try {
-        localStorage.removeItem(draftStorageKey(attemptId));
+        localStorage.removeItem(draftStorageKey(userId, attemptId));
     } catch {
         // Storage unavailable: nothing was persisted.
     }

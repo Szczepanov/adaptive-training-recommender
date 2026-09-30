@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     assertValidAssessmentTrial,
     assessmentTrialIdFor,
@@ -25,6 +25,7 @@ import { CanonicalResultPreview } from './CanonicalResultPreview';
 import { TrialRow } from './TrialRow';
 
 interface TrialCaptureTableProps {
+    userId: string;
     protocol: MeasurementProtocol;
     attempt: AssessmentAttempt;
     contextValues: Record<string, string>;
@@ -35,6 +36,22 @@ interface TrialCaptureTableProps {
     saving: boolean;
     presentationHints?: PerformanceTestPresentationHints;
     initialTrials?: readonly AssessmentTrial[];
+}
+
+interface TrialCaptureRow extends DraftTrialRow {
+    /** UI-only identity: remains stable when display/storage ordinals are renumbered. */
+    clientId: string;
+}
+
+function persistedDraftRow(row: TrialCaptureRow): DraftTrialRow {
+    return {
+        ordinal: row.ordinal,
+        values: row.values,
+        validity: row.validity,
+        ...(row.invalidReason !== undefined ? { invalidReason: row.invalidReason } : {}),
+        ...(row.notes !== undefined ? { notes: row.notes } : {}),
+        ...(row.device !== undefined ? { device: row.device } : {}),
+    };
 }
 
 function normalizeDevice(device: MetricObservationDevice | undefined): MetricObservationDevice | undefined {
@@ -76,6 +93,7 @@ function draftRowsToTrials(
 }
 
 export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
+    userId,
     protocol,
     attempt,
     contextValues,
@@ -89,6 +107,11 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
 }) => {
     const capture = protocol.capture!;
     const isStrength = protocol.metricIds.includes('strength_1rm_kg');
+    const clientIdSequence = useRef(0);
+    const withClientId = useCallback((row: DraftTrialRow): TrialCaptureRow => ({
+        ...row,
+        clientId: `trial-row-${attempt.id}-${clientIdSequence.current++}`,
+    }), [attempt.id]);
 
     // Trials already persisted by an interrupted save are immutable evidence: they win over any
     // local draft for their ordinal and render read-only, so a resubmission cannot diverge.
@@ -97,8 +120,8 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
         [initialTrials],
     );
 
-    const initializeRows = useCallback((): DraftTrialRow[] => {
-        const savedDraft = loadAssessmentDraft(attempt.id);
+    const initializeRows = useCallback((): TrialCaptureRow[] => {
+        const savedDraft = loadAssessmentDraft(userId, attempt.id);
 
         if (initialTrials && initialTrials.length > 0) {
             const activeByOrdinal = new Map<number, AssessmentTrial>();
@@ -106,9 +129,9 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 const current = activeByOrdinal.get(trial.ordinal);
                 if (!current || trial.correctionIndex > current.correctionIndex) activeByOrdinal.set(trial.ordinal, trial);
             }
-            const storedRows: DraftTrialRow[] = [...activeByOrdinal.values()]
+            const storedRows: TrialCaptureRow[] = [...activeByOrdinal.values()]
                 .sort((a, b) => a.ordinal - b.ordinal)
-                .map(t => ({
+                .map(t => withClientId({
                     ordinal: t.ordinal,
                     values: t.values,
                     validity: t.validity,
@@ -116,38 +139,40 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                     notes: t.notes,
                     device: t.device,
                 }));
-            const draftOnlyRows = (savedDraft ?? []).filter(row => !activeByOrdinal.has(row.ordinal));
+            const draftOnlyRows = (savedDraft ?? [])
+                .filter(row => !activeByOrdinal.has(row.ordinal))
+                .map(withClientId);
             return [...storedRows, ...draftOnlyRows];
         }
-        if (savedDraft) return savedDraft;
+        if (savedDraft) return savedDraft.map(withClientId);
 
         const count = capture.plannedTrials;
-        const initial: DraftTrialRow[] = [];
+        const initial: TrialCaptureRow[] = [];
         for (let i = 1; i <= count; i++) {
-            initial.push({
+            initial.push(withClientId({
                 ordinal: i,
                 values: {},
                 validity: 'valid',
-            });
+            }));
         }
         return initial;
-    }, [attempt.id, capture.plannedTrials, initialTrials]);
+    }, [attempt.id, capture.plannedTrials, initialTrials, userId, withClientId]);
 
-    const [rows, setRows] = useState<DraftTrialRow[]>(initializeRows);
+    const [rows, setRows] = useState<TrialCaptureRow[]>(initializeRows);
     const [missingConfirmationRequired, setMissingConfirmationRequired] = useState(false);
     const [clientError, setClientError] = useState<string | null>(null);
 
     // Persist draft on changes
     useEffect(() => {
-        saveAssessmentDraft(attempt.id, rows);
-    }, [attempt.id, rows]);
+        saveAssessmentDraft(userId, attempt.id, rows.map(persistedDraftRow));
+    }, [attempt.id, rows, userId]);
 
     // Handle carry-forward hints (e.g. standing_reach_cm for CMJ)
     const updateRowWithCarryForward = (index: number, updated: DraftTrialRow) => {
         setRows(current => {
             if (storedOrdinals.has(current[index].ordinal)) return current;
             const next = [...current];
-            next[index] = updated;
+            next[index] = { ...updated, clientId: current[index].clientId };
 
             if (index === 0 && presentationHints?.carryForwardFieldIds) {
                 for (const fieldId of presentationHints.carryForwardFieldIds) {
@@ -184,11 +209,11 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
 
         setRows(current => [
             ...current,
-            {
+            withClientId({
                 ordinal: nextOrdinal,
                 values: carryValues,
                 validity: 'valid',
-            },
+            }),
         ]);
     };
 
@@ -241,7 +266,7 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
 
         try {
             await onSave(trials, allowMissingBenchmark);
-            clearAssessmentDraft(attempt.id);
+            clearAssessmentDraft(userId, attempt.id);
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Save failed';
             if (msg.includes('Confirmation required')) {
@@ -351,7 +376,7 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
             <div className="trial-rows-container">
                 {rows.map((row, idx) => (
                     <TrialRow
-                        key={row.ordinal}
+                        key={row.clientId}
                         row={row}
                         fields={capture.fields}
                         onChange={updated => updateRowWithCarryForward(idx, updated)}

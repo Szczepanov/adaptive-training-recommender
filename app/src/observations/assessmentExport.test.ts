@@ -319,6 +319,54 @@ describe('assessmentExport', () => {
         expect(exportData.progress[0].status).toBe('insufficient_evidence');
     });
 
+    it('keeps non-completed evidence in the diagnostic payload but excludes it from progress', () => {
+        const interruptedAttempt: AssessmentAttempt = {
+            ...attempt2,
+            id: 'att-interrupted',
+            state: 'in_progress',
+            completedAt: undefined,
+        };
+        const interruptedKey = 'att-interrupted:standing_broad_jump_distance_cm';
+        const interruptedRevision: MetricObservationRevision = {
+            ...obsRev2A,
+            observationKey: interruptedKey,
+            assessmentAttemptId: interruptedAttempt.id,
+            value: 260,
+            derivedFromEvidenceRefs: [{
+                kind: 'assessment_trial',
+                assessmentAttemptId: interruptedAttempt.id,
+                trialId: 'trial-1',
+            }],
+        };
+        const interruptedObservation: CanonicalObservationExport = {
+            observationKey: interruptedKey,
+            head: {
+                observationKey: interruptedKey,
+                assessmentAttemptId: interruptedAttempt.id,
+                metricId: 'standing_broad_jump_distance_cm',
+                headRevision: 1,
+                createdAt: interruptedRevision.createdAt,
+                updatedAt: interruptedRevision.createdAt,
+            },
+            revisions: [interruptedRevision],
+        };
+
+        const exportData = buildAssessmentDiagnosticExport({
+            exportedAt: '2026-10-25T12:00:00.000Z',
+            protocols: [STANDING_BROAD_JUMP_PROTOCOL],
+            attempts: [attempt1, interruptedAttempt],
+            trials: [],
+            canonicalObservations: [canonicalObs[0], interruptedObservation],
+            resolvedContext: [],
+        });
+
+        expect(exportData.canonicalObservations.map(item => item.observationKey)).toContain(interruptedKey);
+        expect(exportData.progress).toHaveLength(1);
+        expect(exportData.progress[0].baselineObservationId).toBe('att-1:standing_broad_jump_distance_cm');
+        expect(exportData.progress[0].latestObservationId).toBeUndefined();
+        expect(exportData.progress[0].status).toBe('insufficient_evidence');
+    });
+
     it('computes progress using deriveProgress and omits user ID from output', () => {
         const exportData = buildAssessmentDiagnosticExport({
             exportedAt: '2026-10-25T12:00:00.000Z',

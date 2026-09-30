@@ -78,6 +78,14 @@ function computeProgressForExport(
                 const headRev = obs.revisions.find(r => r.revision === obs.head.headRevision);
                 if (!headRev) continue;
                 if (headRev.protocolRef.id !== protocol.id || headRev.protocolRef.revision !== protocol.revision) continue;
+                const parentAttempt = attemptsById.get(headRev.assessmentAttemptId);
+                // Diagnostic export keeps partial/abandoned evidence for audit, but only a
+                // completed parent attempt may contribute a longitudinal benchmark/progress point.
+                if (!parentAttempt || parentAttempt.state !== 'completed') continue;
+                if (
+                    parentAttempt.protocolRef.id !== protocol.id
+                    || parentAttempt.protocolRef.revision !== protocol.revision
+                ) continue;
                 currentObservations.push({ head: obs.head, revision: headRev });
             }
 
