@@ -59,6 +59,11 @@ describe('assessmentDraftStorage', () => {
             { ordinal: 1, values: { distance_cm: 231 }, validity: 'valid', device: [] },
         ]));
         expect(loadAssessmentDraft('att-1')).toBeNull();
+
+        localStorage.setItem('assessment_draft_att-1', JSON.stringify([
+            { ordinal: 1, values: { distance_cm: 231 }, validity: 'valid', device: { model: 'WL Analysis' } },
+        ]));
+        expect(loadAssessmentDraft('att-1')).toBeNull();
     });
 
     it('clears every assessment draft on sign-out and leaves other keys alone', () => {
