@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import type { DailyRecoverySnapshot } from '../engine/models';
+import type { DailyRecoverySnapshot, TrainingSettings } from '../engine/models';
 import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
 import { formatContextBriefExport } from '../utils/contextBriefExport';
 import { CONTEXT_BRIEF_EXPORT_SCHEMA_VERSION } from '../utils/contextBriefExport';
@@ -217,7 +217,51 @@ describe('ContextBriefService', () => {
             expect(result.text).toContain('Subjective check-in for 2026-08-15: missing');
             expect(result.text).toContain('Garmin activities: available; latest none in fetched window; D-1 0 provider row(s).');
             expect(result.text).toContain('Canonical performed training: missing/no occurrence in fetched window');
+            expect(result.text).toContain('imported revision no active plan');
         }
+    });
+
+    it('keeps power telemetry capability missingness states distinct', async () => {
+        const missing = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        expect(missing.text).toContain('Power telemetry capability: missing/not configured (training settings absent).');
+
+        services.peekTrainingSettingsState.mockResolvedValue({ status: 'INVALID', issues: [] });
+        const invalid = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        expect(invalid.text).toContain('Power telemetry capability: invalid (training-settings record could not be parsed).');
+
+        services.peekTrainingSettingsState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read training settings', retryable: true });
+        const unavailable = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        expect(unavailable.text).toContain('Power telemetry capability: unavailable (training-settings read failed).');
+
+        const unsupportedSettings = {
+            userId: 'u1',
+            schemaVersion: 3,
+            equipment: {},
+            guardrails: {},
+            capabilities: { powerMeter: false },
+            defaults: { weekdayMaxMinutes: null, weekendMaxMinutes: null, environment: 'either' },
+            preferences: { preferActiveRecovery: false },
+            migration: { legacyReviewed: true, migratedAt: null },
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+        } as TrainingSettings;
+        services.peekTrainingSettingsState.mockResolvedValue({ status: 'AVAILABLE', data: unsupportedSettings, revision: 'settings-r1' });
+        const unsupported = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        expect(unsupported.text).toContain('Power telemetry capability: unsupported/not collected (configured unavailable).');
+    });
+
+    it('marks stale activity coverage explicitly in the source-currency inventory', async () => {
+        const snapshot = snapshotWithWeight(AS_OF, 73);
+        snapshot.source.metricDates = {
+            ...snapshot.source.metricDates,
+            activitiesThrough: addDaysToLocalDateString(AS_OF, -1),
+        };
+        services.getRecoverySnapshotState.mockImplementation(async (_userId: string, date: string) =>
+            date === AS_OF ? { status: 'AVAILABLE', data: snapshot } : { status: 'MISSING' });
+
+        const result = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+
+        expect(result.text).toContain('activities through 2026-08-14 (1 calendar day(s) before as-of) (stale for current day)');
     });
 
     it('keeps invalid, unavailable and genuine zero/no-record states distinct in the artifact', async () => {
@@ -265,12 +309,23 @@ describe('ContextBriefService', () => {
         const invalid = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         expect(invalid.text).toContain('Current-day plan authority inputs: recommendations invalid');
         expect(invalid.text).toContain('imported schedule invalid');
+        expect(invalid.text).toContain('imported revision invalid/unparseable');
 
         services.getRecommendationsInRange.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
         services.getActivePlanState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
         const unavailable = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         expect(unavailable.text).toContain('Current-day plan authority inputs: recommendations unavailable');
         expect(unavailable.text).toContain('imported schedule unavailable');
+        expect(unavailable.text).toContain('imported revision unavailable');
+
+        services.getRecommendationsInRange.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+        services.getActivePlanState.mockResolvedValue({
+            status: 'AVAILABLE',
+            data: { header: { planId: 'p-readable', title: 'Readable plan', revision: 7 }, placed: [] },
+        });
+        const noOccurrence = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+        expect(noOccurrence.text).toContain('imported schedule missing/no authored occurrence');
+        expect(noOccurrence.text).toContain('imported revision no current-day authored occurrence');
     });
 
     it('exports the same service-built v3 content through Markdown and the independent JSON envelope', async () => {

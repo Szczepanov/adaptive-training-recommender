@@ -320,7 +320,7 @@ function renderBoundedQualityLaps(activity: NormalizedGarminActivity, viewLabel:
         }
     }
     if (visible.length < laps.length) {
-        lines.push(`  - … ${laps.length - visible.length} additional lap(s) omitted from the ${viewLabel}; use diagnostic export for all laps.`);
+        lines.push(`  - … ${laps.length - visible.length} additional lap(s) omitted from the ${viewLabel}; use diagnostic export for a larger bounded lap view.`);
     }
     return lines;
 }
@@ -396,7 +396,7 @@ export function renderMorningQualityActivityTelemetry(activity: NormalizedGarmin
 /**
  * Block planning keeps the #811 information budget for ordinary sessions, but quality
  * cycling/running needs the same bounded execution evidence used to close the morning loop.
- * The 20-row caps preserve bounded growth; diagnostic remains the uncapped persisted view.
+ * The 20-row caps preserve bounded growth; diagnostic retains a larger bounded persisted view.
  */
 export function renderPlanningQualityActivityTelemetry(
     activities: readonly NormalizedGarminActivity[],
@@ -446,7 +446,7 @@ export function renderPlanningQualityActivityTelemetry(
 }
 
 /**
- * Full persisted activity detail for diagnostic analysis. Raw native samples remain outside
+ * Bounded persisted activity detail for diagnostic analysis. Raw native samples remain outside
  * this boundary; this renderer exposes only the bounded normalized fields already hydrated
  * on the activity document.
  */
@@ -599,7 +599,7 @@ export function renderCompactActivityTelemetry(
 /** Insert activity telemetry as a subsection at the end of the completed-training section,
  * located by title so it works in either section order. `compact` selects the bounded
  * planning representation: one-line ordinary-session digests plus bounded quality-session
- * execution detail. Diagnostic keeps the full persisted tables. The fallback append keeps
+ * execution detail. Diagnostic keeps the larger bounded persisted tables. The fallback append keeps
  * the handoff useful if the parent brief heading ever changes. */
 export function injectActivityTelemetryIntoContextBrief(
     brief: string,
@@ -610,7 +610,7 @@ export function injectActivityTelemetryIntoContextBrief(
     // Issue #814: key sessions get a semantic summary. In the compact (planning) export it
     // replaces that session's one-line digest when at least one feature produced a value;
     // the bounded quality-session execution view may still follow as supporting evidence.
-    // Diagnostic keeps every persisted table and adds the summaries after them.
+    // Diagnostic keeps the larger bounded persisted view and adds the summaries after it.
     const summaries = response ? deriveKeySessionSummaries(activities, response) : [];
     const summaryText = response ? renderKeySessionSummaries(summaries, response) : '';
     // Planning suppression must follow canonical response evidence directly rather than

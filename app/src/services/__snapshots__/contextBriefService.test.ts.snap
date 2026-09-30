@@ -17,15 +17,15 @@ Source state and currency (dates never shift the as-of date):
 - Subjective check-in for 2026-08-15: missing; latest none in fetched window; current-day subjective state stale or absent.
 - Garmin activities: available; latest 2026-08-14 (1 calendar day(s) before as-of); D-1 1 provider row(s).
 - Canonical performed training: available; latest 2026-08-14 (1 calendar day(s) before as-of).
-- Current-day plan authority inputs: recommendations missing/no recommendation (latest update none recorded); imported schedule missing/no authored occurrence; imported revision none recorded or unreadable; date 2026-08-15.
-- Power telemetry capability: unknown (not configured).
+- Current-day plan authority inputs: recommendations missing/no recommendation (latest update none recorded); imported schedule missing/no authored occurrence; imported revision no active plan; date 2026-08-15.
+- Power telemetry capability: missing/not configured (training settings absent).
 - Training-response comparisons: not applicable to this compact morning export.
 - Value states: a measured 0 is explicit zero; missing means no record; unavailable means read failure; invalid means an unparseable record; unsupported means not collected by the source; not applicable means the feature does not apply. An em dash means unmeasured, never zero.
 
 Date: 2026-08-15 (Europe/Warsaw) · Mode: Daily Morning Coach Handoff
 Context: This brief is shared daily in an ongoing chat. Focus on today's session, yesterday's debrief, and acute adaptations.
 
-> **DATA INCOMPLETE:** could not reliably read: training settings. Absence from affected sections means "unknown", not "none".
+> **DATA INCOMPLETE:** missing or unreadable source context: training settings. Absence from affected sections means "unknown", not "none".
 
 ### Resolved planning authority for 2026-08-15
 
@@ -111,14 +111,14 @@ Source state and currency (dates never shift the as-of date):
 - Subjective check-in for 2026-08-15: missing; latest none in fetched window; current-day subjective state stale or absent.
 - Garmin activities: available; latest 2026-08-14 (1 calendar day(s) before as-of); D-1 1 provider row(s).
 - Canonical performed training: available; latest 2026-08-14 (1 calendar day(s) before as-of).
-- Current-day plan authority inputs: recommendations missing/no recommendation (latest update none recorded); imported schedule missing/no authored occurrence; imported revision none recorded or unreadable; date 2026-08-15.
-- Power telemetry capability: unknown (not configured).
+- Current-day plan authority inputs: recommendations missing/no recommendation (latest update none recorded); imported schedule missing/no authored occurrence; imported revision no active plan; date 2026-08-15.
+- Power telemetry capability: missing/not configured (training settings absent).
 - Training-response comparisons: see display-only feature rows; insufficient evidence is stated per feature.
 - Value states: a measured 0 is explicit zero; missing means no record; unavailable means read failure; invalid means an unparseable record; unsupported means not collected by the source; not applicable means the feature does not apply. An em dash means unmeasured, never zero.
 
 Window: 2026-08-02 → 2026-08-15 (14 days). All dates are Europe/Warsaw calendar dates.
 Blank values ("—") mean not measured, not zero. This brief contains no raw device payloads.
-Export purpose: diagnostic — full forensic telemetry and observation-only candidate baselines. None of that detail has recommendation authority; it does not change what the app recommends.
+Export purpose: diagnostic — bounded forensic telemetry and observation-only candidate baselines. None of that detail has recommendation authority; it does not change what the app recommends.
 
 
 ## 0. Planning handoff & data currency
@@ -135,7 +135,7 @@ Export purpose: diagnostic — full forensic telemetry and observation-only cand
 > Check-in caution: no subjective check-in is available in the exported window.
 - No activity record is currently dated to the planning date. Same-day Garmin activity can lag until a post-session sync, so this is not proof that no training occurred.
 
-> **DATA INCOMPLETE:** could not reliably read: training settings. Absence from the affected sections means "unknown", not "none". Do not fill those gaps with assumptions.
+> **DATA INCOMPLETE:** missing or unreadable source context: training settings. Absence from the affected sections means "unknown", not "none". Do not fill those gaps with assumptions.
 
 ### Resolved planning authority for 2026-08-15
 
@@ -147,7 +147,7 @@ Authority order: current symptoms and safety > the app's readiness/safety adjudi
 
 A session that violates any of these cannot be executed.
 
-- Training settings unavailable. Do not assume any equipment or absence of injury.
+- Training settings are missing or unreadable. Do not assume any equipment or absence of injury.
 
 ## 2. Objective recovery (wearable)
 
@@ -196,7 +196,7 @@ Calendar-day rows preserve direction and clustering that window averages can hid
 | 2026-08-13 | — | — | — | — | — | — | — | — | — | — | — |
 | 2026-08-14 | — | — | — | — | — | — | — | — | — | — | 1 activity (1 hard) |
 | 2026-08-15 | 78 | 62 | 48 | 13 | 71 | — | 9000 | — | — | — | — |
-## 3. Completed training (recorded by the wearable)
+## 3. Completed training (canonical performed occurrences)
 
 | Date | Modality | Min | Sources | Detail |
 |---|---|---|---|---|
@@ -235,7 +235,7 @@ Read-only status. \`confirmed\` = completed in this window; \`planned\` = import
 - Unilateral lower-body: unknown · no canonical exposure model yet (#803)
 - Long aerobic anchor: unknown · no canonical exposure model yet (#806)
 - Hamstring knee-flexion / calf-soleus / grip-carry: unknown · no canonical exposure model yet (no issue yet)
-- Note: Training settings unavailable: safety suspensions are unknown, not absent.
+- Note: Training settings missing or unreadable: safety suspensions are unknown, not absent.
 
 
 ### Detailed activity telemetry
@@ -314,8 +314,8 @@ Source state and currency (dates never shift the as-of date):
 - Subjective check-in for 2026-08-15: missing; latest none in fetched window; current-day subjective state stale or absent.
 - Garmin activities: available; latest 2026-08-14 (1 calendar day(s) before as-of); D-1 1 provider row(s).
 - Canonical performed training: available; latest 2026-08-14 (1 calendar day(s) before as-of).
-- Current-day plan authority inputs: recommendations missing/no recommendation (latest update none recorded); imported schedule missing/no authored occurrence; imported revision none recorded or unreadable; date 2026-08-15.
-- Power telemetry capability: unknown (not configured).
+- Current-day plan authority inputs: recommendations missing/no recommendation (latest update none recorded); imported schedule missing/no authored occurrence; imported revision no active plan; date 2026-08-15.
+- Power telemetry capability: missing/not configured (training settings absent).
 - Training-response comparisons: see display-only feature rows; insufficient evidence is stated per feature.
 - Value states: a measured 0 is explicit zero; missing means no record; unavailable means read failure; invalid means an unparseable record; unsupported means not collected by the source; not applicable means the feature does not apply. An em dash means unmeasured, never zero.
 
@@ -338,7 +338,7 @@ Export purpose: planning — sections are ordered by decision authority; forensi
 > Check-in caution: no subjective check-in is available in the exported window.
 - No activity record is currently dated to the planning date. Same-day Garmin activity can lag until a post-session sync, so this is not proof that no training occurred.
 
-> **DATA INCOMPLETE:** could not reliably read: training settings. Absence from the affected sections means "unknown", not "none". Do not fill those gaps with assumptions.
+> **DATA INCOMPLETE:** missing or unreadable source context: training settings. Absence from the affected sections means "unknown", not "none". Do not fill those gaps with assumptions.
 
 ### Resolved planning authority for 2026-08-15
 
@@ -350,7 +350,7 @@ Authority order: current symptoms and safety > the app's readiness/safety adjudi
 
 A session that violates any of these cannot be executed.
 
-- Training settings unavailable. Do not assume any equipment or absence of injury.
+- Training settings are missing or unreadable. Do not assume any equipment or absence of injury.
 
 ## 2. Current training intent & goals
 
@@ -408,7 +408,7 @@ Calendar-day rows preserve direction and clustering that window averages can hid
 | 2026-08-13 | — | — | — | — | — | — | — | — | — | — | — |
 | 2026-08-14 | — | — | — | — | — | — | — | — | — | — | 1 activity (1 hard) |
 | 2026-08-15 | 78 | 62 | 48 | 13 | 71 | — | 9000 | — | — | — | — |
-## 5. Completed training (recorded by the wearable)
+## 5. Completed training (canonical performed occurrences)
 
 | Date | Modality | Min | Sources | Detail |
 |---|---|---|---|---|
@@ -441,7 +441,7 @@ Read-only status. \`confirmed\` = completed in this window; \`planned\` = import
 - Unilateral lower-body: unknown · no canonical exposure model yet (#803)
 - Long aerobic anchor: unknown · no canonical exposure model yet (#806)
 - Hamstring knee-flexion / calf-soleus / grip-carry: unknown · no canonical exposure model yet (no issue yet)
-- Note: Training settings unavailable: safety suspensions are unknown, not absent.
+- Note: Training settings missing or unreadable: safety suspensions are unknown, not absent.
 
 
 ### Key-session telemetry (compact)

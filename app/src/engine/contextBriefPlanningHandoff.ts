@@ -447,7 +447,7 @@ function renderDataHandoff(input: ContextBriefPlanningHandoffInput, today: Today
 
     if (input.unavailableSources.length > 0) {
         lines.push('');
-        lines.push(`> **DATA INCOMPLETE:** could not reliably read: ${input.unavailableSources.join('; ')}. Absence from the affected sections means "unknown", not "none". Do not fill those gaps with assumptions.`);
+        lines.push(`> **DATA INCOMPLETE:** missing or unreadable source context: ${input.unavailableSources.join('; ')}. Absence from the affected sections means "unknown", not "none". Do not fill those gaps with assumptions.`);
     }
 
     // The resolved authority block precedes all descriptive telemetry: this handoff is
@@ -721,7 +721,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
     ];
 
     if (input.unavailableSources.length > 0) {
-        lines.push('', `> **DATA INCOMPLETE:** could not reliably read: ${input.unavailableSources.join('; ')}. Absence from affected sections means "unknown", not "none".`);
+        lines.push('', `> **DATA INCOMPLETE:** missing or unreadable source context: ${input.unavailableSources.join('; ')}. Absence from affected sections means "unknown", not "none".`);
     }
 
     lines.push('', todayAuthority.block);
@@ -863,8 +863,10 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
             lines.push(...renderMorningQualityActivityTelemetry(act));
         }
         if (yesterdayActivities.length > 6) lines.push(`- ${yesterdayActivities.length - 6} additional Garmin fallback rows omitted (morning cap 6).`);
-    } else if (input.performedFacts === null || input.activitiesReadable === false) {
+    } else if (input.performedFacts === null) {
         lines.push('- Recorded training: unknown — canonical occurrence read failed; no Garmin rows were available as fallback.');
+    } else if (input.activitiesReadable === false) {
+        lines.push('- Recorded training: unknown — canonical occurrence read found no D-1 occurrence, but provider activity evidence was unreadable; provider-only training may be missing.');
     } else {
         lines.push('- Recorded training: No recorded sessions in this window.');
     }
@@ -897,8 +899,10 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
     if (adherenceDelta) {
         lines.push(`- Adherence Delta: **${adherenceDelta.delta}**`);
         if (adherenceDelta.alert) lines.push(`> **⚠️ ADHERENCE ALERT:** ${adherenceDelta.alert}`);
-    } else if (input.performedFacts === null || input.activitiesReadable === false) {
+    } else if (input.performedFacts === null) {
         lines.push('- Adherence Delta: not computable — canonical performed-training facts unreadable.');
+    } else if (input.activitiesReadable === false) {
+        lines.push('- Adherence Delta: not computable — provider activity evidence unreadable; canonical occurrence read succeeded, but provider-only/additional work and intensity evidence may be missing.');
     } else if (adherenceEvidence?.reason) {
         lines.push(`- Adherence Delta: insufficient evidence — ${adherenceEvidence.reason}.`);
     } else if (input.recommendationsReadable) {

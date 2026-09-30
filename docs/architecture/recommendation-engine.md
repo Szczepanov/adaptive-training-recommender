@@ -181,16 +181,17 @@ full zone tables are retained only when there is no interval/segment table to ma
 redundant. Running uses running dynamics and bounded lap pace/power/HR evidence with the same
 morning zone-suppression rule. This running telemetry is observational and does not establish a
 controlled longitudinal pace–HR comparison. The `planning` and `diagnostic` purposes retain their existing
-richer provenance/zone contracts, with diagnostic remaining the uncapped persisted view. This
-remains display-only and ordinary endurance/recovery sessions keep the one-line morning summary.
+richer provenance/zone contracts, with diagnostic retaining the larger bounded persisted view
+defined by the export-purpose caps. This remains display-only and ordinary endurance/recovery
+sessions keep the one-line morning summary.
 
 A session is a *key session* when at least one feature produced a value, or when it is a
 steady session with no comparable prior session (its rejection reasons are stated). In the
 planning export a key session's semantic summary replaces its one-line telemetry digest only
 when at least one feature produced a value; for quality cycling/running the bounded execution
 detail can still follow because it exposes the performed evidence behind that interpretation.
-The diagnostic export keeps every persisted lap/zone/response row and adds the summaries
-after them. Prior sessions are searched only in the activities
+The diagnostic export keeps a larger bounded lap/zone/response view, with explicit omission
+counts when purpose caps apply, and adds the summaries after it. Prior sessions are searched only in the activities
 `ContextBriefService.build` already fetched (from `activityStart`, at least the 28-day
 sensor-evidence horizon), and the output states that start date. Missing or incomparable
 evidence produces `insufficient_evidence` with a reason, never an estimate.

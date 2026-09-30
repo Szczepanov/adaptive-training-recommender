@@ -172,7 +172,7 @@ function lastNDates(endDateInclusive: string, days: number): string[] {
 function renderConstraints(settings: TrainingSettings | null, preferences: UserPreferences | null, asOfDate: string): string[] {
     const lines: string[] = ['## 1. Constraints', '', 'A session that violates any of these cannot be executed.', ''];
     if (!settings) {
-        lines.push('- Training settings unavailable. Do not assume any equipment or absence of injury.');
+        lines.push('- Training settings are missing or unreadable. Do not assume any equipment or absence of injury.');
         return lines;
     }
 
@@ -406,7 +406,7 @@ function renderTraining(
 
     if (canonical) {
         if (options?.activitiesReadable === false) {
-            lines.push('> Provider activity read failed; canonical structured rows are visible, but provider-only training and totals may be incomplete.', '');
+            lines.push('> Provider activity read failed; canonical occurrence rows are visible, but provider telemetry and provider-only training not yet reconciled into canonical occurrences may be missing; totals may be incomplete.', '');
         }
         if (windowFacts.length === 0) {
             lines.push('No recorded sessions in this window (canonical performed-training facts).');
@@ -921,7 +921,7 @@ export function buildContextBrief(input: ContextBriefInput): string {
     const purposeNote = planningOrder
         ? ['Export purpose: planning — sections are ordered by decision authority; forensic telemetry and '
             + 'experimental candidate baselines are summarized or omitted (request the diagnostic export for them).']
-        : ['Export purpose: diagnostic — full forensic telemetry and observation-only candidate baselines. '
+        : ['Export purpose: diagnostic — bounded forensic telemetry and observation-only candidate baselines. '
             + 'None of that detail has recommendation authority; it does not change what the app recommends.'];
 
     const sections: string[][] = [

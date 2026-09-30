@@ -129,6 +129,23 @@ describe('context brief contract identity (#894)', () => {
         expect(duplicate).toContain('Unmatched Garmin row: 2026-09-09');
     });
 
+    it('distinguishes unreadable provider evidence from unreadable canonical facts in morning adherence', () => {
+        const providerUnavailable = buildMorningCoachBrief(morningInput({
+            performedFacts: [],
+            activitiesReadable: false,
+        }));
+        expect(providerUnavailable).toContain('canonical occurrence read found no D-1 occurrence, but provider activity evidence was unreadable');
+        expect(providerUnavailable).toContain('Adherence Delta: not computable — provider activity evidence unreadable; canonical occurrence read succeeded');
+        expect(providerUnavailable).not.toContain('canonical occurrence read failed');
+
+        const canonicalUnavailable = buildMorningCoachBrief(morningInput({
+            performedFacts: null,
+            activitiesReadable: true,
+        }));
+        expect(canonicalUnavailable).toContain('canonical occurrence read failed');
+        expect(canonicalUnavailable).toContain('Adherence Delta: not computable — canonical performed-training facts unreadable.');
+    });
+
     it('does not move a provider-local D-1 row from its canonical D0 occurrence', () => {
         const providerRow: NormalizedGarminActivity = {
             activityId: 'warsaw-boundary', date: '2026-09-09', type: 'cycling', durationMin: 45,

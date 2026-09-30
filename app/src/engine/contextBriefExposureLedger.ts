@@ -523,7 +523,7 @@ export function deriveExposureLedger(input: ExposureLedgerInput): ExposureLedger
     if (input.performedFacts === null) notes.push('Canonical performed-training facts were unreadable: in-app structured sessions may be missing.');
     if (input.activityOverrides === null) notes.push('Athlete reclassifications were unreadable: rows show the recorded classification.');
     if (input.plannedSessions === null) notes.push('The future plan was not fully readable: `planned` may be incomplete.');
-    if (!safety.known) notes.push('Training settings unavailable: safety suspensions are unknown, not absent.');
+    if (!safety.known) notes.push('Training settings missing or unreadable: safety suspensions are unknown, not absent.');
     return {
         stressors: [...meaningful.map(stressorOf), ...factOnlyStressors(input, events)]
             .sort((a, b) => a.date.localeCompare(b.date)),
