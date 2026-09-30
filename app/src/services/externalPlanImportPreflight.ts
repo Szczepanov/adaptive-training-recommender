@@ -130,7 +130,7 @@ export async function preflightExternalPlanImport(
         }
         if (state.data.plan.planId === plan.planId
             && state.data.placement?.assignments.some(item => item.status === 'moved' || item.status === 'dropped')
-            && !findings.some(item => item.kind === 'placement' && item.detail.includes('existing placement overlay'))) {
+            && !findings.some(item => item.kind === 'placement' && item.detail.includes('existing confirmed placement overlay'))) {
             findings.push({ kind: 'placement', date: activeDates[index], detail: 'Importing this revision resets an existing confirmed placement overlay.' });
         }
     }
