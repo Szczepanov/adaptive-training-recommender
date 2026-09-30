@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import type { DailyRecoverySnapshot } from '../engine/models';
+import type { DailyRecoverySnapshot, TrainingSettings } from '../engine/models';
 import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
+import { formatContextBriefExport } from '../utils/contextBriefExport';
+import { CONTEXT_BRIEF_EXPORT_SCHEMA_VERSION } from '../utils/contextBriefExport';
+import { CONTEXT_BRIEF_CONTRACT_VERSION } from '../engine/contextBriefContract';
+import { stripBriefContractEphemeral } from '../engine/contextBriefContract';
 
 const services = vi.hoisted(() => ({
     getRecoverySnapshotState: vi.fn(),
@@ -153,7 +157,7 @@ describe('ContextBriefService', () => {
         expect(result.text).toContain('completed exposures are unknown, not absent');
     });
 
-    it('reports unreadable performed facts and skips ledger-only reads for the morning brief', async () => {
+    it('reports unreadable performed facts and reads them for morning while skipping ledger-only reads', async () => {
         services.getPerformedTrainingFactsInRange.mockRejectedValue(new Error('down'));
         const full = await new ContextBriefService().build('u1', AS_OF, 14);
         expect(services.getOverridesSinceState).toHaveBeenCalledWith('u1', '2026-08-02');
@@ -163,7 +167,276 @@ describe('ContextBriefService', () => {
         services.getPerformedTrainingFactsInRange.mockClear();
         await new ContextBriefService().build('u1', AS_OF, 2);
         expect(services.getOverridesSinceState).not.toHaveBeenCalled();
-        expect(services.getPerformedTrainingFactsInRange).not.toHaveBeenCalled();
+        expect(services.getPerformedTrainingFactsInRange).toHaveBeenCalledWith('u1', '2026-08-13', '2026-08-16', { preloadedActivities: [], includeDisplayProvenance: true });
+    });
+
+    it('keeps the D-1 morning contract for a one-day caller request', async () => {
+        const result = await new ContextBriefService().build('u1', AS_OF, 1, 'daily');
+
+        expect(result.text).toContain('Retrospective detail window: 2026-08-14 → 2026-08-15 (2 days)');
+        expect(result.text).toContain('Yesterday\'s Closed-Loop Debrief (2026-08-14)');
+        expect(services.getRecommendationsInRange).toHaveBeenCalledWith('u1', '2026-08-14', '2026-08-16');
+        expect(services.getPerformedTrainingFactsInRange).toHaveBeenCalledWith(
+            'u1', '2026-08-13', '2026-08-16', { preloadedActivities: [], includeDisplayProvenance: true },
+        );
+    });
+
+    it('uses a D-2 canonical occurrence to exclude its D-1 provider-local row from morning training', async () => {
+        services.getActivitiesInRange.mockResolvedValue({
+            status: 'AVAILABLE',
+            data: [{
+                activityId: 'late-provider-row', date: '2026-08-14', type: 'cycling', durationMin: 45,
+                trainingEffectAerobic: 2, trainingEffectAnaerobic: 0, averageHr: 130,
+                activityTrainingLoad: 50, intensityTag: 'easy',
+            }],
+            revision: 'activities-r1',
+        });
+        services.getPerformedTrainingFactsInRange.mockResolvedValue({
+            asOfDate: AS_OF, windowDays: 3, revision: 'facts-r1', coverageCredits: [],
+            exposures: [{
+                performedOccurrenceId: 'session-on-D2', localDate: '2026-08-13',
+                durationMin: 45, modality: 'Cycling', confidence: 'exact',
+                sourceKinds: ['provider_activity'], evidenceTier: 'genericModalityFallback',
+                providerActivityIds: ['late-provider-row'],
+            }],
+        });
+
+        const result = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+
+        expect(result.text).toContain('Provider-local D-1 row(s) assigned to another canonical date: 1; excluded from D-1 training and adherence. late-provider-row');
+        expect(result.text).not.toContain('45 min · Cycling · provider activity');
+    });
+
+    it('carries source states and dates into both delivered purposes', async () => {
+        services.getRecoverySnapshotState.mockImplementation(async (_userId: string, date: string) =>
+            date === '2026-08-14' ? { status: 'AVAILABLE', data: snapshotWithWeight(date, 73) } : { status: 'MISSING' });
+        for (const [windowDays, preset] of [[2, 'daily'], [14, 'full']] as const) {
+            const result = await new ContextBriefService().build('u1', AS_OF, windowDays, preset);
+            expect(result.text).toContain('Source state and currency (dates never shift the as-of date):');
+            expect(result.text).toContain('Recovery snapshot for 2026-08-15: missing; latest 2026-08-14 (1 calendar day(s) before as-of); current-day state stale or absent; source schema 3, baseline computation 2');
+            expect(result.text).toContain('Subjective check-in for 2026-08-15: missing');
+            expect(result.text).toContain('Garmin activities: available; latest none in fetched window; D-1 0 provider row(s).');
+            expect(result.text).toContain('Canonical performed training: missing/no occurrence in fetched window');
+            expect(result.text).toContain('imported revision no active plan');
+        }
+    });
+
+    it('keeps power telemetry capability missingness states distinct', async () => {
+        const missing = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        expect(missing.text).toContain('Power telemetry capability: missing/not configured (training settings absent).');
+
+        services.peekTrainingSettingsState.mockResolvedValue({ status: 'INVALID', issues: [] });
+        const invalid = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        expect(invalid.text).toContain('Power telemetry capability: invalid (training-settings record could not be parsed).');
+
+        services.peekTrainingSettingsState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read training settings', retryable: true });
+        const unavailable = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        expect(unavailable.text).toContain('Power telemetry capability: unavailable (training-settings read failed).');
+
+        const unsupportedSettings = {
+            userId: 'u1',
+            schemaVersion: 3,
+            equipment: {},
+            guardrails: {},
+            capabilities: { powerMeter: false },
+            defaults: { weekdayMaxMinutes: null, weekendMaxMinutes: null, environment: 'either' },
+            preferences: { preferActiveRecovery: false },
+            migration: { legacyReviewed: true, migratedAt: null },
+            createdAt: '2026-01-01T00:00:00Z',
+            updatedAt: '2026-01-01T00:00:00Z',
+        } as TrainingSettings;
+        services.peekTrainingSettingsState.mockResolvedValue({ status: 'AVAILABLE', data: unsupportedSettings, revision: 'settings-r1' });
+        const unsupported = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        expect(unsupported.text).toContain('Power telemetry capability: unsupported/not collected (configured unavailable).');
+    });
+
+    it('marks stale activity coverage explicitly in the source-currency inventory', async () => {
+        const snapshot = snapshotWithWeight(AS_OF, 73);
+        snapshot.source.metricDates = {
+            ...snapshot.source.metricDates,
+            activitiesThrough: addDaysToLocalDateString(AS_OF, -1),
+        };
+        services.getRecoverySnapshotState.mockImplementation(async (_userId: string, date: string) =>
+            date === AS_OF ? { status: 'AVAILABLE', data: snapshot } : { status: 'MISSING' });
+
+        const result = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+
+        expect(result.text).toContain('activities through 2026-08-14 (1 calendar day(s) before as-of) (stale for current day)');
+    });
+
+    it('keeps invalid, unavailable and genuine zero/no-record states distinct in the artifact', async () => {
+        services.getRecoverySnapshotState.mockImplementation(async (_userId: string, date: string) =>
+            date === AS_OF ? { status: 'INVALID', issues: [] } : { status: 'MISSING' });
+        services.getCheckinsInRange.mockResolvedValue([{ date: AS_OF, readiness: 'not-a-score' }]);
+        services.getActivitiesInRange.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+        const failed = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        expect(failed.text).toContain('Recovery snapshot for 2026-08-15: invalid');
+        expect(failed.text).toContain('Subjective check-in for 2026-08-15: invalid');
+        expect(failed.text.split('\n').find(line => line.includes('Recovery snapshot for 2026-08-15:'))).not.toContain('stale or absent');
+        expect(failed.text.split('\n').find(line => line.includes('Subjective check-in for 2026-08-15:'))).not.toContain('stale or absent');
+        expect(failed.text).toContain('Garmin activities: unavailable; latest unknown; D-1 unknown.');
+        expect(failed.text).toContain('Recorded training: unknown');
+        services.getActivitiesInRange.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+        const empty = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        expect(empty.text).toContain('Garmin activities: available; latest none in fetched window; D-1 0 provider row(s).');
+
+        const zeroHrv = snapshotWithWeight(AS_OF, 73);
+        zeroHrv.raw.hrvOvernightAvg = 0;
+        zeroHrv.source.metricDates = { weight: AS_OF, hrv: AS_OF };
+        services.getRecoverySnapshotState.mockImplementation(async (_userId: string, date: string) => date === AS_OF
+            ? { status: 'AVAILABLE', data: zeroHrv }
+            : { status: 'MISSING' });
+        const measuredZero = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        expect(measuredZero.text).toContain('- HRV: 0 ms');
+        expect(measuredZero.text).toContain('Subjective check-in for 2026-08-15: invalid');
+    });
+
+    it('does not describe failed current-day reads as stale or absent', async () => {
+        services.getRecoverySnapshotState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+        services.getCheckinsInRange.mockRejectedValue(new Error('read failed'));
+        const result = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        const recovery = result.text.split('\n').find(line => line.includes('Recovery snapshot for 2026-08-15:'));
+        const checkin = result.text.split('\n').find(line => line.includes('Subjective check-in for 2026-08-15:'));
+        expect(recovery).toContain('unavailable');
+        expect(checkin).toContain('unavailable');
+        expect(recovery).not.toContain('stale or absent');
+        expect(checkin).not.toContain('stale or absent');
+    });
+
+    it('preserves INVALID recommendation and active-plan reads in the source inventory', async () => {
+        services.getRecommendationsInRange.mockResolvedValue({ status: 'INVALID', issues: [] });
+        services.getActivePlanState.mockResolvedValue({ status: 'INVALID', issues: [] });
+        const invalid = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+        expect(invalid.text).toContain('Current-day plan authority inputs: recommendations invalid');
+        expect(invalid.text).toContain('imported schedule invalid');
+        expect(invalid.text).toContain('imported revision invalid/unparseable');
+
+        services.getRecommendationsInRange.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+        services.getActivePlanState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+        const unavailable = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+        expect(unavailable.text).toContain('Current-day plan authority inputs: recommendations unavailable');
+        expect(unavailable.text).toContain('imported schedule unavailable');
+        expect(unavailable.text).toContain('imported revision unavailable');
+
+        services.getRecommendationsInRange.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+        services.getActivePlanState.mockResolvedValue({
+            status: 'AVAILABLE',
+            data: { header: { planId: 'p-readable', title: 'Readable plan', revision: 7 }, placed: [] },
+        });
+        const noOccurrence = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+        expect(noOccurrence.text).toContain('imported schedule missing/no authored occurrence');
+        expect(noOccurrence.text).toContain('imported revision no current-day authored occurrence');
+    });
+
+    it('exports the same service-built v3 content through Markdown and the independent JSON envelope', async () => {
+        for (const [windowDays, preset, budget] of [[2, 'daily', 24_000], [14, 'full', 65_000], [14, 'diagnostic', 90_000]] as const) {
+            const brief = await new ContextBriefService().build('u1', AS_OF, windowDays, preset);
+            const markdown = formatContextBriefExport(brief, 'markdown');
+            const json = JSON.parse(formatContextBriefExport(brief, 'json', '2026-08-15T10:00:00.000Z'));
+            expect(markdown).toBe(brief.text);
+            expect(json.schemaVersion).toBe(CONTEXT_BRIEF_EXPORT_SCHEMA_VERSION);
+            expect(json.contractVersion).toBe(CONTEXT_BRIEF_CONTRACT_VERSION);
+            expect(json.content).toBe(markdown);
+            expect(markdown).toContain('Source state and currency');
+            expect(markdown.split('\n').filter(line => /^(Contract version|Purpose|As-of date|Retrospective detail window):/.test(line))).toEqual([
+                `Contract version: ${CONTEXT_BRIEF_CONTRACT_VERSION}`,
+                `Purpose: ${brief.purpose}`,
+                `As-of date: ${AS_OF} (Europe/Warsaw calendar date)`,
+                `Retrospective detail window: ${windowDays === 2 ? '2026-08-14' : '2026-08-02'} → ${AS_OF} (${windowDays} days)`,
+            ]);
+            expect(markdown.length).toBeLessThan(budget);
+        }
+    });
+
+    it.each([
+        [2, 'daily', 'morning', 24_000],
+        [14, 'full', 'planning', 65_000],
+        [14, 'diagnostic', 'diagnostic', 90_000],
+    ] as const)('golden service artifact: %s-day %s export', async (windowDays, preset, purpose, budget) => {
+        const yesterday = addDaysToLocalDateString(AS_OF, -1);
+        const session = {
+            activityId: 'ride-D1', date: yesterday, type: 'road_biking', durationMin: 62,
+            trainingEffectAerobic: 3.4, trainingEffectAnaerobic: 0.8, averageHr: 143,
+            activityTrainingLoad: 118, intensityTag: 'hard' as const, stimulusDomain: 'threshold' as const,
+            normalizedPower: 226, laps: [
+                { lapIndex: 1, durationSeconds: 900, averagePowerWatts: 210, averageHrBpm: 138 },
+                { lapIndex: 2, durationSeconds: 900, averagePowerWatts: 230, averageHrBpm: 148 },
+            ],
+        };
+        services.getRecoverySnapshotState.mockImplementation(async (_userId: string, date: string) =>
+            date === AS_OF ? { status: 'AVAILABLE', data: snapshotWithWeight(date, 73) } : { status: 'MISSING' });
+        services.getActivitiesInRange.mockResolvedValue({ status: 'AVAILABLE', data: [session], revision: 'activities-r1' });
+        services.getPerformedTrainingFactsInRange.mockResolvedValue({
+            asOfDate: AS_OF, windowDays, revision: 'facts-r1', coverageCredits: [],
+            exposures: [{
+                performedOccurrenceId: 'canonical-ride-D1', localDate: yesterday,
+                durationMin: 62, modality: 'Cycling', confidence: 'exact',
+                sourceKinds: ['provider_activity'], evidenceTier: 'genericModalityFallback',
+                providerActivityIds: ['ride-D1'],
+            }],
+        });
+
+        const brief = await new ContextBriefService().build('u1', AS_OF, windowDays, preset);
+        const markdown = formatContextBriefExport(brief, 'markdown');
+        const json = JSON.parse(formatContextBriefExport(brief, 'json', '2026-08-15T10:00:00.000Z'));
+        expect(brief.purpose).toBe(purpose);
+        expect(json.content).toBe(markdown);
+        expect(markdown).toContain('62 min');
+        expect(markdown).toContain('canonical');
+        expect(markdown).toContain('Source state and currency');
+        expect(markdown.length).toBeLessThan(budget);
+        // Snapshot covers the entire final artifact; only the generated timestamp is ephemeral.
+        expect(stripBriefContractEphemeral(markdown)).toMatchSnapshot();
+    });
+
+    it('bounds full planning and diagnostic exports with 30 activities, 100 laps and 100 segments each', async () => {
+        const activities = Array.from({ length: 30 }, (_, activityIndex) => ({
+            activityId: `dense-${String(activityIndex).padStart(2, '0')}`,
+            date: addDaysToLocalDateString(AS_OF, -(activityIndex % 14)),
+            type: 'road_biking', durationMin: 100,
+            trainingEffectAerobic: 3.2, trainingEffectAnaerobic: 0.5, averageHr: 144,
+            activityTrainingLoad: 160, intensityTag: 'hard' as const,
+            stimulusDomain: 'threshold' as const, normalizedPower: 220,
+            laps: Array.from({ length: 100 }, (_, lapIndex) => ({
+                lapIndex: lapIndex + 1, durationSeconds: 60,
+                averagePowerWatts: 220, averageHrBpm: 144,
+            })),
+            activityResponse: {
+                derivationVersion: 'multi-resolution-v1', sourceResolution: { powerSeconds: 1 },
+                segmentCountTotal: 100, segmentsTruncated: false, powerDurationPeaks: [],
+                segments: Array.from({ length: 100 }, (_, segmentIndex) => ({
+                    segmentIndex: segmentIndex + 1, segmentType: 'work' as const,
+                    identitySource: 'fit_workout_step' as const,
+                    durationSeconds: 60, averagePowerWatts: 220, evidenceConfidence: 'high' as const,
+                })),
+            },
+        }));
+        services.getActivitiesInRange.mockResolvedValue({ status: 'AVAILABLE', data: activities, revision: 'dense-r1' });
+        const morning = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+        expect(morning.text).toContain('Recorded training');
+        expect(morning.text.length).toBeLessThan(24_000);
+        const planning = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+        expect(planning.text).toContain('aggregate planning detail cap 20000 characters');
+        expect(planning.text.length).toBeLessThan(65_000);
+        const brief = await new ContextBriefService().build('u1', AS_OF, 14, 'diagnostic');
+        const json = JSON.parse(formatContextBriefExport(brief, 'json', '2026-08-15T10:00:00.000Z'));
+        expect(json.content).toBe(brief.text);
+        expect(brief.text).toContain('aggregate diagnostic detail cap 25000 characters');
+        expect(brief.text).toContain('Segments: 100');
+        expect(brief.text.length).toBeLessThan(90_000);
+    });
+
+    it('uses Warsaw calendar days for currency across the autumn DST boundary', async () => {
+        services.getRecoverySnapshotState.mockImplementation(async (_userId: string, date: string) =>
+            date === '2026-10-25' ? { status: 'AVAILABLE', data: {
+                ...snapshotWithWeight(date, 73),
+                source: { ...snapshotWithWeight(date, 73).source, metricDates: { sleep: date, steps: '2026-10-24' } },
+            } } : { status: 'MISSING' });
+        const brief = await new ContextBriefService().build('u1', '2026-10-26', 2, 'daily');
+        expect(brief.text).toContain('As-of date: 2026-10-26 (Europe/Warsaw calendar date)');
+        expect(brief.text).toContain('Recovery snapshot for 2026-10-26: missing; latest 2026-10-25 (1 calendar day(s) before as-of)');
+        expect(brief.text).toContain('Wearable metric dates: sleep 2026-10-25 (1 calendar day(s) before as-of) (stale for current day); HRV not reported; RHR not reported; D-1 steps 2026-10-24 (2 calendar day(s) before as-of) (expected 2026-10-25; stale or mismatched)');
+        expect(brief.text).toContain('Yesterday\'s Closed-Loop Debrief (2026-10-25)');
     });
 
     it('reads check-ins over a date range covering the full baseline, inclusive of asOfDate', async () => {
@@ -232,6 +505,25 @@ describe('ContextBriefService', () => {
 
             expect(result.text).toContain('D+3 · 2026-08-18: Imported session: Long aerobic support (cycling · 90–120 min · easy · priority: SUPPORTING)');
             expect(result.text).not.toContain('No fixed activities, travel blocks, or imported sessions in the next 72 hours');
+        });
+
+        it('pins imported session revision separately for each date in a changed plan', async () => {
+            services.getActivePlanState.mockImplementation(async (_userId: string, date: string) => {
+                if (date !== AS_OF && date !== '2026-08-16') return { status: 'MISSING' };
+                const revision = date === AS_OF ? 1 : 2;
+                return { status: 'AVAILABLE', data: {
+                    header: { planId: 'plan-1', title: 'Block', revision },
+                    placed: [{ date, status: 'planned', moved: false, session: {
+                        id: `s-${revision}`, title: `Revision ${revision} session`, priority: 'key',
+                        placement: { flexibility: 'fixed' },
+                        gating: { modality: 'cycling', intensity: 'easy', durationMin: 45, durationMax: 45 },
+                        prescription: { summary: `Authored revision ${revision}` },
+                    } }],
+                } };
+            });
+            const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+            expect(result.text).toContain('imported revision plan-1@1; date 2026-08-15');
+            expect(result.text).toContain('2026-08-16 | Imported plan: Block | Revision 2 session | 45 min · easy | key · fixed | revision 2');
         });
 
         it('does not widen the fetch for the full 14-day window, since it already exceeds the timeline horizon', async () => {

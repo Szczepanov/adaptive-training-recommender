@@ -155,7 +155,7 @@ describe('response summary provenance and bounds (#814 WP7)', () => {
             })),
             sourceCompleteness: { occurrenceRead: 'available', structuredExecution: 'not_linked', providerActivities: 'ambiguous' },
         };
-        const brief = '# Brief\n\n## 2. Completed training (recorded by the wearable)\n\nrows\n\n## 3. Next\n';
+        const brief = '# Brief\n\n## 2. Completed training (canonical performed occurrences)\n\nrows\n\n## 3. Next\n';
         const context = {
             history: [first, second], historyStart: '2026-08-22', checkins: NO_CHECKINS,
             asOfDate: '2026-09-20', windowStart: '2026-09-18', windowEnd: '2026-09-18', evidence: [evidence],
@@ -183,7 +183,7 @@ describe('response summary provenance and bounds (#814 WP7)', () => {
             localDate: '2026-09-17',
             sourceCompleteness: { occurrenceRead: 'available', structuredExecution: 'not_linked', providerActivities: 'partial' },
         };
-        const brief = '# Brief\n\n## 2. Completed training (recorded by the wearable)\n\nrows\n\n## 3. Next\n';
+        const brief = '# Brief\n\n## 2. Completed training (canonical performed occurrences)\n\nrows\n\n## 3. Next\n';
         const context = {
             history: [activity], historyStart: '2026-08-22', checkins: NO_CHECKINS,
             asOfDate: '2026-09-20', windowStart: '2026-09-18', windowEnd: '2026-09-18', evidence: [evidence],
@@ -425,6 +425,20 @@ describe('cardiac drift / decoupling (#814)', () => {
         expect(feature.state).toBe('available');
         expect(feature.state === 'available' && feature.observational).toBe(true);
         expect(feature.state === 'available' && feature.hrNote).toBe('HR observational only: HR authority BLOCKED (MEASUREMENT_UNAVAILABLE)');
+    });
+
+    it('qualifies verified-HR decoupling when the available aggregates cannot support a confidence grade', () => {
+        const session = steady('verified', '2026-09-18');
+        const context = { history: [session], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20' };
+        const summary = deriveKeySessionSummaries([session], context)[0];
+        expect(summary.decoupling.state).toBe('available');
+        if (summary.decoupling.state !== 'available') return;
+        const text = renderKeySessionSummaries([{
+            ...summary,
+            decoupling: { ...summary.decoupling, observational: false },
+        }], context);
+        expect(text).toContain('evidence confidence cannot be graded from HR authority and half aggregates alone');
+        expect(text).not.toContain('evidence confidence ungraded');
     });
 
     it('refuses unbalanced halves (80 + 10 min laps)', () => {
@@ -1106,6 +1120,7 @@ describe('next-day response (#814)', () => {
         const context = { history: [session], historyStart: '2026-08-22', checkins: { records: [checkin('2026-09-18', 3, 4), checkin('2026-09-19', 6, 5)], unreadableDates: [] }, asOfDate: '2026-09-20' };
         const text = renderKeySessionSummaries(deriveKeySessionSummaries([session], context), context);
         expect(text).toContain('Next morning (observational, not proof the session caused it): soreness 6 (session-day morning 3) · fatigue 5 (session-day morning 4)');
+        expect(text).toContain('day-to-day self-report comparison on the same rating scale; confidence cannot be graded from check-ins alone');
         expect(text).toContain('Main set: 3 × 11 min @ 229 / 225 / 237 W actual');
         expect(text).toContain('First→last work interval: +3.5%');
     });
@@ -1202,12 +1217,14 @@ describe('next-day response (#814)', () => {
 
 describe('planning vs diagnostic export (#814)', () => {
     const session = intervalRide([229, 225, 237]);
-    const brief = '# Brief\n\n## 2. Completed training (recorded by the wearable)\n\nrows\n\n## 3. Next\n';
+    const brief = '# Brief\n\n## 2. Completed training (canonical performed occurrences)\n\nrows\n\n## 3. Next\n';
     const context = { history: [session], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20' };
 
     it('planning keeps the semantic summary plus bounded quality execution evidence, without the compact lap digest', () => {
         const text = injectActivityTelemetryIntoContextBrief(brief, [session], true, context);
         expect(text).toContain('### Training-response features');
+        expect(text).toContain(`Evidence lineage: Garmin provider activity ${session.activityId}; canonical identity unavailable`);
+        expect(text).toContain('Display-only; comparison confidence is stated on each comparable feature.');
         expect(text).toContain('### Quality-session execution detail (bounded)');
         expect(text).toContain('| Lap | Duration | Avg power | Avg HR |');
         expect(text).toContain('| 7 | 20:00 | 130 W | 128 bpm |');
@@ -1414,6 +1431,7 @@ describe('multi-resolution semantic response (#850)', () => {
         expect(text).toContain('Prescription: 230 W (kept separate from performed power)');
         expect(text).toContain('Within-rep power thirds: #1 232/230/225 W');
         expect(text).toContain('HR final third: 158 / 160 / 163 bpm');
+        expect(text).toMatch(/First→last work interval: [^\n]+within-session comparison; source fit_workout_step; evidence confidence high; cross-session comparability not assessed/);
         expect(text).not.toContain('400 W actual');
     });
 
@@ -1495,6 +1513,7 @@ describe('multi-resolution semantic response (#850)', () => {
         const context = { history: [session], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20' };
         const text = renderKeySessionSummaries(deriveKeySessionSummaries([session], context), context);
         expect(text).toContain('Sprints: 6 × 10 s');
+        expect(text).toMatch(/Sprint fade: [^\n]+within-session comparison; source fit_workout_step; evidence confidence high; cross-session comparability not assessed/);
         expect(text).not.toContain('Strength response: insufficient evidence');
         expect(text).toContain('Sprint peak 5 s');
         expect(text).toContain('Mean 10 s');
@@ -1525,6 +1544,7 @@ describe('multi-resolution semantic response (#850)', () => {
         const context = { history: [session], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20' };
         const text = renderKeySessionSummaries(deriveKeySessionSummaries([session], context), context);
         expect(text).toContain('Pw:HR decoupling (first vs second half)');
+        expect(text).toMatch(/Pw:HR decoupling \(first vs second half\): [^\n]+within-session comparison; source continuous halves; evidence confidence low \(observational HR\); cross-session comparability not assessed/);
         expect(text).not.toContain('lap averages');
     });
 

@@ -151,12 +151,13 @@ authored rest/session from "no prescription."
   baselines and the respiration candidate remain omitted with a pointer to diagnostic;
   vendor composites are secondary context; goals keep target, timing and description but
   omit the event demand vector.
-- `diagnostic` — the full data-source-ordered brief with every persisted lap, zone and
-  activity-response row plus observation-only candidate baselines and full goal demand
-  vectors. Running laps include distance/pace/power/HR; response rows include persisted
-  start offsets, final-third HR and MMP timing/provenance where available. It states that
-  none of this detail has recommendation authority. It is also the pure builder's default
-  so a caller that names no purpose never silently loses evidence.
+- `diagnostic` — the full data-source-ordered brief with detailed provenance and observation-only
+  candidate baselines/full goal demand vectors. To bound pathological histories it keeps at most
+  30 detailed activities and 100 lap/response rows per activity, with explicit omission counts.
+  Running laps include distance/pace/power/HR; response rows include persisted start offsets,
+  final-third HR and MMP timing/provenance where available. It states that none of this detail
+  has recommendation authority. It is also the pure builder's default so a caller that names no
+  purpose never silently loses evidence.
 
 No purpose alters a recommendation, so `POLICY_VERSION` is unaffected.
 
@@ -180,16 +181,17 @@ full zone tables are retained only when there is no interval/segment table to ma
 redundant. Running uses running dynamics and bounded lap pace/power/HR evidence with the same
 morning zone-suppression rule. This running telemetry is observational and does not establish a
 controlled longitudinal pace–HR comparison. The `planning` and `diagnostic` purposes retain their existing
-richer provenance/zone contracts, with diagnostic remaining the uncapped persisted view. This
-remains display-only and ordinary endurance/recovery sessions keep the one-line morning summary.
+richer provenance/zone contracts, with diagnostic retaining the larger bounded persisted view
+defined by the export-purpose caps. This remains display-only and ordinary endurance/recovery
+sessions keep the one-line morning summary.
 
 A session is a *key session* when at least one feature produced a value, or when it is a
 steady session with no comparable prior session (its rejection reasons are stated). In the
 planning export a key session's semantic summary replaces its one-line telemetry digest only
 when at least one feature produced a value; for quality cycling/running the bounded execution
 detail can still follow because it exposes the performed evidence behind that interpretation.
-The diagnostic export keeps every persisted lap/zone/response row and adds the summaries
-after them. Prior sessions are searched only in the activities
+The diagnostic export keeps a larger bounded lap/zone/response view, with explicit omission
+counts when purpose caps apply, and adds the summaries after it. Prior sessions are searched only in the activities
 `ContextBriefService.build` already fetched (from `activityStart`, at least the 28-day
 sensor-evidence horizon), and the output states that start date. Missing or incomparable
 evidence produces `insufficient_evidence` with a reason, never an estimate.

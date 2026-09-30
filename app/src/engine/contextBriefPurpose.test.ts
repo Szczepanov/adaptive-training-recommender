@@ -291,7 +291,7 @@ describe('planning export (#811)', () => {
 
     it('keeps missing-data honesty and the importable schedule contract', () => {
         const text = exportFor('planning', 3, { unavailableSources: ['recorded activities'] });
-        expect(text).toContain('**DATA INCOMPLETE:** could not reliably read: recorded activities');
+        expect(text).toContain('**DATA INCOMPLETE:** missing or unreadable source context: recorded activities');
         expect(text).toContain('### If the user asks for an importable schedule');
     });
 
@@ -302,7 +302,7 @@ describe('planning export (#811)', () => {
 });
 
 describe('diagnostic export (#811)', () => {
-    it('keeps full lap/zone telemetry, candidate baselines and demand vectors', () => {
+    it('keeps bounded diagnostic lap/zone telemetry, candidate baselines and demand vectors', () => {
         const text = exportFor('diagnostic', 100);
         expect(text).toContain('### Detailed activity telemetry');
         expect(text).toContain('| 100 |');

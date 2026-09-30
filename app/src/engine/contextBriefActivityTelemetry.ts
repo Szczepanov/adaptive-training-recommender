@@ -61,7 +61,7 @@ function renderZones(
 ): string[] {
     const totalSeconds = buckets.reduce((sum, bucket) => sum + bucket.secondsInZone, 0);
     const lines = [`- ${label}:`];
-    for (const bucket of [...buckets].sort((a, b) => a.zoneNumber - b.zoneNumber)) {
+    for (const bucket of [...buckets].sort((a, b) => a.zoneNumber - b.zoneNumber).slice(0, 20)) {
         const share = totalSeconds > 0 ? (bucket.secondsInZone / totalSeconds) * 100 : null;
         const shareText = share === null ? '' : ` · ${formatNumber(share, 1)}%`;
         const boundary = bucket.lowBoundary === undefined
@@ -69,6 +69,7 @@ function renderZones(
             : ` · low boundary ${formatNumber(bucket.lowBoundary, 0)} ${boundaryUnit}`;
         lines.push(`  - Z${bucket.zoneNumber}: ${formatDuration(bucket.secondsInZone)}${shareText}${boundary}`);
     }
+    if (buckets.length > 20) lines.push(`  - ${buckets.length - 20} additional zones omitted (cap 20).`);
     return lines;
 }
 
@@ -149,14 +150,14 @@ function renderActivityResponse(
     }
 
     if (response.powerDurationPeaks.length > 0) {
-        lines.push(`  - Power-duration peaks: ${response.powerDurationPeaks
+        lines.push(`  - Power-duration peaks: ${response.powerDurationPeaks.slice(0, 20)
             .map(peak => {
                 const timing = detail === 'diagnostic' && peak.elapsedBeforeSeconds !== undefined
                     ? `, after ${formatDuration(peak.elapsedBeforeSeconds)} elapsed`
                     : '';
                 return `${powerDurationLabel(peak.durationSeconds)} ${formatNumber(peak.powerWatts, 0)} W (${peak.confidence}${peak.activityHalf ? `, ${peak.activityHalf} half` : ''}${timing})`;
             })
-            .join(' · ')}`);
+            .join(' · ')}${response.powerDurationPeaks.length > 20 ? ` · ${response.powerDurationPeaks.length - 20} additional peaks omitted` : ''}`);
     }
     if (response.steadyHalves) {
         const half = response.steadyHalves;
@@ -235,7 +236,7 @@ function renderDiagnosticLaps(activity: NormalizedGarminActivity): string[] {
             '  | Lap | Duration | Avg power | Avg HR |',
             '  |---:|---:|---:|---:|',
         ];
-    for (const lap of laps) {
+    for (const lap of laps.slice(0, 100)) {
         const power = lap.averagePowerWatts === undefined ? '—' : `${formatNumber(lap.averagePowerWatts, 0)} W`;
         const hr = lap.averageHrBpm === undefined ? '—' : `${formatNumber(lap.averageHrBpm, 0)} bpm`;
         if (running) {
@@ -245,12 +246,19 @@ function renderDiagnosticLaps(activity: NormalizedGarminActivity): string[] {
             lines.push(`  | ${lap.lapIndex} | ${formatDuration(lap.durationSeconds)} | ${power} | ${hr} |`);
         }
     }
+    if (laps.length > 100) lines.push(`  - ${laps.length - 100} additional laps omitted (diagnostic cap 100).`);
     return lines;
 }
 
 const QUALITY_SESSION_DOMAINS: ReadonlySet<ActivityStimulusDomain> = new Set(['tempo', 'threshold', 'vo2', 'anaerobic', 'mixed', 'race']);
 const QUALITY_DETAIL_MAX_LAPS = 20;
 const QUALITY_DETAIL_MAX_RESPONSE_SEGMENTS = 20;
+const PLANNING_DETAIL_MAX_ACTIVITIES = 12;
+const PLANNING_DETAIL_MAX_CHARS = 20_000;
+const DIAGNOSTIC_DETAIL_MAX_ACTIVITIES = 30;
+// Optional diagnostic detail shares a single budget across activities. The base brief,
+// canonical sessions, and source state remain intact when a dense FIT trace is present.
+const DIAGNOSTIC_DETAIL_MAX_CHARS = 25_000;
 
 function isFiniteNumber(value: number | null | undefined): value is number {
     return typeof value === 'number' && Number.isFinite(value);
@@ -312,7 +320,7 @@ function renderBoundedQualityLaps(activity: NormalizedGarminActivity, viewLabel:
         }
     }
     if (visible.length < laps.length) {
-        lines.push(`  - … ${laps.length - visible.length} additional lap(s) omitted from the ${viewLabel}; use diagnostic export for all laps.`);
+        lines.push(`  - … ${laps.length - visible.length} additional lap(s) omitted from the ${viewLabel}; use diagnostic export for a larger bounded lap view.`);
     }
     return lines;
 }
@@ -388,13 +396,16 @@ export function renderMorningQualityActivityTelemetry(activity: NormalizedGarmin
 /**
  * Block planning keeps the #811 information budget for ordinary sessions, but quality
  * cycling/running needs the same bounded execution evidence used to close the morning loop.
- * The 20-row caps preserve bounded growth; diagnostic remains the uncapped persisted view.
+ * The 20-row caps preserve bounded growth; diagnostic retains a larger bounded persisted view.
  */
 export function renderPlanningQualityActivityTelemetry(
     activities: readonly NormalizedGarminActivity[],
 ): string {
-    const rendered = [...activities]
-        .sort((a, b) => a.date.localeCompare(b.date) || a.activityId.localeCompare(b.activityId))
+    const quality = activities.filter(isQualityCyclingOrRunning)
+        .sort((a, b) => a.date.localeCompare(b.date) || a.activityId.localeCompare(b.activityId));
+    if (quality.length === 0) return '';
+    // Select the bounded window before rendering laps and response segments.
+    const rendered = quality.slice(-PLANNING_DETAIL_MAX_ACTIVITIES)
         .map(activity => ({ activity, detail: renderBoundedQualityActivityDetail(activity, 'block-planning export') }))
         .filter(item => item.detail.length > 0);
     if (rendered.length === 0) return '';
@@ -402,26 +413,40 @@ export function renderPlanningQualityActivityTelemetry(
     const lines = [
         '### Quality-session execution detail (bounded)',
         '',
-        `Quality cycling/running sessions are expanded with the same execution evidence as the morning handoff, capped at ${QUALITY_DETAIL_MAX_RESPONSE_SEGMENTS} semantic segments or ${QUALITY_DETAIL_MAX_LAPS} running/legacy laps per activity. Ordinary endurance/recovery sessions remain compact; use diagnostic export for every persisted row.`,
+        `Quality cycling/running sessions are expanded with the same execution evidence as the morning handoff, capped at ${QUALITY_DETAIL_MAX_RESPONSE_SEGMENTS} semantic segments or ${QUALITY_DETAIL_MAX_LAPS} running/legacy laps per activity and ${PLANNING_DETAIL_MAX_ACTIVITIES} activities. Ordinary endurance/recovery sessions remain compact; use diagnostic export for more persisted rows.`,
     ];
-    for (const { activity, detail } of rendered) {
+    const blocks: string[] = [];
+    let usedChars = lines.join('\n').length;
+    let omittedForBudget = 0;
+    for (const { activity, detail } of [...rendered].reverse()) {
         const domain = activity.stimulusDomain && activity.stimulusDomain !== 'unknown'
             ? ` · ${activity.stimulusDomain}`
             : '';
         const cost = activity.sessionCost && activity.sessionCost !== 'unknown'
             ? ` · cost ${activity.sessionCost.replace('_', ' ')}`
             : '';
-        lines.push(
+        const block = [
             '',
             `#### ${activity.date} — ${formatActivityType(activity.type)} — ${activity.intensityTag}${domain}${cost}`,
             ...detail,
-        );
+        ].join('\n');
+        if (usedChars + block.length > PLANNING_DETAIL_MAX_CHARS) {
+            omittedForBudget += 1;
+            continue;
+        }
+        blocks.push(block);
+        usedChars += block.length;
+    }
+    lines.push(...blocks.reverse());
+    if (omittedForBudget > 0) lines.push(`- ${omittedForBudget} quality activity details omitted (aggregate planning detail cap ${PLANNING_DETAIL_MAX_CHARS} characters).`);
+    if (quality.length > PLANNING_DETAIL_MAX_ACTIVITIES) {
+        lines.push(`- ${quality.length - PLANNING_DETAIL_MAX_ACTIVITIES} earlier quality activities omitted (planning cap ${PLANNING_DETAIL_MAX_ACTIVITIES}).`);
     }
     return lines.join('\n');
 }
 
 /**
- * Full persisted activity detail for diagnostic analysis. Raw native samples remain outside
+ * Bounded persisted activity detail for diagnostic analysis. Raw native samples remain outside
  * this boundary; this renderer exposes only the bounded normalized fields already hydrated
  * on the activity document.
  */
@@ -439,8 +464,13 @@ export function renderContextBriefActivityTelemetry(
         'Only activities with Garmin detail telemetry are expanded below; absent fields were not reported by Garmin.',
     ];
 
-    for (const activity of detailed) {
-        lines.push('', `#### ${activity.date} — ${formatActivityType(activity.type)} — ${activity.intensityTag}`);
+    const selected = detailed.slice(-DIAGNOSTIC_DETAIL_MAX_ACTIVITIES);
+    const blocks: string[] = [];
+    let usedChars = lines.join('\n').length;
+    let omittedForBudget = 0;
+    // Newest evidence gets priority when many activities have dense lap/segment tables.
+    for (const activity of [...selected].reverse()) {
+        const detail = ['', `#### ${activity.date} — ${formatActivityType(activity.type)} — ${activity.intensityTag}`];
 
         const powerSummary: string[] = [];
         if (activity.normalizedPower !== undefined) {
@@ -452,22 +482,35 @@ export function renderContextBriefActivityTelemetry(
         if (activity.variabilityIndex !== undefined) {
             powerSummary.push(`VI ${formatNumber(activity.variabilityIndex, 2)}`);
         }
-        if (powerSummary.length > 0) lines.push(`- Power summary: ${powerSummary.join(' · ')}`);
-        lines.push(...renderSessionDetail(activity, false));
+        if (powerSummary.length > 0) detail.push(`- Power summary: ${powerSummary.join(' · ')}`);
+        detail.push(...renderSessionDetail(activity, false));
 
         if (activity.powerInZones?.length) {
-            lines.push(...renderZones('Power zones', activity.powerInZones, 'W'));
+            detail.push(...renderZones('Power zones', activity.powerInZones, 'W'));
         }
         if (activity.hrInZones?.length) {
-            lines.push(...renderZones('Heart-rate zones', activity.hrInZones, 'bpm'));
+            detail.push(...renderZones('Heart-rate zones', activity.hrInZones, 'bpm'));
         }
-        lines.push(...renderRunningDynamics(activity));
+        detail.push(...renderRunningDynamics(activity));
         if (activity.laps?.length) {
-            lines.push(...renderDiagnosticLaps(activity));
+            detail.push(...renderDiagnosticLaps(activity));
         }
         if (activity.activityResponse) {
-            lines.push(...renderActivityResponse(activity, undefined, 'diagnostic'));
+            detail.push(...renderActivityResponse(activity, 100, 'diagnostic'));
         }
+        const block = detail.join('\n');
+        if (usedChars + block.length > DIAGNOSTIC_DETAIL_MAX_CHARS) {
+            omittedForBudget += 1;
+            continue;
+        }
+        blocks.push(block);
+        usedChars += block.length;
+    }
+    lines.push(...blocks.reverse());
+    if (omittedForBudget > 0) lines.push(`- ${omittedForBudget} detailed activities omitted (aggregate diagnostic detail cap ${DIAGNOSTIC_DETAIL_MAX_CHARS} characters).`);
+
+    if (detailed.length > DIAGNOSTIC_DETAIL_MAX_ACTIVITIES) {
+        lines.push(`- ${detailed.length - DIAGNOSTIC_DETAIL_MAX_ACTIVITIES} earlier detailed activities omitted (diagnostic cap ${DIAGNOSTIC_DETAIL_MAX_ACTIVITIES}).`);
     }
 
     return lines.join('\n');
@@ -518,10 +561,10 @@ export function renderCompactActivityTelemetry(
         '### Key-session telemetry (compact)',
         '',
         summarizedIds.size > 0
-            ? 'One line per activity with Garmin detail telemetry that has no semantic summary below. The uncapped persisted lap/response view is in the diagnostic export; bounded quality-session zones and execution detail may appear later in this planning section.'
-            : 'One line per activity with Garmin detail telemetry. The uncapped persisted lap/response view is in the diagnostic export; bounded quality-session zones and execution detail may appear later in this planning section.',
+            ? 'One line per recent activity with Garmin detail telemetry that has no semantic summary below. The capped persisted lap/response view is in the diagnostic export; bounded quality-session zones and execution detail may appear later in this planning section.'
+            : 'One line per recent activity with Garmin detail telemetry. The capped persisted lap/response view is in the diagnostic export; bounded quality-session zones and execution detail may appear later in this planning section.',
     ];
-    for (const activity of detailed) {
+    for (const activity of detailed.slice(-PLANNING_DETAIL_MAX_ACTIVITIES)) {
         const parts: string[] = [];
         if (activity.normalizedPower !== undefined) parts.push(`NP ${formatNumber(activity.normalizedPower, 0)} W`);
         if (activity.intensityFactor !== undefined) parts.push(`IF ${formatNumber(activity.intensityFactor, 2)}`);
@@ -547,13 +590,16 @@ export function renderCompactActivityTelemetry(
         }
         lines.push(`- ${activity.date} — ${formatActivityType(activity.type)} — ${activity.intensityTag}: ${parts.length > 0 ? parts.join(' · ') : 'no usable power, zone or lap detail reported'}`);
     }
+    if (detailed.length > PLANNING_DETAIL_MAX_ACTIVITIES) {
+        lines.push(`- ${detailed.length - PLANNING_DETAIL_MAX_ACTIVITIES} earlier activity digests omitted (planning cap ${PLANNING_DETAIL_MAX_ACTIVITIES}).`);
+    }
     return lines.join('\n');
 }
 
 /** Insert activity telemetry as a subsection at the end of the completed-training section,
  * located by title so it works in either section order. `compact` selects the bounded
  * planning representation: one-line ordinary-session digests plus bounded quality-session
- * execution detail. Diagnostic keeps the full persisted tables. The fallback append keeps
+ * execution detail. Diagnostic keeps the larger bounded persisted tables. The fallback append keeps
  * the handoff useful if the parent brief heading ever changes. */
 export function injectActivityTelemetryIntoContextBrief(
     brief: string,
@@ -564,7 +610,7 @@ export function injectActivityTelemetryIntoContextBrief(
     // Issue #814: key sessions get a semantic summary. In the compact (planning) export it
     // replaces that session's one-line digest when at least one feature produced a value;
     // the bounded quality-session execution view may still follow as supporting evidence.
-    // Diagnostic keeps every persisted table and adds the summaries after them.
+    // Diagnostic keeps the larger bounded persisted view and adds the summaries after it.
     const summaries = response ? deriveKeySessionSummaries(activities, response) : [];
     const summaryText = response ? renderKeySessionSummaries(summaries, response) : '';
     // Planning suppression must follow canonical response evidence directly rather than
