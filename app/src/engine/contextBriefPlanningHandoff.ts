@@ -83,7 +83,7 @@ export interface ContextBriefPlanningHandoffInput {
      * own external-plan read failed (occupancy or plan-state), so a null resolved session
      * reflects an unreadable day rather than a confirmed absence. */
     externalFallbackUncertain: boolean;
-    eventStrategy: 'structured_plan' | 'demand_derived' | null;
+    eventStrategy: 'structured_plan' | 'demand_derived' | 'evergreen_fallback' | null;
     goals: readonly UserGoal[];
     upcomingFixedActivities: readonly FixedActivity[];
     upcomingPlanBlocks: readonly AuthoredPlanBlock[];
