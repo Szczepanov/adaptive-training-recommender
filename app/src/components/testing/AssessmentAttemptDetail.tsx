@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { AssessmentAttempt } from '../../observations/models';
 import {
     assessmentHistoryService,
@@ -26,6 +26,26 @@ export const AssessmentAttemptDetail: React.FC<AssessmentAttemptDetailProps> = (
     const [loading, setLoading] = useState(true);
     const [detail, setDetail] = useState<AssessmentAttemptDetailData | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+    useEffect(() => {
+        const previouslyFocused = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                onClose();
+            }
+        };
+
+        closeButtonRef.current?.focus();
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+            previouslyFocused?.focus();
+        };
+    }, [onClose]);
 
     useEffect(() => {
         let active = true;
@@ -59,7 +79,13 @@ export const AssessmentAttemptDetail: React.FC<AssessmentAttemptDetailProps> = (
                             {detail?.protocol.title ?? attempt.protocolRef.id} · rev {attempt.protocolRef.revision}
                         </h3>
                     </div>
-                    <button type="button" className="testing-secondary" onClick={onClose} aria-label="Close detail">
+                    <button
+                        ref={closeButtonRef}
+                        type="button"
+                        className="testing-secondary"
+                        onClick={onClose}
+                        aria-label="Close detail"
+                    >
                         Close
                     </button>
                 </div>
