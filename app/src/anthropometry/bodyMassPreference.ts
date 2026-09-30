@@ -23,3 +23,19 @@ export function persistBodyMassSource(source: 'provider' | 'manual'): void {
         // Ignore storage errors
     }
 }
+
+/**
+ * Resolves the effective body-mass source without silently switching away from an
+ * explicit athlete choice. When no choice exists, preserve ADR-0039 provider-first
+ * behavior but fall back to manual only when no usable provider series is present.
+ */
+export function chooseEffectiveBodyMassSource(
+    storedPreference: 'provider' | 'manual' | null,
+    hasProviderSeries: boolean,
+    hasManualSeries: boolean,
+): 'provider' | 'manual' {
+    if (storedPreference) return storedPreference;
+    if (hasProviderSeries) return 'provider';
+    if (hasManualSeries) return 'manual';
+    return 'provider';
+}
