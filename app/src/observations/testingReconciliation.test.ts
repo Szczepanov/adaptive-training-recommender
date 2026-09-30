@@ -31,7 +31,7 @@ describe('WP5.7: Testing execution reconciliation and single exposure invariant'
 
     describe('(b) completed testing execution and matching Garmin activity reconcile to one exposure', () => {
         it('reconciles a completed cycling assessment execution with a Garmin cycling activity to one exposure', () => {
-            const sprintDef = getPerformanceTestDefinition('cycling_6s_seated_sprint-r1');
+            const sprintDef = getPerformanceTestDefinition('cycling_6s_seated_sprint-r2');
             const execution: SessionExecution = {
                 userId: 'user-1',
                 executionId: 'exec-cycling-sprint',
@@ -78,7 +78,7 @@ describe('WP5.7: Testing execution reconciliation and single exposure invariant'
         });
 
         it('reconciles a completed strength assessment execution with a Garmin strength activity to one exposure', () => {
-            const benchDef = getPerformanceTestDefinition('strength-bench-press-1rm-r1');
+            const benchDef = getPerformanceTestDefinition('strength-bench-press-1rm-r2');
             const execution: SessionExecution = {
                 userId: 'user-1',
                 executionId: 'exec-bench-1rm',
@@ -125,7 +125,7 @@ describe('WP5.7: Testing execution reconciliation and single exposure invariant'
         });
 
         it('reconciles a completed field jump assessment execution with a Garmin field activity', () => {
-            const jumpDef = getPerformanceTestDefinition('field-standing-broad-jump-r1');
+            const jumpDef = getPerformanceTestDefinition('field-standing-broad-jump-r2');
             const execution: SessionExecution = {
                 userId: 'user-1',
                 executionId: 'exec-jump-test',
