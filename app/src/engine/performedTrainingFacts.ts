@@ -31,9 +31,9 @@ export interface PerformedExposureFact {
     localDate: string;
     startedAt?: string;
     endedAt?: string;
-    /** Display provenance only; does not change exposure or coverage authority. */
+    /** Brief/export provenance only; omitted from default decision snapshots and hashes. */
     executionState?: SessionExecutionState;
-    /** Brief-only source linkage; omitted from decision snapshots unless explicitly requested. */
+    /** Brief/export source linkage; omitted from decision snapshots unless explicitly requested. */
     providerActivityIds?: string[];
     durationMin?: number;
     modality: SessionTemplate['modality'] | 'Unknown';
@@ -289,7 +289,6 @@ export function deriveFactsFromOccurrence(
         localDate,
         ...(startedAt ? { startedAt } : {}),
         ...(endedAt ? { endedAt } : {}),
-        ...(hydrated.structured?.executionState ? { executionState: hydrated.structured.executionState } : {}),
         ...(durationMin !== undefined ? { durationMin } : {}),
         modality,
         ...(category ? { category } : {}),

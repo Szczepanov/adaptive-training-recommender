@@ -161,14 +161,14 @@ describe('performedTrainingFactsService', () => {
             expect(snapshot.exposures[0].modality).toBe('Running');
         });
 
-        it('exposes stable provider refs only for the brief opt-in', async () => {
+        it('exposes display provenance only for the brief opt-in', async () => {
             vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([
                 occurrence({ sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: 'act-1' }] }),
             ]);
             const options = { preloadedActivities: [garminActivity()] };
             const decisionFacts = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02', options);
             const briefFacts = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02', {
-                ...options, includeProviderActivityIds: true,
+                ...options, includeDisplayProvenance: true,
             });
             expect(decisionFacts.exposures[0]).not.toHaveProperty('providerActivityIds');
             expect(briefFacts.exposures[0].providerActivityIds).toEqual(['act-1']);
@@ -214,10 +214,14 @@ describe('performedTrainingFactsService', () => {
                     data: sessionExecution({ state, completedAt: state === 'completed' ? '2026-09-01T09:00:00Z' : null }),
                     revision: null,
                 });
-                const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02');
-                expect(snapshot.exposures).toHaveLength(1);
-                expect(snapshot.exposures[0].executionState).toBe(state);
-                expect(snapshot.exposures[0].endedAt).toBe(state === 'completed' ? '2026-09-01T09:00:00Z' : undefined);
+                const decisionSnapshot = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02');
+                const displaySnapshot = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02', {
+                    includeDisplayProvenance: true,
+                });
+                expect(decisionSnapshot.exposures).toHaveLength(1);
+                expect(decisionSnapshot.exposures[0]).not.toHaveProperty('executionState');
+                expect(displaySnapshot.exposures[0].executionState).toBe(state);
+                expect(displaySnapshot.exposures[0].endedAt).toBe(state === 'completed' ? '2026-09-01T09:00:00Z' : undefined);
             });
             it('hydrates a catalog workout structured execution using catalog metadata', async () => {
                 vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([

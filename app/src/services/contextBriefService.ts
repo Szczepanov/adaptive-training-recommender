@@ -598,7 +598,7 @@ export class ContextBriefService {
                     // Provider-local dates can straddle a canonical Warsaw occurrence day.
                     // Reuse the already widened activity read so linked evidence still hydrates.
                     preloadedActivities: activities,
-                    includeProviderActivityIds: true,
+                    includeDisplayProvenance: true,
                 },
             )).exposures;
         } catch (error) {

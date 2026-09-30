@@ -114,8 +114,11 @@ evidence and raw provider rows is not independently interpreted as an extra or m
 workout because one canonical occurrence can legitimately have zero or multiple provider records.
 
 The canonical training authority change advanced the contract from v1 to v2. Required source
-state/currency semantics advanced it to v3. The engine `POLICY_VERSION` is unchanged because
-recommendation selection and safety policy did not change.
+state/currency semantics advanced it to v3. Provider activity IDs and structured execution state
+are brief/export provenance and are opt-in at the performed-facts service boundary; default
+performed-training facts used by recommendation/audit/replay paths retain their prior shape and
+content-hash inputs. The engine `POLICY_VERSION` is unchanged because recommendation selection
+and safety policy did not change.
 
 ## Information bounds
 

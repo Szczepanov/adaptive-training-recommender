@@ -32,7 +32,7 @@ export interface GetPerformedTrainingFactsOptions {
     coverageSetDescriptor?: CoverageSetDescriptor;
     preloadedActivities?: readonly NormalizedGarminActivity[];
     /** Export-only provenance. Keep default decision snapshots and hashes unchanged. */
-    includeProviderActivityIds?: boolean;
+    includeDisplayProvenance?: boolean;
 }
 
 /**
@@ -205,8 +205,9 @@ export async function getPerformedTrainingFactsInRange(
         }
 
         const facts = deriveFactsFromOccurrence(occurrence, hydrated, descriptor);
-        exposures.push(options.includeProviderActivityIds ? {
+        exposures.push(options.includeDisplayProvenance ? {
             ...facts.exposure,
+            ...(hydrated.structured?.executionState ? { executionState: hydrated.structured.executionState } : {}),
             providerActivityIds: [...new Set(providerSources
                 .filter(source => source.ref.provider.toLowerCase() === 'garmin')
                 .map(source => source.ref.activityId))].sort(),

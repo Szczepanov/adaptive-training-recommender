@@ -167,7 +167,7 @@ describe('ContextBriefService', () => {
         services.getPerformedTrainingFactsInRange.mockClear();
         await new ContextBriefService().build('u1', AS_OF, 2);
         expect(services.getOverridesSinceState).not.toHaveBeenCalled();
-        expect(services.getPerformedTrainingFactsInRange).toHaveBeenCalledWith('u1', '2026-08-13', '2026-08-16', { preloadedActivities: [], includeProviderActivityIds: true });
+        expect(services.getPerformedTrainingFactsInRange).toHaveBeenCalledWith('u1', '2026-08-13', '2026-08-16', { preloadedActivities: [], includeDisplayProvenance: true });
     });
 
     it('keeps the D-1 morning contract for a one-day caller request', async () => {
@@ -177,7 +177,7 @@ describe('ContextBriefService', () => {
         expect(result.text).toContain('Yesterday\'s Closed-Loop Debrief (2026-08-14)');
         expect(services.getRecommendationsInRange).toHaveBeenCalledWith('u1', '2026-08-14', '2026-08-16');
         expect(services.getPerformedTrainingFactsInRange).toHaveBeenCalledWith(
-            'u1', '2026-08-13', '2026-08-16', { preloadedActivities: [], includeProviderActivityIds: true },
+            'u1', '2026-08-13', '2026-08-16', { preloadedActivities: [], includeDisplayProvenance: true },
         );
     });
 
