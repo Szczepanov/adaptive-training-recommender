@@ -1,4 +1,5 @@
-import type { DailyRecommendation } from '../engine/models';
+import type { DailyRecommendationWithVerdict } from '../engine/models';
+import { getCanonicalRestTemplate } from '../engine/rules';
 import type { ExternalPlanOccurrenceRef, SessionEntry, SessionExecution, SessionOccurrence } from '../sessions/models';
 import { isExternalPlanOccurrence } from '../sessions/models';
 import type { PerformedTrainingOccurrence } from './models';
@@ -31,9 +32,24 @@ export interface PlannedExecutionStatusInput {
     executionsReadable: boolean;
     performedReadable: boolean;
     occurrences: readonly SessionOccurrence[];
-    recommendations: readonly DailyRecommendation[];
+    recommendations: readonly DailyRecommendationWithVerdict[];
     executions: readonly { execution: SessionExecution; entries: readonly SessionEntry[] }[];
     performedOccurrences: readonly PerformedTrainingOccurrence[];
+    /** PR-C M-0: authored session candidates on D, counted by hydration from the
+     * archive-named revision (never today's active plan). Absent when no count
+     * was computed; a missing count yields `unknown`, never "treat as one". */
+    authoredSessionCountOnDate?: number;
+    /** PR-C M-1/M-5/M-6: the `occurrenceId` from a same-date
+     * `audit.authoredOccurrence`, attributed by hydration to the verified
+     * pre-replace identity only. Set on exactly one candidate per replace day:
+     * the archived revision's row. Absent everywhere else, including the
+     * current revision's row on re-import days (M-6b). */
+    replacedByOccurrenceId?: string;
+    /** PR-C M-8: hydration could not verify what a same-date replace decision
+     * replaced (archive listing failed, unparsable, or failed M-7). The row
+     * degrades to `unknown` with a `replace-archive-unavailable` evidence note
+     * instead of guessing -- set only when no verified attribution exists. */
+    replaceArchiveUnavailable?: boolean;
 }
 
 function sameSource(left: ExternalPlanOccurrenceRef, right: ExternalPlanOccurrenceRef): boolean {
@@ -45,7 +61,13 @@ function sourceOfOccurrence(occurrence: SessionOccurrence | undefined): External
     return occurrence && isExternalPlanOccurrence(occurrence) ? occurrence.externalPlanRef : undefined;
 }
 
-/** Exact-identity projection for #893 and reusable by broader execution reconciliation. */
+/** Exact-identity projection for #893 and reusable by broader execution reconciliation.
+ *
+ * Pure by construction: every input (including `authoredSessionCountOnDate` and
+ * `replacedByOccurrenceId`) is caller-supplied data. No Firestore, no clock, no
+ * title matching, no mode-fallback verdict, no historical-readiness rerun. The
+ * only reads beyond these inputs happen at the hydration boundary
+ * (`contextBriefService.ts`), which loads the pre-replace archive revision. */
 export function projectPlannedExecutionStatus(input: PlannedExecutionStatusInput): PlannedExecutionStatus {
     const authoredSource = input.authored.kind === 'session' ? input.authored.source : undefined;
     const unknown = input.authored.kind === 'unknown' || !input.occurrencesReadable
@@ -88,6 +110,41 @@ export function projectPlannedExecutionStatus(input: PlannedExecutionStatusInput
         && recommendation.recommendationAudit.executionDose !== undefined
         && (recommendation.recommendationAudit.plannedDose.volume !== recommendation.recommendationAudit.executionDose.volume
             || recommendation.recommendationAudit.plannedDose.intensity !== recommendation.recommendationAudit.executionDose.intensity);
+    // PR-C G-1: the adjudicator's exact persisted decision, read from the saved
+    // `engineVerdict` field only. Never the `resolveEngineShadowVerdict(mode)`
+    // legacy fallback: it maps `recover` to `defer` and would fabricate gate
+    // replacements on pre-verdict documents (G-1b). `advisory` event days and
+    // `proceed`/`scale` are excluded by construction (G-2 keeps withheld scale,
+    // binding failures and future non-rest shapes at `unknown`).
+    const verdict = recommendation?.engineVerdict;
+    const gatedVerdict = verdict === 'defer' || verdict === 'skip';
+    const restTemplate = recommendation !== undefined
+        && recommendation.templateId === getCanonicalRestTemplate().id;
+    const gateReplaced = recommendation !== undefined && gatedVerdict && restTemplate;
+    // `advisory` is not an adjudicated executable outcome. Keep it unknown even
+    // when an exact primary binding happens to exist (for example on an event-day
+    // recommendation), rather than falling through to `as_authored`.
+    const unsupportedVerdict = verdict === 'advisory';
+    const verdictTemplateDisagree = recommendation !== undefined && gatedVerdict !== restTemplate;
+    // PR-C M-1/M-4/M-6: a same-date `audit.authoredOccurrence` attributed to this
+    // candidate's verified pre-replace identity. Set by hydration on exactly one
+    // row per replace day, so sibling-revision rows keep their normal result.
+    const replaceAttribution = source !== undefined && input.replacedByOccurrenceId !== undefined
+        ? input.replacedByOccurrenceId
+        : undefined;
+    // M-1: exactly one authored candidate on D (counted from the archive-named
+    // revision), a saved replace decision, and no exact external execution. An
+    // execution of the authored occurrence itself always wins over the replace
+    // label: the replacement workout is a different identity and must never
+    // flip this back, nor may this label ever claim `completed` (M-2).
+    const manuallyReplaced = replaceAttribution !== undefined
+        && input.authoredSessionCountOnDate === 1
+        && executionRecord === undefined;
+    // M-1 singleton scope: on multi-candidate days (or a missing count) the
+    // saved recommendation cannot say which session was primary, so the athlete
+    // dimension stays `unknown` rather than guessing.
+    const replaceBlocksNormalAthlete = replaceAttribution !== undefined
+        && (input.authoredSessionCountOnDate !== 1 || executionRecord === undefined);
     return {
         date: input.date,
         authored: input.authored,
@@ -97,15 +154,36 @@ export function projectPlannedExecutionStatus(input: PlannedExecutionStatusInput
                 ? input.placementConfirmedMoved ? 'intentionally_moved' : 'unknown'
                 : exactOccurrence ? 'as_authored' : 'unknown',
         adjudication: unknown ? 'unknown'
-            : !recommendation ? 'not_adjudicated'
-                : !exactPrimary ? 'unknown' : auditedScale ? 'app_dose_modified' : 'as_authored',
+            : !recommendation
+                // M-4: the lookup finds no matching `audit.externalPlan`, but a
+                // decision was saved and later overwritten (the archive keeps the
+                // earlier audit). `not_adjudicated` would claim no decision exists.
+                // M-8: an unverifiable replace degrades the same way, with a note.
+                ? (replaceAttribution !== undefined || input.replaceArchiveUnavailable ? 'unknown' : 'not_adjudicated')
+                // G-3: `gate_replaced` describes the latest persisted decision on
+                // D, independent of execution: a gated day with an exact completed
+                // execution still reads `gate_replaced` here, with acceptance and
+                // completion carried by the other two dimensions.
+                : gateReplaced ? 'gate_replaced'
+                    : unsupportedVerdict || verdictTemplateDisagree ? 'unknown'
+                        : !exactPrimary ? 'unknown' : auditedScale ? 'app_dose_modified' : 'as_authored',
         athleteDisposition: unknown ? 'unknown'
             : exactOccurrence?.state === 'skipped' ? 'explicitly_skipped'
                 : exactOccurrence?.state === 'superseded' ? 'unknown'
-                    : exactOccurrence?.state === 'completed' || execution ? 'accepted' : 'none',
+                    : manuallyReplaced ? 'manually_replaced'
+                        : replaceBlocksNormalAthlete ? 'unknown'
+                            : exactOccurrence?.state === 'completed' || execution ? 'accepted'
+                                // M-8: a known replace means `none` would misstate
+                                // the day; identity-bound execution still stands.
+                                : input.replaceArchiveUnavailable ? 'unknown' : 'none',
         performance: unknown ? 'unknown'
             : input.authored.kind === 'rest' || input.authored.kind === 'none' ? 'not_applicable'
-                : execution?.state === 'completed' ? performed ? 'completed' : 'unknown'
+                // M-2: the replacement workout is not the authored session's
+                // completion. `none_observed` only on an explicit terminal
+                // no-performance state of the authored occurrence, else `unknown`.
+                : manuallyReplaced
+                    ? (exactOccurrence?.state === 'missed' || exactOccurrence?.state === 'skipped' ? 'none_observed' : 'unknown')
+                    : execution?.state === 'completed' ? performed ? 'completed' : 'unknown'
                     : execution?.state === 'abandoned' || (execution?.state === 'in_progress' && (executionRecord?.entries.length ?? 0) > 0) ? 'partial_or_abandoned'
                         : exactOccurrence?.state === 'missed' || exactOccurrence?.state === 'skipped'
                             ? 'none_observed' : 'unknown',
@@ -116,6 +194,15 @@ export function projectPlannedExecutionStatus(input: PlannedExecutionStatusInput
         evidence: [
             ...(exactOccurrence ? [`occurrence:${exactOccurrence.occurrenceId}`] : []),
             ...(recommendation ? [`recommendation:${recommendation.date}`] : []),
+            // M-4: the row is auditable without claiming completion — the
+            // decision that was overwritten plus the manual authority.
+            ...(replaceAttribution !== undefined
+                ? [`recommendation:${input.date}`, `replaced-by:${replaceAttribution}`]
+                : []),
+            // M-8: row-scoped archive failure marker; never a section-wide null.
+            ...(replaceAttribution === undefined && input.replaceArchiveUnavailable
+                ? ['replace-archive-unavailable']
+                : []),
             ...(execution ? [`execution:${execution.executionId}`] : []),
         ...(performed ? [`performed:${performed.performedOccurrenceId}`] : []),
         ...(input.authored.kind === 'rest' || input.authored.kind === 'none'

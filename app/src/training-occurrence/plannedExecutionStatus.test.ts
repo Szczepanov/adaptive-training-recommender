@@ -1,5 +1,8 @@
 import type { DailyRecommendation } from '../engine/models';
-import type { ExternalPlanSessionOccurrence, SessionExecution } from '../sessions/models';
+import type { DailyRecommendationWithVerdict, ShadowVerdict } from '../engine/models';
+import { getCanonicalRestTemplate } from '../engine/rules';
+import { externalTemplateId } from '../engine/externalSessionProfiles';
+import type { ExternalPlanSessionOccurrence, ManualSessionOccurrence, SessionEntry, SessionExecution } from '../sessions/models';
 import type { PerformedTrainingOccurrence } from './models';
 import { projectPlannedExecutionStatus, renderPlannedExecutionStatuses, type PlannedExecutionStatus, type PlannedExecutionStatusInput } from './plannedExecutionStatus';
 import { describe, expect, it } from 'vitest';
@@ -119,4 +122,415 @@ describe('projectPlannedExecutionStatus', () => {
         expect(rows[3]).toContain('/ride-b');
     });
 
+});
+
+const REST_TEMPLATE_ID = getCanonicalRestTemplate().id;
+const SYNTHETIC_TEMPLATE_ID = externalTemplateId('plan-a', 2, 'ride-1');
+
+function gatedRecommendation(verdict: ShadowVerdict | undefined, templateId: string): DailyRecommendationWithVerdict {
+    return {
+        date: occurrence.date,
+        templateId,
+        mode: 'recover',
+        ...(verdict !== undefined ? { engineVerdict: verdict } : {}),
+        recommendationAudit: {
+            externalPlan: source,
+        },
+    } as DailyRecommendationWithVerdict;
+}
+
+function replaceRecommendation(): DailyRecommendationWithVerdict {
+    return {
+        date: occurrence.date,
+        templateId: 'authored-replacement-template',
+        mode: 'train',
+        engineVerdict: 'proceed',
+        recommendationAudit: {
+            authoredOccurrence: { occurrenceId: 'occ-manual-1', decision: 'proceed' },
+        },
+    } as DailyRecommendationWithVerdict;
+}
+
+const manualOccurrence: ManualSessionOccurrence = {
+    userId: 'u1',
+    occurrenceId: 'occ-manual-1',
+    date: occurrence.date,
+    authority: 'replace_recommendation',
+    state: 'scheduled',
+    definitionRef: { definitionId: 'def-1', revision: 1, contentHash: 'm'.repeat(64) },
+    createdAt: '2026-09-19T00:00:00.000Z',
+    updatedAt: '2026-09-19T00:00:00.000Z',
+};
+
+const manualExecution: SessionExecution = {
+    userId: 'u1',
+    executionId: 'exec-manual-1',
+    occurrenceId: 'occ-manual-1',
+    sessionSource: { kind: 'manual', definitionId: 'def-1', revision: 1, contentHash: 'm'.repeat(64) },
+    prescriptionHash: 'q'.repeat(64),
+    date: occurrence.date,
+    startedAt: '2026-09-20T06:00:00.000Z',
+    completedAt: '2026-09-20T06:45:00.000Z',
+    updatedAt: '2026-09-20T06:45:00.000Z',
+    state: 'completed',
+    schemaVersion: 1,
+};
+
+describe('projectPlannedExecutionStatus gate replacement (PR-C C1)', () => {
+    it('pins the canonical rest template id so a template rename forces derivation review', () => {
+        // Tripwire for G-1's consistency check: if this literal changes, the
+        // gate derivation must be re-examined, not silently carried over.
+        expect(REST_TEMPLATE_ID).toBe('rest_01');
+    });
+
+    it('labels a defer-gated day gate_replaced with unknown performance when nothing executed', () => {
+        const result = projectPlannedExecutionStatus(input({
+            occurrenceId: undefined,
+            occurrences: [],
+            recommendations: [gatedRecommendation('defer', REST_TEMPLATE_ID)],
+        }));
+        expect(result.adjudication).toBe('gate_replaced');
+        expect(result.performance).toBe('unknown');
+        expect(result.performance).not.toBe('none_observed');
+    });
+
+    it('labels a skip-gated day gate_replaced', () => {
+        const result = projectPlannedExecutionStatus(input({
+            occurrenceId: undefined,
+            occurrences: [],
+            recommendations: [gatedRecommendation('skip', REST_TEMPLATE_ID)],
+        }));
+        expect(result.adjudication).toBe('gate_replaced');
+    });
+
+    it('never labels an advisory event day gate_replaced', () => {
+        const result = projectPlannedExecutionStatus(input({
+            occurrenceId: undefined,
+            occurrences: [],
+            recommendations: [gatedRecommendation('advisory', REST_TEMPLATE_ID)],
+        }));
+        expect(result.adjudication).toBe('unknown');
+        expect(result.adjudication).not.toBe('gate_replaced');
+    });
+
+    it('fails closed on advisory even when an exact external primary binding exists', () => {
+        const advisory = {
+            ...gatedRecommendation('advisory', SYNTHETIC_TEMPLATE_ID),
+            recommendationAudit: {
+                externalPlan: source,
+                primarySession: {
+                    sessionSource: execution.sessionSource,
+                    occurrenceId: occurrence.occurrenceId,
+                    prescriptionHash: execution.prescriptionHash,
+                },
+                plannedDose: { volume: 1, intensity: 1 },
+                executionDose: { volume: 1, intensity: 1 },
+            },
+        } as DailyRecommendationWithVerdict;
+        const result = projectPlannedExecutionStatus(input({
+            executions: [{ execution, entries: [] }],
+            recommendations: [advisory],
+        }));
+        expect(result.adjudication).toBe('unknown');
+        expect(result.adjudication).not.toBe('as_authored');
+    });
+
+    it('yields unknown for a verdict-less legacy document instead of applying the mode fallback', () => {
+        const result = projectPlannedExecutionStatus(input({
+            occurrenceId: undefined,
+            occurrences: [],
+            recommendations: [gatedRecommendation(undefined, REST_TEMPLATE_ID)],
+        }));
+        expect(result.adjudication).toBe('unknown');
+    });
+
+    it('yields unknown on verdict/template disagreement instead of gate_replaced', () => {
+        const result = projectPlannedExecutionStatus(input({
+            occurrenceId: undefined,
+            occurrences: [],
+            recommendations: [gatedRecommendation('defer', SYNTHETIC_TEMPLATE_ID)],
+        }));
+        expect(result.adjudication).toBe('unknown');
+    });
+
+    it('keeps a legacy proceed day without verdict on the as_authored path', () => {
+        const result = projectPlannedExecutionStatus(input({
+            executions: [{ execution, entries: [] }],
+            recommendations: [{ date: occurrence.date, recommendationAudit: {
+                externalPlan: source,
+                primarySession: { sessionSource: execution.sessionSource, occurrenceId: occurrence.occurrenceId, prescriptionHash: execution.prescriptionHash },
+                plannedDose: { volume: 1, intensity: 1 }, executionDose: { volume: 1, intensity: 1 },
+            } } as DailyRecommendation],
+            performedOccurrences: [performed],
+        }));
+        expect(result.adjudication).toBe('as_authored');
+    });
+
+    it('reads a gated-but-trained day as gate_replaced without claiming the athlete overrode the gate', () => {
+        const result = projectPlannedExecutionStatus(input({
+            executions: [{ execution, entries: [] }],
+            recommendations: [gatedRecommendation('defer', REST_TEMPLATE_ID)],
+            performedOccurrences: [performed],
+        }));
+        expect(result).toMatchObject({
+            adjudication: 'gate_replaced',
+            athleteDisposition: 'accepted',
+            performance: 'completed',
+            executionId: 'exec-1',
+            performedOccurrenceId: 'performed-1',
+        });
+    });
+});
+
+describe('projectPlannedExecutionStatus manual replacement (PR-C C2)', () => {
+    it('labels a single-session replace day manually_replaced with auditable evidence', () => {
+        const result = projectPlannedExecutionStatus(input({
+            occurrenceId: undefined,
+            occurrences: [],
+            recommendations: [replaceRecommendation()],
+            authoredSessionCountOnDate: 1,
+            replacedByOccurrenceId: 'occ-manual-1',
+        }));
+        expect(result).toMatchObject({
+            adjudication: 'unknown',
+            athleteDisposition: 'manually_replaced',
+            performance: 'unknown',
+        });
+        expect(result.adjudication).not.toBe('not_adjudicated');
+        expect(result.evidence).toContain(`recommendation:${occurrence.date}`);
+        expect(result.evidence).toContain('replaced-by:occ-manual-1');
+    });
+
+    it('stays unknown on multi-session days where the saved record cannot name the primary', () => {
+        const result = projectPlannedExecutionStatus(input({
+            occurrenceId: undefined,
+            occurrences: [],
+            recommendations: [replaceRecommendation()],
+            authoredSessionCountOnDate: 2,
+            replacedByOccurrenceId: 'occ-manual-1',
+        }));
+        expect(result.athleteDisposition).toBe('unknown');
+        expect(result.athleteDisposition).not.toBe('manually_replaced');
+    });
+
+    it('stays unknown when no session count was computed rather than treating it as one', () => {
+        const result = projectPlannedExecutionStatus(input({
+            occurrenceId: undefined,
+            occurrences: [],
+            recommendations: [replaceRecommendation()],
+            replacedByOccurrenceId: 'occ-manual-1',
+        }));
+        expect(result.athleteDisposition).toBe('unknown');
+        expect(result.athleteDisposition).not.toBe('manually_replaced');
+    });
+
+    it('never infers a replacement from the recommendations array alone; hydration owns attribution', () => {
+        const result = projectPlannedExecutionStatus(input({
+            occurrenceId: undefined,
+            occurrences: [],
+            recommendations: [replaceRecommendation()],
+        }));
+        expect(result.adjudication).toBe('not_adjudicated');
+        expect(result.athleteDisposition).not.toBe('manually_replaced');
+    });
+
+    it('reports none_observed only on an explicit terminal no-performance state of the authored occurrence', () => {
+        const result = projectPlannedExecutionStatus(input({
+            occurrences: [{ ...occurrence, state: 'missed' }],
+            recommendations: [replaceRecommendation()],
+            authoredSessionCountOnDate: 1,
+            replacedByOccurrenceId: 'occ-manual-1',
+        }));
+        expect(result.athleteDisposition).toBe('manually_replaced');
+        expect(result.performance).toBe('none_observed');
+    });
+
+    it('never reports the replacement workout as the authored session completion', () => {
+        const result = projectPlannedExecutionStatus(input({
+            occurrenceId: undefined,
+            occurrences: [{ ...manualOccurrence, state: 'completed' }],
+            executions: [{ execution: manualExecution, entries: [] }],
+            recommendations: [replaceRecommendation()],
+            authoredSessionCountOnDate: 1,
+            replacedByOccurrenceId: 'occ-manual-1',
+        }));
+        expect(result.athleteDisposition).toBe('manually_replaced');
+        expect(result.performance).toBe('unknown');
+        expect(result.executionId).toBeUndefined();
+    });
+
+    it('lets an exact external execution win over the replace label', () => {
+        const result = projectPlannedExecutionStatus(input({
+            executions: [{ execution, entries: [] }],
+            recommendations: [replaceRecommendation()],
+            performedOccurrences: [performed],
+            authoredSessionCountOnDate: 1,
+            replacedByOccurrenceId: 'occ-manual-1',
+        }));
+        expect(result.athleteDisposition).toBe('accepted');
+        expect(result.performance).toBe('completed');
+        expect(result.adjudication).toBe('unknown');
+    });
+
+    it('degrades a replace day with an unavailable archive to unknown without nulling anything', () => {
+        const result = projectPlannedExecutionStatus(input({
+            occurrenceId: undefined,
+            occurrences: [],
+            recommendations: [replaceRecommendation()],
+            replaceArchiveUnavailable: true,
+        }));
+        expect(result).toMatchObject({
+            adjudication: 'unknown',
+            athleteDisposition: 'unknown',
+            performance: 'unknown',
+        });
+        expect(result.adjudication).not.toBe('not_adjudicated');
+        expect(result.evidence).toContain('replace-archive-unavailable');
+    });
+});
+
+describe('projectPlannedExecutionStatus remaining WP5.2 pins (PR-C C3)', () => {
+    function boundRecommendation(plannedDose: { volume: number; intensity: number }, executionDose: { volume: number; intensity: number }): DailyRecommendation {
+        return { date: occurrence.date, recommendationAudit: {
+            externalPlan: source,
+            primarySession: { sessionSource: execution.sessionSource, occurrenceId: occurrence.occurrenceId, prescriptionHash: execution.prescriptionHash },
+            plannedDose, executionDose,
+        } } as DailyRecommendation;
+    }
+
+    it('distinguishes scaled-completed from proceeded-as-authored by audited dose diff', () => {
+        const scaled = projectPlannedExecutionStatus(input({
+            executions: [{ execution, entries: [] }],
+            recommendations: [boundRecommendation({ volume: 1, intensity: 1 }, { volume: 0.7, intensity: 1 })],
+            performedOccurrences: [performed],
+        }));
+        expect(scaled).toMatchObject({
+            adjudication: 'app_dose_modified',
+            performance: 'completed',
+            occurrenceId: 'occ-1',
+            performedOccurrenceId: 'performed-1',
+            executionId: 'exec-1',
+            prescriptionHash: execution.prescriptionHash,
+        });
+        const authored = projectPlannedExecutionStatus(input({
+            executions: [{ execution, entries: [] }],
+            recommendations: [boundRecommendation({ volume: 1, intensity: 1 }, { volume: 1, intensity: 1 })],
+            performedOccurrences: [performed],
+        }));
+        expect(authored).toMatchObject({ adjudication: 'as_authored', performance: 'completed' });
+    });
+
+    it('pins intentionally_moved at the projector so refactors cannot break it silently', () => {
+        const result = projectPlannedExecutionStatus(input({
+            authoredDate: '2026-09-19',
+            placementConfirmedMoved: true,
+        }));
+        expect(result.placement).toBe('intentionally_moved');
+    });
+
+    it('labels an abandoned execution with entries partial_or_abandoned', () => {
+        const result = projectPlannedExecutionStatus(input({
+            executions: [{ execution: { ...execution, state: 'abandoned' }, entries: [{} as SessionEntry] }],
+            recommendations: [boundRecommendation({ volume: 1, intensity: 1 }, { volume: 1, intensity: 1 })],
+        }));
+        expect(result.performance).toBe('partial_or_abandoned');
+        expect(result.occurrenceId).toBe('occ-1');
+    });
+
+    it('labels an explicit skip explicitly_skipped with none_observed', () => {
+        const result = projectPlannedExecutionStatus(input({
+            occurrences: [{ ...occurrence, state: 'skipped' }],
+        }));
+        expect(result).toMatchObject({
+            athleteDisposition: 'explicitly_skipped',
+            performance: 'none_observed',
+        });
+    });
+
+    it('keeps authored rest without work at not_applicable with no observed-work evidence', () => {
+        const result = projectPlannedExecutionStatus(input({
+            authored: { kind: 'rest', planId: 'plan-a', revision: 2, restDirectiveId: 'rest-1' },
+            occurrenceId: undefined,
+            occurrences: [],
+            recommendations: [],
+            performedOccurrences: [],
+        }));
+        expect(result.performance).toBe('not_applicable');
+        expect(result.evidence.some(item => item.startsWith('observed-work:'))).toBe(false);
+    });
+
+    it('refuses to cross-match old-revision bytes after a re-import', () => {
+        const revisedSource = { ...source, revision: 3 };
+        const result = projectPlannedExecutionStatus(input({
+            authored: { kind: 'session', source: revisedSource },
+            occurrenceId: undefined,
+            executions: [{ execution, entries: [] }],
+        }));
+        expect(result.executionId).toBeUndefined();
+        expect(result.occurrenceId).toBeUndefined();
+        expect(result.performance).toBe('unknown');
+    });
+
+    it('labels unplanned work not_applicable with observed-work evidence', () => {
+        const result = projectPlannedExecutionStatus(input({
+            authored: { kind: 'none' },
+            occurrenceId: undefined,
+            occurrences: [],
+            recommendations: [],
+            performedOccurrences: [performed],
+        }));
+        expect(result.performance).toBe('not_applicable');
+        expect(result.evidence).toContain('observed-work:performed-1');
+    });
+
+    it('renders every dimension unknown when performed reads are unavailable', () => {
+        const result = projectPlannedExecutionStatus(input({ performedReadable: false }));
+        expect(result).toMatchObject({
+            placement: 'unknown',
+            adjudication: 'unknown',
+            athleteDisposition: 'unknown',
+            performance: 'unknown',
+        });
+    });
+
+    it('renders every dimension unknown when execution reads are unavailable', () => {
+        const result = projectPlannedExecutionStatus(input({ executionsReadable: false }));
+        expect(result).toMatchObject({
+            placement: 'unknown',
+            adjudication: 'unknown',
+            athleteDisposition: 'unknown',
+            performance: 'unknown',
+        });
+    });
+
+    it('renders every dimension unknown when the authored identity is unknown', () => {
+        const result = projectPlannedExecutionStatus(input({
+            authored: { kind: 'unknown', reason: 'immutable plan revision could not be verified' },
+            occurrenceId: undefined,
+            occurrences: [],
+        }));
+        expect(result).toMatchObject({
+            placement: 'unknown',
+            adjudication: 'unknown',
+            athleteDisposition: 'unknown',
+            performance: 'unknown',
+        });
+    });
+
+    it('joins performed identity through enrichment without forking on a second source ref', () => {
+        const enriched: PerformedTrainingOccurrence = {
+            ...performed,
+            sourceRefs: [
+                { kind: 'structured_execution', executionId: 'exec-1', sessionOccurrenceId: 'occ-1', prescriptionHash: execution.prescriptionHash },
+                { kind: 'provider_activity', provider: 'garmin', activityId: 'garmin-activity-1' },
+            ],
+        };
+        const result = projectPlannedExecutionStatus(input({
+            executions: [{ execution, entries: [] }],
+            recommendations: [boundRecommendation({ volume: 1, intensity: 1 }, { volume: 1, intensity: 1 })],
+            performedOccurrences: [enriched],
+        }));
+        expect(result.performance).toBe('completed');
+        expect(result.performedOccurrenceId).toBe('performed-1');
+    });
 });
