@@ -14,6 +14,7 @@ import {
     type RawProviderWeightRecord,
 } from './trends';
 import { roundTo2Decimals } from './protocol';
+import { chooseEffectiveBodyMassSource } from './bodyMassPreference';
 
 export interface ResolvedSameDayBodyMass {
     bodyMassKg: number;
@@ -70,11 +71,18 @@ export function resolveSameDayBodyMass(
     targetDate: string,
     options: ResolveSameDayBodyMassOptions,
 ): ResolvedSameDayBodyMass | null {
-    const preferred = options.preferredSource ?? 'provider';
+    const providerRecords = options.providerRecords
+        ?? (options.snapshots ? extractProviderWeightRecords(options.snapshots) : []);
+    const manualEntries = options.manualEntries ?? [];
+    const preferred = chooseEffectiveBodyMassSource(
+        options.preferredSource ?? null,
+        providerRecords.length > 0,
+        manualEntries.some(entry =>
+            entry.measurements.some(measurement => measurement.metricId === 'body_mass_kg')
+        ),
+    );
 
     if (preferred === 'provider') {
-        const providerRecords = options.providerRecords
-            ?? (options.snapshots ? extractProviderWeightRecords(options.snapshots) : []);
         const dailyMap = reduceDailyProviderBodyMass(providerRecords);
         const point = dailyMap.get(targetDate);
         if (!point || typeof point.weightKg !== 'number' || point.weightKg <= 0) {
@@ -87,7 +95,6 @@ export function resolveSameDayBodyMass(
         };
     }
 
-    const manualEntries = options.manualEntries ?? [];
     const dailyMap = reduceDailyManualBodyMass(manualEntries);
     const point = dailyMap.get(targetDate);
     if (!point || typeof point.weightKg !== 'number' || point.weightKg <= 0) {
