@@ -122,6 +122,110 @@ describe('projectPlannedExecutionStatus', () => {
         expect(rows[3]).toContain('/ride-b');
     });
 
+    describe('renderPlannedExecutionStatuses provenance and bounds (PR-D D0)', () => {
+        const rowStatus = (overrides: Partial<PlannedExecutionStatus> = {}): PlannedExecutionStatus => ({
+            date: '2026-09-20',
+            authored: { kind: 'session', source },
+            placement: 'unknown',
+            adjudication: 'unknown',
+            athleteDisposition: 'unknown',
+            performance: 'unknown',
+            evidence: [],
+            ...overrides,
+        });
+
+        it('renders replacement provenance from replaced-by evidence', () => {
+            const rows = renderPlannedExecutionStatuses([rowStatus({
+                athleteDisposition: 'manually_replaced',
+                evidence: ['recommendation:2026-09-20', 'replaced-by:occ-manual-1'],
+            })]).filter(line => line.startsWith('- '));
+
+            expect(rows).toEqual([
+                '- 2026-09-20 plan-a r2/ride-1: placement unknown; adjudication unknown; athlete manually replaced; performance unknown; replaced by occurrence occ-manual-1.',
+            ]);
+        });
+
+        it('renders a row-level archive failure distinctly from non-determinable unknown', () => {
+            const rows = renderPlannedExecutionStatuses([rowStatus({
+                evidence: ['replace-archive-unavailable'],
+            })]).filter(line => line.startsWith('- '));
+
+            expect(rows).toEqual([
+                '- 2026-09-20 plan-a r2/ride-1: placement unknown; adjudication unknown; athlete unknown; performance unknown; replacement source unavailable (archive read failed).',
+            ]);
+        });
+
+        it('keeps the newest 20 rows in chronological order with a directional omission line', () => {
+            const day = (index: number): string => `2026-09-${String(index).padStart(2, '0')}`;
+            const statuses = Array.from({ length: 22 }, (_, offset) => rowStatus({
+                date: day(offset + 1),
+                occurrenceId: `occ-${String(offset + 1).padStart(2, '0')}`,
+                evidence: [],
+            }));
+            const rows = renderPlannedExecutionStatuses(statuses).filter(line => line.startsWith('- '));
+
+            expect(rows).toHaveLength(21);
+            expect(rows[0]).toContain('2026-09-03');
+            expect(rows[0]).toContain('occurrence occ-03');
+            expect(rows[19]).toContain('2026-09-22');
+            expect(rows[19]).toContain('occurrence occ-22');
+            expect(rows[20]).toBe('- 2 earlier records omitted from this bounded section.');
+            expect(rows.join('\n')).not.toContain('2026-09-01');
+            expect(rows.join('\n')).not.toContain('2026-09-02');
+        });
+
+        it('uses full authored identity as a deterministic tie-breaker', () => {
+            const planA = rowStatus({
+                authored: { kind: 'session', source: { ...source, planId: 'plan-a', revision: 3, sessionId: 'same-session' } },
+                occurrenceId: undefined,
+            });
+            const planB = rowStatus({
+                authored: { kind: 'session', source: { ...source, planId: 'plan-b', revision: 2, sessionId: 'same-session' } },
+                occurrenceId: undefined,
+            });
+
+            const forward = renderPlannedExecutionStatuses([planA, planB]).filter(line => line.startsWith('- '));
+            const reverse = renderPlannedExecutionStatuses([planB, planA]).filter(line => line.startsWith('- '));
+
+            expect(reverse).toEqual(forward);
+            expect(forward[0]).toContain('plan-a r3/same-session');
+            expect(forward[1]).toContain('plan-b r2/same-session');
+        });
+
+        it('bounds and sanitizes rendered identifiers and provenance lists', () => {
+            const longSessionId = `ride-${'x'.repeat(140)}\ncontinued`;
+            const sessionRows = renderPlannedExecutionStatuses([rowStatus({
+                authored: { kind: 'session', source: { ...source, sessionId: longSessionId } },
+            })]).filter(line => line.startsWith('- '));
+
+            expect(sessionRows).toHaveLength(1);
+            expect(sessionRows[0]).not.toContain('\n');
+            expect(sessionRows[0]).not.toContain(longSessionId);
+            expect(sessionRows[0]).toContain('…');
+            expect(sessionRows[0]).not.toContain('Authored rest/no session');
+
+            const longRestId = `rest-${'r'.repeat(140)}\ncontinued`;
+            const evidence = [
+                ...Array.from({ length: 7 }, (_, index) => `observed-work:work-${7 - index}`),
+                'observed-work:work-3',
+                `replaced-by:${'replacement-a-'.repeat(12)}`,
+                `replaced-by:${'replacement-b-'.repeat(12)}`,
+            ];
+            const restRows = renderPlannedExecutionStatuses([rowStatus({
+                authored: { kind: 'rest', planId: 'plan-a', revision: 2, restDirectiveId: longRestId },
+                evidence,
+            })]).filter(line => line.startsWith('- '));
+
+            expect(restRows).toHaveLength(1);
+            expect(restRows[0]).not.toContain('\n');
+            expect(restRows[0]).not.toContain(longRestId);
+            expect(restRows[0]).toContain('…');
+            expect(restRows[0]).toContain('observed work: work-1, work-2, work-3, work-4, work-5; 2 additional observed-work ids omitted');
+            expect(restRows[0]).toContain('1 additional replacement id omitted');
+            expect(restRows[0].length).toBeLessThan(1_200);
+        });
+    });
+
 });
 
 const REST_TEMPLATE_ID = getCanonicalRestTemplate().id;

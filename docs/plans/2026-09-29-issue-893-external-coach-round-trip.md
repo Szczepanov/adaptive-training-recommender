@@ -11,6 +11,19 @@ execution, and exact next-brief provenance. WP7.2 remains partial: provider enri
 abandoned execution, and the listed revision, replacement, rest, multi-session, retry, and
 cross-user variants still need integrated coverage. Keep #893 open until those proofs land.
 
+**Delivery update (30 September 2026, PR-D):** WP6 is implemented. The planning Context Brief
+renders the bounded round-trip section under contract
+`2026-09-context-brief-contract-v4` (v3 → v4 decision recorded in
+`docs/architecture/context-brief-contract.md`: PR-C repurposed existing labels for identical
+persisted inputs, so a v3 stay was not legitimate; planning exports between PR-C and PR-D carry
+v3 identity with v4 semantics). Row rendering keeps the newest 20 with replacement and
+archive-failure provenance; service fixtures pin gate replaced, manually replaced with
+provenance, row-level archive failure, advisory-not-gated, morning absence (never computed),
+hard per-row identifier/observed-work bounds, deterministic total ordering, and the representative
+65k dense-composition budget. `POLICY_VERSION` unchanged (descriptive export only).
+`briefPlanAuthority`, adjudication, and safety gating untouched. The full E2E matrix and the
+round-trip fixture narrative stay in PR-E.
+
 **Delivery update (30 September 2026, PR-B):** WP3.1, WP3.2, and the WP4.1 PR-B slice are
 implemented. One version-proof definition-bearing launch guard is shared by Home and the
 definition resolver. Bundle placement/audit support is centralized separately and fails closed
@@ -904,12 +917,19 @@ Fixtures must distinguish:
 
 ### WP6.2 Contract version
 
-Current architecture documents semantic contract v2.
+> Superseded by PR-D (2026-09-30): the contract advanced to
+> `2026-09-context-brief-contract-v4`; the v2/v3 expectations below are history and must not
+> be re-acted on.
 
-The new planned-vs-performed section changes the planning API meaning, so make a deliberate
-contract version decision in the same PR.
+Historical starting point: architecture documented semantic contract v2, and the original
+work order expected the round-trip section to trigger the next version.
 
-Expected:
+**Recorded decision:** PR-D advances directly from v3 to
+`2026-09-context-brief-contract-v4` because PR-C had already repurposed existing labels for
+identical persisted inputs under the v3 string; the renderer's bounded provenance/order semantics
+are part of the same v4 surface.
+
+Historical expected value (superseded):
 
 ```text
 2026-09-context-brief-contract-v3

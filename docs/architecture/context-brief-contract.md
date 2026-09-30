@@ -4,14 +4,14 @@ The Context Brief is the read-only handoff between the athlete record and an ext
 It is treated as a versioned API even though the wire format remains human/LLM-readable
 Markdown.
 
-This document describes the v3 contract defined under issue #894. The export exposes
-purpose/version/window identity, source state and currency, canonical performed training,
-and purpose-specific bounded telemetry. Issue #893 adds a bounded exact-identity external-plan
-execution round-trip section to planning exports. The final artifact remains Markdown; JSON is a
-versioned transport envelope around that same content. Morning D-1 adherence still uses its
-separate raw-activity debrief path. Remaining #894 work includes full missingness states outside
-completed training, per-source currency, size budgets, golden fixtures and end-to-end regression
-coverage.
+This document describes the current v4 contract. Issue #894 established the versioned export
+contract through v3: purpose/window identity, source state and currency, canonical performed
+training, missingness semantics, purpose budgets, golden fixtures and service-built regression
+coverage. Issue #893 advances that contract to v4 for the planning-only external-plan execution
+round trip specified below. The final artifact remains Markdown; JSON is a versioned transport
+envelope around that same content. Morning D-1 adherence keeps its purpose-specific debrief path
+but consumes canonical performed-training facts; diagnostic preserves separately labelled raw
+provider provenance.
 
 ## Export boundary
 
@@ -58,7 +58,7 @@ create a second planning engine.
 
 ## Contract identity block
 
-Contract version `2026-09-context-brief-contract-v3` currently exposes one field per line so
+Contract version `2026-09-context-brief-contract-v4` currently exposes one field per line so
 each field is independently machine-readable:
 
 - `Contract version`;
@@ -118,12 +118,106 @@ evidence and raw provider rows is not independently interpreted as an extra or m
 workout because one canonical occurrence can legitimately have zero or multiple provider records.
 
 The canonical training authority change advanced the contract from v1 to v2. Required source
-state/currency semantics advanced it to v3. Provider activity IDs and structured execution state
-are brief/export provenance and are opt-in at the performed-facts service boundary; default
-performed-training facts used by recommendation/audit/replay paths retain their prior shape and
-content-hash inputs. The engine `POLICY_VERSION` is unchanged because recommendation selection
-and safety policy did not change. The issue #893 round-trip section composes with that existing v3
-semantics and does not alter recommendation selection or safety policy.
+state/currency semantics advanced it to v3. The issue #893 round-trip semantics specified
+below advanced it to v4: identical persisted inputs changed labels (`not adjudicated`,
+`none`, `as authored` narrowed in meaning), and the row vocabulary, replacement/archive
+provenance, and newest-20 bound are new contract surface. The engine `POLICY_VERSION` is
+unchanged because recommendation selection and safety policy did not change. Provider activity
+IDs and structured execution state are brief/export provenance and are opt-in at the
+performed-facts service boundary; default performed-training facts used by
+recommendation/audit/replay paths retain their prior shape and content-hash inputs.
+
+## External-plan execution round trip
+
+Planning exports render a bounded exact-identity section,
+`## External-plan execution round trip (<windowDays>-day window)`, after the training
+table/exposure ledger. Morning keeps its D-1 debrief path and diagnostic keeps raw provider
+rows; neither renders this section. Rationale: this is a coach-planning handoff ("what was
+authored and what happened"), not a forensic log.
+
+Row format:
+
+```text
+- <date> <authored>: placement …; adjudication …; athlete …; performance …[; provenance].[ observed-work note]
+```
+
+`<authored>` is `planId rN/sessionId`, `planId rN rest/restDirectiveId`, `none`, or `unknown`.
+`recommendation:<date>` evidence is never rendered: the row date already identifies the
+recommendation, and the brief never dumps raw audit.
+
+Row vocabulary (underscores render as spaces):
+
+| Dimension | Labels | Meaning |
+|---|---|---|
+| placement | `as authored`, `intentionally moved`, `unknown` | Whether the session stayed on its authored date. An unconfirmed move renders `unknown`, never `missed`. |
+| adjudication | `as authored`, `app dose modified`, `gate replaced`, `not adjudicated`, `unknown` | What the app decided about the authored dose. `gate replaced` comes only from a saved `engineVerdict` `defer`/`skip` plus the canonical rest template, never from a mode fallback. `advisory` and verdict/template disagreement render `unknown`. |
+| athlete | `accepted`, `manually replaced`, `explicitly skipped`, `none`, `unknown` | What the athlete did. `manually replaced` is singleton-scoped (exactly one authored candidate that day) and never claims `completed`. `superseded` occurrences give `unknown`. |
+| performance | `completed`, `partial or abandoned`, `none observed`, `not applicable`, `unknown` | What was performed. `completed` requires the exact execution linked to the exact occurrence. Authored rest and unplanned work render `not applicable` with the observed work listed, never as completion. |
+
+Further meaning rules:
+
+- `unknown` means unavailable or not determinable evidence, never a miss.
+- `not adjudicated` asserts no decision was ever saved for that exact identity; a replace
+  day whose decision was overwritten renders `unknown`, not `not adjudicated`.
+- Withheld scale (no exact reduced definition), binding failures, and future non-rest
+  shapes render `unknown`, never `gate replaced` or `as authored`.
+
+Identity and provenance:
+
+- The join is exact-identity only: `planId`, `revision`, `sessionId`, `contentHash` plus
+  `occurrenceId` (`ExternalPlanOccurrenceRef`, `SessionOccurrence`, `SessionExecution`,
+  `PerformedTrainingOccurrence.sourceRefs`, persisted recommendation/adjudication
+  provenance). No title similarity.
+- Exact joins always use the complete persisted identifiers. Rendering is a bounded display
+  projection only: every identifier token is normalized to one line and capped at 96
+  characters, preserving a prefix and suffix separated by `…` when clipping is required.
+  Display clipping never participates in identity matching.
+- Rendered provenance ids are `occurrence`, `execution`, `performed`, and
+  `prescription` (hash) only.
+- On replace days the row carries `replaced by occurrence <id>`, attributing the
+  archive-named (pre-replace) revision — never today's active plan.
+- A row degraded by an archive-read failure carries
+  `replacement source unavailable (archive read failed)`, so a read failure reads
+  distinctly from not-determinable `unknown`.
+
+Distinctions the section guarantees:
+
+- intentionally moved vs missed;
+- authored rest vs no authored session, including rest plus unexpected work
+  (`Authored rest/no session; observed work: <ids>.`);
+- gate replacement vs athlete replacement vs withheld-scale / unsupported-verdict `unknown`;
+- completed vs partial/abandoned;
+- row-level read failure vs non-determinable `unknown`.
+
+Bounds:
+
+- At most 20 rows: the newest 20 of the deterministic sort, rendered chronologically.
+  The total sort key is date, complete authored identity (including plan/revision/session/hash
+  or rest identity), occurrence/execution/performed/prescription ids, then sorted evidence.
+  Exact duplicate rows may compare equal because their rendered output is identical.
+- When rows are cut, the section ends with
+  `- N earlier records omitted from this bounded section.`
+- Identifier tokens are capped at 96 rendered characters as described above.
+- `observed-work` ids are rendered only for authored-rest/no-session rows, deduplicated and
+  sorted; at most 5 are rendered per row, followed by an explicit counted omission marker
+  when more exist.
+- Replacement provenance is singular in the projector; the renderer defensively caps
+  `replaced-by` ids at 1 and counts any malformed/legacy extras rather than allowing them
+  to expand the row.
+- An empty window renders
+  `No exact external-plan occurrence records were available in this window. Missing activity
+  is not treated as a missed session.` Missing activity is never a miss.
+- Section-level unreadable inputs render the whole section `unknown`
+  (`Round-trip records are unknown because one or more sources could not be read.`) with an
+  `external-plan execution round-trip inputs` entry in `unavailableSources`, rather than an
+  empty section.
+
+Composition rule: the section consumes canonical performed-training authority and plan
+authority persisted per date. It never re-matches provider records, re-runs historical
+readiness, or duplicates raw telemetry (ids only).
+
+Determinism: identical persisted inputs, explicit `asOfDate`, purpose and contract version
+give identical semantic output; only `Generated at` varies.
 
 ## Information bounds
 
@@ -133,7 +227,11 @@ activity. Diagnostic keeps at most 30 detailed activities and 100 laps/response 
 activity. Omitted detail is counted and labelled. Service-level regressions cap representative
 Markdown artifacts at 24,000 characters for morning, 65,000 for planning and 90,000 for
 diagnostic. These limits apply to optional detail; authority and safety sections are rendered
-outside the activity-detail selection.
+outside the activity-detail selection. The round-trip section is independently finite through
+its newest-20 row cap, one-line 96-character identifier projection, five-item observed-work
+cap and singular replacement-provenance cap, all with explicit omission semantics. Like activity detail, representative maximum-density
+fixtures exercise composition without a global truncation; authority rows are never cut merely
+to satisfy a whole-document character limit.
 
 ## Determinism
 
@@ -168,6 +266,17 @@ decision. Do not silently repurpose an existing label.
 Adding or changing body sections also requires checking #894's contract requirements so that
 missingness, provenance, authority and information-budget guarantees are not weakened.
 
+Version history:
+
+- v1 → v2: canonical performed-training authority (one deduped occurrence per workout).
+- v2 → v3: required source state/currency semantics.
+- v3 → v4: round-trip semantics — `not adjudicated`, `none` and `as authored` narrowed for
+  identical persisted inputs (existing labels repurposed, never silently), plus the row
+  vocabulary, replacement/archive provenance, deterministic total ordering, newest-20 row
+  selection, and per-row identifier/observed-work bounds specified above. Planning exports
+  produced between PR-C's merge and this bump carry v3 identity with v4 semantics; the bump
+  bounds that window after the fact.
+
 Contract identity is asserted on every service-built artifact, and fixed-date semantic tests
 exclude only the generation timestamp. JSON's `context_brief_export_v2` transport version is
-independent of semantic contract v3. No recommendation authority is added by this export.
+independent of semantic contract v4. No recommendation authority is added by this export.

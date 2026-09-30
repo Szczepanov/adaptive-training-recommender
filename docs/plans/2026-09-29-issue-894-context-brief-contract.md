@@ -2,12 +2,16 @@
 
 | | |
 |---|---|
-| **Status** | **In progress** — remaining contract decisions are recorded below and implementation has started |
+| **Status** | **Implemented** — delivered by PR #922 on 30 September 2026; retained as the historical execution record |
 | **Source** | [Issue #894](https://github.com/Szczepanov/adaptive-training-recommender/issues/894) |
-| **Baseline** | Current repository contract v2; service-level identity validation and canonical planning/diagnostic completed-training rows are already present |
+| **Baseline** | Historical starting point: contract v2 with service-level identity validation and canonical planning/diagnostic completed-training rows |
 | **Blocked by** | None; D1 and D2 are fixed below for this implementation |
 | **Unlocks** | A regression-tested external-coach export contract across morning, planning and diagnostic purposes |
 | **Policy effect** | None expected. The brief remains descriptive and must not gain recommendation authority or change `POLICY_VERSION`. |
+
+> **Historical implementation record:** all work packages and acceptance criteria below are
+> complete. Imperative wording documents the delivered design sequence and is not a live work
+> queue. The living behavior contract is `docs/architecture/context-brief-contract.md`.
 
 ## Goal
 
@@ -21,7 +25,7 @@ Make each Context Brief a deterministic, bounded, source-honest handoff whose au
 - ADR-0034 `PerformedTrainingFacts` remains the identity source when available. Raw provider rows remain diagnostic evidence or an explicitly labelled fallback.
 - Existing `DataState` semantics (`AVAILABLE`, `MISSING`, `INVALID`, `UNAVAILABLE`) and response comparability/confidence contracts should be reused where they fit; do not create parallel meanings.
 
-## Decisions to record before implementation
+## Decisions recorded for implementation (historical)
 
 - **D1 — Staleness policy:** compare each decision-critical record's semantic source date with the date the brief is describing (today for recovery/check-in/current plan authority; D-1 for completed training/adherence). Flag records whose source date predates that expected date as stale and always render source date/age. A failed read is unavailable, not stale; do not infer upload time or shift `asOfDate` from a late source.
 - **D2 — Output budgets:** use deterministic, character-based limits checked against representative fixtures; retain existing per-activity segment/lap caps and add any missing aggregate cap needed by those fixtures. Keep decision-critical authority/safety fields outside optional-detail truncation. Diagnostic retains full supported provenance under an explicit hard output limit and omission count.
@@ -37,7 +41,7 @@ Make each Context Brief a deterministic, bounded, source-honest handoff whose au
 | WP3 Purpose bounds and deterministic rendering | `[x]` | Purpose-specific detail caps preserve authority/safety content; dense fixtures assert aggregate limits |
 | WP4 Fixture matrix, end-to-end gate and documentation | `[x]` | Issue scenarios, purpose snapshots, service-built Markdown/JSON assertions and architecture docs are updated; `make verify` passes |
 
-## Work items
+## Implemented work items (historical)
 
 ### WP0 — Version identity and source currency
 

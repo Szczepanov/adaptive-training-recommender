@@ -214,6 +214,46 @@ export function projectPlannedExecutionStatus(input: PlannedExecutionStatusInput
     };
 }
 
+const ROUND_TRIP_MAX_ROWS = 20;
+const ROUND_TRIP_MAX_IDENTIFIER_CHARS = 96;
+const ROUND_TRIP_IDENTIFIER_PREFIX_CHARS = 64;
+const ROUND_TRIP_IDENTIFIER_SUFFIX_CHARS = ROUND_TRIP_MAX_IDENTIFIER_CHARS - ROUND_TRIP_IDENTIFIER_PREFIX_CHARS - 1;
+const ROUND_TRIP_MAX_OBSERVED_WORK_IDS = 5;
+const ROUND_TRIP_MAX_REPLACED_BY_IDS = 1;
+
+function renderRoundTripIdentifier(value: string): string {
+    const oneLine = value.replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ').trim();
+    if (oneLine.length <= ROUND_TRIP_MAX_IDENTIFIER_CHARS) return oneLine;
+    return `${oneLine.slice(0, ROUND_TRIP_IDENTIFIER_PREFIX_CHARS)}…${oneLine.slice(-ROUND_TRIP_IDENTIFIER_SUFFIX_CHARS)}`;
+}
+
+function plannedExecutionStatusSortKey(status: PlannedExecutionStatus): string {
+    const authored = status.authored.kind === 'session'
+        ? ['session', status.authored.source.planId, String(status.authored.source.revision).padStart(10, '0'),
+            status.authored.source.sessionId, status.authored.source.contentHash].join('\u0001')
+        : status.authored.kind === 'rest'
+            ? ['rest', status.authored.planId, String(status.authored.revision).padStart(10, '0'),
+                status.authored.restDirectiveId].join('\u0001')
+            : status.authored.kind === 'unknown'
+                ? ['unknown', status.authored.reason].join('\u0001')
+                : 'none';
+    return [
+        status.date,
+        authored,
+        status.occurrenceId ?? '',
+        status.executionId ?? '',
+        status.performedOccurrenceId ?? '',
+        status.prescriptionHash ?? '',
+        [...status.evidence].sort().join('\u0001'),
+    ].join('\u0000');
+}
+
+function comparePlannedExecutionStatus(left: PlannedExecutionStatus, right: PlannedExecutionStatus): number {
+    const leftKey = plannedExecutionStatusSortKey(left);
+    const rightKey = plannedExecutionStatusSortKey(right);
+    return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+}
+
 export function renderPlannedExecutionStatuses(
     statuses: readonly PlannedExecutionStatus[] | null | undefined,
     heading = '## External-plan execution round trip',
@@ -222,24 +262,59 @@ export function renderPlannedExecutionStatuses(
     if (statuses === null) return [heading, '', 'Round-trip records are unknown because one or more sources could not be read.'];
     if (statuses.length === 0) return [heading, '', 'No exact external-plan occurrence records were available in this window. Missing activity is not treated as a missed session.'];
     const label = (value: string) => value.replaceAll('_', ' ');
-    const rows = [...statuses]
-        .sort((left, right) => left.date.localeCompare(right.date)
-            || (left.authored.kind === 'session' && right.authored.kind === 'session'
-                ? left.authored.source.sessionId.localeCompare(right.authored.source.sessionId)
-                : left.authored.kind.localeCompare(right.authored.kind))
-            || (left.occurrenceId ?? '').localeCompare(right.occurrenceId ?? ''))
-        .slice(0, 20)
-        .map(status => {
-            const authored = status.authored.kind === 'session'
-                ? `${status.authored.source.planId} r${status.authored.source.revision}/${status.authored.source.sessionId}`
-                : status.authored.kind === 'rest'
-                    ? `${status.authored.planId} r${status.authored.revision} rest/${status.authored.restDirectiveId}`
-                    : status.authored.kind;
-            const unexpectedWork = status.evidence.filter(item => item.startsWith('observed-work:'));
-            const workNote = unexpectedWork.length > 0 ? ` Authored rest/no session; observed work: ${unexpectedWork.map(item => item.slice('observed-work:'.length)).join(', ')}.` : '';
-            const provenance = [status.occurrenceId && `occurrence ${status.occurrenceId}`, status.executionId && `execution ${status.executionId}`, status.performedOccurrenceId && `performed ${status.performedOccurrenceId}`, status.prescriptionHash && `prescription ${status.prescriptionHash}`].filter(Boolean).join('; ');
-            return `- ${status.date} ${authored}: placement ${label(status.placement)}; adjudication ${label(status.adjudication)}; athlete ${label(status.athleteDisposition)}; performance ${label(status.performance)}${provenance ? `; ${provenance}` : ''}.${workNote}`;
-        });
-    if (statuses.length > 20) rows.push(`- ${statuses.length - 20} additional records omitted from this bounded section.`);
+    const sorted = [...statuses].sort(comparePlannedExecutionStatus);
+    // A planning handoff prioritizes the most recent records while preserving
+    // chronological display. Per-row identifiers and observed-work detail are
+    // bounded below so the section remains finite even with malformed/legacy data.
+    const visible = sorted.length > ROUND_TRIP_MAX_ROWS
+        ? sorted.slice(sorted.length - ROUND_TRIP_MAX_ROWS)
+        : sorted;
+    const rows = visible.map(status => {
+        const authored = status.authored.kind === 'session'
+            ? `${renderRoundTripIdentifier(status.authored.source.planId)} r${status.authored.source.revision}/${renderRoundTripIdentifier(status.authored.source.sessionId)}`
+            : status.authored.kind === 'rest'
+                ? `${renderRoundTripIdentifier(status.authored.planId)} r${status.authored.revision} rest/${renderRoundTripIdentifier(status.authored.restDirectiveId)}`
+                : status.authored.kind;
+        const observedWorkIds = status.authored.kind === 'rest' || status.authored.kind === 'none'
+            ? [...new Set(status.evidence
+                .filter(item => item.startsWith('observed-work:'))
+                .map(item => item.slice('observed-work:'.length)))]
+                .sort()
+            : [];
+        const visibleObservedWork = observedWorkIds
+            .slice(0, ROUND_TRIP_MAX_OBSERVED_WORK_IDS)
+            .map(renderRoundTripIdentifier);
+        const omittedObservedWork = observedWorkIds.length - visibleObservedWork.length;
+        const workNote = visibleObservedWork.length > 0
+            ? ` Authored rest/no session; observed work: ${visibleObservedWork.join(', ')}${omittedObservedWork > 0
+                ? `; ${omittedObservedWork} additional observed-work ids omitted`
+                : ''}.`
+            : '';
+        const replacedByIds = [...new Set(status.evidence
+            .filter(item => item.startsWith('replaced-by:'))
+            .map(item => item.slice('replaced-by:'.length)))]
+            .sort();
+        const replacedBy = replacedByIds.slice(0, ROUND_TRIP_MAX_REPLACED_BY_IDS)
+            .map(item => `replaced by occurrence ${renderRoundTripIdentifier(item)}`);
+        if (replacedByIds.length > ROUND_TRIP_MAX_REPLACED_BY_IDS) {
+            const omitted = replacedByIds.length - ROUND_TRIP_MAX_REPLACED_BY_IDS;
+            replacedBy.push(`${omitted} additional replacement ${omitted === 1 ? 'id' : 'ids'} omitted`);
+        }
+        const archiveFailure = status.evidence.includes('replace-archive-unavailable')
+            ? ['replacement source unavailable (archive read failed)']
+            : [];
+        const provenance = [
+            status.occurrenceId && `occurrence ${renderRoundTripIdentifier(status.occurrenceId)}`,
+            status.executionId && `execution ${renderRoundTripIdentifier(status.executionId)}`,
+            status.performedOccurrenceId && `performed ${renderRoundTripIdentifier(status.performedOccurrenceId)}`,
+            status.prescriptionHash && `prescription ${renderRoundTripIdentifier(status.prescriptionHash)}`,
+            ...replacedBy,
+            ...archiveFailure,
+        ].filter((item): item is string => typeof item === 'string').join('; ');
+        return `- ${status.date} ${authored}: placement ${label(status.placement)}; adjudication ${label(status.adjudication)}; athlete ${label(status.athleteDisposition)}; performance ${label(status.performance)}${provenance ? `; ${provenance}` : ''}.${workNote}`;
+    });
+    if (statuses.length > ROUND_TRIP_MAX_ROWS) {
+        rows.push(`- ${statuses.length - ROUND_TRIP_MAX_ROWS} earlier records omitted from this bounded section.`);
+    }
     return [heading, '', ...rows];
 }
