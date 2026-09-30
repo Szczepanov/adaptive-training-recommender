@@ -959,6 +959,8 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(claim.statement).toContain('Zone 2 aerobic endurance');
         expect(claim.statement).toContain('min(templateMultiplier, stimulusMultiplier) = 0.2');
         expect(claim.statement).toContain('intensityClassificationVersion >= 2');
+        expect(claim.statement).toContain('completedStructuredWorkout');
+        expect(claim.statement).toContain('provider-only');
         expect(claim.statement).toContain('fulfilsNominatedAnchor === true');
     });
 });

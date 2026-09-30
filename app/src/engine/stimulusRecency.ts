@@ -195,10 +195,13 @@ export function classifyWorkoutStimulusFamily(
 
 /**
  * Single authority determining whether a performed exposure is confident for stimulus recency:
- * - Structured execution -> confident (true)
- * - Provider activity -> confident ONLY IF intensityClassificationVersion >= 2 AND stimulusDomain is known
- *   (and not suppressed by athlete override)
- * - Legacy / unversioned / fallback -> not confident (false)
+ * - Successfully hydrated structured workout -> confident only when evidenceTier is
+ *   completedStructuredWorkout and stimulusDomain is known.
+ * - If a structured source ref exists but hydration failed, do not promote a weaker
+ *   provider fallback to structured confidence.
+ * - Provider-only activity -> confident ONLY IF intensityClassificationVersion >= 2 AND
+ *   stimulusDomain is known (and not suppressed by athlete override).
+ * - Legacy / unversioned / fallback -> not confident (false).
  */
 export function isConfidentStimulusExposure(
     exposure: PerformedExposureFact | StrengthExposureLike,
