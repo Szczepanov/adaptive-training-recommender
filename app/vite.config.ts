@@ -16,6 +16,7 @@ const gitSha = process.env.VITE_GIT_SHA?.trim() || readGit(['rev-parse', 'HEAD']
 const gitDirty = process.env.VITE_GIT_DIRTY !== undefined
   ? process.env.VITE_GIT_DIRTY === 'true'
   : Boolean(readGit(['status', '--porcelain']));
+const buildTime = process.env.VITE_BUILD_TIME?.trim() || new Date().toISOString();
 
 // Vite evaluates this config before it injects .env/.env.local into process.env. The proxy
 // is a development-only concern, so load the normal development env set explicitly here;
@@ -26,6 +27,7 @@ export default defineConfig({
   define: {
     'import.meta.env.VITE_GIT_SHA': JSON.stringify(gitSha),
     'import.meta.env.VITE_GIT_DIRTY': JSON.stringify(String(gitDirty)),
+    'import.meta.env.VITE_BUILD_TIME': JSON.stringify(buildTime),
   },
   server: {
     proxy: {

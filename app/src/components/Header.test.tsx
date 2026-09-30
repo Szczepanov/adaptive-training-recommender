@@ -72,4 +72,11 @@ describe('Header primary navigation', () => {
     expect(markup).toMatch(/class="nav-link active"[^>]*aria-current="page"[^>]*>.*?Plan/s);
     expect(markup).toMatch(/class="dropdown-item active"[^>]*aria-current="page"[^>]*>.*?Plan/s);
   });
+
+  it('renders build info disclosure item with label and title', () => {
+    const markup = renderHeader('sessions');
+
+    expect(markup).toContain('class="dropdown-item"');
+    expect(markup).toMatch(/<span class="item-title">Build [^<]+<\/span>/);
+  });
 });
