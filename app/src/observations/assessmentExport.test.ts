@@ -245,6 +245,80 @@ describe('assessmentExport', () => {
         expect(att2Obs?.revisions[1].supersedesRevision).toBe(1);
     });
 
+    it('never promotes a familiarization attempt to the implicit longitudinal baseline', () => {
+        const familiarizationAttempt: AssessmentAttempt = {
+            ...attempt1,
+            id: 'att-familiarization',
+            purpose: 'familiarization',
+            scheduledDate: '2026-10-18',
+            completedAt: '2026-10-18T10:15:00.000Z',
+        };
+        const checkpointAttempt: AssessmentAttempt = {
+            ...attempt2,
+            id: 'att-checkpoint',
+            purpose: 'checkpoint',
+        };
+        const familiarizationKey = 'att-familiarization:standing_broad_jump_distance_cm';
+        const checkpointKey = 'att-checkpoint:standing_broad_jump_distance_cm';
+        const familiarizationRevision: MetricObservationRevision = {
+            ...obsRev1A,
+            observationKey: familiarizationKey,
+            assessmentAttemptId: 'att-familiarization',
+            value: 220,
+            observedAt: '2026-10-18T10:15:00.000Z',
+            derivedFromEvidenceRefs: [{ kind: 'assessment_trial', assessmentAttemptId: 'att-familiarization', trialId: 'trial-1' }],
+        };
+        const checkpointRevision: MetricObservationRevision = {
+            ...obsRev1A,
+            observationKey: checkpointKey,
+            assessmentAttemptId: 'att-checkpoint',
+            value: 242,
+            observedAt: '2026-10-25T10:15:00.000Z',
+            derivedFromEvidenceRefs: [{ kind: 'assessment_trial', assessmentAttemptId: 'att-checkpoint', trialId: 'trial-1' }],
+        };
+        const observations: CanonicalObservationExport[] = [
+            {
+                observationKey: familiarizationKey,
+                head: {
+                    observationKey: familiarizationKey,
+                    assessmentAttemptId: 'att-familiarization',
+                    metricId: 'standing_broad_jump_distance_cm',
+                    headRevision: 1,
+                    createdAt: familiarizationRevision.createdAt,
+                    updatedAt: familiarizationRevision.createdAt,
+                },
+                revisions: [familiarizationRevision],
+            },
+            {
+                observationKey: checkpointKey,
+                head: {
+                    observationKey: checkpointKey,
+                    assessmentAttemptId: 'att-checkpoint',
+                    metricId: 'standing_broad_jump_distance_cm',
+                    headRevision: 1,
+                    createdAt: checkpointRevision.createdAt,
+                    updatedAt: checkpointRevision.createdAt,
+                },
+                revisions: [checkpointRevision],
+            },
+        ];
+
+        const exportData = buildAssessmentDiagnosticExport({
+            exportedAt: '2026-10-25T12:00:00.000Z',
+            protocols: [STANDING_BROAD_JUMP_PROTOCOL],
+            attempts: [familiarizationAttempt, checkpointAttempt],
+            trials: [],
+            canonicalObservations: observations,
+            resolvedContext: [],
+        });
+
+        expect(exportData.progress).toHaveLength(1);
+        expect(exportData.progress[0].baselineObservationId).toBe(checkpointKey);
+        expect(exportData.progress[0].baselineObservationId).not.toBe(familiarizationKey);
+        expect(exportData.progress[0].latestObservationId).toBeUndefined();
+        expect(exportData.progress[0].status).toBe('insufficient_evidence');
+    });
+
     it('computes progress using deriveProgress and omits user ID from output', () => {
         const exportData = buildAssessmentDiagnosticExport({
             exportedAt: '2026-10-25T12:00:00.000Z',
