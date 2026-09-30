@@ -107,6 +107,58 @@ describe('ActiveExternalPlanService', () => {
         expect(plans.getPlacementState).toHaveBeenCalledTimes(1);
     });
 
+
+    it('falls back to the prior effective revision until the successor horizon begins', async () => {
+        const predecessor = plan({ revision: 1, startDate: '2026-08-17', weekCount: 2 });
+        const successor = plan({ revision: 2, startDate: '2026-08-24', weekCount: 1 });
+        const predecessorHash = await computeContentHash(predecessor as never);
+        const successorHash = await computeContentHash(successor as never);
+        const plans = {
+            listPlanIds: vi.fn(async () => ({ status: 'AVAILABLE', data: ['autumn-block'], revision: null })),
+            getHeaderState: vi.fn(async () => ({
+                status: 'AVAILABLE',
+                data: header({
+                    revision: 2,
+                    startDate: successor.startDate,
+                    weekCount: successor.weekCount,
+                    contentHash: successorHash,
+                    importedAt: '2026-08-20T08:00:00Z',
+                    supersededFrom: '2026-08-20',
+                }),
+                revision: successorHash,
+            })),
+            getActivationState: vi.fn(async () => ({
+                status: 'AVAILABLE',
+                data: [
+                    {
+                        userId: 'u1', planId: 'autumn-block', revision: 1, contentHash: predecessorHash,
+                        effectiveFrom: '2026-08-17', activatedAt: '2026-08-16T10:00:00Z',
+                    },
+                    {
+                        userId: 'u1', planId: 'autumn-block', revision: 2, contentHash: successorHash,
+                        effectiveFrom: '2026-08-20', activatedAt: '2026-08-20T08:00:00Z',
+                    },
+                ],
+                revision: '2',
+            })),
+            getRevisionState: vi.fn(async (_userId: string, _planId: string, revision: number) => ({
+                status: 'AVAILABLE',
+                data: revision === 1 ? predecessor : successor,
+                revision: String(revision),
+            })),
+            getPlacementState: vi.fn(async () => ({ status: 'MISSING' })),
+        } as unknown as ExternalPlanService;
+
+        const state = await new ActiveExternalPlanService(plans).getActivePlanState('u1', '2026-08-21');
+
+        expect(state.status).toBe('AVAILABLE');
+        if (state.status !== 'AVAILABLE') throw new Error('unreachable');
+        expect(state.data.header.revision).toBe(1);
+        expect(state.data.plan.startDate).toBe('2026-08-17');
+        expect(plans.getRevisionState).toHaveBeenCalledWith('u1', 'autumn-block', 2);
+        expect(plans.getRevisionState).toHaveBeenCalledWith('u1', 'autumn-block', 1);
+    });
+
     it('reports MISSING for a date outside every plan rather than picking the nearest', async () => {
         const state = await new ActiveExternalPlanService(stubPlans()).getActivePlanState('u1', '2026-09-15');
         expect(state.status).toBe('MISSING');
