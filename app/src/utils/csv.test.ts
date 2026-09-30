@@ -36,6 +36,9 @@ describe('spreadsheetSafeText', () => {
         expect(spreadsheetSafeText('+cmd')).toBe("'+cmd");
         expect(spreadsheetSafeText('-cmd')).toBe("'-cmd");
         expect(spreadsheetSafeText('@sum')).toBe("'@sum");
+        expect(spreadsheetSafeText('\tformula')).toBe("'\tformula");
+        expect(spreadsheetSafeText('\nformula')).toBe("'\nformula");
+        expect(spreadsheetSafeText('\0formula')).toBe("'\0formula");
         expect(spreadsheetSafeText('＝1+1')).toBe("'＝1+1");
         expect(spreadsheetSafeText('Garmin')).toBe('Garmin');
     });
