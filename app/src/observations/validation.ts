@@ -1,6 +1,7 @@
 import type {
     AssessmentAttempt,
     CompetitionOutcome,
+    DerivationEvidenceRef,
     MetricObservationHead,
     MetricObservationRevision,
     ObservationContext,
@@ -39,7 +40,7 @@ function assertFiniteNonNegative(value: unknown, label: string): asserts value i
     }
 }
 
-function assertContext(context: ObservationContext, label: string): void {
+export function assertObservationContext(context: ObservationContext, label: string): void {
     if (!context || typeof context !== 'object' || Array.isArray(context)) throw new Error(`${label} must be an object`);
     for (const [key, value] of Object.entries(context)) {
         if (key.trim().length === 0) throw new Error(`${label} cannot contain an empty key`);
@@ -96,7 +97,7 @@ export function assertValidMetricObservationRevision(revision: MetricObservation
     if (!VALIDITIES.has(revision.validity)) throw new Error(`Unsupported observation validity: ${revision.validity}`);
     if (revision.validity === 'invalid') assertNonEmptyString(revision.invalidReason, 'invalidReason');
     if (revision.invalidReason !== undefined) assertNonEmptyString(revision.invalidReason, 'invalidReason');
-    assertContext(revision.context, 'context');
+    assertObservationContext(revision.context, 'context');
 
     if (revision.device !== undefined) {
         assertNonEmptyString(revision.device.provider, 'device.provider');
@@ -106,18 +107,55 @@ export function assertValidMetricObservationRevision(revision: MetricObservation
     if (revision.sourceRef !== undefined) assertNonEmptyString(revision.sourceRef, 'sourceRef');
     if (revision.correctionReason !== undefined) assertNonEmptyString(revision.correctionReason, 'correctionReason');
 
-    if (revision.source === 'derived') {
-        if (!revision.derivedFromObservationIds || revision.derivedFromObservationIds.length === 0) {
-            throw new Error('Derived observations require source observation IDs');
-        }
-        if (new Set(revision.derivedFromObservationIds).size !== revision.derivedFromObservationIds.length) {
-            throw new Error('Derived observation source IDs must be unique');
-        }
-        revision.derivedFromObservationIds.forEach((id, index) => assertNonEmptyString(id, `derivedFromObservationIds[${index}]`));
-        assertNonEmptyString(revision.algorithmVersion, 'algorithmVersion');
-    } else if (revision.derivedFromObservationIds !== undefined || revision.algorithmVersion !== undefined) {
-        throw new Error('Only derived observations may declare derivedFromObservationIds/algorithmVersion');
+    assertDerivationProvenance(revision);
+}
+
+const MAX_DERIVATION_SOURCES = 32;
+
+function assertDerivedObservationIds(ids: readonly string[]): void {
+    if (ids.length === 0 || ids.length > MAX_DERIVATION_SOURCES) {
+        throw new Error(`derivedFromObservationIds must list 1-${MAX_DERIVATION_SOURCES} observation IDs when present`);
     }
+    if (new Set(ids).size !== ids.length) throw new Error('Derived observation source IDs must be unique');
+    ids.forEach((id, index) => assertNonEmptyString(id, `derivedFromObservationIds[${index}]`));
+}
+
+function assertDerivedEvidenceRefs(revision: MetricObservationRevision, refs: readonly DerivationEvidenceRef[]): void {
+    if (refs.length === 0 || refs.length > MAX_DERIVATION_SOURCES) {
+        throw new Error(`derivedFromEvidenceRefs must list 1-${MAX_DERIVATION_SOURCES} references when present`);
+    }
+    const seen = new Set<string>();
+    refs.forEach((ref, index) => {
+        if (ref.kind !== 'assessment_trial') throw new Error(`derivedFromEvidenceRefs[${index}] has unsupported kind`);
+        assertNonEmptyString(ref.trialId, `derivedFromEvidenceRefs[${index}].trialId`);
+        if (ref.assessmentAttemptId !== revision.assessmentAttemptId) {
+            throw new Error('Trial evidence references must name the observation\'s own assessment attempt');
+        }
+        if (seen.has(ref.trialId)) throw new Error('Trial evidence references must be unique');
+        seen.add(ref.trialId);
+    });
+}
+
+/**
+ * ADR-0046 D-AT-REDUCE: a derived revision needs an algorithm version plus at least one source
+ * kind: observation IDs (observation-to-observation derivation, unchanged), typed trial
+ * evidence references (trial-only derivation), or both for a genuinely mixed derivation.
+ * Trial IDs never go into derivedFromObservationIds, which promises observation identities.
+ */
+function assertDerivationProvenance(revision: MetricObservationRevision): void {
+    const { derivedFromObservationIds: observationIds, derivedFromEvidenceRefs: evidenceRefs } = revision;
+    if (revision.source !== 'derived') {
+        if (observationIds !== undefined || evidenceRefs !== undefined || revision.algorithmVersion !== undefined) {
+            throw new Error('Only derived observations may declare derivation sources/algorithmVersion');
+        }
+        return;
+    }
+    if (observationIds === undefined && evidenceRefs === undefined) {
+        throw new Error('Derived observations require source observation IDs or typed evidence references');
+    }
+    if (observationIds !== undefined) assertDerivedObservationIds(observationIds);
+    if (evidenceRefs !== undefined) assertDerivedEvidenceRefs(revision, evidenceRefs);
+    assertNonEmptyString(revision.algorithmVersion, 'algorithmVersion');
 }
 
 export function assertValidAssessmentAttempt(attempt: AssessmentAttempt): void {
@@ -182,6 +220,6 @@ export function assertValidCompetitionOutcome(outcome: CompetitionOutcome): void
     if (outcome.result.distanceM !== undefined) assertFiniteNonNegative(outcome.result.distanceM, 'distanceM');
     if (outcome.result.courseId !== undefined) assertNonEmptyString(outcome.result.courseId, 'courseId');
     if (outcome.result.summary !== undefined && outcome.result.summary.length > 4000) throw new Error('Competition summary is too long');
-    assertContext(outcome.metrics, 'metrics');
-    assertContext(outcome.context, 'context');
+    assertObservationContext(outcome.metrics, 'metrics');
+    assertObservationContext(outcome.context, 'context');
 }

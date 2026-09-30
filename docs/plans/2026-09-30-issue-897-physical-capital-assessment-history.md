@@ -34,15 +34,15 @@ The slice is complete when all of the following are true:
 - [ ] 3 kg seated medicine-ball throw can be run and all trials are retained.
 - [ ] 3 × 6 s seated cycling sprint can store all three trials plus canonical 1 s peak and 5 s mean power.
 - [ ] Strength attempts can store load-by-load WL Analysis velocity evidence without making app-derived e1RM authoritative.
-- [ ] Historical protocol revisions remain immutable.
+- [x] Historical protocol revisions remain immutable.
 - [ ] Repeating a compatible protocol produces an explicit longitudinal comparison.
-- [ ] Incompatible protocol/setup changes produce `non_comparable` or a separate series rather than a false numerical trend.
+- [ ] Incompatible protocol/setup changes produce `non_comparable` or a separate series rather than a false numerical trend. *(PR A: the new protocols and dimensions split comparison series correctly; the `non_comparable` presentation is WP6.4.)*
 - [ ] Assessment history shows baseline/latest/change/comparability.
 - [ ] Normalized CSV export works.
 - [ ] Diagnostic JSON export retains protocol, trials, canonical observations and provenance.
-- [ ] Existing cycling tests continue to work without data migration.
+- [x] Existing cycling tests continue to work without data migration.
 - [ ] No assessment is double-counted as two physical sessions.
-- [ ] No recommendation-selection authority is added.
+- [x] No recommendation-selection authority is added.
 
 ---
 
@@ -72,22 +72,24 @@ For the **19–25 October capture cutline**, the critical path is WP0–WP5 plus
 **Blocked by:** nothing (ADR-0046 accepted 2026-09-30).
 **Unlocks:** WP0.2, WP0.3, WP1.1, WP1.2, WP2.1 and WP4.0.
 
-Create test fixtures that represent the intended October protocols before adding UI.
+Create protocol definitions that represent the intended October protocols before adding UI.
 
-Suggested file:
+Delivered module:
 
-`app/src/observations/__fixtures__/physicalCapitalProtocols.ts`
+`app/src/observations/physicalCapitalProtocols.ts`
 
-Fixtures:
+*(Implemented deliberately as a production module in `app/src/observations/` rather than under `__fixtures__/` so PR B's catalog imports the exact same pinned protocol objects without duplicating definitions).*
 
-- bench 1RM;
-- back-squat 1RM;
-- standing broad jump;
-- wall-touch CMJ;
-- 3 kg seated medicine-ball chest throw;
-- 6 s seated cycling sprint.
+Protocols:
 
-The fixtures must pin:
+- bench 1RM (`BENCH_PRESS_1RM_PROTOCOL`);
+- back-squat 1RM (`BACK_SQUAT_1RM_PROTOCOL`);
+- standing broad jump (`STANDING_BROAD_JUMP_PROTOCOL`);
+- wall-touch CMJ (`WALL_TOUCH_CMJ_PROTOCOL`);
+- 3 kg seated medicine-ball chest throw (`SEATED_MEDBALL_THROW_PROTOCOL`);
+- 6 s seated cycling sprint (`CYCLING_6S_SEATED_SPRINT_PROTOCOL`).
+
+The definitions pin:
 
 - protocol ID;
 - revision;
@@ -107,14 +109,16 @@ The fixtures must pin:
 
 Add a small pure contract for how trial evidence becomes the canonical result.
 
-Suggested concepts:
+Delivered reducer kinds in `app/src/observations/models.ts` and `assessmentReducers.ts`:
 
 ```ts
-type AssessmentReducer =
-  | { kind: 'max_valid'; metricId: string }
-  | { kind: 'highest_successful_load'; metricId: string }
-  | { kind: 'identity'; metricId: string };
+export type AssessmentReducer =
+    | { kind: 'max_valid'; metricId: string; fieldId: string }
+    | { kind: 'highest_successful_load'; metricId: string; loadFieldId: string; successFieldId: string }
+    | { kind: 'max_valid_difference'; metricId: string; minuendFieldId: string; subtrahendFieldId: string };
 ```
+
+*(Note: the initially sketched `identity` reducer was not needed; `max_valid_difference` was added for wall-touch CMJ where standing reach is recorded as a trial field and subtracted from touch height to yield the canonical CMJ jump height).*
 
 Do not make this generic enough to become an analytics DSL. It exists only to make bundled protocol summary semantics explicit and testable.
 
@@ -183,6 +187,8 @@ For bar velocity, `mean concentric velocity` remains the preferred future longit
 
 **Persistence parity requirement:** the current Firestore rules keep their own hard-coded outcome-metric/unit allowlists and measurement-protocol metric allowlist. WP1.1 must update those allowlists and emulator fixtures in the same delivery as the TypeScript registry. In particular, `strength_1rm_kg` being present in `registry.ts` is not sufficient by itself for #897 persistence.
 
+**Pre-existing rules/registry drift fix:** prior to Issue #897 / ADR-0046, `strength_1rm_kg`, `sprint_elapsed_time_s`, `cycling_5s_peak_power_w` and dimension `timing_method` existed in TypeScript but were omitted from the production `firestore.rules` allowlist, preventing bundled persistence of those metrics. The rules and TypeScript registry now share strict parity via `firestore.rules` `outcomeMetricUnits()` and `comparisonDimensionIds()`, verified by `firestoreRulesParity.test.ts`.
+
 ## WP1.2 Add only required comparison dimensions
 
 **Blocked by:** WP0.1 defines material setup/method identity.
@@ -233,40 +239,34 @@ The existing `MetricObservationRevision` remains the benchmark layer. It should 
 **Blocked by:** WP0.1 pins the bounded trial-capture semantics.
 **Unlocks:** WP2.2–WP2.5 and WP3 trial-derived summaries.
 
-Add a bounded raw evidence contract.
+Add a bounded raw evidence contract in `app/src/observations/models.ts` and `assessmentTrials.ts`.
 
-Suggested location:
-
-`app/src/observations/assessmentTrials.ts`
-
-Illustrative shape:
+Delivered shape:
 
 ```ts
-type AssessmentTrialScalar = string | number | boolean;
-
-export interface AssessmentTrialValue {
-    fieldId: string;
-    value: AssessmentTrialScalar;
-    unit?: string;
-}
+export type AssessmentTrialScalar = number | boolean;
 
 export interface AssessmentTrial {
     id: string;
     assessmentAttemptId: string;
     ordinal: number;
+    correctionIndex: number;
+    supersedesTrialId?: string;
+    correctionReason?: string;
     performedAt?: string;
     validity: ObservationValidity;
     invalidReason?: string;
+    /** Values keyed by protocol capture field id; units and bounds are owned by the capture field definition. */
+    values: Readonly<Record<string, AssessmentTrialScalar>>;
     context: ObservationContext;
-    values: readonly AssessmentTrialValue[];
     sourceRef?: string;
     device?: MetricObservationDevice;
     notes?: string;
-    supersedesTrialId?: string;
-    correctionReason?: string;
     createdAt: string;
 }
 ```
+
+*(Note: `values` is a `Readonly<Record<string, AssessmentTrialScalar>>` map keyed by field id rather than an array of `{ fieldId, value, unit }` objects; units and bounds are defined once on the immutable protocol revision's capture schema rather than duplicated per trial value. Document ID is deterministic `trial-${ordinal}` / `trial-${ordinal}-c${correctionIndex}` derived from `ordinal` and `correctionIndex`, with `supersedesTrialId` linking the append-only supersession chain).*
 
 Raw `fieldId` values are declared and validated by the bundled test's bounded capture schema. Reducers map those fields to canonical metric IDs; raw fields do not become `MetricDefinition` entries automatically.
 

@@ -16,8 +16,25 @@ describe('OV1 metric registry', () => {
             'strength_1rm_kg',
             'sprint_elapsed_time_s',
             'cycling_5s_peak_power_w',
+            'standing_broad_jump_distance_cm',
+            'wall_touch_cmj_height_cm',
+            'seated_medball_throw_distance_m',
+            'cycling_sprint_1s_peak_power_w',
+            'cycling_sprint_5s_mean_power_w',
         ]);
         expect(getMetricDefinition('cycling_tt_20m_mean_power_w').direction).toBe('higher_is_better');
+    });
+
+    it('registers the #897 physical-capital benchmark metrics with units and direction', () => {
+        expect(getMetricDefinition('standing_broad_jump_distance_cm')).toMatchObject({ domain: 'field', unit: 'cm', direction: 'higher_is_better' });
+        expect(getMetricDefinition('wall_touch_cmj_height_cm')).toMatchObject({ domain: 'field', unit: 'cm', direction: 'higher_is_better' });
+        expect(getMetricDefinition('seated_medball_throw_distance_m')).toMatchObject({ domain: 'field', unit: 'm', direction: 'higher_is_better' });
+        expect(getMetricDefinition('cycling_sprint_1s_peak_power_w')).toMatchObject({ domain: 'cycling', unit: 'W', direction: 'higher_is_better' });
+        expect(getMetricDefinition('cycling_sprint_5s_mean_power_w')).toMatchObject({ domain: 'cycling', unit: 'W', direction: 'higher_is_better' });
+        expect(() => assertMetricUnit('seated_medball_throw_distance_m', 'cm')).toThrow(/requires unit m/);
+        // Raw capture fields (cadence, balance, bar velocity, RPE) are deliberately not metrics.
+        expect(() => getMetricDefinition('peak_cadence_rpm')).toThrow(/Unsupported metric id/);
+        expect(() => getMetricDefinition('mean_concentric_velocity_mps')).toThrow(/Unsupported metric id/);
     });
 
     it('registers the strength/speed/power performance-goal metrics with the correct direction', () => {

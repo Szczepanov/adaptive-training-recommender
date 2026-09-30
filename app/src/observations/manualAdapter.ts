@@ -40,6 +40,10 @@ export async function adaptManualObservation(
     identity: ObservationRevisionIdentity = { revision: 1 },
 ): Promise<MetricObservationRevision> {
     assertValidMeasurementProtocol(input.protocol);
+    if (input.protocol.capture !== undefined) {
+        // ADR-0046 D-AT-REDUCE: trial-capture protocols derive canonical values from raw trials.
+        throw new Error(`Protocol ${input.protocol.id}@${input.protocol.revision} derives canonical values from trials; manual summary entry is not allowed`);
+    }
     assertMetricUnit(input.metricId, input.unit);
     if (!input.protocol.metricIds.includes(input.metricId)) {
         throw new Error(`Metric ${input.metricId} is not declared by protocol ${input.protocol.id}@${input.protocol.revision}`);

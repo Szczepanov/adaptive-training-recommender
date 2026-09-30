@@ -42,20 +42,28 @@ OV/outcome evidence and optimizer/planner/rules/weekly-allocation modules in eit
 where that would grant outcome evidence production selection authority. A future
 outcome-to-planning rule requires a separate ADR/ship decision.
 
-## V1 metric registry
+## Metric registry (app/src/observations/registry.ts)
 
-The current registry is deliberately cycling-first and bounded:
+The outcome metric registry is bounded and strongly typed:
 
-| Metric | Unit | Direction |
-|---|---|---|
-| `cycling_tt_20m_mean_power_w` | `W` | higher is better |
-| `cycling_tt_4m_mean_power_w` | `W` | higher is better |
-| `cycling_submax_mean_hr_bpm` | `bpm` | context only |
-| `cycling_submax_rpe` | `rpe` | context only |
+| Metric | Unit | Direction | Domain |
+|---|---|---|---|
+| `cycling_tt_20m_mean_power_w` | `W` | higher is better | cycling |
+| `cycling_tt_4m_mean_power_w` | `W` | higher is better | cycling |
+| `cycling_submax_mean_hr_bpm` | `bpm` | context only | cycling |
+| `cycling_submax_rpe` | `rpe` | context only | cycling |
+| `strength_1rm_kg` | `kg` | higher is better | strength |
+| `sprint_elapsed_time_s` | `s` | lower is better | field |
+| `cycling_5s_peak_power_w` | `W` | higher is better | cycling |
+| `standing_broad_jump_distance_cm` | `cm` | higher is better | field |
+| `wall_touch_cmj_height_cm` | `cm` | higher is better | field |
+| `seated_medball_throw_distance_m` | `m` | higher is better | field |
+| `cycling_sprint_1s_peak_power_w` | `W` | higher is better | cycling |
+| `cycling_sprint_5s_mean_power_w` | `W` | higher is better | cycling |
 
-Raw 20-minute mean power is stored as the raw metric. It is not named or persisted as FTP.
-Context-only metrics cannot be promoted to primary/secondary outcome bindings by the registry
-contract.
+Raw 20-minute mean power is stored as the raw metric. It is not named or persisted as FTP. Context-only metrics cannot be promoted to primary/secondary outcome bindings by the registry contract.
+
+**Pre-existing rules/registry drift fix:** prior to Issue #897 / ADR-0046, `strength_1rm_kg`, `sprint_elapsed_time_s`, `cycling_5s_peak_power_w`, and dimension `timing_method` existed in TypeScript but were omitted from the production `firestore.rules` allowlist, preventing bundled persistence of those metrics. The rules and TypeScript registry now share strict parity via `firestore.rules` `outcomeMetricUnits()` and `comparisonDimensionIds()`, verified by `firestoreRulesParity.test.ts`.
 
 ## Measurement protocols and comparison series
 
@@ -115,6 +123,29 @@ scheduled -> in_progress -> completed
 
 Purpose is one of `familiarization | baseline | checkpoint | post_block`. Competition is not
 an assessment-attempt purpose.
+
+### Raw assessment trials (ADR-0046)
+
+```text
+assessment_attempts/{attemptId}/trials/{trialId}
+```
+
+Multi-trial protocols retain repeated attempts and load/velocity evidence as immutable raw trial records below the assessment attempt:
+
+* **Deterministic document identity:** `trialId` is computed by `assessmentTrialIdFor(ordinal, correctionIndex)`. The original attempt for an ordinal is `trial-{ordinal}` (`correctionIndex: 0`); corrections take `trial-{ordinal}-c{correctionIndex}` (`correctionIndex >= 1`). Concurrent corrections for the same ordinal collide on the same document identity instead of silently forking the chain.
+* **Attempt lifecycle binding:** enforced by `assertAssessmentTrialWriteAllowed` and Firestore rules `hasValidAssessmentTrial`:
+  * `scheduled` — no trial writes allowed;
+  * `in_progress` — normal capture window; both new ordinals and corrections are admitted;
+  * `completed` — only append-only supersessions/corrections (`correctionIndex > 0`, non-empty `correctionReason`, referencing an existing superseded trial) are admitted; new ordinals are rejected;
+  * `abandoned` — no trial writes allowed; any previously recorded trials remain for audit but are never reduced into canonical benchmarks.
+* **Capture contract on the protocol revision:** multi-trial protocols declare an immutable `MeasurementProtocol.capture` specification on the protocol revision document (ADR-0046 D-AT-PROTOCOL). This carries `plannedTrials`, `maxTrials`, raw `fields` (`AssessmentTrialFieldDefinition[]`), deterministic `reducers` (`AssessmentReducer[]`), and `reducerVersion` (`ASSESSMENT_REDUCER_VERSION_V1`).
+* **Deterministic reducers:** `reduceAssessmentTrials` transforms active trial evidence into canonical benchmark outcomes:
+  * `max_valid`: best valid attempt (standing broad jump, medicine-ball throw, cycling sprint 1 s peak power, cycling sprint 5 s mean power);
+  * `highest_successful_load`: highest valid successful attempt (bench press 1RM, back squat 1RM);
+  * `max_valid_difference`: maximum difference between two fields within a trial (wall-touch CMJ touch height minus standing reach).
+* **Typed derivation provenance:** `deriveTrialObservationRevisions` creates canonical `MetricObservationRevision` records with `source: 'derived'`, `algorithmVersion: 'assessment-reducer-v1'`, and `derivedFromEvidenceRefs` containing `{ kind: 'assessment_trial', assessmentAttemptId, trialId }` references per metric. Trial IDs never enter `derivedFromObservationIds` (which is reserved for observation-to-observation derivations).
+* **Trial-capture protocols are derive-only:** a protocol revision that declares `capture` cannot receive hand-typed canonical values. `adaptManualObservation` refuses it, and the `hasValidTrialCaptureBinding` Firestore rule requires `source: 'derived'`, `derivedFromEvidenceRefs`, an `algorithmVersion` equal to the protocol's `capture.reducerVersion`, and an `in_progress` or `completed` parent attempt. Summary-only protocols keep manual entry.
+* **Rules parity and immutability:** rules deny trial `update` and `delete` (`allow update, delete: if false`). Parity between rules allowlists/bounds and domain constants is verified by `firestoreRulesParity.test.ts` and `assessmentTrialRules.emulator.test.ts`.
 
 ### Metric observations
 

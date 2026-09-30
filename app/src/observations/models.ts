@@ -36,7 +36,9 @@ export type ComparisonDimension =
     | 'warmup_revision'
     | 'feedback_rule'
     | 'weather_note'
-    | 'timing_method';
+    | 'timing_method'
+    | 'measurement_method_id'
+    | 'equipment_setup_id';
 
 export type ComparisonContextValue = string | number | boolean;
 
@@ -50,6 +52,50 @@ export type ComparisonContext = Readonly<Partial<Record<ComparisonDimension, Com
 export interface ProtocolInstruction {
     id: string;
     text: string;
+}
+
+/**
+ * ADR-0046 raw-trial field vocabulary. Raw fields are declared per protocol revision and are
+ * deliberately not MetricDefinition entries: only reducer outputs become canonical metrics.
+ */
+export type AssessmentTrialFieldUnit = 'W' | 'kg' | 'cm' | 'm' | 'rpm' | 'pct' | 'm/s' | 'rpe';
+
+export type AssessmentTrialFieldDefinition =
+    | {
+        id: string;
+        label: string;
+        valueKind: 'number';
+        unit: AssessmentTrialFieldUnit;
+        required: boolean;
+        minimum: number;
+        maximum: number;
+    }
+    | {
+        id: string;
+        label: string;
+        valueKind: 'boolean';
+        required: boolean;
+    };
+
+/**
+ * Deterministic canonical-summary reducers (ADR-0046 D-AT-REDUCE). Intentionally a closed
+ * union, not an analytics DSL: add a kind only when a bundled protocol needs it.
+ */
+export type AssessmentReducer =
+    | { kind: 'max_valid'; metricId: string; fieldId: string }
+    | { kind: 'max_valid_difference'; metricId: string; minuendFieldId: string; subtrahendFieldId: string }
+    | { kind: 'highest_successful_load'; metricId: string; loadFieldId: string; successFieldId: string };
+
+/**
+ * Multi-trial capture contract persisted on the immutable protocol revision itself
+ * (ADR-0046 D-AT-PROTOCOL). Changing a field or reducer requires a new protocol revision.
+ */
+export interface AssessmentCaptureDefinition {
+    plannedTrials: number;
+    maxTrials: number;
+    fields: readonly AssessmentTrialFieldDefinition[];
+    reducers: readonly AssessmentReducer[];
+    reducerVersion: string;
 }
 
 export interface MeasurementProtocol {
@@ -73,6 +119,8 @@ export interface MeasurementProtocol {
     burden: 'low' | 'moderate' | 'high';
     expectedRecoveryHours?: number;
     invalidationRules: readonly string[];
+    /** Absent for summary-only protocols; present when canonical values derive from raw trials. */
+    capture?: AssessmentCaptureDefinition;
     createdAt: string;
 }
 
@@ -122,6 +170,15 @@ export interface MetricObservationDevice {
 export type ObservationContextValue = string | number | boolean | null;
 export type ObservationContext = Readonly<Record<string, ObservationContextValue>>;
 
+/** Typed non-observation derivation source (ADR-0046 D-AT-REDUCE). */
+export interface AssessmentTrialEvidenceRef {
+    kind: 'assessment_trial';
+    assessmentAttemptId: string;
+    trialId: string;
+}
+
+export type DerivationEvidenceRef = AssessmentTrialEvidenceRef;
+
 export interface MetricObservationRevision {
     observationKey: string;
     revision: number;
@@ -144,8 +201,37 @@ export interface MetricObservationRevision {
     invalidReason?: string;
     context: ObservationContext;
     derivedFromObservationIds?: readonly string[];
+    derivedFromEvidenceRefs?: readonly DerivationEvidenceRef[];
     algorithmVersion?: string;
     correctionReason?: string;
+    createdAt: string;
+}
+
+export type AssessmentTrialScalar = number | boolean;
+
+/**
+ * One immutable raw trial below `users/{uid}/assessment_attempts/{attemptId}/trials/{id}`
+ * (ADR-0046 D-AT-TRIAL). `correctionIndex` 0 is the original record for an ordinal; index k
+ * supersedes index k-1 of the same ordinal. The document id is derived from
+ * (ordinal, correctionIndex), so two concurrent corrections of one ordinal collide on the same
+ * immutable document instead of forking the chain.
+ */
+export interface AssessmentTrial {
+    id: string;
+    assessmentAttemptId: string;
+    ordinal: number;
+    correctionIndex: number;
+    supersedesTrialId?: string;
+    correctionReason?: string;
+    performedAt?: string;
+    validity: ObservationValidity;
+    invalidReason?: string;
+    /** Values keyed by the protocol capture field id; units come from the field definition. */
+    values: Readonly<Record<string, AssessmentTrialScalar>>;
+    context: ObservationContext;
+    sourceRef?: string;
+    device?: MetricObservationDevice;
+    notes?: string;
     createdAt: string;
 }
 

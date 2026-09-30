@@ -77,6 +77,80 @@ describe('OV2 evidence validation', () => {
         }))).toThrow(/Only derived observations/);
     });
 
+    it('validates derivation provenance matrix (trial-only, observation-derived legacy, mixed, and invalid forms)', () => {
+        const validTrialRef = {
+            kind: 'assessment_trial' as const,
+            assessmentAttemptId: 'attempt-1',
+            trialId: 'trial-1',
+        };
+
+        // trial-only derived valid
+        expect(() => assertValidMetricObservationRevision(observation({
+            source: 'derived',
+            derivedFromEvidenceRefs: [validTrialRef],
+            algorithmVersion: 'assessment-reducer-v1',
+        }))).not.toThrow();
+
+        // observation-derived legacy still valid
+        expect(() => assertValidMetricObservationRevision(observation({
+            source: 'derived',
+            derivedFromObservationIds: ['obs-1'],
+            algorithmVersion: 'algo-v1',
+        }))).not.toThrow();
+
+        // mixed valid
+        expect(() => assertValidMetricObservationRevision(observation({
+            source: 'derived',
+            derivedFromObservationIds: ['obs-1'],
+            derivedFromEvidenceRefs: [validTrialRef],
+            algorithmVersion: 'algo-v1',
+        }))).not.toThrow();
+
+        // derived with neither rejected
+        expect(() => assertValidMetricObservationRevision(observation({
+            source: 'derived',
+            algorithmVersion: 'algo-v1',
+        }))).toThrow(/require source observation IDs or typed evidence references/);
+
+        // non-derived with either rejected
+        expect(() => assertValidMetricObservationRevision(observation({
+            source: 'manual',
+            derivedFromEvidenceRefs: [validTrialRef],
+        }))).toThrow(/Only derived observations may declare derivation sources/);
+
+        expect(() => assertValidMetricObservationRevision(observation({
+            source: 'manual',
+            derivedFromObservationIds: ['obs-1'],
+        }))).toThrow(/Only derived observations may declare derivation sources/);
+
+        // duplicate refs rejected
+        expect(() => assertValidMetricObservationRevision(observation({
+            source: 'derived',
+            derivedFromEvidenceRefs: [validTrialRef, { ...validTrialRef }],
+            algorithmVersion: 'algo-v1',
+        }))).toThrow(/Trial evidence references must be unique/);
+
+        // ref naming another attempt rejected
+        expect(() => assertValidMetricObservationRevision(observation({
+            source: 'derived',
+            derivedFromEvidenceRefs: [{ ...validTrialRef, assessmentAttemptId: 'attempt-2' }],
+            algorithmVersion: 'algo-v1',
+        }))).toThrow(/must name the observation's own assessment attempt/);
+
+        // empty lists rejected
+        expect(() => assertValidMetricObservationRevision(observation({
+            source: 'derived',
+            derivedFromObservationIds: [],
+            algorithmVersion: 'algo-v1',
+        }))).toThrow(/must list 1-32 observation IDs when present/);
+
+        expect(() => assertValidMetricObservationRevision(observation({
+            source: 'derived',
+            derivedFromEvidenceRefs: [],
+            algorithmVersion: 'algo-v1',
+        }))).toThrow(/must list 1-32 references when present/);
+    });
+
     it('enforces assessment lifecycle timestamp invariants', () => {
         const scheduled: AssessmentAttempt = {
             id: 'attempt-1', protocolRef: { id: 'cycling-20m-tt', revision: 1 }, state: 'scheduled', purpose: 'baseline', scheduledDate: '2026-08-22',
