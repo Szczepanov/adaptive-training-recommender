@@ -36,7 +36,7 @@ describe('ADR-0017 planning mode resolution', () => {
 
     it('keeps a distant cycling event as context while fallback owns dates before the currently authored structured horizon', () => {
         const cyclingEvent = event('cycling_event');
-        const beforeBuild = '2026-06-20'; // race D-85; derived build starts D-84
+        const beforeBuild = '2026-06-20'; // Current cycling-policy fixture: generated build starts at D-84; not a universal training threshold.
         const firstBuildDay = '2026-06-21';
 
         const fallback = resolvePlanningContext(
