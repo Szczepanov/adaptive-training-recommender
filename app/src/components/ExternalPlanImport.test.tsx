@@ -164,6 +164,7 @@ describe('PlanPreview — M3.7 import acknowledgement gating', () => {
         return [{
             sessionId: 's1',
             change: 'changed',
+            behaviorChanging: true,
             detail: '"Threshold": the session content changed (see below).',
             contentChanges: [
                 { scope: 'step', id: 'block-main/step-interval', change: 'changed', behaviorChanging: true, detail: 'Step "Interval": dose changed.' },
@@ -175,6 +176,7 @@ describe('PlanPreview — M3.7 import acknowledgement gating', () => {
         return [{
             sessionId: 's1',
             change: 'changed',
+            behaviorChanging: false,
             detail: '"Threshold": session wording changed (see below).',
             contentChanges: [
                 { scope: 'session', id: 's1', change: 'changed', behaviorChanging: false, detail: 'Title or summary text changed.' },

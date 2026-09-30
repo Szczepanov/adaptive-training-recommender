@@ -4,6 +4,7 @@ import { resolvePlacement, resolveRestDatesByDate, type PlacedSession } from '..
 import type {
     ExternalPlanHeader,
     ExternalPlanPlacement,
+    ExternalPlanRevisionActivation,
     FixedActivity,
     ScheduleWindow,
 } from '../engine/models';
@@ -12,6 +13,7 @@ import { estimateAuthoredSessionSystemicCost } from '../engine/authoredSessionGa
 import type { DailyLedgerResult } from '../engine/dailyLedger';
 import { proposeBundlePlacement, type BundlePlacementProposal, type IntradayBundleMember, type ResolvedWindowBinding } from '../engine/intradayBundlePlacement';
 import { externalPlanService, type ExternalPlanService } from './externalPlanService';
+import { computeContentHash } from './externalPlanService';
 // M3.6: an active plan may be any supported schema version -- resolvePlacement and most
 // downstream session handling read envelope fields shared by every version. ADR-0035 adds
 // plan-level rest directives in v3, resolved separately below rather than faked as sessions.
@@ -375,38 +377,67 @@ export class ActiveExternalPlanService {
         const unavailable = headerStates.find(state => state.status === 'UNAVAILABLE');
         if (unavailable) return unavailable;
 
-        const covering = headerStates
-            .flatMap(state => (state.status === 'AVAILABLE' ? [state.data] : []))
-            .filter(header => header.startDate <= date && date <= planEndDate(header))
-            .filter(header => header.supersededFrom === null || date >= header.supersededFrom)
-            .sort((left, right) => right.importedAt.localeCompare(left.importedAt)
-                || right.planId.localeCompare(left.planId));
-        if (covering.length === 0) return { status: 'MISSING' };
-        const header = covering[0];
+        const candidates: ActiveExternalPlan[] = [];
+        for (const headerState of headerStates) {
+            if (headerState.status !== 'AVAILABLE') continue;
+            const latestHeader = headerState.data;
+            const activationState = await this.plans.getActivationState(userId, latestHeader.planId);
+            if (activationState.status !== 'AVAILABLE') return activationState;
+            const activations = activationState.data.length > 0
+                ? activationState.data
+                : [{
+                    userId, planId: latestHeader.planId, revision: latestHeader.revision,
+                    contentHash: latestHeader.contentHash,
+                    effectiveFrom: latestHeader.supersededFrom ?? latestHeader.startDate,
+                    activatedAt: latestHeader.importedAt,
+                } satisfies ExternalPlanRevisionActivation];
+            const activation = [...activations]
+                .filter(item => item.effectiveFrom <= date)
+                .sort((left, right) => right.effectiveFrom.localeCompare(left.effectiveFrom) || right.revision - left.revision)[0];
+            if (!activation) continue;
+            if (activation.revision === latestHeader.revision
+                && (date < latestHeader.startDate || date > planEndDate(latestHeader))) continue;
 
-        const revision = await this.plans.getRevisionState(userId, header.planId, header.revision);
-        if (revision.status !== 'AVAILABLE') return revision;
+            const revision = await this.plans.getRevisionState(userId, latestHeader.planId, activation.revision);
+            if (revision.status !== 'AVAILABLE') return revision;
+            const planHash = await computeContentHash(revision.data);
+            if (planHash !== activation.contentHash
+                || (activation.revision === latestHeader.revision && latestHeader.contentHash !== activation.contentHash)) {
+                return { status: 'INVALID', issues: [{ code: 'activation-content-mismatch', documentPath: `users/${userId}/external_plans/${latestHeader.planId}/activations/${activation.revision}` }] };
+            }
+            if (revision.data.startDate > date || date > planEndDate(revision.data)) continue;
 
-        const placementState = await this.plans.getPlacementState(userId, header.planId);
-        // An INVALID or unreadable overlay is not "no overlay": ignoring malformed current
-        // placement could undo reschedules the athlete already confirmed.
-        if (placementState.status === 'INVALID' || placementState.status === 'UNAVAILABLE') return placementState;
-        // A valid overlay belonging to an older immutable revision is different: it is
-        // stale metadata, not a corrupt current overlay. Never apply it to newer plan bytes,
-        // but do not brick a fresh re-import either — the new revision starts unmodified.
-        const placement = placementState.status === 'AVAILABLE' && placementState.data.revision === header.revision
-            ? placementState.data
-            : null;
-
-        return {
-            status: 'AVAILABLE',
-            data: {
+            const placementState = await this.plans.getPlacementState(userId, latestHeader.planId, activation.revision);
+            // An unreadable or malformed overlay is unknown, never a clean placement.
+            if (placementState.status === 'INVALID' || placementState.status === 'UNAVAILABLE') return placementState;
+            const placement = placementState.status === 'AVAILABLE' && placementState.data.revision === activation.revision
+                ? placementState.data
+                : null;
+            const header: ExternalPlanHeader = {
+                ...latestHeader,
+                revision: activation.revision,
+                title: revision.data.title,
+                startDate: revision.data.startDate,
+                weekCount: revision.data.weekCount,
+                contentHash: activation.contentHash,
+                importedAt: activation.activatedAt,
+                supersededFrom: activation.effectiveFrom,
+            };
+            candidates.push({
                 header,
                 plan: revision.data,
                 placement,
                 placed: resolvePlacement(revision.data, placement, { fixedActivities }),
-            },
-            revision: `${header.contentHash}:${placement?.updatedAt ?? 'no-overlay'}`,
+            });
+        }
+        if (candidates.length === 0) return { status: 'MISSING' };
+        candidates.sort((left, right) => right.header.importedAt.localeCompare(left.header.importedAt)
+            || right.header.planId.localeCompare(left.header.planId));
+        const active = candidates[0];
+        return {
+            status: 'AVAILABLE',
+            data: active,
+            revision: `${active.header.contentHash}:${active.placement?.updatedAt ?? 'no-overlay'}`,
         };
     }
 }

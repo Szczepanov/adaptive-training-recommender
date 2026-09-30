@@ -10,8 +10,7 @@ import {
     type AnyExternalTrainingPlan as ExternalTrainingPlan,
     type AnyExternalPlanSession,
 } from '../sessions/externalPlanV2';
-import { EXTERNAL_PLAN_SCHEMA_V4 } from '../sessions/externalPlanV4';
-import { isV5Plan } from '../sessions/externalPlanV5';
+import { EXTERNAL_PLAN_SCHEMA_V6 } from '../sessions/externalPlanV6';
 import { validateAnyExternalTrainingPlan } from '../sessions/externalPlanValidation';
 import { SessionDefinitionPreview } from './session/SessionDefinitionPreview';
 import './ExternalPlanImport.css';
@@ -46,7 +45,7 @@ function parseJson(text: string): { value: unknown } | { error: string } {
 
 const AI_PROMPT_TEMPLATE = `Output the plan as a single JSON document and nothing else. Follow this contract exactly.
 
-Top level: schema (literal "${EXTERNAL_PLAN_SCHEMA_V4}"), planId (lowercase slug, unchanged between revisions of the same plan), revision (integer, increment when revising), title, startDate (the Monday week 1 begins, YYYY-MM-DD), weekCount, optional notes, required restDays, and sessions.
+Top level: schema (literal "${EXTERNAL_PLAN_SCHEMA_V6}"), planId (lowercase slug, unchanged between revisions of the same plan), revision (integer, increment when revising), title, startDate (the Monday week 1 begins, YYYY-MM-DD), weekCount, optional notes, required restDays, optional intentBlocks, and sessions.
 
 restDays is a list of deliberate protected-rest directives. It may be empty. Each directive is exactly {"id": "<stable-unique-id>", "week": <1-based-week>, "day": "<lowercase-weekday>"}. Use the same monday/tuesday/wednesday/thursday/friday/saturday/sunday vocabulary as session placement. Do not put absolute dates in restDays: startDate is the plan's only authored absolute date, and the app resolves week/day to a calendar date. Do not use omission to mean protected rest — a date with neither a session nor a restDays directive is intentionally unplanned and may use the app's normal fallback. Never place a fixed session and a restDays directive on the same week/day.
 
@@ -57,7 +56,7 @@ Do not compute calendar dates for sessions. Each session has id, title, priority
 - objectives: zero or more of threshold_quality, surge_repeatability, zone2_aerobic, strength_maintenance, strength_development, race_specific_endurance, vo2_max.
 - definition: the executable content — schemaVersion (1), id (same as the session's own id), revision (1), title, optional summary, intent (training/testing/competition/rehab_return/recovery/skill_technical), optional dominantModality (matching gating.modality), optional duration ({min, max} minutes), and blocks. Each block has id, optional title, role (warmup/main/cooldown/accessory/test/recovery), executionMode (sequential/circuit/superset/density/amrap/alternating), and steps. Each step has id, kind ("exercise"), optional title, exerciseRef (prefer {"kind": "catalog", "exerciseId": "<id>"} when matching known movements — e.g. bike_progressive_warmup, bike_easy_spin, bike_threshold_interval, bike_vo2_interval, bike_float_interval, bike_over_under_interval, bike_short_surge, bike_hard_finish, bike_race_simulation, bike_race_opener, bike_cooldown, goblet_squat, front_squat, back_squat, rear_foot_elevated_split_squat, romanian_deadlift, kettlebell_deadlift, hip_thrust, bench_press, push_up, pull_up, dumbbell_row, chest_supported_dumbbell_row, dead_bug, side_plank, plank, copenhagen_plank, seated_soleus_iso, calf_isometric, easy_continuous_run, run_tempo_interval, run_vo2_interval, mobility_flow — or use {"kind": "unresolved_free_text", "name": "..."} for custom movements), dose, optional rest (seconds, or {min, max} for a range), optional notes. dose is one of: {"kind": "repetition", "sets": N, "reps": N or {min,max}}; {"kind": "duration", "sets": N (optional), "seconds": N or {min,max}} — use seconds for anything under two minutes (e.g. 10, 20, 30), never fractional minutes; {"kind": "distance", "sets": N (optional), "meters": N or {min,max}}. Example a 30-second-on/15-second-off interval step, 10 reps per set, 3 sets: {"id": "step-1", "kind": "exercise", "title": "30-second work", "exerciseRef": {"kind": "catalog", "exerciseId": "bike_vo2_interval"}, "dose": {"kind": "duration", "sets": 3, "seconds": 30}, "rest": 15}.
 - isEvent: true only on the target event itself (a race, a test event). An event session must also use flexibility: "fixed" with a preferredDay. Do not mark ordinary hard sessions as events.
-- scaling: reducible (boolean; set to false when the session has no useful reduced form — e.g. a race simulation or test. When reducible is false, omit reducedSummary and reducedDurationMin entirely), reducedSummary (how to cut this session down while keeping its purpose; only include when reducible is true), reducedDurationMin (minutes; only include when reducible is true), minimumUsefulDurationMin (below this, skipping is better than a fragment), fallback (advisory author suggestion shown if the equipment or venue is unavailable; it is not an executable substitute).
+- scaling: reducible (boolean; set to false when no useful reduced form exists), reducedSummary and reducedDurationMin (advisory display only), minimumUsefulDurationMin, fallback (advisory only), and optional reducedDefinition. reducedDefinition is a complete SessionDefinition with the exact same id, intent and dominantModality as definition; it is the only executable scaled form. Omit it when reducible is false.
 - intraday (optional): only for a session that is one member of a same-day training bundle (e.g. an AM ride plus a PM strength session on the same date). {"window": {"startLocal": "HH:mm", "endLocal": "HH:mm"}, "bundleId": "<stable-id-unique-within-the-week>", "order": <0-based integer, unique within the bundle>, optional "afterSessionId": "<earlier session's own id in this bundle>", optional "minimumSeparationMinutes": <number, requires afterSessionId>}. Every session sharing a bundleId in the same week must also share the same placement.week, placement.preferredDay and placement.flexibility. window is the requested interval only — the app resolves it against the athlete's real same-day availability at placement time, so only request a window the athlete has actually told the app about (Training Windows in the app). Do not invent a second session on a day with no evidence the athlete wants to train twice; do not use intraday for two unrelated sessions on different days.
 
 Do not encode travel weeks, illness, or externally imposed time off as restDays — those are handled separately by the app's own calendar. restDays is only for deliberate plan-authored protected rest such as sequencing, taper or deload intent. Plan as if every otherwise scheduled day is available.
@@ -80,6 +79,7 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
     const [text, setText] = useState('');
     const [phase, setPhase] = useState<Phase>({ kind: 'editing' });
     const [objectiveEdits, setObjectiveEdits] = useState<Record<string, ObjectiveKey[]>>({});
+    const [effectiveFrom, setEffectiveFrom] = useState(getLocalDateString);
     const [promptCopied, setPromptCopied] = useState(false);
     const today = getLocalDateString();
 
@@ -110,6 +110,10 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
             return;
         }
         const existing = await externalPlanService.getHeaderState(userId, result.data.planId);
+        if (existing.status !== 'AVAILABLE' && existing.status !== 'MISSING') {
+            setPhase({ kind: 'failed', message: 'Could not verify the stored plan history. Nothing was stored; retry after storage is available.' });
+            return;
+        }
         setPhase({
             kind: 'previewing',
             plan: result.data,
@@ -117,16 +121,14 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
         });
     }, [text, userId]);
 
-    const confirmImport = useCallback(async (plan: ExternalTrainingPlan) => {
+    const confirmImport = useCallback(async (plan: ExternalTrainingPlan, effectiveDate: string) => {
         setPhase({ kind: 'saving' });
-        // Forward-only: a revision takes effect from today, so days already adjudicated keep
-        // the recommendation and audit they were given (ADR-0019 D-IMMUT).
-        const result = await externalPlanService.import(userId, plan, today);
+        const result = await externalPlanService.import(userId, plan, effectiveDate);
         if (result.status === 'AVAILABLE') {
             // v5's intentBlocks are materialized as real IntentBlocks only after the plan
             // revision itself is safely stored -- never before, since a failed plan import
             // must not leave orphaned intent blocks sourced from a plan that was never saved.
-            const intentBlockResults = isV5Plan(plan) ? await activateIntentBlocksFromPlan(userId, plan) : [];
+            const intentBlockResults = 'intentBlocks' in plan ? await activateIntentBlocksFromPlan(userId, plan) : [];
             setPhase({
                 kind: 'saved',
                 plan,
@@ -143,9 +145,10 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
                 ? `Rejected: ${result.issues.map(issue => `${issue.field ?? 'plan'} (${issue.code})`).join(', ')}`
                 : `Could not reach storage${errorDetail ? `: ${errorDetail}` : ''}. Nothing was written; try again.`,
         });
-    }, [userId, today, onImported]);
+    }, [userId, onImported]);
 
-    const previousPlan = usePreviousRevision(userId, phase);
+    const previousRevision = usePreviousRevision(userId, phase);
+    const previousPlan = previousRevision.plan;
 
     const diff = useMemo(() => {
         if (phase.kind !== 'previewing' || !previousPlan) return null;
@@ -189,7 +192,7 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
                     onChange={event => handleTextChange(event.target.value)}
                     rows={14}
                     spellCheck={false}
-                    placeholder={`{ "schema": "${EXTERNAL_PLAN_SCHEMA_V4}", "planId": "...", "restDays": [], ... }`}
+                    placeholder={`{ "schema": "${EXTERNAL_PLAN_SCHEMA_V6}", "planId": "...", "restDays": [], ... }`}
                     aria-label="Plan JSON"
                 />
 
@@ -230,7 +233,11 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
                         plan={phase.plan}
                         previous={phase.previous}
                         diff={diff}
-                        onConfirm={() => confirmImport(phase.plan)}
+                        previousRevisionReady={previousRevision.ready}
+                        effectiveFrom={effectiveFrom}
+                        today={today}
+                        onEffectiveFromChange={setEffectiveFrom}
+                        onConfirm={() => confirmImport(phase.plan, effectiveFrom)}
                         onCancel={() => setPhase({ kind: 'editing' })}
                     />
                 )}
@@ -242,7 +249,7 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
                         <h4>Stored: {phase.plan.title}</h4>
                         <p>
                             Revision {phase.plan.revision}, {phase.plan.sessions.length} sessions,
-                            {' '}effective from {today}. Days already decided keep the recommendation they were given.
+                            {' '}effective from {effectiveFrom}. Days already decided keep the recommendation they were given.
                         </p>
                         {phase.intentBlockResults.length > 0 && (
                             <div className="external-import-objectives">
@@ -329,8 +336,8 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
 }
 
 /** Loads the stored revision a preview is replacing, so the diff has something to compare. */
-function usePreviousRevision(userId: string, phase: Phase): ExternalTrainingPlan | null {
-    const [loaded, setLoaded] = useState<{ key: string; plan: ExternalTrainingPlan | null } | null>(null);
+function usePreviousRevision(userId: string, phase: Phase): { plan: ExternalTrainingPlan | null; ready: boolean } {
+    const [loaded, setLoaded] = useState<{ key: string; plan: ExternalTrainingPlan | null; ready: boolean } | null>(null);
     const planId = phase.kind === 'previewing' ? phase.previous?.planId ?? null : null;
     const revision = phase.kind === 'previewing' ? phase.previous?.revision ?? null : null;
     const key = planId !== null && revision !== null ? `${planId}:${revision}` : null;
@@ -339,36 +346,43 @@ function usePreviousRevision(userId: string, phase: Phase): ExternalTrainingPlan
         if (key === null || planId === null || revision === null) return;
         let cancelled = false;
         externalPlanService.getRevisionState(userId, planId, revision).then(state => {
-            if (!cancelled) setLoaded({ key, plan: state.status === 'AVAILABLE' ? state.data : null });
+            if (!cancelled) setLoaded({ key, plan: state.status === 'AVAILABLE' ? state.data : null, ready: state.status === 'AVAILABLE' });
         });
         return () => { cancelled = true; };
     }, [userId, key, planId, revision]);
 
-    return loaded !== null && loaded.key === key ? loaded.plan : null;
+    return key === null ? { plan: null, ready: true }
+        : loaded !== null && loaded.key === key ? { plan: loaded.plan, ready: loaded.ready }
+            : { plan: null, ready: false };
 }
 
 export interface PlanPreviewProps {
     plan: ExternalTrainingPlan;
     previous: ExternalPlanHeader | null;
     diff: PlanDiffRow[] | null;
+    previousRevisionReady?: boolean;
+    effectiveFrom?: string;
+    today?: string;
+    onEffectiveFromChange?: (date: string) => void;
     onConfirm: () => void;
     onCancel: () => void;
 }
 
 /** Exported (not just used internally) so the acknowledgement-gating behavior is directly
  * testable without driving the full paste-JSON → validate → preview state machine. */
-export function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanPreviewProps) {
+export function PlanPreview({
+    plan, previous, diff, previousRevisionReady = true, onConfirm, onCancel,
+    today = getLocalDateString(), effectiveFrom = today, onEffectiveFromChange = () => {},
+}: PlanPreviewProps) {
     const notNewer = previous !== null && plan.revision <= previous.revision;
 
     // M3.7: a diff row's `contentChanges` are only present for a matched v2/v2 session pair
     // (`externalPlanDiff.ts`). Behavior-changing rows -- dose, load, laterality, optional vs
     // required, an authored choice's actions -- must be explicitly acknowledged before the
     // athlete can confirm; cosmetic-only rows (wording) never block.
-    const behaviorChangeCount = (diff ?? [])
-        .flatMap(row => row.contentChanges ?? [])
-        .filter(row => row.behaviorChanging).length;
+    const behaviorChangeCount = (diff ?? []).filter(row => row.behaviorChanging).length;
     const [acknowledged, setAcknowledged] = useState(false);
-    const blockedByUnreviewedChanges = behaviorChangeCount > 0 && !acknowledged;
+    const blockedByUnreviewedChanges = (behaviorChangeCount > 0 && !acknowledged) || !previousRevisionReady;
 
     return (
         <section className="external-import-preview" aria-label="Plan preview">
@@ -378,11 +392,33 @@ export function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanP
                 {' '}{plan.sessions.length} sessions
             </p>
 
+            <label className="external-import-preview-effective-date">
+                Effective from (Europe/Warsaw)
+                <input
+                    type="date"
+                    value={effectiveFrom}
+                    min={today}
+                    onChange={event => onEffectiveFromChange(event.target.value)}
+                    aria-label="Revision effective from date"
+                />
+            </label>
+            <p className="external-import-preview-meta">
+                This full revision replaces this plan from {effectiveFrom}; earlier dates stay with the prior revision. Omitted sessions are removed from this revision&apos;s horizon.
+            </p>
+            {diff && (
+                <p className="external-import-preview-meta">
+                    Added {(diff ?? []).filter(row => row.change === 'added').length} · changed {(diff ?? []).filter(row => row.change === 'changed').length} · removed {(diff ?? []).filter(row => row.change === 'removed').length} · retained {plan.sessions.length - (diff ?? []).filter(row => row.change === 'added' || row.change === 'changed').length}
+                </p>
+            )}
+
             {notNewer && (
                 <p className="external-import-blocked">
                     Revision {plan.revision} does not advance the stored revision {previous.revision}. Bump the
                     revision number in the JSON — a plan is never overwritten in place.
                 </p>
+            )}
+            {!previousRevisionReady && previous !== null && (
+                <p className="external-import-blocked">Could not verify the prior immutable revision. Retry the preview before activating this revision.</p>
             )}
 
             {diff && diff.length > 0 && (
@@ -413,7 +449,7 @@ export function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanP
                 <p className="external-import-preview-meta">No session differs from the stored revision.</p>
             )}
 
-            {isV5Plan(plan) && plan.intentBlocks && plan.intentBlocks.length > 0 && (
+            {'intentBlocks' in plan && plan.intentBlocks && plan.intentBlocks.length > 0 && (
                 <div className="external-import-diff">
                     <h5>Intent blocks this import will author</h5>
                     <ul>
@@ -445,6 +481,12 @@ export function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanP
                                 <SessionDefinitionPreview definition={session.definition} />
                             </details>
                         )}
+                        {'scaling' in session && session.scaling && 'reducedDefinition' in session.scaling && session.scaling.reducedDefinition && (
+                            <details className="external-import-session-detail">
+                                <summary>Exact reduced executable content</summary>
+                                <SessionDefinitionPreview definition={session.scaling.reducedDefinition} />
+                            </details>
+                        )}
                     </li>
                 ))}
             </ol>
@@ -465,7 +507,7 @@ export function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanP
                     type="button"
                     className="external-import-primary"
                     onClick={onConfirm}
-                    disabled={notNewer || blockedByUnreviewedChanges}
+                        disabled={notNewer || blockedByUnreviewedChanges || !effectiveFrom || effectiveFrom < today}
                 >
                     Import this plan
                 </button>

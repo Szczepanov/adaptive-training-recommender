@@ -142,6 +142,15 @@ emulatorDescribe('Firestore rules — ADR-0035/0036 external-plan storage', () =
         await expect(assertSucceeds(setDoc(doc(ownerDb, revisionPath), validExternalPlanRevisionV5(undefined)))).resolves.toBeUndefined();
     });
 
+    it('accepts external-plan@6 with inherited intent blocks and rest directives', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, revisionPath), {
+            ...validExternalPlanRevisionV5(),
+            schema: 'adaptive-training-recommender/external-plan@6',
+            sessions: [{ id: 'w1-a', title: 'Threshold', priority: 'key', scaling: { reducible: true, reducedDefinition: { schemaVersion: 1 } } }],
+        }));
+    });
+
     it('rejects a non-list intentBlocks value and an oversized intentBlocks list', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, revisionPath), validExternalPlanRevisionV5('not-a-list' as unknown as unknown[])));

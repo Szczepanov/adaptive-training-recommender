@@ -51,6 +51,8 @@ a delivery queue.
 
 ## Current plans
 
+The implementation plan for GitHub issue [#893](https://github.com/Szczepanov/adaptive-training-recommender/issues/893) is [`2026-09-29-issue-893-external-coach-round-trip.md`](./2026-09-29-issue-893-external-coach-round-trip.md) — **In progress**.
+
 The combined delivery record for GitHub issues [#459](https://github.com/Szczepanov/adaptive-training-recommender/issues/459),
 [#460](https://github.com/Szczepanov/adaptive-training-recommender/issues/460), and
 [#461](https://github.com/Szczepanov/adaptive-training-recommender/issues/461) is

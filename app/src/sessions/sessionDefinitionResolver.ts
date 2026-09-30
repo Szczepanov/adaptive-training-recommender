@@ -67,6 +67,7 @@ async function applyStoredPrescription(
     expectedDefinitionHash: string | null,
     documentPath: string,
     fallbackRevision: string | null,
+    alternativeDefinitions: readonly { definition: SessionDefinition; hash: string }[] = [],
 ): Promise<DataState<SessionDefinition>> {
     if (!prescriptionHash) {
         return { status: 'AVAILABLE', data: definition, revision: fallbackRevision };
@@ -79,14 +80,19 @@ async function applyStoredPrescription(
             issues: [{ code: 'prescription-source-mismatch', field: 'sessionSource', documentPath }],
         };
     }
-    if (expectedDefinitionHash !== null && prescriptionState.data.definitionHash !== expectedDefinitionHash) {
+    const definitions = [
+        ...(expectedDefinitionHash !== null ? [{ definition, hash: expectedDefinitionHash }] : []),
+        ...alternativeDefinitions,
+    ];
+    const acceptedDefinition = definitions.find(candidate => candidate.hash === prescriptionState.data.definitionHash)?.definition;
+    if (definitions.length > 0 && !acceptedDefinition) {
         return {
             status: 'INVALID',
             issues: [{ code: 'prescription-definition-hash-mismatch', field: 'definitionHash', documentPath }],
         };
     }
     const prescribedDefinition: SessionDefinition = {
-        ...definition,
+        ...(acceptedDefinition ?? definition),
         blocks: prescriptionState.data.blocks,
     };
     const validation = validateSessionDefinition(prescribedDefinition);
@@ -277,8 +283,15 @@ export async function resolveSessionDefinition(
     const definition = isV2Session(session)
         ? { ...session.definition, id: session.id, revision: source.revision }
         : adaptExternalPlanSessionToSessionDefinition(session, source.revision);
+    const reducedDefinition = 'scaling' in session && session.scaling && 'reducedDefinition' in session.scaling
+        ? session.scaling.reducedDefinition
+        : undefined;
     return applyStoredPrescription(
         userId, definition, prescriptionHash, source, await hashSessionDefinition(definition),
         documentPath, source.contentHash,
+        reducedDefinition ? [{
+            definition: { ...reducedDefinition, id: session.id, revision: source.revision },
+            hash: await hashSessionDefinition({ ...reducedDefinition, id: session.id, revision: source.revision }),
+        }] : [],
     );
 }

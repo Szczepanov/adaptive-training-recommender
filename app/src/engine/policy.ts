@@ -1,6 +1,6 @@
 /** Increment whenever a change can alter a persisted recommendation decision. (Refactoring does not require a bump) */
 
-export const POLICY_VERSION = '2026-09-prospective-decision-context-canonical-facts-v1';
+export const POLICY_VERSION = '2026-09-external-plan-activation-history-v1';
 
 /** Historical versions are intentionally not re-executed by this build. Their compact
  * audits remain readable evidence, but replay is rejected explicitly because the old
@@ -142,6 +142,7 @@ export const HISTORICAL_POLICY_VERSIONS = [
     '2026-08-objective-credit-v2-v2',
     '2026-08-phase5-sequence-planning-v1',
     '2026-08-phase6-correctness-carryovers-v1',
+    '2026-09-prospective-decision-context-canonical-facts-v1',
 ] as const;
 
 export function isHistoricalPolicyVersion(version: string): boolean {

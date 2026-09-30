@@ -56,6 +56,7 @@ import { resolveWorkoutPrescription } from '../workouts/prescription';
 import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch, prepareUnplannedSessionLaunch } from './sessionAuthoringService';
 import type { SessionDefinition } from '../sessions/models';
 import type { ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
+import type { ExternalPlanSessionV6 } from '../sessions/externalPlanV6';
 
 beforeEach(() => {
     services.store.clear();
@@ -248,6 +249,98 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
             duration: { min: 60, max: 60 },
         });
         expect(savedPrescription.createdAt).toBe('2026-09-06T12:00:00.000Z');
+    });
+
+    it('freezes only the exact v6 reduced definition when adjudication requests scale', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const authored = externalPlan.session.definition;
+        const reducedDefinition: SessionDefinition = {
+            ...authored,
+            summary: 'Reduced session',
+            duration: { min: 30, max: 30 },
+            blocks: authored.blocks.map(block => ({
+                ...block,
+                steps: block.steps.map(step => ({ ...step, dose: { kind: 'duration', seconds: 90 } })),
+            })),
+        };
+        const v6Session: ExternalPlanSessionV6 = {
+            ...externalPlan.session,
+            scaling: { reducible: true, reducedDefinition },
+        };
+        const launch = await prepareExternalPlanSessionLaunch('u1', {
+            ...externalPlan,
+            session: v6Session,
+        }, { useReducedDefinition: true, maxDurationMinutes: 30, date: '2026-09-06', now: '2026-09-06T12:00:00.000Z' });
+
+        expect(launch.definition).toEqual(reducedDefinition);
+        const saved = services.prescription.savePrescription.mock.calls.at(-1)?.[1];
+        expect(saved?.blocks).toEqual(reducedDefinition.blocks);
+        expect(saved?.blocks).not.toEqual(authored.blocks);
+    });
+
+    it('does not allow scale to launch an older plan without an exact reduced definition', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        await expect(prepareExternalPlanSessionLaunch('u1', externalPlan, {
+            useReducedDefinition: true,
+            date: '2026-09-06',
+        })).rejects.toThrow(/requires an exact structured reducedDefinition/);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
+    it('withholds an exact reduced definition that exceeds today\'s scaled duration ceiling', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const reducedDefinition: SessionDefinition = {
+            ...externalPlan.session.definition,
+            duration: { min: 30, max: 30 },
+        };
+        await expect(prepareExternalPlanSessionLaunch('u1', {
+            ...externalPlan,
+            session: { ...externalPlan.session, scaling: { reducible: true, reducedDefinition } },
+        }, { useReducedDefinition: true, maxDurationMinutes: 24, date: '2026-09-06' }))
+            .rejects.toThrow(/exceeds today's approved duration ceiling/);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
+    it('requires a current ceiling and checks explicit timed steps against it', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const reducedDefinition: SessionDefinition = {
+            ...externalPlan.session.definition,
+            duration: { min: 10, max: 20 },
+            blocks: externalPlan.session.definition.blocks.map((block, blockIndex) => blockIndex === 0 ? {
+                ...block,
+                steps: block.steps.map((step, stepIndex) => stepIndex === 0
+                    ? { ...step, dose: { kind: 'duration' as const, seconds: 3600 } }
+                    : step),
+            } : block),
+        };
+        const session = { ...externalPlan.session, scaling: { reducible: true, reducedDefinition } };
+        await expect(prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, { useReducedDefinition: true }))
+            .rejects.toThrow(/requires today's approved duration ceiling/);
+        await expect(prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, {
+            useReducedDefinition: true, maxDurationMinutes: 24,
+        })).rejects.toThrow(/exceeds today's approved duration ceiling/);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
+    it('counts timed work for every authored block round', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const reducedDefinition: SessionDefinition = {
+            ...externalPlan.session.definition,
+            duration: { min: 10, max: 20 },
+            blocks: externalPlan.session.definition.blocks.map((block, blockIndex) => blockIndex === 0 ? {
+                ...block,
+                rounds: 3,
+                steps: block.steps.map((step, stepIndex) => stepIndex === 0
+                    ? { ...step, dose: { kind: 'duration' as const, seconds: 9 * 60 } }
+                    : step),
+            } : block),
+        };
+        await expect(prepareExternalPlanSessionLaunch('u1', {
+            ...externalPlan,
+            session: { ...externalPlan.session, scaling: { reducible: true, reducedDefinition } },
+        }, { useReducedDefinition: true, maxDurationMinutes: 24 }))
+            .rejects.toThrow(/exceeds today's approved duration ceiling/);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
     });
 
     it('creates and binds an external-plan occurrence when date is provided in options', async () => {

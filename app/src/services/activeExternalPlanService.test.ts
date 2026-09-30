@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { EXTERNAL_PLAN_SCHEMA, type ExternalPlanHeader, type ExternalTrainingPlan } from '../engine/models';
+import { EXTERNAL_PLAN_SCHEMA, type ExternalPlanHeader, type ExternalPlanRevisionActivation, type ExternalTrainingPlan } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import {
     ActiveExternalPlanService,
@@ -11,6 +11,7 @@ import {
     type ActiveExternalPlan,
 } from './activeExternalPlanService';
 import type { ExternalPlanService } from './externalPlanService';
+import { computeContentHash } from './externalPlanService';
 
 function plan(overrides: Partial<ExternalTrainingPlan> = {}): ExternalTrainingPlan {
     return {
@@ -48,16 +49,31 @@ function header(overrides: Partial<ExternalPlanHeader> = {}): ExternalPlanHeader
 function stubPlans(options: {
     ids?: DataState<string[]>;
     headers?: Record<string, DataState<ExternalPlanHeader>>;
+    revisionsByPlan?: Record<string, ExternalTrainingPlan>;
+    activations?: DataState<ExternalPlanRevisionActivation[]>;
     revisions?: DataState<ExternalTrainingPlan>;
     placement?: DataState<never> | DataState<ReturnType<typeof placementDoc>>;
 } = {}): ExternalPlanService {
     return {
         listPlanIds: vi.fn(async () => options.ids ?? ({ status: 'AVAILABLE', data: ['autumn-block'], revision: null } as DataState<string[]>)),
         getHeaderState: vi.fn(async (_userId: string, planId: string) =>
-            options.headers?.[planId] ?? ({ status: 'AVAILABLE', data: header(), revision: 'hash-1' } as DataState<ExternalPlanHeader>)),
-        getRevisionState: vi.fn(async () => options.revisions ?? ({ status: 'AVAILABLE', data: plan(), revision: '1' } as DataState<ExternalTrainingPlan>)),
+            options.headers?.[planId] ?? ({ status: 'AVAILABLE', data: await matchingHeader(), revision: 'hash-1' } as DataState<ExternalPlanHeader>)),
+        getRevisionState: vi.fn(async (_userId: string, planId: string) => options.revisions ?? ({ status: 'AVAILABLE', data: options.revisionsByPlan?.[planId] ?? plan(), revision: '1' } as DataState<ExternalTrainingPlan>)),
+        getActivationState: vi.fn(async () => options.activations ?? ({ status: 'AVAILABLE', data: [], revision: '0' })),
         getPlacementState: vi.fn(async () => options.placement ?? ({ status: 'MISSING' })),
     } as unknown as ExternalPlanService;
+}
+
+async function matchingHeader(overrides: Partial<ExternalPlanHeader> = {}) {
+    const revision = overrides.revision ?? 1;
+    const revisionPlan = plan({
+        ...(overrides.planId ? { planId: overrides.planId } : {}),
+        ...(overrides.title ? { title: overrides.title } : {}),
+        ...(overrides.startDate ? { startDate: overrides.startDate } : {}),
+        ...(overrides.weekCount ? { weekCount: overrides.weekCount } : {}),
+        revision,
+    });
+    return header({ contentHash: await computeContentHash(revisionPlan as never), ...overrides });
 }
 
 function placementDoc(assignments: { sessionId: string; date: string; status: 'planned' | 'moved' | 'dropped' | 'completed' | 'superseded' }[]) {
@@ -93,11 +109,12 @@ describe('ActiveExternalPlanService', () => {
     it('prefers the most recently imported plan when two cover the same date', async () => {
         const plans = stubPlans({
             ids: { status: 'AVAILABLE', data: ['autumn-block', 'newer-block'], revision: null },
+            revisionsByPlan: { 'newer-block': plan({ planId: 'newer-block' }) },
             headers: {
-                'autumn-block': { status: 'AVAILABLE', data: header(), revision: 'hash-1' },
+                'autumn-block': { status: 'AVAILABLE', data: await matchingHeader(), revision: 'hash-1' },
                 'newer-block': {
                     status: 'AVAILABLE',
-                    data: header({ planId: 'newer-block', importedAt: '2026-08-17T10:00:00Z', contentHash: 'hash-2' }),
+                    data: await matchingHeader({ planId: 'newer-block', importedAt: '2026-08-17T10:00:00Z' }),
                     revision: 'hash-2',
                 },
             },

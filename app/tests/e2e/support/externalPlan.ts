@@ -2,6 +2,7 @@ import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import { doc, setDoc, type Firestore } from 'firebase/firestore';
 import { addDaysToLocalDateString, getLocalDateString } from '../../../src/utils/localDate';
 import { EXTERNAL_PLAN_SCHEMA } from '../../../src/engine/models';
+import { computeContentHash } from '../../../src/engine/externalPlanHash';
 import { EXTERNAL_PLAN_SCHEMA_V4 } from '../../../src/sessions/externalPlanV4';
 import { E2E_PROJECT_ID, E2E_EMULATOR_HOST, E2E_FIRESTORE_PORT, type E2EAthlete } from './athlete';
 
@@ -118,6 +119,7 @@ export async function seedExternalPlanForToday(
     ...(v4 ? { restDays: [] } : {}),
     sessions: [session],
   };
+  const contentHash = await computeContentHash(plan as never);
 
   const environment = await initializeTestEnvironment({
     projectId: E2E_PROJECT_ID,
@@ -133,12 +135,20 @@ export async function seedExternalPlanForToday(
         title: plan.title,
         startDate,
         weekCount: 2,
-        contentHash: `e2e-seed-${kind}`,
+        contentHash,
         importedAt: timestamp,
         supersededFrom: null,
         updatedAt: timestamp,
       });
       await setDoc(doc(db, 'users', athlete.userId, 'external_plans', planId, 'revisions', '1'), plan);
+      await setDoc(doc(db, 'users', athlete.userId, 'external_plans', planId, 'activations', '1'), {
+        userId: athlete.userId,
+        planId,
+        revision: 1,
+        contentHash,
+        effectiveFrom: startDate,
+        activatedAt: timestamp,
+      });
       await setDoc(doc(db, 'users', athlete.userId, 'training_intent', 'profile'), {
         userId: athlete.userId,
         planningMode: 'externally_planned',

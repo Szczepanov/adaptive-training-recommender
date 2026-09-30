@@ -14,6 +14,7 @@ import type { LedgerCeilings, LedgerEntry } from './dailyLedger';
 import type { ExternalRevisionEvidence } from './replay';
 import { POLICY_VERSION } from './policy';
 import { isV4Plan, type ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
+import { isV6Plan, type ExternalTrainingPlanV6 } from '../sessions/externalPlanV6';
 import type { ReassessmentInputRevision } from './intradayReassessment';
 
 export type { ReassessmentInputRevision };
@@ -343,15 +344,15 @@ export function intradayDecisionReplayErrors(
 
     if (externalRevision) {
         const rawPlan = externalRevision.plan as unknown as { schema: string };
-        if (!isV4Plan(rawPlan)) {
-            errors.push('Supplied external plan is not an external-plan@4 revision; cannot verify intraday bundle');
+        if (!isV4Plan(rawPlan) && !isV6Plan(rawPlan)) {
+            errors.push('Supplied external plan is not an external-plan@4 or @6 revision; cannot verify intraday bundle');
         } else {
-            const v4Plan = externalRevision.plan as unknown as ExternalTrainingPlanV4;
-            const planSession = v4Plan.sessions.find(s => s.id === record.sessionId);
+            const bundlePlan = externalRevision.plan as unknown as ExternalTrainingPlanV4 | ExternalTrainingPlanV6;
+            const planSession = bundlePlan.sessions.find(s => s.id === record.sessionId);
             if (!planSession) {
-                errors.push(`Session ${record.sessionId} is not present in plan ${v4Plan.planId}`);
+                errors.push(`Session ${record.sessionId} is not present in plan ${bundlePlan.planId}`);
             } else if (!planSession.intraday) {
-                errors.push(`Session ${record.sessionId} in plan ${v4Plan.planId} has no intraday specification`);
+                errors.push(`Session ${record.sessionId} in plan ${bundlePlan.planId} has no intraday specification`);
             } else {
                 if (planSession.intraday.bundleId !== record.bundleId) {
                     errors.push(`Session bundle mismatch: plan specifies bundle ${planSession.intraday.bundleId}, audit recorded ${record.bundleId}`);

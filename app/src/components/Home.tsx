@@ -21,7 +21,8 @@ import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
 import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
 import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch } from '../services/sessionAuthoringService';
-import { isV4Plan, type ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
+import { isV4Plan } from '../sessions/externalPlanV4';
+import { isV6Plan } from '../sessions/externalPlanV6';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { fixedActivityService } from '../services/fixedActivityService';
 import { scheduleWindowService } from '../services/scheduleWindowService';
@@ -552,25 +553,25 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
               memberState: todaysExternalPlanMemberState,
             }
           : undefined;
-        const activeV4Plan = activeExternal && isV4Plan(activeExternal.plan) ? activeExternal.plan : null;
-        const bundlePlacement = (activeExternal && activeV4Plan && bundleContext)
+        const activeBundlePlan = activeExternal && (isV4Plan(activeExternal.plan) || isV6Plan(activeExternal.plan)) ? activeExternal.plan : null;
+        const bundlePlacement = (activeExternal && activeBundlePlan && bundleContext)
           ? resolveIntradayBundlePlacement(activeExternal, input.date, bundleContext)
           : null;
         // Persist the placement display record and immutable D-AUDIT replay snapshot
         // best-effort; neither write may delay or fail today's recommendation.
         if (bundlePlacement) {
           void recordIntradayBundlePlacement(userId, input.date, bundlePlacement);
-          const replayInputs = activeExternal && activeV4Plan && bundleContext
+          const replayInputs = activeExternal && activeBundlePlan && bundleContext
             ? intradayBundlePlacementReplayInputs(activeExternal, input.date, bundleContext, bundlePlacement.bundleId)
             : null;
-          if (activeExternal && activeV4Plan && bundleContext && replayInputs) {
+          if (activeExternal && activeBundlePlan && bundleContext && replayInputs) {
             void recordIntradayBundlePlacementAudit({
               userId,
               date: input.date,
               asOf: new Date().toISOString(),
               policyVersion: POLICY_VERSION,
-              plan: { planId: activeV4Plan.planId, revision: activeV4Plan.revision, contentHash: activeExternal.header.contentHash },
-              planSnapshot: activeV4Plan,
+              plan: { planId: activeBundlePlan.planId, revision: activeBundlePlan.revision, contentHash: activeExternal.header.contentHash },
+              planSnapshot: activeBundlePlan,
               bundleId: bundlePlacement.bundleId,
               scheduleWindows: todaysScheduleWindows,
               fixedActivities: planWeekActivities,
@@ -648,29 +649,30 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           }
         } else if (
           activeExternal &&
-          isV4Plan(activeExternal.plan) &&
-          recommendationWithPrescription.externalVerdict?.decision === 'proceed' &&
+          externalContext && 'definition' in externalContext.session &&
+          (recommendationWithPrescription.externalVerdict?.decision === 'proceed' || recommendationWithPrescription.externalVerdict?.decision === 'scale') &&
           recommendationWithPrescription.externalPrescription?.isEvent !== true &&
           recommendationWithPrescription.template.id !== 'rest_01' &&
           externalContext &&
           'definition' in externalContext.session
         ) {
           try {
-            // #909: only `proceed` can bind the imported structured definition as-is.
-            // A `scale` verdict currently carries a reduced summary/dose but no structured
-            // reduced SessionDefinition. Binding the original definition would execute the
-            // full authored dose; deriving executable steps from free text would violate
-            // ADR-0019's no-parse boundary. Scaled days therefore remain display-only until
-            // the external-plan schema explicitly carries a reduced executable definition.
+            const verdict = recommendationWithPrescription.externalVerdict;
+            const useReducedDefinition = verdict?.decision === 'scale';
+            const maxDurationMinutes = useReducedDefinition
+              ? verdict?.executionDose
+                ? externalContext.session.gating.durationMin * verdict.executionDose.volume
+                : 0
+              : undefined;
             const launch = await prepareExternalPlanSessionLaunch(
               userId,
               {
                 planId: externalContext.planId,
                 revision: externalContext.revision,
                 contentHash: externalContext.contentHash,
-                session: externalContext.session as ExternalPlanSessionV4,
+                session: externalContext.session,
               },
-              { date: input.date },
+              { date: input.date, useReducedDefinition, maxDurationMinutes },
             );
             if (!isCurrent()) return;
             primarySession = launch.binding;
@@ -810,7 +812,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
             acceptedSameDayMinutes += targetDef.duration?.min ?? 45;
           }
 
-          if (activeExternal && isV4Plan(activeExternal.plan) && bundlePlacement?.outcome === 'placed') {
+          if (activeExternal && activeBundlePlan && bundlePlacement?.outcome === 'placed') {
             const ceilings: LedgerCeilings = {
               dailyMinuteCeiling: availability.maxTimeMinutes,
               dailySystemicCostCeiling: Math.max(0, 1 - availability.reservedCapacityCost),
