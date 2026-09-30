@@ -576,6 +576,7 @@ export class ContextBriefService {
             periodization,
             targetDate,
             currentExternalSession ? planningAuthoritySession(currentExternalSession) : null,
+            upcomingPlanBlocks,
         );
         // resolvePlanningContext treats a null externalSession as "confirmed nothing is
         // placed today" and reports externalFallback accordingly. That is only true when
