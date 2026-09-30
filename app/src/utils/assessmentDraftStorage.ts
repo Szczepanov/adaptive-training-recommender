@@ -33,7 +33,7 @@ function isDraftDevice(value: unknown): boolean {
     if (value === undefined) return true;
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
     const device = value as Partial<MetricObservationDevice>;
-    return isOptionalString(device.provider)
+    return typeof device.provider === 'string'
         && isOptionalString(device.model)
         && isOptionalString(device.deviceId);
 }
