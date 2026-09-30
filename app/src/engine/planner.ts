@@ -2165,7 +2165,7 @@ export function generateWeekAheadPlan(
         const exactReserved = reservation
             ? rankingCandidates.filter(template => reservation.occurrence.eligibleTemplateIds.includes(template.id))
             : [];
-        if (optionalQualityBlock && date >= optionalQualityBlock.startDate && date <= optionalQualityBlock.endDate) {
+        if (evergreenOwnsDate && optionalQualityBlock && date >= optionalQualityBlock.startDate && date <= optionalQualityBlock.endDate) {
             const feasibleQualityTemplateIds = projectedDateOutcomeFrom(evaluation).acceptedTemplateIds.filter(templateId =>
                 qualityWorkoutIds.has(workoutIdForTemplateId(templateId) ?? '')
                 && rankingCandidates.some(template => template.id === templateId));
