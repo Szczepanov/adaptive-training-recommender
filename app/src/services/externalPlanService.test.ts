@@ -344,6 +344,63 @@ describe('ExternalPlanService', () => {
         })).rejects.toThrow(/at most one assignment/);
     });
 
+    it('rejects an activation whose payload revision disagrees with its document id', async () => {
+        firestore.getDocs.mockResolvedValue({
+            docs: [{
+                id: '2',
+                data: () => ({
+                    userId: 'u1',
+                    planId: 'autumn-block',
+                    revision: 1,
+                    contentHash: 'a'.repeat(64),
+                    effectiveFrom: '2026-08-17',
+                    activatedAt: '2026-08-16T10:00:00Z',
+                }),
+            }],
+        });
+
+        const state = await new ExternalPlanService().getActivationState('u1', 'autumn-block');
+        expect(state.status).toBe('INVALID');
+        if (state.status !== 'INVALID') throw new Error('unreachable');
+        expect(state.issues).toEqual([{
+            code: 'path-identity-mismatch',
+            field: 'revision',
+            documentPath: 'users/u1/external_plans/autumn-block/activations/2',
+        }]);
+    });
+
+    it('distinguishes an inapplicable legacy overlay from corrupt revision-scoped placement', async () => {
+        const legacyPath = 'users/u1/external_plans/autumn-block/placement/current';
+        const scopedPath = 'users/u1/external_plans/autumn-block/revisions/2/placement/current';
+        firestore.committedDocs.set(legacyPath, {
+            userId: 'u1',
+            planId: 'autumn-block',
+            revision: 1,
+            assignments: [],
+            updatedAt: '2026-08-18T07:00:00Z',
+        });
+
+        const service = new ExternalPlanService();
+        const legacyMismatch = await service.getPlacementState('u1', 'autumn-block', 2);
+        expect(legacyMismatch.status).toBe('MISSING');
+
+        firestore.committedDocs.set(scopedPath, {
+            userId: 'u1',
+            planId: 'autumn-block',
+            revision: 1,
+            assignments: [],
+            updatedAt: '2026-08-18T07:00:00Z',
+        });
+        const scopedMismatch = await service.getPlacementState('u1', 'autumn-block', 2);
+        expect(scopedMismatch.status).toBe('INVALID');
+        if (scopedMismatch.status !== 'INVALID') throw new Error('unreachable');
+        expect(scopedMismatch.issues).toEqual([{
+            code: 'path-identity-mismatch',
+            field: 'revision',
+            documentPath: scopedPath,
+        }]);
+    });
+
     it('treats a byte-identical same-revision retry as idempotent, without new writes', async () => {
         const service = new ExternalPlanService();
         const first = await service.import('u1', plan(), '2026-08-17');
@@ -408,7 +465,7 @@ describe('ExternalPlanService', () => {
         expect(writtenPaths().length).toBe(writesBefore);
     });
 
-    it('lets exactly one of two racing successor imports win from the same base header', async () => {
+    it('rejects a conflicting same-revision successor replay and covers the transaction contention read-set', async () => {
         const predecessor = plan({ revision: 1 });
         const hash = await computeContentHash(predecessor as never);
         firestore.committedDocs.set('users/u1/external_plans/autumn-block', {
@@ -421,8 +478,10 @@ describe('ExternalPlanService', () => {
         });
 
         const service = new ExternalPlanService();
-        // Firestore serializes the two transactions: the second observes the first's
-        // committed header, so the same-revision replay rules decide the loser.
+        // This unit double executes the imports serially; it does not pretend to emulate
+        // Firestore contention. The second call pins the losing replay contract, while the
+        // read-set assertion below proves the production transaction reads every document
+        // whose concurrent mutation must trigger Firestore's retry semantics.
         const first = await service.import('u1', plan({ revision: 2 }), '2026-08-20');
         expect(first.status).toBe('AVAILABLE');
         const second = await service.import('u1', plan({ revision: 2 }), '2026-08-24');

@@ -478,6 +478,36 @@ describe('ActiveExternalPlanService', () => {
         const state = await new ActiveExternalPlanService(plans).getActivePlanState('u1', '2026-08-18');
         expect(state.status).toBe('UNAVAILABLE');
     });
+
+    it('fails closed when an activation references a missing immutable revision', async () => {
+        const revisionPlan = plan({ revision: 1 });
+        const plans = stubPlans({
+            headers: {
+                'autumn-block': { status: 'AVAILABLE', data: await matchingHeader(), revision: 'hash-1' },
+            },
+            activations: {
+                status: 'AVAILABLE',
+                data: [{
+                    userId: 'u1',
+                    planId: 'autumn-block',
+                    revision: 1,
+                    contentHash: await computeContentHash(revisionPlan as never),
+                    effectiveFrom: '2026-08-17',
+                    activatedAt: '2026-08-16T10:00:00Z',
+                }],
+                revision: '1',
+            },
+            revisions: { status: 'MISSING' },
+        });
+
+        const state = await new ActiveExternalPlanService(plans).getActivePlanState('u1', '2026-08-18');
+        expect(state.status).toBe('INVALID');
+        if (state.status !== 'INVALID') throw new Error('unreachable');
+        expect(state.issues).toEqual([{
+            code: 'activation-revision-missing',
+            documentPath: 'users/u1/external_plans/autumn-block/revisions/1',
+        }]);
+    });
 });
 
 describe('placedSessionsForDate & placedSessionForDate', () => {

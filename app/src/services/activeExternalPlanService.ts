@@ -440,6 +440,15 @@ export class ActiveExternalPlanService {
                 const revision = await (cache
                     ? read(cache.revisions, revisionKey, () => this.plans.getRevisionState(userId, latestHeader.planId, activation.revision))
                     : this.plans.getRevisionState(userId, latestHeader.planId, activation.revision));
+                if (revision.status === 'MISSING') {
+                    return {
+                        status: 'INVALID',
+                        issues: [{
+                            code: 'activation-revision-missing',
+                            documentPath: `users/${userId}/external_plans/${latestHeader.planId}/revisions/${activation.revision}`,
+                        }],
+                    };
+                }
                 if (revision.status !== 'AVAILABLE') return revision;
                 const planHash = await computeContentHash(revision.data);
                 if (planHash !== activation.contentHash

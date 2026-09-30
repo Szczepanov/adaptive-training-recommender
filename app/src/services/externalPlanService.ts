@@ -356,7 +356,22 @@ export class ExternalPlanService {
         const documentPath = `users/${userId}/external_plans/${planId}/activations`;
         try {
             const snapshot = await getDocs(collection(getDb(), 'users', userId, 'external_plans', planId, 'activations'));
-            const activations = snapshot.docs.map(item => item.data() as ExternalPlanRevisionActivation);
+            const activationDocs = snapshot.docs.map(item => ({
+                id: item.id,
+                data: item.data() as ExternalPlanRevisionActivation,
+            }));
+            const pathMismatch = activationDocs.find(item => String(item.data.revision) !== item.id);
+            if (pathMismatch) {
+                return {
+                    status: 'INVALID',
+                    issues: [{
+                        code: 'path-identity-mismatch',
+                        field: 'revision',
+                        documentPath: `${documentPath}/${pathMismatch.id}`,
+                    }],
+                };
+            }
+            const activations = activationDocs.map(item => item.data);
             if (activations.some(item => item.userId !== userId || item.planId !== planId
                 || !Number.isSafeInteger(item.revision) || item.revision < 1
                 || !/^[a-f0-9]{64}$/.test(item.contentHash)
@@ -376,13 +391,18 @@ export class ExternalPlanService {
 
     async getPlacementState(userId: string, planId: string, revision?: number): Promise<DataState<ExternalPlanPlacement>> {
         try {
+            let usedLegacyPath = revision === undefined;
             let snapshot = revision === undefined
                 ? await getDoc(this.legacyPlacementRef(userId, planId))
                 : await getDoc(this.placementRef(userId, planId, revision));
             if (revision !== undefined && !snapshot.exists()) {
+                usedLegacyPath = true;
                 snapshot = await getDoc(this.legacyPlacementRef(userId, planId));
             }
             if (!snapshot.exists()) return { status: 'MISSING' };
+            const documentPath = usedLegacyPath
+                ? `users/${userId}/external_plans/${planId}/placement/current`
+                : `users/${userId}/external_plans/${planId}/revisions/${revision}/placement/current`;
             const parsed = validateExternalPlanPlacement(snapshot.data());
             if (!parsed.isValid || !parsed.data) {
                 return {
@@ -390,23 +410,24 @@ export class ExternalPlanService {
                     issues: parsed.errors.map(error => ({
                         code: 'schema-validation-failed',
                         field: error.field,
-                        documentPath: revision === undefined
-                            ? `users/${userId}/external_plans/${planId}/placement/current`
-                            : `users/${userId}/external_plans/${planId}/revisions/${revision}/placement/current`,
+                        documentPath,
                     })),
                 };
             }
             if (parsed.data.userId !== userId) {
-                return { status: 'INVALID', issues: [{ code: 'owner-mismatch', documentPath: revision === undefined
-                    ? `users/${userId}/external_plans/${planId}/placement/current`
-                    : `users/${userId}/external_plans/${planId}/revisions/${revision}/placement/current` }] };
+                return { status: 'INVALID', issues: [{ code: 'owner-mismatch', documentPath }] };
             }
             if (parsed.data.planId !== planId) {
-                return { status: 'INVALID', issues: [{ code: 'path-identity-mismatch', field: 'planId', documentPath: revision === undefined
-                    ? `users/${userId}/external_plans/${planId}/placement/current`
-                    : `users/${userId}/external_plans/${planId}/revisions/${revision}/placement/current` }] };
+                return { status: 'INVALID', issues: [{ code: 'path-identity-mismatch', field: 'planId', documentPath }] };
             }
-            if (revision !== undefined && parsed.data.revision !== revision) return { status: 'MISSING' };
+            if (revision !== undefined && parsed.data.revision !== revision) {
+                // A mismatched legacy overlay belongs to another revision and is therefore
+                // simply not applicable. A mismatched revision-scoped document is corrupt
+                // authority evidence and must fail closed rather than look absent.
+                return usedLegacyPath
+                    ? { status: 'MISSING' }
+                    : { status: 'INVALID', issues: [{ code: 'path-identity-mismatch', field: 'revision', documentPath }] };
+            }
             return { status: 'AVAILABLE', data: parsed.data, revision: parsed.data.updatedAt };
         } catch (error: unknown) {
             return { status: 'UNAVAILABLE', operation: 'read external plan placement', retryable: getErrorCode(error) !== 'permission-denied' };
