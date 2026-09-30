@@ -471,7 +471,7 @@ describe('athlete-relative aerobic_volume floor (#757)', () => {
 
 
 describe('canonical coverage descriptor handoff (#933)', () => {
-    it('requalifies the exact performed identity instead of carrying another descriptor's credit', () => {
+    it('requalifies the exact performed identity instead of carrying another descriptor\'s credit', () => {
         const exposure: PerformedExposureFact = {
             performedOccurrenceId: 'performed-once', localDate: '2026-06-20',
             modality: 'Strength', category: 'Full-body Strength', durationMin: 45,
