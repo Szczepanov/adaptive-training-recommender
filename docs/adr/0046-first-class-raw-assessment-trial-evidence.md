@@ -72,6 +72,10 @@ Reducers consume validated current trial evidence and emit the existing canonica
 
 Derived canonical observations retain the reducer/algorithm version and typed source-evidence references. Trial IDs must not be written into `derivedFromObservationIds`, because that field promises observation identities. Introduce an additive typed evidence-reference contract while preserving existing observation-to-observation provenance.
 
+The first additive reference kind is an assessment-trial reference carrying the parent `assessmentAttemptId` plus `trialId`. For a trial-only derived summary, a non-empty typed trial-evidence reference list satisfies source-provenance validation. An observation-derived summary must continue to provide non-empty `derivedFromObservationIds`; mixed derivations retain both forms when both source kinds are actually consumed. Trial references must be unique and must name the same assessment attempt as the derived canonical observation.
+
+This is a model, validator **and persistence-rules** contract. `MetricObservationRevision`, `assertValidMetricObservationRevision`, the Firestore observation-revision allowlist/derived-source rule, and their unit/emulator tests must change together. Existing historical derived revisions that contain only `derivedFromObservationIds` remain valid unchanged. Non-derived observations may carry neither observation-derivation IDs nor typed derivation-evidence references.
+
 ### D-AT-RAWFIELDS — raw trial fields and canonical outcome metrics are different vocabularies
 
 Only stable longitudinal benchmark outputs belong in the metric registry for the first slice:
