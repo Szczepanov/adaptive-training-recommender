@@ -4,15 +4,14 @@ The Context Brief is the read-only handoff between the athlete record and an ext
 It is treated as a versioned API even though the wire format remains human/LLM-readable
 Markdown.
 
-This document describes the v4 contract defined under issues #894 and #893. The export exposes
-purpose/version/window identity, source state and currency, canonical performed training,
-and purpose-specific bounded telemetry. Issue #893's bounded exact-identity external-plan
-execution round-trip section is specified below for planning exports. The final artifact remains
-Markdown; JSON is a versioned transport envelope around that same content. Morning D-1 adherence
-still uses its separate raw-activity debrief path. Remaining #894 work outside this section
-includes full missingness states for other sections, per-source currency, morning canonical
-adherence, response-evidence lineage, the remaining golden matrix, and end-to-end regression
-coverage.
+This document describes the current v4 contract. Issue #894 established the versioned export
+contract through v3: purpose/window identity, source state and currency, canonical performed
+training, missingness semantics, purpose budgets, golden fixtures and service-built regression
+coverage. Issue #893 advances that contract to v4 for the planning-only external-plan execution
+round trip specified below. The final artifact remains Markdown; JSON is a versioned transport
+envelope around that same content. Morning D-1 adherence keeps its purpose-specific debrief path
+but consumes canonical performed-training facts; diagnostic preserves separately labelled raw
+provider provenance.
 
 ## Export boundary
 
@@ -169,7 +168,12 @@ Identity and provenance:
   `occurrenceId` (`ExternalPlanOccurrenceRef`, `SessionOccurrence`, `SessionExecution`,
   `PerformedTrainingOccurrence.sourceRefs`, persisted recommendation/adjudication
   provenance). No title similarity.
-- Rendered ids are `occurrence`, `execution`, `performed`, and `prescription` (hash) only.
+- Exact joins always use the complete persisted identifiers. Rendering is a bounded display
+  projection only: every identifier token is normalized to one line and capped at 96
+  characters, preserving a prefix and suffix separated by `…` when clipping is required.
+  Display clipping never participates in identity matching.
+- Rendered provenance ids are `occurrence`, `execution`, `performed`, and
+  `prescription` (hash) only.
 - On replace days the row carries `replaced by occurrence <id>`, attributing the
   archive-named (pre-replace) revision — never today's active plan.
 - A row degraded by an archive-read failure carries
@@ -188,10 +192,14 @@ Distinctions the section guarantees:
 Bounds:
 
 - At most 20 rows: the newest 20 of the deterministic sort, rendered chronologically.
-  The sort is ascending by date with `sessionId`, then authored kind, then `occurrenceId`
-  tie-breaks.
+  The total sort key is date, complete authored identity (including plan/revision/session/hash
+  or rest identity), occurrence/execution/performed/prescription ids, then sorted evidence.
+  Exact duplicate rows may compare equal because their rendered output is identical.
 - When rows are cut, the section ends with
   `- N earlier records omitted from this bounded section.`
+- Identifier tokens are capped at 96 rendered characters as described above.
+- `observed-work` ids are deduplicated and sorted; at most 5 are rendered per row, followed
+  by an explicit counted omission marker when more exist.
 - An empty window renders
   `No exact external-plan occurrence records were available in this window. Missing activity
   is not treated as a missed session.` Missing activity is never a miss.
@@ -199,12 +207,6 @@ Bounds:
   (`Round-trip records are unknown because one or more sources could not be read.`) with an
   `external-plan execution round-trip inputs` entry in `unavailableSources`, rather than an
   empty section.
-
-Known unbounded dimensions (follow-up, not this contract version):
-
-- `planId`/`sessionId` have no import-validator length cap (Firestore rules cap only
-  `externalRest.planId`/`restDirectiveId` at 64);
-- the `observed-work` id list per rest/none row is unbounded.
 
 Composition rule: the section consumes canonical performed-training authority and plan
 authority persisted per date. It never re-matches provider records, re-runs historical
@@ -221,10 +223,11 @@ activity. Diagnostic keeps at most 30 detailed activities and 100 laps/response 
 activity. Omitted detail is counted and labelled. Service-level regressions cap representative
 Markdown artifacts at 24,000 characters for morning, 65,000 for planning and 90,000 for
 diagnostic. These limits apply to optional detail; authority and safety sections are rendered
-outside the activity-detail selection. The round-trip section has its own bound (newest 20 rows
-plus a directional omission count, specified above); like activity detail, it is presence at
-maximum density that is guaranteed — authority rows are never cut by a global truncation,
-because no global truncation exists.
+outside the activity-detail selection. The round-trip section is independently finite through
+its newest-20 row cap, one-line 96-character identifier projection and five-item observed-work
+cap, all with explicit omission semantics. Like activity detail, representative maximum-density
+fixtures exercise composition without a global truncation; authority rows are never cut merely
+to satisfy a whole-document character limit.
 
 ## Determinism
 
@@ -265,9 +268,10 @@ Version history:
 - v2 → v3: required source state/currency semantics.
 - v3 → v4: round-trip semantics — `not adjudicated`, `none` and `as authored` narrowed for
   identical persisted inputs (existing labels repurposed, never silently), plus the row
-  vocabulary, replacement/archive provenance segments, and the newest-20 bound specified
-  above. Planning exports produced between PR-C's merge and this bump carry v3 identity
-  with v4 semantics; the bump bounds that window after the fact.
+  vocabulary, replacement/archive provenance, deterministic total ordering, newest-20 row
+  selection, and per-row identifier/observed-work bounds specified above. Planning exports
+  produced between PR-C's merge and this bump carry v3 identity with v4 semantics; the bump
+  bounds that window after the fact.
 
 Contract identity is asserted on every service-built artifact, and fixed-date semantic tests
 exclude only the generation timestamp. JSON's `context_brief_export_v2` transport version is

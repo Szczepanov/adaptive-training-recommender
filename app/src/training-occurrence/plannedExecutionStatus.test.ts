@@ -173,6 +173,47 @@ describe('projectPlannedExecutionStatus', () => {
             expect(rows.join('\n')).not.toContain('2026-09-01');
             expect(rows.join('\n')).not.toContain('2026-09-02');
         });
+
+        it('uses full authored identity as a deterministic tie-breaker', () => {
+            const planA = rowStatus({
+                authored: { kind: 'session', source: { ...source, planId: 'plan-a', revision: 3, sessionId: 'same-session' } },
+                occurrenceId: undefined,
+            });
+            const planB = rowStatus({
+                authored: { kind: 'session', source: { ...source, planId: 'plan-b', revision: 2, sessionId: 'same-session' } },
+                occurrenceId: undefined,
+            });
+
+            const forward = renderPlannedExecutionStatuses([planA, planB]).filter(line => line.startsWith('- '));
+            const reverse = renderPlannedExecutionStatuses([planB, planA]).filter(line => line.startsWith('- '));
+
+            expect(reverse).toEqual(forward);
+            expect(forward[0]).toContain('plan-a r3/same-session');
+            expect(forward[1]).toContain('plan-b r2/same-session');
+        });
+
+        it('bounds and sanitizes rendered identifiers and observed-work detail', () => {
+            const longSessionId = `ride-${'x'.repeat(140)}\ncontinued`;
+            const longOccurrenceId = `occ-${'y'.repeat(140)}`;
+            const evidence = [
+                ...Array.from({ length: 7 }, (_, index) => `observed-work:work-${7 - index}`),
+                'observed-work:work-3',
+                `replaced-by:${'replacement-'.repeat(12)}`,
+            ];
+            const rows = renderPlannedExecutionStatuses([rowStatus({
+                authored: { kind: 'session', source: { ...source, sessionId: longSessionId } },
+                occurrenceId: longOccurrenceId,
+                evidence,
+            })]).filter(line => line.startsWith('- '));
+
+            expect(rows).toHaveLength(1);
+            expect(rows[0]).not.toContain('\n');
+            expect(rows[0]).not.toContain(longSessionId);
+            expect(rows[0]).not.toContain(longOccurrenceId);
+            expect(rows[0]).toContain('…');
+            expect(rows[0]).toContain('observed work: work-1, work-2, work-3, work-4, work-5; 2 additional observed-work ids omitted');
+            expect(rows[0].length).toBeLessThan(1_200);
+        });
     });
 
 });

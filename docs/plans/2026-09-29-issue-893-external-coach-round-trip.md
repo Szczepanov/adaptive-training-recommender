@@ -19,7 +19,8 @@ persisted inputs, so a v3 stay was not legitimate; planning exports between PR-C
 v3 identity with v4 semantics). Row rendering keeps the newest 20 with replacement and
 archive-failure provenance; service fixtures pin gate replaced, manually replaced with
 provenance, row-level archive failure, advisory-not-gated, morning absence (never computed),
-and the 65k budget at maximum density. `POLICY_VERSION` unchanged (descriptive export only).
+hard per-row identifier/observed-work bounds, deterministic total ordering, and the representative
+65k dense-composition budget. `POLICY_VERSION` unchanged (descriptive export only).
 `briefPlanAuthority`, adjudication, and safety gating untouched. The full E2E matrix and the
 round-trip fixture narrative stay in PR-E.
 
@@ -920,13 +921,15 @@ Fixtures must distinguish:
 > `2026-09-context-brief-contract-v4`; the v2/v3 expectations below are history and must not
 > be re-acted on.
 
-Current architecture documents semantic contract v2.
+Historical starting point: architecture documented semantic contract v2, and the original
+work order expected the round-trip section to trigger the next version.
 
-The new planned-vs-performed section changes the planning API meaning, so make a deliberate
-contract version decision in the same PR.
+**Recorded decision:** PR-D advances directly from v3 to
+`2026-09-context-brief-contract-v4` because PR-C had already repurposed existing labels for
+identical persisted inputs under the v3 string; the renderer's bounded provenance/order semantics
+are part of the same v4 surface.
 
-Expected (superseded — PR-D recorded v4 instead, because PR-C had already repurposed
-existing labels for identical persisted inputs under the v3 string):
+Historical expected value (superseded):
 
 ```text
 2026-09-context-brief-contract-v3

@@ -995,10 +995,11 @@ describe('ContextBriefService', () => {
         }));
         services.getActivitiesInRange.mockResolvedValue({ status: 'AVAILABLE', data: activities, revision: 'dense-r1' });
 
-        // PR-D D4: maximum-density round-trip section beside the dense activity
-        // payload — 22 candidates with maximum-length ids and full provenance, so
-        // the 65k planning budget is proven with authority sections present, not
-        // with an empty round-trip section. The companion `none` row on the rest
+        // PR-D D4: representative dense round-trip section beside the dense
+        // activity payload — 22 candidates with 64-char ids and full provenance.
+        // Renderer-level tests separately pin hard identifier/list bounds; this
+        // fixture proves the 65k representative planning budget with the section
+        // populated rather than empty. The companion `none` row on the rest
         // date is a service-test artifact: `externalRestContextForDate` is mocked
         // to `() => null` in this file, so the active-plan rest path cannot fire
         // and the unplanned-work branch also renders. Production resolves the
@@ -1149,8 +1150,8 @@ describe('ContextBriefService', () => {
         expect(morning.text.length).toBeLessThan(24_000);
         const planning = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         expect(planning.text).toContain('aggregate planning detail cap 20000 characters');
-        // Measured 58,749 against the 65k planning budget with the dense activity
-        // payload plus the full 22-candidate round-trip section (~6.2k headroom).
+        // Representative dense composition remains below the 65k planning budget;
+        // renderer-level caps prevent one row from growing without bound.
         expect(planning.text.length).toBeLessThan(65_000);
         const roundTripRows = (() => {
             const lines = planning.text.split('\n');
