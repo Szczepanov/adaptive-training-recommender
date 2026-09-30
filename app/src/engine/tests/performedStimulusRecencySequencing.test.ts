@@ -207,7 +207,7 @@ describe('performed stimulus-domain recency in sequencing decisions (#931)', () 
                 { kind: 'structured_execution', executionId: 'exec-threshold' },
                 { kind: 'provider_activity', provider: 'garmin', activityId: 'garmin-threshold' },
             ],
-            reconciliation: { state: 'single_source' },
+            reconciliation: { state: 'matched' },
             createdAt: '2026-09-06T18:00:00Z',
             updatedAt: '2026-09-06T18:00:00Z',
         };
