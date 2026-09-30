@@ -64,9 +64,9 @@ describe('bodyMass utilities', () => {
 
             const records = extractProviderWeightRecords(snapshots);
             expect(records).toEqual([
-                { date: '2026-10-20', weightKg: 75.5 },
-                { date: '2026-10-20', weightKg: 75.5 },
-                { date: '2026-10-24', weightKg: 76.0 },
+                { date: '2026-10-20', weightKg: 75.5, sourceRef: 'daily_recovery_snapshot:2026-10-21' },
+                { date: '2026-10-20', weightKg: 75.5, sourceRef: 'daily_recovery_snapshot:2026-10-22' },
+                { date: '2026-10-24', weightKg: 76.0, sourceRef: 'daily_recovery_snapshot:2026-10-24' },
             ]);
         });
     });
@@ -90,6 +90,7 @@ describe('bodyMass utilities', () => {
                 bodyMassKg: 75.0,
                 source: 'provider',
                 date: '2026-10-22',
+                reference: 'daily_recovery_snapshot:2026-10-22',
             });
         });
 
@@ -102,6 +103,7 @@ describe('bodyMass utilities', () => {
                 bodyMassKg: 74.8,
                 source: 'manual',
                 date: '2026-10-21',
+                reference: 'anthropometry_entry:m1',
             });
         });
 
@@ -125,6 +127,7 @@ describe('bodyMass utilities', () => {
                 bodyMassKg: 74.5,
                 source: 'manual',
                 date: '2026-10-22',
+                reference: 'anthropometry_entry:m2',
             });
 
             // Missing manual date returns null even when provider point exists
