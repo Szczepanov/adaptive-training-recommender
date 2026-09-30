@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS_BUDGET_BYTES = 32 * 1024
 MANDATORY_ROUTING_PREFIX_BYTES = 8 * 1024
