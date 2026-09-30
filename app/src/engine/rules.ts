@@ -904,7 +904,8 @@ export async function evaluateTrainingWithIntent(
             } : {}),
             decisionTrace: {
                 policyVersion: POLICY_VERSION,
-                candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons })),
+                stimulusRecency: rankingResult.stimulusRecency,
+                candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons, stimulusRecency: candidate.stimulusRecency })),
                 droppedContributorObjectives: intent.droppedContributorObjectives,
                 rankingAudit: null,
                 calibration,
@@ -938,7 +939,8 @@ export async function evaluateTrainingWithIntent(
         } : {}),
         decisionTrace: {
             policyVersion: POLICY_VERSION,
-            candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons })),
+            stimulusRecency: rankingResult.stimulusRecency,
+            candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons, stimulusRecency: candidate.stimulusRecency })),
             droppedContributorObjectives: intent.droppedContributorObjectives,
             rankingAudit: computeRankingCounterfactual(rankingResult, pick.template.id),
             calibration,

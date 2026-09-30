@@ -41,6 +41,13 @@ import { resolveEventTaper } from './taperPolicy';
 import { olympicTriathlonTaperBenefitBoost, olympicTriathlonTaperCandidateCap, olympicTriathlonTaperExclusion, resolveOlympicTriathlonTaperBudget, resolvePriorityAOlympicTriathlonTaper, type OlympicTriathlonTaperBudget } from './taperPlanBudget';
 import { resolveInjuryRestrictions } from './injuryPolicy';
 import { classifyCandidateStrength, classifyPriorStrength, evaluateStrengthSpacingStatus, type StrengthExposureLike } from './strengthSpacingPolicy';
+import type { PerformedExposureFact } from './performedTrainingFacts';
+import {
+    buildPerformedStimulusRecency,
+    evaluateCandidateStimulusRecency,
+    type CandidateStimulusRecencyTrace,
+    type StimulusRecencyDecisionTrace,
+} from './stimulusRecency';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import {
     composeCoverageNeedTier,
@@ -279,12 +286,14 @@ export interface RankedCandidate {
     benefitTier?: number;
     rationale: string;
     excludedReasons: string[];
+    stimulusRecency?: CandidateStimulusRecencyTrace;
 }
 
 export interface RankCandidatesResult {
     accepted: RankedCandidate[];
     rejected: RankedCandidate[];
     all: RankedCandidate[];
+    stimulusRecency?: StimulusRecencyDecisionTrace;
 }
 
 export interface RecentHistoryEntry {
@@ -320,9 +329,10 @@ export interface OptimizationOptions {
     /** Booked training occurrences, including future commitments within the taper. */
     taperFixedReservations?: RecentHistoryEntry[];
     /** Canonical performed-training exposure facts are the recency/spacing authority for
-     * strength. An explicitly present empty array must stay empty rather than falling back
+     * strength and quality stimulus recency. An explicitly present empty array must stay empty rather than falling back
      * to legacy reconstructed history. */
-    recentPerformedExposures?: readonly StrengthExposureLike[];
+    recentPerformedExposures?: readonly (PerformedExposureFact | StrengthExposureLike)[];
+    stimulusRecencyOverridesDegraded?: boolean;
     anchorRole?: 'event-specific' | 'quality' | null;
     adjacentToAnchor?: boolean;
     plannedDose?: PlannedDose;
@@ -976,7 +986,7 @@ export function buildOptimizationContext(
         fatigue: FatigueState;
         periodization?: { focusEvent?: UserEvent | null; phase?: { phaseName: import('./periodization').PhaseWeights['phaseName'] } } | null;
         history?: (RecentHistoryEntry | SessionHistoryEntry)[];
-        performedTrainingFacts?: { exposures: readonly StrengthExposureLike[] } | null;
+        performedTrainingFacts?: { exposures: readonly StrengthExposureLike[]; overridesDegraded?: boolean } | null;
         plannedDose?: PlannedDose;
     },
     context: UserContext,
@@ -1088,6 +1098,9 @@ export function buildOptimizationContext(
         options.aerobicVolumeFloor,
     );
     const recentPerformedExposures = options.recentPerformedExposures ?? intent.performedTrainingFacts?.exposures;
+    const stimulusRecencyOverridesDegraded = options.stimulusRecencyOverridesDegraded
+        ?? intent.performedTrainingFacts?.overridesDegraded
+        ?? false;
     const recoveryPlacementState = options.recoveryPlacementState !== undefined
         ? options.recoveryPlacementState
         : (options.recoveryHistorySnapshot
@@ -1123,6 +1136,7 @@ export function buildOptimizationContext(
             ...(sequenceIntent ? { sequenceIntent } : {}),
             ...(options.recoveryHistorySnapshot ? { recoveryHistorySnapshot: options.recoveryHistorySnapshot } : {}),
             ...(recentPerformedExposures !== undefined ? { recentPerformedExposures } : {}),
+            ...(stimulusRecencyOverridesDegraded ? { stimulusRecencyOverridesDegraded: true } : {}),
             ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
             ...(options.resolvedAvailability ? { resolvedAvailability: options.resolvedAvailability } : {}),
             ...(options.resolveMinimumDaysAfterHardLowerBody ? { resolveMinimumDaysAfterHardLowerBody: options.resolveMinimumDaysAfterHardLowerBody } : {}),
@@ -1173,6 +1187,10 @@ export function rankCandidates(
     const extraMargin = preferences.extraRecoveryMargin ?? preferences.conservativeBias ?? false;
     const focusEvent = options.focusEvent;
     const targetDate = options.date ?? getLocalDateString();
+    const stimulusRecency = buildPerformedStimulusRecency(
+        options.recentPerformedExposures ?? (options.recentHistory as readonly (PerformedExposureFact | StrengthExposureLike)[] | undefined) ?? [],
+        targetDate,
+    );
     const isCEnduranceCompetition = focusEvent?.priority === 'C'
         && (focusEvent.category === 'cycling_event' || focusEvent.category === 'running_race' || focusEvent.category === 'triathlon');
     const resolvedTaper = focusEvent ? resolveEventTaper(focusEvent) : null;
@@ -1282,6 +1300,7 @@ export function rankCandidates(
         }
         let benefit = calculateStimulusBenefit(effectiveCandidate, unresolvedObjectives);
         const fulfilsNominatedAnchor = candidateMatchesAnchorRole(template, options.anchorRole);
+        const stimulusEvaluation = evaluateCandidateStimulusRecency(template, stimulusRecency, fulfilsNominatedAnchor);
         const deferAnchorAdjacentHeavyStrength = Boolean(
             options.adjacentToAnchor
             && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category)
@@ -1431,6 +1450,7 @@ export function rankCandidates(
                 template, benefitScore: benefit, costPenalty, utilityScore: 0, coverageNeedTier, recoveryPreferenceTier,
                 ...(recoveryPlacementTier !== undefined ? { recoveryPlacementTier } : {}),
                 rationale: `Excluded by hard constraint(s): ${excludedReasons.join(', ')}.`, excludedReasons,
+                stimulusRecency: stimulusEvaluation.trace,
             };
             rejected.push(item);
             all.push(item);
@@ -1480,7 +1500,10 @@ export function rankCandidates(
         }
 
         const usedYesterday = summary.usedYesterdayTemplateIds.has(template.id);
-        if (usedYesterday) prefMultiplier *= 0.2;
+        const templateRepetitionMultiplier = usedYesterday ? 0.2 : 1.0;
+        const stimulusRepetitionMultiplier = stimulusEvaluation.stimulusMultiplier;
+        const effectiveRepetitionMultiplier = Math.min(templateRepetitionMultiplier, stimulusRepetitionMultiplier);
+        prefMultiplier *= effectiveRepetitionMultiplier;
 
         const isStrengthCategory = STRENGTH_CATEGORIES.includes(template.category);
         if (isStrengthCategory && focusEvent) {
@@ -1590,6 +1613,9 @@ export function rankCandidates(
                 rationale += ` (Sequence soft preference x${sequencePreference.multiplier.toFixed(2)}: ${sequencePreference.reasons.join('; ')}.)`;
             }
         }
+        if (stimulusEvaluation.rationaleNote) {
+            rationale += ` ${stimulusEvaluation.rationaleNote}`;
+        }
 
         const item: RankedCandidate = {
             template,
@@ -1602,6 +1628,7 @@ export function rankCandidates(
             recoveryPreferenceTier,
             rationale,
             excludedReasons: [],
+            stimulusRecency: stimulusEvaluation.trace,
         };
         accepted.push(item);
         all.push(item);
@@ -1745,7 +1772,20 @@ export function rankCandidates(
         }
     }
 
-    return { accepted, rejected, all };
+    return {
+        accepted,
+        rejected,
+        all,
+        stimulusRecency: {
+            targetDate,
+            yesterdayDate: stimulusRecency.yesterdayDate,
+            evaluatedExposuresCount: stimulusRecency.evaluatedExposuresCount,
+            yesterdayQualityFamilies: Array.from(stimulusRecency.yesterdayQualityFamilies),
+            hasConfidentEnduranceYesterday: stimulusRecency.hasConfidentEnduranceYesterday,
+            exposures: stimulusRecency.exposures,
+            ...(options.stimulusRecencyOverridesDegraded ? { overridesDegraded: true } : {}),
+        },
+    };
 }
 
 /** Issue #458 / analysis §6: a deterministic, read-only counterfactual over an already-

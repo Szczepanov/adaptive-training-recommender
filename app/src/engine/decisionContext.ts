@@ -154,7 +154,8 @@ function validPayload(value: unknown): value is Omit<DecisionContextRecord, 'con
     const facts = value.performedTrainingFacts;
     if (value.minimumSafetyStatus === 'complete') {
         if (!isObject(facts) || !exactKeys(facts,
-            ['asOfDate', 'windowDays', 'revision', 'exposures', 'coverageCredits'])
+            ['asOfDate', 'windowDays', 'revision', 'exposures', 'coverageCredits'], ['overridesDegraded'])
+            || (facts.overridesDegraded !== undefined && typeof facts.overridesDegraded !== 'boolean')
             || facts.asOfDate !== value.date || !Number.isSafeInteger(facts.windowDays)
             || (facts.windowDays as number) < 1 || typeof facts.revision !== 'string' || !facts.revision
             || !Array.isArray(facts.exposures) || !Array.isArray(facts.coverageCredits)) return false;

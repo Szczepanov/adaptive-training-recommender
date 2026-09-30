@@ -9,6 +9,7 @@ import { activityService } from '../services/activityService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { recommendationService } from '../services/recommendationService';
+import { activityOverrideService } from '../services/activityOverrideService';
 import { templateIdForWorkoutId } from '../engine/performedTrainingFacts';
 import type { DailyRecommendation, NormalizedGarminActivity } from '../engine/models';
 import type { SessionExecution } from '../sessions/models';
@@ -39,6 +40,12 @@ vi.mock('../sessions/sessionDefinitionResolver', () => ({
 vi.mock('../services/recommendationService', () => ({
     recommendationService: {
         getRecommendationsInRange: vi.fn(),
+    },
+}));
+
+vi.mock('../services/activityOverrideService', () => ({
+    activityOverrideService: {
+        getOverridesSinceState: vi.fn(),
     },
 }));
 
@@ -129,6 +136,7 @@ describe('performedTrainingFactsService', () => {
         vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'MISSING' });
         vi.mocked(resolveSessionDefinition).mockResolvedValue({ status: 'MISSING' });
         vi.mocked(recommendationService.getRecommendationsInRange).mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+        vi.mocked(activityOverrideService.getOverridesSinceState).mockResolvedValue({ status: 'AVAILABLE', data: {}, revision: 'empty' });
     });
 
     describe('getPerformedTrainingFactsInRange', () => {
@@ -426,6 +434,107 @@ describe('performedTrainingFactsService', () => {
             expect(snapshot.exposures[1].performedOccurrenceId).toBe('pto-2');
             expect(snapshot.revision).toContain('pto-1:2026-09-01T10:00:00Z|pto-2:2026-09-02T10:00:00Z');
             expect(snapshot.windowDays).toBe(2);
+        });
+
+        describe('activity override handling', () => {
+            it('hydrates activity override from activityOverrideService when not explicitly passed', async () => {
+                vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([
+                    occurrence({ modality: 'Cycling', sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: 'act-tempo' }] }),
+                ]);
+                vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({
+                    status: 'AVAILABLE',
+                    data: [garminActivity({
+                        activityId: 'act-tempo',
+                        type: 'cycling',
+                        intensityClassificationVersion: 2,
+                        stimulusDomain: 'tempo',
+                    })],
+                    revision: 'rev-1',
+                });
+                vi.mocked(activityOverrideService.getOverridesSinceState).mockResolvedValue({
+                    status: 'AVAILABLE',
+                    data: {
+                        'act-tempo': {
+                            activityId: 'act-tempo',
+                            userId: 'user-1',
+                            date: '2026-09-01',
+                            originalType: 'cycling',
+                            originalIntensityTag: 'tempo',
+                            overriddenModality: 'Running',
+                            overriddenIntensity: 'easy',
+                            notes: 'Recovery ride',
+                            createdAt: '2026-09-01T12:00:00Z',
+                            updatedAt: '2026-09-01T12:00:00Z',
+                        },
+                    },
+                    revision: 'rev-overrides-1',
+                });
+
+                const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02');
+
+                // Provider tempo was suppressed by override
+                expect(snapshot.exposures[0].stimulusDomain).toBeUndefined();
+                expect(snapshot.exposures[0]).toMatchObject({ modality: 'Running', evidenceTier: 'athleteClassification' });
+                expect(snapshot.overridesDegraded).toBeUndefined();
+            });
+
+            it.each(['unavailable', 'rejected'] as const)('suppresses provider semantics when override hydration is %s', async (failure) => {
+                vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([
+                    occurrence({ sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: 'act-1' }] }),
+                ]);
+                vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({
+                    status: 'AVAILABLE',
+                    data: [garminActivity({
+                        activityId: 'act-1', type: 'cycling',
+                        stimulusDomain: 'tempo', sessionCost: 'high',
+                        intensityEvidence: 'provider evidence', intensityClassificationVersion: 2,
+                    })],
+                    revision: 'rev-1',
+                });
+                if (failure === 'unavailable') {
+                    vi.mocked(activityOverrideService.getOverridesSinceState).mockResolvedValue({
+                        status: 'UNAVAILABLE', operation: 'read activity overrides', retryable: true,
+                    });
+                } else {
+                    vi.mocked(activityOverrideService.getOverridesSinceState).mockRejectedValue(new Error('Firestore connection error'));
+                }
+
+                const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02');
+
+                expect(snapshot.overridesDegraded).toBe(true);
+                expect(snapshot.exposures[0].modality).toBe('Cycling');
+                expect(snapshot.exposures[0]).not.toHaveProperty('stimulusDomain');
+                expect(snapshot.exposures[0]).not.toHaveProperty('sessionCost');
+                expect(snapshot.exposures[0]).not.toHaveProperty('intensityEvidence');
+                expect(snapshot.exposures[0]).not.toHaveProperty('intensityClassificationVersion');
+                expect(snapshot.revision).toContain(':overrides=unavailable');
+            });
+
+            it('retains structured semantic authority when override hydration is unavailable', async () => {
+                vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([occurrence({
+                    sourceRefs: [
+                        { kind: 'structured_execution', executionId: 'exec-1' },
+                        { kind: 'provider_activity', provider: 'garmin', activityId: 'act-1' },
+                    ],
+                })]);
+                vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({
+                    status: 'AVAILABLE', revision: null,
+                    data: sessionExecution({ sessionSource: { kind: 'catalog', workoutId: 'cycling_tempo_surges_01', catalogVersion: 'v1' } }),
+                });
+                vi.mocked(activityOverrideService.getOverridesSinceState).mockResolvedValue({
+                    status: 'UNAVAILABLE', operation: 'read activity overrides', retryable: true,
+                });
+
+                const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02', {
+                    preloadedActivities: [garminActivity({ stimulusDomain: 'endurance', sessionCost: 'low' })],
+                });
+
+                expect(snapshot.overridesDegraded).toBe(true);
+                expect(snapshot.exposures[0]).toMatchObject({
+                    modality: 'Cycling', stimulusDomain: 'tempo',
+                    confidence: 'exact', evidenceTier: 'completedStructuredWorkout',
+                });
+            });
         });
     });
 

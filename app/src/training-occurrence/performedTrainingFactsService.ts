@@ -4,7 +4,7 @@
  * Isolated outside app/src/engine so the recommendation engine and adjudication layer
  * remain strictly free of static I/O and Firebase imports.
  */
-import type { SessionTemplate, NormalizedGarminActivity, DailyRecommendation } from '../engine/models';
+import type { ActivityOverride, SessionTemplate, NormalizedGarminActivity, DailyRecommendation } from '../engine/models';
 import type { SessionExecution } from '../sessions/models';
 import type { CoverageSetDescriptor } from '../workouts/event-plan';
 import type { WorkoutVariant } from '../workouts/models';
@@ -14,6 +14,8 @@ import { isStructuredExecutionRef } from './models';
 import { hydrateOccurrenceSourcesInRange } from './occurrenceSourcesHydration';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { recommendationService } from '../services/recommendationService';
+import { activityOverrideService } from '../services/activityOverrideService';
+import { computeContentHash } from '../engine/externalPlanHash';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { addDaysToLocalDateString, getPreviousLocalDateString } from '../utils/localDate';
 import {
@@ -33,6 +35,7 @@ export interface GetPerformedTrainingFactsOptions {
     preloadedActivities?: readonly NormalizedGarminActivity[];
     /** Export-only provenance. Keep default decision snapshots and hashes unchanged. */
     includeDisplayProvenance?: boolean;
+    activityOverrides?: Readonly<Record<string, ActivityOverride>> | ReadonlyMap<string, ActivityOverride>;
 }
 
 /**
@@ -92,8 +95,25 @@ export async function getPerformedTrainingFactsInRange(
         };
     }
 
+    let overrides = options.activityOverrides;
+    let overridesDegraded = false;
+    if (!overrides) {
+        try {
+            const overridesState = await activityOverrideService.getOverridesSinceState(userId, fromDateInclusive);
+            if (overridesState.status === 'AVAILABLE') {
+                overrides = overridesState.data;
+            } else {
+                overridesDegraded = true;
+            }
+        } catch {
+            overridesDegraded = true;
+            overrides = undefined;
+        }
+    }
+
     const sourceHydration = await hydrateOccurrenceSourcesInRange(userId, fromDateInclusive, toDateExclusive, {
         preloadedActivities: options.preloadedActivities,
+        activityOverrides: overrides,
     });
     const activeOccurrences = sourceHydration.rows.map(row => row.occurrence);
     const activitiesById = new Map(sourceHydration.activities.map(activity => [activity.activityId, activity]));
@@ -201,6 +221,8 @@ export async function getPerformedTrainingFactsInRange(
                 ...(garminActivity?.endedAt ? { endedAt: garminActivity.endedAt } : {}),
                 ...(duration !== null && duration !== undefined ? { durationMin: duration } : {}),
                 ...(garminActivity ? { garminActivity } : {}),
+                ...(garminSource?.override ? { override: garminSource.override } : {}),
+                ...(overridesDegraded ? { overridesUnavailable: true } : {}),
             };
         }
 
@@ -221,12 +243,27 @@ export async function getPerformedTrainingFactsInRange(
         .map(o => `${o.performedOccurrenceId}:${o.updatedAt}`)
         .sort()
         .join('|');
+    // The override service has no revision. Hash only bounded, attached semantic content;
+    // free-text notes, timestamps and overrides outside these occurrences are irrelevant.
+    const relevantOverrides = sourceHydration.rows.flatMap(row => row.providerSources)
+        .flatMap(({ ref, override }) => ref.provider.toLowerCase() === 'garmin' && override ? [{
+            activityId: ref.activityId,
+            modality: override.overriddenModality,
+            intensity: override.overriddenIntensity,
+            stimulusFocus: override.stimulusFocus ?? null,
+            rpe: override.rpe ?? null,
+        }] : [])
+        .sort((a, b) => a.activityId.localeCompare(b.activityId));
+    const overrideRevision = overridesDegraded ? 'unavailable' : relevantOverrides.length
+        ? await computeContentHash({ schema: 'performed-facts-overrides-v1', overrides: relevantOverrides })
+        : undefined;
     // Coverage credits are descriptor-scoped semantic facts. Include that scope in the
     // snapshot revision so evergreen/event interpretations of the same occurrences never
     // alias as one immutable fact revision in cache/audit/replay consumers.
     // The readiness marker is derived from recommendation documents, so a recommendation
     // revision change must also change the facts revision.
     const revision = `canonical-facts-v1:${descriptor.id}:${fromDateInclusive}:${toDateExclusive}:${occurrenceRevision}`
+        + (overrideRevision ? `:overrides=${overrideRevision}` : '')
         + (recommendationRevision ? `:rec=${recommendationRevision}` : '');
 
     return {
@@ -235,6 +272,7 @@ export async function getPerformedTrainingFactsInRange(
         revision,
         exposures,
         coverageCredits,
+        ...(overridesDegraded ? { overridesDegraded: true } : {}),
     };
 }
 
