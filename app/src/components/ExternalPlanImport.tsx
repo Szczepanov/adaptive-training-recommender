@@ -158,6 +158,11 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
             setPreflight(null);
             return;
         }
+        if (!previousRevision.ready) {
+            setPreflight(null);
+            setPreflightAcknowledged(false);
+            return;
+        }
         let current = true;
         setPreflight(null);
         setPreflightAcknowledged(false);
@@ -165,7 +170,7 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
             .then(result => { if (current) setPreflight(result); })
             .catch(() => { if (current) setPreflight({ status: 'unknown', unavailableSources: ['activation preflight'], findings: [] }); });
         return () => { current = false; };
-    }, [effectiveFrom, phase, previousPlan, today, userId]);
+    }, [effectiveFrom, phase, previousPlan, previousRevision.ready, today, userId]);
 
     const diff = useMemo(() => {
         if (phase.kind !== 'previewing' || !previousPlan) return null;
