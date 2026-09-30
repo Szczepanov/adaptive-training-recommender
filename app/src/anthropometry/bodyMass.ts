@@ -20,6 +20,8 @@ export interface ResolvedSameDayBodyMass {
     bodyMassKg: number;
     source: 'provider' | 'manual';
     date: string;
+    /** Stable reference to the canonical source record used for this derived context. */
+    reference?: string;
 }
 
 export interface ResolveSameDayBodyMassOptions {
@@ -33,6 +35,7 @@ export interface BodyMassRelativeContext {
     bodyMassKg?: number;
     bodyMassSource?: 'provider' | 'manual';
     bodyMassDate?: string;
+    bodyMassReference?: string;
     relativeValue?: number;
     relativeUnit?: string;
 }
@@ -49,6 +52,7 @@ export function extractProviderWeightRecords(
         .map(s => ({
             date: s.source.metricDates!.weight as string,
             weightKg: s.raw.weightKg as number,
+            sourceRef: `daily_recovery_snapshot:${s.date}`,
         }));
 }
 
@@ -92,6 +96,7 @@ export function resolveSameDayBodyMass(
             bodyMassKg: point.weightKg,
             source: 'provider',
             date: point.date,
+            reference: point.sourceRef,
         };
     }
 
@@ -104,6 +109,7 @@ export function resolveSameDayBodyMass(
         bodyMassKg: point.weightKg,
         source: 'manual',
         date: point.date,
+        reference: point.entryId ? `anthropometry_entry:${point.entryId}` : undefined,
     };
 }
 
@@ -129,6 +135,7 @@ export function computeBodyMassRelativeContext(
         bodyMassKg: bodyMass.bodyMassKg,
         bodyMassSource: bodyMass.source,
         bodyMassDate: bodyMass.date,
+        bodyMassReference: bodyMass.reference,
         relativeValue,
         relativeUnit: unit,
     };
@@ -145,5 +152,8 @@ export function formatBodyMassRelativeContext(
     if (context.relativeValue === undefined || !context.relativeUnit) {
         return 'unavailable';
     }
-    return `${context.relativeValue} ${context.relativeUnit} (${context.bodyMassSource} · ${context.bodyMassDate})`;
+    const provenance = context.bodyMassReference
+        ? `${context.bodyMassSource} · ${context.bodyMassDate} · ref ${context.bodyMassReference}`
+        : `${context.bodyMassSource} · ${context.bodyMassDate}`;
+    return `${context.relativeValue} ${context.relativeUnit} (${provenance})`;
 }
