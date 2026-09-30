@@ -44,6 +44,7 @@ describe('AssessmentCaptureService', () => {
         mockTrialService = {
             createTrials: vi.fn().mockImplementation(async (_u, _p, _id, trials) => trials),
             createTrial: vi.fn().mockImplementation(async (_u, _p, trial) => trial),
+            commitCorrection: vi.fn().mockResolvedValue(undefined),
             listTrialsForAttempt: vi.fn().mockResolvedValue([]),
             getTrial: vi.fn().mockResolvedValue(null),
         } as unknown as AssessmentTrialService;
@@ -325,9 +326,11 @@ describe('AssessmentCaptureService', () => {
             observedAt: '2026-10-20T10:15:00.000Z',
         });
 
-        // appendCorrection should be called for 1s peak (value changed from 1250 to 1220),
-        // but NOT for 5s mean (value is still 1100, source trial is still trial-1)!
-        expect(mockObservationService.appendCorrection).toHaveBeenCalledTimes(1);
+        // Only the 1s peak changed; one atomic commit contains that revision plus the raw correction.
+        expect(mockTrialService.commitCorrection).toHaveBeenCalledTimes(1);
+        const committedRevisions = vi.mocked(mockTrialService.commitCorrection).mock.calls[0][3];
+        expect(committedRevisions).toHaveLength(1);
+        expect(mockObservationService.appendCorrection).not.toHaveBeenCalled();
         expect(correctResult.updatedObservations).toHaveLength(1);
         expect(correctResult.updatedObservations[0].metricId).toBe('cycling_sprint_1s_peak_power_w');
         expect(correctResult.updatedObservations[0].value).toBe(1220);
@@ -386,7 +389,8 @@ describe('AssessmentCaptureService', () => {
             observedAt: '2026-10-20T10:15:00.000Z',
         })).rejects.toThrow(/without any valid trial/);
 
-        // Fail closed BEFORE any write: no orphaned superseding trial contradicts the benchmark.
+        // Fail closed BEFORE the atomic commit: no orphaned superseding trial contradicts the benchmark.
+        expect(mockTrialService.commitCorrection).not.toHaveBeenCalled();
         expect(mockTrialService.createTrial).not.toHaveBeenCalled();
         expect(mockObservationService.appendCorrection).not.toHaveBeenCalled();
     });
@@ -418,13 +422,8 @@ describe('AssessmentCaptureService', () => {
         vi.mocked(mockTrialService.listTrialsForAttempt).mockResolvedValue([trial1]);
 
         const order: string[] = [];
-        vi.mocked(mockTrialService.createTrial).mockImplementation(async (_u, _p, trial) => {
-            order.push('createTrial');
-            return trial;
-        });
-        vi.mocked(mockObservationService.appendCorrection).mockImplementation(async (_u, rev) => {
-            order.push('appendCorrection');
-            return rev;
+        vi.mocked(mockTrialService.commitCorrection).mockImplementation(async () => {
+            order.push('commitCorrection');
         });
 
         const correction = makeTrial(1, 236, {
@@ -442,7 +441,7 @@ describe('AssessmentCaptureService', () => {
             observedAt: '2026-10-20T10:15:00.000Z',
         });
 
-        expect(order).toEqual(['createTrial', 'appendCorrection']);
+        expect(order).toEqual(['commitCorrection']);
         // No sourceRef supplied: the correction keeps the superseded revision's provenance.
         expect(result.updatedObservations[0].sourceRef).toBe('execution:exec-1');
         expect(result.trials.map(trial => trial.id)).toEqual(['trial-1', 'trial-1-c1']);
