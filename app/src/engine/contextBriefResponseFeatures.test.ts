@@ -155,7 +155,7 @@ describe('response summary provenance and bounds (#814 WP7)', () => {
             })),
             sourceCompleteness: { occurrenceRead: 'available', structuredExecution: 'not_linked', providerActivities: 'ambiguous' },
         };
-        const brief = '# Brief\n\n## 2. Completed training (recorded by the wearable)\n\nrows\n\n## 3. Next\n';
+        const brief = '# Brief\n\n## 2. Completed training (canonical performed occurrences)\n\nrows\n\n## 3. Next\n';
         const context = {
             history: [first, second], historyStart: '2026-08-22', checkins: NO_CHECKINS,
             asOfDate: '2026-09-20', windowStart: '2026-09-18', windowEnd: '2026-09-18', evidence: [evidence],
@@ -183,7 +183,7 @@ describe('response summary provenance and bounds (#814 WP7)', () => {
             localDate: '2026-09-17',
             sourceCompleteness: { occurrenceRead: 'available', structuredExecution: 'not_linked', providerActivities: 'partial' },
         };
-        const brief = '# Brief\n\n## 2. Completed training (recorded by the wearable)\n\nrows\n\n## 3. Next\n';
+        const brief = '# Brief\n\n## 2. Completed training (canonical performed occurrences)\n\nrows\n\n## 3. Next\n';
         const context = {
             history: [activity], historyStart: '2026-08-22', checkins: NO_CHECKINS,
             asOfDate: '2026-09-20', windowStart: '2026-09-18', windowEnd: '2026-09-18', evidence: [evidence],
@@ -1217,7 +1217,7 @@ describe('next-day response (#814)', () => {
 
 describe('planning vs diagnostic export (#814)', () => {
     const session = intervalRide([229, 225, 237]);
-    const brief = '# Brief\n\n## 2. Completed training (recorded by the wearable)\n\nrows\n\n## 3. Next\n';
+    const brief = '# Brief\n\n## 2. Completed training (canonical performed occurrences)\n\nrows\n\n## 3. Next\n';
     const context = { history: [session], historyStart: '2026-08-22', checkins: NO_CHECKINS, asOfDate: '2026-09-20' };
 
     it('planning keeps the semantic summary plus bounded quality execution evidence, without the compact lap digest', () => {
