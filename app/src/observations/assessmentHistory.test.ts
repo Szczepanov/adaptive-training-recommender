@@ -10,6 +10,7 @@ import type {
 } from './models';
 import {
     BENCH_PRESS_1RM_PROTOCOL,
+    CYCLING_6S_SEATED_SPRINT_PROTOCOL_V2,
     STANDING_BROAD_JUMP_PROTOCOL,
 } from './physicalCapitalProtocols';
 import { PERFORMANCE_TEST_DEFINITIONS } from './performanceTestingCatalog';
@@ -39,6 +40,7 @@ function makeObs(
     seriesKey: string,
     observedAt: string,
     isDerivedWithRefs = true,
+    unit = 'cm',
 ): { head: MetricObservationHead; revision: MetricObservationRevision } {
     const observationKey = `${attempt.id}:${metricId}`;
     return {
@@ -55,7 +57,7 @@ function makeObs(
             revision: 1,
             metricId,
             value,
-            unit: 'cm',
+            unit,
             observedAt,
             source: isDerivedWithRefs ? 'derived' : 'manual',
             derivedFromEvidenceRefs: isDerivedWithRefs
@@ -121,15 +123,16 @@ describe('assessmentHistory', () => {
         expect(broadJump).toBeDefined();
 
         // Active series should be rev 2 series-setup-2
-        expect(broadJump?.activeSeries?.protocolRevision).toBe(2);
-        expect(broadJump?.activeSeries?.comparisonSeriesKey).toBe('series-setup-2');
-        expect(broadJump?.activeSeries?.progress.comparable).toBe(true);
-        expect(broadJump?.activeSeries?.progress.absoluteChange).toBe(8);
+        const distanceMetric = broadJump?.metrics.find(metric => metric.metricId === 'standing_broad_jump_distance_cm');
+        expect(distanceMetric?.activeSeries?.protocolRevision).toBe(2);
+        expect(distanceMetric?.activeSeries?.comparisonSeriesKey).toBe('series-setup-2');
+        expect(distanceMetric?.activeSeries?.progress.comparable).toBe(true);
+        expect(distanceMetric?.activeSeries?.progress.absoluteChange).toBe(8);
 
         // Other series should contain rev 1 series-setup-1
-        expect(broadJump?.otherSeries).toHaveLength(1);
-        expect(broadJump?.otherSeries[0].protocolRevision).toBe(1);
-        expect(broadJump?.otherSeries[0].nonComparableReason).toBe('protocol revision changed');
+        expect(distanceMetric?.otherSeries).toHaveLength(1);
+        expect(distanceMetric?.otherSeries[0].protocolRevision).toBe(1);
+        expect(distanceMetric?.otherSeries[0].nonComparableReason).toBe('protocol revision changed');
     });
 
     it('reports unreadable counts without dropping other valid records (D6)', () => {
@@ -145,7 +148,7 @@ describe('assessmentHistory', () => {
 
         expect(history.totalUnreadableCount).toBe(3);
         const broadJump = history.tests.find(t => t.protocolId === STANDING_BROAD_JUMP_PROTOCOL.id);
-        expect(broadJump?.activeSeries?.observations).toHaveLength(1);
+        expect(broadJump?.metrics[0]?.activeSeries?.observations).toHaveLength(1);
     });
 
     it('accurately counts completedWithoutBenchmark and abandoned attempts', () => {
@@ -160,6 +163,38 @@ describe('assessmentHistory', () => {
         const bench = history.tests.find(t => t.protocolId === BENCH_PRESS_1RM_PROTOCOL.id);
         expect(bench?.completedWithoutBenchmarkCount).toBe(1);
         expect(bench?.abandonedCount).toBe(1);
-        expect(bench?.activeSeries).toBeNull();
+        expect(bench?.metrics[0]?.activeSeries).toBeNull();
+    });
+
+    it('keeps multi-metric protocol progress in independent D1 series', () => {
+        const protocol = CYCLING_6S_SEATED_SPRINT_PROTOCOL_V2;
+        const baseline = makeAttempt('sprint-base', protocol.id, protocol.revision, 'baseline', '2026-10-23T08:00:00Z');
+        const checkpoint = makeAttempt('sprint-check', protocol.id, protocol.revision, 'checkpoint', '2027-02-20T08:00:00Z');
+
+        const observations = [
+            makeObs(baseline, 'cycling_1s_peak_power_w', 1200, 'sprint-series', '2026-10-23T08:00:00Z', true, 'W'),
+            makeObs(baseline, 'cycling_5s_mean_power_w', 1050, 'sprint-series', '2026-10-23T08:00:00Z', true, 'W'),
+            makeObs(checkpoint, 'cycling_1s_peak_power_w', 1260, 'sprint-series', '2027-02-20T08:00:00Z', true, 'W'),
+            makeObs(checkpoint, 'cycling_5s_mean_power_w', 1080, 'sprint-series', '2027-02-20T08:00:00Z', true, 'W'),
+        ];
+
+        const history = buildAssessmentHistory({
+            attempts: [baseline, checkpoint],
+            observations,
+        });
+        const sprint = history.tests.find(test => test.protocolId === protocol.id);
+        const peak = sprint?.metrics.find(metric => metric.metricId === 'cycling_1s_peak_power_w');
+        const mean5s = sprint?.metrics.find(metric => metric.metricId === 'cycling_5s_mean_power_w');
+
+        expect(peak?.activeSeries?.baseline?.value).toBe(1200);
+        expect(peak?.activeSeries?.latest?.value).toBe(1260);
+        expect(peak?.activeSeries?.progress.absoluteChange).toBe(60);
+
+        expect(mean5s?.activeSeries?.baseline?.value).toBe(1050);
+        expect(mean5s?.activeSeries?.latest?.value).toBe(1080);
+        expect(mean5s?.activeSeries?.progress.absoluteChange).toBe(30);
+
+        expect(peak?.activeSeries?.observations).toHaveLength(2);
+        expect(mean5s?.activeSeries?.observations).toHaveLength(2);
     });
 });
