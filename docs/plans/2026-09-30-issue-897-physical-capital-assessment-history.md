@@ -1160,8 +1160,8 @@ This is the first athlete-usable slice.
 ## PR C — history + export
 
 - WP6.1–WP6.5: read model (`assessmentHistoryService.ts` / pure `assessmentHistory.ts`), History UI (`AssessmentHistory.tsx`, `AssessmentSeriesCard.tsx`, `AssessmentAttemptDetail.tsx`), D1–D4 series progress (`assessmentProgress.ts`), D5 read model without N+1, D6 diagnostic counts for unreadable records, D7 `TestingWorkflow.tsx` extraction and tab navigation.
-- WP7.1: normalized CSV export (`assessmentCsvExport.ts`, `utils/csv.ts`) with deterministic sorting and 23 exact columns.
-- WP3.4 / D8: body-mass-relative context (`anthropometry/bodyMass.ts`, `bodyMassPreference.ts`) with same-day Warsaw date matching, athlete preference support, and strict fallback to "unavailable".
+- WP7.1: normalized CSV export (`assessmentCsvExport.ts`, `utils/csv.ts`) with deterministic sorting and 24 exact columns, including the body-mass context reference.
+- WP3.4 / D8: body-mass-relative context (`anthropometry/bodyMass.ts`, `bodyMassPreference.ts`) with same-day Warsaw date matching, athlete preference support, stable source/reference provenance, and strict fallback to "unavailable".
 - WP7.2 update: schema version bumped to `assessment_diagnostic_export_v2` for per-series progress in diagnostic export JSON.
 - Appendix A: Proposed ADR-0047 (`docs/adr/0047-fixed-load-velocity-assessment-series.md`) evaluating dedicated protocol, companion attempts, and multi-instance keys.
 - Comprehensive unit tests across all new modules and browser E2E (`tests/e2e/testing-physical-capital.pw.ts`).
