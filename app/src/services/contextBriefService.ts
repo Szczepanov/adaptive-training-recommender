@@ -771,11 +771,11 @@ export class ContextBriefService {
                     const rest = recommendation.recommendationAudit?.externalRest;
                     if (!rest || activeSessionDates.has(recommendation.date)) continue;
                     const key = `${recommendation.date}|${rest.planId}|${rest.revision}|${rest.restDirectiveId}`;
+                    if (restKeys.has(key)) continue;
                     const revisionState = await externalPlanService.getRevisionState(userId, rest.planId, rest.revision);
                     const revisionPlan = revisionState.status === 'AVAILABLE' ? revisionState.data : undefined;
                     const hashMatches = revisionPlan && await computeContentHash(revisionPlan) === rest.contentHash;
                     const directive = hashMatches ? resolveRestDatesByDate(revisionPlan).get(recommendation.date) : undefined;
-                    if (restKeys.has(key)) continue;
                     if (rest.date === recommendation.date && directive?.id === rest.restDirectiveId) {
                         restKeys.add(key);
                         restStatuses.push(projectPlannedExecutionStatus({
