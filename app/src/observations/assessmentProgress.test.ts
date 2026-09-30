@@ -145,6 +145,31 @@ describe('assessmentProgress', () => {
             expect(result.progress.reasons).toContain('raw_change_favorable');
         });
 
+        it('does not let a newer familiarization attempt replace the latest benchmark', () => {
+            const attBase = makeAttempt('att-base', protoRefR1, 'baseline', '2026-10-20T10:00:00Z');
+            const attCheck = makeAttempt('att-check', protoRefR1, 'checkpoint', '2026-10-25T10:00:00Z');
+            const attFam = makeAttempt('att-fam', protoRefR1, 'familiarization', '2026-10-30T10:00:00Z');
+
+            const obsBase = makeObservation(attBase, 'standing_broad_jump_distance_cm', 230, 'series-1', '2026-10-20T10:00:00Z');
+            const obsCheck = makeObservation(attCheck, 'standing_broad_jump_distance_cm', 238, 'series-1', '2026-10-25T10:00:00Z');
+            const obsFam = makeObservation(attFam, 'standing_broad_jump_distance_cm', 250, 'series-1', '2026-10-30T10:00:00Z');
+
+            const result = computeSeriesProgress(
+                {
+                    protocolId: STANDING_BROAD_JUMP_PROTOCOL.id,
+                    protocolRevision: 1,
+                    metricId: 'standing_broad_jump_distance_cm',
+                    comparisonSeriesKey: 'series-1',
+                },
+                [obsBase, obsCheck, obsFam],
+                [],
+            );
+
+            expect(result.latest?.attempt.id).toBe('att-check');
+            expect(result.progress.latestObservationId).toBe(obsCheck.revision.observationKey);
+            expect(result.progress.absoluteChange).toBe(8);
+        });
+
         it('returns insufficient_evidence when only baseline exists (no repeat yet)', () => {
             const attBase = makeAttempt('att-1', protoRefR1, 'baseline', '2026-10-20T10:00:00Z');
             const obs1 = makeObservation(attBase, 'standing_broad_jump_distance_cm', 230, 'series-1', '2026-10-20T10:00:00Z');
