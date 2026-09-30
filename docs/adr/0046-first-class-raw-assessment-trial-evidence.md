@@ -33,6 +33,12 @@ Raw assessment trials extend the existing OV measurement path. They do not creat
 
 Do not embed revision tokens such as `@1` in protocol IDs. Catalog/test-definition IDs may continue to use their existing `-r1` naming convention when that is part of the catalog identity.
 
+### D-AT-PROTOCOL — capture and reducer semantics are immutable evidence contracts
+
+For a multi-trial protocol, the bounded raw-field schema and deterministic reducer declarations are part of the evidence protocol semantics. They must be persisted/versioned with the immutable `MeasurementProtocol` revision or an equally immutable companion that the protocol revision references.
+
+`PerformanceTestDefinition` may supply presentation/layout hints for those stable field IDs, but it must not be the sole semantic owner. A later catalog/UI release must not reinterpret historical trials by changing a field type, unit or reducer under the same protocol revision. Existing summary-only protocols remain valid through additive optional fields.
+
 ### D-AT-TRIAL — repeated attempts are first-class raw evidence
 
 A physical assessment attempt may own zero or more immutable raw trial records below the user-scoped assessment attempt, conceptually:
