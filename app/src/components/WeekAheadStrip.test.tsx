@@ -138,3 +138,23 @@ describe('WeekAheadStrip rationale display (UX review follow-up)', () => {
         expect(html).not.toContain('detail-rationale-technical');
     });
 });
+
+
+describe('WeekAheadStrip clipped role reporting (#933)', () => {
+  it('visibly reports a role packed after the strip without calling it blocked or unresolved', () => {
+    const plan = weekAheadPlan('Easy aerobic day.');
+    plan.allocationReport.outcomes = [{
+      occurrence: { id: 'evergreen@transition|strength', coverageKey: 'primary_strength',
+        label: 'Primary full-body strength', plannedDate: '2026-09-25' },
+      reservation: { occurrenceId: 'evergreen@transition|strength', nominatedDate: '2026-09-25',
+        assignedDate: null, wasMoved: false }, status: 'planned_beyond_horizon',
+    }] as WeekAheadPlan['allocationReport']['outcomes'];
+    const html = renderToStaticMarkup(<WeekAheadStrip plan={plan} />);
+    expect(html).toContain('Planned beyond this forecast');
+    expect(html).toContain('Primary full-body strength (2026-09-25)');
+    expect(html).toContain('1 planned beyond this forecast');
+    expect(html).toContain('Strength role: 1/1 planned');
+    expect(html).not.toContain('1 blocked');
+    expect(html).not.toContain('1 still unresolved');
+  });
+});

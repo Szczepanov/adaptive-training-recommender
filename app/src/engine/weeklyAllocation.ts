@@ -21,6 +21,10 @@ import {
  */
 export interface RequiredRoleOccurrence {
     id: string;
+    authorityId?: string;
+    authorityStartDate?: string;
+    authorityEndDate?: string;
+    plannedDate?: string;
     coverageSetId: CoverageSetId;
     coverageKey: PlanCoverageKey;
     /** Stable `EventPlanSessionCoverage` record identity, never a selected candidate. */
@@ -51,7 +55,7 @@ export interface RequiredRoleOccurrence {
  * withholds exact `aerobic_volume` credit from it. Read coverage state, not this status, for
  * whether a role's stimulus was actually delivered.
  */
-export type WeeklyRoleAllocationStatus = 'reserved' | 'fulfilled' | 'missed' | 'unresolved_search_budget';
+export type WeeklyRoleAllocationStatus = 'reserved' | 'fulfilled' | 'missed' | 'unresolved_search_budget' | 'planned_beyond_horizon' | 'superseded';
 export type WeeklyRoleMissReason = 'no_exact_candidate' | 'hard_safety_or_recovery' | 'daily_ledger_capacity' | 'rolling_load_budget' | 'projected_fatigue' | 'fixed_seed' | 'no_conflict_free_date' | 'subordinate_to_required_roles';
 
 export interface RoleReservation {
@@ -437,6 +441,8 @@ function resolveSinglePass(
         let sawLedgerCapacityExclusion = false;
         let sawRollingLoadBudgetExclusion = false;
         for (const date of dates) {
+            if ((occurrence.authorityStartDate && date < occurrence.authorityStartDate)
+                || (occurrence.authorityEndDate && date > occurrence.authorityEndDate)) continue;
             const outcome = rootOutcomes.get(date)!;
             if (!durationFitsOccurrence(outcome, occurrence)) {
                 sawLedgerCapacityExclusion = true;

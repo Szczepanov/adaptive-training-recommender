@@ -107,7 +107,7 @@ function boundedPlannedDose(volume: number, intensity: number): PlannedDose {
     };
 }
 
-function needsEstablishedPerformanceEvidence(planningContext: PlanningContext): boolean {
+export function needsEstablishedPerformanceEvidence(planningContext: PlanningContext): boolean {
     if (!usesEvergreenProgramming(planningContext)) return false;
     // Issue #805 (D-A): the capability opt-in deliberately does not widen this evidence. It
     // feeds athlete-state inference, the aerobic floor, power and quality priors, and opting in

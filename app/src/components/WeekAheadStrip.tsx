@@ -98,9 +98,12 @@ function strengthRoleSummary(plan: WeekAheadPlan): string | null {
   const strength = plan.allocationReport.outcomes.filter(outcome => outcome.occurrence.coverageKey === 'primary_strength');
   if (strength.length === 0) return null;
 
-  const planned = strength.filter(outcome => outcome.status === 'fulfilled' || outcome.status === 'reserved').length;
+  const planned = strength.filter(outcome => outcome.status === 'fulfilled' || outcome.status === 'reserved'
+    || outcome.status === 'planned_beyond_horizon').length;
   const missed = strength.filter(outcome => outcome.status === 'missed');
   const unresolved = strength.filter(outcome => outcome.status === 'unresolved_search_budget').length;
+  const beyond = strength.filter(outcome => outcome.status === 'planned_beyond_horizon').length;
+  const superseded = strength.filter(outcome => outcome.status === 'superseded').length;
   const roleWord = strength.length === 1 ? 'role' : 'roles';
   const parts = [`Strength ${roleWord}: ${planned}/${strength.length} planned`];
 
@@ -109,6 +112,8 @@ function strengthRoleSummary(plan: WeekAheadPlan): string | null {
     parts.push(`${missed.length} blocked (${reasons.join(', ')})`);
   }
   if (unresolved > 0) parts.push(`${unresolved} still unresolved`);
+  if (beyond > 0) parts.push(`${beyond} planned beyond this forecast`);
+  if (superseded > 0) parts.push(`${superseded} ended with their planning authority`);
   return `${parts.join('; ')}.`;
 }
 
@@ -131,6 +136,10 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
 
   const safeIndex = Math.min(selectedIndex, plan.days.length - 1);
   const selected = plan.days[safeIndex];
+  const selectedAuthority = plan.authoritySegments?.find(segment => segment.startDate <= selected.date && selected.date <= segment.endDate);
+  const capabilityNotes = capabilityMaintenanceReadout(selectedAuthority
+    ? selectedAuthority.evergreen?.capabilityMaintenance ?? null : plan.capabilityMaintenance);
+  const beyondHorizon = plan.allocationReport.outcomes.filter(outcome => outcome.status === 'planned_beyond_horizon');
   const selectedOverlay = scheduleOverlays?.find(o => o.startDate <= selected.date && selected.date <= o.endDate);
   const openObjective = plan.microcycleObjectives.find(objective =>
     (objective.completedCredit ?? objective.completedExposures) < (objective.requiredCredit ?? objective.targetExposures),
@@ -154,6 +163,10 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
         return `Weekly role could not be scheduled safely: ${label} (${outcome.reason?.replaceAll('_', ' ') ?? 'unknown reason'}).`;
       case 'reserved':
         return `Weekly role reserved: ${label}.`;
+      case 'planned_beyond_horizon':
+        return `Weekly role planned beyond this forecast: ${label}.`;
+      case 'superseded':
+        return `Weekly role ended with its planning authority: ${label}.`;
       default:
         return `Weekly role still being worked out: ${label}.`;
     }
@@ -237,11 +250,20 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
         <p className="week-purpose">Week purpose: {evergreenWeekPurpose}</p>
       )}
 
-      {capabilityMaintenanceReadout(plan.capabilityMaintenance).length > 0 && (
+      {beyondHorizon.length > 0 && (
+        <section className="week-role-summary" aria-label="Roles planned beyond this forecast">
+          <strong>Planned beyond this forecast</strong>
+          <ul>{beyondHorizon.map(outcome => <li key={outcome.occurrence.id}>
+            {outcome.occurrence.label}{outcome.occurrence.plannedDate ? ` (${outcome.occurrence.plannedDate})` : ''}
+          </li>)}</ul>
+        </section>
+      )}
+
+      {capabilityNotes.length > 0 && (
         <section className="week-role-summary" aria-label="Capability maintenance status">
           <strong>Capability maintenance</strong>
           <ul>
-            {capabilityMaintenanceReadout(plan.capabilityMaintenance).map(note => <li key={note}>{note}</li>)}
+            {capabilityNotes.map(note => <li key={note}>{note}</li>)}
           </ul>
         </section>
       )}
