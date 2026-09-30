@@ -48,26 +48,29 @@ The slice is complete when all of the following are true:
 
 # Work package overview
 
-| WP | Scope | Outcome |
-|---|---|---|
-| WP0 | Contract decisions + fixtures | lock exact October protocols and persistence semantics |
-| WP1 | Metric + comparison vocabulary | multidomain physical-capital metrics become valid observations |
-| WP2 | Raw trial evidence model | repeated attempts and load/velocity rows are first-class |
-| WP3 | Canonical summary derivation | best valid / highest valid result becomes benchmark with provenance |
-| WP4 | Bundled test catalog | six October assessment protocols available from Testing |
-| WP5 | Capture UX | efficient test-specific trial/result capture |
-| WP6 | Assessment history + progress | baseline/latest/comparability becomes visible |
-| WP7 | Export | CSV + diagnostic JSON |
-| WP8 | Context/goal integration | bounded consumption by existing OV/goal surfaces |
-| WP9 | Verification + docs | backward compatibility, emulator/E2E, architecture docs |
+| WP | Scope | Blocked by | Unlocks | Outcome |
+|---|---|---|---|---|
+| WP0 | Contract decisions + fixtures | ADR-0046 acceptance | WP1–WP5 contract implementation | lock exact October protocols and persistence semantics |
+| WP1 | Metric + comparison vocabulary | WP0.1–WP0.2 | WP4 protocol persistence; WP6 comparability | multidomain physical-capital metrics become valid observations |
+| WP2 | Raw trial evidence model | ADR-0046 acceptance; WP0.1 | WP3 derivation; WP5 capture; WP6/WP7 audit surfaces | repeated attempts and load/velocity rows are first-class |
+| WP3 | Canonical summary derivation | WP0.2; WP1.1; WP2.1–WP2.4 | WP5 completion; WP6 history; WP7 export | best valid / highest valid result becomes benchmark with provenance |
+| WP4 | Bundled test catalog | WP0; WP1; WP4.0 safety boundary | WP5 athlete-facing capture | six October assessment protocols available from Testing |
+| WP5 | Capture UX | WP2 persistence/validation; WP3.2 provenance; relevant WP4 protocols | first athlete-usable October capture; WP6/WP7 | efficient test-specific trial/result capture |
+| WP6 | Assessment history + progress | WP3.2; WP5; existing `deriveProgress()` contracts | WP7 summary export; WP8 bounded consumers | baseline/latest/comparability becomes visible |
+| WP7 | Export | WP3.2; WP6.1/WP6.4 for summary progress; WP2.3 for raw diagnostic evidence | auditable external-coach handoff | CSV + diagnostic JSON |
+| WP8 | Context/goal integration | WP6.4 plus each existing goal/block/context authority contract | bounded feedback-loop reuse | bounded consumption by existing OV/goal surfaces |
+| WP9 | Verification + docs | co-delivered with the implementation work it verifies | merge/#897 closure evidence | backward compatibility, emulator/E2E, architecture docs |
 
-WP0–WP7 form the minimum value-bearing delivery. WP8 may be split into a follow-up PR if it expands scope materially.
+For the **19–25 October capture cutline**, the critical path is WP0–WP5 plus the diagnostic-export part of WP7 so the first real baseline can be preserved and audited correctly. A polished WP6 history surface may follow without risking capture of that evidence, but #897 remains open until its history/comparability, fixed-load-velocity and other acceptance criteria are actually satisfied. WP8 may be split into a follow-up PR if it expands scope materially.
 
 ---
 
 # WP0 — Lock contracts before implementation
 
 ## WP0.1 Add protocol fixtures to tests first
+
+**Blocked by:** ADR-0046 accepted.  
+**Unlocks:** WP0.2, WP0.3, WP1.1, WP1.2, WP2.1 and WP4.0.
 
 Create test fixtures that represent the intended October protocols before adding UI.
 
@@ -99,6 +102,9 @@ The fixtures must pin:
 
 ## WP0.2 Decide canonical reducers explicitly
 
+**Blocked by:** ADR-0046 accepted; WP0.1 protocol fixtures define the target capture contracts.  
+**Unlocks:** WP3.1, WP4 reducer bindings and WP5.1 protocol-driven capture.
+
 Add a small pure contract for how trial evidence becomes the canonical result.
 
 Suggested concepts:
@@ -114,7 +120,12 @@ Do not make this generic enough to become an analytics DSL. It exists only to ma
 
 The semantic capture schema and reducer declarations must be owned by the immutable `MeasurementProtocol` revision (or an equally immutable companion referenced by it). Additive optional fields preserve old summary-only protocols. `PerformanceTestDefinition` may add presentation/layout hints, but it must not be the sole owner of field identity/type/unit or reducer semantics; otherwise a catalog update could reinterpret historical trials.
 
+Whichever immutable storage shape is selected must be admitted and bounded by `app/firestore.rules` as well as TypeScript validation. The current measurement-protocol rule has a strict field allowlist, so adding optional capture/reducer metadata only to `MeasurementProtocol` would otherwise fail at persistence time.
+
 ## WP0.3 Preserve old sprint protocol
+
+**Blocked by:** ADR-0046 accepted; current immutable `cycling-5s-peak-power` revision 1 remains the regression fixture.  
+**Unlocks:** WP4.6 can add the new 6 s sprint without rewriting historical semantics.
 
 Pin regression tests showing that:
 
@@ -133,9 +144,14 @@ No rewrite/migration is required.
 - `app/src/observations/registry.ts`
 - `app/src/observations/models.ts`
 - `app/src/observations/protocols.ts`
-- associated tests
+- `app/firestore.rules`
+- `app/src/emulator/performanceOutcomeRules.emulator.test.ts`
+- associated unit tests
 
 ## WP1.1 Add canonical metrics
+
+**Blocked by:** ADR-0046 accepted; WP0.1 establishes the concrete protocol outputs.  
+**Unlocks:** WP1.3, WP4 protocol persistence and WP3 canonical reducers.
 
 Recommended canonical first set:
 
@@ -165,7 +181,12 @@ Do **not** register every useful raw field as a canonical outcome metric in the 
 
 For bar velocity, `mean concentric velocity` remains the preferred future longitudinal anchor, but fixed-load comparability must first identify the exercise, exact absolute load and material WL Analysis/camera setup. Peak velocity remains secondary.
 
+**Persistence parity requirement:** the current Firestore rules keep their own hard-coded outcome-metric/unit allowlists and measurement-protocol metric allowlist. WP1.1 must update those allowlists and emulator fixtures in the same delivery as the TypeScript registry. In particular, `strength_1rm_kg` being present in `registry.ts` is not sufficient by itself for #897 persistence.
+
 ## WP1.2 Add only required comparison dimensions
+
+**Blocked by:** ADR-0046 accepted; WP0.1 defines material setup/method identity.  
+**Unlocks:** WP1.3, WP4 protocol persistence and WP6.4 comparability.
 
 Initial additions:
 
@@ -184,7 +205,12 @@ Do not add exercise identity as a generic dimension where protocol identity alre
 
 Do not add ball mass for the initial 3 kg throw protocol; the fixed mass is part of the protocol.
 
+The Firestore `hasValidMeasurementProtocol` comparison-dimension allowlist must be extended in lockstep with `ComparisonDimension`; otherwise application validation can accept a protocol that production rules reject.
+
 ## WP1.3 Tests
+
+**Blocked by:** WP1.1 and WP1.2.  
+**Unlocks:** WP4 and WP6 can rely on the expanded metric/comparison contract.
 
 Cover:
 
@@ -203,6 +229,9 @@ Cover:
 The existing `MetricObservationRevision` remains the benchmark layer. It should not be stretched to store every raw trial.
 
 ## WP2.1 Domain model
+
+**Blocked by:** ADR-0046 accepted; WP0.1 pins the bounded trial-capture semantics.  
+**Unlocks:** WP2.2–WP2.5 and WP3 trial-derived summaries.
 
 Add a bounded raw evidence contract.
 
@@ -255,6 +284,9 @@ The exact field names may change during implementation, but preserve these invar
 
 ## WP2.2 Persistence
 
+**Blocked by:** WP2.1.  
+**Unlocks:** WP2.3, WP2.5, WP5.1, WP6.1 and WP7.2.
+
 Recommended Firestore shape:
 
 ```text
@@ -264,6 +296,9 @@ users/{userId}/assessment_attempts/{attemptId}/trials/{trialId}
 A trial record is immutable after creation. Correction support is required for the first athlete-usable slice: create a new immutable trial that names `supersedesTrialId` and a non-empty correction reason. Reducers use the latest unsuperseded record for each ordinal. Correcting only the canonical observation while leaving incorrect source trials in place is not acceptable provenance.
 
 ## WP2.3 Service
+
+**Blocked by:** WP2.1, WP2.2 and WP2.4.  
+**Unlocks:** WP3.2, WP5.1, WP6.1 and WP7 diagnostic export.
 
 Add:
 
@@ -279,6 +314,9 @@ Do not add global unbounded scans.
 
 ## WP2.4 Validation
 
+**Blocked by:** WP2.1 and WP0.1.  
+**Unlocks:** WP2.3, WP2.5 and WP3 reducer safety.
+
 Fail closed on:
 
 - duplicate trial IDs;
@@ -289,9 +327,15 @@ Fail closed on:
 - invalid state/reason combinations;
 - non-finite values;
 - duplicate field IDs within one trial unless the capture schema explicitly allows them;
-- broken supersession chains or missing correction reasons.
+- broken supersession chains or missing correction reasons;
+- superseding a trial from a different assessment attempt or a different ordinal;
+- correction forks that would leave more than one active head for an ordinal;
+- cycles or ambiguous active-trial resolution.
 
 ## WP2.5 Security rules + emulator tests
+
+**Blocked by:** WP2.2 and WP2.4.  
+**Unlocks:** Athlete-facing trial persistence in WP5 and auditable reads in WP6/WP7.
 
 Add Firestore rules equivalent to other athlete-owned assessment evidence.
 
@@ -306,6 +350,9 @@ Emulator tests must prove:
 # WP3 — Derive canonical benchmark observations from trials
 
 ## WP3.1 Pure reducer functions
+
+**Blocked by:** WP0.2, WP1.1, WP2.1 and WP2.4.  
+**Unlocks:** WP3.2 and computed canonical results in WP5.
 
 Suggested file:
 
@@ -345,23 +392,46 @@ A failed heavier attempt remains useful trial evidence but does not become the c
 
 ## WP3.2 Derivation provenance
 
+**Blocked by:** WP3.1 plus WP2 persistence/service; ADR-0046 accepted.  
+**Unlocks:** WP5 completion, WP6 history/progress and WP7 exports.
+
 The canonical `MetricObservationRevision` should state that it was derived from trial evidence rather than typed as a free-standing manual summary.
 
 Preferred approach:
 
-- introduce additive typed derivation evidence references that can point to assessment-trial records;
-- preserve existing observation-to-observation provenance for historical derived observations;
+- add an optional typed field such as `derivedFromEvidenceRefs` to `MetricObservationRevision`;
+- in the first slice, support an assessment-trial reference carrying `kind: 'assessment_trial'`, `assessmentAttemptId` and `trialId`;
+- preserve existing `derivedFromObservationIds` for observation-to-observation provenance and historical derived observations;
 - store `algorithmVersion`, e.g. `assessment-reducer-v1`.
 
 Do not put trial IDs into `derivedFromObservationIds`; that field promises observation identities.
+
+The provenance validator contract is explicit:
+
+- a trial-only `source: 'derived'` revision is valid when it has a non-empty typed trial-evidence list plus `algorithmVersion`;
+- an observation-derived revision continues to require non-empty `derivedFromObservationIds`;
+- a mixed derivation retains both forms when it truly consumes both source kinds;
+- trial references are unique and their `assessmentAttemptId` must equal the canonical observation's `assessmentAttemptId`;
+- a non-derived revision may contain neither derivation field;
+- existing historical observation-derived revisions remain valid without migration.
+
+Implement this in `models.ts`, `assertValidMetricObservationRevision`, `app/firestore.rules`, and matching unit/emulator tests in the same PR. The Firestore observation-revision field allowlist and derived-source predicate currently require `derivedFromObservationIds`, so changing TypeScript alone would still make trial-derived writes fail in production.
+
+`observationCanonical.ts` already canonicalizes the full semantic revision payload generically; add regression tests proving typed evidence-reference changes are semantic conflicts while exact retries with the same refs remain idempotent.
 
 Do not weaken validation just to fit the new source.
 
 ## WP3.3 Manual fallback
 
+**Blocked by:** WP3.2.  
+**Unlocks:** Backward-compatible custom/advanced summary capture without weakening bundled trial-driven defaults.
+
 A manually entered canonical result can remain supported for advanced/custom protocols, but bundled physical-capital protocols should default to trial-driven summary derivation.
 
 ## WP3.4 Source-specific body-mass-relative context
+
+**Blocked by:** WP3.2 and implemented ADR-0039 source-specific body-mass semantics.  
+**Unlocks:** Auditable W/kg/body-mass-relative context without duplicate weight truth.
 
 For sprint W/kg and body-mass-relative squat/bench context, reuse ADR-0039 rather than creating a Testing-owned weight field.
 
@@ -378,6 +448,9 @@ Do not require duplicate manual weight entry merely to complete an assessment.
 # WP4 — Add bundled physical-capital protocols
 
 ## WP4.0 Shared safety and invalidation boundary
+
+**Blocked by:** ADR-0046 accepted; existing session/constraint execution pathways.  
+**Unlocks:** WP4.1–WP4.6 reusable protocol definitions.
 
 The reusable bundled protocols must encode test-specific execution safety without inventing medical clearance:
 
@@ -405,6 +478,9 @@ Do not require a split if the code remains readable.
 
 ## WP4.1 Bench 1RM
 
+**Blocked by:** WP0.1–WP0.2, WP1.1–WP1.2 and WP4.0.  
+**Unlocks:** WP5.2 bench capture and the October strength baseline.
+
 ID:
 
 `strength-bench-press-1rm-r1`
@@ -427,6 +503,9 @@ The runner must not prescribe fixed maximum attempt weights. Attempt selection r
 
 ## WP4.2 Back-squat 1RM
 
+**Blocked by:** WP0.1–WP0.2, WP1.1–WP1.2 and WP4.0.  
+**Unlocks:** WP5.2 squat capture and the October strength baseline.
+
 ID:
 
 `strength-back-squat-1rm-r1`
@@ -439,6 +518,9 @@ Same design principles as bench.
 
 ## WP4.3 Standing broad jump
 
+**Blocked by:** WP0.1–WP0.2, WP1.1–WP1.2 and WP4.0.  
+**Unlocks:** WP5.3 field-power capture.
+
 Definition ID: `field-standing-broad-jump-r1`
 
 Protocol reference: `{ id: 'field-standing-broad-jump', revision: 1 }`
@@ -448,6 +530,9 @@ Three maximal valid attempts after warm-up/familiarization.
 Canonical = best valid distance.
 
 ## WP4.4 Wall-touch CMJ
+
+**Blocked by:** WP0.1–WP0.2, WP1.1–WP1.2 and WP4.0.  
+**Unlocks:** WP5.3 field-power capture.
 
 Definition ID: `field-wall-touch-cmj-r1`
 
@@ -463,6 +548,9 @@ If standing reach is treated as trial context rather than a canonical performanc
 
 ## WP4.5 3 kg seated medicine-ball throw
 
+**Blocked by:** WP0.1–WP0.2, WP1.1–WP1.2 and WP4.0.  
+**Unlocks:** WP5.3 upper-body ballistic-power capture.
+
 Definition ID: `field-seated-medball-chest-throw-3kg-r1`
 
 Protocol reference: `{ id: 'field-seated-medball-chest-throw-3kg', revision: 1 }`
@@ -472,6 +560,9 @@ Three maximal valid attempts.
 Canonical = best valid distance.
 
 ## WP4.6 6 s seated cycling sprint
+
+**Blocked by:** WP0.1–WP0.3, WP1.1–WP1.2 and WP4.0.  
+**Unlocks:** WP5.4 cycling-sprint capture without mutating the old 5 s protocol.
 
 Definition ID: `cycling_6s_seated_sprint-r1`
 
@@ -492,6 +583,9 @@ Canonical metrics:
 - best 5 s mean.
 
 ## WP4.7 Catalog UX copy
+
+**Blocked by:** WP4.1–WP4.6.  
+**Unlocks:** Discoverable grouped athlete-facing assessment catalog.
 
 Change:
 
@@ -519,6 +613,9 @@ The existing capture stage renders one input per canonical metric after the sess
 
 ## WP5.1 Protocol-driven trial capture
 
+**Blocked by:** WP2.3–WP2.5, WP3.2 and at least one implemented WP4 trial protocol.  
+**Unlocks:** WP5.2–WP5.6 and the first athlete-usable multi-trial workflow.
+
 Extend the immutable protocol revision with a small optional semantic trial-capture contract. `PerformanceTestDefinition` may carry presentation metadata that decorates those stable field IDs, but must not redefine their semantics.
 
 Do not infer UI solely from metric names.
@@ -539,6 +636,9 @@ Persist/version this with the protocol revision (or an immutable protocol-refere
 
 ## WP5.2 Strength trial row
 
+**Blocked by:** WP5.1 plus WP4.1–WP4.2.  
+**Unlocks:** Bench/squat load-by-load capture and canonical 1RM derivation.
+
 For squat/bench, each row should support:
 
 - load kg;
@@ -555,6 +655,9 @@ The final canonical 1RM is computed, not separately typed.
 
 ## WP5.3 Jump/throw capture
 
+**Blocked by:** WP5.1 plus WP4.3–WP4.5.  
+**Unlocks:** Broad-jump, CMJ and medicine-ball baseline capture.
+
 Simple table:
 
 | Trial | Result | Validity |
@@ -564,6 +667,9 @@ Display computed best valid result before save.
 
 ## WP5.4 Cycling sprint capture
 
+**Blocked by:** WP5.1 plus WP4.6.  
+**Unlocks:** Three-trial cycling sprint capture with separate canonical 1 s/5 s outputs.
+
 Table:
 
 | Trial | 1 s peak W | 5 s mean W | peak cadence | L/R balance | validity |
@@ -572,6 +678,9 @@ Table:
 Display both canonical results before save.
 
 ## WP5.5 Device provenance
+
+**Blocked by:** WP2.1 and WP5.1.  
+**Unlocks:** Comparable device/setup evidence for reducers, history and export.
 
 Allow a default device for the attempt plus optional trial override.
 
@@ -585,6 +694,9 @@ Do not require duplicate device typing on every trial when unchanged.
 
 ## WP5.6 Mobile usability
 
+**Blocked by:** WP5.2–WP5.5.  
+**Unlocks:** Real gym/field acceptance for the October baseline.
+
 Testing will often occur in a gym/field setting on a phone.
 
 Requirements:
@@ -597,6 +709,9 @@ Requirements:
 - no requirement to type protocol IDs in the normal bundled flow.
 
 ## WP5.7 One physical workout, one completed-training exposure
+
+**Blocked by:** WP5.1, WP2.3 and the existing performed-training reconciliation path.  
+**Unlocks:** E2E proof that assessment evidence does not double-count physical work.
 
 The assessment attempt/trial/observation records are evidence sidecars to the `SessionRunner` execution. They must not create another completed workout. Verify the current performed-training reconciliation path rather than assuming proposed ADR-0034 semantics are automatically active everywhere.
 
@@ -612,6 +727,9 @@ This must hold when the structured testing execution and a provider activity bot
 
 ## WP6.1 Read model
 
+**Blocked by:** WP2.3, WP3.2 and existing current-observation/progress contracts.  
+**Unlocks:** WP6.2–WP6.5 and WP7 summary export.
+
 Add an athlete-scoped assessment history service/read model that joins:
 
 - completed attempts;
@@ -623,6 +741,9 @@ Add an athlete-scoped assessment history service/read model that joins:
 Avoid N+1 unbounded scans. The initial implementation may fetch a bounded date window or metric family.
 
 ## WP6.2 UI location
+
+**Blocked by:** WP6.1.  
+**Unlocks:** One bounded athlete-facing history surface.
 
 Preferred first location:
 
@@ -649,6 +770,9 @@ The screen should show:
 
 ## WP6.3 Attempt detail
 
+**Blocked by:** WP6.1, WP2.3 and WP3.2.  
+**Unlocks:** Auditable raw-trial/correction/reducer drill-down.
+
 Expand to show:
 
 - exact protocol ID/revision;
@@ -660,6 +784,9 @@ Expand to show:
 - reducer/source trials.
 
 ## WP6.4 Comparability
+
+**Blocked by:** WP1.2, WP6.1 and existing `deriveProgress()` semantics.  
+**Unlocks:** WP6.5, WP7 progress export and WP8 bounded consumers.
 
 Use `deriveProgress()` for canonical metrics.
 
@@ -675,6 +802,9 @@ not:
 
 ## WP6.5 Baseline semantics
 
+**Blocked by:** WP6.1 and WP6.4.  
+**Unlocks:** Honest baseline/latest presentation without mutating OV contracts.
+
 For the October battery, `purpose=baseline` is the natural initial reference.
 
 Do not hard-code “first observation forever” as baseline. Existing declared/window baseline semantics should remain available for goals/block reviews.
@@ -682,6 +812,9 @@ Do not hard-code “first observation forever” as baseline. Existing declared/
 The history UI may default to earliest valid baseline-purpose observation for convenience, but that is a presentation choice, not a mutation of outcome contracts.
 
 ## WP6.6 Fixed-load velocity acceptance boundary
+
+**Blocked by:** WP2/WP5 raw velocity capture plus a separately reviewed comparable identity path.  
+**Unlocks:** The fixed-load mean-velocity acceptance criterion required before #897 closes.
 
 Initial October capture may keep WL Analysis velocities as raw trial evidence, but #897 must not be considered fully complete while its fixed-load longitudinal requirement has no comparable-series representation.
 
@@ -698,9 +831,14 @@ Do not solve this by encoding load into metric IDs or by adding a second informa
 
 ## WP7.1 Normalized CSV
 
-Add:
+**Blocked by:** WP3.2, WP6.1 and WP6.4.  
+**Unlocks:** Spreadsheet/pandas-friendly comparable assessment export.
 
-`app/src/utils/assessmentExport.ts`
+Add the assessment export under the OV evidence boundary, for example:
+
+`app/src/observations/assessmentExport.ts`
+
+Reuse the deterministic CSV/JSON ordering and canonicalization conventions already established by `app/src/outcomes/blockOutcomeReport.ts`; do not create another progress interpretation path in a generic `utils` module.
 
 Export current canonical observations with protocol/progress metadata.
 
@@ -731,6 +869,9 @@ Do not include raw trials as repeated comma-joined text inside this summary CSV.
 
 ## WP7.2 Diagnostic JSON
 
+**Blocked by:** WP2.3, WP3.2 and WP6.1.  
+**Unlocks:** Auditable external-coach/agent reconstruction of protocols, trials and canonical results.
+
 Include:
 
 ```text
@@ -755,6 +896,9 @@ The JSON must be sufficient to reconstruct:
 
 ## WP7.3 Optional wide CSV
 
+**Blocked by:** WP7.1 plus demonstrated user need; otherwise deferred.  
+**Unlocks:** Convenience pivot only, never a canonical evidence format.
+
 Defer unless trivial after normalized export lands.
 
 If added, label it explicitly as a convenience pivot, not the canonical export.
@@ -766,6 +910,9 @@ If added, label it explicitly as a convenience pivot, not the canonical export.
 This work should reuse existing OV and PG contracts.
 
 ## WP8.1 Typed performance goals
+
+**Blocked by:** WP6.4, ADR-0041 and an explicit reviewed exercise-mapping/resolver bridge for measured squat/bench 1RM.  
+**Unlocks:** Measured assessment evidence can satisfy supported typed goals without conflating tested 1RM with e1RM.
 
 Do not assume all canonical assessment observations already satisfy typed goals.
 
@@ -783,6 +930,9 @@ The first athlete-usable baseline slice may ship before the strength-goal bridge
 Do not make target values alter assessment protocols.
 
 ## WP8.2 Block review
+
+**Blocked by:** WP6.4 plus existing OV5 evaluation/report contracts and real comparable post-block evidence.  
+**Unlocks:** Evidence-only block outcome statements; no causal or prescription authority.
 
 A later block outcome can consume:
 
@@ -802,6 +952,9 @@ It must not claim causality.
 
 ## WP8.3 Planning Context Brief
 
+**Blocked by:** WP6.4 plus the versioned Context Brief contract and a relevant active goal/block intent.  
+**Unlocks:** Compact current benchmark/trend evidence in planning context without raw-table explosion.
+
 Follow #897’s bounded export intent.
 
 For relevant active goals/block intent, include compact evidence such as:
@@ -820,6 +973,9 @@ Diagnostic export owns the detailed evidence.
 ---
 
 # WP9 — Verification and hardening
+
+**Blocked by:** each verification slice is co-delivered with the implementation item it verifies; full closure depends on every in-scope acceptance criterion.  
+**Unlocks:** merge confidence and #897 closure evidence without treating tests as a separate late phase.
 
 ## Unit tests
 
@@ -867,6 +1023,10 @@ Diagnostic export owns the detailed evidence.
 - create/list/correct raw trials without mutating historical records;
 - no cross-user access;
 - canonical observation references current source trials through typed evidence refs;
+- trial-only derived observations pass the TypeScript validator and Firestore rules without fake `derivedFromObservationIds`;
+- legacy observation-derived revisions still require/accept non-empty `derivedFromObservationIds`;
+- non-derived observations reject both derivation provenance forms;
+- exact retries with identical typed evidence refs remain idempotent while changed refs conflict;
 - assessment completion is not accepted as valid benchmark if required canonical derivation fails;
 - one testing execution contributes at most one completed-training exposure even when provider activity evidence is also present.
 
@@ -874,7 +1034,11 @@ Diagnostic export owns the detailed evidence.
 
 - Firestore ownership;
 - immutable protocol;
+- protocol capture-schema/reducer metadata is accepted only under the bounded immutable schema;
+- new metric/unit and comparison-dimension allowlists stay in parity with application validation;
 - trial write rules;
+- trial-only derived observation provenance is accepted only through bounded typed trial refs;
+- legacy observation-derived provenance remains valid;
 - observation/trial relationship;
 - abandoned attempt cannot be promoted silently.
 
