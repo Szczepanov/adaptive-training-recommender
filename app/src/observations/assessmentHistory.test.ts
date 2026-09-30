@@ -135,6 +135,29 @@ describe('assessmentHistory', () => {
         expect(distanceMetric?.otherSeries[0].nonComparableReason).toBe('protocol revision changed');
     });
 
+    it('does not let audit-only current-revision evidence displace an older usable benchmark', () => {
+        const oldBaseline = makeAttempt('jump-r1-base', STANDING_BROAD_JUMP_PROTOCOL.id, 1, 'baseline', '2026-10-10T10:00:00Z');
+        const currentFamiliarization = makeAttempt('jump-r2-fam', STANDING_BROAD_JUMP_PROTOCOL.id, 2, 'familiarization', '2026-10-20T10:00:00Z');
+
+        const history = buildAssessmentHistory({
+            attempts: [oldBaseline, currentFamiliarization],
+            observations: [
+                makeObs(oldBaseline, 'standing_broad_jump_distance_cm', 225, 'series-old', '2026-10-10T10:00:00Z'),
+                makeObs(currentFamiliarization, 'standing_broad_jump_distance_cm', 235, 'series-current', '2026-10-20T10:00:00Z'),
+            ],
+        });
+
+        const broadJump = history.tests.find(test => test.protocolId === STANDING_BROAD_JUMP_PROTOCOL.id);
+        const distanceMetric = broadJump?.metrics.find(metric => metric.metricId === 'standing_broad_jump_distance_cm');
+
+        expect(distanceMetric?.activeSeries?.protocolRevision).toBe(1);
+        expect(distanceMetric?.activeSeries?.baseline?.value).toBe(225);
+        expect(distanceMetric?.otherSeries).toHaveLength(1);
+        expect(distanceMetric?.otherSeries[0].protocolRevision).toBe(2);
+        expect(distanceMetric?.completedWithoutBenchmarkCount).toBe(1);
+        expect(broadJump?.completedWithoutBenchmarkCount).toBe(1);
+    });
+
     it('reports unreadable counts without dropping other valid records (D6)', () => {
         const att = makeAttempt('att-1', STANDING_BROAD_JUMP_PROTOCOL.id, 2, 'baseline', '2026-10-20T10:00:00Z');
         const obs = makeObs(att, 'standing_broad_jump_distance_cm', 230, 'series-1', '2026-10-20T10:00:00Z');
