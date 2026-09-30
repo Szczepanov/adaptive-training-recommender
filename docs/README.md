@@ -110,7 +110,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0043: Individualized Rolling Catalog-Load Budget**](./adr/0043-rolling-catalog-load-budget.md) — *Accepted.* Versioned, user-history-derived catalog-load envelope to week-ahead planning.
 * [**ADR-0044: Constraint-Aware Requirement Fulfilment and Bounded Multi-Stimulus Packing**](./adr/0044-constraint-aware-requirement-fulfilment.md) — *Accepted.* Defines the requirement-class boundary for constrained planning while preserving canonical coverage, objective-credit, load and intraday authorities.
 * [**ADR-0045: Athlete-Relative Weekly Aerobic Dose Envelope**](./adr/0045-athlete-relative-weekly-aerobic-dose.md) — *Accepted.* 28-day history-derived easy-aerobic weekly envelope with a public-health fallback, no intensity equivalence, and a conditional exact long aerobic anchor.
-* [**ADR-0046: First-Class Raw Assessment Trial Evidence**](./adr/0046-first-class-raw-assessment-trial-evidence.md) — *Proposed.* Extends OV with immutable raw multi-trial evidence, append-only corrections, deterministic reducers and typed derivation provenance while preserving evidence-only authority.
+* [**ADR-0046: First-Class Raw Assessment Trial Evidence**](./adr/0046-first-class-raw-assessment-trial-evidence.md) — *Accepted.* Extends OV with immutable raw multi-trial evidence, append-only corrections, deterministic reducers and typed derivation provenance while preserving evidence-only authority.
 
 ---
 

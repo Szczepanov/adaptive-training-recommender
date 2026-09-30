@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { MeasurementProtocol } from './models';
 import { COMPARISON_CANONICALIZATION_V1 } from './comparability';
 import { adaptManualObservation } from './manualAdapter';
+import { STANDING_BROAD_JUMP_PROTOCOL } from './physicalCapitalProtocols';
 
 const protocol: MeasurementProtocol = {
     id: 'cycling-20m-tt',
@@ -89,5 +90,18 @@ describe('OV2 manual observation adapter', () => {
             context: { duration_seconds: 1200, warmup_revision: 'WU-1' },
             validity: 'valid',
         })).rejects.toThrow(/Missing required comparison dimension: power_source_id/);
+    });
+
+    it('refuses hand-typed canonical values for a trial-capture protocol (ADR-0046 D-AT-REDUCE)', async () => {
+        await expect(adaptManualObservation({
+            assessmentAttemptId: 'attempt-1',
+            metricId: 'standing_broad_jump_distance_cm',
+            value: 238,
+            unit: 'cm',
+            observedAt: '2026-10-19T07:30:00.000Z',
+            protocol: STANDING_BROAD_JUMP_PROTOCOL,
+            context: { test_environment: 'gym-floor' },
+            validity: 'valid',
+        })).rejects.toThrow(/derives canonical values from trials; manual summary entry is not allowed/);
     });
 });

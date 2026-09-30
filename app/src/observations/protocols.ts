@@ -3,6 +3,7 @@ import type {
     ComparisonDimension,
     MeasurementProtocol,
 } from './models';
+import { assertValidAssessmentCapture } from './assessmentCapture';
 import { getMetricDefinition } from './registry';
 
 export type ComparisonDimensionValueKind = 'identifier' | 'number' | 'boolean' | 'text';
@@ -24,11 +25,17 @@ const DIMENSIONS = [
     { id: 'feedback_rule', valueKind: 'identifier', description: 'Feedback/pacing information allowed during the test.' },
     { id: 'weather_note', valueKind: 'text', description: 'Contextual weather note when weather is not series-defining.' },
     { id: 'timing_method', valueKind: 'identifier', description: 'Timing method used to capture an elapsed-time result (e.g. timing gates, radar/laser, handheld stopwatch); method materially affects comparability.' },
+    { id: 'measurement_method_id', valueKind: 'identifier', description: 'Measurement method identity when it materially changes the result (e.g. wall-touch vs contact-mat jump height, bar-velocity app/camera method).' },
+    { id: 'equipment_setup_id', valueKind: 'identifier', description: 'Test station or equipment setup identity when material to the protocol (e.g. rack/bench setup, throw station).' },
 ] as const satisfies readonly ComparisonDimensionDefinition[];
 
 const DIMENSION_BY_ID = new Map<ComparisonDimension, ComparisonDimensionDefinition>(
     DIMENSIONS.map(dimension => [dimension.id, dimension] as const),
 );
+
+export function listComparisonDimensionIds(): readonly ComparisonDimension[] {
+    return DIMENSIONS.map(dimension => dimension.id);
+}
 
 export function getComparisonDimensionDefinition(id: ComparisonDimension): ComparisonDimensionDefinition {
     const dimension = DIMENSION_BY_ID.get(id);
@@ -134,6 +141,7 @@ export function assertValidMeasurementProtocol(protocol: MeasurementProtocol): v
         && (!Number.isFinite(protocol.expectedRecoveryHours) || protocol.expectedRecoveryHours < 0)) {
         throw new Error('expectedRecoveryHours must be a finite non-negative number');
     }
+    if (protocol.capture !== undefined) assertValidAssessmentCapture(protocol, protocol.capture);
 }
 
 export function measurementProtocolRef(protocol: MeasurementProtocol): { id: string; revision: number } {

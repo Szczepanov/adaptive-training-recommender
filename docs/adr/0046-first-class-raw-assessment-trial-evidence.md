@@ -1,7 +1,8 @@
 # ADR-0046: First-Class Raw Assessment Trial Evidence
 
-* **Status:** Proposed
+* **Status:** Accepted
 * **Date:** 2026-09-30
+* **Accepted:** 2026-09-30 — with three acceptance-time clarifications: capture/reducer semantics live on the `MeasurementProtocol` revision itself (D-AT-PROTOCOL), trial writes are bound to the parent attempt lifecycle (D-AT-CORRECTION), and trial immutability is enforced by Firestore rules (D-AT-TRIAL)
 * **Deciders:** Repository owner
 * **Primary issue:** #897
 * **Source analysis:** [2026-09-30 physical-capital assessment integration](../analysis/2026-09-30-issue-897-physical-capital-assessment-integration.md)
@@ -35,7 +36,7 @@ Do not embed revision tokens such as `@1` in protocol IDs. Catalog/test-definiti
 
 ### D-AT-PROTOCOL — capture and reducer semantics are immutable evidence contracts
 
-For a multi-trial protocol, the bounded raw-field schema and deterministic reducer declarations are part of the evidence protocol semantics. They must be persisted/versioned with the immutable `MeasurementProtocol` revision or an equally immutable companion that the protocol revision references.
+For a multi-trial protocol, the bounded raw-field schema and deterministic reducer declarations are part of the evidence protocol semantics. They are persisted as an additive optional capture field on the immutable `MeasurementProtocol` revision document itself, admitted by the existing strict measurement-protocol Firestore allowlist. No separate companion document is introduced: the protocol revision is already immutable (`allow update, delete: if false`), so a companion would only add a second immutable record to keep in lockstep.
 
 `PerformanceTestDefinition` may supply presentation/layout hints for those stable field IDs, but it must not be the sole semantic owner. A later catalog/UI release must not reinterpret historical trials by changing a field type, unit or reducer under the same protocol revision. Existing summary-only protocols remain valid through additive optional fields.
 
@@ -53,6 +54,8 @@ Raw capture fields are declared by the protocol/test capture schema. They are no
 
 Examples include load, success/miss, RPE, WL Analysis mean/peak velocity, start/peak cadence and left/right cycling balance.
 
+Trial immutability is a persistence-rules contract, not only a service convention: the trial collection denies `update` and `delete` in `app/firestore.rules`, and `create` requires athlete ownership, a bounded document shape and an existing parent attempt whose lifecycle admits the write (D-AT-CORRECTION). Conformance of each raw value to the protocol's declared field ID/type/unit is enforced fail-closed by the TypeScript validator before any write.
+
 ### D-AT-CORRECTION — raw evidence is corrected by append-only supersession
 
 A stored trial is immutable.
@@ -60,6 +63,15 @@ A stored trial is immutable.
 Correcting an erroneous trial creates a new trial record that references the superseded trial and records a correction reason. Reducers use the current unsuperseded trial for each ordinal. Historical source evidence remains available for audit/replay.
 
 A canonical observation correction cannot be used as a substitute for correcting its erroneous raw source trial.
+
+Trial writes follow the parent assessment-attempt lifecycle:
+
+- `scheduled` — no trial may be written;
+- `in_progress` — new ordinals and supersession trials may be written; this is the normal capture window, before the canonical observations are written and the attempt is completed;
+- `completed` — only supersession trials (carrying the superseded trial ID and a correction reason) may be written; no new ordinal is admitted after completion;
+- `abandoned` — no trial may be written; trials already recorded remain as audit evidence but are never reduced into a canonical observation.
+
+When a post-completion correction changes a reducer result or its source-trial references, the affected canonical observation is corrected through the existing observation-revision path (`supersedesRevision` plus `correctionReason`) with the updated typed evidence references. A correction that leaves every reducer output and reference unchanged needs no observation revision.
 
 ### D-AT-REDUCE — canonical observations remain the progress/reporting layer
 
