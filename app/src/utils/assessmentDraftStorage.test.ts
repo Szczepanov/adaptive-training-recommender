@@ -44,6 +44,23 @@ describe('assessmentDraftStorage', () => {
         expect(loadAssessmentDraft('att-1')).toBeNull();
     });
 
+    it('rejects unsupported validity, non-scalar values and malformed devices', () => {
+        localStorage.setItem('assessment_draft_att-1', JSON.stringify([
+            { ordinal: 1, values: { distance_cm: 231 }, validity: 'invented' },
+        ]));
+        expect(loadAssessmentDraft('att-1')).toBeNull();
+
+        localStorage.setItem('assessment_draft_att-1', JSON.stringify([
+            { ordinal: 1, values: { distance_cm: { nested: true } }, validity: 'valid' },
+        ]));
+        expect(loadAssessmentDraft('att-1')).toBeNull();
+
+        localStorage.setItem('assessment_draft_att-1', JSON.stringify([
+            { ordinal: 1, values: { distance_cm: 231 }, validity: 'valid', device: [] },
+        ]));
+        expect(loadAssessmentDraft('att-1')).toBeNull();
+    });
+
     it('clears every assessment draft on sign-out and leaves other keys alone', () => {
         saveAssessmentDraft('att-1', [row]);
         saveAssessmentDraft('att-2', [row]);
