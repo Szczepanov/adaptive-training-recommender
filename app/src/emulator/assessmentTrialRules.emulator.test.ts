@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
     assertFails,
     assertSucceeds,
@@ -8,6 +8,8 @@ import {
     type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import { deleteDoc, doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { AssessmentTrialService } from '../services/assessmentTrialService';
+import type { AssessmentTrial, MeasurementProtocol, MetricObservationRevision } from '../observations/models';
 
 const emulatorDescribe = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 let testEnvironment: RulesTestEnvironment;
@@ -478,4 +480,52 @@ emulatorDescribe('Assessment trial and derivation Firestore rules (ADR-0046)', (
             summary.revision({ source: 'derived', derivedFromObservationIds: ['prior-obs-id-1'], algorithmVersion: 'legacy-derivation-v1' }),
             summary.head));
     });
+    it('atomically commits a superseding trial with its canonical observation correction', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            const db = context.firestore();
+            await setDoc(doc(db, protocolPath), validProtocol());
+            await setDoc(doc(db, attemptPath), validAttempt('completed'));
+            await setDoc(doc(db, `${attemptPath}/trials/trial-1`), validTrial(1));
+            await setDoc(doc(db, observationPath), validHead());
+            await setDoc(doc(db, revision1Path), validDerivedRevision());
+        });
+
+        const service = new AssessmentTrialService(ownerDb);
+        const correction = validTrial(1, 1, {
+            values: { distance_cm: 242 },
+            createdAt: '2026-10-19T07:45:00.000Z',
+        }) as unknown as AssessmentTrial;
+        const correctionRevision = validDerivedRevision({
+            revision: 2,
+            supersedesRevision: 1,
+            correctionReason: 'Tape transcription corrected',
+            value: 242,
+            derivedFromEvidenceRefs: [
+                { kind: 'assessment_trial', assessmentAttemptId: attemptId, trialId: 'trial-1-c1' },
+            ],
+            createdAt: '2026-10-19T07:45:00.000Z',
+        }) as unknown as MetricObservationRevision;
+
+        // A stale canonical revision aborts the whole transaction, including the immutable trial write.
+        await expect(service.commitCorrection(
+            ownerId,
+            validProtocol() as unknown as MeasurementProtocol,
+            correction,
+            [{ ...correctionRevision, revision: 3, supersedesRevision: 2 }],
+        )).rejects.toThrow(/Stale correction/);
+        expect((await getDoc(doc(ownerDb, `${attemptPath}/trials/trial-1-c1`))).exists()).toBe(false);
+
+        await service.commitCorrection(
+            ownerId,
+            validProtocol() as unknown as MeasurementProtocol,
+            correction,
+            [correctionRevision],
+        );
+
+        expect((await getDoc(doc(ownerDb, `${attemptPath}/trials/trial-1-c1`))).exists()).toBe(true);
+        expect((await getDoc(doc(ownerDb, observationPath))).data()?.headRevision).toBe(2);
+        expect((await getDoc(doc(ownerDb, `${observationPath}/revisions/2`))).data()?.value).toBe(242);
+    });
+
 });
