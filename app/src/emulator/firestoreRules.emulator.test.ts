@@ -877,6 +877,43 @@ emulatorDescribe('Firestore security rules', () => {
         }));
     });
 
+    it('makes an activation record create-only, so a stored effective date cannot be rewritten', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, externalPlanPath), validExternalPlanHeader()));
+        await assertSucceeds(setDoc(doc(ownerDb, externalRevisionPath), validExternalPlanRevision()));
+        await assertSucceeds(setDoc(doc(ownerDb, externalActivationPath), validExternalActivation()));
+        // Same-bytes rewrite is still an update: denied. A changed effective date is
+        // denied as well -- same-revision replays with a different date must fail closed
+        // at the service layer, and rules never permit the mutation either.
+        await assertFails(setDoc(doc(ownerDb, externalActivationPath), validExternalActivation()));
+        await assertFails(setDoc(doc(ownerDb, externalActivationPath), { ...validExternalActivation(), effectiveFrom: '2026-08-20' }));
+        await assertFails(updateDoc(doc(ownerDb, externalActivationPath), { effectiveFrom: '2026-08-20' }));
+        await assertFails(deleteDoc(doc(ownerDb, externalActivationPath)));
+        await assertSucceeds(getDoc(doc(ownerDb, externalActivationPath)));
+    });
+
+    it('denies cross-user and revision-mismatched revision-scoped placement writes', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            const admin = context.firestore();
+            await setDoc(doc(admin, externalPlanPath), validExternalPlanHeader());
+            await setDoc(doc(admin, externalRevisionPath), validExternalPlanRevision());
+            await setDoc(doc(admin, `${externalPlanPath}/revisions/2`), { ...validExternalPlanRevision(), revision: 2 });
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        const scopedPath = `${externalPlanPath}/revisions/1/placement/current`;
+        // Owner writes bound to the owning revision succeed.
+        await assertSucceeds(setDoc(doc(ownerDb, scopedPath), validExternalPlacement()));
+        // A placement claiming another revision never lands under this revision's path:
+        // historical revisions cannot consume another revision's overlay.
+        await assertFails(setDoc(doc(ownerDb, scopedPath), { ...validExternalPlacement(), revision: 2 }));
+        await assertFails(setDoc(doc(ownerDb, `${externalPlanPath}/revisions/2/placement/current`), { ...validExternalPlacement(), revision: 1 }));
+        // Cross-user reads and writes on revision-scoped placement are denied.
+        await assertFails(getDoc(doc(otherDb, scopedPath)));
+        await assertFails(setDoc(doc(otherDb, scopedPath), validExternalPlacement()));
+        await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/external_plans/autumn-block/revisions/1/placement/current`), validExternalPlacement()));
+    });
+
     it('accepts a provable legacy activation when the header omitted supersededFrom', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const path = `users/${ownerId}/external_plans/legacy-plan`;

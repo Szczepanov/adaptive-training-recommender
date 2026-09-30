@@ -626,6 +626,10 @@ Explicit tests:
 - overlapping different plan IDs;
 - revision whose own plan coverage does not contain D;
 - unreadable activation metadata;
+- activation document-id / payload-revision mismatch fails closed;
+- activation referencing a missing immutable revision fails closed rather than becoming `MISSING`;
+- revision-scoped placement identity mismatch is invalid, while a mismatched legacy placement
+  fallback is merely inapplicable;
 - legacy current-header fallback/migration behavior;
 - DST/Warsaw local-date boundary where applicable.
 
