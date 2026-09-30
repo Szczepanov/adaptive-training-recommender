@@ -73,7 +73,7 @@ import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
 import { mechanicalEvidenceRequiredFor, prepareTrainingHistorySnapshot, resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolveMechanicalCheckinHistory } from './mechanicalCheckinHistory';
-import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
+import { resolveActivePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
 import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry } from './coverage';
@@ -1026,7 +1026,7 @@ export function evaluateProjectedDate(
 
     const unresolved = getUnresolvedObjectives(state.microcycle, true);
     const planDefinition = shared.planDefinition
-        ?? resolvePlanDefinitionForEvent(periodization.focusEvent, shared.authoredPlanBlocks, shared.eventStrengthSupportSessions ?? 0);
+        ?? resolveActivePlanDefinitionForEvent(periodization.focusEvent, date, shared.authoredPlanBlocks, shared.eventStrengthSupportSessions ?? 0);
     const optimizationContext = buildOptimizationContext(
         {
             unresolvedObjectives: unresolved,
@@ -1387,7 +1387,7 @@ export function reconcileObjectivesForDate(
     historicalReplayObjectiveIds: readonly string[];
 } {
     const planDefinitionForDate = planDefinition
-        ?? resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks, eventStrengthSupportSessions);
+        ?? resolveActivePlanDefinitionForEvent(periodization.focusEvent, date, authoredPlanBlocks, eventStrengthSupportSessions);
     const skeleton = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent, planDefinitionForDate, date);
     const historicalReplayObjectiveIds = skeleton.objectives.map(objective => objective.id);
     const fresh = resolveMultiEventObjectives(events, date, periodization, skeleton.objectives);

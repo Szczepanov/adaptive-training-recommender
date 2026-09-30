@@ -34,6 +34,44 @@ describe('ADR-0017 planning mode resolution', () => {
         },
     );
 
+    it('keeps a distant cycling event as context while evergreen owns dates before the first structured block', () => {
+        const cyclingEvent = event('cycling_event');
+        const beforeBuild = '2026-06-20'; // race D-85; derived build starts D-84
+        const firstBuildDay = '2026-06-21';
+
+        expect(resolvePlanningContext(
+            profile('event_directed'),
+            evaluatePeriodizationPhase([cyclingEvent], beforeBuild),
+            beforeBuild,
+        )).toMatchObject({
+            mode: 'event_directed',
+            eventStrategy: 'evergreen_fallback',
+            focusEvent: { category: 'cycling_event' },
+        });
+        expect(resolvePlanningContext(
+            profile('event_directed'),
+            evaluatePeriodizationPhase([cyclingEvent], firstBuildDay),
+            firstBuildDay,
+        )).toMatchObject({ mode: 'event_directed', eventStrategy: 'structured_plan' });
+    });
+
+    it('lets an explicit travel block activate structured event authority before the derived build window', () => {
+        const cyclingEvent = event('cycling_event');
+        const date = '2026-06-10';
+        const authoredTravel = [{
+            id: 'travel-early', userId: 'u1', eventId: cyclingEvent.id, phase: 'travel' as const,
+            startDate: '2026-06-09', endDate: '2026-06-11', volumeScale: 0.4, intensityScale: 0.4,
+            createdAt: '', updatedAt: '',
+        }];
+        expect(resolvePlanningContext(
+            profile('event_directed'),
+            evaluatePeriodizationPhase([cyclingEvent], date),
+            date,
+            null,
+            authoredTravel,
+        )).toMatchObject({ mode: 'event_directed', eventStrategy: 'structured_plan' });
+    });
+
     it('lets explicit evergreen mode suppress event strategy and makes no-event legacy input evergreen', () => {
         const withEvent = resolvePlanningContext(profile('evergreen'), evaluatePeriodizationPhase([event('cycling_event')], '2026-08-10'), '2026-08-10');
         const withoutEvent = resolvePlanningContext(null, evaluatePeriodizationPhase([], '2026-08-10'), '2026-08-10');
