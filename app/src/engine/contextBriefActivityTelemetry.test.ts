@@ -492,7 +492,7 @@ describe('renderPlanningQualityActivityTelemetry', () => {
 
 describe('injectActivityTelemetryIntoContextBrief', () => {
     it('keeps section 4 after the detailed telemetry subsection', () => {
-        const brief = '# Training context brief\n\n## 3. Completed training (recorded by the wearable)\n\nSummary\n\n## 4. Subjective check-ins';
+        const brief = '# Training context brief\n\n## 3. Completed training (canonical performed occurrences)\n\nSummary\n\n## 4. Subjective check-ins';
         const text = injectActivityTelemetryIntoContextBrief(
             brief,
             [activity({ normalizedPower: 287 })],
@@ -505,7 +505,7 @@ describe('injectActivityTelemetryIntoContextBrief', () => {
     });
 
     it('adds bounded quality execution evidence to compact/block-planning injection', () => {
-        const brief = '# Training context brief\n\n## 5. Completed training (recorded by the wearable)\n\nSummary\n\n## 6. Recommendation feedback';
+        const brief = '# Training context brief\n\n## 5. Completed training (canonical performed occurrences)\n\nSummary\n\n## 6. Recommendation feedback';
         const text = injectActivityTelemetryIntoContextBrief(
             brief,
             [activity({
