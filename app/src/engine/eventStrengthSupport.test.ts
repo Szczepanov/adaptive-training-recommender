@@ -231,9 +231,9 @@ describe('event-plan construction threading guard (#801)', () => {
             .filter(file => !DIAGNOSTIC_ONLY.has(file) && file !== 'planSchedule.ts')
             .flatMap(file => {
                 const text = readFileSync(join(engineDir, file), 'utf-8');
-                return [...text.matchAll(/resolvePlanDefinitionForEvent\(([^;]*?)\)/gs)]
+                return [...text.matchAll(/resolve(?:Active)?PlanDefinitionForEvent\(([^;]*?)\)/gs)]
                     .filter(match => !/strengthSupportSessions/i.test(match[1]))
-                    .map(match => `${file}: resolvePlanDefinitionForEvent(${match[1].replace(/\s+/g, ' ')})`);
+                    .map(match => `${file}: event-plan resolver(${match[1].replace(/\s+/g, ' ')})`);
             });
         expect(offenders).toEqual([]);
     });
