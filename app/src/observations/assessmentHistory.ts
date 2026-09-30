@@ -120,9 +120,7 @@ function benchmarkTimestamp(series: AssessmentHistorySeries): string {
     const eligibleRows = series.observations.filter(row =>
         row.validity === 'valid' && row.attemptPurpose !== 'familiarization'
     );
-    return eligibleRows.at(-1)?.observedAt
-        ?? series.observations.at(-1)?.observedAt
-        ?? '';
+    return eligibleRows.at(-1)?.observedAt ?? '';
 }
 
 function selectActiveSeries(
@@ -141,11 +139,13 @@ function selectActiveSeries(
     // Prefer a series from the currently bundled protocol revision when one exists.
     // A late import/correction on an older immutable revision must not silently make
     // that historical protocol the athlete-facing active series.
-    const currentRevisionSeries = seriesList
+    const benchmarkedSeries = seriesList.filter(series => benchmarkTimestamp(series) !== '');
+    const currentRevisionSeries = benchmarkedSeries
         .filter(series => series.protocolRevision === currentProtocolRevision)
         .sort(sortNewest);
+    const sortedBenchmarked = [...benchmarkedSeries].sort(sortNewest);
     const sortedAll = [...seriesList].sort(sortNewest);
-    const activeSeries = currentRevisionSeries[0] ?? sortedAll[0];
+    const activeSeries = currentRevisionSeries[0] ?? sortedBenchmarked[0] ?? sortedAll[0];
 
     const otherSeries = sortedAll
         .filter(series => series !== activeSeries)
@@ -219,8 +219,10 @@ export function buildAssessmentHistory(input: BuildAssessmentHistoryInput): Asse
                         continue;
                     }
 
-                    completedWithAnyBenchmark.add(attempt.id);
-                    completedWithMetricBenchmark.add(attempt.id);
+                    if (revision.validity === 'valid' && attempt.purpose !== 'familiarization') {
+                        completedWithAnyBenchmark.add(attempt.id);
+                        completedWithMetricBenchmark.add(attempt.id);
+                    }
 
                     const seriesKey = revision.comparisonSeriesKey;
                     const compositeKey = `${attempt.protocolRef.revision}::${metricId}::${seriesKey}`;
