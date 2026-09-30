@@ -7,7 +7,7 @@ import {
     initializeTestEnvironment,
     type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { deleteDoc, doc, getDoc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, setDoc, updateDoc, writeBatch, type Firestore } from 'firebase/firestore';
 import { AssessmentTrialService } from '../services/assessmentTrialService';
 import type { AssessmentTrial, MeasurementProtocol, MetricObservationRevision } from '../observations/models';
 
@@ -491,7 +491,7 @@ emulatorDescribe('Assessment trial and derivation Firestore rules (ADR-0046)', (
             await setDoc(doc(db, revision1Path), validDerivedRevision());
         });
 
-        const service = new AssessmentTrialService(ownerDb);
+        const service = new AssessmentTrialService(ownerDb as unknown as Firestore);
         const correction = validTrial(1, 1, {
             values: { distance_cm: 242 },
             createdAt: '2026-10-19T07:45:00.000Z',
