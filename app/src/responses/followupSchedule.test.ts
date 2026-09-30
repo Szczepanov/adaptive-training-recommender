@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { relevantFollowupRegions } from './followupSchedule';
+import {
+    canLinkNextMorningFollowupToSession,
+    relevantFollowupRegions,
+    resolvePendingNextMorningFollowups,
+} from './followupSchedule';
 
 describe('relevantFollowupRegions', () => {
     it('maps back_squat-style tissueDemand/safetyTags to knee', () => {
@@ -36,5 +40,118 @@ describe('relevantFollowupRegions', () => {
 
     it('is case-insensitive', () => {
         expect(relevantFollowupRegions([{ tissueDemand: ['KNEE_EXTENSOR'] }])).toEqual(['knee']);
+    });
+});
+
+
+describe('resolvePendingNextMorningFollowups', () => {
+    const executionRef = { kind: 'execution' as const, id: 'exec-yesterday', date: '2026-09-29' };
+
+    it('does not re-open a follow-up from normal tissue data merely because session linkage remains', () => {
+        const pending = resolvePendingNextMorningFollowups({
+            knee: {
+                region: 'knee',
+                morningState: 'normal',
+                nextMorningReaction: 'normal',
+                sourceSessionRef: executionRef,
+            },
+        }, undefined);
+
+        expect(pending).toEqual([]);
+    });
+
+    it('keeps a morning-only moderate response due under the engine tissue-severity semantics', () => {
+        const pending = resolvePendingNextMorningFollowups({
+            shoulder: { region: 'shoulder', morningState: 'moderate' },
+        }, undefined);
+
+        expect(pending).toEqual([{ region: 'shoulder' }]);
+    });
+
+    it('includes relevant regions derived from a completed session even without a manual tissue flag', () => {
+        const pending = resolvePendingNextMorningFollowups(
+            undefined,
+            undefined,
+            [{ sessionRef: executionRef, regions: ['hip', 'knee'] }],
+        );
+
+        expect(pending).toEqual([
+            { region: 'hip', sessionRef: executionRef },
+            { region: 'knee', sessionRef: executionRef },
+        ]);
+    });
+
+    it('uses the current-day next-morning answer to close the same region across due sources', () => {
+        const pending = resolvePendingNextMorningFollowups(
+            { knee: { region: 'knee', morningState: 'moderate', sourceSessionRef: executionRef } },
+            { knee: { region: 'knee', morningState: 'normal', nextMorningReaction: 'normal' } },
+            [{ sessionRef: executionRef, regions: ['knee'] }],
+        );
+
+        expect(pending).toEqual([]);
+    });
+
+    it('deduplicates a manual and session-derived candidate for the same execution and region', () => {
+        const pending = resolvePendingNextMorningFollowups(
+            { knee: { region: 'knee', morningState: 'moderate', sourceSessionRef: executionRef } },
+            undefined,
+            [{ sessionRef: executionRef, regions: ['knee', 'hip'] }],
+        );
+
+        expect(pending).toEqual([
+            { region: 'knee', sessionRef: executionRef },
+            { region: 'hip', sessionRef: executionRef },
+        ]);
+    });
+
+    it('coalesces multiple session candidates for the same region into one prompt', () => {
+        const secondExecutionRef = { kind: 'execution' as const, id: 'exec-yesterday-2', date: '2026-09-29' };
+
+        const pending = resolvePendingNextMorningFollowups(
+            undefined,
+            undefined,
+            [
+                { sessionRef: executionRef, regions: ['knee'] },
+                { sessionRef: secondExecutionRef, regions: ['knee'] },
+            ],
+        );
+
+        expect(pending).toEqual([{ region: 'knee' }]);
+    });
+
+    it('coalesces a source-less manual tissue flag with a session-derived candidate', () => {
+        const pending = resolvePendingNextMorningFollowups(
+            { knee: { region: 'knee', morningState: 'moderate' } },
+            undefined,
+            [{ sessionRef: executionRef, regions: ['knee'] }],
+        );
+
+        expect(pending).toEqual([{ region: 'knee', sessionRef: executionRef }]);
+    });
+
+    it('preserves explicit manual attribution when another session also touches the region', () => {
+        const secondExecutionRef = { kind: 'execution' as const, id: 'exec-yesterday-2', date: '2026-09-29' };
+
+        const pending = resolvePendingNextMorningFollowups(
+            { knee: { region: 'knee', morningState: 'moderate', sourceSessionRef: executionRef } },
+            undefined,
+            [{ sessionRef: secondExecutionRef, regions: ['knee'] }],
+        );
+
+        expect(pending).toEqual([{ region: 'knee', sessionRef: executionRef }]);
+    });
+});
+
+
+describe('canLinkNextMorningFollowupToSession', () => {
+    const executionRef = { kind: 'execution' as const, id: 'exec-yesterday', date: '2026-09-29' };
+
+    it('allows missing or matching canonical attribution and rejects a conflicting one', () => {
+        expect(canLinkNextMorningFollowupToSession(undefined, executionRef)).toBe(true);
+        expect(canLinkNextMorningFollowupToSession(executionRef, executionRef)).toBe(true);
+        expect(canLinkNextMorningFollowupToSession(
+            { kind: 'execution', id: 'exec-other', date: '2026-09-29' },
+            executionRef,
+        )).toBe(false);
     });
 });

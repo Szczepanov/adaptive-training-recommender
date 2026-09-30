@@ -280,6 +280,20 @@ prefilled defaults or unsaved edits cannot appear complete. Follow-ups reflect t
 review queue and clear only after a follow-up save succeeds (or the athlete explicitly skips
 that prompt for the current visit).
 
+Home and Check-in share `responses/followupSchedule.ts`
+`resolvePendingNextMorningFollowups` as the next-morning due-state authority. Manual tissue
+state uses the same `deriveTissueSeverity` semantics as the injury policy, while completed or
+abandoned structured executions contribute additional candidate regions from their catalog
+facets. Execution-history reads are fail-soft so a temporary history failure cannot hide a
+manual tissue follow-up. The queue is region-level: multiple relevant sessions for the same
+region produce one tissue question. Session linkage is written only when prior manual
+attribution identifies the source or exactly one session is otherwise plausible; ambiguous
+multi-session attribution remains unlinked/unknown. The singular
+`RegionTissueResponse.sourceSessionRef` compatibility bridge is never used to overwrite a
+different existing attribution. A saved
+`nextMorningReaction` closes that region for the date; skipping persists neither a response
+nor a synthetic normal value.
+
 Daily availability has a deliberately narrow decision boundary. `mapCheckinToSubjectiveInput`
 consumes `availability.timeAvailableMin` as today's time input and
 `availability.preferredModalityToday` as the optional modality request. The persisted legacy
