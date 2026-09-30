@@ -4,10 +4,12 @@
 backend (`src/garmin_sync/`) and a React + TypeScript + Firebase app (`app/`) whose engine
 turns recovery snapshots into adaptive training recommendations.
 
-**This file is the rules. [`AGENTS.md`](./AGENTS.md) is the reference** — the complete
-command reference and package routing map. This file keeps only the minimal working-loop
-subset; when full inventories lived in both files they drifted. Read `AGENTS.md` before
-concluding that a module, CLI subcommand or npm script does not exist.
+**This file is the rules. [`AGENTS.md`](./AGENTS.md) is the compact repository reference** — it
+holds the command router and high-level package map, with detailed inventories linked under
+`docs/`. This file keeps only the minimal working-loop subset; when full inventories lived in both
+files they drifted. Read `AGENTS.md` before concluding that a module, CLI subcommand or npm script
+does not exist.
+
 **Source-discovery bootstrap:** for a non-trivial code task whose implementation vocabulary or
 location is unknown, read `.agents/skills/semantic-code-discovery/SKILL.md` before broad source
 exploration. The primary agent owns broad Canopy/Jev discovery; once targets are established, pass
