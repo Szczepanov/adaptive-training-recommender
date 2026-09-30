@@ -192,27 +192,37 @@ describe('projectPlannedExecutionStatus', () => {
             expect(forward[1]).toContain('plan-b r2/same-session');
         });
 
-        it('bounds and sanitizes rendered identifiers and observed-work detail', () => {
+        it('bounds and sanitizes rendered identifiers and provenance lists', () => {
             const longSessionId = `ride-${'x'.repeat(140)}\ncontinued`;
-            const longOccurrenceId = `occ-${'y'.repeat(140)}`;
+            const sessionRows = renderPlannedExecutionStatuses([rowStatus({
+                authored: { kind: 'session', source: { ...source, sessionId: longSessionId } },
+            })]).filter(line => line.startsWith('- '));
+
+            expect(sessionRows).toHaveLength(1);
+            expect(sessionRows[0]).not.toContain('\n');
+            expect(sessionRows[0]).not.toContain(longSessionId);
+            expect(sessionRows[0]).toContain('…');
+            expect(sessionRows[0]).not.toContain('Authored rest/no session');
+
+            const longRestId = `rest-${'r'.repeat(140)}\ncontinued`;
             const evidence = [
                 ...Array.from({ length: 7 }, (_, index) => `observed-work:work-${7 - index}`),
                 'observed-work:work-3',
-                `replaced-by:${'replacement-'.repeat(12)}`,
+                `replaced-by:${'replacement-a-'.repeat(12)}`,
+                `replaced-by:${'replacement-b-'.repeat(12)}`,
             ];
-            const rows = renderPlannedExecutionStatuses([rowStatus({
-                authored: { kind: 'session', source: { ...source, sessionId: longSessionId } },
-                occurrenceId: longOccurrenceId,
+            const restRows = renderPlannedExecutionStatuses([rowStatus({
+                authored: { kind: 'rest', planId: 'plan-a', revision: 2, restDirectiveId: longRestId },
                 evidence,
             })]).filter(line => line.startsWith('- '));
 
-            expect(rows).toHaveLength(1);
-            expect(rows[0]).not.toContain('\n');
-            expect(rows[0]).not.toContain(longSessionId);
-            expect(rows[0]).not.toContain(longOccurrenceId);
-            expect(rows[0]).toContain('…');
-            expect(rows[0]).toContain('observed work: work-1, work-2, work-3, work-4, work-5; 2 additional observed-work ids omitted');
-            expect(rows[0].length).toBeLessThan(1_200);
+            expect(restRows).toHaveLength(1);
+            expect(restRows[0]).not.toContain('\n');
+            expect(restRows[0]).not.toContain(longRestId);
+            expect(restRows[0]).toContain('…');
+            expect(restRows[0]).toContain('observed work: work-1, work-2, work-3, work-4, work-5; 2 additional observed-work ids omitted');
+            expect(restRows[0]).toContain('1 additional replacement ids omitted');
+            expect(restRows[0].length).toBeLessThan(1_200);
         });
     });
 

@@ -219,6 +219,7 @@ const ROUND_TRIP_MAX_IDENTIFIER_CHARS = 96;
 const ROUND_TRIP_IDENTIFIER_PREFIX_CHARS = 64;
 const ROUND_TRIP_IDENTIFIER_SUFFIX_CHARS = ROUND_TRIP_MAX_IDENTIFIER_CHARS - ROUND_TRIP_IDENTIFIER_PREFIX_CHARS - 1;
 const ROUND_TRIP_MAX_OBSERVED_WORK_IDS = 5;
+const ROUND_TRIP_MAX_REPLACED_BY_IDS = 1;
 
 function renderRoundTripIdentifier(value: string): string {
     const oneLine = value.replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ').trim();
@@ -247,6 +248,12 @@ function plannedExecutionStatusSortKey(status: PlannedExecutionStatus): string {
     ].join('\u0000');
 }
 
+function comparePlannedExecutionStatus(left: PlannedExecutionStatus, right: PlannedExecutionStatus): number {
+    const leftKey = plannedExecutionStatusSortKey(left);
+    const rightKey = plannedExecutionStatusSortKey(right);
+    return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+}
+
 export function renderPlannedExecutionStatuses(
     statuses: readonly PlannedExecutionStatus[] | null | undefined,
     heading = '## External-plan execution round trip',
@@ -255,8 +262,7 @@ export function renderPlannedExecutionStatuses(
     if (statuses === null) return [heading, '', 'Round-trip records are unknown because one or more sources could not be read.'];
     if (statuses.length === 0) return [heading, '', 'No exact external-plan occurrence records were available in this window. Missing activity is not treated as a missed session.'];
     const label = (value: string) => value.replaceAll('_', ' ');
-    const sorted = [...statuses].sort((left, right) =>
-        plannedExecutionStatusSortKey(left).localeCompare(plannedExecutionStatusSortKey(right)));
+    const sorted = [...statuses].sort(comparePlannedExecutionStatus);
     // A planning handoff prioritizes the most recent records while preserving
     // chronological display. Per-row identifiers and observed-work detail are
     // bounded below so the section remains finite even with malformed/legacy data.
@@ -269,10 +275,12 @@ export function renderPlannedExecutionStatuses(
             : status.authored.kind === 'rest'
                 ? `${renderRoundTripIdentifier(status.authored.planId)} r${status.authored.revision} rest/${renderRoundTripIdentifier(status.authored.restDirectiveId)}`
                 : status.authored.kind;
-        const observedWorkIds = [...new Set(status.evidence
-            .filter(item => item.startsWith('observed-work:'))
-            .map(item => item.slice('observed-work:'.length)))]
-            .sort();
+        const observedWorkIds = status.authored.kind === 'rest' || status.authored.kind === 'none'
+            ? [...new Set(status.evidence
+                .filter(item => item.startsWith('observed-work:'))
+                .map(item => item.slice('observed-work:'.length)))]
+                .sort()
+            : [];
         const visibleObservedWork = observedWorkIds
             .slice(0, ROUND_TRIP_MAX_OBSERVED_WORK_IDS)
             .map(renderRoundTripIdentifier);
@@ -282,11 +290,15 @@ export function renderPlannedExecutionStatuses(
                 ? `; ${omittedObservedWork} additional observed-work ids omitted`
                 : ''}.`
             : '';
-        const replacedBy = [...new Set(status.evidence
+        const replacedByIds = [...new Set(status.evidence
             .filter(item => item.startsWith('replaced-by:'))
             .map(item => item.slice('replaced-by:'.length)))]
-            .sort()
+            .sort();
+        const replacedBy = replacedByIds.slice(0, ROUND_TRIP_MAX_REPLACED_BY_IDS)
             .map(item => `replaced by occurrence ${renderRoundTripIdentifier(item)}`);
+        if (replacedByIds.length > ROUND_TRIP_MAX_REPLACED_BY_IDS) {
+            replacedBy.push(`${replacedByIds.length - ROUND_TRIP_MAX_REPLACED_BY_IDS} additional replacement ids omitted`);
+        }
         const archiveFailure = status.evidence.includes('replace-archive-unavailable')
             ? ['replacement source unavailable (archive read failed)']
             : [];

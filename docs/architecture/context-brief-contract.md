@@ -198,8 +198,12 @@ Bounds:
 - When rows are cut, the section ends with
   `- N earlier records omitted from this bounded section.`
 - Identifier tokens are capped at 96 rendered characters as described above.
-- `observed-work` ids are deduplicated and sorted; at most 5 are rendered per row, followed
-  by an explicit counted omission marker when more exist.
+- `observed-work` ids are rendered only for authored-rest/no-session rows, deduplicated and
+  sorted; at most 5 are rendered per row, followed by an explicit counted omission marker
+  when more exist.
+- Replacement provenance is singular in the projector; the renderer defensively caps
+  `replaced-by` ids at 1 and counts any malformed/legacy extras rather than allowing them
+  to expand the row.
 - An empty window renders
   `No exact external-plan occurrence records were available in this window. Missing activity
   is not treated as a missed session.` Missing activity is never a miss.
@@ -224,8 +228,8 @@ activity. Omitted detail is counted and labelled. Service-level regressions cap 
 Markdown artifacts at 24,000 characters for morning, 65,000 for planning and 90,000 for
 diagnostic. These limits apply to optional detail; authority and safety sections are rendered
 outside the activity-detail selection. The round-trip section is independently finite through
-its newest-20 row cap, one-line 96-character identifier projection and five-item observed-work
-cap, all with explicit omission semantics. Like activity detail, representative maximum-density
+its newest-20 row cap, one-line 96-character identifier projection, five-item observed-work
+cap and singular replacement-provenance cap, all with explicit omission semantics. Like activity detail, representative maximum-density
 fixtures exercise composition without a global truncation; authority rows are never cut merely
 to satisfy a whole-document character limit.
 
