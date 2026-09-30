@@ -83,6 +83,7 @@ export interface ScenarioDecisionTrace {
      *  null when no candidate was accepted. Sourced from Recommendation.decisionTrace
      *  .rankingAudit (today/tomorrow) or WeekAheadDay.diagnostics.rankingAudit (forecast). */
     rankingAudit: RankingCounterfactual | null;
+    stimulusRecency?: Pick<NonNullable<Recommendation['decisionTrace']>, 'stimulusRecency' | 'candidateScores'>;
 }
 export interface ScenarioResult {
     scenarioId: string; label: string; description: string; weeksSimulated: number; totalDays: number;
@@ -181,6 +182,7 @@ export function traceFromRecommendation(weekIndex: number, date: string, recomme
             selectedVsBestBenefitGap: bestBenefitScore === null || selectedBenefitScore === null ? null : bestBenefitScore - selectedBenefitScore,
         },
         rankingAudit: recommendation.decisionTrace?.rankingAudit ?? null,
+        ...(recommendation.decisionTrace?.stimulusRecency ? { stimulusRecency: { stimulusRecency: recommendation.decisionTrace.stimulusRecency, candidateScores: recommendation.decisionTrace.candidateScores } } : {}),
     };
 }
 
@@ -416,15 +418,25 @@ export async function runScenario(
 
     for (let week = 0; week < scenario.weeks; week++) {
         const readiness = scenario.readinessForDate?.(currentDate, week) ?? scenario.readinessForWeek(week);
+        const preparedHistory = scenario.initialPerformedExposures
+            ? await historyProvider.getSnapshot!('sim-user', currentDate, 7)
+            : null;
+        if (preparedHistory) preparedHistory.performedTrainingFacts = {
+            asOfDate: currentDate,
+            windowDays: 7,
+            revision: `sim-canonical-${currentDate}`,
+            exposures: scenario.initialPerformedExposures!.filter(exposure => exposure.localDate < currentDate),
+            coverageCredits: [],
+        };
         const todayRec = await evaluateTrainingWithIntent(
             'sim-user', readiness, scenario.context, events, currentDate, undefined, historyProvider,
-            null, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
+            preparedHistory, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
             null, subjectiveDriftPolicy, subjectiveDriftWeights, null, false, [], new Map(), undefined,
             scenario.mechanicalCheckinHistory,
         );
         const nextDayPlan = await evaluateNextDayPlanWithIntent(
             'sim-user', events, readiness, scenario.context, currentDate, todayRec, historyProvider,
-            null, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
+            preparedHistory, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
             subjectiveDriftPolicy, subjectiveDriftWeights, [], scenario.mechanicalCheckinHistory,
         );
         const tomorrowRec = nextDayPlan.branches.yellow.recommendation;
@@ -435,7 +447,7 @@ export async function runScenario(
                 days: 6, fixedActivities, fatigueFusionPolicy,
                 ...(scenario.mechanicalCheckinHistory ? { mechanicalCheckinHistory: scenario.mechanicalCheckinHistory } : {}),
             },
-            historyProvider, null, scenario.trainingIntentProfile ?? null,
+            historyProvider, preparedHistory, scenario.trainingIntentProfile ?? null,
         );
         const todayPhase = evaluatePeriodizationPhase(events, currentDate).phase.phaseName;
         const simulatedDays: WeekAheadDay[] = [recommendationAsDay(currentDate, todayRec, todayPhase), ...plan.days];

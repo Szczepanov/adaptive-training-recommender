@@ -561,6 +561,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.optimizer.recovery_streak_heuristics_v1`) with alignment testing. The mixed-recovery 1.40x alternation, 14-day/0.40 streak definition, 1.25x easy-aerobic default boost, 2.0x/0.3x/0.1x streak shaping and 0.50/0.35x intensity stacking penalty are all explicit product calibration.',
     },
     {
+        id: 'optimizer.performed_stimulus_quality_repetition', domain: 'optimizer_scoring', title: 'Performed stimulus quality anti-repetition penalty',
+        currentRule: 'When a confident quality exposure (tempo, threshold, vo2, race) occurred on D-1, candidate templates of the same quality family receive a 0.2 preference multiplier unless fulfilsNominatedAnchor is true; min(templateRepetition, stimulusRepetition) prevents penalty compounding to 0.04; consecutive Zone 2 endurance is exempt.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['engine/stimulusRecency.ts:evaluateCandidateStimulusRecency', 'engine/optimizer.ts:rankCandidates'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.performedStimulusQualityRepetitionPolicy],
+        coverageRationale: 'Issue #931 registers the D-1 quality anti-repetition penalty and Zone 2 exemption as product policy with deterministic alignment testing. The 0.2 multiplier and same-family matching govern candidate ranking without modifying exact weekly-role coverage or hard safety gates.',
+    },
+    {
         id: 'optimizer.rolling_load_budget', domain: 'optimizer_scoring', title: 'Individualized rolling catalog-load budget',
         currentRule: 'With at least three completed exposures spanning at least 14 days in the stable pre-window, derive per-dimension seven-day future catalog-load limits from the athlete\'s own 42-day baseline with 15% headroom and product floors; otherwise leave this new gate inactive and retain existing fatigue/safety controls. The day-1 provisional recommendation is charged to the fixed envelope but remains selected by the separate next-day evaluator; planned fixed-activity and schedule-overlay expected costs reserve capacity across their horizon dates; planner-generated day-2+ forecast exercise candidates are charged at their actual prescribed dose. Admission is candidate-specific by dimension: a non-participating contribution (cost within 1e-9 floating-point tolerance) does not inherit a pre-existing overage as a veto, while a dimension blocks admission with LOAD_BUDGET_EXCEEDED only when candidate cost exceeds 1e-9 and remaining capacity after admission is below -1e-9. No non-zero de minimis threshold is implied.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p1',
