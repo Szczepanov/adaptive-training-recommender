@@ -333,6 +333,23 @@ function capabilityMaintenanceScenario(optedIn: boolean): AthleteScenario {
 
 export const SCENARIOS: AthleteScenario[] = [
     {
+        id: 'cycling_recovery_authority_exit',
+        label: 'Completed cycling recovery hands execution back to Evergreen (#933)',
+        description: 'Starts inside structured recovery and crosses the first date no longer owned by the event. The actual focus-event eligibility boundary, not the authored recovery end, determines the handoff.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling', 'Strength']),
+        event: { id: 'recovery-exit-race', title: 'Completed synthetic cycling race', date: '2026-09-13',
+            priority: 'A', lifecycle: 'completed', category: 'cycling_event',
+            demandProfile: resolveDemandProfile('cycling_event', 'gran_fondo') },
+        trainingIntentProfile: {
+            ...evergreenProfile(['health'], { minSessions: 2, targetSessions: 3, maxSessions: 4 }),
+            planningMode: 'event_directed',
+            capabilityMaintenance: { enabled: true, capabilities: ['linear_speed_skill'] },
+        },
+        preferences: preferences(60, 60), startDate: '2026-09-14', weeks: 1,
+        tags: ['authority-transition', 'cycling', 'evergreen'],
+        readinessForWeek: () => stableReadiness({ readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2, motivation: 8 }),
+    },
+    {
         id: 'evergreen_health_two_sessions',
         label: 'Evergreen health priority (2 sessions)',
         description: 'A compact health-priority week proves the evergreen path handles a realistic lower commitment without inventing event authority.',

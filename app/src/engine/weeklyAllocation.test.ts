@@ -573,3 +573,19 @@ describe('issue #801 two-pass support placement (review regressions)', () => {
         expect(primaryAllocationUnresolved({ budgetExhausted: false, outcomes: [unresolvedPrimary] })).toBe(true);
     });
 });
+
+
+describe('date-local occurrence ownership (#933)', () => {
+    it('cannot reserve a retired role outside its owner segment even when the template is safe', () => {
+        const role = { ...occurrence('aerobic_volume', 0, ['safe']), authorityId: 'structured@2026-08-10',
+            authorityStartDate: '2026-08-10', authorityEndDate: '2026-08-11' };
+        const evaluator: AllocationDateEvaluator = {
+            forecastDates: ['2026-08-12', '2026-08-13'],
+            evaluate: (_assignments, date) => ({ date, fatigueTier: 'train', acceptedTemplateIds: ['safe'],
+                fatigueExcludedTemplateIds: [], exclusionReasons: new Map() }),
+        };
+        const result = resolveWeeklyRoleReservations([role], evaluator);
+        expect(result.reservationsByDate.size).toBe(0);
+        expect(result.outcomes[0].reservation.assignedDate).toBeNull();
+    });
+});
