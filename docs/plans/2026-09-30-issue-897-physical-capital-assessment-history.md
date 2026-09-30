@@ -466,6 +466,12 @@ The reusable bundled protocols must encode test-specific execution safety withou
 
 **PR B safety investigation finding:** `sessionAuthoringService.prepareUnplannedSessionLaunch` validates the session definition and launches an unplanned execution with authority `unplanned_log` without consulting an existing injury, constraint, or clinician-clearance gate. Per architectural constraints, no medical diagnosis or clearance field was invented; protocol-level safety instructions (e.g. rack safeties and spotter requirements) are rendered directly on the Testing ready screen before confirmation.
 
+### PR B review correction — immutable protocol revision 2
+
+PR A published the six physical-capital capture contracts as revision 1. During PR B review, the athlete's active v1.6 October execution document was cross-checked against those immutable revisions and exposed material execution mismatches: the bench pause/two-miss stop rule, the squat's athlete-declared repeatable depth standard, and the cycling sprint's 15–20 minute warm-up, ~5 minute recovery and no-ERG rule. Because ADR-0046 makes a published `MeasurementProtocol` revision immutable, revision 1 is retained byte-for-byte for historical evidence and the bundled October workflow advances to revision 2. Field-test setup details that materially affect repeatability are likewise made explicit in revision 2.
+
+Diagnostic export must enumerate every supported immutable revision and join attempts only to the exact `protocolRef.revision`; familiarization-purpose evidence is stored but is never eligible to become an implicit longitudinal baseline.
+
 ## Primary file
 
 `app/src/observations/performanceTestingCatalog.ts`
@@ -489,11 +495,11 @@ Do not require a split if the code remains readable.
 
 ID:
 
-`strength-bench-press-1rm-r1`
+`strength-bench-press-1rm-r2`
 
 Protocol reference:
 
-`{ id: 'strength-bench-press-1rm', revision: 1 }`
+`{ id: 'strength-bench-press-1rm', revision: 2 }`
 
 Metric:
 
@@ -514,11 +520,11 @@ The runner must not prescribe fixed maximum attempt weights. Attempt selection r
 
 ID:
 
-`strength-back-squat-1rm-r1`
+`strength-back-squat-1rm-r2`
 
 Protocol reference:
 
-`{ id: 'strength-back-squat-1rm', revision: 1 }`
+`{ id: 'strength-back-squat-1rm', revision: 2 }`
 
 Same design principles as bench.
 
@@ -527,9 +533,9 @@ Same design principles as bench.
 **Blocked by:** WP0.1–WP0.2, WP1.1–WP1.2 and WP4.0.
 **Unlocks:** WP5.3 field-power capture.
 
-Definition ID: `field-standing-broad-jump-r1`
+Definition ID: `field-standing-broad-jump-r2`
 
-Protocol reference: `{ id: 'field-standing-broad-jump', revision: 1 }`
+Protocol reference: `{ id: 'field-standing-broad-jump', revision: 2 }`
 
 Three maximal valid attempts after warm-up/familiarization.
 
@@ -540,9 +546,9 @@ Canonical = best valid distance.
 **Blocked by:** WP0.1–WP0.2, WP1.1–WP1.2 and WP4.0.
 **Unlocks:** WP5.3 field-power capture.
 
-Definition ID: `field-wall-touch-cmj-r1`
+Definition ID: `field-wall-touch-cmj-r2`
 
-Protocol reference: `{ id: 'field-wall-touch-cmj', revision: 1 }`
+Protocol reference: `{ id: 'field-wall-touch-cmj', revision: 2 }`
 
 Capture:
 
@@ -557,9 +563,9 @@ If standing reach is treated as trial context rather than a canonical performanc
 **Blocked by:** WP0.1–WP0.2, WP1.1–WP1.2 and WP4.0.
 **Unlocks:** WP5.3 upper-body ballistic-power capture.
 
-Definition ID: `field-seated-medball-chest-throw-3kg-r1`
+Definition ID: `field-seated-medball-chest-throw-3kg-r2`
 
-Protocol reference: `{ id: 'field-seated-medball-chest-throw-3kg', revision: 1 }`
+Protocol reference: `{ id: 'field-seated-medball-chest-throw-3kg', revision: 2 }`
 
 Three maximal valid attempts.
 
@@ -570,9 +576,9 @@ Canonical = best valid distance.
 **Blocked by:** WP0.1–WP0.3, WP1.1–WP1.2 and WP4.0.
 **Unlocks:** WP5.4 cycling-sprint capture without mutating the old 5 s protocol.
 
-Definition ID: `cycling_6s_seated_sprint-r1`
+Definition ID: `cycling_6s_seated_sprint-r2`
 
-Protocol reference: `{ id: 'cycling-6s-seated-sprint', revision: 1 }`
+Protocol reference: `{ id: 'cycling-6s-seated-sprint', revision: 2 }`
 
 Three maximal 6 s seated efforts with long easy recovery.
 
