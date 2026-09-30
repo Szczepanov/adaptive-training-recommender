@@ -44,6 +44,14 @@ import { activeExternalPlanService, externalRestContextForDate, placedSessionFor
 import type { BriefRestDirective } from '../engine/briefPlanAuthority';
 import { activityOverrideService } from './activityOverrideService';
 import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
+import { performedTrainingOccurrenceRepository } from '../training-occurrence/repository';
+import { projectPlannedExecutionStatus, type PlannedExecutionStatus } from '../training-occurrence/plannedExecutionStatus';
+import { sessionOccurrenceService } from './sessionOccurrenceService';
+import { sessionExecutionService } from './sessionExecutionService';
+import { externalPlanService } from './externalPlanService';
+import { computeContentHash } from '../engine/externalPlanHash';
+import { impliedDate, resolveRestDatesByDate } from '../engine/externalPlacement';
+import { isExternalPlanOccurrence } from '../sessions/models';
 import {
     assertRenderedBriefContract,
     CONTEXT_BRIEF_CONTRACT_VERSION,
@@ -607,6 +615,197 @@ export class ContextBriefService {
             unavailableSources.push('canonical performed-training facts');
         }
 
+        let plannedExecutionStatuses: readonly PlannedExecutionStatus[] | null | undefined;
+        if (purpose === 'planning') {
+            const retrospectiveDates = Array.from({ length: windowDays }, (_, offset) =>
+                addDaysToLocalDateString(startDate, offset));
+            const [occurrenceResult, executionResult, performedResult, authoredPlanResults] = await Promise.allSettled([
+                sessionOccurrenceService.getOccurrencesInRangeState(userId, startDate, targetDate),
+                sessionExecutionService.getExecutionsInRange(userId, startDate, throughExclusive),
+                performedTrainingOccurrenceRepository.queryActiveInDateWindow(userId, startDate, targetDate),
+                fixedActivitiesReadable
+                    ? Promise.all(retrospectiveDates.map(date => activeExternalPlanService.getActivePlanState(userId, date, placementFixedActivities)))
+                    : Promise.resolve([]),
+            ]);
+            const executionsReadable = executionResult.status === 'fulfilled' && executionResult.value.invalidRecords === 0;
+            const performedReadable = performedResult.status === 'fulfilled';
+            const authoredPlansReadable = fixedActivitiesReadable && authoredPlanResults.status === 'fulfilled'
+                && authoredPlanResults.value.every(state => state.status === 'MISSING'
+                    || (state.status === 'AVAILABLE' && Boolean(state.data.plan && state.data.header?.contentHash)));
+            if (occurrenceResult.status !== 'fulfilled' || occurrenceResult.value.status !== 'AVAILABLE'
+                || !executionsReadable || !performedReadable || !recommendationsReadable || !authoredPlansReadable) {
+                plannedExecutionStatuses = null;
+                unavailableSources.push('external-plan execution round-trip inputs');
+            } else {
+                const occurrences = occurrenceResult.value.data;
+                const executions = executionResult.value.executions;
+                const performedOccurrences = performedResult.value;
+                const authoredPlans = authoredPlanResults.value;
+                const candidates = new Map<string, {
+                    date: string;
+                    source: { planId: string; revision: number; sessionId: string; contentHash: string };
+                    occurrenceId?: string;
+                    placementConfirmedMoved?: boolean;
+                }>();
+                const keyFor = (date: string, source: { planId: string; revision: number; sessionId: string; contentHash: string }, occurrenceId?: string) =>
+                    `${date}|${source.planId}|${source.revision}|${source.sessionId}|${source.contentHash}|${occurrenceId ?? ''}`;
+                for (const occurrence of occurrences) {
+                    if (!isExternalPlanOccurrence(occurrence)) continue;
+                    candidates.set(keyFor(occurrence.date, occurrence.externalPlanRef, occurrence.occurrenceId), {
+                        date: occurrence.date, source: occurrence.externalPlanRef, occurrenceId: occurrence.occurrenceId,
+                    });
+                }
+                const activeRestStatuses: PlannedExecutionStatus[] = [];
+                const activeSessionDates = new Set<string>();
+                for (let index = 0; index < authoredPlans.length; index += 1) {
+                    const date = retrospectiveDates[index];
+                    const state = authoredPlans[index];
+                    if (state.status !== 'AVAILABLE') {
+                        if (performedOccurrences.some(item => item.status === 'active' && item.localDate === date)) {
+                            activeRestStatuses.push(projectPlannedExecutionStatus({
+                                date, authored: { kind: 'none' }, occurrencesReadable: true, executionsReadable: true,
+                                performedReadable: true, occurrences, recommendations, executions, performedOccurrences,
+                            }));
+                        }
+                        continue;
+                    }
+                    const active = state.data;
+                    const placedOnDate = active.placed.filter(item => item.date === date
+                        && (item.status === 'planned' || item.status === 'moved'));
+                    if (placedOnDate.length > 0) activeSessionDates.add(date);
+                    for (const placed of placedOnDate) {
+                        const source = {
+                            planId: active.plan.planId, revision: active.plan.revision,
+                            sessionId: placed.session.id, contentHash: active.header.contentHash,
+                        };
+                        const exactOccurrences = occurrences.filter(item => isExternalPlanOccurrence(item)
+                            && item.date === date && item.externalPlanRef.planId === source.planId
+                            && item.externalPlanRef.revision === source.revision && item.externalPlanRef.sessionId === source.sessionId
+                            && item.externalPlanRef.contentHash === source.contentHash);
+                        for (const occurrence of exactOccurrences.length > 0 ? exactOccurrences : [undefined]) {
+                            const candidateKey = keyFor(date, source, occurrence?.occurrenceId);
+                            candidates.set(candidateKey, {
+                                date, source, ...(occurrence ? { occurrenceId: occurrence.occurrenceId } : {}),
+                            });
+                        }
+                    }
+                    const rest = externalRestContextForDate(active, date);
+                    if (rest) activeRestStatuses.push(projectPlannedExecutionStatus({
+                        date,
+                        authored: { kind: 'rest', planId: rest.planId, revision: rest.revision, restDirectiveId: rest.directive.id },
+                        occurrencesReadable: true, executionsReadable: true, performedReadable: true,
+                        occurrences, recommendations, executions, performedOccurrences,
+                    }));
+                    else if (placedOnDate.length === 0
+                        && performedOccurrences.some(item => item.status === 'active' && item.localDate === date)) {
+                        activeRestStatuses.push(projectPlannedExecutionStatus({
+                            date, authored: { kind: 'none' }, occurrencesReadable: true, executionsReadable: true,
+                            performedReadable: true, occurrences, recommendations, executions, performedOccurrences,
+                        }));
+                    }
+                }
+                for (const recommendation of recommendations) {
+                    const source = recommendation.recommendationAudit?.externalPlan;
+                    if (!source) continue;
+                    const occurrenceId = recommendation.recommendationAudit?.primarySession?.occurrenceId;
+                    const hasOccurrence = [...candidates.values()].some(candidate => candidate.date === recommendation.date
+                        && candidate.source.planId === source.planId && candidate.source.revision === source.revision
+                        && candidate.source.sessionId === source.sessionId && candidate.source.contentHash === source.contentHash);
+                    if (!occurrenceId && hasOccurrence) continue;
+                    const key = keyFor(recommendation.date, source, occurrenceId);
+                    candidates.set(key, {
+                        date: recommendation.date, source,
+                        ...(occurrenceId ? { occurrenceId } : {}),
+                    });
+                }
+                const revisionKeys = [...new Set([...candidates.values()].map(item => `${item.source.planId}:${item.source.revision}`))];
+                const revisions = await Promise.all(revisionKeys.map(async key => {
+                    const [planId, revision] = key.split(':');
+                    return [key, await externalPlanService.getRevisionState(userId, planId, Number(revision))] as const;
+                }));
+                const revisionMap = new Map(revisions);
+                const placements = await Promise.all(revisionKeys.map(async key => {
+                    const [planId, revision] = key.split(':');
+                    return [key, await externalPlanService.getPlacementState(userId, planId, Number(revision))] as const;
+                }));
+                const placementMap = new Map(placements);
+                const sessionStatuses = await Promise.all([...candidates.values()].map(async candidate => {
+                    const revisionKey = `${candidate.source.planId}:${candidate.source.revision}`;
+                    const revisionState = revisionMap.get(`${candidate.source.planId}:${candidate.source.revision}`);
+                    const revisionPlan = revisionState?.status === 'AVAILABLE' ? revisionState.data : undefined;
+                    const session = revisionPlan
+                        ? revisionPlan.sessions.find(item => item.id === candidate.source.sessionId)
+                        : undefined;
+                    const revisionHash = revisionPlan
+                        ? await computeContentHash(revisionPlan)
+                        : undefined;
+                    const revisionMatchesSource = revisionHash === candidate.source.contentHash;
+                    const authoredDate = revisionPlan && revisionMatchesSource && session
+                        ? impliedDate(revisionPlan, session)
+                        : undefined;
+                    const placementState = placementMap.get(revisionKey);
+                    const placementAssignment = placementState?.status === 'AVAILABLE'
+                        ? placementState.data.assignments.find(item => item.sessionId === candidate.source.sessionId && item.date === candidate.date)
+                        : undefined;
+                    return projectPlannedExecutionStatus({
+                        date: candidate.date,
+                        authored: revisionMatchesSource && session
+                            ? { kind: 'session', source: candidate.source }
+                            : { kind: 'unknown', reason: 'immutable plan revision could not be verified' },
+                        ...(authoredDate ? { authoredDate } : {}),
+                        ...(candidate.occurrenceId ? { occurrenceId: candidate.occurrenceId } : {}),
+                        ...(candidate.placementConfirmedMoved || placementAssignment?.status === 'moved' ? { placementConfirmedMoved: true } : {}),
+                        occurrencesReadable: true,
+                        executionsReadable: true,
+                        performedReadable: true,
+                        occurrences,
+                        recommendations,
+                        executions,
+                        performedOccurrences,
+                    });
+                }));
+                const restKeys = new Set(activeRestStatuses.flatMap(status => status.authored.kind === 'rest'
+                    ? [`${status.date}|${status.authored.planId}|${status.authored.revision}|${status.authored.restDirectiveId}`]
+                    : []));
+                const restStatuses: PlannedExecutionStatus[] = [];
+                for (const recommendation of recommendations) {
+                    const rest = recommendation.recommendationAudit?.externalRest;
+                    if (!rest || activeSessionDates.has(recommendation.date)) continue;
+                    const key = `${recommendation.date}|${rest.planId}|${rest.revision}|${rest.restDirectiveId}`;
+                    if (restKeys.has(key)) continue;
+                    const revisionState = await externalPlanService.getRevisionState(userId, rest.planId, rest.revision);
+                    const revisionPlan = revisionState.status === 'AVAILABLE' ? revisionState.data : undefined;
+                    const hashMatches = revisionPlan && await computeContentHash(revisionPlan) === rest.contentHash;
+                    const directive = hashMatches ? resolveRestDatesByDate(revisionPlan).get(recommendation.date) : undefined;
+                    if (rest.date === recommendation.date && directive?.id === rest.restDirectiveId) {
+                        restKeys.add(key);
+                        restStatuses.push(projectPlannedExecutionStatus({
+                        date: recommendation.date,
+                        authored: {
+                            kind: 'rest', planId: rest.planId, revision: rest.revision,
+                            restDirectiveId: rest.restDirectiveId,
+                        },
+                        occurrencesReadable: true,
+                        executionsReadable: true,
+                        performedReadable: true,
+                        occurrences,
+                        recommendations,
+                        executions,
+                        performedOccurrences,
+                        }));
+                    } else {
+                        restStatuses.push(projectPlannedExecutionStatus({
+                            date: recommendation.date,
+                            authored: { kind: 'unknown', reason: 'rest provenance did not match the immutable plan revision' },
+                            occurrencesReadable: true, executionsReadable: true, performedReadable: true,
+                            occurrences, recommendations, executions, performedOccurrences,
+                        }));
+                    }
+                }
+                plannedExecutionStatuses = [...sessionStatuses, ...activeRestStatuses, ...restStatuses];
+            }
+        }
+
         const generatedAt = new Date().toISOString();
         const input: ContextBriefInput = {
             asOfDate: targetDate,
@@ -624,6 +823,7 @@ export class ContextBriefService {
             bodyComposition,
             purpose,
             generatedAt,
+            plannedExecutionStatuses,
             effectivePlanningMode: planningContext.mode,
             isExternalPlanAuthority: planningContext.mode === 'externally_planned' || planningContext.externalFallback,
             exposureLedger: {

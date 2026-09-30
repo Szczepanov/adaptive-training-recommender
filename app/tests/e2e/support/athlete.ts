@@ -31,6 +31,9 @@ export interface E2EAthlete {
 export interface PersistedSessionExecution {
   executionId: string;
   state: string;
+  occurrenceId?: string;
+  sessionSource?: { kind?: string; planId?: string; revision?: number; sessionId?: string; contentHash?: string };
+  prescriptionHash?: string;
 }
 
 export interface PersistedSessionRestEvent {
@@ -201,6 +204,9 @@ export async function readSessionExecutions(athlete: E2EAthlete): Promise<Persis
     return snapshot.docs.map(item => ({
       executionId: item.id,
       state: typeof item.data().state === 'string' ? item.data().state : 'invalid',
+      ...(typeof item.data().occurrenceId === 'string' ? { occurrenceId: item.data().occurrenceId } : {}),
+      ...(item.data().sessionSource && typeof item.data().sessionSource === 'object' ? { sessionSource: item.data().sessionSource } : {}),
+      ...(typeof item.data().prescriptionHash === 'string' ? { prescriptionHash: item.data().prescriptionHash } : {}),
     }));
   } finally {
     await deleteApp(app);

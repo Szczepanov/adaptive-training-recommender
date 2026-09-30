@@ -415,7 +415,7 @@ describe('Task 2.2 PlanDefinition & PlanSchedule', () => {
     expect(microcycle.objectives.some(o => o.key === 'race_specific_endurance')).toBe(true);
   });
 
-  it('returns no plan-derived objectives when asOfDate falls before the event-relative plan horizon', async () => {
+  it('falls back to generic Base objectives when asOfDate precedes the event-relative plan horizon', async () => {
     const { buildSeptemberCyclingEventPlan } = await import('./planSchedule.ts');
     const { generateWeeklyObjectives } = await import('./microcycle.ts');
     const planState = buildSeptemberCyclingEventPlan(septemberEvent);
@@ -423,7 +423,10 @@ describe('Task 2.2 PlanDefinition & PlanSchedule', () => {
 
     const phase = evaluatePeriodizationPhase([septemberEvent], '2026-06-20').phase;
     const microcycle = generateWeeklyObjectives(phase, '2026-06-20', septemberEvent, planState.data, '2026-06-20');
-    expect(microcycle.objectives).toEqual([]);
+    expect(microcycle.objectives.map(objective => objective.key)).toEqual([
+      'zone2_aerobic', 'threshold_quality', 'strength_maintenance',
+    ]);
+    expect(microcycle.objectives.find(objective => objective.key === 'zone2_aerobic')?.targetExposures).toBe(2);
   });
 
   it('rejects invalid plan definitions with overlapping blocks', async () => {

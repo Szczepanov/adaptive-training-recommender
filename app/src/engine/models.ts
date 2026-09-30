@@ -624,6 +624,16 @@ export interface ExternalPlanPlacement {
     updatedAt: string;
 }
 
+/** Immutable date authority for one stored external-plan revision. */
+export interface ExternalPlanRevisionActivation {
+    userId: string;
+    planId: string;
+    revision: number;
+    contentHash: string;
+    effectiveFrom: string;
+    activatedAt: string;
+}
+
 /** Stored header for a plan across its revisions. */
 export interface ExternalPlanHeader {
     userId: string;

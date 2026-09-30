@@ -238,6 +238,26 @@ persisted athlete input is a different thing with a confusingly similar name. Bo
 doc comment naming the other. No rename, because `TrainingIntent` is referenced across
 `rules.ts`, `planner.ts`, `sequenceSearch.ts` and their tests.
 
+
+## Amendment — 2026-09-30: date-local structured cycling authority (#925)
+
+D-MODE's distinction between athlete mode and engine capability is retained, but structured
+cycling authority is now **date-local**. A future cycling event may remain the
+`event_directed` focus context while its generated `PlanDefinition` has no block that
+contains the evaluated date. In that case `PlanningContext.eventStrategy` is
+`evergreen_fallback`: the event remains available for periodization/UI context, while the
+Evergreen evidence → dose → capacity → exact-role pipeline owns the executable week.
+
+`structured_plan` is reported only when a structured block actually owns the date. An
+explicit authored travel block can therefore activate structured authority before the
+derived build window; otherwise the generated cycling build starts at its authored -84 day
+boundary. Non-cycling eligible events continue to use `demand_derived`.
+
+This is an authority correction, not a new persisted planning mode and not permission to
+fabricate a Base block. ADR-0016 exact-role coverage remains unchanged: provider semantic
+labels may preserve physiological provenance, but they do not manufacture exact workout
+identity or weekly role credit.
+
 ## Consequences
 
 ### Positive

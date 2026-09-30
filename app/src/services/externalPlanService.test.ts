@@ -1,51 +1,51 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EXTERNAL_PLAN_SCHEMA } from '../engine/models';
+import fixture01 from '../sessions/fixtures/01-full-body-maintenance.json';
 
 const firestore = vi.hoisted(() => {
     const committedDocs = new Map<string, unknown>();
-    // Every `writeBatch()` call must return a genuinely independent batch, exactly like
-    // real Firestore -- a shared singleton batch would let one call's staged writes (or
-    // a failed commit's leftovers) leak into a later, unrelated batch, which is precisely
-    // what a "the retry batch contains only its own writes" assertion needs to catch.
-    const batches: Array<{
+    const transactions: Array<{
         set: ReturnType<typeof vi.fn>;
-        commit: ReturnType<typeof vi.fn>;
         stagedWrites: Array<{ path: string; data: unknown }>;
     }> = [];
-    let pendingCommitError: Error | null = null;
-
-    function createBatch() {
-        const stagedWrites: Array<{ path: string; data: unknown }> = [];
-        const commitError = pendingCommitError;
-        pendingCommitError = null;
-        const batch = {
-            set: vi.fn((ref: { path: string }, data: unknown) => {
-                stagedWrites.push({ path: ref.path, data });
-            }),
-            commit: vi.fn(async () => {
-                if (commitError) throw commitError;
-                for (const w of stagedWrites) committedDocs.set(w.path, w.data);
-            }),
-            stagedWrites,
-        };
-        batches.push(batch);
-        return batch;
-    }
+    let transactionError: Error | null = null;
 
     return {
         collection: vi.fn(),
         doc: vi.fn(),
-        getDoc: vi.fn(),
+        getDoc: vi.fn((ref: { path: string }) => Promise.resolve({
+            exists: () => committedDocs.has(ref.path),
+            data: () => committedDocs.get(ref.path),
+        })),
         getDocs: vi.fn(),
         setDoc: vi.fn((ref: { path: string }, data: unknown) => {
             committedDocs.set(ref.path, data);
         }),
-        writeBatch: vi.fn(() => createBatch()),
-        batches,
-        /** Makes only the very next `writeBatch()`-created batch's `commit()` reject --
-         * later batches (e.g. a retry's) are unaffected. */
-        failNextBatchCommit(error: Error) {
-            pendingCommitError = error;
+        runTransaction: vi.fn(async (_db: unknown, callback: (transaction: {
+            get: (ref: { path: string }) => Promise<{ exists: () => boolean; data: () => unknown }>;
+            set: ReturnType<typeof vi.fn>;
+        }) => Promise<unknown>) => {
+            if (transactionError) {
+                const error = transactionError;
+                transactionError = null;
+                throw error;
+            }
+            const stagedWrites: Array<{ path: string; data: unknown }> = [];
+            const tx = {
+                get: vi.fn(async (ref: { path: string }) => ({
+                    exists: () => committedDocs.has(ref.path),
+                    data: () => committedDocs.get(ref.path),
+                })),
+                set: vi.fn((ref: { path: string }, data: unknown) => stagedWrites.push({ path: ref.path, data })),
+            };
+            const result = await callback(tx);
+            transactions.push({ set: tx.set, stagedWrites });
+            for (const write of stagedWrites) committedDocs.set(write.path, write.data);
+            return result;
+        }),
+        transactions,
+        failNextTransaction(error: Error) {
+            transactionError = error;
         },
         committedDocs,
     };
@@ -71,43 +71,45 @@ function plan(overrides: Record<string, unknown> = {}) {
     };
 }
 
-/** Records which document path each write targeted, in order, across every batch
- * created plus any direct `setDoc` calls. */
+/** Records which document path each write targeted, in order, across transactions. */
 function writtenPaths(): string[] {
-    const batchPaths = firestore.batches.flatMap(batch => batch.set.mock.calls.map(call => (call[0] as { path: string }).path));
+    const txPaths = firestore.transactions.flatMap(transaction => transaction.set.mock.calls.map(call => (call[0] as { path: string }).path));
     const setDocPaths = firestore.setDoc.mock.calls.map(call => (call[0] as { path: string }).path);
-    return [...batchPaths, ...setDocPaths];
+    return [...txPaths, ...setDocPaths];
 }
 
 describe('ExternalPlanService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         firestore.committedDocs.clear();
-        firestore.batches.length = 0;
+        firestore.transactions.length = 0;
         firestore.doc.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }));
         firestore.collection.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }));
-        firestore.getDoc.mockResolvedValue({ exists: () => false });
+        firestore.getDoc.mockImplementation((ref: { path: string }) => Promise.resolve({
+            exists: () => firestore.committedDocs.has(ref.path),
+            data: () => firestore.committedDocs.get(ref.path),
+        }));
         firestore.setDoc.mockImplementation((ref: { path: string }, data: unknown) => {
             firestore.committedDocs.set(ref.path, data);
             return Promise.resolve(undefined);
         });
     });
 
-    it('writes the revision and header through a single batch so both commit together', async () => {
+    it('writes revision, immutable activation and latest header atomically', async () => {
         const result = await new ExternalPlanService().import('u1', plan());
 
-        expect(result.status).toBe('AVAILABLE');
+        expect(result).toMatchObject({ status: 'AVAILABLE' });
         expect(writtenPaths()).toEqual([
             'users/u1/external_plans/autumn-block/revisions/1',
+            'users/u1/external_plans/autumn-block/activations/1',
             'users/u1/external_plans/autumn-block',
         ]);
-        expect(firestore.writeBatch).toHaveBeenCalledTimes(1);
-        expect(firestore.batches).toHaveLength(1);
-        expect(firestore.batches[0].commit).toHaveBeenCalledTimes(1);
+        expect(firestore.runTransaction).toHaveBeenCalledTimes(1);
+        expect(firestore.transactions).toHaveLength(1);
     });
 
-    it('leaves neither document committed when the batch commit fails, and allows retry to succeed with its own independent batch', async () => {
-        firestore.failNextBatchCommit(new Error('network error during batch commit'));
+    it('leaves no partial import when the transaction fails, and allows retry', async () => {
+        firestore.failNextTransaction(new Error('network error during transaction'));
 
         const service = new ExternalPlanService();
         const failedResult = await service.import('u1', plan());
@@ -117,31 +119,29 @@ describe('ExternalPlanService', () => {
             retryable: true,
         });
         expect(firestore.committedDocs.size).toBe(0);
-        expect(firestore.batches).toHaveLength(1);
-        expect(firestore.batches[0].set).toHaveBeenCalledTimes(2);
+        expect(firestore.transactions).toHaveLength(0);
 
         const retryResult = await service.import('u1', plan());
         expect(retryResult.status).toBe('AVAILABLE');
 
-        // The retry used a second, independent batch -- not the failed first batch's
-        // leftover staged writes -- and that second batch contains exactly its own two
-        // writes, not four (its two plus the failed attempt's stale two).
-        expect(firestore.batches).toHaveLength(2);
-        expect(firestore.batches[1].set).toHaveBeenCalledTimes(2);
-        expect(firestore.batches[1].stagedWrites.map(w => w.path)).toEqual([
+        expect(firestore.transactions).toHaveLength(1);
+        expect(firestore.transactions[0].set).toHaveBeenCalledTimes(3);
+        expect(firestore.transactions[0].stagedWrites.map(w => w.path)).toEqual([
             'users/u1/external_plans/autumn-block/revisions/1',
+            'users/u1/external_plans/autumn-block/activations/1',
             'users/u1/external_plans/autumn-block',
         ]);
         expect(firestore.committedDocs.has('users/u1/external_plans/autumn-block/revisions/1')).toBe(true);
+        expect(firestore.committedDocs.has('users/u1/external_plans/autumn-block/activations/1')).toBe(true);
         expect(firestore.committedDocs.has('users/u1/external_plans/autumn-block')).toBe(true);
-        expect(firestore.committedDocs.size).toBe(2);
+        expect(firestore.committedDocs.size).toBe(3);
     });
 
     it('writes nothing at all when the plan does not satisfy the contract', async () => {
         const result = await new ExternalPlanService().import('u1', plan({ startDate: '2026-08-18' }));
 
         expect(result.status).toBe('INVALID');
-        expect(firestore.writeBatch).not.toHaveBeenCalled();
+        expect(firestore.runTransaction).not.toHaveBeenCalled();
         expect(firestore.setDoc).not.toHaveBeenCalled();
     });
 
@@ -154,20 +154,27 @@ describe('ExternalPlanService', () => {
     });
 
     it('refuses a revision older than the stored one', async () => {
-        firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ revision: 3 }) });
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block', { revision: 3 });
 
         const older = await new ExternalPlanService().import('u1', plan({ revision: 2 }));
         expect(older.status).toBe('INVALID');
         if (older.status !== 'INVALID') throw new Error('unreachable');
         expect(older.issues[0].code).toBe('revision-not-newer');
-        expect(firestore.writeBatch).not.toHaveBeenCalled();
+        expect(firestore.runTransaction).toHaveBeenCalledOnce();
         expect(firestore.setDoc).not.toHaveBeenCalled();
     });
 
     it('allows a newer revision only after validating the immutable predecessor bytes', async () => {
-        firestore.getDoc
-            .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 3 }) })
-            .mockResolvedValueOnce({ exists: () => true, data: () => plan({ revision: 3 }) });
+        const predecessor = plan({ revision: 3 });
+        const hash = await computeContentHash(predecessor as never);
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block', {
+            userId: 'u1', planId: 'autumn-block', revision: 3, title: '4-week block', startDate: '2026-08-17',
+            weekCount: 4, contentHash: hash, importedAt: '2026-08-17T00:00:00.000Z', supersededFrom: '2026-08-17', updatedAt: '2026-08-17T00:00:00.000Z',
+        });
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block/revisions/3', predecessor);
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block/activations/3', {
+            userId: 'u1', planId: 'autumn-block', revision: 3, contentHash: hash, effectiveFrom: '2026-08-17', activatedAt: '2026-08-17T00:00:00.000Z',
+        });
 
         const newer = await new ExternalPlanService().import('u1', plan({ revision: 4 }));
         expect(newer.status).toBe('AVAILABLE');
@@ -183,12 +190,20 @@ describe('ExternalPlanService', () => {
         expect(writtenPaths().filter(path => path.includes('/revisions/'))).toEqual(
             ['users/u1/external_plans/autumn-block/revisions/1'],
         );
+        expect(writtenPaths()).toContain('users/u1/external_plans/autumn-block/activations/1');
     });
 
     it('supersedes forward only, touching nothing a previously adjudicated day depends on', async () => {
-        firestore.getDoc
-            .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 1 }) })
-            .mockResolvedValueOnce({ exists: () => true, data: () => plan({ revision: 1 }) });
+        const predecessor = plan({ revision: 1 });
+        const hash = await computeContentHash(predecessor as never);
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block', {
+            userId: 'u1', planId: 'autumn-block', revision: 1, title: '4-week block', startDate: '2026-08-17',
+            weekCount: 4, contentHash: hash, importedAt: '2026-08-17T00:00:00.000Z', supersededFrom: '2026-08-17', updatedAt: '2026-08-17T00:00:00.000Z',
+        });
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block/revisions/1', predecessor);
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block/activations/1', {
+            userId: 'u1', planId: 'autumn-block', revision: 1, contentHash: hash, effectiveFrom: '2026-08-17', activatedAt: '2026-08-17T00:00:00.000Z',
+        });
 
         const result = await new ExternalPlanService().import('u1', plan({ revision: 2 }), '2026-08-20');
         expect(result.status).toBe('AVAILABLE');
@@ -198,10 +213,73 @@ describe('ExternalPlanService', () => {
         // recommendation and its audit are byte-identical after this import.
         expect(writtenPaths()).toEqual([
             'users/u1/external_plans/autumn-block/revisions/2',
+            'users/u1/external_plans/autumn-block/activations/2',
             'users/u1/external_plans/autumn-block',
         ]);
         expect(writtenPaths().some(path => path.includes('/recommendations/'))).toBe(false);
         expect(writtenPaths().some(path => path.endsWith('/revisions/1'))).toBe(false);
+    });
+
+    it('materializes a provable legacy predecessor activation before a future successor', async () => {
+        const predecessor = plan({ revision: 1 });
+        const hash = await computeContentHash(predecessor as never);
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block', {
+            userId: 'u1', planId: 'autumn-block', revision: 1, title: '4-week block', startDate: '2026-08-17',
+            weekCount: 4, contentHash: hash, importedAt: '2026-08-17T00:00:00.000Z', supersededFrom: '2026-08-17', updatedAt: '2026-08-17T00:00:00.000Z',
+        });
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block/revisions/1', predecessor);
+
+        const result = await new ExternalPlanService().import('u1', plan({ revision: 2 }), '2026-08-20');
+        expect(result.status).toBe('AVAILABLE');
+        expect(writtenPaths()).toEqual([
+            'users/u1/external_plans/autumn-block/activations/1',
+            'users/u1/external_plans/autumn-block/revisions/2',
+            'users/u1/external_plans/autumn-block/activations/2',
+            'users/u1/external_plans/autumn-block',
+        ]);
+        expect(firestore.committedDocs.get('users/u1/external_plans/autumn-block/activations/1')).toMatchObject({
+            revision: 1, effectiveFrom: '2026-08-17', contentHash: hash,
+        });
+    });
+
+    it('allows a v6 successor to preserve materialized v5 intent blocks', async () => {
+        const intentBlock = {
+            id: 'block-1', startWeek: 1, startDay: 'monday', endWeek: 2, endDay: 'sunday',
+            objectives: [{
+                id: 'obj-1', sport: 'cycling', adaptationScope: 'zone2_aerobic', coverageKey: 'aerobic_volume',
+                intent: 'maintain', priority: 'must_have',
+                doseEnvelope: { min: 60, target: 90, max: 120, unit: 'minutes', floorSemantics: 'soft_floor' },
+                knowledgeLineage: ['claim-1'], successCriteria: { minCompletedExposures: 2 },
+            }],
+            reviewCadenceDays: 14, nextReviewWeek: 2, nextReviewDay: 'sunday',
+        };
+        const predecessor = plan({
+            schema: 'adaptive-training-recommender/external-plan@5', revision: 1, restDays: [], intentBlocks: [intentBlock],
+            sessions: [{
+                id: 'w1-a', title: 'Threshold', priority: 'key',
+                placement: { week: 1, preferredDay: 'tuesday', flexibility: 'preferred', ifMissed: 'drop' },
+                gating: { modality: 'cycling', intensity: 'hard', durationMin: 60, durationMax: 75, environment: 'either', equipment: [] },
+                definition: fixture01,
+            }],
+        });
+        const hash = await computeContentHash(predecessor as never);
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block', {
+            userId: 'u1', planId: 'autumn-block', revision: 1, title: '4-week block', startDate: '2026-08-17',
+            weekCount: 4, contentHash: hash, importedAt: '2026-08-17T00:00:00.000Z', supersededFrom: '2026-08-17', updatedAt: '2026-08-17T00:00:00.000Z',
+        });
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block/revisions/1', predecessor);
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block/activations/1', {
+            userId: 'u1', planId: 'autumn-block', revision: 1, contentHash: hash, effectiveFrom: '2026-08-17', activatedAt: '2026-08-17T00:00:00.000Z',
+        });
+        const successor = {
+            ...predecessor,
+            schema: 'adaptive-training-recommender/external-plan@6',
+            revision: 2,
+            sessions: predecessor.sessions.map((session: { id: string }) => ({ ...session, scaling: { reducible: false } })),
+        };
+
+        const result = await new ExternalPlanService().import('u1', successor, '2026-08-20');
+        expect(result).toMatchObject({ status: 'AVAILABLE' });
     });
 
     it('re-validates a stored revision on read instead of trusting it', async () => {

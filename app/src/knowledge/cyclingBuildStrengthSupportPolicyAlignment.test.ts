@@ -36,7 +36,7 @@ describe('cycling build strength-support policy alignment (ADR-0033, issue #801)
         const floor = strengthRequirement('required').floor;
         expect(floor).toMatchObject({ dose: { unit: 'sessions', value: 2 } });
         expect(strengthRequirement('required').knowledgeRefs[0]).toBe(KNOWLEDGE_CLAIM_IDS.adultStrengthHealthFrequency);
-        const eventContext = { mode: 'event_directed' } as PlanningContext;
+        const eventContext = { mode: 'event_directed', eventStrategy: 'structured_plan' } as PlanningContext;
         expect(eventStrengthSupportSessions(eventContext, profile(['endurance', 'strength_muscle']))).toBe((floor?.dose.value ?? 0) - 1);
     });
 

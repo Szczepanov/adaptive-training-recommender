@@ -6,8 +6,12 @@ Markdown.
 
 This document describes the v3 contract defined under issue #894. The export exposes
 purpose/version/window identity, source state and currency, canonical performed training,
-and purpose-specific bounded telemetry. The final artifact remains Markdown; JSON is a
-versioned transport envelope around that same content.
+and purpose-specific bounded telemetry. Issue #893 adds a bounded exact-identity external-plan
+execution round-trip section to planning exports. The final artifact remains Markdown; JSON is a
+versioned transport envelope around that same content. Morning D-1 adherence still uses its
+separate raw-activity debrief path. Remaining #894 work includes full missingness states outside
+completed training, per-source currency, size budgets, golden fixtures and end-to-end regression
+coverage.
 
 ## Export boundary
 
@@ -118,7 +122,8 @@ state/currency semantics advanced it to v3. Provider activity IDs and structured
 are brief/export provenance and are opt-in at the performed-facts service boundary; default
 performed-training facts used by recommendation/audit/replay paths retain their prior shape and
 content-hash inputs. The engine `POLICY_VERSION` is unchanged because recommendation selection
-and safety policy did not change.
+and safety policy did not change. The issue #893 round-trip section composes with that existing v3
+semantics and does not alter recommendation selection or safety policy.
 
 ## Information bounds
 

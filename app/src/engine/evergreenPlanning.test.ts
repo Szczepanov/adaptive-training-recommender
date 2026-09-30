@@ -79,8 +79,15 @@ describe('resolveEvergreenPlan date-local event fallback (#925)', () => {
         );
         expect(plan).not.toBeNull();
         expect(plan!.planDefinition.coverageSetId).toBe('evergreen_general');
-        expect(plan!.planDefinition.objectives.find(objective => objective.coverageKey === 'primary_strength'))
-            .toMatchObject({ requiredCredit: 2, coverageMinimumSessions: 2, coverageTargetSessions: 2 });
+        const strengthObjective = plan!.planDefinition.objectives.find(objective => objective.coverageKey === 'primary_strength');
+        expect(strengthObjective).toMatchObject({ requiredCredit: 1, coverageMinimumSessions: 1, coverageTargetSessions: 1 });
+        // ADR-0017 D-CAP keeps required-role packing within minSessions. The evidence-backed
+        // two-session strength floor remains intact and any capacity miss must stay explicit.
+        expect(plan!.budget.requirements.find(requirement => requirement.adaptation === 'strength')?.floor)
+            .toMatchObject({ dose: { unit: 'sessions', value: 2 }, semantics: 'guideline_recommended_minimum' });
+        expect(plan!.budget.shortfalls).toContainEqual(expect.objectContaining({
+            adaptation: 'strength', code: 'below_guideline_range',
+        }));
     });
 });
 

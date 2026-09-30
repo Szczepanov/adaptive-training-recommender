@@ -2,7 +2,15 @@
 
 **Date:** 2026-09-30
 **Scope:** recommendation engine, Garmin-completed training semantics, canonical performed-training facts, weekly role coverage, cycling Base-phase planning, and strength/power frequency
-**Status:** analysis only; no recommendation policy is changed by this document
+**Status:** analysis + implementation record for PR #925; P0/P1 implemented, P2/P3 deferred, P4 only partially restored through Evergreen fallback
+
+## Implementation status in PR #925
+
+- **P0 implemented:** structured cycling authority is date-local; far-out event context is retained while Evergreen owns executable programming until an authored block becomes active. Explicit travel overlays can activate structured authority earlier.
+- **P1 implemented:** Garmin/provider-neutral `stimulusDomain`, `sessionCost`, evidence and classification version survive completed-training and canonical performed-fact boundaries when structured execution is absent. Structured execution remains stronger authority.
+- **P2 not implemented:** preserved provider semantics are not yet a new optimizer/objective-credit or same-family sequence rule.
+- **P3 not implemented:** `semantic_confident` weekly coverage remains disabled; exact ADR-0016 role identity stays strict.
+- **P4 partial:** the far-out Base vacuum no longer erases Evergreen strength programming. This PR does not alter ADR-0017 capacity packing to force two strength occurrences when the declared minimum session capacity cannot fit all required dose; the two-session evidence floor remains visible through explicit shortfall semantics.
 
 ## Reported production symptom
 
@@ -523,9 +531,11 @@ This turns the current debugging question from speculation into an auditable tra
 
 ---
 
-## 9. Proposed implementation sequence
+## 9. Implementation sequence and current status
 
 ### P0 — fix plan authority outside structured-plan coverage
+
+**PR #925: implemented.**
 
 Goal: eliminate the Base objective/coverage vacuum.
 
@@ -539,12 +549,16 @@ This is the smallest fix with the largest expected effect on the current screens
 
 ### P1 — preserve stimulus-domain semantics through canonical performed facts
 
+**PR #925: implemented.**
+
 - Extend performed exposure facts with provider-neutral stimulus domain / session cost / provenance.
 - Structured execution remains semantic authority when it exists.
 - Garmin supplies measured provider semantics when structured semantics are absent.
 - Do not persist duplicate recommendation-specific interpretations into the occurrence record; derive versioned facts.
 
 ### P2 — use domain-aware history for objective credit and sequence decisions
+
+**PR #925: deferred.**
 
 - Replace coarse modality x intensity stimulus estimation when versioned domain evidence is available.
 - Feed canonical performed semantic recency into sequence logic.
@@ -553,12 +567,16 @@ This is the smallest fix with the largest expected effect on the current screens
 
 ### P3 — selective semantic coverage
 
+**PR #925: deferred.**
+
 - Define an explicit ADR/policy for `semantic_confident`.
 - Start with narrowly provable roles such as sufficiently long endurance/aerobic volume.
 - Keep exact primary strength and complex quality roles strict until equivalent evidence rules are authored.
 - Record why semantic credit was accepted/rejected.
 
 ### P4 — align Base hybrid strength/power frequency with durable intent / active mesocycle
+
+**PR #925: partial.** Evergreen fallback restores the generic strength requirement before the event block begins; no new global allocation/frequency rule is introduced.
 
 - Ensure two resistance/power exposures survive when the athlete's durable/current plan calls for them and capacity/recovery permit.
 - Reuse #801's primary-vs-support distinction.

@@ -19,8 +19,9 @@ import type { ExternalPlanSessionV2, ExternalTrainingPlanV2 } from './externalPl
 import type { ExternalTrainingPlanV3 } from './externalPlanV3';
 import type { ExternalPlanSessionV4, ExternalTrainingPlanV4 } from './externalPlanV4';
 import type { ExternalTrainingPlanV5 } from './externalPlanV5';
+import type { ExternalPlanSessionV6, ExternalTrainingPlanV6 } from './externalPlanV6';
 
 /** v5 (ADR-0037) is plan-level like v3, not session-level like v4 -- no new
  * `AnyExternalPlanSession` member is needed, same reasoning v3 documents above. */
-export type AnyExternalTrainingPlan = ExternalTrainingPlan | ExternalTrainingPlanV2 | ExternalTrainingPlanV3 | ExternalTrainingPlanV4 | ExternalTrainingPlanV5;
-export type AnyExternalPlanSession = ExternalPlanSession | ExternalPlanSessionV2 | ExternalPlanSessionV4;
+export type AnyExternalTrainingPlan = ExternalTrainingPlan | ExternalTrainingPlanV2 | ExternalTrainingPlanV3 | ExternalTrainingPlanV4 | ExternalTrainingPlanV5 | ExternalTrainingPlanV6;
+export type AnyExternalPlanSession = ExternalPlanSession | ExternalPlanSessionV2 | ExternalPlanSessionV4 | ExternalPlanSessionV6;

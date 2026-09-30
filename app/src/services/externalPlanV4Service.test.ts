@@ -10,6 +10,10 @@ const firestore = vi.hoisted(() => {
     return {
         collection: vi.fn(), doc: vi.fn(), getDoc: vi.fn(), getDocs: vi.fn(), setDoc: vi.fn(),
         writeBatch: vi.fn(() => batch),
+        runTransaction: vi.fn(async (_db: unknown, callback: (transaction: { get: (ref: unknown) => Promise<unknown>; set: typeof batch.set }) => Promise<unknown>) => callback({
+            get: (ref: unknown) => firestore.getDoc(ref),
+            set: batch.set,
+        })),
         batch,
     };
 });
@@ -118,9 +122,18 @@ describe('ExternalPlanService external-plan@4 integration', () => {
     });
 
     it('accepts a newer v4 revision when a lower revision and its immutable bytes are already active', async () => {
+        const predecessor = v4Plan({ revision: 1 });
+        const contentHash = await computeContentHash(predecessor);
         firestore.getDoc
-            .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 1 }) })
-            .mockResolvedValueOnce({ exists: () => true, data: () => v4Plan({ revision: 1 }) });
+            .mockResolvedValueOnce({ exists: () => true, data: () => ({
+                userId: 'u1', planId: predecessor.planId, revision: 1, title: predecessor.title,
+                startDate: predecessor.startDate, weekCount: predecessor.weekCount, contentHash,
+                importedAt: '2026-08-17T00:00:00.000Z', supersededFrom: predecessor.startDate,
+            }) })
+            .mockResolvedValueOnce({ exists: () => false })
+            .mockResolvedValueOnce({ exists: () => false })
+            .mockResolvedValueOnce({ exists: () => true, data: () => predecessor })
+            .mockResolvedValueOnce({ exists: () => false });
 
         const result = await new ExternalPlanService().import('u1', v4Plan({ revision: 2 }));
 

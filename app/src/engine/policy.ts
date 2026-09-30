@@ -6,7 +6,7 @@ export const POLICY_VERSION = '2026-09-date-scoped-event-plan-authority-v1';
  * audits remain readable evidence, but replay is rejected explicitly because the old
  * decision function is not bundled alongside the current policy. */
 export const HISTORICAL_POLICY_VERSIONS = [
-    '2026-09-prospective-decision-context-canonical-facts-v1',
+    '2026-09-external-plan-activation-history-v1',
     '2026-09-date-scoped-mechanical-spacing-v1',
     '2026-09-static-registry-lookup-indexes-v1',
     '2026-09-periodic-athletic-capability-maintenance-v4',
@@ -143,6 +143,7 @@ export const HISTORICAL_POLICY_VERSIONS = [
     '2026-08-objective-credit-v2-v2',
     '2026-08-phase5-sequence-planning-v1',
     '2026-08-phase6-correctness-carryovers-v1',
+    '2026-09-prospective-decision-context-canonical-facts-v1',
 ] as const;
 
 export function isHistoricalPolicyVersion(version: string): boolean {

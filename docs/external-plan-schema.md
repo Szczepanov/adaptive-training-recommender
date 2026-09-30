@@ -8,7 +8,9 @@
 > and where the two disagree the code wins. The round-trip against a real generated plan
 > required no schema change. **v2** (`external-plan@2`, M3.6) is documented separately
 > below — v1 remains fully importable and this document's v1 sections are otherwise
-> unchanged.
+> unchanged. New copy/paste external-coach imports emit **v6** (`external-plan@6`), which
+> inherits v5 and adds an optional exact `scaling.reducedDefinition`. Historical v1–v5 plans
+> remain readable; v6 reduced definitions are the only structured scaled form the app can launch.
 
 The athlete authors a training plan with a general-purpose AI, which emits JSON against
 the schema below. This application imports it, validates it at the persistence boundary,
@@ -189,13 +191,30 @@ This is the external equivalent of the catalog's authored `easierDose`/`harderDo
 `DoseVariation`, and it is what turns a `scale` verdict from a multiplier into an
 athlete-facing reduced prescription.
 
-For `external-plan@2`–`@4`, however, `reducedSummary` and `reducedDurationMin` do **not**
+For `external-plan@2`–`@5`, however, `reducedSummary` and `reducedDurationMin` do **not**
 constitute a second executable `SessionDefinition`. The runner must not parse free text into
 steps, and it must not bind the original full-dose definition under a reduced verdict. Today,
 Home therefore shows the adjudicated reduced summary/dose but withholds structured **Start**
-for `scale`. Executable scaled imports require a future versioned schema/ADR that carries the
-reduced structured definition explicitly; `proceed` remains executable from the imported
-definition as written.
+for `scale`. V6 may include a full `scaling.reducedDefinition` `SessionDefinition`; when present,
+it must retain the authored session id, intent, and dominant modality and is validated through
+the same session-definition boundary as the full definition. The app freezes and launches only
+that exact reduced definition for a `scale` verdict. If it is absent, `scale` remains non-launchable.
+For `proceed`, the app uses the original definition. Free-text `fallback` remains advisory.
+
+## Revision activation history
+
+Each new immutable revision has an immutable activation record at
+`users/{uid}/external_plans/{planId}/activations/{revision}`. It records `effectiveFrom` in
+Europe/Warsaw local-date form and the revision content hash. A future-effective revision leaves
+its predecessor active before that date. New placement writes are scoped to
+`revisions/{revision}/placement/current`; the legacy `placement/current` document is read only
+when its embedded revision matches. The mutable plan header is a latest-revision index, not the
+historical date-to-revision authority.
+
+A revision is a full replacement for the horizon it declares. Omitted sessions are removed;
+they are not implicitly carried forward from an earlier revision. The import preview therefore
+shows the effective date and the added, changed, removed, and retained session counts before
+confirmation.
 
 `minimumUsefulDurationMin` is the floor below which the session stops being worth doing —
 under it, the verdict becomes `defer` or `skip` rather than a pointless fragment.

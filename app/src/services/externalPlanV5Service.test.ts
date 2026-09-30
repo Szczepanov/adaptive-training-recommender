@@ -11,6 +11,10 @@ const firestore = vi.hoisted(() => {
     return {
         collection: vi.fn(), doc: vi.fn(), getDoc: vi.fn(), getDocs: vi.fn(), setDoc: vi.fn(),
         writeBatch: vi.fn(() => batch),
+        runTransaction: vi.fn(async (_db: unknown, callback: (transaction: { get: (ref: unknown) => Promise<unknown>; set: typeof batch.set }) => Promise<unknown>) => callback({
+            get: (ref: unknown) => firestore.getDoc(ref),
+            set: batch.set,
+        })),
         batch,
     };
 });
@@ -189,14 +193,23 @@ describe('ExternalPlanService external-plan@5 integration', () => {
     });
 
     it('allows a newer v5 revision to supersede an existing block when its stable id is retained', async () => {
+        const predecessor = v5Plan({ revision: 2 });
+        const contentHash = await computeContentHash(predecessor);
         firestore.getDoc
-            .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 2 }) })
-            .mockResolvedValueOnce({ exists: () => true, data: () => v5Plan({ revision: 2 }) });
+            .mockResolvedValueOnce({ exists: () => true, data: () => ({
+                userId: 'u1', planId: predecessor.planId, revision: 2, title: predecessor.title,
+                startDate: predecessor.startDate, weekCount: predecessor.weekCount, contentHash,
+                importedAt: '2026-08-17T00:00:00.000Z', supersededFrom: predecessor.startDate,
+            }) })
+            .mockResolvedValueOnce({ exists: () => false })
+            .mockResolvedValueOnce({ exists: () => false })
+            .mockResolvedValueOnce({ exists: () => true, data: () => predecessor })
+            .mockResolvedValueOnce({ exists: () => false });
 
         const result = await new ExternalPlanService().import('u1', v5Plan({ revision: 3 }));
 
         expect(result.status).toBe('AVAILABLE');
-        expect(firestore.batch.set).toHaveBeenCalledTimes(2);
+        expect(firestore.batch.set).toHaveBeenCalledTimes(4);
     });
 
     it('fails closed when the header points to a missing predecessor revision', async () => {
@@ -219,6 +232,8 @@ describe('ExternalPlanService external-plan@5 integration', () => {
     it('fails closed when predecessor bytes do not match the header/path identity', async () => {
         firestore.getDoc
             .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 2 }) })
+            .mockResolvedValueOnce({ exists: () => false })
+            .mockResolvedValueOnce({ exists: () => false })
             .mockResolvedValueOnce({ exists: () => true, data: () => v5Plan({ planId: 'different-plan', revision: 2 }) });
 
         const result = await new ExternalPlanService().import('u1', v5Plan({ revision: 3 }));
@@ -234,9 +249,18 @@ describe('ExternalPlanService external-plan@5 integration', () => {
     });
 
     it('rejects implicit retirement when a newer v5 revision omits a previously materializable block id', async () => {
+        const predecessor = v5Plan({ revision: 2 });
+        const contentHash = await computeContentHash(predecessor);
         firestore.getDoc
-            .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 2 }) })
-            .mockResolvedValueOnce({ exists: () => true, data: () => v5Plan({ revision: 2 }) });
+            .mockResolvedValueOnce({ exists: () => true, data: () => ({
+                userId: 'u1', planId: predecessor.planId, revision: 2, title: predecessor.title,
+                startDate: predecessor.startDate, weekCount: predecessor.weekCount, contentHash,
+                importedAt: '2026-08-17T00:00:00.000Z', supersededFrom: predecessor.startDate,
+            }) })
+            .mockResolvedValueOnce({ exists: () => false })
+            .mockResolvedValueOnce({ exists: () => false })
+            .mockResolvedValueOnce({ exists: () => true, data: () => predecessor })
+            .mockResolvedValueOnce({ exists: () => false });
 
         const result = await new ExternalPlanService().import('u1', v5Plan({ revision: 3, intentBlocks: [] }));
 
@@ -250,9 +274,18 @@ describe('ExternalPlanService external-plan@5 integration', () => {
     });
 
     it('rejects a schema downgrade that would silently strand v5 intent blocks', async () => {
+        const predecessor = v5Plan({ revision: 2 });
+        const contentHash = await computeContentHash(predecessor);
         firestore.getDoc
-            .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 2 }) })
-            .mockResolvedValueOnce({ exists: () => true, data: () => v5Plan({ revision: 2 }) });
+            .mockResolvedValueOnce({ exists: () => true, data: () => ({
+                userId: 'u1', planId: predecessor.planId, revision: 2, title: predecessor.title,
+                startDate: predecessor.startDate, weekCount: predecessor.weekCount, contentHash,
+                importedAt: '2026-08-17T00:00:00.000Z', supersededFrom: predecessor.startDate,
+            }) })
+            .mockResolvedValueOnce({ exists: () => false })
+            .mockResolvedValueOnce({ exists: () => false })
+            .mockResolvedValueOnce({ exists: () => true, data: () => predecessor })
+            .mockResolvedValueOnce({ exists: () => false });
         const downgraded = v5Plan({ schema: EXTERNAL_PLAN_SCHEMA_V4, revision: 3 }) as Record<string, unknown>;
         delete downgraded.intentBlocks;
 
