@@ -9,6 +9,7 @@ takes precedence for its subtree.
 **Read [`CLAUDE.md`](./CLAUDE.md) first** — it holds the invariants you must not violate,
 the pre-change checks, and the verification loop. This file answers *"where is it and what
 do I run?"*; `CLAUDE.md` answers *"what am I allowed to do?"*.
+
 **Instruction-size invariant:** keep this file below **32 KiB UTF-8** and keep mandatory routing
 near the top. Detailed inventories belong under `docs/` or in on-demand skills. Do not depend on a
 developer raising a client-specific instruction limit for correctness.
