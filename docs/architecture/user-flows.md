@@ -286,9 +286,11 @@ state uses the same `deriveTissueSeverity` semantics as the injury policy, while
 abandoned structured executions contribute additional candidate regions from their catalog
 facets. Execution-history reads are fail-soft so a temporary history failure cannot hide a
 manual tissue follow-up. The queue is region-level: multiple relevant sessions for the same
-region produce one tissue question, with per-session linkage retained separately. The singular
-`RegionTissueResponse.sourceSessionRef` compatibility bridge is populated only when one source
-is unambiguous and is never used to overwrite a different existing attribution. A saved
+region produce one tissue question. Session linkage is written only when prior manual
+attribution identifies the source or exactly one session is otherwise plausible; ambiguous
+multi-session attribution remains unlinked/unknown. The singular
+`RegionTissueResponse.sourceSessionRef` compatibility bridge is never used to overwrite a
+different existing attribution. A saved
 `nextMorningReaction` closes that region for the date; skipping persists neither a response
 nor a synthetic normal value.
 

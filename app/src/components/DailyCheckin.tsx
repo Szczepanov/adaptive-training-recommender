@@ -456,7 +456,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
   const handleAnswerFollowup = async (
     region: BodyRegion,
     level: TissueResponseLevel,
-    sessionRefs: NextMorningFollowupCandidate['sessionRefs'],
+    sessionRef?: NextMorningFollowupCandidate['sessionRef'],
   ) => {
     if (!checkin) return;
     const currentResponses = { ...(checkin.tissueResponses ?? {}) };
@@ -464,8 +464,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
     // ADR-0023 D-MRESP keeps sourceSessionRef as compatibility scaffolding only. Attach it
     // when exactly one attribution is known; never replace an existing different reference
     // when several sessions can legitimately contribute to the same region-level response.
-    const sourceSessionRef = existingEntry.sourceSessionRef
-      ?? (sessionRefs.length === 1 ? sessionRefs[0] : undefined);
+    const sourceSessionRef = existingEntry.sourceSessionRef ?? sessionRef;
     currentResponses[region] = {
       ...existingEntry,
       nextMorningReaction: level,
@@ -494,25 +493,19 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
       return;
     }
 
-    // M5.2: the tissue answer above is region-level and canonical. Preserve every session
-    // linkage represented by that one prompt as a linkage-only SessionResponse, without
-    // duplicating the tissue value itself. Each source/window pair stays idempotent.
-    if (sessionRefs.length > 0 && checkin.userId && checkin.date) {
-      await Promise.allSettled(sessionRefs.map(async sessionRef => {
-        const already = await sessionResponseService.getResponseForWindow(checkin.userId!, sessionRef, 'next_morning');
+    // M5.2: write session-level linkage only when attribution is unambiguous. If several
+    // sessions could explain the same region-level response, leaving the session response
+    // absent preserves D-MRESP's unknown semantics instead of manufacturing a passing link.
+    if (sessionRef && checkin.userId && checkin.date) {
+      try {
+        const already = await sessionResponseService.getResponseForWindow(checkin.userId, sessionRef, 'next_morning');
         if (!already) {
-          await sessionResponseService.recordResponse(
-            checkin.userId!,
-            sessionRef,
-            'next_morning',
-            checkin.date!,
-            checkin.date!,
-            {},
-          );
+          await sessionResponseService.recordResponse(checkin.userId, sessionRef, 'next_morning', checkin.date, checkin.date, {});
         }
-      }));
-      // Linkage persistence is best-effort. The canonical tissue answer already succeeded
-      // and remains the source of truth injuryPolicy.ts/D-SUBJFLOOR consume.
+      } catch {
+        // Best-effort session-level linkage; the canonical tissue answer already succeeded
+        // and remains the source of truth injuryPolicy.ts/D-SUBJFLOOR consume.
+      }
     }
   };
 
@@ -692,7 +685,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
                 type="button"
                 className="btn-followup-pill"
                 title={TISSUE_LEVEL_HELP[lvl]}
-                onClick={() => void handleAnswerFollowup(pendingFollowups[0].region, lvl, pendingFollowups[0].sessionRefs)}
+                onClick={() => void handleAnswerFollowup(pendingFollowups[0].region, lvl, pendingFollowups[0].sessionRef)}
               >
                 {TISSUE_LEVEL_LABELS[lvl]}
               </button>

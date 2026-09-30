@@ -45,11 +45,10 @@ type FollowupSessionRef = NonNullable<RegionTissueResponse['sourceSessionRef']>;
 export interface NextMorningFollowupCandidate {
     region: BodyRegion;
     /**
-     * Every session whose movement metadata contributes to this region-level prompt.
-     * A region is asked once even when several sessions touched it; linkage is preserved
-     * separately rather than forcing an ambiguous singular tissue attribution.
+     * The one session this region-level response can be linked to without guessing.
+     * Undefined means attribution is ambiguous or absent and must remain unknown.
      */
-    sessionRefs: readonly FollowupSessionRef[];
+    sessionRef?: FollowupSessionRef;
 }
 
 export interface SessionFollowupRegions {
@@ -91,34 +90,38 @@ export function relevantFollowupRegions(exercises: readonly FacetTagSource[]): B
  * regions even when the athlete never manually flagged a tissue response.
  *
  * The current day's `nextMorningReaction` closes that region for this check-in date. The
- * queue is region-level: multiple relevant sessions for one region become one prompt with
- * multiple linkage refs, so one tissue observation cannot be overwritten repeatedly merely
- * because yesterday contained more than one session. Missing answers remain missing/unknown;
- * this function is pure and never fabricates persistence.
+ * queue is region-level: multiple relevant sessions for one region become one prompt. A
+ * session link is carried only when prior manual attribution identifies it or exactly one
+ * derived session is plausible; otherwise attribution stays unknown instead of being guessed.
+ * Missing answers remain missing/unknown; this function is pure and never fabricates persistence.
  */
 export function resolvePendingNextMorningFollowups(
     previousDayTissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> | undefined,
     currentDayTissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> | undefined,
     sessionDerived: readonly SessionFollowupRegions[] = [],
 ): NextMorningFollowupCandidate[] {
-    const neededByRegion = new Map<BodyRegion, { region: BodyRegion; sessionRefs: FollowupSessionRef[] }>();
+    const neededByRegion = new Map<BodyRegion, {
+        region: BodyRegion;
+        explicitSessionRef?: FollowupSessionRef;
+        derivedSessionRefs: FollowupSessionRef[];
+    }>();
 
     const candidateFor = (region: BodyRegion) => {
         if (currentDayTissueResponses?.[region]?.nextMorningReaction) return null;
         let candidate = neededByRegion.get(region);
         if (!candidate) {
-            candidate = { region, sessionRefs: [] };
+            candidate = { region, derivedSessionRefs: [] };
             neededByRegion.set(region, candidate);
         }
         return candidate;
     };
 
-    const addSessionRef = (
-        candidate: { region: BodyRegion; sessionRefs: FollowupSessionRef[] },
+    const addDerivedSessionRef = (
+        candidate: { derivedSessionRefs: FollowupSessionRef[] },
         sessionRef: FollowupSessionRef,
     ) => {
-        if (!candidate.sessionRefs.some(existing => sameSessionRef(existing, sessionRef))) {
-            candidate.sessionRefs.push(sessionRef);
+        if (!candidate.derivedSessionRefs.some(existing => sameSessionRef(existing, sessionRef))) {
+            candidate.derivedSessionRefs.push(sessionRef);
         }
     };
 
@@ -128,16 +131,26 @@ export function resolvePendingNextMorningFollowups(
 
         const candidate = candidateFor(region);
         if (!candidate) continue;
-        if (response.sourceSessionRef) addSessionRef(candidate, response.sourceSessionRef);
+        if (response.sourceSessionRef) candidate.explicitSessionRef = response.sourceSessionRef;
     }
 
     for (const session of sessionDerived) {
         for (const region of session.regions) {
             const candidate = candidateFor(region);
             if (!candidate) continue;
-            addSessionRef(candidate, session.sessionRef);
+            addDerivedSessionRef(candidate, session.sessionRef);
         }
     }
 
-    return [...neededByRegion.values()];
+    return [...neededByRegion.values()].map(candidate => {
+        // Athlete-reported/manual attribution wins over movement-derived relevance. Without
+        // an explicit attribution, only a single derived session is safe to link. Multiple
+        // plausible sessions stay unlinked rather than pretending medical causation.
+        const sessionRef = candidate.explicitSessionRef
+            ?? (candidate.derivedSessionRefs.length === 1 ? candidate.derivedSessionRefs[0] : undefined);
+        return {
+            region: candidate.region,
+            ...(sessionRef ? { sessionRef } : {}),
+        };
+    });
 }

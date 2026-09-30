@@ -61,7 +61,7 @@ describe('resolvePendingNextMorningFollowups', () => {
             shoulder: { region: 'shoulder', morningState: 'moderate' },
         }, undefined);
 
-        expect(pending).toEqual([{ region: 'shoulder', sessionRefs: [] }]);
+        expect(pending).toEqual([{ region: 'shoulder' }]);
     });
 
     it('includes relevant regions derived from a completed session even without a manual tissue flag', () => {
@@ -72,8 +72,8 @@ describe('resolvePendingNextMorningFollowups', () => {
         );
 
         expect(pending).toEqual([
-            { region: 'hip', sessionRefs: [executionRef] },
-            { region: 'knee', sessionRefs: [executionRef] },
+            { region: 'hip', sessionRef: executionRef },
+            { region: 'knee', sessionRef: executionRef },
         ]);
     });
 
@@ -95,8 +95,8 @@ describe('resolvePendingNextMorningFollowups', () => {
         );
 
         expect(pending).toEqual([
-            { region: 'knee', sessionRefs: [executionRef] },
-            { region: 'hip', sessionRefs: [executionRef] },
+            { region: 'knee', sessionRef: executionRef },
+            { region: 'hip', sessionRef: executionRef },
         ]);
     });
 
@@ -112,10 +112,7 @@ describe('resolvePendingNextMorningFollowups', () => {
             ],
         );
 
-        expect(pending).toEqual([{
-            region: 'knee',
-            sessionRefs: [executionRef, secondExecutionRef],
-        }]);
+        expect(pending).toEqual([{ region: 'knee' }]);
     });
 
     it('coalesces a source-less manual tissue flag with a session-derived candidate', () => {
@@ -125,6 +122,18 @@ describe('resolvePendingNextMorningFollowups', () => {
             [{ sessionRef: executionRef, regions: ['knee'] }],
         );
 
-        expect(pending).toEqual([{ region: 'knee', sessionRefs: [executionRef] }]);
+        expect(pending).toEqual([{ region: 'knee', sessionRef: executionRef }]);
+    });
+
+    it('preserves explicit manual attribution when another session also touches the region', () => {
+        const secondExecutionRef = { kind: 'execution' as const, id: 'exec-yesterday-2', date: '2026-09-29' };
+
+        const pending = resolvePendingNextMorningFollowups(
+            { knee: { region: 'knee', morningState: 'moderate', sourceSessionRef: executionRef } },
+            undefined,
+            [{ sessionRef: secondExecutionRef, regions: ['knee'] }],
+        );
+
+        expect(pending).toEqual([{ region: 'knee', sessionRef: executionRef }]);
     });
 });
