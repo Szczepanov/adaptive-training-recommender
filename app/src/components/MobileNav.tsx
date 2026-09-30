@@ -10,6 +10,7 @@ import {
   isPrimaryNavigationScreen,
   type DrawerDestination,
 } from './navigationGroups';
+import { clearAllAssessmentDrafts } from '../utils/assessmentDraftStorage';
 import './MobileNav.css';
 
 interface MobileNavProps {
@@ -32,6 +33,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
 
   const handleLogout = async () => {
     const { signOut } = await import('firebase/auth');
+    clearAllAssessmentDrafts();
     await signOut(getAuthInstance());
   };
 

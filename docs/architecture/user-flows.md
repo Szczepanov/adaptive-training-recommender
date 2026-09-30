@@ -414,13 +414,24 @@ also remains available.
 
 `TestingWorkflow` owns the assessment lifecycle rather than creating a separate runner:
 
-`lookup` → `ready/lock` → `running` (delegates to `SessionRunner`) → raw result capture →
+`lookup` → `ready/lock` → `running` (delegates to `SessionRunner`) → raw trial / observation capture →
 `complete` or `abandoned`.
 
 Open attempts are recovered on mount. The workflow records assessment-specific context and
 raw observations around the shared structured-session execution. Global resume state marks
 an in-progress testing execution with `SessionIntent = testing`, routing Resume back to the
 `testing` screen.
+
+For multi-trial assessment protocols (e.g. 1RM strength, vertical/horizontal jumps, medicine ball throw,
+cycling sprint), capture provides a protocol-bounded raw trial table (`TrialCaptureTable`) with dynamic
+attempts, validity options, local draft retention (`localStorage`, cleared on save, abandonment and
+sign-out), live canonical reduction preview
+(`CanonicalResultPreview`), and raw video reminder callouts. The completion screen renders canonical
+benchmark results alongside an interactive trial correction panel (`TrialCorrectionPanel`) for append-only
+trial supersession. Trials already persisted by an interrupted save reload read-only, so a resubmission
+cannot diverge from immutable stored evidence. A diagnostic JSON export action (`assessmentExportService`)
+downloads the complete assessment evidence for offline audit and coaching handoff; it omits the Firebase UID
+but remains personal health data (values, notes, device identifiers).
 
 Because `testing` and ordinary `sessions` share the runner, their in-run visual structure is
 very similar; provenance/context around the runner is therefore important.

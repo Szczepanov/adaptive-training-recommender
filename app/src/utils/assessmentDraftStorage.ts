@@ -1,0 +1,76 @@
+import type {
+    AssessmentTrialScalar,
+    MetricObservationDevice,
+    ObservationValidity,
+} from '../observations/models';
+
+/**
+ * Unsaved trial-capture rows for one assessment attempt. Drafts hold personal performance data,
+ * so they live only until the attempt is saved or abandoned, or the user signs out.
+ */
+export interface DraftTrialRow {
+    ordinal: number;
+    values: Record<string, AssessmentTrialScalar>;
+    validity: ObservationValidity;
+    invalidReason?: string;
+    notes?: string;
+    device?: MetricObservationDevice;
+}
+
+const STORAGE_PREFIX = 'assessment_draft_';
+
+function draftStorageKey(attemptId: string): string {
+    return `${STORAGE_PREFIX}${attemptId}`;
+}
+
+function isDraftRow(value: unknown): value is DraftTrialRow {
+    if (!value || typeof value !== 'object') return false;
+    const row = value as Partial<DraftTrialRow>;
+    return Number.isInteger(row.ordinal)
+        && typeof row.validity === 'string'
+        && !!row.values
+        && typeof row.values === 'object';
+}
+
+/** Storage can be blocked or cleared (private mode, previews); every accessor degrades to "no draft". */
+export function loadAssessmentDraft(attemptId: string): DraftTrialRow[] | null {
+    try {
+        const raw = localStorage.getItem(draftStorageKey(attemptId));
+        if (!raw) return null;
+        const parsed: unknown = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed.every(isDraftRow)) return parsed;
+    } catch {
+        // Storage unavailable or corrupted draft: fall back to a fresh capture table.
+    }
+    return null;
+}
+
+export function saveAssessmentDraft(attemptId: string, rows: readonly DraftTrialRow[]): void {
+    try {
+        localStorage.setItem(draftStorageKey(attemptId), JSON.stringify(rows));
+    } catch {
+        // Storage unavailable: the draft simply does not survive a reload.
+    }
+}
+
+export function clearAssessmentDraft(attemptId: string): void {
+    try {
+        localStorage.removeItem(draftStorageKey(attemptId));
+    } catch {
+        // Storage unavailable: nothing was persisted.
+    }
+}
+
+/** Sign-out cleanup: removes every attempt's draft from this browser profile. */
+export function clearAllAssessmentDrafts(): void {
+    try {
+        const keys: string[] = [];
+        for (let index = 0; index < localStorage.length; index += 1) {
+            const key = localStorage.key(index);
+            if (key?.startsWith(STORAGE_PREFIX)) keys.push(key);
+        }
+        keys.forEach(key => localStorage.removeItem(key));
+    } catch {
+        // Storage unavailable: nothing was persisted.
+    }
+}

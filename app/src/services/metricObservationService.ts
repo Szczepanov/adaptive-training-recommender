@@ -186,6 +186,24 @@ export class MetricObservationService {
         }));
         return revisions.sort((a, b) => a.observedAt.localeCompare(b.observedAt));
     }
+
+    /**
+     * WP7.2: resolves the full revision history for one observation head.
+     */
+    async listRevisionsForObservation(userId: string, observationKey: string): Promise<MetricObservationRevision[]> {
+        const snapshots = await getDocs(
+            collection(this.db, 'users', userId, 'metric_observations', observationKey, 'revisions'),
+        );
+        const revisions = snapshots.docs.map(docSnap => {
+            const revision = docSnap.data() as MetricObservationRevision;
+            assertValidMetricObservationRevision(revision);
+            if (revision.observationKey !== observationKey || String(revision.revision) !== docSnap.id) {
+                throw new Error(`Observation revision path mismatch for ${observationKey}/${docSnap.id}`);
+            }
+            return revision;
+        });
+        return revisions.sort((a, b) => a.revision - b.revision);
+    }
 }
 
 export const metricObservationService = new MetricObservationService();

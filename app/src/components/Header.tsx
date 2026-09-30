@@ -10,6 +10,7 @@ import {
 import { getAuthInstance } from '../firebase';
 import { buildInfo } from '../buildInfo';
 import { GarminSyncBadge } from './GarminSyncBadge';
+import { clearAllAssessmentDrafts } from '../utils/assessmentDraftStorage';
 
 interface HeaderProps {
   screen: Screen;
@@ -56,6 +57,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   const handleLogout = async () => {
     const { signOut } = await import('firebase/auth');
+    clearAllAssessmentDrafts();
     await signOut(getAuthInstance());
   };
 
