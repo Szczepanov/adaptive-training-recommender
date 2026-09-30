@@ -377,6 +377,16 @@ Do not require duplicate manual weight entry merely to complete an assessment.
 
 # WP4 — Add bundled physical-capital protocols
 
+## WP4.0 Shared safety and invalidation boundary
+
+The reusable bundled protocols must encode test-specific execution safety without inventing medical clearance:
+
+- maximal bench/squat instructions require rack safeties and/or a competent spotter as appropriate;
+- assisted bar contact, invalid depth/technique or other protocol-defined technical failures remain raw invalid/missed evidence and never become the canonical 1RM;
+- protocol invalidation remains fail-closed for the explicit rules attached to that immutable revision;
+- an active clinician restriction or other safety constraint reaches Testing through the repository's existing validated constraint/session-execution pathway, not through a new diagnosis/clearance field in assessment evidence;
+- the athlete-specific 13 October 2026 cardiology/CPET checkpoint is execution context for this baseline, not a date hard-coded into a generic protocol.
+
 ## Primary file
 
 `app/src/observations/performanceTestingCatalog.ts`
