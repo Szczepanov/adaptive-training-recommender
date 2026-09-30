@@ -10,6 +10,7 @@ export interface PlanDiffRow {
     sessionId: string;
     change: 'added' | 'removed' | 'changed';
     detail: string;
+    behaviorChanging: boolean;
     /** Fine-grained content diff, present only when both revisions are `external-plan@2`
      * sessions. Absence does not mean nothing changed -- see `detail` for the coarse v1
      * fallback line ("the session content changed"). */
@@ -38,39 +39,45 @@ export function diffPlans(previous: ExternalTrainingPlan, next: ExternalTraining
     const rows: PlanDiffRow[] = [];
 
     for (const [id, session] of before) {
-        if (!after.has(id)) rows.push({ sessionId: id, change: 'removed', detail: `“${session.title}” is no longer in the plan.` });
+        if (!after.has(id)) rows.push({ sessionId: id, change: 'removed', detail: `“${session.title}” is no longer in the plan.`, behaviorChanging: true });
     }
     for (const [id, session] of after) {
         const old = before.get(id);
         if (!old) {
-            rows.push({ sessionId: id, change: 'added', detail: `“${session.title}” is new (week ${session.placement.week}).` });
+            rows.push({ sessionId: id, change: 'added', detail: `“${session.title}” is new (week ${session.placement.week}).`, behaviorChanging: true });
             continue;
         }
         const changes: string[] = [];
+        let behaviorChanging = false;
         if (old.title !== session.title) changes.push(`renamed from “${old.title}”`);
-        if (old.priority !== session.priority) changes.push(`priority ${old.priority} → ${session.priority}`);
-        if (old.placement.week !== session.placement.week) changes.push(`moved from week ${old.placement.week} to ${session.placement.week}`);
+        if (old.priority !== session.priority) { changes.push(`priority ${old.priority} → ${session.priority}`); behaviorChanging = true; }
+        if (old.placement.week !== session.placement.week) { changes.push(`moved from week ${old.placement.week} to ${session.placement.week}`); behaviorChanging = true; }
         if (old.placement.preferredDay !== session.placement.preferredDay) {
             changes.push(`preferred day ${old.placement.preferredDay ?? 'none'} → ${session.placement.preferredDay ?? 'none'}`);
+            behaviorChanging = true;
         }
         if (old.placement.flexibility !== session.placement.flexibility) {
             changes.push(`flexibility ${old.placement.flexibility} → ${session.placement.flexibility}`);
+            behaviorChanging = true;
         }
         if (old.placement.ifMissed !== session.placement.ifMissed) {
             changes.push(`missed-session policy ${old.placement.ifMissed} → ${session.placement.ifMissed}`);
+            behaviorChanging = true;
         }
-        if (old.gating.intensity !== session.gating.intensity) changes.push(`intensity ${old.gating.intensity} → ${session.gating.intensity}`);
-        if (old.gating.modality !== session.gating.modality) changes.push(`modality ${old.gating.modality} → ${session.gating.modality}`);
+        if (old.gating.intensity !== session.gating.intensity) { changes.push(`intensity ${old.gating.intensity} → ${session.gating.intensity}`); behaviorChanging = true; }
+        if (old.gating.modality !== session.gating.modality) { changes.push(`modality ${old.gating.modality} → ${session.gating.modality}`); behaviorChanging = true; }
         if (old.gating.durationMin !== session.gating.durationMin || old.gating.durationMax !== session.gating.durationMax) {
             changes.push(`duration ${old.gating.durationMin}–${old.gating.durationMax} → ${session.gating.durationMin}–${session.gating.durationMax} min`);
+            behaviorChanging = true;
         }
         if (old.gating.environment !== session.gating.environment) {
             changes.push(`environment ${old.gating.environment} → ${session.gating.environment}`);
+            behaviorChanging = true;
         }
-        if (!sameStringSet(old.gating.equipment, session.gating.equipment)) changes.push('required equipment changed');
-        if (!sameStringSet(old.objectives, session.objectives)) changes.push('objective tags changed');
-        if (!sameStructuredValue(old.scaling, session.scaling)) changes.push('scaling / fallback policy changed');
-        if (Boolean(old.isEvent) !== Boolean(session.isEvent)) changes.push(session.isEvent ? 'now marked as an event' : 'no longer marked as an event');
+        if (!sameStringSet(old.gating.equipment, session.gating.equipment)) { changes.push('required equipment changed'); behaviorChanging = true; }
+        if (!sameStringSet(old.objectives, session.objectives)) { changes.push('objective tags changed'); behaviorChanging = true; }
+        if (!sameStructuredValue(old.scaling, session.scaling)) { changes.push('scaling / fallback policy changed'); behaviorChanging = true; }
+        if (Boolean(old.isEvent) !== Boolean(session.isEvent)) { changes.push(session.isEvent ? 'now marked as an event' : 'no longer marked as an event'); behaviorChanging = true; }
 
         let contentChanges: SessionContentDiffRow[] | undefined;
         if (isV2Session(old) && isV2Session(session)) {
@@ -79,13 +86,14 @@ export function diffPlans(previous: ExternalTrainingPlan, next: ExternalTraining
             contentChanges = diffSessionDefinitions(old.definition, session.definition);
             if (contentChanges.length > 0) {
                 changes.push(hasBehaviorChanges(contentChanges) ? 'the session content changed (see below)' : 'session wording changed (see below)');
+                behaviorChanging ||= hasBehaviorChanges(contentChanges);
             }
         } else {
             // v1's flat `ExternalPrescription` has no comparable block/step structure --
             // this stays a coarse "changed"/"unchanged" content comparison.
             const oldContent = isV2Session(old) ? old.definition : old.prescription;
             const newContent = isV2Session(session) ? session.definition : session.prescription;
-            if (!sameStructuredValue(oldContent, newContent)) changes.push('the session content changed');
+            if (!sameStructuredValue(oldContent, newContent)) { changes.push('the session content changed'); behaviorChanging = true; }
         }
 
         if (changes.length > 0) {
@@ -93,6 +101,7 @@ export function diffPlans(previous: ExternalTrainingPlan, next: ExternalTraining
                 sessionId: id,
                 change: 'changed',
                 detail: `“${session.title}”: ${changes.join('; ')}.`,
+                behaviorChanging,
                 ...(contentChanges && contentChanges.length > 0 ? { contentChanges } : {}),
             });
         }

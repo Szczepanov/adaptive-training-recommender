@@ -173,6 +173,31 @@ export class SessionOccurrenceService {
             || a.occurrenceId.localeCompare(b.occurrenceId));
     }
 
+    async getOccurrencesInRangeState(userId: string, startDateInclusive: string, endDateInclusive: string): Promise<DataState<SessionOccurrence[]>> {
+        try {
+            const coll = collection(this.db, 'users', userId, 'session_occurrences');
+            const snap = await getDocs(query(coll, where('date', '>=', startDateInclusive), where('date', '<=', endDateInclusive)));
+            const occurrences: SessionOccurrence[] = [];
+            const issues = [];
+            for (const item of snap.docs) {
+                const parsed = parseSessionOccurrenceDocument(item.data(), item.ref.path);
+                if (parsed.status === 'AVAILABLE') occurrences.push(parsed.data);
+                else if (parsed.status === 'INVALID') issues.push(...parsed.issues);
+            }
+            if (issues.length > 0) return { status: 'INVALID', issues };
+            return {
+                status: 'AVAILABLE',
+                data: occurrences.sort((a, b) => a.date.localeCompare(b.date)
+                    || (a.placementOrder ?? 0) - (b.placementOrder ?? 0)
+                    || a.occurrenceId.localeCompare(b.occurrenceId)),
+                revision: String(occurrences.length),
+            };
+        } catch (error: unknown) {
+            const code = (error as { code?: string })?.code;
+            return { status: 'UNAVAILABLE', operation: 'read session occurrences', retryable: code !== 'permission-denied' };
+        }
+    }
+
     private newOccurrenceId(): string {
         return `occ-${Date.now()}-${crypto.randomUUID()}`;
     }

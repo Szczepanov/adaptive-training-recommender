@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { EXTERNAL_PLAN_SCHEMA, type ExternalPlanHeader, type ExternalTrainingPlan } from '../engine/models';
+import { EXTERNAL_PLAN_SCHEMA, type ExternalPlanHeader, type ExternalPlanRevisionActivation, type ExternalTrainingPlan } from '../engine/models';
 import type { DataState } from '../engine/dataState';
 import {
     ActiveExternalPlanService,
@@ -11,6 +11,7 @@ import {
     type ActiveExternalPlan,
 } from './activeExternalPlanService';
 import type { ExternalPlanService } from './externalPlanService';
+import { computeContentHash } from './externalPlanService';
 
 function plan(overrides: Partial<ExternalTrainingPlan> = {}): ExternalTrainingPlan {
     return {
@@ -48,16 +49,31 @@ function header(overrides: Partial<ExternalPlanHeader> = {}): ExternalPlanHeader
 function stubPlans(options: {
     ids?: DataState<string[]>;
     headers?: Record<string, DataState<ExternalPlanHeader>>;
+    revisionsByPlan?: Record<string, ExternalTrainingPlan>;
+    activations?: DataState<ExternalPlanRevisionActivation[]>;
     revisions?: DataState<ExternalTrainingPlan>;
     placement?: DataState<never> | DataState<ReturnType<typeof placementDoc>>;
 } = {}): ExternalPlanService {
     return {
         listPlanIds: vi.fn(async () => options.ids ?? ({ status: 'AVAILABLE', data: ['autumn-block'], revision: null } as DataState<string[]>)),
         getHeaderState: vi.fn(async (_userId: string, planId: string) =>
-            options.headers?.[planId] ?? ({ status: 'AVAILABLE', data: header(), revision: 'hash-1' } as DataState<ExternalPlanHeader>)),
-        getRevisionState: vi.fn(async () => options.revisions ?? ({ status: 'AVAILABLE', data: plan(), revision: '1' } as DataState<ExternalTrainingPlan>)),
+            options.headers?.[planId] ?? ({ status: 'AVAILABLE', data: await matchingHeader(), revision: 'hash-1' } as DataState<ExternalPlanHeader>)),
+        getRevisionState: vi.fn(async (_userId: string, planId: string) => options.revisions ?? ({ status: 'AVAILABLE', data: options.revisionsByPlan?.[planId] ?? plan(), revision: '1' } as DataState<ExternalTrainingPlan>)),
+        getActivationState: vi.fn(async () => options.activations ?? ({ status: 'AVAILABLE', data: [], revision: '0' })),
         getPlacementState: vi.fn(async () => options.placement ?? ({ status: 'MISSING' })),
     } as unknown as ExternalPlanService;
+}
+
+async function matchingHeader(overrides: Partial<ExternalPlanHeader> = {}) {
+    const revision = overrides.revision ?? 1;
+    const revisionPlan = plan({
+        ...(overrides.planId ? { planId: overrides.planId } : {}),
+        ...(overrides.title ? { title: overrides.title } : {}),
+        ...(overrides.startDate ? { startDate: overrides.startDate } : {}),
+        ...(overrides.weekCount ? { weekCount: overrides.weekCount } : {}),
+        revision,
+    });
+    return header({ contentHash: await computeContentHash(revisionPlan as never), ...overrides });
 }
 
 function placementDoc(assignments: { sessionId: string; date: string; status: 'planned' | 'moved' | 'dropped' | 'completed' | 'superseded' }[]) {
@@ -80,6 +96,69 @@ describe('ActiveExternalPlanService', () => {
             .toEqual(['2026-08-18:w1-threshold', '2026-08-20:w1-easy']);
     });
 
+    it('reuses plan authority reads while resolving a date range', async () => {
+        const plans = stubPlans();
+        const states = await new ActiveExternalPlanService(plans).getActivePlanStatesInRange('u1', '2026-08-17', '2026-08-19');
+        expect(states.map(state => state.status)).toEqual(['AVAILABLE', 'AVAILABLE', 'AVAILABLE']);
+        expect(plans.listPlanIds).toHaveBeenCalledTimes(1);
+        expect(plans.getHeaderState).toHaveBeenCalledTimes(1);
+        expect(plans.getActivationState).toHaveBeenCalledTimes(1);
+        expect(plans.getRevisionState).toHaveBeenCalledTimes(1);
+        expect(plans.getPlacementState).toHaveBeenCalledTimes(1);
+    });
+
+
+    it('falls back to the prior effective revision until the successor horizon begins', async () => {
+        const predecessor = plan({ revision: 1, startDate: '2026-08-17', weekCount: 2 });
+        const successor = plan({ revision: 2, startDate: '2026-08-24', weekCount: 1 });
+        const predecessorHash = await computeContentHash(predecessor as never);
+        const successorHash = await computeContentHash(successor as never);
+        const plans = {
+            listPlanIds: vi.fn(async () => ({ status: 'AVAILABLE', data: ['autumn-block'], revision: null })),
+            getHeaderState: vi.fn(async () => ({
+                status: 'AVAILABLE',
+                data: header({
+                    revision: 2,
+                    startDate: successor.startDate,
+                    weekCount: successor.weekCount,
+                    contentHash: successorHash,
+                    importedAt: '2026-08-20T08:00:00Z',
+                    supersededFrom: '2026-08-20',
+                }),
+                revision: successorHash,
+            })),
+            getActivationState: vi.fn(async () => ({
+                status: 'AVAILABLE',
+                data: [
+                    {
+                        userId: 'u1', planId: 'autumn-block', revision: 1, contentHash: predecessorHash,
+                        effectiveFrom: '2026-08-17', activatedAt: '2026-08-16T10:00:00Z',
+                    },
+                    {
+                        userId: 'u1', planId: 'autumn-block', revision: 2, contentHash: successorHash,
+                        effectiveFrom: '2026-08-20', activatedAt: '2026-08-20T08:00:00Z',
+                    },
+                ],
+                revision: '2',
+            })),
+            getRevisionState: vi.fn(async (_userId: string, _planId: string, revision: number) => ({
+                status: 'AVAILABLE',
+                data: revision === 1 ? predecessor : successor,
+                revision: String(revision),
+            })),
+            getPlacementState: vi.fn(async () => ({ status: 'MISSING' })),
+        } as unknown as ExternalPlanService;
+
+        const state = await new ActiveExternalPlanService(plans).getActivePlanState('u1', '2026-08-21');
+
+        expect(state.status).toBe('AVAILABLE');
+        if (state.status !== 'AVAILABLE') throw new Error('unreachable');
+        expect(state.data.header.revision).toBe(1);
+        expect(state.data.plan.startDate).toBe('2026-08-17');
+        expect(plans.getRevisionState).toHaveBeenCalledWith('u1', 'autumn-block', 2);
+        expect(plans.getRevisionState).toHaveBeenCalledWith('u1', 'autumn-block', 1);
+    });
+
     it('reports MISSING for a date outside every plan rather than picking the nearest', async () => {
         const state = await new ActiveExternalPlanService(stubPlans()).getActivePlanState('u1', '2026-09-15');
         expect(state.status).toBe('MISSING');
@@ -93,11 +172,12 @@ describe('ActiveExternalPlanService', () => {
     it('prefers the most recently imported plan when two cover the same date', async () => {
         const plans = stubPlans({
             ids: { status: 'AVAILABLE', data: ['autumn-block', 'newer-block'], revision: null },
+            revisionsByPlan: { 'newer-block': plan({ planId: 'newer-block' }) },
             headers: {
-                'autumn-block': { status: 'AVAILABLE', data: header(), revision: 'hash-1' },
+                'autumn-block': { status: 'AVAILABLE', data: await matchingHeader(), revision: 'hash-1' },
                 'newer-block': {
                     status: 'AVAILABLE',
-                    data: header({ planId: 'newer-block', importedAt: '2026-08-17T10:00:00Z', contentHash: 'hash-2' }),
+                    data: await matchingHeader({ planId: 'newer-block', importedAt: '2026-08-17T10:00:00Z' }),
                     revision: 'hash-2',
                 },
             },

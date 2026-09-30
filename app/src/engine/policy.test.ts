@@ -3,7 +3,7 @@ import { isHistoricalPolicyVersion, HISTORICAL_POLICY_VERSIONS, POLICY_VERSION }
 
 describe('isHistoricalPolicyVersion', () => {
     it('records the current transition and the previous live policies exactly once', () => {
-        expect(POLICY_VERSION).toBe('2026-09-prospective-decision-context-canonical-facts-v1');
+        expect(POLICY_VERSION).toBe('2026-09-external-plan-activation-history-v1');
         expect(HISTORICAL_POLICY_VERSIONS[0]).toBe('2026-09-date-scoped-mechanical-spacing-v1');
         expect(HISTORICAL_POLICY_VERSIONS[1]).toBe('2026-09-static-registry-lookup-indexes-v1');
         expect(HISTORICAL_POLICY_VERSIONS[2]).toBe('2026-09-periodic-athletic-capability-maintenance-v4');
@@ -19,6 +19,9 @@ describe('isHistoricalPolicyVersion', () => {
         expect(HISTORICAL_POLICY_VERSIONS[12]).toBe('2026-09-evergreen-quality-transactional-substitution-v1');
         expect(HISTORICAL_POLICY_VERSIONS.filter(
             (version) => version === '2026-09-date-scoped-mechanical-spacing-v1',
+        )).toHaveLength(1);
+        expect(HISTORICAL_POLICY_VERSIONS.filter(
+            (version) => version === '2026-09-prospective-decision-context-canonical-facts-v1',
         )).toHaveLength(1);
         expect(HISTORICAL_POLICY_VERSIONS.filter(
             (version) => version === '2026-09-static-registry-lookup-indexes-v1',
