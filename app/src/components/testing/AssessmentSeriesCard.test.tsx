@@ -19,8 +19,13 @@ describe('AssessmentSeriesCard', () => {
             defaultContext: {},
             expectedSource: 'manual',
         },
-        activeSeries: null,
-        otherSeries: [],
+        metrics: [{
+            metricId: 'standing_broad_jump_distance_cm',
+            displayName: 'Standing broad jump distance',
+            activeSeries: null,
+            otherSeries: [],
+            completedWithoutBenchmarkCount: 0,
+        }],
         completedWithoutBenchmarkCount: 0,
         abandonedCount: 0,
         unreadableCount: 0,
@@ -30,13 +35,16 @@ describe('AssessmentSeriesCard', () => {
         const html = renderToStaticMarkup(<AssessmentSeriesCard test={baseTest} onSelectAttempt={vi.fn()} />);
         expect(html).toContain('Standing broad jump');
         expect(html).toContain('field');
-        expect(html).toContain('No assessment attempts recorded yet for this test.');
+        expect(html).toContain('No assessment benchmarks recorded yet for this test.');
     });
 
     it('renders active series with honest D4 wording when no reliability exists', () => {
         const testWithSeries: AssessmentTestHistory = {
             ...baseTest,
-            activeSeries: {
+            metrics: [{
+                ...baseTest.metrics[0],
+                activeSeries: {
+                metricId: 'standing_broad_jump_distance_cm',
                 protocolRevision: 2,
                 comparisonSeriesKey: 'series-key-abc123456789',
                 resolvedContext: {},
@@ -101,7 +109,8 @@ describe('AssessmentSeriesCard', () => {
                     reasons: ['no_reliability_estimate', 'raw_change_favorable'],
                     progressPolicyVersion: 'ov-progress-v1',
                 },
-            },
+                },
+            }],
         };
 
         const html = renderToStaticMarkup(<AssessmentSeriesCard test={testWithSeries} onSelectAttempt={vi.fn()} />);
@@ -116,17 +125,21 @@ describe('AssessmentSeriesCard', () => {
     it('renders older series inside disclosure with explicit not comparable reason (D1)', () => {
         const testWithOther: AssessmentTestHistory = {
             ...baseTest,
-            activeSeries: {
-                protocolRevision: 2,
-                comparisonSeriesKey: 'series-setup-2',
+            metrics: [{
+                ...baseTest.metrics[0],
+                activeSeries: {
+                    metricId: 'standing_broad_jump_distance_cm',
+                    protocolRevision: 2,
+                    comparisonSeriesKey: 'series-setup-2',
                 resolvedContext: {},
                 observations: [],
                 baseline: null,
                 latest: null,
                 progress: { metricId: 'test', comparable: false, status: 'insufficient_evidence', reasons: [], progressPolicyVersion: 'v1' },
-            },
-            otherSeries: [
+                },
+                otherSeries: [
                 {
+                    metricId: 'standing_broad_jump_distance_cm',
                     protocolRevision: 1,
                     comparisonSeriesKey: 'series-setup-1',
                     resolvedContext: {},
@@ -136,11 +149,12 @@ describe('AssessmentSeriesCard', () => {
                     progress: { metricId: 'test', comparable: false, status: 'insufficient_evidence', reasons: [], progressPolicyVersion: 'v1' },
                     nonComparableReason: 'protocol revision changed',
                 },
-            ],
+                ],
+            }],
         };
 
         const html = renderToStaticMarkup(<AssessmentSeriesCard test={testWithOther} onSelectAttempt={vi.fn()} />);
-        expect(html).toContain('Other comparison series (1)');
+        expect(html).toContain('Other Standing broad jump distance comparison series (1)');
         expect(html).toContain('not comparable: protocol revision changed');
     });
 });
