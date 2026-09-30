@@ -35,6 +35,7 @@ import type { ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
 import type { ExternalTrainingPlanV5 } from '../sessions/externalPlanV5';
 import type { ExternalTrainingPlanV6 } from '../sessions/externalPlanV6';
 import { validateAnyExternalTrainingPlan } from '../sessions/externalPlanValidation';
+import { isBundleCapableExternalPlan } from '../sessions/externalPlanV2';
 
 export interface IntradayBundlePlacementRecord {
     userId: string;
@@ -121,7 +122,7 @@ function validateAuditInput(input: IntradayBundlePlacementAuditInput): void {
     if (!input.planSnapshot || typeof input.planSnapshot !== 'object'
         || input.planSnapshot.planId !== input.plan.planId
         || input.planSnapshot.revision !== input.plan.revision
-        || !['adaptive-training-recommender/external-plan@4', 'adaptive-training-recommender/external-plan@5', 'adaptive-training-recommender/external-plan@6'].includes(input.planSnapshot.schema)) {
+        || !isBundleCapableExternalPlan(input.planSnapshot)) {
         throw new Error('Invalid frozen external plan snapshot');
     }
     const planValidation = validateAnyExternalTrainingPlan(input.planSnapshot);

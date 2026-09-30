@@ -20,7 +20,7 @@ import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
 import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
-import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch, resolveScaledLaunchCeilingMinutes } from '../services/sessionAuthoringService';
+import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch } from '../services/sessionAuthoringService';
 import { isBundleCapableExternalPlan } from '../sessions/externalPlanV2';
 import { canLaunchExternalPlanSession } from '../sessions/sessionLaunch';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
@@ -692,11 +692,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           try {
             const verdict = recommendationWithPrescription.externalVerdict;
             const useReducedDefinition = verdict?.decision === 'scale';
-            const maxDurationMinutes = useReducedDefinition
-              ? verdict?.executionDose
-                ? resolveScaledLaunchCeilingMinutes(externalContext.session.gating.durationMin, verdict.executionDose.volume)
-                : 0
-              : undefined;
+            const scaleVolume = useReducedDefinition ? verdict?.executionDose?.volume : undefined;
             const launch = await prepareExternalPlanSessionLaunch(
               userId,
               {
@@ -705,7 +701,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
                 contentHash: externalContext.contentHash,
                 session: externalContext.session,
               },
-              { date: input.date, useReducedDefinition, maxDurationMinutes },
+              { date: input.date, useReducedDefinition, scaleVolume },
             );
             if (!isCurrent()) return;
             primarySession = launch.binding;

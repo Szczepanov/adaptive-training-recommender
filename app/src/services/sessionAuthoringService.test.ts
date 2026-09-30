@@ -270,7 +270,7 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         const launch = await prepareExternalPlanSessionLaunch('u1', {
             ...externalPlan,
             session: v6Session,
-        }, { useReducedDefinition: true, maxDurationMinutes: 30, date: '2026-09-06', now: '2026-09-06T12:00:00.000Z' });
+        }, { useReducedDefinition: true, scaleVolume: 0.5, date: '2026-09-06', now: '2026-09-06T12:00:00.000Z' });
 
         expect(launch.definition).toEqual(reducedDefinition);
         const saved = services.prescription.savePrescription.mock.calls.at(-1)?.[1];
@@ -296,7 +296,7 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         await expect(prepareExternalPlanSessionLaunch('u1', {
             ...externalPlan,
             session: { ...externalPlan.session, scaling: { reducible: true, reducedDefinition } },
-        }, { useReducedDefinition: true, maxDurationMinutes: 24, date: '2026-09-06' }))
+        }, { useReducedDefinition: true, scaleVolume: 0.4, date: '2026-09-06' }))
             .rejects.toThrow(/exceeds today's approved duration ceiling/);
         expect(services.prescription.savePrescription).not.toHaveBeenCalled();
     });
@@ -315,14 +315,14 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         };
         const session = { ...externalPlan.session, scaling: { reducible: true, reducedDefinition } };
         await expect(prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, { useReducedDefinition: true }))
-            .rejects.toThrow(/requires today's approved duration ceiling/);
+            .rejects.toThrow(/execution volume/);
         await expect(prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, {
-            useReducedDefinition: true, maxDurationMinutes: 24,
+            useReducedDefinition: true, scaleVolume: 0.4,
         })).rejects.toThrow(/exceeds today's approved duration ceiling/);
         expect(services.prescription.savePrescription).not.toHaveBeenCalled();
     });
 
-    it('rejects non-positive and non-finite scaled duration ceilings', async () => {
+    it('rejects non-positive, non-finite, and inflated scaled execution volumes', async () => {
         const externalPlan = makeV4ExternalPlan();
         const reducedDefinition: SessionDefinition = {
             ...externalPlan.session.definition,
@@ -334,12 +334,12 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
             scaling: { reducible: true, reducedDefinition },
         };
 
-        for (const maxDurationMinutes of [0, Number.NaN, Number.POSITIVE_INFINITY]) {
+        for (const scaleVolume of [0, 1.01, Number.NaN, Number.POSITIVE_INFINITY]) {
             await expect(prepareExternalPlanSessionLaunch('u1', {
                 ...externalPlan,
                 session,
-            }, { useReducedDefinition: true, maxDurationMinutes }))
-                .rejects.toThrow(/requires today's approved duration ceiling/);
+            }, { useReducedDefinition: true, scaleVolume }))
+                .rejects.toThrow(/execution volume/);
         }
         expect(services.prescription.savePrescription).not.toHaveBeenCalled();
     });
@@ -360,7 +360,7 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         await expect(prepareExternalPlanSessionLaunch('u1', {
             ...externalPlan,
             session: { ...externalPlan.session, scaling: { reducible: true, reducedDefinition } },
-        }, { useReducedDefinition: true, maxDurationMinutes: 24 }))
+        }, { useReducedDefinition: true, scaleVolume: 0.4 }))
             .rejects.toThrow(/exceeds today's approved duration ceiling/);
         expect(services.prescription.savePrescription).not.toHaveBeenCalled();
     });
@@ -638,7 +638,7 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         const scaled = await prepareExternalPlanSessionLaunch('u1', {
             ...externalPlan,
             session: v6Session,
-        }, { useReducedDefinition: true, maxDurationMinutes: 30, date: '2026-09-06', now: '2026-09-06T12:00:00.000Z' });
+        }, { useReducedDefinition: true, scaleVolume: 0.5, date: '2026-09-06', now: '2026-09-06T12:00:00.000Z' });
         const full = await prepareExternalPlanSessionLaunch('u1', externalPlan, {
             date: '2026-09-06',
             now: '2026-09-06T12:00:00.000Z',
@@ -687,7 +687,7 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
 
         await expect(prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, {
             useReducedDefinition: true,
-            maxDurationMinutes: 30,
+            scaleVolume: 0.5,
             date: '2026-09-06',
         })).rejects.toThrow(/requires an exact structured reducedDefinition/);
         expect(services.prescription.savePrescription).not.toHaveBeenCalled();
@@ -705,7 +705,7 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
 
         await expect(prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, {
             useReducedDefinition: true,
-            maxDurationMinutes: 30,
+            scaleVolume: 0.5,
             date: '2026-09-06',
         })).rejects.toThrow(/reducible: true/);
         expect(services.prescription.savePrescription).not.toHaveBeenCalled();
@@ -730,7 +730,7 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
 
         await expect(prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, {
             useReducedDefinition: true,
-            maxDurationMinutes: 30,
+            scaleVolume: 0.5,
             date: '2026-09-06',
         })).rejects.toThrow(message);
         expect(services.prescription.savePrescription).not.toHaveBeenCalled();
@@ -797,10 +797,12 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
     });
 
     describe('resolveScaledLaunchCeilingMinutes', () => {
-        it('pins the approved gate-duration formula: gating duration scaled by executed volume', () => {
+        it('pins the approved gate-duration formula and rejects caller inflation/invalid dose', () => {
             expect(resolveScaledLaunchCeilingMinutes(60, 0.5)).toBe(30);
             expect(resolveScaledLaunchCeilingMinutes(45, 1)).toBe(45);
-            expect(resolveScaledLaunchCeilingMinutes(60, 0)).toBe(0);
+            expect(() => resolveScaledLaunchCeilingMinutes(60, 0)).toThrow(/execution volume/);
+            expect(() => resolveScaledLaunchCeilingMinutes(60, 1.01)).toThrow(/execution volume/);
+            expect(() => resolveScaledLaunchCeilingMinutes(Number.NaN, 0.5)).toThrow(/gating duration/);
         });
     });
 });

@@ -151,6 +151,8 @@ describe('external-plan@2 (M3.6)', () => {
                 expect(isDefinitionBearingExternalSession(definitionSession)).toBe(true);
                 expect(isDefinitionBearingExternalSession(prescriptionSession)).toBe(false);
                 expect(isDefinitionBearingExternalSession({})).toBe(false);
+                expect(isDefinitionBearingExternalSession({ definition: null })).toBe(false);
+                expect(isDefinitionBearingExternalSession({ definition: 'not-structured' })).toBe(false);
                 // A session carrying both fields is malformed (import rejects it); the
                 // guard fails closed rather than treating it as executable.
                 expect(isDefinitionBearingExternalSession({ ...definitionSession, prescription: {} })).toBe(false);
@@ -190,16 +192,22 @@ describe('external-plan@2 (M3.6)', () => {
                 expect(isDefinitionBearingExternalPlan(capabilityPlan(EXTERNAL_PLAN_SCHEMA_V2, []))).toBe(false);
             });
 
-            it('isBundleCapableExternalPlan admits the intraday/rest contract without naming schema versions', () => {
-                const intradaySession = { ...definitionSession, intraday: { window: 'morning' as const, order: 1 } };
+            it('isBundleCapableExternalPlan centrally admits supported audit schemas and fails closed otherwise', () => {
+                const intradaySession = {
+                    ...definitionSession,
+                    intraday: {
+                        window: { startLocal: '06:00', endLocal: '07:00' },
+                        bundleId: 'bundle-1',
+                        order: 1,
+                    },
+                };
                 const v4 = capabilityPlan('adaptive-training-recommender/external-plan@4', [intradaySession], { restDays: [] });
-                // The regression the literal risked: v5 is structurally v4-compatible.
                 const v5 = capabilityPlan('adaptive-training-recommender/external-plan@5', [intradaySession], { restDays: [], intentBlocks: [] });
                 const v6 = capabilityPlan('adaptive-training-recommender/external-plan@6', [intradaySession], { restDays: [] });
                 expect(isBundleCapableExternalPlan(v4)).toBe(true);
                 expect(isBundleCapableExternalPlan(v5)).toBe(true);
                 expect(isBundleCapableExternalPlan(v6)).toBe(true);
-                // No intraday request, no rest contract, or no definition: not bundle work.
+                expect(isBundleCapableExternalPlan(capabilityPlan('adaptive-training-recommender/external-plan@3', [intradaySession], { restDays: [] }))).toBe(false);
                 expect(isBundleCapableExternalPlan(capabilityPlan('adaptive-training-recommender/external-plan@4', [definitionSession], { restDays: [] }))).toBe(false);
                 expect(isBundleCapableExternalPlan(capabilityPlan(EXTERNAL_PLAN_SCHEMA_V2, [definitionSession]))).toBe(false);
                 expect(isBundleCapableExternalPlan(capabilityPlan(EXTERNAL_PLAN_SCHEMA, [prescriptionSession]))).toBe(false);

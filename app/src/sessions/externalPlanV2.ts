@@ -109,7 +109,11 @@ export type DefinitionBearingExternalSession = Extract<AnyExternalPlanSession, {
 export function isDefinitionBearingExternalSession(
     session: { definition?: unknown; prescription?: unknown },
 ): session is DefinitionBearingExternalSession {
-    return 'definition' in session && !('prescription' in session);
+    const definition = session.definition;
+    return typeof definition === 'object'
+        && definition !== null
+        && !Array.isArray(definition)
+        && !('prescription' in session);
 }
 
 /**
@@ -121,21 +125,23 @@ export function isDefinitionBearingExternalPlan(plan: AnyExternalTrainingPlan): 
     return Array.isArray(plan.sessions) && plan.sessions.some(isDefinitionBearingExternalSession);
 }
 
+const BUNDLE_CAPABLE_EXTERNAL_PLAN_SCHEMAS = new Set<string>([
+    'adaptive-training-recommender/external-plan@4',
+    'adaptive-training-recommender/external-plan@5',
+    'adaptive-training-recommender/external-plan@6',
+]);
+
 /**
- * Bundle-placement capability guard for the intraday path (PR-B, #893 WP3.1): true when
- * the plan carries the v4 contract the placement and audit code actually consumes --
- * definition-bearing sessions, the v3-inherited `restDays` rest contract, and at least
- * one session requesting `intraday` placement. This replaces the
- * `isV4Plan(...) || isV6Plan(...)` schema-literal gate, which silently excluded v5
- * (structurally v4-compatible: v5 sessions *are* `ExternalPlanSessionV4` and v5 plans
- * carry `restDays`). v2 plans are excluded (no `restDays`, and their validator rejects
- * `intraday`); v3 plans pass the structural check but can never produce a placement for
- * the same validator reason, so every downstream use -- all guarded by a non-null
- * placement -- is unaffected by them.
+ * Bundle-placement/audit capability guard. Unlike the source-neutral launch guard above,
+ * the audit snapshot is a versioned replay contract, so it must fail closed on a future
+ * schema until that schema is explicitly admitted by validation/audit code. Centralizing
+ * the bounded schema set here fixes v5 without scattering `isV4Plan || isV5Plan || isV6Plan`
+ * branches through Home and audit persistence.
  */
 export function isBundleCapableExternalPlan(
     plan: AnyExternalTrainingPlan,
 ): plan is ExternalTrainingPlanV4 | ExternalTrainingPlanV5 | ExternalTrainingPlanV6 {
+    if (!BUNDLE_CAPABLE_EXTERNAL_PLAN_SCHEMAS.has(plan.schema)) return false;
     if (!isDefinitionBearingExternalPlan(plan)) return false;
     if (!('restDays' in plan) || !Array.isArray(plan.restDays)) return false;
     return plan.sessions.some(session =>

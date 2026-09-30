@@ -24,6 +24,7 @@ import { POLICY_VERSION } from '../engine/policy';
 import { computeContentHash } from '../engine/externalPlanHash';
 import fixture01 from '../sessions/fixtures/01-full-body-maintenance.json';
 import type { ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
+import type { ExternalTrainingPlanV5 } from '../sessions/externalPlanV5';
 import type { SessionDefinition } from '../sessions/models';
 
 function placedProposal(): BundlePlacementProposal {
@@ -220,6 +221,21 @@ describe('immutable intraday placement audit', () => {
     it('replays cleanly from the frozen inputs', async () => {
         const input = await auditInput();
         const audit = await recordIntradayBundlePlacementAudit(input);
+        await expect(replayIntradayBundlePlacementAudit(audit)).resolves.toEqual({ valid: true, failures: [] });
+    });
+
+    it('accepts and replays a v5 snapshot that inherits the v4 intraday/rest contract', async () => {
+        const input = await auditInput();
+        const v5Snapshot: ExternalTrainingPlanV5 = {
+            ...(input.planSnapshot as ExternalTrainingPlanV4),
+            schema: 'adaptive-training-recommender/external-plan@5',
+            intentBlocks: [],
+        };
+        input.planSnapshot = v5Snapshot;
+        input.plan = { ...input.plan, contentHash: await computeContentHash(v5Snapshot) };
+
+        const audit = await recordIntradayBundlePlacementAudit(input);
+        expect(audit.planSnapshot.schema).toBe('adaptive-training-recommender/external-plan@5');
         await expect(replayIntradayBundlePlacementAudit(audit)).resolves.toEqual({ valid: true, failures: [] });
     });
 
