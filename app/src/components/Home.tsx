@@ -14,7 +14,7 @@ import { resolvePlanningContext } from '../engine/planningMode';
 import { resolveExecutionDose } from '../engine/dose';
 import { resolveAvailability } from '../engine/schedule';
 import { adjudicateAuthoredSession, createAuthoredSessionTemplate, estimateAuthoredSessionSystemicCost } from '../engine/authoredSessionGates';
-import type { AuthoredPlanBlock, BodyRegion, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, FixedActivity, ShadowVerdict } from '../engine/models';
+import type { AuthoredPlanBlock, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, FixedActivity, ShadowVerdict } from '../engine/models';
 import { isManualOccurrence, type SessionReferenceBinding } from '../sessions/models';
 import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import type { DataState } from '../engine/dataState';
@@ -61,7 +61,11 @@ import { POLICY_VERSION } from '../engine/policy';
 import { checkinService } from '../services/checkinService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionResponseService } from '../services/sessionResponseService';
-import { relevantFollowupRegions } from '../responses/followupSchedule';
+import {
+  relevantFollowupRegions,
+  resolvePendingNextMorningFollowups,
+  type SessionFollowupRegions,
+} from '../responses/followupSchedule';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
 import { AdherencePrompt, type AdherenceAnswer } from './AdherencePrompt';
 import { DecisionJournalCard } from './DecisionJournalCard';
@@ -186,20 +190,49 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
     let cancelled = false;
     const today = decisionInput.date;
     const yesterday = getPreviousLocalDateString(today);
-    Promise.all([
-      checkinService.getCheckin(userId, today),
-      checkinService.getCheckin(userId, yesterday),
-    ]).then(([todayCheckin, yesterdayCheckin]) => {
-      if (cancelled) return;
-      const pending = Object.entries(yesterdayCheckin?.tissueResponses ?? {}).some(([region, response]) =>
-        !!response
-        && !!(response.painDuringTraining || response.afterTrainingState || response.sourceSessionRef)
-        && !todayCheckin?.tissueResponses?.[region as BodyRegion]?.nextMorningReaction,
-      );
-      setHasPendingSessionResponse(pending);
-    }).catch(() => {
-      if (!cancelled) setHasPendingSessionResponse(false);
-    });
+
+    (async () => {
+      try {
+        const [todayCheckin, yesterdayCheckin] = await Promise.all([
+          checkinService.getCheckin(userId, today),
+          checkinService.getCheckin(userId, yesterday),
+        ]);
+
+        const sessionDerived: SessionFollowupRegions[] = [];
+        try {
+          const { executions } = await sessionExecutionService.getExecutionsInRange(userId, yesterday, today);
+          for (const { execution, entries } of executions) {
+            if (execution.state === 'in_progress') continue;
+            const exerciseIds: string[] = [];
+            for (const entry of entries) {
+              if (entry.exerciseRef?.kind === 'catalog') exerciseIds.push(entry.exerciseRef.exerciseId);
+            }
+            const facets = exerciseIds
+              .map(id => EXERCISES_BY_ID.get(id)?.facets)
+              .filter((facet): facet is NonNullable<typeof facet> => !!facet);
+            const regions = relevantFollowupRegions(facets);
+            if (regions.length === 0) continue;
+            sessionDerived.push({
+              sessionRef: { kind: 'execution', id: execution.executionId, date: execution.date },
+              regions,
+            });
+          }
+        } catch {
+          // Keep manual tissue follow-up detection available even if execution history is
+          // temporarily unavailable. Check-in follows the same fail-soft M5.2 rule.
+        }
+
+        if (cancelled) return;
+        setHasPendingSessionResponse(resolvePendingNextMorningFollowups(
+          yesterdayCheckin?.tissueResponses,
+          todayCheckin?.tissueResponses,
+          sessionDerived,
+        ).length > 0);
+      } catch {
+        if (!cancelled) setHasPendingSessionResponse(false);
+      }
+    })();
+
     return () => { cancelled = true; };
   }, [userId, decisionInput]);
 
@@ -1404,8 +1437,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
       {hasPendingSessionResponse && (
         <aside className="session-response-reminder" aria-label="Session response follow-up">
           <div>
-            <strong>How did yesterday&apos;s session feel this morning?</strong>
-            <span>Your response helps keep future recommendations appropriately cautious.</span>
+            <strong>A next-morning follow-up is waiting.</strong>
+            <span>Record how the relevant area feels this morning so today&apos;s plan uses the latest tissue response.</span>
           </div>
           <button type="button" onClick={() => onNavigate('checkin')}>Answer follow-up</button>
         </aside>
