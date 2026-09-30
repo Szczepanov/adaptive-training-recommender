@@ -4,7 +4,7 @@
  * Isolated outside app/src/engine so the recommendation engine and adjudication layer
  * remain strictly free of static I/O and Firebase imports.
  */
-import type { SessionTemplate, NormalizedGarminActivity, DailyRecommendation } from '../engine/models';
+import type { ActivityOverride, SessionTemplate, NormalizedGarminActivity, DailyRecommendation } from '../engine/models';
 import type { SessionExecution } from '../sessions/models';
 import type { CoverageSetDescriptor } from '../workouts/event-plan';
 import type { WorkoutVariant } from '../workouts/models';
@@ -14,6 +14,7 @@ import { isStructuredExecutionRef } from './models';
 import { hydrateOccurrenceSourcesInRange } from './occurrenceSourcesHydration';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { recommendationService } from '../services/recommendationService';
+import { activityOverrideService } from '../services/activityOverrideService';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { addDaysToLocalDateString, getPreviousLocalDateString } from '../utils/localDate';
 import {
@@ -33,6 +34,7 @@ export interface GetPerformedTrainingFactsOptions {
     preloadedActivities?: readonly NormalizedGarminActivity[];
     /** Export-only provenance. Keep default decision snapshots and hashes unchanged. */
     includeDisplayProvenance?: boolean;
+    activityOverrides?: Readonly<Record<string, ActivityOverride>> | ReadonlyMap<string, ActivityOverride>;
 }
 
 /**
@@ -92,8 +94,23 @@ export async function getPerformedTrainingFactsInRange(
         };
     }
 
+    let overrides = options.activityOverrides;
+    let overridesDegraded = false;
+    if (!overrides) {
+        try {
+            const overridesState = await activityOverrideService.getOverridesSinceState(userId, fromDateInclusive);
+            if (overridesState.status === 'AVAILABLE') {
+                overrides = overridesState.data;
+            }
+        } catch {
+            overridesDegraded = true;
+            overrides = undefined;
+        }
+    }
+
     const sourceHydration = await hydrateOccurrenceSourcesInRange(userId, fromDateInclusive, toDateExclusive, {
         preloadedActivities: options.preloadedActivities,
+        activityOverrides: overrides,
     });
     const activeOccurrences = sourceHydration.rows.map(row => row.occurrence);
     const activitiesById = new Map(sourceHydration.activities.map(activity => [activity.activityId, activity]));
@@ -201,6 +218,7 @@ export async function getPerformedTrainingFactsInRange(
                 ...(garminActivity?.endedAt ? { endedAt: garminActivity.endedAt } : {}),
                 ...(duration !== null && duration !== undefined ? { durationMin: duration } : {}),
                 ...(garminActivity ? { garminActivity } : {}),
+                ...(garminSource?.override ? { override: garminSource.override } : {}),
             };
         }
 
@@ -235,6 +253,7 @@ export async function getPerformedTrainingFactsInRange(
         revision,
         exposures,
         coverageCredits,
+        ...(overridesDegraded ? { overridesDegraded: true } : {}),
     };
 }
 

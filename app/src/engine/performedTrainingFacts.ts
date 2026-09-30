@@ -10,7 +10,8 @@
  *
  * Does not re-match sources. ADR-0034 canonical occurrence is the single deduplication authority.
  */
-import type { ActivitySessionCost, ActivityStimulusDomain, SessionTemplate, EvidenceTier, NormalizedGarminActivity, CompletedTrainingEvent, DailyRecommendation } from './models';
+import type { ActivityOverride, ActivitySessionCost, ActivityStimulusDomain, SessionTemplate, EvidenceTier, NormalizedGarminActivity, CompletedTrainingEvent, DailyRecommendation } from './models';
+import { classifyWorkoutStimulusFamily, TEMPLATE_STIMULUS_FAMILY } from './stimulusRecency';
 import type { SessionExecution, SessionExecutionState } from '../sessions/models';
 import type { CoverageSetId, PlanCoverageKey, CoverageSetDescriptor } from '../workouts/event-plan';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
@@ -81,6 +82,7 @@ export interface PerformedTrainingFactsSnapshot {
     revision: string;
     exposures: PerformedExposureFact[];
     coverageCredits: CoverageCreditFact[];
+    overridesDegraded?: boolean;
 }
 
 export interface FactsComparisonResult {
@@ -173,6 +175,7 @@ export interface HydratedOccurrenceContext {
         endedAt?: string;
         durationMin?: number;
         garminActivity?: NormalizedGarminActivity;
+        override?: ActivityOverride;
     };
 }
 
@@ -289,8 +292,21 @@ export function deriveFactsFromOccurrence(
         });
     }
 
+    let structuredDomain: ActivityStimulusDomain | undefined;
+    if (hydrated.structured) {
+        const family = (workoutId ? classifyWorkoutStimulusFamily(workoutId) : undefined)
+            ?? (templateId ? TEMPLATE_STIMULUS_FAMILY[templateId] : undefined);
+        if (family && family !== 'recovery') {
+            structuredDomain = family;
+        } else if (family === 'recovery') {
+            structuredDomain = 'recovery';
+        }
+    }
+
     const localDate = requirePerformedLocalDate(occurrence, startedAt, hydrated);
-    const providerSemantics = hydrated.structured ? undefined : hydrated.provider?.garminActivity;
+    const hasOverride = hydrated.provider?.override !== undefined;
+    const providerSemantics = (hydrated.structured || hasOverride) ? undefined : hydrated.provider?.garminActivity;
+    const resolvedStimulusDomain = structuredDomain ?? providerSemantics?.stimulusDomain;
 
     const exposure: PerformedExposureFact = {
         performedOccurrenceId: occurrence.performedOccurrenceId,
@@ -303,7 +319,7 @@ export function deriveFactsFromOccurrence(
         confidence,
         sourceKinds,
         evidenceTier,
-        ...(providerSemantics?.stimulusDomain !== undefined ? { stimulusDomain: providerSemantics.stimulusDomain } : {}),
+        ...(resolvedStimulusDomain !== undefined ? { stimulusDomain: resolvedStimulusDomain } : {}),
         ...(providerSemantics?.sessionCost !== undefined ? { sessionCost: providerSemantics.sessionCost } : {}),
         ...(providerSemantics?.intensityEvidence !== undefined ? { intensityEvidence: providerSemantics.intensityEvidence } : {}),
         ...(providerSemantics?.intensityClassificationVersion !== undefined

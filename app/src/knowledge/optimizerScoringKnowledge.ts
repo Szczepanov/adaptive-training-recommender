@@ -24,6 +24,7 @@ export const OPTIMIZER_SCORING_CLAIM_IDS = {
     symptomCompatibleStrengthSupportPolicy: 'policy.optimizer.symptom_compatible_strength_support_v1',
     readinessModifiedAerobicSupportPolicy: 'policy.optimizer.readiness_modified_aerobic_support_v1',
     residualLowerBodyStrengthDeferralPolicy: 'policy.optimizer.residual_lower_body_strength_deferral_v1',
+    performedStimulusQualityRepetitionPolicy: 'policy.optimizer.performed_stimulus_quality_repetition_v1',
 } as const;
 
 const OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE = 'PRODUCT-OPTIMIZER-SCORING-POLICY-V1';
@@ -171,5 +172,18 @@ export const OPTIMIZER_SCORING_CLAIMS: readonly KnowledgeClaim[] = [
             'Dimensional admission isolates non-participating contributions within floating-point tolerance (1e-9) only; non-zero costs exceeding tolerance are not dismissed as de minimis without explicit calibrated product policy.',
         ],
         reviewedOn: '2026-09-21', version: 2,
+    },
+    {
+        id: OPTIMIZER_SCORING_CLAIM_IDS.performedStimulusQualityRepetitionPolicy,
+        statement: 'Product candidate-selection policy v1: when a confident performed exposure in a quality family (tempo, threshold, vo2, or race) occurred on D-1, a candidate template belonging to the same quality family receives a preference multiplier of 0.2, unless the candidate fulfills an explicit nominated anchor on the date (fulfilsNominatedAnchor === true). When both exact template repetition (usedYesterday) and stimulus-family repetition apply, the optimizer takes min(templateMultiplier, stimulusMultiplier) = 0.2 rather than compounding them. Performed Zone 2 aerobic endurance is exempt from repetition penalty, admitting consecutive endurance sessions. A performed exposure is confident if it is a structured execution, or if a provider activity has intensityClassificationVersion >= 2 and a known stimulus domain with no athlete override.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
+        applicability: { contexts: ['candidate_selection', 'session_spacing'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['quality_stimulus_spacing'], horizon: 'acute' },
+        evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: [
+            'The 0.2 multiplier and D-1 lookback window are product ranking calibration to prevent back-to-back quality repetitions, not empirical physiological adaptation limits.',
+            'Athlete overrides suppress provider stimulus classification so athlete reclassifications take precedence.',
+            'Exact weekly-role coverage remains strictly exact-identity under ADR-0016; stimulus recency does not grant weekly coverage credit.',
+        ],
+        reviewedOn: '2026-09-30', version: 1,
     },
 ];

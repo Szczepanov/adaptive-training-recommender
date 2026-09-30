@@ -9,6 +9,7 @@ import { activityService } from '../services/activityService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { recommendationService } from '../services/recommendationService';
+import { activityOverrideService } from '../services/activityOverrideService';
 import { templateIdForWorkoutId } from '../engine/performedTrainingFacts';
 import type { DailyRecommendation, NormalizedGarminActivity } from '../engine/models';
 import type { SessionExecution } from '../sessions/models';
@@ -39,6 +40,12 @@ vi.mock('../sessions/sessionDefinitionResolver', () => ({
 vi.mock('../services/recommendationService', () => ({
     recommendationService: {
         getRecommendationsInRange: vi.fn(),
+    },
+}));
+
+vi.mock('../services/activityOverrideService', () => ({
+    activityOverrideService: {
+        getOverridesSinceState: vi.fn(),
     },
 }));
 
@@ -129,6 +136,7 @@ describe('performedTrainingFactsService', () => {
         vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({ status: 'MISSING' });
         vi.mocked(resolveSessionDefinition).mockResolvedValue({ status: 'MISSING' });
         vi.mocked(recommendationService.getRecommendationsInRange).mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+        vi.mocked(activityOverrideService.getOverridesSinceState).mockResolvedValue({ status: 'AVAILABLE', data: {}, revision: 'empty' });
     });
 
     describe('getPerformedTrainingFactsInRange', () => {
@@ -426,6 +434,65 @@ describe('performedTrainingFactsService', () => {
             expect(snapshot.exposures[1].performedOccurrenceId).toBe('pto-2');
             expect(snapshot.revision).toContain('pto-1:2026-09-01T10:00:00Z|pto-2:2026-09-02T10:00:00Z');
             expect(snapshot.windowDays).toBe(2);
+        });
+
+        describe('activity override handling', () => {
+            it('hydrates activity override from activityOverrideService when not explicitly passed', async () => {
+                vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([
+                    occurrence({ sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: 'act-tempo' }] }),
+                ]);
+                vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({
+                    status: 'AVAILABLE',
+                    data: [garminActivity({
+                        activityId: 'act-tempo',
+                        type: 'cycling',
+                        intensityClassificationVersion: 2,
+                        stimulusDomain: 'tempo',
+                    })],
+                    revision: 'rev-1',
+                });
+                vi.mocked(activityOverrideService.getOverridesSinceState).mockResolvedValue({
+                    status: 'AVAILABLE',
+                    data: {
+                        'act-tempo': {
+                            activityId: 'act-tempo',
+                            userId: 'user-1',
+                            date: '2026-09-01',
+                            originalType: 'cycling',
+                            originalIntensityTag: 'tempo',
+                            overriddenModality: 'Cycling',
+                            overriddenIntensity: 'easy',
+                            notes: 'Recovery ride',
+                            createdAt: '2026-09-01T12:00:00Z',
+                            updatedAt: '2026-09-01T12:00:00Z',
+                        },
+                    },
+                    revision: 'rev-overrides-1',
+                });
+
+                const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02');
+
+                // Provider tempo was suppressed by override
+                expect(snapshot.exposures[0].stimulusDomain).toBeUndefined();
+                expect(snapshot.overridesDegraded).toBeUndefined();
+            });
+
+            it('continues gracefully with overridesDegraded when activityOverrideService fails', async () => {
+                vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([
+                    occurrence({ sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: 'act-1' }] }),
+                ]);
+                vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({
+                    status: 'AVAILABLE',
+                    data: [garminActivity({ activityId: 'act-1', type: 'cycling' })],
+                    revision: 'rev-1',
+                });
+                vi.mocked(activityOverrideService.getOverridesSinceState).mockRejectedValue(new Error('Firestore connection error'));
+
+                const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02');
+
+                expect(snapshot.overridesDegraded).toBe(true);
+                expect(snapshot.exposures[0].modality).toBe('Cycling');
+            });
         });
     });
 

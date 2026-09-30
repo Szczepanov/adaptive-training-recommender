@@ -1344,6 +1344,16 @@ already-placed later reservations when an earlier placement retroactively trigge
 2. **Objective Benefit** (Level 4): Scores a template's stimulus profile against currently unresolved weekly objectives (`calculateStimulusBenefit`). Higher objective satisfaction strictly outranks non-objective candidates regardless of preference multipliers. Candidates that do not satisfy an unresolved objective and whose modality is deprioritized by the athlete receive a $0.25\times$ benefit scaling ($0.20\times$ for avoided/disliked), preventing non-preferred high-stimulus sessions from entering top benefit tiers when objectives are satisfied or absent. Weekly-anchor timing and missing supported triathlon-modality coverage are also Level-4 architecture signals.
 3. **Utility Score** (Level 5 & 6): `utility = (benefit / (1 + fatigueCost)) × preferenceMultiplier`. Used to sort candidates of comparable objective benefit (within `0.05` benefit score). Modality preferences scale utility ($1.35\times$ preferred, $0.25\times$ deprioritized, $0.20\times$ disliked).
 
+#### Performed stimulus recency and anti-repetition coordination (Issue #931)
+
+Candidate optimization consumes canonical performed stimulus facts (`endurance`, `tempo`, `threshold`, `vo2`, `race`, `strength`) from `options.recentPerformedExposures` (built via `buildPerformedStimulusRecency`):
+
+- **Quality family anti-repetition:** A confident D-1 exposure in a quality family (`tempo`, `threshold`, `vo2`, `race`) applies a $0.20\times$ preference multiplier (`STIMULUS_REPETITION_PENALTY`) to candidates belonging to the same stimulus family. Quality families are mutually isolated: performed tempo penalizes candidate tempo, but leaves threshold and VO2 unpenalized.
+- **Consecutive Zone 2 endurance exemption:** Consecutive aerobic endurance (`endurance`) days are explicitly exempt ($1.00\times$), allowing daily aerobic foundation volume.
+- **Anchor waiver:** If a candidate fulfils the nominated anchor for the target date (`fulfilsNominatedAnchor === true`), the quality repetition penalty is waived ($1.00\times$). A quality candidate that does not match the nominated anchor role on an anchor day still receives the penalty.
+- **Coordination with template variety:** If a candidate matches both the exact template used yesterday and a performed quality family, `Math.min(templateRepetitionMultiplier, stimulusRepetitionMultiplier)` applies a single $0.20\times$ multiplier rather than compounding to $0.04\times$.
+- **Source precedence and confidence:** Structured executions authoritatively define the stimulus domain from catalog metadata, overriding conflicting provider classifications. Athlete overrides suppress provider classifications (yielding an unclassified domain), preserving override precedence. Unversioned activities (`intensityClassificationVersion < 2`) and unknown domains do not trigger quality penalties.
+
 Strength-maintenance benefit takes the stronger of `maxStrength` and `hypertrophy` target/evidence rather than allowing field order to choose which axis counts.
 
 Event-priority matching is modality-based: cycling events match Cycling, running races match

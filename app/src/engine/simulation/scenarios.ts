@@ -804,4 +804,29 @@ export const SCENARIOS: AthleteScenario[] = [
     // Issue #805: identical athlete, history and check-ins; only the explicit opt-in differs.
     capabilityMaintenanceScenario(true),
     capabilityMaintenanceScenario(false),
+    // Issue #931: independent Garmin tempo activity on D-1 applies quality anti-repetition to next-day tempo.
+    {
+        id: 'performed_stimulus_recency_garmin_tempo',
+        label: 'Independent Garmin tempo D-1 stimulus recency (#931)',
+        description: 'An independent Garmin tempo activity on D-1 with confidence version 2. The engine must apply quality anti-repetition (0.2x) to next-day tempo candidates without suppressing Zone 2 aerobic endurance.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling']),
+        event: eventOn('stimulus-recency-event', 40, 'cycling_event', 'road_race', 'A'),
+        initialHistory: [
+            {
+                occurrenceKey: 'scenario:stimulus-recency:tempo:2026-08-06',
+                date: addDaysToLocalDateString(START_DATE, -1),
+                modality: 'Cycling',
+                category: 'Moderate Endurance',
+                stimulusConfidence: 'inferred',
+                stimulusDomain: 'tempo',
+                intensityClassificationVersion: 2,
+                costProfile: { systemic: 0.45, cardiovascular: 0.5, lowerBody: 0.3, upperBody: 0, impactTissue: 0, neuromuscular: 0.2 },
+                trainingRecordLike: { type: 'Garmin tempo ride', duration_min: 45, training_effect: 3.2, intensity_tag: 'moderate' },
+            },
+        ],
+        startDate: START_DATE,
+        weeks: 1,
+        tags: ['sequencing', 'stimulus-recency', 'quality-anti-repetition'],
+        readinessForWeek: () => stableReadiness({ readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2, motivation: 8 }),
+    },
 ];

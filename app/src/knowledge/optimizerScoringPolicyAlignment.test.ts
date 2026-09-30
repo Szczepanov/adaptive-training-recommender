@@ -942,4 +942,19 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(streakClaim.statement).toContain('Rest/Mobility is multiplied by 2.0');
         expect(streakClaim.statement).toContain('0.35x multiplier');
     });
+
+    it('aligns performed stimulus quality repetition policy statement with constants and behavior', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.performedStimulusQualityRepetitionPolicy);
+        expect(claim.statement).toContain('preference multiplier of 0.2');
+        expect(claim.statement).toContain('D-1');
+        expect(claim.statement).toContain('quality family');
+        expect(claim.statement).toContain('tempo');
+        expect(claim.statement).toContain('threshold');
+        expect(claim.statement).toContain('vo2');
+        expect(claim.statement).toContain('race');
+        expect(claim.statement).toContain('Zone 2 aerobic endurance');
+        expect(claim.statement).toContain('min(templateMultiplier, stimulusMultiplier) = 0.2');
+        expect(claim.statement).toContain('intensityClassificationVersion >= 2');
+        expect(claim.statement).toContain('fulfilsNominatedAnchor === true');
+    });
 });
