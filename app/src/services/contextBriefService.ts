@@ -786,9 +786,10 @@ export class ContextBriefService {
                 // inject the archive-named source as its own candidate so the row
                 // exists even when the active plan no longer places that session.
                 // Verified per M-7: the session id exists in the stored revision
-                // with a matching content hash, and the rules-verified fields
-                // agree with an external decision (`engineVerdict` actionable or
-                // gated, template rest or synthetic-for-session). Any failure
+                // with a matching content hash, and the archived decision fields
+                // form a consistent external-decision pair (actionable verdict +
+                // synthetic session template, or gated verdict + canonical rest).
+                // The archived audit itself remains an untrusted claim until #940. Any failure
                 // leaves the date without attribution (M-8): the row degrades to
                 // `unknown` via `replaceArchiveUnavailable`, never to the current
                 // revision's identity.
