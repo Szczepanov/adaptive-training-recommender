@@ -54,7 +54,7 @@ import { impliedDate, occupiesDate, resolveRestDatesByDate } from '../engine/ext
 import { getCanonicalRestTemplate } from '../engine/rules';
 import type { DataState } from '../engine/dataState';
 import type { ArchivedRecommendation } from '../persistence/parsers/trainingHistory';
-import { isExternalPlanOccurrence } from '../sessions/models';
+import { isExternalPlanOccurrence, isManualOccurrence } from '../sessions/models';
 import {
     assertRenderedBriefContract,
     CONTEXT_BRIEF_CONTRACT_VERSION,
@@ -751,6 +751,15 @@ export class ContextBriefService {
                         && item.recommendationAudit?.authoredOccurrence !== undefined);
                     const authoredOccurrence = current?.recommendationAudit?.authoredOccurrence;
                     if (!authoredOccurrence) continue;
+                    // recommendationAudit.authoredOccurrence is provenance, not the
+                    // authority record itself. Ground it in the exact same-date manual
+                    // replacement occurrence before using it to label an athlete override.
+                    const replacementOccurrence = occurrences.find(item =>
+                        item.occurrenceId === authoredOccurrence.occurrenceId
+                        && item.date === date
+                        && isManualOccurrence(item)
+                        && item.authority === 'replace_recommendation');
+                    if (!replacementOccurrence) continue;
                     const withExternalPlan = state.data.filter(item => item.recommendationAudit?.externalPlan !== undefined);
                     if (withExternalPlan.length === 0) continue;
                     const selected = withExternalPlan.reduce((newest, item) => (item.revision > newest.revision ? item : newest));
@@ -793,11 +802,20 @@ export class ContextBriefService {
                     const session = revisionPlan?.sessions.find(item => item.id === claim.sessionId);
                     const revisionHash = revisionPlan ? await computeContentHash(revisionPlan) : undefined;
                     if (!revisionPlan || !session || revisionHash !== claim.contentHash) continue;
-                    const verdictAgrees = pending.archive.engineVerdict !== undefined
-                        && ['proceed', 'scale', 'defer', 'skip'].includes(pending.archive.engineVerdict);
-                    const templateAgrees = pending.archive.templateId === getCanonicalRestTemplate().id
-                        || pending.archive.templateId === externalTemplateId(claim.planId, claim.revision, claim.sessionId);
-                    if (!verdictAgrees || !templateAgrees) continue;
+                    const archivedVerdict = pending.archive.engineVerdict;
+                    const expectedExternalTemplate = externalTemplateId(claim.planId, claim.revision, claim.sessionId);
+                    const restTemplate = getCanonicalRestTemplate().id;
+                    // Verify the verdict/template pair, not each field independently.
+                    // proceed/scale must point at the imported session template;
+                    // defer/skip must point at canonical rest. advisory, a missing
+                    // verdict, or any crossed pair is not trustworthy enough to
+                    // attribute a historical manual replacement.
+                    const verdictTemplateAgrees = archivedVerdict === 'proceed' || archivedVerdict === 'scale'
+                        ? pending.archive.templateId === expectedExternalTemplate
+                        : archivedVerdict === 'defer' || archivedVerdict === 'skip'
+                            ? pending.archive.templateId === restTemplate
+                            : false;
+                    if (!verdictTemplateAgrees) continue;
                     // PR-C M-0: count the archive-named revision's
                     // non-dropped/non-superseded sessions on D through the same
                     // placement resolution used for every other candidate. No
@@ -834,9 +852,9 @@ export class ContextBriefService {
                         : undefined;
                     // PR-C M-6: attribution belongs to the verified pre-replace
                     // identity only. Sibling-revision rows on the same date keep
-                    // their normal result (M-6b). One document per date means a
-                    // replace date never has a matched `audit.externalPlan`, so
-                    // the unavailable flag below cannot pollute a healthy row.
+                    // their normal result (M-6b) once attribution is verified. If
+                    // attribution cannot be verified, same-date candidates fail closed
+                    // because any one of them could be the overwritten decision.
                     const verified = verifiedReplace.get(candidate.date);
                     const isAttributed = verified !== undefined
                         && verified.source.planId === candidate.source.planId
@@ -902,7 +920,26 @@ export class ContextBriefService {
                         }));
                     }
                 }
-                plannedExecutionStatuses = [...sessionStatuses, ...activeRestStatuses, ...restStatuses];
+                // A replace decision can exist even when no external-plan candidate
+                // survives current-plan/occurrence hydration (for example after a
+                // re-import plus an unreadable archive). Preserve that known uncertainty
+                // as its own row rather than silently dropping the date from the section.
+                const unresolvedReplaceStatuses = replaceDates
+                    .filter(date => !verifiedReplace.has(date)
+                        && ![...candidates.values()].some(candidate => candidate.date === date))
+                    .map(date => projectPlannedExecutionStatus({
+                        date,
+                        authored: { kind: 'unknown', reason: 'pre-replace authored identity could not be verified' },
+                        replaceArchiveUnavailable: true,
+                        occurrencesReadable: true,
+                        executionsReadable: true,
+                        performedReadable: true,
+                        occurrences,
+                        recommendations,
+                        executions,
+                        performedOccurrences,
+                    }));
+                plannedExecutionStatuses = [...sessionStatuses, ...activeRestStatuses, ...restStatuses, ...unresolvedReplaceStatuses];
             }
         }
 
