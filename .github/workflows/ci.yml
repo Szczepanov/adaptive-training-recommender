@@ -430,6 +430,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Node.js
@@ -454,8 +455,20 @@ jobs:
         run: node scripts/run-persona-ai-judge.mjs --build-only
 
       - name: Report simulation semantic diff
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_SHA: ${{ github.sha }}
         run: npm run simulate:diff
         continue-on-error: true
+
+      - name: Upload simulation report artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: simulation-reports
+          path: app/artifacts/simulation-reports
+          if-no-files-found: ignore
 
   docker-build:
     name: Docker Build & Compose Smoke
