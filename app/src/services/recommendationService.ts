@@ -12,6 +12,8 @@ import type { MinimumSafetyCheckinStatus } from '../engine/safetyCheckin';
 
 type DecisionContextCapture = Omit<CreateDecisionContextInput, 'userId' | 'date' | 'recommendationRevision'>;
 
+const ROUND_TRIP_ARCHIVE_REVISION_LIMIT = 128;
+
 /**
  * Persists what the engine actually prescribed each day, and captures whether the user
  * followed it -- previously the engine's output was computed on page load and
@@ -414,7 +416,24 @@ export class RecommendationService {
     ): Promise<DataState<ArchivedRecommendation[]>> {
         try {
             const collRef = collection(getDb(), 'users', userId, this.collectionPath, date, 'revisions');
-            const querySnapshot = await getDocs(query(collRef, orderBy('revision', 'asc')));
+            // Keep the Context Brief read cost bounded even on pathological dates with
+            // many same-day recommendation rewrites. Fetch one sentinel row beyond the
+            // supported window so truncation becomes explicit unknown, never a silently
+            // incomplete archive search.
+            const querySnapshot = await getDocs(query(
+                collRef,
+                orderBy('revision', 'asc'),
+                limit(ROUND_TRIP_ARCHIVE_REVISION_LIMIT + 1),
+            ));
+            if (querySnapshot.docs.length > ROUND_TRIP_ARCHIVE_REVISION_LIMIT) {
+                return {
+                    status: 'INVALID',
+                    issues: [{
+                        code: 'recommendation-archive-too-large',
+                        documentPath: `users/${userId}/${this.collectionPath}/${date}/revisions`,
+                    }],
+                };
+            }
             const archives: ArchivedRecommendation[] = [];
             const issues: DataIssue[] = [];
             for (const archiveDocument of querySnapshot.docs) {
