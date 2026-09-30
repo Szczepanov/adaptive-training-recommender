@@ -57,11 +57,11 @@ describe('AssessmentHistoryService', () => {
         } as unknown as AssessmentAttemptService;
 
         const mockObservationService = {
-            listCurrentRevisionsForMetricWithDiagnostics: vi.fn(async (_uid: string, metricId: string) => {
+            listCurrentObservationsForMetricWithDiagnostics: vi.fn(async (_uid: string, metricId: string) => {
                 if (metricId === 'standing_broad_jump_distance_cm') {
-                    return { revisions: [revision], unreadableCount: 0 };
+                    return { observations: [{ head, revision }], unreadableCount: 0 };
                 }
-                return { revisions: [], unreadableCount: 0 };
+                return { observations: [], unreadableCount: 0 };
             }),
             getHead: vi.fn(async (_uid: string, key: string) => {
                 if (key === head.observationKey) return head;
@@ -100,6 +100,7 @@ describe('AssessmentHistoryService', () => {
 
         // Crucial invariant: listTrialsForAttempt must NOT be called for history loading!
         expect(mockTrialService.listTrialsForAttempt).not.toHaveBeenCalled();
+        expect(mockObservationService.getHead).not.toHaveBeenCalled();
     });
 
     it('loads trials and revision history lazily only in loadAttemptDetail (D5)', async () => {
