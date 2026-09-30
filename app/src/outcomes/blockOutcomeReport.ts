@@ -1,5 +1,5 @@
 import type { BlockOutcomeReport } from './blockOutcome';
-import { canonicalizeJson } from '../utils/canonicalJson';
+import { canonicalizeJson, compareCodeUnits } from '../utils/canonicalJson';
 
 export interface BlockMetricProgressRow {
     evaluationId: string;
@@ -32,10 +32,6 @@ const CSV_COLUMNS: (keyof BlockMetricProgressRow)[] = [
     'blockVerdictPolicyVersion',
     'reasons',
 ];
-
-function compareCodeUnits(left: string, right: string): number {
-    return left < right ? -1 : left > right ? 1 : 0;
-}
 
 function csvField(value: string | number | boolean): string {
     const text = String(value);
