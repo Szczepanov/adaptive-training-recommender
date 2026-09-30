@@ -435,6 +435,18 @@ describe('RecommendationService persistence', () => {
             expect(result.status).toBe('INVALID');
         });
 
+        it('bounds archive hydration and fails closed instead of silently truncating an oversized date', async () => {
+            firestore.getDocs.mockResolvedValue({
+                docs: Array.from({ length: 129 }, (_, index) => archive(index + 1, index === 0 ? externalAudit : undefined)),
+            });
+            const result = await new RecommendationService().listRecommendationRevisions('u1', '2026-09-20');
+            expect(result).toMatchObject({
+                status: 'INVALID',
+                issues: [{ code: 'recommendation-archive-too-large' }],
+            });
+            expect(firestore.limit).toHaveBeenCalledWith(129);
+        });
+
         it('reports unavailable when the archive listing cannot be read', async () => {
             firestore.getDocs.mockRejectedValue(new Error('offline'));
             const result = await new RecommendationService().listRecommendationRevisions('u1', '2026-09-20');
