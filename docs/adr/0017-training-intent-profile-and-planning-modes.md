@@ -250,17 +250,23 @@ Evergreen evidence → dose → capacity → exact-role pipeline owns the execut
 
 `structured_plan` is reported only when a structured block actually owns the date. An
 explicit authored travel block can therefore activate structured authority before the
-derived build window; otherwise the generated cycling build starts at its authored -84 day
-boundary. While `evergreen_fallback` owns a date, it uses the same established-athlete and
-mechanical evidence streams as ordinary Evergreen programming. Forecasts re-resolve this ownership
-per projected date, so crossing from D-85 to D-84 transfers authority to the structured build on
-D-84 rather than carrying the fallback definition across the horizon. Non-cycling eligible events
-continue to use `demand_derived`.
+current generated build window; under the current cycling policy that generated build starts
+at D-84. **D-84 is the first boundary of the currently authored structured plan, not a
+physiological threshold and not a statement that goal-directed preparation begins only at
+D-84.** While `evergreen_fallback` owns a date, it uses the same established-athlete and
+mechanical evidence streams as ordinary Evergreen programming. Forecasts re-resolve this
+ownership per projected date, so crossing the current D-85/D-84 fixture transfers authority
+to the structured build rather than carrying the fallback definition across the horizon.
+Non-cycling eligible events continue to use `demand_derived`.
 
 This is an authority correction, not a new persisted planning mode and not permission to
-fabricate a Base block. ADR-0016 exact-role coverage remains unchanged: provider semantic
-labels may preserve physiological provenance, but they do not manufacture exact workout
-identity or weekly role credit.
+fabricate a Base block. `evergreen_fallback` is a safe executable fallback for dates not
+owned by a structured block; it is **not** the final long-horizon event-periodization model.
+Long-horizon event-directed mesocycle authority is tracked in #927, policy ownership of the
+current D-84/D-35 horizons in #928, and season-level A/B/C event coordination in #929.
+ADR-0016 exact-role coverage remains unchanged: provider semantic labels may preserve
+physiological provenance, but they do not manufacture exact workout identity or weekly role
+credit.
 
 ## Consequences
 
