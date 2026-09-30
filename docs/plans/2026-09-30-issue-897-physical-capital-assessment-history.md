@@ -1,9 +1,12 @@
 # Issue #897 — Physical-capital assessment history implementation plan
 
-**Date:** 2026-09-30  
-**Status:** implementation plan  
-**Companion analysis:** [2026-09-30-issue-897-physical-capital-assessment-integration.md](../analysis/2026-09-30-issue-897-physical-capital-assessment-integration.md)  
-**Primary issue:** #897  
+**Date:** 2026-09-30
+**Status:** Draft
+**Blocked by:** acceptance of proposed [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) for raw-trial identity/correction/provenance; work remains evidence-only under the existing OV authority boundary
+**Unlocks:** first-class multidomain physical-capital assessment capture, comparable history and normalized/diagnostic export without recommendation authority
+**Canonical status owner:** [Performance outcome validation (OV)](./performance-outcome-validation.md); this document is a scoped #897 implementation design, not a parallel OV status board
+**Companion analysis:** [2026-09-30-issue-897-physical-capital-assessment-integration.md](../analysis/2026-09-30-issue-897-physical-capital-assessment-integration.md)
+**Primary issue:** #897
 **Repository baseline:** `main@826d9aba845a8f3e4acaa94a173ece41b1906ef1`
 
 ---
@@ -12,7 +15,7 @@
 
 Make the existing Protocol testing workflow capable of storing, comparing, reviewing and exporting the planned October 2026 physical-capital baseline and later repeat checkpoints.
 
-The implementation must extend the existing Performance Outcome Validation architecture rather than create a parallel subsystem.
+The implementation must extend the existing Performance Outcome Validation architecture rather than create a parallel subsystem. Actionable status remains in the canonical OV plan; if ADR-0046 is accepted, implementation work is tracked there/#897 rather than creating an independent competing task board.
 
 The first complete user journey is:
 
@@ -111,7 +114,7 @@ Do not make this generic enough to become an analytics DSL. It exists only to ma
 
 Pin regression tests showing that:
 
-- `cycling-5s-peak-power@1` remains unchanged;
+- protocol id `cycling-5s-peak-power`, revision `1`, remains unchanged;
 - the new 6 s seated sprint is a different protocol;
 - persisted old revisions still deserialize.
 
@@ -130,7 +133,7 @@ No rewrite/migration is required.
 
 ## WP1.1 Add canonical metrics
 
-Recommended first set:
+Recommended canonical first set:
 
 ```text
 standing_broad_jump_distance_cm
@@ -138,9 +141,6 @@ wall_touch_cmj_height_cm
 seated_medball_throw_distance_m
 cycling_sprint_1s_peak_power_w
 cycling_sprint_5s_mean_power_w
-cycling_sprint_peak_cadence_rpm
-bar_mean_concentric_velocity_mps
-bar_peak_concentric_velocity_mps
 ```
 
 Keep existing:
@@ -156,11 +156,10 @@ Recommended directions:
 | medicine-ball throw | higher_is_better |
 | cycling 1 s peak | higher_is_better |
 | cycling 5 s mean | higher_is_better |
-| peak cadence | context_only |
-| bar mean velocity | higher_is_better |
-| bar peak velocity | context_only or higher_is_better; decide from intended use |
 
-For bar velocity, `mean concentric velocity` is the preferred longitudinal anchor. Peak velocity should remain secondary unless a later use case proves otherwise.
+Do **not** register every useful raw field as a canonical outcome metric in the first slice. Peak cadence, start cadence, left/right balance, success/miss, RPE and WL Analysis mean/peak velocity belong to the bounded raw-trial capture schema initially. Left/right balance is descriptive context only, not a corrective target.
+
+For bar velocity, `mean concentric velocity` remains the preferred future longitudinal anchor, but fixed-load comparability must first identify the exercise, exact absolute load and material WL Analysis/camera setup. Peak velocity remains secondary.
 
 ## WP1.2 Add only required comparison dimensions
 
@@ -210,10 +209,12 @@ Suggested location:
 Illustrative shape:
 
 ```ts
-export interface AssessmentTrialMeasurement {
-    metricId: string;
-    value: number;
-    unit: string;
+type AssessmentTrialScalar = string | number | boolean;
+
+export interface AssessmentTrialValue {
+    fieldId: string;
+    value: AssessmentTrialScalar;
+    unit?: string;
 }
 
 export interface AssessmentTrial {
@@ -224,13 +225,17 @@ export interface AssessmentTrial {
     validity: ObservationValidity;
     invalidReason?: string;
     context: ObservationContext;
-    measurements: readonly AssessmentTrialMeasurement[];
+    values: readonly AssessmentTrialValue[];
     sourceRef?: string;
     device?: MetricObservationDevice;
     notes?: string;
+    supersedesTrialId?: string;
+    correctionReason?: string;
     createdAt: string;
 }
 ```
+
+Raw `fieldId` values are declared and validated by the bundled test's bounded capture schema. Reducers map those fields to canonical metric IDs; raw fields do not become `MetricDefinition` entries automatically.
 
 The exact field names may change during implementation, but preserve these invariants:
 
@@ -238,9 +243,10 @@ The exact field names may change during implementation, but preserve these invar
 - parent attempt identity;
 - stable ordinal;
 - explicit validity;
-- numeric unit-aware measurements;
+- typed, bounded and unit-aware raw fields;
 - scalar context only;
 - source/device provenance;
+- append-only supersession for corrections;
 - no recommendation authority.
 
 ## WP2.2 Persistence
@@ -251,9 +257,7 @@ Recommended Firestore shape:
 users/{userId}/assessment_attempts/{attemptId}/trials/{trialId}
 ```
 
-A trial is immutable after creation in the first slice.
-
-If correction support is required, prefer append-only revision semantics rather than in-place mutation; however, correction can be deferred if the canonical observation correction path is sufficient for the first release.
+A trial record is immutable after creation. Correction support is required for the first athlete-usable slice: create a new immutable trial that names `supersedesTrialId` and a non-empty correction reason. Reducers use the latest unsuperseded record for each ordinal. Correcting only the canonical observation while leaving incorrect source trials in place is not acceptable provenance.
 
 ## WP2.3 Service
 
@@ -275,12 +279,13 @@ Fail closed on:
 
 - duplicate trial IDs;
 - ordinal < 1;
-- unsupported metric;
-- wrong unit;
+- field not declared by the protocol capture schema;
+- wrong field type/unit;
 - invalid attempt identity;
 - invalid state/reason combinations;
 - non-finite values;
-- duplicate measurement metric IDs within one trial unless a real protocol needs duplicates.
+- duplicate field IDs within one trial unless the capture schema explicitly allows them;
+- broken supersession chains or missing correction reasons.
 
 ## WP2.5 Security rules + emulator tests
 
@@ -340,10 +345,11 @@ The canonical `MetricObservationRevision` should state that it was derived from 
 
 Preferred approach:
 
-- extend derived-observation provenance to accept assessment trial IDs;
+- introduce additive typed derivation evidence references that can point to assessment-trial records;
+- preserve existing observation-to-observation provenance for historical derived observations;
 - store `algorithmVersion`, e.g. `assessment-reducer-v1`.
 
-If widening `derivedFromObservationIds` is semantically misleading, introduce a more general evidence-reference type rather than putting trial IDs into a field that promises observation IDs.
+Do not put trial IDs into `derivedFromObservationIds`; that field promises observation identities.
 
 Do not weaken validation just to fit the new source.
 
@@ -377,9 +383,9 @@ ID:
 
 `strength-bench-press-1rm-r1`
 
-Protocol:
+Protocol reference:
 
-`strength-bench-press-1rm@1`
+`{ id: 'strength-bench-press-1rm', revision: 1 }`
 
 Metric:
 
@@ -399,15 +405,27 @@ ID:
 
 `strength-back-squat-1rm-r1`
 
+Protocol reference:
+
+`{ id: 'strength-back-squat-1rm', revision: 1 }`
+
 Same design principles as bench.
 
 ## WP4.3 Standing broad jump
+
+Definition ID: `field-standing-broad-jump-r1`
+
+Protocol reference: `{ id: 'field-standing-broad-jump', revision: 1 }`
 
 Three maximal valid attempts after warm-up/familiarization.
 
 Canonical = best valid distance.
 
 ## WP4.4 Wall-touch CMJ
+
+Definition ID: `field-wall-touch-cmj-r1`
+
+Protocol reference: `{ id: 'field-wall-touch-cmj', revision: 1 }`
 
 Capture:
 
@@ -419,19 +437,28 @@ If standing reach is treated as trial context rather than a canonical performanc
 
 ## WP4.5 3 kg seated medicine-ball throw
 
+Definition ID: `field-seated-medball-chest-throw-3kg-r1`
+
+Protocol reference: `{ id: 'field-seated-medball-chest-throw-3kg', revision: 1 }`
+
 Three maximal valid attempts.
 
 Canonical = best valid distance.
 
 ## WP4.6 6 s seated cycling sprint
 
+Definition ID: `cycling_6s_seated_sprint-r1`
+
+Protocol reference: `{ id: 'cycling-6s-seated-sprint', revision: 1 }`
+
 Three maximal 6 s seated efforts with long easy recovery.
 
-Trial measurements:
+Trial fields:
 
 - 1 s peak power;
 - 5 s mean power;
-- optional peak cadence.
+- optional start/peak cadence;
+- optional left/right power balance when reported by the power source, descriptive only.
 
 Canonical metrics:
 
@@ -512,8 +539,8 @@ Display computed best valid result before save.
 
 Table:
 
-| Trial | 1 s peak W | 5 s mean W | peak cadence | validity |
-|---|---:|---:|---:|---|
+| Trial | 1 s peak W | 5 s mean W | peak cadence | L/R balance | validity |
+|---|---:|---:|---:|---|---|
 
 Display both canonical results before save.
 
@@ -541,6 +568,16 @@ Requirements:
 - retain entered trials through temporary stage changes;
 - clear invalid/practice controls;
 - no requirement to type protocol IDs in the normal bundled flow.
+
+## WP5.7 One physical workout, one completed-training exposure
+
+The assessment attempt/trial/observation records are evidence sidecars to the `SessionRunner` execution. They must not create another completed workout. Verify the current performed-training reconciliation path rather than assuming proposed ADR-0034 semantics are automatically active everywhere.
+
+Required invariant:
+
+`one physical testing session -> at most one completed-training/history exposure`
+
+This must hold when the structured testing execution and a provider activity both exist.
 
 ---
 
@@ -692,12 +729,16 @@ This work should reuse existing OV and PG contracts.
 
 ## WP8.1 Typed performance goals
 
-Existing goal infrastructure can already reference canonical assessment metrics.
+Do not assume all canonical assessment observations already satisfy typed goals.
 
-Verify:
+Current ADR-0041 behavior differs by subject kind:
 
-- bench and squat can disambiguate by protocolRef despite sharing `strength_1rm_kg`;
-- new jump/throw/sprint metrics pass target validation when appropriate.
+- `performance_test` targets can resolve current measured `MetricObservationRevision` evidence through the bound performance-test protocol;
+- `exercise` strength targets currently resolve current capability from `AthletePerformanceProfile.estimated1RmKg`, not from measured assessment observations.
+
+Therefore squat/bench 1RM evidence needs an explicit bridge if it is to satisfy an exercise-subject goal. The implementation must either add a reviewed mapping from the bundled strength test to the canonical exercise identity and extend goal-progress resolution while keeping measured 1RM distinct from e1RM, or leave measured squat/bench assessment evidence outside typed-goal progress in the first slice.
+
+Protocol reference alone does not solve exercise subject identity. New jump/throw/sprint metrics should become goal-eligible only when a real typed-goal use case is declared; assessment metrics do not automatically become goal metrics.
 
 Do not make target values alter assessment protocols.
 
@@ -752,11 +793,13 @@ Diagnostic export owns the detailed evidence.
 ### Trial validation
 
 - invalid ordinals;
-- invalid units;
-- unknown metrics;
+- undeclared fields;
+- invalid field types/units;
 - invalid validity reason;
-- duplicate measurements;
-- malformed context.
+- duplicate fields;
+- malformed context;
+- append-only correction/supersession chain;
+- reducer ignores superseded source trials.
 
 ### Reducers
 
@@ -778,10 +821,11 @@ Diagnostic export owns the detailed evidence.
 
 ## Service tests
 
-- create/list raw trials;
+- create/list/correct raw trials without mutating historical records;
 - no cross-user access;
-- canonical observation references source trials;
-- assessment completion is not accepted as valid benchmark if required canonical derivation fails.
+- canonical observation references current source trials through typed evidence refs;
+- assessment completion is not accepted as valid benchmark if required canonical derivation fails;
+- one testing execution contributes at most one completed-training exposure even when provider activity evidence is also present.
 
 ## Emulator tests
 
@@ -847,7 +891,7 @@ rather than malformed/missing.
 
 ## Existing bundled sprint
 
-Do not rewrite `cycling-5s-peak-power@1`.
+Do not rewrite protocol id `cycling-5s-peak-power`, revision `1`.
 
 If product copy is misleading, deprecate it in catalog metadata or add a later revision/new protocol. Historical results remain tied to the old semantics.
 
@@ -924,11 +968,15 @@ A polished dashboard is less important than preserving correct evidence at first
 
 Before the real baseline begins:
 
+- [ ] proposed ADR-0046 has been accepted and the canonical OV status board reflects the startable #897 work;
 - [ ] all six intended protocols are visible in Testing;
 - [ ] protocol text matches the agreed October execution standards;
 - [ ] familiarization can be recorded separately from baseline;
 - [ ] trial capture works on mobile;
-- [ ] squat/bench raw load attempts can store WL Analysis velocity;
+- [ ] squat/bench raw load attempts can store WL Analysis velocity without prematurely promoting it to a generic canonical series;
+- [ ] raw-trial correction is append-only and canonical reducers use unsuperseded trials;
+- [ ] sprint cadence and L/R balance can be retained as descriptive raw/context evidence without becoming corrective targets;
+- [ ] any W/kg/body-mass-relative output retains the selected source-specific same-day body-mass reference or remains unavailable;
 - [ ] a failed 1RM attempt does not replace the best successful load;
 - [ ] broad jump/CMJ/throw keep all valid attempts;
 - [ ] cycling stores three 6 s trials and both canonical power metrics;
@@ -944,7 +992,7 @@ Before the real baseline begins:
 These do not block the first plan:
 
 1. Whether peak bar velocity should be a canonical context metric or raw-trial-only field.
-2. Whether same-day body mass is joined at export time or snapshotted as a derived-context reference at assessment completion.
+2. Whether history UI also shows a rolling body-mass summary in addition to the required explicit same-day source/reference used for any derived relative value.
 3. Whether raw video references deserve a generic attachment/provenance contract.
 4. Whether personal repeatability/reliability estimates should be calculated automatically after enough repeated trials.
 5. Whether quarterly/semiannual bundles should be scheduled automatically.
