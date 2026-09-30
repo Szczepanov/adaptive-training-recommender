@@ -96,7 +96,7 @@ function computeProgressForExport(
             // non-familiarization attempt (e.g. a checkpoint imported without a baseline label).
             const baselineEligible = validCandidates.filter(c => {
                 const att = attemptsById.get(c.head.assessmentAttemptId);
-                return att?.purpose !== 'familiarization';
+                return att !== undefined && att.purpose !== 'familiarization';
             });
             if (baselineEligible.length === 0) continue;
 
