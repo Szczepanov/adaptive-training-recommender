@@ -91,10 +91,19 @@ function computeProgressForExport(
                     || compareCodeUnits(a.revision.observationKey, b.revision.observationKey));
             if (validCandidates.length === 0) continue;
 
-            const baselineCandidate = validCandidates.find(c => {
+            // Familiarization is practice exposure, never an implicit longitudinal baseline.
+            // Prefer an explicit baseline-purpose attempt; otherwise fall back only to a valid
+            // non-familiarization attempt (e.g. a checkpoint imported without a baseline label).
+            const baselineEligible = validCandidates.filter(c => {
+                const att = attemptsById.get(c.head.assessmentAttemptId);
+                return att?.purpose !== 'familiarization';
+            });
+            if (baselineEligible.length === 0) continue;
+
+            const baselineCandidate = baselineEligible.find(c => {
                 const att = attemptsById.get(c.head.assessmentAttemptId);
                 return att?.purpose === 'baseline';
-            }) ?? validCandidates[0];
+            }) ?? baselineEligible[0];
 
             const expectedDirection: OutcomeDirection = metricDef.direction === 'lower_is_better'
                 ? { kind: 'lower_is_better' }
