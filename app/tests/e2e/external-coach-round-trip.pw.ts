@@ -1,90 +1,73 @@
 import { expect, test } from '@playwright/test';
-import { readFileSync } from 'node:fs';
-import {
-  dismissOnboardingIfVisible,
-  provisionAthlete,
-  readSessionExecutions,
-  seedRecoverySnapshot,
-  signInThroughUi,
-} from './support/athlete';
-import { mondayOfWeek, seedExternalPlanningMode, weekdayOf } from './support/externalPlan';
+import { provisionAthlete, seedRecoverySnapshot, signInThroughUi } from './support/athlete';
+import { seedExternalPlanningMode } from './support/externalPlan';
+import { buildV6Plan, checkIn, previewPlan, planningBrief, finishStrength, terminalExecution, executionRow, readPerformedOccurrences, seedActivityForExecution, readCollection, readDocument } from './support/roundTrip';
+import type { SessionEntry } from '../../src/sessions/models';
+import { addDaysToLocalDateString } from '../../src/utils/localDate';
+import { parseDailyRecommendation } from '../../src/persistence/parsers/trainingHistory';
 
-const definition = JSON.parse(readFileSync(new URL('../../src/sessions/fixtures/01-full-body-maintenance.json', import.meta.url), 'utf8'));
-
-test('a validated v6 coach plan launches, completes, and appears in the next planning brief', async ({ page }) => {
+test('a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)', async ({ page }) => {
   const athlete = await provisionAthlete();
   const today = await seedRecoverySnapshot(athlete);
-  const planId = `e2e-round-trip-${today}`;
-  const sessionTitle = 'E2E coach strength';
-  const plan = {
-    schema: 'adaptive-training-recommender/external-plan@6',
-    planId,
-    revision: 1,
-    title: 'E2E coach round trip',
-    startDate: mondayOfWeek(today),
-    weekCount: 1,
-    restDays: [],
-    sessions: [{
-      id: 'session-today',
-      title: sessionTitle,
-      priority: 'key',
-      placement: { week: 1, preferredDay: weekdayOf(today), flexibility: 'fixed', ifMissed: 'drop' },
-      gating: { modality: 'strength', intensity: 'moderate', durationMin: 30, durationMax: 60, environment: 'either', equipment: [] },
-      definition,
-  }],
-  };
-
+  const plan = buildV6Plan(today);
   await seedExternalPlanningMode(athlete);
   await signInThroughUi(page, athlete);
-  await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('button', { name: /Export Context for AI/ }).click();
-  await expect(page.getByRole('heading', { name: 'Export Context for AI' })).toBeVisible();
-  const initialBlockPlanning = page.getByRole('button', { name: /Block Planning/ });
-  await initialBlockPlanning.click();
-  await expect(initialBlockPlanning).toHaveAttribute('aria-pressed', 'true');
-  await expect.poll(async () => page.locator('textarea.brief-text').inputValue()).toContain('## External-plan execution round trip');
-  await page.getByRole('button', { name: 'Plan', exact: true }).click();
-  await page.getByRole('button', { name: /Import Plan/ }).click();
-  await page.getByRole('textbox', { name: 'Plan JSON' }).fill(JSON.stringify(plan));
-  await page.getByRole('button', { name: 'Validate and preview' }).click();
-  await expect(page.getByText('No overlap or placement consequences were found')).toBeVisible();
+  expect(await planningBrief(page)).toContain('## External-plan execution round trip');
+  await previewPlan(page, plan);
+  await page.getByText('Need the prompt template for your AI?').click();
+  await expect(page.locator('.external-import-prompt-text')).toContainText('adaptive-training-recommender/external-plan@6');
   await page.getByRole('button', { name: 'Import this plan' }).click();
-  await expect(page.getByRole('heading', { name: 'This week in E2E coach round trip' })).toBeVisible();
-
-  await page.getByRole('button', { name: 'Check-in', exact: true }).click();
-  await dismissOnboardingIfVisible(page);
-  await page.getByRole('button', { name: /Feeling normal today\? Use typical values/ }).click();
-  await page.getByRole('button', { name: "Save & see today's plan", exact: true }).click();
-  await expect(page.getByRole('button', { name: new RegExp(`Start ${sessionTitle}`) })).toBeVisible();
-  await page.getByRole('button', { name: new RegExp(`Start ${sessionTitle}`) }).click();
-  await page.getByLabel('Warm-up').uncheck();
-  await page.getByRole('button', { name: 'Log repetition set' }).click();
-  await page.getByRole('button', { name: /Finish Session \(/ }).click();
-  await expect(page.getByRole('dialog', { name: 'Complete Session' })).toBeVisible();
-  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
-  let executions = await readSessionExecutions(athlete);
-  await expect.poll(async () => {
-    executions = await readSessionExecutions(athlete);
-    return executions.filter(item => item.state === 'completed').length;
-  }).toBe(1);
-  const execution = executions.find(item => item.state === 'completed');
-  expect(execution?.sessionSource).toMatchObject({ kind: 'external_plan', planId, revision: 1, sessionId: 'session-today' });
-  expect(execution?.occurrenceId).toBeTruthy();
-  expect(execution?.prescriptionHash).toBeTruthy();
-
-  await dismissOnboardingIfVisible(page);
+  await expect(page.getByRole('heading', { name: `This week in ${plan.title}` })).toBeVisible();
+  await checkIn(page);
+  await page.getByRole('button', { name: `Start ${plan.sessions[0].title}`, exact: true }).click();
+  await finishStrength(page);
+  const execution = await terminalExecution(athlete);
+  expect(execution.sessionSource).toMatchObject({ kind: 'external_plan', planId: plan.planId, revision: 1, sessionId: 'session-today' });
+  let text = await planningBrief(page);
+  const [performed] = await readPerformedOccurrences(athlete, today);
+  expect(performed).toBeTruthy();
+  expect(text).toContain(executionRow(today, plan, execution, performed.performedOccurrenceId));
+  const activityId = await seedActivityForExecution(athlete, execution);
   await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('button', { name: /Export Context for AI/ }).click();
-  const blockPlanning = page.getByRole('button', { name: /Block Planning/ });
-  await blockPlanning.click();
-  await expect(blockPlanning).toHaveAttribute('aria-pressed', 'true');
-  const brief = page.locator('textarea.brief-text');
-  await expect.poll(() => brief.inputValue()).toContain('## External-plan execution round trip');
-  const text = await brief.inputValue();
-  expect(text).toContain(`${planId} r1/session-today`);
-  expect(text).toContain(`occurrence ${execution?.occurrenceId}`);
-  expect(text).toContain(`execution ${execution?.executionId}`);
-  expect(text).toContain(`prescription ${execution?.prescriptionHash}`);
-  expect(text).toContain('performance completed');
-  expect(text).toMatch(/performed [a-zA-Z0-9_-]+/);
+  await page.getByRole('button', { name: /Data/ }).click();
+  await page.getByRole('button', { name: 'Activities', exact: true }).click();
+  // The canonical Activities read model is off by default in .env.e2e. Its
+  // service-level fallback exercises real reconciliation without fabricating linkage.
+  await page.evaluate(async ({ userId, today, through }) => {
+    const modulePath = '/src/training-occurrence/canonicalActivitiesWindow.ts';
+    const { loadCanonicalActivitiesWindow } = await import(/* @vite-ignore */ modulePath);
+    await loadCanonicalActivitiesWindow(userId, today, through);
+  }, { userId: athlete.userId, today, through: addDaysToLocalDateString(today, 1) });
+  await expect.poll(async () => (await readPerformedOccurrences(athlete, today)).map(item => ({ id: item.performedOccurrenceId, refs: item.sourceRefs }))).toEqual([
+    { id: performed.performedOccurrenceId, refs: expect.arrayContaining([
+      expect.objectContaining({ kind: 'structured_execution', executionId: execution.executionId }),
+      expect.objectContaining({ kind: 'provider_activity', activityId }),
+    ]) },
+  ]);
+  text = await planningBrief(page);
+  expect(text).toContain(executionRow(today, plan, execution, performed.performedOccurrenceId));
+  const completedSection = text.split('Completed training (canonical performed occurrences)')[1]?.split('\n## ')[0];
+  expect(completedSection).toBeDefined();
+  expect(completedSection?.split('\n').filter(row => row.startsWith('| ') && row.includes(today))).toHaveLength(1);
+});
+
+test('V12 abandoned external execution retains logged evidence and exact next-brief ids', async ({ page }) => {
+  const athlete = await provisionAthlete();
+  const today = await seedRecoverySnapshot(athlete);
+  const plan = buildV6Plan(today);
+  await seedExternalPlanningMode(athlete);
+  await signInThroughUi(page, athlete);
+  await previewPlan(page, plan);
+  await page.getByRole('button', { name: 'Import this plan' }).click();
+  await expect(page.getByRole('heading', { name: `This week in ${plan.title}` })).toBeVisible();
+  await checkIn(page);
+  await page.getByRole('button', { name: `Start ${plan.sessions[0].title}`, exact: true }).click();
+  await finishStrength(page, true);
+  const execution = await terminalExecution(athlete, 'abandoned');
+  const entries = await readCollection<SessionEntry>(athlete, `session_executions/${execution.executionId}/entries`);
+  expect(entries).toHaveLength(1);
+  expect(entries[0].payload).toMatchObject({ kind: 'repetition', isWarmup: false });
+  const recommendation = await readDocument(athlete, `daily_recommendations/${today}`);
+  expect(parseDailyRecommendation(recommendation, `users/${athlete.userId}/daily_recommendations/${today}`)).toMatchObject({ status: 'AVAILABLE' });
+  expect(await planningBrief(page)).toContain(executionRow(today, plan, execution));
 });

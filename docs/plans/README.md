@@ -51,7 +51,7 @@ a delivery queue.
 
 ## Current plans
 
-The implementation plan for GitHub issue [#893](https://github.com/Szczepanov/adaptive-training-recommender/issues/893) is [`2026-09-29-issue-893-external-coach-round-trip.md`](./2026-09-29-issue-893-external-coach-round-trip.md) — **In progress**.
+The implementation plan for GitHub issue [#893](https://github.com/Szczepanov/adaptive-training-recommender/issues/893) is [`2026-09-29-issue-893-external-coach-round-trip.md`](./2026-09-29-issue-893-external-coach-round-trip.md) — **In progress**: PR-E added the browser proofs; four [named integrated gaps (#949–#952)](./2026-09-29-issue-893-external-coach-round-trip.md#named-proof-gaps) remain as `test.fixme` regressions, with a shared rules-budget cause in [#953](https://github.com/Szczepanov/adaptive-training-recommender/issues/953). Coordination stays with [#909](https://github.com/Szczepanov/adaptive-training-recommender/issues/909), [#894](https://github.com/Szczepanov/adaptive-training-recommender/issues/894), [#815](https://github.com/Szczepanov/adaptive-training-recommender/issues/815) and [#895](https://github.com/Szczepanov/adaptive-training-recommender/issues/895).
 The implementation plan for GitHub issue [#894](https://github.com/Szczepanov/adaptive-training-recommender/issues/894)
 (versioned Context Brief export contract) is
 [`2026-09-29-issue-894-context-brief-contract.md`](./2026-09-29-issue-894-context-brief-contract.md) — **Implemented**.

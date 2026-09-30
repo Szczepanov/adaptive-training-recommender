@@ -5,36 +5,12 @@
 **Repository baseline reviewed:** `main` at `8f788a5d61421c8da15e355ac124f6f622adbcc4`
 **Issue:** https://github.com/Szczepanov/adaptive-training-recommender/issues/893
 
-**Delivery update (30 September 2026):** WP1.1 and WP1.2 are implemented. WP7.1 now has an
-integrated browser happy path from an initial planning brief through v6 import, logged structured
-execution, and exact next-brief provenance. WP7.2 remains partial: provider enrichment, partial /
-abandoned execution, and the listed revision, replacement, rest, multi-session, retry, and
-cross-user variants still need integrated coverage. Keep #893 open until those proofs land.
-
-**Delivery update (30 September 2026, PR-D):** WP6 is implemented. The planning Context Brief
-renders the bounded round-trip section under contract
-`2026-09-context-brief-contract-v4` (v3 → v4 decision recorded in
-`docs/architecture/context-brief-contract.md`: PR-C repurposed existing labels for identical
-persisted inputs, so a v3 stay was not legitimate; planning exports between PR-C and PR-D carry
-v3 identity with v4 semantics). Row rendering keeps the newest 20 with replacement and
-archive-failure provenance; service fixtures pin gate replaced, manually replaced with
-provenance, row-level archive failure, advisory-not-gated, morning absence (never computed),
-hard per-row identifier/observed-work bounds, deterministic total ordering, and the representative
-65k dense-composition budget. `POLICY_VERSION` unchanged (descriptive export only).
-`briefPlanAuthority`, adjudication, and safety gating untouched. The full E2E matrix and the
-round-trip fixture narrative stay in PR-E.
-
-**Delivery update (30 September 2026, PR-B):** WP3.1, WP3.2, and the WP4.1 PR-B slice are
-implemented. One version-proof definition-bearing launch guard is shared by Home and the
-definition resolver. Bundle placement/audit support is centralized separately and fails closed
-to the validated v4/v5/v6 replay contract (fixing v5 without structurally misclassifying v3).
-The authoring boundary re-enforces `reducible: true`, reduced-identity retention, and derives
-the scaled duration ceiling itself from the adjudicated execution-volume fraction rather than
-trusting a caller-precomputed ceiling. Old-revision resolvability, frozen-prescription
-write-once identity, abandoned-execution identity, and v5 audit replay are pinned by tests.
-Rules verified sufficient for v6 identity (no rule-language change; emulator suite green).
-The scaled browser leg is deferred to PR-E. No `POLICY_VERSION` bump (policy-drift check
-passes: no decision-affecting engine file changed).
+**Delivery update (30 September 2026, PR-E):** PR-A through PR-D delivered the product
+boundaries and the initial browser happy path. PR-E supplies integrated variant proofs and WP8
+closeout documentation. The criterion ledger in §5 records four integrated product gaps tracked by #949–#952.
+Their desired browser regressions are `test.fixme`; active proofs and final verification do not
+close those gaps, so #893 stays open. §2/§4/§7 are delivery records rather than implementation
+instructions; §3 preserves the design decisions.
 
 ## 1. Goal
 
@@ -68,228 +44,26 @@ The implementation must preserve:
 
 ---
 
-# 2. Review summary — material changes to the supplied draft
-
-The supplied plan is directionally correct, but current `main` changes several implementation
-decisions.
-
-## 2.1 Do not make `external-plan@5` the final #893 write contract
-
-`external-plan@5` is the newest accepted schema, but it inherits v4's session contract unchanged.
-Its `scaling` block can carry `reducedSummary` / `reducedDurationMin`, not a second executable
-`SessionDefinition`.
-
-Current production behavior correctly refuses to bind the original full structured definition
-under a `scale` verdict. That means v5 cannot fully satisfy #893's round-trip requirement for:
-
-- **performed with dose modification from app adjudication**, while
-- still executing the exact accepted structured prescription through `SessionRunner`.
-
-**Decision:** introduce `external-plan@6` as the canonical emitted/write contract for #893.
-Keep v1–v5 readable and importable without migration.
-
-v6 should inherit v5 and add only the missing executable scale representation, rather than
-forking scheduling, rest, intraday, intent-block or session-definition semantics.
-
-Recommended shape:
-
-```ts
-scaling?: {
-  reducible: boolean;
-  reducedSummary?: string;
-  reducedDurationMin?: number;
-  minimumUsefulDurationMin?: number;
-  fallback?: string;
-
-  // v6: optional exact reduced executable form.
-  reducedDefinition?: SessionDefinition;
-}
-```
-
-Rules:
-
-- `reducedDefinition` is a **same-session reduced-dose form**, not an alternative modality.
-- it must pass normal `SessionDefinition` validation;
-- it remains subject to the parent session's gating/readiness/safety/feasibility authority;
-- it is covered by the plan content hash;
-- the accepted execution is frozen into its own `ExecutionPrescription` and
-  `prescriptionHash`;
-- free-text `fallback` remains advisory only;
-- an alternative modality/session remains a separate structured candidate and must pass its own
-  gates;
-- if a `scale` verdict has no structured `reducedDefinition`, structured Start remains withheld.
-
-This is a schema change, not a reason to reinterpret v1–v5.
-
-## 2.2 Fix revision-effective history before exposing a selectable effective date
-
-The current storage model has a correctness hole that the supplied draft did not identify.
-
-`externalPlanService.import` stores all immutable plan revisions, but
-`external_plans/{planId}` is a **single mutable latest header**. The header contains
-`revision` and `supersededFrom`.
-
-`activeExternalPlanService.getActivePlanState` reads only that latest header and filters it by
-`supersededFrom`.
-
-Therefore:
-
-1. revision 1 is active;
-2. revision 2 is imported today but selected to become effective next Monday;
-3. the latest header immediately points to revision 2;
-4. dates before next Monday reject revision 2 because its effective boundary is in the future;
-5. the resolver no longer has revision 1's header/effective record to fall back to.
-
-The result is `MISSING`, not revision 1.
-
-A UI date picker on top of the current persistence model would therefore make the authority bug
-more visible rather than solve it.
-
-**Decision:** add immutable per-revision activation metadata and make it the authority for
-date-to-revision resolution.
-
-Recommended model:
-
-```ts
-interface ExternalPlanRevisionActivation {
-  userId: string;
-  planId: string;
-  revision: number;
-  contentHash: string;
-  activatedAt: string;
-  effectiveFrom: LocalDateString;
-}
-```
-
-Recommended path:
-
-```text
-users/{uid}/external_plans/{planId}/activations/{revision}
-```
-
-The existing latest header may remain as a latest-plan index/compatibility record, but it must no
-longer be the only source of revision-effective history.
-
-For a date D, resolve the plan revision whose activation is the deterministic latest applicable
-activation with `effectiveFrom <= D` and whose own plan coverage includes D.
-
-A future-effective revision must leave the previous revision active before its boundary.
-
-## 2.3 Preserve placement by revision
-
-The current mutable placement overlay is stored only at:
-
-```text
-users/{uid}/external_plans/{planId}/placement/current
-```
-
-and contains a `revision`.
-
-That is sufficient for the current revision but not for #893's historical/moved-session
-round trip. Once a later revision receives a new current placement overlay, the previous
-revision's placement history is no longer available through the current path.
-
-**Decision:** make placement revision-scoped.
-
-Recommended new documents:
-
-```text
-users/{uid}/external_plans/{planId}/revisions/{revision}/placement/current
-```
-
-with the existing `ExternalPlanPlacement` payload.
-
-Compatibility:
-
-- read `revisions/{revision}/placement/current` first;
-- if absent, accept legacy `placement/current` only when its `revision` matches;
-- new writes go to `revisions/{revision}/placement/current`;
-- historical revisions never consume another revision's overlay.
-
-This is necessary to distinguish an intentionally moved session from a false miss after later
-plan revisions.
-
-## 2.4 Do not put historical planned-vs-performed reconciliation in `briefPlanAuthority`
-
-`briefPlanAuthority` is already the pure **current-date actionable-authority** resolver created
-for #810. It should stay that way.
-
-Historical execution reconciliation is a different domain:
-
-```text
-authored plan occurrence
-≠ daily adjudication
-≠ structured execution
-≠ canonical performed occurrence
-≠ provider evidence
-```
-
-Issue #815 already identifies this separation.
-
-**Decision:** add a reusable source-neutral round-trip projection at the
-session/training-occurrence boundary, then let Context Brief render it.
-
-Suggested module:
-
-```text
-app/src/training-occurrence/plannedExecutionStatus.ts
-```
-
-or an equivalently named source-neutral module.
-
-Do not create a second plan-authority resolver in the brief.
-
-## 2.5 Reuse the existing import diff instead of rebuilding review UX
-
-`ExternalPlanImport` already has:
-
-- strict shared validation;
-- a preview phase;
-- `diffPlans`;
-- added/removed/changed session rows;
-- fine-grained `SessionDefinition` diffs;
-- explicit acknowledgement of behavior-changing changes;
-- v5 intent-block preview.
-
-The gap is narrower:
-
-- the copy/paste prompt and placeholder still emit v4;
-- effective-from is hard-coded to Warsaw-local today;
-- the existing diff has no explicit retained count / revision-scope summary;
-- it does not preflight cross-plan/calendar conflicts before activation.
-
-Extend this surface rather than replacing it.
-
-## 2.6 Launch structured sessions by capability, not `isV4Plan`
-
-`Home.tsx` currently protects the external launch with `isV4Plan(activeExternal.plan)`.
-That excludes v5 even though v5 sessions are v4 sessions structurally, and also makes future
-schema versions fragile.
-
-`sessionDefinitionResolver` already resolves definition-bearing external sessions using the
-session capability (`isV2Session`), which naturally covers v2–v5.
-
-**Decision:** use one definition-bearing external-session predicate/type for v2+ executable
-schemas, including v6. Do not add another schema-literal Home branch.
-
-## 2.7 Keep adjacent issue ownership explicit
-
-#893 should integrate with, but not absorb, these tickets:
-
-- **#909** — athlete-facing external verdict/source/hard-gate rendering on Home.
-  #893 should use that surface in final E2E, not redesign a parallel verdict UI.
-- **#894** — Context Brief versioning, golden fixtures, missingness/budget/integrity contract.
-  #893 adds one semantic round-trip section and participates in the version discipline.
-- **#815** — general recommendation-feedback vs execution-reconciliation separation.
-  The #893 status primitive should be reusable by #815; #893 need not redesign every existing
-  adherence surface.
-- **#895** — offline/reload/correction durability of the structured execution diary.
-  #893 proves correct identity/linkage through the runner, but does not take ownership of the
-  offline outbox, correction audit trail or resume implementation.
+# 2. Delivery record — baseline review resolved
+
+The 29 September review identified the old v5 scale limitation, latest-header-only authority,
+shared placement history, v4-only launch checks and incomplete brief reporting. PR-A through
+PR-D delivered the corresponding boundaries:
+
+- v6 inherited v5 and added exact reduced executable definitions; v1–v5 stayed readable.
+- Immutable activations became date-to-revision authority; future revisions retained predecessors.
+- Placement writes became revision-scoped, with a matching-revision legacy read fallback.
+- The existing import diff gained effective-date and conflict review, and the prompt became v6.
+- Home and replay shared definition-bearing capability/authoring guards.
+- `projectPlannedExecutionStatus` supplied exact multidimensional state below Context Brief.
+- PR-D reconciled the semantic export contract to `2026-09-context-brief-contract-v4`.
+
+Those service/domain boundaries were delivered. Browser verification subsequently exposed the
+four integration gaps in §5; their desired behavior is not recorded as shipped.
 
 ---
 
-# 3. Architecture decisions to lock before implementation
+# 3. Recorded architecture decisions
 
 ## D1 — canonical external write schema is v6
 
@@ -352,7 +126,8 @@ separate versioned contract/authority rather than smuggling patch behavior into 
 
 Do not force all round-trip truth into one flat enum.
 
-Recommended projection:
+The projection dimensions are recorded below; `plannedExecutionStatus.ts` remains the source
+of truth for its current type:
 
 ```ts
 interface PlannedExecutionStatus {
@@ -404,16 +179,16 @@ The renderer can derive issue-facing labels such as:
 - manually replaced;
 - partially performed;
 - explicitly skipped;
-- missed;
+- explicit no-performance evidence;
 - authored rest;
-- no authored session;
+- unplanned observed work;
 - unknown.
 
 Important rules:
 
-- `missed` requires explicit trustworthy evidence, not "no Garmin activity";
+- explicit no-performance status requires trustworthy evidence, not "no Garmin activity";
 - source-unavailable/read-failure becomes `unknown`;
-- a recently scheduled session with no execution is not automatically `missed`;
+- a recently scheduled session with no execution has unknown performance;
 - authored rest + performed work is represented as authored rest **plus** observed unexpected
   work, not transformed into "no plan";
 - movement and completion can coexist;
@@ -445,771 +220,239 @@ It does not:
 - create another authority resolver;
 - duplicate the canonical completed-training table.
 
-Because this adds new semantic output, make an explicit Context Brief contract-version decision.
-Expected outcome: advance the semantic contract from current v2 to v3 in the same change unless
-#894 lands another version first.
+PR-D advanced the semantic contract to `2026-09-context-brief-contract-v4` after PR-C changed
+the meaning of existing labels under v3. The JSON transport wrapper did not change.
+The recorded rationale lives in `docs/architecture/context-brief-contract.md`.
 
 ---
 
-# 4. Work packages
+# 4. Work-package delivery
 
-## WP0 — Contract and migration decisions
+| Package | Delivered scope | Closeout state |
+|---|---|---|
+| WP0 | Additive v6 contract; immutable activation and revision-scoped-placement contracts | Implemented in PR-A. |
+| WP1 | v6 prompt; effective date, diff, replacement scope and conflict review | Implemented in PR-A; PR-E prompt/path browser proofs pass (§5). |
+| WP2 | Deterministic per-date revision authority, legacy activation compatibility and scoped placement | Implemented in PR-A; PR-E concurrent-import browser proof passes (G1). |
+| WP3 | Shared definition-bearing launch and exact reduced-definition freezing; #909 verdict UI integration | Service/adapter implemented in PR-B; Home scaled launch is blocked by #949 (V4). |
+| WP4 | Exact occurrence/execution/source/prescription linkage and historical identity | Identity boundary implemented in PR-B; Home prepares scheduled occurrences before Start (#951). Enrichment and abandon are active V10/V12 proofs. |
+| WP5 | Source-neutral multidimensional planned/performed projection | Projector implemented in PR-C; integrated gate/manual replacement attribution remains open in #950/#951. |
+| WP6 | Bounded planning-only round-trip rendering under semantic contract v4 | Implemented in PR-D. |
+| WP7 | Main browser happy path and integrated variant matrix | Active PR-E cases cover supported paths; V4/V7/V8 and full V9 bundle completion are `test.fixme` with #949–#952. |
+| WP8 | Schema narrative, storage/diff corrections, criterion proof ledger and truthful status board | Documentation updated in PR-E; completion remains conditional on the ledger and verification. |
 
-### WP0.1 Add `external-plan@6`
-
-**Primary files**
-
-- `app/src/sessions/externalPlanV6.ts`
-- `app/src/sessions/externalPlanValidation.ts`
-- external-plan validator tests
-- `app/firestore.rules`
-- `docs/external-plan-schema.md`
-
-**Work**
-
-1. Extend v5, preserving:
-   - v4 `SessionDefinition` sessions;
-   - v3 authored rest;
-   - v4 intraday bundles;
-   - v5 intent blocks.
-2. Add optional exact structured `scaling.reducedDefinition`.
-3. Reject unknown fields and malformed reduced definitions with exact field paths.
-4. Reject impossible combinations, including:
-   - reduced definition when `reducible === false`;
-   - an executable reduced form that attempts to change the parent session's gate identity in
-     an unsupported way.
-5. Continue rejecting model-supplied hidden engine quantities.
-6. Preserve unresolved exercise text through existing `ExerciseRef.unresolved_free_text`.
-7. Keep free-text fallback advisory.
-
-**Done when**
-
-- v6 example validates;
-- malformed nested reduced definitions fail with precise field paths;
-- v1–v5 compatibility tests remain green;
-- rules accept valid v6 storage and reject unsupported schemas/shapes.
-
-**Risk:** Medium.
-The safest implementation is additive inheritance, not another independent session schema.
+The [schema reference](../external-plan-schema.md#structured-round-trip-893) describes the current
+loop. PR-E changes tests/helpers and Markdown only; product holes require separate tracked fixes.
+#895 owns offline/reload/correction durability, beyond the online abandon path in V12.
 
 ---
 
-### WP0.2 Define revision activation and placement migration
-
-**Primary files**
-
-- `app/src/engine/models.ts`
-- `app/src/services/externalPlanService.ts`
-- `app/src/services/activeExternalPlanService.ts`
-- external plan persistence tests
-- `app/firestore.rules`
-
-**Work**
-
-1. Add `ExternalPlanRevisionActivation`.
-2. Add user-scoped immutable `activations/{revision}` persistence.
-3. Change new imports from read-then-batch to an atomic transaction covering revision,
-   activation and latest header/index.
-4. Add revision-scoped placement documents.
-5. Make reads:
-   - revision-scoped first;
-   - legacy `placement/current` fallback only for matching revision.
-6. Migration compatibility:
-   - for the current legacy header/revision, its effective date can be materialized from
-     `header.supersededFrom ?? revision.startDate` when a migration/first-write path can prove
-     those are the current stored bytes;
-   - do not fabricate exact activation dates for older revisions whose metadata was never
-     persisted;
-   - historical persisted recommendations/audits remain authoritative where activation history
-     cannot be reconstructed.
-7. Keep the latest header as a bounded index/compatibility record, not historical authority.
-
-**Done when**
-
-- revision 1 remains active before revision 2's future `effectiveFrom`;
-- revision 2 becomes active exactly on the boundary;
-- a later revision does not erase revision 1/2 placement history;
-- same revision/content/activation retry is idempotent;
-- conflicting replay of the same revision with a different effective date fails closed;
-- concurrent imports cannot publish two conflicting latest states.
-
-**Risk:** High.
-This is the most important correctness work in #893.
-
----
-
-## WP1 — Canonical import/prompt and explicit activation review
-
-### WP1.1 Make v6 the copy/paste output contract
-
-**Primary files**
-
-- `app/src/components/ExternalPlanImport.tsx`
-- `docs/external-plan-schema.md`
-- copy/paste fixture/test data
-
-**Work**
-
-1. Replace the v4 prompt and placeholder with v6.
-2. Publish a complete v6 fixture containing:
-   - multiple sessions on one date;
-   - authored rest;
-   - structured strength with canonical exercise IDs;
-   - at least one `unresolved_free_text` exercise;
-   - optional vs required work;
-   - intraday placement;
-   - an intent block;
-   - executable structured reduced dose;
-   - advisory fallback;
-   - a tactical revision example.
-3. Add a compatibility table:
-   - v1 readable legacy flat prescription;
-   - v2 structured definition;
-   - v3 rest;
-   - v4 intraday;
-   - v5 intent blocks;
-   - v6 executable reduced definition.
-4. State that v6 is the emitted contract, not the only readable one.
-
-**Done when**
-
-the published fixture passes the same v6 validator used by import.
-
----
-
-### WP1.2 Extend the existing preview with effective date and conflict preflight
-
-**Primary files**
-
-- `app/src/components/ExternalPlanImport.tsx`
-- `app/src/components/externalPlanDiff.ts`
-- new focused import-preview service/projector if needed
-- fixed-activity / plan-block / active-plan readers already present in the repository
-
-**Work**
-
-1. Add an explicit Europe/Warsaw `effectiveFrom` control.
-2. Default to `getLocalDateString()`.
-3. Reject malformed dates and dates earlier than today for normal interactive import.
-4. Preserve the existing detailed diff.
-5. Add explicit counts:
-   - added;
-   - changed;
-   - removed;
-   - retained.
-6. State revision semantics prominently:
-   - this revision replaces the same plan from `effectiveFrom`;
-   - dates before the boundary remain on the prior revision;
-   - omitted sessions in the new full revision are removed from the new revision's horizon.
-7. Preflight, without inventing new authority policy:
-   - overlap with another external plan that would change which plan wins;
-   - fixed activities / occupied dates;
-   - travel/plan-block constraints;
-   - existing authority-bearing authored occurrences where a current API can prove them;
-   - placement consequences such as moves/drops produced by existing placement rules.
-8. Treat unavailable authority-affecting reads as unknown. Do not render "no conflict".
-9. Require acknowledgement of behavior-changing diffs/conflicts before activation.
-
-**Done when**
-
-a user can see **what changes, from what date, and which existing constraints/authority are
-affected** before any plan bytes become active.
-
-**Risk:** Medium–High.
-Do not create a second placement/authority engine solely for preview.
-
----
-
-## WP2 — Correct date-to-revision authority resolution
-
-### WP2.1 Resolve exact active revision by date
-
-**Primary files**
-
-- `app/src/services/activeExternalPlanService.ts`
-- `app/src/services/externalPlanService.ts`
-- activation/placement tests
-
-**Work**
-
-For each `planId`:
-
-1. read applicable activation metadata;
-2. choose the deterministic revision applicable to D;
-3. load that exact immutable revision;
-4. load that revision's placement overlay;
-5. resolve placement against current fixed-activity inputs;
-6. preserve existing deterministic cross-plan winner semantics, but base them on the actual
-   revision active on D rather than the latest mutable header only.
-
-Explicit tests:
-
-- first revision;
-- future-effective second revision;
-- third revision after second;
-- date before/at/after each boundary;
-- overlapping different plan IDs;
-- revision whose own plan coverage does not contain D;
-- unreadable activation metadata;
-- activation document-id / payload-revision mismatch fails closed;
-- activation referencing a missing immutable revision fails closed rather than becoming `MISSING`;
-- revision-scoped placement identity mismatch is invalid, while a mismatched legacy placement
-  fallback is merely inapplicable;
-- legacy current-header fallback/migration behavior;
-- DST/Warsaw local-date boundary where applicable.
-
-**Done when**
-
-historical and future date authority can be reproduced without mutating old revisions or silently
-dropping the predecessor.
-
-### POLICY_VERSION
-
-This work **can change which recommendation governs a date** compared with current behavior.
-Under repository rules that is decision-affecting.
-
-Therefore this WP should include:
-
-- a `POLICY_VERSION` bump;
-- policy drift verification;
-- simulation review;
-- explicit replay/regression tests for external-plan authority.
-
-Do not classify it as a display-only change.
-
----
-
-## WP3 — Definition-bearing external launch, including exact scaled execution
-
-### WP3.1 Replace v4-literal execution gating with a capability guard
-
-**Primary files**
-
-- `app/src/components/Home.tsx`
-- `app/src/services/sessionAuthoringService.ts`
-- `app/src/sessions/sessionDefinitionResolver.ts`
-- targeted tests
-
-**Work**
-
-1. Introduce/reuse one type guard for a structured external session with a canonical
-   `SessionDefinition`.
-2. Allow definition-bearing v2+ sessions, including v5 and v6, through the same adapter.
-3. Preserve current exclusions:
-   - events are advisory;
-   - `skip` and `defer` cannot launch;
-   - invalid definitions fail closed.
-4. Keep exact external source:
-   `(planId, revision, sessionId, contentHash)`.
-
-This removes the brittle `isV4Plan` dependency without adding per-schema Home branches.
-
-**Done when**
-
-a valid v5 `proceed` structured session and a valid v6 `proceed` session both reach the canonical
-runner with exact source provenance.
-
----
-
-### WP3.2 Make v6 scaled execution exact
-
-**Primary files**
-
-- `app/src/engine/externalSession.ts`
-- `app/src/services/sessionAuthoringService.ts`
-- related adjudication/authoring tests
-
-**Work**
-
-1. Keep today's existing scale verdict/dose policy unless the schema forces a separately reviewed
-   policy change.
-2. When the adjudicated result is `scale`:
-   - if v6 provides a valid `reducedDefinition`, bind that definition;
-   - freeze it into an immutable `ExecutionPrescription`;
-   - retain the original external source ref;
-   - use the new prescription hash to identify the exact accepted executable form.
-3. If no exact reduced definition exists:
-   - keep scale non-executable;
-   - never bind the original full definition;
-   - never parse `reducedSummary` into steps.
-4. Do not make feasibility fallback executable automatically.
-
-**Done when**
-
-tests prove:
-
-- full authored definition cannot launch under a scaled verdict;
-- v6 reduced definition can launch under scale;
-- the execution prescription contains the exact reduced blocks shown to the athlete;
-- later plan revisions cannot alter that snapshot.
-
-**Risk:** High.
-A mistaken implementation here could execute the full dose while displaying a reduced dose.
-
----
-
-### WP3.3 Keep #909 as the verdict-UI owner
-
-#893 may need small integration changes to consume the #909 surface, but it should not introduce
-another verdict banner/card.
-
-Final E2E should verify the active production UI exposes:
-
-- external source/revision;
-- proceed/scale/defer/skip/advisory;
-- hard-gate reason;
-- Start only when an exact executable definition exists.
-
-If #909 has not landed, backend/contract WPs can proceed, but final athlete-facing round-trip
-acceptance remains incomplete.
-
----
-
-## WP4 — Prove exact occurrence/execution/performed linkage
-
-### WP4.1 Reuse the current occurrence identity
-
-The repository already has the right primitives:
-
-- deterministic external `SessionOccurrence` identity;
-- exact `ExternalPlanOccurrenceRef`;
-- immutable execution-prescription hashes;
-- `SessionExecution.occurrenceId`;
-- canonical `PerformedTrainingOccurrence.sourceRefs`;
-- provider reconciliation.
-
-Do not create a parallel external-workout identity.
-
-**Primary files**
-
-- `app/src/services/sessionOccurrenceService.ts`
-- `app/src/services/sessionAuthoringService.ts`
-- `app/src/sessions/sessionDefinitionResolver.ts`
-- training-occurrence reconciliation tests
-- Firestore rules tests
-
-**Verification**
-
-Prove:
-
-- repeated launch preparation is idempotent;
-- superseded *scheduled* occurrence behavior remains correct;
-- active/completed history is not rewritten by a later plan revision;
-- old revision definitions remain resolvable by content hash;
-- partial/abandoned execution retains exact occurrence/source identity;
-- matched Garmin evidence enriches the same canonical performed occurrence;
-- two genuine same-day sessions remain two occurrences;
-- cross-user reads/writes are denied.
-
-Change `session_occurrences` rules only if the existing source shape genuinely cannot represent
-the v6 identity. v6 should normally reuse the same external source ref.
-
-### #895 boundary
-
-Do not expand this WP into:
-
-- offline SessionEntry outbox;
-- reload/resume state;
-- correction history;
-- rest-close replay;
-- durable undo.
-
-Those remain #895. #893 only requires enough execution evidence to prove the round-trip identity
-and partial/completed semantics.
-
----
-
-## WP5 — Source-neutral planned-vs-performed projection
-
-### WP5.1 Add the pure projection below Context Brief
-
-**Suggested location**
-
-```text
-app/src/training-occurrence/plannedExecutionStatus.ts
-app/src/training-occurrence/plannedExecutionStatus.test.ts
-```
-
-**Inputs should be explicit canonical/read-state data, not services**
-
-At minimum:
-
-- authored external plan state for the relevant date/revision;
-- revision-scoped placement result;
-- exact `SessionOccurrence` records;
-- relevant persisted daily recommendation/adjudication provenance;
-- structured execution state;
-- canonical performed occurrence/source links;
-- explicit source availability/unavailability.
-
-**The function must not**
-
-- read Firestore;
-- use `Date.now()`;
-- call a model;
-- infer identity by title;
-- rerun historical readiness against current data;
-- convert missing provider evidence into a skip.
-
-### WP5.2 Required state coverage
-
-Fixtures must distinguish:
-
-1. authored session + exact completed execution, unchanged;
-2. authored session + v6 scaled prescription completed;
-3. intentionally moved, not falsely missed on original date;
-4. gate replaced;
-5. athlete manual replacement/override;
-6. abandoned/partial structured execution;
-7. explicit skip;
-8. explicit miss/drop when persisted state proves it;
-9. scheduled/pending session with no completion yet;
-10. authored rest with no training;
-11. authored rest + unexpected performed workout;
-12. no authored session + unplanned performed workout;
-13. no authored session + no observed workout;
-14. unavailable plan state;
-15. unavailable canonical performed state;
-16. multiple same-day authored sessions;
-17. revision boundary;
-18. exact provider enrichment of a structured execution.
-
-`unknown` is a real output, not a test failure.
-
-### WP5.3 Coordinate with #815, do not duplicate it
-
-#815 should be able to reuse this projection for the broader separation between:
-
-- recommendation feedback completion; and
-- observed execution reconciliation.
-
-#893 does not need to rewrite every morning/adherence surface in the same PR.
-
----
-
-## WP6 — Integrate exact round-trip state into the planning Context Brief
-
-### WP6.1 Render a bounded planning-only section
-
-**Primary files**
-
-- `app/src/services/contextBriefService.ts`
-- `app/src/engine/contextBriefPlanningHandoff.ts` or a focused renderer consumed by it
-- `docs/architecture/context-brief-contract.md`
-- service/render tests
-
-**Work**
-
-1. Hydrate the WP5 canonical status inputs at the service boundary.
-2. Add a bounded `planning` section for the selected retrospective window.
-3. Include exact plan/revision/session/occurrence provenance where useful but do not dump raw
-   telemetry.
-4. Reuse the canonical completed-training authority already live in planning/diagnostic.
-5. Keep current-date `briefPlanAuthority` unchanged except for data needed to link to the new
-   projection.
-6. Do not add the section to morning by default. Morning D-1 migration should coordinate with
-   #815/#894.
-7. Preserve:
-   - unavailable vs absent;
-   - rest vs no authored session;
-   - moved vs missed;
-   - gate replacement vs athlete non-adherence.
-
-### WP6.2 Contract version
-
-> Superseded by PR-D (2026-09-30): the contract advanced to
-> `2026-09-context-brief-contract-v4`; the v2/v3 expectations below are history and must not
-> be re-acted on.
-
-Historical starting point: architecture documented semantic contract v2, and the original
-work order expected the round-trip section to trigger the next version.
-
-**Recorded decision:** PR-D advances directly from v3 to
-`2026-09-context-brief-contract-v4` because PR-C had already repurposed existing labels for
-identical persisted inputs under the v3 string; the renderer's bounded provenance/order semantics
-are part of the same v4 surface.
-
-Historical expected value (superseded):
-
-```text
-2026-09-context-brief-contract-v3
-```
-
-unless #894 has advanced the version first.
-
-Update:
-
-- contract metadata tests;
-- semantic deterministic fixtures;
-- docs wording;
-- JSON transport only if its wrapper shape changes. Do **not** bump the transport schema merely
-  because the semantic contract version changes.
-
-### #894 boundary
-
-Reuse #894's:
-
-- version discipline;
-- missingness vocabulary;
-- deterministic fixture conventions;
-- boundedness rules.
-
-Do not absorb the remaining general #894 backlog for every section/source.
-
----
-
-## WP7 — End-to-end round trip
-
-### WP7.1 Main happy-path fixture
-
-Use the existing external-plan / runner / reconciliation harnesses.
-
-End-to-end sequence:
-
-1. build a real `planning` Context Brief fixture;
-2. use a validator-backed v6 structured plan fixture representing the external response;
-3. import and review it;
-4. choose an explicit effective date;
-5. activate it;
-6. resolve today's exact revision/placement;
-7. adjudicate it through the normal external-session gates;
-8. launch the exact structured definition through `SessionRunner`;
-9. log enough execution to create:
-   - one completed case; and
-   - one partial/abandoned case in focused variants;
-10. reconcile matching Garmin/provider evidence to the same physical occurrence;
-11. build the next planning brief;
-12. assert exact revision/session/occurrence linkage and the correct round-trip status.
-
-### WP7.2 Required integrated variants
-
-Keep exhaustive state logic at unit level; E2E should cover the highest-risk boundaries:
-
-- duplicate import/idempotent retry;
-- future-effective revision:
-  - predecessor remains active before boundary;
-  - successor wins on/after boundary;
-- revision-scoped moved session;
-- v6 scaled structured execution;
-- skip/defer cannot launch;
-- authored rest vs no authored session;
-- gate replacement;
-- manual replacement;
-- two same-day sessions;
-- Garmin enrichment creates no second completed workout;
-- cross-user isolation.
-
-### WP7.3 E2E scope boundary
-
-Do not make #893's E2E depend on solving #895's entire offline/reload matrix. Add only a small
-cross-check if #895 has already landed the needed durability behavior.
-
----
-
-## WP8 — Documentation and status reconciliation
-
-**Primary files**
-
-- `docs/external-plan-schema.md`
-- `docs/architecture/context-brief-contract.md`
-- relevant external-plan/session architecture docs
-- `docs/plans/README.md`
-- this implementation-plan file
-
-**Work**
-
-1. Publish the complete copy/paste v6 contract.
-2. Add a full round-trip fixture:
-   Context Brief assumptions → external v6 response → imported revision/activation →
-   adjudication → exact execution → canonical performed identity → next-brief status.
-3. Document:
-   - full-revision semantics;
-   - tactical revision limitation;
-   - effective-from behavior;
-   - activation timeline;
-   - revision-scoped placement;
-   - scale execution boundary;
-   - provider-enrichment provenance;
-   - unsupported/incomplete evidence as unknown.
-4. Add #893 to `docs/plans/README.md` while in progress.
-5. When complete, remove present-tense problem statements from the plan rather than merely marking
-   a checkbox as Implemented.
-6. Cross-reference #909, #894, #815 and #895 rather than copying their work lists.
-
----
-
-# 5. Revised acceptance criteria
+# 5. Revised acceptance criteria and proof ledger
+
+Every original §5 criterion appears below. **Located** means the exact test is present and passed in the
+PR-E `make verify` run (§6). **Passed** marks a PR-E browser proof. Initially missing assertions
+**G1–G3** now have active test cases. **H1–H4** are demonstrated integration gaps: their desired
+regressions are `test.fixme`, not passing proofs. V slots are tracked below.
 
 ## Contract/import
 
-- [ ] Built-in external-agent prompt emits `external-plan@6`.
-- [ ] v1–v5 remain readable/importable.
-- [ ] Invalid enum/date/session-definition/reduced-definition fields fail closed with exact paths.
-- [ ] Hidden engine values such as calibrated `systemicCost` are not accepted as model authority.
-- [ ] Import preview shows effective-from, replacement scope, added/changed/removed/retained
-      sessions and known authority/calendar conflicts.
-- [ ] Authority-affecting conflict reads that fail are shown as unknown rather than no conflict.
+| ID | Acceptance criterion | Exact executable proof | State |
+|---|---|---|---|
+| C1 | Built-in external-agent prompt emits `external-plan@6`. | [round-trip E2E] `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)` asserts the built-in rendered prompt includes `adaptive-training-recommender/external-plan@6`. | Passed (G2) |
+| C2 | v1–v5 remain readable/importable. | [validation v1] `accepts the round-trip plan expressed against the revised contract`; [v2] `validates a v2 plan whose session definition is the M0.2 fixture vocabulary`; [v3] `validates a well-formed v3 plan with one rest directive`; [v4 service] `dispatches v4 validation on import and persists the immutable v4 bytes`; [v5 service] `dispatches v5 validation on import and persists the immutable v5 bytes, including intentBlocks` | Located |
+| C3 | Invalid enum/date/session-definition/reduced-definition fields fail closed with exact paths. | [revision E2E] `invalid enum, date, full and reduced definitions fail at exact contract paths`; [v6] `reports malformed nested reduced definitions using the exact input path`. | Passed (G3) |
+| C4 | Hidden engine values such as calibrated `systemicCost` are not accepted as model authority. | [v2] `rejects an author-supplied systemicCost on the definition (D-EXTTIER)` | Located |
+| C5 | Import preview shows effective-from, replacement scope, added/changed/removed/retained sessions and known authority/calendar conflicts. | [import UI] `surfaces behavior changes that affect placement, adjudication, credit or event semantics`; `requires acknowledgement of conflicts and blocks activation when preflight is unknown`; [preflight] `checks current authority on empty dates across the entire effective plan horizon`; `acknowledges rest changes from the prior immutable revision and checks rest-day conflicts` | Located; V2 passed |
+| C6 | Authority-affecting conflict reads that fail are shown as unknown rather than no conflict. | [preflight] `fails closed when a calendar authority read is unavailable`; [import UI] `requires acknowledgement of conflicts and blocks activation when preflight is unknown` | Located |
 
 ## Revision/history
 
-- [ ] Revision bytes remain immutable.
-- [ ] Every new revision has immutable activation metadata.
-- [ ] A future-effective revision does not hide the currently active predecessor.
-- [ ] Date D resolves deterministically to the correct revision after later imports.
-- [ ] Placement overlays are revision-scoped.
-- [ ] A later revision does not erase earlier move/drop placement evidence.
-- [ ] Identical same-revision import is idempotent.
-- [ ] Attempting to mutate an existing revision's effective date fails closed.
-- [ ] Historical recommendation/audit/execution records are never rewritten.
+| ID | Acceptance criterion | Exact executable proof | State |
+|---|---|---|---|
+| R1 | Revision bytes remain immutable. | [import service] `pins the immutable-revision conflict for same-revision content that differs`; [rules] `makes a stored revision create-only, so an audited decision stays verifiable` | Located |
+| R2 | Every new revision has immutable activation metadata. | [import service] `writes revision, immutable activation and latest header atomically`; [rules] `makes an activation record create-only, so a stored effective date cannot be rewritten` | Located |
+| R3 | A future-effective revision does not hide the currently active predecessor. | [active plan] `falls back to the prior effective revision until the successor horizon begins` | Located; V2 passed |
+| R4 | Date D resolves deterministically to the correct revision after later imports. | [active plan] `resolves an R1 → future R2 → R3 chain deterministically per date`; `honors a Warsaw DST-boundary effectiveFrom with calendar-date comparison` | Located; V2 passed |
+| R5 | Placement overlays are revision-scoped. | [rules] `accepts v6 reduced-definition revisions, revision-scoped placement and immutable activation records`; [import service] `distinguishes an inapplicable legacy overlay from corrupt revision-scoped placement` | Located; V3 passed |
+| R6 | A later revision does not erase earlier move/drop placement evidence. | [active plan] `treats another revision overlay as no overlay, never as this revision placement`; [status] `pins intentionally_moved at the projector so refactors cannot break it silently` | Located; V3 passed |
+| R7 | Identical same-revision import is idempotent. | [import service] `treats a byte-identical same-revision retry as idempotent, without new writes` | Located; V1 passed |
+| R8 | Attempting to mutate an existing revision's effective date fails closed. | [import service] `fails closed when the same revision content is replayed with a different effective date` | Located |
+| R9 | Historical recommendation/audit/execution records are never rewritten. | [import service] `supersedes forward only, touching nothing a previously adjudicated day depends on`; [authoring] `never rewrites a frozen prescription when a later revision is prepared for the same plan`; [rules] `rejects update or delete of an existing revision document in subcollection` | Located |
 
 ## Execution
 
-- [ ] Definition-bearing external sessions use one source-neutral launch adapter rather than
-      a v4-only Home branch.
-- [ ] A v5/v6 `proceed` session launches through canonical `SessionRunner`.
-- [ ] A v6 `scale` session launches only from its exact structured reduced definition.
-- [ ] A v1–v5 scale without exact reduced definition cannot accidentally launch the full dose.
-- [ ] `skip`, `defer` and advisory event states cannot expose an executable Start path.
-- [ ] Exact authored source and prescription hash are persisted with the execution.
-- [ ] Partial/abandoned executions retain their actual evidence.
+| ID | Acceptance criterion | Exact executable proof | State |
+|---|---|---|---|
+| E1 | Definition-bearing external sessions use one source-neutral launch adapter rather than a v4-only Home branch. | [v2] `isDefinitionBearingExternalPlan covers every definition-bearing schema and refuses v1/empty plans`; `isDefinitionBearingExternalSession admits v2+ definition sessions and refuses v1 flat prescriptions`; [authoring] `launches a v5-inherited structured session under proceed with exact source provenance` | Located |
+| E2 | A v5/v6 `proceed` session launches through canonical `SessionRunner`. | [authoring] `launches a v5-inherited structured session under proceed with exact source provenance`; [round-trip E2E] `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)` | Located |
+| E3 | A v6 `scale` session launches only from its exact structured reduced definition. | [authoring] `freezes only the exact v6 reduced definition when adjudication requests scale`; [resolver] `resolves the exact v6 reduced definition frozen in a scaled execution prescription`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is `test.fixme`: Home withholds Start even with valid exact reduced bytes. | Open H1 [#949] |
+| E4 | A v1–v5 scale without exact reduced definition cannot accidentally launch the full dose. | [authoring] `does not allow scale to launch an older plan without an exact reduced definition`; [verdict E2E] `a scaled imported session shows the reduced version without launching the full structured dose` (desktop/mobile). | Located |
+| E5 | `skip`, `defer` and advisory event states cannot expose an executable Start path. | [verdict E2E] `a deferred imported session names its verdict and offers no Start path`; `an excluded imported session names its verdict and offers no Start path as written` (desktop/mobile); [authoring] `rejects target-event sessions because they are advisory fixed-activity inputs` | Located; verdict E2E passed. Skip-day recommendation persistence open [#950]/[#953] |
+| E6 | Exact authored source and prescription hash are persisted with the execution. | [authoring] `creates and binds an external-plan occurrence when date is provided in options`; [round-trip E2E] `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)` | Located |
+| E7 | Partial/abandoned executions retain their actual evidence. | [execution] `retains occurrenceId + sessionSource + prescriptionHash when an external execution is abandoned`; [status] `labels an abandoned execution with entries partial_or_abandoned` | Located; V12 passed |
 
 ## Canonical performed identity
 
-- [ ] Completed execution links to the exact external plan/revision/session occurrence.
-- [ ] Matching Garmin/provider evidence enriches the same `PerformedTrainingOccurrence`.
-- [ ] One physical workout renders once in normal planning history.
-- [ ] Two genuine same-day workouts remain separate.
-- [ ] Later revision/provider updates do not rewrite structured execution semantics.
+| ID | Acceptance criterion | Exact executable proof | State |
+|---|---|---|---|
+| P1 | Completed execution links to the exact external plan/revision/session occurrence. | [status] `joins completed performance through exact occurrence and execution identity`; [round-trip E2E] `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)` | Located |
+| P2 | Matching Garmin/provider evidence enriches the same `PerformedTrainingOccurrence`. | [reconciliation] `structured-first, Garmin arrives later and clears auto-link -> attaches to the existing structured-only occurrence` | Located; V10 passed |
+| P3 | One physical workout renders once in normal planning history. | [training dedupe] `planning renders one deduped row per fact and counts structured-only sessions`; [contract] `links Garmin evidence to one canonical D-1 session and isolates an unmatched activity` | Located; V10 passed |
+| P4 | Two genuine same-day workouts remain separate. | [training dedupe] `keeps two legitimate same-day canonical workouts distinct`; [repository transactions] `enforces the one-structured-execution invariant at the repository boundary`; [state E2E] `V9 an intraday bundle retains two session rows and two genuine workouts` is `test.fixme`: after primary completion the secondary launch card is absent. | Unit proof; integrated gap H4 [#952] |
+| P5 | Later revision/provider updates do not rewrite structured execution semantics. | [authoring] `never rewrites a frozen prescription when a later revision is prepared for the same plan`; [resolver] `resolves the original revision bytes after a later revision import (content-hash boundary, not latest-header)`; [repository] `never overwrites Adaptive-authoritative fields with Garmin fields on attach`; [rules] `allows execution lifecycle with entry subcollection mutability while in_progress, and terminal immutability` | Located |
 
 ## Planned versus performed
 
-- [ ] Per-session status uses exact persisted identities, never title similarity.
-- [ ] Performed-as-authored is distinguishable from app-dose-modified.
-- [ ] Moved is distinguishable from missed.
-- [ ] Gate replacement is distinguishable from athlete replacement/non-adherence.
-- [ ] Partial/abandoned is distinguishable from completed.
-- [ ] Explicit skip/miss is distinguishable from missing/unavailable evidence.
-- [ ] Authored rest is distinguishable from no authored session.
-- [ ] Authored rest + unexpected training is represented truthfully.
-- [ ] Unavailable plan/performed evidence yields unknown.
+| ID | Acceptance criterion | Exact executable proof | State |
+|---|---|---|---|
+| S1 | Per-session status uses exact persisted identities, never title similarity. | [status] `does not join same-day records with a different immutable plan source`; `does not join an occurrence from another local date`; `refuses to cross-match old-revision bytes after a re-import` | Located |
+| S2 | Performed-as-authored is distinguishable from app-dose-modified. | [status] `distinguishes scaled-completed from proceeded-as-authored by audited dose diff`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is `test.fixme`: no integrated scaled execution can be started from Home. | Unit proof; integrated gap H1 [#949] |
+| S3 | Moved is distinguishable from missed. | [status] `pins intentionally_moved at the projector so refactors cannot break it silently`; `uses only an explicit missed occurrence as evidence of no performance` | Located; V3 passed |
+| S4 | Gate replacement is distinguishable from athlete replacement/non-adherence. | [status] `labels a defer-gated day gate_replaced with unknown performance when nothing executed`; `labels a skip-gated day gate_replaced`; `labels a single-session replace day manually_replaced with auditable evidence`; [state E2E] `V7 a gate replacement has exact labels and creates no external occurrence` and `V8 UI manual replacement names its exact replacement occurrence` are `test.fixme`; persisted UI behavior does not reach those projected states. | Unit proof; integrated gaps H2/H3 [#950]/[#951] |
+| S5 | Partial/abandoned is distinguishable from completed. | [status] `labels an abandoned execution with entries partial_or_abandoned`; `joins completed performance through exact occurrence and execution identity` | Located; V12 passed |
+| S6 | Explicit skip/miss is distinguishable from missing/unavailable evidence. | [status] `labels an explicit skip explicitly_skipped with none_observed`; `uses only an explicit missed occurrence as evidence of no performance`; `does not infer a miss from a recent scheduled occurrence without execution` | Located |
+| S7 | Authored rest is distinguishable from no authored session. | [status] `keeps authored rest without work at not_applicable with no observed-work evidence`; `labels unplanned work not_applicable with observed-work evidence`; [active plan] `returns nothing for a day with nothing placed` | Located; V6 passed |
+| S8 | Authored rest + unexpected training is represented truthfully. | [status] `keeps authored rest distinct while reporting unexpected performed work` | Located; V6 passed |
+| S9 | Unavailable plan/performed evidence yields unknown. | [status] `renders source read failures as unknown`; `renders every dimension unknown when performed reads are unavailable`; `renders every dimension unknown when the authored identity is unknown`; [brief service] `emits the planning round-trip section and preserves unavailable source reads as unknown` | Located |
 
 ## Context Brief
 
-- [ ] Planning Context Brief includes a bounded exact-identity round-trip section.
-- [ ] It consumes, rather than reimplements, current-date plan authority and canonical performed
-      authority.
-- [ ] It does not duplicate raw provider telemetry.
-- [ ] Semantic contract version is explicitly advanced/reconciled.
-- [ ] Output is deterministic for the same persisted inputs and explicit `asOfDate`.
-- [ ] #894 fixture/boundedness conventions are preserved.
+| ID | Acceptance criterion | Exact executable proof | State |
+|---|---|---|---|
+| B1 | Planning Context Brief includes a bounded exact-identity round-trip section. | [brief service] `hydrates round-trip rows from exact external source, occurrence, execution and performed ids`; [status] `keeps the newest 20 rows in chronological order with a directional omission line`; `bounds and sanitizes rendered identifiers and provenance lists` | Located |
+| B2 | It consumes, rather than reimplements, current-date plan authority and canonical performed authority. | [brief service] `hydrates round-trip rows from exact external source, occurrence, execution and performed ids`; `pins imported session revision separately for each date in a changed plan`; [training dedupe] `planning renders one deduped row per fact and counts structured-only sessions` | Located |
+| B3 | It does not duplicate raw provider telemetry. | [brief service] `exports bounded quality execution detail for planning and the full persisted view for diagnostics`; [training dedupe] `diagnostic keeps raw provider rows as provenance, not additional volume`. Round-trip rows carry ids/statuses, not another telemetry table. | Located |
+| B4 | Semantic contract version is explicitly advanced/reconciled. | [brief service] `emits the planning round-trip section and preserves unavailable source reads as unknown` pins `2026-09-context-brief-contract-v4`; [contract] `exposes an explicit contract version and purpose on planning and diagnostic` | Located |
+| B5 | Output is deterministic for the same persisted inputs and explicit `asOfDate`. | [contract] `is deterministic for identical inputs ignoring the generation timestamp`; [status] `renders round-trip rows chronologically with deterministic tie-breakers`; `uses full authored identity as a deterministic tie-breaker` | Located |
+| B6 | #894 fixture/boundedness conventions are preserved. | [brief service] `golden service artifact: %s-day %s export`; `bounds full planning and diagnostic exports with 30 activities, 100 laps and 100 segments each`; `renders the empty window and unreadable inputs as exact section blocks` | Located |
 
 ## Security/reliability
 
-- [ ] New activation and revision-scoped-placement documents are user-scoped in Firestore rules.
-- [ ] Cross-user emulator tests deny reads/writes.
-- [ ] Immutable activation/revision records cannot be updated/deleted by the client.
-- [ ] Concurrent import tests prove one deterministic latest state.
-- [ ] No external model receives direct Firestore write authority.
-
----
-
-# 6. Verification matrix
-
-## Focused unit/component tests
-
-- `externalPlanV6.test.ts`
-- `externalPlanValidation.test.ts`
-- `ExternalPlanImport.test.tsx`
-- `externalPlanDiff.test.ts`
-- `externalPlanService.test.ts`
-- `activeExternalPlanService.test.ts`
-- `sessionAuthoringService.test.ts`
-- `sessionOccurrenceService.test.ts`
-- `externalSession.test.ts`
-- `sessionDefinitionResolver.test.ts`
-- new `plannedExecutionStatus.test.ts`
-- `contextBriefPlanningHandoff.test.ts`
-- `contextBriefService.test.ts`
-
-## Rules/emulator
-
-Run:
-
-```bash
-cd app
-npm run test:rules
-```
-
-Cover:
-
-- v6 revision create/read;
-- activation create/read + update/delete denial;
-- revision-scoped placement ownership/shape;
-- cross-user denial;
-- existing occurrence/prescription isolation.
-
-## Frontend gate
-
-```bash
-cd app
-npm run check
-```
-
-## Browser E2E
-
-Use the existing external-plan runner harness and focused round-trip fixture, then:
-
-```bash
-cd app
-npm run test:e2e
-```
-
-If #909 changes material UI during the same delivery, include its required mobile/desktop visual
-review rather than duplicating another visual system in #893.
-
-## Policy/replay gates
-
-Because WP2 changes effective external-plan authority resolution and can alter recommendations:
-
-```bash
-cd app
-node scripts/check-policy-drift.mjs <base-sha>
-npm run simulate:plan-judge
-cd ..
-make simulate
-```
-
-Include the required `POLICY_VERSION` bump with the authority fix.
-
-If later changes are proven display/storage-only, do not add additional policy bumps merely for
-schema documentation or rendering.
-
-## Final repository handoff
-
-```bash
-make verify
-```
-
-Report exactly which suites ran and their results.
-
----
-
-# 7. Recommended implementation order / PR slicing
-
-The work is safer as several narrow PRs rather than one large branch.
-
-| PR | Scope | Depends on | Why |
+| ID | Acceptance criterion | Exact executable proof | State |
 |---|---|---|---|
-| 1 | v6 contract + validator + rules shape + docs fixture | — | locks the exact interchange contract |
-| 2 | revision activations + revision-scoped placement + resolver + migration compatibility | PR1 optional | fixes the correctness boundary before the UI exposes future dates |
-| 3 | import effective-date/conflict review + v6 prompt | PR2 | user surface now rests on correct authority semantics |
-| 4 | capability-based structured launch + v6 scaled-definition execution | PR1 | isolates execution-risk changes |
-| 5 | exact planned-execution status projector | PR2, PR4 | builds source-neutral round-trip semantics below the brief |
-| 6 | planning Context Brief integration + contract version + #894 fixture coordination | PR5 | renderer consumes stable domain semantics |
-| 7 | end-to-end round trip + docs/status reconciliation | PR3–PR6, #909 UX as applicable | proves the complete athlete workflow |
+| A1 | New activation and revision-scoped-placement documents are user-scoped in Firestore rules. | [rules] `accepts v6 reduced-definition revisions, revision-scoped placement and immutable activation records` | Located |
+| A2 | Cross-user emulator tests deny reads/writes. | [rules] `rejects cross-user external plan access and forged ownership`; `denies cross-user and revision-mismatched revision-scoped placement writes` | Located; V11 cite |
+| A3 | Immutable activation/revision records cannot be updated/deleted by the client. | [rules] `makes an activation record create-only, so a stored effective date cannot be rewritten`; `makes a stored revision create-only, so an audited decision stays verifiable` | Located |
+| A4 | Concurrent import tests prove one deterministic latest state. | [revision E2E] `concurrent successor imports converge to one deterministic latest revision` invokes the real service concurrently in the authenticated browser and asserts the latest header/revision/activation. The earlier [import service] `rejects a conflicting same-revision successor replay and covers the transaction contention read-set` remains a serial unit proof only. | Passed (G1) |
+| A5 | No external model receives direct Firestore write authority. | [import UI] `renders Import disabled and shows the acknowledgement checkbox when unreviewed behavior changes exist`; [round-trip E2E] `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)` requires athlete confirmation; [rules] `rejects cross-user external plan access and forged ownership`. Reviewed JSON enters through the signed-in athlete, not an external model principal. | Located; human/rules boundary |
 
-If repository conventions prefer fewer PRs, PR1+PR2 may be combined, and PR5+PR6 may be combined.
-Do not combine the revision-history change with unrelated UI polish merely to reduce PR count.
+## Browser variant proof slots
+
+Active cases and skipped desired regressions are distinguished below. Passing active tests cannot
+complete a variant whose required behavior is tracked by `test.fixme`.
+
+| Variant | File | Exact test name / verification |
+|---|---|---|
+| V1 duplicate UI import | [revision E2E] | `V1 non-advancing UI re-import preserves immutable revision and activation`. Active; passed. |
+| V2 future-effective boundary | [revision E2E] | `V2 tomorrow-effective successor preserves the revision boundary`; `V2 today-effective successor preserves the revision boundary`. Active; two fresh athletes prove current-day authority because the week strip resolves one revision for today. Passed. |
+| V3 moved-session revision history | [revision E2E] | `V3 revision-scoped move onto today survives a future successor import`. Active, validated-overlay fallback: PlanView filters rows to today…today+6, so yesterday's authored row has no rendered move control. Passed. |
+| V4 exact reduced execution | [state E2E] | `V4 scale freezes the exact reduced definition and reports app dose modified` is `test.fixme`, [#949]. Service-level reduced-definition proofs do not close the Home launch gap. |
+| V5 skip/defer cannot launch | [verdict E2E] and [mobile verdict E2E] | `a deferred imported session names its verdict and offers no Start path`; `an excluded imported session names its verdict and offers no Start path as written`. Existing cases; passed. The skip day's recommendation write is rejected ([#953]), which blocks V7, not the no-Start assertion. |
+| V6 rest, no session, unexpected work | [state E2E] | `V6 authored rest records unexpected work without inventing an authored session`; `V6 an active plan with no authored session today renders no row for today`. Active; passed. |
+| V7 gate replacement | [state E2E] | `V7 a gate replacement has exact labels and creates no external occurrence` is `test.fixme`, [#950]. Skip check-in persistence fails; the next brief is not adjudicated, not gate replaced. |
+| V8 manual replacement | [state E2E] | `V8 UI manual replacement names its exact replacement occurrence` is `test.fixme`, [#951]. UI-imported JSON reaches Save/Schedule/Replace because direct fixture/catalog previews do not expose the destination sheet. A real replacement/manual completion exists, but the authored row retains athlete none. Home also prepares the external occurrence before Start. |
+| V9 same-day sessions | [state E2E] | Active `V9 plain fixed same-day sessions retain two distinct next-brief rows` asserts two exact not-adjudicated rows and zero executions. `V9 an intraday bundle retains two session rows and two genuine workouts` is `test.fixme`, [#952]; two-workout integrated completion remains unproved. |
+| V10 Garmin enrichment | [round-trip E2E] | `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)`. Active; opens Data → Activities, then calls the real `loadCanonicalActivitiesWindow` service because the canonical Activities read-model flag is off by default in E2E. It does not fabricate performed linkage. Passed. |
+| V11 user isolation | [rules] | `rejects cross-user external plan access and forged ownership`; `denies cross-user and revision-mismatched revision-scoped placement writes`. Rules gate passed in initial `make verify`. |
+| V12 abandoned execution | [round-trip E2E] | `V12 abandoned external execution retains logged evidence and exact next-brief ids`. Active; passed, including 3/3 under `--repeat-each=3`. An earlier PR-E repeat run saw one V12 failure (invalid recommendation read); it did not reproduce, and the likely cause is the recommendation-write budget rejection tracked in [#953]. |
+
+## Named proof gaps
+
+Four desired regressions remain open in [state E2E] as `test.fixme`. This PR is tests/docs only;
+their product fixes belong to the linked issues and separate fix PRs.
+
+| Gap | Affected criteria/variant | Demonstrated boundary | Follow-up |
+|---|---|---|---|
+| H1 | E3, S2 / V4 | The authoring adapter accepts exact reduced definitions, but Home unconditionally withholds Start for scale. No integrated reduced execution or completed app-dose-modified row is proven. | [#949] |
+| H2 | S4 / V7, legacy V5 skip reliability | The legacy skip check-in cannot persist its recommendation: Firestore rejects the write at the 1000-expression rules budget ([#953], which also affects non-external check-ins). The next brief reports not adjudicated, rather than gate replaced. | [#950] |
+| H3 | S4 / V8, occurrence-at-Start boundary | A real UI manual replacement and completed manual execution exist, but the next brief retains the authored row with athlete none and no replacement attribution. Home eagerly prepares a scheduled external occurrence before Start, so the variant's no-external-occurrence condition is unmet. | [#951] |
+| H4 | P4 / full V9 | The initial bundle recommendation parses AVAILABLE with two valid separate windows and short executable definitions. The primary completes and the brief retains both rows, but the secondary Start card is absent. Started-member replay/binding mismatches and rejected recommendation updates accompany the failure. | [#952] |
+
+The initially missing assertions now have active, passing cases:
+
+- **G1 — actual concurrent import (A4):** [revision E2E]
+  `concurrent successor imports converge to one deterministic latest revision`.
+- **G2 — built-in prompt schema (C1):** [round-trip E2E]
+  `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)`.
+- **G3 — exact validation paths (C3):** [revision E2E]
+  `invalid enum, date, full and reduced definitions fail at exact contract paths`.
+
+#893 remains **In progress** even if every active test passes. H1–H4 require product fixes and
+passing integrated regressions; skipped tests cannot close an acceptance criterion.
+Use `Refs #893`, not closing language, for this tests/docs-only PR.
+
+[#949]: https://github.com/Szczepanov/adaptive-training-recommender/issues/949
+[#950]: https://github.com/Szczepanov/adaptive-training-recommender/issues/950
+[#951]: https://github.com/Szczepanov/adaptive-training-recommender/issues/951
+[#952]: https://github.com/Szczepanov/adaptive-training-recommender/issues/952
+[#953]: https://github.com/Szczepanov/adaptive-training-recommender/issues/953
+
+## Proof-file index
+
+[validation v1]: ../../app/src/engine/externalPlanValidation.test.ts
+[v2]: ../../app/src/sessions/externalPlanV2.test.ts
+[v3]: ../../app/src/sessions/externalPlanV3.test.ts
+[v4 service]: ../../app/src/services/externalPlanV4Service.test.ts
+[v5 service]: ../../app/src/services/externalPlanV5Service.test.ts
+[v6]: ../../app/src/sessions/externalPlanV6.test.ts
+[import UI]: ../../app/src/components/ExternalPlanImport.test.tsx
+[preflight]: ../../app/src/services/externalPlanImportPreflight.test.ts
+[import service]: ../../app/src/services/externalPlanService.test.ts
+[active plan]: ../../app/src/services/activeExternalPlanService.test.ts
+[authoring]: ../../app/src/services/sessionAuthoringService.test.ts
+[resolver]: ../../app/src/sessions/sessionDefinitionResolver.test.ts
+[execution]: ../../app/src/services/sessionExecutionService.test.ts
+[status]: ../../app/src/training-occurrence/plannedExecutionStatus.test.ts
+[reconciliation]: ../../app/src/training-occurrence/reconciliationService.test.ts
+[repository]: ../../app/src/training-occurrence/repository.test.ts
+[repository transactions]: ../../app/src/training-occurrence/repositoryTransactionHardening.test.ts
+[training dedupe]: ../../app/src/engine/contextBriefTrainingDedupe.test.ts
+[contract]: ../../app/src/engine/contextBriefContract.test.ts
+[brief service]: ../../app/src/services/contextBriefService.test.ts
+[rules]: ../../app/src/emulator/firestoreRules.emulator.test.ts
+[round-trip E2E]: ../../app/tests/e2e/external-coach-round-trip.pw.ts
+[revision E2E]: ../../app/tests/e2e/external-plan-revisions.pw.ts
+[state E2E]: ../../app/tests/e2e/external-plan-execution-states.pw.ts
+[verdict E2E]: ../../app/tests/e2e/external-verdict.pw.ts
+[mobile verdict E2E]: ../../app/tests/e2e/mobile/external-verdict.pw.ts
+
+---
+
+# 6. PR-E verification record
+
+Final verification ran on the PR-E worktree over base `8afef4ff` (2026-09-30). H1–H4 remain
+open whatever the status of the active tests.
+
+| Gate | Command | Result |
+|---|---|---|
+| Focused browser variants | From `app/`: `npm run emulators:exec:e2e -- "npx playwright test --config=playwright.e2e.config.ts external-coach-round-trip external-plan-revisions external-plan-execution-states --project=e2e-chromium"` | 11 passed, 4 skipped (`test.fixme`), 1.1 min |
+| Flake check | Same, with `--repeat-each=3` | 33 passed, 12 skipped, 0 failed, 3.2 min |
+| Repository handoff | Repository root: `make verify` | PASS (exit 0), including frontend gate, both Firestore rules shards, and browser E2E (desktop + mobile: 40 passed, 4 skipped) |
+
+Per-file wall time (single pass): `external-coach-round-trip.pw.ts` 21.5 s (slowest test 14.1 s),
+`external-plan-revisions.pw.ts` 28.8 s, `external-plan-execution-states.pw.ts` 14.5 s. Every test
+stays far below the 45 s timeout, so none needs `test.slow()`.
+
+Emulator output from passing specs, including pre-existing `daily-decision.pw.ts` and
+`external-verdict.pw.ts`, shows `daily_recommendations` writes rejected at Firestore's
+1000-expression rules budget. The active assertions do not depend on the rejected revision.
+That product defect is tracked in [#953], and it underlies H2 and contributes to H3/H4.
+
+Java 21 and Chromium are needed for browser/emulator runs. Tests use fresh synthetic athletes
+and poll persisted state. No PR-E policy, engine, contract or rules changes are authorized, so
+policy drift/judge/simulation work is not an additional PR-E requirement. The earlier WP2 policy
+change was verified in its owning PR; this closeout does not repeat that implementation.
+
+---
+
+# 7. Delivered PR slices
+
+| PR | Scope |
+|---|---|
+| PR-A [#934](https://github.com/Szczepanov/adaptive-training-recommender/pull/934) | v6 contract, activation history, revision-scoped placement and import review. |
+| PR-B [#937](https://github.com/Szczepanov/adaptive-training-recommender/pull/937) | Capability-based launch, exact scaled prescription and execution identity. |
+| PR-C [#943](https://github.com/Szczepanov/adaptive-training-recommender/pull/943) | Source-neutral planned/performed projection and replacement hydration. |
+| PR-D [#946](https://github.com/Szczepanov/adaptive-training-recommender/pull/946) | Bounded round-trip rendering and Context Brief semantic contract v4. |
+| PR-E | Active browser proofs, four issue-linked `test.fixme` regressions and documentation; #893 remains open. |
 
 ---
 
@@ -1218,18 +461,17 @@ Do not combine the revision-history change with unrelated UI polish merely to re
 ## Coordination dependencies
 
 ### #909 — external verdict UX
-Needed for the final athlete-facing Home flow. Do not duplicate its UI responsibility.
+Owns the athlete-facing Home verdict UI consumed by the round-trip browser proofs.
 
 ### #894 — Context Brief contract
-Use its versioning/missingness/golden-fixture discipline. #893 does not need to wait for every
-remaining #894 item.
+Supplied the versioning, missingness and golden-fixture conventions retained by the v4 export.
 
 ### #815 — execution reconciliation semantics
-The new source-neutral status projection should become reusable input for #815. Avoid a second
-status vocabulary.
+Can reuse the source-neutral status projection for wider execution reconciliation, with the
+same status vocabulary.
 
 ### #895 — structured diary durability
-Not a blocker for basic #893 exact linkage. Offline/reload/correction guarantees remain there.
+Owns offline/reload/correction guarantees beyond #893's basic linkage and online abandon proof.
 
 ## Out of scope
 
