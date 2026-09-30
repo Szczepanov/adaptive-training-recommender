@@ -257,6 +257,32 @@ export interface CandidateStimulusRecencyEvaluation {
     rationaleNote?: string;
 }
 
+const TRACE_DECISION_FAMILY_ORDER = ['endurance', ...QUALITY_RECENCY_FAMILIES] as const;
+const MAX_STIMULUS_RECENCY_TRACE_EXPOSURES = 16;
+
+function boundedStimulusRecencyEvidence(
+    evidence: readonly StimulusRecencyExposureTrace[],
+): StimulusRecencyExposureTrace[] {
+    const sorted = [...evidence].sort((a, b) => a.performedOccurrenceId.localeCompare(b.performedOccurrenceId));
+    const representatives: StimulusRecencyExposureTrace[] = [];
+    const representedOccurrenceIds = new Set<string>();
+
+    // Preserve the evidence that can actually change recency decisions before filling the
+    // bounded diagnostic with unrelated D-1 rows. Otherwise 16 lexicographically earlier
+    // low-confidence occurrences could hide the tempo/VO2/endurance fact that changed rank.
+    for (const family of TRACE_DECISION_FAMILY_ORDER) {
+        const representative = sorted.find(row =>
+            row.confident && stimulusFamilyFromDomain(row.stimulusDomain) === family,
+        );
+        if (!representative) continue;
+        representatives.push(representative);
+        representedOccurrenceIds.add(representative.performedOccurrenceId);
+    }
+
+    const remaining = sorted.filter(row => !representedOccurrenceIds.has(row.performedOccurrenceId));
+    return [...representatives, ...remaining].slice(0, MAX_STIMULUS_RECENCY_TRACE_EXPOSURES);
+}
+
 /**
  * Builds the stimulus recency state for the planning date from canonical performed exposures.
  */
@@ -308,7 +334,7 @@ export function buildPerformedStimulusRecency(
         evaluatedExposuresCount,
         yesterdayQualityFamilies,
         hasConfidentEnduranceYesterday,
-        exposures: evidence.sort((a, b) => a.performedOccurrenceId.localeCompare(b.performedOccurrenceId)).slice(0, 16),
+        exposures: boundedStimulusRecencyEvidence(evidence),
     };
 }
 

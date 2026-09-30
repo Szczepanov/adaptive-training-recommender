@@ -1098,6 +1098,9 @@ export function buildOptimizationContext(
         options.aerobicVolumeFloor,
     );
     const recentPerformedExposures = options.recentPerformedExposures ?? intent.performedTrainingFacts?.exposures;
+    const stimulusRecencyOverridesDegraded = options.stimulusRecencyOverridesDegraded
+        ?? intent.performedTrainingFacts?.overridesDegraded
+        ?? false;
     const recoveryPlacementState = options.recoveryPlacementState !== undefined
         ? options.recoveryPlacementState
         : (options.recoveryHistorySnapshot
@@ -1133,7 +1136,7 @@ export function buildOptimizationContext(
             ...(sequenceIntent ? { sequenceIntent } : {}),
             ...(options.recoveryHistorySnapshot ? { recoveryHistorySnapshot: options.recoveryHistorySnapshot } : {}),
             ...(recentPerformedExposures !== undefined ? { recentPerformedExposures } : {}),
-            ...(intent.performedTrainingFacts?.overridesDegraded ? { stimulusRecencyOverridesDegraded: true } : {}),
+            ...(stimulusRecencyOverridesDegraded ? { stimulusRecencyOverridesDegraded: true } : {}),
             ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
             ...(options.resolvedAvailability ? { resolvedAvailability: options.resolvedAvailability } : {}),
             ...(options.resolveMinimumDaysAfterHardLowerBody ? { resolveMinimumDaysAfterHardLowerBody: options.resolveMinimumDaysAfterHardLowerBody } : {}),

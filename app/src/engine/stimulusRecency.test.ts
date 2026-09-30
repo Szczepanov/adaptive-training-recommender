@@ -237,6 +237,39 @@ describe('stimulusRecency', () => {
             expect(result.trace.penaltyApplied).toBe(false);
         });
 
+        it('keeps decision-bearing family evidence inside the bounded trace', () => {
+            const fillers = Array.from({ length: 20 }, (_, index) => mockFact({
+                performedOccurrenceId: `a-filler-${String(index).padStart(2, '0')}`,
+                localDate: dMinus1,
+                sourceKinds: ['provider_activity'],
+                intensityClassificationVersion: 1,
+                stimulusDomain: 'tempo',
+            }));
+            const tempo = mockFact({
+                performedOccurrenceId: 'z-tempo-decision',
+                localDate: dMinus1,
+                sourceKinds: ['provider_activity'],
+                intensityClassificationVersion: 2,
+                stimulusDomain: 'tempo',
+            });
+            const endurance = mockFact({
+                performedOccurrenceId: 'zz-endurance-decision',
+                localDate: dMinus1,
+                sourceKinds: ['provider_activity'],
+                intensityClassificationVersion: 2,
+                stimulusDomain: 'endurance',
+            });
+
+            const recency = buildPerformedStimulusRecency([...fillers, tempo, endurance], targetDate);
+
+            expect(recency.exposures).toHaveLength(16);
+            expect(recency.exposures.map(row => row.performedOccurrenceId)).toEqual(
+                expect.arrayContaining(['z-tempo-decision', 'zz-endurance-decision']),
+            );
+            expect(recency.yesterdayQualityFamilies.has('tempo')).toBe(true);
+            expect(recency.hasConfidentEnduranceYesterday).toBe(true);
+        });
+
         it('waives quality repetition penalty when fulfilsNominatedAnchor is true', () => {
             const exposures = [
                 mockFact({
