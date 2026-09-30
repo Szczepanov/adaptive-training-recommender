@@ -1,6 +1,11 @@
 import React from 'react';
 import type { AssessmentAttempt } from '../../observations/models';
-import type { AssessmentHistoryRow, AssessmentTestHistory } from '../../observations/assessmentHistory';
+import type {
+    AssessmentHistoryRow,
+    AssessmentHistorySeries,
+    AssessmentMetricHistory,
+    AssessmentTestHistory,
+} from '../../observations/assessmentHistory';
 import {
     formatBodyMassRelativeContext,
     isBodyMassRelativeMetric,
@@ -31,11 +36,31 @@ function progressStatusLabel(status: string, reasons: readonly string[]): string
     return status;
 }
 
+function rowsForMetric(metric: AssessmentMetricHistory): AssessmentHistoryRow[] {
+    const rows = [
+        ...(metric.activeSeries?.observations ?? []),
+        ...metric.otherSeries.flatMap(series => series.observations),
+    ];
+    return rows;
+}
+
 export const AssessmentSeriesCard: React.FC<AssessmentSeriesCardProps> = ({
     test,
     onSelectAttempt,
 }) => {
-    const { activeSeries, otherSeries, completedWithoutBenchmarkCount, abandonedCount } = test;
+    const { completedWithoutBenchmarkCount, abandonedCount } = test;
+    const hasAnySeries = test.metrics.some(metric =>
+        metric.activeSeries !== null || metric.otherSeries.length > 0
+    );
+
+    const relativeContextForAttempt = (attemptId: string): Record<string, BodyMassRelativeContext> => {
+        const result: Record<string, BodyMassRelativeContext> = {};
+        for (const metric of test.metrics) {
+            const row = rowsForMetric(metric).find(candidate => candidate.attemptId === attemptId);
+            if (row) result[row.metricId] = row.relativeContext;
+        }
+        return result;
+    };
 
     const renderObservationTable = (rows: readonly AssessmentHistoryRow[]) => (
         <div className="history-table-wrapper">
@@ -81,13 +106,18 @@ export const AssessmentSeriesCard: React.FC<AssessmentSeriesCardProps> = ({
                                     <small className="source-kind-label">{row.sourceKind}</small>
                                 </td>
                                 <td>
-                                    {relativeStr ? <small className="relative-context-text">{relativeStr}</small> : <span className="testing-muted">—</span>}
+                                    {relativeStr
+                                        ? <small className="relative-context-text">{relativeStr}</small>
+                                        : <span className="testing-muted">—</span>}
                                 </td>
                                 <td>
                                     <button
                                         type="button"
                                         className="testing-secondary btn-compact"
-                                        onClick={() => onSelectAttempt(row.attempt, { [row.metricId]: row.relativeContext })}
+                                        onClick={() => onSelectAttempt(
+                                            row.attempt,
+                                            relativeContextForAttempt(row.attemptId),
+                                        )}
                                         aria-label={`View attempt ${row.attemptId} details`}
                                     >
                                         Details
@@ -101,6 +131,127 @@ export const AssessmentSeriesCard: React.FC<AssessmentSeriesCardProps> = ({
         </div>
     );
 
+    const renderSeries = (
+        metric: AssessmentMetricHistory,
+        activeSeries: AssessmentHistorySeries,
+    ) => (
+        <>
+            <section
+                className="active-series-section"
+                aria-labelledby={`metric-title-${test.definitionId}-${metric.metricId}`}
+            >
+                <h4 id={`metric-title-${test.definitionId}-${metric.metricId}`}>
+                    {metric.displayName}
+                </h4>
+                <div className="series-meta-bar">
+                    <span><strong>Protocol revision:</strong> rev {activeSeries.protocolRevision}</span>
+                    <span><strong>Series key:</strong> <code>{activeSeries.comparisonSeriesKey.slice(0, 12)}…</code></span>
+                </div>
+
+                <div className="series-headline-grid">
+                    <div className="headline-stat">
+                        <span className="stat-label">Baseline</span>
+                        <span className="stat-value">
+                            {activeSeries.baseline ? `${activeSeries.baseline.value} ${activeSeries.baseline.unit}` : '—'}
+                        </span>
+                        {activeSeries.baseline && (
+                            <small className="stat-sub">
+                                {activeSeries.baseline.localDate} · {activeSeries.baseline.attemptPurpose}
+                            </small>
+                        )}
+                    </div>
+
+                    <div className="headline-stat">
+                        <span className="stat-label">Latest</span>
+                        <span className="stat-value">
+                            {activeSeries.latest ? `${activeSeries.latest.value} ${activeSeries.latest.unit}` : '—'}
+                        </span>
+                        {activeSeries.latest && (
+                            <small className="stat-sub">
+                                {activeSeries.latest.localDate} · {activeSeries.latest.attemptPurpose}
+                            </small>
+                        )}
+                    </div>
+
+                    <div className="headline-stat delta-stat">
+                        <span className="stat-label">Longitudinal change</span>
+                        <span className="stat-value">
+                            {activeSeries.progress.comparable && activeSeries.progress.absoluteChange !== undefined ? (
+                                <>
+                                    {activeSeries.progress.absoluteChange > 0 ? '+' : ''}
+                                    {activeSeries.progress.absoluteChange} {activeSeries.baseline?.unit}
+                                    {activeSeries.progress.percentChange !== undefined && (
+                                        <span className="pct-badge">
+                                            {' '}({activeSeries.progress.percentChange > 0 ? '+' : ''}
+                                            {activeSeries.progress.percentChange.toFixed(1)}%)
+                                        </span>
+                                    )}
+                                </>
+                            ) : (
+                                <span className="testing-muted">no comparable repeat yet</span>
+                            )}
+                        </span>
+                        <span className="status-label-badge">
+                            {progressStatusLabel(activeSeries.progress.status, activeSeries.progress.reasons)}
+                        </span>
+                    </div>
+                </div>
+
+                <div className="series-attempts-list">
+                    <h5>Recorded attempts ({activeSeries.observations.length})</h5>
+                    {renderObservationTable(activeSeries.observations)}
+                </div>
+            </section>
+
+            {metric.otherSeries.length > 0 && (
+                <details className="other-series-disclosure">
+                    <summary>
+                        <strong>Other {metric.displayName} comparison series ({metric.otherSeries.length})</strong>
+                        <span className="other-series-hint">
+                            {metric.otherSeries.map(series =>
+                                `not comparable: ${series.nonComparableReason}`
+                            ).join('; ')}
+                        </span>
+                    </summary>
+                    <div className="other-series-content">
+                        {metric.otherSeries.map((series, idx) => (
+                            <div
+                                key={`${metric.metricId}-${series.protocolRevision}-${series.comparisonSeriesKey}-${idx}`}
+                                className="other-series-box"
+                            >
+                                <div className="other-series-header">
+                                    <div>
+                                        <strong>Protocol rev {series.protocolRevision}</strong> ·{' '}
+                                        <code>{series.comparisonSeriesKey.slice(0, 12)}…</code>
+                                    </div>
+                                    <span className="not-comparable-marker">
+                                        not comparable: {series.nonComparableReason}
+                                    </span>
+                                </div>
+                                <div className="other-series-stats">
+                                    <span>
+                                        Baseline: {series.baseline ? `${series.baseline.value} ${series.baseline.unit}` : '—'}
+                                    </span>
+                                    <span>
+                                        Latest: {series.latest ? `${series.latest.value} ${series.latest.unit}` : '—'}
+                                    </span>
+                                </div>
+                                {renderObservationTable(series.observations)}
+                            </div>
+                        ))}
+                    </div>
+                </details>
+            )}
+
+            {metric.completedWithoutBenchmarkCount > 0 && (
+                <p className="testing-muted metric-missing-benchmark-note">
+                    {metric.completedWithoutBenchmarkCount} completed attempt
+                    {metric.completedWithoutBenchmarkCount > 1 ? 's' : ''} had no {metric.displayName} benchmark.
+                </p>
+            )}
+        </>
+    );
+
     return (
         <article className="testing-card assessment-series-card" aria-labelledby={`test-title-${test.definitionId}`}>
             <header className="series-card-header">
@@ -111,108 +262,29 @@ export const AssessmentSeriesCard: React.FC<AssessmentSeriesCardProps> = ({
                 <small className="testing-muted">{test.definitionId}</small>
             </header>
 
-            {!activeSeries && (
+            {!hasAnySeries && (
                 <div className="series-empty-state">
-                    <p className="testing-muted">No assessment attempts recorded yet for this test.</p>
+                    <p className="testing-muted">No assessment benchmarks recorded yet for this test.</p>
                 </div>
             )}
 
-            {activeSeries && (
-                <section className="active-series-section">
-                    <div className="series-meta-bar">
-                        <span><strong>Protocol revision:</strong> rev {activeSeries.protocolRevision}</span>
-                        <span><strong>Series key:</strong> <code>{activeSeries.comparisonSeriesKey.slice(0, 12)}…</code></span>
-                    </div>
-
-                    <div className="series-headline-grid">
-                        <div className="headline-stat">
-                            <span className="stat-label">Baseline</span>
-                            <span className="stat-value">
-                                {activeSeries.baseline ? `${activeSeries.baseline.value} ${activeSeries.baseline.unit}` : '—'}
-                            </span>
-                            {activeSeries.baseline && (
-                                <small className="stat-sub">{activeSeries.baseline.localDate} · {activeSeries.baseline.attemptPurpose}</small>
-                            )}
-                        </div>
-
-                        <div className="headline-stat">
-                            <span className="stat-label">Latest</span>
-                            <span className="stat-value">
-                                {activeSeries.latest ? `${activeSeries.latest.value} ${activeSeries.latest.unit}` : '—'}
-                            </span>
-                            {activeSeries.latest && (
-                                <small className="stat-sub">{activeSeries.latest.localDate} · {activeSeries.latest.attemptPurpose}</small>
-                            )}
-                        </div>
-
-                        <div className="headline-stat delta-stat">
-                            <span className="stat-label">Longitudinal change</span>
-                            <span className="stat-value">
-                                {activeSeries.progress.comparable && activeSeries.progress.absoluteChange !== undefined ? (
-                                    <>
-                                        {activeSeries.progress.absoluteChange > 0 ? '+' : ''}
-                                        {activeSeries.progress.absoluteChange} {activeSeries.baseline?.unit}
-                                        {activeSeries.progress.percentChange !== undefined && (
-                                            <span className="pct-badge">
-                                                {' '}({activeSeries.progress.percentChange > 0 ? '+' : ''}
-                                                {activeSeries.progress.percentChange.toFixed(1)}%)
-                                            </span>
-                                        )}
-                                    </>
-                                ) : (
-                                    <span className="testing-muted">no comparable repeat yet</span>
-                                )}
-                            </span>
-                            <span className="status-label-badge">
-                                {progressStatusLabel(activeSeries.progress.status, activeSeries.progress.reasons)}
-                            </span>
-                        </div>
-                    </div>
-
-                    <div className="series-attempts-list">
-                        <h4>Recorded attempts ({activeSeries.observations.length})</h4>
-                        {renderObservationTable(activeSeries.observations)}
-                    </div>
-                </section>
-            )}
-
-            {otherSeries.length > 0 && (
-                <details className="other-series-disclosure">
-                    <summary>
-                        <strong>Other comparison series ({otherSeries.length})</strong>
-                        <span className="other-series-hint">
-                            {otherSeries.map(s => `not comparable: ${s.nonComparableReason}`).join('; ')}
-                        </span>
-                    </summary>
-                    <div className="other-series-content">
-                        {otherSeries.map((series, idx) => (
-                            <div key={`${series.protocolRevision}-${series.comparisonSeriesKey}-${idx}`} className="other-series-box">
-                                <div className="other-series-header">
-                                    <div>
-                                        <strong>Protocol rev {series.protocolRevision}</strong> · <code>{series.comparisonSeriesKey.slice(0, 12)}…</code>
-                                    </div>
-                                    <span className="not-comparable-marker">
-                                        not comparable: {series.nonComparableReason}
-                                    </span>
-                                </div>
-                                <div className="other-series-stats">
-                                    <span>Baseline: {series.baseline ? `${series.baseline.value} ${series.baseline.unit}` : '—'}</span>
-                                    <span>Latest: {series.latest ? `${series.latest.value} ${series.latest.unit}` : '—'}</span>
-                                </div>
-                                {renderObservationTable(series.observations)}
-                            </div>
-                        ))}
-                    </div>
-                </details>
-            )}
+            {test.metrics.map(metric => metric.activeSeries ? (
+                <div key={metric.metricId} className="assessment-metric-history">
+                    {renderSeries(metric, metric.activeSeries)}
+                </div>
+            ) : null)}
 
             {(completedWithoutBenchmarkCount > 0 || abandonedCount > 0) && (
                 <footer className="series-card-footer">
                     {completedWithoutBenchmarkCount > 0 && (
-                        <span className="notice-chip">{completedWithoutBenchmarkCount} completed without benchmark</span>
+                        <span className="notice-chip">
+                            {completedWithoutBenchmarkCount} completed without any benchmark
+                        </span>
                     )}
                     {abandonedCount > 0 && (
-                        <span className="notice-chip notice-abandoned">{abandonedCount} abandoned attempt{abandonedCount > 1 ? 's' : ''}</span>
+                        <span className="notice-chip notice-abandoned">
+                            {abandonedCount} abandoned attempt{abandonedCount > 1 ? 's' : ''}
+                        </span>
                     )}
                 </footer>
             )}
