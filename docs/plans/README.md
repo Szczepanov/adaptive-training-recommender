@@ -51,6 +51,14 @@ a delivery queue.
 
 ## Current plans
 
+Issue #933 forecast authority handoff: **Implemented**. Forecasts use date-local
+ownership segments and the production Evergreen seed, verified by live-parity,
+accounting and terminal-recovery simulation regressions. Projected work may seed forecast
+strategy/dose/capability evidence but never fabricates canonical performed-stimulus recency.
+See [`recommendation-engine.md`](../architecture/recommendation-engine.md) for the contract;
+long-horizon development (#927), phase horizons (#928), season coordination (#929), and
+post-event focus eligibility remain outside this change.
+
 The implementation plan for GitHub issue [#893](https://github.com/Szczepanov/adaptive-training-recommender/issues/893) is [`2026-09-29-issue-893-external-coach-round-trip.md`](./2026-09-29-issue-893-external-coach-round-trip.md) — **In progress**.
 The implementation plan for GitHub issue [#894](https://github.com/Szczepanov/adaptive-training-recommender/issues/894)
 (versioned Context Brief export contract) is
@@ -62,7 +70,7 @@ feature changes the exported API; #893's round-trip work is one such extension.
 
 The scoped design for GitHub issue [#897](https://github.com/Szczepanov/adaptive-training-recommender/issues/897)
 (first-class periodic physical-capital assessments) is
-[`2026-09-30-issue-897-physical-capital-assessment-history.md`](./2026-09-30-issue-897-physical-capital-assessment-history.md) — **In progress**: [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A merged ([PR #942](https://github.com/Szczepanov/adaptive-training-recommender/pull/942)); PR B merged ([PR #944](https://github.com/Szczepanov/adaptive-training-recommender/pull/944)); PR C (WP6 assessment history, series comparability, WP7.1 normalized CSV export, WP3.4 body-mass context, Appendix A ADR-0047) implemented, in review. It is a scoped implementation design only; [`performance-outcome-validation.md`](./performance-outcome-validation.md) remains the sole canonical OV status board.
+[`2026-09-30-issue-897-physical-capital-assessment-history.md`](./2026-09-30-issue-897-physical-capital-assessment-history.md) — **In progress**: [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A merged ([PR #942](https://github.com/Szczepanov/adaptive-training-recommender/pull/942)); PR B merged ([PR #944](https://github.com/Szczepanov/adaptive-training-recommender/pull/944)); PR C ([PR #948](https://github.com/Szczepanov/adaptive-training-recommender/pull/948): WP6 history/comparability, WP7.1 CSV export, WP3.4 body-mass context, ADR-0047 proposal) implemented, in review. #897 remains open for WP6.6 fixed-load velocity and WP8 unless explicitly rescoped. It is a scoped implementation design only; [`performance-outcome-validation.md`](./performance-outcome-validation.md) remains the sole canonical OV status board.
 
 The combined delivery record for GitHub issues [#459](https://github.com/Szczepanov/adaptive-training-recommender/issues/459),
 [#460](https://github.com/Szczepanov/adaptive-training-recommender/issues/460), and
