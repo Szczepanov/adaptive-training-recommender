@@ -10,7 +10,7 @@ Retrospective detail window: 2026-08-14 → 2026-08-15 (2 days)
 Subjective baseline window: not used by this export
 Recovery timeline: 7 days
 Sensor evidence horizon: not used by this export
-Engine policy version: 2026-09-external-plan-activation-history-v1
+Engine policy version: 2026-09-date-scoped-event-plan-authority-v1
 Source state and currency (dates never shift the as-of date):
 - Recovery snapshot for 2026-08-15: available; latest 2026-08-15 (0 calendar day(s) before as-of); source schema 3, baseline computation 2, Garmin synced 2026-08-15T06:15:00Z.
 - Wearable metric dates: sleep not reported; HRV not reported; RHR not reported; D-1 steps not reported; activities through not reported. The sync timestamp above is transport provenance, not the measurement date.
@@ -104,7 +104,7 @@ Retrospective detail window: 2026-08-02 → 2026-08-15 (14 days)
 Subjective baseline window: 2026-07-19 → 2026-08-15 (28 days)
 Recovery timeline: 7 days
 Sensor evidence horizon: 28 days
-Engine policy version: 2026-09-external-plan-activation-history-v1
+Engine policy version: 2026-09-date-scoped-event-plan-authority-v1
 Source state and currency (dates never shift the as-of date):
 - Recovery snapshot for 2026-08-15: available; latest 2026-08-15 (0 calendar day(s) before as-of); source schema 3, baseline computation 2, Garmin synced 2026-08-15T06:15:00Z.
 - Wearable metric dates: sleep not reported; HRV not reported; RHR not reported; D-1 steps not reported; activities through not reported. The sync timestamp above is transport provenance, not the measurement date.
@@ -307,7 +307,7 @@ Retrospective detail window: 2026-08-02 → 2026-08-15 (14 days)
 Subjective baseline window: 2026-07-19 → 2026-08-15 (28 days)
 Recovery timeline: 7 days
 Sensor evidence horizon: 28 days
-Engine policy version: 2026-09-external-plan-activation-history-v1
+Engine policy version: 2026-09-date-scoped-event-plan-authority-v1
 Source state and currency (dates never shift the as-of date):
 - Recovery snapshot for 2026-08-15: available; latest 2026-08-15 (0 calendar day(s) before as-of); source schema 3, baseline computation 2, Garmin synced 2026-08-15T06:15:00Z.
 - Wearable metric dates: sleep not reported; HRV not reported; RHR not reported; D-1 steps not reported; activities through not reported. The sync timestamp above is transport provenance, not the measurement date.

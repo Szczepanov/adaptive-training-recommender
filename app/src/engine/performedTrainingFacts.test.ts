@@ -145,6 +145,10 @@ describe('performedTrainingFacts', () => {
                 trainingEffectAnaerobic: 0,
                 activityTrainingLoad: 2.9,
                 intensityTag: 'easy',
+                stimulusDomain: 'strength',
+                sessionCost: 'moderate',
+                intensityEvidence: 'primary_benefit',
+                intensityClassificationVersion: 2,
             };
             const hydrated: HydratedOccurrenceContext = {
                 provider: {
@@ -164,6 +168,12 @@ describe('performedTrainingFacts', () => {
             expect(exposure.sourceKinds).toEqual(['provider_activity']);
             expect(exposure.durationMin).toBe(77);
             expect(exposure.workoutId).toBeUndefined();
+            expect(exposure).toMatchObject({
+                stimulusDomain: 'strength',
+                sessionCost: 'moderate',
+                intensityEvidence: 'primary_benefit',
+                intensityClassificationVersion: 2,
+            });
 
             expect(coverageCredits).toHaveLength(1);
             expect(coverageCredits[0].coverageKey).toBe('primary_strength');

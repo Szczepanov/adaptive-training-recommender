@@ -73,7 +73,7 @@ import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
 import { mechanicalEvidenceRequiredFor, prepareTrainingHistorySnapshot, resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolveMechanicalCheckinHistory } from './mechanicalCheckinHistory';
-import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
+import { resolveActivePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
 import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry } from './coverage';
@@ -1025,8 +1025,9 @@ export function evaluateProjectedDate(
         || isAdjacentDate(date, shared.anchors.qualityAnchorDate);
 
     const unresolved = getUnresolvedObjectives(state.microcycle, true);
-    const planDefinition = shared.planDefinition
-        ?? resolvePlanDefinitionForEvent(periodization.focusEvent, shared.authoredPlanBlocks, shared.eventStrengthSupportSessions ?? 0);
+    const planDefinition = projectedPlanDefinitionForDate(
+        shared.planDefinition, periodization, date, shared.authoredPlanBlocks, shared.eventStrengthSupportSessions ?? 0,
+    );
     const optimizationContext = buildOptimizationContext(
         {
             unresolvedObjectives: unresolved,
@@ -1368,6 +1369,27 @@ function backfillCreditFromPriorExposures(
     return total;
 }
 
+function projectedPlanDefinitionForDate(
+    suppliedPlanDefinition: PlanDefinition | null | undefined,
+    periodization: PeriodizationResult,
+    date: string,
+    authoredPlanBlocks: readonly AuthoredPlanBlock[],
+    eventStrengthSupportSessions: number,
+): PlanDefinition | null {
+    const activeEventPlan = resolveActivePlanDefinitionForEvent(
+        periodization.focusEvent,
+        date,
+        authoredPlanBlocks,
+        eventStrengthSupportSessions,
+    );
+    // An injected/explicit structured plan keeps its authority. An Evergreen definition is
+    // only a fallback and must yield as soon as the event plan owns the projected date.
+    if (suppliedPlanDefinition?.coverageSetId === EVERGREEN_GENERAL_COVERAGE_SET.id) {
+        return activeEventPlan ?? suppliedPlanDefinition;
+    }
+    return suppliedPlanDefinition ?? activeEventPlan;
+}
+
 export function reconcileObjectivesForDate(
     microcycle: MicrocycleState,
     events: UserEvent[],
@@ -1386,8 +1408,9 @@ export function reconcileObjectivesForDate(
      * completed training is authoritative for these definitions on this forecast date. */
     historicalReplayObjectiveIds: readonly string[];
 } {
-    const planDefinitionForDate = planDefinition
-        ?? resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks, eventStrengthSupportSessions);
+    const planDefinitionForDate = projectedPlanDefinitionForDate(
+        planDefinition, periodization, date, authoredPlanBlocks, eventStrengthSupportSessions,
+    );
     const skeleton = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent, planDefinitionForDate, date);
     const historicalReplayObjectiveIds = skeleton.objectives.map(objective => objective.id);
     const fresh = resolveMultiEventObjectives(events, date, periodization, skeleton.objectives);
@@ -2056,6 +2079,7 @@ export function generateWeekAheadPlan(
         const reservation = allocation.reservationsByDate.get(date);
 
         const evaluation = projectedEvaluation(date, []);
+        const evergreenOwnsDate = evaluation.optimizationContext.coverageState?.coverageSetId === EVERGREEN_GENERAL_COVERAGE_SET.id;
         const { anchorRole, eligible, fatigueGated, recoveryGated, peakFatigue, fatigueTier, rankingFatigue, optimizationContext: optContext } = evaluation;
 
         const hasFatigueGatedRequiredCoverage = beganAfterHardRaceSpecificExposure && anchorRole === 'event-specific' && eligible.some(template =>
@@ -2128,7 +2152,8 @@ export function generateWeekAheadPlan(
             && day.date <= optionalQualityBlock.endDate
             && qualityWorkoutIds.has(workoutIdForTemplateId(day.template.id) ?? ''));
         const isSupportReservation = reservation?.occurrence.reservationTier === 'support';
-        const canPlaceOptionalQuality = Boolean(optionalQualityBlock
+        const canPlaceOptionalQuality = Boolean(evergreenOwnsDate
+            && optionalQualityBlock
             && date >= optionalQualityBlock.startDate
             && date <= optionalQualityBlock.endDate
             && qualityWindow
@@ -2140,7 +2165,7 @@ export function generateWeekAheadPlan(
         const exactReserved = reservation
             ? rankingCandidates.filter(template => reservation.occurrence.eligibleTemplateIds.includes(template.id))
             : [];
-        if (optionalQualityBlock && date >= optionalQualityBlock.startDate && date <= optionalQualityBlock.endDate) {
+        if (evergreenOwnsDate && optionalQualityBlock && date >= optionalQualityBlock.startDate && date <= optionalQualityBlock.endDate) {
             const feasibleQualityTemplateIds = projectedDateOutcomeFrom(evaluation).acceptedTemplateIds.filter(templateId =>
                 qualityWorkoutIds.has(workoutIdForTemplateId(templateId) ?? '')
                 && rankingCandidates.some(template => template.id === templateId));
@@ -2156,7 +2181,7 @@ export function generateWeekAheadPlan(
             rankingCandidates = exactReserved;
         }
 
-        if (evergreenCapacity && optionalQualityBlock
+        if (evergreenOwnsDate && evergreenCapacity && optionalQualityBlock
             && date <= optionalQualityBlock.endDate
             && (!reservation || isSupportReservation)
             && capacityOccupiedSessionCount >= evergreenCapacity.maxSessions) {
@@ -2238,7 +2263,8 @@ export function generateWeekAheadPlan(
                     if (primaryAllocationUnresolved(after)) {
                         return 'unresolved_search_budget';
                     }
-                    const isOptionalQualityCandidate = Boolean(optionalQualityBlock
+                    const isOptionalQualityCandidate = Boolean(evergreenOwnsDate
+                        && optionalQualityBlock
                         && date >= optionalQualityBlock.startDate
                         && date <= optionalQualityBlock.endDate
                         && qualityWorkoutIds.has(workoutIdForTemplateId(template.id) ?? ''));
@@ -2447,7 +2473,7 @@ export async function generateWeekAheadPlanWithIntent(
         );
     // #804: the check-in read does not depend on the intent, so it runs alongside it.
     const mechanicalCheckinsRead = options.mechanicalCheckinHistory
-        ?? (preferences && !historyProvider && mechanicalEvidenceRequiredFor(trainingIntentProfile, events, todayDate)
+        ?? (preferences && !historyProvider && mechanicalEvidenceRequiredFor(trainingIntentProfile, events, todayDate, options.authoredPlanBlocks ?? [])
             ? resolveMechanicalCheckinHistory(userId, todayDate)
             : []);
     const intent = await resolveTrainingIntent(

@@ -261,7 +261,9 @@ function developmentalObjectives(
 
 /**
  * Phase 6.2c: reusable event-relative cycling plan. Training phases are derived from the
- * event planning date and the same 84/35/taper boundaries used by generic periodization.
+ * event planning date and the current 84/35/taper policy defaults shared with generic
+ * periodization. The 84/35 values describe today's generated plan; they are not universal
+ * physiological thresholds or the beginning of all goal-directed development (#927/#928).
  * Travel is deliberately NOT fabricated here; it is an explicit availability/day-context
  * overlay (or an explicitly authored plan block) rather than a property of every event.
  */
@@ -485,4 +487,21 @@ export function resolvePlanDefinitionForEvent(
   if (!event || event.category !== 'cycling_event') return null;
   const result = buildCyclingEventPlan(event, authoredBlocks, strengthSupportSessions);
   return result.status === 'AVAILABLE' ? result.data : null;
+}
+
+/** Date-local structured-plan authority. A future event may already have a complete
+ * PlanDefinition, but that plan owns the current decision only when one of its blocks
+ * actually contains the date. This preserves event context without letting a distant
+ * future block suppress Base/evergreen weekly programming. The first generated cycling
+ * block is currently D-84, but this resolver depends on actual block ownership rather than
+ * treating 84 as an architectural invariant (#927/#928). */
+export function resolveActivePlanDefinitionForEvent(
+  event: UserEvent | null,
+  date: string,
+  authoredBlocks: readonly AuthoredPlanBlock[] = [],
+  strengthSupportSessions: number = 0,
+): PlanDefinition | null {
+  const plan = resolvePlanDefinitionForEvent(event, authoredBlocks, strengthSupportSessions);
+  if (!plan) return null;
+  return plan.blocks.some(block => block.startDate <= date && date <= block.endDate) ? plan : null;
 }

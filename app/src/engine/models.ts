@@ -2112,6 +2112,13 @@ export interface CompletedTrainingEvent {
     /** Issue #809: the dimension the default cost row was indexed by (session dose) when it
      *  differs from the stimulus `intensity`. Absent means cost follows `intensity`. */
     costIntensity?: CompletedTrainingIntensity;
+    /** Provider-neutral Garmin semantic classification preserved when no athlete override
+     * replaced it. These fields are provenance; exact authored/structured semantics remain
+     * stronger wherever they are available. */
+    stimulusDomain?: ActivityStimulusDomain;
+    sessionCost?: ActivitySessionCost;
+    intensityEvidence?: string;
+    intensityClassificationVersion?: number;
     trainingEffect: number | null;
     estimatedCost: WorkoutCostProfile;
     estimatedStimulus: Partial<WorkoutStimulusProfile>;

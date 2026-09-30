@@ -1,4 +1,4 @@
-import type { DailyRecommendation, DeliveredDose, SessionTemplate, TrainingRecord, WorkoutCostProfile, WorkoutStimulusProfile } from './models';
+import type { ActivitySessionCost, ActivityStimulusDomain, DailyRecommendation, DeliveredDose, SessionTemplate, TrainingRecord, WorkoutCostProfile, WorkoutStimulusProfile } from './models';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { ENRICHED_TEMPLATES_BY_ID, ENRICHED_TEMPLATES_BY_MODALITY } from './templates';
 import { workoutForTemplate } from '../workouts/prescription';
@@ -18,6 +18,12 @@ export interface CompletedExposure {
     recoveryHours?: number;
     stimulusProfile?: WorkoutStimulusProfile;
     stimulusConfidence?: 'exact' | 'inferred' | 'unknown';
+    /** Preserved provider-neutral semantic provenance. Consumers must not treat these
+     * fields as exact catalog-role identity. */
+    stimulusDomain?: ActivityStimulusDomain;
+    sessionCost?: ActivitySessionCost;
+    intensityEvidence?: string;
+    intensityClassificationVersion?: number;
     modality?: SessionTemplate['modality'];
     category?: SessionTemplate['category'];
 }

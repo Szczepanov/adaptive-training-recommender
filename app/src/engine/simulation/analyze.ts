@@ -6,7 +6,7 @@ import type { CompletedExposure, TrainingHistoryProvider } from '../trainingHist
 import type { TrainingHistorySnapshot } from '../trainingHistorySnapshot';
 import { evaluatePeriodizationPhase, resolveMultiEventObjectives } from '../periodization';
 import { creditObjectivesFromStimulus, generateWeeklyObjectives, updateMicrocycleProgress } from '../microcycle';
-import { resolvePlanDefinitionForEvent } from '../planSchedule';
+import { resolveActivePlanDefinitionForEvent } from '../planSchedule';
 import { resolvePlanningContext } from '../planningMode';
 import { addDaysToLocalDateString } from '../../utils/localDate';
 import { workoutForTemplate } from '../../workouts/prescription';
@@ -643,7 +643,7 @@ export async function runForecastDailyParityScenario(
         const dayOffset = index % 7;
         const weekStart = addDaysToLocalDateString(scenario.startDate, weekIndex * 7);
         const periodization = evaluatePeriodizationPhase(events, trace.date);
-        const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent);
+        const planDefinition = resolveActivePlanDefinitionForEvent(periodization.focusEvent, trace.date);
         const definitions = resolveMultiEventObjectives(
             events, trace.date, periodization,
             generateWeeklyObjectives(periodization.phase, weekStart, periodization.focusEvent, planDefinition, trace.date).objectives,

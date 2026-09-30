@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { TrainingIntentProfile, UserEvent, UserGoal } from './models';
 import { evaluatePeriodizationPhase } from './periodization';
 import { resolveDemandProfile } from './eventPresets';
-import { resolvePlanningContext, suggestTrainingPriorities } from './planningMode';
+import { resolvePlanningContext, suggestTrainingPriorities, usesEvergreenProgramming } from './planningMode';
 
 function profile(mode: TrainingIntentProfile['planningMode']): TrainingIntentProfile {
     return {
@@ -33,6 +33,49 @@ describe('ADR-0017 planning mode resolution', () => {
             expect(context).toMatchObject({ mode: 'event_directed', eventStrategy: 'demand_derived' });
         },
     );
+
+    it('keeps a distant cycling event as context while fallback owns dates before the currently authored structured horizon', () => {
+        const cyclingEvent = event('cycling_event');
+        const beforeBuild = '2026-06-20'; // Current cycling-policy fixture: generated build starts at D-84; not a universal training threshold.
+        const firstBuildDay = '2026-06-21';
+
+        const fallback = resolvePlanningContext(
+            profile('event_directed'),
+            evaluatePeriodizationPhase([cyclingEvent], beforeBuild),
+            beforeBuild,
+        );
+        expect(fallback).toMatchObject({
+            mode: 'event_directed',
+            eventStrategy: 'evergreen_fallback',
+            focusEvent: { category: 'cycling_event' },
+        });
+        expect(usesEvergreenProgramming(fallback)).toBe(true);
+
+        const structured = resolvePlanningContext(
+            profile('event_directed'),
+            evaluatePeriodizationPhase([cyclingEvent], firstBuildDay),
+            firstBuildDay,
+        );
+        expect(structured).toMatchObject({ mode: 'event_directed', eventStrategy: 'structured_plan' });
+        expect(usesEvergreenProgramming(structured)).toBe(false);
+    });
+
+    it('lets an explicit travel block activate structured event authority before the derived build window', () => {
+        const cyclingEvent = event('cycling_event');
+        const date = '2026-06-10';
+        const authoredTravel = [{
+            id: 'travel-early', userId: 'u1', eventId: cyclingEvent.id, phase: 'travel' as const,
+            startDate: '2026-06-09', endDate: '2026-06-11', volumeScale: 0.4, intensityScale: 0.4,
+            createdAt: '', updatedAt: '',
+        }];
+        expect(resolvePlanningContext(
+            profile('event_directed'),
+            evaluatePeriodizationPhase([cyclingEvent], date),
+            date,
+            null,
+            authoredTravel,
+        )).toMatchObject({ mode: 'event_directed', eventStrategy: 'structured_plan' });
+    });
 
     it('lets explicit evergreen mode suppress event strategy and makes no-event legacy input evergreen', () => {
         const withEvent = resolvePlanningContext(profile('evergreen'), evaluatePeriodizationPhase([event('cycling_event')], '2026-08-10'), '2026-08-10');
