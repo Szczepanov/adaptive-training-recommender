@@ -1803,6 +1803,18 @@ export interface DailyRecommendation {
     };
 }
 
+/**
+ * PR-C (#893 WP5.2): a persisted recommendation plus the adjudicator's exact
+ * persisted decision. `engineVerdict` is written by `recommendationService.ts`
+ * `saveRecommendationInternal` as evidence-only metadata (Phase 9.0) and kept
+ * by `parseDailyRecommendation` on read; legacy documents predate it. The
+ * `mode` fallback (`resolveEngineShadowVerdict`) must never substitute for a
+ * missing verdict in round-trip labeling: it maps `recover` to `defer` and
+ * would fabricate gate replacements on pre-verdict documents. Replaces the
+ * local `DailyRecommendation & { engineVerdict?: ShadowVerdict }` widenings.
+ */
+export type DailyRecommendationWithVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
+
 /** Discriminated intensity gauge for one logged strength set (ADR-0021 D-GAUGE). `rir` and
  *  `rpe_rts` measure the same failure-proximity construct in different vocabulary and are
  *  mutually convertible -- but only at READ time; the persisted value is always exactly

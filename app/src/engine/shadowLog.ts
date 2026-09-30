@@ -1,5 +1,6 @@
 import type {
     DailyRecommendation,
+    DailyRecommendationWithVerdict,
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
     DecisionJournalEntry,
@@ -14,8 +15,6 @@ import type {
     ModificationReason,
 } from '../feedback/feedbackModels';
 import { classifyAgreement, resolveEngineShadowVerdict, type AgreementClass } from './shadowAgreement';
-
-type PersistedRecommendationWithVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
 
 /**
  * Phase 9.0.5 export: joins the engine's persisted verdict, the athlete's own decision
@@ -96,7 +95,7 @@ export function deriveEngineVerdictFromMode(mode: DailyRecommendation['mode']): 
 }
 
 function persistedEngineVerdict(recommendation: DailyRecommendation): ShadowVerdict {
-    const persisted = recommendation as PersistedRecommendationWithVerdict;
+    const persisted = recommendation as DailyRecommendationWithVerdict;
     return persisted.engineVerdict ?? deriveEngineVerdictFromMode(recommendation.mode);
 }
 

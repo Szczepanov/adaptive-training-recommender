@@ -1,6 +1,20 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { parseDailyRecommendation, parseNormalizedGarminActivity } from './trainingHistory';
+import { parseArchivedRecommendation, parseDailyRecommendation, parseNormalizedGarminActivity } from './trainingHistory';
+
+const archivedRecommendation = {
+    revision: 1,
+    templateId: 'rest_01',
+    templateTitle: 'Total Rest',
+    category: 'Rest',
+    modality: 'None',
+    mode: 'recover',
+    rationale: 'Readiness gate withheld the imported session.',
+    engineVerdict: 'defer',
+    recommendationAudit: {
+        externalPlan: { planId: 'autumn-block', revision: 2, sessionId: 'ride-1', contentHash: 'a'.repeat(64) },
+    },
+};
 
 const activity = {
     activityId: 'a-1', date: '2026-08-06', type: 'cycling', durationMin: 45,
@@ -612,5 +626,53 @@ describe('training-history persistence parsers', () => {
             'users/u1/daily_recommendations/2026-08-06',
         );
         expect(parsed).toMatchObject({ status: 'INVALID', issues: [{ code: 'invalid-engine-verdict', field: 'engineVerdict' }] });
+    });
+
+    it('parses a well-formed recommendation revision archive with its external-plan claim', () => {
+        const parsed = parseArchivedRecommendation(archivedRecommendation, 'users/u1/daily_recommendations/2026-09-20/revisions/1');
+        expect(parsed).toMatchObject({
+            status: 'AVAILABLE',
+            data: {
+                revision: 1,
+                templateId: 'rest_01',
+                mode: 'recover',
+                engineVerdict: 'defer',
+                recommendationAudit: {
+                    externalPlan: { planId: 'autumn-block', revision: 2, sessionId: 'ride-1' },
+                },
+            },
+        });
+    });
+
+    it('parses an archive without optional verdict, prescription, bindings or audit', () => {
+        const { engineVerdict: _removedVerdict, recommendationAudit: _removedAudit, ...minimal } = archivedRecommendation;
+        void _removedVerdict;
+        void _removedAudit;
+        const parsed = parseArchivedRecommendation(minimal, 'users/u1/daily_recommendations/2026-09-20/revisions/1');
+        expect(parsed).toMatchObject({ status: 'AVAILABLE', data: { revision: 1 } });
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available');
+        expect(parsed.data.engineVerdict).toBeUndefined();
+        expect(parsed.data.recommendationAudit).toBeUndefined();
+    });
+
+    it('rejects archives that fail any structural check instead of trusting them partially', () => {
+        const path = 'users/u1/daily_recommendations/2026-09-20/revisions/1';
+        expect(parseArchivedRecommendation(null, path)).toMatchObject({ status: 'INVALID' });
+        expect(parseArchivedRecommendation({ ...archivedRecommendation, revision: 0 }, path))
+            .toMatchObject({ status: 'INVALID', issues: [{ field: 'revision' }] });
+        expect(parseArchivedRecommendation({ ...archivedRecommendation, templateId: '' }, path))
+            .toMatchObject({ status: 'INVALID', issues: [{ field: 'templateId' }] });
+        expect(parseArchivedRecommendation({ ...archivedRecommendation, mode: 'rest' }, path))
+            .toMatchObject({ status: 'INVALID', issues: [{ field: 'mode' }] });
+        expect(parseArchivedRecommendation({ ...archivedRecommendation, engineVerdict: 'maybe' }, path))
+            .toMatchObject({ status: 'INVALID', issues: [{ field: 'engineVerdict' }] });
+        expect(parseArchivedRecommendation({
+            ...archivedRecommendation,
+            recommendationAudit: { externalPlan: { planId: 'autumn-block', revision: 'two', sessionId: 'ride-1', contentHash: 'a'.repeat(64) } },
+        }, path)).toMatchObject({ status: 'INVALID', issues: [{ field: 'recommendationAudit.externalPlan' }] });
+        expect(parseArchivedRecommendation({
+            ...archivedRecommendation,
+            recommendationAudit: { authoredOccurrence: { occurrenceId: 'occ-1', decision: 'reject' } },
+        }, path)).toMatchObject({ status: 'INVALID', issues: [{ field: 'recommendationAudit.authoredOccurrence' }] });
     });
 });
