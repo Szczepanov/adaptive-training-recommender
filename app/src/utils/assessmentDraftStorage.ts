@@ -23,13 +23,34 @@ function draftStorageKey(attemptId: string): string {
     return `${STORAGE_PREFIX}${attemptId}`;
 }
 
+const VALID_DRAFT_VALIDITIES = new Set<ObservationValidity>(['valid', 'invalid', 'practice', 'questionable']);
+
+function isOptionalString(value: unknown): boolean {
+    return value === undefined || typeof value === 'string';
+}
+
+function isDraftDevice(value: unknown): boolean {
+    if (value === undefined) return true;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const device = value as Partial<MetricObservationDevice>;
+    return isOptionalString(device.provider)
+        && isOptionalString(device.model)
+        && isOptionalString(device.deviceId);
+}
+
 function isDraftRow(value: unknown): value is DraftTrialRow {
-    if (!value || typeof value !== 'object') return false;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
     const row = value as Partial<DraftTrialRow>;
-    return Number.isInteger(row.ordinal)
-        && typeof row.validity === 'string'
-        && !!row.values
-        && typeof row.values === 'object';
+    if (!Number.isInteger(row.ordinal) || (row.ordinal ?? 0) < 1) return false;
+    if (!VALID_DRAFT_VALIDITIES.has(row.validity as ObservationValidity)) return false;
+    if (!row.values || typeof row.values !== 'object' || Array.isArray(row.values)) return false;
+    if (!Object.entries(row.values).every(([fieldId, fieldValue]) =>
+        fieldId.trim().length > 0
+        && (typeof fieldValue === 'boolean' || (typeof fieldValue === 'number' && Number.isFinite(fieldValue)))
+    )) return false;
+    return isOptionalString(row.invalidReason)
+        && isOptionalString(row.notes)
+        && isDraftDevice(row.device);
 }
 
 /** Storage can be blocked or cleared (private mode, previews); every accessor degrades to "no draft". */
