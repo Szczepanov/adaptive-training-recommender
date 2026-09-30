@@ -153,13 +153,13 @@ export class AssessmentTrialService {
         for (const revision of observationRevisions) {
             assertValidMetricObservationRevision(revision);
             if (revision.assessmentAttemptId !== trial.assessmentAttemptId) {
-                throw new Error(\`Observation \${revision.observationKey} belongs to another assessment attempt\`);
+                throw new Error(`Observation ${revision.observationKey} belongs to another assessment attempt`);
             }
             if (revision.protocolRef.id !== protocol.id || revision.protocolRef.revision !== protocol.revision) {
-                throw new Error(\`Observation \${revision.observationKey} is bound to another protocol revision\`);
+                throw new Error(`Observation ${revision.observationKey} is bound to another protocol revision`);
             }
             if (seenObservationKeys.has(revision.observationKey)) {
-                throw new Error(\`Duplicate observation correction in commit: \${revision.observationKey}\`);
+                throw new Error(`Duplicate observation correction in commit: ${revision.observationKey}`);
             }
             seenObservationKeys.add(revision.observationKey);
         }
@@ -171,7 +171,7 @@ export class AssessmentTrialService {
 
             const attemptSnapshot = await transaction.get(attemptRef);
             if (!attemptSnapshot.exists()) {
-                throw new Error(\`Assessment attempt \${trial.assessmentAttemptId} does not exist\`);
+                throw new Error(`Assessment attempt ${trial.assessmentAttemptId} does not exist`);
             }
             const attempt = attemptSnapshot.data() as AssessmentAttempt;
             this.assertAttemptBinding(attempt, trial.assessmentAttemptId, protocol);
@@ -189,14 +189,14 @@ export class AssessmentTrialService {
             }));
 
             if (!supersededSnapshot.exists()) {
-                throw new Error(\`Superseded trial \${trial.supersedesTrialId} does not exist\`);
+                throw new Error(`Superseded trial ${trial.supersedesTrialId} does not exist`);
             }
 
             let shouldWriteTrial = true;
             if (trialSnapshot.exists()) {
                 const existingTrial = trialSnapshot.data() as AssessmentTrial;
                 if (!sameCanonicalAssessmentTrial(existingTrial, trial)) {
-                    throw new Error(\`Trial \${trial.id} already exists with different content; correction chain diverged\`);
+                    throw new Error(`Trial ${trial.id} already exists with different content; correction chain diverged`);
                 }
                 shouldWriteTrial = false;
             }
@@ -222,7 +222,7 @@ export class AssessmentTrialService {
                     }
                     if (headSnapshot.exists() || revisionSnapshot.exists()) {
                         if (!headSnapshot.exists() || !revisionSnapshot.exists()) {
-                            throw new Error(\`Observation \${revision.observationKey} has an incomplete head/revision chain\`);
+                            throw new Error(`Observation ${revision.observationKey} has an incomplete head/revision chain`);
                         }
                         const head = headSnapshot.data() as MetricObservationHead;
                         const existingRevision = revisionSnapshot.data() as MetricObservationRevision;
@@ -235,7 +235,7 @@ export class AssessmentTrialService {
                             || head.assessmentAttemptId !== revision.assessmentAttemptId
                             || !sameCanonicalObservationRevision(existingRevision, revision)
                         ) {
-                            throw new Error(\`Observation \${revision.observationKey} already exists with different or newer content\`);
+                            throw new Error(`Observation ${revision.observationKey} already exists with different or newer content`);
                         }
                         continue;
                     }
@@ -257,7 +257,7 @@ export class AssessmentTrialService {
                     throw new Error('Observation correction requires supersedesRevision and correctionReason');
                 }
                 if (!headSnapshot.exists()) {
-                    throw new Error(\`Observation \${revision.observationKey} does not exist\`);
+                    throw new Error(`Observation ${revision.observationKey} does not exist`);
                 }
                 const head = headSnapshot.data() as MetricObservationHead;
                 assertValidMetricObservationHead(head);
@@ -276,14 +276,14 @@ export class AssessmentTrialService {
                         head.headRevision !== revision.revision
                         || !sameCanonicalObservationRevision(existingRevision, revision)
                     ) {
-                        throw new Error(\`Observation revision \${revision.revision} already exists with different or newer content\`);
+                        throw new Error(`Observation revision ${revision.revision} already exists with different or newer content`);
                     }
                     continue;
                 }
 
                 const expectedRevision = head.headRevision + 1;
                 if (revision.revision !== expectedRevision || revision.supersedesRevision !== head.headRevision) {
-                    throw new Error(\`Stale correction: expected revision \${expectedRevision} superseding \${head.headRevision}\`);
+                    throw new Error(`Stale correction: expected revision ${expectedRevision} superseding ${head.headRevision}`);
                 }
                 correctionWrites.push({ revision, headRef, revisionRef });
             }
