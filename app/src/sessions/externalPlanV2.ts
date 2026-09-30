@@ -33,6 +33,10 @@ import {
     type ValidationResult as EngineValidationResult,
 } from '../engine/validation';
 import type { SessionDefinition } from './models';
+import type { AnyExternalPlanSession, AnyExternalTrainingPlan } from './externalPlanAny';
+import type { ExternalTrainingPlanV4 } from './externalPlanV4';
+import type { ExternalTrainingPlanV5 } from './externalPlanV5';
+import type { ExternalTrainingPlanV6 } from './externalPlanV6';
 import { validateSessionDefinition } from './validation';
 
 export const EXTERNAL_PLAN_SCHEMA_V2 = 'adaptive-training-recommender/external-plan@2';
@@ -83,6 +87,68 @@ export type { AnyExternalTrainingPlan, AnyExternalPlanSession } from './external
  * narrowing) for call sites that only have the session in hand. */
 export function isV2Session(session: { definition?: unknown; prescription?: unknown }): session is ExternalPlanSessionV2 {
     return 'definition' in session && !('prescription' in session);
+}
+
+/** Any external session carrying a canonical `SessionDefinition` as its executable
+ * content (v2, v4, v5, v6 -- v3/v5 reuse the v2/v4 session contract unchanged, so no new
+ * union member is needed for them). v1 flat prescriptions (`prescription.summary`, no
+ * `definition`) are excluded. */
+export type DefinitionBearingExternalSession = Extract<AnyExternalPlanSession, { definition: unknown }>;
+
+/**
+ * Version-proof capability guard for the canonical launch path (PR-B, #893 WP3.1): true
+ * for any external session carrying a canonical `SessionDefinition`, regardless of plan
+ * schema version -- including future v7+ sessions that keep the `definition` contract.
+ * Same mechanism as `isV2Session`, named for intent so call sites (`Home.tsx` launch
+ * composition, `sessionLaunch.ts` eligibility) never grow another per-version literal.
+ * Carrying a definition is necessary but not sufficient for launch: advisory events,
+ * `skip`/`defer` verdicts, and authored rest are excluded separately by
+ * `canLaunchExternalPlanSession`, and `prepareExternalPlanSessionLaunch` revalidates the
+ * exact executable form before any persistence.
+ */
+export function isDefinitionBearingExternalSession(
+    session: { definition?: unknown; prescription?: unknown },
+): session is DefinitionBearingExternalSession {
+    const definition = session.definition;
+    return typeof definition === 'object'
+        && definition !== null
+        && !Array.isArray(definition)
+        && !('prescription' in session);
+}
+
+/**
+ * Plan-level form of the capability guard: true when at least one of the plan's sessions
+ * carries a canonical `SessionDefinition`. Fails closed on an empty or prescription-only
+ * (v1) session list.
+ */
+export function isDefinitionBearingExternalPlan(plan: AnyExternalTrainingPlan): boolean {
+    return Array.isArray(plan.sessions) && plan.sessions.some(isDefinitionBearingExternalSession);
+}
+
+const BUNDLE_CAPABLE_EXTERNAL_PLAN_SCHEMAS = new Set<string>([
+    'adaptive-training-recommender/external-plan@4',
+    'adaptive-training-recommender/external-plan@5',
+    'adaptive-training-recommender/external-plan@6',
+]);
+
+/**
+ * Bundle-placement/audit capability guard. Unlike the source-neutral launch guard above,
+ * the audit snapshot is a versioned replay contract, so it must fail closed on a future
+ * schema until that schema is explicitly admitted by validation/audit code. Centralizing
+ * the bounded schema set here fixes v5 without scattering `isV4Plan || isV5Plan || isV6Plan`
+ * branches through Home and audit persistence.
+ */
+export function isBundleCapableExternalPlan(
+    plan: AnyExternalTrainingPlan,
+): plan is ExternalTrainingPlanV4 | ExternalTrainingPlanV5 | ExternalTrainingPlanV6 {
+    if (!BUNDLE_CAPABLE_EXTERNAL_PLAN_SCHEMAS.has(plan.schema)) return false;
+    if (!isDefinitionBearingExternalPlan(plan)) return false;
+    if (!('restDays' in plan) || !Array.isArray(plan.restDays)) return false;
+    return plan.sessions.some(session =>
+        typeof session === 'object'
+        && session !== null
+        && 'intraday' in session
+        && session.intraday !== undefined);
 }
 
 /** Exported for `externalPlanV3.ts` to reuse: v3 inherits v2's `definition`-based session

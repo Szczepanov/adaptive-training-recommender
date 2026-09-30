@@ -21,8 +21,8 @@ import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
 import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
 import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch } from '../services/sessionAuthoringService';
-import { isV4Plan } from '../sessions/externalPlanV4';
-import { isV6Plan } from '../sessions/externalPlanV6';
+import { isBundleCapableExternalPlan } from '../sessions/externalPlanV2';
+import { canLaunchExternalPlanSession } from '../sessions/sessionLaunch';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { fixedActivityService } from '../services/fixedActivityService';
 import { scheduleWindowService } from '../services/scheduleWindowService';
@@ -586,7 +586,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
               memberState: todaysExternalPlanMemberState,
             }
           : undefined;
-        const activeBundlePlan = activeExternal && (isV4Plan(activeExternal.plan) || isV6Plan(activeExternal.plan)) ? activeExternal.plan : null;
+        const activeBundlePlan = activeExternal && isBundleCapableExternalPlan(activeExternal.plan) ? activeExternal.plan : null;
         const bundlePlacement = (activeExternal && activeBundlePlan && bundleContext)
           ? resolveIntradayBundlePlacement(activeExternal, input.date, bundleContext)
           : null;
@@ -682,21 +682,17 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           }
         } else if (
           activeExternal &&
-          externalContext && 'definition' in externalContext.session &&
-          (recommendationWithPrescription.externalVerdict?.decision === 'proceed' || recommendationWithPrescription.externalVerdict?.decision === 'scale') &&
-          recommendationWithPrescription.externalPrescription?.isEvent !== true &&
-          recommendationWithPrescription.template.id !== 'rest_01' &&
           externalContext &&
-          'definition' in externalContext.session
+          canLaunchExternalPlanSession(externalContext.session, {
+            verdictDecision: recommendationWithPrescription.externalVerdict?.decision,
+            isEvent: recommendationWithPrescription.externalPrescription?.isEvent,
+            templateId: recommendationWithPrescription.template.id,
+          })
         ) {
           try {
             const verdict = recommendationWithPrescription.externalVerdict;
             const useReducedDefinition = verdict?.decision === 'scale';
-            const maxDurationMinutes = useReducedDefinition
-              ? verdict?.executionDose
-                ? externalContext.session.gating.durationMin * verdict.executionDose.volume
-                : 0
-              : undefined;
+            const scaleVolume = useReducedDefinition ? verdict?.executionDose?.volume : undefined;
             const launch = await prepareExternalPlanSessionLaunch(
               userId,
               {
@@ -705,7 +701,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
                 contentHash: externalContext.contentHash,
                 session: externalContext.session,
               },
-              { date: input.date, useReducedDefinition, maxDurationMinutes },
+              { date: input.date, useReducedDefinition, scaleVolume },
             );
             if (!isCurrent()) return;
             primarySession = launch.binding;
