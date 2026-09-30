@@ -322,6 +322,28 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         expect(services.prescription.savePrescription).not.toHaveBeenCalled();
     });
 
+    it('rejects non-positive and non-finite scaled duration ceilings', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const reducedDefinition: SessionDefinition = {
+            ...externalPlan.session.definition,
+            summary: 'Reduced session',
+            duration: { min: 30, max: 30 },
+        };
+        const session: ExternalPlanSessionV6 = {
+            ...externalPlan.session,
+            scaling: { reducible: true, reducedDefinition },
+        };
+
+        for (const maxDurationMinutes of [0, Number.NaN, Number.POSITIVE_INFINITY]) {
+            await expect(prepareExternalPlanSessionLaunch('u1', {
+                ...externalPlan,
+                session,
+            }, { useReducedDefinition: true, maxDurationMinutes }))
+                .rejects.toThrow(/requires today's approved duration ceiling/);
+        }
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
     it('counts timed work for every authored block round', async () => {
         const externalPlan = makeV4ExternalPlan();
         const reducedDefinition: SessionDefinition = {
