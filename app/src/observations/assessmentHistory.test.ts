@@ -172,10 +172,10 @@ describe('assessmentHistory', () => {
         const checkpoint = makeAttempt('sprint-check', protocol.id, protocol.revision, 'checkpoint', '2027-02-20T08:00:00Z');
 
         const observations = [
-            makeObs(baseline, 'cycling_1s_peak_power_w', 1200, 'sprint-series', '2026-10-23T08:00:00Z', true, 'W'),
-            makeObs(baseline, 'cycling_5s_mean_power_w', 1050, 'sprint-series', '2026-10-23T08:00:00Z', true, 'W'),
-            makeObs(checkpoint, 'cycling_1s_peak_power_w', 1260, 'sprint-series', '2027-02-20T08:00:00Z', true, 'W'),
-            makeObs(checkpoint, 'cycling_5s_mean_power_w', 1080, 'sprint-series', '2027-02-20T08:00:00Z', true, 'W'),
+            makeObs(baseline, 'cycling_sprint_1s_peak_power_w', 1200, 'sprint-series', '2026-10-23T08:00:00Z', true, 'W'),
+            makeObs(baseline, 'cycling_sprint_5s_mean_power_w', 1050, 'sprint-series', '2026-10-23T08:00:00Z', true, 'W'),
+            makeObs(checkpoint, 'cycling_sprint_1s_peak_power_w', 1260, 'sprint-series', '2027-02-20T08:00:00Z', true, 'W'),
+            makeObs(checkpoint, 'cycling_sprint_5s_mean_power_w', 1080, 'sprint-series', '2027-02-20T08:00:00Z', true, 'W'),
         ];
 
         const history = buildAssessmentHistory({
@@ -183,8 +183,8 @@ describe('assessmentHistory', () => {
             observations,
         });
         const sprint = history.tests.find(test => test.protocolId === protocol.id);
-        const peak = sprint?.metrics.find(metric => metric.metricId === 'cycling_1s_peak_power_w');
-        const mean5s = sprint?.metrics.find(metric => metric.metricId === 'cycling_5s_mean_power_w');
+        const peak = sprint?.metrics.find(metric => metric.metricId === 'cycling_sprint_1s_peak_power_w');
+        const mean5s = sprint?.metrics.find(metric => metric.metricId === 'cycling_sprint_5s_mean_power_w');
 
         expect(peak?.activeSeries?.baseline?.value).toBe(1200);
         expect(peak?.activeSeries?.latest?.value).toBe(1260);
