@@ -6,7 +6,7 @@ import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { evaluatePeriodizationPhase, resolveMultiEventObjectives, type DroppedContributorObjective, type PeriodizationResult } from './periodization';
 import { resolveActivePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import { resolvePlanningContext, type PlanningContext } from './planningMode';
+import { resolvePlanningContext, usesEvergreenProgramming, type PlanningContext } from './planningMode';
 import { applyPlanningOverlays } from './planningOverlays';
 import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import { coverageSetFor, EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
@@ -108,7 +108,7 @@ function boundedPlannedDose(volume: number, intensity: number): PlannedDose {
 }
 
 function needsEstablishedPerformanceEvidence(planningContext: PlanningContext): boolean {
-    if (planningContext.mode !== 'evergreen') return false;
+    if (!usesEvergreenProgramming(planningContext)) return false;
     // Issue #805 (D-A): the capability opt-in deliberately does not widen this evidence. It
     // feeds athlete-state inference, the aerobic floor, power and quality priors, and opting in
     // must not change those decisions; capability cadence reads the #804 mechanical evidence.
@@ -119,7 +119,7 @@ function needsEstablishedPerformanceEvidence(planningContext: PlanningContext): 
 /** Issue #804: whether this intent can emit a mechanical requirement, and therefore whether
  * orchestration must source mechanical exposure evidence and tissue check-ins. */
 export function mechanicalEvidenceRequired(planningContext: PlanningContext): boolean {
-    return planningContext.mode === 'evergreen'
+    return usesEvergreenProgramming(planningContext)
         && canEmitMechanicalRequirement(
             planningContext.profile.priorities,
             planningContext.profile.capabilityMaintenance?.enabled === true,
@@ -132,9 +132,16 @@ export function mechanicalEvidenceRequiredFor(
     trainingIntentProfile: TrainingIntentProfile | null,
     events: UserEvent[],
     date: string,
+    authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
 ): boolean {
     return mechanicalEvidenceRequired(
-        resolvePlanningContext(trainingIntentProfile, evaluatePeriodizationPhase(events, date), date),
+        resolvePlanningContext(
+            trainingIntentProfile,
+            evaluatePeriodizationPhase(events, date),
+            date,
+            null,
+            authoredPlanBlocks,
+        ),
     );
 }
 

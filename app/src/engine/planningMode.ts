@@ -20,6 +20,14 @@ export interface PlanningContext {
     externalFallback: boolean;
 }
 
+/** True when the current date is executed by the Evergreen dose/packing authority.
+ * A far-out event can remain contextual without owning executable programming. */
+export function usesEvergreenProgramming(planningContext: PlanningContext): boolean {
+    return planningContext.mode === 'evergreen'
+        || (planningContext.mode === 'event_directed'
+            && planningContext.eventStrategy === 'evergreen_fallback');
+}
+
 export { DEFAULT_TRAINING_INTENT_PROFILE } from './evergreenStrategy';
 
 type GoalForPrioritySuggestion = UserGoal & { id?: string };

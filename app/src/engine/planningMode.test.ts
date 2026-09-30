@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { TrainingIntentProfile, UserEvent, UserGoal } from './models';
 import { evaluatePeriodizationPhase } from './periodization';
 import { resolveDemandProfile } from './eventPresets';
-import { resolvePlanningContext, suggestTrainingPriorities } from './planningMode';
+import { resolvePlanningContext, suggestTrainingPriorities, usesEvergreenProgramming } from './planningMode';
 
 function profile(mode: TrainingIntentProfile['planningMode']): TrainingIntentProfile {
     return {
@@ -39,20 +39,25 @@ describe('ADR-0017 planning mode resolution', () => {
         const beforeBuild = '2026-06-20'; // race D-85; derived build starts D-84
         const firstBuildDay = '2026-06-21';
 
-        expect(resolvePlanningContext(
+        const fallback = resolvePlanningContext(
             profile('event_directed'),
             evaluatePeriodizationPhase([cyclingEvent], beforeBuild),
             beforeBuild,
-        )).toMatchObject({
+        );
+        expect(fallback).toMatchObject({
             mode: 'event_directed',
             eventStrategy: 'evergreen_fallback',
             focusEvent: { category: 'cycling_event' },
         });
-        expect(resolvePlanningContext(
+        expect(usesEvergreenProgramming(fallback)).toBe(true);
+
+        const structured = resolvePlanningContext(
             profile('event_directed'),
             evaluatePeriodizationPhase([cyclingEvent], firstBuildDay),
             firstBuildDay,
-        )).toMatchObject({ mode: 'event_directed', eventStrategy: 'structured_plan' });
+        );
+        expect(structured).toMatchObject({ mode: 'event_directed', eventStrategy: 'structured_plan' });
+        expect(usesEvergreenProgramming(structured)).toBe(false);
     });
 
     it('lets an explicit travel block activate structured event authority before the derived build window', () => {

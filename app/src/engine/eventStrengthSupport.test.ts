@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveDemandProfile } from './eventPresets';
-import { eventStrengthSupportSessions, resolveTrainingIntent } from './trainingIntent';
+import { eventStrengthSupportSessions, mechanicalEvidenceRequiredFor, resolveTrainingIntent } from './trainingIntent';
 import { buildCoverageState, coverageNeedTierForTemplate } from './coverage';
 import { deriveRequiredRoleOccurrences } from './weeklyAllocation';
 import { creditObjectivesFromStimulus, generateWeeklyObjectives } from './microcycle';
@@ -68,6 +68,34 @@ describe('cycling hybrid event strength support (#801)', () => {
         expect(intent.eventStrengthSupportSessions).toBe(0);
         const resolved = resolvePlanDefinitionForEvent(event, [], intent.eventStrengthSupportSessions);
         expect(resolved?.objectives.some(item => item.coverageKey === 'compact_strength')).toBe(false);
+    });
+
+    it('loads established athlete evidence while a distant cycling event uses evergreen fallback', async () => {
+        const windows: number[] = [];
+        const recordingHistory: TrainingHistoryProvider = {
+            reconstruct: async (_userId, _date, windowDays) => {
+                windows.push(windowDays);
+                return [];
+            },
+        };
+        await resolveTrainingIntent(
+            'endurance-athlete', [event], '2026-06-20', readiness, 7, recordingHistory,
+            undefined, [], profile(['endurance']),
+        );
+        expect(windows).toContain(28);
+    });
+
+    it('requests mechanical evidence only while evergreen owns the evaluated date', () => {
+        const speedProfile = profile(['speed_power']);
+        expect(mechanicalEvidenceRequiredFor(speedProfile, [event], '2026-06-20')).toBe(true);
+        expect(mechanicalEvidenceRequiredFor(speedProfile, [event], '2026-06-21')).toBe(false);
+
+        const travel = [{
+            id: 'early-travel', userId: 'hybrid-athlete', eventId: event.id, phase: 'travel' as const,
+            startDate: '2026-06-10', endDate: '2026-06-11', volumeScale: 0.5, intensityScale: 0.4,
+            createdAt: '', updatedAt: '',
+        }];
+        expect(mechanicalEvidenceRequiredFor(speedProfile, [event], '2026-06-10', travel)).toBe(false);
     });
 
     it('does not carry the support minimum into taper or race blocks', async () => {

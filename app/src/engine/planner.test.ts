@@ -75,6 +75,52 @@ function buildTodayAndTomorrow(context: UserContext, date = '2026-08-07') {
 
 // --- Tests -------------------------------------------------------------------
 
+describe('date-local event authority in projected planning (#925)', () => {
+    it('lets the structured cycling plan replace a supplied evergreen fallback on race D-84', () => {
+        const todayDate = '2026-06-20';
+        const projectedDate = '2026-06-21';
+        const cyclingEvent: UserEvent = {
+            id: 'boundary-race', title: 'Boundary race', date: '2026-09-13', priority: 'A',
+            lifecycle: 'scheduled', category: 'cycling_event',
+            demandProfile: {
+                aerobicEndurance: 0.8, thresholdPower: 0.9, vo2MaxPower: 0.7,
+                repeatedSurges: 0.8, sprintPower: 0.5, fatigueResistance: 0.8, neuromuscular: 0.5,
+            },
+        };
+        const fallbackState = buildPlanDefinition(
+            EVERGREEN_GENERAL_COVERAGE_SET.coverage,
+            [{ id: 'block_general', phase: 'general', startDate: todayDate, endDate: '2026-06-26', volumeScale: 1, intensityScale: 1 }],
+            cyclingEvent,
+            [{ key: 'zone2_aerobic', coverageKey: 'aerobic_volume', blockId: 'block_general', requiredCredit: 1,
+                priority: 'must_have', role: 'primary_developmental', coverageMinimumSessions: 1, coverageTargetSessions: 1 }],
+            [], 'fallback_boundary', EVERGREEN_GENERAL_COVERAGE_SET.id,
+        );
+        if (fallbackState.status !== 'AVAILABLE') throw new Error('fallback plan invalid');
+
+        const phase = evaluatePeriodizationPhase([cyclingEvent], projectedDate);
+        const state = {
+            microcycle: generateWeeklyObjectives(phase.phase, todayDate, cyclingEvent, fallbackState.data, todayDate),
+            externalFatigue: createEmptyFatigue(todayDate),
+            projectedHistory: [],
+        };
+        const evaluation = evaluateProjectedDate(projectedDate, state, {
+            context: baseContext({ hasIndoorBike: true }),
+            preferences: NEUTRAL_PREFERENCES,
+            events: [cyclingEvent],
+            fixedActivities: [],
+            authoredPlanBlocks: [],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: todayDate,
+            planDefinition: fallbackState.data,
+            todayDate,
+        });
+
+        expect(evaluation.optimizationContext.coverageState?.coverageSetId).not.toBe(EVERGREEN_GENERAL_COVERAGE_SET.id);
+        expect(evaluation.optimizationContext.coverageState?.activeBlockId).toBe('block_build');
+    });
+});
+
 describe('generateWeekAheadPlan', () => {
     afterEach(() => vi.useRealTimers());
 

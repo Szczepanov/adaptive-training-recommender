@@ -1,6 +1,6 @@
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { FixedActivity, GuardrailKey, MicrocycleState, ScheduleOverlay, UserContext, UserPreferences } from './models';
-import type { PlanningContext } from './planningMode';
+import { usesEvergreenProgramming, type PlanningContext } from './planningMode';
 import type { CompletedExposure } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import type { PhaseWeights } from './periodization';
@@ -205,9 +205,7 @@ export function resolveEvergreenPlan(
     /** Inputs used only by the #804 mechanical capability owner. */
     mechanical: EvergreenMechanicalInputs = {},
 ): ResolvedEvergreenPlan | null {
-    const ownsEvergreenProgramming = planningContext.mode === 'evergreen'
-        || (planningContext.mode === 'event_directed' && planningContext.eventStrategy === 'evergreen_fallback');
-    if (!ownsEvergreenProgramming || !preferences) return null;
+    if (!usesEvergreenProgramming(planningContext) || !preferences) return null;
     const resolvedWindows = Array.from({ length: Math.max(1, days) }, (_, index) => {
         const windowDate = addDaysToLocalDateString(date, index);
         const resolved = resolveAvailability(windowDate, null, [...fixedActivities], context, scheduleOverlays);
