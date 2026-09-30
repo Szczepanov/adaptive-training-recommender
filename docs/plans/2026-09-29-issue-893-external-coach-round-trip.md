@@ -11,6 +11,15 @@ execution, and exact next-brief provenance. WP7.2 remains partial: provider enri
 abandoned execution, and the listed revision, replacement, rest, multi-session, retry, and
 cross-user variants still need integrated coverage. Keep #893 open until those proofs land.
 
+**Delivery update (30 September 2026, PR-B):** WP3.1, WP3.2, and the WP4.1 PR-B slice are
+implemented. One version-proof definition-bearing/bundle capability guard replaces the
+`isV4Plan || isV6Plan` literals (v5 intraday plans now record bundle placement/audit like
+v4/v6); the authoring boundary re-enforces `reducible: true` and reduced-identity retention;
+old-revision resolvability, frozen-prescription write-once identity, and abandoned-execution
+identity are pinned by unit tests. Rules verified sufficient for v6 identity (no rule-language
+change; emulator suite green). The scaled browser leg is deferred to PR-E. No
+`POLICY_VERSION` bump (policy-drift check passes: no decision-affecting engine file changed).
+
 ## 1. Goal
 
 Make the external-coach workflow a first-class, exact, replayable loop:

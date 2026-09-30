@@ -212,6 +212,17 @@ export async function prepareAuthoredOccurrenceLaunch(
     };
 }
 
+/**
+ * Provenance for a scaled launch's duration ceiling (PR-B, #893 WP3.2): the approved gate
+ * duration is always the session's own `gating.durationMin` scaled by the verdict's
+ * executed volume fraction -- never rounded, re-derived, or independently estimated.
+ * `Home.tsx` computes it through this helper so the formula has one owner and one
+ * pinning test; `prepareExternalPlanSessionLaunch` enforces it via `maxDurationMinutes`.
+ */
+export function resolveScaledLaunchCeilingMinutes(gatingDurationMin: number, doseVolume: number): number {
+    return gatingDurationMin * doseVolume;
+}
+
 export interface PrepareExternalPlanSessionLaunchOptions {
     summaryOverride?: string;
     now?: string;
@@ -270,6 +281,26 @@ export async function prepareExternalPlanSessionLaunch(
         : undefined;
     if (options.useReducedDefinition && !reducedDefinition) {
         throw new Error('A scaled external-plan session requires an exact structured reducedDefinition.');
+    }
+    // Execution-boundary mirror of `externalPlanV6.ts`'s import contract (PR-B, #893 WP3.2):
+    // a scaled launch is only ever the coach's own reduced form. Import validation already
+    // rejects a `reducedDefinition` without `reducible: true` and one that renames the
+    // authored identity, but the authoring layer accepts hand-built sessions, so it
+    // re-enforces both rules here -- before any dose check -- and fails closed.
+    if (options.useReducedDefinition && externalPlan.session.scaling?.reducible !== true) {
+        throw new Error('A scaled external-plan launch requires reducible: true with an exact structured reducedDefinition.');
+    }
+    if (options.useReducedDefinition && reducedDefinition) {
+        const fullDefinition = externalPlan.session.definition;
+        if (reducedDefinition.id !== fullDefinition.id) {
+            throw new Error('Reduced definition must retain the authored session definition id.');
+        }
+        if (reducedDefinition.intent !== fullDefinition.intent) {
+            throw new Error('Reduced definition must retain the authored session intent.');
+        }
+        if (reducedDefinition.dominantModality !== fullDefinition.dominantModality) {
+            throw new Error('Reduced definition must retain the authored dominant modality.');
+        }
     }
     if (options.useReducedDefinition
         && (options.maxDurationMinutes === undefined

@@ -32,6 +32,7 @@ import { POLICY_VERSION } from '../engine/policy';
 import { validateScheduleWindow, validateScheduleWindowSet } from '../engine/scheduleWindows';
 import { validateFixedActivity } from '../engine/validation';
 import type { ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
+import type { ExternalTrainingPlanV5 } from '../sessions/externalPlanV5';
 import type { ExternalTrainingPlanV6 } from '../sessions/externalPlanV6';
 import { validateAnyExternalTrainingPlan } from '../sessions/externalPlanValidation';
 
@@ -53,8 +54,9 @@ export interface IntradayBundlePlacementAuditInput {
     asOf: string;
     policyVersion: string;
     plan: { planId: string; revision: number; contentHash: string };
-    /** Exact immutable plan revision used to project the bundle members. */
-    planSnapshot: ExternalTrainingPlanV4 | ExternalTrainingPlanV6;
+    /** Exact immutable plan revision used to project the bundle members. v5 inherits
+     * v4's intraday/rest contract unchanged, so it records exactly like v4/v6. */
+    planSnapshot: ExternalTrainingPlanV4 | ExternalTrainingPlanV5 | ExternalTrainingPlanV6;
     bundleId: string;
     scheduleWindows: readonly ScheduleWindow[];
     fixedActivities: readonly FixedActivity[];
@@ -119,7 +121,7 @@ function validateAuditInput(input: IntradayBundlePlacementAuditInput): void {
     if (!input.planSnapshot || typeof input.planSnapshot !== 'object'
         || input.planSnapshot.planId !== input.plan.planId
         || input.planSnapshot.revision !== input.plan.revision
-        || !['adaptive-training-recommender/external-plan@4', 'adaptive-training-recommender/external-plan@6'].includes(input.planSnapshot.schema)) {
+        || !['adaptive-training-recommender/external-plan@4', 'adaptive-training-recommender/external-plan@5', 'adaptive-training-recommender/external-plan@6'].includes(input.planSnapshot.schema)) {
         throw new Error('Invalid frozen external plan snapshot');
     }
     const planValidation = validateAnyExternalTrainingPlan(input.planSnapshot);

@@ -208,6 +208,53 @@ describe('resolveSessionDefinition', () => {
         expect(result).toMatchObject({ status: 'AVAILABLE', data: { title: 'Reduced', blocks: reducedDefinition.blocks } });
     });
 
+    it('resolves the original revision bytes after a later revision import (content-hash boundary, not latest-header)', async () => {
+        // B3 (WP4.1 PR-B slice): revision 2 changes the session content; the revision 1
+        // source ref must still resolve to the revision 1 bytes it names.
+        const definitionR1: SessionDefinition = {
+            schemaVersion: 1, id: 'session-rev', revision: 1, title: 'Original', intent: 'training',
+            blocks: [{ id: 'original', role: 'main', executionMode: 'sequential', steps: [] }],
+        };
+        const definitionR2: SessionDefinition = {
+            ...definitionR1, revision: 2, title: 'Revised',
+            blocks: [{ id: 'revised', role: 'main', executionMode: 'sequential', steps: [] }],
+        };
+        function revisionPlan(revision: number, definition: SessionDefinition) {
+            return {
+                schema: 'adaptive-training-recommender/external-plan@6', planId: 'plan-rev', revision,
+                title: 'Revision plan', startDate: '2026-08-17', weekCount: 1, restDays: [], intentBlocks: [],
+                sessions: [{
+                    id: 'session-rev', title: definition.title, priority: 'key',
+                    placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' },
+                    gating: { modality: 'strength', intensity: 'moderate', durationMin: 45, durationMax: 55, environment: 'either', equipment: [] },
+                    definition,
+                    scaling: { reducible: true, reducedDefinition: definition },
+                }],
+            };
+        }
+        const planR1 = revisionPlan(1, definitionR1);
+        const planR2 = revisionPlan(2, definitionR2);
+        services.external.getRevisionState.mockImplementation(async (_userId: string, _planId: string, revision: number) => ({
+            status: 'AVAILABLE' as const,
+            data: revision === 1 ? planR1 : planR2,
+            revision: String(revision),
+        } as never));
+
+        const sourceR1 = {
+            kind: 'external_plan' as const, planId: 'plan-rev', revision: 1, sessionId: 'session-rev',
+            contentHash: await computeContentHash(planR1),
+        };
+        const resolvedR1 = await resolveSessionDefinition('u1', sourceR1);
+        expect(resolvedR1).toMatchObject({ status: 'AVAILABLE', data: { title: 'Original', blocks: definitionR1.blocks } });
+        expect(services.external.getRevisionState).toHaveBeenCalledWith('u1', 'plan-rev', 1);
+
+        const resolvedR2 = await resolveSessionDefinition('u1', {
+            kind: 'external_plan' as const, planId: 'plan-rev', revision: 2, sessionId: 'session-rev',
+            contentHash: await computeContentHash(planR2),
+        });
+        expect(resolvedR2).toMatchObject({ status: 'AVAILABLE', data: { title: 'Revised', blocks: definitionR2.blocks } });
+    });
+
     describe('catalog source (M3.1)', () => {
         const catalogSource = { kind: 'catalog' as const, workoutId: 'catalog-workout-1', catalogVersion: '1' };
         const storedPrescription: ExecutionPrescription = {
