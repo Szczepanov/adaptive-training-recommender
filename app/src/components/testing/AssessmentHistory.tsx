@@ -28,7 +28,8 @@ export interface AssessmentHistoryProps {
 export const AssessmentHistory: React.FC<AssessmentHistoryProps> = ({ userId }) => {
     const [loading, setLoading] = useState(true);
     const [history, setHistory] = useState<AssessmentHistoryModel | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [actionError, setActionError] = useState<string | null>(null);
     const [exporting, setExporting] = useState(false);
     const [selectedAttempt, setSelectedAttempt] = useState<{
         attempt: AssessmentAttempt;
@@ -37,12 +38,12 @@ export const AssessmentHistory: React.FC<AssessmentHistoryProps> = ({ userId }) 
 
     const loadHistory = useCallback(async () => {
         setLoading(true);
-        setError(null);
+        setLoadError(null);
         try {
             const data = await assessmentHistoryService.loadAssessmentHistory(userId);
             setHistory(data);
         } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
+            setLoadError(err instanceof Error ? err.message : String(err));
         } finally {
             setLoading(false);
         }
@@ -54,22 +55,24 @@ export const AssessmentHistory: React.FC<AssessmentHistoryProps> = ({ userId }) 
 
     const handleExportCsv = () => {
         if (!history) return;
+        setActionError(null);
         try {
             const csv = buildAssessmentHistoryCsv(history);
             downloadCsvFile('assessment-history.csv', csv);
         } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
+            setActionError(err instanceof Error ? err.message : String(err));
         }
     };
 
     const handleExportJson = async () => {
+        setActionError(null);
         setExporting(true);
         try {
             const diagnosticData = await assessmentExportService.loadDiagnosticExport(userId);
             const json = assessmentDiagnosticExportToJson(diagnosticData);
             downloadDiagnosticExportFile('physical-capital-diagnostic-export.json', json);
         } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
+            setActionError(err instanceof Error ? err.message : String(err));
         } finally {
             setExporting(false);
         }
@@ -83,10 +86,10 @@ export const AssessmentHistory: React.FC<AssessmentHistoryProps> = ({ userId }) 
         );
     }
 
-    if (error) {
+    if (loadError) {
         return (
             <div className="assessment-history-view">
-                <p className="testing-error" role="alert">{error}</p>
+                <p className="testing-error" role="alert">{loadError}</p>
                 <button type="button" className="testing-primary" onClick={loadHistory}>Retry</button>
             </div>
         );
@@ -128,6 +131,12 @@ export const AssessmentHistory: React.FC<AssessmentHistoryProps> = ({ userId }) 
                     </button>
                 </div>
             </div>
+
+            {actionError && (
+                <div className="testing-card testing-error" role="alert">
+                    <strong>Export failed:</strong> {actionError}
+                </div>
+            )}
 
             {history.totalUnreadableCount > 0 && (
                 <div className="testing-card testing-warning-banner" role="alert">
