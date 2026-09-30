@@ -115,10 +115,14 @@ describe('cycling build strength support in the weekly allocator (#801)', () => 
 
     it('derives the support count from the evergreen strength floor, so planning mode alone does not cut 2 to 1', () => {
         const floor = strengthRequirement('required').floor?.dose.value ?? 0;
-        const eventContext = { mode: 'event_directed' } as PlanningContext;
+        const eventContext = { mode: 'event_directed', eventStrategy: 'structured_plan' } as PlanningContext;
         expect(floor).toBe(2);
         expect(1 + eventStrengthSupportSessions(eventContext, profile(['endurance', 'strength_muscle']))).toBe(floor);
         expect(eventStrengthSupportSessions(eventContext, profile(['endurance']))).toBe(0);
+        expect(eventStrengthSupportSessions(
+            { mode: 'event_directed', eventStrategy: 'evergreen_fallback' } as PlanningContext,
+            profile(['endurance', 'strength_muscle']),
+        )).toBe(0);
         expect(eventStrengthSupportSessions({ mode: 'evergreen' } as PlanningContext, profile(['endurance', 'strength_muscle']))).toBe(0);
     });
 
