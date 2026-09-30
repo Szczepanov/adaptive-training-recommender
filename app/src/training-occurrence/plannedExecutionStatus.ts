@@ -136,9 +136,11 @@ export function renderPlannedExecutionStatuses(
     if (statuses.length === 0) return [heading, '', 'No exact external-plan occurrence records were available in this window. Missing activity is not treated as a missed session.'];
     const label = (value: string) => value.replaceAll('_', ' ');
     const rows = [...statuses]
-        .sort((left, right) => left.authored.kind === 'session' && right.authored.kind === 'session'
-            ? left.authored.source.sessionId.localeCompare(right.authored.source.sessionId)
-            : left.authored.kind.localeCompare(right.authored.kind))
+        .sort((left, right) => left.date.localeCompare(right.date)
+            || (left.authored.kind === 'session' && right.authored.kind === 'session'
+                ? left.authored.source.sessionId.localeCompare(right.authored.source.sessionId)
+                : left.authored.kind.localeCompare(right.authored.kind))
+            || (left.occurrenceId ?? '').localeCompare(right.occurrenceId ?? ''))
         .slice(0, 20)
         .map(status => {
             const authored = status.authored.kind === 'session'
