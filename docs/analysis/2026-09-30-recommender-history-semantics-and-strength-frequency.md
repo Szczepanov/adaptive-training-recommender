@@ -6,7 +6,7 @@
 
 ## Implementation status in PR #925
 
-- **P0 implemented:** structured cycling authority is date-local; far-out event context is retained while Evergreen owns executable programming until an authored block becomes active. Explicit travel overlays can activate structured authority earlier. Fallback dates use the same established-athlete/mechanical evidence acquisition as ordinary Evergreen, and forecast dates re-resolve authority so an Evergreen D-85 definition cannot mask the structured D-84 build.
+- **P0 implemented:** structured cycling authority is date-local; far-out event context is retained while Evergreen owns executable programming until an authored block becomes active. Explicit travel overlays can activate structured authority earlier. This is the safe bug-fix fallback, not a claim that long-horizon goal-directed development should remain generic until D-84; #927, #928 and #929 track that follow-up architecture. Fallback dates use the same established-athlete/mechanical evidence acquisition as ordinary Evergreen, and forecast dates re-resolve authority so an Evergreen D-85 definition cannot mask the structured D-84 build.
 - **P1 implemented:** Garmin/provider-neutral `stimulusDomain`, `sessionCost`, evidence and classification version survive completed-training and canonical performed-fact boundaries when structured execution is absent. Structured execution remains stronger authority.
 - **P2 not implemented:** preserved provider semantics are not yet a new optimizer/objective-credit or same-family sequence rule.
 - **P3 not implemented:** `semantic_confident` weekly coverage remains disabled; exact ADR-0016 role identity stays strict.
@@ -145,6 +145,14 @@ Two implementation shapes are reasonable:
 - If no block is active, treat the structured plan as inactive for this date and resolve Base objectives/coverage from evergreen/demand-derived policy.
 
 Option B has the cleaner authority boundary: a plan cannot shadow dates it does not own.
+
+PR #925 implements Option B as the immediate authority-vacuum fix. The current D-84 start
+of the generated cycling build remains an implementation/policy boundary of today's plan
+definition, not a physiological threshold and not a declaration that preparation for a
+300-day goal begins only at D-84. A complete long-horizon event-directed model still needs
+an active mesocycle/development authority before the final event build (#927), one
+policy-owned source for event-build/specificity horizons (#928), and coherent season-level
+coordination of A/B/C events (#929).
 
 ### Required regression tests
 
