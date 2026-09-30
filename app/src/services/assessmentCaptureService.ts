@@ -181,11 +181,10 @@ export class AssessmentCaptureService {
 
     /**
      * WP5.5 Post-completion trial correction flow:
-     * 1. Append superseding trial record (correctionIndex + 1)
-     * 2. Re-list trials for attempt
-     * 3. Re-derive with identityByMetric: current revision + 1
-     * 4. appendCorrection ONLY for metrics whose value or evidence refs changed
-     * 5. Fail closed if a correction leaves a previously benchmarked metric with no valid trial.
+     * 1. Build the superseding trial candidate (correctionIndex + 1) without writing.
+     * 2. Re-derive with identityByMetric: current revision + 1.
+     * 3. Fail closed if a correction leaves a previously benchmarked metric with no valid trial.
+     * 4. Atomically commit the superseding trial plus every changed canonical revision/head.
      */
     async correctTrial(input: CorrectTrialInput): Promise<CorrectTrialResult> {
         const { userId, protocol, attempt, trial, context, observedAt, sourceRef, device } = input;
@@ -250,24 +249,20 @@ export class AssessmentCaptureService {
             }
         }
 
-        // 6b. Persist the superseding trial (idempotent on exact retry; a different payload at
-        //     the same id fails closed in the trial service).
-        await this.trialService.createTrial(userId, protocol, trial);
-
-        // 7. Append corrections only for changed metrics
+        // 7. Prepare every changed canonical revision in memory. The trial service commits the
+        //    superseding raw trial and this complete revision set in one Firestore transaction.
         const updatedObservations: MetricObservationRevision[] = [];
         const allResultObservations: MetricObservationRevision[] = [];
 
         for (const newObs of derivation.observations) {
             const current = currentObservationsByMetric.get(newObs.metricId);
             if (!current) {
-                // If there was no previous observation, create initial revision
-                const initial = await this.observationService.createInitialRevision(userId, {
+                // A completed-without-benchmark attempt may acquire its first valid benchmark
+                // through a later superseding trial.
+                const initial: MetricObservationRevision = {
                     ...newObs,
                     revision: 1,
-                    supersedesRevision: undefined,
-                    correctionReason: undefined,
-                });
+                };
                 updatedObservations.push(initial);
                 allResultObservations.push(initial);
                 continue;
@@ -277,13 +272,14 @@ export class AssessmentCaptureService {
             const evidenceChanged = !sameEvidenceRefs(current.derivedFromEvidenceRefs, newObs.derivedFromEvidenceRefs);
 
             if (valueChanged || evidenceChanged) {
-                const appended = await this.observationService.appendCorrection(userId, newObs);
-                updatedObservations.push(appended);
-                allResultObservations.push(appended);
+                updatedObservations.push(newObs);
+                allResultObservations.push(newObs);
             } else {
                 allResultObservations.push(current);
             }
         }
+
+        await this.trialService.commitCorrection(userId, protocol, trial, updatedObservations);
 
         return {
             trials: allTrials,
