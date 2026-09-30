@@ -32,6 +32,31 @@ export interface E2EExternalVerdictSeed {
   planId: string;
 }
 
+export async function seedExternalPlanningMode(athlete: E2EAthlete): Promise<void> {
+  const date = getLocalDateString();
+  const environment = await initializeTestEnvironment({
+    projectId: E2E_PROJECT_ID,
+    firestore: { host: EMULATOR_HOST, port: FIRESTORE_EMULATOR_PORT },
+  });
+  try {
+    await environment.withSecurityRulesDisabled(async context => {
+      const db = context.firestore() as unknown as Firestore;
+      await setDoc(doc(db, 'users', athlete.userId, 'training_intent', 'profile'), {
+        userId: athlete.userId,
+        planningMode: 'externally_planned',
+        priorities: ['endurance'],
+        weeklyCommitment: { minSessions: 4, targetSessions: 5, maxSessions: 6 },
+        organizationPreference: 'auto',
+        schemaVersion: 1,
+        createdAt: `${date}T06:00:00.000Z`,
+        updatedAt: `${date}T06:00:00.000Z`,
+      });
+    });
+  } finally {
+    await environment.cleanup();
+  }
+}
+
 /**
  * Seeds one imported plan (header + immutable revision) plus an externally_planned
  * training-intent profile, with a single `fixed` session placed on today. Reads bypass

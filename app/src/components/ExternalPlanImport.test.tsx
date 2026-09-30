@@ -202,6 +202,22 @@ describe('PlanPreview — M3.7 import acknowledgement gating', () => {
         const importButtonMarkup = html.match(/<button[^>]*>Import this plan<\/button>/)?.[0] ?? '';
         expect(importButtonMarkup).not.toContain('disabled');
     });
+
+    it('requires acknowledgement of conflicts and blocks activation when preflight is unknown', () => {
+        const conflictHtml = renderToStaticMarkup(
+            <PlanPreview plan={v2Plan()} previous={null} diff={null} onConfirm={vi.fn()} onCancel={vi.fn()}
+                preflight={{ status: 'ready', findings: [{ kind: 'external_plan', date: '2026-08-18', detail: 'Another plan wins.' }] }} />,
+        );
+        expect(conflictHtml).toContain('I reviewed these placement, calendar, and authority impacts.');
+        expect(conflictHtml.match(/<button[^>]*>Import this plan<\/button>/)?.[0]).toContain('disabled=""');
+
+        const unknownHtml = renderToStaticMarkup(
+            <PlanPreview plan={v2Plan()} previous={null} diff={null} onConfirm={vi.fn()} onCancel={vi.fn()}
+                preflight={{ status: 'unknown', unavailableSources: ['fixed activities'], findings: [] }} />,
+        );
+        expect(unknownHtml).toContain('fixed activities');
+        expect(unknownHtml.match(/<button[^>]*>Import this plan<\/button>/)?.[0]).toContain('disabled=""');
+    });
 });
 
 function v5Plan(): ExternalTrainingPlanV5 {

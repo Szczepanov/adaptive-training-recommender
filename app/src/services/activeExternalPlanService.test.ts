@@ -96,6 +96,17 @@ describe('ActiveExternalPlanService', () => {
             .toEqual(['2026-08-18:w1-threshold', '2026-08-20:w1-easy']);
     });
 
+    it('reuses plan authority reads while resolving a date range', async () => {
+        const plans = stubPlans();
+        const states = await new ActiveExternalPlanService(plans).getActivePlanStatesInRange('u1', '2026-08-17', '2026-08-19');
+        expect(states.map(state => state.status)).toEqual(['AVAILABLE', 'AVAILABLE', 'AVAILABLE']);
+        expect(plans.listPlanIds).toHaveBeenCalledTimes(1);
+        expect(plans.getHeaderState).toHaveBeenCalledTimes(1);
+        expect(plans.getActivationState).toHaveBeenCalledTimes(1);
+        expect(plans.getRevisionState).toHaveBeenCalledTimes(1);
+        expect(plans.getPlacementState).toHaveBeenCalledTimes(1);
+    });
+
     it('reports MISSING for a date outside every plan rather than picking the nearest', async () => {
         const state = await new ActiveExternalPlanService(stubPlans()).getActivePlanState('u1', '2026-09-15');
         expect(state.status).toBe('MISSING');

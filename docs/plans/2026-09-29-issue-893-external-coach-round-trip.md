@@ -5,6 +5,12 @@
 **Repository baseline reviewed:** `main` at `8f788a5d61421c8da15e355ac124f6f622adbcc4`
 **Issue:** https://github.com/Szczepanov/adaptive-training-recommender/issues/893
 
+**Delivery update (30 September 2026):** WP1.1 and WP1.2 are implemented. WP7.1 now has an
+integrated browser happy path from an initial planning brief through v6 import, logged structured
+execution, and exact next-brief provenance. WP7.2 remains partial: provider enrichment, partial /
+abandoned execution, and the listed revision, replacement, rest, multi-session, retry, and
+cross-user variants still need integrated coverage. Keep #893 open until those proofs land.
+
 ## 1. Goal
 
 Make the external-coach workflow a first-class, exact, replayable loop:

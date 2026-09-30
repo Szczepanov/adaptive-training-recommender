@@ -30,6 +30,14 @@ export interface ActiveExternalPlan {
     placed: readonly PlacedSession[];
 }
 
+type ActivePlanReadCache = {
+    ids?: ReturnType<ExternalPlanService['listPlanIds']>;
+    headers: Map<string, ReturnType<ExternalPlanService['getHeaderState']>>;
+    activations: Map<string, ReturnType<ExternalPlanService['getActivationState']>>;
+    revisions: Map<string, ReturnType<ExternalPlanService['getRevisionState']>>;
+    placements: Map<string, ReturnType<ExternalPlanService['getPlacementState']>>;
+};
+
 /** Last date the plan covers, inclusive. */
 export function planEndDate(header: Pick<ExternalPlanHeader, 'startDate' | 'weekCount'>): string {
     return addDaysToLocalDateString(header.startDate, header.weekCount * 7 - 1);
@@ -369,11 +377,41 @@ export class ActiveExternalPlanService {
         date: string,
         fixedActivities: readonly FixedActivity[] = [],
     ): Promise<DataState<ActiveExternalPlan>> {
-        const ids = await this.plans.listPlanIds(userId);
+        return this.resolveActivePlanState(userId, date, fixedActivities);
+    }
+
+    /** Resolves a contiguous date range while reusing immutable plan reads within this request. */
+    async getActivePlanStatesInRange(
+        userId: string,
+        startDate: string,
+        endDate: string,
+        fixedActivities: readonly FixedActivity[] = [],
+    ): Promise<DataState<ActiveExternalPlan>[]> {
+        const cache: ActivePlanReadCache = { headers: new Map(), activations: new Map(), revisions: new Map(), placements: new Map() };
+        const dates: string[] = [];
+        for (let date = startDate; date <= endDate; date = addDaysToLocalDateString(date, 1)) dates.push(date);
+        return Promise.all(dates.map(date => this.resolveActivePlanState(userId, date, fixedActivities, cache)));
+    }
+
+    private async resolveActivePlanState(
+        userId: string,
+        date: string,
+        fixedActivities: readonly FixedActivity[],
+        cache?: ActivePlanReadCache,
+    ): Promise<DataState<ActiveExternalPlan>> {
+        const read = <T>(map: Map<string, Promise<T>>, key: string, load: () => Promise<T>): Promise<T> => {
+            let pending = map.get(key);
+            if (!pending) { pending = load(); map.set(key, pending); }
+            return pending;
+        };
+        const idsPending = cache ? (cache.ids ??= this.plans.listPlanIds(userId)) : this.plans.listPlanIds(userId);
+        const ids = await idsPending;
         if (ids.status !== 'AVAILABLE') return ids;
         if (ids.data.length === 0) return { status: 'MISSING' };
 
-        const headerStates = await Promise.all(ids.data.map(planId => this.plans.getHeaderState(userId, planId)));
+        const headerStates = await Promise.all(ids.data.map(planId => cache
+            ? read(cache.headers, planId, () => this.plans.getHeaderState(userId, planId))
+            : this.plans.getHeaderState(userId, planId)));
         const unavailable = headerStates.find(state => state.status === 'UNAVAILABLE');
         if (unavailable) return unavailable;
 
@@ -381,7 +419,9 @@ export class ActiveExternalPlanService {
         for (const headerState of headerStates) {
             if (headerState.status !== 'AVAILABLE') continue;
             const latestHeader = headerState.data;
-            const activationState = await this.plans.getActivationState(userId, latestHeader.planId);
+            const activationState = await (cache
+                ? read(cache.activations, latestHeader.planId, () => this.plans.getActivationState(userId, latestHeader.planId))
+                : this.plans.getActivationState(userId, latestHeader.planId));
             if (activationState.status !== 'AVAILABLE') return activationState;
             const activations = activationState.data.length > 0
                 ? activationState.data
@@ -398,7 +438,10 @@ export class ActiveExternalPlanService {
             if (activation.revision === latestHeader.revision
                 && (date < latestHeader.startDate || date > planEndDate(latestHeader))) continue;
 
-            const revision = await this.plans.getRevisionState(userId, latestHeader.planId, activation.revision);
+            const revisionKey = `${latestHeader.planId}:${activation.revision}`;
+            const revision = await (cache
+                ? read(cache.revisions, revisionKey, () => this.plans.getRevisionState(userId, latestHeader.planId, activation.revision))
+                : this.plans.getRevisionState(userId, latestHeader.planId, activation.revision));
             if (revision.status !== 'AVAILABLE') return revision;
             const planHash = await computeContentHash(revision.data);
             if (planHash !== activation.contentHash
@@ -407,7 +450,9 @@ export class ActiveExternalPlanService {
             }
             if (revision.data.startDate > date || date > planEndDate(revision.data)) continue;
 
-            const placementState = await this.plans.getPlacementState(userId, latestHeader.planId, activation.revision);
+            const placementState = await (cache
+                ? read(cache.placements, revisionKey, () => this.plans.getPlacementState(userId, latestHeader.planId, activation.revision))
+                : this.plans.getPlacementState(userId, latestHeader.planId, activation.revision));
             // An unreadable or malformed overlay is unknown, never a clean placement.
             if (placementState.status === 'INVALID' || placementState.status === 'UNAVAILABLE') return placementState;
             const placement = placementState.status === 'AVAILABLE' && placementState.data.revision === activation.revision

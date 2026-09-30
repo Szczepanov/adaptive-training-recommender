@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { impliedDate } from '../engine/externalPlacement';
 import { type ExternalPlanHeader, type ObjectiveKey } from '../engine/models';
 import { externalPlanService } from '../services/externalPlanService';
+import { preflightExternalPlanImport, type ExternalPlanImportPreflight } from '../services/externalPlanImportPreflight';
 import { activateIntentBlocksFromPlan, type IntentBlockActivationResult } from '../services/externalPlanV5ActivationService';
-import { getLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import { diffPlans, type PlanDiffRow } from './externalPlanDiff';
 import {
     isV2Session,
@@ -80,6 +81,8 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
     const [phase, setPhase] = useState<Phase>({ kind: 'editing' });
     const [objectiveEdits, setObjectiveEdits] = useState<Record<string, ObjectiveKey[]>>({});
     const [effectiveFrom, setEffectiveFrom] = useState(getLocalDateString);
+    const [preflight, setPreflight] = useState<ExternalPlanImportPreflight | null>(null);
+    const [preflightAcknowledged, setPreflightAcknowledged] = useState(false);
     const [promptCopied, setPromptCopied] = useState(false);
     const today = getLocalDateString();
 
@@ -149,6 +152,20 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
 
     const previousRevision = usePreviousRevision(userId, phase);
     const previousPlan = previousRevision.plan;
+
+    useEffect(() => {
+        if (phase.kind !== 'previewing') {
+            setPreflight(null);
+            return;
+        }
+        let current = true;
+        setPreflight(null);
+        setPreflightAcknowledged(false);
+        void preflightExternalPlanImport(userId, phase.plan, effectiveFrom, today, previousPlan)
+            .then(result => { if (current) setPreflight(result); })
+            .catch(() => { if (current) setPreflight({ status: 'unknown', unavailableSources: ['activation preflight'], findings: [] }); });
+        return () => { current = false; };
+    }, [effectiveFrom, phase, previousPlan, today, userId]);
 
     const diff = useMemo(() => {
         if (phase.kind !== 'previewing' || !previousPlan) return null;
@@ -237,6 +254,9 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
                         effectiveFrom={effectiveFrom}
                         today={today}
                         onEffectiveFromChange={setEffectiveFrom}
+                        preflight={preflight}
+                        preflightAcknowledged={preflightAcknowledged}
+                        onPreflightAcknowledgementChange={setPreflightAcknowledged}
                         onConfirm={() => confirmImport(phase.plan, effectiveFrom)}
                         onCancel={() => setPhase({ kind: 'editing' })}
                     />
@@ -363,7 +383,10 @@ export interface PlanPreviewProps {
     previousRevisionReady?: boolean;
     effectiveFrom?: string;
     today?: string;
+    preflight?: ExternalPlanImportPreflight | null;
+    preflightAcknowledged?: boolean;
     onEffectiveFromChange?: (date: string) => void;
+    onPreflightAcknowledgementChange?: (acknowledged: boolean) => void;
     onConfirm: () => void;
     onCancel: () => void;
 }
@@ -373,6 +396,8 @@ export interface PlanPreviewProps {
 export function PlanPreview({
     plan, previous, diff, previousRevisionReady = true, onConfirm, onCancel,
     today = getLocalDateString(), effectiveFrom = today, onEffectiveFromChange = () => {},
+    preflight = { status: 'ready', findings: [] }, preflightAcknowledged = false,
+    onPreflightAcknowledgementChange = () => {},
 }: PlanPreviewProps) {
     const notNewer = previous !== null && plan.revision <= previous.revision;
 
@@ -382,7 +407,9 @@ export function PlanPreview({
     // athlete can confirm; cosmetic-only rows (wording) never block.
     const behaviorChangeCount = (diff ?? []).filter(row => row.behaviorChanging).length;
     const [acknowledged, setAcknowledged] = useState(false);
-    const blockedByUnreviewedChanges = (behaviorChangeCount > 0 && !acknowledged) || !previousRevisionReady;
+    const blockedByPreflight = !preflight || preflight.status !== 'ready'
+        || (preflight.findings.length > 0 && !preflightAcknowledged);
+    const blockedByUnreviewedChanges = (behaviorChangeCount > 0 && !acknowledged) || !previousRevisionReady || blockedByPreflight;
 
     return (
         <section className="external-import-preview" aria-label="Plan preview">
@@ -410,6 +437,31 @@ export function PlanPreview({
                     Added {(diff ?? []).filter(row => row.change === 'added').length} · changed {(diff ?? []).filter(row => row.change === 'changed').length} · removed {(diff ?? []).filter(row => row.change === 'removed').length} · retained {plan.sessions.length - (diff ?? []).filter(row => row.change === 'added' || row.change === 'changed').length}
                 </p>
             )}
+
+            <section className="external-import-diff" aria-label="Activation conflict review">
+                <h5>Calendar and authority preflight</h5>
+                {!preflight && <p>Checking current plans, fixed activities, travel blocks, and authored sessions…</p>}
+                {preflight?.status === 'invalid_date' && <p className="external-import-blocked">Choose a valid effective date from today through the plan’s final date, {addDaysToLocalDateString(plan.startDate, plan.weekCount * 7 - 1)}.</p>}
+                {preflight?.status === 'unknown' && (
+                    <p className="external-import-blocked">Activation is blocked because these authority inputs could not be verified: {preflight.unavailableSources.join(', ')}. Retry the preview when they are readable.</p>
+                )}
+                {preflight?.status === 'ready' && preflight.findings.length === 0 && (
+                    <p>No overlap or placement consequences were found in the current plan, calendar, or occurrence records.</p>
+                )}
+                {preflight?.status === 'ready' && preflight.findings.length > 0 && (
+                    <>
+                        <ul>
+                            {preflight.findings.map((finding, index) => (
+                                <li key={`${finding.kind}-${finding.date}-${index}`}>{finding.date} — {finding.detail}</li>
+                            ))}
+                        </ul>
+                        <label className="external-import-ack">
+                            <input type="checkbox" checked={preflightAcknowledged} onChange={event => onPreflightAcknowledgementChange(event.target.checked)} />
+                            I reviewed these placement, calendar, and authority impacts.
+                        </label>
+                    </>
+                )}
+            </section>
 
             {notNewer && (
                 <p className="external-import-blocked">
