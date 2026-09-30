@@ -91,11 +91,11 @@ export function projectPlannedExecutionStatus(input: PlannedExecutionStatusInput
     return {
         date: input.date,
         authored: input.authored,
-        placement: unknown || !source || !exactOccurrence || !input.authoredDate
+        placement: unknown || !source || !input.authoredDate
             ? 'unknown'
-            : exactOccurrence.date !== input.authoredDate
+            : input.date !== input.authoredDate
                 ? input.placementConfirmedMoved ? 'intentionally_moved' : 'unknown'
-                : 'as_authored',
+                : exactOccurrence ? 'as_authored' : 'unknown',
         adjudication: unknown ? 'unknown'
             : !recommendation ? 'not_adjudicated'
                 : !exactPrimary ? 'unknown' : auditedScale ? 'app_dose_modified' : 'as_authored',

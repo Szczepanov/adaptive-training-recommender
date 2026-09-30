@@ -4,12 +4,14 @@ The Context Brief is the read-only handoff between the athlete record and an ext
 It is treated as a versioned API even though the wire format remains human/LLM-readable
 Markdown.
 
-This document describes the contract implemented incrementally by issue #894. Contract
-identity/versioning and the planning/diagnostic canonical completed-training table are
-implemented. The v3 planning contract adds a bounded exact-identity external-plan execution
-round-trip section. Morning D-1 adherence still uses its separate raw-activity debrief path and remains
-part of the broader #894 follow-up, alongside full missingness states outside completed training,
-per-source currency, size budgets, golden fixtures and end-to-end regression coverage.
+This document describes the v3 contract defined under issue #894. The export exposes
+purpose/version/window identity, source state and currency, canonical performed training,
+and purpose-specific bounded telemetry. Issue #893 adds a bounded exact-identity external-plan
+execution round-trip section to planning exports. The final artifact remains Markdown; JSON is a
+versioned transport envelope around that same content. Morning D-1 adherence still uses its
+separate raw-activity debrief path. Remaining #894 work includes full missingness states outside
+completed training, per-source currency, size budgets, golden fixtures and end-to-end regression
+coverage.
 
 ## Export boundary
 
@@ -24,7 +26,7 @@ The engine renderers stay pure:
 - `buildMorningCoachBrief` renders the daily closed-loop coaching artifact;
 - `briefContractHeaderLines` renders the versioned contract block;
 - `assertRenderedBriefContract` fails closed at the service boundary if version, purpose,
-  as-of date or generation timestamp is missing or mismatched.
+  as-of date, generation timestamp or required source-state sections are missing.
 
 Pure builders may omit `generatedAt` in unit tests. A service-level export may not.
 
@@ -74,19 +76,32 @@ A horizon that the selected renderer does not use is written explicitly as
 wider source range. In particular, the morning artifact uses the 7-day recovery timeline but
 does not claim the longer planning/diagnostic subjective-baseline or sensor-evidence sections.
 
+The source-state section identifies the relevant recovery snapshot and wearable metric dates,
+check-in date, Garmin activity read, canonical completed-training read, current plan inputs,
+and comparison evidence state. It distinguishes measured, missing, unavailable, invalid,
+unsupported/not collected, and not applicable; a measured zero remains a value, not missingness.
+Where source data has a semantic date, the brief reports its age against the as-of date and
+flags a date older than the expected day as stale. Transport sync/update timestamps are
+provenance only; they do not establish measurement freshness. A late-arriving source never
+changes the explicit as-of date.
+
 `Engine policy version` is the current `POLICY_VERSION` bundled with the application build.
 It identifies the engine-policy build present when the export was generated. It must not be
 read as the historical decision policy of every persisted recommendation in the retrospective
 window; decision-specific provenance remains on `DailyRecommendation.recommendationAudit`.
-Surfacing all decision/source/knowledge lineage is part of the remaining #894 provenance work.
+Source schema, baseline-computation, activity-response derivation and imported-plan revisions
+are included where they materially qualify a rendered value.
 
 ## Completed-training authority
 
-Planning and diagnostic retrospective completed-training sections prefer ADR-0034 canonical
+Planning, diagnostic and morning D-1 completed-training sections prefer ADR-0034 canonical
 performed-training facts. One canonical occurrence renders once even when a structured execution
 and Garmin activity are linked to the same physical workout. Structured-only occurrences remain
-visible, and readiness-modified, partial, inferred and otherwise unverified facts are labelled
-rather than dropped.
+visible; in-progress, abandoned, completed, readiness-modified, partial, inferred and otherwise
+unverified facts are labelled rather than dropped. Morning may show linked Garmin telemetry as
+evidence under the canonical occurrence, never as another workout. If canonical facts cannot be
+read, the morning fallback is explicitly non-canonical and adherence is reported as unknown where
+the available evidence cannot establish it.
 
 Duration missingness is preserved through aggregates: an occurrence with unknown duration is not
 silently treated as zero minutes in totals, discipline summaries or rolling buckets.
@@ -102,9 +117,23 @@ never added to canonical totals. A count mismatch between canonical occurrences 
 evidence and raw provider rows is not independently interpreted as an extra or missing physical
 workout because one canonical occurrence can legitimately have zero or multiple provider records.
 
-The contract advanced from v2 to v3 to add the exact-identity external-plan execution round-trip
-section to planning exports. This changes brief semantics only; it does not alter recommendation
-selection or safety policy.
+The canonical training authority change advanced the contract from v1 to v2. Required source
+state/currency semantics advanced it to v3. Provider activity IDs and structured execution state
+are brief/export provenance and are opt-in at the performed-facts service boundary; default
+performed-training facts used by recommendation/audit/replay paths retain their prior shape and
+content-hash inputs. The engine `POLICY_VERSION` is unchanged because recommendation selection
+and safety policy did not change. The issue #893 round-trip section composes with that existing v3
+semantics and does not alter recommendation selection or safety policy.
+
+## Information bounds
+
+The morning export caps provider fallback/detail at six D-1 rows. Planning keeps at most 12
+recent activity details, with no more than 20 quality-session laps or semantic segments per
+activity. Diagnostic keeps at most 30 detailed activities and 100 laps/response rows per
+activity. Omitted detail is counted and labelled. Service-level regressions cap representative
+Markdown artifacts at 24,000 characters for morning, 65,000 for planning and 90,000 for
+diagnostic. These limits apply to optional detail; authority and safety sections are rendered
+outside the activity-detail selection.
 
 ## Determinism
 
@@ -139,4 +168,6 @@ decision. Do not silently repurpose an existing label.
 Adding or changing body sections also requires checking #894's contract requirements so that
 missingness, provenance, authority and information-budget guarantees are not weakened.
 
-The remaining acceptance criteria of #894 stay tracked by that issue. This slice completes the planning/diagnostic canonical table only; morning D-1 canonicalization and the other open contract gates remain outstanding, so merging it must not auto-close #894.
+Contract identity is asserted on every service-built artifact, and fixed-date semantic tests
+exclude only the generation timestamp. JSON's `context_brief_export_v2` transport version is
+independent of semantic contract v3. No recommendation authority is added by this export.

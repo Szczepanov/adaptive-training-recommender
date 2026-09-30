@@ -90,6 +90,7 @@ export interface ExpectedRenderedBriefContract {
     asOfDate: string;
     generatedAt: string;
     contractVersion?: string;
+    requireSourceState?: boolean;
 }
 
 /**
@@ -119,5 +120,11 @@ export function assertRenderedBriefContract(
         throw new Error(
             `Context Brief generation timestamp mismatch: expected ${expected.generatedAt}, got ${actualGeneratedAt ?? 'missing'}`,
         );
+    }
+    if (expected.requireSourceState && (!text.includes('Source state and currency (dates never shift the as-of date):')
+        || !text.includes('- Recovery snapshot for ')
+        || !text.includes('- Canonical performed training:')
+        || !text.includes('- Current-day plan authority inputs:'))) {
+        throw new Error('Context Brief source state and currency missing');
     }
 }
