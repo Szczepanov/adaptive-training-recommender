@@ -12,7 +12,7 @@ import {
   type SessionFollowupRegions,
 } from '../responses/followupSchedule';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
-import type { BodyRegion, DailySubjectiveCheckin, NutritionTrackingAdherence, PhysicalWorkCheckin, RedFlagCategory, TissueResponseLevel } from '../engine/models';
+import type { BodyRegion, DailySubjectiveCheckin, NutritionTrackingAdherence, PhysicalWorkCheckin, RedFlagCategory, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
 import type { HealthContextCheckin } from '../engine/healthAnomalyModels';
 import { BODY_REGIONS } from '../engine/models';
 import { isCompletedSubjectiveCheckin } from '../engine/checkinCompletion';
