@@ -652,9 +652,9 @@ export function parseDailyRecommendation(raw: unknown, documentPath: string): Da
 /** One immutable `daily_recommendations/{date}/revisions/{n}` archive written by
  * `recommendationService.ts` `saveRecommendationInternal` when a new decision
  * revision supersedes the previous one. Unlike the live document it carries no
- * `userId`/`date`/`adherence` envelope -- only the prior decision bytes the
- * rules layer verified (`archivesPriorRevision`: template, mode, rationale,
- * `engineVerdict`, `prescription.id`).
+ * `userId`/`date`/`adherence` envelope. `archivesPriorRevision` compares the
+ * core prior-decision fields (and `engineVerdict` when it already existed), but
+ * does not currently authenticate `recommendationAudit` itself; see #940.
  *
  * PR-C (#893 WP5.2 M-5/M-7): the round-trip projector's only archive read. The
  * archived `recommendationAudit` is client-written and NOT rules-verified, so
