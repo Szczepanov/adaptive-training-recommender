@@ -1,7 +1,7 @@
 # Issue #897 — Physical-capital assessment history implementation plan
 
 **Date:** 2026-09-30
-**Status:** In progress — [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A (WP0–WP3 domain foundation) merged (PR #942); PR B (WP4 bundled catalog, WP5 trial capture UX, WP7.2 diagnostic JSON export) merged (PR #944); PR C (WP6 assessment history, series comparability, WP7.1 normalized CSV export, WP3.4 body-mass context, Appendix A ADR-0047) implemented, in review
+**Status:** In progress — [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A (WP0–WP3 domain foundation) merged (PR #942); PR B (WP4 bundled catalog, WP5 trial capture UX, WP7.2 diagnostic JSON export) merged (PR #944); PR C (WP6 assessment history, series comparability, WP7.1 normalized CSV export, WP3.4 body-mass context, Appendix A ADR-0047) implemented and under review in PR #948. #897 intentionally remains open for WP6.6 fixed-load velocity and WP8 bounded consumer integration unless those acceptance criteria are explicitly rescoped.
 **Authority boundary:** evidence-only under the existing OV authority boundary; ADR-0046 grants no recommendation authority
 **Unlocks:** first-class multidomain physical-capital assessment capture, comparable history and normalized/diagnostic export without recommendation authority
 **Canonical status owner:** [Performance outcome validation (OV)](./performance-outcome-validation.md); this document is a scoped #897 implementation design, not a parallel OV status board
@@ -758,6 +758,12 @@ Add an athlete-scoped assessment history service/read model that joins:
 
 Avoid N+1 unbounded scans. The initial implementation may fetch a bounded date window or metric family.
 
+**PR #948 review clarification:** the list read path queries attempts by protocol ID and current observation
+head/revision pairs by metric ID, performs **zero raw-trial reads**, and does not re-fetch an observation head
+after its current revision has been resolved. Series are grouped by the complete D1 identity
+`(protocolId, protocolRevision, metricId, comparisonSeriesKey)`; multi-metric protocols never share one
+baseline/latest series.
+
 ## WP6.2 UI location
 
 **Blocked by:** WP6.1.
@@ -827,7 +833,7 @@ For the October battery, `purpose=baseline` is the natural initial reference.
 
 Do not hard-code “first observation forever” as baseline. Existing declared/window baseline semantics should remain available for goals/block reviews.
 
-The history UI may default to earliest valid baseline-purpose observation for convenience, but that is a presentation choice, not a mutation of outcome contracts.
+The history UI may default to earliest valid baseline-purpose observation for convenience, but that is a presentation choice, not a mutation of outcome contracts. Familiarization evidence remains visible/auditable but is excluded from both baseline selection **and** longitudinal latest/progress selection.
 
 ## WP6.6 Fixed-load velocity acceptance boundary
 
@@ -887,7 +893,7 @@ Do not include raw trials as repeated comma-joined text inside this summary CSV.
 
 ## WP7.2 Diagnostic JSON
 
-**Blocked by:** WP2.3 and WP3.2. Delivered in PR B, before the WP6.1 read model exists: it reads the bounded attempts/trials/observations directly and computes `progress` with the existing `deriveProgress()`. When WP6.1 lands, the export reuses that read model rather than keeping a second join.
+**Blocked by:** WP2.3 and WP3.2. Delivered in PR B, before the WP6.1 read model exists: it reads the bounded attempts/trials/observations directly and computes `progress` with the existing `deriveProgress()`. After WP6.1 lands, diagnostic export reuses the same D1 series identity/progress derivation and avoids duplicate per-revision attempt queries, but it deliberately retains separate **detail** reads for raw trials and complete observation revision chains because the lightweight History list must not load those records eagerly.
 **Unlocks:** Auditable external-coach/agent reconstruction of protocols, trials and canonical results.
 
 Include:
