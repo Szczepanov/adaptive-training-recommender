@@ -33,8 +33,8 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
 
   const handleLogout = async () => {
     const { signOut } = await import('firebase/auth');
-    clearAllAssessmentDrafts();
     await signOut(getAuthInstance());
+    clearAllAssessmentDrafts();
   };
 
   const buildTitle = `Git commit ${buildInfo.gitSha}${buildInfo.dirty ? ' (local working tree has uncommitted changes)' : ''}${buildInfo.builtAtFormatted ? `\nDeployed ${buildInfo.builtAtFormatted}` : ''}`;
