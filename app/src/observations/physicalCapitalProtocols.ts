@@ -420,11 +420,6 @@ export const PHYSICAL_CAPITAL_PROTOCOLS_V2: readonly MeasurementProtocol[] = [
     CYCLING_6S_SEATED_SPRINT_PROTOCOL_V2,
 ];
 
-export const PHYSICAL_CAPITAL_PROTOCOL_REVISIONS: readonly MeasurementProtocol[] = [
-    ...PHYSICAL_CAPITAL_PROTOCOLS,
-    ...PHYSICAL_CAPITAL_PROTOCOLS_V2,
-];
-
 export const PHYSICAL_CAPITAL_PROTOCOLS: readonly MeasurementProtocol[] = [
     BENCH_PRESS_1RM_PROTOCOL,
     BACK_SQUAT_1RM_PROTOCOL,
@@ -432,4 +427,10 @@ export const PHYSICAL_CAPITAL_PROTOCOLS: readonly MeasurementProtocol[] = [
     WALL_TOUCH_CMJ_PROTOCOL,
     SEATED_MEDBALL_THROW_PROTOCOL,
     CYCLING_6S_SEATED_SPRINT_PROTOCOL,
+];
+
+/** All immutable revisions that diagnostic export must continue to understand. */
+export const PHYSICAL_CAPITAL_PROTOCOL_REVISIONS: readonly MeasurementProtocol[] = [
+    ...PHYSICAL_CAPITAL_PROTOCOLS,
+    ...PHYSICAL_CAPITAL_PROTOCOLS_V2,
 ];
