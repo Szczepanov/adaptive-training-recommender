@@ -93,7 +93,19 @@ export function computeSeriesProgress(
     reliabilityEstimates: readonly SeriesReliabilityEstimate[] = [],
 ): { baseline: AssessmentSeriesObservation | null; latest: AssessmentSeriesObservation | null; progress: ProgressResult } {
     const metricDef = getMetricDefinition(identity.metricId);
-    const baselineCandidate = selectSeriesBaselineCandidate(seriesObservations);
+    // Defend the D1 comparison identity at the shared derivation boundary rather than
+    // relying on every caller to pre-filter perfectly. Familiarization remains useful
+    // audit evidence but is never a longitudinal benchmark point, even when recorded
+    // after the real baseline/checkpoint.
+    const eligibleObservations = seriesObservations.filter(observation =>
+        observation.attempt.state === 'completed'
+        && observation.attempt.purpose !== 'familiarization'
+        && observation.revision.metricId === identity.metricId
+        && observation.revision.protocolRef.id === identity.protocolId
+        && observation.revision.protocolRef.revision === identity.protocolRevision
+        && observation.revision.comparisonSeriesKey === identity.comparisonSeriesKey
+    );
+    const baselineCandidate = selectSeriesBaselineCandidate(eligibleObservations);
 
     if (!baselineCandidate) {
         return {
@@ -139,11 +151,11 @@ export function computeSeriesProgress(
             rationale: `Series progress for ${identity.metricId}`,
         };
 
-    const currentObs: CurrentObservation[] = seriesObservations.map(o => ({ head: o.head, revision: o.revision }));
+    const currentObs: CurrentObservation[] = eligibleObservations.map(o => ({ head: o.head, revision: o.revision }));
     const progress = deriveProgress(binding, currentObs, reliabilityEstimates);
 
     const latest = progress.latestObservationId
-        ? seriesObservations.find(o => o.revision.observationKey === progress.latestObservationId) ?? null
+        ? eligibleObservations.find(o => o.revision.observationKey === progress.latestObservationId) ?? null
         : null;
 
     return {
