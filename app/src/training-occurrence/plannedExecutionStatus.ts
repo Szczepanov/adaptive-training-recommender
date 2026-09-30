@@ -121,6 +121,10 @@ export function projectPlannedExecutionStatus(input: PlannedExecutionStatusInput
     const restTemplate = recommendation !== undefined
         && recommendation.templateId === getCanonicalRestTemplate().id;
     const gateReplaced = recommendation !== undefined && gatedVerdict && restTemplate;
+    // `advisory` is not an adjudicated executable outcome. Keep it unknown even
+    // when an exact primary binding happens to exist (for example on an event-day
+    // recommendation), rather than falling through to `as_authored`.
+    const unsupportedVerdict = verdict === 'advisory';
     const verdictTemplateDisagree = recommendation !== undefined && gatedVerdict !== restTemplate;
     // PR-C M-1/M-4/M-6: a same-date `audit.authoredOccurrence` attributed to this
     // candidate's verified pre-replace identity. Set by hydration on exactly one
@@ -161,7 +165,7 @@ export function projectPlannedExecutionStatus(input: PlannedExecutionStatusInput
                 // execution still reads `gate_replaced` here, with acceptance and
                 // completion carried by the other two dimensions.
                 : gateReplaced ? 'gate_replaced'
-                    : verdictTemplateDisagree ? 'unknown'
+                    : unsupportedVerdict || verdictTemplateDisagree ? 'unknown'
                         : !exactPrimary ? 'unknown' : auditedScale ? 'app_dose_modified' : 'as_authored',
         athleteDisposition: unknown ? 'unknown'
             : exactOccurrence?.state === 'skipped' ? 'explicitly_skipped'
