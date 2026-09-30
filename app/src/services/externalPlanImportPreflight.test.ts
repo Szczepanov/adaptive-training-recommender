@@ -92,6 +92,7 @@ describe('preflightExternalPlanImport', () => {
             externalPlanRef: { planId: 'new-plan', revision: 1, sessionId: 'ride-1', contentHash: 'stale' },
         }] });
         const result = await preflightExternalPlanImport('u1', plan as never, plan.startDate, '2026-08-16');
+        expect(result.status).toBe('ready');
         if (result.status === 'ready') expect(result.findings).toContainEqual(expect.objectContaining({ kind: 'authored_occurrence', detail: expect.stringContaining('old-occurrence') }));
     });
 
@@ -103,9 +104,10 @@ describe('preflightExternalPlanImport', () => {
         const result = await preflightExternalPlanImport('u1', plan as never, plan.startDate, '2026-08-16', {
             ...plan, restDays: [{ id: 'rest', week: 1, day: 'friday' }],
         } as never);
+        expect(result.status).toBe('ready');
         if (result.status === 'ready') {
             expect(result.findings.some(item => item.kind === 'rest_directive')).toBe(true);
-            expect(result.findings.some(item => item.kind === 'placement' && item.detail.includes('resets'))).toBe(true);
+            expect(result.findings.filter(item => item.kind === 'placement' && item.detail.includes('resets'))).toHaveLength(1);
         }
     });
 
@@ -120,6 +122,7 @@ describe('preflightExternalPlanImport', () => {
         const restPlan = { ...plan, sessions: [], restDays: [{ id: 'new-rest', week: 1, day: 'friday' }] };
         const priorPlan = { ...plan, sessions: [], restDays: [{ id: 'old-rest', week: 1, day: 'thursday' }] };
         const result = await preflightExternalPlanImport('u1', restPlan as never, plan.startDate, '2026-08-16', priorPlan as never);
+        expect(result.status).toBe('ready');
         if (result.status === 'ready') {
             expect(result.findings).toContainEqual(expect.objectContaining({ kind: 'rest_directive' }));
             expect(result.findings).toContainEqual(expect.objectContaining({ kind: 'fixed_activity', date: '2026-08-21' }));
