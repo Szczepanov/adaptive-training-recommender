@@ -332,6 +332,7 @@ export interface OptimizationOptions {
      * strength and quality stimulus recency. An explicitly present empty array must stay empty rather than falling back
      * to legacy reconstructed history. */
     recentPerformedExposures?: readonly (PerformedExposureFact | StrengthExposureLike)[];
+    stimulusRecencyOverridesDegraded?: boolean;
     anchorRole?: 'event-specific' | 'quality' | null;
     adjacentToAnchor?: boolean;
     plannedDose?: PlannedDose;
@@ -985,7 +986,7 @@ export function buildOptimizationContext(
         fatigue: FatigueState;
         periodization?: { focusEvent?: UserEvent | null; phase?: { phaseName: import('./periodization').PhaseWeights['phaseName'] } } | null;
         history?: (RecentHistoryEntry | SessionHistoryEntry)[];
-        performedTrainingFacts?: { exposures: readonly StrengthExposureLike[] } | null;
+        performedTrainingFacts?: { exposures: readonly StrengthExposureLike[]; overridesDegraded?: boolean } | null;
         plannedDose?: PlannedDose;
     },
     context: UserContext,
@@ -1132,6 +1133,7 @@ export function buildOptimizationContext(
             ...(sequenceIntent ? { sequenceIntent } : {}),
             ...(options.recoveryHistorySnapshot ? { recoveryHistorySnapshot: options.recoveryHistorySnapshot } : {}),
             ...(recentPerformedExposures !== undefined ? { recentPerformedExposures } : {}),
+            ...(intent.performedTrainingFacts?.overridesDegraded ? { stimulusRecencyOverridesDegraded: true } : {}),
             ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
             ...(options.resolvedAvailability ? { resolvedAvailability: options.resolvedAvailability } : {}),
             ...(options.resolveMinimumDaysAfterHardLowerBody ? { resolveMinimumDaysAfterHardLowerBody: options.resolveMinimumDaysAfterHardLowerBody } : {}),
@@ -1777,6 +1779,8 @@ export function rankCandidates(
             evaluatedExposuresCount: stimulusRecency.evaluatedExposuresCount,
             yesterdayQualityFamilies: Array.from(stimulusRecency.yesterdayQualityFamilies),
             hasConfidentEnduranceYesterday: stimulusRecency.hasConfidentEnduranceYesterday,
+            exposures: stimulusRecency.exposures,
+            ...(options.stimulusRecencyOverridesDegraded ? { overridesDegraded: true } : {}),
         },
     };
 }

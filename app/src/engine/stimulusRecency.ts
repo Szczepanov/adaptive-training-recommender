@@ -15,7 +15,7 @@
 import type { ActivityStimulusDomain, SessionTemplate } from './models';
 import type { PerformedExposureFact } from './performedTrainingFacts';
 import type { StrengthExposureLike } from './strengthSpacingPolicy';
-import { getPreviousLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString } from '../utils/localDate';
 
 export type StimulusRecencyFamily =
     | 'endurance'
@@ -75,7 +75,7 @@ export const WORKOUT_STIMULUS_FAMILY: Readonly<Record<string, StimulusRecencyFam
     cycling_zone2_standard_01: 'endurance',
     cycling_controlled_threshold_4x8_01: 'threshold',
     cycling_over_under_3x12_01: 'threshold',
-    cycling_short_surges_10x20_01: 'vo2',
+    cycling_short_surges_10x20_01: 'race',
     cycling_criterium_surges_01: 'race',
     cycling_race_simulation_50_01: 'race',
     cycling_event_specific_endurance_01: 'race',
@@ -153,7 +153,7 @@ export const TEMPLATE_STIMULUS_FAMILY: Readonly<Record<string, StimulusRecencyFa
     str_low_load_maint_01: 'strength',
     str_full_02: 'strength',
     end_hard_01: 'vo2',
-    end_hard_02: 'vo2',
+    end_hard_02: 'threshold',
     end_hard_03: 'vo2',
     swim_technique_01: null,
     swim_easy_01: 'endurance',
@@ -223,7 +223,15 @@ export interface PerformedStimulusRecency {
     evaluatedExposuresCount: number;
     yesterdayQualityFamilies: Set<QualityRecencyFamily>;
     hasConfidentEnduranceYesterday: boolean;
+    exposures: StimulusRecencyExposureTrace[];
 }
+
+export type StimulusRecencyExposureTrace = Pick<PerformedExposureFact,
+    'performedOccurrenceId' | 'localDate' | 'stimulusDomain' | 'confidence' | 'sourceKinds'
+    | 'evidenceTier' | 'intensityEvidence' | 'intensityClassificationVersion'> & {
+    confident: boolean;
+    structuredOverridesProvider: boolean;
+};
 
 export interface StimulusRecencyDecisionTrace {
     targetDate: string;
@@ -231,6 +239,7 @@ export interface StimulusRecencyDecisionTrace {
     evaluatedExposuresCount: number;
     yesterdayQualityFamilies: QualityRecencyFamily[];
     hasConfidentEnduranceYesterday: boolean;
+    exposures: StimulusRecencyExposureTrace[];
     overridesDegraded?: boolean;
 }
 
@@ -255,17 +264,33 @@ export function buildPerformedStimulusRecency(
     exposures: readonly (PerformedExposureFact | StrengthExposureLike)[],
     targetDate: string,
 ): PerformedStimulusRecency {
-    const yesterdayDate = getPreviousLocalDateString(targetDate);
+    const yesterdayDate = addDaysToLocalDateString(targetDate, -STIMULUS_REPETITION_LOOKBACK_DAYS);
     const yesterdayQualityFamilies = new Set<QualityRecencyFamily>();
     let hasConfidentEnduranceYesterday = false;
     let evaluatedExposuresCount = 0;
+    const evidence: StimulusRecencyExposureTrace[] = [];
 
     for (const exp of exposures) {
         const expDate = 'localDate' in exp && exp.localDate ? exp.localDate : ('date' in exp ? exp.date : undefined);
         if (expDate !== yesterdayDate) continue;
 
         evaluatedExposuresCount++;
-        if (!isConfidentStimulusExposure(exp)) continue;
+        const confident = isConfidentStimulusExposure(exp);
+        if ('sourceKinds' in exp) {
+            evidence.push({
+                performedOccurrenceId: exp.performedOccurrenceId,
+                localDate: exp.localDate,
+                confidence: exp.confidence,
+                sourceKinds: [...exp.sourceKinds],
+                evidenceTier: exp.evidenceTier,
+                ...(exp.stimulusDomain !== undefined ? { stimulusDomain: exp.stimulusDomain } : {}),
+                ...(exp.intensityEvidence !== undefined ? { intensityEvidence: exp.intensityEvidence } : {}),
+                ...(exp.intensityClassificationVersion !== undefined ? { intensityClassificationVersion: exp.intensityClassificationVersion } : {}),
+                confident,
+                structuredOverridesProvider: exp.sourceKinds.includes('structured_execution') && exp.sourceKinds.includes('provider_activity'),
+            });
+        }
+        if (!confident) continue;
 
         const domain = 'stimulusDomain' in exp ? exp.stimulusDomain : undefined;
         const family = stimulusFamilyFromDomain(domain);
@@ -283,6 +308,7 @@ export function buildPerformedStimulusRecency(
         evaluatedExposuresCount,
         yesterdayQualityFamilies,
         hasConfidentEnduranceYesterday,
+        exposures: evidence.sort((a, b) => a.performedOccurrenceId.localeCompare(b.performedOccurrenceId)).slice(0, 16),
     };
 }
 

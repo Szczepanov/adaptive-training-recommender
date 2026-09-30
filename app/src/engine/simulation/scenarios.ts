@@ -47,6 +47,7 @@ export interface AthleteScenario {
      * 6.3 needs this to reproduce failures that depend on yesterday's real training rather
      * than only on a synthetic readiness counter. */
     initialHistory?: CompletedExposure[];
+    initialPerformedExposures?: import('../performedTrainingFacts').PerformedExposureFact[];
     /** User-authored commitments passed through every day-0/day-1/week-ahead decision. */
     fixedActivities?: FixedActivity[];
     /** Structured tissue check-ins (#804) passed through every day-0/day-1/week-ahead
@@ -807,6 +808,16 @@ export const SCENARIOS: AthleteScenario[] = [
     // Issue #931: independent Garmin tempo activity on D-1 applies quality anti-repetition to next-day tempo.
     {
         id: 'performed_stimulus_recency_garmin_tempo',
+        initialPerformedExposures: [{
+            performedOccurrenceId: 'scenario:stimulus-recency:tempo',
+            localDate: addDaysToLocalDateString(START_DATE, -1),
+            modality: 'Cycling',
+            sourceKinds: ['provider_activity'],
+            confidence: 'inferred',
+            evidenceTier: 'garminTrainingEffect',
+            stimulusDomain: 'tempo',
+            intensityClassificationVersion: 2,
+        }],
         label: 'Independent Garmin tempo D-1 stimulus recency (#931)',
         description: 'An independent Garmin tempo activity on D-1 with confidence version 2. The engine must apply quality anti-repetition (0.2x) to next-day tempo candidates without suppressing Zone 2 aerobic endurance.',
         context: context({ indoor_bike: true, free_weights: true }, ['Cycling']),

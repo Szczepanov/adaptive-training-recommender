@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { QUALITY_RECENCY_FAMILIES, STIMULUS_REPETITION_LOOKBACK_DAYS, STIMULUS_REPETITION_PENALTY } from '../engine/stimulusRecency';
 import type { FatigueState, SessionTemplate, UserEvent, UserPreferences, WeeklyObjective } from '../engine/models';
 import type { CoverageState } from '../engine/coverage';
 import type { ResolvedAvailability } from '../engine/schedule';
@@ -945,7 +946,10 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
 
     it('aligns performed stimulus quality repetition policy statement with constants and behavior', () => {
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.performedStimulusQualityRepetitionPolicy);
-        expect(claim.statement).toContain('preference multiplier of 0.2');
+        expect(STIMULUS_REPETITION_PENALTY).toBe(0.2);
+        expect(STIMULUS_REPETITION_LOOKBACK_DAYS).toBe(1);
+        expect(QUALITY_RECENCY_FAMILIES).toEqual(['tempo', 'threshold', 'vo2', 'race']);
+        expect(claim.statement).toContain(`preference multiplier of ${STIMULUS_REPETITION_PENALTY}`);
         expect(claim.statement).toContain('D-1');
         expect(claim.statement).toContain('quality family');
         expect(claim.statement).toContain('tempo');

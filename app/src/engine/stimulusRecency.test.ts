@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { WORKOUTS } from '../workouts/catalog';
+import { workoutForTemplate } from '../workouts/prescription';
 import { ENRICHED_TEMPLATES } from './templates';
 import type { SessionTemplate } from './models';
 import type { PerformedExposureFact } from './performedTrainingFacts';
@@ -67,6 +68,16 @@ describe('stimulusRecency', () => {
             for (const workout of WORKOUTS) {
                 expect(workout.id in WORKOUT_STIMULUS_FAMILY, `Missing mapping for workout ${workout.id}`).toBe(true);
                 expect(WORKOUT_STIMULUS_FAMILY[workout.id]).not.toBeUndefined();
+            }
+        });
+
+        it('aligns quality candidate families with their materialized catalog workout', () => {
+            for (const template of ENRICHED_TEMPLATES) {
+                const family = TEMPLATE_STIMULUS_FAMILY[template.id];
+                if (!['tempo', 'threshold', 'vo2', 'race'].includes(family ?? '')) continue;
+                const workout = workoutForTemplate(template.id);
+                expect(workout, template.id).toBeDefined();
+                expect.soft(WORKOUT_STIMULUS_FAMILY[workout!.id], template.id).toBe(family);
             }
         });
 

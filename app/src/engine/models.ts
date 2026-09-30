@@ -1054,6 +1054,8 @@ export interface Recommendation {
     recommendationAudit?: RecommendationAudit;
     /** Engine trace retained only long enough to create the compact persisted audit. */
     decisionTrace?: {
+        /** Runtime diagnostics; excluded from the compact persisted audit. */
+        stimulusRecency?: import('./stimulusRecency').StimulusRecencyDecisionTrace;
         policyVersion: string;
         candidateScores: Array<{
             templateId: string;
@@ -1061,6 +1063,7 @@ export interface Recommendation {
             excludedReasons: string[];
             benefitScore?: number;
             costPenalty?: number;
+            stimulusRecency?: import('./stimulusRecency').CandidateStimulusRecencyTrace;
         }>;
         /** Phase 5.6: contributor objectives dropped from this decision's microcycle
          *  because they fell inadmissible during the taper authority's taper window -- see

@@ -176,6 +176,8 @@ export interface HydratedOccurrenceContext {
         durationMin?: number;
         garminActivity?: NormalizedGarminActivity;
         override?: ActivityOverride;
+        /** Failed override hydration cannot prove that provider semantics are unmodified. */
+        overridesUnavailable?: boolean;
     };
 }
 
@@ -240,8 +242,10 @@ export function deriveFactsFromOccurrence(
 
     const occurrenceModality = occurrence.modality ? normalizeModality(occurrence.modality) : undefined;
     const providerModality = hydrated.provider?.modality;
+    const providerOverride = hydrated.structured ? undefined : hydrated.provider?.override;
     const modality: SessionTemplate['modality'] | 'Unknown' =
         hydrated.structured?.modality
+        ?? providerOverride?.overriddenModality
         ?? (occurrenceModality && occurrenceModality !== 'Unknown' ? occurrenceModality : undefined)
         ?? (providerModality && providerModality !== 'Unknown' ? providerModality : undefined)
         ?? occurrenceModality
@@ -281,6 +285,9 @@ export function deriveFactsFromOccurrence(
             confidence = 'high';
             evidenceTier = 'completedStructuredWorkout';
         }
+    } else if (providerOverride) {
+        confidence = 'high';
+        evidenceTier = 'athleteClassification';
     } else if (hydrated.provider?.garminActivity) {
         confidence = 'inferred';
         evidenceTier = classifyGarminTier({
@@ -305,7 +312,9 @@ export function deriveFactsFromOccurrence(
 
     const localDate = requirePerformedLocalDate(occurrence, startedAt, hydrated);
     const hasOverride = hydrated.provider?.override !== undefined;
-    const providerSemantics = (hydrated.structured || hasOverride) ? undefined : hydrated.provider?.garminActivity;
+    const providerSemantics = (hydrated.structured || hasOverride || hydrated.provider?.overridesUnavailable)
+        ? undefined
+        : hydrated.provider?.garminActivity;
     const resolvedStimulusDomain = structuredDomain ?? providerSemantics?.stimulusDomain;
 
     const exposure: PerformedExposureFact = {

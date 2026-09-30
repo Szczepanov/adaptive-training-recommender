@@ -68,7 +68,7 @@ describe('performed stimulus-domain recency in sequencing decisions (#931)', () 
     const tempoCandidate = ENRICHED_TEMPLATES_BY_ID.get('end_mod_02')!; // Moderate Endurance (Cycling Tempo Ride)
     const runningTempoCandidate = ENRICHED_TEMPLATES_BY_ID.get('end_mod_01')!; // Moderate Endurance (Running Tempo Run)
     const enduranceCandidate = ENRICHED_TEMPLATES_BY_ID.get('end_easy_01')!; // Easy Endurance
-    const vo2Candidate = ENRICHED_TEMPLATES_BY_ID.get('end_hard_02')!; // Hard Endurance (VO2)
+    const vo2Candidate = ENRICHED_TEMPLATES_BY_ID.get('end_hard_01')!; // Hard Endurance (VO2)
     const thresholdCandidate = ENRICHED_TEMPLATES_BY_ID.get('swim_threshold_01')!; // Sustained Swim Intervals (Threshold)
 
     it('demotes Monday tempo candidate (0.2x) after Sunday provider 3x15 tempo', () => {
@@ -465,5 +465,21 @@ describe('performed stimulus-domain recency in sequencing decisions (#931)', () 
         expect(result.accepted[0].coverageNeedTier).toBe(1);
         expect(result.accepted[1].template.id).toBe(tempoCandidate.id);
         expect(result.accepted[1].coverageNeedTier).toBe(3);
+    });
+});
+
+
+describe('canonical stimulus recency simulation regression', () => {
+    it('consumes the canonical Garmin tempo seed in the production daily evaluator', async () => {
+        const { runScenario } = await import('../simulation/analyze');
+        const { SCENARIOS } = await import('../simulation/scenarios');
+        const scenario = SCENARIOS.find(item => item.id === 'performed_stimulus_recency_garmin_tempo')!;
+        const result = await runScenario(scenario);
+        const trace = result.decisionTraces[0].stimulusRecency;
+        expect(trace?.stimulusRecency?.yesterdayQualityFamilies).toEqual(['tempo']);
+        expect(trace?.stimulusRecency?.exposures).toEqual([
+            expect.objectContaining({ performedOccurrenceId: 'scenario:stimulus-recency:tempo', stimulusDomain: 'tempo', confident: true }),
+        ]);
+        expect(trace?.candidateScores.some(candidate => candidate.stimulusRecency?.penaltyApplied)).toBe(true);
     });
 });

@@ -463,6 +463,7 @@ describe('performedTrainingFacts', () => {
 
         it('athlete override suppresses provider stimulusDomain resulting in unclassified domain', () => {
             const occurrence = mockOccurrence({
+                modality: 'Cycling',
                 sourceRefs: [{ kind: 'provider_activity', provider: 'Garmin', activityId: 'garmin-1' }],
             });
             const hydrated: HydratedOccurrenceContext = {
@@ -486,7 +487,7 @@ describe('performedTrainingFacts', () => {
                         date: '2026-09-01',
                         originalType: 'cycling',
                         originalIntensityTag: 'tempo',
-                        overriddenModality: 'Cycling',
+                        overriddenModality: 'Running',
                         overriddenIntensity: 'easy',
                         notes: 'Reclassified as recovery spin',
                         createdAt: '2026-09-01T12:00:00Z',
@@ -498,6 +499,9 @@ describe('performedTrainingFacts', () => {
             const { exposure } = deriveFactsFromOccurrence(occurrence, hydrated);
             // Provider domain 'tempo' is suppressed by the override; fact has undefined stimulusDomain
             expect(exposure.stimulusDomain).toBeUndefined();
+            expect(exposure.modality).toBe('Running');
+            expect(exposure.evidenceTier).toBe('athleteClassification');
+            expect(exposure.confidence).toBe('high');
         });
 
         it('fails visibly rather than fabricating a 1970 date when no performed date exists', () => {
