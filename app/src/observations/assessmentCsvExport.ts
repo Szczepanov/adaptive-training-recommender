@@ -6,7 +6,7 @@
  */
 
 import type { AssessmentHistoryModel, AssessmentHistoryRow } from './assessmentHistory';
-import { formatCsvRow } from '../utils/csv';
+import { formatCsvRow, spreadsheetSafeText } from '../utils/csv';
 import { compareCodeUnits } from '../utils/canonicalJson';
 
 export const ASSESSMENT_CSV_HEADERS: readonly string[] = [
@@ -105,8 +105,8 @@ export function buildAssessmentHistoryCsv(historyModel: AssessmentHistoryModel):
             row.rowProgress.absoluteChange !== undefined ? row.rowProgress.absoluteChange : '',
             row.rowProgress.percentChange !== undefined ? row.rowProgress.percentChange : '',
             row.rowProgress.status,
-            row.revision.device?.provider ?? '',
-            row.revision.device?.model ?? '',
+            spreadsheetSafeText(row.revision.device?.provider ?? ''),
+            spreadsheetSafeText(row.revision.device?.model ?? ''),
             row.relativeContext.bodyMassKg !== undefined ? row.relativeContext.bodyMassKg : '',
             row.relativeContext.bodyMassSource ?? '',
             row.relativeContext.bodyMassReference ?? '',

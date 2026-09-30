@@ -6,12 +6,9 @@ import type {
     MetricObservationHead,
     MetricObservationRevision,
 } from './models';
-import {
-    type ProgressResult,
-    type SeriesReliabilityEstimate,
-} from './progress';
+import { type SeriesReliabilityEstimate } from './progress';
 import { canonicalizeJson, compareCodeUnits } from '../utils/canonicalJson';
-import { computeProgressForExport } from './assessmentProgress';
+import { computeProgressForExport, type SeriesProgressExport } from './assessmentProgress';
 
 export const ASSESSMENT_DIAGNOSTIC_EXPORT_SCHEMA_VERSION = 'assessment_diagnostic_export_v2' as const;
 
@@ -36,7 +33,7 @@ export interface AssessmentDiagnosticExport {
     attempts: readonly AssessmentAttempt[];
     trials: readonly AssessmentTrial[];
     canonicalObservations: readonly CanonicalObservationExport[];
-    progress: readonly ProgressResult[];
+    progress: readonly SeriesProgressExport[];
     resolvedContext: readonly ResolvedContextExport[];
 }
 

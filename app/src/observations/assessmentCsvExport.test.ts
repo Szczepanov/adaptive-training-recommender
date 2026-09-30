@@ -135,6 +135,25 @@ describe('assessmentCsvExport', () => {
         expect(lines[2]).toContain('insufficient_evidence');
     });
 
+    it('neutralizes formula-leading device metadata at the spreadsheet export boundary', () => {
+        const att = makeAttempt('att-formula', STANDING_BROAD_JUMP_PROTOCOL.id, 2, 'baseline', '2026-10-20T10:00:00Z');
+        const obs = makeObs(
+            att,
+            'standing_broad_jump_distance_cm',
+            230,
+            'series-1',
+            '2026-10-20T10:00:00Z',
+            'valid',
+            { provider: '=1+1', model: '@SUM' },
+        );
+
+        const history = buildAssessmentHistory({ attempts: [att], observations: [obs] });
+        const fields = buildAssessmentHistoryCsv(history).split('\n')[1].split(',');
+
+        expect(fields[16]).toBe("'=1+1");
+        expect(fields[17]).toBe("'@SUM");
+    });
+
     it('correctly uses Warsaw local_date across UTC-midnight boundary (I2)', () => {
         // 2026-10-20 23:30:00 UTC is 2026-10-21 01:30:00 in Europe/Warsaw (CEST, UTC+2)
         const att = makeAttempt('att-late', STANDING_BROAD_JUMP_PROTOCOL.id, 2, 'baseline', '2026-10-20T23:30:00.000Z');

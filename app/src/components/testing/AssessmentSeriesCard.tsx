@@ -179,7 +179,7 @@ export const AssessmentSeriesCard: React.FC<AssessmentSeriesCardProps> = ({
                             {activeSeries.progress.comparable && activeSeries.progress.absoluteChange !== undefined ? (
                                 <>
                                     {activeSeries.progress.absoluteChange > 0 ? '+' : ''}
-                                    {activeSeries.progress.absoluteChange} {activeSeries.baseline?.unit}
+                                    {Number(activeSeries.progress.absoluteChange.toFixed(2))} {activeSeries.baseline?.unit}
                                     {activeSeries.progress.percentChange !== undefined && (
                                         <span className="pct-badge">
                                             {' '}({activeSeries.progress.percentChange > 0 ? '+' : ''}

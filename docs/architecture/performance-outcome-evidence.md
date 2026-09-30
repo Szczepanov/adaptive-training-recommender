@@ -303,7 +303,8 @@ $$\text{Series} = (\text{protocolId}, \text{protocolRevision}, \text{metricId}, 
 
 * **Normalized CSV export (`app/src/observations/assessmentCsvExport.ts`):** Emits standard CSV rows with
   deterministic sorting and 24 canonical columns, including comparison series keys, validity, deltas,
-  and relative context with the exact body-mass source reference.
+  and relative context with the exact body-mass source reference. User-controlled device provider/model text
+  is neutralized at the spreadsheet boundary while numeric evidence remains numeric.
 * **Diagnostic JSON export (`assessment_diagnostic_export_v2`):** Schema version 2 groups progress per series
   rather than per protocol revision, preventing multi-setup comparisons from collapsing into a single series.
 * **Body-mass-relative context (`app/src/anthropometry/bodyMass.ts`):** Relative metrics (sprint W/kg and
@@ -320,6 +321,7 @@ $$\text{Series} = (\text{protocolId}, \text{protocolRevision}, \text{metricId}, 
 The following are deliberately absent from the current architecture:
 
 * personal repeatability estimation (OV4.4) — gated on real close-spaced repeat trials;
+* minimal block progress/report UI (OV6.2) — still usage-triggered; #948 adds the separate assessment-history UI, not the OV6.2 block-outcome surface;
 * operational evidence on the real event/block timeline (the remaining OV7.1 data capture plus OV7.2–OV8);
 * automatic recommendation changes based on outcome evidence.
 

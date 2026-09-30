@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { csvField, formatCsvRow } from './csv';
+import { csvField, formatCsvRow, spreadsheetSafeText } from './csv';
 
 describe('csvField', () => {
     it('returns empty string for null and undefined', () => {
@@ -27,6 +27,17 @@ describe('csvField', () => {
     it('quotes strings containing newlines and carriage returns', () => {
         expect(csvField("line 1\nline 2")).toBe('"line 1\nline 2"');
         expect(csvField("line 1\r\nline 2")).toBe('"line 1\r\nline 2"');
+    });
+});
+
+describe('spreadsheetSafeText', () => {
+    it('neutralizes spreadsheet formula prefixes without touching ordinary text', () => {
+        expect(spreadsheetSafeText('=1+1')).toBe("'=1+1");
+        expect(spreadsheetSafeText('+cmd')).toBe("'+cmd");
+        expect(spreadsheetSafeText('-cmd')).toBe("'-cmd");
+        expect(spreadsheetSafeText('@sum')).toBe("'@sum");
+        expect(spreadsheetSafeText('＝1+1')).toBe("'＝1+1");
+        expect(spreadsheetSafeText('Garmin')).toBe('Garmin');
     });
 });
 

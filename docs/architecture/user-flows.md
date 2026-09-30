@@ -432,7 +432,7 @@ also remains available.
      metadata, locked comparison context, canonical benchmark observations (including revision history and same-day
      body-mass-relative sprint W/kg or relative 1RM under D8), and the complete raw trials table with superseded
      trials clearly distinguished.
-   - The toolbar provides one-click normalized CSV export (`assessment-history.csv`, 23 canonical columns) and
+   - The toolbar provides one-click normalized CSV export (`assessment-history.csv`, 24 canonical columns) and
      offline diagnostic evidence export (`assessment_diagnostic_export_v2`).
 
 Open attempts are recovered on mount. The workflow records assessment-specific context and

@@ -252,8 +252,10 @@ describe('assessmentProgress', () => {
             const exportProgress = computeProgressForExport(protocols, [attR1, attR2], canonicalExport);
 
             expect(exportProgress).toHaveLength(2);
-            // Neither compares across revisions
+            // Neither compares across revisions, and each export row remains self-identifying.
             expect(exportProgress.every(p => !p.comparable)).toBe(true);
+            expect(exportProgress.map(p => p.protocolRevision)).toEqual([1, 2]);
+            expect(exportProgress.every(p => p.protocolId === STANDING_BROAD_JUMP_PROTOCOL.id)).toBe(true);
         });
     });
 

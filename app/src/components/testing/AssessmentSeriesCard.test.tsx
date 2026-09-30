@@ -77,12 +77,12 @@ describe('AssessmentSeriesCard', () => {
                         observedAt: '2026-10-25T10:00:00Z',
                         metricId: 'standing_broad_jump_distance_cm',
                         displayName: 'Standing broad jump distance',
-                        value: 241.5,
+                        value: 241.3,
                         unit: 'cm',
                         validity: 'valid',
                         sourceKind: 'trial-derived',
                         relativeContext: {},
-                        rowProgress: { baselineValue: 230, absoluteChange: 11.5, percentChange: 5, status: 'insufficient_evidence' },
+                        rowProgress: { baselineValue: 230, absoluteChange: 11.300000000000011, percentChange: 4.9, status: 'insufficient_evidence' },
                         attempt: { id: 'att-2', protocolRef: { id: STANDING_BROAD_JUMP_PROTOCOL.id, revision: 2 }, scheduledDate: '2026-10-25', state: 'completed', purpose: 'checkpoint' },
                         head: {} as unknown as MetricObservationHead,
                         revision: {} as unknown as MetricObservationRevision,
@@ -95,7 +95,7 @@ describe('AssessmentSeriesCard', () => {
                     attemptPurpose: 'baseline',
                 } as unknown as AssessmentHistoryRow,
                 latest: {
-                    value: 241.5,
+                    value: 241.3,
                     unit: 'cm',
                     localDate: '2026-10-25',
                     attemptPurpose: 'checkpoint',
@@ -103,8 +103,8 @@ describe('AssessmentSeriesCard', () => {
                 progress: {
                     metricId: 'standing_broad_jump_distance_cm',
                     comparable: true,
-                    absoluteChange: 11.5,
-                    percentChange: 5.0,
+                    absoluteChange: 11.300000000000011,
+                    percentChange: 4.9,
                     status: 'insufficient_evidence',
                     reasons: ['no_reliability_estimate', 'raw_change_favorable'],
                     progressPolicyVersion: 'ov-progress-v1',
@@ -116,8 +116,9 @@ describe('AssessmentSeriesCard', () => {
         const html = renderToStaticMarkup(<AssessmentSeriesCard test={testWithSeries} onSelectAttempt={vi.fn()} />);
 
         expect(html).toContain('230 cm');
-        expect(html).toContain('241.5 cm');
-        expect(html).toContain('+11.5 cm');
+        expect(html).toContain('241.3 cm');
+        expect(html).toContain('+11.3 cm');
+        expect(html).not.toContain('11.300000000000011');
         expect(html).toContain('raw change, no reliability estimate');
         expect(html).toContain('trial-derived');
     });

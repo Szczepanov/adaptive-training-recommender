@@ -48,6 +48,11 @@ export interface AssessmentSeriesGroup {
     progress: ProgressResult;
 }
 
+export type SeriesProgressExport = ProgressResult & {
+    protocolId: string;
+    protocolRevision: number;
+};
+
 export interface CanonicalObservationExportLike {
     observationKey: string;
     head: MetricObservationHead;
@@ -174,9 +179,9 @@ export function computeProgressForExport(
     attempts: readonly AssessmentAttempt[],
     canonicalObservations: readonly CanonicalObservationExportLike[],
     reliabilityEstimates: readonly SeriesReliabilityEstimate[] = [],
-): ProgressResult[] {
+): SeriesProgressExport[] {
     const attemptsById = new Map(attempts.map(a => [a.id, a] as const));
-    const results: ProgressResult[] = [];
+    const results: SeriesProgressExport[] = [];
 
     for (const protocol of protocols) {
         for (const metricId of protocol.metricIds) {
@@ -211,13 +216,19 @@ export function computeProgressForExport(
                     comparisonSeriesKey: seriesKey,
                 };
                 const { progress } = computeSeriesProgress(identity, seriesObs, reliabilityEstimates);
-                results.push(progress);
+                results.push({
+                    ...progress,
+                    protocolId: protocol.id,
+                    protocolRevision: protocol.revision,
+                });
             }
         }
     }
 
     return results.sort((a, b) =>
         compareCodeUnits(a.metricId, b.metricId)
+        || compareCodeUnits(a.protocolId, b.protocolId)
+        || a.protocolRevision - b.protocolRevision
         || compareCodeUnits(a.comparisonSeriesKey ?? '', b.comparisonSeriesKey ?? ''),
     );
 }
