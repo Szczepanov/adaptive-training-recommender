@@ -6,6 +6,7 @@ const firestore = vi.hoisted(() => {
     const committedDocs = new Map<string, unknown>();
     const transactions: Array<{
         set: ReturnType<typeof vi.fn>;
+        get: ReturnType<typeof vi.fn>;
         stagedWrites: Array<{ path: string; data: unknown }>;
     }> = [];
     let transactionError: Error | null = null;
@@ -39,7 +40,7 @@ const firestore = vi.hoisted(() => {
                 set: vi.fn((ref: { path: string }, data: unknown) => stagedWrites.push({ path: ref.path, data })),
             };
             const result = await callback(tx);
-            transactions.push({ set: tx.set, stagedWrites });
+            transactions.push({ set: tx.set, get: tx.get, stagedWrites });
             for (const write of stagedWrites) committedDocs.set(write.path, write.data);
             return result;
         }),
@@ -69,6 +70,11 @@ function plan(overrides: Record<string, unknown> = {}) {
         }],
         ...overrides,
     };
+}
+
+/** Records which document path each transactional read targeted, in order. */
+function readPaths(): string[] {
+    return firestore.transactions.flatMap(transaction => transaction.get.mock.calls.map(call => (call[0] as { path: string }).path));
 }
 
 /** Records which document path each write targeted, in order, across transactions. */
@@ -336,6 +342,120 @@ describe('ExternalPlanService', () => {
                 { sessionId: 'a', date: '2026-08-19', status: 'moved' },
             ],
         })).rejects.toThrow(/at most one assignment/);
+    });
+
+    it('treats a byte-identical same-revision retry as idempotent, without new writes', async () => {
+        const service = new ExternalPlanService();
+        const first = await service.import('u1', plan(), '2026-08-17');
+        expect(first.status).toBe('AVAILABLE');
+        if (first.status !== 'AVAILABLE') throw new Error('unreachable');
+        const writesAfterFirst = writtenPaths().length;
+
+        const retry = await service.import('u1', plan(), '2026-08-17');
+        expect(retry.status).toBe('AVAILABLE');
+        if (retry.status !== 'AVAILABLE') throw new Error('unreachable');
+        expect(retry.data.header).toEqual(first.data.header);
+        // The idempotent retry stages no writes: header, revision bytes and activation
+        // history are byte-identical, including importedAt.
+        expect(writtenPaths().length).toBe(writesAfterFirst);
+        expect(firestore.transactions[1].stagedWrites).toEqual([]);
+    });
+
+    it('fails closed when the same revision content is replayed with a different effective date', async () => {
+        const service = new ExternalPlanService();
+        const first = await service.import('u1', plan(), '2026-08-17');
+        expect(first.status).toBe('AVAILABLE');
+
+        const writesBefore = writtenPaths().length;
+        const replay = await service.import('u1', plan(), '2026-08-20');
+        expect(replay.status).toBe('INVALID');
+        if (replay.status !== 'INVALID') throw new Error('unreachable');
+        expect(replay.issues[0].code).toBe('immutable-activation-conflict');
+        expect(replay.issues[0].documentPath).toBe('users/u1/external_plans/autumn-block/activations/1');
+        expect(writtenPaths().length).toBe(writesBefore);
+    });
+
+    it('pins the immutable-revision conflict for same-revision content that differs', async () => {
+        const service = new ExternalPlanService();
+        const first = await service.import('u1', plan(), '2026-08-17');
+        expect(first.status).toBe('AVAILABLE');
+
+        const edited = plan();
+        edited.sessions[0].title = 'Threshold (edited)';
+        const conflict = await service.import('u1', edited, '2026-08-17');
+        expect(conflict.status).toBe('INVALID');
+        if (conflict.status !== 'INVALID') throw new Error('unreachable');
+        expect(conflict.issues[0].code).toBe('immutable-revision-conflict');
+    });
+
+    it('rejects a successor whose effective date regresses before the predecessor activation', async () => {
+        const predecessor = plan({ revision: 1 });
+        const hash = await computeContentHash(predecessor as never);
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block', {
+            userId: 'u1', planId: 'autumn-block', revision: 1, title: '4-week block', startDate: '2026-08-17',
+            weekCount: 4, contentHash: hash, importedAt: '2026-08-17T00:00:00.000Z', supersededFrom: '2026-08-20', updatedAt: '2026-08-17T00:00:00.000Z',
+        });
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block/revisions/1', predecessor);
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block/activations/1', {
+            userId: 'u1', planId: 'autumn-block', revision: 1, contentHash: hash, effectiveFrom: '2026-08-20', activatedAt: '2026-08-17T00:00:00.000Z',
+        });
+
+        const writesBefore = writtenPaths().length;
+        const result = await new ExternalPlanService().import('u1', plan({ revision: 2 }), '2026-08-18');
+        expect(result.status).toBe('INVALID');
+        if (result.status !== 'INVALID') throw new Error('unreachable');
+        expect(result.issues[0].code).toBe('activation-date-regression');
+        expect(writtenPaths().length).toBe(writesBefore);
+    });
+
+    it('lets exactly one of two racing successor imports win from the same base header', async () => {
+        const predecessor = plan({ revision: 1 });
+        const hash = await computeContentHash(predecessor as never);
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block', {
+            userId: 'u1', planId: 'autumn-block', revision: 1, title: '4-week block', startDate: '2026-08-17',
+            weekCount: 4, contentHash: hash, importedAt: '2026-08-17T00:00:00.000Z', supersededFrom: '2026-08-17', updatedAt: '2026-08-17T00:00:00.000Z',
+        });
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block/revisions/1', predecessor);
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block/activations/1', {
+            userId: 'u1', planId: 'autumn-block', revision: 1, contentHash: hash, effectiveFrom: '2026-08-17', activatedAt: '2026-08-17T00:00:00.000Z',
+        });
+
+        const service = new ExternalPlanService();
+        // Firestore serializes the two transactions: the second observes the first's
+        // committed header, so the same-revision replay rules decide the loser.
+        const first = await service.import('u1', plan({ revision: 2 }), '2026-08-20');
+        expect(first.status).toBe('AVAILABLE');
+        const second = await service.import('u1', plan({ revision: 2 }), '2026-08-24');
+        expect(second.status).toBe('INVALID');
+        if (second.status !== 'INVALID') throw new Error('unreachable');
+        expect(second.issues[0].code).toBe('immutable-activation-conflict');
+
+        const latest = firestore.committedDocs.get('users/u1/external_plans/autumn-block') as { supersededFrom: string };
+        expect(latest.supersededFrom).toBe('2026-08-20');
+        // The transaction read-set covers header + revision + activation, which is the
+        // precondition for Firestore's retry-on-contention semantics in production.
+        expect(readPaths()).toEqual(expect.arrayContaining([
+            'users/u1/external_plans/autumn-block',
+            'users/u1/external_plans/autumn-block/revisions/2',
+            'users/u1/external_plans/autumn-block/activations/2',
+        ]));
+    });
+
+    it('fails closed when legacy history cannot prove the claimed activation date', async () => {
+        const predecessor = plan({ revision: 1 });
+        const hash = await computeContentHash(predecessor as never);
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block', {
+            userId: 'u1', planId: 'autumn-block', revision: 1, title: '4-week block', startDate: '2026-08-17',
+            weekCount: 4, contentHash: hash, importedAt: '2026-08-17T00:00:00.000Z', supersededFrom: '2026-08-17', updatedAt: '2026-08-17T00:00:00.000Z',
+        });
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block/revisions/1', predecessor);
+
+        const writesBefore = writtenPaths().length;
+        const result = await new ExternalPlanService().import('u1', plan(), '2026-08-20');
+        expect(result.status).toBe('INVALID');
+        if (result.status !== 'INVALID') throw new Error('unreachable');
+        expect(result.issues[0].code).toBe('activation-history-unavailable');
+        expect(writtenPaths().length).toBe(writesBefore);
     });
 });
 
