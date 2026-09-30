@@ -4,12 +4,19 @@ import { buildTestingSessionDefinition } from './testingWorkflow';
 import { getPerformanceTestDefinition } from './performanceTestingCatalog';
 import {
     BACK_SQUAT_1RM_PROTOCOL,
+    BACK_SQUAT_1RM_PROTOCOL_V2,
     BENCH_PRESS_1RM_PROTOCOL,
+    BENCH_PRESS_1RM_PROTOCOL_V2,
     CYCLING_6S_SEATED_SPRINT_PROTOCOL,
+    CYCLING_6S_SEATED_SPRINT_PROTOCOL_V2,
     PHYSICAL_CAPITAL_PROTOCOLS,
+    PHYSICAL_CAPITAL_PROTOCOLS_V2,
+    PHYSICAL_CAPITAL_PROTOCOL_REVISIONS,
     SEATED_MEDBALL_THROW_PROTOCOL,
     STANDING_BROAD_JUMP_PROTOCOL,
+    STANDING_BROAD_JUMP_PROTOCOL_V2,
     WALL_TOUCH_CMJ_PROTOCOL,
+    WALL_TOUCH_CMJ_PROTOCOL_V2,
 } from './physicalCapitalProtocols';
 import { assertValidMeasurementProtocol } from './protocols';
 import { getMetricDefinition } from './registry';
@@ -104,6 +111,57 @@ describe('WP0.1 October physical-capital protocol contracts', () => {
             expect(protocol.instructions.find(instruction => instruction.id === 'raw-video')?.text).toMatch(/not the video/);
             expect(protocol.invalidationRules.some(rule => /spotter/i.test(rule))).toBe(true);
         }
+    });
+});
+
+
+describe('v2 October execution protocols', () => {
+    it('keeps revision 1 immutable and publishes a separate six-protocol revision-2 set', () => {
+        expect(PHYSICAL_CAPITAL_PROTOCOLS_V2.map(protocol => `${protocol.id}@${protocol.revision}`)).toEqual([
+            'strength-bench-press-1rm@2',
+            'strength-back-squat-1rm@2',
+            'field-standing-broad-jump@2',
+            'field-wall-touch-cmj@2',
+            'field-seated-medball-chest-throw-3kg@2',
+            'cycling-6s-seated-sprint@2',
+        ]);
+        expect(PHYSICAL_CAPITAL_PROTOCOL_REVISIONS).toHaveLength(12);
+        expect(PHYSICAL_CAPITAL_PROTOCOLS.every(protocol => protocol.revision === 1)).toBe(true);
+        for (const protocol of PHYSICAL_CAPITAL_PROTOCOLS_V2) {
+            expect(() => assertValidMeasurementProtocol(protocol)).not.toThrow();
+            expect(protocol.capture?.reducerVersion).toBe(ASSESSMENT_REDUCER_VERSION_V1);
+        }
+    });
+
+    it('pins the v1.6 strength execution standards without rewriting revision 1', () => {
+        expect(BENCH_PRESS_1RM_PROTOCOL.revision).toBe(1);
+        expect(BENCH_PRESS_1RM_PROTOCOL_V2.instructions.find(i => i.id === 'standard')?.text)
+            .toMatch(/1-second pause/);
+        expect(BENCH_PRESS_1RM_PROTOCOL_V2.instructions.find(i => i.id === 'attempts')?.text)
+            .toMatch(/two misses/);
+        expect(BACK_SQUAT_1RM_PROTOCOL_V2.instructions.find(i => i.id === 'standard')?.text)
+            .toMatch(/declared depth criterion/);
+        expect(BACK_SQUAT_1RM_PROTOCOL_V2.invalidationRules.join(' '))
+            .not.toMatch(/hip crease below|top of the knee/i);
+    });
+
+    it('pins the v1.6 field-test setup semantics that materially affect repeatability', () => {
+        expect(STANDING_BROAD_JUMP_PROTOCOL_V2.comparisonContext.seriesDefining)
+            .toEqual(['test_environment', 'equipment_setup_id']);
+        expect(WALL_TOUCH_CMJ_PROTOCOL_V2.comparisonContext.seriesDefining)
+            .toEqual(['measurement_method_id', 'equipment_setup_id']);
+        expect(WALL_TOUCH_CMJ_PROTOCOL_V2.instructions.find(i => i.id === 'reach')?.text)
+            .toMatch(/three times.*median/i);
+    });
+
+    it('pins the 15-20 minute sprint warm-up, five-minute recovery and no-ERG rule', () => {
+        expect(CYCLING_6S_SEATED_SPRINT_PROTOCOL_V2.warmupRef).toBe('cycling-sprint-warmup-r2');
+        expect(CYCLING_6S_SEATED_SPRINT_PROTOCOL_V2.instructions.find(i => i.id === 'warmup')?.text)
+            .toMatch(/15-20 minutes/);
+        expect(CYCLING_6S_SEATED_SPRINT_PROTOCOL_V2.instructions.find(i => i.id === 'recovery')?.text)
+            .toMatch(/5 minutes/);
+        expect(CYCLING_6S_SEATED_SPRINT_PROTOCOL_V2.instructions.find(i => i.id === 'mode')?.text)
+            .toMatch(/ERG/);
     });
 });
 

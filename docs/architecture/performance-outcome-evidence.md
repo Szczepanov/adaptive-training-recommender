@@ -145,6 +145,24 @@ Multi-trial protocols retain repeated attempts and load/velocity evidence as imm
   * `max_valid_difference`: maximum difference between two fields within a trial (wall-touch CMJ touch height minus standing reach).
 * **Typed derivation provenance:** `deriveTrialObservationRevisions` creates canonical `MetricObservationRevision` records with `source: 'derived'`, `algorithmVersion: 'assessment-reducer-v1'`, and `derivedFromEvidenceRefs` containing `{ kind: 'assessment_trial', assessmentAttemptId, trialId }` references per metric. Trial IDs never enter `derivedFromObservationIds` (which is reserved for observation-to-observation derivations).
 * **Trial-capture protocols are derive-only:** a protocol revision that declares `capture` cannot receive hand-typed canonical values. `adaptManualObservation` refuses it, and the `hasValidTrialCaptureBinding` Firestore rule requires `source: 'derived'`, `derivedFromEvidenceRefs`, an `algorithmVersion` equal to the protocol's `capture.reducerVersion`, and an `in_progress` or `completed` parent attempt. Summary-only protocols keep manual entry.
+* **Capture orchestration (`assessmentCaptureService`):** coordinates the multi-step persistence transaction for trial assessments:
+  1. `createTrials` writes all trial rows atomically (idempotent on exact retry);
+  2. `listTrialsForAttempt` loads every stored trial (including superseded records); on an `in_progress` attempt, a resubmission that omits an already-stored trial fails closed, because stored trials cannot be removed;
+  3. `deriveTrialObservationRevisions` evaluates deterministic reducers and emits canonical revisions with typed trial evidence refs;
+  4. `metricObservationService.createInitialRevision` creates head and revision-1 for each derived metric (or skips metrics without valid trials if `allowMissingBenchmark` is explicitly confirmed);
+  5. `assessmentAttemptService.completeAttempt` finalizes the attempt.
+  A `scheduled` attempt is refused (trials are only recorded once the linked execution has started it), and an unconfirmed missing benchmark returns without completing, keeping the athlete in capture.
+  Post-completion trial corrections derive the candidate trial set (stored trials plus the superseding record, `correctionIndex + 1`) in memory first. If that would leave a previously benchmarked metric without any valid trial, the service fails closed *before any write*. Otherwise `AssessmentTrialService.commitCorrection` commits the immutable superseding trial and every changed/new canonical observation revision/head in **one Firestore transaction**. A stale head or failed write therefore commits none of the correction set. Corrected revisions inherit the superseded revision's `sourceRef` execution provenance.
+* **Protocol-revision continuity:** published capture protocols are never edited in place. The six PR-A physical-capital contracts remain available as revision 1; the athlete-facing October baseline catalog uses revision 2 after the v1.6 execution cross-check. Diagnostic export enumerates all supported immutable revisions and binds each attempt only to its exact `protocolRef.revision`, so historical revision-1 evidence remains auditable beside revision-2 evidence.
+* **Baseline-purpose semantics:** `purpose=familiarization` is retained as evidence but is not eligible to become an implicit longitudinal baseline. Export/progress prefers an explicit `baseline` attempt and only falls back to a valid non-familiarization attempt when no explicit baseline exists.
+* **Progress lifecycle eligibility:** diagnostic export retains partial, abandoned and completed evidence for audit, but only canonical observations whose parent assessment attempt is `completed` may participate in longitudinal progress. An observation left behind by an interrupted multi-step save cannot silently become a benchmark.
+* **Diagnostic JSON export (`assessmentExport` / `assessmentExportService`):** exports the complete bounded #897 physical-capital assessment evidence for supported immutable protocol revisions in a deterministic, byte-stable JSON format (`assessment_diagnostic_export_v1`):
+  * excludes the athlete's Firebase UID, but remains personal health data (trial values, free-text notes and reasons, device identifiers);
+  * retains all measurement protocols and attempts;
+  * retains every trial, including superseded corrections with the full chain;
+  * includes full observation revision chains (not just latest heads);
+  * computes longitudinal progress via `deriveProgress()` across comparable attempts;
+  * formats keys with canonical recursive code-unit sorting (`canonicalJson.ts`).
 * **Rules parity and immutability:** rules deny trial `update` and `delete` (`allow update, delete: if false`). Parity between rules allowlists/bounds and domain constants is verified by `firestoreRulesParity.test.ts` and `assessmentTrialRules.emulator.test.ts`.
 
 ### Metric observations

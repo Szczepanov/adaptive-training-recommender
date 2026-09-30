@@ -100,6 +100,34 @@ export class AssessmentAttemptService {
         return null;
     }
 
+    /**
+     * Bounded query for WP7.2: list all attempts for one protocol ID.
+     */
+    async listAttemptsForProtocol(userId: string, protocolId: string): Promise<AssessmentAttempt[]> {
+        const attempts = query(
+            collection(this.db, 'users', userId, 'assessment_attempts'),
+            where('protocolRef.id', '==', protocolId),
+        );
+        const snapshots = await getDocs(attempts);
+        const candidates: AssessmentAttempt[] = [];
+        for (const snapshot of snapshots.docs) {
+            const attempt = snapshot.data() as AssessmentAttempt;
+            try {
+                assertValidAssessmentAttempt(attempt);
+            } catch {
+                continue;
+            }
+            if (attempt.id === snapshot.id && attempt.protocolRef.id === protocolId) {
+                candidates.push(attempt);
+            }
+        }
+        return candidates.sort((a, b) => {
+            const dateA = a.startedAt ?? `${a.scheduledDate ?? ''}T00:00:00`;
+            const dateB = b.startedAt ?? `${b.scheduledDate ?? ''}T00:00:00`;
+            return dateA.localeCompare(dateB);
+        });
+    }
+
     async startAttempt(userId: string, attemptId: string, startedAt: string): Promise<void> {
         await this.transitionAttempt(userId, attemptId, current => {
             if (current.state !== 'scheduled') throw new Error(`Cannot start assessment from ${current.state}`);

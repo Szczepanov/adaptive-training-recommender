@@ -10,6 +10,7 @@ import {
 import { getAuthInstance } from '../firebase';
 import { buildInfo } from '../buildInfo';
 import { GarminSyncBadge } from './GarminSyncBadge';
+import { clearAllAssessmentDrafts } from '../utils/assessmentDraftStorage';
 
 interface HeaderProps {
   screen: Screen;
@@ -57,6 +58,7 @@ export const Header: React.FC<HeaderProps> = ({
   const handleLogout = async () => {
     const { signOut } = await import('firebase/auth');
     await signOut(getAuthInstance());
+    clearAllAssessmentDrafts();
   };
 
   const buildTitle = `Git commit ${buildInfo.gitSha}${buildInfo.dirty ? ' (local working tree has uncommitted changes)' : ''}${buildInfo.builtAtFormatted ? `\nDeployed ${buildInfo.builtAtFormatted}` : ''}`;

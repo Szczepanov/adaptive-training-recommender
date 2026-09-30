@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
     AssessmentAttempt,
     AssessmentAttemptPurpose,
+    AssessmentTrial,
     ComparisonContext,
     MeasurementProtocol,
     MetricObservationRevision,
@@ -12,6 +13,7 @@ import { getComparisonDimensionDefinition } from '../../observations/protocols';
 import {
     PERFORMANCE_TEST_DEFINITIONS,
     getPerformanceTestDefinition,
+    getPerformanceTestFamily,
 } from '../../observations/performanceTestingCatalog';
 import {
     buildComparisonContextFromStrings,
@@ -22,6 +24,13 @@ import { adaptManualObservation } from '../../observations/manualAdapter';
 import { observationKeyFor } from '../../observations/validation';
 import { measurementProtocolService } from '../../services/measurementProtocolService';
 import { assessmentAttemptService } from '../../services/assessmentAttemptService';
+import { assessmentTrialService } from '../../services/assessmentTrialService';
+import { assessmentCaptureService } from '../../services/assessmentCaptureService';
+import {
+    assessmentExportService,
+    downloadDiagnosticExportFile,
+} from '../../services/assessmentExportService';
+import { assessmentDiagnosticExportToJson } from '../../observations/assessmentExport';
 import { metricObservationService } from '../../services/metricObservationService';
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
 import { sessionExecutionService } from '../../services/sessionExecutionService';
@@ -29,6 +38,9 @@ import type { PreparedSessionLaunch } from '../../sessions/sessionLaunch';
 import type { SessionExecution } from '../../sessions/models';
 import { getLocalDateString } from '../../utils/localDate';
 import { SessionRunner } from '../session/SessionRunner';
+import { TrialCaptureTable } from './TrialCaptureTable';
+import { clearAssessmentDraft } from '../../utils/assessmentDraftStorage';
+import { TrialCorrectionPanel } from './TrialCorrectionPanel';
 import './TestingWorkflow.css';
 
 type TestingStage = 'lookup' | 'ready' | 'running' | 'capture' | 'complete' | 'abandoned';
@@ -41,6 +53,11 @@ interface TestingWorkflowProps {
 
 const PURPOSES: readonly AssessmentAttemptPurpose[] = ['familiarization', 'baseline', 'checkpoint', 'post_block'];
 const VALIDITIES: readonly ObservationValidity[] = ['valid', 'invalid', 'practice', 'questionable'];
+const FAMILIES: readonly { id: 'cycling' | 'strength' | 'field'; label: string }[] = [
+    { id: 'cycling', label: 'Cycling' },
+    { id: 'strength', label: 'Strength' },
+    { id: 'field', label: 'Field & power' },
+];
 
 function occurrenceIdFromAttempt(attempt: AssessmentAttempt): string | null {
     const prefix = 'occurrence:';
@@ -100,6 +117,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
     const [deviceModel, setDeviceModel] = useState('');
     const [deviceId, setDeviceId] = useState('');
     const [saved, setSaved] = useState<MetricObservationRevision[]>([]);
+    const [trials, setTrials] = useState<readonly AssessmentTrial[]>([]);
     const [correctionMetricId, setCorrectionMetricId] = useState<string | null>(null);
     const [correctionValue, setCorrectionValue] = useState('');
     const [correctionReason, setCorrectionReason] = useState('');
@@ -118,6 +136,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
             defaultContext[dimension] === undefined ? '' : String(defaultContext[dimension]),
         ])));
         setMetricValues(Object.fromEntries(loaded.metricIds.map(metricId => [metricId, ''])));
+        setTrials([]);
     }, []);
 
     const refreshSaved = useCallback(async (assessmentAttemptId: string, loadedProtocol: MeasurementProtocol) => {
@@ -125,6 +144,15 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
             metricObservationService.getCurrentRevision(userId, observationKeyFor(assessmentAttemptId, metricId)),
         ));
         setSaved(revisions.filter((revision): revision is MetricObservationRevision => revision !== null));
+    }, [userId]);
+
+    const refreshTrials = useCallback(async (assessmentAttemptId: string, loadedProtocol: MeasurementProtocol) => {
+        if (loadedProtocol.capture) {
+            const loadedTrials = await assessmentTrialService.listTrialsForAttempt(userId, loadedProtocol, assessmentAttemptId);
+            setTrials(loadedTrials);
+        } else {
+            setTrials([]);
+        }
     }, [userId]);
 
     useEffect(() => {
@@ -173,13 +201,15 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                         await assessmentAttemptService.startAttempt(userId, openAttempt.id, linkedExecution.startedAt);
                         setAttempt({ ...openAttempt, state: 'in_progress', startedAt: linkedExecution.startedAt });
                     }
-                    setStage('capture');
                     await refreshSaved(openAttempt.id, loadedProtocol);
+                    await refreshTrials(openAttempt.id, loadedProtocol);
+                    setStage(openAttempt.state === 'completed' ? 'complete' : 'capture');
                     return;
                 }
                 if (openAttempt.state !== 'abandoned') {
                     await assessmentAttemptService.abandonAttempt(userId, openAttempt.id, 'Linked execution was abandoned.');
                 }
+                clearAssessmentDraft(userId, openAttempt.id);
                 setAttempt({ ...openAttempt, state: 'abandoned' });
                 setStage('abandoned');
             })
@@ -190,7 +220,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                 if (!cancelled) setRecovering(false);
             });
         return () => { cancelled = true; };
-    }, [populateProtocol, refreshSaved, userId]);
+    }, [populateProtocol, refreshSaved, refreshTrials, userId]);
 
     const loadBundledTest = async (definitionId: string) => {
         setBusy(true);
@@ -288,8 +318,17 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                     return;
                 }
             }
+            // Load stored trials before mounting capture: TrialCaptureTable seeds its rows once,
+            // and trials persisted by an interrupted save must render read-only from the start.
+            if (protocol) {
+                try {
+                    await refreshSaved(attempt.id, protocol);
+                    await refreshTrials(attempt.id, protocol);
+                } catch (reason) {
+                    setError(reason instanceof Error ? reason.message : 'Could not load saved assessment evidence.');
+                }
+            }
             setStage('capture');
-            if (protocol) await refreshSaved(attempt.id, protocol);
             return;
         }
 
@@ -297,13 +336,14 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
             terminalHandled.current = next.executionId;
             try {
                 await assessmentAttemptService.abandonAttempt(userId, attempt.id, 'Session execution abandoned.');
+                clearAssessmentDraft(userId, attempt.id);
                 setAttempt(current => current ? { ...current, state: 'abandoned' } : current);
             } catch (reason) {
                 setError(reason instanceof Error ? reason.message : 'Could not abandon assessment attempt.');
             }
             setStage('abandoned');
         }
-    }, [attempt, onSessionStateChange, protocol, refreshSaved, userId]);
+    }, [attempt, onSessionStateChange, protocol, refreshSaved, refreshTrials, userId]);
 
     const saveObservations = async () => {
         if (!protocol || !attempt || !execution) return;
@@ -402,7 +442,75 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
         }
     };
 
+    // Errors propagate to TrialCaptureTable, which renders them next to the trial rows.
+    const handleSaveTrialAssessment = async (saveTrials: AssessmentTrial[], allowMissingBenchmark: boolean) => {
+        if (!protocol || !attempt || !execution) return;
+        setBusy(true);
+        setError(null);
+        try {
+            const context = buildComparisonContextFromStrings(protocol, contextValues);
+            const observedAt = execution.completedAt ?? new Date().toISOString();
+            const result = await assessmentCaptureService.saveTrialAssessment({
+                userId,
+                protocol,
+                attempt,
+                trials: saveTrials,
+                context,
+                observedAt,
+                sourceRef: `execution:${execution.executionId}`,
+                device: deviceProvider.trim() ? {
+                    provider: deviceProvider.trim(),
+                    ...(deviceModel.trim() ? { model: deviceModel.trim() } : {}),
+                    ...(deviceId.trim() ? { deviceId: deviceId.trim() } : {}),
+                } : undefined,
+                allowMissingBenchmark,
+            });
+            setAttempt(result.attempt);
+            setTrials(result.trials);
+            if (result.attempt.state !== 'completed') {
+                // The service stopped before completion (a metric has no valid trial and the
+                // athlete has not confirmed completing without a benchmark): stay in capture.
+                throw new Error(`Confirmation required: no valid trial for ${result.missingMetricIds.join(', ')}`);
+            }
+            await refreshSaved(attempt.id, protocol);
+            setStage('complete');
+        } catch (reason) {
+            // Trials may have landed before a later step failed; reload them so the rows that are
+            // now immutable render read-only for the retry.
+            await refreshTrials(attempt.id, protocol).catch(() => undefined);
+            throw reason;
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    const exportAssessmentJson = async () => {
+        setBusy(true);
+        setError(null);
+        try {
+            const diagnostic = await assessmentExportService.loadDiagnosticExport(userId);
+            const jsonStr = assessmentDiagnosticExportToJson(diagnostic);
+            const dateStr = getLocalDateString();
+            downloadDiagnosticExportFile(`assessment-diagnostic-${dateStr}.json`, jsonStr);
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : 'Could not export assessment evidence.');
+        } finally {
+            setBusy(false);
+        }
+    };
+
     const metricRows = useMemo(() => protocol?.metricIds.map(getMetricDefinition) ?? [], [protocol]);
+    // Trial corrections re-derive against the context the benchmark was saved with; the edited
+    // form values are only a fallback and may be incomplete after a reload, so never throw here.
+    const correctionContext = useMemo((): ComparisonContext | null => {
+        if (saved.length > 0) return saved[0].context as ComparisonContext;
+        if (!protocol) return null;
+        try {
+            return buildComparisonContextFromStrings(protocol, contextValues);
+        } catch {
+            return null;
+        }
+    }, [contextValues, protocol, saved]);
     const abandonmentPersisted = canStartFreshAssessmentAttempt(attempt);
 
     const startFreshAttempt = () => {
@@ -411,9 +519,11 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
         // startTest builds a brand-new attempt id (createAssessmentAttemptId mints
         // Date.now()/random entropy), so the abandoned attempt stays abandoned -- no
         // execution or persistence semantic change.
+        if (attempt) clearAssessmentDraft(userId, attempt.id);
         setAttempt(null);
         setExecution(null);
         setSaved([]);
+        setTrials([]);
         setError(null);
         setStage('ready');
     };
@@ -430,27 +540,18 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
 
     if (recovering) return <div className="testing-workflow"><p>Recovering testing workflow…</p></div>;
 
-    if (stage === 'running' && launch) {
+    if (stage === 'running') {
         return (
             <div className="testing-workflow">
                 {lockSummary}
                 <SessionRunner
                     userId={userId}
-                    initialSession={launch}
+                    initialSession={launch ?? undefined}
                     onInitialSessionHandled={() => setLaunch(null)}
                     onSessionStateChange={handleExecutionState}
                     onClose={onClose}
                     mode="assessment"
                 />
-            </div>
-        );
-    }
-
-    if (stage === 'running' && execution?.state === 'in_progress') {
-        return (
-            <div className="testing-workflow">
-                {lockSummary}
-                <SessionRunner userId={userId} onSessionStateChange={handleExecutionState} onClose={onClose} mode="assessment" />
             </div>
         );
     }
@@ -470,21 +571,40 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
             {stage === 'lookup' && (
                 <>
                     <section className="testing-card">
-                        <h3>Bundled cycling assessments</h3>
-                        <p>Choose a versioned default protocol. Its immutable revision is created on first use and never silently changed later.</p>
-                        <div className="testing-grid two">
-                            {PERFORMANCE_TEST_DEFINITIONS.map(definition => (
-                                <button
-                                    key={definition.id}
-                                    type="button"
-                                    className="testing-secondary"
-                                    disabled={busy}
-                                    onClick={() => loadBundledTest(definition.id)}
-                                >
-                                    {definition.protocol.title} · rev {definition.protocol.revision}
-                                </button>
-                            ))}
+                        <div className="testing-card-header-row">
+                            <h3>Bundled assessments</h3>
+                            <button
+                                type="button"
+                                className="testing-secondary export-diagnostic-btn"
+                                disabled={busy}
+                                onClick={exportAssessmentJson}
+                            >
+                                Export physical-capital evidence (JSON)
+                            </button>
                         </div>
+                        <p>Choose a versioned default protocol. Its immutable revision is created on first use and never silently changed later.</p>
+                        <div className="bundled-catalog-groups">{FAMILIES.map(family => {
+                            const tests = PERFORMANCE_TEST_DEFINITIONS.filter(def => getPerformanceTestFamily(def) === family.id);
+                            if (tests.length === 0) return null;
+                            return (
+                                <div key={family.id} className="catalog-group">
+                                    <h4 className="catalog-group-heading">{family.label}</h4>
+                                    <div className="testing-grid two">
+                                        {tests.map(definition => (
+                                            <button
+                                                key={definition.id}
+                                                type="button"
+                                                className="testing-secondary"
+                                                disabled={busy}
+                                                onClick={() => loadBundledTest(definition.id)}
+                                            >
+                                                {definition.protocol.title} · rev {definition.protocol.revision}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })}</div>
                     </section>
                     <section className="testing-card">
                         <h3>Load another immutable protocol revision</h3>
@@ -506,6 +626,16 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                         <p>Burden: <strong>{protocol.burden}</strong>{protocol.expectedRecoveryHours !== undefined ? ` · expected recovery ${protocol.expectedRecoveryHours} h` : ''}</p>
                         {protocol.warmupRef && <p>Warm-up: <code>{protocol.warmupRef}</code></p>}
                         <p>Familiarization: {protocol.familiarization.required ? `required · minimum ${protocol.familiarization.minimumExposures}` : 'not required'}</p>
+                        {protocol.instructions.length > 0 && (
+                            <div className="testing-instructions">
+                                <strong>Protocol instructions & safety:</strong>
+                                <ul>
+                                    {protocol.instructions.map(inst => (
+                                        <li key={inst.id}>{inst.text}</li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
                         {protocol.invalidationRules.length > 0 && <div><strong>Invalidate if:</strong><ul>{protocol.invalidationRules.map(rule => <li key={rule}>{rule}</li>)}</ul></div>}
                     </section>
 
@@ -529,40 +659,112 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
             )}
 
             {protocol && attempt && stage === 'capture' && (
-                <section className="testing-card">
-                    <h3>Record raw result</h3>
-                    <p>Attempt <code>{attempt.id}</code>. Values remain raw; this screen does not infer FTP, threshold or progress.</p>
-                    <div className="testing-grid">
-                        {metricRows.map(metric => <label key={metric.id}>{metric.displayName} ({metric.unit})<input inputMode="decimal" value={metricValues[metric.id] ?? ''} onChange={event => setMetricValues(current => ({ ...current, [metric.id]: event.target.value }))} /></label>)}
-                    </div>
-                    <fieldset className="testing-validity"><legend>Attempt validity</legend>{VALIDITIES.map(item => <label key={item}><input type="radio" name="validity" checked={validity === item} onChange={() => setValidity(item)} /> {item}</label>)}</fieldset>
-                    {validity === 'invalid' && <label>Invalid reason<input value={invalidReason} onChange={event => setInvalidReason(event.target.value)} /></label>}
-                    {(validity === 'questionable' || validity === 'practice' || validity === 'valid') && <label>Validity note (optional{validity === 'questionable' ? ' except questionable requires one' : ''})<input value={qualityNote} onChange={event => setQualityNote(event.target.value)} /></label>}
-                    <h4>Manual source/device provenance</h4>
-                    <div className="testing-grid three">
-                        <label>Provider<input placeholder="e.g. Garmin / Favero" value={deviceProvider} onChange={event => setDeviceProvider(event.target.value)} /></label>
-                        <label>Model<input value={deviceModel} onChange={event => setDeviceModel(event.target.value)} /></label>
-                        <label>Device ID<input value={deviceId} onChange={event => setDeviceId(event.target.value)} /></label>
-                    </div>
-                    <p className="testing-note">If the page was reloaded after execution, re-enter the exact locked comparison context before saving. No context is guessed.</p>
-                    <div className="testing-grid">
-                        {protocol.comparisonContext.required.map(dimension => <label key={dimension}>{dimension}<input value={contextValues[dimension] ?? ''} onChange={event => setContextValues(current => ({ ...current, [dimension]: event.target.value }))} /></label>)}
-                    </div>
-                    <button type="button" className="testing-primary" disabled={busy} onClick={saveObservations}>{busy ? 'Saving…' : 'Save raw observation(s)'}</button>
-                </section>
+                protocol.capture ? (
+                    <TrialCaptureTable
+                        userId={userId}
+                        protocol={protocol}
+                        attempt={attempt}
+                        contextValues={contextValues}
+                        onContextChange={setContextValues}
+                        defaultDevice={{
+                            provider: deviceProvider,
+                            model: deviceModel || undefined,
+                            deviceId: deviceId || undefined,
+                        }}
+                        onDefaultDeviceChange={dev => {
+                            setDeviceProvider(dev.provider);
+                            setDeviceModel(dev.model ?? '');
+                            setDeviceId(dev.deviceId ?? '');
+                        }}
+                        onSave={handleSaveTrialAssessment}
+                        saving={busy}
+                        presentationHints={catalogDefinitionId ? getPerformanceTestDefinition(catalogDefinitionId)?.presentationHints : undefined}
+                        initialTrials={trials}
+                    />
+                ) : (
+                    <section className="testing-card">
+                        <h3>Record raw result</h3>
+                        <p>Attempt <code>{attempt.id}</code>. Values remain raw; this screen does not infer FTP, threshold or progress.</p>
+                        <div className="testing-grid">
+                            {metricRows.map(metric => <label key={metric.id}>{metric.displayName} ({metric.unit})<input inputMode="decimal" value={metricValues[metric.id] ?? ''} onChange={event => setMetricValues(current => ({ ...current, [metric.id]: event.target.value }))} /></label>)}
+                        </div>
+                        <fieldset className="testing-validity"><legend>Attempt validity</legend>{VALIDITIES.map(item => <label key={item}><input type="radio" name="validity" checked={validity === item} onChange={() => setValidity(item)} /> {item}</label>)}</fieldset>
+                        {validity === 'invalid' && <label>Invalid reason<input value={invalidReason} onChange={event => setInvalidReason(event.target.value)} /></label>}
+                        {(validity === 'questionable' || validity === 'practice' || validity === 'valid') && <label>Validity note (optional{validity === 'questionable' ? ' except questionable requires one' : ''})<input value={qualityNote} onChange={event => setQualityNote(event.target.value)} /></label>}
+                        <h4>Manual source/device provenance</h4>
+                        <div className="testing-grid three">
+                            <label>Provider<input placeholder="e.g. Garmin / Favero" value={deviceProvider} onChange={event => setDeviceProvider(event.target.value)} /></label>
+                            <label>Model<input value={deviceModel} onChange={event => setDeviceModel(event.target.value)} /></label>
+                            <label>Device ID<input value={deviceId} onChange={event => setDeviceId(event.target.value)} /></label>
+                        </div>
+                        <p className="testing-note">If the page was reloaded after execution, re-enter the exact locked comparison context before saving. No context is guessed.</p>
+                        <div className="testing-grid">
+                            {protocol.comparisonContext.required.map(dimension => <label key={dimension}>{dimension}<input value={contextValues[dimension] ?? ''} onChange={event => setContextValues(current => ({ ...current, [dimension]: event.target.value }))} /></label>)}
+                        </div>
+                        <button type="button" className="testing-primary" disabled={busy} onClick={saveObservations}>{busy ? 'Saving…' : 'Save raw observation(s)'}</button>
+                    </section>
+                )
             )}
 
             {protocol && attempt && stage === 'complete' && (
-                <section className="testing-card">
-                    <h3>Assessment recorded</h3>
-                    <p>Attempt {attempt.id} is complete. Current observation revisions:</p>
-                    <div className="testing-observations">{saved.map(revision => {
-                        const metric = getMetricDefinition(revision.metricId);
-                        return <div key={revision.observationKey} className="testing-observation-row"><div><strong>{metric.displayName}</strong><span>{revision.value} {revision.unit} · {revision.validity} · rev {revision.revision}</span></div><button type="button" className="testing-secondary" onClick={() => { setCorrectionMetricId(revision.metricId); setCorrectionValue(String(revision.value)); setCorrectionReason(''); }}>Correct</button></div>;
-                    })}</div>
-                    {correctionMetricId && <div className="testing-correction"><h4>Append correction</h4><label>Corrected value<input inputMode="decimal" value={correctionValue} onChange={event => setCorrectionValue(event.target.value)} /></label><label>Reason<input value={correctionReason} onChange={event => setCorrectionReason(event.target.value)} /></label><div className="testing-actions"><button type="button" className="testing-secondary" onClick={() => setCorrectionMetricId(null)}>Cancel</button><button type="button" className="testing-primary" disabled={busy} onClick={saveCorrection}>{busy ? 'Saving…' : 'Save correction revision'}</button></div></div>}
-                    <div className="testing-actions"><button type="button" className="testing-primary" onClick={onClose}>Done</button></div>
-                </section>
+                protocol.capture ? (
+                    <section className="testing-card">
+                        <h3>Assessment recorded</h3>
+                        <p>Attempt <code>{attempt.id}</code> is complete. Observations derived from its trials:</p>
+                        <div className="testing-observations">{saved.map(revision => {
+                            const metric = getMetricDefinition(revision.metricId);
+                            return (
+                                <div key={revision.observationKey} className="testing-observation-row">
+                                    <div>
+                                        <strong>{metric.displayName}</strong>
+                                        <span>{revision.value} {revision.unit} · {revision.validity} · rev {revision.revision}</span>
+                                    </div>
+                                </div>
+                            );
+                        })}</div>
+                        {correctionContext && <TrialCorrectionPanel
+                            userId={userId}
+                            protocol={protocol}
+                            attempt={attempt}
+                            trials={trials}
+                            context={correctionContext}
+                            observedAt={attempt.completedAt ?? new Date().toISOString()}
+                            device={deviceProvider.trim() ? {
+                                provider: deviceProvider.trim(),
+                                ...(deviceModel.trim() ? { model: deviceModel.trim() } : {}),
+                                ...(deviceId.trim() ? { deviceId: deviceId.trim() } : {}),
+                            } : undefined}
+                            onCorrectionComplete={(updTrials, updObs) => {
+                                setTrials(updTrials);
+                                setSaved([...updObs]);
+                            }}
+                        />}
+                        <div className="testing-actions">
+                            <button
+                                type="button"
+                                className="testing-secondary export-diagnostic-btn"
+                                disabled={busy}
+                                onClick={exportAssessmentJson}
+                            >
+                                Export physical-capital evidence (JSON)
+                            </button>
+                            <button type="button" className="testing-primary" onClick={onClose}>Done</button>
+                        </div>
+                    </section>
+                ) : (
+                    <section className="testing-card">
+                        <h3>Assessment recorded</h3>
+                        <p>Attempt {attempt.id} is complete. Current observation revisions:</p>
+                        <div className="testing-observations">{saved.map(revision => {
+                            const metric = getMetricDefinition(revision.metricId);
+                            return <div key={revision.observationKey} className="testing-observation-row"><div><strong>{metric.displayName}</strong><span>{revision.value} {revision.unit} · {revision.validity} · rev {revision.revision}</span></div><button type="button" className="testing-secondary" onClick={() => { setCorrectionMetricId(revision.metricId); setCorrectionValue(String(revision.value)); setCorrectionReason(''); }}>Correct</button></div>;
+                        })}</div>
+                        {correctionMetricId && <div className="testing-correction"><h4>Append correction</h4><label>Corrected value<input inputMode="decimal" value={correctionValue} onChange={event => setCorrectionValue(event.target.value)} /></label><label>Reason<input value={correctionReason} onChange={event => setCorrectionReason(event.target.value)} /></label><div className="testing-actions"><button type="button" className="testing-secondary" onClick={() => setCorrectionMetricId(null)}>Cancel</button><button type="button" className="testing-primary" disabled={busy} onClick={saveCorrection}>{busy ? 'Saving…' : 'Save correction revision'}</button></div></div>}
+                        <div className="testing-actions">
+                            <button type="button" className="testing-primary" onClick={onClose}>Done</button>
+                        </div>
+                    </section>
+                )
             )}
 
             {stage === 'abandoned' && (

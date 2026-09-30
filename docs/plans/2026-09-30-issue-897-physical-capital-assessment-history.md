@@ -1,7 +1,7 @@
 # Issue #897 — Physical-capital assessment history implementation plan
 
 **Date:** 2026-09-30
-**Status:** In progress — [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A (WP0–WP3 domain foundation) started
+**Status:** In progress — [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A (WP0–WP3 domain foundation) merged (PR #942); PR B (WP4 bundled catalog, WP5 trial capture UX, WP7.2 diagnostic JSON export) implemented, in review
 **Authority boundary:** evidence-only under the existing OV authority boundary; ADR-0046 grants no recommendation authority
 **Unlocks:** first-class multidomain physical-capital assessment capture, comparable history and normalized/diagnostic export without recommendation authority
 **Canonical status owner:** [Performance outcome validation (OV)](./performance-outcome-validation.md); this document is a scoped #897 implementation design, not a parallel OV status board
@@ -27,21 +27,21 @@ The first complete user journey is:
 
 The slice is complete when all of the following are true:
 
-- [ ] Bench 1RM can be run as a bundled standardized assessment.
-- [ ] Back-squat 1RM can be run as a bundled standardized assessment.
-- [ ] Standing broad jump can be run and all trials are retained.
-- [ ] Wall-touch CMJ can be run and all trials are retained.
-- [ ] 3 kg seated medicine-ball throw can be run and all trials are retained.
-- [ ] 3 × 6 s seated cycling sprint can store all three trials plus canonical 1 s peak and 5 s mean power.
-- [ ] Strength attempts can store load-by-load WL Analysis velocity evidence without making app-derived e1RM authoritative.
+- [x] Bench 1RM can be run as a bundled standardized assessment.
+- [x] Back-squat 1RM can be run as a bundled standardized assessment.
+- [x] Standing broad jump can be run and all trials are retained.
+- [x] Wall-touch CMJ can be run and all trials are retained.
+- [x] 3 kg seated medicine-ball throw can be run and all trials are retained.
+- [x] 3 × 6 s seated cycling sprint can store all three trials plus canonical 1 s peak and 5 s mean power.
+- [x] Strength attempts can store load-by-load WL Analysis velocity evidence without making app-derived e1RM authoritative.
 - [x] Historical protocol revisions remain immutable.
 - [ ] Repeating a compatible protocol produces an explicit longitudinal comparison.
 - [ ] Incompatible protocol/setup changes produce `non_comparable` or a separate series rather than a false numerical trend. *(PR A: the new protocols and dimensions split comparison series correctly; the `non_comparable` presentation is WP6.4.)*
 - [ ] Assessment history shows baseline/latest/change/comparability.
 - [ ] Normalized CSV export works.
-- [ ] Diagnostic JSON export retains protocol, trials, canonical observations and provenance.
+- [x] Diagnostic JSON export retains protocol, trials, canonical observations and provenance.
 - [x] Existing cycling tests continue to work without data migration.
-- [ ] No assessment is double-counted as two physical sessions.
+- [x] No assessment is double-counted as two physical sessions.
 - [x] No recommendation-selection authority is added.
 
 ---
@@ -445,6 +445,8 @@ For sprint W/kg and body-mass-relative squat/bench context, reuse ADR-0039 rathe
 
 Do not require duplicate manual weight entry merely to complete an assessment.
 
+*(PR B status: WP3.4 body-mass-relative W/kg and strength ratios are moved to PR C alongside history and progress reporting.)*
+
 ---
 
 # WP4 — Add bundled physical-capital protocols
@@ -461,6 +463,14 @@ The reusable bundled protocols must encode test-specific execution safety withou
 - protocol invalidation remains fail-closed for the explicit rules attached to that immutable revision;
 - an active clinician restriction or other safety constraint reaches Testing through the repository's existing validated constraint/session-execution pathway, not through a new diagnosis/clearance field in assessment evidence;
 - the athlete-specific 13 October 2026 cardiology/CPET checkpoint is execution context for this baseline, not a date hard-coded into a generic protocol.
+
+**PR B safety investigation finding:** `sessionAuthoringService.prepareUnplannedSessionLaunch` validates the session definition and launches an unplanned execution with authority `unplanned_log` without consulting an existing injury, constraint, or clinician-clearance gate. Per architectural constraints, no medical diagnosis or clearance field was invented; protocol-level safety instructions (e.g. rack safeties and spotter requirements) are rendered directly on the Testing ready screen before confirmation.
+
+### PR B review correction — immutable protocol revision 2
+
+PR A published the six physical-capital capture contracts as revision 1. During PR B review, the athlete's active v1.6 October execution document was cross-checked against those immutable revisions and exposed material execution mismatches: the bench pause/two-miss stop rule, the squat's athlete-declared repeatable depth standard, and the cycling sprint's 15–20 minute warm-up, ~5 minute recovery and no-ERG rule. Because ADR-0046 makes a published `MeasurementProtocol` revision immutable, revision 1 is retained byte-for-byte for historical evidence and the bundled October workflow advances to revision 2. Field-test setup details that materially affect repeatability are likewise made explicit in revision 2.
+
+Diagnostic export must enumerate every supported immutable revision and join attempts only to the exact `protocolRef.revision`; familiarization-purpose evidence is stored but is never eligible to become an implicit longitudinal baseline.
 
 ## Primary file
 
@@ -485,11 +495,11 @@ Do not require a split if the code remains readable.
 
 ID:
 
-`strength-bench-press-1rm-r1`
+`strength-bench-press-1rm-r2`
 
 Protocol reference:
 
-`{ id: 'strength-bench-press-1rm', revision: 1 }`
+`{ id: 'strength-bench-press-1rm', revision: 2 }`
 
 Metric:
 
@@ -510,11 +520,11 @@ The runner must not prescribe fixed maximum attempt weights. Attempt selection r
 
 ID:
 
-`strength-back-squat-1rm-r1`
+`strength-back-squat-1rm-r2`
 
 Protocol reference:
 
-`{ id: 'strength-back-squat-1rm', revision: 1 }`
+`{ id: 'strength-back-squat-1rm', revision: 2 }`
 
 Same design principles as bench.
 
@@ -523,9 +533,9 @@ Same design principles as bench.
 **Blocked by:** WP0.1–WP0.2, WP1.1–WP1.2 and WP4.0.
 **Unlocks:** WP5.3 field-power capture.
 
-Definition ID: `field-standing-broad-jump-r1`
+Definition ID: `field-standing-broad-jump-r2`
 
-Protocol reference: `{ id: 'field-standing-broad-jump', revision: 1 }`
+Protocol reference: `{ id: 'field-standing-broad-jump', revision: 2 }`
 
 Three maximal valid attempts after warm-up/familiarization.
 
@@ -536,9 +546,9 @@ Canonical = best valid distance.
 **Blocked by:** WP0.1–WP0.2, WP1.1–WP1.2 and WP4.0.
 **Unlocks:** WP5.3 field-power capture.
 
-Definition ID: `field-wall-touch-cmj-r1`
+Definition ID: `field-wall-touch-cmj-r2`
 
-Protocol reference: `{ id: 'field-wall-touch-cmj', revision: 1 }`
+Protocol reference: `{ id: 'field-wall-touch-cmj', revision: 2 }`
 
 Capture:
 
@@ -553,9 +563,9 @@ If standing reach is treated as trial context rather than a canonical performanc
 **Blocked by:** WP0.1–WP0.2, WP1.1–WP1.2 and WP4.0.
 **Unlocks:** WP5.3 upper-body ballistic-power capture.
 
-Definition ID: `field-seated-medball-chest-throw-3kg-r1`
+Definition ID: `field-seated-medball-chest-throw-3kg-r2`
 
-Protocol reference: `{ id: 'field-seated-medball-chest-throw-3kg', revision: 1 }`
+Protocol reference: `{ id: 'field-seated-medball-chest-throw-3kg', revision: 2 }`
 
 Three maximal valid attempts.
 
@@ -566,9 +576,9 @@ Canonical = best valid distance.
 **Blocked by:** WP0.1–WP0.3, WP1.1–WP1.2 and WP4.0.
 **Unlocks:** WP5.4 cycling-sprint capture without mutating the old 5 s protocol.
 
-Definition ID: `cycling_6s_seated_sprint-r1`
+Definition ID: `cycling_6s_seated_sprint-r2`
 
-Protocol reference: `{ id: 'cycling-6s-seated-sprint', revision: 1 }`
+Protocol reference: `{ id: 'cycling-6s-seated-sprint', revision: 2 }`
 
 Three maximal 6 s seated efforts with long easy recovery.
 
@@ -696,6 +706,8 @@ Do not require duplicate device typing on every trial when unchanged.
 
 The agreed October execution protocol also requires raw videos to be preserved. #897 should not invent a one-off media store to satisfy that operational rule. Until a generic durable attachment/provenance contract is accepted, protocol copy/checklists should remind the athlete to preserve the raw videos outside OV, and the product must not imply that those videos are stored merely because numeric WL Analysis/trial evidence is present. A future attachment reference must be source-scoped and replay-stable rather than an ad hoc filename field.
 
+**PR B follow-up (trial correction integrity):** In `assessmentCaptureService.correctTrial`, if an athlete supersedes a trial (e.g. marking it invalid or practice) such that a previously benchmarked metric now has no valid trials remaining, the service fails closed with an informative error. The candidate trial set is derived in memory first; accepted corrections then use `AssessmentTrialService.commitCorrection` so the superseding trial plus all changed/new canonical observation revisions and heads commit in one Firestore transaction. A stale concurrent head or interrupted write therefore cannot leave the raw correction only partly reflected in canonical benchmarks. An explicit observation benchmark invalidation workflow is still a separate follow-up for intentionally removing the last valid benchmark.
+
 ## WP5.6 Mobile usability
 
 **Blocked by:** WP5.2–WP5.5.
@@ -724,6 +736,8 @@ Required invariant:
 `one physical testing session -> at most one completed-training/history exposure`
 
 This must hold when the structured testing execution and a provider activity both exist.
+
+**PR B reconciliation verification finding:** Traced `matchExecutionsToGarminActivities` in `app/src/sessions/reconciliation.ts`: session executions launched from testing specify modality (`cycling`, `strength`, `field`) and matching same-day Garmin activities within 20m tolerance reconcile to a single exposure. Assessment attempts, trials, and observations write strictly to user subcollections (`assessment_attempts`, `assessment_attempts/{id}/trials`, `metric_observations`) and create zero additional completed workout or occurrence records. Pinned by unit tests in `testingReconciliation.test.ts`.
 
 ---
 

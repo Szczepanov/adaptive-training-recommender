@@ -12,9 +12,22 @@ import {
     assertValidAssessmentTrial,
     assertValidAssessmentTrialSet,
 } from '../observations/assessmentTrials';
-import type { AssessmentAttempt, AssessmentTrial, MeasurementProtocol } from '../observations/models';
-import { sameCanonicalAssessmentTrial } from '../observations/observationCanonical';
-import { assertValidAssessmentAttempt } from '../observations/validation';
+import type {
+    AssessmentAttempt,
+    AssessmentTrial,
+    MeasurementProtocol,
+    MetricObservationHead,
+    MetricObservationRevision,
+} from '../observations/models';
+import {
+    sameCanonicalAssessmentTrial,
+    sameCanonicalObservationRevision,
+} from '../observations/observationCanonical';
+import {
+    assertValidAssessmentAttempt,
+    assertValidMetricObservationHead,
+    assertValidMetricObservationRevision,
+} from '../observations/validation';
 
 function compareTrials(a: AssessmentTrial, b: AssessmentTrial): number {
     return a.ordinal - b.ordinal || a.correctionIndex - b.correctionIndex;
@@ -38,6 +51,14 @@ export class AssessmentTrialService {
 
     private trialRef(userId: string, attemptId: string, trialId: string) {
         return doc(this.db, 'users', userId, 'assessment_attempts', attemptId, 'trials', trialId);
+    }
+
+    private observationHeadRef(userId: string, observationKey: string) {
+        return doc(this.db, 'users', userId, 'metric_observations', observationKey);
+    }
+
+    private observationRevisionRef(userId: string, observationKey: string, revision: number) {
+        return doc(this.db, 'users', userId, 'metric_observations', observationKey, 'revisions', String(revision));
     }
 
     private assertAttemptBinding(attempt: AssessmentAttempt, attemptId: string, protocol: MeasurementProtocol): void {
@@ -109,6 +130,177 @@ export class AssessmentTrialService {
     async createTrial(userId: string, protocol: MeasurementProtocol, trial: AssessmentTrial): Promise<AssessmentTrial> {
         const [stored] = await this.createTrials(userId, protocol, trial.assessmentAttemptId, [trial]);
         return stored;
+    }
+
+    /**
+     * ADR-0046 correction commit boundary. The superseding raw trial and every canonical
+     * observation revision affected by it commit in one Firestore transaction. A stale
+     * concurrent head or interrupted request therefore cannot leave raw evidence ahead of
+     * only some of its derived benchmark heads.
+     */
+    async commitCorrection(
+        userId: string,
+        protocol: MeasurementProtocol,
+        trial: AssessmentTrial,
+        observationRevisions: readonly MetricObservationRevision[],
+    ): Promise<void> {
+        assertValidAssessmentTrial(trial, protocol);
+        if (trial.correctionIndex < 1 || !trial.supersedesTrialId || !trial.correctionReason) {
+            throw new Error('Atomic correction commit requires a superseding trial with a correction reason');
+        }
+
+        const seenObservationKeys = new Set<string>();
+        for (const revision of observationRevisions) {
+            assertValidMetricObservationRevision(revision);
+            if (revision.assessmentAttemptId !== trial.assessmentAttemptId) {
+                throw new Error(`Observation ${revision.observationKey} belongs to another assessment attempt`);
+            }
+            if (revision.protocolRef.id !== protocol.id || revision.protocolRef.revision !== protocol.revision) {
+                throw new Error(`Observation ${revision.observationKey} is bound to another protocol revision`);
+            }
+            if (seenObservationKeys.has(revision.observationKey)) {
+                throw new Error(`Duplicate observation correction in commit: ${revision.observationKey}`);
+            }
+            seenObservationKeys.add(revision.observationKey);
+        }
+
+        await runTransaction(this.db, async transaction => {
+            const attemptRef = this.attemptRef(userId, trial.assessmentAttemptId);
+            const trialRef = this.trialRef(userId, trial.assessmentAttemptId, trial.id);
+            const supersededRef = this.trialRef(userId, trial.assessmentAttemptId, trial.supersedesTrialId!);
+
+            const attemptSnapshot = await transaction.get(attemptRef);
+            if (!attemptSnapshot.exists()) {
+                throw new Error(`Assessment attempt ${trial.assessmentAttemptId} does not exist`);
+            }
+            const attempt = attemptSnapshot.data() as AssessmentAttempt;
+            this.assertAttemptBinding(attempt, trial.assessmentAttemptId, protocol);
+            assertAssessmentTrialWriteAllowed(attempt, trial);
+
+            // Firestore transactions require reads before writes and retry when a read changes.
+            const trialSnapshot = await transaction.get(trialRef);
+            const supersededSnapshot = await transaction.get(supersededRef);
+            const observationSnapshots = await Promise.all(observationRevisions.map(async revision => {
+                const headRef = this.observationHeadRef(userId, revision.observationKey);
+                const revisionRef = this.observationRevisionRef(userId, revision.observationKey, revision.revision);
+                const headSnapshot = await transaction.get(headRef);
+                const revisionSnapshot = await transaction.get(revisionRef);
+                return { revision, headRef, revisionRef, headSnapshot, revisionSnapshot };
+            }));
+
+            if (!supersededSnapshot.exists()) {
+                throw new Error(`Superseded trial ${trial.supersedesTrialId} does not exist`);
+            }
+
+            let shouldWriteTrial = true;
+            if (trialSnapshot.exists()) {
+                const existingTrial = trialSnapshot.data() as AssessmentTrial;
+                if (!sameCanonicalAssessmentTrial(existingTrial, trial)) {
+                    throw new Error(`Trial ${trial.id} already exists with different content; correction chain diverged`);
+                }
+                shouldWriteTrial = false;
+            }
+
+            const initialWrites: Array<{
+                revision: MetricObservationRevision;
+                head: MetricObservationHead;
+                headRef: ReturnType<AssessmentTrialService['observationHeadRef']>;
+                revisionRef: ReturnType<AssessmentTrialService['observationRevisionRef']>;
+            }> = [];
+            const correctionWrites: Array<{
+                revision: MetricObservationRevision;
+                headRef: ReturnType<AssessmentTrialService['observationHeadRef']>;
+                revisionRef: ReturnType<AssessmentTrialService['observationRevisionRef']>;
+            }> = [];
+
+            for (const entry of observationSnapshots) {
+                const { revision, headRef, revisionRef, headSnapshot, revisionSnapshot } = entry;
+
+                if (revision.revision === 1) {
+                    if (revision.supersedesRevision !== undefined) {
+                        throw new Error('Initial observation correction commit cannot declare supersedesRevision');
+                    }
+                    if (headSnapshot.exists() || revisionSnapshot.exists()) {
+                        if (!headSnapshot.exists() || !revisionSnapshot.exists()) {
+                            throw new Error(`Observation ${revision.observationKey} has an incomplete head/revision chain`);
+                        }
+                        const head = headSnapshot.data() as MetricObservationHead;
+                        const existingRevision = revisionSnapshot.data() as MetricObservationRevision;
+                        assertValidMetricObservationHead(head);
+                        assertValidMetricObservationRevision(existingRevision);
+                        if (
+                            head.headRevision !== 1
+                            || head.observationKey !== revision.observationKey
+                            || head.metricId !== revision.metricId
+                            || head.assessmentAttemptId !== revision.assessmentAttemptId
+                            || !sameCanonicalObservationRevision(existingRevision, revision)
+                        ) {
+                            throw new Error(`Observation ${revision.observationKey} already exists with different or newer content`);
+                        }
+                        continue;
+                    }
+
+                    const head: MetricObservationHead = {
+                        observationKey: revision.observationKey,
+                        assessmentAttemptId: revision.assessmentAttemptId,
+                        metricId: revision.metricId,
+                        headRevision: 1,
+                        createdAt: revision.createdAt,
+                        updatedAt: revision.createdAt,
+                    };
+                    assertValidMetricObservationHead(head);
+                    initialWrites.push({ revision, head, headRef, revisionRef });
+                    continue;
+                }
+
+                if (revision.supersedesRevision === undefined || !revision.correctionReason) {
+                    throw new Error('Observation correction requires supersedesRevision and correctionReason');
+                }
+                if (!headSnapshot.exists()) {
+                    throw new Error(`Observation ${revision.observationKey} does not exist`);
+                }
+                const head = headSnapshot.data() as MetricObservationHead;
+                assertValidMetricObservationHead(head);
+                if (
+                    head.observationKey !== revision.observationKey
+                    || head.metricId !== revision.metricId
+                    || head.assessmentAttemptId !== revision.assessmentAttemptId
+                ) {
+                    throw new Error('Correction cannot change logical observation identity');
+                }
+
+                if (revisionSnapshot.exists()) {
+                    const existingRevision = revisionSnapshot.data() as MetricObservationRevision;
+                    assertValidMetricObservationRevision(existingRevision);
+                    if (
+                        head.headRevision !== revision.revision
+                        || !sameCanonicalObservationRevision(existingRevision, revision)
+                    ) {
+                        throw new Error(`Observation revision ${revision.revision} already exists with different or newer content`);
+                    }
+                    continue;
+                }
+
+                const expectedRevision = head.headRevision + 1;
+                if (revision.revision !== expectedRevision || revision.supersedesRevision !== head.headRevision) {
+                    throw new Error(`Stale correction: expected revision ${expectedRevision} superseding ${head.headRevision}`);
+                }
+                correctionWrites.push({ revision, headRef, revisionRef });
+            }
+
+            if (shouldWriteTrial) transaction.set(trialRef, trial);
+            for (const write of initialWrites) {
+                transaction.set(write.revisionRef, write.revision);
+                transaction.set(write.headRef, write.head);
+            }
+            for (const write of correctionWrites) {
+                transaction.set(write.revisionRef, write.revision);
+                transaction.update(write.headRef, {
+                    headRevision: write.revision.revision,
+                    updatedAt: write.revision.createdAt,
+                });
+            }
+        });
     }
 
     async getTrial(
