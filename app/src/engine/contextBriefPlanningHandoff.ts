@@ -41,6 +41,7 @@ import {
 import { renderSensorEvidence } from './contextBriefSensorEvidence';
 import { synthesizeRecoveryEvidence } from './contextBriefRecoverySynthesis';
 import { briefContractHeaderLines } from './contextBriefContract';
+import type { PerformedExposureFact } from './performedTrainingFacts';
 
 export const UPCOMING_CONTEXT_DAYS = 7;
 export const RECOVERY_TIMELINE_DAYS = 7;
@@ -95,6 +96,9 @@ export interface ContextBriefPlanningHandoffInput {
      * It is planning authority for D-1, not a second source of performed-training truth. */
     yesterdayExternalSession?: UpcomingExternalPlanSession | null;
     restDirectiveYesterday?: BriefRestDirective | null;
+    /** Canonical physical sessions, including structured-only and incomplete executions. */
+    performedFacts?: readonly PerformedExposureFact[] | null;
+    activitiesReadable?: boolean;
     unavailableSources: readonly string[];
     preset?: BriefWindowPreset;
     /** Issue #811. When absent it is derived from `preset`; an absent preset keeps the
@@ -252,6 +256,58 @@ function deriveAdherenceDelta(
     return { delta: 'ON_PLAN', alert: null };
 }
 
+/** A provider row is evidence for a canonical session only when its stable source ref
+ * is attached to that occurrence. Any ambiguity makes the D-1 verdict incomplete. */
+function morningAdherenceEvidence(
+    facts: readonly PerformedExposureFact[],
+    allFacts: readonly PerformedExposureFact[],
+    activities: readonly NormalizedGarminActivity[],
+    yesterdayDate: string,
+): { matched: NormalizedGarminActivity[]; unmatched: NormalizedGarminActivity[]; reason: string | null } {
+    const byId = new Map(activities.map(activity => [activity.activityId, activity]));
+    const refCounts = new Map<string, number>();
+    for (const id of allFacts.flatMap(fact => fact.providerActivityIds ?? [])) {
+        refCounts.set(id, (refCounts.get(id) ?? 0) + 1);
+    }
+    const matched: NormalizedGarminActivity[] = [];
+    const selectedIds = new Set<string>();
+    // An unfinished structured execution is the most actionable limitation: report it
+    // even if an earlier fact also lacks provider linkage.
+    const incomplete = facts.find(fact => fact.executionState && fact.executionState !== 'completed');
+    let reason: string | null = incomplete
+        ? `structured execution ${incomplete.executionState!.replace('_', ' ')}; completed dose is unknown`
+        : null;
+    for (const fact of facts) {
+        const ids = fact.providerActivityIds;
+        if (!ids || ids.length !== 1) {
+            reason ??= ids?.length === 0
+                ? 'canonical session has no linked provider intensity evidence'
+                : 'canonical provider linkage is absent or ambiguous';
+            continue;
+        }
+        const activity = byId.get(ids[0]);
+        if (!activity) {
+            reason ??= 'linked provider activity was not available in the fetched evidence';
+            continue;
+        }
+        if ((refCounts.get(activity.activityId) ?? 0) > 1 || selectedIds.has(activity.activityId)) {
+            reason ??= 'one provider row is linked to multiple canonical sessions';
+            continue;
+        }
+        if (canonicalActivityIntensityRank(activity) === null || activity.durationMin === null || activity.durationMin === undefined) {
+            reason ??= 'linked provider intensity or duration evidence is insufficient';
+        }
+        matched.push(activity);
+        selectedIds.add(activity.activityId);
+    }
+    const otherDateIds = new Set(allFacts.filter(fact => fact.localDate !== yesterdayDate)
+        .flatMap(fact => fact.providerActivityIds ?? []));
+    const unmatched = activities.filter(activity => activity.date === yesterdayDate
+        && !selectedIds.has(activity.activityId) && !otherDateIds.has(activity.activityId));
+    if (unmatched.length > 0) reason ??= 'unmatched Garmin rows may be additional or unreconciled physical sessions';
+    return { matched, unmatched, reason };
+}
+
 function mapMorningRecoveryPattern(pattern: ReturnType<typeof synthesizeRecoveryEvidence>['pattern']): MorningRecoveryPattern {
     switch (pattern) {
         case 'CONVERGENT_REASSURING': return 'CONVERGENT_REASSURING';
@@ -391,7 +447,7 @@ function renderDataHandoff(input: ContextBriefPlanningHandoffInput, today: Today
 
     if (input.unavailableSources.length > 0) {
         lines.push('');
-        lines.push(`> **DATA INCOMPLETE:** could not reliably read: ${input.unavailableSources.join('; ')}. Absence from the affected sections means "unknown", not "none". Do not fill those gaps with assumptions.`);
+        lines.push(`> **DATA INCOMPLETE:** missing or unreadable source context: ${input.unavailableSources.join('; ')}. Absence from the affected sections means "unknown", not "none". Do not fill those gaps with assumptions.`);
     }
 
     // The resolved authority block precedes all descriptive telemetry: this handoff is
@@ -626,7 +682,23 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
     const activeSnapshot = todaySnapshot ?? latestSnapshot;
 
     const todayCheckin = input.checkins.find(c => c.date === targetDate);
-    const yesterdayActivities = input.activities.filter(a => a.date === yesterdayDate);
+    const sameDateProviderIds = new Set((input.performedFacts ?? [])
+        .filter(fact => fact.localDate === yesterdayDate)
+        .flatMap(fact => fact.providerActivityIds ?? []));
+    const otherDateProviderIds = new Set((input.performedFacts ?? [])
+        .filter(fact => fact.localDate !== yesterdayDate)
+        .flatMap(fact => fact.providerActivityIds ?? [])
+        .filter(id => !sameDateProviderIds.has(id)));
+    const crossDateProviderRows = input.activities.filter(activity => activity.date === yesterdayDate
+        && otherDateProviderIds.has(activity.activityId));
+    const yesterdayActivities = input.activities.filter(a => a.date === yesterdayDate
+        && !otherDateProviderIds.has(a.activityId))
+        .sort((a, b) => a.activityId.localeCompare(b.activityId));
+    const yesterdayFacts = input.performedFacts?.filter(fact => fact.localDate === yesterdayDate)
+        .sort((a, b) => a.performedOccurrenceId.localeCompare(b.performedOccurrenceId));
+    const adherenceEvidence = yesterdayFacts
+        ? morningAdherenceEvidence(yesterdayFacts, input.performedFacts ?? [], input.activities, yesterdayDate)
+        : null;
     const todayRecommendation = latestRecommendationFor(input.recommendations, targetDate);
     const yesterdayRecommendation = latestRecommendationFor(input.recommendations, yesterdayDate);
     const todayAuthority = resolveTodayAuthority(input);
@@ -649,7 +721,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
     ];
 
     if (input.unavailableSources.length > 0) {
-        lines.push('', `> **DATA INCOMPLETE:** could not reliably read: ${input.unavailableSources.join('; ')}. Absence from affected sections means "unknown", not "none".`);
+        lines.push('', `> **DATA INCOMPLETE:** missing or unreadable source context: ${input.unavailableSources.join('; ')}. Absence from affected sections means "unknown", not "none".`);
     }
 
     lines.push('', todayAuthority.block);
@@ -764,8 +836,21 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         lines.push('- Prescribed: No app/imported prescription recorded for yesterday.');
     }
 
-    if (yesterdayActivities.length > 0) {
-        for (const act of yesterdayActivities) {
+    if (yesterdayFacts?.length) {
+        for (const fact of yesterdayFacts) {
+            const sources = fact.sourceKinds.map(source => source === 'provider_activity' ? 'Garmin' : source === 'structured_execution' ? 'structured' : 'legacy strength').join(' + ');
+            const completion = fact.startedAt && !fact.endedAt ? ' · started, completion unrecorded' : '';
+            const executionState = fact.executionState ? ` · execution ${fact.executionState.replace('_', ' ')}` : '';
+            lines.push(`- Recorded training (canonical): ${fact.modality} · ${fact.durationMin ?? 'duration unrecorded'}${fact.durationMin === undefined ? '' : ' min'} · ${sources || 'source unknown'} · identity ${fact.confidence}${executionState}${completion}`);
+        }
+        if (adherenceEvidence?.matched.length) lines.push(`- Garmin detail: ${adherenceEvidence.matched.length} linked provider row(s), observational evidence for the canonical sessions above; not additional workouts.`);
+        for (const activity of adherenceEvidence?.unmatched.slice(0, 6) ?? []) {
+            lines.push(`- Unmatched Garmin row: ${activity.date} · activity ${activity.activityId} · ${formatActivityType(activity.type)} · ${activity.durationMin ?? 'duration unknown'} min; identity unresolved, excluded from canonical totals.`);
+        }
+        if ((adherenceEvidence?.unmatched.length ?? 0) > 6) lines.push(`- ${adherenceEvidence!.unmatched.length - 6} additional unmatched Garmin rows omitted (morning cap 6).`);
+    } else if (yesterdayActivities.length > 0) {
+        lines.push('- Canonical occurrence unavailable or not reconciled; Garmin-only fallback may omit structured work or duplicate provider recordings.');
+        for (const act of yesterdayActivities.slice(0, 6)) {
             const typeLabel = formatActivityType(act.type);
             const loadStr = act.activityTrainingLoad != null ? ` · Load ${round(act.activityTrainingLoad, 1)}` : '';
             const teStr = act.trainingEffectAerobic != null ? ` · Aerobic TE ${round(act.trainingEffectAerobic, 1)}` : '';
@@ -777,8 +862,22 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
             if (pSum.length > 0) lines.push(`  - Power summary: ${pSum.join(' · ')}`);
             lines.push(...renderMorningQualityActivityTelemetry(act));
         }
+        if (yesterdayActivities.length > 6) lines.push(`- ${yesterdayActivities.length - 6} additional Garmin fallback rows omitted (morning cap 6).`);
+    } else if (input.performedFacts === null) {
+        lines.push('- Recorded training: unknown — canonical occurrence read failed; no Garmin rows were available as fallback.');
+    } else if (input.activitiesReadable === false) {
+        lines.push('- Recorded training: unknown — canonical occurrence read found no D-1 occurrence, but provider activity evidence was unreadable; provider-only training may be missing.');
     } else {
         lines.push('- Recorded training: No recorded sessions in this window.');
+    }
+
+    if (crossDateProviderRows.length > 0) {
+        lines.push(`- Provider-local D-1 row(s) assigned to another canonical date: ${crossDateProviderRows.length}; excluded from D-1 training and adherence. ${crossDateProviderRows.slice(0, 6).map(activity => activity.activityId).join(', ')}${crossDateProviderRows.length > 6 ? `; ${crossDateProviderRows.length - 6} additional IDs omitted` : ''}.`);
+    }
+
+    if (yesterdayFacts?.length) {
+        for (const act of adherenceEvidence?.matched.slice(0, 6) ?? []) lines.push(...renderMorningQualityActivityTelemetry(act));
+        if ((adherenceEvidence?.matched.length ?? 0) > 6) lines.push(`- ${adherenceEvidence!.matched.length - 6} additional linked Garmin detail rows omitted (morning cap 6).`);
     }
 
     if (todayCheckin?.physicalWork?.performed) {
@@ -789,15 +888,23 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
 
     const importedAuthorityYesterday = input.yesterdayExternalSession != null
         || input.restDirectiveYesterday != null;
-    const adherenceDelta = deriveAdherenceDelta(
+    const adherenceDelta = input.performedFacts === null || input.activitiesReadable === false
+        || (adherenceEvidence?.reason != null)
+        ? null : deriveAdherenceDelta(
         importedAuthorityYesterday ? null : yesterdayRecommendation,
         input.yesterdayExternalSession ?? null,
         input.restDirectiveYesterday ?? null,
-        yesterdayActivities,
+        adherenceEvidence?.matched ?? yesterdayActivities,
     );
     if (adherenceDelta) {
         lines.push(`- Adherence Delta: **${adherenceDelta.delta}**`);
         if (adherenceDelta.alert) lines.push(`> **⚠️ ADHERENCE ALERT:** ${adherenceDelta.alert}`);
+    } else if (input.performedFacts === null) {
+        lines.push('- Adherence Delta: not computable — canonical performed-training facts unreadable.');
+    } else if (input.activitiesReadable === false) {
+        lines.push('- Adherence Delta: not computable — provider activity evidence unreadable; canonical occurrence read succeeded, but provider-only/additional work and intensity evidence may be missing.');
+    } else if (adherenceEvidence?.reason) {
+        lines.push(`- Adherence Delta: insufficient evidence — ${adherenceEvidence.reason}.`);
     } else if (input.recommendationsReadable) {
         lines.push('- Adherence Delta: not computable — no executable app/imported prescription recorded for yesterday.');
     } else {

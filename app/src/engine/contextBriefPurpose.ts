@@ -41,7 +41,7 @@ export function briefPurposeFor(preset: BriefWindowPreset): BriefPurpose {
  * locate sections by title (see `findSectionHeading`), never by number. */
 export const SECTION_TITLE = {
     objective: 'Objective recovery (wearable)',
-    training: 'Completed training (recorded by the wearable)',
+    training: 'Completed training (canonical performed occurrences)',
     subjective: 'Subjective reports (self-scored each morning, 1–10)',
     adherence: 'Recommendation feedback (athlete responses — not plan execution)',
     intent: 'Goals & training intent',

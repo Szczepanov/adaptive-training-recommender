@@ -11,7 +11,7 @@
  * Does not re-match sources. ADR-0034 canonical occurrence is the single deduplication authority.
  */
 import type { SessionTemplate, EvidenceTier, NormalizedGarminActivity, CompletedTrainingEvent, DailyRecommendation } from './models';
-import type { SessionExecution } from '../sessions/models';
+import type { SessionExecution, SessionExecutionState } from '../sessions/models';
 import type { CoverageSetId, PlanCoverageKey, CoverageSetDescriptor } from '../workouts/event-plan';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { grantsPowerExposureCredit } from '../workouts/powerExposure';
@@ -31,6 +31,10 @@ export interface PerformedExposureFact {
     localDate: string;
     startedAt?: string;
     endedAt?: string;
+    /** Brief/export provenance only; omitted from default decision snapshots and hashes. */
+    executionState?: SessionExecutionState;
+    /** Brief/export source linkage; omitted from decision snapshots unless explicitly requested. */
+    providerActivityIds?: string[];
     durationMin?: number;
     modality: SessionTemplate['modality'] | 'Unknown';
     category?: SessionTemplate['category'];
@@ -148,6 +152,7 @@ export interface HydratedOccurrenceContext {
         category?: SessionTemplate['category'];
         startedAt?: string;
         endedAt?: string;
+        executionState?: SessionExecutionState;
         durationMin?: number;
         isLegacyStrength?: boolean;
         workoutVariantId?: WorkoutVariant['id'];

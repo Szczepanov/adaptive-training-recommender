@@ -95,6 +95,16 @@ describe('contextBrief canonical training table (#894)', () => {
         expect(text).toContain('Discipline volume: Cycling: 2 sessions (60 known min; 1 duration unknown)');
     });
 
+    it('labels abandoned and in-progress structured occurrences distinctly', () => {
+        const facts = [
+            fact(D1, { executionState: 'abandoned', startedAt: `${D1}T08:00:00+02:00`, endedAt: undefined }),
+            fact(D2, { executionState: 'in_progress', startedAt: `${D2}T08:00:00+02:00`, endedAt: undefined }),
+        ];
+        const text = buildContextBrief(withFacts(facts, { purpose: 'planning' }));
+        expect(text).toContain('abandoned structured execution; started, completion unrecorded');
+        expect(text).toContain('structured execution in progress; started, completion unrecorded');
+    });
+
     it('keeps two legitimate same-day canonical workouts distinct', () => {
         const facts = [
             fact(D1, { performedOccurrenceId: 'occ-am', durationMin: 50 }),
@@ -166,5 +176,19 @@ describe('contextBrief canonical training table (#894)', () => {
     it('empty facts with no raw records still report an empty window', () => {
         const emptied = withFacts([], { purpose: 'planning', activities: [] });
         expect(buildContextBrief(emptied)).toContain('No recorded sessions in this window (canonical performed-training facts).');
+    });
+
+    it.each(['planning', 'diagnostic'] as const)('%s does not call an unreadable provider window empty', purpose => {
+        const unreadable = withFacts([], {
+            purpose,
+            activities: [],
+            exposureLedger: {
+                activitiesReadable: false, recommendationsReadable: true,
+                activityOverrides: null, performedFacts: [], plannedSessions: null,
+            },
+        });
+        const text = buildContextBrief(unreadable);
+        expect(text).toContain('completed training is unknown, not zero.');
+        expect(text).not.toContain('No recorded sessions in this window');
     });
 });

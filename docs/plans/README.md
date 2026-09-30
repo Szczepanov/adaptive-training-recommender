@@ -51,6 +51,13 @@ a delivery queue.
 
 ## Current plans
 
+The implementation plan for GitHub issue [#894](https://github.com/Szczepanov/adaptive-training-recommender/issues/894)
+(versioned Context Brief export contract) is
+[`2026-09-29-issue-894-context-brief-contract.md`](./2026-09-29-issue-894-context-brief-contract.md) — **In progress**.
+Contract identity/versioning and planning/diagnostic canonical completed-training rows are already present;
+the implementation now covers morning canonical adherence, source-state/currency, purpose budgets and
+service-built artifact regressions. `make verify` passes; PR delivery remains in progress.
+
 The combined delivery record for GitHub issues [#459](https://github.com/Szczepanov/adaptive-training-recommender/issues/459),
 [#460](https://github.com/Szczepanov/adaptive-training-recommender/issues/460), and
 [#461](https://github.com/Szczepanov/adaptive-training-recommender/issues/461) is

@@ -286,6 +286,14 @@ function prescribedTargetText(target: { kind: string; value?: number; low?: numb
     return target.value === undefined ? target.kind : `${target.kind} ${fmt(target.value)}`;
 }
 
+function withinSessionEvidence(items: readonly { identitySource?: string; evidenceConfidence?: 'high' | 'moderate' | 'low' }[]): string {
+    const sources = [...new Set(items.map(item => item.identitySource ?? 'unreported identity'))].sort().join(', ');
+    const confidences = items.map(item => item.evidenceConfidence);
+    const confidence = confidences.includes(undefined) ? 'ungraded'
+        : confidences.includes('low') ? 'low' : confidences.includes('moderate') ? 'moderate' : 'high';
+    return `within-session comparison; source ${sources}; evidence confidence ${confidence}; cross-session comparability not assessed`;
+}
+
 function intervalLines(feature: IntervalRepetition): string[] {
     if (feature.state !== 'available') return [];
     const durations = feature.intervals.map(item => item.durationSeconds);
@@ -322,7 +330,7 @@ function intervalLines(feature: IntervalRepetition): string[] {
             `#${index + 1} ${fmt(item.firstThirdPowerWatts as number)}/${fmt(item.middleThirdPowerWatts as number)}/${fmt(item.lastThirdPowerWatts as number)} W`))}`);
     }
     if (feature.hrNote) lines.push(`- HR note: ${feature.hrNote}`);
-    lines.push(`- First→last work interval: ${signedPct(feature.firstToLastPct)} · spread ${fmt(feature.spreadPct, 1)}% of mean`);
+    lines.push(`- First→last work interval: ${signedPct(feature.firstToLastPct)} · spread ${fmt(feature.spreadPct, 1)}% of mean · ${withinSessionEvidence(feature.intervals)}`);
     lines.push(`- Response: ${PATTERN_TEXT[feature.pattern].replace('{n}', String(feature.intervals.length))}`);
     return lines;
 }
@@ -343,7 +351,7 @@ function sprintLines(feature: SprintRepetition): string[] {
     if (feature.sprints.some(item => item.maxCadenceRpm !== undefined)) {
         lines.push(`- Peak cadence: ${boundedValues(feature.sprints.map(item => item.maxCadenceRpm === undefined ? '—' : fmt(item.maxCadenceRpm)))} rpm`);
     }
-    lines.push(`- Sprint fade: last vs best ${signedPct(feature.lastToBestPct)} · ${feature.pattern === 'late_fade' ? 'late fade' : 'repeatable'}`);
+    lines.push(`- Sprint fade: last vs best ${signedPct(feature.lastToBestPct)} · ${feature.pattern === 'late_fade' ? 'late fade' : 'repeatable'} · ${withinSessionEvidence(feature.sprints)}`);
     return lines;
 }
 
@@ -371,7 +379,10 @@ function efficiencyLines(feature: EfficiencyComparison): string[] {
 function decouplingLines(feature: Decoupling): string[] {
     if (feature.state !== 'available') return [];
     const note = feature.hrNote ? ` · ${feature.hrNote}` : '';
-    return [`- Pw:HR decoupling (first vs second half): ${fmt(feature.decouplingPct, 1)}%${note}`];
+    const confidence = feature.observational
+        ? 'low (observational HR)'
+        : 'cannot be graded from HR authority and half aggregates alone; sensor continuity and environmental comparability were not assessed';
+    return [`- Pw:HR decoupling (first vs second half): ${fmt(feature.decouplingPct, 1)}% · within-session comparison; source ${feature.source}; evidence confidence ${confidence}; cross-session comparability not assessed${note}`];
 }
 
 function topSetText(set: { topWeightKg?: number; topReps?: number }): string {
@@ -423,7 +434,7 @@ function nextDayLines(feature: NextDayResponse): string[] {
     for (const response of feature.tissueResponses) {
         parts.push(`${response.region} ${response.reaction ?? 'reaction not recorded'} (${response.linkedToSession ? 'linked to this session' : 'not linked to this session'})`);
     }
-    return [`- Next morning (observational, not proof the session caused it): ${parts.join(' · ')}`];
+    return [`- Next morning (observational, not proof the session caused it): ${parts.join(' · ')} · day-to-day self-report comparison on the same rating scale; confidence cannot be graded from check-ins alone`];
 }
 
 function headerLine(activity: NormalizedGarminActivity): string {
@@ -449,16 +460,25 @@ function powerLine(activity: NormalizedGarminActivity): string[] {
 
 export function renderKeySessionSummaries(summaries: readonly KeySessionSummary[], context: ResponseContext): string {
     if (summaries.length === 0) return '';
+    const limit = context.diagnostic ? 30 : 12;
+    const maxChars = context.diagnostic ? 18_000 : 12_000;
     const lines = [
         '### Training-response features (derived, display-only)',
         '',
         `Derived from bounded provider telemetry and canonical structured occurrence/set evidence when available, with legacy laps and check-ins as fallbacks; prior sessions are searched only in the fetched ${context.historyStart}–${context.asOfDate} evidence window. `
         + 'Features with missing or incomparable evidence are omitted or marked insufficient, never estimated. These features have no recommendation authority.',
     ];
-    for (const summary of summaries) {
-        lines.push(
+    const blocks: string[] = [];
+    let usedChars = lines.join('\n').length;
+    let omittedForBudget = 0;
+    for (const summary of [...summaries.slice(-limit)].reverse()) {
+        const lineage = summary.evidence
+            ? `canonical occurrence ${summary.evidence.performedOccurrenceId ?? 'unavailable'}; identity ${summary.evidence.identity.level}; provider completeness ${summary.evidence.sourceCompleteness.providerActivities}`
+            : summary.activity ? `Garmin provider activity ${summary.activity.activityId}; canonical identity unavailable` : 'source unavailable';
+        const block: string[] = [
             '',
             summary.activity ? headerLine(summary.activity) : structuredHeaderLine(summary.evidence!),
+            `- Evidence lineage: ${lineage}; ${summary.activity?.activityResponse ? `telemetry derivation ${summary.activity.activityResponse.derivationVersion}` : 'structured/provider summary only'}. Display-only; comparison confidence is stated on each comparable feature.`,
             ...(summary.activity ? powerLine(summary.activity) : []),
             ...intervalLines(summary.intervals),
             ...sprintLines(summary.sprints),
@@ -466,9 +486,9 @@ export function renderKeySessionSummaries(summaries: readonly KeySessionSummary[
             ...efficiencyLines(summary.efficiency),
             ...strengthLines(summary.strength, isExplicitStructuredStrengthEvidence(summary.evidence)),
             ...nextDayLines(summary.nextDay),
-        );
+        ];
         if (summary.providerSelectionFailure) {
-            lines.push(summary.providerSelectionFailure === 'ambiguous'
+            block.push(summary.providerSelectionFailure === 'ambiguous'
                 ? '- Provider response: insufficient evidence — multiple recordings represent this occurrence and no deterministic primary source is available'
                 : '- Provider response: insufficient evidence — provider activity evidence is only partially available');
         }
@@ -481,19 +501,29 @@ export function renderKeySessionSummaries(summaries: readonly KeySessionSummary[
                     .slice(0, 8);
                 const sourceKinds = [...evidence.identity.sourceKinds].sort().slice(0, 8);
                 const omittedSources = Math.max(0, evidence.measuredSources.length - sources.length);
-                lines.push(`- Diagnostic provenance: occurrence ${evidence.performedOccurrenceId ?? 'unavailable'}; identity ${evidence.identity.level}; source kinds ${sourceKinds.join(', ') || 'unknown'}; sources ${sources.join(', ') || 'none'}${omittedSources ? `; ${omittedSources} additional sources omitted` : ''}; provider selection ${evidence.sourceCompleteness.providerActivities}`);
+                block.push(`- Diagnostic provenance: occurrence ${evidence.performedOccurrenceId ?? 'unavailable'}; identity ${evidence.identity.level}; source kinds ${sourceKinds.join(', ') || 'unknown'}; sources ${sources.join(', ') || 'none'}${omittedSources ? `; ${omittedSources} additional sources omitted` : ''}; provider selection ${evidence.sourceCompleteness.providerActivities}`);
             }
             if (summary.efficiency.state === 'available') {
                 const decision = summary.efficiency.decision;
                 if (decision) {
-                    lines.push(`- Diagnostic comparison: selected prior ${summary.efficiency.priorActivityId} (${summary.efficiency.priorDate}); ${decision.featureFamily} ${decision.state} via ${decision.matchBasis ?? 'none'}; occurrence ${decision.provenance.occurrenceIdentity}; protocol ${decision.provenance.protocolIdentity}; measurement ${decision.provenance.measurementSensorEvidence}; threshold ${decision.provenance.thresholdUnitEvidence}; venue/environment ${decision.provenance.venueEnvironmentEvidence}; source completeness ${decision.provenance.sourceCompleteness}; limitations ${decision.limitations.join(', ') || 'none'}`);
+                    block.push(`- Diagnostic comparison: selected prior ${summary.efficiency.priorActivityId} (${summary.efficiency.priorDate}); ${decision.featureFamily} ${decision.state} via ${decision.matchBasis ?? 'none'}; occurrence ${decision.provenance.occurrenceIdentity}; protocol ${decision.provenance.protocolIdentity}; measurement ${decision.provenance.measurementSensorEvidence}; threshold ${decision.provenance.thresholdUnitEvidence}; venue/environment ${decision.provenance.venueEnvironmentEvidence}; source completeness ${decision.provenance.sourceCompleteness}; limitations ${decision.limitations.join(', ') || 'none'}`);
                 }
             } else if (summary.efficiency.kind === 'no_comparable' && summary.efficiency.rejected.length > 0) {
                 const rejected = summary.efficiency.rejected.slice(0, 8);
-                lines.push(`- Diagnostic rejected comparisons: ${rejected.join('; ')}${summary.efficiency.rejectedOmittedCount ? `; ${summary.efficiency.rejectedOmittedCount} additional candidate(s) omitted` : ''}`);
+                block.push(`- Diagnostic rejected comparisons: ${rejected.join('; ')}${summary.efficiency.rejectedOmittedCount ? `; ${summary.efficiency.rejectedOmittedCount} additional candidate(s) omitted` : ''}`);
             }
         }
+        const renderedBlock = block.join('\n');
+        if (usedChars + renderedBlock.length > maxChars) {
+            omittedForBudget += 1;
+            continue;
+        }
+        blocks.push(renderedBlock);
+        usedChars += renderedBlock.length;
     }
+    lines.push(...blocks.reverse());
+    if (omittedForBudget > 0) lines.push('', `- ${omittedForBudget} response summaries omitted (aggregate ${context.diagnostic ? 'diagnostic' : 'planning'} response cap ${maxChars} characters).`);
+    if (summaries.length > limit) lines.push('', `- ${summaries.length - limit} earlier response summaries omitted (${context.diagnostic ? 'diagnostic' : 'planning'} cap ${limit}).`);
     const omittedStructuredOnlyCount = summaries.reduce((count, summary) => count + (summary.omittedStructuredOnlyCount ?? 0), 0);
     if (omittedStructuredOnlyCount > 0) lines.push('', `- ${omittedStructuredOnlyCount} additional structured-only strength occurrences omitted`);
     return lines.join('\n');

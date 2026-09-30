@@ -27,7 +27,7 @@ Window: 2026-08-07 → 2026-08-20 (14 days).
 
 - HRV: 60
 
-## 3. Completed training (recorded by the wearable)
+## 3. Completed training (canonical performed occurrences)
 
 No recorded sessions in this window.
 
