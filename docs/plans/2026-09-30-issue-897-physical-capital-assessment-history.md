@@ -1166,7 +1166,7 @@ This is the first athlete-usable slice.
 - Appendix A: Proposed ADR-0047 (`docs/adr/0047-fixed-load-velocity-assessment-series.md`) evaluating dedicated protocol, companion attempts, and multi-instance keys.
 - Comprehensive unit tests across all new modules and browser E2E (`tests/e2e/testing-physical-capital.pw.ts`).
 
-This closes the user’s “store, export and track” requirement.
+PR C closes the athlete-facing **history + normalized export** slice of “store, export and track”. It does **not** close Issue #897 as a whole: WP6.6 fixed-load velocity and WP8 bounded goal/context consumers remain open unless explicitly rescoped.
 
 ## PR D — bounded feedback-loop integration
 
