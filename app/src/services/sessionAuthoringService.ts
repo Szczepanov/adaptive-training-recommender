@@ -271,7 +271,10 @@ export async function prepareExternalPlanSessionLaunch(
     if (options.useReducedDefinition && !reducedDefinition) {
         throw new Error('A scaled external-plan session requires an exact structured reducedDefinition.');
     }
-    if (options.useReducedDefinition && options.maxDurationMinutes === undefined) {
+    if (options.useReducedDefinition
+        && (options.maxDurationMinutes === undefined
+            || !Number.isFinite(options.maxDurationMinutes)
+            || options.maxDurationMinutes <= 0)) {
         throw new Error('A scaled external-plan launch requires today\'s approved duration ceiling.');
     }
     const definition = options.useReducedDefinition ? reducedDefinition! : externalPlan.session.definition;
