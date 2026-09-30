@@ -72,8 +72,8 @@ export function resolvePlanningContext(
      * through `externalPlacement.ts`; this function performs no placement itself. */
     externalSession: ExternalPlanSession | null = null,
     /** Explicit travel blocks can legitimately make a structured event plan active before
-     * its derived build window, so authority resolution must see the same authored blocks
-     * as trainingIntent. */
+     * its current generated build window, so authority resolution must see the same authored
+     * blocks as trainingIntent. The current D-84 cycling boundary is plan policy, not a mode invariant. */
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
 ): PlanningContext {
     const resolvedProfile = fallbackProfile(profile);
