@@ -128,7 +128,7 @@ test('physical capital assessment: standing broad jump trial capture, checkpoint
 
   // Export diagnostic JSON and assert contents
   const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export assessment evidence (JSON)' }).click();
+  await page.getByRole('button', { name: 'Export physical-capital evidence (JSON)' }).click();
   const download = await downloadPromise;
 
   const stream = await download.createReadStream();
