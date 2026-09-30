@@ -12,6 +12,7 @@ import {
     PERFORMANCE_TEST_DEFINITIONS,
     type PerformanceTestDefinition,
 } from '../observations/performanceTestingCatalog';
+import { PHYSICAL_CAPITAL_PROTOCOL_REVISIONS } from '../observations/physicalCapitalProtocols';
 import type {
     AssessmentAttempt,
     AssessmentTrial,
@@ -80,9 +81,18 @@ export class AssessmentHistoryService {
         userId: string,
         definitions: readonly PerformanceTestDefinition[] = PERFORMANCE_TEST_DEFINITIONS,
     ): Promise<AssessmentHistoryModel> {
-        // Collect distinct protocol IDs and metric IDs
+        // Collect distinct protocol IDs and metric IDs. Include known immutable
+        // historical revisions for the selected bundled protocols so a later protocol
+        // revision cannot make an older metric disappear from History.
         const protocolIds = Array.from(new Set(definitions.map(d => d.protocol.id)));
-        const metricIds = Array.from(new Set(definitions.flatMap(d => d.protocol.metricIds)));
+        const selectedProtocolIds = new Set(protocolIds);
+        const historicalMetricIds = PHYSICAL_CAPITAL_PROTOCOL_REVISIONS
+            .filter(protocol => selectedProtocolIds.has(protocol.id))
+            .flatMap(protocol => protocol.metricIds);
+        const metricIds = Array.from(new Set([
+            ...definitions.flatMap(d => d.protocol.metricIds),
+            ...historicalMetricIds,
+        ]));
 
         // 1. Fetch attempts per protocol ID
         let totalUnreadableAttempts = 0;
