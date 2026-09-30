@@ -110,12 +110,14 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0043: Individualized Rolling Catalog-Load Budget**](./adr/0043-rolling-catalog-load-budget.md) — *Accepted.* Versioned, user-history-derived catalog-load envelope to week-ahead planning.
 * [**ADR-0044: Constraint-Aware Requirement Fulfilment and Bounded Multi-Stimulus Packing**](./adr/0044-constraint-aware-requirement-fulfilment.md) — *Accepted.* Defines the requirement-class boundary for constrained planning while preserving canonical coverage, objective-credit, load and intraday authorities.
 * [**ADR-0045: Athlete-Relative Weekly Aerobic Dose Envelope**](./adr/0045-athlete-relative-weekly-aerobic-dose.md) — *Accepted.* 28-day history-derived easy-aerobic weekly envelope with a public-health fallback, no intensity equivalence, and a conditional exact long aerobic anchor.
+* [**ADR-0046: First-Class Raw Assessment Trial Evidence**](./adr/0046-first-class-raw-assessment-trial-evidence.md) — *Proposed.* Extends OV with immutable raw multi-trial evidence, append-only corrections, deterministic reducers and typed derivation provenance while preserving evidence-only authority.
 
 ---
 
 ### 🔍 Reviews & Analysis
 Point-in-time assessments of the system as built, including gaps between documented decisions and implemented behaviour:
 
+* [**2026-09-30 Issue #897 physical-capital assessment integration**](./analysis/2026-09-30-issue-897-physical-capital-assessment-integration.md) — Point-in-time audit and architecture integration analysis for multidomain baseline testing, raw trial evidence, comparability, history/export and bounded goal/context reuse.
 * [**2026-09-28 Issue #814 training-response completion analysis**](./analysis/2026-09-28-issue-814-training-response-completion-analysis.md) — Point-in-time audit of delivered #814 response features, canonical occurrence/source-authority gaps, comparability, strength, next-day linkage, controlled running scope, and evidence boundaries.
 * [**2026-09-26 Constraint-aware training requirement fulfilment**](./analysis/2026-09-26-constraint-aware-training-fulfilment.md) — Evidence and architecture review for multi-stimulus credit, maintenance microdoses, accumulated dose and bounded same-day packing without weakening exact-role semantics.
 * [**2026-09-24 Coding-agent evaluation baseline (capability & routing suite)**](./analysis/2026-09-24-coding-agent-eval-baseline.md) — initial isolated-worktree baseline trials for `external-library-version-routing`, `internal-architecture-no-external-docs`, and `firestore-targeted-prior-revision-query` (`3 / 3 PASS`), plus operational findings for Vite/Vitest worktree dependency installation and Serena project root binding.
