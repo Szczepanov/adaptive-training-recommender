@@ -283,17 +283,21 @@ Longitudinal progress is evaluated strictly per comparison series (`D1`), where:
 $$\text{Series} = (\text{protocolId}, \text{protocolRevision}, \text{metricId}, \text{comparisonSeriesKey})$$
 
 * **Shared progress module (`app/src/observations/assessmentProgress.ts`):** Evaluates progress within each
-  series using `deriveProgress` (`ov-progress-v1`). Different protocol revisions or setup keys are shown as
-  separate series with an explicit non-comparability marker (`protocol revision changed` or `setup/method changed`),
-  never as false numerical zero changes.
-* **Baseline contract (`D3`):** Within a series, baseline defaults to the earliest valid observation from a
-  `purpose: 'baseline'` attempt, or the earliest valid non-familiarization observation. Familiarization is never a baseline.
+  series using `deriveProgress` (`ov-progress-v1`). The history projection groups by the full D1 identity,
+  including **metricId**, so a multi-metric protocol such as the seated cycling sprint cannot compare 1 s peak
+  power against 5 s mean power. Different protocol revisions or setup keys are shown as separate series with an
+  explicit non-comparability marker (`protocol revision changed` or `setup/method changed`), never as false
+  numerical zero changes.
+* **Baseline/latest contract (`D3`):** Within a series, baseline defaults to the earliest valid observation from a
+  `purpose: 'baseline'` attempt, or the earliest valid non-familiarization observation. Familiarization remains
+  auditable evidence but is excluded from both baseline and longitudinal latest/progress selection.
 * **Honest reporting (`D4`):** When no reliability estimate exists (the normal baseline case), deltas are
   labelled `"raw change, no reliability estimate"` with status `insufficient_evidence`.
 * **Bounded read model (`D5`, `D6`, `app/src/services/assessmentHistoryService.ts`):** List views read current
-  observation revisions and attempts without trial queries ($O(0)$ trial reads). Malformed or unreadable records
-  are counted and surfaced rather than silently dropped (`D6`). Detailed trials and revision chains load lazily
-  only for attempt inspection.
+  observation head/revision pairs and attempts without trial queries ($O(0)$ trial reads). The metric selector
+  returns the already-read head with its current revision, avoiding a second per-observation `getHead()` read.
+  Malformed or unreadable records are counted and surfaced rather than silently dropped (`D6`). Detailed trials
+  and revision chains load lazily only for attempt inspection.
 
 ## Exports and body-mass-relative context (WP7.1, WP3.4, D8)
 
@@ -303,9 +307,11 @@ $$\text{Series} = (\text{protocolId}, \text{protocolRevision}, \text{metricId}, 
 * **Diagnostic JSON export (`assessment_diagnostic_export_v2`):** Schema version 2 groups progress per series
   rather than per protocol revision, preventing multi-setup comparisons from collapsing into a single series.
 * **Body-mass-relative context (`app/src/anthropometry/bodyMass.ts`):** Relative metrics (sprint W/kg and
-  strength 1RM relative load) derive context strictly from one same-day Warsaw date point from the athlete's
-  stored source preference (or provider-first per `D-BC-WEIGHT`). Never averages, never falls back across sources,
-  and never uses stale provider carry-forwards. If no same-day record exists, relative context renders `"unavailable"`.
+  strength 1RM relative load) derive context strictly from one same-day Warsaw date point. An explicit athlete
+  source choice never silently switches. With no explicit choice, `D-BC-WEIGHT` is provider-first and uses manual
+  only when no usable provider series exists; once a source is selected for the read, a missing same-day point does
+  **not** fall back to the other source. Values are never averaged and stale provider carry-forwards are never used.
+  If no acceptable same-day record exists, relative context renders `"unavailable"`.
 
 ## Not implemented yet
 
