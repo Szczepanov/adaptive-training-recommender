@@ -1,7 +1,7 @@
 # Recommender history semantics, repeated-session recommendations, and strength-frequency gap
 
-**Date:** 2026-09-30  
-**Scope:** recommendation engine, Garmin-completed training semantics, canonical performed-training facts, weekly role coverage, cycling Base-phase planning, and strength/power frequency  
+**Date:** 2026-09-30
+**Scope:** recommendation engine, Garmin-completed training semantics, canonical performed-training facts, weekly role coverage, cycling Base-phase planning, and strength/power frequency
 **Status:** analysis only; no recommendation policy is changed by this document
 
 ## Reported production symptom
@@ -344,13 +344,13 @@ Do **not** immediately make every Garmin domain satisfy every exact role.
 
 Stage the cutover:
 
-1. **Semantic recency first**  
+1. **Semantic recency first**
    Use confident performed domain facts to prevent nonsensical same-family adjacency and to improve decision explanations. This does not grant exact coverage.
 
-2. **Physiological credit second**  
+2. **Physiological credit second**
    Derive the completed stimulus profile from the persisted domain/evidence instead of coarse modality x intensity.
 
-3. **Selective semantic coverage last**  
+3. **Selective semantic coverage last**
    Enable `semantic_confident` only for roles with a precise, auditable equivalence rule.
 
 A good first candidate is aerobic-volume coverage, because it can require all of:

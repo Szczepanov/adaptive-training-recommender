@@ -127,6 +127,31 @@ describe('completed training reconciliation', () => {
         expect(events.find(event => event.sources.includes('adherence'))?.linkedActivityId).toBe('garmin-close');
     });
 
+    it('preserves Garmin stimulus-domain and session-cost provenance through the completed exposure', () => {
+        const [event] = reconcileCompletedTrainingEvents([activity({
+            intensityTag: 'easy',
+            stimulusDomain: 'endurance',
+            sessionCost: 'high',
+            intensityEvidence: 'cycling_power_zones',
+            intensityClassificationVersion: 2,
+        })], []);
+        const exposure = completedEventToExposure(event);
+        expect(event).toMatchObject({
+            stimulusDomain: 'endurance',
+            sessionCost: 'high',
+            intensityEvidence: 'cycling_power_zones',
+            intensityClassificationVersion: 2,
+        });
+        expect(exposure).toMatchObject({
+            stimulusDomain: 'endurance',
+            sessionCost: 'high',
+            intensityEvidence: 'cycling_power_zones',
+            intensityClassificationVersion: 2,
+        });
+        expect(event.intensity).toBe('easy');
+        expect(event.costIntensity).toBe('hard');
+    });
+
     it('attaches inferred stimulus profile to recognized Garmin cycling session', () => {
         const [event] = reconcileCompletedTrainingEvents([activity({ type: 'cycling', intensityTag: 'moderate', trainingEffectAerobic: 2.5 })], []);
         const exposure = completedEventToExposure(event);

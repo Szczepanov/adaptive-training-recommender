@@ -387,6 +387,12 @@ read-only ledgers (`contextBriefExposureLedger.ts` `deriveExposureLedger` /
   cost row, the six-dimensional cost vector (shown split into systemic/cardiovascular vs
   lower-body/impact/neuromuscular) and the evidence tier; ADR-0034 canonical performed
   facts (`getPerformedTrainingFactsInRange`, which drive live weekly coverage credit)
+  preserve provider-neutral Garmin `stimulusDomain`, `sessionCost`,
+  `intensityEvidence` and classification-version provenance for provider-only
+  occurrences, while structured executions remain the stronger semantic authority. These
+  provider fields do **not** by themselves grant exact weekly-role coverage:
+  `coverageHistoryFromFacts` still consumes only canonical `creditKind: 'exact'` until
+  a separately governed semantic-coverage policy is accepted. Canonical facts also
   confirm capabilities with their own provenance, including in-app structured executions
   with no Garmin record or adherence answer. Unanswered or skipped recommendations and
   imported future sessions never count as completed; imported sessions in the next 7 days
@@ -500,7 +506,20 @@ label rather than present as an ordinary pick (ADR-0019 D-EXT).
 An eligible event remains event-directed for profile-less athletes, preserving the legacy
 path. An explicit `event_directed` profile uses an eligible event when present. Otherwise
 the effective mode is `evergreen`: it has no focus event and no event strategy, even if an
-event record exists. Event-directed cycling uses `structured_plan`; Running, triathlon, strength, and general events retain demand-derived planning. Running race-specific objectives are modality-scoped and half-marathon/marathon demand adds a long-run durability objective; the generic single-sport aerobic-base objective intentionally remains cross-training-creditable. Triathlon demand creates separate swim, bike, and run aerobic objectives so one discipline cannot silently satisfy the whole sport. Outdoor cycling and swimming are hard-gated by declared bicycle/swim access.
+event record exists. Event-directed cycling is now date-local: `structured_plan` applies
+only when a derived or athlete-authored plan block actually owns the evaluated date. Before
+the first owned block, the race remains the focus event and periodization/UI context, but
+`eventStrategy: 'evergreen_fallback'` makes the evergreen weekly allocator authoritative
+for objectives, coverage roles, strength frequency, capability maintenance and dose. An
+explicit travel block may therefore activate structured authority before the derived build
+window, while a distant future race cannot suppress Base programming merely because its full
+future PlanDefinition can already be constructed. Running, triathlon, strength, and general
+events retain demand-derived planning. Running race-specific objectives are modality-scoped
+and half-marathon/marathon demand adds a long-run durability objective; the generic
+single-sport aerobic-base objective intentionally remains cross-training-creditable.
+Triathlon demand creates separate swim, bike, and run aerobic objectives so one discipline
+cannot silently satisfy the whole sport. Outdoor cycling and swimming are hard-gated by
+declared bicycle/swim access.
 
 Cycling event build strength support (#801): when the durable intent explicitly includes
 `strength_muscle`, `trainingIntent.ts` `eventStrengthSupportSessions` keeps the rest of the
