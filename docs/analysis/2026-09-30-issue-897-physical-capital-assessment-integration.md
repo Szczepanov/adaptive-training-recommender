@@ -319,6 +319,8 @@ from a standardized 6-second seated sprint, repeated three times.
 
 **Decision:** do not mutate the historical bundled protocol. Add a new immutable protocol with id `cycling-6s-seated-sprint` and revision `1`, with correctly named metrics. Protocol identity and numeric revision remain separate fields, matching the existing `MeasurementProtocol` contract.
 
+For new multi-trial protocols, the **semantic raw-capture schema and reducer declarations must be pinned by the immutable protocol revision** (or an equally immutable companion referenced by it). They must not exist only as current `PerformanceTestDefinition` UI metadata, because a later app/catalog change must not reinterpret historical October trials. Presentation hints may remain in the test-definition layer, but field identity/type/unit and reducer semantics are evidence-contract data.
+
 A separate cleanup issue/PR may later deprecate or clarify the old bundled protocol without rewriting its persisted history.
 
 ---
