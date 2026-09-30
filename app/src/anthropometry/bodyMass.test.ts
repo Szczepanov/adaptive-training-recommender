@@ -93,6 +93,18 @@ describe('bodyMass utilities', () => {
             });
         });
 
+        it('falls back to manual only when no usable provider series exists and no source was explicitly chosen', () => {
+            const res = resolveSameDayBodyMass('2026-10-21', {
+                snapshots: [],
+                manualEntries,
+            });
+            expect(res).toEqual({
+                bodyMassKg: 74.8,
+                source: 'manual',
+                date: '2026-10-21',
+            });
+        });
+
         it('ignores stale provider carry-forward on snapshot date', () => {
             // On 2026-10-21, provider snapshot has weight 75.2 but metricDates.weight is 2026-10-20
             const res = resolveSameDayBodyMass('2026-10-21', {
