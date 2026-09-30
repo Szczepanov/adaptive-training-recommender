@@ -5,6 +5,7 @@ import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionResponseService } from '../services/sessionResponseService';
 import { preferencesService } from '../services/preferencesService';
 import {
+  canLinkNextMorningFollowupToSession,
   relevantFollowupRegions,
   resolvePendingNextMorningFollowups,
   type NextMorningFollowupCandidate,
@@ -464,7 +465,10 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
     // ADR-0023 D-MRESP keeps sourceSessionRef as compatibility scaffolding only. Attach it
     // when exactly one attribution is known; never replace an existing different reference
     // when several sessions can legitimately contribute to the same region-level response.
-    const sourceSessionRef = existingEntry.sourceSessionRef ?? sessionRef;
+    const mayLinkSession = Boolean(
+      sessionRef && canLinkNextMorningFollowupToSession(existingEntry.sourceSessionRef, sessionRef),
+    );
+    const sourceSessionRef = existingEntry.sourceSessionRef ?? (mayLinkSession ? sessionRef : undefined);
     currentResponses[region] = {
       ...existingEntry,
       nextMorningReaction: level,
@@ -496,7 +500,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
     // M5.2: write session-level linkage only when attribution is unambiguous. If several
     // sessions could explain the same region-level response, leaving the session response
     // absent preserves D-MRESP's unknown semantics instead of manufacturing a passing link.
-    if (sessionRef && checkin.userId && checkin.date) {
+    if (sessionRef && mayLinkSession && checkin.userId && checkin.date) {
       try {
         const already = await sessionResponseService.getResponseForWindow(checkin.userId, sessionRef, 'next_morning');
         if (!already) {

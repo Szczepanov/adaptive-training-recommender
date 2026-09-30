@@ -60,6 +60,18 @@ function sameSessionRef(a: FollowupSessionRef, b: FollowupSessionRef): boolean {
     return a.kind === b.kind && a.id === b.id && a.date === b.date;
 }
 
+/**
+ * The singular tissue-side source reference is compatibility scaffolding. A delayed answer
+ * may create session-level linkage only when that linkage agrees with any source reference
+ * already present on today's canonical region row; otherwise the session must stay unknown.
+ */
+export function canLinkNextMorningFollowupToSession(
+    existingSourceSessionRef: RegionTissueResponse['sourceSessionRef'],
+    candidateSessionRef: FollowupSessionRef,
+): boolean {
+    return !existingSourceSessionRef || sameSessionRef(existingSourceSessionRef, candidateSessionRef);
+}
+
 function regionsForTags(source: FacetTagSource): BodyRegion[] {
     const tags = [...(source.tissueDemand ?? []), ...(source.safetyTags ?? [])].map(tag => tag.toLowerCase());
     if (tags.length === 0) return [];

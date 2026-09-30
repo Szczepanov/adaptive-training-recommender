@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { relevantFollowupRegions, resolvePendingNextMorningFollowups } from './followupSchedule';
+import {
+    canLinkNextMorningFollowupToSession,
+    relevantFollowupRegions,
+    resolvePendingNextMorningFollowups,
+} from './followupSchedule';
 
 describe('relevantFollowupRegions', () => {
     it('maps back_squat-style tissueDemand/safetyTags to knee', () => {
@@ -135,5 +139,19 @@ describe('resolvePendingNextMorningFollowups', () => {
         );
 
         expect(pending).toEqual([{ region: 'knee', sessionRef: executionRef }]);
+    });
+});
+
+
+describe('canLinkNextMorningFollowupToSession', () => {
+    const executionRef = { kind: 'execution' as const, id: 'exec-yesterday', date: '2026-09-29' };
+
+    it('allows missing or matching canonical attribution and rejects a conflicting one', () => {
+        expect(canLinkNextMorningFollowupToSession(undefined, executionRef)).toBe(true);
+        expect(canLinkNextMorningFollowupToSession(executionRef, executionRef)).toBe(true);
+        expect(canLinkNextMorningFollowupToSession(
+            { kind: 'execution', id: 'exec-other', date: '2026-09-29' },
+            executionRef,
+        )).toBe(false);
     });
 });
