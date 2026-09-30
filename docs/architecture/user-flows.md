@@ -429,9 +429,11 @@ sign-out), live canonical reduction preview
 (`CanonicalResultPreview`), and raw video reminder callouts. The completion screen renders canonical
 benchmark results alongside an interactive trial correction panel (`TrialCorrectionPanel`) for append-only
 trial supersession. Trials already persisted by an interrupted save reload read-only, so a resubmission
-cannot diverge from immutable stored evidence. A diagnostic JSON export action (`assessmentExportService`)
-downloads the complete assessment evidence for offline audit and coaching handoff; it omits the Firebase UID
-but remains personal health data (values, notes, device identifiers).
+cannot diverge from immutable stored evidence. For the bundled #897 physical-capital trial-capture flow, a
+scoped diagnostic JSON export action (`assessmentExportService`) downloads the supported physical-capital
+protocol revisions, attempts, raw trials and canonical revision history for offline audit/coaching handoff.
+The action is not shown on legacy/custom summary-only tests because this bounded export does not scan those
+protocol families. It omits the Firebase UID but remains personal health data (values, notes, device identifiers).
 
 Because `testing` and ordinary `sessions` share the runner, their in-run visual structure is
 very similar; provenance/context around the runner is therefore important.
