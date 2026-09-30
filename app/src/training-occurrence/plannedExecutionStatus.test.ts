@@ -1,7 +1,7 @@
 import type { DailyRecommendation } from '../engine/models';
 import type { ExternalPlanSessionOccurrence, SessionExecution } from '../sessions/models';
 import type { PerformedTrainingOccurrence } from './models';
-import { projectPlannedExecutionStatus, type PlannedExecutionStatusInput } from './plannedExecutionStatus';
+import { projectPlannedExecutionStatus, renderPlannedExecutionStatuses, type PlannedExecutionStatus, type PlannedExecutionStatusInput } from './plannedExecutionStatus';
 import { describe, expect, it } from 'vitest';
 
 const source = { planId: 'plan-a', revision: 2, sessionId: 'ride-1', contentHash: 'a'.repeat(64) };
@@ -92,4 +92,31 @@ describe('projectPlannedExecutionStatus', () => {
         expect(result.performance).toBe('not_applicable');
         expect(result.evidence).toContain('observed-work:performed-1');
     });
+    it('renders round-trip rows chronologically with deterministic tie-breakers', () => {
+        const status = (date: string, sessionId: string, occurrenceId: string): PlannedExecutionStatus => ({
+            date,
+            authored: { kind: 'session', source: { ...source, sessionId } },
+            placement: 'as_authored',
+            adjudication: 'as_authored',
+            athleteDisposition: 'accepted',
+            performance: 'completed',
+            occurrenceId,
+            evidence: [],
+        });
+        const rows = renderPlannedExecutionStatuses([
+            status('2026-09-21', 'ride-a', 'occ-2'),
+            status('2026-09-19', 'ride-z', 'occ-9'),
+            status('2026-09-21', 'ride-b', 'occ-3'),
+            status('2026-09-21', 'ride-a', 'occ-1'),
+        ]).filter(line => line.startsWith('- '));
+
+        expect(rows[0]).toContain('2026-09-19');
+        expect(rows[0]).toContain('/ride-z');
+        expect(rows[1]).toContain('/ride-a');
+        expect(rows[1]).toContain('occurrence occ-1');
+        expect(rows[2]).toContain('/ride-a');
+        expect(rows[2]).toContain('occurrence occ-2');
+        expect(rows[3]).toContain('/ride-b');
+    });
+
 });
