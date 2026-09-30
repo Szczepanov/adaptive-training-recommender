@@ -195,6 +195,68 @@ describe('performed stimulus-domain recency in sequencing decisions (#931)', () 
         expect(rankedTempo.stimulusRecency?.penaltyApplied).toBe(true);
     });
 
+    it('uses structured threshold authority over a conflicting Garmin label exactly once', () => {
+        const occurrence: PerformedTrainingOccurrence = {
+            schemaVersion: 1,
+            performedOccurrenceId: 'occ-threshold-reconciled',
+            userId: 'user_1',
+            status: 'active',
+            localDate: '2026-09-06',
+            modality: 'Cycling',
+            sourceRefs: [
+                { kind: 'structured_execution', executionId: 'exec-threshold' },
+                { kind: 'provider_activity', provider: 'garmin', activityId: 'garmin-threshold' },
+            ],
+            reconciliation: { state: 'single_source' },
+            createdAt: '2026-09-06T18:00:00Z',
+            updatedAt: '2026-09-06T18:00:00Z',
+        };
+
+        const hydrated: HydratedOccurrenceContext = {
+            structured: {
+                executionId: 'exec-threshold',
+                workoutId: 'cycling_controlled_threshold_4x8_01',
+                modality: 'Cycling',
+                durationMin: 64,
+            },
+            provider: {
+                activityId: 'garmin-threshold',
+                provider: 'garmin',
+                garminActivity: {
+                    activityId: 'garmin-threshold',
+                    userId: 'user_1',
+                    startTimeLocal: '2026-09-06T10:00:00',
+                    startTimeGmt: '2026-09-06T08:00:00Z',
+                    type: 'cycling',
+                    durationMin: 64,
+                    trainingEffectAerobic: 3.0,
+                    trainingEffectAnaerobic: 0,
+                    averageHr: 140,
+                    intensityClassificationVersion: 2,
+                    stimulusDomain: 'tempo',
+                } as unknown as NormalizedGarminActivity,
+            },
+        };
+
+        const { exposure } = deriveFactsFromOccurrence(occurrence, hydrated);
+        expect(exposure.stimulusDomain).toBe('threshold');
+        expect(exposure.sourceKinds).toEqual(['structured_execution', 'provider_activity']);
+
+        const result = rankCandidates(
+            [thresholdCandidate],
+            [],
+            DEFAULT_FATIGUE,
+            DEFAULT_AVAILABILITY,
+            [],
+            DEFAULT_PREFERENCES,
+            { date: mondayDate, recentPerformedExposures: [exposure] },
+        );
+
+        expect(result.stimulusRecency?.evaluatedExposuresCount).toBe(1);
+        expect(result.stimulusRecency?.yesterdayQualityFamilies).toEqual(['threshold']);
+        expect(result.accepted[0].stimulusRecency?.penaltyApplied).toBe(true);
+    });
+
     it('does not demote Monday tempo when Sunday provider tempo had an athlete override (override precedence)', () => {
         const occurrence: PerformedTrainingOccurrence = {
             schemaVersion: 1,
