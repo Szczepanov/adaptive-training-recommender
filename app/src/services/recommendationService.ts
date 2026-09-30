@@ -1,16 +1,15 @@
 import { collection, deleteField, doc, getDoc, getDocs, limit, orderBy, query, setDoc, where, writeBatch } from 'firebase/firestore';
 import { getDb } from '../firebase';
-import type { DailyRecommendation, Recommendation, ShadowVerdict } from '../engine/models';
+import type { DailyRecommendation, DailyRecommendationWithVerdict, Recommendation } from '../engine/models';
 import { resolveEngineShadowVerdict } from '../engine/shadowAgreement';
 import { validateRecommendation, validateAdherenceUpdate } from '../engine/validation';
 import type { DataIssue, DataState } from '../engine/dataState';
-import { parseDailyRecommendation } from '../persistence/parsers/trainingHistory';
+import { parseArchivedRecommendation, parseDailyRecommendation, type ArchivedRecommendation } from '../persistence/parsers/trainingHistory';
 import { isPermissionDeniedError } from '../utils/errors';
 import { deepEqual } from '../utils/deepEqual';
 import { createDecisionContext, validateDecisionContext, type CreateDecisionContextInput, type DecisionContextRecord } from '../engine/decisionContext';
 import type { MinimumSafetyCheckinStatus } from '../engine/safetyCheckin';
 
-type PersistedRecommendationWithVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
 type DecisionContextCapture = Omit<CreateDecisionContextInput, 'userId' | 'date' | 'recommendationRevision'>;
 
 /**
@@ -92,7 +91,7 @@ export class RecommendationService {
         try {
             const docRef = doc(getDb(), 'users', userId, this.collectionPath, date);
             const existingSnap = await getDoc(docRef);
-            const existing = existingSnap.exists() ? existingSnap.data() as PersistedRecommendationWithVerdict : undefined;
+            const existing = existingSnap.exists() ? existingSnap.data() as DailyRecommendationWithVerdict : undefined;
 
             const isNewDoc = !existing;
             priorRevision = existing ? (existing.revision ?? 1) : 1;
@@ -220,7 +219,7 @@ export class RecommendationService {
                 // Persist the adjudicator's exact external decision when present instead of
                 // reconstructing it later from train/modify/recover (which cannot represent
                 // skip/advisory and is not equivalent on every imported-plan day).
-                const validated = { ...validation.data!, engineVerdict } as PersistedRecommendationWithVerdict;
+                const validated = { ...validation.data!, engineVerdict } as DailyRecommendationWithVerdict;
                 const writeData: Record<string, unknown> = { ...validated };
                 if (!rec.prescription && existing?.prescription) writeData.prescription = deleteField();
                 if (!rec.primarySession && existing?.primarySession) writeData.primarySession = deleteField();
@@ -393,6 +392,46 @@ export class RecommendationService {
             return {
                 status: 'UNAVAILABLE',
                 operation: 'read recommendation history',
+                retryable: !isPermissionDeniedError(error),
+            };
+        }
+    }
+
+    /**
+     * PR-C (#893 WP5.2 M-5): bounded, read-only listing of one date's archived
+     * recommendation revisions (`daily_recommendations/{date}/revisions`). Called
+     * only for replace days -- dates whose current recommendation carries
+     * `audit.authoredOccurrence` -- within the already-bounded retrospective
+     * window (at most one listing per such date). Returns a `DataState` so
+     * callers distinguish unavailable/empty from readable: an archive that
+     * fails parsing or verification degrades only that date's row (M-8), never
+     * the section. No writes, no provider re-matching. Covered by the existing
+     * owner read on `revisions/{revId}` -- no rules change needed.
+     */
+    async listRecommendationRevisions(
+        userId: string,
+        date: string,
+    ): Promise<DataState<ArchivedRecommendation[]>> {
+        try {
+            const collRef = collection(getDb(), 'users', userId, this.collectionPath, date, 'revisions');
+            const querySnapshot = await getDocs(query(collRef, orderBy('revision', 'asc')));
+            const archives: ArchivedRecommendation[] = [];
+            const issues: DataIssue[] = [];
+            for (const archiveDocument of querySnapshot.docs) {
+                const path = `users/${userId}/${this.collectionPath}/${date}/revisions/${archiveDocument.id}`;
+                const parsed = parseArchivedRecommendation(archiveDocument.data(), path);
+                if (parsed.status === 'AVAILABLE') {
+                    archives.push(parsed.data);
+                } else if (parsed.status === 'INVALID') {
+                    issues.push(...parsed.issues);
+                }
+            }
+            if (issues.length > 0) return { status: 'INVALID', issues };
+            return { status: 'AVAILABLE', data: archives, revision: archives.map(item => `r${item.revision}`).join('|') || null };
+        } catch (error: unknown) {
+            return {
+                status: 'UNAVAILABLE',
+                operation: 'read recommendation revision archive',
                 retryable: !isPermissionDeniedError(error),
             };
         }

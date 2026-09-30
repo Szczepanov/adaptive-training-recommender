@@ -34,7 +34,7 @@ import {
     UPCOMING_CONTEXT_DAYS,
     type UpcomingExternalPlanSession,
 } from '../engine/contextBriefPlanningHandoff';
-import { externalSessionDisplayPrescription } from '../engine/externalSessionProfiles';
+import { externalSessionDisplayPrescription, externalTemplateId } from '../engine/externalSessionProfiles';
 import { resolvePlanningContext } from '../engine/planningMode';
 import { evaluatePeriodizationPhase, goalToUserEvent } from '../engine/periodization';
 import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
@@ -50,7 +50,10 @@ import { sessionOccurrenceService } from './sessionOccurrenceService';
 import { sessionExecutionService } from './sessionExecutionService';
 import { externalPlanService } from './externalPlanService';
 import { computeContentHash } from '../engine/externalPlanHash';
-import { impliedDate, resolveRestDatesByDate } from '../engine/externalPlacement';
+import { impliedDate, occupiesDate, resolveRestDatesByDate } from '../engine/externalPlacement';
+import { getCanonicalRestTemplate } from '../engine/rules';
+import type { DataState } from '../engine/dataState';
+import type { ArchivedRecommendation } from '../persistence/parsers/trainingHistory';
 import { isExternalPlanOccurrence } from '../sessions/models';
 import {
     assertRenderedBriefContract,
@@ -718,7 +721,48 @@ export class ContextBriefService {
                         ...(occurrenceId ? { occurrenceId } : {}),
                     });
                 }
-                const revisionKeys = [...new Set([...candidates.values()].map(item => `${item.source.planId}:${item.source.revision}`))];
+                // PR-C M-5: for replace days only (the current recommendation
+                // carries `audit.authoredOccurrence`), one bounded, read-only
+                // listing of `daily_recommendations/{date}/revisions` per such
+                // date within the already-bounded retrospective window. Selects
+                // the highest-numbered archived revision whose audit carries
+                // `externalPlan` -- never "revision n-1": after rev1 external,
+                // rev2 manual, rev3 manual, n-1 is rev2, which carries
+                // `authoredOccurrence` and no `externalPlan`. The archived audit
+                // is client-written and not rules-verified, so it is a claim to
+                // be verified (M-7) below, never self-authenticating evidence.
+                // Justification for the extra read: hydration resolved as of
+                // today cannot supply the pre-replace external identity after a
+                // re-import; everything else this section needs is already loaded.
+                const replaceDates = [...new Set(retrospectiveDates.filter(date =>
+                    recommendations.some(item => item.date === date
+                        && item.recommendationAudit?.authoredOccurrence !== undefined)))];
+                const replaceArchiveResults: Array<readonly [string, DataState<ArchivedRecommendation[]>]> = await Promise.all(replaceDates.map(async date => {
+                    try {
+                        return [date, await recommendationService.listRecommendationRevisions(userId, date)] as const;
+                    } catch {
+                        return [date, { status: 'UNAVAILABLE', operation: 'read recommendation revision archive', retryable: true } as const];
+                    }
+                }));
+                const pendingReplaceClaims = new Map<string, { archive: ArchivedRecommendation; authoredOccurrenceId: string }>();
+                for (const [date, state] of replaceArchiveResults) {
+                    if (state.status !== 'AVAILABLE') continue;
+                    const current = recommendations.find(item => item.date === date
+                        && item.recommendationAudit?.authoredOccurrence !== undefined);
+                    const authoredOccurrence = current?.recommendationAudit?.authoredOccurrence;
+                    if (!authoredOccurrence) continue;
+                    const withExternalPlan = state.data.filter(item => item.recommendationAudit?.externalPlan !== undefined);
+                    if (withExternalPlan.length === 0) continue;
+                    const selected = withExternalPlan.reduce((newest, item) => (item.revision > newest.revision ? item : newest));
+                    pendingReplaceClaims.set(date, { archive: selected, authoredOccurrenceId: authoredOccurrence.occurrenceId });
+                }
+                const revisionKeys = [...new Set([
+                    ...[...candidates.values()].map(item => `${item.source.planId}:${item.source.revision}`),
+                    // The archive-named revision joins the same key set so its
+                    // stored bytes and placement load through the usual path.
+                    ...[...pendingReplaceClaims.values()].map(item =>
+                        `${item.archive.recommendationAudit?.externalPlan?.planId}:${item.archive.recommendationAudit?.externalPlan?.revision}`),
+                ])];
                 const revisions = await Promise.all(revisionKeys.map(async key => {
                     const [planId, revision] = key.split(':');
                     return [key, await externalPlanService.getRevisionState(userId, planId, Number(revision))] as const;
@@ -729,6 +773,47 @@ export class ContextBriefService {
                     return [key, await externalPlanService.getPlacementState(userId, planId, Number(revision))] as const;
                 }));
                 const placementMap = new Map(placements);
+                // PR-C M-6a/M-7: verify the archived claim before trusting it, then
+                // inject the archive-named source as its own candidate so the row
+                // exists even when the active plan no longer places that session.
+                // Verified per M-7: the session id exists in the stored revision
+                // with a matching content hash, and the rules-verified fields
+                // agree with an external decision (`engineVerdict` actionable or
+                // gated, template rest or synthetic-for-session). Any failure
+                // leaves the date without attribution (M-8): the row degrades to
+                // `unknown` via `replaceArchiveUnavailable`, never to the current
+                // revision's identity.
+                const verifiedReplace = new Map<string, { source: { planId: string; revision: number; sessionId: string; contentHash: string }; authoredOccurrenceId: string; sessionCount?: number }>();
+                for (const [date, pending] of pendingReplaceClaims) {
+                    const claim = pending.archive.recommendationAudit?.externalPlan;
+                    if (!claim) continue;
+                    const revisionKey = `${claim.planId}:${claim.revision}`;
+                    const revisionState = revisionMap.get(revisionKey);
+                    const revisionPlan = revisionState?.status === 'AVAILABLE' ? revisionState.data : undefined;
+                    const session = revisionPlan?.sessions.find(item => item.id === claim.sessionId);
+                    const revisionHash = revisionPlan ? await computeContentHash(revisionPlan) : undefined;
+                    if (!revisionPlan || !session || revisionHash !== claim.contentHash) continue;
+                    const verdictAgrees = pending.archive.engineVerdict !== undefined
+                        && ['proceed', 'scale', 'defer', 'skip'].includes(pending.archive.engineVerdict);
+                    const templateAgrees = pending.archive.templateId === getCanonicalRestTemplate().id
+                        || pending.archive.templateId === externalTemplateId(claim.planId, claim.revision, claim.sessionId);
+                    if (!verdictAgrees || !templateAgrees) continue;
+                    // PR-C M-0: count the archive-named revision's
+                    // non-dropped/non-superseded sessions on D through the same
+                    // placement resolution used for every other candidate. No
+                    // placement: no count, and a missing count yields `unknown`.
+                    const placementState = placementMap.get(revisionKey);
+                    const sessionCount = placementState?.status === 'AVAILABLE'
+                        ? placementState.data.assignments.filter(item => item.date === date && occupiesDate(item.status)).length
+                        : undefined;
+                    const source = { planId: claim.planId, revision: claim.revision, sessionId: claim.sessionId, contentHash: claim.contentHash };
+                    candidates.set(keyFor(date, source, undefined), { date, source });
+                    verifiedReplace.set(date, {
+                        source,
+                        authoredOccurrenceId: pending.authoredOccurrenceId,
+                        ...(sessionCount !== undefined ? { sessionCount } : {}),
+                    });
+                }
                 const sessionStatuses = await Promise.all([...candidates.values()].map(async candidate => {
                     const revisionKey = `${candidate.source.planId}:${candidate.source.revision}`;
                     const revisionState = revisionMap.get(`${candidate.source.planId}:${candidate.source.revision}`);
@@ -747,6 +832,18 @@ export class ContextBriefService {
                     const placementAssignment = placementState?.status === 'AVAILABLE'
                         ? placementState.data.assignments.find(item => item.sessionId === candidate.source.sessionId && item.date === candidate.date)
                         : undefined;
+                    // PR-C M-6: attribution belongs to the verified pre-replace
+                    // identity only. Sibling-revision rows on the same date keep
+                    // their normal result (M-6b). One document per date means a
+                    // replace date never has a matched `audit.externalPlan`, so
+                    // the unavailable flag below cannot pollute a healthy row.
+                    const verified = verifiedReplace.get(candidate.date);
+                    const isAttributed = verified !== undefined
+                        && verified.source.planId === candidate.source.planId
+                        && verified.source.revision === candidate.source.revision
+                        && verified.source.sessionId === candidate.source.sessionId
+                        && verified.source.contentHash === candidate.source.contentHash;
+                    const replaceArchiveUnavailable = verified === undefined && replaceDates.includes(candidate.date);
                     return projectPlannedExecutionStatus({
                         date: candidate.date,
                         authored: revisionMatchesSource && session
@@ -755,6 +852,9 @@ export class ContextBriefService {
                         ...(authoredDate ? { authoredDate } : {}),
                         ...(candidate.occurrenceId ? { occurrenceId: candidate.occurrenceId } : {}),
                         ...(candidate.placementConfirmedMoved || placementAssignment?.status === 'moved' ? { placementConfirmedMoved: true } : {}),
+                        ...(isAttributed && verified ? { replacedByOccurrenceId: verified.authoredOccurrenceId } : {}),
+                        ...(isAttributed && verified?.sessionCount !== undefined ? { authoredSessionCountOnDate: verified.sessionCount } : {}),
+                        ...(replaceArchiveUnavailable ? { replaceArchiveUnavailable: true } : {}),
                         occurrencesReadable: true,
                         executionsReadable: true,
                         performedReadable: true,

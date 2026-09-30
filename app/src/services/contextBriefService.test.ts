@@ -30,6 +30,7 @@ const services = vi.hoisted(() => ({
     queryActiveInDateWindow: vi.fn(),
     getRevisionState: vi.fn(),
     getPlacementState: vi.fn(),
+    listRecommendationRevisions: vi.fn(),
 }));
 
 vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: {
@@ -60,7 +61,10 @@ vi.mock('../training-occurrence/trainingResponseEvidence', () => ({
     getTrainingResponseEvidenceInRange: services.getTrainingResponseEvidenceInRange,
 }));
 vi.mock('./activityService', () => ({ activityService: { getActivitiesInRange: services.getActivitiesInRange } }));
-vi.mock('./recommendationService', () => ({ recommendationService: { getRecommendationsInRange: services.getRecommendationsInRange } }));
+vi.mock('./recommendationService', () => ({ recommendationService: {
+    getRecommendationsInRange: services.getRecommendationsInRange,
+    listRecommendationRevisions: services.listRecommendationRevisions,
+} }));
 vi.mock('./trainingSettingsService', () => ({ trainingSettingsService: {
     getTrainingSettingsState: services.getTrainingSettingsState,
     peekTrainingSettingsState: services.peekTrainingSettingsState,
@@ -80,6 +84,7 @@ vi.mock('./anthropometryService', () => ({ anthropometryService: { getEntriesInR
 
 import { ContextBriefService } from './contextBriefService';
 import { computeContentHash } from '../engine/externalPlanHash';
+import { externalTemplateId } from '../engine/externalSessionProfiles';
 
 const AS_OF = '2026-08-15';
 
@@ -138,6 +143,7 @@ describe('ContextBriefService', () => {
         services.queryActiveInDateWindow.mockResolvedValue([]);
         services.getRevisionState.mockResolvedValue({ status: 'MISSING' });
         services.getPlacementState.mockResolvedValue({ status: 'MISSING' });
+        services.listRecommendationRevisions.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
     });
 
     it('passes the supplied planner resolution into the exposure ledger without recalculating cadence', async () => {
@@ -204,6 +210,262 @@ describe('ContextBriefService', () => {
 
         const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         expect(result.text).toContain(`${AS_OF} plan-a r1/ride-1: placement as authored; adjudication app dose modified; athlete accepted; performance completed; occurrence occ-1; execution exec-1; performed performed-1; prescription`);
+    });
+
+    describe('round-trip manual replacement hydration (PR-C C2)', () => {
+        const nullAdherence = { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null };
+
+        function replaceDayRecommendation(date: string) {
+            return {
+                userId: 'u1', date, templateId: 'authored-replacement', templateTitle: 'Authored replacement',
+                category: 'Moderate Endurance', modality: 'Cycling', mode: 'train',
+                rationale: 'Athlete replaced the imported session.', schemaVersion: 3,
+                engineVerdict: 'proceed', createdAt: '', updatedAt: '',
+                recommendationAudit: { authoredOccurrence: { occurrenceId: 'occ-manual-1', decision: 'proceed' } },
+                adherence: nullAdherence,
+            };
+        }
+
+        function externalPlanV1(planId: string, revision: number, sessionIds: string[]) {
+            return {
+                schema: 'adaptive-training-recommender/external-plan@1', planId, revision,
+                title: 'Plan', startDate: '2026-08-10', weekCount: 2,
+                sessions: sessionIds.map(id => ({
+                    id, title: 'Ride', priority: 'supporting',
+                    placement: { week: 1, preferredDay: 'saturday' },
+                    gating: { modality: 'cycling', intensity: 'easy', durationMin: 45, durationMax: 60, environment: 'either', equipment: [] },
+                    prescription: { summary: 'Easy ride' },
+                })),
+            };
+        }
+
+        function archivedRevision(revision: number, audit?: Record<string, unknown>, overrides: Record<string, unknown> = {}) {
+            return {
+                revision,
+                templateId: 'synthetic-template',
+                templateTitle: 'Ride',
+                category: 'Moderate Endurance',
+                modality: 'Cycling',
+                mode: 'train',
+                rationale: 'Pre-replace decision.',
+                engineVerdict: 'proceed',
+                ...(audit ? { recommendationAudit: audit } : {}),
+                ...overrides,
+            };
+        }
+
+        function placementFor(planId: string, revision: number, sessionIds: string[], date: string) {
+            return {
+                userId: 'u1', planId, revision,
+                assignments: sessionIds.map(sessionId => ({ sessionId, date, status: 'planned' })), updatedAt: '',
+            };
+        }
+
+        it('attributes a single-session replace day to the verified pre-replace revision', async () => {
+            const plan = externalPlanV1('plan-a', 2, ['ride-1']);
+            const contentHash = await computeContentHash(plan);
+            services.getRecommendationsInRange.mockResolvedValue({
+                status: 'AVAILABLE', data: [replaceDayRecommendation(AS_OF)], revision: null,
+            });
+            services.listRecommendationRevisions.mockResolvedValue({
+                status: 'AVAILABLE',
+                data: [archivedRevision(
+                    1,
+                    { externalPlan: { planId: 'plan-a', revision: 2, sessionId: 'ride-1', contentHash } },
+                    { templateId: externalTemplateId('plan-a', 2, 'ride-1') },
+                )],
+                revision: 'r1',
+            });
+            services.getRevisionState.mockResolvedValue({ status: 'AVAILABLE', data: plan });
+            services.getPlacementState.mockResolvedValue({ status: 'AVAILABLE', data: placementFor('plan-a', 2, ['ride-1'], AS_OF) });
+
+            const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+
+            expect(result.text).toContain(`${AS_OF} plan-a r2/ride-1: placement unknown; adjudication unknown; athlete manually replaced; performance unknown.`);
+        });
+
+        it('selects the highest archived revision carrying externalPlan, not revision n-1', async () => {
+            const plan = externalPlanV1('plan-a', 2, ['ride-1', 'ride-9']);
+            const contentHash = await computeContentHash(plan);
+            services.getRecommendationsInRange.mockResolvedValue({
+                status: 'AVAILABLE', data: [replaceDayRecommendation(AS_OF)], revision: null,
+            });
+            services.listRecommendationRevisions.mockResolvedValue({
+                status: 'AVAILABLE',
+                data: [
+                    archivedRevision(1, { externalPlan: { planId: 'plan-a', revision: 2, sessionId: 'ride-1', contentHash: 'bad-hash' } }),
+                    archivedRevision(
+                        2,
+                        { externalPlan: { planId: 'plan-a', revision: 2, sessionId: 'ride-9', contentHash } },
+                        { templateId: externalTemplateId('plan-a', 2, 'ride-9') },
+                    ),
+                    archivedRevision(3, { authoredOccurrence: { occurrenceId: 'occ-manual-2', decision: 'scale' } }),
+                ],
+                revision: 'r1|r2|r3',
+            });
+            services.getRevisionState.mockResolvedValue({ status: 'AVAILABLE', data: plan });
+            services.getPlacementState.mockResolvedValue({ status: 'AVAILABLE', data: placementFor('plan-a', 2, ['ride-9'], AS_OF) });
+
+            const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+
+            expect(result.text).toContain(`${AS_OF} plan-a r2/ride-9: placement unknown; adjudication unknown; athlete manually replaced; performance unknown.`);
+            expect(result.text).not.toContain('ride-1');
+        });
+
+        it('renders two honest rows after a re-import, never manually_replaced for the current revision', async () => {
+            const planR2 = externalPlanV1('plan-a', 2, ['ride-1']);
+            const planR3 = externalPlanV1('plan-a', 3, ['ride-1']);
+            const hashR2 = await computeContentHash(planR2);
+            const hashR3 = await computeContentHash(planR3);
+            const templateR2 = externalTemplateId('plan-a', 2, 'ride-1');
+            services.getRecommendationsInRange.mockResolvedValue({
+                status: 'AVAILABLE', data: [replaceDayRecommendation(AS_OF)], revision: null,
+            });
+            services.listRecommendationRevisions.mockResolvedValue({
+                status: 'AVAILABLE',
+                data: [archivedRevision(1, { externalPlan: { planId: 'plan-a', revision: 2, sessionId: 'ride-1', contentHash: hashR2 } }, { templateId: templateR2 })],
+                revision: 'r1',
+            });
+            services.getRevisionState.mockImplementation(async (_userId: string, _planId: string, revision: number) =>
+                revision === 2 ? { status: 'AVAILABLE', data: planR2 } : { status: 'AVAILABLE', data: planR3 });
+            services.getPlacementState.mockResolvedValue({ status: 'AVAILABLE', data: placementFor('plan-a', 2, ['ride-1'], AS_OF) });
+            services.getActivePlanState.mockImplementation(async (_userId: string, date: string) => date !== AS_OF ? { status: 'MISSING' } : ({
+                status: 'AVAILABLE',
+                data: {
+                    header: { planId: 'plan-a', revision: 3, contentHash: hashR3 },
+                    plan: planR3, placement: null,
+                    placed: [{ date: AS_OF, status: 'planned', moved: false, session: planR3.sessions[0] }],
+                },
+            }));
+
+            const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+
+            expect(result.text).toContain(`${AS_OF} plan-a r2/ride-1: placement unknown; adjudication unknown; athlete manually replaced; performance unknown.`);
+            expect(result.text).toContain(`${AS_OF} plan-a r3/ride-1: placement unknown; adjudication not adjudicated; athlete none; performance unknown.`);
+        });
+
+        it('scopes an archive read failure to that date row and leaves other rows unchanged', async () => {
+            const plan = externalPlanV1('plan-a', 1, ['ride-1']);
+            const contentHash = await computeContentHash(plan);
+            const otherDate = '2026-08-14';
+            services.getRecommendationsInRange.mockResolvedValue({
+                status: 'AVAILABLE', data: [replaceDayRecommendation(AS_OF)], revision: null,
+            });
+            services.listRecommendationRevisions.mockRejectedValue(new Error('offline'));
+            services.getRevisionState.mockResolvedValue({ status: 'AVAILABLE', data: plan });
+            services.getPlacementState.mockResolvedValue({ status: 'MISSING' });
+            services.getActivePlanState.mockImplementation(async (_userId: string, date: string) => (date !== AS_OF && date !== otherDate) ? { status: 'MISSING' } : ({
+                status: 'AVAILABLE',
+                data: {
+                    header: { planId: 'plan-a', revision: 1, contentHash },
+                    plan, placement: null,
+                    placed: [{ date, status: 'planned', moved: false, session: plan.sessions[0] }],
+                },
+            }));
+
+            const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+
+            expect(result.text).toContain(`${AS_OF} plan-a r1/ride-1: placement unknown; adjudication unknown; athlete unknown; performance unknown.`);
+            expect(result.text).toContain(`${otherDate} plan-a r1/ride-1: placement unknown; adjudication not adjudicated; athlete none; performance unknown.`);
+            expect(result.unavailableSources).not.toContain('external-plan execution round-trip inputs');
+        });
+
+        it('refuses an archived claim whose content hash does not match the stored revision', async () => {
+            const plan = externalPlanV1('plan-a', 2, ['ride-1']);
+            services.getRecommendationsInRange.mockResolvedValue({
+                status: 'AVAILABLE', data: [replaceDayRecommendation(AS_OF)], revision: null,
+            });
+            services.listRecommendationRevisions.mockResolvedValue({
+                status: 'AVAILABLE',
+                data: [archivedRevision(
+                    1,
+                    { externalPlan: { planId: 'plan-a', revision: 2, sessionId: 'ride-1', contentHash: 'tampered' } },
+                    { templateId: externalTemplateId('plan-a', 2, 'ride-1') },
+                )],
+                revision: 'r1',
+            });
+            services.getRevisionState.mockResolvedValue({ status: 'AVAILABLE', data: plan });
+            services.getPlacementState.mockResolvedValue({ status: 'AVAILABLE', data: placementFor('plan-a', 2, ['ride-1'], AS_OF) });
+            services.getActivePlanState.mockImplementation(async (_userId: string, date: string) => date !== AS_OF ? { status: 'MISSING' } : ({
+                status: 'AVAILABLE',
+                data: {
+                    header: { planId: 'plan-a', revision: 2, contentHash: await computeContentHash(plan) },
+                    plan, placement: null,
+                    placed: [{ date: AS_OF, status: 'planned', moved: false, session: plan.sessions[0] }],
+                },
+            }));
+
+            const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+
+            expect(result.text).not.toContain('manually replaced');
+            expect(result.text).toContain(`${AS_OF} plan-a r2/ride-1: placement unknown; adjudication unknown; athlete unknown; performance unknown.`);
+        });
+
+        it('refuses an archived claim whose verdict and template do not describe an external decision', async () => {
+            const plan = externalPlanV1('plan-a', 2, ['ride-1']);
+            const contentHash = await computeContentHash(plan);
+            services.getRecommendationsInRange.mockResolvedValue({
+                status: 'AVAILABLE', data: [replaceDayRecommendation(AS_OF)], revision: null,
+            });
+            services.listRecommendationRevisions.mockResolvedValue({
+                status: 'AVAILABLE',
+                data: [archivedRevision(
+                    1,
+                    { externalPlan: { planId: 'plan-a', revision: 2, sessionId: 'ride-1', contentHash } },
+                    { engineVerdict: 'advisory', templateId: 'rest_01' },
+                )],
+                revision: 'r1',
+            });
+            services.getRevisionState.mockResolvedValue({ status: 'AVAILABLE', data: plan });
+            services.getPlacementState.mockResolvedValue({ status: 'AVAILABLE', data: placementFor('plan-a', 2, ['ride-1'], AS_OF) });
+
+            const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+
+            expect(result.text).not.toContain('manually replaced');
+        });
+
+        it('falls back to unknown, never the current identity, when no archive carries externalPlan', async () => {
+            const plan = externalPlanV1('plan-a', 2, ['ride-1']);
+            services.getRecommendationsInRange.mockResolvedValue({
+                status: 'AVAILABLE', data: [replaceDayRecommendation(AS_OF)], revision: null,
+            });
+            services.listRecommendationRevisions.mockResolvedValue({
+                status: 'AVAILABLE',
+                data: [archivedRevision(2, { authoredOccurrence: { occurrenceId: 'occ-manual-1', decision: 'proceed' } })],
+                revision: 'r2',
+            });
+            services.getRevisionState.mockResolvedValue({ status: 'AVAILABLE', data: plan });
+            services.getPlacementState.mockResolvedValue({ status: 'AVAILABLE', data: placementFor('plan-a', 2, ['ride-1'], AS_OF) });
+
+            const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+
+            expect(result.text).not.toContain('manually replaced');
+        });
+
+        it('stays unknown on multi-session days where the record cannot name the primary', async () => {
+            const plan = externalPlanV1('plan-a', 2, ['ride-1', 'ride-2']);
+            const contentHash = await computeContentHash(plan);
+            const templateId = externalTemplateId('plan-a', 2, 'ride-1');
+            services.getRecommendationsInRange.mockResolvedValue({
+                status: 'AVAILABLE', data: [replaceDayRecommendation(AS_OF)], revision: null,
+            });
+            services.listRecommendationRevisions.mockResolvedValue({
+                status: 'AVAILABLE',
+                data: [archivedRevision(
+                    1,
+                    { externalPlan: { planId: 'plan-a', revision: 2, sessionId: 'ride-1', contentHash } },
+                    { templateId },
+                )],
+                revision: 'r1',
+            });
+            services.getRevisionState.mockResolvedValue({ status: 'AVAILABLE', data: plan });
+            services.getPlacementState.mockResolvedValue({ status: 'AVAILABLE', data: placementFor('plan-a', 2, ['ride-1', 'ride-2'], AS_OF) });
+
+            const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+
+            expect(result.text).toContain(`${AS_OF} plan-a r2/ride-1: placement unknown; adjudication unknown; athlete unknown; performance unknown.`);
+            expect(result.text).not.toContain('manually replaced');
+        });
     });
 
     it('fails closed when recommendation rest provenance does not match the immutable revision hash', async () => {

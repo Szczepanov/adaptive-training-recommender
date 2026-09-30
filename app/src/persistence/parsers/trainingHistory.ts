@@ -9,6 +9,7 @@ import type {
     ActivitySteadyHalfSummary,
     ActivityStimulusDomain,
     DailyRecommendation,
+    DailyRecommendationWithVerdict,
     FitWorkoutFingerprintKind,
     HrMeasurement,
     NormalizedGarminActivity,
@@ -20,7 +21,6 @@ import type { DataIssue, DataState } from '../../engine/dataState';
 import { validateRecommendation, isValidDate } from '../../engine/validation';
 
 type RawDocument = Record<string, unknown>;
-type RecommendationWithEngineVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
 const FIT_WORKOUT_FINGERPRINT_PATTERN = /^fit-workout-v2:[0-9a-f]{32}$/;
 
 function invalid(documentPath: string, code: string, field?: string, schemaVersion?: number): DataState<never> {
@@ -638,7 +638,7 @@ export function parseDailyRecommendation(raw: unknown, documentPath: string): Da
             issues: result.errors.map(error => ({ code: 'schema-validation-failed', field: error.field, documentPath, ...(typeof schemaVersion === 'number' ? { schemaVersion } : {}) })),
         };
     }
-    const recommendation: RecommendationWithEngineVerdict = {
+    const recommendation: DailyRecommendationWithVerdict = {
         ...result.data,
         ...(isShadowVerdict(raw.engineVerdict) ? { engineVerdict: raw.engineVerdict } : {}),
     };
@@ -646,5 +646,119 @@ export function parseDailyRecommendation(raw: unknown, documentPath: string): Da
         status: 'AVAILABLE',
         data: recommendation,
         revision: recommendation.revision ? `r${recommendation.revision}:${recommendation.updatedAt}` : (recommendation.updatedAt || null),
+    };
+}
+
+/** One immutable `daily_recommendations/{date}/revisions/{n}` archive written by
+ * `recommendationService.ts` `saveRecommendationInternal` when a new decision
+ * revision supersedes the previous one. Unlike the live document it carries no
+ * `userId`/`date`/`adherence` envelope -- only the prior decision bytes the
+ * rules layer verified (`archivesPriorRevision`: template, mode, rationale,
+ * `engineVerdict`, `prescription.id`).
+ *
+ * PR-C (#893 WP5.2 M-5/M-7): the round-trip projector's only archive read. The
+ * archived `recommendationAudit` is client-written and NOT rules-verified, so
+ * this parser validates its structure but hydration must still verify the
+ * archived `externalPlan` claim against stored plan-revision bytes before
+ * trusting it (M-7). An archive that fails any check here is INVALID and the
+ * calling row degrades to `unknown` (M-8) -- never trusted partially. */
+export interface ArchivedRecommendation {
+    revision: number;
+    templateId: string;
+    templateTitle: string;
+    category: string;
+    modality: string;
+    mode: DailyRecommendation['mode'];
+    rationale: string;
+    engineVerdict?: ShadowVerdict;
+    prescription?: unknown;
+    primarySession?: unknown;
+    additionalSessions?: unknown;
+    recommendationAudit?: {
+        externalPlan?: ArchivedExternalPlanClaim;
+        authoredOccurrence?: ArchivedAuthoredOccurrenceClaim;
+    };
+}
+
+export interface ArchivedExternalPlanClaim {
+    planId: string;
+    revision: number;
+    sessionId: string;
+    contentHash: string;
+}
+
+export interface ArchivedAuthoredOccurrenceClaim {
+    occurrenceId: string;
+    decision: 'proceed' | 'scale';
+}
+
+function parseArchivedExternalPlan(value: unknown): ArchivedExternalPlanClaim | undefined {
+    if (value === undefined) return undefined;
+    if (!isObject(value)) return undefined;
+    if (typeof value.planId !== 'string' || value.planId === ''
+        || typeof value.sessionId !== 'string' || value.sessionId === ''
+        || typeof value.contentHash !== 'string' || value.contentHash === ''
+        || typeof value.revision !== 'number' || !Number.isInteger(value.revision)) return undefined;
+    return { planId: value.planId, revision: value.revision, sessionId: value.sessionId, contentHash: value.contentHash };
+}
+
+function parseArchivedAuthoredOccurrence(value: unknown): ArchivedAuthoredOccurrenceClaim | undefined {
+    if (value === undefined) return undefined;
+    if (!isObject(value)) return undefined;
+    if (typeof value.occurrenceId !== 'string' || value.occurrenceId === ''
+        || (value.decision !== 'proceed' && value.decision !== 'scale')) return undefined;
+    return { occurrenceId: value.occurrenceId, decision: value.decision };
+}
+
+export function parseArchivedRecommendation(raw: unknown, documentPath: string): DataState<ArchivedRecommendation> {
+    if (!isObject(raw)) return invalid(documentPath, 'not-an-object');
+    if (typeof raw.revision !== 'number' || !Number.isInteger(raw.revision) || raw.revision < 1) {
+        return invalid(documentPath, 'invalid-archive-revision', 'revision');
+    }
+    for (const field of ['templateId', 'templateTitle', 'category', 'modality', 'rationale'] as const) {
+        if (typeof raw[field] !== 'string' || (raw[field] as string).trim() === '') {
+            return invalid(documentPath, 'missing-required-field', field);
+        }
+    }
+    if (raw.mode !== 'train' && raw.mode !== 'modify' && raw.mode !== 'recover') {
+        return invalid(documentPath, 'invalid-type', 'mode');
+    }
+    if (raw.engineVerdict !== undefined && !isShadowVerdict(raw.engineVerdict)) {
+        return invalid(documentPath, 'invalid-engine-verdict', 'engineVerdict');
+    }
+    let recommendationAudit: ArchivedRecommendation['recommendationAudit'];
+    if (raw.recommendationAudit !== undefined) {
+        if (!isObject(raw.recommendationAudit)) return invalid(documentPath, 'invalid-type', 'recommendationAudit');
+        const audit = raw.recommendationAudit;
+        const externalPlan = parseArchivedExternalPlan(audit.externalPlan);
+        if (audit.externalPlan !== undefined && externalPlan === undefined) {
+            return invalid(documentPath, 'invalid-type', 'recommendationAudit.externalPlan');
+        }
+        const authoredOccurrence = parseArchivedAuthoredOccurrence(audit.authoredOccurrence);
+        if (audit.authoredOccurrence !== undefined && authoredOccurrence === undefined) {
+            return invalid(documentPath, 'invalid-type', 'recommendationAudit.authoredOccurrence');
+        }
+        recommendationAudit = {
+            ...(externalPlan !== undefined ? { externalPlan } : {}),
+            ...(authoredOccurrence !== undefined ? { authoredOccurrence } : {}),
+        };
+    }
+    return {
+        status: 'AVAILABLE',
+        data: {
+            revision: raw.revision,
+            templateId: raw.templateId as string,
+            templateTitle: raw.templateTitle as string,
+            category: raw.category as string,
+            modality: raw.modality as string,
+            mode: raw.mode,
+            rationale: raw.rationale as string,
+            ...(isShadowVerdict(raw.engineVerdict) ? { engineVerdict: raw.engineVerdict } : {}),
+            ...(raw.prescription !== undefined ? { prescription: raw.prescription } : {}),
+            ...(raw.primarySession !== undefined ? { primarySession: raw.primarySession } : {}),
+            ...(raw.additionalSessions !== undefined ? { additionalSessions: raw.additionalSessions } : {}),
+            ...(recommendationAudit !== undefined ? { recommendationAudit } : {}),
+        },
+        revision: `archive-r${raw.revision}`,
     };
 }

@@ -14,7 +14,7 @@ import { resolvePlanningContext } from '../engine/planningMode';
 import { resolveExecutionDose } from '../engine/dose';
 import { resolveAvailability } from '../engine/schedule';
 import { adjudicateAuthoredSession, createAuthoredSessionTemplate, estimateAuthoredSessionSystemicCost } from '../engine/authoredSessionGates';
-import type { AuthoredPlanBlock, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, FixedActivity, ShadowVerdict } from '../engine/models';
+import type { AuthoredPlanBlock, Recommendation, NextDayPotentialPlan, DailyRecommendation, DailyRecommendationWithVerdict, DecisionJournalEntry, FixedActivity } from '../engine/models';
 import { isManualOccurrence, type SessionReferenceBinding } from '../sessions/models';
 import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import type { DataState } from '../engine/dataState';
@@ -171,7 +171,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
       decisionJournalService.getEntry(userId, resolved.date)
         .then(existing => {
           if (!existing || existing.actualVerdict) return;
-          const persisted = resolved.recommendation as DailyRecommendation & { engineVerdict?: ShadowVerdict };
+          const persisted = resolved.recommendation as DailyRecommendationWithVerdict;
           const exactVerdict = persisted.engineVerdict ?? resolveEngineShadowVerdict(persisted.mode);
           if (exactVerdict === 'advisory') return;
           return decisionJournalService.recordActualVerdict(userId, resolved.date, exactVerdict);

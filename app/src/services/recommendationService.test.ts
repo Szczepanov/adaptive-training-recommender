@@ -393,4 +393,52 @@ describe('RecommendationService persistence', () => {
         expect((writeData as Record<string, unknown>).revision).toBe(1);
         expect((writeData as Record<string, unknown>).engineVerdict).toBe('proceed');
     });
+
+    describe('listRecommendationRevisions (PR-C M-5)', () => {
+        const archive = (revision: number, audit?: Record<string, unknown>) => ({
+            id: String(revision),
+            data: () => ({
+                revision,
+                templateId: 'rest_01',
+                templateTitle: 'Total Rest',
+                category: 'Rest',
+                modality: 'None',
+                mode: 'recover',
+                rationale: 'Gate withheld the imported session.',
+                engineVerdict: 'defer',
+                ...(audit ? { recommendationAudit: audit } : {}),
+            }),
+        });
+        const externalAudit = {
+            externalPlan: { planId: 'autumn-block', revision: 2, sessionId: 'ride-1', contentHash: 'a'.repeat(64) },
+        };
+
+        it('lists one date revision archive in revision order', async () => {
+            firestore.getDocs.mockResolvedValue({ docs: [archive(1, externalAudit), archive(2)] });
+            const result = await new RecommendationService().listRecommendationRevisions('u1', '2026-09-20');
+            expect(result).toMatchObject({ status: 'AVAILABLE' });
+            if (result.status !== 'AVAILABLE') throw new Error('expected available');
+            expect(result.data.map(item => item.revision)).toEqual([1, 2]);
+            expect(result.data[0].recommendationAudit?.externalPlan).toMatchObject({ planId: 'autumn-block' });
+            expect(firestore.collection).toHaveBeenCalledWith(expect.anything(), 'users', 'u1', 'daily_recommendations', '2026-09-20', 'revisions');
+        });
+
+        it('returns an empty available listing when no revision was archived', async () => {
+            firestore.getDocs.mockResolvedValue({ docs: [] });
+            const result = await new RecommendationService().listRecommendationRevisions('u1', '2026-09-20');
+            expect(result).toMatchObject({ status: 'AVAILABLE', data: [] });
+        });
+
+        it('reports invalid instead of trusting a malformed archive partially', async () => {
+            firestore.getDocs.mockResolvedValue({ docs: [archive(1, externalAudit), { id: '2', data: () => ({ revision: 2 }) }] });
+            const result = await new RecommendationService().listRecommendationRevisions('u1', '2026-09-20');
+            expect(result.status).toBe('INVALID');
+        });
+
+        it('reports unavailable when the archive listing cannot be read', async () => {
+            firestore.getDocs.mockRejectedValue(new Error('offline'));
+            const result = await new RecommendationService().listRecommendationRevisions('u1', '2026-09-20');
+            expect(result).toMatchObject({ status: 'UNAVAILABLE', operation: 'read recommendation revision archive' });
+        });
+    });
 });
