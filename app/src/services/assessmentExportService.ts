@@ -1,4 +1,4 @@
-import { PHYSICAL_CAPITAL_PROTOCOLS } from '../observations/physicalCapitalProtocols';
+import { PHYSICAL_CAPITAL_PROTOCOL_REVISIONS } from '../observations/physicalCapitalProtocols';
 import {
     buildAssessmentDiagnosticExport,
     type AssessmentDiagnosticExport,
@@ -32,14 +32,15 @@ export class AssessmentExportService {
      * No global scans.
      */
     async loadDiagnosticExport(userId: string): Promise<AssessmentDiagnosticExport> {
-        const protocols = PHYSICAL_CAPITAL_PROTOCOLS;
+        const protocols = PHYSICAL_CAPITAL_PROTOCOL_REVISIONS;
         const allAttempts: AssessmentAttempt[] = [];
         const allTrials: AssessmentTrial[] = [];
         const allObservations: CanonicalObservationExport[] = [];
         const allResolvedContext: ResolvedContextExport[] = [];
 
         for (const protocol of protocols) {
-            const attempts = await this.attemptService.listAttemptsForProtocol(userId, protocol.id);
+            const attempts = (await this.attemptService.listAttemptsForProtocol(userId, protocol.id))
+                .filter(attempt => attempt.protocolRef.revision === protocol.revision);
             for (const attempt of attempts) {
                 allAttempts.push(attempt);
                 const trials = await this.trialService.listTrialsForAttempt(userId, protocol, attempt.id);
