@@ -2,14 +2,19 @@
  * Pure RFC 4180-compliant CSV field escaping and row formatting utilities.
  */
 
-const SPREADSHEET_FORMULA_PREFIX = /^[=+\-@\t\r\n\u0000＝＋－＠]/u;
+const SPREADSHEET_FORMULA_PREFIX = /^[=+\-@＝＋－＠]/u;
 
 /**
  * Neutralize formula-leading untrusted text before it crosses a spreadsheet-facing CSV boundary.
  * Keep this separate from RFC 4180 syntax escaping so numeric evidence remains numeric.
  */
 export function spreadsheetSafeText(value: string): string {
-    return SPREADSHEET_FORMULA_PREFIX.test(value) ? `'${value}` : value;
+    const firstCharacter = value[0];
+    const startsWithControlCharacter = firstCharacter === '\t'
+        || firstCharacter === '\r'
+        || firstCharacter === '\n'
+        || firstCharacter === '\0';
+    return startsWithControlCharacter || SPREADSHEET_FORMULA_PREFIX.test(value) ? `'${value}` : value;
 }
 
 export function csvField(value: string | number | boolean | null | undefined): string {

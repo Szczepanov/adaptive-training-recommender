@@ -167,9 +167,8 @@ export const BodyCompositionPanel: React.FC<BodyCompositionPanelProps> = ({
 
   // Auto fallback to manual if user hasn't explicitly selected provider and provider has 0 points
   const effectiveSource = useMemo(() => {
-    const stored = loadStoredBodyMassSource();
     return chooseEffectiveBodyMassSource(
-      stored,
+      selectedSource,
       providerPointsByDate.size > 0,
       manualPointsByDate.size > 0,
     );
