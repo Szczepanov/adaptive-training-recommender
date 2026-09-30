@@ -297,7 +297,8 @@ export function renderPlannedExecutionStatuses(
         const replacedBy = replacedByIds.slice(0, ROUND_TRIP_MAX_REPLACED_BY_IDS)
             .map(item => `replaced by occurrence ${renderRoundTripIdentifier(item)}`);
         if (replacedByIds.length > ROUND_TRIP_MAX_REPLACED_BY_IDS) {
-            replacedBy.push(`${replacedByIds.length - ROUND_TRIP_MAX_REPLACED_BY_IDS} additional replacement ids omitted`);
+            const omitted = replacedByIds.length - ROUND_TRIP_MAX_REPLACED_BY_IDS;
+            replacedBy.push(`${omitted} additional replacement ${omitted === 1 ? 'id' : 'ids'} omitted`);
         }
         const archiveFailure = status.evidence.includes('replace-archive-unavailable')
             ? ['replacement source unavailable (archive read failed)']
