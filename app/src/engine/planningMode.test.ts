@@ -34,7 +34,7 @@ describe('ADR-0017 planning mode resolution', () => {
         },
     );
 
-    it('keeps a distant cycling event as context while evergreen owns dates before the first structured block', () => {
+    it('keeps a distant cycling event as context while fallback owns dates before the currently authored structured horizon', () => {
         const cyclingEvent = event('cycling_event');
         const beforeBuild = '2026-06-20'; // race D-85; derived build starts D-84
         const firstBuildDay = '2026-06-21';
