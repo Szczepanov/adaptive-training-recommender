@@ -511,14 +511,19 @@ only when a derived or athlete-authored plan block actually owns the evaluated d
 the first owned block, the race remains the focus event and periodization/UI context, but
 `eventStrategy: 'evergreen_fallback'` makes the evergreen weekly allocator authoritative
 for objectives, coverage roles, strength frequency, capability maintenance and dose. An
-explicit travel block may therefore activate structured authority before the derived build
-window, while a distant future race cannot suppress Base programming merely because its full
-future PlanDefinition can already be constructed. Fallback dates load the same established-athlete
-and mechanical evidence streams as ordinary Evergreen dates; the contextual event must not make
-Evergreen fail closed to a shorter history window. Week-ahead projection re-resolves structured
-ownership for each projected date, so a supplied Evergreen fallback definition yields when the
-event plan becomes active (for example D-85 → D-84) instead of pinning today's strategy across
-the forecast horizon. Running, triathlon, strength, and general
+explicit travel block may therefore activate structured authority before the current
+generated build window, while a distant future race cannot suppress Base programming merely
+because its full future PlanDefinition can already be constructed. The generated cycling plan
+currently begins its build at D-84; that value is a current plan-policy boundary, not a
+physiological cut-point or the point at which goal-directed preparation is supposed to begin.
+Fallback dates load the same established-athlete and mechanical evidence streams as ordinary
+Evergreen dates; the contextual event must not make Evergreen fail closed to a shorter history
+window. Week-ahead projection re-resolves structured ownership for each projected date, so a
+supplied Evergreen fallback definition yields when the event plan's first authored block becomes
+active (the current fixture is D-85 → D-84) instead of pinning today's strategy across the
+forecast horizon. This fallback fixes the authority gap without claiming to solve long-horizon
+mesocycle planning (#927), ownership of the D-84/D-35 phase horizons (#928), or season-level
+A/B/C event coordination (#929). Running, triathlon, strength, and general
 events retain demand-derived planning. Running race-specific objectives are modality-scoped
 and half-marathon/marathon demand adds a long-run durability objective; the generic
 single-sport aerobic-base objective intentionally remains cross-training-creditable.
