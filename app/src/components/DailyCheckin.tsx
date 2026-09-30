@@ -7,10 +7,11 @@ import { preferencesService } from '../services/preferencesService';
 import {
   relevantFollowupRegions,
   resolvePendingNextMorningFollowups,
+  type NextMorningFollowupCandidate,
   type SessionFollowupRegions,
 } from '../responses/followupSchedule';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
-import type { BodyRegion, DailySubjectiveCheckin, NutritionTrackingAdherence, PhysicalWorkCheckin, RedFlagCategory, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
+import type { BodyRegion, DailySubjectiveCheckin, NutritionTrackingAdherence, PhysicalWorkCheckin, RedFlagCategory, TissueResponseLevel } from '../engine/models';
 import type { HealthContextCheckin } from '../engine/healthAnomalyModels';
 import { BODY_REGIONS } from '../engine/models';
 import { isCompletedSubjectiveCheckin } from '../engine/checkinCompletion';
@@ -139,7 +140,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
   const [error, setError] = useState<string | null>(null);
   const [showGarminComparison, setShowGarminComparison] = useState(false);
   const [recoverySnapshot, setRecoverySnapshot] = useState<Awaited<ReturnType<typeof recoverySnapshotService.getRecoverySnapshotByDate>>>(null);
-  const [pendingFollowups, setPendingFollowups] = useState<Array<{ region: BodyRegion; sessionRef?: RegionTissueResponse['sourceSessionRef'] }>>([]);
+  const [pendingFollowups, setPendingFollowups] = useState<NextMorningFollowupCandidate[]>([]);
   const [pendingTissueRegion, setPendingTissueRegion] = useState<BodyRegion | ''>('');
   const [tissueResponseOpen, setTissueResponseOpen] = useState(false);
   const [redFlagDetailsOpen, setRedFlagDetailsOpen] = useState(false);
@@ -455,15 +456,20 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
   const handleAnswerFollowup = async (
     region: BodyRegion,
     level: TissueResponseLevel,
-    sessionRef?: RegionTissueResponse['sourceSessionRef'],
+    sessionRefs: NextMorningFollowupCandidate['sessionRefs'],
   ) => {
     if (!checkin) return;
     const currentResponses = { ...(checkin.tissueResponses ?? {}) };
     const existingEntry = currentResponses[region] ?? { region, morningState: level };
+    // ADR-0023 D-MRESP keeps sourceSessionRef as compatibility scaffolding only. Attach it
+    // when exactly one attribution is known; never replace an existing different reference
+    // when several sessions can legitimately contribute to the same region-level response.
+    const sourceSessionRef = existingEntry.sourceSessionRef
+      ?? (sessionRefs.length === 1 ? sessionRefs[0] : undefined);
     currentResponses[region] = {
       ...existingEntry,
       nextMorningReaction: level,
-      ...(sessionRef ? { sourceSessionRef: sessionRef } : {}),
+      ...(sourceSessionRef ? { sourceSessionRef } : {}),
     };
     const updatedCheckin: Partial<DailySubjectiveCheckin> = {
       ...checkin,
@@ -482,31 +488,36 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
         // draft here could clobber a slider/toggle edit made while this request was in flight.
         setPersistedCheckin(savedCheckin);
       }
-      setPendingFollowups(prev => prev.filter(item => !(item.region === region && item.sessionRef?.id === sessionRef?.id && item.sessionRef?.kind === sessionRef?.kind)));
+      setPendingFollowups(prev => prev.filter(item => item.region !== region));
     } catch (err: unknown) {
       setError(`Couldn't save follow-up: ${getErrorMessage(err)}`);
       return;
     }
 
-    // M5.2: one session-level SessionResponse per session for the next_morning window --
-    // several regions of the same session must not create duplicates, so an existing one
-    // is checked for first. The tissue value itself is never written here or duplicated
-    // into it (D-MRESP) -- the check-in write above is the only tissue authority.
-    if (sessionRef && checkin.userId && checkin.date) {
-      try {
-        const already = await sessionResponseService.getResponseForWindow(checkin.userId, sessionRef, 'next_morning');
+    // M5.2: the tissue answer above is region-level and canonical. Preserve every session
+    // linkage represented by that one prompt as a linkage-only SessionResponse, without
+    // duplicating the tissue value itself. Each source/window pair stays idempotent.
+    if (sessionRefs.length > 0 && checkin.userId && checkin.date) {
+      await Promise.allSettled(sessionRefs.map(async sessionRef => {
+        const already = await sessionResponseService.getResponseForWindow(checkin.userId!, sessionRef, 'next_morning');
         if (!already) {
-          await sessionResponseService.recordResponse(checkin.userId, sessionRef, 'next_morning', checkin.date, checkin.date, {});
+          await sessionResponseService.recordResponse(
+            checkin.userId!,
+            sessionRef,
+            'next_morning',
+            checkin.date!,
+            checkin.date!,
+            {},
+          );
         }
-      } catch {
-        // Best-effort session-level linkage; the tissue answer above already succeeded and
-        // remains the source of truth injuryPolicy.ts/D-SUBJFLOOR consume.
-      }
+      }));
+      // Linkage persistence is best-effort. The canonical tissue answer already succeeded
+      // and remains the source of truth injuryPolicy.ts/D-SUBJFLOOR consume.
     }
   };
 
-  const handleSkipFollowup = (region: BodyRegion, sessionRef?: RegionTissueResponse['sourceSessionRef']) => {
-    setPendingFollowups(prev => prev.filter(item => !(item.region === region && item.sessionRef?.id === sessionRef?.id && item.sessionRef?.kind === sessionRef?.kind)));
+  const handleSkipFollowup = (region: BodyRegion) => {
+    setPendingFollowups(prev => prev.filter(item => item.region !== region));
   };
 
   const handleAvailabilityChange = (field: string, value: number | string | boolean | null) => {
@@ -681,7 +692,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
                 type="button"
                 className="btn-followup-pill"
                 title={TISSUE_LEVEL_HELP[lvl]}
-                onClick={() => void handleAnswerFollowup(pendingFollowups[0].region, lvl, pendingFollowups[0].sessionRef)}
+                onClick={() => void handleAnswerFollowup(pendingFollowups[0].region, lvl, pendingFollowups[0].sessionRefs)}
               >
                 {TISSUE_LEVEL_LABELS[lvl]}
               </button>
@@ -689,7 +700,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
             <button
               type="button"
               className="btn-followup-skip"
-              onClick={() => handleSkipFollowup(pendingFollowups[0].region, pendingFollowups[0].sessionRef)}
+              onClick={() => handleSkipFollowup(pendingFollowups[0].region)}
             >
               Skip
             </button>

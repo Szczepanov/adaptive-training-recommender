@@ -40,14 +40,25 @@ export interface FacetTagSource {
     safetyTags?: string[];
 }
 
+type FollowupSessionRef = NonNullable<RegionTissueResponse['sourceSessionRef']>;
+
 export interface NextMorningFollowupCandidate {
     region: BodyRegion;
-    sessionRef?: RegionTissueResponse['sourceSessionRef'];
+    /**
+     * Every session whose movement metadata contributes to this region-level prompt.
+     * A region is asked once even when several sessions touched it; linkage is preserved
+     * separately rather than forcing an ambiguous singular tissue attribution.
+     */
+    sessionRefs: readonly FollowupSessionRef[];
 }
 
 export interface SessionFollowupRegions {
-    sessionRef: NonNullable<RegionTissueResponse['sourceSessionRef']>;
+    sessionRef: FollowupSessionRef;
     regions: readonly BodyRegion[];
+}
+
+function sameSessionRef(a: FollowupSessionRef, b: FollowupSessionRef): boolean {
+    return a.kind === b.kind && a.id === b.id && a.date === b.date;
 }
 
 function regionsForTags(source: FacetTagSource): BodyRegion[] {
@@ -79,44 +90,54 @@ export function relevantFollowupRegions(exercises: readonly FacetTagSource[]): B
  * candidates remain useful for completed executions whose catalog facets identify relevant
  * regions even when the athlete never manually flagged a tissue response.
  *
- * The current day's `nextMorningReaction` closes that region for this check-in date. Missing
- * answers remain missing/unknown; this function is pure and never fabricates persistence.
+ * The current day's `nextMorningReaction` closes that region for this check-in date. The
+ * queue is region-level: multiple relevant sessions for one region become one prompt with
+ * multiple linkage refs, so one tissue observation cannot be overwritten repeatedly merely
+ * because yesterday contained more than one session. Missing answers remain missing/unknown;
+ * this function is pure and never fabricates persistence.
  */
 export function resolvePendingNextMorningFollowups(
     previousDayTissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> | undefined,
     currentDayTissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> | undefined,
     sessionDerived: readonly SessionFollowupRegions[] = [],
 ): NextMorningFollowupCandidate[] {
-    const needed: NextMorningFollowupCandidate[] = [];
-    const coveredRegionSessionKeys = new Set<string>();
+    const neededByRegion = new Map<BodyRegion, { region: BodyRegion; sessionRefs: FollowupSessionRef[] }>();
+
+    const candidateFor = (region: BodyRegion) => {
+        if (currentDayTissueResponses?.[region]?.nextMorningReaction) return null;
+        let candidate = neededByRegion.get(region);
+        if (!candidate) {
+            candidate = { region, sessionRefs: [] };
+            neededByRegion.set(region, candidate);
+        }
+        return candidate;
+    };
+
+    const addSessionRef = (
+        candidate: { region: BodyRegion; sessionRefs: FollowupSessionRef[] },
+        sessionRef: FollowupSessionRef,
+    ) => {
+        if (!candidate.sessionRefs.some(existing => sameSessionRef(existing, sessionRef))) {
+            candidate.sessionRefs.push(sessionRef);
+        }
+    };
 
     for (const [regionKey, response] of Object.entries(previousDayTissueResponses ?? {})) {
         const region = regionKey as BodyRegion;
         if (!response || deriveTissueSeverity(response) === null) continue;
 
-        const sessionKey = response.sourceSessionRef
-            ? `${response.sourceSessionRef.kind}:${response.sourceSessionRef.id}`
-            : 'checkin';
-        coveredRegionSessionKeys.add(`${sessionKey}:${region}`);
+        const candidate = candidateFor(region);
+        if (!candidate) continue;
+        if (response.sourceSessionRef) addSessionRef(candidate, response.sourceSessionRef);
+    }
 
-        if (!currentDayTissueResponses?.[region]?.nextMorningReaction) {
-            needed.push({
-                region,
-                ...(response.sourceSessionRef ? { sessionRef: response.sourceSessionRef } : {}),
-            });
+    for (const session of sessionDerived) {
+        for (const region of session.regions) {
+            const candidate = candidateFor(region);
+            if (!candidate) continue;
+            addSessionRef(candidate, session.sessionRef);
         }
     }
 
-    for (const candidate of sessionDerived) {
-        const sessionKey = `${candidate.sessionRef.kind}:${candidate.sessionRef.id}`;
-        for (const region of candidate.regions) {
-            const key = `${sessionKey}:${region}`;
-            if (coveredRegionSessionKeys.has(key)) continue;
-            coveredRegionSessionKeys.add(key);
-            if (currentDayTissueResponses?.[region]?.nextMorningReaction) continue;
-            needed.push({ region, sessionRef: candidate.sessionRef });
-        }
-    }
-
-    return needed;
+    return [...neededByRegion.values()];
 }

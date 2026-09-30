@@ -159,7 +159,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
    * between that evaluation and the tap (plan step 11); cleared alongside the statuses. */
   const [bundleMemberInputRevision, setBundleMemberInputRevision] = useState<DashboardInputRevision | null>(null);
   const [additionalSessionNotice, setAdditionalSessionNotice] = useState<string | null>(null);
-  const [hasPendingSessionResponse, setHasPendingSessionResponse] = useState(false);
+  const [hasPendingNextMorningFollowup, setHasPendingNextMorningFollowup] = useState(false);
   const pendingAdherenceRef = useRef(pendingAdherence);
   useEffect(() => { pendingAdherenceRef.current = pendingAdherence; }, [pendingAdherence]);
 
@@ -184,7 +184,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
 
   useEffect(() => {
     if (!decisionInput) {
-      setHasPendingSessionResponse(false);
+      setHasPendingNextMorningFollowup(false);
       return;
     }
     let cancelled = false;
@@ -223,13 +223,13 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         }
 
         if (cancelled) return;
-        setHasPendingSessionResponse(resolvePendingNextMorningFollowups(
+        setHasPendingNextMorningFollowup(resolvePendingNextMorningFollowups(
           yesterdayCheckin?.tissueResponses,
           todayCheckin?.tissueResponses,
           sessionDerived,
         ).length > 0);
       } catch {
-        if (!cancelled) setHasPendingSessionResponse(false);
+        if (!cancelled) setHasPendingNextMorningFollowup(false);
       }
     })();
 
@@ -1434,7 +1434,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
 
   return (
     <div className="home-container">
-      {hasPendingSessionResponse && (
+      {hasPendingNextMorningFollowup && (
         <aside className="session-response-reminder" aria-label="Session response follow-up">
           <div>
             <strong>A next-morning follow-up is waiting.</strong>

@@ -61,7 +61,7 @@ describe('resolvePendingNextMorningFollowups', () => {
             shoulder: { region: 'shoulder', morningState: 'moderate' },
         }, undefined);
 
-        expect(pending).toEqual([{ region: 'shoulder' }]);
+        expect(pending).toEqual([{ region: 'shoulder', sessionRefs: [] }]);
     });
 
     it('includes relevant regions derived from a completed session even without a manual tissue flag', () => {
@@ -72,8 +72,8 @@ describe('resolvePendingNextMorningFollowups', () => {
         );
 
         expect(pending).toEqual([
-            { region: 'hip', sessionRef: executionRef },
-            { region: 'knee', sessionRef: executionRef },
+            { region: 'hip', sessionRefs: [executionRef] },
+            { region: 'knee', sessionRefs: [executionRef] },
         ]);
     });
 
@@ -95,8 +95,36 @@ describe('resolvePendingNextMorningFollowups', () => {
         );
 
         expect(pending).toEqual([
-            { region: 'knee', sessionRef: executionRef },
-            { region: 'hip', sessionRef: executionRef },
+            { region: 'knee', sessionRefs: [executionRef] },
+            { region: 'hip', sessionRefs: [executionRef] },
         ]);
+    });
+
+    it('coalesces multiple session candidates for the same region into one prompt', () => {
+        const secondExecutionRef = { kind: 'execution' as const, id: 'exec-yesterday-2', date: '2026-09-29' };
+
+        const pending = resolvePendingNextMorningFollowups(
+            undefined,
+            undefined,
+            [
+                { sessionRef: executionRef, regions: ['knee'] },
+                { sessionRef: secondExecutionRef, regions: ['knee'] },
+            ],
+        );
+
+        expect(pending).toEqual([{
+            region: 'knee',
+            sessionRefs: [executionRef, secondExecutionRef],
+        }]);
+    });
+
+    it('coalesces a source-less manual tissue flag with a session-derived candidate', () => {
+        const pending = resolvePendingNextMorningFollowups(
+            { knee: { region: 'knee', morningState: 'moderate' } },
+            undefined,
+            [{ sessionRef: executionRef, regions: ['knee'] }],
+        );
+
+        expect(pending).toEqual([{ region: 'knee', sessionRefs: [executionRef] }]);
     });
 });
