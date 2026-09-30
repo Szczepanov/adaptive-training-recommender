@@ -4,7 +4,7 @@ import { buildMicrocycleState, getUnresolvedObjectives } from './microcycle';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { evaluatePeriodizationPhase, resolveMultiEventObjectives, type DroppedContributorObjective, type PeriodizationResult } from './periodization';
-import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
+import { resolveActivePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { resolvePlanningContext, type PlanningContext } from './planningMode';
 import { applyPlanningOverlays } from './planningOverlays';
@@ -29,7 +29,9 @@ export function eventStrengthSupportSessions(
     planningContext: PlanningContext,
     profile: TrainingIntentProfile | null | undefined,
 ): number {
-    if (planningContext.mode !== 'event_directed' || profile?.priorities.includes('strength_muscle') !== true) return 0;
+    if (planningContext.mode !== 'event_directed'
+        || planningContext.eventStrategy !== 'structured_plan'
+        || profile?.priorities.includes('strength_muscle') !== true) return 0;
     const floor = strengthRequirement('required').floor;
     const authoredPrimaryStrengthRoles = 1;
     return floor?.dose.unit === 'sessions' ? Math.max(0, floor.dose.value - authoredPrimaryStrengthRoles) : 0;
@@ -160,15 +162,23 @@ function resolveIntentAuthorities(
     trainingIntentProfile: TrainingIntentProfile | null,
 ) {
     const eventPeriodization = evaluatePeriodizationPhase(events, date);
-    const planningContext = resolvePlanningContext(trainingIntentProfile, eventPeriodization, date);
+    const planningContext = resolvePlanningContext(
+        trainingIntentProfile,
+        eventPeriodization,
+        date,
+        null,
+        authoredPlanBlocks,
+    );
     // PlanningContext is the sole authority for whether event periodization applies.
     const periodization = planningContext.mode === 'event_directed'
         ? eventPeriodization
         : evaluatePeriodizationPhase([], date);
     const strengthSupportSessions = eventStrengthSupportSessions(planningContext, trainingIntentProfile);
-    const planDefinition = resolvePlanDefinitionForEvent(
-        periodization.focusEvent, authoredPlanBlocks, strengthSupportSessions,
-    );
+    const planDefinition = planningContext.eventStrategy === 'structured_plan'
+        ? resolveActivePlanDefinitionForEvent(
+            periodization.focusEvent, date, authoredPlanBlocks, strengthSupportSessions,
+        )
+        : null;
     const performedFactsCoverageDescriptor = planDefinition
         ? coverageSetFor(planDefinition.coverageSetId)
         : EVERGREEN_GENERAL_COVERAGE_SET;

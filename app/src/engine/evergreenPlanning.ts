@@ -205,7 +205,9 @@ export function resolveEvergreenPlan(
     /** Inputs used only by the #804 mechanical capability owner. */
     mechanical: EvergreenMechanicalInputs = {},
 ): ResolvedEvergreenPlan | null {
-    if (planningContext.mode !== 'evergreen' || !preferences) return null;
+    const ownsEvergreenProgramming = planningContext.mode === 'evergreen'
+        || (planningContext.mode === 'event_directed' && planningContext.eventStrategy === 'evergreen_fallback');
+    if (!ownsEvergreenProgramming || !preferences) return null;
     const resolvedWindows = Array.from({ length: Math.max(1, days) }, (_, index) => {
         const windowDate = addDaysToLocalDateString(date, index);
         const resolved = resolveAvailability(windowDate, null, [...fixedActivities], context, scheduleOverlays);
@@ -269,7 +271,9 @@ export function resolveEvergreenPlan(
         : packed;
     const capability = capabilityMaintenanceEnabled ? resolveCapabilityMaintenancePlan({
         profile,
-        mode: planningContext.mode,
+        // A far-out event remains contextual in PlanningContext, but executable
+        // programming is evergreen until a structured event block owns this date.
+        mode: planningContext.eventStrategy === 'evergreen_fallback' ? 'evergreen' : planningContext.mode,
         date,
         planningHorizonDays: Math.max(1, days),
         exposures: capabilityEvidence.exposures,

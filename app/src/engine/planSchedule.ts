@@ -486,3 +486,18 @@ export function resolvePlanDefinitionForEvent(
   const result = buildCyclingEventPlan(event, authoredBlocks, strengthSupportSessions);
   return result.status === 'AVAILABLE' ? result.data : null;
 }
+
+/** Date-local structured-plan authority. A future event may already have a complete
+ * PlanDefinition, but that plan owns the current decision only when one of its blocks
+ * actually contains the date. This preserves event context without letting a distant
+ * future block suppress Base/evergreen weekly programming. */
+export function resolveActivePlanDefinitionForEvent(
+  event: UserEvent | null,
+  date: string,
+  authoredBlocks: readonly AuthoredPlanBlock[] = [],
+  strengthSupportSessions: number = 0,
+): PlanDefinition | null {
+  const plan = resolvePlanDefinitionForEvent(event, authoredBlocks, strengthSupportSessions);
+  if (!plan) return null;
+  return plan.blocks.some(block => block.startDate <= date && date <= block.endDate) ? plan : null;
+}
