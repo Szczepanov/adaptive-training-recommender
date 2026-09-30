@@ -122,6 +122,59 @@ describe('projectPlannedExecutionStatus', () => {
         expect(rows[3]).toContain('/ride-b');
     });
 
+    describe('renderPlannedExecutionStatuses provenance and bounds (PR-D D0)', () => {
+        const rowStatus = (overrides: Partial<PlannedExecutionStatus> = {}): PlannedExecutionStatus => ({
+            date: '2026-09-20',
+            authored: { kind: 'session', source },
+            placement: 'unknown',
+            adjudication: 'unknown',
+            athleteDisposition: 'unknown',
+            performance: 'unknown',
+            evidence: [],
+            ...overrides,
+        });
+
+        it('renders replacement provenance from replaced-by evidence', () => {
+            const rows = renderPlannedExecutionStatuses([rowStatus({
+                athleteDisposition: 'manually_replaced',
+                evidence: ['recommendation:2026-09-20', 'replaced-by:occ-manual-1'],
+            })]).filter(line => line.startsWith('- '));
+
+            expect(rows).toEqual([
+                '- 2026-09-20 plan-a r2/ride-1: placement unknown; adjudication unknown; athlete manually replaced; performance unknown; replaced by occurrence occ-manual-1.',
+            ]);
+        });
+
+        it('renders a row-level archive failure distinctly from non-determinable unknown', () => {
+            const rows = renderPlannedExecutionStatuses([rowStatus({
+                evidence: ['replace-archive-unavailable'],
+            })]).filter(line => line.startsWith('- '));
+
+            expect(rows).toEqual([
+                '- 2026-09-20 plan-a r2/ride-1: placement unknown; adjudication unknown; athlete unknown; performance unknown; replacement source unavailable (archive read failed).',
+            ]);
+        });
+
+        it('keeps the newest 20 rows in chronological order with a directional omission line', () => {
+            const day = (index: number): string => `2026-09-${String(index).padStart(2, '0')}`;
+            const statuses = Array.from({ length: 22 }, (_, offset) => rowStatus({
+                date: day(offset + 1),
+                occurrenceId: `occ-${String(offset + 1).padStart(2, '0')}`,
+                evidence: [],
+            }));
+            const rows = renderPlannedExecutionStatuses(statuses).filter(line => line.startsWith('- '));
+
+            expect(rows).toHaveLength(21);
+            expect(rows[0]).toContain('2026-09-03');
+            expect(rows[0]).toContain('occurrence occ-03');
+            expect(rows[19]).toContain('2026-09-22');
+            expect(rows[19]).toContain('occurrence occ-22');
+            expect(rows[20]).toBe('- 2 earlier records omitted from this bounded section.');
+            expect(rows.join('\n')).not.toContain('2026-09-01');
+            expect(rows.join('\n')).not.toContain('2026-09-02');
+        });
+    });
+
 });
 
 const REST_TEMPLATE_ID = getCanonicalRestTemplate().id;

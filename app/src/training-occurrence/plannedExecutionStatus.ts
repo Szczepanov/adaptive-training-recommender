@@ -222,13 +222,16 @@ export function renderPlannedExecutionStatuses(
     if (statuses === null) return [heading, '', 'Round-trip records are unknown because one or more sources could not be read.'];
     if (statuses.length === 0) return [heading, '', 'No exact external-plan occurrence records were available in this window. Missing activity is not treated as a missed session.'];
     const label = (value: string) => value.replaceAll('_', ' ');
-    const rows = [...statuses]
+    const sorted = [...statuses]
         .sort((left, right) => left.date.localeCompare(right.date)
             || (left.authored.kind === 'session' && right.authored.kind === 'session'
                 ? left.authored.source.sessionId.localeCompare(right.authored.source.sessionId)
                 : left.authored.kind.localeCompare(right.authored.kind))
-            || (left.occurrenceId ?? '').localeCompare(right.occurrenceId ?? ''))
-        .slice(0, 20)
+            || (left.occurrenceId ?? '').localeCompare(right.occurrenceId ?? ''));
+    // PR-D: the bound keeps the newest rows (a planning handoff needs the most
+    // recent days), rendered chronologically. The omission line names the cut end.
+    const visible = sorted.length > 20 ? sorted.slice(sorted.length - 20) : sorted;
+    const rows = visible
         .map(status => {
             const authored = status.authored.kind === 'session'
                 ? `${status.authored.source.planId} r${status.authored.source.revision}/${status.authored.source.sessionId}`
@@ -237,9 +240,15 @@ export function renderPlannedExecutionStatuses(
                     : status.authored.kind;
             const unexpectedWork = status.evidence.filter(item => item.startsWith('observed-work:'));
             const workNote = unexpectedWork.length > 0 ? ` Authored rest/no session; observed work: ${unexpectedWork.map(item => item.slice('observed-work:'.length)).join(', ')}.` : '';
-            const provenance = [status.occurrenceId && `occurrence ${status.occurrenceId}`, status.executionId && `execution ${status.executionId}`, status.performedOccurrenceId && `performed ${status.performedOccurrenceId}`, status.prescriptionHash && `prescription ${status.prescriptionHash}`].filter(Boolean).join('; ');
+            const replacedBy = status.evidence
+                .filter(item => item.startsWith('replaced-by:'))
+                .map(item => `replaced by occurrence ${item.slice('replaced-by:'.length)}`);
+            const archiveFailure = status.evidence.includes('replace-archive-unavailable')
+                ? ['replacement source unavailable (archive read failed)']
+                : [];
+            const provenance = [status.occurrenceId && `occurrence ${status.occurrenceId}`, status.executionId && `execution ${status.executionId}`, status.performedOccurrenceId && `performed ${status.performedOccurrenceId}`, status.prescriptionHash && `prescription ${status.prescriptionHash}`, ...replacedBy, ...archiveFailure].filter(Boolean).join('; ');
             return `- ${status.date} ${authored}: placement ${label(status.placement)}; adjudication ${label(status.adjudication)}; athlete ${label(status.athleteDisposition)}; performance ${label(status.performance)}${provenance ? `; ${provenance}` : ''}.${workNote}`;
         });
-    if (statuses.length > 20) rows.push(`- ${statuses.length - 20} additional records omitted from this bounded section.`);
+    if (statuses.length > 20) rows.push(`- ${statuses.length - 20} earlier records omitted from this bounded section.`);
     return [heading, '', ...rows];
 }

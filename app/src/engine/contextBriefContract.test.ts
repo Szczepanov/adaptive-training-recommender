@@ -229,7 +229,7 @@ describe('context brief contract identity (#894)', () => {
         })).toThrow(/generation timestamp mismatch/);
     });
 
-    it('requires source state and currency when the service enforces v3', () => {
+    it('requires source state and currency when the service enforces the current contract', () => {
         const generatedAt = '2026-09-10T06:00:00.000Z';
         const text = buildContextBrief(baseInput({ purpose: 'planning', generatedAt }));
         expect(() => assertRenderedBriefContract(text, {

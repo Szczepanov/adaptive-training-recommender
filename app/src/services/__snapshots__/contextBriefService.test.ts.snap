@@ -3,7 +3,7 @@
 exports[`ContextBriefService > golden service artifact: 2-day daily export 1`] = `
 "# Morning Training & Readiness Brief
 
-Contract version: 2026-09-context-brief-contract-v3
+Contract version: 2026-09-context-brief-contract-v4
 Purpose: morning
 As-of date: 2026-08-15 (Europe/Warsaw calendar date)
 Retrospective detail window: 2026-08-14 → 2026-08-15 (2 days)
@@ -97,7 +97,7 @@ No recommendation recorded for today yet (check-in may be pending or sync in pro
 exports[`ContextBriefService > golden service artifact: 14-day diagnostic export 1`] = `
 "# Training context brief
 
-Contract version: 2026-09-context-brief-contract-v3
+Contract version: 2026-09-context-brief-contract-v4
 Purpose: diagnostic
 As-of date: 2026-08-15 (Europe/Warsaw calendar date)
 Retrospective detail window: 2026-08-02 → 2026-08-15 (14 days)
@@ -300,7 +300,7 @@ Use this exact day-block format so it remains compatible with 1-click plan impor
 exports[`ContextBriefService > golden service artifact: 14-day full export 1`] = `
 "# Training context brief
 
-Contract version: 2026-09-context-brief-contract-v3
+Contract version: 2026-09-context-brief-contract-v4
 Purpose: planning
 As-of date: 2026-08-15 (Europe/Warsaw calendar date)
 Retrospective detail window: 2026-08-02 → 2026-08-15 (14 days)

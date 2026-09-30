@@ -162,9 +162,9 @@ describe('ContextBriefService', () => {
         expect(result.text).toContain('sport_skill: overdue since 2026-08-01; blocked (modality_avoided)');
     });
 
-    it('emits the v3 planning round-trip section and preserves unavailable source reads as unknown', async () => {
+    it('emits the planning round-trip section and preserves unavailable source reads as unknown', async () => {
         const empty = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
-        expect(empty.contractVersion).toBe('2026-09-context-brief-contract-v3');
+        expect(empty.contractVersion).toBe('2026-09-context-brief-contract-v4');
         expect(empty.text).toContain('External-plan execution round trip (14-day window)');
         expect(empty.text).toContain('Missing activity is not treated as a missed session.');
 
@@ -301,7 +301,7 @@ describe('ContextBriefService', () => {
 
             const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
 
-            expect(result.text).toContain(`${AS_OF} plan-a r2/ride-1: placement unknown; adjudication unknown; athlete manually replaced; performance unknown.`);
+            expect(result.text).toContain(`${AS_OF} plan-a r2/ride-1: placement unknown; adjudication unknown; athlete manually replaced; performance unknown; replaced by occurrence occ-manual-1.`);
         });
 
         it('selects the highest archived revision carrying externalPlan, not revision n-1', async () => {
@@ -328,7 +328,7 @@ describe('ContextBriefService', () => {
 
             const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
 
-            expect(result.text).toContain(`${AS_OF} plan-a r2/ride-9: placement unknown; adjudication unknown; athlete manually replaced; performance unknown.`);
+            expect(result.text).toContain(`${AS_OF} plan-a r2/ride-9: placement unknown; adjudication unknown; athlete manually replaced; performance unknown; replaced by occurrence occ-manual-1.`);
             expect(result.text).not.toContain('ride-1');
         });
 
@@ -360,7 +360,7 @@ describe('ContextBriefService', () => {
 
             const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
 
-            expect(result.text).toContain(`${AS_OF} plan-a r2/ride-1: placement unknown; adjudication unknown; athlete manually replaced; performance unknown.`);
+            expect(result.text).toContain(`${AS_OF} plan-a r2/ride-1: placement unknown; adjudication unknown; athlete manually replaced; performance unknown; replaced by occurrence occ-manual-1.`);
             expect(result.text).toContain(`${AS_OF} plan-a r3/ride-1: placement unknown; adjudication not adjudicated; athlete none; performance unknown.`);
         });
 
@@ -385,8 +385,9 @@ describe('ContextBriefService', () => {
 
             const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
 
-            expect(result.text).toContain(`${AS_OF} plan-a r1/ride-1: placement unknown; adjudication unknown; athlete unknown; performance unknown.`);
+            expect(result.text).toContain(`${AS_OF} plan-a r1/ride-1: placement unknown; adjudication unknown; athlete unknown; performance unknown; replacement source unavailable (archive read failed).`);
             expect(result.text).toContain(`${otherDate} plan-a r1/ride-1: placement unknown; adjudication not adjudicated; athlete none; performance unknown.`);
+            expect(result.text).not.toContain('Round-trip records are unknown because one or more sources could not be read.');
             expect(result.unavailableSources).not.toContain('external-plan execution round-trip inputs');
         });
 
@@ -418,7 +419,7 @@ describe('ContextBriefService', () => {
             const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
 
             expect(result.text).not.toContain('manually replaced');
-            expect(result.text).toContain(`${AS_OF} plan-a r2/ride-1: placement unknown; adjudication unknown; athlete unknown; performance unknown.`);
+            expect(result.text).toContain(`${AS_OF} plan-a r2/ride-1: placement unknown; adjudication unknown; athlete unknown; performance unknown; replacement source unavailable (archive read failed).`);
         });
 
         it('refuses an archived claim whose verdict and template do not describe an external decision', async () => {
@@ -468,7 +469,7 @@ describe('ContextBriefService', () => {
             const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
 
             expect(result.text).not.toContain('manually replaced');
-            expect(result.text).toContain(AS_OF + ' unknown: placement unknown; adjudication unknown; athlete unknown; performance unknown.');
+            expect(result.text).toContain(AS_OF + ' unknown: placement unknown; adjudication unknown; athlete unknown; performance unknown; replacement source unavailable (archive read failed).');
         });
 
         it('refuses manual replacement attribution when the referenced replacement occurrence is absent', async () => {
@@ -493,7 +494,7 @@ describe('ContextBriefService', () => {
             const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
 
             expect(result.text).not.toContain('manually replaced');
-            expect(result.text).toContain(AS_OF + ' unknown: placement unknown; adjudication unknown; athlete unknown; performance unknown.');
+            expect(result.text).toContain(AS_OF + ' unknown: placement unknown; adjudication unknown; athlete unknown; performance unknown; replacement source unavailable (archive read failed).');
         });
 
         it('preserves an unresolved replace day even when no external candidate survives hydration', async () => {
@@ -507,7 +508,7 @@ describe('ContextBriefService', () => {
 
             const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
 
-            expect(result.text).toContain(AS_OF + ' unknown: placement unknown; adjudication unknown; athlete unknown; performance unknown.');
+            expect(result.text).toContain(AS_OF + ' unknown: placement unknown; adjudication unknown; athlete unknown; performance unknown; replacement source unavailable (archive read failed).');
             expect(result.text).not.toContain('No exact external-plan occurrence records were available in this window.');
         });
 
@@ -550,8 +551,106 @@ describe('ContextBriefService', () => {
 
             const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
 
-            expect(result.text).toContain(`${AS_OF} plan-a r2/ride-1: placement unknown; adjudication unknown; athlete unknown; performance unknown.`);
+            expect(result.text).toContain(`${AS_OF} plan-a r2/ride-1: placement unknown; adjudication unknown; athlete unknown; performance unknown; replaced by occurrence occ-manual-1.`);
             expect(result.text).not.toContain('manually replaced');
+        });
+    });
+
+    describe('round-trip planning fixtures (PR-D D3)', () => {
+        const nullAdherence = { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null };
+
+        function externalPlanV1(planId: string, revision: number, sessionIds: string[]) {
+            return {
+                schema: 'adaptive-training-recommender/external-plan@1', planId, revision,
+                title: 'Plan', startDate: '2026-08-10', weekCount: 2,
+                sessions: sessionIds.map(id => ({
+                    id, title: 'Ride', priority: 'supporting',
+                    placement: { week: 1, preferredDay: 'saturday' },
+                    gating: { modality: 'cycling', intensity: 'easy', durationMin: 45, durationMax: 60, environment: 'either', equipment: [] },
+                    prescription: { summary: 'Easy ride' },
+                })),
+            };
+        }
+
+        function gatedDaySetup(engineVerdict: 'defer' | 'advisory', occurrenceId: string) {
+            return async () => {
+                const plan = externalPlanV1('plan-a', 1, ['ride-1']);
+                const contentHash = await computeContentHash(plan);
+                const source = { planId: 'plan-a', revision: 1, sessionId: 'ride-1', contentHash };
+                services.getOccurrencesInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [{
+                    userId: 'u1', occurrenceId, date: AS_OF, authority: 'external_plan', state: 'scheduled',
+                    externalPlanRef: source, createdAt: '2026-08-14T00:00:00Z', updatedAt: '2026-08-15T00:00:00Z',
+                }] });
+                services.getRecommendationsInRange.mockResolvedValue({ status: 'AVAILABLE', data: [{
+                    userId: 'u1', date: AS_OF, templateId: 'rest_01', templateTitle: 'Rest', category: 'Rest',
+                    modality: 'Mobility', mode: 'recover', rationale: '', schemaVersion: 3,
+                    engineVerdict, createdAt: '', updatedAt: '',
+                    recommendationAudit: { externalPlan: source },
+                    adherence: nullAdherence,
+                }], revision: null });
+                services.getRevisionState.mockResolvedValue({ status: 'AVAILABLE', data: plan });
+                services.getPlacementState.mockResolvedValue({ status: 'AVAILABLE', data: {
+                    userId: 'u1', planId: 'plan-a', revision: 1,
+                    assignments: [{ sessionId: 'ride-1', date: AS_OF, status: 'planned' }], updatedAt: '',
+                } });
+            };
+        }
+
+        it('pins a defer-gated day as gate replaced with exact provenance', async () => {
+            await gatedDaySetup('defer', 'occ-gate-1')();
+
+            const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+
+            expect(result.text).toContain(`${AS_OF} plan-a r1/ride-1: placement as authored; adjudication gate replaced; athlete none; performance unknown; occurrence occ-gate-1.`);
+        });
+
+        it('never labels an advisory rest day gate replaced', async () => {
+            await gatedDaySetup('advisory', 'occ-adv-1')();
+
+            const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+
+            expect(result.text).toContain(`${AS_OF} plan-a r1/ride-1: placement as authored; adjudication unknown; athlete none; performance unknown; occurrence occ-adv-1.`);
+            expect(result.text).not.toContain('gate replaced');
+        });
+
+        it('never computes the round-trip section for morning exports', async () => {
+            await gatedDaySetup('defer', 'occ-gate-1')();
+
+            const result = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
+
+            expect(result.text).not.toContain('External-plan execution round trip');
+            expect(result.text).not.toContain('occ-gate-1');
+            expect(services.getOccurrencesInRangeState).not.toHaveBeenCalled();
+            expect(services.getExecutionsInRange).not.toHaveBeenCalled();
+            expect(services.queryActiveInDateWindow).not.toHaveBeenCalled();
+            expect(services.listRecommendationRevisions).not.toHaveBeenCalled();
+            expect(services.getRevisionState).not.toHaveBeenCalled();
+            expect(services.getPlacementState).not.toHaveBeenCalled();
+        });
+
+        it('renders the empty window and unreadable inputs as exact section blocks', async () => {
+            const sectionBlock = (text: string): string[] => {
+                const lines = text.split('\n');
+                const start = lines.findIndex(line => line.startsWith('## External-plan execution round trip'));
+                expect(start).toBeGreaterThanOrEqual(0);
+                return lines.slice(start, start + 3);
+            };
+
+            const empty = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+            expect(sectionBlock(empty.text)).toEqual([
+                '## External-plan execution round trip (14-day window)',
+                '',
+                'No exact external-plan occurrence records were available in this window. Missing activity is not treated as a missed session.',
+            ]);
+
+            services.getOccurrencesInRangeState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+            const unreadable = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+            expect(sectionBlock(unreadable.text)).toEqual([
+                '## External-plan execution round trip (14-day window)',
+                '',
+                'Round-trip records are unknown because one or more sources could not be read.',
+            ]);
+            expect(unreadable.unavailableSources).toContain('external-plan execution round-trip inputs');
         });
     });
 
@@ -811,7 +910,7 @@ describe('ContextBriefService', () => {
         expect(noOccurrence.text).toContain('imported revision no current-day authored occurrence');
     });
 
-    it('exports the same service-built v3 content through Markdown and the independent JSON envelope', async () => {
+    it('exports the same service-built content through Markdown and the independent JSON envelope', async () => {
         for (const [windowDays, preset, budget] of [[2, 'daily', 24_000], [14, 'full', 65_000], [14, 'diagnostic', 90_000]] as const) {
             const brief = await new ContextBriefService().build('u1', AS_OF, windowDays, preset);
             const markdown = formatContextBriefExport(brief, 'markdown');
@@ -895,12 +994,195 @@ describe('ContextBriefService', () => {
             },
         }));
         services.getActivitiesInRange.mockResolvedValue({ status: 'AVAILABLE', data: activities, revision: 'dense-r1' });
+
+        // PR-D D4: maximum-density round-trip section beside the dense activity
+        // payload — 22 candidates with maximum-length ids and full provenance, so
+        // the 65k planning budget is proven with authority sections present, not
+        // with an empty round-trip section. The companion `none` row on the rest
+        // date is a service-test artifact: `externalRestContextForDate` is mocked
+        // to `() => null` in this file, so the active-plan rest path cannot fire
+        // and the unplanned-work branch also renders. Production resolves the
+        // active rest directive and renders only the rest row.
+        const densePlanId = 'p'.repeat(64);
+        const denseSessionA = 'a'.repeat(64);
+        const denseSessionB = 'b'.repeat(64);
+        const denseSessionC = 'c'.repeat(64);
+        const denseHash = 'ab'.repeat(32);
+        const densePlan = {
+            schema: 'adaptive-training-recommender/external-plan@3', planId: densePlanId, revision: 1,
+            title: 'Dense plan', startDate: '2026-08-10', weekCount: 2,
+            sessions: [denseSessionA, denseSessionB, denseSessionC].map(id => ({
+                id, title: 'Ride', priority: 'supporting',
+                placement: { week: 1, preferredDay: 'saturday' },
+                gating: { modality: 'cycling', intensity: 'easy', durationMin: 45, durationMax: 60, environment: 'either', equipment: [] },
+                prescription: { summary: 'Easy ride' },
+            })),
+            restDays: [{ id: 'rest-1', week: 1, day: 'friday' }],
+        };
+        const denseContentHash = await computeContentHash(densePlan);
+        const denseSource = (sessionId: string) => ({ planId: densePlanId, revision: 1, sessionId, contentHash: denseContentHash });
+        const padId = (prefix: string, key: string): string => `${prefix}-${key}-`.padEnd(64, 'o');
+        // 19 full-provenance sessions: two per date 08-04..08-12 plus session A on 08-13.
+        const denseFullDays = [...Array.from({ length: 9 }, (_, offset) => addDaysToLocalDateString(AS_OF, -(11 - offset))), '2026-08-13'];
+        const denseFull = denseFullDays.flatMap(date =>
+            (date === '2026-08-13' ? [denseSessionA] : [denseSessionA, denseSessionB]).map(sessionId => ({ date, sessionId })));
+        const nullAdherence = { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null };
+        services.getOccurrencesInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [
+            ...denseFull.map(({ date, sessionId }) => ({
+                userId: 'u1', occurrenceId: padId('occ', `${date.slice(5).replace('-', '')}-${sessionId[0]}`),
+                date, authority: 'external_plan', state: 'scheduled',
+                externalPlanRef: denseSource(sessionId),
+                createdAt: '2026-08-14T00:00:00Z', updatedAt: '2026-08-15T00:00:00Z',
+            })),
+            {
+                userId: 'u1', occurrenceId: 'occ-manual-dense', date: AS_OF,
+                authority: 'replace_recommendation', state: 'scheduled',
+                definitionRef: { definitionId: 'def-manual', revision: 1, contentHash: 'm'.repeat(64) },
+                createdAt: AS_OF + 'T05:00:00.000Z', updatedAt: AS_OF + 'T05:00:00.000Z',
+            },
+        ] });
+        services.getExecutionsInRange.mockResolvedValue({ invalidRecords: 0, executions: denseFull.map(({ date, sessionId }) => ({
+            execution: {
+                userId: 'u1', executionId: padId('exec', `${date.slice(5).replace('-', '')}-${sessionId[0]}`),
+                occurrenceId: padId('occ', `${date.slice(5).replace('-', '')}-${sessionId[0]}`),
+                sessionSource: { kind: 'external_plan', ...denseSource(sessionId) },
+                prescriptionHash: denseHash, date,
+                startedAt: `${date}T06:00:00Z`, completedAt: `${date}T06:45:00Z`,
+                updatedAt: `${date}T06:45:00Z`, state: 'completed', schemaVersion: 1,
+            }, entries: [],
+        })) });
+        const denseRestWorkIds = ['w1'.repeat(32), 'w2'.repeat(32), 'w3'.repeat(32)];
+        services.queryActiveInDateWindow.mockResolvedValue([
+            ...denseFull.map(({ date, sessionId }) => {
+                const key = `${date.slice(5).replace('-', '')}-${sessionId[0]}`;
+                return {
+                    schemaVersion: 1, performedOccurrenceId: padId('perf', key), userId: 'u1',
+                    status: 'active', localDate: date,
+                    sourceRefs: [{ kind: 'structured_execution', executionId: padId('exec', key), sessionOccurrenceId: padId('occ', key), prescriptionHash: denseHash }],
+                    reconciliation: { state: 'single_source' },
+                    createdAt: `${date}T06:00:00Z`, updatedAt: `${date}T06:45:00Z`,
+                };
+            }),
+            ...denseRestWorkIds.map((performedOccurrenceId, index) => ({
+                schemaVersion: 1, performedOccurrenceId, userId: 'u1',
+                status: 'active', localDate: '2026-08-14',
+                sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: `dense-0${index}` }],
+                reconciliation: { state: 'single_source' },
+                createdAt: '2026-08-14T06:00:00Z', updatedAt: '2026-08-14T06:45:00Z',
+            })),
+        ]);
+        services.getRecommendationsInRange.mockResolvedValue({ status: 'AVAILABLE', data: [
+            ...denseFull.map(({ date, sessionId }) => {
+                const key = `${date.slice(5).replace('-', '')}-${sessionId[0]}`;
+                return {
+                    userId: 'u1', date, templateId: 'ext', templateTitle: 'External',
+                    category: 'Moderate Endurance', modality: 'Cycling', mode: 'modify',
+                    rationale: '', schemaVersion: 3, createdAt: '', updatedAt: '',
+                    recommendationAudit: {
+                        externalPlan: denseSource(sessionId),
+                        plannedDose: { volume: 1, intensity: 1 }, executionDose: { volume: 1, intensity: 1 },
+                        primarySession: {
+                            sessionSource: { kind: 'external_plan', ...denseSource(sessionId) },
+                            occurrenceId: padId('occ', key), prescriptionHash: denseHash,
+                        },
+                    },
+                    adherence: nullAdherence,
+                };
+            }),
+            {
+                userId: 'u1', date: AS_OF, templateId: 'authored-replacement', templateTitle: 'Authored replacement',
+                category: 'Moderate Endurance', modality: 'Cycling', mode: 'train',
+                rationale: 'Athlete replaced the imported session.', schemaVersion: 3,
+                engineVerdict: 'proceed', createdAt: '', updatedAt: '',
+                recommendationAudit: { authoredOccurrence: { occurrenceId: 'occ-manual-dense', decision: 'proceed' } },
+                adherence: nullAdherence,
+            },
+            {
+                userId: 'u1', date: '2026-08-14', templateId: 'rest', templateTitle: 'Rest', category: 'Rest',
+                modality: 'Mobility', mode: 'recover', rationale: '', schemaVersion: 3, createdAt: '', updatedAt: '',
+                recommendationAudit: { externalRest: {
+                    planId: densePlanId, revision: 1, contentHash: denseContentHash,
+                    restDirectiveId: 'rest-1', date: '2026-08-14',
+                } },
+                adherence: nullAdherence,
+            },
+        ], revision: null });
+        services.listRecommendationRevisions.mockResolvedValue({ status: 'AVAILABLE', data: [{
+            revision: 5,
+            templateId: externalTemplateId(densePlanId, 1, denseSessionC),
+            templateTitle: 'Ride',
+            category: 'Moderate Endurance',
+            modality: 'Cycling',
+            mode: 'train',
+            rationale: 'Pre-replace decision.',
+            engineVerdict: 'proceed',
+            recommendationAudit: { externalPlan: denseSource(denseSessionC) },
+        }], revision: 'r5' });
+        services.getRevisionState.mockResolvedValue({ status: 'AVAILABLE', data: densePlan });
+        services.getPlacementState.mockResolvedValue({ status: 'AVAILABLE', data: {
+            userId: 'u1', planId: densePlanId, revision: 1,
+            assignments: [
+                ...denseFull.map(({ date, sessionId }) => ({ sessionId, date, status: 'planned' })),
+                { sessionId: denseSessionC, date: AS_OF, status: 'planned' },
+            ],
+            updatedAt: '',
+        } });
+        const densePlacedByDate = new Map<string, string[]>([
+            ...denseFullDays.map(date => [date, date === '2026-08-13' ? [denseSessionA] : [denseSessionA, denseSessionB]] as [string, string[]]),
+            ['2026-08-14', []],
+            [AS_OF, [denseSessionC]],
+        ]);
+        services.getActivePlanState.mockImplementation(async (_userId: string, date: string) => ({
+            status: 'AVAILABLE',
+            data: {
+                header: { planId: densePlanId, revision: 1, contentHash: denseContentHash },
+                plan: densePlan, placement: null,
+                placed: (densePlacedByDate.get(date) ?? []).map(sessionId => ({
+                    date, status: 'planned', moved: false,
+                    session: densePlan.sessions.find(item => item.id === sessionId),
+                })),
+            },
+        }));
+
         const morning = await new ContextBriefService().build('u1', AS_OF, 2, 'daily');
         expect(morning.text).toContain('Recorded training');
         expect(morning.text.length).toBeLessThan(24_000);
         const planning = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
         expect(planning.text).toContain('aggregate planning detail cap 20000 characters');
+        // Measured 58,749 against the 65k planning budget with the dense activity
+        // payload plus the full 22-candidate round-trip section (~6.2k headroom).
         expect(planning.text.length).toBeLessThan(65_000);
+        const roundTripRows = (() => {
+            const lines = planning.text.split('\n');
+            const start = lines.findIndex(line => line.startsWith('## External-plan execution round trip'));
+            expect(start).toBeGreaterThanOrEqual(0);
+            // Section rows are contiguous bullets after the heading + blank
+            // line; whatever follows (telemetry appendix, adherence) is out.
+            const rows: string[] = [];
+            for (let index = start + 2; index < lines.length && lines[index].startsWith('- '); index += 1) {
+                rows.push(lines[index]);
+            }
+            return rows;
+        })();
+        const dataRows = roundTripRows.filter(line => !line.includes('omitted from this bounded section'));
+        const omissionRows = roundTripRows.filter(line => line.includes('omitted from this bounded section'));
+        // Newest 20 of 22 survive: the two oldest full rows (2026-08-04) are cut.
+        expect(dataRows).toHaveLength(20);
+        expect(omissionRows).toEqual(['- 2 earlier records omitted from this bounded section.']);
+        expect(roundTripRows.join('\n')).not.toContain(padId('occ', '0804-a'));
+        expect(roundTripRows.join('\n')).not.toContain(padId('occ', '0804-b'));
+        expect(dataRows[0]).toContain('2026-08-05');
+        expect(dataRows[0]).toContain(padId('occ', '0805-a'));
+        expect(dataRows[0]).toContain(`execution ${padId('exec', '0805-a')}`);
+        expect(dataRows[0]).toContain(`performed ${padId('perf', '0805-a')}`);
+        expect(dataRows[0]).toContain(`prescription ${denseHash}`);
+        expect(roundTripRows.join('\n')).toContain(
+            `- 2026-08-14 ${densePlanId} r1 rest/rest-1: placement unknown; adjudication not adjudicated; athlete none; performance not applicable. Authored rest/no session; observed work: ${denseRestWorkIds.join(', ')}.`,
+        );
+        expect(roundTripRows.join('\n')).toContain(
+            `- ${AS_OF} ${densePlanId} r1/${denseSessionC}: placement unknown; adjudication unknown; athlete manually replaced; performance unknown; replaced by occurrence occ-manual-dense.`,
+        );
+        expect(planning.text).not.toContain('Round-trip records are unknown');
         const brief = await new ContextBriefService().build('u1', AS_OF, 14, 'diagnostic');
         const json = JSON.parse(formatContextBriefExport(brief, 'json', '2026-08-15T10:00:00.000Z'));
         expect(json.content).toBe(brief.text);
