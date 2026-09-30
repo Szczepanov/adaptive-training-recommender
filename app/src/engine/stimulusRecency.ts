@@ -207,7 +207,12 @@ export function isConfidentStimulusExposure(
         return false;
     }
     if (exposure.sourceKinds.includes('structured_execution')) {
-        return true;
+        // sourceKinds records attached canonical refs, not whether the structured source
+        // actually hydrated. Do not let an unavailable structured execution promote a
+        // weaker provider fallback to "structured" confidence.
+        return exposure.evidenceTier === 'completedStructuredWorkout'
+            && exposure.stimulusDomain !== undefined
+            && exposure.stimulusDomain !== 'unknown';
     }
     if (exposure.sourceKinds.includes('provider_activity')) {
         const version = exposure.intensityClassificationVersion ?? 0;
@@ -313,7 +318,9 @@ export function buildPerformedStimulusRecency(
                 ...(exp.intensityEvidence !== undefined ? { intensityEvidence: exp.intensityEvidence } : {}),
                 ...(exp.intensityClassificationVersion !== undefined ? { intensityClassificationVersion: exp.intensityClassificationVersion } : {}),
                 confident,
-                structuredOverridesProvider: exp.sourceKinds.includes('structured_execution') && exp.sourceKinds.includes('provider_activity'),
+                structuredOverridesProvider: exp.evidenceTier === 'completedStructuredWorkout'
+                    && exp.sourceKinds.includes('structured_execution')
+                    && exp.sourceKinds.includes('provider_activity'),
             });
         }
         if (!confident) continue;

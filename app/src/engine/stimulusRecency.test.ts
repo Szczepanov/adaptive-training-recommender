@@ -137,6 +137,26 @@ describe('stimulusRecency', () => {
             expect(isConfidentStimulusExposure(exp)).toBe(true);
         });
 
+        it('does not promote provider fallback when a structured ref failed to hydrate', () => {
+            const exp = mockFact({
+                localDate: '2026-09-09',
+                sourceKinds: ['structured_execution', 'provider_activity'],
+                confidence: 'inferred',
+                evidenceTier: 'garminTrainingEffect',
+                intensityClassificationVersion: 2,
+                stimulusDomain: 'tempo',
+            });
+
+            expect(isConfidentStimulusExposure(exp)).toBe(false);
+
+            const recency = buildPerformedStimulusRecency([exp], '2026-09-10');
+            expect(recency.yesterdayQualityFamilies.size).toBe(0);
+            expect(recency.exposures[0]).toMatchObject({
+                confident: false,
+                structuredOverridesProvider: false,
+            });
+        });
+
         it('treats version >= 2 provider activities with known domain as confident', () => {
             const exp = mockFact({
                 sourceKinds: ['provider_activity'],
