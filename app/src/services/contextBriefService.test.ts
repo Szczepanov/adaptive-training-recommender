@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import type { DailyRecoverySnapshot } from '../engine/models';
+import type { DailyRecommendation, DailyRecoverySnapshot } from '../engine/models';
 import type { CapabilityMaintenanceResult } from '../engine/capabilityMaintenance';
 
 const services = vi.hoisted(() => ({
@@ -21,6 +21,11 @@ const services = vi.hoisted(() => ({
     getOverridesSinceState: vi.fn(),
     getPerformedTrainingFactsInRange: vi.fn(),
     getTrainingResponseEvidenceInRange: vi.fn(),
+    getOccurrencesInRangeState: vi.fn(),
+    getExecutionsInRange: vi.fn(),
+    queryActiveInDateWindow: vi.fn(),
+    getRevisionState: vi.fn(),
+    getPlacementState: vi.fn(),
 }));
 
 vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: {
@@ -34,6 +39,19 @@ vi.mock('./activityOverrideService', () => ({ activityOverrideService: {
 vi.mock('../training-occurrence/performedTrainingFactsService', () => ({
     getPerformedTrainingFactsInRange: services.getPerformedTrainingFactsInRange,
 }));
+vi.mock('../training-occurrence/repository', () => ({
+    performedTrainingOccurrenceRepository: { queryActiveInDateWindow: services.queryActiveInDateWindow },
+}));
+vi.mock('./sessionOccurrenceService', () => ({ sessionOccurrenceService: {
+    getOccurrencesInRangeState: services.getOccurrencesInRangeState,
+} }));
+vi.mock('./sessionExecutionService', () => ({ sessionExecutionService: {
+    getExecutionsInRange: services.getExecutionsInRange,
+} }));
+vi.mock('./externalPlanService', () => ({ externalPlanService: {
+    getRevisionState: services.getRevisionState,
+    getPlacementState: services.getPlacementState,
+} }));
 vi.mock('../training-occurrence/trainingResponseEvidence', () => ({
     getTrainingResponseEvidenceInRange: services.getTrainingResponseEvidenceInRange,
 }));
@@ -57,6 +75,7 @@ vi.mock('./activeExternalPlanService', () => ({
 vi.mock('./anthropometryService', () => ({ anthropometryService: { getEntriesInRange: services.getEntriesInRange } }));
 
 import { ContextBriefService } from './contextBriefService';
+import { computeContentHash } from '../engine/externalPlanHash';
 
 const AS_OF = '2026-08-15';
 
@@ -110,6 +129,11 @@ describe('ContextBriefService', () => {
         services.getOverridesSinceState.mockResolvedValue({ status: 'AVAILABLE', data: {}, revision: null });
         services.getPerformedTrainingFactsInRange.mockResolvedValue({ asOfDate: '', windowDays: 0, revision: 'r', exposures: [], coverageCredits: [] });
         services.getTrainingResponseEvidenceInRange.mockResolvedValue({ evidence: [], occurrenceRead: 'available', providerActivityRead: 'available' });
+        services.getOccurrencesInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [] });
+        services.getExecutionsInRange.mockResolvedValue({ executions: [], invalidRecords: 0 });
+        services.queryActiveInDateWindow.mockResolvedValue([]);
+        services.getRevisionState.mockResolvedValue({ status: 'MISSING' });
+        services.getPlacementState.mockResolvedValue({ status: 'MISSING' });
     });
 
     it('passes the supplied planner resolution into the exposure ledger without recalculating cadence', async () => {
@@ -126,6 +150,77 @@ describe('ContextBriefService', () => {
         const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full', resolved);
 
         expect(result.text).toContain('sport_skill: overdue since 2026-08-01; blocked (modality_avoided)');
+    });
+
+    it('emits the v3 planning round-trip section and preserves unavailable source reads as unknown', async () => {
+        const empty = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+        expect(empty.contractVersion).toBe('2026-09-context-brief-contract-v3');
+        expect(empty.text).toContain('External-plan execution round trip (14-day window)');
+        expect(empty.text).toContain('Missing activity is not treated as a missed session.');
+
+        services.getOccurrencesInRangeState.mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read', retryable: true });
+        const unreadable = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+        expect(unreadable.text).toContain('Round-trip records are unknown because one or more sources could not be read.');
+        expect(unreadable.unavailableSources).toContain('external-plan execution round-trip inputs');
+    });
+
+    it('hydrates round-trip rows from exact external source, occurrence, execution and performed ids', async () => {
+        const source = { planId: 'plan-a', revision: 1, sessionId: 'ride-1', contentHash: 'a'.repeat(64) };
+        const plan = {
+            schema: 'adaptive-training-recommender/external-plan@1', planId: 'plan-a', revision: 1,
+            title: 'Plan', startDate: '2026-08-10', weekCount: 1,
+            sessions: [{ id: 'ride-1', placement: { week: 1, preferredDay: 'saturday' } }],
+        };
+        source.contentHash = await computeContentHash(plan);
+        services.getOccurrencesInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [{
+            userId: 'u1', occurrenceId: 'occ-1', date: AS_OF, authority: 'external_plan', state: 'completed',
+            externalPlanRef: source, createdAt: '2026-08-14T00:00:00Z', updatedAt: '2026-08-15T00:00:00Z',
+        }] });
+        services.getExecutionsInRange.mockResolvedValue({ executions: [{ execution: {
+            userId: 'u1', executionId: 'exec-1', occurrenceId: 'occ-1', sessionSource: { kind: 'external_plan', ...source },
+            prescriptionHash: 'p'.repeat(64), date: AS_OF, startedAt: '2026-08-15T06:00:00Z',
+            completedAt: '2026-08-15T06:45:00Z', updatedAt: '2026-08-15T06:45:00Z', state: 'completed', schemaVersion: 1,
+        }, entries: [] }], invalidRecords: 0 });
+        services.queryActiveInDateWindow.mockResolvedValue([{
+            schemaVersion: 1, performedOccurrenceId: 'performed-1', userId: 'u1', status: 'active', localDate: AS_OF,
+            sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-1', sessionOccurrenceId: 'occ-1' }],
+            reconciliation: { state: 'single_source' }, createdAt: '2026-08-15T06:00:00Z', updatedAt: '2026-08-15T06:45:00Z',
+        }]);
+        services.getRecommendationsInRange.mockResolvedValue({ status: 'AVAILABLE', data: [{
+            userId: 'u1', date: AS_OF, templateId: 'ext', templateTitle: 'External', category: 'Moderate Endurance',
+            modality: 'Cycling', mode: 'modify', rationale: '', schemaVersion: 3, createdAt: '', updatedAt: '',
+            recommendationAudit: {
+                externalPlan: source,
+                plannedDose: { volume: 1, intensity: 1 }, executionDose: { volume: 0.8, intensity: 1 },
+                primarySession: { sessionSource: { kind: 'external_plan', ...source }, occurrenceId: 'occ-1', prescriptionHash: 'p'.repeat(64) },
+            },
+            adherence: { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null },
+        }], revision: null });
+        services.getRevisionState.mockResolvedValue({ status: 'AVAILABLE', data: plan });
+
+        const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+        expect(result.text).toContain(`${AS_OF} plan-a r1/ride-1: placement as authored; adjudication app dose modified; athlete accepted; performance completed; occurrence occ-1; execution exec-1; performed performed-1; prescription`);
+    });
+
+    it('fails closed when recommendation rest provenance does not match the immutable revision hash', async () => {
+        const plan = {
+            schema: 'adaptive-training-recommender/external-plan@3', planId: 'plan-rest', revision: 1,
+            title: 'Rest plan', startDate: '2026-08-10', weekCount: 1,
+            sessions: [], restDays: [{ id: 'rest-1', week: 1, day: 'saturday' }],
+        };
+        services.getRecommendationsInRange.mockResolvedValue({ status: 'AVAILABLE', data: [{
+            userId: 'u1', date: AS_OF, templateId: 'rest', templateTitle: 'Rest', category: 'Rest',
+            modality: 'Mobility', mode: 'recover', rationale: '', schemaVersion: 3, createdAt: '', updatedAt: '',
+            recommendationAudit: { externalRest: {
+                planId: 'plan-rest', revision: 1, contentHash: 'f'.repeat(64), restDirectiveId: 'rest-1', date: AS_OF,
+            } },
+            adherence: { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null },
+        } as DailyRecommendation], revision: null });
+        services.getRevisionState.mockResolvedValue({ status: 'AVAILABLE', data: plan });
+
+        const result = await new ContextBriefService().build('u1', AS_OF, 14, 'full');
+
+        expect(result.text).toContain(`${AS_OF} unknown: placement unknown; adjudication unknown; athlete unknown; performance unknown.`);
     });
 
     it('passes the already-fetched activity history to response evidence without another provider read', async () => {
@@ -335,8 +430,13 @@ describe('ContextBriefService', () => {
             expect((await service.build('u1', AS_OF, 14, 'diagnostic')).purpose).toBe('diagnostic');
         });
 
-        it('diagnostic reads exactly the same sources and ranges as planning', async () => {
-            expect(await callsFor('diagnostic')).toEqual(await callsFor('full'));
+        it('limits retrospective plan-authority hydration to planning briefs', async () => {
+            const diagnostic = await callsFor('diagnostic');
+            const planning = await callsFor('full');
+            const planReads = Object.keys(services).indexOf('getActivePlanState');
+            expect(diagnostic[planReads]).toHaveLength(7);
+            expect(planning[planReads]).toHaveLength(21);
+            expect(planning[planReads]).toContainEqual(['u1', '2026-08-02', []]);
         });
 
         it('planning summarizes laps while diagnostic keeps the per-lap table', async () => {
@@ -448,7 +548,7 @@ describe('ContextBriefService', () => {
         // Visible handoff is 2026-08-15..21. Six days of padding on both sides covers
         // every whole plan week that can affect a flexible placement in that horizon.
         expect(services.getFixedActivitiesInRangeState).toHaveBeenCalledWith('u1', '2026-08-09', '2026-08-27');
-        expect(services.getActivePlanState).toHaveBeenCalledTimes(7);
+        expect(services.getActivePlanState).toHaveBeenCalledTimes(21);
         expect(services.getActivePlanState).toHaveBeenNthCalledWith(1, 'u1', '2026-08-15', []);
         expect(services.getActivePlanState).toHaveBeenNthCalledWith(7, 'u1', '2026-08-21', []);
     });

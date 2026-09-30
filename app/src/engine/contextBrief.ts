@@ -19,6 +19,7 @@ import { deriveExposureLedger, renderExposureLedger, type ExposureLedgerInput } 
 import { briefContractHeaderLines } from './contextBriefContract';
 import type { PerformedExposureFact } from './performedTrainingFacts';
 import { SENSOR_OBSERVATION_HORIZON_DAYS } from './contextBriefSensorEvidence';
+import { renderPlannedExecutionStatuses, type PlannedExecutionStatus } from '../training-occurrence/plannedExecutionStatus';
 
 // Re-exported so existing importers keep one entry point for the brief.
 export { round, signed } from './contextBriefRecovery';
@@ -74,6 +75,8 @@ export interface ContextBriefInput {
     effectivePlanningMode?: PlanningMode;
     /** Explicit override or convenience flag for whether an imported/external plan is the planning authority. */
     isExternalPlanAuthority?: boolean;
+    /** Exact-identity external-plan round-trip projection; null means source reads failed. */
+    plannedExecutionStatuses?: readonly PlannedExecutionStatus[] | null;
     /** Issue #894: ISO generation timestamp. Ephemeral — omitted from semantic
      * determinism checks. Supplied by the service layer; the pure builder never clocks. */
     generatedAt?: string;
@@ -890,6 +893,10 @@ export function buildContextBrief(input: ContextBriefInput): string {
         }), startDate, asOfDate)
         : [];
     const training = [...trainingTable, ...ledgerLines];
+    const roundTrip = renderPlannedExecutionStatuses(
+        planningOrder ? input.plannedExecutionStatuses : undefined,
+        `## External-plan execution round trip (${windowDays}-day window)`,
+    );
     const subjective = renderSubjective(
         checkins, baselineCheckins, windowDays, baselineDays, { morning: hungerMorning, other: hungerOther },
         `## 4. ${SECTION_TITLE.subjective}`,
@@ -905,7 +912,7 @@ export function buildContextBrief(input: ContextBriefInput): string {
         },
     );
     const body: string[][] = planningOrder
-        ? [constraints, intent, objective, bodyComposition, subjective, training, adherence]
+        ? [constraints, intent, objective, bodyComposition, subjective, training, roundTrip, adherence]
         : [constraints, objective, bodyComposition, training, subjective, adherence, intent];
     const purposeNote = planningOrder
         ? ['Export purpose: planning — sections are ordered by decision authority; forensic telemetry and '

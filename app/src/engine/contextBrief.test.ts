@@ -645,4 +645,21 @@ describe('buildContextBrief', () => {
         expect(text).toContain('The feedback below reflects responses to in-app recommendation prompts only, not compliance with the external plan.');
         expect(text).toContain('Plan execution reconciliation: unavailable');
     });
+
+    it('adds exact external-plan round-trip status to planning briefs only', () => {
+        const status = {
+            date: '2026-08-14',
+            authored: { kind: 'session' as const, source: { planId: 'plan-a', revision: 2, sessionId: 'ride-1', contentHash: 'a'.repeat(64) } },
+            placement: 'intentionally_moved' as const,
+            adjudication: 'app_dose_modified' as const,
+            athleteDisposition: 'accepted' as const,
+            performance: 'completed' as const,
+            evidence: ['occurrence:occ-1', 'execution:exec-1'],
+        };
+        const planning = buildContextBrief(input({ purpose: 'planning', plannedExecutionStatuses: [status] }));
+        expect(planning).toContain('External-plan execution round trip (14-day window)');
+        expect(planning).toContain('2026-08-14 plan-a r2/ride-1: placement intentionally moved; adjudication app dose modified; athlete accepted; performance completed.');
+        expect(buildContextBrief(input({ purpose: 'diagnostic', plannedExecutionStatuses: [status] })))
+            .not.toContain('External-plan execution round trip');
+    });
 });

@@ -6,7 +6,8 @@ Markdown.
 
 This document describes the contract implemented incrementally by issue #894. Contract
 identity/versioning and the planning/diagnostic canonical completed-training table are
-implemented. Morning D-1 adherence still uses its separate raw-activity debrief path and remains
+implemented. The v3 planning contract adds a bounded exact-identity external-plan execution
+round-trip section. Morning D-1 adherence still uses its separate raw-activity debrief path and remains
 part of the broader #894 follow-up, alongside full missingness states outside completed training,
 per-source currency, size budgets, golden fixtures and end-to-end regression coverage.
 
@@ -55,7 +56,7 @@ create a second planning engine.
 
 ## Contract identity block
 
-Contract version `2026-09-context-brief-contract-v2` currently exposes one field per line so
+Contract version `2026-09-context-brief-contract-v3` currently exposes one field per line so
 each field is independently machine-readable:
 
 - `Contract version`;
@@ -101,8 +102,9 @@ never added to canonical totals. A count mismatch between canonical occurrences 
 evidence and raw provider rows is not independently interpreted as an extra or missing physical
 workout because one canonical occurrence can legitimately have zero or multiple provider records.
 
-This authority change is the semantic reason the contract advanced from v1 to v2; the engine
-`POLICY_VERSION` is unchanged because recommendation selection and safety policy did not change.
+The contract advanced from v2 to v3 to add the exact-identity external-plan execution round-trip
+section to planning exports. This changes brief semantics only; it does not alter recommendation
+selection or safety policy.
 
 ## Determinism
 
