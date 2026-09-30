@@ -221,7 +221,7 @@ describe('projectPlannedExecutionStatus', () => {
             expect(restRows[0]).not.toContain(longRestId);
             expect(restRows[0]).toContain('…');
             expect(restRows[0]).toContain('observed work: work-1, work-2, work-3, work-4, work-5; 2 additional observed-work ids omitted');
-            expect(restRows[0]).toContain('1 additional replacement ids omitted');
+            expect(restRows[0]).toContain('1 additional replacement id omitted');
             expect(restRows[0].length).toBeLessThan(1_200);
         });
     });
