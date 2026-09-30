@@ -579,7 +579,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                                 disabled={busy}
                                 onClick={exportAssessmentJson}
                             >
-                                Export assessment evidence (JSON)
+                                Export physical-capital evidence (JSON)
                             </button>
                         </div>
                         <p>Choose a versioned default protocol. Its immutable revision is created on first use and never silently changed later.</p>
@@ -745,7 +745,7 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                                 disabled={busy}
                                 onClick={exportAssessmentJson}
                             >
-                                Export assessment evidence (JSON)
+                                Export physical-capital evidence (JSON)
                             </button>
                             <button type="button" className="testing-primary" onClick={onClose}>Done</button>
                         </div>
@@ -760,14 +760,6 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                         })}</div>
                         {correctionMetricId && <div className="testing-correction"><h4>Append correction</h4><label>Corrected value<input inputMode="decimal" value={correctionValue} onChange={event => setCorrectionValue(event.target.value)} /></label><label>Reason<input value={correctionReason} onChange={event => setCorrectionReason(event.target.value)} /></label><div className="testing-actions"><button type="button" className="testing-secondary" onClick={() => setCorrectionMetricId(null)}>Cancel</button><button type="button" className="testing-primary" disabled={busy} onClick={saveCorrection}>{busy ? 'Saving…' : 'Save correction revision'}</button></div></div>}
                         <div className="testing-actions">
-                            <button
-                                type="button"
-                                className="testing-secondary export-diagnostic-btn"
-                                disabled={busy}
-                                onClick={exportAssessmentJson}
-                            >
-                                Export assessment evidence (JSON)
-                            </button>
                             <button type="button" className="testing-primary" onClick={onClose}>Done</button>
                         </div>
                     </section>
