@@ -7,7 +7,7 @@ export function compareCodeUnits(left: string, right: string): number {
 
 /**
  * Deterministic, byte-stable JSON value normalization.
- * Recursively sorts object keys by Unicode code point while preserving array element order.
+ * Recursively sorts object keys by JavaScript UTF-16 code-unit order while preserving array element order.
  * Undefined object properties are omitted.
  */
 export function canonicalizeJson(value: unknown): CanonicalJson {
