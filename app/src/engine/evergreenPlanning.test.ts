@@ -6,8 +6,9 @@ import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { resolvePlanningContext } from './planningMode';
 import { evaluatePeriodizationPhase } from './periodization';
-import type { DailySubjectiveCheckin, UserContext, UserPreferences, TrainingIntentProfile } from './models';
+import type { DailySubjectiveCheckin, UserContext, UserPreferences, TrainingIntentProfile, UserEvent } from './models';
 import { CATALOG_AEROBIC_VOLUME_FLOOR, type AerobicVolumeFloor } from './aerobicVolumeFloor';
+import { resolveDemandProfile } from './eventPresets';
 
 /**
  * End-to-end check (ADR-0037 D-DOSE) that a confirmed progression's per-session duration
@@ -52,6 +53,36 @@ function resolve(progressionOverrides?: ReadonlyMap<string, number>) {
         progressionOverrides,
     );
 }
+
+describe('resolveEvergreenPlan date-local event fallback (#925)', () => {
+    it('uses durable evergreen roles before the cycling event plan becomes active', () => {
+        const date = '2026-06-20';
+        const event: UserEvent = {
+            id: 'future-road-race', title: 'Future road race', date: '2026-09-13', priority: 'A',
+            lifecycle: 'scheduled', category: 'cycling_event',
+            demandProfile: resolveDemandProfile('cycling_event', 'road_race'),
+        };
+        const eventProfile: TrainingIntentProfile = {
+            ...evergreenProfile,
+            planningMode: 'event_directed',
+            priorities: ['endurance', 'strength_muscle'],
+            weeklyCommitment: { minSessions: 5, targetSessions: 6, maxSessions: 7 },
+        };
+        const periodization = evaluatePeriodizationPhase([event], date);
+        const planningContext = resolvePlanningContext(eventProfile, periodization, date);
+        expect(planningContext).toMatchObject({
+            mode: 'event_directed', eventStrategy: 'evergreen_fallback',
+            focusEvent: { id: 'future-road-race' },
+        });
+        const plan = resolveEvergreenPlan(
+            planningContext, periodization.phase, [], null, preferences, context, date, [], 7,
+        );
+        expect(plan).not.toBeNull();
+        expect(plan!.planDefinition.coverageSetId).toBe('evergreen_general');
+        expect(plan!.planDefinition.objectives.find(objective => objective.coverageKey === 'primary_strength'))
+            .toMatchObject({ requiredCredit: 2, coverageMinimumSessions: 2, coverageTargetSessions: 2 });
+    });
+});
 
 describe('resolveEvergreenPlan progressionOverrides wiring', () => {
     it('threads a confirmed progression override into the packed weekly budget', () => {

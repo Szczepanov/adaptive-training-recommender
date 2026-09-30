@@ -10,7 +10,7 @@
  *
  * Does not re-match sources. ADR-0034 canonical occurrence is the single deduplication authority.
  */
-import type { SessionTemplate, EvidenceTier, NormalizedGarminActivity, CompletedTrainingEvent, DailyRecommendation } from './models';
+import type { ActivitySessionCost, ActivityStimulusDomain, SessionTemplate, EvidenceTier, NormalizedGarminActivity, CompletedTrainingEvent, DailyRecommendation } from './models';
 import type { SessionExecution, SessionExecutionState } from '../sessions/models';
 import type { CoverageSetId, PlanCoverageKey, CoverageSetDescriptor } from '../workouts/event-plan';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
@@ -41,6 +41,13 @@ export interface PerformedExposureFact {
     confidence: FactConfidence;
     sourceKinds: Array<'structured_execution' | 'provider_activity' | 'legacy_strength'>;
     evidenceTier: EvidenceTier;
+    /** Provider-neutral semantic provenance. Omitted when a structured execution is present
+     * so exact authored semantics stay authoritative. These fields do not themselves grant
+     * exact weekly-role coverage. */
+    stimulusDomain?: ActivityStimulusDomain;
+    sessionCost?: ActivitySessionCost;
+    intensityEvidence?: string;
+    intensityClassificationVersion?: number;
     workoutId?: string;
     templateId?: string;
     /** Exact catalog dose variant recovered from the recommendation that owns this execution.
@@ -283,6 +290,7 @@ export function deriveFactsFromOccurrence(
     }
 
     const localDate = requirePerformedLocalDate(occurrence, startedAt, hydrated);
+    const providerSemantics = hydrated.structured ? undefined : hydrated.provider?.garminActivity;
 
     const exposure: PerformedExposureFact = {
         performedOccurrenceId: occurrence.performedOccurrenceId,
@@ -295,6 +303,12 @@ export function deriveFactsFromOccurrence(
         confidence,
         sourceKinds,
         evidenceTier,
+        ...(providerSemantics?.stimulusDomain !== undefined ? { stimulusDomain: providerSemantics.stimulusDomain } : {}),
+        ...(providerSemantics?.sessionCost !== undefined ? { sessionCost: providerSemantics.sessionCost } : {}),
+        ...(providerSemantics?.intensityEvidence !== undefined ? { intensityEvidence: providerSemantics.intensityEvidence } : {}),
+        ...(providerSemantics?.intensityClassificationVersion !== undefined
+            ? { intensityClassificationVersion: providerSemantics.intensityClassificationVersion }
+            : {}),
         ...(workoutId ? { workoutId } : {}),
         ...(templateId ? { templateId } : {}),
         ...(hydrated.structured?.workoutVariantId ? { workoutVariantId: hydrated.structured.workoutVariantId } : {}),
