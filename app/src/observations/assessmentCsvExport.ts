@@ -37,6 +37,7 @@ export const ASSESSMENT_CSV_HEADERS: readonly string[] = [
 
 interface CsvExportRowItem {
     definitionId: string;
+    metricId: string;
     protocolRevision: number;
     comparisonSeriesKey: string;
     row: AssessmentHistoryRow;
@@ -44,6 +45,7 @@ interface CsvExportRowItem {
 
 function compareCsvRows(a: CsvExportRowItem, b: CsvExportRowItem): number {
     return compareCodeUnits(a.definitionId, b.definitionId)
+        || compareCodeUnits(a.metricId, b.metricId)
         || a.protocolRevision - b.protocolRevision
         || compareCodeUnits(a.comparisonSeriesKey, b.comparisonSeriesKey)
         || a.row.observedAt.localeCompare(b.row.observedAt)
@@ -58,19 +60,22 @@ export function buildAssessmentHistoryCsv(historyModel: AssessmentHistoryModel):
     const items: CsvExportRowItem[] = [];
 
     for (const test of historyModel.tests) {
-        const allSeries = [
-            ...(test.activeSeries ? [test.activeSeries] : []),
-            ...test.otherSeries,
-        ];
+        for (const metric of test.metrics) {
+            const allSeries = [
+                ...(metric.activeSeries ? [metric.activeSeries] : []),
+                ...metric.otherSeries,
+            ];
 
-        for (const series of allSeries) {
-            for (const row of series.observations) {
-                items.push({
-                    definitionId: test.definitionId,
-                    protocolRevision: series.protocolRevision,
-                    comparisonSeriesKey: series.comparisonSeriesKey,
-                    row,
-                });
+            for (const series of allSeries) {
+                for (const row of series.observations) {
+                    items.push({
+                        definitionId: test.definitionId,
+                        metricId: metric.metricId,
+                        protocolRevision: series.protocolRevision,
+                        comparisonSeriesKey: series.comparisonSeriesKey,
+                        row,
+                    });
+                }
             }
         }
     }
