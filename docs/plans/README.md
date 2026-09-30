@@ -61,7 +61,7 @@ service-built artifact regressions. `make verify` passes; PR delivery remains in
 
 The scoped design for GitHub issue [#897](https://github.com/Szczepanov/adaptive-training-recommender/issues/897)
 (first-class periodic physical-capital assessments) is
-[`2026-09-30-issue-897-physical-capital-assessment-history.md`](./2026-09-30-issue-897-physical-capital-assessment-history.md) — **Draft**, blocked by acceptance of proposed [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md). It is a scoped implementation design only; [`performance-outcome-validation.md`](./performance-outcome-validation.md) remains the sole canonical OV status board.
+[`2026-09-30-issue-897-physical-capital-assessment-history.md`](./2026-09-30-issue-897-physical-capital-assessment-history.md) — **In progress**: [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A (WP0–WP3 domain foundation) started. It is a scoped implementation design only; [`performance-outcome-validation.md`](./performance-outcome-validation.md) remains the sole canonical OV status board.
 
 The combined delivery record for GitHub issues [#459](https://github.com/Szczepanov/adaptive-training-recommender/issues/459),
 [#460](https://github.com/Szczepanov/adaptive-training-recommender/issues/460), and

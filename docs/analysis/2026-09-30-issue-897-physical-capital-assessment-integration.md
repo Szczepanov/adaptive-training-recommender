@@ -1,7 +1,7 @@
 # Issue #897 — Physical-capital assessment integration analysis
 
 **Date:** 2026-09-30
-**Status:** point-in-time analysis
+**Status:** point-in-time analysis — ADR-0046, proposed here, was accepted on 2026-09-30; see the [scoped plan](../plans/2026-09-30-issue-897-physical-capital-assessment-history.md) for current delivery state
 **Repository baseline reviewed:** `main@826d9aba845a8f3e4acaa94a173ece41b1906ef1`
 **Primary issue:** #897 — periodic performance assessments as first-class canonical evidence
 **Scope:** determine how the existing protocol-testing / outcome-evidence architecture should represent the planned October 2026 physical-capital baseline and later longitudinal checkpoints without introducing a parallel measurement subsystem.
