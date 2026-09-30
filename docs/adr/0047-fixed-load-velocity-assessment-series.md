@@ -13,7 +13,7 @@
 
 ## Context
 
-In strength and power diagnostics, mean concentric velocity (measured via linear position transducers or video velocity analysis such as WL Analysis) at a standardized, fixed submaximal absolute load (e.g. 60 kg bench press, 80 kg back squat) provides a sensitive, low-fatigue indicator of neuromuscular readiness, movement quality, and true force-velocity adaptation. Unlike true 1RM testing, which imposes high fatigue and injury risk, fixed-load velocity can be assessed weekly or bi-weekly.
+In strength and power diagnostics, mean concentric velocity (measured via linear position transducers or video velocity analysis such as WL Analysis) at a standardized, fixed submaximal absolute load (e.g. 60 kg bench press, 80 kg back squat) provides a sensitive, low-fatigue indicator of neuromuscular readiness, movement quality, and true force-velocity adaptation. Direct 1RM testing is a valid maximal-strength measure when appropriate, but it is not necessary for frequent longitudinal monitoring. A standardized fixed-load velocity check can provide a lower-cost repeat measure between question-driven maximal tests.
 
 However, the current Performance Outcome Validation (OV) evidence stack (ADR-0023, ADR-0046) enforces a fundamental identity constraint:
 
@@ -44,8 +44,8 @@ The athlete runs this assessment as a dedicated, brief test session (e.g. 3 warm
 
 #### Trade-offs
 * **Pros:**
-  1. **Strictly Invariant-Preserving:** Fully conforms to ADR-0023 and ADR-0046 without modifying Firestore security rules, TypeScript types, or database schemas.
-  2. **Zero Blast Radius:** Uses the existing single-observation `observationKeyFor(attemptId, metricId)` and existing `computeSeriesProgress` logic.
+  1. **Identity-Schema Preserving:** Conforms to ADR-0023 and ADR-0046 without changing the one-observation-per-metric-per-attempt identity or Firestore document shape.
+  2. **Bounded Blast Radius:** Reuses `observationKeyFor(attemptId, metricId)` and existing `computeSeriesProgress` logic, while still requiring normal registry/rules additions for the new canonical metric and `test_load_kg` comparison dimension.
   3. **Methodological Rigor:** Standardizes warm-up pacing, rest intervals, and intent specifically for velocity testing rather than treating velocity as an incidental byproduct of a maximal grind.
   4. **Clean Series Separation:** Load changes automatically trigger setup/method comparability boundaries (Decision D1).
 * **Cons:**
@@ -91,11 +91,11 @@ where `instanceDiscriminator` could be `load_60kg`.
 
 ---
 
-## Recommendation and Architectural Decision
+## Proposed Recommendation
 
-We recommend **Option A (Dedicated Fixed-Load Protocol per Exercise)** as the normative, accepted architecture for fixed-load velocity assessments.
+While this ADR remains **Proposed**, Option A (Dedicated Fixed-Load Protocol per Exercise) is the recommended path for fixed-load velocity assessments. It does not become normative until the ADR is accepted.
 
-### Decision Rules
+### Proposed Decision Rules
 
 1. **Dedicated Protocols:** Fixed-load velocity is modeled as a first-class `MeasurementProtocol`:
    - Bench press: `strength-bench-press-fixed-load-velocity`
@@ -103,12 +103,13 @@ We recommend **Option A (Dedicated Fixed-Load Protocol per Exercise)** as the no
 2. **Canonical Metric:** Uses metric `mean_concentric_velocity_mps` (unit: `m/s`, direction: `higher_is_better`).
 3. **Series-Defining Load:** `test_load_kg` is a required, series-defining comparison context dimension. Any change in test load automatically creates a distinct longitudinal series, marked non-comparable under Decision D1.
 4. **Trial Capture:** Each attempt captures 2–3 maximal-velocity repetitions at the locked load. Reducer selects the peak valid mean velocity.
-5. **No Schema Mutations:** The core `observationKey = ${attemptId}:${metricId}` contract remains unaltered.
+5. **No Observation-Identity Schema Mutation:** The core `observationKey = ${attemptId}:${metricId}` contract remains unaltered.
+6. **Registry/rules work is still required:** add `mean_concentric_velocity_mps` and `test_load_kg` through the existing TypeScript registry + Firestore allowlist parity path before any protocol using them can persist canonical evidence.
 
 ---
 
 ## Consequences
 
-* **Security & Invariants:** Zero changes to `firestore.rules` or database schemas. All existing data integrity checks remain intact.
+* **Security & Invariants:** No database-shape or observation-key migration is required. `firestore.rules` and the TypeScript registry must still be extended in lockstep for the new metric/dimension, preserving the existing parity tests and data-integrity checks.
 * **Progress & History:** Integrates transparently into `AssessmentHistory` and normalized CSV export without special-casing.
 * **Athlete Experience:** Clear separation between maximal force capacity (1RM) and neuromuscular movement velocity (fixed load).
