@@ -92,6 +92,7 @@ describe('assessmentCsvExport', () => {
             'device_model',
             'body_mass_kg',
             'body_mass_source',
+            'body_mass_reference',
             'body_mass_date',
             'relative_value',
             'relative_unit',
