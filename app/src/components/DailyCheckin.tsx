@@ -4,13 +4,16 @@ import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionResponseService } from '../services/sessionResponseService';
 import { preferencesService } from '../services/preferencesService';
-import { relevantFollowupRegions } from '../responses/followupSchedule';
+import {
+  relevantFollowupRegions,
+  resolvePendingNextMorningFollowups,
+  type SessionFollowupRegions,
+} from '../responses/followupSchedule';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
 import type { BodyRegion, DailySubjectiveCheckin, NutritionTrackingAdherence, PhysicalWorkCheckin, RedFlagCategory, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
 import type { HealthContextCheckin } from '../engine/healthAnomalyModels';
 import { BODY_REGIONS } from '../engine/models';
 import { isCompletedSubjectiveCheckin } from '../engine/checkinCompletion';
-import { deriveTissueSeverity } from '../engine/injuryPolicy';
 import { getLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
 import { resolveDefaultTimeAvailable, type CheckinAvailabilityDefault } from '../utils/checkinDefaults';
 import { getErrorMessage } from '../utils/errors';
@@ -193,26 +196,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
         // unchanged, exactly as before M5.2.
         const yesterday = addDaysToLocalDateString(today, -1);
         const yesterdayCheckin = await checkinService.getCheckin(userId, yesterday);
-        const needed: Array<{ region: BodyRegion; sessionRef?: RegionTissueResponse['sourceSessionRef'] }> = [];
-        const coveredRegionSessionKeys = new Set<string>();
-        if (yesterdayCheckin?.tissueResponses) {
-          for (const [regionKey, response] of Object.entries(yesterdayCheckin.tissueResponses)) {
-            const region = regionKey as BodyRegion;
-            // Trigger on the same tissue-severity semantics the engine itself uses
-            // (deriveTissueSeverity), not on the presence of a few specific fields --
-            // a morning-only moderate/severe reading derives a limit/exclude restriction
-            // (SEP-C3) but previously wouldn't have produced this prompt, silently leaving
-            // that restriction without a real chance of an explicit next-day re-check
-            // (issue #680).
-            if (response && deriveTissueSeverity(response) !== null) {
-              const sessionKey = response.sourceSessionRef ? `${response.sourceSessionRef.kind}:${response.sourceSessionRef.id}` : 'checkin';
-              coveredRegionSessionKeys.add(`${sessionKey}:${region}`);
-              if (!existing?.tissueResponses?.[region]?.nextMorningReaction) {
-                needed.push({ region, sessionRef: response.sourceSessionRef });
-              }
-            }
-          }
-        }
+        const sessionDerived: SessionFollowupRegions[] = [];
         try {
           const { executions } = await sessionExecutionService.getExecutionsInRange(userId, yesterday, today);
           for (const { execution, entries } of executions) {
@@ -224,20 +208,22 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
             const facets = exerciseIds
               .map(id => EXERCISES_BY_ID.get(id)?.facets)
               .filter((facet): facet is NonNullable<typeof facet> => !!facet);
-            const sessionRef: RegionTissueResponse['sourceSessionRef'] = { kind: 'execution', id: execution.executionId, date: execution.date };
-            const sessionKey = `execution:${execution.executionId}`;
-            for (const region of relevantFollowupRegions(facets)) {
-              const key = `${sessionKey}:${region}`;
-              if (coveredRegionSessionKeys.has(key)) continue;
-              coveredRegionSessionKeys.add(key);
-              if (existing?.tissueResponses?.[region]?.nextMorningReaction) continue;
-              needed.push({ region, sessionRef });
-            }
+            const regions = relevantFollowupRegions(facets);
+            if (regions.length === 0) continue;
+            sessionDerived.push({
+              sessionRef: { kind: 'execution', id: execution.executionId, date: execution.date },
+              regions,
+            });
           }
         } catch {
           // Session-derived candidates are an enhancement, not a requirement -- a failed
           // read here must not block the check-in itself from loading.
         }
+        const needed = resolvePendingNextMorningFollowups(
+          yesterdayCheckin?.tissueResponses,
+          existing?.tissueResponses,
+          sessionDerived,
+        );
         setPendingFollowups(needed);
         setTissueResponseOpen(Boolean(
           existing?.painOrInjury
