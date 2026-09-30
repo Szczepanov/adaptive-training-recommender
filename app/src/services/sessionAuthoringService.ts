@@ -212,6 +212,22 @@ export async function prepareAuthoredOccurrenceLaunch(
     };
 }
 
+/**
+ * Provenance for a scaled launch's duration ceiling (PR-B, #893 WP3.2): the approved gate
+ * duration is always the session's own `gating.durationMin` scaled by the adjudicated
+ * execution-volume fraction. The execution boundary owns this derivation so callers cannot
+ * inflate a precomputed minute ceiling.
+ */
+export function resolveScaledLaunchCeilingMinutes(gatingDurationMin: number, doseVolume: number): number {
+    if (!Number.isFinite(gatingDurationMin) || gatingDurationMin <= 0) {
+        throw new Error('A scaled external-plan launch requires a positive finite gating duration.');
+    }
+    if (!Number.isFinite(doseVolume) || doseVolume <= 0 || doseVolume > 1) {
+        throw new Error('A scaled external-plan launch requires an approved execution volume in (0, 1].');
+    }
+    return gatingDurationMin * doseVolume;
+}
+
 export interface PrepareExternalPlanSessionLaunchOptions {
     summaryOverride?: string;
     now?: string;
@@ -224,8 +240,8 @@ export interface PrepareExternalPlanSessionLaunchOptions {
     windowBinding?: OccurrenceWindowBinding;
     /** Scale only from the exact reducedDefinition carried by v6. */
     useReducedDefinition?: boolean;
-    /** Approved gate duration for today's exact scale verdict. */
-    maxDurationMinutes?: number;
+    /** Adjudicated execution-volume fraction for today's exact scale verdict. */
+    scaleVolume?: number;
 }
 
 /**
@@ -271,17 +287,34 @@ export async function prepareExternalPlanSessionLaunch(
     if (options.useReducedDefinition && !reducedDefinition) {
         throw new Error('A scaled external-plan session requires an exact structured reducedDefinition.');
     }
-    if (options.useReducedDefinition
-        && (options.maxDurationMinutes === undefined
-            || !Number.isFinite(options.maxDurationMinutes)
-            || options.maxDurationMinutes <= 0)) {
-        throw new Error('A scaled external-plan launch requires today\'s approved duration ceiling.');
+    // Execution-boundary mirror of `externalPlanV6.ts`'s import contract (PR-B, #893 WP3.2):
+    // a scaled launch is only ever the coach's own reduced form. Import validation already
+    // rejects a `reducedDefinition` without `reducible: true` and one that renames the
+    // authored identity, but the authoring layer accepts hand-built sessions, so it
+    // re-enforces both rules here -- before any dose check -- and fails closed.
+    if (options.useReducedDefinition && externalPlan.session.scaling?.reducible !== true) {
+        throw new Error('A scaled external-plan launch requires reducible: true with an exact structured reducedDefinition.');
     }
+    if (options.useReducedDefinition && reducedDefinition) {
+        const fullDefinition = externalPlan.session.definition;
+        if (reducedDefinition.id !== fullDefinition.id) {
+            throw new Error('Reduced definition must retain the authored session definition id.');
+        }
+        if (reducedDefinition.intent !== fullDefinition.intent) {
+            throw new Error('Reduced definition must retain the authored session intent.');
+        }
+        if (reducedDefinition.dominantModality !== fullDefinition.dominantModality) {
+            throw new Error('Reduced definition must retain the authored dominant modality.');
+        }
+    }
+    const maxDurationMinutes = options.useReducedDefinition
+        ? resolveScaledLaunchCeilingMinutes(externalPlan.session.gating.durationMin, options.scaleVolume ?? Number.NaN)
+        : undefined;
     const definition = options.useReducedDefinition ? reducedDefinition! : externalPlan.session.definition;
-    if (options.useReducedDefinition && options.maxDurationMinutes !== undefined
+    if (options.useReducedDefinition && maxDurationMinutes !== undefined
         && (!definition.duration
-            || definition.duration.max > options.maxDurationMinutes
-            || explicitDurationSeconds(definition) > options.maxDurationMinutes * 60)) {
+            || definition.duration.max > maxDurationMinutes
+            || explicitDurationSeconds(definition) > maxDurationMinutes * 60)) {
         throw new Error('The exact reduced definition exceeds today\'s approved duration ceiling.');
     }
     // Defense in depth: revalidate the exact executable definition, including v6's scaled form.

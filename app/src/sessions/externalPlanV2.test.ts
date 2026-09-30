@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { validateExternalTrainingPlanV2, isV2Plan, isV2Session, EXTERNAL_PLAN_SCHEMA_V2 } from './externalPlanV2';
+import { validateExternalTrainingPlanV2, isV2Plan, isV2Session, isDefinitionBearingExternalSession, isDefinitionBearingExternalPlan, isBundleCapableExternalPlan, EXTERNAL_PLAN_SCHEMA_V2 } from './externalPlanV2';
 import { EXTERNAL_PLAN_SCHEMA } from '../engine/models';
+import type { AnyExternalTrainingPlan } from './externalPlanAny';
 import { computeContentHash } from '../engine/externalPlanHash';
 import type { SessionDefinition } from './models';
 
@@ -127,6 +128,90 @@ describe('external-plan@2 (M3.6)', () => {
         it('isV2Session narrows on definition vs. prescription', () => {
             expect(isV2Session({ definition: {} })).toBe(true);
             expect(isV2Session({ prescription: {} })).toBe(false);
+        });
+
+        // PR-B (#893 WP3.1): one version-proof capability guard for the canonical launch
+        // path, so a new schema version never needs another per-version literal at the
+        // call site the way v5 fell through `isV4Plan(...) || isV6Plan(...)`.
+        describe('definition-bearing and bundle capability guards', () => {
+            const definitionSession: { definition?: unknown; prescription?: unknown } & Record<string, unknown> = {
+                id: 'w1-session', title: 'Session',
+                placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' },
+                gating: { modality: 'strength', intensity: 'moderate', durationMin: 45, durationMax: 55, environment: 'either', equipment: [] },
+                definition: { id: 'w1-session' },
+            };
+            const prescriptionSession: { definition?: unknown; prescription?: unknown } & Record<string, unknown> = {
+                id: 'w1-session', title: 'Session',
+                placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' },
+                gating: { modality: 'strength', intensity: 'moderate', durationMin: 45, durationMax: 55, environment: 'either', equipment: [] },
+                prescription: { summary: 'Flat v1 prescription' },
+            };
+
+            it('isDefinitionBearingExternalSession admits v2+ definition sessions and refuses v1 flat prescriptions', () => {
+                expect(isDefinitionBearingExternalSession(definitionSession)).toBe(true);
+                expect(isDefinitionBearingExternalSession(prescriptionSession)).toBe(false);
+                expect(isDefinitionBearingExternalSession({})).toBe(false);
+                expect(isDefinitionBearingExternalSession({ definition: null })).toBe(false);
+                expect(isDefinitionBearingExternalSession({ definition: 'not-structured' })).toBe(false);
+                // A session carrying both fields is malformed (import rejects it); the
+                // guard fails closed rather than treating it as executable.
+                expect(isDefinitionBearingExternalSession({ ...definitionSession, prescription: {} })).toBe(false);
+            });
+
+            it('isDefinitionBearingExternalSession is capability-only: advisory events still carry a definition', () => {
+                // Event exclusion is `canLaunchExternalPlanSession`'s job (via isEvent),
+                // not the capability guard's -- the guard answers "can the runner execute
+                // these bytes", not "may today start them".
+                expect(isDefinitionBearingExternalSession({ ...definitionSession, isEvent: true } as { definition?: unknown; prescription?: unknown })).toBe(true);
+            });
+
+            it('isDefinitionBearingExternalSession admits a future schema that keeps the definition contract', () => {
+                expect(isDefinitionBearingExternalSession({
+                    ...definitionSession,
+                    schema: 'adaptive-training-recommender/external-plan@7',
+                    coachNotes: 'a v7-only field',
+                } as { definition?: unknown; prescription?: unknown })).toBe(true);
+            });
+
+            function capabilityPlan(schema: string, sessions: unknown[], extra: Record<string, unknown> = {}) {
+                return {
+                    schema, planId: 'capability-plan', revision: 1, title: 'Capability plan',
+                    startDate: '2026-08-17', weekCount: 1, sessions, ...extra,
+                } as unknown as AnyExternalTrainingPlan;
+            }
+
+            it('isDefinitionBearingExternalPlan covers every definition-bearing schema and refuses v1/empty plans', () => {
+                const v1 = capabilityPlan(EXTERNAL_PLAN_SCHEMA, [prescriptionSession]);
+                const v2 = capabilityPlan(EXTERNAL_PLAN_SCHEMA_V2, [definitionSession]);
+                const v5 = capabilityPlan('adaptive-training-recommender/external-plan@5', [definitionSession], { restDays: [], intentBlocks: [] });
+                const v6 = capabilityPlan('adaptive-training-recommender/external-plan@6', [{ ...definitionSession, scaling: { reducible: true, reducedDefinition: { id: 'w1-session' } } }], { restDays: [] });
+                expect(isDefinitionBearingExternalPlan(v1)).toBe(false);
+                expect(isDefinitionBearingExternalPlan(v2)).toBe(true);
+                expect(isDefinitionBearingExternalPlan(v5)).toBe(true);
+                expect(isDefinitionBearingExternalPlan(v6)).toBe(true);
+                expect(isDefinitionBearingExternalPlan(capabilityPlan(EXTERNAL_PLAN_SCHEMA_V2, []))).toBe(false);
+            });
+
+            it('isBundleCapableExternalPlan centrally admits supported audit schemas and fails closed otherwise', () => {
+                const intradaySession = {
+                    ...definitionSession,
+                    intraday: {
+                        window: { startLocal: '06:00', endLocal: '07:00' },
+                        bundleId: 'bundle-1',
+                        order: 1,
+                    },
+                };
+                const v4 = capabilityPlan('adaptive-training-recommender/external-plan@4', [intradaySession], { restDays: [] });
+                const v5 = capabilityPlan('adaptive-training-recommender/external-plan@5', [intradaySession], { restDays: [], intentBlocks: [] });
+                const v6 = capabilityPlan('adaptive-training-recommender/external-plan@6', [intradaySession], { restDays: [] });
+                expect(isBundleCapableExternalPlan(v4)).toBe(true);
+                expect(isBundleCapableExternalPlan(v5)).toBe(true);
+                expect(isBundleCapableExternalPlan(v6)).toBe(true);
+                expect(isBundleCapableExternalPlan(capabilityPlan('adaptive-training-recommender/external-plan@3', [intradaySession], { restDays: [] }))).toBe(false);
+                expect(isBundleCapableExternalPlan(capabilityPlan('adaptive-training-recommender/external-plan@4', [definitionSession], { restDays: [] }))).toBe(false);
+                expect(isBundleCapableExternalPlan(capabilityPlan(EXTERNAL_PLAN_SCHEMA_V2, [definitionSession]))).toBe(false);
+                expect(isBundleCapableExternalPlan(capabilityPlan(EXTERNAL_PLAN_SCHEMA, [prescriptionSession]))).toBe(false);
+            });
         });
     });
 

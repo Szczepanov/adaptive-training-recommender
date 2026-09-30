@@ -7,7 +7,7 @@ import { computeContentHash } from '../engine/externalPlanHash';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import type { WorkoutDefinition } from '../workouts/models';
 import { adaptExternalPlanSessionToSessionDefinition } from './externalSessionAdapter';
-import { isV2Session } from './externalPlanV2';
+import { isDefinitionBearingExternalSession } from './externalPlanV2';
 import { canonicalizeSessionData, hashSessionDefinition } from './sessionDefinitionHash';
 import { validateSessionDefinition } from './validation';
 
@@ -280,7 +280,7 @@ export async function resolveSessionDefinition(
     // adapter needed, unlike v1's flat/free-text prescription. Identity (id/revision) is
     // still normalized to the wrapping session/plan, matching the v1 adapter's convention;
     // hashSessionDefinition doesn't cover either field, so this has no hash consequence.
-    const definition = isV2Session(session)
+    const definition = isDefinitionBearingExternalSession(session)
         ? { ...session.definition, id: session.id, revision: source.revision }
         : adaptExternalPlanSessionToSessionDefinition(session, source.revision);
     const reducedDefinition = 'scaling' in session && session.scaling && 'reducedDefinition' in session.scaling
