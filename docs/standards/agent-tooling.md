@@ -330,6 +330,33 @@ but it can also hide source. Treat it as a client-local experiment and compare c
 full-source runs before enabling it broadly. Explicit `jev ask`/`jev find` remains the shared
 workflow.
 
+Do not run that experiment through the upstream plugin's own hook: it sends every eligible file
+with no path policy, and puts its "this read was narrowed" note where Claude Code ignores it. The
+opt-in `scripts/agent_jev_read_hook.py` wraps `jev hook read` instead:
+
+- It forwards only absolute paths to source files (`.ts`/`.tsx`/`.js`/`.py` and similar) inside
+  the repository that pass the `agent_jev.py` scope policy. Paths under `.claude/` or inside a
+  nested git checkout (such as an agent worktree) are never forwarded.
+- Decision-authority code is always read whole: `app/src/engine/`, `app/src/knowledge/`,
+  `app/src/workouts/` and `src/garmin_sync/intensity_classification.py`, at any depth.
+- Jev only narrows files of 400 lines up to 80 KB. Its reply is accepted only as a narrowing of the
+  same file, and the note is always delivered.
+- Any refusal, error or timeout passes the read through untouched.
+- It still sends the latest user prompt (Jev's "goal") along with each forwarded file, so never
+  paste health data into a prompt while it is enabled (I6).
+
+Register it in `.claude/settings.local.json`, which must stay git-ignored, as a `PreToolUse` hook
+with matcher `Read`, and disable the `jev@jev` plugin. Make the command fail open, because a
+PreToolUse hook exiting 2 blocks the tool, and `python` exits 2 when the script is absent (an
+older checkout or worktree):
+
+```bash
+f="$CLAUDE_PROJECT_DIR/scripts/agent_jev_read_hook.py"; if [ -f "$f" ]; then python "$f" || echo '{}'; else echo '{}'; fi
+```
+
+`JEV_HOOK_DISABLE=1` turns it off. `JEV_HOOK_DEBUG=1` prints the wrapper's pass-through reason
+and Jev's own diagnostics to stderr.
+
 `jev gain` may be used as a local diagnostic for query count, examined tokens and provider spend,
 but leverage is not the same as measured agent-token savings. Repository evals should prioritize
 end-state correctness and then compare turns/context/tool usage across repeated trials.
