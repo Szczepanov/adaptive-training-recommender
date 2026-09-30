@@ -210,17 +210,22 @@ The physical-capital battery is a natural next expansion.
 - sprint elapsed time;
 - `cycling_5s_peak_power_w`.
 
-It does not yet represent:
+It does not yet represent the canonical benchmark outputs required by the October battery:
 
 - standing broad-jump distance;
 - wall-touch CMJ height;
 - medicine-ball throw distance;
-- separate cycling 1 s peak and 5 s mean sprint power;
-- bar mean concentric velocity;
-- bar peak concentric velocity;
-- optional sprint peak cadence.
+- separate cycling 1 s peak and 5 s mean sprint power.
 
-The registry should be expanded with explicit raw constructs instead of overloading one vaguely named metric.
+Bar mean/peak velocity and sprint cadence are **not** metric-registry gaps in the initial slice. They remain bounded raw/context evidence unless a reviewed longitudinal identity is introduced later; fixed-load mean concentric velocity has its own explicit acceptance boundary because comparability must include exercise, exact load and material measurement/setup identity.
+
+The canonical registry should therefore expand only for stable longitudinal outcomes, while the new protocol-owned trial schema carries raw constructs such as velocity, cadence, lift result and RPE.
+
+### 4.1.1 Firestore persistence contracts are narrower than the TypeScript vocabulary
+
+The current Firestore rules hard-code allowed outcome metric IDs, metric units, measurement-protocol fields and comparison dimensions. Those allowlists are narrower than the current TypeScript registry/catalog and will also reject the new multidomain metrics, new comparison dimensions, protocol-owned trial-capture/reducer metadata and typed trial provenance unless they are updated in the same implementation PRs.
+
+This is a runtime persistence constraint, not only a test-maintenance detail. #897 work must keep TypeScript validation, Firestore validation and emulator coverage in lockstep so a protocol or observation accepted by application code cannot fail only at the production write boundary.
 
 ### 4.2 Comparison context is explicitly cycling-first
 
@@ -589,6 +594,8 @@ The first implementation may compute the reducer locally in the capture workflow
 - protocol reference.
 
 Do not place trial IDs into `derivedFromObservationIds`: that field promises observation identities. Introduce an additive typed derivation-evidence reference while preserving existing observation-to-observation provenance.
+
+For trial-only summaries, non-empty typed assessment-trial references must satisfy `assertValidMetricObservationRevision` provenance validation while observation-derived summaries continue to require non-empty `derivedFromObservationIds`. The Firestore observation-revision rules currently enforce the same observation-ID-only assumption and a strict field allowlist, so the model, TypeScript validator, Firestore rules and unit/emulator tests must be changed atomically. Existing observation-derived history remains valid. Trial references must stay within the same assessment attempt and must be unique.
 
 Do not write a derived summary without retaining the raw trial rows that produced it.
 
