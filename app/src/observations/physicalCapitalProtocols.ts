@@ -12,6 +12,8 @@ import type { AssessmentTrialFieldDefinition, MeasurementProtocol } from './mode
 
 const CREATED_AT = '2026-09-30T00:00:00.000Z';
 const SPRINT_WARMUP = 'cycling-sprint-warmup-r1';
+const SPRINT_WARMUP_V2 = 'cycling-sprint-warmup-r2';
+const CREATED_AT_V2 = '2026-09-30T15:00:00.000Z';
 
 const RAW_VIDEO_INSTRUCTION = {
     id: 'raw-video',
@@ -274,6 +276,154 @@ export const CYCLING_6S_SEATED_SPRINT_PROTOCOL: MeasurementProtocol = {
     },
     createdAt: CREATED_AT,
 };
+
+
+/**
+ * Revision 2 aligns the athlete-facing October baseline with the v1.6 execution protocol.
+ * Revision 1 is intentionally preserved above because ADR-0046 makes protocol revisions
+ * immutable evidence contracts once published.
+ */
+export const BENCH_PRESS_1RM_PROTOCOL_V2: MeasurementProtocol = {
+    ...BENCH_PRESS_1RM_PROTOCOL,
+    revision: 2,
+    instructions: [
+        { id: 'safety', text: 'Bench inside a rack with safety arms set just below chest height, or with a competent spotter. Do not attempt maximal lifts alone without safeties.' },
+        { id: 'warmup', text: 'Complete the established progressive warm-up ramp. Choose later attempts from bar speed, technique and feel rather than historical peak numbers.' },
+        { id: 'standard', text: 'Use the same established grip, chest touch point, approximately 1-second pause, repeatable arch, planted feet and butt-on-bench standard on every test. A valid lift finishes at full lockout without bounce or spotter contact.' },
+        { id: 'attempts', text: 'Rest about 3-5 minutes before heavy attempts. End after a technically valid maximum is established or after two misses at the same or nearby load; do not chase repeated misses.' },
+        RAW_VIDEO_INSTRUCTION,
+    ],
+    invalidationRules: [
+        'The spotter touched the bar during the attempt.',
+        'The bar bounced, the pause/touch standard was not met, the feet lost the declared position, or the butt left the bench.',
+        'The lift was not pressed to full lockout.',
+        'Chest symptoms, syncope/near-syncope, disproportionate breathlessness, sustained palpitations, acute pain, illness, or equipment failure materially affected the attempt.',
+    ],
+    createdAt: CREATED_AT_V2,
+};
+
+export const BACK_SQUAT_1RM_PROTOCOL_V2: MeasurementProtocol = {
+    ...BACK_SQUAT_1RM_PROTOCOL,
+    revision: 2,
+    instructions: [
+        { id: 'safety', text: 'Squat inside a rack with safety pins set just below the bottom position, or with competent spotters. Do not attempt maximal lifts alone without safeties.' },
+        { id: 'warmup', text: 'Complete the established progressive warm-up ramp. Choose later attempts from bar speed, technique and feel rather than historical peak numbers.' },
+        { id: 'standard', text: 'Use the same established squat style on every test: footwear, belt/sleeve policy, stance, bar position and declared depth criterion must stay consistent. A valid lift meets that declared depth and returns to full standing without spotter contact.' },
+        { id: 'attempts', text: 'Rest about 3-5 minutes before heavy attempts. End after a technically valid maximum is established or after two misses at the same or nearby load; do not chase repeated misses.' },
+        RAW_VIDEO_INSTRUCTION,
+    ],
+    invalidationRules: [
+        'A spotter touched the bar or the bar was set on the safety pins.',
+        'The squat did not meet the athlete\'s declared repeatable depth criterion.',
+        'The lift did not return to full standing.',
+        'Chest symptoms, syncope/near-syncope, disproportionate breathlessness, sustained palpitations, acute pain, illness, or equipment failure materially affected the attempt.',
+    ],
+    createdAt: CREATED_AT_V2,
+};
+
+export const STANDING_BROAD_JUMP_PROTOCOL_V2: MeasurementProtocol = {
+    ...STANDING_BROAD_JUMP_PROTOCOL,
+    revision: 2,
+    instructions: [
+        { id: 'warmup', text: 'Complete a brief general warm-up plus 1-2 progressive jumps; the separate familiarization exposure should already have established the setup.' },
+        { id: 'setup', text: 'Use the same fixed start line, floor, footwear and free arm-swing standard used for the baseline.' },
+        { id: 'stance', text: 'Start with both feet behind the line and jump forward from a static two-foot stance with free arm swing.' },
+        { id: 'measure', text: 'Measure from the fixed start line to the back of the rearmost heel.' },
+        { id: 'attempts', text: 'Perform three maximal valid jumps with a controlled two-foot landing and about 60-90 seconds of rest.' },
+    ],
+    comparisonContext: {
+        required: ['test_environment', 'equipment_setup_id'],
+        seriesDefining: ['test_environment', 'equipment_setup_id'],
+        contextOnly: [],
+        canonicalizationVersion: COMPARISON_CANONICALIZATION_V1,
+    },
+    invalidationRules: [
+        'Take-off was not from a static two-foot stance.',
+        'The landing was not controlled on two feet, or the athlete fell/stepped backward.',
+        'The fixed start line, floor, footwear or measurement setup differed materially from the declared setup.',
+        'Illness or acute pain materially affected the attempt.',
+    ],
+    createdAt: CREATED_AT_V2,
+};
+
+export const WALL_TOUCH_CMJ_PROTOCOL_V2: MeasurementProtocol = {
+    ...WALL_TOUCH_CMJ_PROTOCOL,
+    revision: 2,
+    instructions: [
+        { id: 'warmup', text: 'Complete the same brief warm-up and two progressive practice jumps used for repeat testing.' },
+        { id: 'reach', text: 'On the same wall/floor and in the same shoes, measure standing reach three times with the same marking hand and use the median.' },
+        { id: 'jump', text: 'Use a normal arm swing. From a static stance, perform a countermovement jump without a step and touch the wall at the apex with the same marking hand.' },
+        { id: 'attempts', text: 'Perform three maximal valid jumps 60-90 seconds apart. Replace only clearly invalid attempts and cap the session at five maximal attempts.' },
+    ],
+    comparisonContext: {
+        required: ['measurement_method_id', 'equipment_setup_id'],
+        seriesDefining: ['measurement_method_id', 'equipment_setup_id'],
+        contextOnly: [],
+        canonicalizationVersion: COMPARISON_CANONICALIZATION_V1,
+    },
+    familiarization: { required: false, minimumExposures: 0 },
+    invalidationRules: [
+        'A step, hop or run-up was used before the jump.',
+        'The marking hand or standing-reach method differed from the declared setup.',
+        'The wall/floor, footwear or measurement setup differed materially from the declared setup.',
+        'Illness or acute pain materially affected the attempt.',
+    ],
+    createdAt: CREATED_AT_V2,
+};
+
+export const SEATED_MEDBALL_THROW_PROTOCOL_V2: MeasurementProtocol = {
+    ...SEATED_MEDBALL_THROW_PROTOCOL,
+    revision: 2,
+    instructions: [
+        { id: 'warmup', text: 'Complete a brief upper-body warm-up and 2 progressive throws; the separate familiarization exposure should already have established the setup.' },
+        { id: 'position', text: 'Sit on the floor with legs extended, head and upper back against the wall, holding the same 3 kg ball at the chest.' },
+        { id: 'throw', text: 'Perform an explosive two-hand chest pass while keeping the torso against the wall.' },
+        { id: 'measure', text: 'Measure from the wall to the first point of ball contact. Perform three maximal valid throws with about 60-90 seconds of rest.' },
+    ],
+    invalidationRules: [
+        'The head/upper back or torso left the wall during the throw.',
+        'A ball other than the declared 3 kg ball or a materially different station/setup was used.',
+        'Illness, acute pain, or equipment failure materially affected the attempt.',
+    ],
+    createdAt: CREATED_AT_V2,
+};
+
+export const CYCLING_6S_SEATED_SPRINT_PROTOCOL_V2: MeasurementProtocol = {
+    ...CYCLING_6S_SEATED_SPRINT_PROTOCOL,
+    revision: 2,
+    instructions: [
+        { id: 'warmup', text: 'Complete 15-20 minutes of easy progressive cycling, then 2-3 short progressive cadence/torque activations with full recovery.' },
+        { id: 'calibrate', text: 'Use the same bicycle and declared power source; calibrate/zero-offset it using the normal procedure.' },
+        { id: 'effort', text: 'From the same seated rolling start (about 85-90 rpm when practical), sprint maximally for 6 seconds while staying seated throughout.' },
+        { id: 'recovery', text: 'Recover about 5 minutes very easily between efforts. Perform three maximal seated efforts and stop after three valid trials.' },
+        { id: 'mode', text: 'Use resistance, slope or free-ride mode; do not use ERG mode for the sprint.' },
+        { id: 'record', text: 'For each effort record 1-second peak power and best 5-second mean power from the declared source. Peak cadence and left/right balance are descriptive context only.' },
+    ],
+    warmupRef: SPRINT_WARMUP_V2,
+    familiarization: { required: false, minimumExposures: 0 },
+    invalidationRules: [
+        'The athlete stood up out of the saddle during the effort.',
+        'The effort was interrupted or materially shorter than 6 seconds.',
+        'The declared bicycle, power source, start convention or resistance/free-ride mode changed materially during the test.',
+        'ERG mode was used for the maximal sprint.',
+        'Chest symptoms, syncope/near-syncope, disproportionate breathlessness, sustained palpitations, acute pain, illness, or equipment failure materially affected the effort.',
+    ],
+    createdAt: CREATED_AT_V2,
+};
+
+export const PHYSICAL_CAPITAL_PROTOCOLS_V2: readonly MeasurementProtocol[] = [
+    BENCH_PRESS_1RM_PROTOCOL_V2,
+    BACK_SQUAT_1RM_PROTOCOL_V2,
+    STANDING_BROAD_JUMP_PROTOCOL_V2,
+    WALL_TOUCH_CMJ_PROTOCOL_V2,
+    SEATED_MEDBALL_THROW_PROTOCOL_V2,
+    CYCLING_6S_SEATED_SPRINT_PROTOCOL_V2,
+];
+
+export const PHYSICAL_CAPITAL_PROTOCOL_REVISIONS: readonly MeasurementProtocol[] = [
+    ...PHYSICAL_CAPITAL_PROTOCOLS,
+    ...PHYSICAL_CAPITAL_PROTOCOLS_V2,
+];
 
 export const PHYSICAL_CAPITAL_PROTOCOLS: readonly MeasurementProtocol[] = [
     BENCH_PRESS_1RM_PROTOCOL,
