@@ -671,6 +671,17 @@ Do not hard-code “first observation forever” as baseline. Existing declared/
 
 The history UI may default to earliest valid baseline-purpose observation for convenience, but that is a presentation choice, not a mutation of outcome contracts.
 
+## WP6.6 Fixed-load velocity acceptance boundary
+
+Initial October capture may keep WL Analysis velocities as raw trial evidence, but #897 must not be considered fully complete while its fixed-load longitudinal requirement has no comparable-series representation.
+
+Before closing #897, choose and implement one reviewed path:
+
+- a dedicated fixed-load velocity assessment protocol/identity that can emit canonical observations without violating the one-observation-per-metric-per-attempt contract; or
+- an explicit architecture extension for multi-instance metric observations, with backward-compatible identity/rules/progress semantics.
+
+Do not solve this by encoding load into metric IDs or by adding a second informal trend algorithm over arbitrary raw rows.
+
 ---
 
 # WP7 — Export
@@ -756,6 +767,8 @@ Current ADR-0041 behavior differs by subject kind:
 Therefore squat/bench 1RM evidence needs an explicit bridge if it is to satisfy an exercise-subject goal. The implementation must either add a reviewed mapping from the bundled strength test to the canonical exercise identity and extend goal-progress resolution while keeping measured 1RM distinct from e1RM, or leave measured squat/bench assessment evidence outside typed-goal progress in the first slice.
 
 Protocol reference alone does not solve exercise subject identity. New jump/throw/sprint metrics should become goal-eligible only when a real typed-goal use case is declared; assessment metrics do not automatically become goal metrics.
+
+The first athlete-usable baseline slice may ship before the strength-goal bridge, but #897's typed-goal acceptance criterion remains open until a reviewed mapping/resolver path is implemented or the issue scope is explicitly amended. Do not silently mark the requirement complete.
 
 Do not make target values alter assessment protocols.
 
