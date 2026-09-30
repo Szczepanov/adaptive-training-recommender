@@ -213,6 +213,28 @@ describe('projectPlannedExecutionStatus gate replacement (PR-C C1)', () => {
         expect(result.adjudication).not.toBe('gate_replaced');
     });
 
+    it('fails closed on advisory even when an exact external primary binding exists', () => {
+        const advisory = {
+            ...gatedRecommendation('advisory', SYNTHETIC_TEMPLATE_ID),
+            recommendationAudit: {
+                externalPlan: source,
+                primarySession: {
+                    sessionSource: execution.sessionSource,
+                    occurrenceId: occurrence.occurrenceId,
+                    prescriptionHash: execution.prescriptionHash,
+                },
+                plannedDose: { volume: 1, intensity: 1 },
+                executionDose: { volume: 1, intensity: 1 },
+            },
+        } as DailyRecommendationWithVerdict;
+        const result = projectPlannedExecutionStatus(input({
+            executions: [{ execution, entries: [] }],
+            recommendations: [advisory],
+        }));
+        expect(result.adjudication).toBe('unknown');
+        expect(result.adjudication).not.toBe('as_authored');
+    });
+
     it('yields unknown for a verdict-less legacy document instead of applying the mode fallback', () => {
         const result = projectPlannedExecutionStatus(input({
             occurrenceId: undefined,
