@@ -320,5 +320,8 @@ Operational manuals and operational procedures:
 
 ## ⚡ Quick Links & Root Documents
 
-* [`AGENTS.md`](../AGENTS.md) — AI agent guidance, system constraints, and command cheat sheet.
+* [`AGENTS.md`](../AGENTS.md) — Compact cross-client AI-agent router, system constraints, semantic discovery policy, and command cheat sheet.
+* [`CLAUDE.md`](../CLAUDE.md) — Claude Code always-on invariants and working loop.
+* [`GEMINI.md`](../GEMINI.md) — Gemini CLI native entrypoint that routes to the shared agent contract.
+* [`docs/reference/package-architecture.md`](./reference/package-architecture.md) — Detailed package/file routing inventory extracted from the always-loaded agent instructions.
 * [`README.md`](../README.md) — Root project overview, env vars, quick start commands.
