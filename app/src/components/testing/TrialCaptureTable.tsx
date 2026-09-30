@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     assertValidAssessmentTrial,
     assessmentTrialIdFor,
@@ -107,11 +107,6 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
 }) => {
     const capture = protocol.capture!;
     const isStrength = protocol.metricIds.includes('strength_1rm_kg');
-    const clientIdSequence = useRef(0);
-    const withClientId = useCallback((row: DraftTrialRow): TrialCaptureRow => ({
-        ...row,
-        clientId: `trial-row-${attempt.id}-${clientIdSequence.current++}`,
-    }), [attempt.id]);
 
     // Trials already persisted by an interrupted save are immutable evidence: they win over any
     // local draft for their ordinal and render read-only, so a resubmission cannot diverge.
@@ -122,6 +117,11 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
 
     const initializeRows = useCallback((): TrialCaptureRow[] => {
         const savedDraft = loadAssessmentDraft(userId, attempt.id);
+        let nextClientSequence = 1;
+        const attachClientId = (row: DraftTrialRow): TrialCaptureRow => ({
+            ...row,
+            clientId: `trial-row-${attempt.id}-${nextClientSequence++}`,
+        });
 
         if (initialTrials && initialTrials.length > 0) {
             const activeByOrdinal = new Map<number, AssessmentTrial>();
@@ -131,7 +131,7 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
             }
             const storedRows: TrialCaptureRow[] = [...activeByOrdinal.values()]
                 .sort((a, b) => a.ordinal - b.ordinal)
-                .map(t => withClientId({
+                .map(t => attachClientId({
                     ordinal: t.ordinal,
                     values: t.values,
                     validity: t.validity,
@@ -141,22 +141,22 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 }));
             const draftOnlyRows = (savedDraft ?? [])
                 .filter(row => !activeByOrdinal.has(row.ordinal))
-                .map(withClientId);
+                .map(attachClientId);
             return [...storedRows, ...draftOnlyRows];
         }
-        if (savedDraft) return savedDraft.map(withClientId);
+        if (savedDraft) return savedDraft.map(attachClientId);
 
         const count = capture.plannedTrials;
         const initial: TrialCaptureRow[] = [];
         for (let i = 1; i <= count; i++) {
-            initial.push(withClientId({
+            initial.push(attachClientId({
                 ordinal: i,
                 values: {},
                 validity: 'valid',
             }));
         }
         return initial;
-    }, [attempt.id, capture.plannedTrials, initialTrials, userId, withClientId]);
+    }, [attempt.id, capture.plannedTrials, initialTrials, userId]);
 
     const [rows, setRows] = useState<TrialCaptureRow[]>(initializeRows);
     const [missingConfirmationRequired, setMissingConfirmationRequired] = useState(false);
@@ -197,24 +197,32 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
     };
 
     const addAttempt = () => {
-        if (rows.length >= capture.maxTrials) return;
-        const nextOrdinal = rows.length + 1;
-        const carryValues: Record<string, AssessmentTrialScalar> = {};
-        if (presentationHints?.carryForwardFieldIds && rows.length > 0) {
-            for (const fieldId of presentationHints.carryForwardFieldIds) {
-                const existingVal = rows[0].values[fieldId];
-                if (existingVal !== undefined) carryValues[fieldId] = existingVal;
+        setRows(current => {
+            if (current.length >= capture.maxTrials) return current;
+            const nextOrdinal = current.length + 1;
+            const carryValues: Record<string, AssessmentTrialScalar> = {};
+            if (presentationHints?.carryForwardFieldIds && current.length > 0) {
+                for (const fieldId of presentationHints.carryForwardFieldIds) {
+                    const existingVal = current[0].values[fieldId];
+                    if (existingVal !== undefined) carryValues[fieldId] = existingVal;
+                }
             }
-        }
+            const nextClientSequence = current.reduce((maxSequence, row) => {
+                const match = row.clientId.match(/-(\d+)$/);
+                const sequence = match ? Number(match[1]) : 0;
+                return Math.max(maxSequence, sequence);
+            }, 0) + 1;
 
-        setRows(current => [
-            ...current,
-            withClientId({
-                ordinal: nextOrdinal,
-                values: carryValues,
-                validity: 'valid',
-            }),
-        ]);
+            return [
+                ...current,
+                {
+                    ordinal: nextOrdinal,
+                    values: carryValues,
+                    validity: 'valid',
+                    clientId: `trial-row-${attempt.id}-${nextClientSequence}`,
+                },
+            ];
+        });
     };
 
     const removeAttempt = (index: number) => {
