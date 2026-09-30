@@ -36,11 +36,12 @@ test('physical capital assessment: standing broad jump trial capture, checkpoint
   await expect(page.getByRole('heading', { name: 'Field & power' })).toBeVisible();
 
   // Select Standing broad jump
-  await page.getByRole('button', { name: 'Standing broad jump · rev 1' }).click();
+  await page.getByRole('button', { name: 'Standing broad jump · rev 2' }).click();
 
   // Stage 2: Ready screen shows protocol lock, instructions & comparison context
   await expect(page.getByRole('heading', { name: 'Lock comparison context' })).toBeVisible();
   await expect(page.getByText('Protocol instructions & safety:')).toBeVisible();
+  await page.getByLabel(/equipment_setup_id/).fill('gym-floor-a · tape-line-a · same shoes');
 
   // Start the baseline test
   await page.getByRole('button', { name: 'Confirm lock and start' }).click();
@@ -100,10 +101,11 @@ test('physical capital assessment: standing broad jump trial capture, checkpoint
   await nav.getByRole('button', { name: /More/ }).click();
   await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
   await expect(page).toHaveURL(/\?screen=testing$/);
-  await page.getByRole('button', { name: 'Standing broad jump · rev 1' }).click();
+  await page.getByRole('button', { name: 'Standing broad jump · rev 2' }).click();
   await expect(page.getByRole('heading', { name: 'Lock comparison context' })).toBeVisible();
 
-  // Change purpose to checkpoint
+  // Use the exact same series-defining setup, then change purpose to checkpoint.
+  await page.getByLabel(/equipment_setup_id/).fill('gym-floor-a · tape-line-a · same shoes');
   await page.getByLabel('Attempt purpose').selectOption('checkpoint');
   await page.getByRole('button', { name: 'Confirm lock and start' }).click();
 
@@ -138,7 +140,7 @@ test('physical capital assessment: standing broad jump trial capture, checkpoint
   const parsed = JSON.parse(fileContent);
 
   expect(parsed.schemaVersion).toBe('assessment_diagnostic_export_v1');
-  expect(parsed.protocols.some((p: { id: string }) => p.id === 'field-standing-broad-jump')).toBe(true);
+  expect(parsed.protocols.some((p: { id: string; revision: number }) => p.id === 'field-standing-broad-jump' && p.revision === 2)).toBe(true);
   expect(parsed.attempts.length).toBeGreaterThanOrEqual(2);
   expect(parsed.trials.length).toBeGreaterThanOrEqual(7);
   expect(parsed.canonicalObservations.length).toBeGreaterThanOrEqual(2);
