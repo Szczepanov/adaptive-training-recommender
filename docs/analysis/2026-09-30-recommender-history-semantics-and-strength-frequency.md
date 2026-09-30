@@ -6,7 +6,7 @@
 
 ## Implementation status in PR #925
 
-- **P0 implemented:** structured cycling authority is date-local; far-out event context is retained while Evergreen owns executable programming until an authored block becomes active. Explicit travel overlays can activate structured authority earlier.
+- **P0 implemented:** structured cycling authority is date-local; far-out event context is retained while Evergreen owns executable programming until an authored block becomes active. Explicit travel overlays can activate structured authority earlier. Fallback dates use the same established-athlete/mechanical evidence acquisition as ordinary Evergreen, and forecast dates re-resolve authority so an Evergreen D-85 definition cannot mask the structured D-84 build.
 - **P1 implemented:** Garmin/provider-neutral `stimulusDomain`, `sessionCost`, evidence and classification version survive completed-training and canonical performed-fact boundaries when structured execution is absent. Structured execution remains stronger authority.
 - **P2 not implemented:** preserved provider semantics are not yet a new optimizer/objective-credit or same-family sequence rule.
 - **P3 not implemented:** `semantic_confident` weekly coverage remains disabled; exact ADR-0016 role identity stays strict.

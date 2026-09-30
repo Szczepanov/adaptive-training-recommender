@@ -251,7 +251,11 @@ Evergreen evidence → dose → capacity → exact-role pipeline owns the execut
 `structured_plan` is reported only when a structured block actually owns the date. An
 explicit authored travel block can therefore activate structured authority before the
 derived build window; otherwise the generated cycling build starts at its authored -84 day
-boundary. Non-cycling eligible events continue to use `demand_derived`.
+boundary. While `evergreen_fallback` owns a date, it uses the same established-athlete and
+mechanical evidence streams as ordinary Evergreen programming. Forecasts re-resolve this ownership
+per projected date, so crossing from D-85 to D-84 transfers authority to the structured build on
+D-84 rather than carrying the fallback definition across the horizon. Non-cycling eligible events
+continue to use `demand_derived`.
 
 This is an authority correction, not a new persisted planning mode and not permission to
 fabricate a Base block. ADR-0016 exact-role coverage remains unchanged: provider semantic
