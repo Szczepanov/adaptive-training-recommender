@@ -19,6 +19,7 @@ const goalPath = `users/${ownerId}/goals/goal-1`;
 const externalPlanPath = `users/${ownerId}/external_plans/autumn-block`;
 const externalRevisionPath = `${externalPlanPath}/revisions/1`;
 const externalPlacementPath = `${externalPlanPath}/placement/current`;
+const externalActivationPath = `${externalPlanPath}/activations/1`;
 const intentBlockPath = `users/${ownerId}/intent_blocks/block_1`;
 const intentBlockRevisionPath = `${intentBlockPath}/revisions/1`;
 const decisionJournalPath = `users/${ownerId}/decision_journal/2026-08-07`;
@@ -56,6 +57,13 @@ function validExternalPlacement() {
         userId: ownerId, planId: 'autumn-block', revision: 1,
         assignments: [{ sessionId: 'w1-a', date: '2026-08-18', status: 'planned' }],
         updatedAt: '2026-08-15T06:00:00Z',
+    };
+}
+
+function validExternalActivation() {
+    return {
+        userId: ownerId, planId: 'autumn-block', revision: 1, contentHash: 'a'.repeat(64),
+        effectiveFrom: '2026-08-17', activatedAt: '2026-08-15T06:00:00Z',
     };
 }
 
@@ -838,6 +846,51 @@ emulatorDescribe('Firestore security rules', () => {
         await assertSucceeds(setDoc(doc(ownerDb, externalPlacementPath), validExternalPlacement()));
     });
 
+    it('accepts v6 reduced-definition revisions, revision-scoped placement and immutable activation records', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const v6Path = `${externalPlanPath}/revisions/2`;
+        await assertSucceeds(setDoc(doc(ownerDb, externalPlanPath), { ...validExternalPlanHeader(), revision: 2, supersededFrom: '2026-08-17' }));
+        await assertSucceeds(setDoc(doc(ownerDb, v6Path), {
+            schema: 'adaptive-training-recommender/external-plan@6',
+            planId: 'autumn-block', revision: 2, title: '4-week block',
+            startDate: '2026-08-17', weekCount: 4, sessions: [{ id: 'w1-a', title: 'Threshold' }],
+            restDays: [], intentBlocks: [],
+        }));
+        const v6PlacementPath = `${v6Path}/placement/current`;
+        const v6ActivationPath = `${externalPlanPath}/activations/2`;
+        await assertSucceeds(setDoc(doc(ownerDb, v6PlacementPath), { ...validExternalPlacement(), revision: 2 }));
+        await assertFails(setDoc(doc(ownerDb, v6ActivationPath), {
+            ...validExternalActivation(), revision: 2, contentHash: 'b'.repeat(64),
+        }));
+        await assertSucceeds(setDoc(doc(ownerDb, v6ActivationPath), { ...validExternalActivation(), revision: 2 }));
+        await assertSucceeds(getDoc(doc(ownerDb, v6ActivationPath)));
+        await assertFails(setDoc(doc(ownerDb, v6ActivationPath), { ...validExternalActivation(), revision: 2 }));
+        await assertFails(deleteDoc(doc(ownerDb, v6ActivationPath)));
+        await assertFails(setDoc(doc(ownerDb, `${externalPlanPath}/activations/3`), {
+            ...validExternalActivation(), revision: 3,
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${externalPlanPath}/activations/2`), {
+            ...validExternalActivation(), revision: 2, contentHash: 'z'.repeat(64),
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${externalPlanPath}/revisions/3/placement/current`), {
+            ...validExternalPlacement(), revision: 3,
+        }));
+    });
+
+    it('accepts a provable legacy activation when the header omitted supersededFrom', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const path = `users/${ownerId}/external_plans/legacy-plan`;
+        const legacyHeader = { ...validExternalPlanHeader(), planId: 'legacy-plan' };
+        delete (legacyHeader as { supersededFrom?: string | null }).supersededFrom;
+        await assertSucceeds(setDoc(doc(ownerDb, path), legacyHeader));
+        await assertSucceeds(setDoc(doc(ownerDb, `${path}/revisions/1`), {
+            ...validExternalPlanRevision(), planId: 'legacy-plan',
+        }));
+        await assertSucceeds(setDoc(doc(ownerDb, `${path}/activations/1`), {
+            ...validExternalActivation(), planId: 'legacy-plan',
+        }));
+    });
+
     it('stores a v2 external plan revision (M3.6) -- rules bound sessions but never deep-validate them either version', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertSucceeds(setDoc(doc(ownerDb, externalRevisionPath), {
@@ -948,6 +1001,8 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(getDoc(doc(otherDb, externalRevisionPath)));
         await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/external_plans/forged`), validExternalPlanHeader()));
         await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/external_plans/autumn-block/placement/current`), validExternalPlacement()));
+        await assertFails(getDoc(doc(otherDb, externalActivationPath)));
+        await assertFails(setDoc(doc(otherDb, externalActivationPath), validExternalActivation()));
     });
 
     it('stores an intent block header and revision for its owner (ADR-0037 H5a/H5c persistence)', async () => {

@@ -169,6 +169,45 @@ describe('resolveSessionDefinition', () => {
         expect(services.prescription.getPrescription).not.toHaveBeenCalled();
     });
 
+    it('resolves the exact v6 reduced definition frozen in a scaled execution prescription', async () => {
+        const definition: SessionDefinition = {
+            schemaVersion: 1, id: 'session-v6', revision: 1, title: 'Full', intent: 'training',
+            blocks: [{ id: 'full', role: 'main', executionMode: 'sequential', steps: [] }],
+        };
+        const reducedDefinition: SessionDefinition = {
+            ...definition,
+            title: 'Reduced',
+            blocks: [{ id: 'reduced', role: 'main', executionMode: 'sequential', steps: [] }],
+        };
+        const plan = {
+            schema: 'adaptive-training-recommender/external-plan@6', planId: 'plan-v6', revision: 1,
+            title: 'V6 Plan', startDate: '2026-08-17', weekCount: 1, restDays: [], intentBlocks: [],
+            sessions: [{
+                id: 'session-v6', title: 'Full', priority: 'key',
+                placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' },
+                gating: { modality: 'strength', intensity: 'moderate', durationMin: 45, durationMax: 55, environment: 'either', equipment: [] },
+                definition,
+                scaling: { reducible: true, reducedDefinition },
+            }],
+        };
+        const source = {
+            kind: 'external_plan' as const, planId: 'plan-v6', revision: 1, sessionId: 'session-v6',
+            contentHash: await computeContentHash(plan),
+        };
+        services.external.getRevisionState.mockResolvedValue({ status: 'AVAILABLE', data: plan, revision: '1' } as never);
+        const reducedHash = await hashSessionDefinition(reducedDefinition);
+        services.prescription.getPrescription.mockResolvedValue({
+            status: 'AVAILABLE', revision: null,
+            data: {
+                schemaVersion: 1, prescriptionHash: 'scaled-prescription', sessionSource: source,
+                definitionHash: reducedHash, blocks: reducedDefinition.blocks, createdAt: '2026-08-18T00:00:00Z',
+            },
+        } satisfies DataState<ExecutionPrescription>);
+
+        const result = await resolveSessionDefinition('u1', source, 'scaled-prescription');
+        expect(result).toMatchObject({ status: 'AVAILABLE', data: { title: 'Reduced', blocks: reducedDefinition.blocks } });
+    });
+
     describe('catalog source (M3.1)', () => {
         const catalogSource = { kind: 'catalog' as const, workoutId: 'catalog-workout-1', catalogVersion: '1' };
         const storedPrescription: ExecutionPrescription = {

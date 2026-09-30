@@ -10,7 +10,7 @@ vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
 
 import { ActiveExternalPlanService } from './activeExternalPlanService';
-import { ExternalPlanService } from './externalPlanService';
+import { computeContentHash, ExternalPlanService } from './externalPlanService';
 
 function plan(overrides: Partial<ExternalTrainingPlan> = {}): ExternalTrainingPlan {
     return {
@@ -79,11 +79,16 @@ describe('external plan path identity', () => {
 describe('active external revision integrity', () => {
     it('never applies a stale placement overlay to newer immutable revision bytes', async () => {
         const stale = placement({ revision: 1, assignments: [{ sessionId: 'threshold', date: '2026-08-20', status: 'moved' }] });
-        const currentHeader = header({ revision: 2 });
         const currentPlan = plan({ revision: 2 });
+        const contentHash = await computeContentHash(currentPlan);
+        const currentHeader = header({ revision: 2, contentHash });
         const plans = {
             listPlanIds: vi.fn(async () => ({ status: 'AVAILABLE', data: ['autumn-block'], revision: null } as DataState<string[]>)),
             getHeaderState: vi.fn(async () => ({ status: 'AVAILABLE', data: currentHeader, revision: currentHeader.contentHash } as DataState<ExternalPlanHeader>)),
+            getActivationState: vi.fn(async () => ({ status: 'AVAILABLE', data: [{
+                userId: 'u1', planId: 'autumn-block', revision: 2, contentHash,
+                effectiveFrom: '2026-08-17', activatedAt: currentHeader.importedAt,
+            }], revision: '1' } as never)),
             getRevisionState: vi.fn(async () => ({ status: 'AVAILABLE', data: currentPlan, revision: '2' } as DataState<ExternalTrainingPlan>)),
             getPlacementState: vi.fn(async () => ({ status: 'AVAILABLE', data: stale, revision: stale.updatedAt } as DataState<ExternalPlanPlacement>)),
         } as unknown as ExternalPlanService;
@@ -96,11 +101,17 @@ describe('active external revision integrity', () => {
     });
 
     it('does not activate a newly imported revision before its supersededFrom boundary', async () => {
-        const futureHeader = header({ revision: 2, supersededFrom: '2026-08-20' });
+        const futurePlan = plan({ revision: 2 });
+        const contentHash = await computeContentHash(futurePlan);
+        const futureHeader = header({ revision: 2, contentHash, supersededFrom: '2026-08-20' });
         const plans = {
             listPlanIds: vi.fn(async () => ({ status: 'AVAILABLE', data: ['autumn-block'], revision: null } as DataState<string[]>)),
             getHeaderState: vi.fn(async () => ({ status: 'AVAILABLE', data: futureHeader, revision: futureHeader.contentHash } as DataState<ExternalPlanHeader>)),
-            getRevisionState: vi.fn(async () => ({ status: 'AVAILABLE', data: plan({ revision: 2 }), revision: '2' } as DataState<ExternalTrainingPlan>)),
+            getActivationState: vi.fn(async () => ({ status: 'AVAILABLE', data: [{
+                userId: 'u1', planId: 'autumn-block', revision: 2, contentHash,
+                effectiveFrom: '2026-08-20', activatedAt: futureHeader.importedAt,
+            }], revision: '1' } as never)),
+            getRevisionState: vi.fn(async () => ({ status: 'AVAILABLE', data: futurePlan, revision: '2' } as DataState<ExternalTrainingPlan>)),
             getPlacementState: vi.fn(async () => ({ status: 'MISSING' } as DataState<ExternalPlanPlacement>)),
         } as unknown as ExternalPlanService;
 
