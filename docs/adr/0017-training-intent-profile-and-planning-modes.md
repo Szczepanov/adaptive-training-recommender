@@ -293,6 +293,16 @@ credit.
   frozen by ADR-0016 and the [macrocycle v5 contract](../macrocycle-v5.md); the evergreen
   set starts uncalibrated and must not be presented as evidence-derived.
 
+## Clarification: forecast ownership segments (#933, 2026-09-30)
+
+Date-local executable ownership applies symmetrically when entering or leaving structured
+event programming. A forecast seeds the production Evergreen rolling week once at the
+first date of each ownership segment, using projected work as assumed-performed evidence;
+it does not reseed daily. A new rolling seed is required when an uninterrupted Evergreen
+week expires. Allocation and capability reporting follow these segments. This clarifies
+D-MODE/D-DOSE without changing event eligibility, generated horizons, or exact coverage
+policy; frozen forecast inputs are documented in the living engine architecture.
+
 ## References
 
 * Implementation plan: [`docs/plans/phase-7-training-intent-and-planning-modes.md`](../plans/phase-7-training-intent-and-planning-modes.md)

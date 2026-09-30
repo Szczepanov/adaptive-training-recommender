@@ -555,6 +555,20 @@ const externallyPlannedFixture = buildFixture({ externalPlan: importedPlan }, ex
 
 export const VISUAL_SCENARIOS: VisualScenario[] = [
   {
+    id: 'plan-recovery-authority-exit',
+    title: 'Plan — recovery authority ends inside the forecast',
+    screen: 'plan',
+    expectedFocus: ['Recovery hands off to Evergreen on its actual ownership boundary.',
+      'Roles packed after the visible strip are explicitly labelled planned beyond this forecast.'],
+    fixture: buildFixture({ goals: [{ ...eventGoal, title: 'Synthetic cycling race',
+      targetDate: '2026-09-14', eventLifecycle: 'scheduled' }] }, {
+      userId: VISUAL_USER_ID, planningMode: 'event_directed', priorities: ['health'],
+      weeklyCommitment: { minSessions: 3, targetSessions: 6, maxSessions: 6 },
+      capabilityMaintenance: { enabled: true, capabilities: ['linear_speed_skill'] },
+      organizationPreference: 'auto', schemaVersion: 1, createdAt: TIMESTAMP, updatedAt: TIMESTAMP,
+    }),
+  },
+  {
     id: 'manual-builder-empty',
     title: 'Manual builder — first session',
     screen: 'builder',
