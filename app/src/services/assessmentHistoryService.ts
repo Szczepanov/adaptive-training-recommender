@@ -99,15 +99,11 @@ export class AssessmentHistoryService {
         const allObservations: { head: MetricObservationHead; revision: MetricObservationRevision }[] = [];
 
         for (const metricId of metricIds) {
-            const result = await this.observationService.listCurrentRevisionsForMetricWithDiagnostics(userId, metricId);
-            for (const rev of result.revisions) {
-                const head = await this.observationService.getHead(userId, rev.observationKey);
-                if (head) {
-                    allObservations.push({ head, revision: rev });
-                } else {
-                    totalUnreadableObservations++;
-                }
-            }
+            const result = await this.observationService.listCurrentObservationsForMetricWithDiagnostics(
+                userId,
+                metricId,
+            );
+            allObservations.push(...result.observations);
             totalUnreadableObservations += result.unreadableCount;
         }
 
