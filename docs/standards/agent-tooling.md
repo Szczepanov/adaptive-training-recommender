@@ -67,7 +67,7 @@ never trigger task-time provisioning.
 
 Current client references:
 
-- Codex configuration reference: <https://developers.openai.com/docs/config-file/config-reference>
+- Codex configuration reference: <https://learn.chatgpt.com/docs/config-file/config-reference>
 - Claude Code extension/context guidance: <https://code.claude.com/docs/en/features-overview>
 - Gemini CLI context files: <https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/gemini-md.md>
 - OpenCode instructions: <https://opencode.ai/v2/docs/instructions>
