@@ -94,8 +94,12 @@ export const AssessmentHistory: React.FC<AssessmentHistoryProps> = ({ userId }) 
 
     if (!history) return null;
 
-    const hasAnyAttempts = history.tests.some(
-        t => t.activeSeries !== null || t.otherSeries.length > 0 || t.completedWithoutBenchmarkCount > 0 || t.abandonedCount > 0,
+    const hasAnyAttempts = history.tests.some(test =>
+        test.metrics.some(metric =>
+            metric.activeSeries !== null || metric.otherSeries.length > 0
+        )
+        || test.completedWithoutBenchmarkCount > 0
+        || test.abandonedCount > 0
     );
 
     return (
