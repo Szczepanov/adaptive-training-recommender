@@ -131,7 +131,7 @@ interface ExternalPlanRevisionActivation {
   planId: string;
   revision: number;
   contentHash: string;
-  importedAt: string;
+  activatedAt: string;
   effectiveFrom: LocalDateString;
 }
 ```
@@ -169,16 +169,16 @@ revision's placement history is no longer available through the current path.
 Recommended new documents:
 
 ```text
-users/{uid}/external_plans/{planId}/placement/{revision}
+users/{uid}/external_plans/{planId}/revisions/{revision}/placement/current
 ```
 
 with the existing `ExternalPlanPlacement` payload.
 
 Compatibility:
 
-- read `placement/{revision}` first;
+- read `revisions/{revision}/placement/current` first;
 - if absent, accept legacy `placement/current` only when its `revision` matches;
-- new writes go to the revision-scoped document;
+- new writes go to `revisions/{revision}/placement/current`;
 - historical revisions never consume another revision's overlay.
 
 This is necessary to distinguish an intentionally moved session from a false miss after later
