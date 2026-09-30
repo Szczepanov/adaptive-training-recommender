@@ -94,8 +94,9 @@ describe('AssessmentHistoryService', () => {
 
         expect(history.tests.length).toBeGreaterThan(0);
         const broadJump = history.tests.find(t => t.protocolId === STANDING_BROAD_JUMP_PROTOCOL.id);
-        expect(broadJump?.activeSeries?.observations).toHaveLength(1);
-        expect(broadJump?.activeSeries?.observations[0].value).toBe(235);
+        const distanceMetric = broadJump?.metrics.find(metric => metric.metricId === 'standing_broad_jump_distance_cm');
+        expect(distanceMetric?.activeSeries?.observations).toHaveLength(1);
+        expect(distanceMetric?.activeSeries?.observations[0].value).toBe(235);
 
         // Crucial invariant: listTrialsForAttempt must NOT be called for history loading!
         expect(mockTrialService.listTrialsForAttempt).not.toHaveBeenCalled();
