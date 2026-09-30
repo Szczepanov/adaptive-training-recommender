@@ -93,7 +93,9 @@ The fixtures must pin:
 - required comparison dimensions;
 - familiarization rule;
 - expected recovery;
-- invalidation rules.
+- invalidation rules;
+- bounded raw-trial field schema when the protocol is multi-trial;
+- reducer declarations/version when canonical summaries are derived from trials.
 
 ## WP0.2 Decide canonical reducers explicitly
 
@@ -109,6 +111,8 @@ type AssessmentReducer =
 ```
 
 Do not make this generic enough to become an analytics DSL. It exists only to make bundled protocol summary semantics explicit and testable.
+
+The semantic capture schema and reducer declarations must be owned by the immutable `MeasurementProtocol` revision (or an equally immutable companion referenced by it). Additive optional fields preserve old summary-only protocols. `PerformanceTestDefinition` may add presentation/layout hints, but it must not be the sole owner of field identity/type/unit or reducer semantics; otherwise a catalog update could reinterpret historical trials.
 
 ## WP0.3 Preserve old sprint protocol
 
@@ -357,6 +361,18 @@ Do not weaken validation just to fit the new source.
 
 A manually entered canonical result can remain supported for advanced/custom protocols, but bundled physical-capital protocols should default to trial-driven summary derivation.
 
+## WP3.4 Source-specific body-mass-relative context
+
+For sprint W/kg and body-mass-relative squat/bench context, reuse ADR-0039 rather than creating a Testing-owned weight field.
+
+- select an acceptable same-day body-mass point from one explicit source series;
+- retain its source/reference alongside the derived relative value;
+- never average or silently switch between provider/manual body-mass series;
+- keep the derived relative value context-only in the first slice;
+- if no acceptable same-day point exists, leave the relative value unavailable.
+
+Do not require duplicate manual weight entry merely to complete an assessment.
+
 ---
 
 # WP4 — Add bundled physical-capital protocols
@@ -493,11 +509,11 @@ The existing capture stage renders one input per canonical metric after the sess
 
 ## WP5.1 Protocol-driven trial capture
 
-Extend `PerformanceTestDefinition` with a small capture schema or test-family metadata.
+Extend the immutable protocol revision with a small optional semantic trial-capture contract. `PerformanceTestDefinition` may carry presentation metadata that decorates those stable field IDs, but must not redefine their semantics.
 
 Do not infer UI solely from metric names.
 
-Candidate:
+Candidate semantic contract:
 
 ```ts
 interface AssessmentCaptureDefinition {
@@ -505,10 +521,11 @@ interface AssessmentCaptureDefinition {
   trialCount?: number;
   trialFields?: readonly AssessmentTrialFieldDefinition[];
   reducers?: readonly AssessmentReducer[];
+  reducerVersion?: string;
 }
 ```
 
-Keep the shape bounded and declarative.
+Persist/version this with the protocol revision (or an immutable protocol-referenced companion). Keep the shape bounded and declarative. Old protocols without this field retain the existing summary-input workflow.
 
 ## WP5.2 Strength trial row
 
@@ -788,7 +805,10 @@ Diagnostic export owns the detailed evidence.
 - all six bundled protocols validate;
 - immutable ID/revision collisions fail closed;
 - expected units are pinned;
-- comparison dimensions are pinned.
+- comparison dimensions are pinned;
+- multi-trial field schema and reducer semantics are pinned to the immutable protocol revision;
+- old summary-only protocol revisions remain valid without a trial-capture schema;
+- changing a trial field/reducer contract requires a new immutable protocol revision rather than reinterpreting history.
 
 ### Trial validation
 
