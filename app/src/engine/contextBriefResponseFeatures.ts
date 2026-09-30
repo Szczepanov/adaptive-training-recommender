@@ -67,6 +67,7 @@ export interface WorkInterval {
     lastThirdPowerWatts?: number;
     prescribedTarget?: ActivityPrescribedTarget;
     identitySource?: ActivitySegmentSummary['identitySource'];
+    evidenceConfidence?: ActivitySegmentSummary['evidenceConfidence'];
 }
 
 export type SprintRepetition =
@@ -92,7 +93,7 @@ export type IntervalRepetition =
     | Insufficient;
 
 export type Decoupling =
-    | { state: 'available'; decouplingPct: number; hrNote: string | null; observational: boolean }
+    | { state: 'available'; decouplingPct: number; hrNote: string | null; observational: boolean; source: 'continuous halves' | 'Garmin lap averages' }
     | Insufficient;
 
 export type EfficiencyComparison =
@@ -281,6 +282,7 @@ function workIntervalFromSegment(
         ...(segment.lastThirdPowerWatts !== undefined ? { lastThirdPowerWatts: segment.lastThirdPowerWatts } : {}),
         ...(segment.prescribedTarget ? { prescribedTarget: segment.prescribedTarget } : {}),
         identitySource: segment.identitySource,
+        evidenceConfidence: segment.evidenceConfidence,
     };
 }
 
@@ -369,6 +371,7 @@ export function deriveIntervalRepetition(activity: NormalizedGarminActivity): In
             powerWatts: lap.averagePowerWatts as number,
             ...(!hr.withheld && lap.averageHrBpm !== undefined ? { hrBpm: lap.averageHrBpm } : {}),
             identitySource: 'manual_lap' as const,
+            evidenceConfidence: 'low' as const,
         })),
         hr.note,
     );
@@ -454,6 +457,7 @@ export function deriveDecoupling(activity: NormalizedGarminActivity): Decoupling
             decouplingPct: round(((first - second) / first) * 100, 1),
             hrNote: hr.note,
             observational: hr.observational,
+            source: 'continuous halves',
         };
     }
     const laps = [...(activity.laps ?? [])]
@@ -475,7 +479,7 @@ export function deriveDecoupling(activity: NormalizedGarminActivity): Decoupling
     }
     const first = halfEfficiency(halves[0]);
     const second = halfEfficiency(halves[1]);
-    return { state: 'available', decouplingPct: round(((first - second) / first) * 100, 1), hrNote: hr.note, observational: hr.observational };
+    return { state: 'available', decouplingPct: round(((first - second) / first) * 100, 1), hrNote: hr.note, observational: hr.observational, source: 'Garmin lap averages' };
 }
 
 function responseLocalDate(

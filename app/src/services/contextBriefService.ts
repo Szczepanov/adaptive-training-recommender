@@ -39,7 +39,7 @@ import { resolvePlanningContext } from '../engine/planningMode';
 import { evaluatePeriodizationPhase, goalToUserEvent } from '../engine/periodization';
 import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
 import { isV2Session, type AnyExternalPlanSession } from '../sessions/externalPlanV2';
-import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString, getDayDiff, getLocalDateString } from '../utils/localDate';
 import { activeExternalPlanService, externalRestContextForDate, placedSessionForDate } from './activeExternalPlanService';
 import type { BriefRestDirective } from '../engine/briefPlanAuthority';
 import { activityOverrideService } from './activityOverrideService';
@@ -212,9 +212,12 @@ export class ContextBriefService {
     ): Promise<ContextBriefResult> {
         const targetDate = asOfDate ?? getLocalDateString();
         // Purpose selects the output contract. Planning and diagnostic deliberately share
-        // identical reads; the morning path skips planning-only ledgers and additionally
-        // resolves D-1 imported authority for its closed-loop adherence debrief.
+        // identical reads; the morning path skips planning-only ledgers, but reads
+        // canonical performed facts and D-1 imported authority for its debrief.
         const purpose = briefPurposeFor(preset);
+        // The morning contract always includes today's status and yesterday's debrief,
+        // even when a caller requests a one-day window.
+        windowDays = purpose === 'morning' ? Math.max(2, windowDays) : windowDays;
         const startDate = briefWindowStart(targetDate, windowDays);
         // Strictly longer than the window, so there is always prior history to compare
         // against even when the caller asks for a long window.
@@ -462,6 +465,8 @@ export class ContextBriefService {
         // `externalFallback: true` downstream is never presented as certain when the day
         // that mattered most could not actually be read.
         let externalScheduleTodayConfirmed = fixedActivitiesReadable;
+        let currentPlanReadStatus: 'AVAILABLE' | 'MISSING' | 'INVALID' | 'UNAVAILABLE' = fixedActivityResult.status === 'fulfilled'
+            ? fixedActivityResult.value.status : 'UNAVAILABLE';
         let planScheduleFullyRead = fixedActivitiesReadable;
         if (fixedActivitiesReadable) {
             // Resolve the active plan independently for each future date so plan revision
@@ -477,10 +482,14 @@ export class ContextBriefService {
                 const settled = activePlanResults[index];
                 if (settled.status === 'rejected') {
                     unreadablePlanDays += 1;
-                    if (date === targetDate) externalScheduleTodayConfirmed = false;
+                    if (date === targetDate) {
+                        externalScheduleTodayConfirmed = false;
+                        currentPlanReadStatus = 'UNAVAILABLE';
+                    }
                     continue;
                 }
                 const state = settled.value;
+                if (date === targetDate) currentPlanReadStatus = state.status;
                 if (state.status === 'MISSING') continue;
                 if (state.status !== 'AVAILABLE') {
                     unreadablePlanDays += 1;
@@ -572,20 +581,26 @@ export class ContextBriefService {
         // not negative.
         const externalFallbackUncertain = planningContext.externalFallback && !externalScheduleTodayConfirmed;
 
-        // Issue #813: canonical performed facts (ADR-0034) drive live coverage credit, including
-        // in-app structured executions with no Garmin record. Hydration reuses the activities
+        // Issue #813/#894: canonical performed facts (ADR-0034) drive completed-training
+        // identity in all three purposes, including structured work without Garmin. Hydration reuses the activities
         // already read above. Readability is carried separately (`activitiesReadable`): the
         // facts service itself cannot tell an unreadable activity read from none.
         let performedFacts: PerformedExposureFact[] | null = null;
-        if (purpose !== 'morning') {
-            try {
-                performedFacts = (await getPerformedTrainingFactsInRange(userId, startDate, throughExclusive, {
-                    preloadedActivities: activities.filter(activity => activity.date >= startDate && activity.date <= targetDate),
-                })).exposures;
-            } catch (error) {
-                console.warn('Context brief: performed-training facts unreadable', error);
-                unavailableSources.push('canonical performed-training facts');
-            }
+        try {
+            performedFacts = (await getPerformedTrainingFactsInRange(
+                userId,
+                purpose === 'morning' ? addDaysToLocalDateString(startDate, -1) : startDate,
+                throughExclusive,
+                {
+                    // Provider-local dates can straddle a canonical Warsaw occurrence day.
+                    // Reuse the already widened activity read so linked evidence still hydrates.
+                    preloadedActivities: activities,
+                    includeProviderActivityIds: true,
+                },
+            )).exposures;
+        } catch (error) {
+            console.warn('Context brief: performed-training facts unreadable', error);
+            unavailableSources.push('canonical performed-training facts');
         }
 
         const generatedAt = new Date().toISOString();
@@ -665,7 +680,7 @@ export class ContextBriefService {
                 diagnostic: purpose === 'diagnostic',
             },
         );
-        const text = enhanceContextBriefForPlanning(retrospectiveText, {
+        const rendered = enhanceContextBriefForPlanning(retrospectiveText, {
             asOfDate: targetDate,
             snapshots,
             checkins,
@@ -685,16 +700,69 @@ export class ContextBriefService {
             restDirectiveToday,
             yesterdayExternalSession,
             restDirectiveYesterday,
+            performedFacts,
+            activitiesReadable: activityResult.status === 'fulfilled' && activityResult.value.status === 'AVAILABLE',
             unavailableSources,
             preset,
             purpose,
             generatedAt,
         });
 
+        const latestDate = (dates: readonly string[]): string | null =>
+            dates.filter(date => date <= targetDate).sort().at(-1) ?? null;
+        const dated = (date: string | null): string => date
+            ? `${date} (${getDayDiff(targetDate, date)} calendar day(s) before as-of)`
+            : 'none in fetched window';
+        const todaySnapshotState = snapshotResults.status === 'fulfilled'
+            ? snapshotResults.value.at(-1)?.status ?? 'MISSING'
+            : 'UNAVAILABLE';
+        const checkinTodayInvalid = unreadableCheckinDates.includes(targetDate);
+        const checkinTodayState = checkinResult.status === 'rejected' ? 'unavailable'
+            : checkinTodayInvalid ? 'invalid'
+                : checkins.some(item => item.date === targetDate) ? 'measured' : 'missing';
+        const activitiesReadable = activityResult.status === 'fulfilled' && activityResult.value.status === 'AVAILABLE';
+        const latestSnapshot = snapshots.filter(item => item.date <= targetDate).sort((a, b) => b.date.localeCompare(a.date))[0];
+        const metricDates = latestSnapshot?.source.metricDates;
+        const metricDate = (date: string | null | undefined): string => !date ? 'not reported'
+            : !/^\d{4}-\d{2}-\d{2}$/.test(date) || addDaysToLocalDateString(date, 0) !== date
+                ? 'invalid source date'
+                : date > targetDate ? `${date} (after as-of; cannot establish current-day freshness)` : dated(date);
+        const currentMetricDate = (date: string | null | undefined): string => {
+            const value = metricDate(date);
+            return `${value}${date && value !== 'invalid source date' && date < targetDate ? ' (stale for current day)' : ''}`;
+        };
+        const planRevisions = [...new Set(upcomingExternalSessions.filter(item => item.date === targetDate)
+            .map(item => `${item.planId}@${item.revision}`))].sort();
+        const currentRecommendationUpdatedAt = recommendations.filter(item => item.date === targetDate)
+            .map(item => item.updatedAt).sort().at(-1) ?? 'none recorded';
+        const recommendationReadStatus = recommendationResult.status === 'fulfilled'
+            ? recommendationResult.value.status : 'UNAVAILABLE';
+        const recommendationState = recommendationReadStatus === 'INVALID' ? 'invalid'
+            : recommendationReadStatus === 'UNAVAILABLE' ? 'unavailable'
+                : recommendationReadStatus === 'MISSING' ? 'missing/no recommendation'
+            : currentRecommendationUpdatedAt === 'none recorded' ? 'missing/no recommendation' : 'measured';
+        const importedScheduleState = currentPlanReadStatus === 'INVALID' ? 'invalid'
+            : !externalScheduleTodayConfirmed ? 'unavailable'
+            : currentExternalSession || restDirectiveToday || upcomingExternalSessions.some(item => item.date === targetDate)
+                ? 'measured authored occurrence/rest' : 'missing/no authored occurrence';
+        const sourceLines = [
+            'Source state and currency (dates never shift the as-of date):',
+            `- Recovery snapshot for ${targetDate}: ${todaySnapshotState.toLowerCase()}; latest ${dated(latestDate(snapshots.map(item => item.date)))}${todaySnapshotState === 'MISSING' ? '; current-day state stale or absent' : ''}; source schema ${latestSnapshot?.source.sourceSchemaVersion ?? 'unknown'}, baseline computation ${latestSnapshot?.derived.baselineComputationVersion ?? 'unknown'}, Garmin synced ${latestSnapshot?.source.garminSyncedAt ?? 'unknown'}.`,
+            `- Wearable metric dates: sleep ${currentMetricDate(metricDates?.sleep)}; HRV ${currentMetricDate(metricDates?.hrv)}; RHR ${currentMetricDate(metricDates?.restingHr)}; D-1 steps ${metricDate(metricDates?.steps)}${metricDates?.steps && metricDates.steps !== yesterdayPlanDate ? ` (expected ${yesterdayPlanDate}; stale or mismatched)` : ''}; activities through ${metricDate(metricDates?.activitiesThrough)}. The sync timestamp above is transport provenance, not the measurement date.`,
+            `- Subjective check-in for ${targetDate}: ${checkinTodayState}; latest ${dated(latestDate(checkins.map(item => item.date)))}${checkinTodayState === 'missing' ? '; current-day subjective state stale or absent' : ''}.`,
+            `- Garmin activities: ${activitiesReadable ? 'available' : activityResult.status === 'fulfilled' ? activityResult.value.status.toLowerCase() : 'unavailable'}; latest ${activitiesReadable ? dated(latestDate(activities.map(item => item.date))) : 'unknown'}; D-1 ${activitiesReadable ? `${activities.filter(item => item.date === yesterdayPlanDate).length} provider row(s)` : 'unknown'}.`,
+            `- Canonical performed training: ${performedFacts === null ? 'unavailable' : performedFacts.length ? 'available' : 'missing/no occurrence in fetched window'}; latest ${performedFacts === null ? 'unknown' : dated(latestDate(performedFacts.map(item => item.localDate)))}.`,
+            `- Current-day plan authority inputs: recommendations ${recommendationState} (latest update ${recommendationsReadable ? currentRecommendationUpdatedAt : 'unknown'}); imported schedule ${importedScheduleState}; imported revision ${planRevisions.join(', ') || (restDirectiveToday ? `${restDirectiveToday.planId}@${restDirectiveToday.revision}` : 'none recorded or unreadable')}; date ${targetDate}.`,
+            `- Power telemetry capability: ${trainingSettings?.capabilities?.powerMeter === false ? 'unsupported/not collected (configured unavailable)' : trainingSettings?.capabilities?.powerMeter === true ? 'configured available; individual activity measurement still depends on source' : 'unknown (not configured)'}.`,
+            `- Training-response comparisons: ${purpose === 'morning' ? 'not applicable to this compact morning export' : responseEvidence?.occurrenceRead === 'unavailable' ? 'unavailable (occurrence evidence read failed)' : 'see display-only feature rows; insufficient evidence is stated per feature'}.`,
+            '- Value states: a measured 0 is explicit zero; missing means no record; unavailable means read failure; invalid means an unparseable record; unsupported means not collected by the source; not applicable means the feature does not apply. An em dash means unmeasured, never zero.',
+        ];
+        const text = rendered.replace(/(Generated at: [^\n]+\n)/, `$1${sourceLines.join('\n')}\n`);
         assertRenderedBriefContract(text, {
             purpose,
             asOfDate: targetDate,
             generatedAt,
+            requireSourceState: true,
         });
 
         return {

@@ -161,6 +161,19 @@ describe('performedTrainingFactsService', () => {
             expect(snapshot.exposures[0].modality).toBe('Running');
         });
 
+        it('exposes stable provider refs only for the brief opt-in', async () => {
+            vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([
+                occurrence({ sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: 'act-1' }] }),
+            ]);
+            const options = { preloadedActivities: [garminActivity()] };
+            const decisionFacts = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02', options);
+            const briefFacts = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02', {
+                ...options, includeProviderActivityIds: true,
+            });
+            expect(decisionFacts.exposures[0]).not.toHaveProperty('providerActivityIds');
+            expect(briefFacts.exposures[0].providerActivityIds).toEqual(['act-1']);
+        });
+
         it('handles non-AVAILABLE activityService status gracefully', async () => {
             vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([
                 occurrence({ sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: 'act-1' }] }),
@@ -192,6 +205,20 @@ describe('performedTrainingFactsService', () => {
         });
 
         describe('structured execution hydration', () => {
+            it.each(['in_progress', 'abandoned', 'completed'] as const)('preserves %s execution state for display without inferring completion', async state => {
+                vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([
+                    occurrence({ sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-1' }] }),
+                ]);
+                vi.mocked(sessionExecutionService.getExecution).mockResolvedValue({
+                    status: 'AVAILABLE',
+                    data: sessionExecution({ state, completedAt: state === 'completed' ? '2026-09-01T09:00:00Z' : null }),
+                    revision: null,
+                });
+                const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-09-01', '2026-09-02');
+                expect(snapshot.exposures).toHaveLength(1);
+                expect(snapshot.exposures[0].executionState).toBe(state);
+                expect(snapshot.exposures[0].endedAt).toBe(state === 'completed' ? '2026-09-01T09:00:00Z' : undefined);
+            });
             it('hydrates a catalog workout structured execution using catalog metadata', async () => {
                 vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([
                     occurrence({ sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-1' }] }),

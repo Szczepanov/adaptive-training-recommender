@@ -265,6 +265,8 @@ function sourceKindLabel(kind: PerformedExposureFact['sourceKinds'][number]): st
  * flagged rather than silently dropped. */
 function factDetail(fact: PerformedExposureFact): string {
     const flags: string[] = [];
+    if (fact.executionState === 'abandoned') flags.push('abandoned structured execution');
+    else if (fact.executionState === 'in_progress') flags.push('structured execution in progress');
     if (fact.isReadinessModifiedDose) flags.push('readiness-modified dose');
     if (fact.startedAt && !fact.endedAt) flags.push('started, completion unrecorded');
     if (fact.durationMin === undefined) flags.push('duration unrecorded');
@@ -376,6 +378,7 @@ function renderTraining(
          * Null = hydration failed: raw table with an explicit double-count caution.
          * Array = canonical deduped table, with raw provenance in diagnostic. */
         performedFacts?: readonly PerformedExposureFact[] | null;
+        activitiesReadable?: boolean;
     },
 ): string[] {
     const lines: string[] = [heading, ''];
@@ -396,8 +399,15 @@ function renderTraining(
         lines.push('> Canonical performed-training facts were unreadable for this window and no raw provider activity rows are available as fallback. Completed training cannot be determined for this window.');
         return lines;
     }
+    if (options?.activitiesReadable === false && activities.length === 0 && windowFacts.length === 0) {
+        lines.push('> Recorded activities could not be read. Canonical facts contain no occurrence in this window, but provider-only training may be missing; completed training is unknown, not zero.');
+        return lines;
+    }
 
     if (canonical) {
+        if (options?.activitiesReadable === false) {
+            lines.push('> Provider activity read failed; canonical structured rows are visible, but provider-only training and totals may be incomplete.', '');
+        }
         if (windowFacts.length === 0) {
             lines.push('No recorded sessions in this window (canonical performed-training facts).');
             return lines;
@@ -877,6 +887,7 @@ export function buildContextBrief(input: ContextBriefInput): string {
     const trainingTable = renderTraining(activities, asOfDate, windowDays, `## ${n(5, 3)}. ${SECTION_TITLE.training}`, {
         planningOrder,
         performedFacts: input.exposureLedger?.performedFacts,
+        activitiesReadable: input.exposureLedger?.activitiesReadable,
     });
     const ledgerLines = input.exposureLedger
         ? renderExposureLedger(deriveExposureLedger({

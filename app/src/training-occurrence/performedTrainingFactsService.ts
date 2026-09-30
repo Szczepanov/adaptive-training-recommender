@@ -31,6 +31,8 @@ import {
 export interface GetPerformedTrainingFactsOptions {
     coverageSetDescriptor?: CoverageSetDescriptor;
     preloadedActivities?: readonly NormalizedGarminActivity[];
+    /** Export-only provenance. Keep default decision snapshots and hashes unchanged. */
+    includeProviderActivityIds?: boolean;
 }
 
 /**
@@ -170,6 +172,7 @@ export async function getPerformedTrainingFactsInRange(
 
                 hydrated.structured = {
                     executionId: execution.executionId,
+                    executionState: execution.state,
                     ...(workoutId ? { workoutId } : {}),
                     ...(templateId ? { templateId } : {}),
                     ...(executionModality ? { modality: executionModality } : {}),
@@ -202,7 +205,12 @@ export async function getPerformedTrainingFactsInRange(
         }
 
         const facts = deriveFactsFromOccurrence(occurrence, hydrated, descriptor);
-        exposures.push(facts.exposure);
+        exposures.push(options.includeProviderActivityIds ? {
+            ...facts.exposure,
+            providerActivityIds: [...new Set(providerSources
+                .filter(source => source.ref.provider.toLowerCase() === 'garmin')
+                .map(source => source.ref.activityId))].sort(),
+        } : facts.exposure);
         coverageCredits.push(...facts.coverageCredits);
     }
 

@@ -151,12 +151,13 @@ authored rest/session from "no prescription."
   baselines and the respiration candidate remain omitted with a pointer to diagnostic;
   vendor composites are secondary context; goals keep target, timing and description but
   omit the event demand vector.
-- `diagnostic` — the full data-source-ordered brief with every persisted lap, zone and
-  activity-response row plus observation-only candidate baselines and full goal demand
-  vectors. Running laps include distance/pace/power/HR; response rows include persisted
-  start offsets, final-third HR and MMP timing/provenance where available. It states that
-  none of this detail has recommendation authority. It is also the pure builder's default
-  so a caller that names no purpose never silently loses evidence.
+- `diagnostic` — the full data-source-ordered brief with detailed provenance and observation-only
+  candidate baselines/full goal demand vectors. To bound pathological histories it keeps at most
+  30 detailed activities and 100 lap/response rows per activity, with explicit omission counts.
+  Running laps include distance/pace/power/HR; response rows include persisted start offsets,
+  final-third HR and MMP timing/provenance where available. It states that none of this detail
+  has recommendation authority. It is also the pure builder's default so a caller that names no
+  purpose never silently loses evidence.
 
 No purpose alters a recommendation, so `POLICY_VERSION` is unaffected.
 
