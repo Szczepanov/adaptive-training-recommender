@@ -77,6 +77,22 @@ describe('cycling hybrid event strength support (#801)', () => {
                 windows.push(windowDays);
                 return [];
             },
+            getSnapshot: async (_userId, throughDateExclusive, windowDays) => {
+                windows.push(windowDays);
+                return {
+                    throughDateExclusive,
+                    windowDays,
+                    completedEvents: [],
+                    exposures: [],
+                    sourceStates: {
+                        activities: { status: 'AVAILABLE', revision: 'test' },
+                        recommendations: { status: 'AVAILABLE', revision: 'test' },
+                        manualTraining: { status: 'MISSING' },
+                    },
+                    generatedAt: '',
+                    revision: 'test',
+                };
+            },
         };
         await resolveTrainingIntent(
             'endurance-athlete', [event], '2026-06-20', readiness, 7, recordingHistory,
