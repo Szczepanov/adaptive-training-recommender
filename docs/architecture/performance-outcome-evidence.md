@@ -261,12 +261,57 @@ evidence assembled by `app/src/outcomes/blockProcessEvidence.ts`. `app/src/outco
 (added 2026-08-26 as part of SV4/SV5) is a further additive extension over this evidence — it is
 tested to never move the block verdict, preserving the authority boundary below.
 
+## Raw assessment trial evidence (ADR-0046 / Issue #897)
+
+Multi-trial and velocity-capable protocols persist immutable raw trial records below the user-scoped
+attempt:
+
+```text
+users/{userId}/assessment_attempts/{attemptId}/trials/{trialId}
+```
+
+* **Contract:** Capture schemas and deterministic reducers are declared on the immutable `MeasurementProtocol`
+  revision document itself (`D-AT-PROTOCOL`).
+* **Immutability & Correction:** Trials are write-once in `firestore.rules`. Corrections are append-only
+  with supersession pointers (`supersedesTrialId`), re-deriving the canonical benchmark as revision $N+1$
+  without mutating historical evidence.
+
+## Series-level progress and history (Issue #897 PR C)
+
+Longitudinal progress is evaluated strictly per comparison series (`D1`), where:
+
+$$\text{Series} = (\text{protocolId}, \text{protocolRevision}, \text{metricId}, \text{comparisonSeriesKey})$$
+
+* **Shared progress module (`app/src/observations/assessmentProgress.ts`):** Evaluates progress within each
+  series using `deriveProgress` (`ov-progress-v1`). Different protocol revisions or setup keys are shown as
+  separate series with an explicit non-comparability marker (`protocol revision changed` or `setup/method changed`),
+  never as false numerical zero changes.
+* **Baseline contract (`D3`):** Within a series, baseline defaults to the earliest valid observation from a
+  `purpose: 'baseline'` attempt, or the earliest valid non-familiarization observation. Familiarization is never a baseline.
+* **Honest reporting (`D4`):** When no reliability estimate exists (the normal baseline case), deltas are
+  labelled `"raw change, no reliability estimate"` with status `insufficient_evidence`.
+* **Bounded read model (`D5`, `D6`, `app/src/services/assessmentHistoryService.ts`):** List views read current
+  observation revisions and attempts without trial queries ($O(0)$ trial reads). Malformed or unreadable records
+  are counted and surfaced rather than silently dropped (`D6`). Detailed trials and revision chains load lazily
+  only for attempt inspection.
+
+## Exports and body-mass-relative context (WP7.1, WP3.4, D8)
+
+* **Normalized CSV export (`app/src/observations/assessmentCsvExport.ts`):** Emits standard CSV rows with
+  deterministic sorting and 23 canonical columns, including comparison series keys, validity, deltas,
+  and relative context.
+* **Diagnostic JSON export (`assessment_diagnostic_export_v2`):** Schema version 2 groups progress per series
+  rather than per protocol revision, preventing multi-setup comparisons from collapsing into a single series.
+* **Body-mass-relative context (`app/src/anthropometry/bodyMass.ts`):** Relative metrics (sprint W/kg and
+  strength 1RM relative load) derive context strictly from one same-day Warsaw date point from the athlete's
+  stored source preference (or provider-first per `D-BC-WEIGHT`). Never averages, never falls back across sources,
+  and never uses stale provider carry-forwards. If no same-day record exists, relative context renders `"unavailable"`.
+
 ## Not implemented yet
 
 The following are deliberately absent from the current architecture:
 
 * personal repeatability estimation (OV4.4) — gated on real close-spaced repeat trials;
-* any progress/report dashboard UI (OV6.2) — usage-triggered, not yet justified by real report use;
 * operational evidence on the real event/block timeline (the remaining OV7.1 data capture plus OV7.2–OV8);
 * automatic recommendation changes based on outcome evidence.
 

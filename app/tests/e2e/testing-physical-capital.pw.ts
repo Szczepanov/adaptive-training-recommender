@@ -7,6 +7,7 @@ import {
   signInThroughUi,
   type E2EAthlete,
 } from './support/athlete';
+import { ASSESSMENT_CSV_HEADERS } from '../../src/observations/assessmentCsvExport';
 
 async function completeCheckin(page: Page, athlete: E2EAthlete, date: string): Promise<void> {
   await page.getByRole('button', { name: /Feeling normal today\? Use typical values/ }).click();
@@ -16,7 +17,7 @@ async function completeCheckin(page: Page, athlete: E2EAthlete, date: string): P
   await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
 }
 
-test('physical capital assessment: standing broad jump trial capture, checkpoint attempt, and diagnostic JSON export', async ({ page }) => {
+test('physical capital assessment: standing broad jump trial capture, checkpoint attempt, history comparability, and exports', async ({ page }) => {
   const athlete = await provisionAthlete();
   const date = await seedRecoverySnapshot(athlete);
 
@@ -28,6 +29,12 @@ test('physical capital assessment: standing broad jump trial capture, checkpoint
   await nav.getByRole('button', { name: /More/ }).click();
   await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
   await expect(page).toHaveURL(/\?screen=testing$/);
+
+  // Stage 0: History tab initially shows empty state
+  await page.getByRole('tab', { name: 'History' }).click();
+  await expect(page.getByRole('heading', { name: 'Assessment History', exact: true })).toBeVisible();
+  await expect(page.getByText('No assessment history recorded yet')).toBeVisible();
+  await page.getByRole('tab', { name: 'Protocols' }).click();
 
   // Stage 1: Lookup screen shows bundled assessments grouped by family
   await expect(page.getByRole('heading', { name: 'Bundled assessments' })).toBeVisible();
@@ -97,10 +104,21 @@ test('physical capital assessment: standing broad jump trial capture, checkpoint
   // Done closes or returns to home
   await page.getByRole('button', { name: 'Done' }).click();
 
-  // Now start a second attempt (checkpoint attempt) via More menu
+  // Check History tab reflects the baseline attempt
   await nav.getByRole('button', { name: /More/ }).click();
   await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
   await expect(page).toHaveURL(/\?screen=testing$/);
+  await page.getByRole('tab', { name: 'History' }).click();
+
+  const broadJumpCard = page.locator('.assessment-series-card', { hasText: 'Standing broad jump' });
+  await expect(broadJumpCard).toBeVisible();
+  await expect(broadJumpCard.locator('.headline-stat', { hasText: 'Baseline' })).toContainText('236 cm');
+  await expect(broadJumpCard.locator('.headline-stat', { hasText: 'Latest' })).toContainText('—');
+  await expect(broadJumpCard.locator('.status-label-badge')).toContainText('no comparable repeat yet');
+  await expect(broadJumpCard.locator('.history-attempt-row')).toHaveCount(1);
+
+  // Switch back to Protocols tab to start second attempt (checkpoint attempt, SAME setup)
+  await page.getByRole('tab', { name: 'Protocols' }).click();
   await page.getByRole('button', { name: 'Standing broad jump · rev 2' }).click();
   await expect(page.getByRole('heading', { name: 'Lock comparison context' })).toBeVisible();
 
@@ -125,25 +143,111 @@ test('physical capital assessment: standing broad jump trial capture, checkpoint
   // Verify completion screen for checkpoint attempt
   await expect(page.getByRole('heading', { name: 'Assessment recorded' })).toBeVisible();
   await expect(page.locator('.testing-observations')).toContainText('242 cm');
+  await page.getByRole('button', { name: 'Done' }).click();
 
-  // Export diagnostic JSON and assert contents
-  const downloadPromise = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Export physical-capital evidence (JSON)' }).click();
-  const download = await downloadPromise;
+  // Check History tab reflects the checkpoint and progress delta
+  await nav.getByRole('button', { name: /More/ }).click();
+  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await expect(page).toHaveURL(/\?screen=testing$/);
+  await page.getByRole('tab', { name: 'History' }).click();
 
-  const stream = await download.createReadStream();
-  const chunks: Buffer[] = [];
-  for await (const chunk of stream) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  const broadJumpCardAfterCheckpoint = page.locator('.assessment-series-card', { hasText: 'Standing broad jump' });
+  await expect(broadJumpCardAfterCheckpoint.locator('.headline-stat', { hasText: 'Baseline' })).toContainText('236 cm');
+  await expect(broadJumpCardAfterCheckpoint.locator('.headline-stat', { hasText: 'Latest' })).toContainText('242 cm');
+  await expect(broadJumpCardAfterCheckpoint.locator('.delta-stat')).toContainText('+6 cm');
+  await expect(broadJumpCardAfterCheckpoint.locator('.delta-stat')).toContainText('+2.5%');
+  await expect(broadJumpCardAfterCheckpoint.locator('.status-label-badge')).toContainText('raw change, no reliability estimate');
+  await expect(broadJumpCardAfterCheckpoint.locator('.history-attempt-row')).toHaveCount(2);
+
+  // Switch back to Protocols tab to start third attempt (different setup -> comparability split)
+  await page.getByRole('tab', { name: 'Protocols' }).click();
+  await page.getByRole('button', { name: 'Standing broad jump · rev 2' }).click();
+  await expect(page.getByRole('heading', { name: 'Lock comparison context' })).toBeVisible();
+
+  // Different setup: grass field
+  await page.getByLabel(/equipment_setup_id/).fill('grass-field-b · tape-line-b · trail shoes');
+  await page.getByLabel('Attempt purpose').selectOption('checkpoint');
+  await page.getByRole('button', { name: 'Confirm lock and start' }).click();
+
+  // Finish running session
+  await page.getByRole('button', { name: /Finish Session \(/ }).click();
+  await expect(page.getByRole('dialog', { name: 'Complete Session' })).toBeVisible();
+  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+
+  // Capture third attempt trial
+  await expect(page.getByRole('heading', { name: 'Record assessment trials' })).toBeVisible();
+  const thirdDistanceInputs = page.locator('input[placeholder="1–400"]');
+  await thirdDistanceInputs.nth(0).fill('215');
+  await thirdDistanceInputs.nth(1).fill('212');
+  await thirdDistanceInputs.nth(2).fill('210');
+  await page.getByRole('button', { name: 'Save assessment trials' }).click();
+
+  await expect(page.getByRole('heading', { name: 'Assessment recorded' })).toBeVisible();
+  await expect(page.locator('.testing-observations')).toContainText('215 cm');
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  // Inspect History tab with comparability split
+  await nav.getByRole('button', { name: /More/ }).click();
+  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await expect(page).toHaveURL(/\?screen=testing$/);
+  await page.getByRole('tab', { name: 'History' }).click();
+
+  const broadJumpCardMulti = page.locator('.assessment-series-card', { hasText: 'Standing broad jump' });
+  await expect(broadJumpCardMulti.locator('.active-series-section .headline-stat', { hasText: 'Baseline' })).toContainText('215 cm');
+  await expect(broadJumpCardMulti.locator('.active-series-section .headline-stat', { hasText: 'Latest' })).toContainText('—');
+  const otherSeries = broadJumpCardMulti.locator('.other-series-disclosure');
+  await expect(otherSeries).toBeVisible();
+  await otherSeries.locator('summary').click();
+  await expect(otherSeries.locator('.not-comparable-marker').first()).toContainText('not comparable: setup/method changed');
+  await expect(otherSeries.locator('.other-series-stats').first()).toContainText('Baseline: 236 cm');
+  await expect(otherSeries.locator('.other-series-stats').first()).toContainText('Latest: 242 cm');
+
+  // Test Attempt detail modal
+  await broadJumpCardMulti.getByRole('button', { name: /View attempt .* details/ }).first().click();
+  const detailModal = page.locator('[role="dialog"][aria-labelledby="attempt-detail-title"]');
+  await expect(detailModal).toBeVisible();
+  await expect(detailModal.locator('#attempt-detail-title')).toContainText('Standing broad jump · rev 2');
+  await expect(detailModal.locator('.attempt-metadata-grid')).toContainText('Purpose:');
+  await expect(detailModal.locator('.attempt-benchmarks-list')).toBeVisible();
+  await expect(detailModal.locator('.attempt-trials-table')).toBeVisible();
+  await detailModal.getByRole('button', { name: 'Close detail' }).click();
+  await expect(detailModal).toBeHidden();
+
+  // Test CSV export from History toolbar
+  const csvDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export history (CSV)' }).click();
+  const csvDownload = await csvDownloadPromise;
+  const csvStream = await csvDownload.createReadStream();
+  const csvChunks: Buffer[] = [];
+  for await (const chunk of csvStream) {
+    csvChunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
   }
-  const fileContent = Buffer.concat(chunks).toString('utf-8');
+  const csvContent = Buffer.concat(csvChunks).toString('utf-8');
+  const csvLines = csvContent.trim().split('\n');
+  expect(csvLines[0]).toBe(ASSESSMENT_CSV_HEADERS.join(','));
+  expect(csvContent).toContain('field-standing-broad-jump');
+  expect(csvContent).toContain('236');
+  expect(csvContent).toContain('242');
+  expect(csvContent).toContain('215');
+  expect(csvContent).not.toContain(athlete.userId);
+
+  // Test diagnostic JSON export from History toolbar
+  const jsonDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export physical-capital evidence (JSON)' }).click();
+  const jsonDownload = await jsonDownloadPromise;
+  const jsonStream = await jsonDownload.createReadStream();
+  const jsonChunks: Buffer[] = [];
+  for await (const chunk of jsonStream) {
+    jsonChunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  const fileContent = Buffer.concat(jsonChunks).toString('utf-8');
   const parsed = JSON.parse(fileContent);
 
-  expect(parsed.schemaVersion).toBe('assessment_diagnostic_export_v1');
+  expect(parsed.schemaVersion).toBe('assessment_diagnostic_export_v2');
   expect(parsed.protocols.some((p: { id: string; revision: number }) => p.id === 'field-standing-broad-jump' && p.revision === 2)).toBe(true);
-  expect(parsed.attempts.length).toBeGreaterThanOrEqual(2);
-  expect(parsed.trials.length).toBeGreaterThanOrEqual(7);
-  expect(parsed.canonicalObservations.length).toBeGreaterThanOrEqual(2);
+  expect(parsed.attempts.length).toBeGreaterThanOrEqual(3);
+  expect(parsed.trials.length).toBeGreaterThanOrEqual(9);
+  expect(parsed.canonicalObservations.length).toBeGreaterThanOrEqual(3);
   // Verify Firebase UID is omitted
   expect(JSON.stringify(parsed)).not.toContain(athlete.userId);
 });

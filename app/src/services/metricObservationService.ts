@@ -188,6 +188,52 @@ export class MetricObservationService {
     }
 
     /**
+     * WP6.1 / D6: resolves current revisions for one metric, returning unreadable record counts
+     * instead of failing the entire query.
+     */
+    async listCurrentRevisionsForMetricWithDiagnostics(
+        userId: string,
+        metricId: string,
+    ): Promise<{ revisions: MetricObservationRevision[]; unreadableCount: number }> {
+        if (!metricId.trim()) throw new Error('metricId is required');
+        const headsSnapshot = await getDocs(query(
+            collection(this.db, 'users', userId, 'metric_observations'),
+            where('metricId', '==', metricId),
+        ));
+
+        const validRevisions: MetricObservationRevision[] = [];
+        let unreadableCount = 0;
+
+        await Promise.all(headsSnapshot.docs.map(async headSnapshot => {
+            try {
+                const head = headSnapshot.data() as MetricObservationHead;
+                assertValidMetricObservationHead(head);
+                if (head.observationKey !== headSnapshot.id || head.metricId !== metricId) {
+                    unreadableCount++;
+                    return;
+                }
+                const revision = await this.getRevision(userId, head.observationKey, head.headRevision);
+                if (!revision) {
+                    unreadableCount++;
+                    return;
+                }
+                if (revision.metricId !== head.metricId || revision.assessmentAttemptId !== head.assessmentAttemptId) {
+                    unreadableCount++;
+                    return;
+                }
+                validRevisions.push(revision);
+            } catch {
+                unreadableCount++;
+            }
+        }));
+
+        return {
+            revisions: validRevisions.sort((a, b) => a.observedAt.localeCompare(b.observedAt)),
+            unreadableCount,
+        };
+    }
+
+    /**
      * WP7.2: resolves the full revision history for one observation head.
      */
     async listRevisionsForObservation(userId: string, observationKey: string): Promise<MetricObservationRevision[]> {

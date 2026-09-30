@@ -101,3 +101,15 @@ export function downloadDiagnosticExportFile(filename: string, jsonString: strin
     // Revoking synchronously can cancel the download in some browsers; release on the next task.
     setTimeout(() => URL.revokeObjectURL(url), 0);
 }
+
+export function downloadCsvFile(filename: string, csvString: string): void {
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename.endsWith('.csv') ? filename : `${filename}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+}

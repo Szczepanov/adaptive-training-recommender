@@ -412,10 +412,28 @@ also remains available.
 
 ### 10. Protocol testing
 
-`TestingWorkflow` owns the assessment lifecycle rather than creating a separate runner:
+`TestingWorkflow` owns the assessment lifecycle and longitudinal history across two top-level tabs:
 
-`lookup` → `ready/lock` → `running` (delegates to `SessionRunner`) → raw trial / observation capture →
-`complete` or `abandoned`.
+1. **Protocols tab:**
+   `lookup` (bundled catalog grouped by Cycling / Strength / Field & power via `TestingCatalogPanel`) →
+   `ready/lock` → `running` (delegates to `SessionRunner`) → raw trial / observation capture →
+   `complete` or `abandoned`.
+
+2. **History tab (`AssessmentHistory`):**
+   Longitudinal physical-capital benchmark evidence and comparability tracking.
+   - Groups cards by family (`Cycling`, `Strength`, `Field & power` via `getPerformanceTestFamily`).
+   - Each card (`AssessmentSeriesCard`) presents the active comparison series: baseline value, latest value,
+     longitudinal change (labelled `"raw change, no reliability estimate"` with status `insufficient_evidence` under D4),
+     comparability, and validity.
+   - Disparate protocol revisions or modified series-defining setup parameters establish separate comparison series;
+     older or alternate series sit in an expandable disclosure with an explicit non-comparable marker
+     (`not comparable: protocol revision changed` or `not comparable: setup/method changed` under D1).
+   - Clicking "Details" on an attempt row opens the attempt detail modal (`AssessmentAttemptDetail`), showing attempt
+     metadata, locked comparison context, canonical benchmark observations (including revision history and same-day
+     body-mass-relative sprint W/kg or relative 1RM under D8), and the complete raw trials table with superseded
+     trials clearly distinguished.
+   - The toolbar provides one-click normalized CSV export (`assessment-history.csv`, 23 canonical columns) and
+     offline diagnostic evidence export (`assessment_diagnostic_export_v2`).
 
 Open attempts are recovered on mount. The workflow records assessment-specific context and
 raw observations around the shared structured-session execution. Global resume state marks
@@ -429,11 +447,10 @@ sign-out), live canonical reduction preview
 (`CanonicalResultPreview`), and raw video reminder callouts. The completion screen renders canonical
 benchmark results alongside an interactive trial correction panel (`TrialCorrectionPanel`) for append-only
 trial supersession. Trials already persisted by an interrupted save reload read-only, so a resubmission
-cannot diverge from immutable stored evidence. For the bundled #897 physical-capital trial-capture flow, a
-scoped diagnostic JSON export action (`assessmentExportService`) downloads the supported physical-capital
+cannot diverge from immutable stored evidence. For the bundled #897 physical-capital trial-capture flow,
+scoped diagnostic JSON export (`assessmentExportService`) downloads the supported physical-capital
 protocol revisions, attempts, raw trials and canonical revision history for offline audit/coaching handoff.
-The action is not shown on legacy/custom summary-only tests because this bounded export does not scan those
-protocol families. It omits the Firebase UID but remains personal health data (values, notes, device identifiers).
+It omits the Firebase UID but remains personal health data (values, notes, device identifiers).
 
 Because `testing` and ordinary `sessions` share the runner, their in-run visual structure is
 very similar; provenance/context around the runner is therefore important.
