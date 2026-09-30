@@ -23,6 +23,7 @@ export interface BodyCompositionPanelProps {
 }
 
 import {
+  chooseEffectiveBodyMassSource,
   loadStoredBodyMassSource,
   persistBodyMassSource,
 } from '../../anthropometry/bodyMassPreference';
@@ -167,11 +168,11 @@ export const BodyCompositionPanel: React.FC<BodyCompositionPanelProps> = ({
   // Auto fallback to manual if user hasn't explicitly selected provider and provider has 0 points
   const effectiveSource = useMemo(() => {
     const stored = loadStoredBodyMassSource();
-    if (!stored) {
-      if (providerPointsByDate.size > 0) return 'provider';
-      if (manualPointsByDate.size > 0) return 'manual';
-    }
-    return selectedSource;
+    return chooseEffectiveBodyMassSource(
+      stored,
+      providerPointsByDate.size > 0,
+      manualPointsByDate.size > 0,
+    );
   }, [selectedSource, providerPointsByDate.size, manualPointsByDate.size]);
 
   const activeBodyMassTrend = useMemo(() => {
