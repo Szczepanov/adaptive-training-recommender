@@ -71,7 +71,7 @@ describe('performed stimulus-domain recency in sequencing decisions (#931)', () 
     const vo2Candidate = ENRICHED_TEMPLATES_BY_ID.get('end_hard_01')!; // Hard Endurance (VO2)
     const thresholdCandidate = ENRICHED_TEMPLATES_BY_ID.get('swim_threshold_01')!; // Sustained Swim Intervals (Threshold)
 
-    it('demotes Monday tempo candidate (0.2x) after Sunday provider 3x15 tempo', () => {
+    it('demotes Monday tempo after Sunday provider tempo while preserving Monday easy endurance', () => {
         const sundayTempo = makeFact({ stimulusDomain: 'tempo' });
 
         // Baseline: no Sunday exposures
@@ -144,7 +144,7 @@ describe('performed stimulus-domain recency in sequencing decisions (#931)', () 
                 { kind: 'structured_execution', executionId: 'exec-1' },
                 { kind: 'provider_activity', provider: 'garmin', activityId: 'garmin-act-1' },
             ],
-            reconciliation: { state: 'single_source' },
+            reconciliation: { state: 'matched' },
             createdAt: '2026-09-06T18:00:00Z',
             updatedAt: '2026-09-06T18:00:00Z',
         };
