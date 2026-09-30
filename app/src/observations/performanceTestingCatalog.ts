@@ -966,10 +966,8 @@ export const PERFORMANCE_TEST_DEFINITIONS: readonly PerformanceTestDefinition[] 
         family: 'field',
         protocol: SEATED_MEDBALL_THROW_PROTOCOL_V2,
         sessionDefinition: seatedMedballThrowSession,
-        defaultContext: {
-            equipment_setup_id: 'standard-seated-station',
-        },
-        expectedSource: 'Manual entry of measured distance from wall to initial ball contact point.',
+        defaultContext: {},
+        expectedSource: 'Manual entry of measured distance from wall to initial ball contact point; declare the repeatable wall/floor/ball station before starting.',
     },
     {
         id: 'cycling_6s_seated_sprint-r2',
