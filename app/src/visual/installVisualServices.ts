@@ -70,6 +70,7 @@ export function installVisualServices(fixture: VisualFixture): void {
   });
 
   checkinService.getCheckin = async () => fixture.checkin;
+  checkinService.getCheckinsInRangeState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
   checkinService.upsertTodayCheckin = async (_userId, update) => ({
     ...(fixture.checkin ?? { userId: fixture.input.userId, date: fixture.input.date }),
     ...update,

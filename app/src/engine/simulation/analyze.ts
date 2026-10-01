@@ -1,6 +1,6 @@
 import type { DimensionalFatigue, EquipmentKey, MicrocycleState, RankingCounterfactual, Recommendation, SessionTemplate, UserContext, WeeklyObjective, WorkoutCostProfile, WorkoutStimulusProfile } from '../models';
 import { evaluateNextDayPlanWithIntent, evaluateTrainingWithIntent } from '../rules';
-import { generateWeekAheadPlanWithIntent, resolveWeeklyAnchors, type WeekAheadDay } from '../planner';
+import { generateWeekAheadPlanWithIntent, resolveWeeklyAnchors, type WeekAheadDay, type WeekAheadPlan } from '../planner';
 import { materializeEffectiveDose } from '../optimizer';
 import type { CompletedExposure, TrainingHistoryProvider } from '../trainingHistory';
 import type { TrainingHistorySnapshot } from '../trainingHistorySnapshot';
@@ -96,6 +96,7 @@ export interface ScenarioResult {
     qualityWarnings: string[]; anchorWeeks: AnchorWeekResult[]; anchorScopeNote: string | null;
     fatigueTierDayCounts: { train: number; modify: number; recover: number }; constraintViolations: string[];
     allocationReports: Array<{ weekIndex: number; report: WeeklyRoleAllocationReport }>;
+    authoritySegments?: Array<{ weekIndex: number; segments: NonNullable<WeekAheadPlan['authoritySegments']> }>;
     decisionTraces: ScenarioDecisionTrace[];
     /** Issue #458: deterministic sequencing/ranking diagnostics derived purely from
      *  decisionTraces above. Diagnostic only -- never influences recommendation output. */
@@ -413,6 +414,7 @@ export async function runScenario(
     const objectiveTallies = new Map<string, ObjectiveTally>();
     const objectiveCredits: ObjectiveCredit[] = [];
     const allocationReports: Array<{ weekIndex: number; report: WeeklyRoleAllocationReport }> = [];
+    const authoritySegments: NonNullable<ScenarioResult['authoritySegments']> = [];
     const decisionTraces: ScenarioDecisionTrace[] = [];
     let currentDate = scenario.startDate;
 
@@ -470,6 +472,7 @@ export async function runScenario(
 
         weeklyDays.push(simulatedDays);
         allocationReports.push({ weekIndex: week, report: plan.allocationReport });
+        if (plan.authoritySegments) authoritySegments.push({ weekIndex: week, segments: plan.authoritySegments });
         plan.objectiveCredits.forEach(credit => objectiveCredits.push({ weekIndex: week, ...credit }));
         simulatedDays.forEach(day => accumulatedHistory.push(toCompletedExposure(day)));
 
@@ -481,7 +484,8 @@ export async function runScenario(
         });
         currentDate = addDaysToLocalDateString(currentDate, 7);
     }
-    return computeMetrics(scenario, weeklyDays, anchorWeeks, objectiveTallies, objectiveCredits, allocationReports, decisionTraces);
+    return { ...computeMetrics(scenario, weeklyDays, anchorWeeks, objectiveTallies, objectiveCredits, allocationReports, decisionTraces),
+        ...(authoritySegments.length > 0 ? { authoritySegments } : {}) };
 }
 
 /** WP3.0 diagnostic. A pick parity comparison is observational: the aged-credit column

@@ -4,6 +4,7 @@ import { resolveDemandProfile } from './eventPresets';
 import { buildCyclingEventPlan } from './planSchedule';
 import {
     buildCoverageState,
+    coverageHistoryFromFacts,
     coverageKeysForExposure,
     coverageKeysForTemplate,
     coverageNeedTierForTemplate,
@@ -15,7 +16,9 @@ import {
 } from './coverage';
 import type { SessionTemplate, UserEvent } from './models';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import { EVERGREEN_GENERAL_COVERAGE_SET, type EventPlanCoverageKey, type EventPlanPhase } from '../workouts/event-plan';
+import { EVERGREEN_GENERAL_COVERAGE_SET, SEPTEMBER_CYCLING_EVENT_COVERAGE_SET, type EventPlanCoverageKey, type EventPlanPhase } from '../workouts/event-plan';
+import { deriveExactCoverageCredits, type PerformedExposureFact } from './performedTrainingFacts';
+import { workoutForTemplate } from '../workouts/prescription';
 import { resolveAerobicVolumeFloor, type AerobicVolumeFloor } from './aerobicVolumeFloor';
 
 function templateForCoverage(key: EventPlanCoverageKey, phase: EventPlanPhase): SessionTemplate {
@@ -463,5 +466,36 @@ describe('athlete-relative aerobic_volume floor (#757)', () => {
         expect(rideTier).toBe(coverageNeedTierForTemplate(establishedState, cappedWalk));
         expect(rideTier).toBeGreaterThan(coverageNeedTierForTemplate(catalogState, cappedRide));
         expect(coverageNeedTierForTemplate(establishedState, { ...ride, durationMin: 45 })).toBe(coverageNeedTierForTemplate(catalogState, cappedRide));
+    });
+});
+
+
+describe('canonical coverage descriptor handoff (#933)', () => {
+    it('requalifies the exact performed identity instead of carrying another descriptor\'s credit', () => {
+        const exposure: PerformedExposureFact = {
+            performedOccurrenceId: 'performed-once', localDate: '2026-06-20',
+            modality: 'Strength', category: 'Full-body Strength', durationMin: 45,
+            confidence: 'exact', evidenceTier: 'completedStructuredWorkout', sourceKinds: ['structured_execution'],
+            workoutId: workoutForTemplate('str_full_01')!.id, templateId: 'str_full_01',
+        };
+        const facts = { exposures: [exposure], coverageCredits: deriveExactCoverageCredits(exposure, EVERGREEN_GENERAL_COVERAGE_SET) };
+        const retained = coverageHistoryFromFacts(facts);
+        const handedOff = coverageHistoryFromFacts(facts, SEPTEMBER_CYCLING_EVENT_COVERAGE_SET);
+        expect(retained[0].canonicalCoverageCredits!.every(credit => credit.coverageSetId === 'evergreen_general')).toBe(true);
+        expect(handedOff[0].canonicalCoverageCredits!.length).toBeGreaterThan(0);
+        expect(handedOff[0].canonicalCoverageCredits!.every(credit => credit.coverageSetId === 'september_cycling_event')).toBe(true);
+        expect(handedOff.map(item => item.occurrenceKey)).toEqual(['performed-once']);
+        expect(facts.coverageCredits.every(credit => credit.coverageSetId === 'evergreen_general')).toBe(true);
+    });
+
+    it('never turns unknown identity or an unknown mechanical/power variant into exact coverage', () => {
+        const unknown = coverageHistoryFromFacts({ exposures: [{ performedOccurrenceId: 'unknown',
+            localDate: '2026-06-20', modality: 'Strength' }], coverageCredits: [] }, EVERGREEN_GENERAL_COVERAGE_SET);
+        expect(unknown[0].canonicalCoverageCredits).toEqual([]);
+        const unknownVariant = coverageHistoryFromFacts({ exposures: [{ performedOccurrenceId: 'field',
+            localDate: '2026-06-20', workoutId: workoutForTemplate('field_technical_01')!.id }], coverageCredits: [] },
+        EVERGREEN_GENERAL_COVERAGE_SET);
+        expect(unknownVariant[0].canonicalCoverageCredits!.map(credit => credit.coverageKey))
+            .not.toContain('mechanical_exposure');
     });
 });

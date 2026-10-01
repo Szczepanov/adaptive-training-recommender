@@ -223,6 +223,53 @@ function requirePerformedLocalDate(
     return localDate;
 }
 
+/** Re-evaluate an already reconciled exact identity under a new descriptor, without
+ * carrying old descriptor credit or widening semantic coverage policy. */
+export function deriveExactCoverageCredits(
+    fact: Pick<PerformedExposureFact, 'performedOccurrenceId' | 'workoutId' | 'workoutVariantId' | 'isReadinessModifiedDose' | 'sourceKinds'>,
+    descriptor: CoverageSetDescriptor,
+): CoverageCreditFact[] {
+    const coverageCredits: CoverageCreditFact[] = [];
+    const workoutId = fact.workoutId;
+    if (workoutId && workoutId !== 'legacy_strength') {
+        const matchingItems = descriptor.coverage
+            .filter(item => item.workoutIds.includes(workoutId))
+            // Issue #802: completed power credit requires both exact workout identity and
+            // the exact materialized dose variant. Unknown variants fail closed.
+            .filter(item => item.key !== 'power_exposure' || (
+                fact.workoutVariantId !== undefined
+                && grantsPowerExposureCredit({
+                    workoutId,
+                    variant: fact.workoutVariantId,
+                    isReadinessModifiedDose: fact.isReadinessModifiedDose,
+                })
+            ))
+            // Issue #804: completed mechanical credit likewise requires the exact materialized
+            // variant. Unknown variants fail closed rather than inheriting a broad family role.
+            .filter(item => item.key !== 'mechanical_exposure' || (
+                fact.workoutVariantId !== undefined
+                && grantsMechanicalExposureCredit({
+                    workoutId,
+                    variant: fact.workoutVariantId as MechanicalDoseVariant,
+                    isReadinessModifiedDose: fact.isReadinessModifiedDose,
+                })
+            ));
+        for (const item of matchingItems) {
+            coverageCredits.push({
+                performedOccurrenceId: fact.performedOccurrenceId,
+                coverageSetId: descriptor.id,
+                coverageKey: item.key,
+                workoutId,
+                creditKind: 'exact',
+                confidence: 1.0,
+                reasonCode: 'exact_workout_identity',
+                sourceKinds: fact.sourceKinds,
+            });
+        }
+    }
+    return coverageCredits;
+}
+
 /**
  * Pure fact derivation from a single active occurrence and its hydrated sources.
  * Enforces field-level source precedence (D4, D5).
@@ -342,43 +389,7 @@ export function deriveFactsFromOccurrence(
 
     const coverageCredits: CoverageCreditFact[] = [];
     if (workoutId && workoutId !== 'legacy_strength') {
-        const matchingItems = descriptor.coverage
-            .filter(item => item.workoutIds.includes(workoutId))
-            // Issue #802: completed power credit requires both exact workout identity and
-            // the exact materialized dose variant. Unknown variants fail closed; this avoids
-            // treating a return-to-training prescription as full power merely because the
-            // catalog workout family contains a power step.
-            .filter(item => item.key !== 'power_exposure' || (
-                hydrated.structured?.workoutVariantId !== undefined
-                && grantsPowerExposureCredit({
-                    workoutId,
-                    variant: hydrated.structured.workoutVariantId,
-                    isReadinessModifiedDose: hydrated.structured.isReadinessModifiedDose,
-                })
-            ))
-            // Issue #804: completed mechanical credit requires both exact workout identity and
-            // the exact materialized dose variant. Unknown variants fail closed; this avoids
-            // treating a return-to-training prescription as full mechanical exposure.
-            .filter(item => item.key !== 'mechanical_exposure' || (
-                hydrated.structured?.workoutVariantId !== undefined
-                && grantsMechanicalExposureCredit({
-                    workoutId,
-                    variant: hydrated.structured.workoutVariantId as MechanicalDoseVariant,
-                    isReadinessModifiedDose: hydrated.structured.isReadinessModifiedDose,
-                })
-            ));
-        for (const item of matchingItems) {
-            coverageCredits.push({
-                performedOccurrenceId: occurrence.performedOccurrenceId,
-                coverageSetId: descriptor.id,
-                coverageKey: item.key,
-                workoutId,
-                creditKind: 'exact',
-                confidence: 1.0,
-                reasonCode: 'exact_workout_identity',
-                sourceKinds,
-            });
-        }
+        coverageCredits.push(...deriveExactCoverageCredits(exposure, descriptor));
     } else if (modality === 'Strength') {
         // Generic strength occurred without proven exact catalog role (D1, D5).
         coverageCredits.push({

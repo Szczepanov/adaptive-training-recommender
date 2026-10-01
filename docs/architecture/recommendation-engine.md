@@ -518,10 +518,48 @@ currently begins its build at D-84; that value is a current plan-policy boundary
 physiological cut-point or the point at which goal-directed preparation is supposed to begin.
 Fallback dates load the same established-athlete and mechanical evidence streams as ordinary
 Evergreen dates; the contextual event must not make Evergreen fail closed to a shorter history
-window. Week-ahead projection re-resolves structured ownership for each projected date, so a
-supplied Evergreen fallback definition yields when the event plan's first authored block becomes
-active (the current fixture is D-85 → D-84) instead of pinning today's strategy across the
-forecast horizon. This fallback fixes the authority gap without claiming to solve long-horizon
+window. `generateWeekAheadPlanWithIntent` injects the pure `forecastAuthority.ts`
+`createForecastAuthorityResolver` into the synchronous planner. It resolves ownership per
+date in both directions: Evergreen yields when an eligible structured block begins, and
+structured execution yields when no eligible event block owns the date. Current completed/DNF
+event eligibility ends after D+3, even though the generated recovery block extends through
+D+7; #933 preserves that separate policy. Authored blocks are subject to the same event
+eligibility as live evaluation.
+
+Evergreen is seeded once per contiguous ownership segment, anchored at its first date T,
+using T's phase and a full T through T+6 production evidence/dose/capacity/packing window.
+An uninterrupted Evergreen segment rolls to another seed when that week expires. Initial
+packing retains the caller's existing horizon capacity; transition packing always uses the
+full rolling week. Completed history and assumed-performed projected occurrences through T−1
+are deduplicated by occurrence identity, including the wider athlete-state and mechanical
+evidence windows. Projected work affects strategy/dose evidence but remains projected
+objective and coverage credit; no key-based objective carry-over crosses owners. Exact
+workout identity is retained for capability cadence, without inventing it from inferred work.
+Canonical completed coverage is requalified against the new descriptor using its exact
+workout/variant identity; credits from the prior descriptor are never reinterpreted.
+
+At T, production and forecast authority, objectives, requirements, dose and capability state
+match given equivalent history and neutral readiness. Future readiness/clinical flags use
+today's assumptions, tissue check-ins are available only as of today, and the athlete aerobic
+floor remains fixed as of today under #757. Canonical performed-stimulus recency remains
+observation-only under #931: projected sessions do not fabricate confident performed facts or
+advance the canonical recency ledger. Observation-span proof is retained from the provider;
+projecting sessions does not fabricate a wider observed history. These frozen inputs can
+legitimately differ from a later live evaluation once actual readiness, check-ins or performed
+facts arrive.
+
+Allocation introduces each segment's roles at its first forecast date, namespaces occurrence
+IDs by segment, and admits reservations/fulfilment only while that owner is active. Closed
+unfulfilled roles remain explicitly `superseded`. Required roles packed after the visible
+strip remain `planned_beyond_horizon`, with their packed dates, rather than becoming misses.
+`WeekAheadPlan.authoritySegments` exposes each full seed budget/capability state without its
+completed-history input; per-day diagnostics identify the segment and coverage/dose. The
+legacy capability summary describes today, while `WeekAheadStrip` reads the selected date's
+segment and displays roles beyond the strip. Home/PlanView's daily capability callbacks remain
+daily. Simulation reports retain segment seeds; the deferred beam-search comparison in
+`sequenceSearch.ts` remains a separate experimental planner (ADR-0015).
+
+This fallback fixes the authority gap without claiming to solve long-horizon
 mesocycle planning (#927), ownership of the D-84/D-35 phase horizons (#928), or season-level
 A/B/C event coordination (#929). Running, triathlon, strength, and general
 events retain demand-derived planning. Running race-specific objectives are modality-scoped

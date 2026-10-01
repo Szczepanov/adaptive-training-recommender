@@ -152,8 +152,13 @@ describe('issue #758 evergreen cycling quality', () => {
         };
         const result = await run(scenario);
         const selectedQuality = cyclingQuality(result);
-        expect(selectedQuality).toHaveLength(1);
-        expect(selectedQuality.every(trace => trace.date !== fixedDate)).toBe(true);
+        // Required aerobic work plus both bookings fills the old week's capacity.
+        // D+7 now belongs to a fresh rolling seed, so optional quality cannot borrow it.
+        expect(selectedQuality).toHaveLength(0);
+        const nextWeekStart = addDaysToLocalDateString(scenario.startDate, 7);
+        const nextOwner = result.authoritySegments[0].segments.find(segment => segment.startDate === nextWeekStart);
+        expect(nextOwner).toBeDefined();
+        expect(nextOwner.evergreen.budget.requiredRoles.some(role => role.date === nextWeekStart)).toBe(true);
         const qualityBlockEnd = addDaysToLocalDateString(scenario.startDate, 6);
         const recommendedExerciseSessions = result.decisionTraces.filter(trace =>
             trace.date >= scenario.startDate
