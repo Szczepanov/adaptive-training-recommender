@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AssessmentAttempt } from './models';
+import type { AssessmentAttempt, MeasurementProtocol } from './models';
 import { BACK_SQUAT_1RM_PROTOCOL_V2, STANDING_BROAD_JUMP_PROTOCOL } from './physicalCapitalProtocols';
 import {
     annotateWlBatchDuplicates,
@@ -168,8 +168,8 @@ describe('wlAnalysisImport duplicates (D6)', () => {
         const a = proposed(makeFile('a.csv', base, 'a'.repeat(64)));
         const b = proposed(makeFile('b.csv', { ...base, tags: 'back squat attempt 2' }, 'b'.repeat(64)));
         annotateWlBatchDuplicates([a, b], new Map([
-            ['a.csv', 'same-summary'],
-            ['b.csv', 'same-summary'],
+            [a.sourceRef, 'same-summary'],
+            [b.sourceRef, 'same-summary'],
         ]));
         expect(b.warnings.some(w => /identical movement data/i.test(w))).toBe(true);
         expect(b.warnings.some(w => /identical summary block/i.test(w))).toBe(true);
@@ -219,6 +219,7 @@ describe('wlAnalysisImport ordering (D4)', () => {
 describe('wlAnalysisImport file dates', () => {
     it('reads both DD/MM and MM/DD interpretations', () => {
         expect(wlFileDateReadings('03/02/2025')).toEqual(['2025-02-03', '2025-03-02']);
+        expect(wlFileDateReadings('31/02/2025')).toEqual([]);
         expect(wlFileDateReadings('not a date')).toEqual([]);
     });
 
@@ -248,6 +249,11 @@ describe('wlAnalysisImport draft rows (D5)', () => {
         expect(row.sourceRef).toBe(proposal.sourceRef);
         expect(row.context).toEqual(proposal.context);
         expect(row.device).toEqual({ provider: WL_ANALYSIS_DEVICE_PROVIDER });
+        expect(row.importReview).toEqual({
+            loadKgConfirmed: false,
+            successConfirmed: false,
+            validityConfirmed: false,
+        });
     });
 
     it('rejects a load outside the protocol bounds', () => {
@@ -292,11 +298,34 @@ describe('wlAnalysisImport scope (D7)', () => {
         purpose: 'baseline',
     });
 
-    it('offers import only in capture of an open attempt on velocity-capable protocols', () => {
+    it('offers import only in capture of an open attempt with the complete WL field schema', () => {
         expect(canImportWlAnalysis(BACK_SQUAT_1RM_PROTOCOL_V2, attempt('in_progress'))).toBe(true);
         expect(canImportWlAnalysis(BACK_SQUAT_1RM_PROTOCOL_V2, attempt('completed'))).toBe(false);
         expect(canImportWlAnalysis(BACK_SQUAT_1RM_PROTOCOL_V2, attempt('scheduled'))).toBe(false);
         expect(canImportWlAnalysis(STANDING_BROAD_JUMP_PROTOCOL, attempt('in_progress'))).toBe(false);
+
+        const missingPeak: MeasurementProtocol = {
+            ...BACK_SQUAT_1RM_PROTOCOL_V2,
+            capture: {
+                ...BACK_SQUAT_1RM_PROTOCOL_V2.capture!,
+                fields: BACK_SQUAT_1RM_PROTOCOL_V2.capture!.fields.filter(field => field.id !== 'peak_velocity_mps'),
+            },
+        };
+        expect(canImportWlAnalysis(missingPeak, attempt('in_progress'))).toBe(false);
+    });
+});
+
+describe('wlAnalysisImport same-batch source identity', () => {
+    it('rejects the second proposal once the first digest is registered for the batch', () => {
+        const seen = new Set<string>();
+        const first = proposeWlTrial(makeFile('first.csv', makeParsed(), 'c'.repeat(64)), null, seen);
+        expect(first.status).toBe('proposed');
+        if (first.status !== 'proposed') return;
+        seen.add(first.proposal.sourceRef);
+
+        const second = proposeWlTrial(makeFile('second.csv', makeParsed(), 'c'.repeat(64)), null, seen);
+        expect(second.status).toBe('rejected');
+        if (second.status === 'rejected') expect(second.rejection.reason).toMatch(/already imported/i);
     });
 });
 
