@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { archivedSavedDefinitionError, canLaunchExternalPlanSession, isPreparedReducedExternalBinding } from './sessionLaunch';
-import type { SessionReferenceBinding } from './models';
+import type { SessionDefinition, SessionReferenceBinding } from './models';
 import type { AnyExternalPlanSession } from './externalPlanV2';
 
 // M4.3 follow-up: SessionRunner's startCompanion resolves a saved definition by header the
@@ -66,7 +66,10 @@ describe('canLaunchExternalPlanSession', () => {
 // #949: Home may start a scaled imported session only through the exact prepared reduced snapshot.
 describe('isPreparedReducedExternalBinding', () => {
     const prescription = {
-        planId: 'coach-block-a', revision: 3, sessionId: 'w2-tempo',
+        planId: 'coach-block-a',
+        revision: 3,
+        sessionId: 'w2-tempo',
+        scaling: { reducible: true, reducedDefinition: {} as SessionDefinition },
     };
     const binding: SessionReferenceBinding = {
         sessionSource: { kind: 'external_plan', planId: 'coach-block-a', revision: 3, sessionId: 'w2-tempo', contentHash: 'hash' },
@@ -77,6 +80,14 @@ describe('isPreparedReducedExternalBinding', () => {
 
     it('permits only the exact prepared reduced prescription for the same external source', () => {
         expect(isPreparedReducedExternalBinding(prescription, binding, prepared)).toBe(true);
+    });
+
+    it.each([
+        ['legacy/no scaling', { ...prescription, scaling: undefined }],
+        ['non-reducible', { ...prescription, scaling: { reducible: false, reducedDefinition: {} as SessionDefinition } }],
+        ['missing structured reduced definition', { ...prescription, scaling: { reducible: true } }],
+    ])('fails closed for %s even when runtime evidence claims reduced', (_label, candidate) => {
+        expect(isPreparedReducedExternalBinding(candidate, binding, prepared)).toBe(false);
     });
 
     it('blocks the full prepared form even though full and reduced share the same source identity', () => {

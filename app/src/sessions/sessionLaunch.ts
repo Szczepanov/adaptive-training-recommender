@@ -53,6 +53,10 @@ export interface ExternalPrescriptionIdentity {
     planId: string;
     revision: number;
     sessionId: string;
+    scaling?: {
+        reducible?: boolean;
+        reducedDefinition?: SessionDefinition;
+    };
 }
 
 /** Runtime evidence produced only after the source-neutral authoring adapter has frozen an
