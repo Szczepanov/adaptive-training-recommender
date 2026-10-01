@@ -17,7 +17,7 @@ from garmin_sync.provider import RecoveryObservationProvider
 
 def test_health_observation_service_sync_date_multi_provider() -> None:
     mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
-    mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
+    mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1), (True, 1)]
     mock_repo.get_health_observation_bundles_in_range.return_value = []
 
     mock_provider = MagicMock(spec=RecoveryObservationProvider)
@@ -61,12 +61,12 @@ def test_health_observation_service_sync_date_multi_provider() -> None:
     assert res["google_health"]["totalObservations"] == 2
     assert "garmin_google_health" in res["google_health"]["sources"]
     assert "eight_sleep_google_health" in res["google_health"]["sources"]
-    assert mock_repo.save_health_observation_day_bundle.call_count == 2
+    assert mock_repo.save_health_observation_day_bundles_batch.call_count == 1
 
 
 def test_health_observation_service_backfill_range() -> None:
     mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
-    mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
+    mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1)]
     mock_repo.get_health_observation_bundles_in_range.return_value = []
 
     mock_provider = MagicMock(spec=RecoveryObservationProvider)
@@ -94,7 +94,7 @@ def test_health_observation_service_tombstones_source_dropped_from_mixed_batch()
     """Eight Sleep was present in a prior sync of this date but the new batch only
     carries Garmin -- the old Eight Sleep bundle must be deleted, not left queryable."""
     mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
-    mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
+    mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1)]
     mock_repo.get_health_observation_bundles_in_range.return_value = [
         {"provider": "garmin", "transport": "google_health", "logicalDate": "2026-08-27"},
         {"provider": "eight_sleep", "transport": "google_health", "logicalDate": "2026-08-27"},
@@ -293,7 +293,11 @@ def test_health_observation_service_sync_date_error_handling() -> None:
 
 def test_health_observation_service_sync_repair() -> None:
     mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
-    mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
+    mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1)]
+    mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1)]
+    mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1)]
+    mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1)]
+    mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1)]
     mock_repo.get_health_observation_bundles_in_range.return_value = []
 
     mock_provider = MagicMock(spec=RecoveryObservationProvider)
@@ -344,7 +348,7 @@ def test_health_observation_service_archive_exception_handled(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
-    mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
+    mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1)]
     mock_repo.get_health_observation_bundles_in_range.return_value = []
 
     mock_provider = MagicMock(spec=RecoveryObservationProvider)
@@ -379,12 +383,12 @@ def test_health_observation_service_archive_exception_handled(
     assert "Failed to archive raw health observations: Simulated archive error" in caplog.text
     assert result["google_health"]["status"] == "success"
     assert result["google_health"]["totalObservations"] == 1
-    mock_repo.save_health_observation_day_bundle.assert_called_once()
+    mock_repo.save_health_observation_day_bundles_batch.assert_called_once()
 
 
 def test_health_observation_service_archive_success_updates_raw_archive_ref() -> None:
     mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
-    mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
+    mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1)]
     mock_repo.get_health_observation_bundles_in_range.return_value = []
 
     mock_provider = MagicMock(spec=RecoveryObservationProvider)
@@ -418,8 +422,8 @@ def test_health_observation_service_archive_success_updates_raw_archive_ref() ->
     result = service.sync_date("2026-08-27")
 
     assert result["google_health"]["status"] == "success"
-    mock_repo.save_health_observation_day_bundle.assert_called_once()
-    saved_bundle = mock_repo.save_health_observation_day_bundle.call_args[0][0]
+    mock_repo.save_health_observation_day_bundles_batch.assert_called_once()
+    saved_bundle = mock_repo.save_health_observation_day_bundles_batch.call_args[0][0][0]
     assert saved_bundle.rawArchiveRef == "gs://my-bucket/raw/health/test_uid/rev_1.json.gz"
 
 

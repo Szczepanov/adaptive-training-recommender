@@ -472,6 +472,45 @@ def test_save_health_observation_day_bundle_persists_when_hash_changed_regardles
     doc_ref.set.assert_called_once()
 
 
+def test_save_health_observation_day_bundles_batch() -> None:
+    mock_db = MagicMock()
+    mock_batch = MagicMock()
+    mock_db.batch.return_value = mock_batch
+    collection_ref = MagicMock()
+    mock_db.collection.return_value.document.return_value.collection.return_value = collection_ref
+
+    doc_snap1 = MagicMock()
+    doc_snap1.id = "2026-08-28_garmin_api"
+    doc_snap1.exists = True
+    doc_snap1.to_dict.return_value = {
+        "sourcePayloadHash": "sha256:same",
+        "normalizerVersion": 1,
+        "revision": 2,
+    }
+
+    doc_snap2 = MagicMock()
+    doc_snap2.id = "2026-08-28_eight_sleep_api"
+    doc_snap2.exists = False
+
+    mock_db.get_all.return_value = [doc_snap1, doc_snap2]
+
+    repo = FirestoreRecoveryRepository(user_id="test_uid", db=mock_db)
+
+    b1 = _make_bundle(source_payload_hash="sha256:same", normalizer_version=1)
+    b1.provider = "garmin"
+    b1.transport = "api"
+
+    b2 = _make_bundle(source_payload_hash="sha256:new", normalizer_version=1)
+    b2.provider = "eight_sleep"
+    b2.transport = "api"
+
+    results = repo.save_health_observation_day_bundles_batch([b1, b2])
+
+    assert results == [(False, 2), (True, 1)]
+    assert mock_batch.set.call_count == 1
+    mock_batch.commit.assert_called_once()
+
+
 def test_delete_health_observation_day_bundles_batch_chunks_writes() -> None:
     mock_db = MagicMock()
     mock_batch = MagicMock()

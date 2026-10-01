@@ -14,7 +14,9 @@ from garmin_sync.provider import RecoveryObservationProvider
 
 def test_sync_date_reports_bundle_persistence_failure(caplog: pytest.LogCaptureFixture) -> None:
     mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
-    mock_repo.save_health_observation_day_bundle.side_effect = OSError("database save failed")
+    mock_repo.save_health_observation_day_bundles_batch.side_effect = OSError(
+        "database save failed"
+    )
 
     mock_provider = MagicMock(spec=RecoveryObservationProvider)
     now = datetime.now(timezone.utc)
@@ -58,12 +60,13 @@ def test_sync_date_isolates_one_provider_persistence_failure() -> None:
     mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
     mock_repo.get_health_observation_bundles_in_range.return_value = []
 
-    def save_side_effect(bundle: Any) -> tuple[bool, int]:
-        if bundle.provider == "failing_provider":
-            raise OSError("provider save failure")
-        return True, 1
+    def save_batch_side_effect(bundles: list[Any]) -> list[tuple[bool, int]]:
+        for bundle in bundles:
+            if bundle.provider == "failing_provider":
+                raise OSError("provider save failure")
+        return [(True, 1) for _ in bundles]
 
-    mock_repo.save_health_observation_day_bundle.side_effect = save_side_effect
+    mock_repo.save_health_observation_day_bundles_batch.side_effect = save_batch_side_effect
 
     now = datetime.now(timezone.utc)
     failing_provider = MagicMock(spec=RecoveryObservationProvider)

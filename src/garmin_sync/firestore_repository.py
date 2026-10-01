@@ -648,6 +648,84 @@ class FirestoreRecoveryRepository:
             )
         return changed, current_rev
 
+    def save_health_observation_day_bundles_batch(
+        self,
+        bundles: list[Any],  # list[HealthObservationDayBundle]
+    ) -> list[tuple[bool, int]]:
+        """Batch save multiple day-source observation bundles to Firestore.
+
+        Executes a single db.get_all(refs) batch fetch to inspect existing states,
+        then commits all updated bundles in chunked db.batch() writes (up to 500 per batch).
+
+        Returns list of (changed: bool, revision: int) tuples corresponding to input bundles.
+        """
+        if not bundles:
+            return []
+
+        if len(bundles) == 1:
+            return [self.save_health_observation_day_bundle(bundles[0])]
+
+        db = self._get_db()
+        collection_ref = (
+            db.collection("users").document(self.user_id).collection("health_observation_days")
+        )
+
+        doc_ids = [
+            f"{bundle.logicalDate}_{bundle.provider}_{bundle.transport}" for bundle in bundles
+        ]
+        doc_refs = [collection_ref.document(doc_id) for doc_id in doc_ids]
+
+        # Batch read existing documents using db.get_all
+        existing_docs: dict[str, dict[str, Any]] = {}
+        try:
+            for doc_snap in db.get_all(doc_refs):
+                if doc_snap.exists:
+                    existing_docs[doc_snap.id] = doc_snap.to_dict() or {}
+        except Exception as err:
+            logger.warning("Failed to batch-read health observation bundles: %s", err)
+            # Fall back to individual saves if get_all is unavailable or fails
+            return [self.save_health_observation_day_bundle(b) for b in bundles]
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        results: list[tuple[bool, int]] = []
+        updates_to_write: list[tuple[Any, Any]] = []  # (doc_ref, bundle)
+
+        for doc_id, doc_ref, bundle in zip(doc_ids, doc_refs, bundles, strict=True):
+            existing_data = existing_docs.get(doc_id)
+            current_rev = 1
+            changed = True
+
+            if existing_data is not None:
+                existing_hash = existing_data.get("sourcePayloadHash")
+                existing_normalizer_version = existing_data.get("normalizerVersion", 1)
+                current_rev = existing_data.get("revision", 1)
+                if (
+                    existing_hash == bundle.sourcePayloadHash
+                    and existing_normalizer_version >= bundle.normalizerVersion
+                ):
+                    changed = False
+
+            if changed:
+                if existing_data is not None:
+                    current_rev += 1
+                bundle.revision = current_rev
+                bundle.ingestedAt = now_iso
+                bundle.effectiveAt = now_iso
+                updates_to_write.append((doc_ref, bundle))
+
+            results.append((changed, current_rev))
+
+        if updates_to_write:
+            batch_size = 500
+            for i in range(0, len(updates_to_write), batch_size):
+                chunk = updates_to_write[i : i + batch_size]
+                batch = db.batch()
+                for doc_ref, bundle in chunk:
+                    batch.set(doc_ref, bundle.to_dict())
+                batch.commit()
+
+        return results
+
     def get_health_observation_day_bundle(
         self,
         logical_date: str,
