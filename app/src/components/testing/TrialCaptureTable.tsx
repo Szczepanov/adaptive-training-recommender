@@ -52,6 +52,7 @@ function persistedDraftRow(row: TrialCaptureRow): DraftTrialRow {
         ...(row.device !== undefined ? { device: row.device } : {}),
         ...(row.sourceRef !== undefined ? { sourceRef: row.sourceRef } : {}),
         ...(row.context !== undefined ? { context: row.context } : {}),
+        ...(row.importReview !== undefined ? { importReview: row.importReview } : {}),
     };
 }
 
@@ -248,6 +249,19 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
     // observations), normalized device provenance and one createdAt per save.
     const buildTrialsForSave = (): { trials: AssessmentTrial[] } | { error: string } => {
         if (rows.length === 0) return { error: 'At least one trial is required.' };
+        const pendingImportReview = rows.find(row => row.importReview
+            && (!row.importReview.loadKgConfirmed
+                || !row.importReview.successConfirmed
+                || !row.importReview.validityConfirmed));
+        if (pendingImportReview) {
+            const missing: string[] = [];
+            if (!pendingImportReview.importReview?.loadKgConfirmed) missing.push('load unit');
+            if (!pendingImportReview.importReview?.successConfirmed) missing.push('success/miss');
+            if (!pendingImportReview.importReview?.validityConfirmed) missing.push('validity');
+            return {
+                error: `Attempt ${pendingImportReview.ordinal}: confirm imported ${missing.join(', ')} before saving.`,
+            };
+        }
         const incompleteDevice = rows.find(row => hasDeviceWithoutProvider(row.device));
         if (incompleteDevice) return { error: `Trial ${incompleteDevice.ordinal} device override requires a provider.` };
         try {
