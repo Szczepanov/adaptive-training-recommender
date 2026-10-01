@@ -514,6 +514,66 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         expect(services.prescription.savePrescription).not.toHaveBeenCalled();
     });
 
+    it('preserves a completed occurrence binding only for recommendation recomposition', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        services.occurrence.getOccurrence.mockResolvedValueOnce({
+            status: 'AVAILABLE',
+            data: {
+                userId: 'u1',
+                occurrenceId: 'occ-ext-completed',
+                date: '2026-09-06',
+                authority: 'external_plan',
+                externalPlanRef: {
+                    planId: 'plan-xyz',
+                    revision: 2,
+                    sessionId: 'session-101',
+                    contentHash: 'c'.repeat(64),
+                },
+                state: 'completed',
+                createdAt: '2026-09-06T12:00:00.000Z',
+                updatedAt: '2026-09-06T13:00:00.000Z',
+            },
+        });
+
+        const launch = await prepareExternalPlanSessionLaunch('u1', externalPlan, {
+            occurrenceId: 'occ-ext-completed',
+            date: '2026-09-06',
+            allowPreviouslyLaunchedOccurrence: true,
+        });
+
+        expect(launch.binding.occurrenceId).toBe('occ-ext-completed');
+        expect(services.prescription.savePrescription).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not re-bind skipped occurrences during recommendation recomposition', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        services.occurrence.getOccurrence.mockResolvedValueOnce({
+            status: 'AVAILABLE',
+            data: {
+                userId: 'u1',
+                occurrenceId: 'occ-ext-skipped',
+                date: '2026-09-06',
+                authority: 'external_plan',
+                externalPlanRef: {
+                    planId: 'plan-xyz',
+                    revision: 2,
+                    sessionId: 'session-101',
+                    contentHash: 'c'.repeat(64),
+                },
+                state: 'skipped',
+                createdAt: '2026-09-06T12:00:00.000Z',
+                updatedAt: '2026-09-06T13:00:00.000Z',
+            },
+        });
+
+        await expect(prepareExternalPlanSessionLaunch('u1', externalPlan, {
+            occurrenceId: 'occ-ext-skipped',
+            date: '2026-09-06',
+            allowPreviouslyLaunchedOccurrence: true,
+        })).rejects.toThrow(/does not match the launch source/i);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
     it('rejects a supplied occurrence that is in skipped state', async () => {
         const externalPlan = makeV4ExternalPlan();
         services.occurrence.getOccurrence.mockResolvedValueOnce({

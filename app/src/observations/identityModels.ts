@@ -24,52 +24,13 @@
 export type IdentityStatus = 'USER' | 'NOT_USER' | 'UNCERTAIN';
 export type IdentityConfidenceTier = 'HIGH' | 'MODERATE' | 'LOW' | 'NONE';
 
-export type IdentityReasonCode =
-    | 'ANCHOR_MISSING'
-    | 'ANCHOR_QUALITY_INSUFFICIENT'
-    | 'EVIDENCE_LINEAGE_DEPENDENT'
-    | 'INSUFFICIENT_PASSPORT_HISTORY'
-    | 'MULTIPLE_PAIRING_CANDIDATES'
-    | 'SESSION_TIMING_CONCORDANT'
-    | 'SESSION_TIMING_DISCORDANT'
-    | 'RHR_RELATION_CONCORDANT'
-    | 'RHR_RELATION_DISCORDANT'
-    | 'RESPIRATION_RELATION_CONCORDANT'
-    | 'RESPIRATION_RELATION_DISCORDANT'
-    | 'HRV_RELATION_CONCORDANT'
-    | 'HRV_RELATION_DISCORDANT'
-    | 'MIXED_OCCUPANCY_SUSPECTED'
-    | 'SESSION_INTERVAL_INVALID';
-
-/**
- * Stable, versioned registry of every valid `IdentityReasonCode`. Bump
- * `IDENTITY_REASON_CODE_SCHEMA_VERSION` whenever a code is added, removed, or its meaning changes
- * in a way that would invalidate historical replay comparisons (see PI1 tests: "reason codes are
- * stable/versioned").
- */
-export const IDENTITY_REASON_CODE_SCHEMA_VERSION = 'identity-reason-codes-v1';
-
-export const IDENTITY_REASON_CODES: readonly IdentityReasonCode[] = Object.freeze([
-    'ANCHOR_MISSING',
-    'ANCHOR_QUALITY_INSUFFICIENT',
-    'EVIDENCE_LINEAGE_DEPENDENT',
-    'INSUFFICIENT_PASSPORT_HISTORY',
-    'MULTIPLE_PAIRING_CANDIDATES',
-    'SESSION_TIMING_CONCORDANT',
-    'SESSION_TIMING_DISCORDANT',
-    'RHR_RELATION_CONCORDANT',
-    'RHR_RELATION_DISCORDANT',
-    'RESPIRATION_RELATION_CONCORDANT',
-    'RESPIRATION_RELATION_DISCORDANT',
-    'HRV_RELATION_CONCORDANT',
-    'HRV_RELATION_DISCORDANT',
-    'MIXED_OCCUPANCY_SUSPECTED',
-    'SESSION_INTERVAL_INVALID',
-]);
-
-export function isKnownIdentityReasonCode(code: string): code is IdentityReasonCode {
-    return (IDENTITY_REASON_CODES as readonly string[]).includes(code);
-}
+import type { IdentityReasonCode } from '../contracts/identityReasonCodes';
+export type { IdentityReasonCode } from '../contracts/identityReasonCodes';
+export {
+    IDENTITY_REASON_CODE_SCHEMA_VERSION,
+    IDENTITY_REASON_CODES,
+    isKnownIdentityReasonCode,
+} from '../contracts/identityReasonCodes';
 
 export interface ObservationBundleRef {
     id: string;

@@ -59,9 +59,10 @@ export class RecommendationService {
 
     /**
      * Save (or re-save) the recommendation generated for a given date. Safe to call
-     * every time the dashboard computes one -- merge:true means an already-answered
-     * adherence field is preserved (see validateRecommendation), and re-saving the same
-     * template/rationale for a date that hasn't changed is a no-op in effect.
+     * every time the dashboard computes one. Persistence uses explicit top-level mergeFields:
+     * map-valued fields such as recommendationAudit are replaced wholesale while an already-
+     * answered adherence value is carried forward from the validated existing document.
+     * Re-saving the same template/rationale for a date that hasn't changed is a no-op in effect.
      */
     async saveRecommendation(
         userId: string,
@@ -246,16 +247,16 @@ export class RecommendationService {
                     if (existing.recommendationAudit) archiveData.recommendationAudit = existing.recommendationAudit;
 
                     batch.set(archiveRef, archiveData);
-                    batch.set(docRef, writeData, { merge: true });
+                    batch.set(docRef, writeData, { mergeFields: Object.keys(writeData) });
                     if (boundContext && contextRef) batch.set(contextRef, boundContext);
                     await batch.commit();
                 } else if (boundContext && contextRef) {
                     const batch = writeBatch(getDb());
-                    batch.set(docRef, writeData, { merge: true });
+                    batch.set(docRef, writeData, { mergeFields: Object.keys(writeData) });
                     batch.set(contextRef, boundContext);
                     await batch.commit();
                 } else {
-                    await setDoc(docRef, writeData, { merge: true });
+                    await setDoc(docRef, writeData, { mergeFields: Object.keys(writeData) });
                 }
                 return validated;
             };
@@ -280,8 +281,7 @@ export class RecommendationService {
                 console.warn(
                     `Permission denied saving recommendation at ${docPath} ` +
                     `(decisionChanged=${decisionChanged}, priorRevision=${priorRevision}, nextRevision=${nextRevision}). ` +
-                    'Usually means the local read (cache or a blocked connection) disagreed with the server about ' +
-                    'whether the decision changed -- see firestore.rules decisionFieldsUnchanged()/auditWriteOnce().'
+                    'May indicate a rule evaluation expression budget limit, schema shape mismatch, stale merge sub-fields, or client/server disagreement on revision progression.'
                 );
                 return null;
             }

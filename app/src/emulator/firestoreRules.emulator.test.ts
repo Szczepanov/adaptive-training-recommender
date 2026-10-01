@@ -307,6 +307,20 @@ emulatorDescribe('Firestore security rules', () => {
             ...validIdentityDecision(), passportVersion: 'forged-passport',
         };
         await assertFails(setDoc(doc(ownerDb, recommendationPath), forged));
+
+        await testEnvironment.clearFirestore();
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(
+                doc(context.firestore(), `users/${ownerId}/health_identity_assessments/identity-assessment-1`),
+                validIdentityAssessment(),
+            );
+        });
+        const forgedBundle = validRecommendation();
+        forgedBundle.recommendationAudit.identityDecision = {
+            ...validIdentityDecision(),
+            sharedBundleRef: { ...validIdentityDecision().sharedBundleRef, revision: 99 },
+        };
+        await assertFails(setDoc(doc(ownerDb, recommendationPath), forgedBundle));
     });
 
     it('accepts a valid exact engine verdict and rejects an unsupported one', async () => {
@@ -400,6 +414,30 @@ emulatorDescribe('Firestore security rules', () => {
 
     });
 
+    it('accepts bounded athlete-evidence lineage and rejects an oversized lineage', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const withEvidence = validRecommendation();
+        (withEvidence.recommendationAudit as Record<string, unknown>).athleteEvidenceLineage = [{
+            recordId: 'athlete-evidence-1',
+            version: 1,
+            domain: 'subjective_calibration',
+            refinementType: 'calibrate_scalar',
+            baseKnowledgeClaimId: 'readiness.objective_mode_thresholds',
+        }];
+        await assertSucceeds(setDoc(doc(ownerDb, recommendationPath), withEvidence));
+
+        await testEnvironment.clearFirestore();
+        const oversized = validRecommendation();
+        (oversized.recommendationAudit as Record<string, unknown>).athleteEvidenceLineage = Array.from({ length: 17 }, (_, i) => ({
+            recordId: `athlete-evidence-${i}`,
+            version: 1,
+            domain: 'subjective_calibration',
+            refinementType: 'calibrate_scalar',
+            baseKnowledgeClaimId: 'readiness.objective_mode_thresholds',
+        }));
+        await assertFails(setDoc(doc(ownerDb, recommendationPath), oversized));
+    });
+
     it('accepts an audit carrying subjective-drift provenance', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const withDrift = validRecommendation();
@@ -464,6 +502,54 @@ emulatorDescribe('Firestore security rules', () => {
         batch.set(doc(ownerDb, recommendationPath) as any, {
             ...validRecommendation(),
             templateId: 'hard_01',
+            revision: 2,
+        }, { merge: true });
+
+        await assertFails(batch.commit());
+    });
+
+    it('rejects decision update when archived scalar provenance is mismatched', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), recommendationPath), { ...validRecommendation(), revision: 1 });
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const batch = ownerDb.batch();
+        batch.set(doc(ownerDb, `${recommendationPath}/revisions/1`) as any, {
+            revision: 1,
+            templateId: 'easy_01',
+            templateTitle: 'Easy Ride',
+            category: 'FORGED_CATEGORY',
+            modality: 'Cycling',
+            mode: 'train',
+            rationale: 'A compact rationale.',
+        });
+        batch.set(doc(ownerDb, recommendationPath) as any, {
+            ...validRecommendation('2026-08-07T09:30:00Z'),
+            templateId: 'hard_01',
+            revision: 2,
+        }, { merge: true });
+
+        await assertFails(batch.commit());
+    });
+
+    it('rejects a malformed changed scalar even when the archive and revision transition are otherwise valid', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), recommendationPath), { ...validRecommendation(), revision: 1 });
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const batch = ownerDb.batch();
+        batch.set(doc(ownerDb, `${recommendationPath}/revisions/1`) as any, {
+            revision: 1,
+            templateId: 'easy_01',
+            templateTitle: 'Easy Ride',
+            category: 'Easy Endurance',
+            modality: 'Cycling',
+            mode: 'train',
+            rationale: 'A compact rationale.',
+        });
+        batch.set(doc(ownerDb, recommendationPath) as any, {
+            ...validRecommendation('2026-08-07T09:30:00Z'),
+            templateTitle: 42,
             revision: 2,
         }, { merge: true });
 
@@ -2138,6 +2224,74 @@ emulatorDescribe('Firestore security rules', () => {
         await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recWithBindings))).resolves.toBeUndefined();
     });
 
+    it('accepts a catalog binding with a valid fitWorkoutFingerprint pair', async () => {
+        const base = validRecommendation();
+        const recWithFingerprint = {
+            ...base,
+            primarySession: {
+                sessionSource: { kind: 'catalog', workoutId: 'strength_full_body_maintenance_01', catalogVersion: '1' },
+                prescriptionHash: 'presc-hash-abc',
+                occurrenceId: 'occ-1',
+                fitWorkoutFingerprint: 'fit-workout-v2:0123456789abcdef0123456789abcdef',
+                fitWorkoutFingerprintKind: 'semantic_definition',
+            },
+        };
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recWithFingerprint))).resolves.toBeUndefined();
+    });
+
+    it('rejects a catalog binding with only one half of the fingerprint pair', async () => {
+        const base = validRecommendation();
+        const recOnlyFingerprint = {
+            ...base,
+            primarySession: {
+                sessionSource: { kind: 'catalog', workoutId: 'strength_full_body_maintenance_01', catalogVersion: '1' },
+                prescriptionHash: 'presc-hash-abc',
+                fitWorkoutFingerprint: 'fit-workout-v2:0123456789abcdef0123456789abcdef',
+            },
+        };
+        const recOnlyKind = {
+            ...base,
+            primarySession: {
+                sessionSource: { kind: 'catalog', workoutId: 'strength_full_body_maintenance_01', catalogVersion: '1' },
+                prescriptionHash: 'presc-hash-abc',
+                fitWorkoutFingerprintKind: 'semantic_definition',
+            },
+        };
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recOnlyFingerprint))).resolves.toBeDefined();
+        await expect(assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recOnlyKind))).resolves.toBeDefined();
+    });
+
+    it('rejects a catalog binding with an unknown fingerprint kind', async () => {
+        const base = validRecommendation();
+        const recInvalidKind = {
+            ...base,
+            primarySession: {
+                sessionSource: { kind: 'catalog', workoutId: 'strength_full_body_maintenance_01', catalogVersion: '1' },
+                prescriptionHash: 'presc-hash-abc',
+                fitWorkoutFingerprint: 'fit-workout-v2:0123456789abcdef0123456789abcdef',
+                fitWorkoutFingerprintKind: 'invalid_kind',
+            },
+        };
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recInvalidKind))).resolves.toBeDefined();
+    });
+
+    it('rejects a catalog binding with an extra unknown key', async () => {
+        const base = validRecommendation();
+        const recExtraKey = {
+            ...base,
+            primarySession: {
+                sessionSource: { kind: 'catalog', workoutId: 'strength_full_body_maintenance_01', catalogVersion: '1' },
+                prescriptionHash: 'presc-hash-abc',
+                unknownField: 'disallowed',
+            },
+        };
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recExtraKey))).resolves.toBeDefined();
+    });
+
     it('binds a recommendation to an owner-only, write-once decision context', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
@@ -2212,6 +2366,44 @@ emulatorDescribe('Firestore security rules', () => {
             contentHash: 'c'.repeat(64),
         });
         await assertFails(missingFacts.commit());
+
+        const wrongPathDay = '2026-08-14';
+        const wrongPathRecommendationPath = `users/${ownerId}/daily_recommendations/${wrongPathDay}`;
+        const wrongPathContextPath = `${wrongPathRecommendationPath}/decision_contexts/1`;
+        const wrongPathBatch = writeBatch(ownerDb);
+        wrongPathBatch.set(doc(ownerDb, wrongPathRecommendationPath), {
+            ...recommendation,
+            date: wrongPathDay,
+            recommendationAudit: {
+                ...recommendation.recommendationAudit,
+                decisionContext: {
+                    path: `users/${ownerId}/daily_recommendations/${wrongPathDay}/decision_contexts/999`,
+                    revision: 1,
+                    contentHash: 'e'.repeat(64),
+                },
+            },
+        });
+        wrongPathBatch.set(doc(ownerDb, wrongPathContextPath), {
+            ...context, date: wrongPathDay, contentHash: 'e'.repeat(64),
+        });
+        await assertFails(wrongPathBatch.commit());
+
+        const stringRevisionDay = '2026-08-15';
+        const stringRevisionRecommendationPath = `users/${ownerId}/daily_recommendations/${stringRevisionDay}`;
+        const stringRevisionContextPath = `${stringRevisionRecommendationPath}/decision_contexts/1`;
+        const stringRevisionBatch = writeBatch(ownerDb);
+        stringRevisionBatch.set(doc(ownerDb, stringRevisionRecommendationPath), {
+            ...recommendation,
+            date: stringRevisionDay,
+            recommendationAudit: {
+                ...recommendation.recommendationAudit,
+                decisionContext: { path: stringRevisionContextPath, revision: 1, contentHash: 'f'.repeat(64) },
+            },
+        });
+        stringRevisionBatch.set(doc(ownerDb, stringRevisionContextPath), {
+            ...context, date: stringRevisionDay, recommendationRevision: '1', contentHash: 'f'.repeat(64),
+        });
+        await assertFails(stringRevisionBatch.commit());
 
         // The capture must describe the same evaluation as the audit it is bound to. The
         // first (drift-free) entry is the positive control for the three rejections.

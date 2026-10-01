@@ -68,6 +68,7 @@ import { EVENT_PRESETS } from './eventPresets';
 import { getLocalDateString } from '../utils/localDate';
 import type { GoalPerformanceTarget } from './performanceTargetPolicy';
 import type { SessionReferenceBinding, SessionSourceRef } from '../sessions/models';
+import { isKnownIdentityReasonCode } from '../contracts/identityReasonCodes';
 
 // --- Validation Result Types ---
 
@@ -1345,10 +1346,17 @@ function isValidSessionSourceRef(value: any): value is SessionSourceRef {
 }
 
 function isValidSessionReferenceBinding(value: any): value is SessionReferenceBinding {
-    return value && typeof value === 'object'
-        && isValidSessionSourceRef(value.sessionSource)
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const hasFingerprint = Object.prototype.hasOwnProperty.call(value, 'fitWorkoutFingerprint');
+    const hasFingerprintKind = Object.prototype.hasOwnProperty.call(value, 'fitWorkoutFingerprintKind');
+    return isValidSessionSourceRef(value.sessionSource)
         && typeof value.prescriptionHash === 'string' && value.prescriptionHash.length > 0
-        && (value.occurrenceId === undefined || (typeof value.occurrenceId === 'string' && value.occurrenceId.length > 0));
+        && (value.occurrenceId === undefined || (typeof value.occurrenceId === 'string' && value.occurrenceId.length > 0))
+        && hasFingerprint === hasFingerprintKind
+        && (!hasFingerprint || (
+            typeof value.fitWorkoutFingerprint === 'string' && value.fitWorkoutFingerprint.length > 0
+            && ['semantic_definition', 'index_fallback'].includes(value.fitWorkoutFingerprintKind)
+        ));
 }
 
 export function validateRecommendation(raw: any): ValidationResult<DailyRecommendation> {
@@ -1452,6 +1460,77 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
             && hasExactKeys((drift as Record<string, unknown>).perMetricContributions, ['readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation'])
             && Object.values((drift as Record<string, { perMetricContributions: Record<string, unknown> }>).perMetricContributions)
                 .every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0);
+        const validExternalRest = (rest: unknown) => {
+            if (!rest || typeof rest !== 'object' || Array.isArray(rest)) return false;
+            const value = rest as Record<string, unknown>;
+            const keys = Object.keys(value);
+            return ['planId', 'revision', 'contentHash', 'restDirectiveId', 'date'].every(key => Object.prototype.hasOwnProperty.call(value, key))
+                && keys.every(key => ['planId', 'revision', 'contentHash', 'restDirectiveId', 'date', 'overridden'].includes(key))
+                && typeof value.planId === 'string' && value.planId.length <= 64
+                && Number.isInteger(value.revision) && (value.revision as number) >= 1
+                && typeof value.contentHash === 'string' && value.contentHash.length <= 128
+                && typeof value.restDirectiveId === 'string' && value.restDirectiveId.length <= 64
+                && typeof value.date === 'string' && isValidDate(value.date)
+                && (value.overridden === undefined || value.overridden === true);
+        };
+        const validObservationBundleRef = (ref: unknown) => hasExactKeys(
+            ref,
+            ['id', 'provider', 'transport', 'revision', 'sourcePayloadHash', 'lineageKey'],
+        )
+            && ['id', 'provider', 'transport', 'sourcePayloadHash', 'lineageKey']
+                .every(key => typeof (ref as Record<string, unknown>)[key] === 'string'
+                    && ((ref as Record<string, string>)[key]).length > 0)
+            && Number.isInteger((ref as Record<string, unknown>).revision)
+            && (ref as Record<string, number>).revision >= 1;
+        const validIdentityDecision = (identity: unknown) => {
+            if (!hasExactKeys(identity, [
+                'identityAssessmentId', 'automaticStatus', 'effectiveStatus', 'reviewEventId',
+                'identityPolicyVersion', 'featureSchemaVersion', 'passportVersion', 'sharedBundleRef',
+                'anchorBundleRefs', 'selectedEffectiveSource', 'fallbackReason',
+            ])) return false;
+            const value = identity as Record<string, any>;
+            const statuses = ['USER', 'NOT_USER', 'UNCERTAIN'];
+            const selected = value.selectedEffectiveSource;
+            const selectedValid = selected === null || (
+                hasExactKeys(selected, ['provider', 'transport'])
+                && typeof selected.provider === 'string' && selected.provider.length > 0
+                && typeof selected.transport === 'string' && selected.transport.length > 0
+            );
+            const anchorsValid = Array.isArray(value.anchorBundleRefs)
+                && value.anchorBundleRefs.every(validObservationBundleRef);
+            return typeof value.identityAssessmentId === 'string' && value.identityAssessmentId.length > 0
+                && statuses.includes(value.automaticStatus)
+                && statuses.includes(value.effectiveStatus)
+                && (value.reviewEventId === null || (typeof value.reviewEventId === 'string' && value.reviewEventId.length > 0))
+                && typeof value.identityPolicyVersion === 'string' && value.identityPolicyVersion.length > 0
+                && typeof value.featureSchemaVersion === 'string' && value.featureSchemaVersion.length > 0
+                && (value.passportVersion === null || (typeof value.passportVersion === 'string' && value.passportVersion.length > 0))
+                && validObservationBundleRef(value.sharedBundleRef)
+                && anchorsValid
+                && selectedValid
+                && (value.fallbackReason === null
+                    || (typeof value.fallbackReason === 'string' && isKnownIdentityReasonCode(value.fallbackReason)))
+                && (value.automaticStatus === value.effectiveStatus || value.reviewEventId !== null)
+                && (value.anchorBundleRefs.length > 0 || value.fallbackReason === 'ANCHOR_MISSING')
+                && (value.effectiveStatus === 'USER'
+                    || selected === null
+                    || selected.provider !== value.sharedBundleRef.provider
+                    || selected.transport !== value.sharedBundleRef.transport);
+        };
+        const validAthleteEvidenceLineage = audit.athleteEvidenceLineage === undefined || (
+            Array.isArray(audit.athleteEvidenceLineage)
+            && audit.athleteEvidenceLineage.length <= 16
+            && audit.athleteEvidenceLineage.every((ref: any) => hasExactKeys(
+                ref, ['recordId', 'version', 'domain', 'refinementType', 'baseKnowledgeClaimId'],
+            )
+                && typeof ref.recordId === 'string' && ref.recordId.length > 0
+                && Number.isInteger(ref.version) && ref.version >= 1
+                && typeof ref.domain === 'string' && ref.domain.length > 0
+                && typeof ref.refinementType === 'string' && ref.refinementType.length > 0
+                && typeof ref.baseKnowledgeClaimId === 'string' && ref.baseKnowledgeClaimId.length > 0)
+            && new Set(audit.athleteEvidenceLineage.map((ref: any) => ref.recordId)).size
+                === audit.athleteEvidenceLineage.length
+        );
         const validKnowledgeLineage = audit.knowledgeLineage === undefined || (
             Array.isArray(audit.knowledgeLineage)
             && audit.knowledgeLineage.length <= 64
@@ -1467,24 +1546,26 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
             && Number.isSafeInteger(audit.decisionContext.revision) && audit.decisionContext.revision >= 1
             && typeof audit.decisionContext.contentHash === 'string' && /^[a-f0-9]{64}$/.test(audit.decisionContext.contentHash)
         );
-        const validAudit = hasExactKeys(audit, ['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'decisionContext', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'].filter(key => audit?.[key] !== undefined))
+        const validAudit = hasExactKeys(audit, ['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'decisionContext', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage', 'athleteEvidenceLineage'].filter(key => audit?.[key] !== undefined))
             && typeof audit.policyVersion === 'string'
             && typeof audit.evaluatedAt === 'string'
             && typeof audit.decisionContextRevision === 'string'
             && validDecisionContext
             && audit.safetyStatus === 'complete'
-            && audit.history && typeof audit.history === 'object'
+            && hasExactKeys(audit.history, ['completedEventCount', 'unmatchedEventCount', 'sourceStatuses'])
             && Number.isInteger(audit.history.completedEventCount) && audit.history.completedEventCount >= 0
             && Number.isInteger(audit.history.unmatchedEventCount) && audit.history.unmatchedEventCount >= 0
-            && audit.history.sourceStatuses && typeof audit.history.sourceStatuses === 'object'
+            && hasExactKeys(audit.history.sourceStatuses, ['activities', 'recommendations', 'manualTraining'])
             && ['activities', 'recommendations', 'manualTraining'].every(key => validStatuses.includes(audit.history.sourceStatuses[key]))
-            && audit.envelope && typeof audit.envelope === 'object'
+            && hasExactKeys(audit.envelope, ['safetyRestrictedModalityCount', 'planMaxAllowableTier'])
             && Number.isInteger(audit.envelope.safetyRestrictedModalityCount) && audit.envelope.safetyRestrictedModalityCount >= 0
             && validTiers.includes(audit.envelope.planMaxAllowableTier)
             && (audit.plannedDose === undefined || validDose(audit.plannedDose))
             && (audit.executionDose === undefined || validDose(audit.executionDose))
             && (audit.externalPlan === undefined || validExternalPlan(audit.externalPlan))
+            && (audit.externalRest === undefined || validExternalRest(audit.externalRest))
             && (audit.subjectiveDrift === undefined || validSubjectiveDrift(audit.subjectiveDrift))
+            && (audit.identityDecision === undefined || validIdentityDecision(audit.identityDecision))
             && (audit.primarySession === undefined || isValidSessionReferenceBinding(audit.primarySession))
             && (audit.additionalSessions === undefined || (Array.isArray(audit.additionalSessions)
                 && audit.additionalSessions.length <= 4
@@ -1494,24 +1575,29 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
             // entries -- mirrored here so an oversized catalog fails validation locally
             // with a clear message instead of surfacing as an opaque permission-denied.
             && audit.candidateScores.length <= 64
-            && audit.candidateScores.every((candidate: any) => candidate && typeof candidate.templateId === 'string'
+            && audit.candidateScores.every((candidate: any) => hasExactKeys(candidate, ['templateId', 'utilityScore', 'excludedReasons'])
+                && typeof candidate.templateId === 'string'
                 && typeof candidate.utilityScore === 'number' && Number.isFinite(candidate.utilityScore)
                 && Array.isArray(candidate.excludedReasons) && candidate.excludedReasons.every((reason: any) => typeof reason === 'string'))
-            && (audit.authoredOccurrence === undefined || (audit.authoredOccurrence
-                && typeof audit.authoredOccurrence === 'object'
+            && (audit.authoredOccurrence === undefined || (
+                hasExactKeys(audit.authoredOccurrence, ['occurrenceId', 'decision'])
                 && typeof audit.authoredOccurrence.occurrenceId === 'string'
+                && audit.authoredOccurrence.occurrenceId.length <= 128
                 && ['proceed', 'scale'].includes(audit.authoredOccurrence.decision)))
             && (audit.droppedContributorObjectives === undefined
                 || (Array.isArray(audit.droppedContributorObjectives)
                     && audit.droppedContributorObjectives.length <= 64
-                    && audit.droppedContributorObjectives.every((objective: any) => objective
+                    && audit.droppedContributorObjectives.every((objective: any) => hasExactKeys(
+                        objective, ['eventId', 'eventTitle', 'objectiveKey', 'reason', 'message', 'date'],
+                    )
                         && typeof objective.eventId === 'string'
                         && typeof objective.eventTitle === 'string'
                         && typeof objective.objectiveKey === 'string'
                         && typeof objective.reason === 'string'
                         && typeof objective.message === 'string'
                         && typeof objective.date === 'string')))
-            && validKnowledgeLineage;
+            && validKnowledgeLineage
+            && validAthleteEvidenceLineage;
         if (!validAudit) {
             errors.push({ field: 'recommendationAudit', message: 'Recommendation audit has an invalid shape' });
         } else {

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/consoleTrap';
 import { provisionAthlete, seedRecoverySnapshot, signInThroughUi } from './support/athlete';
 import { seedExternalPlanningMode, mondayOfWeek } from './support/externalPlan';
 import { buildV6Plan, coachSession, checkIn, importPlan, previewPlan, planningBrief, readDocument, seedExternalPlanRevision, seedPlacement } from './support/roundTrip';
