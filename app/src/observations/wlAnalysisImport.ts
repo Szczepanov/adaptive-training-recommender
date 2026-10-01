@@ -34,10 +34,21 @@ export const WL_CONTEXT_KEYS = {
     resolution: 'wl_resolution',
 } as const;
 
-/** True only on the capture screen of an open attempt for velocity-capable protocols (D7). */
+function hasWlImportSchema(protocol: MeasurementProtocol): boolean {
+    const fields = new Map(protocol.capture?.fields.map(field => [field.id, field] as const) ?? []);
+    const load = fields.get('load_kg');
+    const mean = fields.get('mean_concentric_velocity_mps');
+    const peak = fields.get('peak_velocity_mps');
+    const successful = fields.get('successful');
+    return load?.valueKind === 'number' && load.unit === 'kg'
+        && mean?.valueKind === 'number' && mean.unit === 'm/s'
+        && peak?.valueKind === 'number' && peak.unit === 'm/s'
+        && successful?.valueKind === 'boolean';
+}
+
+/** True only on the capture screen of an open attempt with the complete WL import schema (D7). */
 export function canImportWlAnalysis(protocol: MeasurementProtocol, attempt: AssessmentAttempt): boolean {
-    return attempt.state === 'in_progress'
-        && (protocol.capture?.fields.some(field => field.id === 'mean_concentric_velocity_mps') ?? false);
+    return attempt.state === 'in_progress' && hasWlImportSchema(protocol);
 }
 
 export interface WlImportFile {
@@ -113,19 +124,28 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
     return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-/** Both readings of an ambiguous `DD/MM/YYYY`-or-`MM/DD/YYYY` file date, as `YYYY-MM-DD`. */
+function validIsoDate(year: string, monthRaw: string, dayRaw: string): string | null {
+    const month = Number(monthRaw);
+    const day = Number(dayRaw);
+    const yearNumber = Number(year);
+    if (!Number.isInteger(yearNumber) || month < 1 || month > 12 || day < 1 || day > 31) return null;
+    const date = new Date(Date.UTC(yearNumber, month - 1, day));
+    if (date.getUTCFullYear() !== yearNumber || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+        return null;
+    }
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/** Both valid readings of an ambiguous `DD/MM/YYYY`-or-`MM/DD/YYYY` file date. */
 export function wlFileDateReadings(dateRaw: string): string[] {
     const match = dateRaw.trim().match(FILE_DATE_PATTERN);
     if (!match) return [];
     const [, first, second, year] = match;
-    const pad = (part: string): string => part.padStart(2, '0');
     const readings = new Set<string>();
-    const firstAsMonth = Number(first);
-    const secondAsMonth = Number(second);
-    // DD/MM reading: valid when the month part is 1-12.
-    if (secondAsMonth >= 1 && secondAsMonth <= 12) readings.add(`${year}-${pad(second)}-${pad(first)}`);
-    // MM/DD reading: valid when the month part is 1-12.
-    if (firstAsMonth >= 1 && firstAsMonth <= 12) readings.add(`${year}-${pad(first)}-${pad(second)}`);
+    const ddMm = validIsoDate(year, second, first);
+    const mmDd = validIsoDate(year, first, second);
+    if (ddMm) readings.add(ddMm);
+    if (mmDd) readings.add(mmDd);
     return [...readings];
 }
 
@@ -242,7 +262,7 @@ export function proposeWlTrial(
  * Warn when two files in one batch carry identical per-frame data or identical summary
  * blocks: the same video was probably exported twice (D6). Never blocks; never silent.
  */
-export function annotateWlBatchDuplicates(proposals: WlTrialProposal[], summaryByFile: ReadonlyMap<string, string>): void {
+export function annotateWlBatchDuplicates(proposals: WlTrialProposal[], summaryBySourceRef: ReadonlyMap<string, string>): void {
     const seenFrames = new Map<string, string>();
     const seenSummary = new Map<string, string>();
     for (const proposal of proposals) {
@@ -252,7 +272,7 @@ export function annotateWlBatchDuplicates(proposals: WlTrialProposal[], summaryB
         } else {
             seenFrames.set(proposal.frameSignature, proposal.fileName);
         }
-        const summary = summaryByFile.get(proposal.fileName) ?? '';
+        const summary = summaryBySourceRef.get(proposal.sourceRef) ?? '';
         if (summary.length > 0) {
             const summaryHolder = seenSummary.get(summary);
             if (summaryHolder && summaryHolder !== proposal.fileName) {
@@ -349,6 +369,32 @@ function requireFiniteNumber(value: number, label: string, fileName: string): vo
     if (!Number.isFinite(value)) throw new Error(`File "${fileName}": ${label} is not a number.`);
 }
 
+function requireNumberField(
+    protocol: MeasurementProtocol,
+    fieldId: string,
+    unit: 'kg' | 'm/s',
+    value: number,
+    fileName: string,
+): void {
+    const field = protocol.capture?.fields.find(candidate => candidate.id === fieldId);
+    if (!field || field.valueKind !== 'number' || field.unit !== unit) {
+        throw new Error(`This protocol does not declare WL Analysis field ${fieldId} in ${unit}.`);
+    }
+    if (value < field.minimum || value > field.maximum) {
+        throw new Error(
+            `File "${fileName}": ${field.label.toLowerCase()} ${value} ${unit} is outside this test's `
+            + `${field.minimum}–${field.maximum} ${unit} range.`,
+        );
+    }
+}
+
+function requireBooleanField(protocol: MeasurementProtocol, fieldId: string): void {
+    const field = protocol.capture?.fields.find(candidate => candidate.id === fieldId);
+    if (!field || field.valueKind !== 'boolean') {
+        throw new Error(`This protocol does not declare WL Analysis field ${fieldId} as a boolean.`);
+    }
+}
+
 /**
  * Build the draft row for an ordered proposal. The caller fills a free row or creates
  * one; stored (immutable) rows are never overwritten — the panel blocks those upfront.
@@ -361,14 +407,10 @@ export function wlProposalToDraftRow(
     requireFiniteNumber(proposal.loadKg, 'load', proposal.fileName);
     requireFiniteNumber(proposal.meanVelocityMps, 'mean velocity', proposal.fileName);
     requireFiniteNumber(proposal.peakVelocityMps, 'peak velocity', proposal.fileName);
-    const fields = new Map(protocol.capture?.fields.map(field => [field.id, field] as const) ?? []);
-    const loadField = fields.get('load_kg');
-    if (loadField?.valueKind === 'number'
-        && (proposal.loadKg < loadField.minimum || proposal.loadKg > loadField.maximum)) {
-        throw new Error(
-            `File "${proposal.fileName}": load ${proposal.loadKg} kg is outside this test's ${loadField.minimum}–${loadField.maximum} kg range.`,
-        );
-    }
+    requireNumberField(protocol, 'load_kg', 'kg', proposal.loadKg, proposal.fileName);
+    requireNumberField(protocol, 'mean_concentric_velocity_mps', 'm/s', proposal.meanVelocityMps, proposal.fileName);
+    requireNumberField(protocol, 'peak_velocity_mps', 'm/s', proposal.peakVelocityMps, proposal.fileName);
+    requireBooleanField(protocol, 'successful');
     const values: Record<string, number | boolean> = {
         load_kg: proposal.loadKg,
         mean_concentric_velocity_mps: proposal.meanVelocityMps,
@@ -383,5 +425,10 @@ export function wlProposalToDraftRow(
         device: proposal.device,
         sourceRef: proposal.sourceRef,
         context: proposal.context,
+        importReview: {
+            loadKgConfirmed: false,
+            successConfirmed: proposal.successful === undefined,
+            validityConfirmed: false,
+        },
     };
 }
