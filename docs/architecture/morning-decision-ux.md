@@ -115,7 +115,7 @@ Keyboard shortcuts `[1]`, `[2]`, and `[3]` are convenience controls. A synchrono
 The change set is covered by:
 
 - decision-evidence unit tests for safety locks, confidence, deltas, and alternative IDs;
-- `morningLaunchDecision.test.ts` and `MorningDecisionCardAdjustedLaunch.test.tsx` for the adjusted-launch rule in §4, including withheld Start/Resume/Redo on authored and imported bindings;
+- `morningLaunchDecision.test.ts` and `MorningDecisionCardAdjustedLaunch.test.tsx` for the adjusted-launch rule in §4, including withheld authored Start/Resume/Redo and imported-plan no-launch states;
 - `morning-decision-adjusted-launch.pw.ts` for the browser-level Reset recovery path and keyboard-focus restoration;
 - the `morning-card-authored-adjustment-withheld` visual scenario for the non-happy-path explanation and reset state at desktop/mobile review widths;
 - usability-metrics unit tests for first-action timing, wizard outcome/stage reporting, malformed outcomes, and storage-write fallback behavior;
