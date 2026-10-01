@@ -497,9 +497,21 @@ def summarize_garmin_payload(
                 count += _count_recovery_steps(s.get("workoutSteps", []))
         return count
 
-    top_level_steps = garmin_payload.get("workoutSegments", [{}])[0].get("workoutSteps", [])
-    canonical_step_count = sum(len(block.get("steps", [])) for block in workout.get("blocks", []))
-    repeat_group_count = sum(1 for s in top_level_steps if s.get("type") == "RepeatGroupDTO")
+    blocks = workout.get("blocks", [])
+    canonical_step_count = sum(len(block.get("steps", [])) for block in blocks)
+
+    workout_segments = garmin_payload.get("workoutSegments", [])
+    top_level_steps = workout_segments[0].get("workoutSteps", []) if workout_segments else []
+
+    repeat_group_count = 0
+    recovery_step_count = 0
+
+    for step in top_level_steps:
+        if step.get("stepType", {}).get("stepTypeKey") == "recovery":
+            recovery_step_count += 1
+        if step.get("type") == "RepeatGroupDTO":
+            repeat_group_count += 1
+            recovery_step_count += _count_recovery_steps(step.get("workoutSteps", []))
 
     return {
         "workoutId": workout.get("workoutId"),
@@ -508,7 +520,7 @@ def summarize_garmin_payload(
         "canonicalStepCount": canonical_step_count,
         "garminTopLevelStepCount": len(top_level_steps),
         "repeatGroupCount": repeat_group_count,
-        "recoveryStepCount": _count_recovery_steps(top_level_steps),
+        "recoveryStepCount": recovery_step_count,
     }
 
 

@@ -72,3 +72,7 @@
 ## 2026-09-25 - Avoid O(N) array scans during static object initialization
 **Learning:** Initializing static objects (like `EVERGREEN_PACKING_COVERAGE`) by repeatedly calling `.find()` on the same configuration array (`EVERGREEN_GENERAL_COVERAGE_SET.coverage`) incurs redundant O(N) operations at import time.
 **Action:** When extracting multiple values from a small or static array to build a new data structure at module level, construct a temporary O(1) `Map` (`new Map(array.map(item => [item.key, item]))`) and use `.get()` instead of calling `.find()` repeatedly.
+
+## 2026-10-01 - Single-pass Garmin payload summary optimization
+**Learning:** `summarize_garmin_payload` in `src/garmin_sync/workout_export.py` was making multiple separate passes over `top_level_steps` to compute `repeat_group_count` and `recovery_step_count`.
+**Action:** Combine step counting, repeat group counting, and recovery step traversal into a single loop pass over top-level workout steps to avoid multiple list traversals.
