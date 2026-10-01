@@ -78,6 +78,7 @@ export function isPreparedReducedExternalBinding(
     prepared: PreparedExternalLaunchEvidence | null | undefined,
 ): boolean {
     if (!prescription || !binding || !prepared) return false;
+    if (prescription.scaling?.reducible !== true || !prescription.scaling.reducedDefinition) return false;
     if (prepared.variant !== 'reduced' || prepared.prescriptionHash !== binding.prescriptionHash) return false;
     const source = binding.sessionSource;
     return source.kind === 'external_plan'
