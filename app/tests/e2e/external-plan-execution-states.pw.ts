@@ -9,8 +9,8 @@ import { resolvePlacement } from '../../src/engine/externalPlacement';
 import type { SessionDefinition } from '../../src/sessions/models';
 import { parseDailyRecommendation } from '../../src/persistence/parsers/trainingHistory';
 
-// Product gap: https://github.com/Szczepanov/adaptive-training-recommender/issues/949
-test.fixme('V4 scale freezes the exact reduced definition and reports app dose modified', async ({ page }) => {
+// Fixed in #949 (Home starts the prepared exact v6 reduced binding under scale)
+test('V4 scale freezes the exact reduced definition and reports app dose modified', async ({ page }) => {
   const athlete = await provisionAthlete();
   const today = await seedRecoverySnapshot(athlete, { bodyBatteryWake: 25 });
   const full: SessionDefinition = {

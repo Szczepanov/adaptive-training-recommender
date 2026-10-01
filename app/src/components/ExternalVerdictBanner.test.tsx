@@ -131,6 +131,39 @@ describe('ExternalVerdictBanner (#909)', () => {
         expect(html).not.toContain('3x10 min at tempo');
         expect(html).not.toContain('Tempo x3');
     });
+    it('a v6 scale verdict with a prepared reduced binding says Start runs the reduced version', () => {
+        const html = renderToStaticMarkup(
+            <ExternalVerdictBanner
+                prescription={{
+                    ...prescription,
+                    scaling: { reducible: true, reducedDefinition: { id: 'w2-tempo' } } as Prescription['scaling'],
+                }}
+                verdict={verdict({ decision: 'scale', scaledSummary: 'Five minutes only', executionDose: { volume: 0.5, intensity: 1 } })}
+                reducedLaunchAvailable
+            />,
+        );
+        expect(html).toContain('Start runs your plan’s own reduced version exactly as written');
+        expect(html).not.toContain('Start is unavailable');
+        expect(html).not.toContain('does not include executable reduced steps');
+        expect(html).not.toContain('Tempo x3');
+    });
+
+    it('a v6 scale verdict whose reduced binding was not prepared does not claim the plan lacks reduced steps', () => {
+        const html = render(
+            { ...prescription, scaling: { reducible: true, reducedDefinition: { id: 'w2-tempo' } } as Prescription['scaling'] },
+            verdict({ decision: 'scale', executionDose: { volume: 0.5, intensity: 1 } }),
+        );
+        expect(html).toContain('your plan’s reduced version could not be prepared for today');
+        expect(html).not.toContain('does not include executable reduced steps');
+    });
+
+    it('reducedLaunchAvailable adds no launch note outside a scale verdict', () => {
+        const html = renderToStaticMarkup(
+            <ExternalVerdictBanner prescription={prescription} verdict={verdict({ decision: 'proceed' })} reducedLaunchAvailable />,
+        );
+        expect(html).not.toContain('Start runs your plan');
+    });
+
     it('a proceed verdict shows the authored prescription with its steps', () => {
         const html = render(prescription, verdict({ decision: 'proceed' }));
         expect(html).toContain('As your plan wrote it');

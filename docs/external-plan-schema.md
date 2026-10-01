@@ -11,7 +11,7 @@
 > unchanged. New copy/paste external-coach imports emit **v6** (`external-plan@6`), which
 > inherits v5 and adds an optional exact `scaling.reducedDefinition`. Historical v1–v5 plans
 > remain readable; v6 reduced definitions are the only structured scaled form accepted by the
-> launch adapter. Home currently withholds scaled Start even for this valid form
+> launch adapter, and the only scaled form Home offers to Start
 > ([#949](https://github.com/Szczepanov/adaptive-training-recommender/issues/949)).
 
 The athlete authors a training plan with a general-purpose AI, which emits JSON against
@@ -195,14 +195,14 @@ athlete-facing reduced prescription.
 
 For `external-plan@2`–`@5`, however, `reducedSummary` and `reducedDurationMin` do **not**
 constitute a second executable `SessionDefinition`. The runner must not parse free text into
-steps, and it must not bind the original full-dose definition under a reduced verdict. Today,
-Home therefore shows the adjudicated reduced summary/dose but withholds structured **Start**
+steps, and it must not bind the original full-dose definition under a reduced verdict. For
+those versions Home shows the adjudicated reduced summary/dose but withholds structured **Start**
 for `scale`. V6 may include a full `scaling.reducedDefinition` `SessionDefinition`; when present,
 it must retain the authored session id, intent, and dominant modality and is validated through
-the same session-definition boundary as the full definition. The authoring adapter can freeze
-only that exact reduced definition for a `scale` verdict. Home currently withholds Start for all
-scaled external sessions, including valid v6 reduced forms; this integrated launch gap is
-tracked by [#949](https://github.com/Szczepanov/adaptive-training-recommender/issues/949).
+the same session-definition boundary as the full definition. The authoring adapter freezes
+only that exact reduced definition for a `scale` verdict, and Home offers **Start** for exactly
+that prepared reduced binding
+([#949](https://github.com/Szczepanov/adaptive-training-recommender/issues/949)).
 If the reduced definition is absent, scale has no executable structured form at all.
 For `proceed`, the app uses the original definition. Free-text `fallback` remains advisory.
 
@@ -343,8 +343,8 @@ intentional moves and drops after later imports.
 The app adjudicates the selected session against its normal safety, readiness and feasibility
 gates. `proceed` uses the full authored definition. The launch adapter accepts `scale` only with
 an explicitly authored, validated `scaling.reducedDefinition` retaining the session identity,
-intent and dominant modality, within the adjudicated duration ceiling. Home currently blocks
-this valid scaled launch ([#949](https://github.com/Szczepanov/adaptive-training-recommender/issues/949)).
+intent and dominant modality, within the adjudicated duration ceiling; Home offers Start for
+that prepared reduced binding ([#949](https://github.com/Szczepanov/adaptive-training-recommender/issues/949)).
 Free-text reductions and fallback suggestions cannot become executable doses. The adapters
 exclude `skip`, `defer` and advisory event inputs from structured execution. Recommendation writes
 on skip and gate-replacement days previously failed due to rules expression-budget and catalog-binding

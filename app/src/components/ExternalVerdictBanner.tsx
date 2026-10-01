@@ -6,6 +6,9 @@ import './ExternalVerdictBanner.css';
 interface ExternalVerdictBannerProps {
     prescription: NonNullable<Recommendation['externalPrescription']>;
     verdict: ExternalSessionVerdictSummary;
+    /** #949: Home froze a launch binding to the plan's exact v6 `reducedDefinition`, so the
+     * card offers Start for the reduced form. Only meaningful under a `scale` verdict. */
+    reducedLaunchAvailable?: boolean;
 }
 
 const DECISION_LABEL: Record<ExternalSessionVerdictSummary['decision'], string> = {
@@ -31,7 +34,19 @@ function gateSentence(gateFailures: readonly string[]): string | null {
  * fallback is rendered as prose with no action attached to it — ADR-0019 D-CANDIDATE makes
  * it advisory, because it has passed none of today's gates.
  */
-export function ExternalVerdictBanner({ prescription, verdict }: ExternalVerdictBannerProps) {
+/** The scale-only note on what Start will run, so the banner never contradicts the card's
+ * launch affordance: present only when the card offers Start for the reduced form. */
+function scaleLaunchNote(prescription: ExternalVerdictBannerProps['prescription'], reducedLaunchAvailable: boolean): string {
+    if (reducedLaunchAvailable) {
+        return 'Start runs your plan’s own reduced version exactly as written, never the original full-dose steps.';
+    }
+    const scaling = prescription.scaling as { reducedDefinition?: unknown } | undefined;
+    return scaling?.reducedDefinition
+        ? 'Start is unavailable because your plan’s reduced version could not be prepared for today. The app will not launch the original full-dose steps under a reduced verdict.'
+        : 'Start is unavailable for this reduced form because the imported plan does not include executable reduced steps. The app will not launch the original full-dose steps under a reduced verdict.';
+}
+
+export function ExternalVerdictBanner({ prescription, verdict, reducedLaunchAvailable = false }: ExternalVerdictBannerProps) {
     const actionable = verdict.decision === 'proceed' || verdict.decision === 'scale' || verdict.decision === 'advisory';
     // `skip` and `advisory` rationales already name the gates in the same words, and the
     // rationale is what the athlete reads twice (here and under "Why this today?"). Repeating
@@ -91,11 +106,7 @@ export function ExternalVerdictBanner({ prescription, verdict }: ExternalVerdict
                         </p>
                     )}
                     {verdict.decision === 'scale' && (
-                        <p className="external-prescription-dose">
-                            Start is unavailable for this reduced form because the imported plan does not include
-                            executable reduced steps. The app will not launch the original full-dose steps under a
-                            reduced verdict.
-                        </p>
+                        <p className="external-prescription-dose">{scaleLaunchNote(prescription, reducedLaunchAvailable)}</p>
                     )}
                 </div>
             ) : (

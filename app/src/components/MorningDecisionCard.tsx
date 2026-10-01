@@ -9,6 +9,7 @@ import { WorkoutExportMenu } from './WorkoutExportMenu';
 import type { MorningDecisionEvidence } from '../engine/decisionEvidence';
 import { capabilityMaintenanceReadout } from '../engine/capabilityMaintenance';
 import { prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
+import { isPreparedReducedExternalBinding } from '../sessions/sessionLaunch';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
 import { splitCoachingRationale } from '../utils/rationaleDisplay';
@@ -142,13 +143,17 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     const hasExternalVerdict = externalVerdict !== null && externalPrescription !== null;
     const isExternalExcluded = hasExternalVerdict
         && (externalVerdict.decision === 'skip' || externalVerdict.decision === 'defer');
-    // A scaled imported session is still today's authoritative prescription, but v1-v4
-    // external plans do not carry a structured reduced SessionDefinition. Never launch a
-    // raw imported binding under `scale`: it points at the full authored definition.
-    // Separately selected/constructed catalog alternatives remain governed by their own
-    // launch path and gates.
+    // A scaled imported session is still today's authoritative prescription, but only a
+    // v6 plan carries an exact structured `reducedDefinition`. #949: Start the scaled
+    // session only through the binding Home froze to that reduced form; a scale with no
+    // reduced form (pre-v6 plans, or v6 sessions that omit it) never launches a raw imported
+    // binding, because it points at the full authored definition. Separately selected or
+    // constructed catalog alternatives remain governed by their own launch path and gates.
+    const isExternalReducedLaunchAvailable = hasExternalVerdict
+        && externalVerdict.decision === 'scale'
+        && isPreparedReducedExternalBinding(externalPrescription, recommendation?.primarySession);
     const isExternalPrimaryBindingUnavailable = isExternalExcluded
-        || (hasExternalVerdict && externalVerdict.decision === 'scale');
+        || (hasExternalVerdict && externalVerdict.decision === 'scale' && !isExternalReducedLaunchAvailable);
     // #909: an adjudicated imported session carries the verdict rationale as the
     // recommendation rationale verbatim, so the hero "Why today" callout would repeat
     // the banner word for word. Suppress it there; the banner owns the explanation and
@@ -362,7 +367,11 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                         ) : (
                             <>
                                 {hasExternalVerdict && (
-                                    <ExternalVerdictBanner prescription={externalPrescription} verdict={externalVerdict} />
+                                    <ExternalVerdictBanner
+                                        prescription={externalPrescription}
+                                        verdict={externalVerdict}
+                                        reducedLaunchAvailable={isExternalReducedLaunchAvailable}
+                                    />
                                 )}
                                 <div className="headline-meta-row">
                                     <h2 className="hero-headline">

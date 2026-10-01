@@ -25,19 +25,24 @@ content.
 
 ## Imported-plan scale verdicts and structured Start
 
-An external-plan `proceed` verdict may bind the imported v2–v4 `SessionDefinition` as written.
-A `scale` verdict is different: the current import contract carries an adjudicated
-`executionDose` plus optional free-text `reducedSummary`/`reducedDurationMin`, but no second
-structured reduced definition. Home must therefore present that reduced prescription and dose
-without creating a structured runner binding. Executing the original blocks would silently run
-the full authored dose, while deriving replacement steps from free text would violate ADR-0019's
-no-parse/candidate boundary.
+An external-plan `proceed` verdict may bind the imported v2+ `SessionDefinition` as written.
+A `scale` verdict is different: executing the original blocks would silently run the full
+authored dose, while deriving replacement steps from free text `reducedSummary`/
+`reducedDurationMin` would violate ADR-0019's no-parse/candidate boundary. The only executable
+scaled form is an `external-plan@6` session's explicit `scaling.reducedDefinition`.
 
-Accordingly, structured **Start** is withheld for an imported `scale` verdict and the banner
-does not show the original detailed step list as if it were the reduced workout. A future
-executable reduced form requires a versioned external-plan schema/ADR that carries the reduced
-`SessionDefinition` explicitly. This is an execution-snapshot boundary, not a new recommendation
-rule, so it does not change `POLICY_VERSION`.
+Under `scale`, Home composes the launch binding through `sessionAuthoringService`
+`prepareExternalPlanSessionLaunch` with `useReducedDefinition`, which freezes that exact reduced
+definition (its own `definitionHash`, distinct from the full definition's) within the adjudicated
+duration ceiling, and fails closed when the session has no reduced form. `MorningDecisionCard`
+offers **Start** for a `scale` verdict only when `sessionLaunch` `isPreparedReducedExternalBinding`
+holds: the imported session is `reducible: true` with a `reducedDefinition`, and
+`primarySession` is an external-plan binding to exactly that plan, revision and session. A scale
+without a reduced form (pre-v6 plans, or v6 sessions that omit it) presents the reduced summary
+and dose with no Start, and `skip`/`defer` never start regardless of any binding.
+`ExternalVerdictBanner` never shows the original detailed step list as if it were the reduced
+workout, and its launch note states which of those cases applies. This is an execution-snapshot
+boundary, not a new recommendation rule, so it does not change `POLICY_VERSION`.
 
 ## Catalog warm-ups and execution logging
 
