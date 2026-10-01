@@ -691,6 +691,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         ) {
           try {
             const verdict = recommendationWithPrescription.externalVerdict;
+            // #949: under `scale` this is the only producer of an external primary binding, and
+            // it freezes the exact v6 reducedDefinition or throws. MorningDecisionCard's
+            // `isPreparedReducedExternalBinding` relies on that: keep any new scale-day
+            // external binding path on `useReducedDefinition`.
             const useReducedDefinition = verdict?.decision === 'scale';
             const scaleVolume = useReducedDefinition ? verdict?.executionDose?.volume : undefined;
             const launch = await prepareExternalPlanSessionLaunch(

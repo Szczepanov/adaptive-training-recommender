@@ -157,7 +157,7 @@ describe('MorningDecisionCard imported-session verdict (#909)', () => {
         expect(html).toContain('Start Session →');
     });
 
-    it('a scale verdict shows the reduced summary but blocks the unscaled imported Start path', () => {
+    it('a legacy scale verdict (no reducedDefinition) shows the reduced summary but blocks the unscaled imported Start path', () => {
         const html = renderToStaticMarkup(
             <MorningDecisionCard
                 {...baseProps}
@@ -191,6 +191,216 @@ describe('MorningDecisionCard imported-session verdict (#909)', () => {
         expect(html).toContain('20–40 min · reduced');
         expect(html).not.toContain('Start Session →');
         expect(html).not.toContain('Resume Session →');
+    });
+
+    // #949: a v6 plan carries the coach's exact reduced SessionDefinition, and Home freezes
+    // the scale binding to it, so that binding -- and only that binding -- gets a Start path.
+    const v6ExternalPrescription: Prescription = {
+        ...externalPrescription,
+        scaling: {
+            reducible: true,
+            reducedSummary: 'Cut to 2x10 min tempo, keep the warm-up.',
+            reducedDefinition: { id: 'w2-tempo', title: 'Tempo intervals (reduced)' },
+        } as Prescription['scaling'],
+    };
+    const scaleVerdict: ExternalSessionVerdictSummary = {
+        decision: 'scale',
+        gateFailures: [],
+        scaledSummary: 'Cut to 2x10 min tempo, keep the warm-up.',
+        executionDose: { volume: 0.66, intensity: 1 },
+        rationale: 'Readiness caps today below the written dose; the reduced version keeps the intent.',
+    };
+    const reducedBinding = {
+        sessionSource: {
+            kind: 'external_plan' as const,
+            planId: 'coach-block-a',
+            revision: 3,
+            sessionId: 'w2-tempo',
+            contentHash: 'fresh-binding',
+        },
+        occurrenceId: 'occ-today',
+        prescriptionHash: 'reduced-hash',
+    };
+
+    it('a v6 scale verdict starts the prepared exact reduced binding', () => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(scaleVerdict, {
+                    externalPrescription: v6ExternalPrescription,
+                    primarySession: reducedBinding,
+                })}
+            />,
+        );
+        expect(html).toContain('Do the reduced version');
+        expect(html).toContain('Start Session →');
+        expect(html).toContain('aria-label="Start Tempo intervals"');
+        expect(html).toContain('Start runs your plan’s own reduced version exactly as written');
+        expect(html).not.toContain('Start is unavailable');
+    });
+
+    it('a v6 scale verdict without a prepared binding stays blocked and says why', () => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(scaleVerdict, { externalPrescription: v6ExternalPrescription })}
+            />,
+        );
+        expect(html).not.toContain('Start Session →');
+        expect(html).toContain('your plan’s reduced version could not be prepared for today');
+        expect(html).not.toContain('does not include executable reduced steps');
+    });
+
+    it('a v6 scale verdict never starts a binding to a different imported session', () => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(scaleVerdict, {
+                    externalPrescription: v6ExternalPrescription,
+                    primarySession: {
+                        ...reducedBinding,
+                        sessionSource: { ...reducedBinding.sessionSource, sessionId: 'w3-threshold' },
+                    },
+                })}
+            />,
+        );
+        expect(html).not.toContain('Start Session →');
+    });
+
+    it.each(['skip', 'defer'] as const)('a %s verdict stays blocked even with a reduced definition and binding', decision => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(
+                    { decision, gateFailures: [], rationale: 'Move this session rather than doing a diminished version of it.' },
+                    { externalPrescription: v6ExternalPrescription, primarySession: reducedBinding },
+                )}
+            />,
+        );
+        expect(html).not.toContain('Start Session →');
+        expect(html).not.toContain('Resume Session →');
+    });
+
+    it.each([
+        ['a time-crunch alternative', { activeAlternativeId: 'time-20' }],
+        ['an easier load adjustment', { adjustmentDirection: 'easier' as const }],
+    ])('a v6 scale day with %s never starts the unadjusted reduced binding', (_label, adjustment) => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                {...adjustment}
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(scaleVerdict, {
+                    externalPrescription: v6ExternalPrescription,
+                    primarySession: reducedBinding,
+                })}
+            />,
+        );
+        expect(html).not.toContain('Start Session →');
+        expect(html).toContain('Start is unavailable while a time or load adjustment is applied');
+    });
+
+    it('a completed v6 reduced session keeps its Redo path', () => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                todayExecution={{ state: 'completed' } as never}
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(scaleVerdict, {
+                    externalPrescription: v6ExternalPrescription,
+                    primarySession: reducedBinding,
+                })}
+            />,
+        );
+        expect(html).toContain('Redo Session');
+    });
+
+    // A proceed binding freezes the full authored definition. A time-crunch or load adjustment
+    // keeps that binding (and the verdict) while the hero shows the adjusted dose, and an
+    // imported template never resolves a catalog prescription, so Start must fail closed
+    // rather than run the unadjusted imported session.
+    const proceedVerdict: ExternalSessionVerdictSummary = {
+        decision: 'proceed',
+        gateFailures: [],
+        rationale: 'Readiness supports this session as written.',
+    };
+    const proceedBinding = { ...reducedBinding, prescriptionHash: 'full-hash' };
+    const athleteAdjustments = [
+        ['a time-crunch alternative', { activeAlternativeId: 'time-20' }],
+        ['an easier load adjustment', { adjustmentDirection: 'easier' as const }],
+        ['a harder load adjustment', { adjustmentDirection: 'harder' as const }],
+    ] as const;
+
+    it.each(athleteAdjustments)('a proceed day with %s never starts the full imported binding and says why', (_label, adjustment) => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                {...adjustment}
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(proceedVerdict, { primarySession: proceedBinding })}
+            />,
+        );
+        expect(html).toContain('Do it as written');
+        expect(html).not.toContain('Start Session →');
+        expect(html).not.toContain('Resume Session →');
+        expect(html).toContain('Start is unavailable while a time or load adjustment is applied');
+    });
+
+    it('a proceed day keeps Start and adds no adjustment note once the adjustment is reset', () => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(proceedVerdict, { primarySession: proceedBinding })}
+            />,
+        );
+        expect(html).toContain('Start Session →');
+        expect(html).not.toContain('Start is unavailable');
+    });
+
+    it('an in-progress proceed session is not resumed from the full binding under a time crunch', () => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                activeAlternativeId="time-20"
+                todayExecution={{ state: 'in_progress' } as never}
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(proceedVerdict, { primarySession: proceedBinding })}
+            />,
+        );
+        expect(html).not.toContain('Resume Session →');
+        expect(html).toContain('Reset the adjustment to start it.');
+    });
+
+    it('a completed proceed session offers no Redo of the full binding under a load adjustment', () => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                adjustmentDirection="easier"
+                todayExecution={{ state: 'completed' } as never}
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(proceedVerdict, { primarySession: proceedBinding })}
+            />,
+        );
+        expect(html).toContain('Completed ✓');
+        expect(html).not.toContain('Redo Session');
+    });
+
+    it('a proceed day with no prepared binding adds no adjustment note it cannot honour', () => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                activeAlternativeId="time-20"
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(proceedVerdict)}
+            />,
+        );
+        expect(html).not.toContain('Start Session →');
+        expect(html).not.toContain('Start is unavailable');
     });
 
     it('an event-advisory day keeps the ranked pick’s own Why-today explanation', () => {

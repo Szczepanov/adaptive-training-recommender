@@ -47,3 +47,36 @@ export function canLaunchExternalPlanSession(
     if (eligibility.templateId === 'rest_01') return false;
     return true;
 }
+
+/** The display-side identity of today's imported session, as `Recommendation.externalPrescription`
+ * carries it. `scaling` is the authored object verbatim, so a v6 session keeps its
+ * `reducedDefinition` even though the shared display type does not name it. */
+export interface ExternalPrescriptionIdentity {
+    planId: string;
+    revision: number;
+    sessionId: string;
+    scaling?: object;
+}
+
+/**
+ * #949: whether Home may start `binding` under today's `scale` verdict. The only scaled form
+ * this app ever executes is the coach's own v6 `reducedDefinition`, and Home freezes a scale
+ * binding solely through `prepareExternalPlanSessionLaunch({ useReducedDefinition })`, which
+ * fails closed without one. So a scaled Start needs both the authored reduced form and an
+ * external-plan binding for exactly this plan, revision and session; a legacy scale (no
+ * `reducedDefinition`) or a binding to any other source stays blocked.
+ */
+export function isPreparedReducedExternalBinding(
+    prescription: ExternalPrescriptionIdentity | null | undefined,
+    binding: SessionReferenceBinding | null | undefined,
+): boolean {
+    if (!prescription || !binding) return false;
+    const scaling = prescription.scaling as { reducible?: unknown; reducedDefinition?: unknown } | undefined;
+    if (scaling?.reducible !== true) return false;
+    if (typeof scaling.reducedDefinition !== 'object' || scaling.reducedDefinition === null) return false;
+    const source = binding.sessionSource;
+    return source.kind === 'external_plan'
+        && source.planId === prescription.planId
+        && source.revision === prescription.revision
+        && source.sessionId === prescription.sessionId;
+}
