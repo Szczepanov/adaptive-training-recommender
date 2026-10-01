@@ -96,6 +96,11 @@ describe('assessmentDraftStorage', () => {
             device: { provider: 'WL Analysis' },
             sourceRef: `wl-analysis-csv:sha256:${'a'.repeat(64)}`,
             context: { wl_parser_version: 'wl-analysis-csv-v1', wl_rep_count: 1 },
+            importReview: {
+                loadKgConfirmed: false,
+                successConfirmed: false,
+                validityConfirmed: false,
+            },
         };
         saveAssessmentDraft('user-1', 'att-1', [imported]);
         expect(loadAssessmentDraft('user-1', 'att-1')).toEqual([imported]);
@@ -118,6 +123,11 @@ describe('assessmentDraftStorage', () => {
 
         localStorage.setItem('assessment_draft_user-1::att-1', JSON.stringify([
             { ...row, context: { '': 1 } },
+        ]));
+        expect(loadAssessmentDraft('user-1', 'att-1')).toBeNull();
+
+        localStorage.setItem('assessment_draft_user-1::att-1', JSON.stringify([
+            { ...row, importReview: { loadKgConfirmed: false, successConfirmed: 'yes', validityConfirmed: false } },
         ]));
         expect(loadAssessmentDraft('user-1', 'att-1')).toBeNull();
     });
