@@ -8,8 +8,6 @@ Uses single-source Firestore transactions with create-only semantics to prevent 
 with live ingestion or concurrent reconcilers.
 """
 
-from __future__ import annotations
-
 import logging
 import time
 import urllib.parse
