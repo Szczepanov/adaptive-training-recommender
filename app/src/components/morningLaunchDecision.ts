@@ -28,7 +28,7 @@ export interface MorningLaunchInputs {
     primarySession: SessionReferenceBinding | undefined;
     /** `skip`/`defer`: nothing from the imported session, nor any catalog swap, starts today. */
     isExternalExcluded: boolean;
-    /** The external verdict alone already makes the stored binding unlaunchable. */
+    /** External-plan launch state already makes the binding unavailable (verdict, scaling proof, or adjustment). */
     isExternalPrimaryBindingUnavailable: boolean;
 }
 
@@ -37,11 +37,14 @@ export function resolveMorningLaunch(inputs: MorningLaunchInputs): MorningLaunch
         canLaunch, hasAthleteAdjustment, prescription, primarySession,
         isExternalExcluded, isExternalPrimaryBindingUnavailable,
     } = inputs;
-    if (!canLaunch) return { kind: 'none' };
-    if (hasAthleteAdjustment && prescription && !isExternalExcluded) {
+    // External-plan launch authority is stronger than the presence of a catalog prescription.
+    // Fail closed even for currently-unreachable mixed states so a future resolver change cannot
+    // turn an imported skip/scale/adjustment into a catalog swap by accident.
+    if (!canLaunch || isExternalExcluded || isExternalPrimaryBindingUnavailable) return { kind: 'none' };
+    if (hasAthleteAdjustment && prescription) {
         return { kind: 'adjusted', prescription };
     }
-    if (!primarySession || isExternalPrimaryBindingUnavailable) return { kind: 'none' };
+    if (!primarySession) return { kind: 'none' };
     return hasAthleteAdjustment
         ? { kind: 'withheld', binding: primarySession }
         : { kind: 'primary', binding: primarySession };
