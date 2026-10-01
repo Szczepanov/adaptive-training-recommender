@@ -57,8 +57,7 @@ describe('assessmentDraftStorage', () => {
         expect(loadAssessmentDraft('user-1', 'att-1')).toBeNull();
     });
 
-    it('rejects unsupported validity, non-scalar values and malformed devices', () => {
-        localStorage.setItem('assessment_draft_user-1::att-1', JSON.stringify([
+    it('rejects unsupported validity, non-scalar values and malformed devices', () => {        localStorage.setItem('assessment_draft_user-1::att-1', JSON.stringify([
             { ordinal: 1, values: { distance_cm: 231 }, validity: 'invented' },
         ]));
         expect(loadAssessmentDraft('user-1', 'att-1')).toBeNull();
@@ -89,8 +88,41 @@ describe('assessmentDraftStorage', () => {
         expect(localStorage.getItem('unrelated')).toBe('keep');
     });
 
-    it('degrades to no draft when storage throws', () => {
-        const blocked = () => { throw new Error('blocked'); };
+    it('round-trips import provenance and stays backward-compatible with older drafts', () => {
+        const imported: DraftTrialRow = {
+            ordinal: 2,
+            values: { load_kg: 150, successful: true, mean_concentric_velocity_mps: 0.567 },
+            validity: 'valid',
+            device: { provider: 'WL Analysis' },
+            sourceRef: `wl-analysis-csv:sha256:${'a'.repeat(64)}`,
+            context: { wl_parser_version: 'wl-analysis-csv-v1', wl_rep_count: 1 },
+        };
+        saveAssessmentDraft('user-1', 'att-1', [imported]);
+        expect(loadAssessmentDraft('user-1', 'att-1')).toEqual([imported]);
+
+        // Drafts saved before the importer existed carry neither field and still load.
+        localStorage.setItem('assessment_draft_user-1::att-old', JSON.stringify([row]));
+        expect(loadAssessmentDraft('user-1', 'att-old')).toEqual([row]);
+    });
+
+    it('rejects malformed import provenance instead of rendering it', () => {
+        localStorage.setItem('assessment_draft_user-1::att-1', JSON.stringify([
+            { ...row, sourceRef: '' },
+        ]));
+        expect(loadAssessmentDraft('user-1', 'att-1')).toBeNull();
+
+        localStorage.setItem('assessment_draft_user-1::att-1', JSON.stringify([
+            { ...row, context: { wl_rep_count: { nested: true } } },
+        ]));
+        expect(loadAssessmentDraft('user-1', 'att-1')).toBeNull();
+
+        localStorage.setItem('assessment_draft_user-1::att-1', JSON.stringify([
+            { ...row, context: { '': 1 } },
+        ]));
+        expect(loadAssessmentDraft('user-1', 'att-1')).toBeNull();
+    });
+
+    it('degrades to no draft when storage throws', () => {        const blocked = () => { throw new Error('blocked'); };
         vi.stubGlobal('localStorage', {
             get length(): number { return blocked(); },
             key: blocked,

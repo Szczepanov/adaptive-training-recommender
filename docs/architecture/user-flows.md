@@ -444,7 +444,14 @@ For multi-trial assessment protocols (e.g. 1RM strength, vertical/horizontal jum
 cycling sprint), capture provides a protocol-bounded raw trial table (`TrialCaptureTable`) with dynamic
 attempts, validity options, local draft retention (`localStorage`, cleared on save, abandonment and
 sign-out), live canonical reduction preview
-(`CanonicalResultPreview`), and raw video reminder callouts. The completion screen renders canonical
+(`CanonicalResultPreview`), and raw video reminder callouts. On an open squat/bench attempt the capture
+screen additionally offers WL Analysis per-frame CSV import (`WlAnalysisImportPanel`): one exported file
+per filmed attempt fills the load/velocity trial rows after a per-file preview (attempt number, load with
+unit confirmation, reps, chosen rep, velocities, completeness, proposed validity, warnings), and the
+athlete still reviews success/validity and saves through the existing path — the import itself writes
+nothing. Importable-recording checklist (one video per attempt, `attempt N` tags, per-frame export with
+velocity + displacement, kilograms, fixed side-on tripod, raw files kept outside the app) lives in the
+#897 plan's WP5.5 section. The completion screen renders canonical
 benchmark results alongside an interactive trial correction panel (`TrialCorrectionPanel`) for append-only
 trial supersession. Trials already persisted by an interrupted save reload read-only, so a resubmission
 cannot diverge from immutable stored evidence. For the bundled #897 physical-capital trial-capture flow,

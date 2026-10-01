@@ -9,6 +9,41 @@ import {
 } from './support/athlete';
 import { ASSESSMENT_CSV_HEADERS } from '../../src/observations/assessmentCsvExport';
 
+/** Minimal single-rep WL Analysis per-frame export: descent then one concentric ascent. */
+function wlSingleRepCsv(weightKg: number, tags: string, ascentVelocity: number, peakVelocity: number): string {
+  const frameRate = 30;
+  const depthCm = -50;
+  const descentFrames = 10;
+  const ascentFrames = 10;
+  const lines = [
+    'Video id,date,Video resolution,Frame rate,weight,tags',
+    `1,03/02/2025,1080x1920,${frameRate}.0,${weightKg},${tags}`,
+    '',
+    'Video id: 1',
+    ', average, Min, time of min, Max, time of max',
+    '"velocity (vertical, m/s)", -0.00, -0.69, 33.896,  0.87, 24.197',
+    '"displacement (vertical, cm)", -18.90, -63.78, 19.197,  8.80, 35.429',
+    '',
+    'Video id: 1',
+    'Frame ordinal,Time (s),"velocity (vertical, m/s)","acceleration (vertical, m/s^2)","displacement (vertical, cm)","power (vertical, kW)","force (vertical, kN)"',
+  ];
+  let ordinal = 1;
+  let time = 16.231;
+  const push = (velocity: number, displacement: number): void => {
+    lines.push(`${ordinal},${time.toFixed(3)},${velocity.toFixed(2)},0.00,${displacement.toFixed(2)},0.00,1.47`);
+    ordinal += 1;
+    time += 1 / frameRate;
+  };
+  for (let i = 0; i < 5; i += 1) push(0, 0);
+  for (let i = 0; i < descentFrames; i += 1) push(-0.5, (depthCm * (i + 1)) / descentFrames);
+  for (let i = 0; i < ascentFrames; i += 1) {
+    const velocity = i === Math.floor(ascentFrames / 2) ? peakVelocity : ascentVelocity;
+    push(velocity, depthCm + ((0 - depthCm) * i) / (ascentFrames - 1));
+  }
+  for (let i = 0; i < 5; i += 1) push(0, 0);
+  return lines.join('\n');
+}
+
 async function completeCheckin(page: Page, athlete: E2EAthlete, date: string): Promise<void> {
   await page.getByRole('button', { name: /Feeling normal today\? Use typical values/ }).click();
   await page.getByRole('button', { name: "Save & see today's plan", exact: true }).click();
@@ -250,4 +285,89 @@ test('physical capital assessment: standing broad jump trial capture, checkpoint
   expect(parsed.canonicalObservations.length).toBeGreaterThanOrEqual(3);
   // Verify Firebase UID is omitted
   expect(JSON.stringify(parsed)).not.toContain(athlete.userId);
+});
+
+test('physical capital assessment: back-squat WL Analysis CSV import fills trial rows', async ({ page }) => {
+  const athlete = await provisionAthlete();
+  const date = await seedRecoverySnapshot(athlete);
+
+  await signInThroughUi(page, athlete);
+  await completeCheckin(page, athlete, date);
+
+  const nav = page.locator('.navbar-desktop-menu');
+  await nav.getByRole('button', { name: /More/ }).click();
+  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await expect(page).toHaveURL(/\?screen=testing$/);
+  await page.getByRole('tab', { name: 'Protocols' }).click();
+
+  await page.getByRole('button', { name: 'Back squat 1RM · rev 2' }).click();
+  await expect(page.getByRole('heading', { name: 'Lock comparison context' })).toBeVisible();
+  await page.getByLabel(/equipment_setup_id/).fill('rack-a · same shoes · same belt');
+  await page.getByRole('button', { name: 'Confirm lock and start' }).click();
+
+  await expect(page.getByText(/Locked assessment: Back squat 1RM/)).toBeVisible();
+  await page.getByRole('button', { name: /Finish Session \(/ }).click();
+  await expect(page.getByRole('dialog', { name: 'Complete Session' })).toBeVisible();
+  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+
+  // Capture screen offers the WL Analysis importer for this open squat attempt.
+  await expect(page.getByRole('heading', { name: 'Record assessment trials' })).toBeVisible();
+  await expect(page.getByText('Import WL Analysis CSV')).toBeVisible();
+
+  await page.locator('.wl-file-input').setInputFiles([
+    {
+      name: 'squat-attempt-1.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(wlSingleRepCsv(100, 'back squat attempt 1', 0.6, 0.75)),
+    },
+    {
+      name: 'squat-attempt-2.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(wlSingleRepCsv(120, 'back squat attempt 2', 0.55, 0.7)),
+    },
+  ]);
+
+  // Preview before applying: ordinals from tags, confirmed loads, velocities, auto-detected success.
+  const preview = page.locator('.wl-preview-list');
+  await expect(preview).toContainText('Attempt 1');
+  await expect(preview).toContainText('Attempt 2');
+  await expect(preview).toContainText('0.615 m/s');
+  await expect(preview).toContainText('0.565 m/s');
+  await expect(preview).toContainText('auto-detected — confirm');
+  await expect(preview).toContainText('does not match the session date');
+  await expect(preview.locator('.wl-file-card input[type="number"]').nth(0)).toHaveValue('100');
+  await expect(preview.locator('.wl-file-card input[type="number"]').nth(1)).toHaveValue('120');
+
+  await page.getByRole('button', { name: 'Apply to draft rows (2)' }).click();
+
+  // Rows are filled; success is pre-selected from the completed ascents.
+  const loadInputs = page.locator('input[placeholder="1–500"]');
+  await expect(loadInputs.nth(0)).toHaveValue('100');
+  await expect(loadInputs.nth(1)).toHaveValue('120');
+  await expect(page.locator('select.trial-select').nth(0)).toHaveValue('true');
+  await expect(page.locator('select.trial-select').nth(1)).toHaveValue('true');
+
+  // Drop the untouched planned rows so only the two imported attempts save.
+  for (let i = 0; i < 4; i += 1) {
+    await page.locator('.trial-remove-btn').last().click();
+  }
+
+  await page.getByRole('button', { name: 'Save assessment trials' }).click();
+
+  // Canonical 1RM derives from the heaviest successful imported attempt.
+  await expect(page.getByRole('heading', { name: 'Assessment recorded' })).toBeVisible();
+  await expect(page.locator('.testing-observations')).toContainText('120 kg');
+  await page.getByRole('button', { name: 'Done' }).click();
+
+  // History detail retains the imported velocities on the trial rows.
+  await nav.getByRole('button', { name: /More/ }).click();
+  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await page.getByRole('tab', { name: 'History' }).click();
+  const squatCard = page.locator('.assessment-series-card', { hasText: 'Back squat 1RM' });
+  await expect(squatCard.locator('.headline-stat', { hasText: 'Baseline' })).toContainText('120 kg');
+  await squatCard.getByRole('button', { name: /View attempt .* details/ }).first().click();
+  const detailModal = page.locator('[role="dialog"][aria-labelledby="attempt-detail-title"]');
+  await expect(detailModal.locator('.attempt-trials-table')).toContainText('mean_concentric_velocity_mps: 0.615');
+  await expect(detailModal.locator('.attempt-trials-table')).toContainText('peak_velocity_mps: 0.75');
+  await detailModal.getByRole('button', { name: 'Close detail' }).click();
 });

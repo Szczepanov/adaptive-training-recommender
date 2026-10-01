@@ -965,6 +965,50 @@
   opacity: 0.6;
 }
 
+/* WL Analysis CSV import panel (Issue #897 PR B2) */
+.wl-import-panel {
+  border-style: dashed;
+}
+
+.wl-file-input {
+  min-height: 44px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.wl-file-input:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.wl-preview-list {
+  display: grid;
+  gap: 12px;
+}
+
+.wl-file-card {
+  border: 1px solid var(--border-color, #d7d7d7);
+  border-radius: 8px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.wl-file-card > strong {
+  overflow-wrap: anywhere;
+}
+
+.wl-file-card p {
+  margin: 0;
+}
+
+.wl-rejected {
+  border-color: #dc2626;
+  background: rgba(220, 38, 38, 0.05);
+}
+
 @media (max-width: 600px) {
   .series-headline-grid {
     grid-template-columns: 1fr;

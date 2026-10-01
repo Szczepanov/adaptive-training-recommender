@@ -16,6 +16,16 @@ export interface DraftTrialRow {
     invalidReason?: string;
     notes?: string;
     device?: MetricObservationDevice;
+    /**
+     * Replay-stable import provenance (e.g. `wl-analysis-csv:sha256:…`). Absent for
+     * hand-typed rows and for drafts saved before the WL Analysis importer existed.
+     */
+    sourceRef?: string;
+    /**
+     * Scalar import context (e.g. `wl_parser_version`). Merged over the attempt comparison
+     * context when trial records are built; keys must not collide with comparison dimensions.
+     */
+    context?: Record<string, string | number | boolean | null>;
 }
 
 const STORAGE_PREFIX = 'assessment_draft_';
@@ -31,6 +41,23 @@ function isOptionalString(value: unknown): boolean {
     return value === undefined || typeof value === 'string';
 }
 
+function isDraftSourceRef(value: unknown): boolean {
+    return value === undefined || (typeof value === 'string' && value.length > 0 && value.length <= 512);
+}
+
+function isDraftContext(value: unknown): boolean {
+    if (value === undefined) return true;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length > 32) return false;
+    return entries.every(([key, entryValue]) =>
+        key.trim().length > 0
+        && (typeof entryValue === 'string'
+            || typeof entryValue === 'boolean'
+            || entryValue === null
+            || (typeof entryValue === 'number' && Number.isFinite(entryValue)))
+    );
+}
 function isDraftDevice(value: unknown): boolean {
     if (value === undefined) return true;
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -52,7 +79,9 @@ function isDraftRow(value: unknown): value is DraftTrialRow {
     )) return false;
     return isOptionalString(row.invalidReason)
         && isOptionalString(row.notes)
-        && isDraftDevice(row.device);
+        && isDraftDevice(row.device)
+        && isDraftSourceRef(row.sourceRef)
+        && isDraftContext(row.context);
 }
 
 /** Storage can be blocked or cleared (private mode, previews); every accessor degrades to "no draft". */
