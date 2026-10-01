@@ -143,20 +143,21 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     const hasExternalVerdict = externalVerdict !== null && externalPrescription !== null;
     const isExternalExcluded = hasExternalVerdict
         && (externalVerdict.decision === 'skip' || externalVerdict.decision === 'defer');
-    // A scaled imported session is still today's authoritative prescription, but only a
-    // v6 plan carries an exact structured `reducedDefinition`. #949: Start the scaled
-    // session only through the binding Home froze to that reduced form; a scale with no
-    // reduced form (pre-v6 plans, or v6 sessions that omit it) never launches a raw imported
-    // binding, because it points at the full authored definition. Separately selected or
-    // constructed catalog alternatives remain governed by their own launch path and gates.
-    // A time-crunch or load adjustment
-    // keeps the imported binding while changing the displayed dose, so the exact reduced
-    // form is only startable with no athlete adjustment applied.
+    // #949: a scaled imported session may Start only when Home proves that the
+    // source-neutral authoring adapter froze the reduced variant and that proof names the
+    // exact `primarySession.prescriptionHash`. Plan/revision/session are not enough because
+    // the full and reduced forms share that source identity. A time-crunch or load
+    // adjustment keeps the imported binding while changing the displayed dose, so the
+    // prepared reduced form is startable only with no athlete adjustment applied.
     const isExternalScale = hasExternalVerdict && externalVerdict.decision === 'scale';
     const hasAthleteAdjustment = Boolean(activeAlternativeId) || adjustmentDirection !== null;
     const isExternalReducedLaunchAvailable = isExternalScale
         && !hasAthleteAdjustment
-        && isPreparedReducedExternalBinding(externalPrescription, recommendation?.primarySession);
+        && isPreparedReducedExternalBinding(
+            externalPrescription,
+            recommendation?.primarySession,
+            recommendation?.externalPreparedLaunch,
+        );
     const isExternalPrimaryBindingUnavailable = isExternalExcluded
         || (isExternalScale && !isExternalReducedLaunchAvailable);
     const externalReducedLaunch: ReducedLaunchState = isExternalReducedLaunchAvailable

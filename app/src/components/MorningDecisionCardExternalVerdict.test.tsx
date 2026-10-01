@@ -221,6 +221,10 @@ describe('MorningDecisionCard imported-session verdict (#909)', () => {
         occurrenceId: 'occ-today',
         prescriptionHash: 'reduced-hash',
     };
+    const reducedPreparedLaunch = {
+        variant: 'reduced' as const,
+        prescriptionHash: reducedBinding.prescriptionHash,
+    };
 
     it('a v6 scale verdict starts the prepared exact reduced binding', () => {
         const html = renderToStaticMarkup(
@@ -230,6 +234,7 @@ describe('MorningDecisionCard imported-session verdict (#909)', () => {
                 recommendation={externalRecommendation(scaleVerdict, {
                     externalPrescription: v6ExternalPrescription,
                     primarySession: reducedBinding,
+                    externalPreparedLaunch: reducedPreparedLaunch,
                 })}
             />,
         );
@@ -238,6 +243,37 @@ describe('MorningDecisionCard imported-session verdict (#909)', () => {
         expect(html).toContain('aria-label="Start Tempo intervals"');
         expect(html).toContain('Start runs your plan’s own reduced version exactly as written');
         expect(html).not.toContain('Start is unavailable');
+    });
+
+    it('never mistakes a full-dose binding for the reduced snapshot merely because the source identity matches', () => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(scaleVerdict, {
+                    externalPrescription: v6ExternalPrescription,
+                    primarySession: { ...reducedBinding, prescriptionHash: 'full-hash' },
+                    externalPreparedLaunch: { variant: 'full', prescriptionHash: 'full-hash' },
+                })}
+            />,
+        );
+        expect(html).not.toContain('Start Session →');
+        expect(html).toContain('your plan’s reduced version could not be prepared for today');
+    });
+
+    it('blocks Start when reduced launch evidence names a different immutable prescription', () => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(scaleVerdict, {
+                    externalPrescription: v6ExternalPrescription,
+                    primarySession: reducedBinding,
+                    externalPreparedLaunch: { variant: 'reduced', prescriptionHash: 'different-reduced-hash' },
+                })}
+            />,
+        );
+        expect(html).not.toContain('Start Session →');
     });
 
     it('a v6 scale verdict without a prepared binding stays blocked and says why', () => {
@@ -264,6 +300,7 @@ describe('MorningDecisionCard imported-session verdict (#909)', () => {
                         ...reducedBinding,
                         sessionSource: { ...reducedBinding.sessionSource, sessionId: 'w3-threshold' },
                     },
+                    externalPreparedLaunch: reducedPreparedLaunch,
                 })}
             />,
         );
@@ -277,7 +314,7 @@ describe('MorningDecisionCard imported-session verdict (#909)', () => {
                 onStartSession={() => undefined}
                 recommendation={externalRecommendation(
                     { decision, gateFailures: [], rationale: 'Move this session rather than doing a diminished version of it.' },
-                    { externalPrescription: v6ExternalPrescription, primarySession: reducedBinding },
+                    { externalPrescription: v6ExternalPrescription, primarySession: reducedBinding, externalPreparedLaunch: reducedPreparedLaunch },
                 )}
             />,
         );
@@ -297,6 +334,7 @@ describe('MorningDecisionCard imported-session verdict (#909)', () => {
                 recommendation={externalRecommendation(scaleVerdict, {
                     externalPrescription: v6ExternalPrescription,
                     primarySession: reducedBinding,
+                    externalPreparedLaunch: reducedPreparedLaunch,
                 })}
             />,
         );
@@ -313,6 +351,7 @@ describe('MorningDecisionCard imported-session verdict (#909)', () => {
                 recommendation={externalRecommendation(scaleVerdict, {
                     externalPrescription: v6ExternalPrescription,
                     primarySession: reducedBinding,
+                    externalPreparedLaunch: reducedPreparedLaunch,
                 })}
             />,
         );

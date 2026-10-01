@@ -672,11 +672,16 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         // M3.1/M3.4: a catalog-sourced recommendation gets its executable snapshot bound
         // and persisted (write-once, content-addressed) at composition time.
         let primarySession: Recommendation['primarySession'] = recommendationWithPrescription.primarySession;
+        let externalPreparedLaunch: Recommendation['externalPreparedLaunch'];
         if (recommendationWithPrescription.prescription) {
           try {
             const launch = await prepareCatalogSessionLaunch(userId, recommendationWithPrescription.prescription);
             if (!isCurrent()) return;
             primarySession = launch.binding;
+            externalPreparedLaunch = {
+              variant: useReducedDefinition ? 'reduced' : 'full',
+              prescriptionHash: launch.binding.prescriptionHash,
+            };
           } catch (err) {
             console.warn('Failed to prepare the catalog session binding for today\'s recommendation:', err);
           }
@@ -691,10 +696,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         ) {
           try {
             const verdict = recommendationWithPrescription.externalVerdict;
-            // #949: under `scale` this is the only producer of an external primary binding, and
-            // it freezes the exact v6 reducedDefinition or throws. MorningDecisionCard's
-            // `isPreparedReducedExternalBinding` relies on that: keep any new scale-day
-            // external binding path on `useReducedDefinition`.
+            // #949: the authoring adapter is the authority on which exact executable
+            // snapshot was frozen. Full and reduced forms intentionally share source identity,
+            // so carry the returned prescription hash forward as runtime launch evidence
+            // instead of asking the UI to infer the variant from plan/revision/session.
             const useReducedDefinition = verdict?.decision === 'scale';
             const scaleVolume = useReducedDefinition ? verdict?.executionDose?.volume : undefined;
             const launch = await prepareExternalPlanSessionLaunch(
@@ -714,7 +719,11 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           }
         }
 
-        let recommendationWithSession = { ...recommendationWithPrescription, primarySession };
+        let recommendationWithSession = {
+          ...recommendationWithPrescription,
+          primarySession,
+          ...(externalPreparedLaunch ? { externalPreparedLaunch } : {}),
+        };
 
         // M3.3 Gated authored replacement & additional session authority (ADR-0023 / D-MAUTH)
         try {

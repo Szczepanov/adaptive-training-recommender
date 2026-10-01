@@ -63,29 +63,36 @@ describe('canLaunchExternalPlanSession', () => {
     });
 });
 
-// #949: Home may start a scaled imported session only through the exact v6 reduced binding.
+// #949: Home may start a scaled imported session only through the exact prepared reduced snapshot.
 describe('isPreparedReducedExternalBinding', () => {
-    const v6Prescription = {
+    const prescription = {
         planId: 'coach-block-a', revision: 3, sessionId: 'w2-tempo',
-        scaling: { reducible: true, reducedSummary: 'Five minutes only', reducedDefinition: { id: 'w2-tempo' } },
     };
     const binding: SessionReferenceBinding = {
         sessionSource: { kind: 'external_plan', planId: 'coach-block-a', revision: 3, sessionId: 'w2-tempo', contentHash: 'hash' },
         occurrenceId: 'occ-1',
         prescriptionHash: 'reduced-hash',
     };
+    const prepared = { variant: 'reduced' as const, prescriptionHash: 'reduced-hash' };
 
-    it('permits an external binding to the exact plan, revision and session that carries a reducedDefinition', () => {
-        expect(isPreparedReducedExternalBinding(v6Prescription, binding)).toBe(true);
+    it('permits only the exact prepared reduced prescription for the same external source', () => {
+        expect(isPreparedReducedExternalBinding(prescription, binding, prepared)).toBe(true);
     });
 
-    it('blocks a legacy scale whose plan carries no reducedDefinition', () => {
-        expect(isPreparedReducedExternalBinding({ ...v6Prescription, scaling: { reducible: true, reducedSummary: 'Half' } }, binding)).toBe(false);
-        expect(isPreparedReducedExternalBinding({ planId: 'coach-block-a', revision: 3, sessionId: 'w2-tempo' }, binding)).toBe(false);
+    it('blocks the full prepared form even though full and reduced share the same source identity', () => {
+        expect(isPreparedReducedExternalBinding(
+            prescription,
+            binding,
+            { variant: 'full', prescriptionHash: binding.prescriptionHash },
+        )).toBe(false);
     });
 
-    it('blocks a reducedDefinition that is not explicitly reducible', () => {
-        expect(isPreparedReducedExternalBinding({ ...v6Prescription, scaling: { reducedDefinition: { id: 'w2-tempo' } } }, binding)).toBe(false);
+    it('blocks a reduced proof whose immutable prescription hash does not match the binding', () => {
+        expect(isPreparedReducedExternalBinding(
+            prescription,
+            binding,
+            { variant: 'reduced', prescriptionHash: 'different-reduced-hash' },
+        )).toBe(false);
     });
 
     it.each([
@@ -94,16 +101,17 @@ describe('isPreparedReducedExternalBinding', () => {
         ['session', { sessionId: 'w3-tempo' }],
     ] as const)('blocks a binding to a different %s', (_label, change) => {
         const other = { ...binding, sessionSource: { ...binding.sessionSource, ...change } } as SessionReferenceBinding;
-        expect(isPreparedReducedExternalBinding(v6Prescription, other)).toBe(false);
+        expect(isPreparedReducedExternalBinding(prescription, other, prepared)).toBe(false);
     });
 
-    it('blocks a non-external binding and a missing binding', () => {
+    it('blocks a non-external binding and missing evidence', () => {
         const catalog: SessionReferenceBinding = {
             sessionSource: { kind: 'catalog', workoutId: 'cyc_end_01', catalogVersion: '1' },
             prescriptionHash: 'catalog-hash',
         };
-        expect(isPreparedReducedExternalBinding(v6Prescription, catalog)).toBe(false);
-        expect(isPreparedReducedExternalBinding(v6Prescription, undefined)).toBe(false);
-        expect(isPreparedReducedExternalBinding(null, binding)).toBe(false);
+        expect(isPreparedReducedExternalBinding(prescription, catalog, prepared)).toBe(false);
+        expect(isPreparedReducedExternalBinding(prescription, undefined, prepared)).toBe(false);
+        expect(isPreparedReducedExternalBinding(null, binding, prepared)).toBe(false);
+        expect(isPreparedReducedExternalBinding(prescription, binding, undefined)).toBe(false);
     });
 });

@@ -36,10 +36,15 @@ Under `scale`, Home composes the launch binding through `sessionAuthoringService
 definition (its own `definitionHash`, distinct from the full definition's) within the adjudicated
 duration ceiling, and fails closed when the session has no reduced form. `MorningDecisionCard`
 offers **Start** for a `scale` verdict only when `sessionLaunch` `isPreparedReducedExternalBinding`
-holds: the imported session is `reducible: true` with a `reducedDefinition`, and
-`primarySession` is an external-plan binding to exactly that plan, revision and session, with no
-time-crunch alternative or load adjustment applied (those keep the binding but change the
-displayed dose, so Start is withheld until they are reset). A scale without a reduced form (pre-v6 plans, or v6 sessions that omit it) presents the reduced summary
+holds. Home records runtime-only `externalPreparedLaunch` evidence directly from the authoring
+adapter: its variant must be `reduced`, its content-addressed `prescriptionHash` must equal
+`primarySession.prescriptionHash`, and that binding must name the same external plan, revision and
+session. This distinction is required because the full and reduced forms deliberately share source
+identity under ADR-0023; source identity alone does not prove which immutable execution snapshot
+will run. The runtime evidence is not persisted separately because the recommendation audit already
+pins the exact `primarySession` binding/prescription hash. A time-crunch alternative or load
+adjustment still withholds Start because it changes the displayed dose without freezing another
+execution snapshot. A scale without a reduced form (pre-v6 plans, or v6 sessions that omit it) presents the reduced summary
 and dose with no Start, and `skip`/`defer` never start regardless of any binding.
 `ExternalVerdictBanner` never shows the original detailed step list as if it were the reduced
 workout, and its launch note states which of those cases applies. This is an execution-snapshot

@@ -1044,6 +1044,14 @@ export interface Recommendation {
         scaling?: ExternalSessionScaling;
         isEvent?: boolean;
     };
+    /** Runtime-only proof of the external execution snapshot prepared by Home. The launch
+     * variant is bound to the exact content-addressed prescription hash returned by the
+     * source-neutral authoring adapter; persistence already records `primarySession` and
+     * deliberately does not serialize this UI affordance evidence. */
+    externalPreparedLaunch?: {
+        variant: 'full' | 'reduced';
+        prescriptionHash: string;
+    };
     /** Multidomain session bindings (M3.2 / ADR-0023 D-MSNAP). */
     primarySession?: SessionReferenceBinding;
     additionalSessions?: SessionReferenceBinding[];
