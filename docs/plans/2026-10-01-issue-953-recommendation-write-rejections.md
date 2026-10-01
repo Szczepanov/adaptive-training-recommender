@@ -304,6 +304,11 @@ write budget, while the recommendation hot path keeps the minimum forward integr
 Identity assessment comparisons likewise remain in Rules; only deep object shape moved to the
 trusted validation boundary.
 
+The TypeScript validator consumes identity reason-code enums through the neutral
+`src/contracts/identityReasonCodes.ts` contract rather than `observations/identityModels.ts`, so
+selection/optimizer modules do not gain a transitive dependency on evidence-only observation
+modules (OV1.4 architecture boundary).
+
 ### WP4 — Stop deep-merging the audit (fixes D3)
 
 In `recommendationService.ts` `persist`, any write that sets `recommendationAudit` must
