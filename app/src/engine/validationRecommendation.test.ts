@@ -241,7 +241,7 @@ describe('recommendation validation boundary', () => {
     });
     it('accepts bounded exact athlete-evidence lineage emitted by provenance', () => {
         const raw = validV4Recommendation();
-        raw.recommendationAudit.athleteEvidenceLineage = [{
+        (raw.recommendationAudit as Record<string, unknown>).athleteEvidenceLineage = [{
             recordId: 'athlete-evidence-1',
             version: 2,
             domain: 'subjective_calibration',
