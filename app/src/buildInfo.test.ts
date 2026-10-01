@@ -20,6 +20,37 @@ describe('formatBuildTime', () => {
     expect(formatBuildTime('')).toBe('');
     expect(formatBuildTime('not-a-date')).toBe('');
   });
+
+  it('uses ISO fallback format when Intl.DateTimeFormat throws for an invalid timezone', () => {
+    expect(formatBuildTime('2026-09-30T06:55:00.000Z', 'Invalid/Timezone')).toBe('2026-09-30 06:55');
+  });
+
+  it('returns empty string when Intl.DateTimeFormat throws and toISOString fails', () => {
+    const originalToISOString = Date.prototype.toISOString;
+    Date.prototype.toISOString = () => {
+      throw new Error('toISOString failure');
+    };
+    try {
+      expect(formatBuildTime('2026-09-30T06:55:00.000Z', 'Invalid/Timezone')).toBe('');
+    } finally {
+      Date.prototype.toISOString = originalToISOString;
+    }
+  });
+
+  it('returns empty string when formatToParts yields incomplete date/time parts', () => {
+    const originalDateTimeFormat = Intl.DateTimeFormat;
+    // @ts-expect-error Mocking Intl.DateTimeFormat for incomplete parts test
+    Intl.DateTimeFormat = function () {
+      return {
+        formatToParts: () => [{ type: 'year', value: '2026' }],
+      };
+    };
+    try {
+      expect(formatBuildTime('2026-09-30T06:55:00.000Z')).toBe('');
+    } finally {
+      Intl.DateTimeFormat = originalDateTimeFormat;
+    }
+  });
 });
 
 describe('buildInfo', () => {
