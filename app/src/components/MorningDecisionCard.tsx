@@ -9,6 +9,7 @@ import { WorkoutExportMenu } from './WorkoutExportMenu';
 import type { MorningDecisionEvidence } from '../engine/decisionEvidence';
 import { capabilityMaintenanceReadout } from '../engine/capabilityMaintenance';
 import { prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
+import { resolveMorningLaunch, withheldLaunchExplanation } from './morningLaunchDecision';
 import { isPreparedReducedExternalBinding } from '../sessions/sessionLaunch';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
@@ -81,6 +82,10 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     const [confirmRedoOpen, setConfirmRedoOpen] = useState(false);
     const panelId = useId();
     const cancelRedoButtonRef = useRef<HTMLButtonElement>(null);
+    // The Start/Resume or Redo button, whichever renders; focus returns here after the
+    // withheld-launch Reset removes the focused Reset button (ui-ux.md §3.2).
+    const launchButtonRef = useRef<HTMLButtonElement>(null);
+    const focusLaunchAfterResetRef = useRef(false);
 
     useEffect(() => {
         if (!confirmRedoOpen) return;
@@ -232,11 +237,35 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
         }
     };
 
+    // morning-decision-ux.md §4: `primarySession` is the unadjusted binding. With an athlete
+    // adjustment applied, only a displayed catalog prescription may launch; an adjustment
+    // with nothing displayable to author (an authored replacement under a time-crunch, or a
+    // load change that resolved no catalog workout) withholds the stale binding instead of
+    // silently running the original definition. An adjusted imported binding is already
+    // unavailable above (`isExternalBindingAdjusted`), and its verdict banner explains it.
+    const launchDecision = resolveMorningLaunch({
+        canLaunch: !clinicalEscalationActive && Boolean(onStartSession),
+        hasAthleteAdjustment,
+        prescription,
+        primarySession: recommendation?.primarySession,
+        isExternalExcluded,
+        isExternalPrimaryBindingUnavailable,
+    });
+
+    useEffect(() => {
+        if (!focusLaunchAfterResetRef.current || launchDecision.kind === 'withheld') return;
+        focusLaunchAfterResetRef.current = false;
+        launchButtonRef.current?.focus();
+    }, [launchDecision.kind]);
+
     const handleStartPrimary = async (options?: { allowDuplicateCompleted?: boolean }) => {
         if (existingExecution?.state === 'completed' && !options?.allowDuplicateCompleted) {
             setConfirmRedoOpen(true);
             return;
         }
+        // The affordances are not rendered while withheld; this guards a redo confirmation
+        // that was already open when the adjustment was applied.
+        if (launchDecision.kind === 'withheld' && !isCheckinMissing) return;
 
         usabilityMetrics.recordActionSelected(userId, date, 'start_primary_session', {
             adjusted: adjustmentDirection !== null,
@@ -259,12 +288,11 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
         // A recommendation's primarySession is an immutable binding for the original
         // authored prescription. Once the athlete selects a one-tap alternative or load
         // adjustment, launch the currently displayed prescription instead of silently
-        // executing that stale binding.
-        const needsAdjustedBinding = Boolean(activeAlternativeId || adjustmentDirection !== null);
-        if (onStartSession && needsAdjustedBinding && prescription && !isExternalExcluded) {
+        // executing that stale binding -- or nothing, when nothing adjusted is displayable.
+        if (onStartSession && launchDecision.kind === 'adjusted') {
             setLaunching(true);
             try {
-                const launch = await prepareCatalogSessionLaunch(userId, prescription);
+                const launch = await prepareCatalogSessionLaunch(userId, launchDecision.prescription);
                 await onStartSession(launch.binding, options);
             } catch (error) {
                 setLaunchError(error instanceof Error ? error.message : 'Unable to prepare the adjusted session.');
@@ -274,10 +302,10 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
             return;
         }
 
-        if (recommendation.primarySession && onStartSession && !isExternalPrimaryBindingUnavailable) {
+        if (onStartSession && launchDecision.kind === 'primary') {
             setLaunching(true);
             try {
-                await onStartSession(recommendation.primarySession, options);
+                await onStartSession(launchDecision.binding, options);
             } catch (error) {
                 setLaunchError(error instanceof Error ? error.message : 'Unable to start this session.');
             } finally {
@@ -310,16 +338,29 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     const isHardGateActive = clinicalEscalationActive || isGateLocked || !evidence.boundaries.harderAdjustmentAllowed;
     // #909: on an excluded imported day the verdict banner owns the day ("nothing from
     // this session is prescribed today"), so no adjusted/alternative catalog binding gets
-    // a hero Start either. Unreachable through today's engine paths (every alternative
-    // and adjustment branch leaves `prescription` undefined for synthetic templates),
-    // but the card must not depend on that chain to keep its own promise.
-    const canLaunchCurrentPrescription = Boolean(
-        !clinicalEscalationActive
-        && !isExternalExcluded
-        && onStartSession
-        && prescription
-        && (activeAlternativeId || adjustmentDirection !== null),
-    );
+    // a hero Start either (resolveMorningLaunch). Unreachable through today's engine paths
+    // (every alternative and adjustment branch leaves `prescription` undefined for
+    // synthetic templates), but the card must not depend on that chain to keep its own promise.
+    const canStartFromHero = launchDecision.kind === 'adjusted' || launchDecision.kind === 'primary';
+    const withheldLaunchNotice = launchDecision.kind === 'withheld'
+        ? withheldLaunchExplanation(
+            launchDecision.binding,
+            existingExecution?.state === 'completed' ? 'redo'
+                : existingExecution?.state === 'in_progress' ? 'resume' : 'start',
+        )
+        : null;
+
+    const handleResetWithheldAdjustment = () => {
+        usabilityMetrics.recordActionSelected(userId, date, 'reset_withheld_adjustment');
+        // A confirmation opened before the adjustment became unlaunchable must not
+        // reappear after Reset with focus left outside its aria-modal surface.
+        setConfirmRedoOpen(false);
+        focusLaunchAfterResetRef.current = true;
+        // A load direction is reset through the persisting path, so the saved recommendation
+        // does not keep a stale `adjustment`; the alternative reset then clears local state.
+        if (adjustmentDirection !== null) handleLoadAdjustClick(null);
+        onResetAlternative();
+    };
 
     return (
         <section
@@ -465,8 +506,9 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                                     📋 View Targets
                                                 </button>
                                             )}
-                                            {!isExternalPrimaryBindingUnavailable && (
+                                            {canStartFromHero && (
                                             <button
+                                                ref={launchButtonRef}
                                                 type="button"
                                                 className="btn-redo-session"
                                                 onClick={() => setConfirmRedoOpen(true)}
@@ -477,8 +519,9 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                             </button>
                                             )}
                                         </div>
-                                    ) : (canLaunchCurrentPrescription || (recommendation.primarySession && onStartSession && !isExternalPrimaryBindingUnavailable)) ? (
+                                    ) : canStartFromHero ? (
                                         <button
+                                            ref={launchButtonRef}
                                             type="button"
                                             className="btn-hero-primary"
                                             onClick={() => void handleStartPrimary()}
@@ -506,7 +549,23 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                         </button>
                                     ) : null}
 
-                                    {confirmRedoOpen && (
+                                    {withheldLaunchNotice && (
+                                        <div className="adjusted-launch-withheld" role="note" aria-labelledby={`${panelId}-withheld-title`}>
+                                            <p id={`${panelId}-withheld-title`} className="adjusted-launch-withheld-title">
+                                                {withheldLaunchNotice.title}
+                                            </p>
+                                            <p className="adjusted-launch-withheld-text">{withheldLaunchNotice.text}</p>
+                                            <button
+                                                type="button"
+                                                className="btn-reset-adjustment"
+                                                onClick={handleResetWithheldAdjustment}
+                                            >
+                                                <span aria-hidden="true">↺</span> Reset to Original Session
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {confirmRedoOpen && !withheldLaunchNotice && (
                                         <div className="redo-confirm-banner" role="alertdialog" aria-modal="true" aria-labelledby={`${panelId}-redo-confirm-title`}>
                                             <p id={`${panelId}-redo-confirm-title`} className="redo-confirm-message">
                                                 You already completed this session today — start another anyway?

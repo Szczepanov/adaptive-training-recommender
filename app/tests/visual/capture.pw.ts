@@ -139,7 +139,35 @@ for (const scenario of VISUAL_SCENARIOS) {
       }
     }
 
+    if (scenario.id === 'morning-card-authored-adjustment-withheld') {
+      const note = page.getByRole('note', { name: 'Start is unavailable while this adjustment is applied' });
+      await expect(note).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Start My Tempo Run' })).toHaveCount(0);
+      const reset = page.getByRole('button', { name: 'Reset to Original Session' });
+      await expect(reset).toBeVisible();
+      if (test.info().project.name.includes('mobile')) {
+        const box = await reset.boundingBox();
+        expect(box).not.toBeNull();
+        expect(box!.height).toBeGreaterThanOrEqual(44);
+        expect(box!.width).toBeGreaterThanOrEqual(44);
+      }
+    }
+
     await capture(page, scenario);
+
+    if (scenario.id === 'morning-card-authored-adjustment-withheld') {
+      const reset = page.getByRole('button', { name: 'Reset to Original Session' });
+      await reset.focus();
+      await expect(reset).toBeFocused();
+      await reset.click();
+      const start = page.getByRole('button', { name: 'Start My Tempo Run' });
+      await expect(start).toBeVisible();
+      await expect(start).toBeFocused();
+      await expect(page.getByRole('note', { name: 'Start is unavailable while this adjustment is applied' })).toHaveCount(0);
+      await capture(page, scenario, 'reset', [
+        'Reset restores the executable original session and keyboard focus lands on Start.',
+      ]);
+    }
 
     if (scenario.id === 'manual-builder-empty') {
       await page.getByRole('button', { name: 'Add movement' }).click();
