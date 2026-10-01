@@ -1,7 +1,7 @@
 # Concurrent test-harness port isolation
 
-**Status:** `In progress` — P0–P3, P5, P6 and P8 implemented on branch
-`claude/concurrent-agent-port-conflicts-cb7da8`; P4 measured and dropped; P7 skipped (see
+**Status:** `In progress` — P0–P3, P5, P6 and P8 implemented in PR #960; P4 measured and
+dropped; P7 skipped (see
 [Delivery record](#delivery-record))
 **Blocked by:** — (PR #958 merged; this branch is rebased on it)
 **Unlocks:** running `make verify`, `test:e2e`, `test:rules`, visual capture and the local preview from several agent worktrees at once without port collisions, cross-worktree server reuse, or orphaned emulators
@@ -91,12 +91,17 @@ as constraints:
 One small harness layer in `app/scripts/harness/` that every emulator/browser entry point goes
 through:
 
-- **Lease, don't hard-code.** A run acquires a *port block* (8 consecutive ports) from a
-  machine-wide lease directory, `os.tmpdir()/atr-harness/leases/`, by creating
-  `<blockBase>.json` with `fs.openSync(…, 'wx')` (atomic exclusive create). The lease records
-  `{ pid, worktree, suite, ports, startedAt }`. Before use, every port in the block is probed by
-  binding on both `127.0.0.1` and `::1` (the hub binds both). Probe failure → release, try the next
-  block. A lease whose `pid` is dead is stale and may be reclaimed.
+- **Lease, don't hard-code.** A run acquires a *port block* (8 consecutive ports for emulator
+  suites, 2 for the visual Vite server) from a machine-wide lease directory,
+  `os.tmpdir()/atr-harness/leases/`, by publishing `<blockBase>.json` atomically: the lease is
+  written to a private temp file and hard-linked into place, which fails if the block is taken. The
+  lease records `{ pid, worktree, suite, ports, startedAt }`. Before use, every port in the block is
+  probed by binding on both `127.0.0.1` and `::1` (the hub binds both). Probe failure → release,
+  try the next block. A lease whose `pid` is dead is stale. It may be reclaimed only if its ports
+  are free; a stale lease whose ports are still held marks an orphan and is left for
+  `harness:reap`. Every operation that deletes a lease it did not just create (reclaim, release,
+  reap) takes the block's `.reclaim` lock and re-reads the lease first, and release only deletes a
+  lease that still records the caller as owner.
 - **Range:** 20000–39999, step 10. Below the Windows ephemeral range (49152+), clear of
   docker-compose (8080–8083) and the `firebase.json` defaults. Windows/Hyper-V excluded port
   ranges land inside it (this machine excludes 28385 and 28390), which is why every port is
@@ -109,9 +114,11 @@ through:
   `.env.*` files, so `.env.e2e` stays as the documented default for manual runs (verified
   empirically in Phase 0 — see Risks).
 - **No reuse, strict ports.** Servers start with `--strictPort`; `reuseExistingServer` becomes
-  opt-in (`E2E_REUSE_SERVER=1`) instead of `!CI`.
-- **Kill the tree.** The launcher owns the child tree: on exit/signal it terminates it
-  (`taskkill /T /F /PID` on Windows, process-group kill elsewhere) and releases the lease.
+  opt-in (`E2E_REUSE_SERVER=1`, `VISUAL_REUSE_SERVER=1` for the visual suite) instead of `!CI`.
+- **Kill the tree.** The launcher owns the child tree: on exit/signal it terminates it and
+  releases the lease. On Windows that is `taskkill /T /F /PID`. Elsewhere the child runs in its
+  own process group, which first gets SIGINT so firebase-tools can stop the emulator JVM it starts
+  in a separate session, then SIGKILL after 10 s.
 - **`firebase.json` defaults stay** for humans running `firebase emulators:start` by hand. No
   automated path uses them any more.
 
@@ -214,9 +221,11 @@ E2E mode, not the support helpers; that would need its own plan.
 - Rewrite `.claude/skills/local-app-preview/SKILL.md` to read ports from `app/.preview.json`
   instead of the hard-coded 9099/8080/4173 table and curl examples.
 
-### P7 — Optional machine-wide emulator cap — Skipped
+### P7 — Optional machine-wide emulator cap — Skipped (revisit)
 
-Not needed: concurrent runs from separate worktrees passed without it (see the delivery record).
+Skipped because concurrent E2E pairs from separate worktrees passed without it, but two
+concurrent full `make verify` runs hit load timeouts (see the delivery record), so this is the
+first candidate if that needs fixing.
 
 - A counting semaphore in the same lease directory limits concurrent emulator JVM runs
   (`ATR_MAX_EMULATOR_RUNS`, default derived from core count). Waiters log who holds the slots
@@ -250,9 +259,9 @@ Not needed: concurrent runs from separate worktrees passed without it (see the d
 | Risk | Mitigation |
 |---|---|
 | Vite env precedence differs from the assumption in Vite 8.3 | P0 verifies it; fallback is a generated `--mode` env file per lease, cleaned up with the config |
-| Probe-then-bind race with a non-harness process | Exclusive leases remove races between harness runs; on `port taken` the launcher retries once with a new block |
+| Probe-then-bind race with a non-harness process | Exclusive leases remove races between harness runs; a non-harness process binding a leased port between probe and emulator start still fails that run with `port taken` (no automatic retry) |
 | Excluded/reserved port ranges change after boot (Hyper-V, WSL, Docker) | Every port is probed at lease time; ranges are never cached |
-| Reaper kills a legitimate process | Reap acts only on leases whose recorded owner pid is dead, only on that lease's ports, and is dry-run by default |
+| Reaper kills a legitimate process | Reap acts only on leases whose recorded owner pid is dead, re-checked under the block lock immediately before acting, only on that lease's ports, and is dry-run by default. `preview:stop` kills only when the lease still names its live supervisor |
 | Per-run project ids leave Auth/Firestore state behind | Emulators are in-memory with `emulators:exec`; nothing persists past the run |
 | CI regressions from dynamic ports | CI runs the same launcher; dynamic ports on a fresh runner are always free. `test:rules` and E2E CI jobs gate the change |
 
@@ -270,7 +279,7 @@ active). Leased blocks started at 20000.
 
 | Acceptance criterion | Result |
 |---|---|
-| Two worktrees running `make verify` concurrently both pass, on distinct leased ports | See the `make verify` row in the PR description |
+| Two worktrees running `make verify` concurrently both pass, on distinct leased ports | **Not met on this machine.** Ports stayed disjoint (no `port taken`), but each run failed one load timeout: rules shard 1/2 in one worktree (`recommendationAuditBudget` `beforeAll` > 30 s hook timeout; the same shard passed in the other), one E2E visibility timeout (`testing-physical-capital`) in the other. Two full verifies run 6 emulator JVMs and 2 browsers at once. |
 | Two concurrent `test:e2e` runs in the **same** worktree both pass | **Not met.** Each run leases its own block and project and cleans up, but 4 of 4 runs had 1–4 failures, all 5 s UI/persistence timeouts in different tests (pages still `Loading…`). The same pair from two worktrees passed 41/41 on both sides, so the cause is something shared within one worktree and is not yet identified. Agents use separate worktrees, which is the supported case. |
 | A foreign server on 4173 is never reused | Met: branch E2E passed on its leased app port while `main`'s E2E served 4173 (and 8080/9099) at the same time |
 | No automated suite binds a `firebase.json` default port | Met: rules, E2E, shards, visual and preview all go through the launcher; `runRulesShard.test.mjs` asserts the lease range excludes every default |
@@ -278,12 +287,14 @@ active). Leased blocks started at 20000.
 | P4 socket target | Dropped with P4 (above) |
 | `test:rules` and `test:e2e` pass | Met locally: rules suite exit 0; E2E 41 passed, 3 skipped (CI pending on the PR) |
 
-Cross-worktree concurrency: three concurrent pairs passed on both sides (`main` + branch, and
-branch + branch twice counting `make verify`'s E2E lane).
+Cross-worktree concurrency: two concurrent full-E2E pairs passed 41/41 on both sides (`main` +
+branch, branch + branch). Two concurrent full `make verify` runs did not (load timeouts, above).
 
 Known follow-ups, not blocking:
 
-- Same-worktree concurrent E2E flakes (above).
+- Same-worktree concurrent E2E flakes, and load timeouts with two concurrent `make verify` runs
+  (above). P7's emulator cap, or longer timeouts on the budget-probe hook, are the candidate
+  remedies; P7 was skipped on the earlier, narrower evidence.
 - E2E through the launcher ran 10–15% slower than `main` on the same specs (two-spec sample:
   ~1.0–1.1 min vs 56–57 s). Not from P4 (the gap persisted with P4 reverted) and not from
   `singleProjectMode`; cause not investigated.

@@ -2,7 +2,14 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { acquirePortBlock, releasePortBlock } from './portLease.mjs';
-import { APP_DIR, ROOT_DIR, SPAWN_OWN_PROCESS_GROUP, killProcessTree } from './runWithEmulators.mjs';
+import {
+  APP_DIR,
+  ROOT_DIR,
+  SPAWN_OWN_PROCESS_GROUP,
+  killProcessTree,
+  signalExitCode,
+  stopChild,
+} from './runWithEmulators.mjs';
 
 export function parsePortCliArgs(argv) {
   const args = [...argv];
@@ -77,9 +84,13 @@ export async function runWithPort({
     releasePortBlock(lease);
   };
 
-  const handleSignal = () => {
+  let stopping = false;
+  const handleSignal = async (signal) => {
+    if (stopping) return;
+    stopping = true;
+    await stopChild(childProc);
     cleanup();
-    process.exit(130);
+    process.exit(signalExitCode(signal));
   };
   process.on('SIGINT', handleSignal);
   process.on('SIGTERM', handleSignal);

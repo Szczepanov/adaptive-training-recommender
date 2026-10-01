@@ -402,9 +402,10 @@ sequential, streamed output while debugging, run
 
 ### Harness port isolation and process lifecycle
 
-Automated emulator and browser suites acquire disjoint 8-port blocks via
-`app/scripts/harness/portLease.mjs` and run under unique project IDs (`demo-atr-<suite>-<blockBase>`).
-`reuseExistingServer` is disabled by default and opt-in via `E2E_REUSE_SERVER=1`.
+Automated emulator and browser suites acquire disjoint port blocks (8 ports for emulator suites,
+2 for the visual Vite server) via `app/scripts/harness/portLease.mjs` and run under unique project
+IDs (`demo-atr-<suite>-<blockBase>`). `reuseExistingServer` is disabled by default and opt-in via
+`E2E_REUSE_SERVER=1` (browser E2E) or `VISUAL_REUSE_SERVER=1` (visual capture).
 
 **Never kill processes by port number.** Doing so in concurrent multi-worktree agent environments
 can terminate sibling runs mid-execution. Use `npm run harness:status` to inspect active and

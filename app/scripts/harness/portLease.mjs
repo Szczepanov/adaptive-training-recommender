@@ -170,41 +170,61 @@ function createFileExclusive(path, content) {
   }
 }
 
-function isReclaimable(leaseFile, isPidAliveFn) {
+function readLeaseState(leaseFile, isPidAliveFn) {
   let content;
   try {
     content = readFileSync(leaseFile, 'utf8');
   } catch (err) {
-    // Released between our failed create and this read: the block is free to retry.
-    return err.code === 'ENOENT';
+    if (err.code === 'ENOENT') return { state: 'absent' };
+    throw err;
   }
   try {
-    return isStale(deserializeLease(content), { isPidAliveFn });
+    const lease = deserializeLease(content);
+    return { state: isStale(lease, { isPidAliveFn }) ? 'stale' : 'live', lease };
   } catch {
-    return fileAgeMs(leaseFile) > UNPARSEABLE_LEASE_GRACE_MS;
+    // Unparseable: an orphan once past the grace period, otherwise possibly mid-write.
+    return { state: fileAgeMs(leaseFile) > UNPARSEABLE_LEASE_GRACE_MS ? 'stale' : 'live' };
   }
 }
 
-// Replaces a stale lease with ours. Unlink-then-create is two steps, so without the lock two
-// acquirers that both saw the same dead lease could each delete the other's fresh one and both
-// believe they own the block. Under the lock the staleness check is repeated, so a block that
-// another acquirer has just reclaimed is left alone.
-function tryReclaimLease(leaseFile, content, isPidAliveFn) {
+function sameOwner(a, b) {
+  return Boolean(a && b) && a.pid === b.pid && a.startedAt === b.startedAt;
+}
+
+// Runs `fn` while holding the block's lock, or returns `null` without running it when another
+// process holds the lock. Every operation that deletes a lease it did not just create (reclaim,
+// release, reap) runs under this lock and re-reads the lease inside it, so none of them can
+// delete a lease another process has just written. Creating a lease on a free block needs no
+// lock: the hard-link publish is atomic on its own.
+export function withBlockLock(leaseFile, fn) {
   const lockFile = `${leaseFile}.reclaim`;
   try {
     writeFileSync(lockFile, String(process.pid), { flag: 'wx' });
   } catch (err) {
     if (err.code !== 'EEXIST') throw err;
     if (fileAgeMs(lockFile) > RECLAIM_LOCK_STALE_MS) rmSync(lockFile, { force: true });
-    return false;
+    return null;
   }
   try {
-    if (!isReclaimable(leaseFile, isPidAliveFn)) return false;
-    rmSync(leaseFile, { force: true });
-    return createFileExclusive(leaseFile, content);
+    return fn();
   } finally {
     rmSync(lockFile, { force: true });
   }
+}
+
+// Replaces a stale lease with ours, under the block lock with the staleness check repeated
+// inside it, so two acquirers that saw the same dead lease cannot both end up owning the block.
+function tryReclaimLease(leaseFile, content, isPidAliveFn) {
+  return (
+    withBlockLock(leaseFile, () => {
+      const { state } = readLeaseState(leaseFile, isPidAliveFn);
+      if (state === 'live') return false;
+      // 'absent': the owner released it meanwhile; never delete here, because a lock-free
+      // acquirer may be publishing on the free block right now.
+      if (state === 'stale') rmSync(leaseFile, { force: true });
+      return createFileExclusive(leaseFile, content);
+    }) ?? false
+  );
 }
 
 export async function acquirePortBlock({
@@ -233,13 +253,20 @@ export async function acquirePortBlock({
     };
     const content = `${serializeLease(leaseData)}\n`;
 
-    const acquired =
-      createFileExclusive(leaseFile, content) || tryReclaimLease(leaseFile, content, isPidAliveFn);
+    let acquired = createFileExclusive(leaseFile, content);
+    if (!acquired) {
+      if (readLeaseState(leaseFile, isPidAliveFn).state === 'live') continue;
+      // A stale lease whose ports are still held marks an orphan (a hard-killed run's emulator).
+      // Leave that record for `harness:reap` instead of replacing it and losing track of the
+      // orphan.
+      if (probePorts && !(await probeBlockPorts(leaseData.ports))) continue;
+      acquired = tryReclaimLease(leaseFile, content, isPidAliveFn);
+    }
     if (!acquired) continue;
 
     if (probePorts && !(await probeBlockPorts(leaseData.ports))) {
       // A non-harness process holds one of the ports (or the OS reserves it): try the next block.
-      rmSync(leaseFile, { force: true });
+      releasePortBlock({ ...leaseData, leaseFile, released: false });
       continue;
     }
 
@@ -253,15 +280,22 @@ export async function acquirePortBlock({
   throw new Error(`Failed to acquire port block of size ${size} in range ${minPort}-${maxPort}`);
 }
 
+// Deletes the lease file only while it still records this owner (same pid and start time).
+// After `harness:reap` has removed a lease and another run has taken the block, a late release
+// from the original owner must not delete the new owner's lease.
 export function releasePortBlock(lease, { leaseDir = getDefaultLeaseDir() } = {}) {
-  if (!lease) return;
-  if (lease.released) return;
+  if (!lease || lease.released) return;
 
   const leaseFile = lease.leaseFile || resolve(leaseDir, `${lease.blockBase}.json`);
-  try {
-    unlinkSync(leaseFile);
-  } catch (err) {
-    if (err.code !== 'ENOENT') throw err;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const done = withBlockLock(leaseFile, () => {
+      const { lease: current } = readLeaseState(leaseFile, () => true);
+      if (sameOwner(current, lease)) rmSync(leaseFile, { force: true });
+      return true;
+    });
+    if (done) break;
+    // Another process holds the block lock for a few milliseconds; wait and retry.
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
   }
   lease.released = true;
 }
