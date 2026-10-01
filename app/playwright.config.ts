@@ -1,13 +1,16 @@
 /* global process */
 import { defineConfig, devices } from '@playwright/test';
 
+const visualPort = Number(process.env.VISUAL_APP_PORT) || 4174;
+const baseURL = `http://127.0.0.1:${visualPort}`;
+
 export default defineConfig({
   testDir: './tests/visual',
   testMatch: '**/*.pw.ts',
   timeout: 30_000,
   workers: 1,
   use: {
-    baseURL: 'http://127.0.0.1:4174',
+    baseURL,
     colorScheme: 'dark',
     locale: 'en-US',
     timezoneId: 'Europe/Warsaw',
@@ -15,9 +18,9 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'npm run visual:serve',
-    url: 'http://127.0.0.1:4174/visual.html',
-    reuseExistingServer: !process.env.CI,
+    command: `npx vite --mode visual --host 127.0.0.1 --port ${visualPort} --strictPort`,
+    url: `${baseURL}/visual.html`,
+    reuseExistingServer: process.env.VISUAL_REUSE_SERVER === '1',
     timeout: 30_000,
   },
   projects: [

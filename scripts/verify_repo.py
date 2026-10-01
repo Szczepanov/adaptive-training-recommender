@@ -111,9 +111,9 @@ def build_plan(mode: VerificationMode, base_sha: str) -> list[VerificationPhase]
 
     Phases run in order. Within a phase, lanes run concurrently and each lane runs its steps
     in order, so a lane holds exactly the steps that must not overlap, e.g. ``simulate:diff``
-    reads the report that ``simulate:scenarios`` writes. Emulator suites can share a phase only
-    because each rules shard gets ports of its own (``app/scripts/run-rules-shard.mjs``) while
-    browser E2E keeps ``firebase.json``'s defaults. Wall-clock latency gates get a phase of their own so no
+    reads the report that ``simulate:scenarios`` writes. Emulator suites can share a phase
+    because each rules shard and browser E2E acquires its own dynamically leased ports via the
+    test harness launcher. Wall-clock latency gates get a phase of their own so no
     sibling competes for the CPU while samples are taken.
     """
     # In code mode the gates phase runs mypy and ESLint itself; pre-commit's copies of those

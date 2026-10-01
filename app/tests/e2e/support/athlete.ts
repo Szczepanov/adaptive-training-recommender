@@ -6,7 +6,8 @@ import { collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestor
 import type { Page } from '@playwright/test';
 import { getLocalDateString } from '../../../src/utils/localDate';
 
-export const E2E_PROJECT_ID = 'demo-adaptive-training-e2e';
+// The harness launcher injects a per-run project id so the app and these helpers agree on it.
+export const E2E_PROJECT_ID = process.env.E2E_PROJECT_ID ?? 'demo-adaptive-training-e2e';
 export const E2E_EMULATOR_HOST = process.env.E2E_EMULATOR_HOST ?? '127.0.0.1';
 export const E2E_AUTH_PORT = Number(process.env.E2E_AUTH_PORT ?? 9099);
 export const E2E_FIRESTORE_PORT = Number(process.env.E2E_FIRESTORE_PORT ?? 8080);

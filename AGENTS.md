@@ -220,10 +220,12 @@ aligned.
 * `npm run check` — the frontend gate: `tsc -b`, `eslint`, `vitest run`, knowledge validation, knowledge-coverage validation, knowledge-freshness reporting, workout catalog validation
 * `npm test` — `vitest run` only; the fast inner loop (`npm run test:watch`, `npm run test:coverage`)
 * `npm run test:perf` — wall-clock latency gates (`*.perf.test.ts`, `vitest.perf.config.ts`), run in a single worker; excluded from `npm test` because sibling workers preempt them. Part of `npm run check` / `make check`
-* `npm run test:rules` — Firestore security-rule suite inside the Firebase emulator (needs Java)
-* `npm run test:e2e` — Playwright browser E2E suite inside the Auth + Firestore emulators (`playwright.e2e.config.ts`; `npm run e2e:serve` serves the E2E app at `http://127.0.0.1:4173`)
-* `npm run emulators:exec:rules -- "<cmd>"` / `npm run emulators:exec:e2e -- "<cmd>"` — run a command inside the same emulators `test:rules` / `test:e2e` use; CI shards with e.g. `npm run emulators:exec:rules -- "npm run test:rules:emulator -- --shard=1/2"` (`test:e2e:emulator` is the Playwright counterpart)
-* `npm run test:rules:shard -- <index>/<total>` — one rules shard on emulator ports of its own (`scripts/run-rules-shard.mjs`), so shards can run side by side with each other and with `test:e2e` on one machine; `make verify` uses it
+* `npm run test:rules` — Firestore security-rule suite inside the Firebase emulator on dynamically leased ports (needs Java)
+* `npm run test:e2e` — Playwright browser E2E suite inside Auth + Firestore emulators on dynamically leased ports (`playwright.e2e.config.ts`; `npm run e2e:serve` serves the E2E app at `http://127.0.0.1:4173` for manual runs)
+* `npm run emulators:exec:rules -- "<cmd>"` / `npm run emulators:exec:e2e -- "<cmd>"` — run a command inside dynamically leased emulators that `test:rules` / `test:e2e` use; CI shards with e.g. `npm run emulators:exec:rules -- "npm run test:rules:emulator -- --shard=1/2"` (`test:e2e:emulator` is the Playwright counterpart)
+* `npm run test:rules:shard -- <index>/<total>` — one rules shard on dynamically leased emulator ports (`scripts/run-rules-shard.mjs`), so shards can run side by side with each other and with `test:e2e` across multiple agent worktrees; `make verify` uses it
+* `npm run harness:status` / `npm run harness:reap [-- --yes]` — inspect active and stale port leases and hub locators; reap orphan processes and files left by abnormal terminations. **Never kill processes by port number**; use these commands.
+* `npm run preview:start` / `npm run preview:stop` — start/stop background preview environment on leased ports, saving connection details to `app/.preview.json`
 * `npm run build` — `npm run check && vite build`
 * `npm run dev` — Vite dev server (`predev` runs `npm run check` first)
 * `npm run validate:workouts` / `npm run validate:knowledge` / `npm run validate:knowledge-coverage` — catalog and registry validators, individually

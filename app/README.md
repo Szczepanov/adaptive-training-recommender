@@ -58,9 +58,9 @@ All scripts defined in `package.json` are organized below by feature domain:
 | `npm test` | Engine unit tests | Runs Vitest unit tests once (`vitest run`). |
 | `npm run test:watch` | Watch mode unit tests | Runs Vitest in interactive watch mode for test-driven development. |
 | `npm run test:coverage` | Code coverage report | Executes Vitest V8 coverage and writes terminal, JSON, and HTML reports to `artifacts/coverage/frontend/`. |
-| `npm run test:rules` | Firestore security rules test | Launches Firebase local emulator with `--only firestore` and executes security rules unit tests (`test:rules:emulator`). |
+| `npm run test:rules` | Firestore security rules test | Launches Firebase local emulator on dynamically leased ports and executes security rules unit tests (`test:rules:emulator`). |
 | `npm run test:rules:emulator` | Direct rules test | Executes Vitest serially against every `src/emulator/*.emulator.test.ts` file (called internally by `test:rules`; expects a running Firestore emulator). |
-| `npm run emulators:exec:rules -- "<cmd>"` | Run inside the rules emulator | Starts the same Firestore emulator as `test:rules` and runs `<cmd>` against it. CI uses it to shard the suite: `npm run emulators:exec:rules -- "npm run test:rules:emulator -- --shard=1/2"`. |
+| `npm run emulators:exec:rules -- "<cmd>"` | Run inside the rules emulator | Starts Firestore emulator on dynamically leased ports and runs `<cmd>` against it. CI uses it to shard the suite: `npm run emulators:exec:rules -- "npm run test:rules:emulator -- --shard=1/2"`. |
 | `npm run firestore:rules:drift` | Production rules comparison | Reads the deployed default Firestore ruleset through local Application Default Credentials and fails if its source differs from `firestore.rules`. |
 | `npm run firestore:rules:deploy -- --confirm` | Production rules deployment | Runs emulator tests, saves rollback metadata locally, deploys only `firestore:rules`, then verifies the deployed source. See `docs/ops/firestore-rules-deployment.md`. |
 | `npm run firestore:rules:rollback -- --backup <file> --confirm` | Production rules rollback | Restores the release to the ruleset recorded by a previous local deployment. |
@@ -103,19 +103,22 @@ Parses the input JSON payload, feeds the historical recovery snapshot and athlet
 |---|---|---|
 | `npm run visual:install` | Install browser binaries | Installs Playwright Chromium browser binary needed for visual regression testing and screenshot capture. |
 | `npm run visual:serve` | Visual harness server | Starts Vite in visual testing mode (`.env.visual`, entry point `visual.html`) rendering synthetic athlete fixtures on `http://127.0.0.1:4174`. |
-| `npm run visual:refresh` | Refresh review screenshots | Prepares workspace, executes Playwright visual screenshot tests across desktop (1440x1000) and mobile (390x844) viewports against synthetic fixtures, and finalizes review artifacts. |
-| `npm run test:e2e` | Browser journey suite | Starts disposable Firebase Auth and Firestore emulators, serves the normal application in e2e mode, and runs the Chromium sign-in, check-in/recommendation, session lifecycle, and duplicate-start journeys. |
-| `npm run test:e2e:mobile` | Phone interaction suite | Uses the same disposable emulators and app server; runs all `tests/e2e/mobile/*.pw.ts` specs in the `e2e-mobile` Chromium project at 390 × 844 CSS pixels. |
+| `npm run visual:refresh` | Refresh review screenshots | Prepares workspace, executes Playwright visual screenshot tests on a dynamically leased Vite port across desktop (1440x1000) and mobile (390x844) viewports against synthetic fixtures, and finalizes review artifacts. |
+| `npm run test:e2e` | Browser journey suite | Starts disposable Firebase Auth and Firestore emulators on dynamically leased ports, serves the normal application in e2e mode on a leased port, and runs the Chromium sign-in, check-in/recommendation, session lifecycle, and duplicate-start journeys. |
+| `npm run test:e2e:mobile` | Phone interaction suite | Uses the same disposable emulators and app server on leased ports; runs all `tests/e2e/mobile/*.pw.ts` specs in the `e2e-mobile` Chromium project at 390 × 844 CSS pixels. |
 | `npm run test:e2e:emulator` | Direct browser suite | Runs `playwright test --config=playwright.e2e.config.ts` against already-running emulators (called internally by `test:e2e` and `test:e2e:mobile`). |
-| `npm run emulators:exec:e2e -- "<cmd>"` | Run inside the E2E emulators | Starts the same Auth + Firestore emulators as `test:e2e` and runs `<cmd>` against them. CI uses it to shard the suite by spec file: `npm run emulators:exec:e2e -- "npm run test:e2e:emulator -- --shard=1/2"`. |
+| `npm run emulators:exec:e2e -- "<cmd>"` | Run inside the E2E emulators | Starts Auth + Firestore emulators on dynamically leased ports and runs `<cmd>` against them. CI uses it to shard the suite by spec file: `npm run emulators:exec:e2e -- "npm run test:e2e:emulator -- --shard=1/2"`. |
+| `npm run harness:status` | Harness lease status | Inspects active and stale port leases and Firebase emulator hub locators. |
+| `npm run harness:reap` | Reap stale harness resources | Safely kills orphan processes and cleans up stale locators/leases left by abnormal terminations (`--yes` to execute). |
+| `npm run preview:start` / `npm run preview:stop` | Interactive preview | Starts/stops background emulators and Vite on leased ports, saving connection details to `app/.preview.json`. |
 
 `playwright.e2e.config.ts` keeps `e2e-chromium` on the existing desktop specs and selects
 `tests/e2e/mobile/*.pw.ts` for `e2e-mobile`. The full `test:e2e` command runs both projects;
 the mobile command runs the specs in `tests/e2e/mobile/` (drawer, overlay, session-runner
 journeys and assertion primitives). Add later mobile journeys to that folder to include them
-in the bounded phone suite. This suite uses
-the e2e app at port 4173 and the Auth/Firestore emulators; the separate visual harness uses
-port 4174 and its own fixture data.
+in the bounded phone suite. All automated emulator and browser suites acquire dynamically leased
+port blocks (20000-39999) and unique project IDs, preventing cross-worktree collisions and server reuse.
+Ports 4173/4174 and `firebase.json` defaults remain available for manual human runs.
 
 `test:e2e` reads the checked-in `.env.e2e` demo configuration only. It never accesses a
 production Firebase project or Garmin account. Playwright saves a trace, screenshot, video,
