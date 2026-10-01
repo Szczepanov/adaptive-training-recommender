@@ -1,7 +1,8 @@
 # ADR-0047: Fixed-Load Mean Velocity Assessment Series and Identity Architecture
 
-* **Status:** Proposed
+* **Status:** Accepted
 * **Date:** 2026-09-30
+* **Accepted:** 2026-10-01 — Option A (dedicated fixed-load protocol per exercise); Options B and C rejected; with two acceptance-time clarifications (decision rules 8 and 9)
 * **Revised:** 2026-10-01 (while Proposed) — the series identity now includes the velocity measurement method and parser version (ADR-0046 D-AT-IMPORT); the canonical metric is renamed so it no longer collides with the raw trial field `mean_concentric_velocity_mps` (ADR-0046 D-AT-RAWFIELDS); only comparison dimensions that exist or are explicitly added are named
 * **Deciders:** Repository owner
 * **Primary issue:** #897 (WP6.6 / Appendix A)
@@ -92,11 +93,11 @@ where `instanceDiscriminator` could be `load_60kg`.
 
 ---
 
-## Proposed Recommendation
+## Decision outcome
 
-While this ADR remains **Proposed**, Option A (Dedicated Fixed-Load Protocol per Exercise) is the recommended path for fixed-load velocity assessments. It does not become normative until the ADR is accepted.
+Option A (Dedicated Fixed-Load Protocol per Exercise) is the accepted, normative path for fixed-load velocity assessments. Option B (derived companion attempts) and Option C (multi-instance observation keys) are rejected for the reasons listed in their trade-offs: Option B couples attempt lifecycles and treats non-standardized 1RM warm-ups as benchmarks; Option C mutates the observation identity contract across rules, services, progress and goals.
 
-### Proposed Decision Rules
+### Decision rules
 
 1. **Dedicated Protocols:** Fixed-load velocity is modeled as a first-class `MeasurementProtocol`:
    - Bench press: `strength-bench-press-fixed-load-velocity`
@@ -107,6 +108,8 @@ While this ADR remains **Proposed**, Option A (Dedicated Fixed-Load Protocol per
 5. **Trial Capture:** Each attempt captures 2–3 maximal-velocity repetitions at the locked load. Reducer selects the peak valid mean velocity.
 6. **No Observation-Identity Schema Mutation:** The core `observationKey = ${attemptId}:${metricId}` contract remains unaltered.
 7. **Registry/rules work is still required:** add `strength_fixed_load_mean_velocity_mps` and `test_load_kg` through the existing TypeScript registry + Firestore allowlist parity path before any protocol using them can persist canonical evidence.
+8. **Trial load equals the locked load (acceptance-time clarification):** every valid trial of a fixed-load attempt is performed at exactly the attempt's `test_load_kg`. A trial whose recorded load differs is not valid evidence for that attempt; it is recorded as practice or invalid, never silently attributed to the locked load.
+9. **1RM attempt velocities stay raw (acceptance-time clarification):** velocities captured during 1RM attempts (including warm-up trials at round loads) remain raw trial evidence under ADR-0046 and are not promoted into fixed-load series. Fixed-load series are populated only by fixed-load attempts. Any later retrospective derivation from stored 1RM trials would require a new decision.
 
 ---
 

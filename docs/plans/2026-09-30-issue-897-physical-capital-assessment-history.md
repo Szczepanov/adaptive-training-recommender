@@ -853,6 +853,8 @@ Before closing #897, choose and implement one reviewed path:
 
 Do not solve this by encoding load into metric IDs or by adding a second informal trend algorithm over arbitrary raw rows.
 
+**Path chosen (2026-10-01):** [ADR-0047](../adr/0047-fixed-load-velocity-assessment-series.md) is accepted with Option A: dedicated `strength-bench-press-fixed-load-velocity` and `strength-back-squat-fixed-load-velocity` protocols, canonical metric `strength_fixed_load_mean_velocity_mps`, and `test_load_kg`, `measurement_method_id` (including importer parser version) and `equipment_setup_id` as series-defining identity. Implementation remains open work for this item (registry metric and `test_load_kg` dimension with Firestore parity, the two protocol revisions with capture contracts, catalog entries, and capture through the WL Analysis importer). 1RM attempt velocities stay raw trial evidence and do not populate fixed-load series.
+
 ---
 
 # WP7 — Export
@@ -1167,7 +1169,7 @@ This is the first athlete-usable slice.
 - WP7.1: normalized CSV export (`assessmentCsvExport.ts`, `utils/csv.ts`) with deterministic sorting and 24 exact columns, including the body-mass context reference.
 - WP3.4 / D8: body-mass-relative context (`anthropometry/bodyMass.ts`, `bodyMassPreference.ts`) with same-day Warsaw date matching, athlete preference support, stable source/reference provenance, and strict fallback to "unavailable".
 - WP7.2 update: schema version bumped to `assessment_diagnostic_export_v2` for per-series progress in diagnostic export JSON.
-- Appendix A: Proposed ADR-0047 (`docs/adr/0047-fixed-load-velocity-assessment-series.md`) evaluating dedicated protocol, companion attempts, and multi-instance keys.
+- Appendix A: ADR-0047 (`docs/adr/0047-fixed-load-velocity-assessment-series.md`; delivered as Proposed, accepted 2026-10-01 with Option A) evaluating dedicated protocol, companion attempts, and multi-instance keys.
 - Comprehensive unit tests across all new modules and browser E2E (`tests/e2e/testing-physical-capital.pw.ts`).
 
 PR C closes the athlete-facing **history + normalized export** slice of “store, export and track”. It does **not** close Issue #897 as a whole: WP6.6 fixed-load velocity and WP8 bounded goal/context consumers remain open unless explicitly rescoped.

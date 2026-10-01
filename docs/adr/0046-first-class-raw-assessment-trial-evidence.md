@@ -115,7 +115,7 @@ An athlete may fill raw trial fields from an exported measurement file instead o
 - **No silent judgement.** An adapter may pre-fill a value it cannot fully observe (e.g. a lift's success inferred from a completed ascent) only as a visibly marked suggestion the athlete confirms. Technical validity (depth, spotter contact, protocol deviations) remains the athlete's decision. An import writes nothing by itself: the athlete reviews the rows and saves through the normal capture path, so the lifecycle (D-AT-CORRECTION) and immutability (D-AT-TRIAL) rules apply unchanged.
 - **Fail closed.** Unknown columns, units, delimiters or structures are rejected with a plain-language reason rather than guessed.
 
-This amendment changes no persisted schema, Firestore rule, canonical metric or recommendation behaviour. A future canonical series that consumes imported values (see proposed ADR-0047) must include the measurement method, including the parser version, in its comparison identity.
+This amendment changes no persisted schema, Firestore rule, canonical metric or recommendation behaviour. A future canonical series that consumes imported values (see ADR-0047, accepted 2026-10-01) must include the measurement method, including the parser version, in its comparison identity.
 
 ### D-AT-BODYMASS — relative values retain source-specific body-mass provenance
 
