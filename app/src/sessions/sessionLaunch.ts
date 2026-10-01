@@ -48,32 +48,43 @@ export function canLaunchExternalPlanSession(
     return true;
 }
 
-/** The display-side identity of today's imported session, as `Recommendation.externalPrescription`
- * carries it. `scaling` is the authored object verbatim, so a v6 session keeps its
- * `reducedDefinition` even though the shared display type does not name it. */
+/** The display-side immutable source identity of today's imported session. */
 export interface ExternalPrescriptionIdentity {
     planId: string;
     revision: number;
     sessionId: string;
-    scaling?: object;
+    scaling?: {
+        reducible?: boolean;
+        reducedDefinition?: SessionDefinition;
+    };
+}
+
+/** Runtime evidence created after the source-neutral authoring adapter has frozen an
+ * executable external snapshot. Full and reduced forms intentionally share source identity,
+ * so the prescription hash is the discriminator that proves which exact bytes will run. */
+export interface PreparedExternalLaunchEvidence {
+    variant: 'full' | 'reduced';
+    prescriptionHash: string;
 }
 
 /**
- * #949: whether Home may start `binding` under today's `scale` verdict. The only scaled form
- * this app ever executes is the coach's own v6 `reducedDefinition`, and Home freezes a scale
- * binding solely through `prepareExternalPlanSessionLaunch({ useReducedDefinition })`, which
- * fails closed without one. So a scaled Start needs both the authored reduced form and an
- * external-plan binding for exactly this plan, revision and session; a legacy scale (no
- * `reducedDefinition`) or a binding to any other source stays blocked.
+ * #949: whether Home may start `binding` under today's `scale` verdict.
+ *
+ * ADR-0023 D-MSNAP separates immutable source identity from the content-addressed execution
+ * prescription. A full and reduced v6 launch therefore have the same external-plan source
+ * but different prescription hashes. Start is available only when Home records that the
+ * reduced variant was prepared and that proof names the exact
+ * `primarySession.prescriptionHash`; matching plan/revision/session alone is insufficient.
  */
 export function isPreparedReducedExternalBinding(
     prescription: ExternalPrescriptionIdentity | null | undefined,
     binding: SessionReferenceBinding | null | undefined,
+    prepared: PreparedExternalLaunchEvidence | null | undefined,
 ): boolean {
-    if (!prescription || !binding) return false;
-    const scaling = prescription.scaling as { reducible?: unknown; reducedDefinition?: unknown } | undefined;
-    if (scaling?.reducible !== true) return false;
-    if (typeof scaling.reducedDefinition !== 'object' || scaling.reducedDefinition === null) return false;
+    if (!prescription || !binding || !prepared) return false;
+    if (prescription.scaling?.reducible !== true || !prescription.scaling.reducedDefinition) return false;
+    if (!binding.prescriptionHash || !prepared.prescriptionHash) return false;
+    if (prepared.variant !== 'reduced' || prepared.prescriptionHash !== binding.prescriptionHash) return false;
     const source = binding.sessionSource;
     return source.kind === 'external_plan'
         && source.planId === prescription.planId

@@ -387,7 +387,7 @@ Executable browser proofs live in
 [`external-plan-execution-states.pw.ts`](../app/tests/e2e/external-plan-execution-states.pw.ts)
 and the desktop/mobile [`external-verdict.pw.ts`](../app/tests/e2e/external-verdict.pw.ts).
 The [#893 proof ledger](./plans/2026-09-29-issue-893-external-coach-round-trip.md#5-revised-acceptance-criteria-and-proof-ledger)
-records exact test names, verification status and remaining gaps. V4, V7, V8 and full V9 bundle
+records exact test names, verification status and remaining gaps. V8 and full V9 bundle
 completion are issue-linked `test.fixme` regressions; they are not passing proofs. #893 remains
 In progress, independently of the active tests' verification results.
 

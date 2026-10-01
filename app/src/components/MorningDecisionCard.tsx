@@ -150,18 +150,21 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
         && (externalVerdict.decision === 'skip' || externalVerdict.decision === 'defer');
     // A scaled imported session is still today's authoritative prescription, but only a
     // v6 plan carries an exact structured `reducedDefinition`. #949: Start the scaled
-    // session only through the binding Home froze to that reduced form; a scale with no
-    // reduced form (pre-v6 plans, or v6 sessions that omit it) never launches a raw imported
-    // binding, because it points at the full authored definition. Separately selected or
-    // constructed catalog alternatives remain governed by their own launch path and gates.
-    // A time-crunch or load adjustment
-    // keeps the imported binding while changing the displayed dose, so the exact reduced
-    // form is only startable with no athlete adjustment applied.
+    // session only when Home has current runtime proof that the authoring adapter froze the
+    // reduced variant and its prescription hash exactly matches primarySession. Source
+    // plan/revision/session identity is insufficient because full and reduced snapshots
+    // intentionally share it. A time-crunch or load adjustment keeps the imported binding
+    // while changing the displayed dose, so the exact reduced form is only startable with
+    // no athlete adjustment applied.
     const isExternalScale = hasExternalVerdict && externalVerdict.decision === 'scale';
     const hasAthleteAdjustment = Boolean(activeAlternativeId) || adjustmentDirection !== null;
     const isExternalReducedLaunchAvailable = isExternalScale
         && !hasAthleteAdjustment
-        && isPreparedReducedExternalBinding(externalPrescription, recommendation?.primarySession);
+        && isPreparedReducedExternalBinding(
+            externalPrescription,
+            recommendation?.primarySession,
+            recommendation?.externalPreparedLaunch,
+        );
     // The same holds under `proceed`: an imported binding freezes the authored definition,
     // a time-crunch or load adjustment keeps that binding while changing the displayed dose,
     // and an imported template never resolves to a catalog prescription to launch instead.

@@ -12,8 +12,10 @@ Their desired browser regressions are `test.fixme`; active proofs and final veri
 close those gaps, so #893 stays open. §2/§4/§7 are delivery records rather than implementation
 instructions; §3 preserves the design decisions.
 
-**Delivery update (1 October 2026):** H2 was resolved by #953 and H1 by #949; V7 and V4 are
-active, passing regressions. H3/H4 (#951/#952) remain `test.fixme`, so #893 stays open.
+**Delivery update (1 October 2026):** H2 was resolved by #953. The H1 execution path reached
+`main` through stacked PR #966 and V4 is active/passing; #964 now hardens that path so a scaled
+Start requires adapter-produced reduced launch evidence whose `prescriptionHash` exactly matches
+the primary binding. H3/H4 (#951/#952) remain `test.fixme`, so #893 stays open.
 
 ## 1. Goal
 
@@ -289,7 +291,7 @@ tracked below.
 |---|---|---|---|
 | E1 | Definition-bearing external sessions use one source-neutral launch adapter rather than a v4-only Home branch. | [v2] `isDefinitionBearingExternalPlan covers every definition-bearing schema and refuses v1/empty plans`; `isDefinitionBearingExternalSession admits v2+ definition sessions and refuses v1 flat prescriptions`; [authoring] `launches a v5-inherited structured session under proceed with exact source provenance` | Located |
 | E2 | A v5/v6 `proceed` session launches through canonical `SessionRunner`. | [authoring] `launches a v5-inherited structured session under proceed with exact source provenance`; [round-trip E2E] `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)` | Located |
-| E3 | A v6 `scale` session launches only from its exact structured reduced definition. | [authoring] `freezes only the exact v6 reduced definition when adjudication requests scale`; [resolver] `resolves the exact v6 reduced definition frozen in a scaled execution prescription`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is active: Home starts the prepared reduced binding, whose frozen `definitionHash` is the reduced hash and not the full one. | Passed in the #949 PR verification; H1 resolved by [#949] |
+| E3 | A v6 `scale` session launches only from its exact structured reduced definition. | [authoring] `freezes only the exact v6 reduced definition when adjudication requests scale`; [resolver] `resolves the exact v6 reduced definition frozen in a scaled execution prescription`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is active: Home starts the prepared reduced binding, whose frozen `definitionHash` is the reduced hash and not the full one. #964 additionally requires runtime reduced-launch evidence to name the exact `primarySession.prescriptionHash`, so source identity alone cannot authorize Start. | V4 active/passing on `main`; hash-proof hardening in #964 |
 | E4 | A v1–v5 scale without exact reduced definition cannot accidentally launch the full dose. | [authoring] `does not allow scale to launch an older plan without an exact reduced definition`; [verdict E2E] `a scaled imported session shows the reduced version without launching the full structured dose` (desktop/mobile). | Located |
 | E5 | `skip`, `defer` and advisory event states cannot expose an executable Start path. | [verdict E2E] `a deferred imported session names its verdict and offers no Start path`; `an excluded imported session names its verdict and offers no Start path as written` (desktop/mobile); [authoring] `rejects target-event sessions because they are advisory fixed-activity inputs` | Located; verdict E2E passed. Skip-day recommendation persistence open [#950]/[#953] |
 | E6 | Exact authored source and prescription hash are persisted with the execution. | [authoring] `creates and binds an external-plan occurrence when date is provided in options`; [round-trip E2E] `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)` | Located |
@@ -310,7 +312,7 @@ tracked below.
 | ID | Acceptance criterion | Exact executable proof | State |
 |---|---|---|---|
 | S1 | Per-session status uses exact persisted identities, never title similarity. | [status] `does not join same-day records with a different immutable plan source`; `does not join an occurrence from another local date`; `refuses to cross-match old-revision bytes after a re-import` | Located |
-| S2 | Performed-as-authored is distinguishable from app-dose-modified. | [status] `distinguishes scaled-completed from proceeded-as-authored by audited dose diff`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is active and asserts the exact next-brief row labelled app dose modified. | Passed in the #949 PR verification; H1 resolved by [#949] |
+| S2 | Performed-as-authored is distinguishable from app-dose-modified. | [status] `distinguishes scaled-completed from proceeded-as-authored by audited dose diff`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is active and asserts the exact next-brief row labelled app dose modified. | V4 active/passing on `main`; #964 hardens Start-to-snapshot proof |
 | S3 | Moved is distinguishable from missed. | [status] `pins intentionally_moved at the projector so refactors cannot break it silently`; `uses only an explicit missed occurrence as evidence of no performance` | Located; V3 passed |
 | S4 | Gate replacement is distinguishable from athlete replacement/non-adherence. | [status] `labels a defer-gated day gate_replaced with unknown performance when nothing executed`; `labels a skip-gated day gate_replaced`; `labels a single-session replace day manually_replaced with auditable evidence`; [state E2E] `V7 a gate replacement has exact labels and creates no external occurrence` is active and passing since [#953]; `V8 UI manual replacement names its exact replacement occurrence` is `test.fixme` because persisted UI behavior does not reach that projected state. | Unit proof; V7 resolved (H2); integrated gap H3 [#951] |
 | S5 | Partial/abandoned is distinguishable from completed. | [status] `labels an abandoned execution with entries partial_or_abandoned`; `joins completed performance through exact occurrence and execution identity` | Located; V12 passed |
@@ -362,11 +364,12 @@ complete a variant whose required behavior is tracked by `test.fixme`.
 
 ## Named proof gaps
 
-Two desired regressions remain open in [state E2E] as `test.fixme` (H1 resolved by #949, H2 by #953).
+Two desired regressions remain open in [state E2E] as `test.fixme` (H3/H4). H1's executable
+gap is active and passing on `main`; #964 is defense-in-depth hardening. H2 was resolved by #953.
 
 | Gap | Affected criteria/variant | Demonstrated boundary | Follow-up |
 |---|---|---|---|
-| H1 | E3, S2 / V4 | Resolved by [#949]: Home offers Start only for the binding it froze to the exact v6 reduced definition; legacy scale and skip/defer stay blocked. V4 is active and passing. | Closed by the #949 PR |
+| H1 | E3, S2 / V4 | The executable reduced path is active on `main` and V4 passes. #964 closes the remaining defense-in-depth gap: full and reduced forms share source identity, so Start also requires current reduced-launch evidence whose prescription hash exactly matches the bound snapshot. | [#949] / #964 |
 | H2 | S4 / V7, legacy V5 skip reliability | Resolved by [#953] (D1 catalog fingerprint pair accepted by rules). V7 is active and passing. | Closed ([#950]) |
 | H3 | S4 / V8, occurrence-at-Start boundary | A real UI manual replacement and completed manual execution exist, but the next brief retains the authored row with athlete none and no replacement attribution. Home eagerly prepares a scheduled external occurrence before Start, so the variant's no-external-occurrence condition is unmet. | [#951] |
 | H4 | P4 / full V9 | The initial bundle recommendation parses AVAILABLE with two valid separate windows and short executable definitions. The primary completes and the brief retains both rows, but the secondary Start card is absent. Started-member replay/binding mismatches and rejected recommendation updates accompany the failure. | [#952] |
@@ -380,7 +383,7 @@ The initially missing assertions now have active, passing cases:
 - **G3 — exact validation paths (C3):** [revision E2E]
   `invalid enum, date, full and reduced definitions fail at exact contract paths`.
 
-#893 remains **In progress** even if every active test passes. H3/H4 still require product fixes
+Issue #893 remains **In progress** even if every active test passes. H3/H4 still require product fixes
 and passing integrated regressions (H1/H2 are resolved); skipped tests cannot close an acceptance
 criterion.
 Use `Refs #893`, not closing language, for this tests/docs-only PR.

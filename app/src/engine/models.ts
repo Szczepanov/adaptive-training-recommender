@@ -1,5 +1,5 @@
 import type { AthletePerformanceProfile, WorkoutPrescription } from '../workouts/models.ts';
-import type { SessionReferenceBinding } from '../sessions/models';
+import type { SessionDefinition, SessionReferenceBinding } from '../sessions/models';
 import type { IdentityDecisionProvenance } from '../observations/identityModels';
 import type { DataIssue, DataState, DataStateSummary } from './dataState';
 import type { SubjectiveBaseline } from './subjectiveBaseline';
@@ -1041,8 +1041,17 @@ export interface Recommendation {
         sessionId: string;
         title: string;
         prescription: ExternalPrescription;
-        scaling?: ExternalSessionScaling;
+        /** v1-v5 use the legacy scaling fields; v6 may additionally carry the exact
+         * structured reduced definition accepted by the external launch adapter. */
+        scaling?: ExternalSessionScaling & { reducedDefinition?: SessionDefinition };
         isEvent?: boolean;
+    };
+    /** Runtime-only proof of the external execution snapshot prepared by Home. The
+     * persistence boundary deliberately does not serialize this field; the durable
+     * recommendation/audit already pins primarySession and its prescriptionHash. */
+    externalPreparedLaunch?: {
+        variant: 'full' | 'reduced';
+        prescriptionHash: string;
     };
     /** Multidomain session bindings (M3.2 / ADR-0023 D-MSNAP). */
     primarySession?: SessionReferenceBinding;

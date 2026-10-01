@@ -25,7 +25,7 @@ export const VISUAL_USER_ID = 'visual-athlete';
 export const VISUAL_DATE = '2026-09-12';
 const TIMESTAMP = '2026-09-12T08:00:00.000+02:00';
 
-export type VisualScreen = 'home' | 'checkin' | 'goals' | 'data' | 'constraints' | 'preferences' | 'session' | 'builder' | 'plan';
+export type VisualScreen = 'home' | 'checkin' | 'goals' | 'data' | 'constraints' | 'preferences' | 'session' | 'builder' | 'plan' | 'morning-card';
 
 export interface VisualScenario {
   id: string;
@@ -593,6 +593,17 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
       intent: 'invalid' as SessionDefinition['intent'],
     },
     expectedFocus: ['The validation message is readable and the builder remains editable.'],
+    fixture: standardFixture,
+  },
+  {
+    id: 'morning-card-authored-adjustment-withheld',
+    title: 'Morning decision — adjusted authored session is withheld',
+    screen: 'morning-card',
+    expectedFocus: [
+      'The adjusted display never exposes Start for the stale authored binding.',
+      'The explanation names the unavailable action and offers one reversible reset.',
+      'Reset restores the original Start action without a pointer-only interaction.',
+    ],
     fixture: standardFixture,
   },
   {

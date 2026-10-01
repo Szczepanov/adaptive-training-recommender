@@ -15,6 +15,7 @@ import type { Screen } from '../types/navigation';
 import { VISUAL_USER_ID, type VisualScenario, type VisualScreen } from './fixtures';
 import { prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
 import type { SessionDefinition, SessionReferenceBinding } from '../sessions/models';
+import { MorningDecisionAdjustedLaunchHarness } from './MorningDecisionAdjustedLaunchHarness';
 
 interface VisualReviewAppProps {
   scenario: VisualScenario;
@@ -72,7 +73,11 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
     navigate(mapScreenToVisual(next));
   };
 
-  const appScreen: Screen = screen === 'session' || screen === 'builder' ? 'sessions' : screen;
+  const appScreen: Screen = screen === 'session' || screen === 'builder'
+    ? 'sessions'
+    : screen === 'morning-card'
+      ? 'home'
+      : screen;
   const isWorkoutRunnerActive = screen === 'session' && sessionExecution?.state === 'in_progress';
   const isCheckin = screen === 'checkin';
 
@@ -90,6 +95,7 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
 
       <main className="app-content">
         {screen === 'home' && <Home userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} onViewData={() => navigate('data')} />}
+        {screen === 'morning-card' && <MorningDecisionAdjustedLaunchHarness />}
         {screen === 'plan' && <PlanView userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} />}
         {screen === 'checkin' && <DailyCheckin userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} onBack={() => navigate('home')} />}
         {screen === 'goals' && <Goals userId={VISUAL_USER_ID} />}
