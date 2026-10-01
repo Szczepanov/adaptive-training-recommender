@@ -394,17 +394,31 @@ export function fixtureMaximal(): DailyRecommendation {
     };
     const identityDecision = {
         identityAssessmentId: 'assessment-max-1',
-        automaticStatus: 'MATCH' as const,
-        effectiveStatus: 'MATCH' as const,
+        automaticStatus: 'UNCERTAIN' as const,
+        effectiveStatus: 'UNCERTAIN' as const,
         reviewEventId: null,
         identityPolicyVersion: 'identity-policy-v1',
-        featureSchemaVersion: 1,
-        passportVersion: 1,
-        sharedBundleRef: { provider: 'garmin' as const, transport: 'direct' as const },
+        featureSchemaVersion: 'identity-features-v1',
+        passportVersion: null,
+        sharedBundleRef: {
+            id: 'shared-max-1',
+            provider: 'garmin',
+            transport: 'garmin_direct',
+            revision: 1,
+            sourcePayloadHash: 'sha256:shared-max-1',
+            lineageKey: 'garmin:maximal',
+        },
         anchorBundleRefs: [],
         selectedEffectiveSource: null,
-        fallbackReason: null,
+        fallbackReason: 'ANCHOR_MISSING' as const,
     };
+    const athleteEvidenceLineage = Array.from({ length: 16 }, (_, i) => ({
+        recordId: `athlete-evidence-${i}`,
+        version: 1,
+        domain: 'subjective_calibration',
+        refinementType: 'calibrate_scalar',
+        baseKnowledgeClaimId: `claim.${i}`,
+    }));
     const rec = {
         ...base,
         additionalSessions,
@@ -413,6 +427,7 @@ export function fixtureMaximal(): DailyRecommendation {
             additionalSessions,
             subjectiveDrift,
             identityDecision,
+            athleteEvidenceLineage,
         },
     };
     const validation = validateRecommendation(rec);
@@ -475,13 +490,20 @@ export async function executeScenario(
             const adminDb = ctx.firestore();
             await setDoc(doc(adminDb, `users/${owner}/health_identity_assessments/assessment-max-1`), {
                 id: 'assessment-max-1',
-                automaticStatus: 'MATCH',
+                automaticStatus: 'UNCERTAIN',
                 policyVersion: 'identity-policy-v1',
-                featureSchemaVersion: 1,
-                passportVersion: 1,
-                sharedBundleRef: { provider: 'garmin', transport: 'direct' },
+                featureSchemaVersion: 'identity-features-v1',
+                passportVersion: null,
+                sharedBundleRef: {
+                    id: 'shared-max-1',
+                    provider: 'garmin',
+                    transport: 'garmin_direct',
+                    revision: 1,
+                    sourcePayloadHash: 'sha256:shared-max-1',
+                    lineageKey: 'garmin:maximal',
+                },
                 anchorBundleRefs: [],
-                reasonCodes: [],
+                reasonCodes: ['ANCHOR_MISSING'],
             });
         });
     }
