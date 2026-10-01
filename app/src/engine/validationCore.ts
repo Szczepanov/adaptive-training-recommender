@@ -68,7 +68,7 @@ import { EVENT_PRESETS } from './eventPresets';
 import { getLocalDateString } from '../utils/localDate';
 import type { GoalPerformanceTarget } from './performanceTargetPolicy';
 import type { SessionReferenceBinding, SessionSourceRef } from '../sessions/models';
-import { isKnownIdentityReasonCode } from '../observations/identityModels';
+import { isKnownIdentityReasonCode } from '../contracts/identityReasonCodes';
 
 // --- Validation Result Types ---
 
