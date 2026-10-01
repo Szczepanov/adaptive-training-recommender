@@ -97,11 +97,17 @@ service cloud.firestore {
       let selected = identity.selectedEffectiveSource;
       let assessment = get(/databases/$(database)/documents/users/$(userId)/health_identity_assessments/$(identity.identityAssessmentId)).data;
       return identity is map
+        // Deep shape is enforced at the TypeScript persistence boundary. Keep the
+        // replay-critical cross-document bindings here: a client must not attach
+        // otherwise-valid identity evidence from a different assessment snapshot.
         && (selected == null || selected is map)
         && assessment.id == identity.identityAssessmentId
         && assessment.automaticStatus == identity.automaticStatus
         && assessment.policyVersion == identity.identityPolicyVersion
+        && assessment.featureSchemaVersion == identity.featureSchemaVersion
         && assessment.passportVersion == identity.passportVersion
+        && assessment.sharedBundleRef == identity.sharedBundleRef
+        && assessment.anchorBundleRefs == identity.anchorBundleRefs
         && (identity.fallbackReason == null || identity.fallbackReason in assessment.reasonCodes)
         && (identity.reviewEventId == null
           ? identity.effectiveStatus == assessment.automaticStatus
@@ -131,6 +137,7 @@ service cloud.firestore {
         && (!('decisionContext' in audit) || (
           audit.decisionContext is map
           && audit.decisionContext.keys().hasOnly(['path', 'revision', 'contentHash'])
+          && audit.decisionContext.path == 'users/' + userId + '/daily_recommendations/' + date + '/decision_contexts/' + string(revision)
           && audit.decisionContext.revision == revision
           && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/decision_contexts/$(string(revision))).data.contentHash == audit.decisionContext.contentHash
         ))
@@ -225,10 +232,16 @@ service cloud.firestore {
       let prior = getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/revisions/$(string(priorRevNum))).data;
       return prior.revision == priorRevNum
         && prior.templateId == previous.templateId
+        && prior.templateTitle == previous.templateTitle
+        && prior.category == previous.category
+        && prior.modality == previous.modality
         && prior.mode == previous.mode
         && prior.rationale == previous.rationale
         && (!('engineVerdict' in previous) || prior.engineVerdict == previous.engineVerdict)
-        && (!('prescription' in previous) || (!('id' in previous.prescription) || prior.prescription.id == previous.prescription.id));
+        && (!('prescription' in previous) || (
+          ('prescription' in prior)
+          && (!('id' in previous.prescription) || prior.prescription.id == previous.prescription.id)
+        ));
     }
 
     // WP2 / Issue #953: On update, validate only changed sections.
@@ -236,17 +249,20 @@ service cloud.firestore {
     // which was validated at creation or upon its last change.
     function hasValidRecommendationUpdate(userId, date, changed) {
       let data = request.resource.data;
-      let coreChanged = changed.hasAny(['templateId', 'templateTitle', 'category', 'modality', 'mode', 'rationale', 'schemaVersion', 'revision']);
       return isDateDocument(date)
         && data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'engineVerdict', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'primarySession', 'additionalSessions', 'adherence', 'recommendationAudit', 'revision'])
-        && (!coreChanged || (
-          data.templateId is string
-          && data.mode in ['train', 'modify', 'recover']
-          && data.rationale is string
-          && data.schemaVersion in [1, 2, 3, 4]
-          && (!('revision' in data) || (data.revision is int && data.revision >= 1))
-        ))
+        // Validate each changed scalar independently. Grouping these behind one
+        // "core changed" flag accidentally left templateTitle/category/modality unchecked.
+        && (!changed.hasAny(['templateId']) || data.templateId is string)
+        && (!changed.hasAny(['templateTitle']) || data.templateTitle is string)
+        && (!changed.hasAny(['category']) || data.category is string)
+        && (!changed.hasAny(['modality']) || data.modality is string)
+        && (!changed.hasAny(['mode']) || data.mode in ['train', 'modify', 'recover'])
+        && (!changed.hasAny(['rationale']) || data.rationale is string)
+        && (!changed.hasAny(['schemaVersion']) || data.schemaVersion in [1, 2, 3, 4])
+        && (!changed.hasAny(['revision']) || (!('revision' in data) || (data.revision is int && data.revision >= 1)))
         && (!changed.hasAny(['engineVerdict']) || (!('engineVerdict' in data) || data.engineVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory']))
+        && (!changed.hasAny(['createdAt']) || data.createdAt is string)
         && (!changed.hasAny(['updatedAt']) || data.updatedAt is string)
         && (!changed.hasAny(['adherence']) || hasValidAdherence(data.adherence))
         && (!changed.hasAny(['primarySession']) || (!('primarySession' in data) || hasValidSessionReferenceBinding(data.primarySession)))
@@ -1898,9 +1914,11 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
-    function hasMatchingRecommendationContext(recDoc, data) {
+    function hasMatchingRecommendationContext(userId, date, revision, recDoc, data) {
       let boundAudit = recDoc.recommendationAudit;
       return recDoc.revision == data.recommendationRevision
+        && boundAudit.decisionContext.path == 'users/' + userId + '/daily_recommendations/' + date + '/decision_contexts/' + revision
+        && boundAudit.decisionContext.revision == data.recommendationRevision
         && boundAudit.decisionContext.contentHash == data.contentHash
         && boundAudit.policyVersion == data.policyVersion
         && boundAudit.evaluatedAt == data.evaluatedAt;
@@ -1908,30 +1926,45 @@ service cloud.firestore {
 
     function hasValidDecisionContext(userId, date, revision) {
       let d = request.resource.data;
+      let recommendationPath = /databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date);
       return d.keys().hasOnly([
           'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',
           'policyVersion', 'captureVersion', 'appSource', 'minimumSafetyStatus',
           'evaluatorInputs', 'performedTrainingFacts', 'mechanicalCheckinHistory', 'contentHash'
         ])
+        && d.keys().hasAll([
+          'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',
+          'policyVersion', 'captureVersion', 'appSource', 'minimumSafetyStatus',
+          'evaluatorInputs', 'performedTrainingFacts', 'contentHash'
+        ])
         && d.schemaVersion == 1
         && d.userId == userId
         && d.date == date
+        && d.recommendationRevision is int && d.recommendationRevision >= 0
         && string(d.recommendationRevision) == revision
-        && (d.recommendationRevision == 0 || hasMatchingRecommendationContext(
-          getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data,
-          d
+        && d.evaluatedAt is string
+        && d.policyVersion is string
+        && (d.recommendationRevision == 0 || (
+          existsAfter(recommendationPath)
+          && hasMatchingRecommendationContext(
+            userId, date, revision, getAfter(recommendationPath).data, d
+          )
         ))
         && d.captureVersion == 'same-day-capture-v1'
         && d.appSource is map
         && d.appSource.keys().hasOnly(['gitSha', 'dirty'])
+        && d.appSource.keys().hasAll(['gitSha', 'dirty'])
+        && d.appSource.gitSha is string && d.appSource.gitSha.size() > 0
         && d.appSource.dirty is bool
         && (d.minimumSafetyStatus == 'complete'
-          ? (d.evaluatorInputs is map
+          ? (d.recommendationRevision >= 1
+            && d.evaluatorInputs is map
             && d.performedTrainingFacts is map)
           : (d.minimumSafetyStatus in ['missing', 'incomplete']
             && d.recommendationRevision == 0
             && d.evaluatorInputs == null
             && d.performedTrainingFacts == null))
+        && d.contentHash is string
         && d.contentHash.matches('^[a-f0-9]{64}$');
     }
 
