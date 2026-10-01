@@ -26,10 +26,28 @@ export interface ResolvedSameDayBodyMass {
 
 export interface ResolveSameDayBodyMassOptions {
     manualEntries?: readonly AnthropometryEntry[];
+    /**
+     * Provider weigh-ins covering the target date(s) plus the provider-series lookback
+     * (`PROVIDER_BODY_MASS_SERIES_LOOKBACK_DAYS`), so "a usable provider series exists" is not
+     * judged from the test day alone.
+     */
     providerRecords?: readonly RawProviderWeightRecord[];
     snapshots?: readonly DailyRecoverySnapshot[];
     preferredSource?: 'provider' | 'manual' | null;
+    /**
+     * `unknown` when the provider read failed or returned unreadable rows. Without an explicit
+     * athlete preference, provider-first selection cannot be applied to unknown provider data,
+     * so the relative value is unavailable rather than substituted from the manual series.
+     */
+    providerSeriesStatus?: 'known' | 'unknown';
 }
+
+/**
+ * Horizon over which a provider body-mass series counts as "usable" for D-BC-WEIGHT
+ * provider-first selection. A provider series with weigh-ins in this window stays the selected
+ * source even on a test day without a weigh-in (the value is then unavailable, never manual).
+ */
+export const PROVIDER_BODY_MASS_SERIES_LOOKBACK_DAYS = 28;
 
 export interface BodyMassRelativeContext {
     bodyMassKg?: number;
@@ -78,6 +96,11 @@ export function resolveSameDayBodyMass(
     const providerRecords = options.providerRecords
         ?? (options.snapshots ? extractProviderWeightRecords(options.snapshots) : []);
     const manualEntries = options.manualEntries ?? [];
+    if (!options.preferredSource && options.providerSeriesStatus === 'unknown') {
+        // ADR-0046 D-AT-BODYMASS: no cross-source substitution. A failed provider read must not
+        // turn provider-first selection into a silent manual fallback.
+        return null;
+    }
     const preferred = chooseEffectiveBodyMassSource(
         options.preferredSource ?? null,
         providerRecords.length > 0,

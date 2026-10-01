@@ -285,6 +285,19 @@ describe('assessmentProgress', () => {
             expect(row.status).toBe('insufficient_evidence');
         });
 
+        it('never publishes a numeric change across series or protocol revisions (D1)', () => {
+            const attBase = makeAttempt('att-1', protoRefR1, 'baseline', '2026-10-20T10:00:00Z');
+            const obsBase = makeObservation(attBase, 'standing_broad_jump_distance_cm', 230, 'series-1', '2026-10-20T10:00:00Z');
+
+            const attOtherSeries = makeAttempt('att-2', protoRefR1, 'checkpoint', '2026-11-20T10:00:00Z');
+            const obsOtherSeries = makeObservation(attOtherSeries, 'standing_broad_jump_distance_cm', 245, 'series-2', '2026-11-20T10:00:00Z');
+            expect(computeObservationRowProgress(obsOtherSeries, obsBase, [])).toEqual({ status: 'non_comparable' });
+
+            const attOtherRevision = makeAttempt('att-3', protoRefR2, 'checkpoint', '2026-12-20T10:00:00Z');
+            const obsOtherRevision = makeObservation(attOtherRevision, 'standing_broad_jump_distance_cm', 250, 'series-1', '2026-12-20T10:00:00Z');
+            expect(computeObservationRowProgress(obsOtherRevision, obsBase, [])).toEqual({ status: 'non_comparable' });
+        });
+
         it('returns familiarization status for familiarization attempts', () => {
             const attFam = makeAttempt('att-fam', protoRefR1, 'familiarization', '2026-10-18T10:00:00Z');
             const obsFam = makeObservation(attFam, 'standing_broad_jump_distance_cm', 220, 'series-1', '2026-10-18T10:00:00Z');
