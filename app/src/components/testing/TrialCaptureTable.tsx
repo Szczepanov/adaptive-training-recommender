@@ -221,15 +221,13 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 return Math.max(maxSequence, sequence);
             }, 0) + 1;
 
-            return [
-                ...current,
-                {
-                    ordinal: nextOrdinal,
-                    values: carryValues,
-                    validity: 'valid',
-                    clientId: `trial-row-${attempt.id}-${nextClientSequence}`,
-                },
-            ].sort((a, b) => a.ordinal - b.ordinal);
+            const nextRow: TrialCaptureRow = {
+                ordinal: nextOrdinal,
+                values: carryValues,
+                validity: 'valid',
+                clientId: `trial-row-${attempt.id}-${nextClientSequence}`,
+            };
+            return [...current, nextRow].sort((a, b) => a.ordinal - b.ordinal);
         });
     };
 
