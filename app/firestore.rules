@@ -83,8 +83,9 @@ service cloud.firestore {
     }
 
     function hasValidSubjectiveDriftAudit(drift) {
-      return drift is map
-        && drift.perMetricContributions is map;
+      // Exact drift keys/ranges are validated by validateRecommendation. Rules keep
+      // only the top-level container contract on this hot path.
+      return drift is map;
     }
 
     function hasMatchingIdentityReview(userId, identity) {
@@ -96,11 +97,11 @@ service cloud.firestore {
     function hasValidIdentityDecisionProvenance(userId, identity) {
       let selected = identity.selectedEffectiveSource;
       let assessment = get(/databases/$(database)/documents/users/$(userId)/health_identity_assessments/$(identity.identityAssessmentId)).data;
-      return identity is map
+      return
         // Deep shape is enforced at the TypeScript persistence boundary. Keep the
         // replay-critical cross-document bindings here: a client must not attach
         // otherwise-valid identity evidence from a different assessment snapshot.
-        && (selected == null || (
+        (selected == null || (
           // Deep selected-source shape is validated by validateRecommendation. Field
           // access here still fails closed for malformed non-map input; Rules retain
           // only the replay-critical source-separation predicate.
@@ -108,7 +109,8 @@ service cloud.firestore {
           || selected.provider != identity.sharedBundleRef.provider
           || selected.transport != identity.sharedBundleRef.transport
         ))
-        && assessment.id == identity.identityAssessmentId
+        // The assessment document is fetched from identityAssessmentId itself; comparing
+        // the server-owned document's duplicate internal id adds no binding strength.
         && assessment.automaticStatus == identity.automaticStatus
         && assessment.policyVersion == identity.identityPolicyVersion
         && assessment.featureSchemaVersion == identity.featureSchemaVersion
@@ -151,9 +153,9 @@ service cloud.firestore {
         // is required to preserve deterministic headroom under Firestore's expression
         // budget (ADR-0010 implementation amendment, issue #953).
         && (!('decisionContext' in audit) || (
-          audit.decisionContext is map
-          && audit.decisionContext.keys().hasOnly(['path', 'revision', 'contentHash'])
-          && audit.decisionContext.path == 'users/' + userId + '/daily_recommendations/' + date + '/decision_contexts/' + string(revision)
+          // validateRecommendation owns exact context shape. Rules retain the
+          // integrity-bearing canonical path/revision/hash binding.
+          audit.decisionContext.path == 'users/' + userId + '/daily_recommendations/' + date + '/decision_contexts/' + string(revision)
           && audit.decisionContext.revision == revision
           && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/decision_contexts/$(string(revision))).data.contentHash == audit.decisionContext.contentHash
         ))
