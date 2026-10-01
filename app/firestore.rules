@@ -101,12 +101,12 @@ service cloud.firestore {
         // replay-critical cross-document bindings here: a client must not attach
         // otherwise-valid identity evidence from a different assessment snapshot.
         && (selected == null || (
-          selected is map
-          && (
-            identity.effectiveStatus == 'USER'
-            || selected.provider != identity.sharedBundleRef.provider
-            || selected.transport != identity.sharedBundleRef.transport
-          )
+          // Deep selected-source shape is validated by validateRecommendation. Field
+          // access here still fails closed for malformed non-map input; Rules retain
+          // only the replay-critical source-separation predicate.
+          identity.effectiveStatus == 'USER'
+          || selected.provider != identity.sharedBundleRef.provider
+          || selected.transport != identity.sharedBundleRef.transport
         ))
         && assessment.id == identity.identityAssessmentId
         && assessment.automaticStatus == identity.automaticStatus
@@ -146,14 +146,14 @@ service cloud.firestore {
           ? !hasLineage
           : (version == 4 && hasLineage && hasValidKnowledgeLineage(audit.knowledgeLineage)))
         && (!('athleteEvidenceLineage' in audit) || hasValidAthleteEvidenceLineage(audit.athleteEvidenceLineage))
-        && audit.policyVersion is string
-        && audit.evaluatedAt is string
-        && audit.decisionContextRevision is string
+        // Scalar/deep audit shape is validated at the TypeScript persistence/read
+        // boundary. Rules keep the integrity-bearing context binding below; this split
+        // is required to preserve deterministic headroom under Firestore's expression
+        // budget (ADR-0010 implementation amendment, issue #953).
         && (!('decisionContext' in audit) || (
           audit.decisionContext is map
           && audit.decisionContext.keys().hasOnly(['path', 'revision', 'contentHash'])
           && audit.decisionContext.path == 'users/' + userId + '/daily_recommendations/' + date + '/decision_contexts/' + string(revision)
-          && audit.decisionContext.revision is int
           && audit.decisionContext.revision == revision
           && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/decision_contexts/$(string(revision))).data.contentHash == audit.decisionContext.contentHash
         ))
@@ -168,7 +168,8 @@ service cloud.firestore {
         // be empty. An explicit athlete override (audit.externalRest.overridden == true)
         // suspends only the protected-rest short circuit -- selection is the ordinary ranked
         // planner path, so candidateScores is populated exactly like any other decision.
-        && (!('droppedContributorObjectives' in audit) || audit.droppedContributorObjectives is list)
+        && (!('droppedContributorObjectives' in audit)
+          || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
         && (!('externalPlan' in audit) || (audit.externalPlan is map))
         && (!('externalRest' in audit) || (
           audit.externalRest is map
@@ -265,20 +266,26 @@ service cloud.firestore {
     // which was validated at creation or upon its last change.
     function hasValidRecommendationUpdate(userId, date, changed) {
       let data = request.resource.data;
+      // Most decision transitions change rationale/revision/audit but not the stable
+      // scalar identity fields. Test that set once rather than spending one expression
+      // per unchanged field. If any member changes, validate the whole stable scalar
+      // group so templateTitle/category/modality cannot bypass validation.
+      let stableScalarsChanged = changed.hasAny(['templateId', 'templateTitle', 'category', 'modality', 'mode', 'schemaVersion', 'engineVerdict']);
       return isDateDocument(date)
         && data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'engineVerdict', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'primarySession', 'additionalSessions', 'adherence', 'recommendationAudit', 'revision'])
-        // Validate each changed scalar independently. Grouping these behind one
-        // "core changed" flag accidentally left templateTitle/category/modality unchecked.
-        && (!changed.hasAny(['templateId']) || data.templateId is string)
-        && (!changed.hasAny(['templateTitle']) || data.templateTitle is string)
-        && (!changed.hasAny(['category']) || data.category is string)
-        && (!changed.hasAny(['modality']) || data.modality is string)
-        && (!changed.hasAny(['mode']) || data.mode in ['train', 'modify', 'recover'])
+        && (!stableScalarsChanged || (
+          data.templateId is string
+          && data.templateTitle is string
+          && data.category is string
+          && data.modality is string
+          && data.mode in ['train', 'modify', 'recover']
+          && data.schemaVersion in [1, 2, 3, 4]
+          && (!('engineVerdict' in data) || data.engineVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory'])
+        ))
         && (!changed.hasAny(['rationale']) || data.rationale is string)
-        && (!changed.hasAny(['schemaVersion']) || data.schemaVersion in [1, 2, 3, 4])
         && (!changed.hasAny(['revision']) || (!('revision' in data) || (data.revision is int && data.revision >= 1)))
-        && (!changed.hasAny(['engineVerdict']) || (!('engineVerdict' in data) || data.engineVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory']))
-        && (!changed.hasAny(['createdAt']) || data.createdAt is string)
+        // createdAt is already pinned to resource.data by canUpdateRecommendation.
+        // updatedAt remains the only timestamp whose type must be checked on update.
         && (!changed.hasAny(['updatedAt']) || data.updatedAt is string)
         && (!changed.hasAny(['adherence']) || hasValidAdherence(data.adherence))
         && (!changed.hasAny(['primarySession']) || (!('primarySession' in data) || hasValidSessionReferenceBinding(data.primarySession)))
