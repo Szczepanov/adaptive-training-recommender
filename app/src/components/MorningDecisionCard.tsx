@@ -352,6 +352,9 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
 
     const handleResetWithheldAdjustment = () => {
         usabilityMetrics.recordActionSelected(userId, date, 'reset_withheld_adjustment');
+        // A confirmation opened before the adjustment became unlaunchable must not
+        // reappear after Reset with focus left outside its aria-modal surface.
+        setConfirmRedoOpen(false);
         focusLaunchAfterResetRef.current = true;
         // A load direction is reset through the persisting path, so the saved recommendation
         // does not keep a stale `adjustment`; the alternative reset then clears local state.
