@@ -31,7 +31,11 @@ import { computeContentHash } from '../engine/externalPlanHash';
 import { POLICY_VERSION } from '../engine/policy';
 import { validateScheduleWindow, validateScheduleWindowSet } from '../engine/scheduleWindows';
 import { validateFixedActivity } from '../engine/validation';
-import { validateExternalTrainingPlanV4, type ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
+import type { ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
+import type { ExternalTrainingPlanV5 } from '../sessions/externalPlanV5';
+import type { ExternalTrainingPlanV6 } from '../sessions/externalPlanV6';
+import { validateAnyExternalTrainingPlan } from '../sessions/externalPlanValidation';
+import { isBundleCapableExternalPlan } from '../sessions/externalPlanV2';
 
 export interface IntradayBundlePlacementRecord {
     userId: string;
@@ -51,8 +55,9 @@ export interface IntradayBundlePlacementAuditInput {
     asOf: string;
     policyVersion: string;
     plan: { planId: string; revision: number; contentHash: string };
-    /** Exact immutable plan revision used to project the bundle members. */
-    planSnapshot: ExternalTrainingPlanV4;
+    /** Exact immutable plan revision used to project the bundle members. v5 inherits
+     * v4's intraday/rest contract unchanged, so it records exactly like v4/v6. */
+    planSnapshot: ExternalTrainingPlanV4 | ExternalTrainingPlanV5 | ExternalTrainingPlanV6;
     bundleId: string;
     scheduleWindows: readonly ScheduleWindow[];
     fixedActivities: readonly FixedActivity[];
@@ -117,10 +122,10 @@ function validateAuditInput(input: IntradayBundlePlacementAuditInput): void {
     if (!input.planSnapshot || typeof input.planSnapshot !== 'object'
         || input.planSnapshot.planId !== input.plan.planId
         || input.planSnapshot.revision !== input.plan.revision
-        || input.planSnapshot.schema !== 'adaptive-training-recommender/external-plan@4') {
+        || !isBundleCapableExternalPlan(input.planSnapshot)) {
         throw new Error('Invalid frozen external plan snapshot');
     }
-    const planValidation = validateExternalTrainingPlanV4(input.planSnapshot);
+    const planValidation = validateAnyExternalTrainingPlan(input.planSnapshot);
     if (!planValidation.isValid) throw new Error('Invalid frozen external plan snapshot');
     if (input.proposal?.bundleId !== input.bundleId) throw new Error('Placement proposal bundle identity mismatch');
     if (!Array.isArray(input.scheduleWindows) || input.scheduleWindows.length > 8

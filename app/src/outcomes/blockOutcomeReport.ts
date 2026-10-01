@@ -1,4 +1,5 @@
 import type { BlockOutcomeReport } from './blockOutcome';
+import { canonicalizeJson, compareCodeUnits } from '../utils/canonicalJson';
 
 export interface BlockMetricProgressRow {
     evaluationId: string;
@@ -31,10 +32,6 @@ const CSV_COLUMNS: (keyof BlockMetricProgressRow)[] = [
     'blockVerdictPolicyVersion',
     'reasons',
 ];
-
-function compareCodeUnits(left: string, right: string): number {
-    return left < right ? -1 : left > right ? 1 : 0;
-}
 
 function csvField(value: string | number | boolean): string {
     const text = String(value);
@@ -73,24 +70,10 @@ export function blockOutcomeReportToCsv(report: BlockOutcomeReport): string {
     ].join('\n');
 }
 
-type JsonPrimitive = string | number | boolean | null;
-type CanonicalJson = JsonPrimitive | CanonicalJson[] | { [key: string]: CanonicalJson };
-
-function canonicalize(value: unknown): CanonicalJson {
-    if (value === null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
-    if (Array.isArray(value)) return value.map(canonicalize);
-    if (typeof value !== 'object') throw new Error(`Unsupported report JSON value: ${typeof value}`);
-
-    const entries = Object.entries(value as Record<string, unknown>)
-        .filter(([, item]) => item !== undefined)
-        .sort(([left], [right]) => compareCodeUnits(left, right));
-    return Object.fromEntries(entries.map(([key, item]) => [key, canonicalize(item)]));
-}
-
 /**
  * OV6.1 byte-stable nested export. Object keys are canonicalized recursively while array
  * ordering remains the report's deterministic evidence ordering.
  */
 export function blockOutcomeReportToJson(report: BlockOutcomeReport): string {
-    return JSON.stringify(canonicalize(report));
+    return JSON.stringify(canonicalizeJson(report));
 }

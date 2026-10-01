@@ -1,8 +1,9 @@
-import { collection, doc, getDoc, getDocs, setDoc, writeBatch, type DocumentData } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, runTransaction, setDoc, type DocumentData } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type {
     ExternalPlanHeader,
     ExternalPlanPlacement,
+    ExternalPlanRevisionActivation,
     ExternalTrainingPlan,
 } from '../engine/models';
 import type { DataIssue, DataState } from '../engine/dataState';
@@ -13,7 +14,9 @@ import { type ExternalTrainingPlanV2 } from '../sessions/externalPlanV2';
 import { type ExternalTrainingPlanV3 } from '../sessions/externalPlanV3';
 import { type ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
 import { EXTERNAL_PLAN_SCHEMA_V5, type ExternalTrainingPlanV5 } from '../sessions/externalPlanV5';
+import { EXTERNAL_PLAN_SCHEMA_V6, type ExternalTrainingPlanV6 } from '../sessions/externalPlanV6';
 import { validateAnyExternalTrainingPlan } from '../sessions/externalPlanValidation';
+import { isValidDate } from '../engine/validation';
 
 /** Re-exported so existing callers keep one import site. The implementation lives in
  * `engine/externalPlanHash.ts` because `replay.ts` verifies against it and must not pull
@@ -22,7 +25,7 @@ export { computeContentHash } from '../engine/externalPlanHash';
 
 export interface ImportResult {
     header: ExternalPlanHeader;
-    plan: ExternalTrainingPlan | ExternalTrainingPlanV2 | ExternalTrainingPlanV3 | ExternalTrainingPlanV4 | ExternalTrainingPlanV5;
+    plan: ExternalTrainingPlan | ExternalTrainingPlanV2 | ExternalTrainingPlanV3 | ExternalTrainingPlanV4 | ExternalTrainingPlanV5 | ExternalTrainingPlanV6;
 }
 
 /**
@@ -33,7 +36,7 @@ export interface ImportResult {
  * revisions so supersession is always explicit through another revision of that same block.
  */
 function validateIntentBlockSupersession(
-    previous: ExternalTrainingPlanV5,
+    previous: { planId: string; intentBlocks?: { id: string }[] },
     next: ImportResult['plan'],
     userId: string,
 ): DataIssue[] {
@@ -41,7 +44,7 @@ function validateIntentBlockSupersession(
     if (previousIds.size === 0) return [];
 
     const documentPath = `users/${userId}/external_plans/${previous.planId}`;
-    if (next.schema !== EXTERNAL_PLAN_SCHEMA_V5) {
+    if (next.schema !== EXTERNAL_PLAN_SCHEMA_V5 && next.schema !== EXTERNAL_PLAN_SCHEMA_V6) {
         return [{
             code: 'intent-block-retirement-unsupported',
             field: 'schema',
@@ -71,8 +74,16 @@ export class ExternalPlanService {
         return doc(getDb(), 'users', userId, 'external_plans', planId, 'revisions', String(revision));
     }
 
-    private placementRef(userId: string, planId: string) {
+    private placementRef(userId: string, planId: string, revision: number) {
+        return doc(getDb(), 'users', userId, 'external_plans', planId, 'revisions', String(revision), 'placement', 'current');
+    }
+
+    private legacyPlacementRef(userId: string, planId: string) {
         return doc(getDb(), 'users', userId, 'external_plans', planId, 'placement', 'current');
+    }
+
+    private activationRef(userId: string, planId: string, revision: number) {
+        return doc(getDb(), 'users', userId, 'external_plans', planId, 'activations', String(revision));
     }
 
     /**
@@ -88,7 +99,7 @@ export class ExternalPlanService {
      * `supersededFrom` records the date this revision takes effect. Days already
      * adjudicated keep their persisted recommendations and audits regardless.
      */
-    async import(userId: string, raw: unknown, supersededFrom: string | null = null): Promise<DataState<ImportResult>> {
+    async import(userId: string, raw: unknown, effectiveFromOverride: string | null = null): Promise<DataState<ImportResult>> {
         const parsed = validateAnyExternalTrainingPlan(raw);
         if (!parsed.isValid || !parsed.data) {
             const issues: DataIssue[] = parsed.errors.map(error => ({
@@ -100,10 +111,25 @@ export class ExternalPlanService {
         }
 
         const plan = parsed.data;
+        const effectiveFrom = effectiveFromOverride ?? plan.startDate;
+        if (!isValidDate(effectiveFrom)) {
+            return { status: 'INVALID', issues: [{ code: 'invalid-effective-date', field: 'effectiveFrom', documentPath: `users/${userId}/external_plans/${plan.planId}` }] };
+        }
         try {
-            const existing = await getDoc(this.headerRef(userId, plan.planId));
-            if (existing.exists()) {
-                const existingHeader = existing.data() as ExternalPlanHeader;
+            const now = new Date().toISOString();
+            const contentHash = await computeContentHash(plan);
+            return await runTransaction(getDb(), async transaction => {
+                const headerRef = this.headerRef(userId, plan.planId);
+                const revisionRef = this.revisionRef(userId, plan.planId, plan.revision);
+                const activationRef = this.activationRef(userId, plan.planId, plan.revision);
+                const [existing, sameRevision, sameActivation] = await Promise.all([
+                    transaction.get(headerRef),
+                    transaction.get(revisionRef),
+                    transaction.get(activationRef),
+                ]);
+                const existingHeader = existing.exists() ? existing.data() as ExternalPlanHeader : null;
+                let predecessorActivationToWrite: ExternalPlanRevisionActivation | null = null;
+                if (existingHeader) {
                 const storedRevision = existingHeader.revision;
                 if (typeof storedRevision === 'number' && plan.revision < storedRevision) {
                     return {
@@ -123,7 +149,7 @@ export class ExternalPlanService {
                     // are missing, malformed, or stored under the wrong identity we cannot prove
                     // what live intent blocks or immutable content the header actually represents.
                     const previousDocumentPath = `users/${userId}/external_plans/${plan.planId}/revisions/${storedRevision}`;
-                    const previousSnapshot = await getDoc(this.revisionRef(userId, plan.planId, storedRevision));
+                    const previousSnapshot = plan.revision === storedRevision ? sameRevision : await transaction.get(this.revisionRef(userId, plan.planId, storedRevision));
                     if (!previousSnapshot.exists()) {
                         return {
                             status: 'INVALID',
@@ -153,11 +179,8 @@ export class ExternalPlanService {
                     }
 
                     if (plan.revision === storedRevision) {
-                        const [storedHash, incomingHash] = await Promise.all([
-                            computeContentHash(previousParsed.data),
-                            computeContentHash(plan),
-                        ]);
-                        if (storedHash !== incomingHash || existingHeader.contentHash !== storedHash) {
+                        const storedHash = await computeContentHash(previousParsed.data);
+                        if (storedHash !== contentHash || existingHeader.contentHash !== storedHash) {
                             return {
                                 status: 'INVALID',
                                 issues: [{
@@ -167,23 +190,63 @@ export class ExternalPlanService {
                                 }],
                             };
                         }
-                        return {
-                            status: 'AVAILABLE',
-                            data: { header: existingHeader, plan },
-                            revision: storedHash,
-                        };
+                        const persistedActivation = sameActivation.exists()
+                            ? sameActivation.data() as ExternalPlanRevisionActivation
+                            : null;
+                        if (persistedActivation && (
+                            persistedActivation.effectiveFrom !== effectiveFrom
+                            || persistedActivation.contentHash !== storedHash
+                            || persistedActivation.userId !== userId
+                            || persistedActivation.planId !== plan.planId
+                        )) {
+                            return { status: 'INVALID', issues: [{ code: 'immutable-activation-conflict', field: 'effectiveFrom', documentPath: `users/${userId}/external_plans/${plan.planId}/activations/${plan.revision}` }] };
+                        }
+                        if (!persistedActivation) {
+                            const legacyDate = existingHeader.supersededFrom ?? previousParsed.data.startDate;
+                            if (existingHeader.revision !== plan.revision || legacyDate !== effectiveFrom) {
+                                return { status: 'INVALID', issues: [{ code: 'activation-history-unavailable', field: 'effectiveFrom', documentPath: `users/${userId}/external_plans/${plan.planId}/activations/${plan.revision}` }] };
+                            }
+                            transaction.set(activationRef, {
+                                userId, planId: plan.planId, revision: plan.revision, contentHash: storedHash,
+                                effectiveFrom, activatedAt: existingHeader.importedAt,
+                            } as unknown as DocumentData);
+                        }
+                        return { status: 'AVAILABLE', data: { header: existingHeader, plan }, revision: storedHash };
                     }
 
-                    if (previousParsed.data.schema === EXTERNAL_PLAN_SCHEMA_V5) {
+                    const predecessorActivation = await transaction.get(this.activationRef(userId, plan.planId, storedRevision));
+                    const predecessorHash = await computeContentHash(previousParsed.data);
+                    if (predecessorHash !== existingHeader.contentHash) {
+                        return { status: 'INVALID', issues: [{ code: 'superseded-revision-hash-mismatch', field: 'revision', documentPath: previousDocumentPath }] };
+                    }
+                    const predecessorEffectiveFrom = predecessorActivation.exists()
+                        ? (predecessorActivation.data() as ExternalPlanRevisionActivation).effectiveFrom
+                        : existingHeader.supersededFrom ?? previousParsed.data.startDate;
+                    if (effectiveFrom < predecessorEffectiveFrom) {
+                        return { status: 'INVALID', issues: [{ code: 'activation-date-regression', field: 'effectiveFrom', documentPath: `users/${userId}/external_plans/${plan.planId}` }] };
+                    }
+
+                    if (previousParsed.data.schema === EXTERNAL_PLAN_SCHEMA_V5 || previousParsed.data.schema === EXTERNAL_PLAN_SCHEMA_V6) {
                         const supersessionIssues = validateIntentBlockSupersession(previousParsed.data, plan, userId);
                         if (supersessionIssues.length > 0) {
                             return { status: 'INVALID', issues: supersessionIssues };
                         }
                     }
+                    if (!predecessorActivation.exists()) {
+                        predecessorActivationToWrite = {
+                            userId,
+                            planId: plan.planId,
+                            revision: storedRevision,
+                            contentHash: predecessorHash,
+                            effectiveFrom: predecessorEffectiveFrom,
+                            activatedAt: existingHeader.importedAt,
+                        };
+                    }
                 }
-            }
+                } else if (sameRevision.exists() || sameActivation.exists()) {
+                    return { status: 'INVALID', issues: [{ code: 'orphaned-plan-revision', field: 'revision', documentPath: `users/${userId}/external_plans/${plan.planId}/revisions/${plan.revision}` }] };
+                }
 
-            const now = new Date().toISOString();
             const header: ExternalPlanHeader = {
                 userId,
                 planId: plan.planId,
@@ -191,20 +254,23 @@ export class ExternalPlanService {
                 title: plan.title,
                 startDate: plan.startDate,
                 weekCount: plan.weekCount,
-                contentHash: await computeContentHash(plan),
+                contentHash,
                 importedAt: now,
-                supersededFrom,
+                supersededFrom: effectiveFrom,
                 updatedAt: now,
             };
-
-            // The revision and header are committed in a single atomic batch: both documents
-            // commit together or neither does, ensuring a failed commit leaves no orphan
-            // revision or header and retries can cleanly succeed.
-            const batch = writeBatch(getDb());
-            batch.set(this.revisionRef(userId, plan.planId, plan.revision), plan as unknown as DocumentData);
-            batch.set(this.headerRef(userId, plan.planId), header as unknown as DocumentData);
-            await batch.commit();
+            const activation: ExternalPlanRevisionActivation = {
+                userId, planId: plan.planId, revision: plan.revision, contentHash,
+                effectiveFrom, activatedAt: now,
+            };
+            if (predecessorActivationToWrite) {
+                transaction.set(this.activationRef(userId, plan.planId, predecessorActivationToWrite.revision), predecessorActivationToWrite as unknown as DocumentData);
+            }
+            transaction.set(revisionRef, plan as unknown as DocumentData);
+            transaction.set(activationRef, activation as unknown as DocumentData);
+            transaction.set(headerRef, header as unknown as DocumentData);
             return { status: 'AVAILABLE', data: { header, plan }, revision: header.contentHash };
+            });
         } catch (error: unknown) {
             console.error('[ExternalPlanService.import] Failed:', error);
             return {
@@ -241,7 +307,7 @@ export class ExternalPlanService {
 
     /** Re-validates on read. A revision that no longer satisfies the contract -- because
      * the contract moved, or the document was tampered with -- is `INVALID`, never coerced. */
-    async getRevisionState(userId: string, planId: string, revision: number): Promise<DataState<ExternalTrainingPlan | ExternalTrainingPlanV2 | ExternalTrainingPlanV3 | ExternalTrainingPlanV4 | ExternalTrainingPlanV5>> {
+    async getRevisionState(userId: string, planId: string, revision: number): Promise<DataState<ExternalTrainingPlan | ExternalTrainingPlanV2 | ExternalTrainingPlanV3 | ExternalTrainingPlanV4 | ExternalTrainingPlanV5 | ExternalTrainingPlanV6>> {
         const documentPath = `users/${userId}/external_plans/${planId}/revisions/${revision}`;
         try {
             const snapshot = await getDoc(this.revisionRef(userId, planId, revision));
@@ -286,10 +352,57 @@ export class ExternalPlanService {
         }
     }
 
-    async getPlacementState(userId: string, planId: string): Promise<DataState<ExternalPlanPlacement>> {
+    async getActivationState(userId: string, planId: string): Promise<DataState<ExternalPlanRevisionActivation[]>> {
+        const documentPath = `users/${userId}/external_plans/${planId}/activations`;
         try {
-            const snapshot = await getDoc(this.placementRef(userId, planId));
+            const snapshot = await getDocs(collection(getDb(), 'users', userId, 'external_plans', planId, 'activations'));
+            const activationDocs = snapshot.docs.map(item => ({
+                id: item.id,
+                data: item.data() as ExternalPlanRevisionActivation,
+            }));
+            const pathMismatch = activationDocs.find(item => String(item.data.revision) !== item.id);
+            if (pathMismatch) {
+                return {
+                    status: 'INVALID',
+                    issues: [{
+                        code: 'path-identity-mismatch',
+                        field: 'revision',
+                        documentPath: `${documentPath}/${pathMismatch.id}`,
+                    }],
+                };
+            }
+            const activations = activationDocs.map(item => item.data);
+            if (activations.some(item => item.userId !== userId || item.planId !== planId
+                || !Number.isSafeInteger(item.revision) || item.revision < 1
+                || !/^[a-f0-9]{64}$/.test(item.contentHash)
+                || !isValidDate(item.effectiveFrom)
+                || typeof item.activatedAt !== 'string')) {
+                return { status: 'INVALID', issues: [{ code: 'invalid-activation-history', documentPath }] };
+            }
+            return {
+                status: 'AVAILABLE',
+                data: activations.sort((left, right) => left.effectiveFrom.localeCompare(right.effectiveFrom) || left.revision - right.revision),
+                revision: String(activations.length),
+            };
+        } catch (error: unknown) {
+            return { status: 'UNAVAILABLE', operation: 'read external plan activation history', retryable: getErrorCode(error) !== 'permission-denied' };
+        }
+    }
+
+    async getPlacementState(userId: string, planId: string, revision?: number): Promise<DataState<ExternalPlanPlacement>> {
+        try {
+            let usedLegacyPath = revision === undefined;
+            let snapshot = revision === undefined
+                ? await getDoc(this.legacyPlacementRef(userId, planId))
+                : await getDoc(this.placementRef(userId, planId, revision));
+            if (revision !== undefined && !snapshot.exists()) {
+                usedLegacyPath = true;
+                snapshot = await getDoc(this.legacyPlacementRef(userId, planId));
+            }
             if (!snapshot.exists()) return { status: 'MISSING' };
+            const documentPath = usedLegacyPath
+                ? `users/${userId}/external_plans/${planId}/placement/current`
+                : `users/${userId}/external_plans/${planId}/revisions/${revision}/placement/current`;
             const parsed = validateExternalPlanPlacement(snapshot.data());
             if (!parsed.isValid || !parsed.data) {
                 return {
@@ -297,15 +410,23 @@ export class ExternalPlanService {
                     issues: parsed.errors.map(error => ({
                         code: 'schema-validation-failed',
                         field: error.field,
-                        documentPath: `users/${userId}/external_plans/${planId}/placement/current`,
+                        documentPath,
                     })),
                 };
             }
             if (parsed.data.userId !== userId) {
-                return { status: 'INVALID', issues: [{ code: 'owner-mismatch', documentPath: `users/${userId}/external_plans/${planId}/placement/current` }] };
+                return { status: 'INVALID', issues: [{ code: 'owner-mismatch', documentPath }] };
             }
             if (parsed.data.planId !== planId) {
-                return { status: 'INVALID', issues: [{ code: 'path-identity-mismatch', field: 'planId', documentPath: `users/${userId}/external_plans/${planId}/placement/current` }] };
+                return { status: 'INVALID', issues: [{ code: 'path-identity-mismatch', field: 'planId', documentPath }] };
+            }
+            if (revision !== undefined && parsed.data.revision !== revision) {
+                // A mismatched legacy overlay belongs to another revision and is therefore
+                // simply not applicable. A mismatched revision-scoped document is corrupt
+                // authority evidence and must fail closed rather than look absent.
+                return usedLegacyPath
+                    ? { status: 'MISSING' }
+                    : { status: 'INVALID', issues: [{ code: 'path-identity-mismatch', field: 'revision', documentPath }] };
             }
             return { status: 'AVAILABLE', data: parsed.data, revision: parsed.data.updatedAt };
         } catch (error: unknown) {
@@ -320,7 +441,7 @@ export class ExternalPlanService {
         if (!parsed.isValid) {
             throw new Error(`Invalid placement overlay: ${parsed.errors.map(error => `${error.field}: ${error.message}`).join('; ')}`);
         }
-        await setDoc(this.placementRef(userId, placement.planId), stored as unknown as DocumentData);
+        await setDoc(this.placementRef(userId, placement.planId, placement.revision), stored as unknown as DocumentData);
         return stored;
     }
 }

@@ -938,7 +938,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             // primary's own completion.
             if (companions && companions.length > 0) {
                 setCompanionPrompt({ finishedTitle, finishedAt: Date.now(), companions });
-            } else if (onClose) {
+            } else if (onClose && mode !== 'assessment') {
                 onClose();
             }
         } catch {

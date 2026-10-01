@@ -34,16 +34,27 @@ import {
     UPCOMING_CONTEXT_DAYS,
     type UpcomingExternalPlanSession,
 } from '../engine/contextBriefPlanningHandoff';
-import { externalSessionDisplayPrescription } from '../engine/externalSessionProfiles';
+import { externalSessionDisplayPrescription, externalTemplateId } from '../engine/externalSessionProfiles';
 import { resolvePlanningContext } from '../engine/planningMode';
 import { evaluatePeriodizationPhase, goalToUserEvent } from '../engine/periodization';
 import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
 import { isV2Session, type AnyExternalPlanSession } from '../sessions/externalPlanV2';
-import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString, getDayDiff, getLocalDateString } from '../utils/localDate';
 import { activeExternalPlanService, externalRestContextForDate, placedSessionForDate } from './activeExternalPlanService';
 import type { BriefRestDirective } from '../engine/briefPlanAuthority';
 import { activityOverrideService } from './activityOverrideService';
 import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
+import { performedTrainingOccurrenceRepository } from '../training-occurrence/repository';
+import { projectPlannedExecutionStatus, type PlannedExecutionStatus } from '../training-occurrence/plannedExecutionStatus';
+import { sessionOccurrenceService } from './sessionOccurrenceService';
+import { sessionExecutionService } from './sessionExecutionService';
+import { externalPlanService } from './externalPlanService';
+import { computeContentHash } from '../engine/externalPlanHash';
+import { impliedDate, occupiesDate, resolveRestDatesByDate } from '../engine/externalPlacement';
+import { getCanonicalRestTemplate } from '../engine/rules';
+import type { DataState } from '../engine/dataState';
+import type { ArchivedRecommendation } from '../persistence/parsers/trainingHistory';
+import { isExternalPlanOccurrence, isManualOccurrence } from '../sessions/models';
 import {
     assertRenderedBriefContract,
     CONTEXT_BRIEF_CONTRACT_VERSION,
@@ -212,9 +223,12 @@ export class ContextBriefService {
     ): Promise<ContextBriefResult> {
         const targetDate = asOfDate ?? getLocalDateString();
         // Purpose selects the output contract. Planning and diagnostic deliberately share
-        // identical reads; the morning path skips planning-only ledgers and additionally
-        // resolves D-1 imported authority for its closed-loop adherence debrief.
+        // identical reads; the morning path skips planning-only ledgers, but reads
+        // canonical performed facts and D-1 imported authority for its debrief.
         const purpose = briefPurposeFor(preset);
+        // The morning contract always includes today's status and yesterday's debrief,
+        // even when a caller requests a one-day window.
+        windowDays = purpose === 'morning' ? Math.max(2, windowDays) : windowDays;
         const startDate = briefWindowStart(targetDate, windowDays);
         // Strictly longer than the window, so there is always prior history to compare
         // against even when the caller asks for a long window.
@@ -388,6 +402,9 @@ export class ContextBriefService {
             unavailableSources.push('recommendations and feedback');
         }
 
+        const trainingSettingsReadStatus = settingsResult.status === 'fulfilled'
+            ? settingsResult.value.status
+            : 'UNAVAILABLE';
         const trainingSettings = settingsResult.status === 'fulfilled' && settingsResult.value.status === 'AVAILABLE'
             ? settingsResult.value.data
             : null;
@@ -462,6 +479,8 @@ export class ContextBriefService {
         // `externalFallback: true` downstream is never presented as certain when the day
         // that mattered most could not actually be read.
         let externalScheduleTodayConfirmed = fixedActivitiesReadable;
+        let currentPlanReadStatus: 'AVAILABLE' | 'MISSING' | 'INVALID' | 'UNAVAILABLE' = fixedActivityResult.status === 'fulfilled'
+            ? fixedActivityResult.value.status : 'UNAVAILABLE';
         let planScheduleFullyRead = fixedActivitiesReadable;
         if (fixedActivitiesReadable) {
             // Resolve the active plan independently for each future date so plan revision
@@ -477,10 +496,14 @@ export class ContextBriefService {
                 const settled = activePlanResults[index];
                 if (settled.status === 'rejected') {
                     unreadablePlanDays += 1;
-                    if (date === targetDate) externalScheduleTodayConfirmed = false;
+                    if (date === targetDate) {
+                        externalScheduleTodayConfirmed = false;
+                        currentPlanReadStatus = 'UNAVAILABLE';
+                    }
                     continue;
                 }
                 const state = settled.value;
+                if (date === targetDate) currentPlanReadStatus = state.status;
                 if (state.status === 'MISSING') continue;
                 if (state.status !== 'AVAILABLE') {
                     unreadablePlanDays += 1;
@@ -564,6 +587,7 @@ export class ContextBriefService {
             periodization,
             targetDate,
             currentExternalSession ? planningAuthoritySession(currentExternalSession) : null,
+            upcomingPlanBlocks,
         );
         // resolvePlanningContext treats a null externalSession as "confirmed nothing is
         // placed today" and reports externalFallback accordingly. That is only true when
@@ -572,19 +596,351 @@ export class ContextBriefService {
         // not negative.
         const externalFallbackUncertain = planningContext.externalFallback && !externalScheduleTodayConfirmed;
 
-        // Issue #813: canonical performed facts (ADR-0034) drive live coverage credit, including
-        // in-app structured executions with no Garmin record. Hydration reuses the activities
+        // Issue #813/#894: canonical performed facts (ADR-0034) drive completed-training
+        // identity in all three purposes, including structured work without Garmin. Hydration reuses the activities
         // already read above. Readability is carried separately (`activitiesReadable`): the
         // facts service itself cannot tell an unreadable activity read from none.
         let performedFacts: PerformedExposureFact[] | null = null;
-        if (purpose !== 'morning') {
-            try {
-                performedFacts = (await getPerformedTrainingFactsInRange(userId, startDate, throughExclusive, {
-                    preloadedActivities: activities.filter(activity => activity.date >= startDate && activity.date <= targetDate),
-                })).exposures;
-            } catch (error) {
-                console.warn('Context brief: performed-training facts unreadable', error);
-                unavailableSources.push('canonical performed-training facts');
+        try {
+            performedFacts = (await getPerformedTrainingFactsInRange(
+                userId,
+                purpose === 'morning' ? addDaysToLocalDateString(startDate, -1) : startDate,
+                throughExclusive,
+                {
+                    // Provider-local dates can straddle a canonical Warsaw occurrence day.
+                    // Reuse the already widened activity read so linked evidence still hydrates.
+                    preloadedActivities: activities,
+                    includeDisplayProvenance: true,
+                },
+            )).exposures;
+        } catch (error) {
+            console.warn('Context brief: performed-training facts unreadable', error);
+            unavailableSources.push('canonical performed-training facts');
+        }
+
+        let plannedExecutionStatuses: readonly PlannedExecutionStatus[] | null | undefined;
+        if (purpose === 'planning') {
+            const retrospectiveDates = Array.from({ length: windowDays }, (_, offset) =>
+                addDaysToLocalDateString(startDate, offset));
+            const [occurrenceResult, executionResult, performedResult, authoredPlanResults] = await Promise.allSettled([
+                sessionOccurrenceService.getOccurrencesInRangeState(userId, startDate, targetDate),
+                sessionExecutionService.getExecutionsInRange(userId, startDate, throughExclusive),
+                performedTrainingOccurrenceRepository.queryActiveInDateWindow(userId, startDate, targetDate),
+                fixedActivitiesReadable
+                    ? Promise.all(retrospectiveDates.map(date => activeExternalPlanService.getActivePlanState(userId, date, placementFixedActivities)))
+                    : Promise.resolve([]),
+            ]);
+            const executionsReadable = executionResult.status === 'fulfilled' && executionResult.value.invalidRecords === 0;
+            const performedReadable = performedResult.status === 'fulfilled';
+            const authoredPlansReadable = fixedActivitiesReadable && authoredPlanResults.status === 'fulfilled'
+                && authoredPlanResults.value.every(state => state.status === 'MISSING'
+                    || (state.status === 'AVAILABLE' && Boolean(state.data.plan && state.data.header?.contentHash)));
+            if (occurrenceResult.status !== 'fulfilled' || occurrenceResult.value.status !== 'AVAILABLE'
+                || !executionsReadable || !performedReadable || !recommendationsReadable || !authoredPlansReadable) {
+                plannedExecutionStatuses = null;
+                unavailableSources.push('external-plan execution round-trip inputs');
+            } else {
+                const occurrences = occurrenceResult.value.data;
+                const executions = executionResult.value.executions;
+                const performedOccurrences = performedResult.value;
+                const authoredPlans = authoredPlanResults.value;
+                const candidates = new Map<string, {
+                    date: string;
+                    source: { planId: string; revision: number; sessionId: string; contentHash: string };
+                    occurrenceId?: string;
+                    placementConfirmedMoved?: boolean;
+                }>();
+                const keyFor = (date: string, source: { planId: string; revision: number; sessionId: string; contentHash: string }, occurrenceId?: string) =>
+                    `${date}|${source.planId}|${source.revision}|${source.sessionId}|${source.contentHash}|${occurrenceId ?? ''}`;
+                for (const occurrence of occurrences) {
+                    if (!isExternalPlanOccurrence(occurrence)) continue;
+                    candidates.set(keyFor(occurrence.date, occurrence.externalPlanRef, occurrence.occurrenceId), {
+                        date: occurrence.date, source: occurrence.externalPlanRef, occurrenceId: occurrence.occurrenceId,
+                    });
+                }
+                const activeRestStatuses: PlannedExecutionStatus[] = [];
+                const activeSessionDates = new Set<string>();
+                for (let index = 0; index < authoredPlans.length; index += 1) {
+                    const date = retrospectiveDates[index];
+                    const state = authoredPlans[index];
+                    if (state.status !== 'AVAILABLE') {
+                        if (performedOccurrences.some(item => item.status === 'active' && item.localDate === date)) {
+                            activeRestStatuses.push(projectPlannedExecutionStatus({
+                                date, authored: { kind: 'none' }, occurrencesReadable: true, executionsReadable: true,
+                                performedReadable: true, occurrences, recommendations, executions, performedOccurrences,
+                            }));
+                        }
+                        continue;
+                    }
+                    const active = state.data;
+                    const placedOnDate = active.placed.filter(item => item.date === date
+                        && (item.status === 'planned' || item.status === 'moved'));
+                    if (placedOnDate.length > 0) activeSessionDates.add(date);
+                    for (const placed of placedOnDate) {
+                        const source = {
+                            planId: active.plan.planId, revision: active.plan.revision,
+                            sessionId: placed.session.id, contentHash: active.header.contentHash,
+                        };
+                        const exactOccurrences = occurrences.filter(item => isExternalPlanOccurrence(item)
+                            && item.date === date && item.externalPlanRef.planId === source.planId
+                            && item.externalPlanRef.revision === source.revision && item.externalPlanRef.sessionId === source.sessionId
+                            && item.externalPlanRef.contentHash === source.contentHash);
+                        for (const occurrence of exactOccurrences.length > 0 ? exactOccurrences : [undefined]) {
+                            const candidateKey = keyFor(date, source, occurrence?.occurrenceId);
+                            candidates.set(candidateKey, {
+                                date, source, ...(occurrence ? { occurrenceId: occurrence.occurrenceId } : {}),
+                            });
+                        }
+                    }
+                    const rest = externalRestContextForDate(active, date);
+                    if (rest) activeRestStatuses.push(projectPlannedExecutionStatus({
+                        date,
+                        authored: { kind: 'rest', planId: rest.planId, revision: rest.revision, restDirectiveId: rest.directive.id },
+                        occurrencesReadable: true, executionsReadable: true, performedReadable: true,
+                        occurrences, recommendations, executions, performedOccurrences,
+                    }));
+                    else if (placedOnDate.length === 0
+                        && performedOccurrences.some(item => item.status === 'active' && item.localDate === date)) {
+                        activeRestStatuses.push(projectPlannedExecutionStatus({
+                            date, authored: { kind: 'none' }, occurrencesReadable: true, executionsReadable: true,
+                            performedReadable: true, occurrences, recommendations, executions, performedOccurrences,
+                        }));
+                    }
+                }
+                for (const recommendation of recommendations) {
+                    const source = recommendation.recommendationAudit?.externalPlan;
+                    if (!source) continue;
+                    const occurrenceId = recommendation.recommendationAudit?.primarySession?.occurrenceId;
+                    const hasOccurrence = [...candidates.values()].some(candidate => candidate.date === recommendation.date
+                        && candidate.source.planId === source.planId && candidate.source.revision === source.revision
+                        && candidate.source.sessionId === source.sessionId && candidate.source.contentHash === source.contentHash);
+                    if (!occurrenceId && hasOccurrence) continue;
+                    const key = keyFor(recommendation.date, source, occurrenceId);
+                    candidates.set(key, {
+                        date: recommendation.date, source,
+                        ...(occurrenceId ? { occurrenceId } : {}),
+                    });
+                }
+                // PR-C M-5: for replace days only (the current recommendation
+                // carries `audit.authoredOccurrence`), one bounded, read-only
+                // listing of `daily_recommendations/{date}/revisions` per such
+                // date within the already-bounded retrospective window. Selects
+                // the highest-numbered archived revision whose audit carries
+                // `externalPlan` -- never "revision n-1": after rev1 external,
+                // rev2 manual, rev3 manual, n-1 is rev2, which carries
+                // `authoredOccurrence` and no `externalPlan`. The archived audit
+                // is client-written and not rules-verified, so it is a claim to
+                // be verified (M-7) below, never self-authenticating evidence.
+                // Justification for the extra read: hydration resolved as of
+                // today cannot supply the pre-replace external identity after a
+                // re-import; everything else this section needs is already loaded.
+                const replaceDates = [...new Set(retrospectiveDates.filter(date =>
+                    recommendations.some(item => item.date === date
+                        && item.recommendationAudit?.authoredOccurrence !== undefined)))];
+                const replaceArchiveResults: Array<readonly [string, DataState<ArchivedRecommendation[]>]> = await Promise.all(replaceDates.map(async date => {
+                    try {
+                        return [date, await recommendationService.listRecommendationRevisions(userId, date)] as const;
+                    } catch {
+                        return [date, { status: 'UNAVAILABLE', operation: 'read recommendation revision archive', retryable: true } as const];
+                    }
+                }));
+                const pendingReplaceClaims = new Map<string, { archive: ArchivedRecommendation; authoredOccurrenceId: string }>();
+                for (const [date, state] of replaceArchiveResults) {
+                    if (state.status !== 'AVAILABLE') continue;
+                    const current = recommendations.find(item => item.date === date
+                        && item.recommendationAudit?.authoredOccurrence !== undefined);
+                    const authoredOccurrence = current?.recommendationAudit?.authoredOccurrence;
+                    if (!authoredOccurrence) continue;
+                    // recommendationAudit.authoredOccurrence is provenance, not the
+                    // authority record itself. Ground it in the exact same-date manual
+                    // replacement occurrence before using it to label an athlete override.
+                    const replacementOccurrence = occurrences.find(item =>
+                        item.occurrenceId === authoredOccurrence.occurrenceId
+                        && item.date === date
+                        && isManualOccurrence(item)
+                        && item.authority === 'replace_recommendation');
+                    if (!replacementOccurrence) continue;
+                    const withExternalPlan = state.data.filter(item => item.recommendationAudit?.externalPlan !== undefined);
+                    if (withExternalPlan.length === 0) continue;
+                    const selected = withExternalPlan.reduce((newest, item) => (item.revision > newest.revision ? item : newest));
+                    pendingReplaceClaims.set(date, { archive: selected, authoredOccurrenceId: authoredOccurrence.occurrenceId });
+                }
+                const revisionKeys = [...new Set([
+                    ...[...candidates.values()].map(item => `${item.source.planId}:${item.source.revision}`),
+                    // The archive-named revision joins the same key set so its
+                    // stored bytes and placement load through the usual path.
+                    ...[...pendingReplaceClaims.values()].map(item =>
+                        `${item.archive.recommendationAudit?.externalPlan?.planId}:${item.archive.recommendationAudit?.externalPlan?.revision}`),
+                ])];
+                const revisions = await Promise.all(revisionKeys.map(async key => {
+                    const [planId, revision] = key.split(':');
+                    return [key, await externalPlanService.getRevisionState(userId, planId, Number(revision))] as const;
+                }));
+                const revisionMap = new Map(revisions);
+                const placements = await Promise.all(revisionKeys.map(async key => {
+                    const [planId, revision] = key.split(':');
+                    return [key, await externalPlanService.getPlacementState(userId, planId, Number(revision))] as const;
+                }));
+                const placementMap = new Map(placements);
+                // PR-C M-6a/M-7: verify the archived claim before trusting it, then
+                // inject the archive-named source as its own candidate so the row
+                // exists even when the active plan no longer places that session.
+                // Verified per M-7: the session id exists in the stored revision
+                // with a matching content hash, and the archived decision fields
+                // form a consistent external-decision pair (actionable verdict +
+                // synthetic session template, or gated verdict + canonical rest).
+                // The archived audit itself remains an untrusted claim until #940. Any failure
+                // leaves the date without attribution (M-8): the row degrades to
+                // `unknown` via `replaceArchiveUnavailable`, never to the current
+                // revision's identity.
+                const verifiedReplace = new Map<string, { source: { planId: string; revision: number; sessionId: string; contentHash: string }; authoredOccurrenceId: string; sessionCount?: number }>();
+                for (const [date, pending] of pendingReplaceClaims) {
+                    const claim = pending.archive.recommendationAudit?.externalPlan;
+                    if (!claim) continue;
+                    const revisionKey = `${claim.planId}:${claim.revision}`;
+                    const revisionState = revisionMap.get(revisionKey);
+                    const revisionPlan = revisionState?.status === 'AVAILABLE' ? revisionState.data : undefined;
+                    const session = revisionPlan?.sessions.find(item => item.id === claim.sessionId);
+                    const revisionHash = revisionPlan ? await computeContentHash(revisionPlan) : undefined;
+                    if (!revisionPlan || !session || revisionHash !== claim.contentHash) continue;
+                    const archivedVerdict = pending.archive.engineVerdict;
+                    const expectedExternalTemplate = externalTemplateId(claim.planId, claim.revision, claim.sessionId);
+                    const restTemplate = getCanonicalRestTemplate().id;
+                    // Verify the verdict/template pair, not each field independently.
+                    // proceed/scale must point at the imported session template;
+                    // defer/skip must point at canonical rest. advisory, a missing
+                    // verdict, or any crossed pair is not trustworthy enough to
+                    // attribute a historical manual replacement.
+                    const verdictTemplateAgrees = archivedVerdict === 'proceed' || archivedVerdict === 'scale'
+                        ? pending.archive.templateId === expectedExternalTemplate
+                        : archivedVerdict === 'defer' || archivedVerdict === 'skip'
+                            ? pending.archive.templateId === restTemplate
+                            : false;
+                    if (!verdictTemplateAgrees) continue;
+                    // PR-C M-0: count the archive-named revision's
+                    // non-dropped/non-superseded sessions on D through the same
+                    // placement resolution used for every other candidate. No
+                    // placement: no count, and a missing count yields `unknown`.
+                    const placementState = placementMap.get(revisionKey);
+                    const sessionCount = placementState?.status === 'AVAILABLE'
+                        ? placementState.data.assignments.filter(item => item.date === date && occupiesDate(item.status)).length
+                        : undefined;
+                    const source = { planId: claim.planId, revision: claim.revision, sessionId: claim.sessionId, contentHash: claim.contentHash };
+                    candidates.set(keyFor(date, source, undefined), { date, source });
+                    verifiedReplace.set(date, {
+                        source,
+                        authoredOccurrenceId: pending.authoredOccurrenceId,
+                        ...(sessionCount !== undefined ? { sessionCount } : {}),
+                    });
+                }
+                const sessionStatuses = await Promise.all([...candidates.values()].map(async candidate => {
+                    const revisionKey = `${candidate.source.planId}:${candidate.source.revision}`;
+                    const revisionState = revisionMap.get(`${candidate.source.planId}:${candidate.source.revision}`);
+                    const revisionPlan = revisionState?.status === 'AVAILABLE' ? revisionState.data : undefined;
+                    const session = revisionPlan
+                        ? revisionPlan.sessions.find(item => item.id === candidate.source.sessionId)
+                        : undefined;
+                    const revisionHash = revisionPlan
+                        ? await computeContentHash(revisionPlan)
+                        : undefined;
+                    const revisionMatchesSource = revisionHash === candidate.source.contentHash;
+                    const authoredDate = revisionPlan && revisionMatchesSource && session
+                        ? impliedDate(revisionPlan, session)
+                        : undefined;
+                    const placementState = placementMap.get(revisionKey);
+                    const placementAssignment = placementState?.status === 'AVAILABLE'
+                        ? placementState.data.assignments.find(item => item.sessionId === candidate.source.sessionId && item.date === candidate.date)
+                        : undefined;
+                    // PR-C M-6: attribution belongs to the verified pre-replace
+                    // identity only. Sibling-revision rows on the same date keep
+                    // their normal result (M-6b) once attribution is verified. If
+                    // attribution cannot be verified, same-date candidates fail closed
+                    // because any one of them could be the overwritten decision.
+                    const verified = verifiedReplace.get(candidate.date);
+                    const isAttributed = verified !== undefined
+                        && verified.source.planId === candidate.source.planId
+                        && verified.source.revision === candidate.source.revision
+                        && verified.source.sessionId === candidate.source.sessionId
+                        && verified.source.contentHash === candidate.source.contentHash;
+                    const replaceArchiveUnavailable = verified === undefined && replaceDates.includes(candidate.date);
+                    return projectPlannedExecutionStatus({
+                        date: candidate.date,
+                        authored: revisionMatchesSource && session
+                            ? { kind: 'session', source: candidate.source }
+                            : { kind: 'unknown', reason: 'immutable plan revision could not be verified' },
+                        ...(authoredDate ? { authoredDate } : {}),
+                        ...(candidate.occurrenceId ? { occurrenceId: candidate.occurrenceId } : {}),
+                        ...(candidate.placementConfirmedMoved || placementAssignment?.status === 'moved' ? { placementConfirmedMoved: true } : {}),
+                        ...(isAttributed && verified ? { replacedByOccurrenceId: verified.authoredOccurrenceId } : {}),
+                        ...(isAttributed && verified?.sessionCount !== undefined ? { authoredSessionCountOnDate: verified.sessionCount } : {}),
+                        ...(replaceArchiveUnavailable ? { replaceArchiveUnavailable: true } : {}),
+                        occurrencesReadable: true,
+                        executionsReadable: true,
+                        performedReadable: true,
+                        occurrences,
+                        recommendations,
+                        executions,
+                        performedOccurrences,
+                    });
+                }));
+                const restKeys = new Set(activeRestStatuses.flatMap(status => status.authored.kind === 'rest'
+                    ? [`${status.date}|${status.authored.planId}|${status.authored.revision}|${status.authored.restDirectiveId}`]
+                    : []));
+                const restStatuses: PlannedExecutionStatus[] = [];
+                for (const recommendation of recommendations) {
+                    const rest = recommendation.recommendationAudit?.externalRest;
+                    if (!rest || activeSessionDates.has(recommendation.date)) continue;
+                    const key = `${recommendation.date}|${rest.planId}|${rest.revision}|${rest.restDirectiveId}`;
+                    if (restKeys.has(key)) continue;
+                    const revisionState = await externalPlanService.getRevisionState(userId, rest.planId, rest.revision);
+                    const revisionPlan = revisionState.status === 'AVAILABLE' ? revisionState.data : undefined;
+                    const hashMatches = revisionPlan && await computeContentHash(revisionPlan) === rest.contentHash;
+                    const directive = hashMatches ? resolveRestDatesByDate(revisionPlan).get(recommendation.date) : undefined;
+                    if (rest.date === recommendation.date && directive?.id === rest.restDirectiveId) {
+                        restKeys.add(key);
+                        restStatuses.push(projectPlannedExecutionStatus({
+                        date: recommendation.date,
+                        authored: {
+                            kind: 'rest', planId: rest.planId, revision: rest.revision,
+                            restDirectiveId: rest.restDirectiveId,
+                        },
+                        occurrencesReadable: true,
+                        executionsReadable: true,
+                        performedReadable: true,
+                        occurrences,
+                        recommendations,
+                        executions,
+                        performedOccurrences,
+                        }));
+                    } else {
+                        restStatuses.push(projectPlannedExecutionStatus({
+                            date: recommendation.date,
+                            authored: { kind: 'unknown', reason: 'rest provenance did not match the immutable plan revision' },
+                            occurrencesReadable: true, executionsReadable: true, performedReadable: true,
+                            occurrences, recommendations, executions, performedOccurrences,
+                        }));
+                    }
+                }
+                // A replace decision can exist even when no external-plan candidate
+                // survives current-plan/occurrence hydration (for example after a
+                // re-import plus an unreadable archive). Preserve that known uncertainty
+                // as its own row rather than silently dropping the date from the section.
+                const unresolvedReplaceStatuses = replaceDates
+                    .filter(date => !verifiedReplace.has(date)
+                        && ![...candidates.values()].some(candidate => candidate.date === date))
+                    .map(date => projectPlannedExecutionStatus({
+                        date,
+                        authored: { kind: 'unknown', reason: 'pre-replace authored identity could not be verified' },
+                        replaceArchiveUnavailable: true,
+                        occurrencesReadable: true,
+                        executionsReadable: true,
+                        performedReadable: true,
+                        occurrences,
+                        recommendations,
+                        executions,
+                        performedOccurrences,
+                    }));
+                plannedExecutionStatuses = [...sessionStatuses, ...activeRestStatuses, ...restStatuses, ...unresolvedReplaceStatuses];
             }
         }
 
@@ -605,6 +961,7 @@ export class ContextBriefService {
             bodyComposition,
             purpose,
             generatedAt,
+            plannedExecutionStatuses,
             effectivePlanningMode: planningContext.mode,
             isExternalPlanAuthority: planningContext.mode === 'externally_planned' || planningContext.externalFallback,
             exposureLedger: {
@@ -665,7 +1022,7 @@ export class ContextBriefService {
                 diagnostic: purpose === 'diagnostic',
             },
         );
-        const text = enhanceContextBriefForPlanning(retrospectiveText, {
+        const rendered = enhanceContextBriefForPlanning(retrospectiveText, {
             asOfDate: targetDate,
             snapshots,
             checkins,
@@ -685,16 +1042,75 @@ export class ContextBriefService {
             restDirectiveToday,
             yesterdayExternalSession,
             restDirectiveYesterday,
+            performedFacts,
+            activitiesReadable: activityResult.status === 'fulfilled' && activityResult.value.status === 'AVAILABLE',
             unavailableSources,
             preset,
             purpose,
             generatedAt,
         });
 
+        const latestDate = (dates: readonly string[]): string | null =>
+            dates.filter(date => date <= targetDate).sort().at(-1) ?? null;
+        const dated = (date: string | null): string => date
+            ? `${date} (${getDayDiff(targetDate, date)} calendar day(s) before as-of)`
+            : 'none in fetched window';
+        const todaySnapshotState = snapshotResults.status === 'fulfilled'
+            ? snapshotResults.value.at(-1)?.status ?? 'MISSING'
+            : 'UNAVAILABLE';
+        const checkinTodayInvalid = unreadableCheckinDates.includes(targetDate);
+        const checkinTodayState = checkinResult.status === 'rejected' ? 'unavailable'
+            : checkinTodayInvalid ? 'invalid'
+                : checkins.some(item => item.date === targetDate) ? 'measured' : 'missing';
+        const activitiesReadable = activityResult.status === 'fulfilled' && activityResult.value.status === 'AVAILABLE';
+        const latestSnapshot = snapshots.filter(item => item.date <= targetDate).sort((a, b) => b.date.localeCompare(a.date))[0];
+        const metricDates = latestSnapshot?.source.metricDates;
+        const metricDate = (date: string | null | undefined): string => !date ? 'not reported'
+            : !/^\d{4}-\d{2}-\d{2}$/.test(date) || addDaysToLocalDateString(date, 0) !== date
+                ? 'invalid source date'
+                : date > targetDate ? `${date} (after as-of; cannot establish current-day freshness)` : dated(date);
+        const currentMetricDate = (date: string | null | undefined): string => {
+            const value = metricDate(date);
+            return `${value}${date && value !== 'invalid source date' && date < targetDate ? ' (stale for current day)' : ''}`;
+        };
+        const planRevisions = [...new Set(upcomingExternalSessions.filter(item => item.date === targetDate)
+            .map(item => `${item.planId}@${item.revision}`))].sort();
+        const currentRecommendationUpdatedAt = recommendations.filter(item => item.date === targetDate)
+            .map(item => item.updatedAt).sort().at(-1) ?? 'none recorded';
+        const recommendationReadStatus = recommendationResult.status === 'fulfilled'
+            ? recommendationResult.value.status : 'UNAVAILABLE';
+        const recommendationState = recommendationReadStatus === 'INVALID' ? 'invalid'
+            : recommendationReadStatus === 'UNAVAILABLE' ? 'unavailable'
+                : recommendationReadStatus === 'MISSING' ? 'missing/no recommendation'
+            : currentRecommendationUpdatedAt === 'none recorded' ? 'missing/no recommendation' : 'measured';
+        const importedScheduleState = currentPlanReadStatus === 'INVALID' ? 'invalid'
+            : !externalScheduleTodayConfirmed ? 'unavailable'
+            : currentExternalSession || restDirectiveToday || upcomingExternalSessions.some(item => item.date === targetDate)
+                ? 'measured authored occurrence/rest' : 'missing/no authored occurrence';
+        const importedRevisionState = planRevisions.join(', ')
+            || (restDirectiveToday ? `${restDirectiveToday.planId}@${restDirectiveToday.revision}` : '')
+            || (currentPlanReadStatus === 'INVALID' ? 'invalid/unparseable'
+                : currentPlanReadStatus === 'UNAVAILABLE' ? 'unavailable'
+                    : currentPlanReadStatus === 'MISSING' ? 'no active plan'
+                        : 'no current-day authored occurrence');
+        const sourceLines = [
+            'Source state and currency (dates never shift the as-of date):',
+            `- Recovery snapshot for ${targetDate}: ${todaySnapshotState.toLowerCase()}; latest ${dated(latestDate(snapshots.map(item => item.date)))}${todaySnapshotState === 'MISSING' ? '; current-day state stale or absent' : ''}; source schema ${latestSnapshot?.source.sourceSchemaVersion ?? 'unknown'}, baseline computation ${latestSnapshot?.derived.baselineComputationVersion ?? 'unknown'}, Garmin synced ${latestSnapshot?.source.garminSyncedAt ?? 'unknown'}.`,
+            `- Wearable metric dates: sleep ${currentMetricDate(metricDates?.sleep)}; HRV ${currentMetricDate(metricDates?.hrv)}; RHR ${currentMetricDate(metricDates?.restingHr)}; D-1 steps ${metricDate(metricDates?.steps)}${metricDates?.steps && metricDates.steps !== yesterdayPlanDate ? ` (expected ${yesterdayPlanDate}; stale or mismatched)` : ''}; activities through ${currentMetricDate(metricDates?.activitiesThrough)}. The sync timestamp above is transport provenance, not the measurement date.`,
+            `- Subjective check-in for ${targetDate}: ${checkinTodayState}; latest ${dated(latestDate(checkins.map(item => item.date)))}${checkinTodayState === 'missing' ? '; current-day subjective state stale or absent' : ''}.`,
+            `- Garmin activities: ${activitiesReadable ? 'available' : activityResult.status === 'fulfilled' ? activityResult.value.status.toLowerCase() : 'unavailable'}; latest ${activitiesReadable ? dated(latestDate(activities.map(item => item.date))) : 'unknown'}; D-1 ${activitiesReadable ? `${activities.filter(item => item.date === yesterdayPlanDate).length} provider row(s)` : 'unknown'}.`,
+            `- Canonical performed training: ${performedFacts === null ? 'unavailable' : performedFacts.length ? 'available' : 'missing/no occurrence in fetched window'}; latest ${performedFacts === null ? 'unknown' : dated(latestDate(performedFacts.map(item => item.localDate)))}.`,
+            `- Current-day plan authority inputs: recommendations ${recommendationState} (latest update ${recommendationsReadable ? currentRecommendationUpdatedAt : 'unknown'}); imported schedule ${importedScheduleState}; imported revision ${importedRevisionState}; date ${targetDate}.`,
+            `- Power telemetry capability: ${trainingSettingsReadStatus === 'INVALID' ? 'invalid (training-settings record could not be parsed)' : trainingSettingsReadStatus === 'UNAVAILABLE' ? 'unavailable (training-settings read failed)' : trainingSettingsReadStatus === 'MISSING' ? 'missing/not configured (training settings absent)' : trainingSettings?.capabilities?.powerMeter === false ? 'unsupported/not collected (configured unavailable)' : trainingSettings?.capabilities?.powerMeter === true ? 'configured available; individual activity measurement still depends on source' : 'missing/not configured (capability not configured)'}.`,
+            `- Training-response comparisons: ${purpose === 'morning' ? 'not applicable to this compact morning export' : responseEvidence?.occurrenceRead === 'unavailable' ? 'unavailable (occurrence evidence read failed)' : 'see display-only feature rows; insufficient evidence is stated per feature'}.`,
+            '- Value states: a measured 0 is explicit zero; missing means no record; unavailable means read failure; invalid means an unparseable record; unsupported means not collected by the source; not applicable means the feature does not apply. An em dash means unmeasured, never zero.',
+        ];
+        const text = rendered.replace(/(Generated at: [^\n]+\n)/, `$1${sourceLines.join('\n')}\n`);
         assertRenderedBriefContract(text, {
             purpose,
             asOfDate: targetDate,
             generatedAt,
+            requireSourceState: true,
         });
 
         return {

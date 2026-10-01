@@ -110,6 +110,8 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0043: Individualized Rolling Catalog-Load Budget**](./adr/0043-rolling-catalog-load-budget.md) — *Accepted.* Versioned, user-history-derived catalog-load envelope to week-ahead planning.
 * [**ADR-0044: Constraint-Aware Requirement Fulfilment and Bounded Multi-Stimulus Packing**](./adr/0044-constraint-aware-requirement-fulfilment.md) — *Accepted.* Defines the requirement-class boundary for constrained planning while preserving canonical coverage, objective-credit, load and intraday authorities.
 * [**ADR-0045: Athlete-Relative Weekly Aerobic Dose Envelope**](./adr/0045-athlete-relative-weekly-aerobic-dose.md) — *Accepted.* 28-day history-derived easy-aerobic weekly envelope with a public-health fallback, no intensity equivalence, and a conditional exact long aerobic anchor.
+* [**ADR-0046: First-Class Raw Assessment Trial Evidence**](./adr/0046-first-class-raw-assessment-trial-evidence.md) — *Accepted.* Extends OV with immutable raw multi-trial evidence, append-only corrections, deterministic reducers and typed derivation provenance while preserving evidence-only authority. Amended 2026-10-01 (D-AT-IMPORT): file imports such as WL Analysis per-frame CSV are versioned, local-only source adapters with content-digest provenance.
+* [**ADR-0047: Fixed-Load Mean Velocity Assessment Series**](./adr/0047-fixed-load-velocity-assessment-series.md) — *Accepted.* Dedicated fixed-load velocity protocols per exercise with exact load, measurement method (including importer parser version) and equipment setup as series-defining identity; no observation-key change.
 
 ---
 
@@ -119,6 +121,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-28 Issue #859 Date-Scoped Mechanical Spacing Analysis**](./analysis/2026-09-28-issue-859-date-scoped-mechanical-spacing-analysis.md) — Investigation into mechanical spacing of requirements constrained by specific date scopes.
 * [**2026-09-28 Training Occurrence Backfill Verification**](./analysis/2026-09-28-training-occurrence-backfill-verification.md) — Verifies historical backfill coverage for canonical performed training occurrences.
 * [**2026-09-28 Activity Response Semantic Tail Correction**](./analysis/2026-09-28-activity-response-semantic-tail-correction.md) — Analysis on resolving semantic tail corrections within activity responses.
+* [**2026-09-30 Issue #897 physical-capital assessment integration**](./analysis/2026-09-30-issue-897-physical-capital-assessment-integration.md) — Point-in-time audit and architecture integration analysis for multidomain baseline testing, raw trial evidence, comparability, history/export and bounded goal/context reuse.
 * [**2026-09-28 Issue #814 training-response completion analysis**](./analysis/2026-09-28-issue-814-training-response-completion-analysis.md) — Point-in-time audit of delivered #814 response features, canonical occurrence/source-authority gaps, comparability, strength, next-day linkage, controlled running scope, and evidence boundaries.
 * [**2026-09-27 Training Occurrence TO4/TO5 Shadow Evidence**](./analysis/2026-09-27-training-occurrence-to4-to5-shadow-evidence.md) — Details the shadow evidence generated during TO4 and TO5 training occurrences.
 * [**2026-09-27 Activity Response Preservation Evidence**](./analysis/2026-09-27-activity-response-preservation-evidence.md) — Documents activity response preservation semantics and required evidence.
@@ -326,5 +329,8 @@ Operational manuals and operational procedures:
 
 ## ⚡ Quick Links & Root Documents
 
-* [`AGENTS.md`](../AGENTS.md) — AI agent guidance, system constraints, and command cheat sheet.
+* [`AGENTS.md`](../AGENTS.md) — Compact cross-client AI-agent router, system constraints, semantic discovery policy, and command cheat sheet.
+* [`CLAUDE.md`](../CLAUDE.md) — Claude Code always-on invariants and working loop.
+* [`GEMINI.md`](../GEMINI.md) — Gemini CLI native entrypoint that routes to the shared agent contract.
+* [`docs/reference/package-architecture.md`](./reference/package-architecture.md) — Detailed package/file routing inventory extracted from the always-loaded agent instructions.
 * [`README.md`](../README.md) — Root project overview, env vars, quick start commands.

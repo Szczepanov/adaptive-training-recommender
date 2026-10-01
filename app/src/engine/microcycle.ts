@@ -34,7 +34,9 @@ export function generateWeeklyObjectives(
      *  today) should pass today's date explicitly. */
     asOfDate: string = windowStartDate
 ): MicrocycleState {
-    if (planDefinition && planDefinition.objectives.length > 0) {
+    const activeBlock = planDefinition?.blocks
+        .find((block) => block.startDate <= asOfDate && asOfDate <= block.endDate);
+    if (planDefinition && activeBlock && planDefinition.objectives.length > 0) {
         const objectives: WeeklyObjective[] = [];
         const blockMap = new Map(planDefinition.blocks.map((b) => [b.id, b]));
         // An authored travel overlay intentionally overlaps the derived block beneath it.
@@ -42,9 +44,7 @@ export function generateWeeklyObjectives(
         // block makes the explicit user contract authoritative for both dose *and* weekly
         // objectives. Keeping every overlapping block here would quietly retain peak work
         // during travel even though resolvePlannedDoseForDate correctly used travel dose.
-        const activeBlock = planDefinition.blocks
-            .find((block) => block.startDate <= asOfDate && asOfDate <= block.endDate);
-        const activeBlockIds = new Set(activeBlock ? [activeBlock.id] : []);
+        const activeBlockIds = new Set([activeBlock.id]);
 
         planDefinition.objectives
             .filter((objDef) => activeBlockIds.has(objDef.blockId) && objDef.requiredCredit > 0)

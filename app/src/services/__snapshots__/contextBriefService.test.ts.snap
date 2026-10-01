@@ -1,0 +1,508 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ContextBriefService > golden service artifact: 2-day daily export 1`] = `
+"# Morning Training & Readiness Brief
+
+Contract version: 2026-09-context-brief-contract-v4
+Purpose: morning
+As-of date: 2026-08-15 (Europe/Warsaw calendar date)
+Retrospective detail window: 2026-08-14 → 2026-08-15 (2 days)
+Subjective baseline window: not used by this export
+Recovery timeline: 7 days
+Sensor evidence horizon: not used by this export
+Engine policy version: 2026-09-forecast-authority-segments-v1
+Source state and currency (dates never shift the as-of date):
+- Recovery snapshot for 2026-08-15: available; latest 2026-08-15 (0 calendar day(s) before as-of); source schema 3, baseline computation 2, Garmin synced 2026-08-15T06:15:00Z.
+- Wearable metric dates: sleep not reported; HRV not reported; RHR not reported; D-1 steps not reported; activities through not reported. The sync timestamp above is transport provenance, not the measurement date.
+- Subjective check-in for 2026-08-15: missing; latest none in fetched window; current-day subjective state stale or absent.
+- Garmin activities: available; latest 2026-08-14 (1 calendar day(s) before as-of); D-1 1 provider row(s).
+- Canonical performed training: available; latest 2026-08-14 (1 calendar day(s) before as-of).
+- Current-day plan authority inputs: recommendations missing/no recommendation (latest update none recorded); imported schedule missing/no authored occurrence; imported revision no active plan; date 2026-08-15.
+- Power telemetry capability: missing/not configured (training settings absent).
+- Training-response comparisons: not applicable to this compact morning export.
+- Value states: a measured 0 is explicit zero; missing means no record; unavailable means read failure; invalid means an unparseable record; unsupported means not collected by the source; not applicable means the feature does not apply. An em dash means unmeasured, never zero.
+
+Date: 2026-08-15 (Europe/Warsaw) · Mode: Daily Morning Coach Handoff
+Context: This brief is shared daily in an ongoing chat. Focus on today's session, yesterday's debrief, and acute adaptations.
+
+> **DATA INCOMPLETE:** missing or unreadable source context: training settings. Absence from affected sections means "unknown", not "none".
+
+### Resolved planning authority for 2026-08-15
+
+Authority order: current symptoms and safety > the app's readiness/safety adjudication > the imported (authored) plan > the app's own generated recommendation. Fixed activities are availability/load constraints, not workouts.
+
+- Outcome: **NO_AUTHORED_SESSION — no imported plan governs today; the app recommendation is the planning input**.
+- Authoritative session today: none recorded yet.
+
+## 1. Today's Status & Check-in
+
+> Check-in caution: No subjective check-in submitted for 2026-08-15 yet. Subjective readiness, soreness, and availability are unrecorded.
+
+## 2. Overnight Recovery (Wearable)
+
+- HRV: 62 ms (+4 vs 7d), RHR: 48 bpm (-2 vs 7d), Sleep: 7h 30m (78 pts) | Pattern: CONVERGENT_REASSURING
+
+### Recent 7-day recovery timeline
+
+Calendar-day rows preserve direction and clustering that window averages can hide. Steps are the completed D-1 total carried by that morning's snapshot. “—” means not recorded.
+
+| Date | Sleep | HRV | RHR | Resp | BB | Stress | Steps D-1 | Ready | Fatigue | Sore | Training / flags |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 2026-08-09 | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-10 | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-11 | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-12 | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-13 | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-14 | — | — | — | — | — | — | — | — | — | — | 1 activity (1 hard) |
+| 2026-08-15 | 78 | 62 | 48 | 13 | 71 | — | 9000 | — | — | — | — |
+
+## 3. Yesterday's Closed-Loop Debrief (2026-08-14)
+
+- Prescribed: No app/imported prescription recorded for yesterday.
+- Recorded training (canonical): Cycling · 62 min · Garmin · identity exact
+- Garmin detail: 1 linked provider row(s), observational evidence for the canonical sessions above; not additional workouts.
+  - Quality-session detail (display-only):
+    - Session detail: anaerobic TE 0.8
+    - Interval/lap detail:
+
+      | Lap | Duration | Avg power | Avg HR |
+      |---:|---:|---:|---:|
+      | 1 | 15:00 | 210 W | 138 bpm |
+      | 2 | 15:00 | 230 W | 148 bpm |
+- Manual physical work: none reported
+- Adherence Delta: not computable — no executable app/imported prescription recorded for yesterday.
+- Recommendation feedback (athlete response, not execution): no app recommendation recorded for yesterday.
+
+## 4. Today's App Recommendation & Engine Stance
+
+No recommendation recorded for today yet (check-in may be pending or sync in progress).
+
+## 5. Short-Term Horizon (Next 48–72h)
+
+- D+1 · 2026-08-16: No app-held fixed activity, travel block, or imported session.
+- D+2 · 2026-08-17: No app-held fixed activity, travel block, or imported session.
+- D+3 · 2026-08-18: No app-held fixed activity, travel block, or imported session.
+
+## 6. Morning Coach Instructions
+
+- Treat this brief as state/context for your ongoing morning conversation. Answer the athlete's actual question first.
+- Acknowledge today's recovery metrics, check-in scores, and yesterday's debrief (flagging any notable strain deltas, soreness, or fatigue from manual labor).
+- Today's authoritative session is the one named in *Resolved planning authority*; do not choose between, or merge, the app recommendation and an imported session. If it is UNRESOLVED or UNKNOWN, ask the athlete.
+- Review today's recommended session against how the athlete feels, their available time, and any sore areas. Confirm or suggest practical fine-tuning (e.g. cadence emphasis, intensity ceiling).
+- Provide concrete execution guidance (power/HR zones, warmup emphasis for reported aches).
+- Keep tomorrow's planned session in mind so today appropriately sets up the week.
+- Do NOT output a multi-day schedule table or redesign the training block unless explicitly asked. Focus on coaching today."
+`;
+
+exports[`ContextBriefService > golden service artifact: 14-day diagnostic export 1`] = `
+"# Training context brief
+
+Contract version: 2026-09-context-brief-contract-v4
+Purpose: diagnostic
+As-of date: 2026-08-15 (Europe/Warsaw calendar date)
+Retrospective detail window: 2026-08-02 → 2026-08-15 (14 days)
+Subjective baseline window: 2026-07-19 → 2026-08-15 (28 days)
+Recovery timeline: 7 days
+Sensor evidence horizon: 28 days
+Engine policy version: 2026-09-forecast-authority-segments-v1
+Source state and currency (dates never shift the as-of date):
+- Recovery snapshot for 2026-08-15: available; latest 2026-08-15 (0 calendar day(s) before as-of); source schema 3, baseline computation 2, Garmin synced 2026-08-15T06:15:00Z.
+- Wearable metric dates: sleep not reported; HRV not reported; RHR not reported; D-1 steps not reported; activities through not reported. The sync timestamp above is transport provenance, not the measurement date.
+- Subjective check-in for 2026-08-15: missing; latest none in fetched window; current-day subjective state stale or absent.
+- Garmin activities: available; latest 2026-08-14 (1 calendar day(s) before as-of); D-1 1 provider row(s).
+- Canonical performed training: available; latest 2026-08-14 (1 calendar day(s) before as-of).
+- Current-day plan authority inputs: recommendations missing/no recommendation (latest update none recorded); imported schedule missing/no authored occurrence; imported revision no active plan; date 2026-08-15.
+- Power telemetry capability: missing/not configured (training settings absent).
+- Training-response comparisons: see display-only feature rows; insufficient evidence is stated per feature.
+- Value states: a measured 0 is explicit zero; missing means no record; unavailable means read failure; invalid means an unparseable record; unsupported means not collected by the source; not applicable means the feature does not apply. An em dash means unmeasured, never zero.
+
+Window: 2026-08-02 → 2026-08-15 (14 days). All dates are Europe/Warsaw calendar dates.
+Blank values ("—") mean not measured, not zero. This brief contains no raw device payloads.
+Export purpose: diagnostic — bounded forensic telemetry and observation-only candidate baselines. None of that detail has recommendation authority; it does not change what the app recommends.
+
+
+## 0. Planning handoff & data currency
+
+**Use this as context for the conversation, not as a standalone command.** Answer the user's actual question that accompanies or follows this brief; do not generate a new plan merely because the brief was pasted.
+- Planning date: 2026-08-15 (Europe/Warsaw calendar date).
+- Effective planning mode today: evergreen.
+- Sensors — configured vs observed (observed = canonical activities 2026-07-19..2026-08-15, 1 in window; observation is evidence, not ownership):
+  - Power meter: configuration unavailable (training settings and preferences not readable); recent cycling power observed on 1 activity; latest 2026-08-14.
+  - Heart-rate monitor: configuration unavailable (training settings and preferences not readable); recent HR observed on 1 activity; latest 2026-08-14.
+  - Cadence: configuration unavailable (training settings and preferences not readable); not observable — cadence is not carried by canonical activity fields in this export.
+  - Prescription rule: only configured-available sensors are guaranteed for future sessions. Do not assume permanent availability from observation alone; when configuration is unknown or unavailable, give sensor-dependent sessions an executable RPE/feel (or HR, if HR is configured available) fallback.
+- Latest wearable snapshot: 2026-08-15; Garmin sync timestamp 2026-08-15T06:15:00Z.
+> Check-in caution: no subjective check-in is available in the exported window.
+- No activity record is currently dated to the planning date. Same-day Garmin activity can lag until a post-session sync, so this is not proof that no training occurred.
+
+> **DATA INCOMPLETE:** missing or unreadable source context: training settings. Absence from the affected sections means "unknown", not "none". Do not fill those gaps with assumptions.
+
+### Resolved planning authority for 2026-08-15
+
+Authority order: current symptoms and safety > the app's readiness/safety adjudication > the imported (authored) plan > the app's own generated recommendation. Fixed activities are availability/load constraints, not workouts.
+
+- Outcome: **NO_AUTHORED_SESSION — no imported plan governs today; the app recommendation is the planning input**.
+- Authoritative session today: none recorded yet.
+## 1. Constraints
+
+A session that violates any of these cannot be executed.
+
+- Training settings are missing or unreadable. Do not assume any equipment or absence of injury.
+
+## 2. Objective recovery (wearable)
+
+### Recovery evidence synthesis (explanatory — not a readiness score, no decision authority)
+
+Recovery pattern (2026-08-15): **CONVERGENT_REASSURING** — one vote per independent family (athlete-reported, HRV, resting HR, sleep); vendor composites do not vote.
+- Adverse evidence:
+  - none
+- Reassuring evidence:
+  - HRV (overnight): 62 ms on 2026-08-15, +4 vs 7d (usual variation ±3) — favorable vs baseline
+  - Resting HR: 48 bpm on 2026-08-15, -2 vs 7d (usual variation ±1.5) — favorable vs baseline
+  - Sleep score: 78 pts on 2026-08-15, +7 vs 7d (usual variation ±4) — favorable vs baseline
+- Neutral / unavailable:
+  - Athlete-reported state: no check-in for 2026-08-15 — missing, not assumed favorable
+- Conflicts / uncertainty:
+  - subjective check-in missing
+- Data confidence (observability only): wearable current (latest 2026-08-15) · 28-day baseline mature · check-in missing
+- Vendor composites and respiration (correlated or production-off; context only, not counted): Body Battery on waking 71 · HRV status balanced · respiration 13 br/min (production respiration strain scoring is off)
+- Decision implication:
+  - reassuring evidence never justifies raising volume or intensity above authored intent
+  - explanatory only — not a readiness score; recommendations are unchanged by this summary
+
+Most recent reading — 2026-08-15:
+- HRV (overnight avg): 62 ms (7d 58, 28d 61) — +4 vs 7d, +1 vs 28d
+- Resting HR: 48 bpm (7d 50, 28d 49) — -2 vs 7d, -1 vs 28d
+- Sleep score: 78 pts (7d 71, 28d 74) — +7 vs 7d, +4 vs 28d
+- Steps (yesterday D-1): 9000 steps (7d —, 28d —) — — vs 7d, — vs 28d
+- Respiration: 13 br/min (legacy pre-v3 baseline fields use mean; robust median/MAD unavailable)
+- Body battery on waking: 71
+- HRV status (device): balanced
+
+Window averages (1 of 14 days have data):
+- HRV 62 ms · resting HR 48 bpm · sleep score 78
+
+
+### Recent 7-day recovery timeline
+
+Calendar-day rows preserve direction and clustering that window averages can hide. Steps are the completed D-1 total carried by that morning's snapshot. “—” means not recorded.
+
+| Date | Sleep | HRV | RHR | Resp | BB | Stress | Steps D-1 | Ready | Fatigue | Sore | Training / flags |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 2026-08-09 | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-10 | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-11 | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-12 | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-13 | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-14 | — | — | — | — | — | — | — | — | — | — | 1 activity (1 hard) |
+| 2026-08-15 | 78 | 62 | 48 | 13 | 71 | — | 9000 | — | — | — | — |
+## 3. Completed training (canonical performed occurrences)
+
+| Date | Modality | Min | Sources | Detail |
+|---|---|---|---|---|
+| 2026-08-14 | Cycling | 62 | Garmin | — |
+
+Totals: 1 sessions · 62 min (canonical, deduped across structured and provider sources; 1 raw provider activity row in window).
+Discipline volume: Cycling: 1 session (62 min)
+- 2026-08-09 → 2026-08-15: 1 sessions · 62 min
+- 2026-08-02 → 2026-08-08: 0 sessions · 0 min
+
+Raw activity provenance (diagnostic only — source rows are not added to canonical totals; unmatched or multiple provider rows may reflect reconciliation state):
+
+| Date | Type | Min | Load | Aerobic TE | Anaerobic TE | Avg HR | Intensity |
+|---|---|---|---|---|---|---|---|
+| 2026-08-14 | Road cycling | 62 | 118 | 3.4 | 0.8 | 143 | hard (threshold) |
+
+### Recent meaningful stressors (2026-08-02 → 2026-08-15)
+
+Completed sessions only: Garmin records and answered adherence reconciled as the engine's training history does (except rows marked athlete-reclassified, which also show the engine-recorded classification), plus canonical performed occurrences such as in-app structured sessions. Listed when the stimulus is high-intensity, the session cost is high, or the modality loads tissue mechanically. Cost vector = engine-estimated 0–1 cost, systemic vs mechanical.
+- 2026-08-14: cycling quality — hard stimulus (threshold) · session cost not measured (engine cost row: hard) · systemic 0.7 · cardiovascular 0.8 | lower-body 0.7 · impact 0.1 · neuromuscular 0.5 · Garmin measured effort (garmin; inferred)
+
+### Physical-capability exposure
+
+Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next 7 days only (never counted as done); \`unknown\` = not observed in this window or no canonical model; \`deliberately_suspended\` = blocked by a current safety limit or a deliberate planning suspension, not neglect. \`overdue\` is reported only for change of direction and sport skill, and only from the evergreen planner's resolved #805 capability-maintenance cadence when this export carries it; no other family has an authoritative cadence/max-gap policy. Not yet represented: taper/event-specific suppression outside #805, and the #803/#806 capability models. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities.
+- Aerobic endurance: confirmed · last confirmed 2026-08-14 — canonical performed occurrence (provider_activity; exact)
+- Cycling quality (tempo+ / race): confirmed · last confirmed 2026-08-14 — Garmin measured effort (garmin; inferred)
+- Strength: unknown
+- Neuromuscular power: unknown
+- Running familiarity: unknown
+- Field / multidirectional sport: unknown
+- Impact / jump-land: unknown
+- Linear speed: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Acceleration / deceleration: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Change of direction / multidirectional: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Sport skill: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Unilateral lower-body: unknown · no canonical exposure model yet (#803)
+- Long aerobic anchor: unknown · no canonical exposure model yet (#806)
+- Hamstring knee-flexion / calf-soleus / grip-carry: unknown · no canonical exposure model yet (no issue yet)
+- Note: Training settings missing or unreadable: safety suspensions are unknown, not absent.
+
+
+### Detailed activity telemetry
+
+Only activities with Garmin detail telemetry are expanded below; absent fields were not reported by Garmin.
+
+#### 2026-08-14 — Road cycling — hard
+- Power summary: normalized power 226 W
+- Session detail: anaerobic TE 0.8
+- Laps:
+
+  | Lap | Duration | Avg power | Avg HR |
+  |---:|---:|---:|---:|
+  | 1 | 15:00 | 210 W | 138 bpm |
+  | 2 | 15:00 | 230 W | 148 bpm |
+
+## 4. Subjective reports (self-scored each morning, 1–10)
+
+No check-ins in this window.
+
+## 5. Recommendation feedback (athlete responses — not plan execution)
+
+Athlete answers to the app's adherence prompt for **app recommendations only** — feedback completion, not execution. Imported/external-plan sessions are not counted here.
+
+No app recommendations recorded in this window.
+
+Plan execution reconciliation: unavailable (canonical planned-vs-performed reconciliation is shadow-only; ADR-0034 TO4/TO5, #646). Observed execution is not reconciled against planned sessions in this export: an unanswered prompt is not a skip, and a missing activity is not proof of non-execution (sync may be incomplete) — compare against the completed-training section yourself.
+
+## 7. Existing commitments / imported plan (2026-08-15 → 2026-08-21)
+
+Preserve these when proposing days unless the user explicitly asks to move, replace or re-plan them. Authored travel blocks scale the surrounding plan rather than representing an extra workout.
+
+No fixed activity, travel block or imported-plan session is recorded in this 7-day horizon. This only describes app-held commitments; it does not prove the athlete has no calendar constraints outside the app.
+
+## 8. How to use this handoff
+
+- Treat the brief as **state/context**, not as a request to automatically create a plan. Answer the user's actual question first.
+- For **today**, current illness/pain/tissue response and current-day availability outrank favorable wearable metrics. A green wearable day does not justify overriding a local warning signal.
+- **Day 1 of a new block is not a blank slate.** Cross-check it against the most recent rows in the completed-training table before finalizing it — a session scheduled for today or tomorrow that duplicates one already completed the day of or immediately before the brief's date needs an explicit adjustment (lower end of the range, different modality, or rest), not a repeat of the same slot.
+- For **future days**, preserve the intended purpose and hard/easy spacing of key sessions. Do not pre-emptively downgrade a future quality day merely because the preceding planned work may create normal fatigue; reassess that day when current data exists.
+- Favorable recovery metrics may support proceeding with the intended dose, but are not a reason by themselves to add volume or intensity beyond the plan.
+- Treat respiration robust statistics and the observation-only median/MAD fields as context for pattern recognition, not independent additive penalties.
+- For **today**, follow the *Resolved planning authority* block in section 0. It already reconciles the app recommendation with the imported plan; do not re-decide between them, merge them, or invent a compromise dose. If it says UNRESOLVED or UNKNOWN, say so and ask the athlete instead of choosing.
+- Respect fixed activities, travel scaling blocks and imported-plan sessions above. Imported sessions on later dates keep their authored authority on those dates. If a change is warranted, explain which constraint or new evidence justifies it.
+- Honor configured sensor capabilities; observed recent telemetry (section 0) shows what recent activities contained, not guaranteed future availability. If a sensor is not configured available, do not make the session depend solely on that sensor; provide an executable RPE/HR/feel alternative as appropriate. Never treat a sensor configured unavailable as available because it once appeared in historical data.
+- Prefer dated/current records when information conflicts. Explicitly call out missing or stale data instead of assuming normality.
+
+### If the user asks for an importable schedule
+
+Use this exact day-block format so it remains compatible with 1-click plan import:
+\`\`\`markdown
+### Day YYYY-MM-DD: <Session Name>
+- Modality: <Cycling | Running | Strength | Mobility | Field | Cross Training>
+- Duration: <minutes> min
+- Intensity: <easy | moderate | hard>
+- Objectives: <zone2 aerobic | threshold quality | surge repeatability | vo2 max | strength maintenance | strength development | race specific endurance> (or omit if recovery)
+- Description: <Interval structure, target power/HR zones, or workout instructions>
+\`\`\`
+"
+`;
+
+exports[`ContextBriefService > golden service artifact: 14-day full export 1`] = `
+"# Training context brief
+
+Contract version: 2026-09-context-brief-contract-v4
+Purpose: planning
+As-of date: 2026-08-15 (Europe/Warsaw calendar date)
+Retrospective detail window: 2026-08-02 → 2026-08-15 (14 days)
+Subjective baseline window: 2026-07-19 → 2026-08-15 (28 days)
+Recovery timeline: 7 days
+Sensor evidence horizon: 28 days
+Engine policy version: 2026-09-forecast-authority-segments-v1
+Source state and currency (dates never shift the as-of date):
+- Recovery snapshot for 2026-08-15: available; latest 2026-08-15 (0 calendar day(s) before as-of); source schema 3, baseline computation 2, Garmin synced 2026-08-15T06:15:00Z.
+- Wearable metric dates: sleep not reported; HRV not reported; RHR not reported; D-1 steps not reported; activities through not reported. The sync timestamp above is transport provenance, not the measurement date.
+- Subjective check-in for 2026-08-15: missing; latest none in fetched window; current-day subjective state stale or absent.
+- Garmin activities: available; latest 2026-08-14 (1 calendar day(s) before as-of); D-1 1 provider row(s).
+- Canonical performed training: available; latest 2026-08-14 (1 calendar day(s) before as-of).
+- Current-day plan authority inputs: recommendations missing/no recommendation (latest update none recorded); imported schedule missing/no authored occurrence; imported revision no active plan; date 2026-08-15.
+- Power telemetry capability: missing/not configured (training settings absent).
+- Training-response comparisons: see display-only feature rows; insufficient evidence is stated per feature.
+- Value states: a measured 0 is explicit zero; missing means no record; unavailable means read failure; invalid means an unparseable record; unsupported means not collected by the source; not applicable means the feature does not apply. An em dash means unmeasured, never zero.
+
+Window: 2026-08-02 → 2026-08-15 (14 days). All dates are Europe/Warsaw calendar dates.
+Blank values ("—") mean not measured, not zero. This brief contains no raw device payloads.
+Export purpose: planning — sections are ordered by decision authority; forensic telemetry and experimental candidate baselines are summarized or omitted (request the diagnostic export for them).
+
+
+## 0. Planning handoff & data currency
+
+**Use this as context for the conversation, not as a standalone command.** Answer the user's actual question that accompanies or follows this brief; do not generate a new plan merely because the brief was pasted.
+- Planning date: 2026-08-15 (Europe/Warsaw calendar date).
+- Effective planning mode today: evergreen.
+- Sensors — configured vs observed (observed = canonical activities 2026-07-19..2026-08-15, 1 in window; observation is evidence, not ownership):
+  - Power meter: configuration unavailable (training settings and preferences not readable); recent cycling power observed on 1 activity; latest 2026-08-14.
+  - Heart-rate monitor: configuration unavailable (training settings and preferences not readable); recent HR observed on 1 activity; latest 2026-08-14.
+  - Cadence: configuration unavailable (training settings and preferences not readable); not observable — cadence is not carried by canonical activity fields in this export.
+  - Prescription rule: only configured-available sensors are guaranteed for future sessions. Do not assume permanent availability from observation alone; when configuration is unknown or unavailable, give sensor-dependent sessions an executable RPE/feel (or HR, if HR is configured available) fallback.
+- Latest wearable snapshot: 2026-08-15; Garmin sync timestamp 2026-08-15T06:15:00Z.
+> Check-in caution: no subjective check-in is available in the exported window.
+- No activity record is currently dated to the planning date. Same-day Garmin activity can lag until a post-session sync, so this is not proof that no training occurred.
+
+> **DATA INCOMPLETE:** missing or unreadable source context: training settings. Absence from the affected sections means "unknown", not "none". Do not fill those gaps with assumptions.
+
+### Resolved planning authority for 2026-08-15
+
+Authority order: current symptoms and safety > the app's readiness/safety adjudication > the imported (authored) plan > the app's own generated recommendation. Fixed activities are availability/load constraints, not workouts.
+
+- Outcome: **NO_AUTHORED_SESSION — no imported plan governs today; the app recommendation is the planning input**.
+- Authoritative session today: none recorded yet.
+## 1. Constraints
+
+A session that violates any of these cannot be executed.
+
+- Training settings are missing or unreadable. Do not assume any equipment or absence of injury.
+
+## 2. Current training intent & goals
+
+No active goals or training intent profile recorded.
+
+## 3. Objective recovery (wearable)
+
+### Recovery evidence synthesis (explanatory — not a readiness score, no decision authority)
+
+Recovery pattern (2026-08-15): **CONVERGENT_REASSURING** — one vote per independent family (athlete-reported, HRV, resting HR, sleep); vendor composites do not vote.
+- Adverse evidence:
+  - none
+- Reassuring evidence:
+  - HRV (overnight): 62 ms on 2026-08-15, +4 vs 7d (usual variation ±3) — favorable vs baseline
+  - Resting HR: 48 bpm on 2026-08-15, -2 vs 7d (usual variation ±1.5) — favorable vs baseline
+  - Sleep score: 78 pts on 2026-08-15, +7 vs 7d (usual variation ±4) — favorable vs baseline
+- Neutral / unavailable:
+  - Athlete-reported state: no check-in for 2026-08-15 — missing, not assumed favorable
+- Conflicts / uncertainty:
+  - subjective check-in missing
+- Data confidence (observability only): wearable current (latest 2026-08-15) · 28-day baseline mature · check-in missing
+- Vendor composites and respiration (correlated or production-off; context only, not counted): Body Battery on waking 71 · HRV status balanced · respiration 13 br/min (production respiration strain scoring is off)
+- Decision implication:
+  - reassuring evidence never justifies raising volume or intensity above authored intent
+  - explanatory only — not a readiness score; recommendations are unchanged by this summary
+
+Most recent reading — 2026-08-15:
+- HRV (overnight avg): 62 ms (7d 58, 28d 61) — +4 vs 7d, +1 vs 28d
+- Resting HR: 48 bpm (7d 50, 28d 49) — -2 vs 7d, -1 vs 28d
+- Sleep score: 78 pts (7d 71, 28d 74) — +7 vs 7d, +4 vs 28d
+- Steps (yesterday D-1): 9000 steps (7d —, 28d —) — — vs 7d, — vs 28d
+
+Secondary device composites (context only; correlated with the metrics above, not independent evidence):
+- Body battery on waking: 71
+- HRV status (device): balanced
+
+Window averages (1 of 14 days have data):
+- HRV 62 ms · resting HR 48 bpm · sleep score 78
+
+## 4. Subjective reports (self-scored each morning, 1–10)
+
+No check-ins in this window.
+
+
+### Recent 7-day recovery timeline
+
+Calendar-day rows preserve direction and clustering that window averages can hide. Steps are the completed D-1 total carried by that morning's snapshot. “—” means not recorded.
+
+| Date | Sleep | HRV | RHR | Resp | BB | Stress | Steps D-1 | Ready | Fatigue | Sore | Training / flags |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 2026-08-09 | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-10 | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-11 | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-12 | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-13 | — | — | — | — | — | — | — | — | — | — | — |
+| 2026-08-14 | — | — | — | — | — | — | — | — | — | — | 1 activity (1 hard) |
+| 2026-08-15 | 78 | 62 | 48 | 13 | 71 | — | 9000 | — | — | — | — |
+## 5. Completed training (canonical performed occurrences)
+
+| Date | Modality | Min | Sources | Detail |
+|---|---|---|---|---|
+| 2026-08-14 | Cycling | 62 | Garmin | — |
+
+Totals: 1 sessions · 62 min (canonical, deduped across structured and provider sources; 1 raw provider activity row in window).
+Discipline volume: Cycling: 1 session (62 min)
+- 2026-08-09 → 2026-08-15: 1 sessions · 62 min
+- 2026-08-02 → 2026-08-08: 0 sessions · 0 min
+
+### Recent meaningful stressors (2026-08-02 → 2026-08-15)
+
+Completed sessions only: Garmin records and answered adherence reconciled as the engine's training history does (except rows marked athlete-reclassified, which also show the engine-recorded classification), plus canonical performed occurrences such as in-app structured sessions. Listed when the stimulus is high-intensity, the session cost is high, or the modality loads tissue mechanically. Cost vector = engine-estimated 0–1 cost, systemic vs mechanical.
+- 2026-08-14: cycling quality — hard stimulus (threshold) · session cost not measured (engine cost row: hard) · systemic 0.7 · cardiovascular 0.8 | lower-body 0.7 · impact 0.1 · neuromuscular 0.5 · Garmin measured effort (garmin; inferred)
+
+### Physical-capability exposure
+
+Read-only status. \`confirmed\` = completed in this window; \`planned\` = imported plan session in the next 7 days only (never counted as done); \`unknown\` = not observed in this window or no canonical model; \`deliberately_suspended\` = blocked by a current safety limit or a deliberate planning suspension, not neglect. \`overdue\` is reported only for change of direction and sport skill, and only from the evergreen planner's resolved #805 capability-maintenance cadence when this export carries it; no other family has an authoritative cadence/max-gap policy. Not yet represented: taper/event-specific suppression outside #805, and the #803/#806 capability models. Neuromuscular power (#802), impact (#804), change of direction and sport skill (#805) are confirmed only by exact authored identities.
+- Aerobic endurance: confirmed · last confirmed 2026-08-14 — canonical performed occurrence (provider_activity; exact)
+- Cycling quality (tempo+ / race): confirmed · last confirmed 2026-08-14 — Garmin measured effort (garmin; inferred)
+- Strength: unknown
+- Neuromuscular power: unknown
+- Running familiarity: unknown
+- Field / multidirectional sport: unknown
+- Impact / jump-land: unknown
+- Linear speed: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Acceleration / deceleration: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Change of direction / multidirectional: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Sport skill: unknown · no resolved capability-maintenance cadence in this export; overdue status is not reported
+- Unilateral lower-body: unknown · no canonical exposure model yet (#803)
+- Long aerobic anchor: unknown · no canonical exposure model yet (#806)
+- Hamstring knee-flexion / calf-soleus / grip-carry: unknown · no canonical exposure model yet (no issue yet)
+- Note: Training settings missing or unreadable: safety suspensions are unknown, not absent.
+
+## External-plan execution round trip (14-day window)
+
+No exact external-plan occurrence records were available in this window. Missing activity is not treated as a missed session.
+
+
+### Key-session telemetry (compact)
+
+One line per recent activity with Garmin detail telemetry. The capped persisted lap/response view is in the diagnostic export; bounded quality-session zones and execution detail may appear later in this planning section.
+- 2026-08-14 — Road cycling — hard: NP 226 W · 2 laps (30:00) · strongest lap 230 W for 15:00
+
+### Quality-session execution detail (bounded)
+
+Quality cycling/running sessions are expanded with the same execution evidence as the morning handoff, capped at 20 semantic segments or 20 running/legacy laps per activity and 12 activities. Ordinary endurance/recovery sessions remain compact; use diagnostic export for more persisted rows.
+
+#### 2026-08-14 — Road cycling — hard · threshold
+- Session detail: anaerobic TE 0.8
+- Interval/lap detail:
+
+  | Lap | Duration | Avg power | Avg HR |
+  |---:|---:|---:|---:|
+  | 1 | 15:00 | 210 W | 138 bpm |
+  | 2 | 15:00 | 230 W | 148 bpm |
+
+## 6. Recommendation feedback (athlete responses — not plan execution)
+
+Athlete answers to the app's adherence prompt for **app recommendations only** — feedback completion, not execution. Imported/external-plan sessions are not counted here.
+
+No app recommendations recorded in this window.
+
+Plan execution reconciliation: unavailable (canonical planned-vs-performed reconciliation is shadow-only; ADR-0034 TO4/TO5, #646). Observed execution is not reconciled against planned sessions in this export: an unanswered prompt is not a skip, and a missing activity is not proof of non-execution (sync may be incomplete) — compare against the completed-training section yourself.
+
+## 7. Existing commitments / imported plan (2026-08-15 → 2026-08-21)
+
+Preserve these when proposing days unless the user explicitly asks to move, replace or re-plan them. Authored travel blocks scale the surrounding plan rather than representing an extra workout.
+
+No fixed activity, travel block or imported-plan session is recorded in this 7-day horizon. This only describes app-held commitments; it does not prove the athlete has no calendar constraints outside the app.
+
+## 8. How to use this handoff
+
+- Treat the brief as **state/context**, not as a request to automatically create a plan. Answer the user's actual question first.
+- For **today**, current illness/pain/tissue response and current-day availability outrank favorable wearable metrics. A green wearable day does not justify overriding a local warning signal.
+- **Day 1 of a new block is not a blank slate.** Cross-check it against the most recent rows in the completed-training table before finalizing it — a session scheduled for today or tomorrow that duplicates one already completed the day of or immediately before the brief's date needs an explicit adjustment (lower end of the range, different modality, or rest), not a repeat of the same slot.
+- For **future days**, preserve the intended purpose and hard/easy spacing of key sessions. Do not pre-emptively downgrade a future quality day merely because the preceding planned work may create normal fatigue; reassess that day when current data exists.
+- Favorable recovery metrics may support proceeding with the intended dose, but are not a reason by themselves to add volume or intensity beyond the plan.
+- Secondary device composites (body battery, stress, training readiness) are correlated context, not independent additive evidence. Candidate median/MAD baselines are deliberately absent from this planning export; do not infer them.
+- For **today**, follow the *Resolved planning authority* block in section 0. It already reconciles the app recommendation with the imported plan; do not re-decide between them, merge them, or invent a compromise dose. If it says UNRESOLVED or UNKNOWN, say so and ask the athlete instead of choosing.
+- Respect fixed activities, travel scaling blocks and imported-plan sessions above. Imported sessions on later dates keep their authored authority on those dates. If a change is warranted, explain which constraint or new evidence justifies it.
+- Honor configured sensor capabilities; observed recent telemetry (section 0) shows what recent activities contained, not guaranteed future availability. If a sensor is not configured available, do not make the session depend solely on that sensor; provide an executable RPE/HR/feel alternative as appropriate. Never treat a sensor configured unavailable as available because it once appeared in historical data.
+- Prefer dated/current records when information conflicts. Explicitly call out missing or stale data instead of assuming normality.
+
+### If the user asks for an importable schedule
+
+Use this exact day-block format so it remains compatible with 1-click plan import:
+\`\`\`markdown
+### Day YYYY-MM-DD: <Session Name>
+- Modality: <Cycling | Running | Strength | Mobility | Field | Cross Training>
+- Duration: <minutes> min
+- Intensity: <easy | moderate | hard>
+- Objectives: <zone2 aerobic | threshold quality | surge repeatability | vo2 max | strength maintenance | strength development | race specific endurance> (or omit if recovery)
+- Description: <Interval structure, target power/HR zones, or workout instructions>
+\`\`\`
+"
+`;

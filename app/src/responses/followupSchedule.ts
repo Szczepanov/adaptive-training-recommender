@@ -12,7 +12,8 @@
  * skipped or never-shown prompt simply produces no record (M5.1), which is `unknown` by
  * construction, not a status this module computes.
  */
-import type { BodyRegion } from '../engine/models';
+import { deriveTissueSeverity } from '../engine/injuryPolicy';
+import type { BodyRegion, RegionTissueResponse } from '../engine/models';
 
 /** Keyword -> region, checked as a case-insensitive substring against every
  * `tissueDemand`/`safetyTags` label on a step's resolved exercise. Deliberately small and
@@ -39,6 +40,38 @@ export interface FacetTagSource {
     safetyTags?: string[];
 }
 
+type FollowupSessionRef = NonNullable<RegionTissueResponse['sourceSessionRef']>;
+
+export interface NextMorningFollowupCandidate {
+    region: BodyRegion;
+    /**
+     * The one session this region-level response can be linked to without guessing.
+     * Undefined means attribution is ambiguous or absent and must remain unknown.
+     */
+    sessionRef?: FollowupSessionRef;
+}
+
+export interface SessionFollowupRegions {
+    sessionRef: FollowupSessionRef;
+    regions: readonly BodyRegion[];
+}
+
+function sameSessionRef(a: FollowupSessionRef, b: FollowupSessionRef): boolean {
+    return a.kind === b.kind && a.id === b.id && a.date === b.date;
+}
+
+/**
+ * The singular tissue-side source reference is compatibility scaffolding. A delayed answer
+ * may create session-level linkage only when that linkage agrees with any source reference
+ * already present on today's canonical region row; otherwise the session must stay unknown.
+ */
+export function canLinkNextMorningFollowupToSession(
+    existingSourceSessionRef: RegionTissueResponse['sourceSessionRef'],
+    candidateSessionRef: FollowupSessionRef,
+): boolean {
+    return !existingSourceSessionRef || sameSessionRef(existingSourceSessionRef, candidateSessionRef);
+}
+
 function regionsForTags(source: FacetTagSource): BodyRegion[] {
     const tags = [...(source.tissueDemand ?? []), ...(source.safetyTags ?? [])].map(tag => tag.toLowerCase());
     if (tags.length === 0) return [];
@@ -57,4 +90,79 @@ export function relevantFollowupRegions(exercises: readonly FacetTagSource[]): B
     const regions = new Set<BodyRegion>();
     for (const exercise of exercises) for (const region of regionsForTags(exercise)) regions.add(region);
     return [...regions].sort();
+}
+
+/**
+ * Canonical M5.2 next-morning due-state resolver shared by Today and Check-in.
+ *
+ * A previous-day manual tissue response is due only when it has real restriction semantics
+ * according to the same `deriveTissueSeverity` authority used by the engine. Linkage alone
+ * (`sourceSessionRef`) is not evidence that another follow-up is owed. Session-derived
+ * candidates remain useful for completed executions whose catalog facets identify relevant
+ * regions even when the athlete never manually flagged a tissue response.
+ *
+ * The current day's `nextMorningReaction` closes that region for this check-in date. The
+ * queue is region-level: multiple relevant sessions for one region become one prompt. A
+ * session link is carried only when prior manual attribution identifies it or exactly one
+ * derived session is plausible; otherwise attribution stays unknown instead of being guessed.
+ * Missing answers remain missing/unknown; this function is pure and never fabricates persistence.
+ */
+export function resolvePendingNextMorningFollowups(
+    previousDayTissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> | undefined,
+    currentDayTissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> | undefined,
+    sessionDerived: readonly SessionFollowupRegions[] = [],
+): NextMorningFollowupCandidate[] {
+    const neededByRegion = new Map<BodyRegion, {
+        region: BodyRegion;
+        explicitSessionRef?: FollowupSessionRef;
+        derivedSessionRefs: FollowupSessionRef[];
+    }>();
+
+    const candidateFor = (region: BodyRegion) => {
+        if (currentDayTissueResponses?.[region]?.nextMorningReaction) return null;
+        let candidate = neededByRegion.get(region);
+        if (!candidate) {
+            candidate = { region, derivedSessionRefs: [] };
+            neededByRegion.set(region, candidate);
+        }
+        return candidate;
+    };
+
+    const addDerivedSessionRef = (
+        candidate: { derivedSessionRefs: FollowupSessionRef[] },
+        sessionRef: FollowupSessionRef,
+    ) => {
+        if (!candidate.derivedSessionRefs.some(existing => sameSessionRef(existing, sessionRef))) {
+            candidate.derivedSessionRefs.push(sessionRef);
+        }
+    };
+
+    for (const [regionKey, response] of Object.entries(previousDayTissueResponses ?? {})) {
+        const region = regionKey as BodyRegion;
+        if (!response || deriveTissueSeverity(response) === null) continue;
+
+        const candidate = candidateFor(region);
+        if (!candidate) continue;
+        if (response.sourceSessionRef) candidate.explicitSessionRef = response.sourceSessionRef;
+    }
+
+    for (const session of sessionDerived) {
+        for (const region of session.regions) {
+            const candidate = candidateFor(region);
+            if (!candidate) continue;
+            addDerivedSessionRef(candidate, session.sessionRef);
+        }
+    }
+
+    return [...neededByRegion.values()].map(candidate => {
+        // Athlete-reported/manual attribution wins over movement-derived relevance. Without
+        // an explicit attribution, only a single derived session is safe to link. Multiple
+        // plausible sessions stay unlinked rather than pretending medical causation.
+        const sessionRef = candidate.explicitSessionRef
+            ?? (candidate.derivedSessionRefs.length === 1 ? candidate.derivedSessionRefs[0] : undefined);
+        return {
+            region: candidate.region,
+            ...(sessionRef ? { sessionRef } : {}),
+        };
+    });
 }

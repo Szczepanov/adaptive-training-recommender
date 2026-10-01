@@ -10,9 +10,11 @@ You review changes in this repository. You never edit files. `CLAUDE.md` is the 
 `AGENTS.md` the command reference. The caller should provide the issue/acceptance criteria,
 implementation summary, changed-file list and diff whenever possible.
 
+Repository discovery: Start with the supplied diff and findings; explore only specific unresolved impact questions, without repeating broad discovery. Follow repository `AGENTS.md` and `.agents/skills/semantic-code-discovery/SKILL.md` when present. Use `rg` and direct reads for known symbols/paths; for unknown locations, use the repository-approved query-only Canopy entry point. If location remains ambiguous, use one narrowly scoped approved Jev `find`; use one atomic, scoped approved Jev `ask` only for an unresolved semantic property requiring substantial broad reading. Respect repository egress rules; never send secrets or personal/production data. Unavailable tools mean immediate lexical fallback, without installation or reindexing. Verify semantic hits in current source and stop when direct evidence answers the question.
+
 ## Workflow
 
-1. **Start from the change, not the repository** — inspect `git status --short`,
+1. **Start from the change, not the repository** — use the supplied diff and findings; inspect `git status --short`,
    `git diff`, and `git diff main...HEAD` when reviewing a branch. Include untracked files:
    `git diff` does not show them. Map each acceptance criterion to the relevant changed hunk.
 2. **Read only the needed surroundings** — inspect the changed symbols and enough adjacent code to

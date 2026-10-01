@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     preparedPerformedFactsForCoverageSet,
+    resolvePerformedTrainingFactsCoverageDescriptor,
     resolveTrainingIntent,
 } from '../trainingIntent';
 import { getPerformedTrainingFactsInRange } from '../../training-occurrence/performedTrainingFactsService';
-import type { DailyReadiness } from '../models';
+import type { DailyReadiness, TrainingIntentProfile, UserEvent } from '../models';
 import type { TrainingHistorySnapshot } from '../trainingHistorySnapshot';
 import type { PerformedTrainingFactsSnapshot } from '../performedTrainingFacts';
+import { resolveDemandProfile } from '../eventPresets';
 
 vi.mock('../firestoreTrainingHistory', () => ({
     firestoreTrainingHistoryProvider: {
@@ -99,6 +101,23 @@ describe('training intent canonical facts + prepared history snapshot', () => {
 
         expect(preparedPerformedFactsForCoverageSet(evergreen, 'evergreen_general')).toBe(evergreen);
         expect(preparedPerformedFactsForCoverageSet(event, 'evergreen_general')).toBeNull();
+    });
+
+    it('uses evergreen canonical coverage before a future cycling structured block owns the date', () => {
+        const event: UserEvent = {
+            id: 'future-road-race', title: 'Future road race', date: '2026-09-13', priority: 'A',
+            lifecycle: 'scheduled', category: 'cycling_event',
+            demandProfile: resolveDemandProfile('cycling_event', 'road_race'),
+        };
+        const profile: TrainingIntentProfile = {
+            userId: 'user-1', planningMode: 'event_directed', priorities: ['endurance', 'strength_muscle'],
+            weeklyCommitment: { minSessions: 5, targetSessions: 6, maxSessions: 7 },
+            organizationPreference: 'auto', schemaVersion: 1, createdAt: '', updatedAt: '',
+        };
+        expect(resolvePerformedTrainingFactsCoverageDescriptor([event], '2026-06-20', [], profile).id)
+            .toBe('evergreen_general');
+        expect(resolvePerformedTrainingFactsCoverageDescriptor([event], '2026-06-21', [], profile).id)
+            .toBe('september_cycling_event');
     });
 
     it('retains noncanonical revision strings for deterministic injected fixtures', () => {

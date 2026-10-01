@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { NormalizedGarminActivity } from './models';
 import {
     injectActivityTelemetryIntoContextBrief,
+    renderCompactActivityTelemetry,
     renderContextBriefActivityTelemetry,
     renderMorningQualityActivityTelemetry,
     renderPlanningQualityActivityTelemetry,
@@ -25,6 +26,27 @@ function activity(
 }
 
 describe('renderContextBriefActivityTelemetry', () => {
+    it('caps variable activity detail per purpose and reports omitted activity counts', () => {
+        const many = Array.from({ length: 40 }, (_, index) => activity({
+            activityId: `ride-${String(index).padStart(2, '0')}`,
+            normalizedPower: 210 + index,
+        }));
+        const planning = renderCompactActivityTelemetry(many);
+        const diagnostic = renderContextBriefActivityTelemetry(many);
+        expect(planning).toContain('28 earlier activity digests omitted (planning cap 12)');
+        expect(planning).not.toContain('NP 210 W');
+        expect(diagnostic).toContain('10 earlier detailed activities omitted (diagnostic cap 30)');
+        expect(diagnostic).not.toContain('normalized power 210 W');
+    });
+    it('bounds diagnostic lap rows with an explicit omission count', () => {
+        const text = renderContextBriefActivityTelemetry([activity({
+            laps: Array.from({ length: 150 }, (_, index) => ({ lapIndex: index + 1, durationSeconds: 60 })),
+        })]);
+        expect(text).toContain('50 additional laps omitted (diagnostic cap 100)');
+        expect(text).toContain('| 100 |');
+        expect(text).not.toContain('| 101 |');
+        expect(text.length).toBeLessThan(6500);
+    });
     it('returns no section when the activity has only summary telemetry', () => {
         expect(renderContextBriefActivityTelemetry([activity()])).toBe('');
     });
@@ -470,7 +492,7 @@ describe('renderPlanningQualityActivityTelemetry', () => {
 
 describe('injectActivityTelemetryIntoContextBrief', () => {
     it('keeps section 4 after the detailed telemetry subsection', () => {
-        const brief = '# Training context brief\n\n## 3. Completed training (recorded by the wearable)\n\nSummary\n\n## 4. Subjective check-ins';
+        const brief = '# Training context brief\n\n## 3. Completed training (canonical performed occurrences)\n\nSummary\n\n## 4. Subjective check-ins';
         const text = injectActivityTelemetryIntoContextBrief(
             brief,
             [activity({ normalizedPower: 287 })],
@@ -483,7 +505,7 @@ describe('injectActivityTelemetryIntoContextBrief', () => {
     });
 
     it('adds bounded quality execution evidence to compact/block-planning injection', () => {
-        const brief = '# Training context brief\n\n## 5. Completed training (recorded by the wearable)\n\nSummary\n\n## 6. Recommendation feedback';
+        const brief = '# Training context brief\n\n## 5. Completed training (canonical performed occurrences)\n\nSummary\n\n## 6. Recommendation feedback';
         const text = injectActivityTelemetryIntoContextBrief(
             brief,
             [activity({

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveDemandProfile } from './eventPresets';
-import { eventStrengthSupportSessions, resolveTrainingIntent } from './trainingIntent';
+import { eventStrengthSupportSessions, mechanicalEvidenceRequiredFor, resolveTrainingIntent } from './trainingIntent';
 import { buildCoverageState, coverageNeedTierForTemplate } from './coverage';
 import { deriveRequiredRoleOccurrences } from './weeklyAllocation';
 import { creditObjectivesFromStimulus, generateWeeklyObjectives } from './microcycle';
@@ -70,6 +70,50 @@ describe('cycling hybrid event strength support (#801)', () => {
         expect(resolved?.objectives.some(item => item.coverageKey === 'compact_strength')).toBe(false);
     });
 
+    it('loads established athlete evidence while a distant cycling event uses evergreen fallback', async () => {
+        const windows: number[] = [];
+        const recordingHistory: TrainingHistoryProvider = {
+            reconstruct: async (_userId, _date, windowDays) => {
+                windows.push(windowDays);
+                return [];
+            },
+            getSnapshot: async (_userId, throughDateExclusive, windowDays) => {
+                windows.push(windowDays);
+                return {
+                    throughDateExclusive,
+                    windowDays,
+                    completedEvents: [],
+                    exposures: [],
+                    sourceStates: {
+                        activities: { status: 'AVAILABLE', revision: 'test' },
+                        recommendations: { status: 'AVAILABLE', revision: 'test' },
+                        manualTraining: { status: 'MISSING' },
+                    },
+                    generatedAt: '',
+                    revision: 'test',
+                };
+            },
+        };
+        await resolveTrainingIntent(
+            'endurance-athlete', [event], '2026-06-20', readiness, 7, recordingHistory,
+            undefined, [], profile(['endurance']),
+        );
+        expect(windows).toContain(28);
+    });
+
+    it('requests mechanical evidence only while evergreen owns the evaluated date', () => {
+        const speedProfile = profile(['speed_power']);
+        expect(mechanicalEvidenceRequiredFor(speedProfile, [event], '2026-06-20')).toBe(true);
+        expect(mechanicalEvidenceRequiredFor(speedProfile, [event], '2026-06-21')).toBe(false);
+
+        const travel = [{
+            id: 'early-travel', userId: 'hybrid-athlete', eventId: event.id, phase: 'travel' as const,
+            startDate: '2026-06-10', endDate: '2026-06-11', volumeScale: 0.5, intensityScale: 0.4,
+            createdAt: '', updatedAt: '',
+        }];
+        expect(mechanicalEvidenceRequiredFor(speedProfile, [event], '2026-06-10', travel)).toBe(false);
+    });
+
     it('does not carry the support minimum into taper or race blocks', async () => {
         const intent = await resolveTrainingIntent(
             'hybrid-athlete', [event], date, readiness, 7, historyProvider,
@@ -115,10 +159,14 @@ describe('cycling build strength support in the weekly allocator (#801)', () => 
 
     it('derives the support count from the evergreen strength floor, so planning mode alone does not cut 2 to 1', () => {
         const floor = strengthRequirement('required').floor?.dose.value ?? 0;
-        const eventContext = { mode: 'event_directed' } as PlanningContext;
+        const eventContext = { mode: 'event_directed', eventStrategy: 'structured_plan' } as PlanningContext;
         expect(floor).toBe(2);
         expect(1 + eventStrengthSupportSessions(eventContext, profile(['endurance', 'strength_muscle']))).toBe(floor);
         expect(eventStrengthSupportSessions(eventContext, profile(['endurance']))).toBe(0);
+        expect(eventStrengthSupportSessions(
+            { mode: 'event_directed', eventStrategy: 'evergreen_fallback' } as PlanningContext,
+            profile(['endurance', 'strength_muscle']),
+        )).toBe(0);
         expect(eventStrengthSupportSessions({ mode: 'evergreen' } as PlanningContext, profile(['endurance', 'strength_muscle']))).toBe(0);
     });
 
@@ -227,9 +275,9 @@ describe('event-plan construction threading guard (#801)', () => {
             .filter(file => !DIAGNOSTIC_ONLY.has(file) && file !== 'planSchedule.ts')
             .flatMap(file => {
                 const text = readFileSync(join(engineDir, file), 'utf-8');
-                return [...text.matchAll(/resolvePlanDefinitionForEvent\(([^;]*?)\)/gs)]
+                return [...text.matchAll(/resolve(?:Active)?PlanDefinitionForEvent\(([^;]*?)\)/gs)]
                     .filter(match => !/strengthSupportSessions/i.test(match[1]))
-                    .map(match => `${file}: resolvePlanDefinitionForEvent(${match[1].replace(/\s+/g, ' ')})`);
+                    .map(match => `${file}: event-plan resolver(${match[1].replace(/\s+/g, ' ')})`);
             });
         expect(offenders).toEqual([]);
     });

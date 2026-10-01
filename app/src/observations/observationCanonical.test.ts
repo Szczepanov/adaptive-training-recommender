@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { MetricObservationRevision } from './models';
-import { sameCanonicalObservationRevision } from './observationCanonical';
+import {
+    sameCanonicalAssessmentTrial,
+    sameCanonicalObservationRevision,
+} from './observationCanonical';
 
 function revision(overrides: Partial<MetricObservationRevision> = {}): MetricObservationRevision {
     return {
@@ -41,5 +44,58 @@ describe('canonical observation revision payload', () => {
         expect(sameCanonicalObservationRevision(revision(), revision({ value: 301 }))).toBe(false);
         expect(sameCanonicalObservationRevision(revision(), revision({ validity: 'practice' }))).toBe(false);
         expect(sameCanonicalObservationRevision(revision(), revision({ context: { power_source_id: 'other', duration_seconds: 1200 } }))).toBe(false);
+    });
+
+    it('treats changed typed evidence refs as semantic conflicts and identical refs as idempotent retries', () => {
+        const derivedA = revision({
+            source: 'derived',
+            derivedFromEvidenceRefs: [{ kind: 'assessment_trial', assessmentAttemptId: 'attempt-1', trialId: 'trial-1' }],
+            algorithmVersion: 'algo-v1',
+            createdAt: '2026-08-21T06:05:00.000Z',
+        });
+        const derivedB = revision({
+            source: 'derived',
+            derivedFromEvidenceRefs: [{ kind: 'assessment_trial', assessmentAttemptId: 'attempt-1', trialId: 'trial-2' }],
+            algorithmVersion: 'algo-v1',
+            createdAt: '2026-08-21T06:05:00.000Z',
+        });
+        const derivedRetry = revision({
+            source: 'derived',
+            derivedFromEvidenceRefs: [{ kind: 'assessment_trial', assessmentAttemptId: 'attempt-1', trialId: 'trial-1' }],
+            algorithmVersion: 'algo-v1',
+            createdAt: '2026-08-21T06:06:00.000Z',
+        });
+
+        expect(sameCanonicalObservationRevision(derivedA, derivedB)).toBe(false);
+        expect(sameCanonicalObservationRevision(derivedA, derivedRetry)).toBe(true);
+    });
+});
+
+describe('sameCanonicalAssessmentTrial', () => {
+    function trial(overrides: Partial<import('./models').AssessmentTrial> = {}): import('./models').AssessmentTrial {
+        return {
+            id: 'trial-1',
+            assessmentAttemptId: 'attempt-1',
+            ordinal: 1,
+            correctionIndex: 0,
+            validity: 'valid',
+            values: { distance_cm: 240 },
+            context: {},
+            createdAt: '2026-10-19T07:30:00.000Z',
+            ...overrides,
+        };
+    }
+
+    it('treats identical trial payloads with different createdAt as idempotent', () => {
+        expect(sameCanonicalAssessmentTrial(
+            trial({ createdAt: '2026-10-19T07:30:00.000Z' }),
+            trial({ createdAt: '2026-10-19T07:30:05.000Z' }),
+        )).toBe(true);
+    });
+
+    it('treats changed trial values or validity as semantic conflicts', () => {
+        expect(sameCanonicalAssessmentTrial(trial(), trial({ values: { distance_cm: 245 } }))).toBe(false);
+        expect(sameCanonicalAssessmentTrial(trial(), trial({ validity: 'invalid', invalidReason: 'Fell' }))).toBe(false);
+        expect(sameCanonicalAssessmentTrial(trial(), trial({ ordinal: 2, id: 'trial-2' }))).toBe(false);
     });
 });

@@ -19,6 +19,7 @@ import { deriveExposureLedger, renderExposureLedger, type ExposureLedgerInput } 
 import { briefContractHeaderLines } from './contextBriefContract';
 import type { PerformedExposureFact } from './performedTrainingFacts';
 import { SENSOR_OBSERVATION_HORIZON_DAYS } from './contextBriefSensorEvidence';
+import { renderPlannedExecutionStatuses, type PlannedExecutionStatus } from '../training-occurrence/plannedExecutionStatus';
 
 // Re-exported so existing importers keep one entry point for the brief.
 export { round, signed } from './contextBriefRecovery';
@@ -74,6 +75,8 @@ export interface ContextBriefInput {
     effectivePlanningMode?: PlanningMode;
     /** Explicit override or convenience flag for whether an imported/external plan is the planning authority. */
     isExternalPlanAuthority?: boolean;
+    /** Exact-identity external-plan round-trip projection; null means source reads failed. */
+    plannedExecutionStatuses?: readonly PlannedExecutionStatus[] | null;
     /** Issue #894: ISO generation timestamp. Ephemeral — omitted from semantic
      * determinism checks. Supplied by the service layer; the pure builder never clocks. */
     generatedAt?: string;
@@ -172,7 +175,7 @@ function lastNDates(endDateInclusive: string, days: number): string[] {
 function renderConstraints(settings: TrainingSettings | null, preferences: UserPreferences | null, asOfDate: string): string[] {
     const lines: string[] = ['## 1. Constraints', '', 'A session that violates any of these cannot be executed.', ''];
     if (!settings) {
-        lines.push('- Training settings unavailable. Do not assume any equipment or absence of injury.');
+        lines.push('- Training settings are missing or unreadable. Do not assume any equipment or absence of injury.');
         return lines;
     }
 
@@ -265,6 +268,8 @@ function sourceKindLabel(kind: PerformedExposureFact['sourceKinds'][number]): st
  * flagged rather than silently dropped. */
 function factDetail(fact: PerformedExposureFact): string {
     const flags: string[] = [];
+    if (fact.executionState === 'abandoned') flags.push('abandoned structured execution');
+    else if (fact.executionState === 'in_progress') flags.push('structured execution in progress');
     if (fact.isReadinessModifiedDose) flags.push('readiness-modified dose');
     if (fact.startedAt && !fact.endedAt) flags.push('started, completion unrecorded');
     if (fact.durationMin === undefined) flags.push('duration unrecorded');
@@ -376,6 +381,7 @@ function renderTraining(
          * Null = hydration failed: raw table with an explicit double-count caution.
          * Array = canonical deduped table, with raw provenance in diagnostic. */
         performedFacts?: readonly PerformedExposureFact[] | null;
+        activitiesReadable?: boolean;
     },
 ): string[] {
     const lines: string[] = [heading, ''];
@@ -396,8 +402,15 @@ function renderTraining(
         lines.push('> Canonical performed-training facts were unreadable for this window and no raw provider activity rows are available as fallback. Completed training cannot be determined for this window.');
         return lines;
     }
+    if (options?.activitiesReadable === false && activities.length === 0 && windowFacts.length === 0) {
+        lines.push('> Recorded activities could not be read. Canonical facts contain no occurrence in this window, but provider-only training may be missing; completed training is unknown, not zero.');
+        return lines;
+    }
 
     if (canonical) {
+        if (options?.activitiesReadable === false) {
+            lines.push('> Provider activity read failed; canonical occurrence rows are visible, but provider telemetry and provider-only training not yet reconciled into canonical occurrences may be missing; totals may be incomplete.', '');
+        }
         if (windowFacts.length === 0) {
             lines.push('No recorded sessions in this window (canonical performed-training facts).');
             return lines;
@@ -877,6 +890,7 @@ export function buildContextBrief(input: ContextBriefInput): string {
     const trainingTable = renderTraining(activities, asOfDate, windowDays, `## ${n(5, 3)}. ${SECTION_TITLE.training}`, {
         planningOrder,
         performedFacts: input.exposureLedger?.performedFacts,
+        activitiesReadable: input.exposureLedger?.activitiesReadable,
     });
     const ledgerLines = input.exposureLedger
         ? renderExposureLedger(deriveExposureLedger({
@@ -890,6 +904,10 @@ export function buildContextBrief(input: ContextBriefInput): string {
         }), startDate, asOfDate)
         : [];
     const training = [...trainingTable, ...ledgerLines];
+    const roundTrip = renderPlannedExecutionStatuses(
+        planningOrder ? input.plannedExecutionStatuses : undefined,
+        `## External-plan execution round trip (${windowDays}-day window)`,
+    );
     const subjective = renderSubjective(
         checkins, baselineCheckins, windowDays, baselineDays, { morning: hungerMorning, other: hungerOther },
         `## 4. ${SECTION_TITLE.subjective}`,
@@ -905,12 +923,12 @@ export function buildContextBrief(input: ContextBriefInput): string {
         },
     );
     const body: string[][] = planningOrder
-        ? [constraints, intent, objective, bodyComposition, subjective, training, adherence]
+        ? [constraints, intent, objective, bodyComposition, subjective, training, roundTrip, adherence]
         : [constraints, objective, bodyComposition, training, subjective, adherence, intent];
     const purposeNote = planningOrder
         ? ['Export purpose: planning — sections are ordered by decision authority; forensic telemetry and '
             + 'experimental candidate baselines are summarized or omitted (request the diagnostic export for them).']
-        : ['Export purpose: diagnostic — full forensic telemetry and observation-only candidate baselines. '
+        : ['Export purpose: diagnostic — bounded forensic telemetry and observation-only candidate baselines. '
             + 'None of that detail has recommendation authority; it does not change what the app recommends.'];
 
     const sections: string[][] = [

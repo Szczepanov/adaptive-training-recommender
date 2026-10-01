@@ -42,4 +42,11 @@ describe('MobileNav More drawer', () => {
     expect(markup).toMatch(/class="nav-item active"[^>]*aria-current="page"[^>]*>.*?Plan/s);
     expect(markup).toMatch(/class="drawer-item active" aria-current="page"[^>]*>.*?Plan/s);
   });
+
+  it('renders build info drawer item with label and title', () => {
+    const markup = renderNav('sessions');
+
+    expect(markup).toContain('class="drawer-item"');
+    expect(markup).toMatch(/<span class="item-title">Build [^<]+<\/span>/);
+  });
 });

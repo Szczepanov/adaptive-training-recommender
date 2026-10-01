@@ -209,12 +209,12 @@ describe('engine knowledge coverage inventory', () => {
         // #802 adds one partial/p2 embedded power-maintenance item (no power-specific dose evidence).
         // #801 adds one covered cycling-build strength-support product-policy item.
         // #806 adds one covered weekly aerobic-dose envelope item.
-        // #804 adds one covered longitudinal mechanical and impact exposure item.
         // #805 adds one covered periodic athletic-capability maintenance item.
+        // #931 adds one covered performed stimulus-domain quality anti-repetition item.
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(83);
-        expect(summary.byCoverage).toEqual({ covered: 57, partial: 19, uncovered: 1, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 8, p1: 9, p2: 3, p3: 0, none: 63 });
+        expect(summary.total).toBe(84);
+        expect(summary.byCoverage).toEqual({ covered: 58, partial: 19, uncovered: 1, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 8, p1: 9, p2: 3, p3: 0, none: 64 });
         expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
     });

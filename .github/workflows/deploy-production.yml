@@ -1,4 +1,5 @@
 name: Deploy Production E2E
+run-name: Deploy Production E2E (${{ github.sha }})
 
 # One production release = one Git SHA, validated once and promoted in dependency order:
 #   CI (reused from main's post-merge run when it passed) -> Garmin backend/jobs/schedulers -> Firestore indexes -> Firestore rules -> Hosting.

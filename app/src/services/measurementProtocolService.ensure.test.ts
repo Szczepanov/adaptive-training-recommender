@@ -69,4 +69,21 @@ describe('MeasurementProtocolService.ensureRevision', () => {
         await expect(service.ensureRevision('u1', protocol)).rejects.toThrow(/conflicts with the bundled immutable revision/);
         expect(firestore.setDoc).not.toHaveBeenCalled();
     });
+
+    it('fails closed when the same id/revision contains different capture criteria', async () => {
+        const protocolWithCapture: MeasurementProtocol = {
+            ...protocol,
+            capture: {
+                plannedTrials: 3,
+                maxTrials: 5,
+                fields: [{ id: 'power_w', label: 'Power', valueKind: 'number', unit: 'W', required: true, minimum: 0, maximum: 2000 }],
+                reducers: [{ kind: 'max_valid', metricId: 'cycling_tt_4m_mean_power_w', fieldId: 'power_w' }],
+                reducerVersion: 'assessment-reducer-v1',
+            },
+        };
+        firestore.getDoc.mockResolvedValueOnce(snapshot(protocolWithCapture));
+        const service = new MeasurementProtocolService({} as never);
+        await expect(service.ensureRevision('u1', protocol)).rejects.toThrow(/conflicts with the bundled immutable revision/);
+        expect(firestore.setDoc).not.toHaveBeenCalled();
+    });
 });

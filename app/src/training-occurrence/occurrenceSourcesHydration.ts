@@ -1,5 +1,5 @@
 import { activityService } from '../services/activityService';
-import type { NormalizedGarminActivity } from '../engine/models';
+import type { ActivityOverride, NormalizedGarminActivity } from '../engine/models';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { performedTrainingOccurrenceRepository } from './repository';
 import { isProviderActivityRef, type PerformedTrainingOccurrence, type ProviderActivitySourceRef } from './models';
@@ -7,6 +7,7 @@ import { isProviderActivityRef, type PerformedTrainingOccurrence, type ProviderA
 export interface HydratedProviderSource {
     ref: ProviderActivitySourceRef;
     activity?: NormalizedGarminActivity;
+    override?: ActivityOverride;
 }
 
 export interface HydratedOccurrenceSources {
@@ -23,6 +24,7 @@ export async function hydrateOccurrenceSourcesInRange(
     options: {
         preloadedActivities?: readonly NormalizedGarminActivity[];
         activityDatePaddingDays?: number;
+        activityOverrides?: Readonly<Record<string, ActivityOverride>> | ReadonlyMap<string, ActivityOverride>;
     } = {},
 ): Promise<{
     rows: HydratedOccurrenceSources[];
@@ -49,14 +51,23 @@ export async function hydrateOccurrenceSourcesInRange(
     );
     const rows = occurrences.map(occurrence => ({
         occurrence,
-        providerSources: occurrence.sourceRefs.filter(isProviderActivityRef).map(ref => ({
-            ref,
-            // activityService currently hydrates Garmin only. An unrelated provider may
-            // reuse the same opaque activity ID; provider is part of source identity.
-            ...(ref.provider.toLowerCase() === 'garmin'
-                ? { activity: activitiesById.get(ref.activityId) }
-                : {}),
-        })),
+        providerSources: occurrence.sourceRefs.filter(isProviderActivityRef).map(ref => {
+            const overrides = options.activityOverrides;
+            const override = overrides
+                ? ('get' in overrides && typeof overrides.get === 'function'
+                    ? (overrides as ReadonlyMap<string, ActivityOverride>).get(ref.activityId)
+                    : (overrides as Readonly<Record<string, ActivityOverride>>)[ref.activityId])
+                : undefined;
+            return {
+                ref,
+                // activityService currently hydrates Garmin only. An unrelated provider may
+                // reuse the same opaque activity ID; provider is part of source identity.
+                ...(ref.provider.toLowerCase() === 'garmin'
+                    ? { activity: activitiesById.get(ref.activityId) }
+                    : {}),
+                ...(override ? { override } : {}),
+            };
+        }),
     }));
     return { rows, activitiesReadable: activitiesState.status === 'AVAILABLE', activities };
 }

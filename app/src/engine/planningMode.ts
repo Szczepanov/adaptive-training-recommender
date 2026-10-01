@@ -1,6 +1,6 @@
-import type { ExternalPlanSession, PlanningMode, TrainingIntentProfile, TrainingPriority, UserEvent, UserGoal } from './models';
+import type { AuthoredPlanBlock, ExternalPlanSession, PlanningMode, TrainingIntentProfile, TrainingPriority, UserEvent, UserGoal } from './models';
 import type { PeriodizationResult } from './periodization';
-import { resolvePlanDefinitionForEvent } from './planSchedule';
+import { resolveActivePlanDefinitionForEvent } from './planSchedule';
 import { DEFAULT_TRAINING_INTENT_PROFILE } from './evergreenStrategy';
 
 export interface PlanningContext {
@@ -8,13 +8,24 @@ export interface PlanningContext {
     /** A resolved in-memory default is always present, even when no Firestore profile is. */
     profile: TrainingIntentProfile;
     focusEvent: UserEvent | null;
-    eventStrategy: 'structured_plan' | 'demand_derived' | null;
+    /** Date-local event programming authority. A cycling event can remain the focus
+     * context while its authored plan is not yet active; in that case evergreen owns the
+     * executable week until a structured block starts. */
+    eventStrategy: 'structured_plan' | 'demand_derived' | 'evergreen_fallback' | null;
     /** The imported session placed on this date, present only in `externally_planned`
      * mode. Callers adjudicate it instead of ranking candidates (ADR-0019 D-EXT). */
     externalSession: ExternalPlanSession | null;
     /** True when the athlete selected `externally_planned` but no session is placed today,
      * so the engine's own pick is standing in. Never silent: the caller labels it. */
     externalFallback: boolean;
+}
+
+/** True when the current date is executed by the Evergreen dose/packing authority.
+ * A far-out event can remain contextual without owning executable programming. */
+export function usesEvergreenProgramming(planningContext: PlanningContext): boolean {
+    return planningContext.mode === 'evergreen'
+        || (planningContext.mode === 'event_directed'
+            && planningContext.eventStrategy === 'evergreen_fallback');
 }
 
 export { DEFAULT_TRAINING_INTENT_PROFILE } from './evergreenStrategy';
@@ -60,8 +71,11 @@ export function resolvePlanningContext(
     /** The imported session already placed on `date`, if any. Resolved by the caller
      * through `externalPlacement.ts`; this function performs no placement itself. */
     externalSession: ExternalPlanSession | null = null,
+    /** Explicit travel blocks can legitimately make a structured event plan active before
+     * its current generated build window, so authority resolution must see the same authored
+     * blocks as trainingIntent. The current D-84 cycling boundary is plan policy, not a mode invariant. */
+    authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
 ): PlanningContext {
-    void date;
     const resolvedProfile = fallbackProfile(profile);
 
     // D-EXT: externally-planned is effective only when the athlete chose it AND a session
@@ -88,11 +102,16 @@ export function resolvePlanningContext(
     if (!eventDirected) return { mode: 'evergreen', profile: resolvedProfile, focusEvent: null, eventStrategy: null, externalSession: null, externalFallback: false };
 
     const focusEvent = periodization.focusEvent!;
+    const eventStrategy = focusEvent.category === 'cycling_event'
+        ? (resolveActivePlanDefinitionForEvent(focusEvent, date, authoredPlanBlocks)
+            ? 'structured_plan'
+            : 'evergreen_fallback')
+        : 'demand_derived';
     return {
         mode: 'event_directed',
         profile: resolvedProfile,
         focusEvent,
-        eventStrategy: resolvePlanDefinitionForEvent(focusEvent) ? 'structured_plan' : 'demand_derived',
+        eventStrategy,
         externalSession: null,
         externalFallback: false,
     };

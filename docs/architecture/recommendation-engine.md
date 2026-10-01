@@ -151,12 +151,13 @@ authored rest/session from "no prescription."
   baselines and the respiration candidate remain omitted with a pointer to diagnostic;
   vendor composites are secondary context; goals keep target, timing and description but
   omit the event demand vector.
-- `diagnostic` — the full data-source-ordered brief with every persisted lap, zone and
-  activity-response row plus observation-only candidate baselines and full goal demand
-  vectors. Running laps include distance/pace/power/HR; response rows include persisted
-  start offsets, final-third HR and MMP timing/provenance where available. It states that
-  none of this detail has recommendation authority. It is also the pure builder's default
-  so a caller that names no purpose never silently loses evidence.
+- `diagnostic` — the full data-source-ordered brief with detailed provenance and observation-only
+  candidate baselines/full goal demand vectors. To bound pathological histories it keeps at most
+  30 detailed activities and 100 lap/response rows per activity, with explicit omission counts.
+  Running laps include distance/pace/power/HR; response rows include persisted start offsets,
+  final-third HR and MMP timing/provenance where available. It states that none of this detail
+  has recommendation authority. It is also the pure builder's default so a caller that names no
+  purpose never silently loses evidence.
 
 No purpose alters a recommendation, so `POLICY_VERSION` is unaffected.
 
@@ -180,16 +181,17 @@ full zone tables are retained only when there is no interval/segment table to ma
 redundant. Running uses running dynamics and bounded lap pace/power/HR evidence with the same
 morning zone-suppression rule. This running telemetry is observational and does not establish a
 controlled longitudinal pace–HR comparison. The `planning` and `diagnostic` purposes retain their existing
-richer provenance/zone contracts, with diagnostic remaining the uncapped persisted view. This
-remains display-only and ordinary endurance/recovery sessions keep the one-line morning summary.
+richer provenance/zone contracts, with diagnostic retaining the larger bounded persisted view
+defined by the export-purpose caps. This remains display-only and ordinary endurance/recovery
+sessions keep the one-line morning summary.
 
 A session is a *key session* when at least one feature produced a value, or when it is a
 steady session with no comparable prior session (its rejection reasons are stated). In the
 planning export a key session's semantic summary replaces its one-line telemetry digest only
 when at least one feature produced a value; for quality cycling/running the bounded execution
 detail can still follow because it exposes the performed evidence behind that interpretation.
-The diagnostic export keeps every persisted lap/zone/response row and adds the summaries
-after them. Prior sessions are searched only in the activities
+The diagnostic export keeps a larger bounded lap/zone/response view, with explicit omission
+counts when purpose caps apply, and adds the summaries after it. Prior sessions are searched only in the activities
 `ContextBriefService.build` already fetched (from `activityStart`, at least the 28-day
 sensor-evidence horizon), and the output states that start date. Missing or incomparable
 evidence produces `insufficient_evidence` with a reason, never an estimate.
@@ -385,6 +387,12 @@ read-only ledgers (`contextBriefExposureLedger.ts` `deriveExposureLedger` /
   cost row, the six-dimensional cost vector (shown split into systemic/cardiovascular vs
   lower-body/impact/neuromuscular) and the evidence tier; ADR-0034 canonical performed
   facts (`getPerformedTrainingFactsInRange`, which drive live weekly coverage credit)
+  preserve provider-neutral Garmin `stimulusDomain`, `sessionCost`,
+  `intensityEvidence` and classification-version provenance for provider-only
+  occurrences, while structured executions remain the stronger semantic authority. These
+  provider fields do **not** by themselves grant exact weekly-role coverage:
+  `coverageHistoryFromFacts` still consumes only canonical `creditKind: 'exact'` until
+  a separately governed semantic-coverage policy is accepted. Canonical facts also
   confirm capabilities with their own provenance, including in-app structured executions
   with no Garmin record or adherence answer. Unanswered or skipped recommendations and
   imported future sessions never count as completed; imported sessions in the next 7 days
@@ -498,7 +506,68 @@ label rather than present as an ordinary pick (ADR-0019 D-EXT).
 An eligible event remains event-directed for profile-less athletes, preserving the legacy
 path. An explicit `event_directed` profile uses an eligible event when present. Otherwise
 the effective mode is `evergreen`: it has no focus event and no event strategy, even if an
-event record exists. Event-directed cycling uses `structured_plan`; Running, triathlon, strength, and general events retain demand-derived planning. Running race-specific objectives are modality-scoped and half-marathon/marathon demand adds a long-run durability objective; the generic single-sport aerobic-base objective intentionally remains cross-training-creditable. Triathlon demand creates separate swim, bike, and run aerobic objectives so one discipline cannot silently satisfy the whole sport. Outdoor cycling and swimming are hard-gated by declared bicycle/swim access.
+event record exists. Event-directed cycling is now date-local: `structured_plan` applies
+only when a derived or athlete-authored plan block actually owns the evaluated date. Before
+the first owned block, the race remains the focus event and periodization/UI context, but
+`eventStrategy: 'evergreen_fallback'` makes the evergreen weekly allocator authoritative
+for objectives, coverage roles, strength frequency, capability maintenance and dose. An
+explicit travel block may therefore activate structured authority before the current
+generated build window, while a distant future race cannot suppress Base programming merely
+because its full future PlanDefinition can already be constructed. The generated cycling plan
+currently begins its build at D-84; that value is a current plan-policy boundary, not a
+physiological cut-point or the point at which goal-directed preparation is supposed to begin.
+Fallback dates load the same established-athlete and mechanical evidence streams as ordinary
+Evergreen dates; the contextual event must not make Evergreen fail closed to a shorter history
+window. `generateWeekAheadPlanWithIntent` injects the pure `forecastAuthority.ts`
+`createForecastAuthorityResolver` into the synchronous planner. It resolves ownership per
+date in both directions: Evergreen yields when an eligible structured block begins, and
+structured execution yields when no eligible event block owns the date. Current completed/DNF
+event eligibility ends after D+3, even though the generated recovery block extends through
+D+7; #933 preserves that separate policy. Authored blocks are subject to the same event
+eligibility as live evaluation.
+
+Evergreen is seeded once per contiguous ownership segment, anchored at its first date T,
+using T's phase and a full T through T+6 production evidence/dose/capacity/packing window.
+An uninterrupted Evergreen segment rolls to another seed when that week expires. Initial
+packing retains the caller's existing horizon capacity; transition packing always uses the
+full rolling week. Completed history and assumed-performed projected occurrences through T−1
+are deduplicated by occurrence identity, including the wider athlete-state and mechanical
+evidence windows. Projected work affects strategy/dose evidence but remains projected
+objective and coverage credit; no key-based objective carry-over crosses owners. Exact
+workout identity is retained for capability cadence, without inventing it from inferred work.
+Canonical completed coverage is requalified against the new descriptor using its exact
+workout/variant identity; credits from the prior descriptor are never reinterpreted.
+
+At T, production and forecast authority, objectives, requirements, dose and capability state
+match given equivalent history and neutral readiness. Future readiness/clinical flags use
+today's assumptions, tissue check-ins are available only as of today, and the athlete aerobic
+floor remains fixed as of today under #757. Canonical performed-stimulus recency remains
+observation-only under #931: projected sessions do not fabricate confident performed facts or
+advance the canonical recency ledger. Observation-span proof is retained from the provider;
+projecting sessions does not fabricate a wider observed history. These frozen inputs can
+legitimately differ from a later live evaluation once actual readiness, check-ins or performed
+facts arrive.
+
+Allocation introduces each segment's roles at its first forecast date, namespaces occurrence
+IDs by segment, and admits reservations/fulfilment only while that owner is active. Closed
+unfulfilled roles remain explicitly `superseded`. Required roles packed after the visible
+strip remain `planned_beyond_horizon`, with their packed dates, rather than becoming misses.
+`WeekAheadPlan.authoritySegments` exposes each full seed budget/capability state without its
+completed-history input; per-day diagnostics identify the segment and coverage/dose. The
+legacy capability summary describes today, while `WeekAheadStrip` reads the selected date's
+segment and displays roles beyond the strip. Home/PlanView's daily capability callbacks remain
+daily. Simulation reports retain segment seeds; the deferred beam-search comparison in
+`sequenceSearch.ts` remains a separate experimental planner (ADR-0015).
+
+This fallback fixes the authority gap without claiming to solve long-horizon
+mesocycle planning (#927), ownership of the D-84/D-35 phase horizons (#928), or season-level
+A/B/C event coordination (#929). Running, triathlon, strength, and general
+events retain demand-derived planning. Running race-specific objectives are modality-scoped
+and half-marathon/marathon demand adds a long-run durability objective; the generic
+single-sport aerobic-base objective intentionally remains cross-training-creditable.
+Triathlon demand creates separate swim, bike, and run aerobic objectives so one discipline
+cannot silently satisfy the whole sport. Outdoor cycling and swimming are hard-gated by
+declared bicycle/swim access.
 
 Cycling event build strength support (#801): when the durable intent explicitly includes
 `strength_muscle`, `trainingIntent.ts` `eventStrengthSupportSessions` keeps the rest of the
@@ -1312,6 +1381,18 @@ earlier decision, not a property of the candidate itself. `weeklyAllocation.ts` 
 already-placed later reservations when an earlier placement retroactively triggers it.
 2. **Objective Benefit** (Level 4): Scores a template's stimulus profile against currently unresolved weekly objectives (`calculateStimulusBenefit`). Higher objective satisfaction strictly outranks non-objective candidates regardless of preference multipliers. Candidates that do not satisfy an unresolved objective and whose modality is deprioritized by the athlete receive a $0.25\times$ benefit scaling ($0.20\times$ for avoided/disliked), preventing non-preferred high-stimulus sessions from entering top benefit tiers when objectives are satisfied or absent. Weekly-anchor timing and missing supported triathlon-modality coverage are also Level-4 architecture signals.
 3. **Utility Score** (Level 5 & 6): `utility = (benefit / (1 + fatigueCost)) × preferenceMultiplier`. Used to sort candidates of comparable objective benefit (within `0.05` benefit score). Modality preferences scale utility ($1.35\times$ preferred, $0.25\times$ deprioritized, $0.20\times$ disliked).
+
+#### Performed stimulus recency and anti-repetition coordination (Issue #931)
+
+Candidate optimization consumes canonical performed stimulus facts (`endurance`, `tempo`, `threshold`, `vo2`, `race`, `strength`) from `options.recentPerformedExposures` (built via `buildPerformedStimulusRecency`):
+
+- **Quality family anti-repetition:** A confident D-1 exposure in a quality family (`tempo`, `threshold`, `vo2`, `race`) applies a $0.20\times$ preference multiplier (`STIMULUS_REPETITION_PENALTY`) to candidates belonging to the same stimulus family. Quality families are mutually isolated: performed tempo penalizes candidate tempo, but leaves threshold and VO2 unpenalized.
+- **Consecutive Zone 2 endurance exemption:** Consecutive aerobic endurance (`endurance`) days are explicitly exempt ($1.00\times$), allowing daily aerobic foundation volume.
+- **Anchor waiver:** If a candidate fulfils the nominated anchor for the target date (`fulfilsNominatedAnchor === true`), the quality repetition penalty is waived ($1.00\times$). A quality candidate that does not match the nominated anchor role on an anchor day still receives the penalty.
+- **Coordination with template variety:** If a candidate matches both the exact template used yesterday and a performed quality family, `Math.min(templateRepetitionMultiplier, stimulusRepetitionMultiplier)` applies a single $0.20\times$ multiplier rather than compounding to $0.04\times$.
+- **Source precedence and confidence:** Successfully hydrated structured executions (`evidenceTier=completedStructuredWorkout`) authoritatively define the stimulus domain from catalog metadata, overriding conflicting provider classifications. The mere presence of a structured source ref is not enough to confer structured confidence when that execution could not be hydrated. Athlete overrides suppress provider classifications (yielding an unclassified domain), preserving override precedence. Unversioned activities (`intensityClassificationVersion < 2`) and unknown domains do not trigger quality penalties. Unavailable override reads suppress provider semantic authority and report `overridesDegraded`; structured facts remain authoritative. Override changes update the canonical fact revision.
+
+The runtime `Recommendation.decisionTrace` retains the recency summary, up to 16 bounded D-1 occurrence evidence rows, and candidate penalty/anchor/endurance diagnostics. The bounded trace first preserves one deterministic representative for each decision-bearing family observed on D-1 (endurance, tempo, threshold, VO2, race), then fills remaining slots by occurrence identity, so unrelated rows cannot truncate the evidence that changed ranking. These diagnostics are excluded from the compact persisted audit; captured canonical facts remain the persisted source provenance. Exact-template variety remains independent for endurance, whose exemption applies only to stimulus-family repetition.
 
 Strength-maintenance benefit takes the stronger of `maxStrength` and `hypertrophy` target/evidence rather than allowing field order to choose which axis counts.
 

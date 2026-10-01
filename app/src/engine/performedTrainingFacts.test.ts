@@ -17,6 +17,7 @@ import { performedTrainingOccurrenceRepository as repository } from '../training
 import { activityService } from '../services/activityService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { recommendationService } from '../services/recommendationService';
+import { activityOverrideService } from '../services/activityOverrideService';
 import type { NormalizedGarminActivity, CompletedTrainingEvent, DailyRecommendation } from './models';
 
 vi.mock('../training-occurrence/repository', () => ({
@@ -40,6 +41,12 @@ vi.mock('../services/activityService', () => ({
 vi.mock('../services/recommendationService', () => ({
     recommendationService: {
         getRecommendationsInRange: vi.fn(),
+    },
+}));
+
+vi.mock('../services/activityOverrideService', () => ({
+    activityOverrideService: {
+        getOverridesSinceState: vi.fn().mockResolvedValue({ status: 'AVAILABLE', data: {} }),
     },
 }));
 
@@ -145,6 +152,10 @@ describe('performedTrainingFacts', () => {
                 trainingEffectAnaerobic: 0,
                 activityTrainingLoad: 2.9,
                 intensityTag: 'easy',
+                stimulusDomain: 'strength',
+                sessionCost: 'moderate',
+                intensityEvidence: 'primary_benefit',
+                intensityClassificationVersion: 2,
             };
             const hydrated: HydratedOccurrenceContext = {
                 provider: {
@@ -164,6 +175,12 @@ describe('performedTrainingFacts', () => {
             expect(exposure.sourceKinds).toEqual(['provider_activity']);
             expect(exposure.durationMin).toBe(77);
             expect(exposure.workoutId).toBeUndefined();
+            expect(exposure).toMatchObject({
+                stimulusDomain: 'strength',
+                sessionCost: 'moderate',
+                intensityEvidence: 'primary_benefit',
+                intensityClassificationVersion: 2,
+            });
 
             expect(coverageCredits).toHaveLength(1);
             expect(coverageCredits[0].coverageKey).toBe('primary_strength');
@@ -392,6 +409,101 @@ describe('performedTrainingFacts', () => {
             expect(coverageCredits[0].reasonCode).toBe('generic_modality_only');
         });
 
+        it('structured execution sets stimulusDomain authoritatively from workout catalog', () => {
+            const occurrence = mockOccurrence({
+                sourceRefs: [{ kind: 'structured_execution', executionId: 'sess-1' }],
+            });
+            const hydrated: HydratedOccurrenceContext = {
+                structured: {
+                    executionId: 'sess-1',
+                    workoutId: 'cycling_tempo_surges_01',
+                    modality: 'Cycling',
+                },
+            };
+
+            const { exposure } = deriveFactsFromOccurrence(occurrence, hydrated);
+            expect(exposure.stimulusDomain).toBe('tempo');
+            expect(exposure.confidence).toBe('exact');
+        });
+
+        it('structured execution overrides conflicting provider stimulus domain', () => {
+            const occurrence = mockOccurrence({
+                sourceRefs: [
+                    { kind: 'structured_execution', executionId: 'sess-1' },
+                    { kind: 'provider_activity', provider: 'Garmin', activityId: 'garmin-1' },
+                ],
+            });
+            const hydrated: HydratedOccurrenceContext = {
+                structured: {
+                    executionId: 'sess-1',
+                    workoutId: 'cycling_tempo_surges_01',
+                    modality: 'Cycling',
+                },
+                provider: {
+                    activityId: 'garmin-1',
+                    provider: 'Garmin',
+                    garminActivity: {
+                        activityId: 'garmin-1',
+                        date: '2026-09-01',
+                        type: 'cycling',
+                        durationMin: 60,
+                        trainingEffectAerobic: 2.5,
+                        trainingEffectAnaerobic: 0,
+                        averageHr: 130,
+                        intensityClassificationVersion: 2,
+                        stimulusDomain: 'endurance',
+                    } as NormalizedGarminActivity,
+                },
+            };
+
+            const { exposure } = deriveFactsFromOccurrence(occurrence, hydrated);
+            // Structured execution says tempo; provider said endurance. Structured domain strictly wins.
+            expect(exposure.stimulusDomain).toBe('tempo');
+        });
+
+        it('athlete override suppresses provider stimulusDomain resulting in unclassified domain', () => {
+            const occurrence = mockOccurrence({
+                modality: 'Cycling',
+                sourceRefs: [{ kind: 'provider_activity', provider: 'Garmin', activityId: 'garmin-1' }],
+            });
+            const hydrated: HydratedOccurrenceContext = {
+                provider: {
+                    activityId: 'garmin-1',
+                    provider: 'Garmin',
+                    garminActivity: {
+                        activityId: 'garmin-1',
+                        date: '2026-09-01',
+                        type: 'cycling',
+                        durationMin: 60,
+                        trainingEffectAerobic: 3.5,
+                        trainingEffectAnaerobic: 0,
+                        averageHr: 145,
+                        intensityClassificationVersion: 2,
+                        stimulusDomain: 'tempo',
+                    } as NormalizedGarminActivity,
+                    override: {
+                        activityId: 'garmin-1',
+                        userId: 'user-1',
+                        date: '2026-09-01',
+                        originalType: 'cycling',
+                        originalIntensityTag: 'tempo',
+                        overriddenModality: 'Running',
+                        overriddenIntensity: 'easy',
+                        notes: 'Reclassified as recovery spin',
+                        createdAt: '2026-09-01T12:00:00Z',
+                        updatedAt: '2026-09-01T12:00:00Z',
+                    },
+                },
+            };
+
+            const { exposure } = deriveFactsFromOccurrence(occurrence, hydrated);
+            // Provider domain 'tempo' is suppressed by the override; fact has undefined stimulusDomain
+            expect(exposure.stimulusDomain).toBeUndefined();
+            expect(exposure.modality).toBe('Running');
+            expect(exposure.evidenceTier).toBe('athleteClassification');
+            expect(exposure.confidence).toBe('high');
+        });
+
         it('fails visibly rather than fabricating a 1970 date when no performed date exists', () => {
             const occurrence = mockOccurrence({ localDate: undefined, startedAt: undefined });
 
@@ -475,6 +587,26 @@ describe('performedTrainingFacts', () => {
 
             expect(snapshot.exposures[0].workoutVariantId).toBe('return_to_training');
             expect(snapshot.coverageCredits.map(credit => credit.coverageKey)).toEqual(['primary_strength']);
+        });
+
+        it('continues without error and flags overridesDegraded when getOverridesSinceState fails', async () => {
+            const occ = mockOccurrence({
+                performedOccurrenceId: 'pto-degraded',
+                localDate: '2026-09-01',
+            });
+            vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([occ]);
+            vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({
+                status: 'AVAILABLE',
+                data: [],
+                revision: 'rev-1',
+            });
+            vi.mocked(activityOverrideService.getOverridesSinceState).mockRejectedValueOnce(
+                new Error('Firestore unavailable'),
+            );
+
+            const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-08-31', '2026-09-02');
+            expect(snapshot.overridesDegraded).toBe(true);
+            expect(snapshot.exposures).toHaveLength(1);
         });
     });
 

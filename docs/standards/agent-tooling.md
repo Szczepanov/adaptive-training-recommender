@@ -6,6 +6,72 @@ verification, and evaluation infrastructure in this repository.
 It applies to Claude Code, Codex, Gemini/Antigravity, and any other coding agent that works on this
 repository. Client-specific MCP configuration remains developer-local; repository policy lives here.
 
+## 0. Client instruction entrypoints
+
+The repository must work correctly without requiring each developer to customize a global agent
+configuration. Client-local setup may improve convenience or environment inheritance, but the
+committed entrypoints below are the portability contract:
+
+| Client | Native repository entrypoint | Repository rule |
+|---|---|---|
+| Codex | `AGENTS.md` | Keep the root file below the repository's 32 KiB budget and keep mandatory discovery routing near the top. `project_doc_max_bytes` may be raised locally for headroom, but correctness must not depend on it. |
+| Claude Code | `CLAUDE.md` | Keep the always-on file concise (target ≤200 lines); route detailed/on-demand discovery to `.agents/skills/semantic-code-discovery/SKILL.md`. |
+| Gemini CLI | `GEMINI.md` | The root shim points Gemini to the canonical `AGENTS.md` / `CLAUDE.md` contract and repeats only the minimal semantic-discovery decision boundary. |
+| OpenCode / OpenChamber | `AGENTS.md` | OpenCode V2 consumes `AGENTS.md` directly; OpenChamber inherits that behavior through its OpenCode server. |
+
+The cross-client single source of truth for semantic routing remains
+`.agents/skills/semantic-code-discovery/SKILL.md`. Client-specific entrypoints should contain only
+enough always-on context to make the model load that skill when applicable. Do not copy the full
+skill into `AGENTS.md`, `CLAUDE.md`, or `GEMINI.md`.
+
+### Repository instruction budgets
+
+- `AGENTS.md` has a repository-enforced **32 KiB UTF-8 ceiling**. Large routing inventories belong
+  under `docs/reference/` and are linked from the root file.
+- Mandatory semantic-routing instructions must begin within the first **8 KiB** of `AGENTS.md`.
+- `CLAUDE.md` should remain at or below **200 lines**. Reference material belongs in skills,
+  standards, or architecture documents.
+- `GEMINI.md` is a small compatibility/router shim, not another canonical policy document.
+
+These are repository design constraints, not claims that every client uses exactly the same hard
+limit. The purpose is to stay inside conservative client budgets and minimize always-on context.
+
+### Recommended developer-local setup
+
+Repository correctness does not require these settings, but they improve reliability on a
+multi-client workstation:
+
+- **Codex:** `~/.codex/config.toml` may set `project_doc_max_bytes = 65536` for additional headroom.
+  Keep normal shell environment inheritance configured so `python`, `canopy`, `jev`, and Ollama are
+  visible to commands. The committed 32 KiB budget still applies.
+- **Claude Code:** no extra project-memory configuration is required because `CLAUDE.md` is the
+  native entrypoint. Keep user-level rules generic; do not duplicate this repository's semantic
+  policy globally.
+- **Gemini CLI:** no `context.fileName` override is required now that the repository contains
+  `GEMINI.md`. `/memory show` can be used to verify that the expected context loaded.
+- **OpenCode:** the repository `AGENTS.md` is sufficient. A global
+  `~/.config/opencode/AGENTS.md` should contain only cross-project personal defaults.
+- **OpenChamber:** when its login/startup service is used, changing `PATH`, provider credentials,
+  Jev credentials, or local tool locations requires refreshing/restarting the service environment;
+  do not put those credentials in the repository.
+
+On each client, a local smoke check for this repository is:
+
+```bash
+python scripts/agent_canopy.py status
+python scripts/agent_jev.py probe
+```
+
+`CANOPY_UNAVAILABLE` remains a normal fallback condition. A missing Jev/Canopy installation must
+never trigger task-time provisioning.
+
+Current client references:
+
+- Codex configuration reference: <https://learn.chatgpt.com/docs/config-file/config-reference>
+- Claude Code extension/context guidance: <https://code.claude.com/docs/en/features-overview>
+- Gemini CLI context files: <https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/gemini-md.md>
+- OpenCode instructions: <https://opencode.ai/v2/docs/instructions>
+- OpenChamber server/startup environment: <https://github.com/openchamber/openchamber/blob/main/packages/docs/content/docs/opencode-server.mdx>
 ## 1. External library and API documentation: Context7
 
 When Context7 is connected, use it for **external** library/API questions before relying on model
@@ -263,6 +329,33 @@ The automatic Jev large-read narrowing hook is **not** a repository default. It 
 but it can also hide source. Treat it as a client-local experiment and compare correctness against
 full-source runs before enabling it broadly. Explicit `jev ask`/`jev find` remains the shared
 workflow.
+
+Do not run that experiment through the upstream plugin's own hook: it sends every eligible file
+with no path policy, and puts its "this read was narrowed" note where Claude Code ignores it. The
+opt-in `scripts/agent_jev_read_hook.py` wraps `jev hook read` instead:
+
+- It forwards only absolute paths to source files (`.ts`/`.tsx`/`.js`/`.py` and similar) inside
+  the repository that pass the `agent_jev.py` scope policy. Paths under `.claude/` or inside a
+  nested git checkout (such as an agent worktree) are never forwarded.
+- Decision-authority code is always read whole: `app/src/engine/`, `app/src/knowledge/`,
+  `app/src/workouts/` and `src/garmin_sync/intensity_classification.py`, at any depth.
+- Jev only narrows files of 400 lines up to 80 KB. Its reply is accepted only as a narrowing of the
+  same file, and the note is always delivered.
+- Any refusal, error or timeout passes the read through untouched.
+- It still sends the latest user prompt (Jev's "goal") along with each forwarded file, so never
+  paste health data into a prompt while it is enabled (I6).
+
+Register it in `.claude/settings.local.json`, which must stay git-ignored, as a `PreToolUse` hook
+with matcher `Read`, and disable the `jev@jev` plugin. Make the command fail open, because a
+PreToolUse hook exiting 2 blocks the tool, and `python` exits 2 when the script is absent (an
+older checkout or worktree):
+
+```bash
+f="$CLAUDE_PROJECT_DIR/scripts/agent_jev_read_hook.py"; if [ -f "$f" ]; then python "$f" || echo '{}'; else echo '{}'; fi
+```
+
+`JEV_HOOK_DISABLE=1` turns it off. `JEV_HOOK_DEBUG=1` prints the wrapper's pass-through reason
+and Jev's own diagnostics to stderr.
 
 `jev gain` may be used as a local diagnostic for query count, examined tokens and provider spend,
 but leverage is not the same as measured agent-token savings. Repository evals should prioritize

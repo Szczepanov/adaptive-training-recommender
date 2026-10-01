@@ -1,202 +1,272 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
 
-const baselinePath = resolve('../docs/analysis/simulation-baseline.json');
+const repoRoot = resolve('..');
 
-if (!existsSync(baselinePath)) {
-  console.error(`Baseline file not found at ${baselinePath}. Create it only after review with npm run simulate:update-baseline -- --reviewed.`);
+function git(args, cwd = repoRoot) {
+  return execFileSync('git', args, { encoding: 'utf8', cwd }).trim();
+}
+
+function safeGitCommit(ref = 'HEAD') {
+  try {
+    return git(['rev-parse', ref]);
+  } catch {
+    return 'unknown';
+  }
+}
+
+// Parse command line arguments
+const args = process.argv.slice(2);
+function getArg(flag) {
+  const idx = args.indexOf(flag);
+  return idx !== -1 && args[idx + 1] ? args[idx + 1] : null;
+}
+const hasFlag = (flag) => args.includes(flag);
+
+const baselineArg = getArg('--baseline') || resolve('../docs/analysis/simulation-baseline.json');
+const baseArg = getArg('--base') || getArg('--base-sha') || process.env.BASE_SHA || process.env.VERIFY_BASE || null;
+const prHeadArg = getArg('--head') || getArg('--head-sha') || getArg('--pr-head') || process.env.PR_HEAD_SHA || process.env.HEAD_SHA || null;
+const mergeArg = getArg('--merge') || getArg('--merge-sha') || process.env.MERGE_SHA || null;
+const baseReportArg = getArg('--base-report');
+const currentReportArg = getArg('--current-report');
+const baselineOnly = hasFlag('--baseline-only') || hasFlag('--no-base');
+
+if (!existsSync(baselineArg)) {
+  console.error(`Baseline file not found at ${baselineArg}. Create it only after review with npm run simulate:update-baseline -- --reviewed.`);
   process.exit(1);
 }
 
+let baselineContent;
 let baseline;
 try {
-  baseline = JSON.parse(readFileSync(baselinePath, 'utf8'));
+  baselineContent = readFileSync(baselineArg, 'utf8');
+  baseline = JSON.parse(baselineContent);
 } catch (error) {
-  console.error(`Baseline file at ${baselinePath} is malformed JSON: ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`Baseline file at ${baselineArg} is malformed JSON: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 }
 
 if (!baseline || !Array.isArray(baseline.scenarios)) {
-  console.error(`Baseline file at ${baselinePath} does not contain a scenarios array.`);
+  console.error(`Baseline file at ${baselineArg} does not contain a scenarios array.`);
   process.exit(1);
 }
 
-const server = await createServer({
+// Spin up Vite server in app to load simulation engine modules
+const appServer = await createServer({
   configFile: false,
   root: resolve('.'),
   logLevel: 'warn',
   server: { middlewareMode: true },
+  optimizeDeps: { noDiscovery: true },
   appType: 'custom',
 });
 
-let current;
+let diffModule;
 try {
-  const { runAllScenarios } = await server.ssrLoadModule('/src/engine/simulation/analyze.ts');
-  current = await runAllScenarios(undefined, 'current');
-} finally {
-  await server.close();
+  diffModule = await appServer.ssrLoadModule('/src/engine/simulation/simulationDiff.ts');
+} catch (err) {
+  console.error(`Failed to load simulationDiff module: ${err instanceof Error ? err.message : String(err)}`);
+  await appServer.close();
+  process.exit(1);
 }
 
-console.log('=== Simulation Semantic Diff against Committed Baseline ===\n');
+const {
+  computeBaselineHash,
+  computeCorpusHash,
+  diffSimulationReports,
+  formatSimulationDiffReport,
+  normalizeSimulationReport,
+} = diffModule;
 
-let changesFound = false;
-
-const currentByScenario = new Map(current.scenarios.map((s) => [s.scenarioId, s]));
-
-for (const baseScenario of baseline.scenarios) {
-  const curScenario = currentByScenario.get(baseScenario.scenarioId);
-  if (!curScenario) {
-    console.log(`[REMOVED SCENARIO] ${baseScenario.scenarioId}`);
-    changesFound = true;
-    continue;
+// Load or generate current simulation report
+let current;
+if (currentReportArg && existsSync(currentReportArg)) {
+  try {
+    current = JSON.parse(readFileSync(currentReportArg, 'utf8'));
+  } catch (err) {
+    console.error(`Could not read current report from ${currentReportArg}: ${err.message}`);
   }
+}
 
-  const diffs = [];
-
-  // 1. Rest/Recovery Pct
-  if (baseScenario.restOrRecoveryDayPct !== curScenario.restOrRecoveryDayPct) {
-    diffs.push(`  Rest/Recovery %: ${baseScenario.restOrRecoveryDayPct}% -> ${curScenario.restOrRecoveryDayPct}%`);
-  }
-
-  // 2. Modality Distribution
-  const allModalities = new Set([
-    ...Object.keys(baseScenario.modalityDistribution),
-    ...Object.keys(curScenario.modalityDistribution),
-  ]);
-  const modDiffs = [];
-  for (const mod of allModalities) {
-    const bVal = baseScenario.modalityDistribution[mod] ?? 0;
-    const cVal = curScenario.modalityDistribution[mod] ?? 0;
-    if (bVal !== cVal) {
-      modDiffs.push(`${mod}: ${bVal} -> ${cVal}`);
+if (!current) {
+  const latestReportPath = resolve('artifacts/simulation-reports/latest/report.json');
+  const headSha = safeGitCommit('HEAD');
+  if (existsSync(latestReportPath)) {
+    try {
+      const cached = JSON.parse(readFileSync(latestReportPath, 'utf8'));
+      if (cached && Array.isArray(cached.scenarios) && (cached.commit === headSha || cached.commit === 'current')) {
+        current = cached;
+      }
+    } catch {
+      // Regenerate if cached report cannot be parsed
     }
   }
-  if (modDiffs.length > 0) {
-    diffs.push(`  Modality dist: ${modDiffs.join(', ')}`);
-  }
 
-  // 3. Category Distribution
-  const allCategories = new Set([
-    ...Object.keys(baseScenario.categoryDistribution),
-    ...Object.keys(curScenario.categoryDistribution),
-  ]);
-  const catDiffs = [];
-  for (const cat of allCategories) {
-    const bVal = baseScenario.categoryDistribution[cat] ?? 0;
-    const cVal = curScenario.categoryDistribution[cat] ?? 0;
-    if (bVal !== cVal) {
-      catDiffs.push(`${cat}: ${bVal} -> ${cVal}`);
+  if (!current) {
+    try {
+      const { runAllScenarios } = await appServer.ssrLoadModule('/src/engine/simulation/analyze.ts');
+      current = await runAllScenarios(undefined, headSha);
+    } catch (err) {
+      console.error(`Failed to run current scenarios: ${err instanceof Error ? err.message : String(err)}`);
+      await appServer.close();
+      process.exit(1);
     }
   }
-  if (catDiffs.length > 0) {
-    diffs.push(`  Category dist: ${catDiffs.join(', ')}`);
-  }
+}
 
-  // 4. Fatigue Tier Days
-  const bFat = baseScenario.fatigueTierDayCounts;
-  const cFat = curScenario.fatigueTierDayCounts;
-  if (bFat.train !== cFat.train || bFat.modify !== cFat.modify || bFat.recover !== cFat.recover) {
-    diffs.push(`  Fatigue tiers (train/modify/recover): ${bFat.train}/${bFat.modify}/${bFat.recover} -> ${cFat.train}/${cFat.modify}/${cFat.recover}`);
+let policyVersion = current.policyVersion || 'unknown';
+try {
+  const policyModule = await appServer.ssrLoadModule('/src/engine/policy.ts');
+  if (policyModule?.POLICY_VERSION) {
+    policyVersion = policyModule.POLICY_VERSION;
   }
+} catch {
+  // fallback to report policyVersion
+}
 
-  // 5. Objective Resolution
-  const baseObjMap = new Map(baseScenario.objectiveResolution.map((o) => [o.key, o]));
-  const curObjMap = new Map(curScenario.objectiveResolution.map((o) => [o.key, o]));
-  const allObjKeys = new Set([...baseObjMap.keys(), ...curObjMap.keys()]);
-  const objDiffs = [];
-  for (const objKey of allObjKeys) {
-    const bObj = baseObjMap.get(objKey);
-    const cObj = curObjMap.get(objKey);
-    const bStr = bObj ? `${bObj.timesResolved}/${bObj.timesGenerated}` : '0/0';
-    const cStr = cObj ? `${cObj.timesResolved}/${cObj.timesGenerated}` : '0/0';
-    if (bStr !== cStr) {
-      objDiffs.push(`${objKey}: ${bStr} -> ${cStr}`);
+// Close app server once current simulation is loaded
+await appServer.close();
+
+// Resolve base SHA if possible and not explicitly disabled
+let resolvedBaseSha = null;
+if (!baselineOnly) {
+  if (baseArg && baseArg !== '0000000000000000000000000000000000000000') {
+    resolvedBaseSha = baseArg;
+  } else {
+    // Attempt to auto-detect base when on a feature branch locally
+    try {
+      const currentBranch = git(['rev-parse', '--abbrev-ref', 'HEAD']);
+      if (currentBranch && currentBranch !== 'main' && currentBranch !== 'HEAD') {
+        const mergeBase = git(['merge-base', 'origin/main', 'HEAD']);
+        const headSha = safeGitCommit('HEAD');
+        if (mergeBase && mergeBase !== headSha) {
+          resolvedBaseSha = mergeBase;
+        }
+      }
+    } catch {
+      // Git failure or shallow checkout - base detection skipped
     }
   }
-  if (objDiffs.length > 0) {
-    diffs.push(`  Objective resolution: ${objDiffs.join(', ')}`);
+}
+
+// Load or generate base simulation report
+let baseReport = null;
+if (baseReportArg && existsSync(baseReportArg)) {
+  try {
+    baseReport = JSON.parse(readFileSync(baseReportArg, 'utf8'));
+  } catch (err) {
+    console.warn(`Could not read base report from ${baseReportArg}: ${err.message}`);
+  }
+} else if (resolvedBaseSha) {
+  const baseReportPath = resolve(`artifacts/simulation-reports/base/report.json`);
+  if (existsSync(baseReportPath)) {
+    try {
+      const cached = JSON.parse(readFileSync(baseReportPath, 'utf8'));
+      if (cached && cached.commit === resolvedBaseSha) {
+        baseReport = cached;
+      }
+    } catch {
+      // Regenerate
+    }
   }
 
-  // 6. Objective Credits -- which sessions actually earned credit, not just the tally.
-  const creditKey = (c) => `${c.weekIndex}|${c.date}|${c.objectiveKey}|${c.templateId}`;
-  const baseCreditKeys = new Set(baseScenario.objectiveCredits.map(creditKey));
-  const curCreditKeys = new Set(curScenario.objectiveCredits.map(creditKey));
-  if (baseCreditKeys.size !== curCreditKeys.size
-      || ![...baseCreditKeys].every((k) => curCreditKeys.has(k))) {
-    diffs.push(`  Objective credits: ${baseCreditKeys.size} -> ${curCreditKeys.size} entries (set changed)`);
-  }
+  if (!baseReport) {
+    let tmpWorktree = null;
+    try {
+      // Ensure commit is present locally if shallow clone
+      try {
+        git(['cat-file', '-e', resolvedBaseSha]);
+      } catch {
+        try {
+          git(['fetch', '--depth=1', 'origin', resolvedBaseSha]);
+        } catch {
+          // ignore fetch error, worktree add will fail if commit is missing
+        }
+      }
 
-  // 7. Utility diagnostics
-  const bUtil = baseScenario.utilityDiagnostics;
-  const cUtil = curScenario.utilityDiagnostics;
-  const utilDiffs = [];
-  for (const key of ['fragileSelectionCount', 'lowerBenefitSelectionCount', 'trainTierRestOrRecoveryCount']) {
-    if (bUtil[key] !== cUtil[key]) utilDiffs.push(`${key}: ${bUtil[key]} -> ${cUtil[key]}`);
-  }
-  if (utilDiffs.length > 0) {
-    diffs.push(`  Utility diagnostics: ${utilDiffs.join(', ')}`);
-  }
+      tmpWorktree = mkdtempSync(join(tmpdir(), 'atr-sim-base-'));
+      git(['worktree', 'add', '--detach', tmpWorktree, resolvedBaseSha]);
 
-  // 8. Quality warnings
-  const baseWarnings = [...baseScenario.qualityWarnings].sort();
-  const curWarnings = [...curScenario.qualityWarnings].sort();
-  if (JSON.stringify(baseWarnings) !== JSON.stringify(curWarnings)) {
-    diffs.push(`  Quality warnings: [${baseWarnings.join(' | ')}] -> [${curWarnings.join(' | ')}]`);
-  }
+      const baseServer = await createServer({
+        configFile: false,
+        root: resolve(tmpWorktree, 'app'),
+        logLevel: 'warn',
+        server: { middlewareMode: true },
+        optimizeDeps: { noDiscovery: true },
+        appType: 'custom',
+      });
 
-  // 9. Anchor weeks
-  const anchorKey = (w) => `${w.weekIndex}|${w.eventSpecificAnchorDate}|${w.qualityAnchorDate}|${w.eventSpecificAnchorHit}|${w.eventSpecificAnchorFulfilled}|${w.qualityAnchorHit}`;
-  const baseAnchorKeys = baseScenario.anchorWeeks.map(anchorKey);
-  const curAnchorKeys = curScenario.anchorWeeks.map(anchorKey);
-  if (JSON.stringify(baseAnchorKeys) !== JSON.stringify(curAnchorKeys)) {
-    diffs.push(`  Anchor weeks changed (${baseAnchorKeys.length} -> ${curAnchorKeys.length} weeks, or hit/fulfilled state differs)`);
-  }
+      try {
+        const { runAllScenarios } = await baseServer.ssrLoadModule('/src/engine/simulation/analyze.ts');
+        baseReport = await runAllScenarios(undefined, resolvedBaseSha);
+      } finally {
+        await baseServer.close();
+      }
 
-  // 10. Same-template streak diagnostics
-  if (baseScenario.maxConsecutiveSameTemplateStreakWithinCall !== curScenario.maxConsecutiveSameTemplateStreakWithinCall) {
-    diffs.push(`  Max streak within call: ${baseScenario.maxConsecutiveSameTemplateStreakWithinCall} -> ${curScenario.maxConsecutiveSameTemplateStreakWithinCall}`);
-  }
-  if (baseScenario.maxConsecutiveSameTemplateStreakAcrossWeeks !== curScenario.maxConsecutiveSameTemplateStreakAcrossWeeks) {
-    diffs.push(`  Max streak across weeks: ${baseScenario.maxConsecutiveSameTemplateStreakAcrossWeeks} -> ${curScenario.maxConsecutiveSameTemplateStreakAcrossWeeks}`);
-  }
-
-  if (diffs.length > 0) {
-    changesFound = true;
-    console.log(`[MODIFIED] ${curScenario.label} (${curScenario.scenarioId}):`);
-    diffs.forEach((d) => console.log(d));
-    console.log('');
+      // Persist base report
+      const baseOutDir = resolve('artifacts/simulation-reports/base');
+      if (!existsSync(baseOutDir)) mkdirSync(baseOutDir, { recursive: true });
+      writeFileSync(resolve(baseOutDir, 'report.json'), `${JSON.stringify(baseReport, null, 2)}\n`);
+    } catch (err) {
+      console.warn(`Could not generate simulation artifact for base ref ${resolvedBaseSha}: ${err.message}`);
+      baseReport = null;
+    } finally {
+      if (tmpWorktree) {
+        try {
+          git(['worktree', 'remove', '--force', tmpWorktree]);
+        } catch {
+          // ignore cleanup errors
+        }
+      }
+    }
   }
 }
 
-for (const curScenario of current.scenarios) {
-  if (!baseline.scenarios.some((s) => s.scenarioId === curScenario.scenarioId)) {
-    console.log(`[NEW SCENARIO] ${curScenario.scenarioId}: ${curScenario.label}`);
-    changesFound = true;
-  }
+// Compute diffs
+let prDiff = null;
+let baselineDrift = null;
+
+if (baseReport) {
+  const normBase = normalizeSimulationReport(baseReport);
+  const normCurrent = normalizeSimulationReport(current);
+  const normBaseline = normalizeSimulationReport(baseline);
+
+  prDiff = diffSimulationReports(normBase, normCurrent);
+  baselineDrift = diffSimulationReports(normBaseline, normBase);
+} else {
+  const normCurrent = normalizeSimulationReport(current);
+  const normBaseline = normalizeSimulationReport(baseline);
+  baselineDrift = diffSimulationReports(normBaseline, normCurrent);
 }
 
-// 11. Readiness/preference sensitivity are top-level report fields.
-const sensitivityKey = (r) => JSON.stringify(r);
-const baseReadiness = (baseline.readinessSensitivity ?? []).map(sensitivityKey);
-const curReadiness = (current.readinessSensitivity ?? []).map(sensitivityKey);
-if (JSON.stringify(baseReadiness) !== JSON.stringify(curReadiness)) {
-  console.log('[MODIFIED] readinessSensitivity:');
-  console.log(`  ${JSON.stringify(baseline.readinessSensitivity)} ->`);
-  console.log(`  ${JSON.stringify(current.readinessSensitivity)}`);
-  console.log('');
-  changesFound = true;
-}
-const basePreference = (baseline.preferenceSensitivity ?? []).map(sensitivityKey);
-const curPreference = (current.preferenceSensitivity ?? []).map(sensitivityKey);
-if (JSON.stringify(basePreference) !== JSON.stringify(curPreference)) {
-  console.log('[MODIFIED] preferenceSensitivity:');
-  console.log(`  ${JSON.stringify(baseline.preferenceSensitivity)} ->`);
-  console.log(`  ${JSON.stringify(current.preferenceSensitivity)}`);
-  console.log('');
-  changesFound = true;
-}
+// Provenance
+const headSha = safeGitCommit('HEAD');
+const provenance = {
+  baseSha: resolvedBaseSha,
+  prHeadSha: prHeadArg || (resolvedBaseSha ? headSha : null),
+  mergeSha: mergeArg || headSha,
+  baselineIdentity: computeBaselineHash(baselineContent),
+  policyVersion,
+  scenarioCount: current.scenarios ? current.scenarios.length : 0,
+  corpusHash: current.scenarios ? computeCorpusHash(current.scenarios) : null,
+};
 
-if (!changesFound) {
-  console.log('No semantic differences found. Current simulation matches committed baseline.');
+const output = formatSimulationDiffReport({
+  prDiff,
+  baselineDrift,
+  provenance,
+});
+
+console.log(output);
+
+// Save diff report artifact
+try {
+  const diffArtifactDir = resolve('artifacts/simulation-reports');
+  if (!existsSync(diffArtifactDir)) mkdirSync(diffArtifactDir, { recursive: true });
+  writeFileSync(resolve(diffArtifactDir, 'simulation-diff.txt'), output);
+} catch {
+  // ignore artifact write failure
 }

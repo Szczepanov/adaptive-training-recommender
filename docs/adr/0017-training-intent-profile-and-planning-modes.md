@@ -238,6 +238,36 @@ persisted athlete input is a different thing with a confusingly similar name. Bo
 doc comment naming the other. No rename, because `TrainingIntent` is referenced across
 `rules.ts`, `planner.ts`, `sequenceSearch.ts` and their tests.
 
+
+## Amendment — 2026-09-30: date-local structured cycling authority (#925)
+
+D-MODE's distinction between athlete mode and engine capability is retained, but structured
+cycling authority is now **date-local**. A future cycling event may remain the
+`event_directed` focus context while its generated `PlanDefinition` has no block that
+contains the evaluated date. In that case `PlanningContext.eventStrategy` is
+`evergreen_fallback`: the event remains available for periodization/UI context, while the
+Evergreen evidence → dose → capacity → exact-role pipeline owns the executable week.
+
+`structured_plan` is reported only when a structured block actually owns the date. An
+explicit authored travel block can therefore activate structured authority before the
+current generated build window; under the current cycling policy that generated build starts
+at D-84. **D-84 is the first boundary of the currently authored structured plan, not a
+physiological threshold and not a statement that goal-directed preparation begins only at
+D-84.** While `evergreen_fallback` owns a date, it uses the same established-athlete and
+mechanical evidence streams as ordinary Evergreen programming. Forecasts re-resolve this
+ownership per projected date, so crossing the current D-85/D-84 fixture transfers authority
+to the structured build rather than carrying the fallback definition across the horizon.
+Non-cycling eligible events continue to use `demand_derived`.
+
+This is an authority correction, not a new persisted planning mode and not permission to
+fabricate a Base block. `evergreen_fallback` is a safe executable fallback for dates not
+owned by a structured block; it is **not** the final long-horizon event-periodization model.
+Long-horizon event-directed mesocycle authority is tracked in #927, policy ownership of the
+current D-84/D-35 horizons in #928, and season-level A/B/C event coordination in #929.
+ADR-0016 exact-role coverage remains unchanged: provider semantic labels may preserve
+physiological provenance, but they do not manufacture exact workout identity or weekly role
+credit.
+
 ## Consequences
 
 ### Positive
@@ -262,6 +292,16 @@ doc comment naming the other. No rename, because `TrainingIntent` is referenced 
 * Two coverage sets means two calibration surfaces. The September set's semantics are
   frozen by ADR-0016 and the [macrocycle v5 contract](../macrocycle-v5.md); the evergreen
   set starts uncalibrated and must not be presented as evidence-derived.
+
+## Clarification: forecast ownership segments (#933, 2026-09-30)
+
+Date-local executable ownership applies symmetrically when entering or leaving structured
+event programming. A forecast seeds the production Evergreen rolling week once at the
+first date of each ownership segment, using projected work as assumed-performed evidence;
+it does not reseed daily. A new rolling seed is required when an uninterrupted Evergreen
+week expires. Allocation and capability reporting follow these segments. This clarifies
+D-MODE/D-DOSE without changing event eligibility, generated horizons, or exact coverage
+policy; frozen forecast inputs are documented in the living engine architecture.
 
 ## References
 

@@ -10,8 +10,9 @@
  *
  * Does not re-match sources. ADR-0034 canonical occurrence is the single deduplication authority.
  */
-import type { SessionTemplate, EvidenceTier, NormalizedGarminActivity, CompletedTrainingEvent, DailyRecommendation } from './models';
-import type { SessionExecution } from '../sessions/models';
+import type { ActivityOverride, ActivitySessionCost, ActivityStimulusDomain, SessionTemplate, EvidenceTier, NormalizedGarminActivity, CompletedTrainingEvent, DailyRecommendation } from './models';
+import { classifyWorkoutStimulusFamily, TEMPLATE_STIMULUS_FAMILY } from './stimulusRecency';
+import type { SessionExecution, SessionExecutionState } from '../sessions/models';
 import type { CoverageSetId, PlanCoverageKey, CoverageSetDescriptor } from '../workouts/event-plan';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { grantsPowerExposureCredit } from '../workouts/powerExposure';
@@ -31,12 +32,23 @@ export interface PerformedExposureFact {
     localDate: string;
     startedAt?: string;
     endedAt?: string;
+    /** Brief/export provenance only; omitted from default decision snapshots and hashes. */
+    executionState?: SessionExecutionState;
+    /** Brief/export source linkage; omitted from decision snapshots unless explicitly requested. */
+    providerActivityIds?: string[];
     durationMin?: number;
     modality: SessionTemplate['modality'] | 'Unknown';
     category?: SessionTemplate['category'];
     confidence: FactConfidence;
     sourceKinds: Array<'structured_execution' | 'provider_activity' | 'legacy_strength'>;
     evidenceTier: EvidenceTier;
+    /** Provider-neutral semantic provenance. Omitted when a structured execution is present
+     * so exact authored semantics stay authoritative. These fields do not themselves grant
+     * exact weekly-role coverage. */
+    stimulusDomain?: ActivityStimulusDomain;
+    sessionCost?: ActivitySessionCost;
+    intensityEvidence?: string;
+    intensityClassificationVersion?: number;
     workoutId?: string;
     templateId?: string;
     /** Exact catalog dose variant recovered from the recommendation that owns this execution.
@@ -70,6 +82,7 @@ export interface PerformedTrainingFactsSnapshot {
     revision: string;
     exposures: PerformedExposureFact[];
     coverageCredits: CoverageCreditFact[];
+    overridesDegraded?: boolean;
 }
 
 export interface FactsComparisonResult {
@@ -148,6 +161,7 @@ export interface HydratedOccurrenceContext {
         category?: SessionTemplate['category'];
         startedAt?: string;
         endedAt?: string;
+        executionState?: SessionExecutionState;
         durationMin?: number;
         isLegacyStrength?: boolean;
         workoutVariantId?: WorkoutVariant['id'];
@@ -161,6 +175,9 @@ export interface HydratedOccurrenceContext {
         endedAt?: string;
         durationMin?: number;
         garminActivity?: NormalizedGarminActivity;
+        override?: ActivityOverride;
+        /** Failed override hydration cannot prove that provider semantics are unmodified. */
+        overridesUnavailable?: boolean;
     };
 }
 
@@ -206,6 +223,53 @@ function requirePerformedLocalDate(
     return localDate;
 }
 
+/** Re-evaluate an already reconciled exact identity under a new descriptor, without
+ * carrying old descriptor credit or widening semantic coverage policy. */
+export function deriveExactCoverageCredits(
+    fact: Pick<PerformedExposureFact, 'performedOccurrenceId' | 'workoutId' | 'workoutVariantId' | 'isReadinessModifiedDose' | 'sourceKinds'>,
+    descriptor: CoverageSetDescriptor,
+): CoverageCreditFact[] {
+    const coverageCredits: CoverageCreditFact[] = [];
+    const workoutId = fact.workoutId;
+    if (workoutId && workoutId !== 'legacy_strength') {
+        const matchingItems = descriptor.coverage
+            .filter(item => item.workoutIds.includes(workoutId))
+            // Issue #802: completed power credit requires both exact workout identity and
+            // the exact materialized dose variant. Unknown variants fail closed.
+            .filter(item => item.key !== 'power_exposure' || (
+                fact.workoutVariantId !== undefined
+                && grantsPowerExposureCredit({
+                    workoutId,
+                    variant: fact.workoutVariantId,
+                    isReadinessModifiedDose: fact.isReadinessModifiedDose,
+                })
+            ))
+            // Issue #804: completed mechanical credit likewise requires the exact materialized
+            // variant. Unknown variants fail closed rather than inheriting a broad family role.
+            .filter(item => item.key !== 'mechanical_exposure' || (
+                fact.workoutVariantId !== undefined
+                && grantsMechanicalExposureCredit({
+                    workoutId,
+                    variant: fact.workoutVariantId as MechanicalDoseVariant,
+                    isReadinessModifiedDose: fact.isReadinessModifiedDose,
+                })
+            ));
+        for (const item of matchingItems) {
+            coverageCredits.push({
+                performedOccurrenceId: fact.performedOccurrenceId,
+                coverageSetId: descriptor.id,
+                coverageKey: item.key,
+                workoutId,
+                creditKind: 'exact',
+                confidence: 1.0,
+                reasonCode: 'exact_workout_identity',
+                sourceKinds: fact.sourceKinds,
+            });
+        }
+    }
+    return coverageCredits;
+}
+
 /**
  * Pure fact derivation from a single active occurrence and its hydrated sources.
  * Enforces field-level source precedence (D4, D5).
@@ -225,8 +289,10 @@ export function deriveFactsFromOccurrence(
 
     const occurrenceModality = occurrence.modality ? normalizeModality(occurrence.modality) : undefined;
     const providerModality = hydrated.provider?.modality;
+    const providerOverride = hydrated.structured ? undefined : hydrated.provider?.override;
     const modality: SessionTemplate['modality'] | 'Unknown' =
         hydrated.structured?.modality
+        ?? providerOverride?.overriddenModality
         ?? (occurrenceModality && occurrenceModality !== 'Unknown' ? occurrenceModality : undefined)
         ?? (providerModality && providerModality !== 'Unknown' ? providerModality : undefined)
         ?? occurrenceModality
@@ -266,6 +332,9 @@ export function deriveFactsFromOccurrence(
             confidence = 'high';
             evidenceTier = 'completedStructuredWorkout';
         }
+    } else if (providerOverride) {
+        confidence = 'high';
+        evidenceTier = 'athleteClassification';
     } else if (hydrated.provider?.garminActivity) {
         confidence = 'inferred';
         evidenceTier = classifyGarminTier({
@@ -277,7 +346,23 @@ export function deriveFactsFromOccurrence(
         });
     }
 
+    let structuredDomain: ActivityStimulusDomain | undefined;
+    if (hydrated.structured) {
+        const family = (workoutId ? classifyWorkoutStimulusFamily(workoutId) : undefined)
+            ?? (templateId ? TEMPLATE_STIMULUS_FAMILY[templateId] : undefined);
+        if (family && family !== 'recovery') {
+            structuredDomain = family;
+        } else if (family === 'recovery') {
+            structuredDomain = 'recovery';
+        }
+    }
+
     const localDate = requirePerformedLocalDate(occurrence, startedAt, hydrated);
+    const hasOverride = hydrated.provider?.override !== undefined;
+    const providerSemantics = (hydrated.structured || hasOverride || hydrated.provider?.overridesUnavailable)
+        ? undefined
+        : hydrated.provider?.garminActivity;
+    const resolvedStimulusDomain = structuredDomain ?? providerSemantics?.stimulusDomain;
 
     const exposure: PerformedExposureFact = {
         performedOccurrenceId: occurrence.performedOccurrenceId,
@@ -290,6 +375,12 @@ export function deriveFactsFromOccurrence(
         confidence,
         sourceKinds,
         evidenceTier,
+        ...(resolvedStimulusDomain !== undefined ? { stimulusDomain: resolvedStimulusDomain } : {}),
+        ...(providerSemantics?.sessionCost !== undefined ? { sessionCost: providerSemantics.sessionCost } : {}),
+        ...(providerSemantics?.intensityEvidence !== undefined ? { intensityEvidence: providerSemantics.intensityEvidence } : {}),
+        ...(providerSemantics?.intensityClassificationVersion !== undefined
+            ? { intensityClassificationVersion: providerSemantics.intensityClassificationVersion }
+            : {}),
         ...(workoutId ? { workoutId } : {}),
         ...(templateId ? { templateId } : {}),
         ...(hydrated.structured?.workoutVariantId ? { workoutVariantId: hydrated.structured.workoutVariantId } : {}),
@@ -298,43 +389,7 @@ export function deriveFactsFromOccurrence(
 
     const coverageCredits: CoverageCreditFact[] = [];
     if (workoutId && workoutId !== 'legacy_strength') {
-        const matchingItems = descriptor.coverage
-            .filter(item => item.workoutIds.includes(workoutId))
-            // Issue #802: completed power credit requires both exact workout identity and
-            // the exact materialized dose variant. Unknown variants fail closed; this avoids
-            // treating a return-to-training prescription as full power merely because the
-            // catalog workout family contains a power step.
-            .filter(item => item.key !== 'power_exposure' || (
-                hydrated.structured?.workoutVariantId !== undefined
-                && grantsPowerExposureCredit({
-                    workoutId,
-                    variant: hydrated.structured.workoutVariantId,
-                    isReadinessModifiedDose: hydrated.structured.isReadinessModifiedDose,
-                })
-            ))
-            // Issue #804: completed mechanical credit requires both exact workout identity and
-            // the exact materialized dose variant. Unknown variants fail closed; this avoids
-            // treating a return-to-training prescription as full mechanical exposure.
-            .filter(item => item.key !== 'mechanical_exposure' || (
-                hydrated.structured?.workoutVariantId !== undefined
-                && grantsMechanicalExposureCredit({
-                    workoutId,
-                    variant: hydrated.structured.workoutVariantId as MechanicalDoseVariant,
-                    isReadinessModifiedDose: hydrated.structured.isReadinessModifiedDose,
-                })
-            ));
-        for (const item of matchingItems) {
-            coverageCredits.push({
-                performedOccurrenceId: occurrence.performedOccurrenceId,
-                coverageSetId: descriptor.id,
-                coverageKey: item.key,
-                workoutId,
-                creditKind: 'exact',
-                confidence: 1.0,
-                reasonCode: 'exact_workout_identity',
-                sourceKinds,
-            });
-        }
+        coverageCredits.push(...deriveExactCoverageCredits(exposure, descriptor));
     } else if (modality === 'Strength') {
         // Generic strength occurred without proven exact catalog role (D1, D5).
         coverageCredits.push({

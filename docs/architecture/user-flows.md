@@ -280,6 +280,20 @@ prefilled defaults or unsaved edits cannot appear complete. Follow-ups reflect t
 review queue and clear only after a follow-up save succeeds (or the athlete explicitly skips
 that prompt for the current visit).
 
+Home and Check-in share `responses/followupSchedule.ts`
+`resolvePendingNextMorningFollowups` as the next-morning due-state authority. Manual tissue
+state uses the same `deriveTissueSeverity` semantics as the injury policy, while completed or
+abandoned structured executions contribute additional candidate regions from their catalog
+facets. Execution-history reads are fail-soft so a temporary history failure cannot hide a
+manual tissue follow-up. The queue is region-level: multiple relevant sessions for the same
+region produce one tissue question. Session linkage is written only when prior manual
+attribution identifies the source or exactly one session is otherwise plausible; ambiguous
+multi-session attribution remains unlinked/unknown. The singular
+`RegionTissueResponse.sourceSessionRef` compatibility bridge is never used to overwrite a
+different existing attribution. A saved
+`nextMorningReaction` closes that region for the date; skipping persists neither a response
+nor a synthetic normal value.
+
 Daily availability has a deliberately narrow decision boundary. `mapCheckinToSubjectiveInput`
 consumes `availability.timeAvailableMin` as today's time input and
 `availability.preferredModalityToday` as the optional modality request. The persisted legacy
@@ -398,15 +412,45 @@ also remains available.
 
 ### 10. Protocol testing
 
-`TestingWorkflow` owns the assessment lifecycle rather than creating a separate runner:
+`TestingWorkflow` owns the assessment lifecycle and longitudinal history across two top-level tabs:
 
-`lookup` → `ready/lock` → `running` (delegates to `SessionRunner`) → raw result capture →
-`complete` or `abandoned`.
+1. **Protocols tab:**
+   `lookup` (bundled catalog grouped by Cycling / Strength / Field & power via `TestingCatalogPanel`) →
+   `ready/lock` → `running` (delegates to `SessionRunner`) → raw trial / observation capture →
+   `complete` or `abandoned`.
+
+2. **History tab (`AssessmentHistory`):**
+   Longitudinal physical-capital benchmark evidence and comparability tracking.
+   - Groups cards by family (`Cycling`, `Strength`, `Field & power` via `getPerformanceTestFamily`).
+   - Each card (`AssessmentSeriesCard`) presents the active comparison series: baseline value, latest value,
+     longitudinal change (labelled `"raw change, no reliability estimate"` with status `insufficient_evidence` under D4),
+     comparability, and validity.
+   - Disparate protocol revisions or modified series-defining setup parameters establish separate comparison series;
+     older or alternate series sit in an expandable disclosure with an explicit non-comparable marker
+     (`not comparable: protocol revision changed` or `not comparable: setup/method changed` under D1).
+   - Clicking "Details" on an attempt row opens the attempt detail modal (`AssessmentAttemptDetail`), showing attempt
+     metadata, locked comparison context, canonical benchmark observations (including revision history and same-day
+     body-mass-relative sprint W/kg or relative 1RM under D8), and the complete raw trials table with superseded
+     trials clearly distinguished.
+   - The toolbar provides one-click normalized CSV export (`assessment-history.csv`, 24 canonical columns) and
+     offline diagnostic evidence export (`assessment_diagnostic_export_v2`).
 
 Open attempts are recovered on mount. The workflow records assessment-specific context and
 raw observations around the shared structured-session execution. Global resume state marks
 an in-progress testing execution with `SessionIntent = testing`, routing Resume back to the
 `testing` screen.
+
+For multi-trial assessment protocols (e.g. 1RM strength, vertical/horizontal jumps, medicine ball throw,
+cycling sprint), capture provides a protocol-bounded raw trial table (`TrialCaptureTable`) with dynamic
+attempts, validity options, local draft retention (`localStorage`, cleared on save, abandonment and
+sign-out), live canonical reduction preview
+(`CanonicalResultPreview`), and raw video reminder callouts. The completion screen renders canonical
+benchmark results alongside an interactive trial correction panel (`TrialCorrectionPanel`) for append-only
+trial supersession. Trials already persisted by an interrupted save reload read-only, so a resubmission
+cannot diverge from immutable stored evidence. For the bundled #897 physical-capital trial-capture flow,
+scoped diagnostic JSON export (`assessmentExportService`) downloads the supported physical-capital
+protocol revisions, attempts, raw trials and canonical revision history for offline audit/coaching handoff.
+It omits the Firebase UID but remains personal health data (values, notes, device identifiers).
 
 Because `testing` and ordinary `sessions` share the runner, their in-run visual structure is
 very similar; provenance/context around the runner is therefore important.

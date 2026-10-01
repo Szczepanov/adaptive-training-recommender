@@ -47,6 +47,7 @@ export interface AthleteScenario {
      * 6.3 needs this to reproduce failures that depend on yesterday's real training rather
      * than only on a synthetic readiness counter. */
     initialHistory?: CompletedExposure[];
+    initialPerformedExposures?: import('../performedTrainingFacts').PerformedExposureFact[];
     /** User-authored commitments passed through every day-0/day-1/week-ahead decision. */
     fixedActivities?: FixedActivity[];
     /** Structured tissue check-ins (#804) passed through every day-0/day-1/week-ahead
@@ -331,6 +332,23 @@ function capabilityMaintenanceScenario(optedIn: boolean): AthleteScenario {
 }
 
 export const SCENARIOS: AthleteScenario[] = [
+    {
+        id: 'cycling_recovery_authority_exit',
+        label: 'Completed cycling recovery hands execution back to Evergreen (#933)',
+        description: 'Starts inside structured recovery and crosses the first date no longer owned by the event. The actual focus-event eligibility boundary, not the authored recovery end, determines the handoff.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling', 'Strength']),
+        event: { id: 'recovery-exit-race', title: 'Completed synthetic cycling race', date: '2026-09-13',
+            priority: 'A', lifecycle: 'completed', category: 'cycling_event',
+            demandProfile: resolveDemandProfile('cycling_event', 'gran_fondo') },
+        trainingIntentProfile: {
+            ...evergreenProfile(['health'], { minSessions: 2, targetSessions: 3, maxSessions: 4 }),
+            planningMode: 'event_directed',
+            capabilityMaintenance: { enabled: true, capabilities: ['linear_speed_skill'] },
+        },
+        preferences: preferences(60, 60), startDate: '2026-09-14', weeks: 1,
+        tags: ['authority-transition', 'cycling', 'evergreen'],
+        readinessForWeek: () => stableReadiness({ readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2, motivation: 8 }),
+    },
     {
         id: 'evergreen_health_two_sessions',
         label: 'Evergreen health priority (2 sessions)',
@@ -804,4 +822,39 @@ export const SCENARIOS: AthleteScenario[] = [
     // Issue #805: identical athlete, history and check-ins; only the explicit opt-in differs.
     capabilityMaintenanceScenario(true),
     capabilityMaintenanceScenario(false),
+    // Issue #931: independent Garmin tempo activity on D-1 applies quality anti-repetition to next-day tempo.
+    {
+        id: 'performed_stimulus_recency_garmin_tempo',
+        initialPerformedExposures: [{
+            performedOccurrenceId: 'scenario:stimulus-recency:tempo',
+            localDate: addDaysToLocalDateString(START_DATE, -1),
+            modality: 'Cycling',
+            sourceKinds: ['provider_activity'],
+            confidence: 'inferred',
+            evidenceTier: 'garminTrainingEffect',
+            stimulusDomain: 'tempo',
+            intensityClassificationVersion: 2,
+        }],
+        label: 'Independent Garmin tempo D-1 stimulus recency (#931)',
+        description: 'An independent Garmin tempo activity on D-1 with confidence version 2. The engine must apply quality anti-repetition (0.2x) to next-day tempo candidates without suppressing Zone 2 aerobic endurance.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling']),
+        event: eventOn('stimulus-recency-event', 40, 'cycling_event', 'road_race', 'A'),
+        initialHistory: [
+            {
+                occurrenceKey: 'scenario:stimulus-recency:tempo:2026-08-06',
+                date: addDaysToLocalDateString(START_DATE, -1),
+                modality: 'Cycling',
+                category: 'Moderate Endurance',
+                stimulusConfidence: 'inferred',
+                stimulusDomain: 'tempo',
+                intensityClassificationVersion: 2,
+                costProfile: { systemic: 0.45, cardiovascular: 0.5, lowerBody: 0.3, upperBody: 0, impactTissue: 0, neuromuscular: 0.2 },
+                trainingRecordLike: { type: 'Garmin tempo ride', duration_min: 45, training_effect: 3.2, intensity_tag: 'moderate' },
+            },
+        ],
+        startDate: START_DATE,
+        weeks: 1,
+        tags: ['sequencing', 'stimulus-recency', 'quality-anti-repetition'],
+        readinessForWeek: () => stableReadiness({ readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, stress: 2, motivation: 8 }),
+    },
 ];

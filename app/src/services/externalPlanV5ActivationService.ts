@@ -21,6 +21,7 @@
  */
 
 import type { ExternalTrainingPlanV5 } from '../sessions/externalPlanV5';
+import type { ExternalTrainingPlanV6 } from '../sessions/externalPlanV6';
 import { resolveExternalIntentBlock } from '../sessions/externalPlanV5';
 import { intentBlockService, type IntentBlockHeader, type IntentBlockService } from './intentBlockService';
 import { getErrorMessage } from '../utils/errors';
@@ -61,7 +62,7 @@ export type IntentBlockActivationServiceDependency = Pick<IntentBlockService, 'g
  */
 export async function activateIntentBlocksFromPlan(
     userId: string,
-    plan: ExternalTrainingPlanV5,
+    plan: ExternalTrainingPlanV5 | ExternalTrainingPlanV6,
     service: IntentBlockActivationServiceDependency = intentBlockService,
 ): Promise<IntentBlockActivationResult[]> {
     const entries = plan.intentBlocks ?? [];
@@ -115,7 +116,7 @@ export async function activateIntentBlocksFromPlan(
             const header = await service.save(
                 userId,
                 { ...block, id: blockId },
-                { sourceSchemaVersion: EXTERNAL_INTENT_BLOCK_SOURCE_SCHEMA_VERSION, sourceRef },
+                { sourceSchemaVersion: plan.schema, sourceRef },
             );
             return { entryId: entry.id, blockId, outcome: { status: 'saved', header } };
         } catch (error: unknown) {

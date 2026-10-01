@@ -1,12 +1,12 @@
 import type { DimensionalFatigue, EquipmentKey, MicrocycleState, RankingCounterfactual, Recommendation, SessionTemplate, UserContext, WeeklyObjective, WorkoutCostProfile, WorkoutStimulusProfile } from '../models';
 import { evaluateNextDayPlanWithIntent, evaluateTrainingWithIntent } from '../rules';
-import { generateWeekAheadPlanWithIntent, resolveWeeklyAnchors, type WeekAheadDay } from '../planner';
+import { generateWeekAheadPlanWithIntent, resolveWeeklyAnchors, type WeekAheadDay, type WeekAheadPlan } from '../planner';
 import { materializeEffectiveDose } from '../optimizer';
 import type { CompletedExposure, TrainingHistoryProvider } from '../trainingHistory';
 import type { TrainingHistorySnapshot } from '../trainingHistorySnapshot';
 import { evaluatePeriodizationPhase, resolveMultiEventObjectives } from '../periodization';
 import { creditObjectivesFromStimulus, generateWeeklyObjectives, updateMicrocycleProgress } from '../microcycle';
-import { resolvePlanDefinitionForEvent } from '../planSchedule';
+import { resolveActivePlanDefinitionForEvent } from '../planSchedule';
 import { resolvePlanningContext } from '../planningMode';
 import { addDaysToLocalDateString } from '../../utils/localDate';
 import { workoutForTemplate } from '../../workouts/prescription';
@@ -83,6 +83,7 @@ export interface ScenarioDecisionTrace {
      *  null when no candidate was accepted. Sourced from Recommendation.decisionTrace
      *  .rankingAudit (today/tomorrow) or WeekAheadDay.diagnostics.rankingAudit (forecast). */
     rankingAudit: RankingCounterfactual | null;
+    stimulusRecency?: Pick<NonNullable<Recommendation['decisionTrace']>, 'stimulusRecency' | 'candidateScores'>;
 }
 export interface ScenarioResult {
     scenarioId: string; label: string; description: string; weeksSimulated: number; totalDays: number;
@@ -95,6 +96,7 @@ export interface ScenarioResult {
     qualityWarnings: string[]; anchorWeeks: AnchorWeekResult[]; anchorScopeNote: string | null;
     fatigueTierDayCounts: { train: number; modify: number; recover: number }; constraintViolations: string[];
     allocationReports: Array<{ weekIndex: number; report: WeeklyRoleAllocationReport }>;
+    authoritySegments?: Array<{ weekIndex: number; segments: NonNullable<WeekAheadPlan['authoritySegments']> }>;
     decisionTraces: ScenarioDecisionTrace[];
     /** Issue #458: deterministic sequencing/ranking diagnostics derived purely from
      *  decisionTraces above. Diagnostic only -- never influences recommendation output. */
@@ -181,6 +183,7 @@ export function traceFromRecommendation(weekIndex: number, date: string, recomme
             selectedVsBestBenefitGap: bestBenefitScore === null || selectedBenefitScore === null ? null : bestBenefitScore - selectedBenefitScore,
         },
         rankingAudit: recommendation.decisionTrace?.rankingAudit ?? null,
+        ...(recommendation.decisionTrace?.stimulusRecency ? { stimulusRecency: { stimulusRecency: recommendation.decisionTrace.stimulusRecency, candidateScores: recommendation.decisionTrace.candidateScores } } : {}),
     };
 }
 
@@ -411,20 +414,31 @@ export async function runScenario(
     const objectiveTallies = new Map<string, ObjectiveTally>();
     const objectiveCredits: ObjectiveCredit[] = [];
     const allocationReports: Array<{ weekIndex: number; report: WeeklyRoleAllocationReport }> = [];
+    const authoritySegments: NonNullable<ScenarioResult['authoritySegments']> = [];
     const decisionTraces: ScenarioDecisionTrace[] = [];
     let currentDate = scenario.startDate;
 
     for (let week = 0; week < scenario.weeks; week++) {
         const readiness = scenario.readinessForDate?.(currentDate, week) ?? scenario.readinessForWeek(week);
+        const preparedHistory = scenario.initialPerformedExposures
+            ? await historyProvider.getSnapshot!('sim-user', currentDate, 7)
+            : null;
+        if (preparedHistory) preparedHistory.performedTrainingFacts = {
+            asOfDate: currentDate,
+            windowDays: 7,
+            revision: `sim-canonical-${currentDate}`,
+            exposures: scenario.initialPerformedExposures!.filter(exposure => exposure.localDate < currentDate),
+            coverageCredits: [],
+        };
         const todayRec = await evaluateTrainingWithIntent(
             'sim-user', readiness, scenario.context, events, currentDate, undefined, historyProvider,
-            null, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
+            preparedHistory, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
             null, subjectiveDriftPolicy, subjectiveDriftWeights, null, false, [], new Map(), undefined,
             scenario.mechanicalCheckinHistory,
         );
         const nextDayPlan = await evaluateNextDayPlanWithIntent(
             'sim-user', events, readiness, scenario.context, currentDate, todayRec, historyProvider,
-            null, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
+            preparedHistory, fixedActivities, [], scenario.trainingIntentProfile ?? null, scenario.preferences ?? null, fatigueFusionPolicy,
             subjectiveDriftPolicy, subjectiveDriftWeights, [], scenario.mechanicalCheckinHistory,
         );
         const tomorrowRec = nextDayPlan.branches.yellow.recommendation;
@@ -435,7 +449,7 @@ export async function runScenario(
                 days: 6, fixedActivities, fatigueFusionPolicy,
                 ...(scenario.mechanicalCheckinHistory ? { mechanicalCheckinHistory: scenario.mechanicalCheckinHistory } : {}),
             },
-            historyProvider, null, scenario.trainingIntentProfile ?? null,
+            historyProvider, preparedHistory, scenario.trainingIntentProfile ?? null,
         );
         const todayPhase = evaluatePeriodizationPhase(events, currentDate).phase.phaseName;
         const simulatedDays: WeekAheadDay[] = [recommendationAsDay(currentDate, todayRec, todayPhase), ...plan.days];
@@ -458,6 +472,7 @@ export async function runScenario(
 
         weeklyDays.push(simulatedDays);
         allocationReports.push({ weekIndex: week, report: plan.allocationReport });
+        if (plan.authoritySegments) authoritySegments.push({ weekIndex: week, segments: plan.authoritySegments });
         plan.objectiveCredits.forEach(credit => objectiveCredits.push({ weekIndex: week, ...credit }));
         simulatedDays.forEach(day => accumulatedHistory.push(toCompletedExposure(day)));
 
@@ -469,7 +484,8 @@ export async function runScenario(
         });
         currentDate = addDaysToLocalDateString(currentDate, 7);
     }
-    return computeMetrics(scenario, weeklyDays, anchorWeeks, objectiveTallies, objectiveCredits, allocationReports, decisionTraces);
+    return { ...computeMetrics(scenario, weeklyDays, anchorWeeks, objectiveTallies, objectiveCredits, allocationReports, decisionTraces),
+        ...(authoritySegments.length > 0 ? { authoritySegments } : {}) };
 }
 
 /** WP3.0 diagnostic. A pick parity comparison is observational: the aged-credit column
@@ -643,7 +659,7 @@ export async function runForecastDailyParityScenario(
         const dayOffset = index % 7;
         const weekStart = addDaysToLocalDateString(scenario.startDate, weekIndex * 7);
         const periodization = evaluatePeriodizationPhase(events, trace.date);
-        const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent);
+        const planDefinition = resolveActivePlanDefinitionForEvent(periodization.focusEvent, trace.date);
         const definitions = resolveMultiEventObjectives(
             events, trace.date, periodization,
             generateWeeklyObjectives(periodization.phase, weekStart, periodization.focusEvent, planDefinition, trace.date).objectives,

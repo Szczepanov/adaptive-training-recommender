@@ -6,6 +6,7 @@ import type {
     FatigueState,
     FixedActivity,
     MicrocycleState,
+    PlannedDose,
     RankingCounterfactual,
     Recommendation,
     ScheduleOverlay,
@@ -35,7 +36,7 @@ import { resolveAvailability, scheduleOverlayCostProfileForDate } from './schedu
 import { isTemplatePhaseEligible, evaluatePeriodizationPhase, resolveMultiEventObjectives, type DroppedContributorObjective, type PeriodizationResult } from './periodization';
 import { eligibleTemplates } from './eligibility';
 import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
-import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
+import { coverageSetFor, EVERGREEN_GENERAL_COVERAGE_SET, type CoverageSetId } from '../workouts/event-plan';
 import {
     createEmptyFatigue,
     applyCompletedSessionLoad,
@@ -71,13 +72,15 @@ import {
 import { resolveOlympicTriathlonTaperBudget, taperHistoryFromFixedActivities } from './taperPlanBudget';
 import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
-import { mechanicalEvidenceRequiredFor, prepareTrainingHistorySnapshot, resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
+import { ATHLETE_STATE_HISTORY_WINDOW_DAYS, mechanicalEvidenceRequiredFor, needsEstablishedPerformanceEvidence, prepareTrainingHistorySnapshot, resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolveMechanicalCheckinHistory } from './mechanicalCheckinHistory';
-import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
+import { type PlanDefinition } from './planSchedule';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
-import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry } from './coverage';
+import { buildCoverageState, coverageHistoryFromFacts, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry, type CoveragePerformedFacts } from './coverage';
 import { resolveEvergreenPlan } from './evergreenPlanning';
+import { createForecastAuthorityResolver, resolveDateLocalPlanDefinition, type ForecastAuthority, type ForecastAuthorityResolver } from './forecastAuthority';
+import { resolvePlanningContext } from './planningMode';
 import type { CapabilityMaintenanceResult } from './capabilityMaintenance';
 import type { AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { hasCurrentClinicalSymptoms, isFreshSubjectiveWithAdverseWearables, isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
@@ -137,6 +140,9 @@ export interface WeekAheadDay {
     activeDose?: DoseVariation;
     adjustment?: SessionAdjustment;
     diagnostics?: {
+        authorityId?: string;
+        plannedDose?: PlannedDose;
+        coverageState?: OptimizationContext['coverageState'];
         peakFatigue: number;
         fatigueTier: 'train' | 'modify' | 'recover';
         topUtilityScore: number;
@@ -179,6 +185,9 @@ export interface WeekAheadPlan {
     allocationReport: WeeklyRoleAllocationReport;
     /** Planner-owned capability cadence/fulfilment readout. Forecast-only; never persisted. */
     capabilityMaintenance?: CapabilityMaintenanceResult | null;
+    /** One production seed per ownership segment, including the full rolling budget
+     * beyond the visible strip. Forecast assumptions are never persisted as actual work. */
+    authoritySegments?: Omit<ForecastAuthority, 'completedHistory'>[];
 }
 
 export interface WeekAheadPlanSeed {
@@ -193,6 +202,8 @@ export interface WeekAheadPlanSeed {
     /** Canonical completed-role history. Operational/projected history stays separate so
      * future recommendations never reclassify completed occurrences through legacy lookup. */
     completedCoverageHistory?: CoverageHistoryEntry[];
+    completedPerformedFacts?: CoveragePerformedFacts | null;
+    completedCoverageSetId?: CoverageSetId;
     droppedContributorObjectives?: DroppedContributorObjective[];
     /** Issue #757: athlete-level `aerobic_volume` floor resolved as of today from completed
      * evidence. Held constant across the horizon; projected picks never move it. */
@@ -338,6 +349,7 @@ export interface WeekAheadOptions {
      * the call self-contained (then none, which holds stage advancement rather than assuming
      * a normal response). */
     mechanicalCheckinHistory?: readonly CheckinRecord[];
+    resolveAuthority?: ForecastAuthorityResolver;
 }
 
 const ZERO_COST: WorkoutCostProfile = {
@@ -727,6 +739,7 @@ export interface ProjectedDatePlanningContext {
     internalStrainAsOf: string;
     fatigueFusionPolicy?: FatigueFusionPolicy;
     planDefinition?: PlanDefinition | null;
+    resolveAuthority?: ForecastAuthorityResolver;
     todayDate?: string;
     healthPlanningPolicy?: HealthPlanningPolicy | null;
     aerobicVolumeFloor?: AerobicVolumeFloor | null;
@@ -749,6 +762,8 @@ export interface ProjectedDateState {
     externalFatigue: FatigueState;
     projectedHistory: (RecentHistoryEntry | SessionHistoryEntry)[];
     coverageHistory?: CoverageHistoryEntry[];
+    projectedExposures?: readonly CompletedExposure[];
+    authorityId?: string;
 }
 
 function effectiveProjectedFatigueTier(
@@ -836,6 +851,7 @@ function templatesWithinProjectedRecoveryPolicy(
 }
 
 export interface ProjectedDateEvaluation {
+    plannedDose: PlannedDose;
     date: string;
     periodization: PeriodizationResult;
     availability: ReturnType<typeof resolveAvailability>;
@@ -1024,22 +1040,27 @@ export function evaluateProjectedDate(
     const adjacentToAnchor = isAdjacentDate(date, shared.anchors.eventSpecificAnchorDate)
         || isAdjacentDate(date, shared.anchors.qualityAnchorDate);
 
-    const unresolved = getUnresolvedObjectives(state.microcycle, true);
-    const planDefinition = shared.planDefinition
-        ?? resolvePlanDefinitionForEvent(periodization.focusEvent, shared.authoredPlanBlocks, shared.eventStrengthSupportSessions ?? 0);
+    const authority = shared.resolveAuthority?.(date, state.projectedExposures ?? []);
+    const planDefinition = authority ? authority.planDefinition : resolveDateLocalPlanDefinition(
+        shared.planDefinition, periodization, date, shared.authoredPlanBlocks, shared.eventStrengthSupportSessions ?? 0,
+    );
+    const governingMicrocycle = authority && authority.id !== state.authorityId ? microcycleForAuthorityDate(authority, date, periodization,
+        state.microcycle, state.projectedExposures ?? [], shared.todayDate ?? date, shared.events) : state.microcycle;
+    const unresolved = getUnresolvedObjectives(governingMicrocycle, true);
+    const plannedDose = applyPlanningOverlays(resolvePlannedDoseForDate(
+                periodization.phase,
+                governingMicrocycle.objectives,
+                unresolved,
+                planDefinition,
+                date,
+            ), date, shared.authoredPlanBlocks, planDefinition, shared.scheduleOverlays ?? []);
     const optimizationContext = buildOptimizationContext(
         {
             unresolvedObjectives: unresolved,
             fatigue: rankingFatigue,
             periodization,
             history: state.projectedHistory,
-            plannedDose: applyPlanningOverlays(resolvePlannedDoseForDate(
-                periodization.phase,
-                state.microcycle.objectives,
-                unresolved,
-                planDefinition,
-                date,
-            ), date, shared.authoredPlanBlocks, planDefinition, shared.scheduleOverlays ?? []),
+            plannedDose,
         },
         shared.context,
         shared.preferences,
@@ -1071,6 +1092,7 @@ export function evaluateProjectedDate(
     const rankings = new Map<string, RankCandidatesResult>();
 
     return {
+        plannedDose,
         date,
         periodization,
         availability,
@@ -1344,6 +1366,41 @@ export interface ProjectionExposure {
     category?: SessionTemplate['category'];
     durationMin?: number;
     stimulusConfidence?: StimulusConfidence;
+    costProfile?: WorkoutCostProfile;
+}
+
+export function completedExposureFromProjection(exposure: ProjectionExposure): CompletedExposure {
+    const confidence = exposure.stimulusConfidence ?? 'exact';
+    const workoutId = exposure.workoutId ?? (confidence === 'exact' && exposure.templateId
+        ? workoutIdForTemplateId(exposure.templateId) : undefined);
+    return {
+        ...exposure,
+        ...(workoutId ? { workoutId } : {}),
+        costProfile: exposure.costProfile ?? ZERO_COST,
+        stimulusProfile: exposure.stimulus,
+        stimulusConfidence: confidence,
+        trainingRecordLike: { type: `${exposure.modality ?? 'None'} ${exposure.category ?? ''}`,
+            duration_min: exposure.durationMin ?? 0, training_effect: 0, intensity_tag: '' },
+    };
+}
+
+function microcycleForAuthorityDate(
+    authority: ForecastAuthority,
+    date: string,
+    periodization: PeriodizationResult,
+    previous: MicrocycleState,
+    projected: readonly CompletedExposure[],
+    todayDate: string,
+    events: UserEvent[],
+): MicrocycleState {
+    const skeleton = buildMicrocycleState(periodization.phase, addDaysToLocalDateString(date, -7),
+        [...authority.completedHistory], authority.planningContext.focusEvent, authority.planDefinition, date);
+    const fresh = { ...previous, ...skeleton };
+    const aged = ageCompletedObjectiveCreditForForecastDate(fresh, authority.completedHistory, date, todayDate,
+        projected.map(exposure => ({ ...exposure, occurrenceKey: exposure.occurrenceKey ?? `projection:${exposure.date}`,
+            stimulus: exposure.stimulusProfile ?? ZERO_STIMULUS })), new Set(skeleton.objectives.map(objective => objective.id)));
+    return authority.evergreen ? aged : { ...aged, objectives: resolveMultiEventObjectives(
+        events, date, periodization, aged.objectives).objectives };
 }
 
 function backfillCreditFromPriorExposures(
@@ -1368,6 +1425,7 @@ function backfillCreditFromPriorExposures(
     return total;
 }
 
+
 export function reconcileObjectivesForDate(
     microcycle: MicrocycleState,
     events: UserEvent[],
@@ -1386,8 +1444,9 @@ export function reconcileObjectivesForDate(
      * completed training is authoritative for these definitions on this forecast date. */
     historicalReplayObjectiveIds: readonly string[];
 } {
-    const planDefinitionForDate = planDefinition
-        ?? resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks, eventStrengthSupportSessions);
+    const planDefinitionForDate = resolveDateLocalPlanDefinition(
+        planDefinition, periodization, date, authoredPlanBlocks, eventStrengthSupportSessions,
+    );
     const skeleton = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent, planDefinitionForDate, date);
     const historicalReplayObjectiveIds = skeleton.objectives.map(objective => objective.id);
     const fresh = resolveMultiEventObjectives(events, date, periodization, skeleton.objectives);
@@ -1554,6 +1613,8 @@ export function applyFixedActivityStimulusCredit(
             modality: identity.modality,
             category: identity.category,
             stimulusConfidence,
+            durationMin: activity.durationMin,
+            costProfile: { ...ZERO_COST, ...activity.expectedCost },
         });
 
         const derivedCredits = getUnresolvedObjectives(nextMicrocycle, true).flatMap(objective => {
@@ -1652,17 +1713,14 @@ export function generateWeekAheadPlan(
     const eventStrengthSupportSessions = options.eventStrengthSupportSessions ?? 0;
     const scheduleOverlays = options.scheduleOverlays ?? [];
     const suppliedPlanDefinition = options.planDefinition ?? null;
-    const evergreenCapacity = options.evergreenCapacity;
-    const optionalQualityObjective = suppliedPlanDefinition?.coverageSetId === EVERGREEN_GENERAL_COVERAGE_SET.id
+    let evergreenCapacity = options.evergreenCapacity;
+    let optionalQualityObjective = suppliedPlanDefinition?.coverageSetId === EVERGREEN_GENERAL_COVERAGE_SET.id
         ? suppliedPlanDefinition.objectives.find(objective => objective.coverageKey === 'sustained_quality'
             && objective.coverageMinimumSessions === 0
             && (objective.coverageTargetSessions ?? 0) > 0)
         : undefined;
-    const optionalQualityBlock = suppliedPlanDefinition?.blocks.find(block => block.id === optionalQualityObjective?.blockId);
-    const optionalQualityTarget = Boolean(optionalQualityBlock);
-    const qualityWorkoutIds = new Set(optionalQualityTarget
-        ? EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(role => role.key === 'sustained_quality')?.workoutIds ?? []
-        : []);
+    let optionalQualityBlock = suppliedPlanDefinition?.blocks.find(block => block.id === optionalQualityObjective?.blockId);
+    const qualityWorkoutIds = new Set(EVERGREEN_GENERAL_COVERAGE_SET.coverage.find(role => role.key === 'sustained_quality')?.workoutIds ?? []);
     const qualityOpportunityDates: string[] = [];
     const requiredReservationBlockedQualityDates: string[] = [];
     const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
@@ -1762,6 +1820,7 @@ export function generateWeekAheadPlan(
             modality: template.modality,
             category: template.category,
             durationMin: effectiveTemplate.durationMin,
+            costProfile: effectiveTemplate.costProfile ?? enrichedCostProfile(template.id),
         });
     };
 
@@ -1801,6 +1860,35 @@ export function generateWeekAheadPlan(
         externalFatigue = applyCompletedSessionLoad(externalFatigue, date, cost, fatigueFusionPolicy);
     };
 
+    const authoritySegments = new Map<string, ForecastAuthority>();
+    let activeAuthorityId: string | undefined;
+    const projectedEvidence = () => projectionExposures.map(completedExposureFromProjection);
+    const activateAuthority = (date: string): ForecastAuthority | undefined => {
+        const authority = options.resolveAuthority?.(date, projectedEvidence());
+        if (!authority) return undefined;
+        const phase = evaluatePeriodizationPhase(events, date, todayDate);
+        if (activeAuthorityId !== authority.id) {
+            creditMemory.clear();
+            authoritySegments.set(authority.id, authority);
+            if (date !== todayDate) microcycle = microcycleForAuthorityDate(authority, date, phase, microcycle, projectedEvidence(), todayDate, events);
+            activeAuthorityId = authority.id;
+        } else {
+            const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, phase,
+                creditMemory, projectionExposures, authoredPlanBlocks, authority.planDefinition, eventStrengthSupportSessions);
+            microcycle = reconciled.microcycle;
+            if (seed.completedExposures) microcycle = ageCompletedObjectiveCreditForForecastDate(microcycle,
+                seed.completedExposures, date, todayDate, projectionExposures, new Set(reconciled.historicalReplayObjectiveIds));
+        }
+        evergreenCapacity = authority.evergreen?.budget.capacity;
+        optionalQualityObjective = authority.planDefinition?.coverageSetId === EVERGREEN_GENERAL_COVERAGE_SET.id
+            ? authority.planDefinition.objectives.find(objective => objective.coverageKey === 'sustained_quality'
+                && objective.coverageMinimumSessions === 0 && (objective.coverageTargetSessions ?? 0) > 0)
+            : undefined;
+        optionalQualityBlock = authority.planDefinition?.blocks.find(block => block.id === optionalQualityObjective?.blockId);
+        return authority;
+    };
+    activateAuthority(todayDate);
+
     applyFixedActivityStimulus(todayDate);
     applyPick(todayDate, todayRec.template, todayRec.activeDose);
     applyFixedActivityCost(todayDate);
@@ -1808,10 +1896,11 @@ export function generateWeekAheadPlan(
 
     if (tomorrowRec) {
         const tomorrowDate = addDaysToLocalDateString(todayDate, 1);
-        const tomorrowPeriodization = evaluatePeriodizationPhase(events, tomorrowDate);
-        const tomorrowReconciled = reconcileObjectivesForDate(microcycle, events, tomorrowDate, todayDate, tomorrowPeriodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition, eventStrengthSupportSessions);
-        microcycle = tomorrowReconciled.microcycle;
-        if (seed.completedExposures) {
+        const tomorrowPeriodization = evaluatePeriodizationPhase(events, tomorrowDate, todayDate);
+        const tomorrowAuthority = activateAuthority(tomorrowDate);
+        const tomorrowReconciled = tomorrowAuthority ? { microcycle, droppedContributorObjectives: [], historicalReplayObjectiveIds: [] } : reconcileObjectivesForDate(microcycle, events, tomorrowDate, todayDate, tomorrowPeriodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition, eventStrengthSupportSessions);
+        if (!tomorrowAuthority) microcycle = tomorrowReconciled.microcycle;
+        if (!tomorrowAuthority && seed.completedExposures) {
             microcycle = ageCompletedObjectiveCreditForForecastDate(
                 microcycle,
                 seed.completedExposures,
@@ -1853,6 +1942,7 @@ export function generateWeekAheadPlan(
         internalStrainAsOf,
         fatigueFusionPolicy,
         planDefinition: suppliedPlanDefinition,
+        resolveAuthority: options.resolveAuthority,
         todayDate,
         healthPlanningPolicy: options.healthPlanningPolicy,
         aerobicVolumeFloor: seed.aerobicVolumeFloor ?? null,
@@ -1939,6 +2029,14 @@ export function generateWeekAheadPlan(
         if (cached) return cached;
         const history = liveProjectedHistory();
         const coverageHistory = liveProjectedCoverageHistory();
+        const evidence = projectedEvidence().filter(exposure => exposure.date < date);
+        const authority = options.resolveAuthority?.(date, evidence);
+        const targetCoverageSet = authority?.planDefinition?.coverageSetId;
+        if (seed.completedPerformedFacts && targetCoverageSet && targetCoverageSet !== seed.completedCoverageSetId) {
+            const completed = coverageHistoryFromFacts(seed.completedPerformedFacts, coverageSetFor(targetCoverageSet));
+            coverageHistory.splice(0, coverageHistory.length, ...completed,
+                ...coverageHistory.filter(exposure => exposure.source !== 'completed'));
+        }
         const loads: Array<{ date: string; cost: WorkoutCostProfile }> = [];
         fixedActivities
             .filter(activity => !activity.isCompleted && activity.expectedCost
@@ -1961,6 +2059,10 @@ export function generateWeekAheadPlan(
             const effective = effectiveTemplateForProjection(template, item.activeDose);
             loads.push({ date: item.date, cost: effective.costProfile ?? enrichedCostProfile(item.templateId) });
             const projectedEntry = historyEntryFor(item.date, template, item.activeDose, item.isReadinessModifiedDose ?? false);
+            evidence.push(completedExposureFromProjection({ occurrenceKey: `recommendation:${item.date}`,
+                date: item.date, templateId: item.templateId, modality: template.modality, category: template.category,
+                durationMin: effective.durationMin, stimulus: enrichedStimulusProfile(effective),
+                costProfile: effective.costProfile ?? enrichedCostProfile(item.templateId) }));
             history.push(projectedEntry);
             coverageHistory.push(...resolveCoverageHistory(undefined, [projectedEntry]));
         });
@@ -1969,7 +2071,8 @@ export function generateWeekAheadPlan(
             .reduce((state, load) => applyCompletedSessionLoad(state, load.date, load.cost, fatigueFusionPolicy), externalFatigue);
         const evaluation = evaluateProjectedDate(
             date,
-            { microcycle, externalFatigue: fatigue, projectedHistory: history, coverageHistory },
+            { microcycle, externalFatigue: fatigue, projectedHistory: history, coverageHistory, projectedExposures: evidence,
+                authorityId: activeAuthorityId },
             {
                 ...sharedProjection,
                 projectedRecoveryPolicy: {
@@ -2002,16 +2105,40 @@ export function generateWeekAheadPlan(
 
     const firstForecastOffset = resultDays.length + 1;
     const seedDates = new Set(resultDays.map(day => day.date).concat(todayDate));
-    const allocationOccurrences = attachExactEligibleIdentities(
-        deriveRequiredRoleOccurrences(
-            projectedEvaluation(addDaysToLocalDateString(todayDate, firstForecastOffset), []).optimizationContext.coverageState,
-        ),
-        ENRICHED_TEMPLATES,
-        sharedProjection.aerobicVolumeFloor,
-    );
+    const allocationOccurrences: RequiredRoleOccurrence[] = [];
+    const registeredBlocks = new Set<string>();
+    const beyondHorizon = new Map<string, 'planned_beyond_horizon' | 'superseded'>();
+    const forecastEnd = addDaysToLocalDateString(todayDate, totalDays);
+    const registerOccurrences = (date: string) => {
+        const authority = options.resolveAuthority?.(date, projectedEvidence());
+        const coverage = projectedEvaluation(date, []).optimizationContext.coverageState;
+        const blockKey = authority?.id ?? 'legacy';
+        if (registeredBlocks.has(blockKey)) return;
+        registeredBlocks.add(blockKey);
+        const packedRoles = authority?.evergreen?.budget.requiredRoles ?? [];
+        const fresh = attachExactEligibleIdentities(deriveRequiredRoleOccurrences(coverage), ENRICHED_TEMPLATES,
+            sharedProjection.aerobicVolumeFloor).map(occurrence => {
+            const packed = packedRoles.filter(role => role.coverageRoleId === occurrence.coverageKey)
+                .sort((left, right) => left.date.localeCompare(right.date))[occurrence.ordinal];
+            const ownerEnd = authority?.endDate ?? occurrence.windowEnd;
+            const namespaced = {
+                ...occurrence,
+                ...(authority ? { id: `${authority.id}|${occurrence.id}`, authorityId: authority.id,
+                    authorityStartDate: authority.startDate, authorityEndDate: authority.endDate,
+                    windowStart: occurrence.windowStart < authority.startDate ? authority.startDate : occurrence.windowStart,
+                    windowEnd: occurrence.windowEnd > ownerEnd ? ownerEnd : occurrence.windowEnd } : {}),
+                ...(packed ? { plannedDate: packed.date } : {}),
+            };
+            if (packed && packed.date > ownerEnd) beyondHorizon.set(namespaced.id, 'superseded');
+            else if (packed && packed.date > forecastEnd) beyondHorizon.set(namespaced.id, 'planned_beyond_horizon');
+            return namespaced;
+        });
+        allocationOccurrences.push(...fresh);
+    };
+    registerOccurrences(addDaysToLocalDateString(todayDate, firstForecastOffset));
 
     let allocation = resolveWeeklyRoleReservations(
-        allocationOccurrences,
+        allocationOccurrences.filter(occurrence => !beyondHorizon.has(occurrence.id)),
         allocationEvaluator(forecastDatesFrom(firstForecastOffset)),
         { unavailableDates: seedDates, supportExcludedDates: supportExcludedDatesForPendingOccurrences(anchors, allocationOccurrences) },
     );
@@ -2027,9 +2154,12 @@ export function generateWeekAheadPlan(
         const periodization = evaluatePeriodizationPhase(events, date, todayDate);
 
         const priorObjectiveIds = new Set(microcycle.objectives.map(objective => objective.id));
-        const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition, eventStrengthSupportSessions);
-        microcycle = reconciled.microcycle;
-        if (seed.completedExposures) {
+        const authority = activateAuthority(date);
+        const reconciled = authority ? { microcycle, droppedContributorObjectives: resolveMultiEventObjectives(
+            events, date, periodization, microcycle.objectives).droppedContributorObjectives, historicalReplayObjectiveIds: [] }
+            : reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition, eventStrengthSupportSessions);
+        if (!authority) microcycle = reconciled.microcycle;
+        if (!authority && seed.completedExposures) {
             microcycle = ageCompletedObjectiveCreditForForecastDate(
                 microcycle,
                 seed.completedExposures,
@@ -2042,7 +2172,21 @@ export function generateWeekAheadPlan(
         accumulateNewDrops(droppedContributorObjectives, currentlyDroppedPairs, reconciled.droppedContributorObjectives);
         applyFixedActivityStimulus(date);
 
-        const pendingOccurrences = allocationOccurrences.filter(occurrence => !settledOutcomes.has(occurrence.id));
+        // Closed owners remain auditable but cannot consume another owner's capacity or
+        // participate in its preservation search.
+        allocationOccurrences.filter(occurrence => occurrence.authorityEndDate && occurrence.authorityEndDate < date
+            && !settledOutcomes.has(occurrence.id)).forEach(occurrence => {
+            const previous = allocation.outcomes.find(outcome => outcome.occurrence.id === occurrence.id);
+            settledOutcomes.set(occurrence.id, {
+                occurrence, status: 'superseded',
+                reservation: { occurrenceId: occurrence.id, nominatedDate: nominatedDates.get(occurrence.id) ?? null,
+                    assignedDate: null, templateId: null, workoutId: null, wasMoved: false },
+                ...(previous?.observedBlockers ? { observedBlockers: previous.observedBlockers } : {}),
+            });
+        });
+        registerOccurrences(date);
+        const pendingOccurrences = allocationOccurrences.filter(occurrence => !settledOutcomes.has(occurrence.id)
+            && !beyondHorizon.has(occurrence.id));
         allocation = resolveWeeklyRoleReservations(
             pendingOccurrences,
             allocationEvaluator(forecastDatesFrom(offset)),
@@ -2056,6 +2200,7 @@ export function generateWeekAheadPlan(
         const reservation = allocation.reservationsByDate.get(date);
 
         const evaluation = projectedEvaluation(date, []);
+        const evergreenOwnsDate = evaluation.optimizationContext.coverageState?.coverageSetId === EVERGREEN_GENERAL_COVERAGE_SET.id;
         const { anchorRole, eligible, fatigueGated, recoveryGated, peakFatigue, fatigueTier, rankingFatigue, optimizationContext: optContext } = evaluation;
 
         const hasFatigueGatedRequiredCoverage = beganAfterHardRaceSpecificExposure && anchorRole === 'event-specific' && eligible.some(template =>
@@ -2128,7 +2273,8 @@ export function generateWeekAheadPlan(
             && day.date <= optionalQualityBlock.endDate
             && qualityWorkoutIds.has(workoutIdForTemplateId(day.template.id) ?? ''));
         const isSupportReservation = reservation?.occurrence.reservationTier === 'support';
-        const canPlaceOptionalQuality = Boolean(optionalQualityBlock
+        const canPlaceOptionalQuality = Boolean(evergreenOwnsDate
+            && optionalQualityBlock
             && date >= optionalQualityBlock.startDate
             && date <= optionalQualityBlock.endDate
             && qualityWindow
@@ -2140,7 +2286,7 @@ export function generateWeekAheadPlan(
         const exactReserved = reservation
             ? rankingCandidates.filter(template => reservation.occurrence.eligibleTemplateIds.includes(template.id))
             : [];
-        if (optionalQualityBlock && date >= optionalQualityBlock.startDate && date <= optionalQualityBlock.endDate) {
+        if (evergreenOwnsDate && optionalQualityBlock && date >= optionalQualityBlock.startDate && date <= optionalQualityBlock.endDate) {
             const feasibleQualityTemplateIds = projectedDateOutcomeFrom(evaluation).acceptedTemplateIds.filter(templateId =>
                 qualityWorkoutIds.has(workoutIdForTemplateId(templateId) ?? '')
                 && rankingCandidates.some(template => template.id === templateId));
@@ -2156,7 +2302,7 @@ export function generateWeekAheadPlan(
             rankingCandidates = exactReserved;
         }
 
-        if (evergreenCapacity && optionalQualityBlock
+        if (evergreenOwnsDate && evergreenCapacity && optionalQualityBlock
             && date <= optionalQualityBlock.endDate
             && (!reservation || isSupportReservation)
             && capacityOccupiedSessionCount >= evergreenCapacity.maxSessions) {
@@ -2210,7 +2356,7 @@ export function generateWeekAheadPlan(
             // marker so future coverage reflects the dose actually assigned, while the
             // coverage ledger itself (`coverage.ts` `hasRequiredAerobicDose`) stays
             // dose-aware and leaves the role open for ranking.
-            const selfFulfilledOccurrences = occurrencesFulfilledByTemplateSelection(pendingOccurrences, template);
+            const selfFulfilledOccurrences = occurrencesFulfilledByTemplateSelection(pendingOccurrences.filter(occurrence => !occurrence.authorityId || occurrence.authorityId === activeAuthorityId), template);
             const selfFulfilledIds = new Set(selfFulfilledOccurrences.map(occurrence => occurrence.id));
             const incumbentAssignments = incumbentAssignmentsRemainingAfterSelection(
                 allocation.reservationsByDate,
@@ -2238,7 +2384,8 @@ export function generateWeekAheadPlan(
                     if (primaryAllocationUnresolved(after)) {
                         return 'unresolved_search_budget';
                     }
-                    const isOptionalQualityCandidate = Boolean(optionalQualityBlock
+                    const isOptionalQualityCandidate = Boolean(evergreenOwnsDate
+                        && optionalQualityBlock
                         && date >= optionalQualityBlock.startDate
                         && date <= optionalQualityBlock.endDate
                         && qualityWorkoutIds.has(workoutIdForTemplateId(template.id) ?? ''));
@@ -2285,7 +2432,7 @@ export function generateWeekAheadPlan(
         applyFixedActivityCost(date);
         applyScheduleOverlayCost(date);
 
-        occurrencesFulfilledByTemplateSelection(pendingOccurrences, pick.template)
+        occurrencesFulfilledByTemplateSelection(pendingOccurrences.filter(occurrence => !occurrence.authorityId || occurrence.authorityId === activeAuthorityId), pick.template)
             .forEach(occurrence => {
                 const nominated = nominatedDates.get(occurrence.id) ?? null;
                 const prior = allocation.outcomes.find(outcome => outcome.occurrence.id === occurrence.id);
@@ -2335,6 +2482,8 @@ export function generateWeekAheadPlan(
             addressesObjectives: addressed,
             ...(forecastDoseAdjustment ? { activeDose: forecastDoseAdjustment.activeDose, adjustment: forecastDoseAdjustment.adjustment } : {}),
             diagnostics: {
+                ...(authority ? { authorityId: authority.id, plannedDose: evaluation.plannedDose,
+                    coverageState: optContext.coverageState } : {}),
                 peakFatigue,
                 fatigueTier: effectiveFatigueTier,
                 topUtilityScore: pick.utilityScore,
@@ -2370,6 +2519,12 @@ export function generateWeekAheadPlan(
     const finalOutcomes: WeeklyRoleAllocationOutcome[] = allocationOccurrences.map(occurrence => {
         const settled = settledOutcomes.get(occurrence.id);
         if (settled) return settled;
+        const clipped = beyondHorizon.get(occurrence.id);
+        if (clipped) return {
+            occurrence, status: clipped,
+            reservation: { occurrenceId: occurrence.id, nominatedDate: occurrence.plannedDate ?? null,
+                assignedDate: null, templateId: null, workoutId: null, wasMoved: false },
+        };
         const latest = allocation.outcomes.find(outcome => outcome.occurrence.id === occurrence.id);
         if (!latest) {
             return {
@@ -2393,30 +2548,40 @@ export function generateWeekAheadPlan(
             : { ...latest, reservation, status: 'unresolved_search_budget' as const };
     });
 
-    const selectedQuality = optionalQualityBlock && [
-        { date: todayDate, template: todayRec.template },
-        ...resultDays.map(day => ({ date: day.date, template: day.template })),
-    ].some(day => day.date >= optionalQualityBlock.startDate && day.date <= optionalQualityBlock.endDate
-        && qualityWorkoutIds.has(workoutIdForTemplateId(day.template.id) ?? ''));
-    const optionalQualityCapacityMiss = optionalQualityTarget && !selectedQuality
-        && qualityOpportunityDates.length > 0
-        && qualityOpportunityDates.length === requiredReservationBlockedQualityDates.length
-        && requiredReservationBlockedQualityDates.every(date => finalOutcomes.some(outcome =>
-            outcome.status === 'fulfilled' && outcome.reservation.assignedDate === date));
+    const qualityBlocks = options.resolveAuthority
+        ? [...authoritySegments.values()].flatMap(authority => {
+            const quality = authority.planDefinition?.objectives.find(objective => objective.coverageKey === 'sustained_quality'
+                && objective.coverageMinimumSessions === 0 && (objective.coverageTargetSessions ?? 0) > 0);
+            const block = authority.planDefinition?.blocks.find(item => item.id === quality?.blockId);
+            return block ? [{ startDate: block.startDate, endDate: block.endDate < authority.endDate ? block.endDate : authority.endDate }] : [];
+        }) : optionalQualityBlock ? [optionalQualityBlock] : [];
+    const optionalMisses = qualityBlocks.flatMap(block => {
+        const inBlock = (date: string) => date >= block.startDate && date <= block.endDate;
+        const selectedQuality = [{ date: todayDate, template: todayRec.template }, ...resultDays]
+            .some(day => inBlock(day.date) && qualityWorkoutIds.has(workoutIdForTemplateId(day.template.id) ?? ''));
+        const opportunities = qualityOpportunityDates.filter(inBlock);
+        const blocked = requiredReservationBlockedQualityDates.filter(inBlock);
+        return !selectedQuality && opportunities.length > 0 && opportunities.length === blocked.length
+            && blocked.every(date => finalOutcomes.some(outcome => outcome.status === 'fulfilled'
+                && outcome.reservation.assignedDate === date))
+            ? [{ coverageKey: 'sustained_quality' as const, reason: 'capacity_exhausted_by_required_roles' as const,
+                observedBlockedDates: blocked }] : [];
+    });
 
     return {
         startDate: addDaysToLocalDateString(todayDate, 1),
         days: resultDays,
+        ...(options.resolveAuthority ? { authoritySegments: [...authoritySegments.values()].map(authority => ({
+            id: authority.id, startDate: authority.startDate, endDate: authority.endDate,
+            planningContext: authority.planningContext, planDefinition: authority.planDefinition,
+            microcycle: authority.microcycle, evergreen: authority.evergreen,
+        })) } : {}),
         objectiveCredits,
         microcycleObjectives: microcycle.objectives ?? [],
         droppedContributorObjectives,
         allocationReport: {
             outcomes: finalOutcomes.sort((left, right) => left.occurrence.id.localeCompare(right.occurrence.id)),
-            ...(optionalQualityCapacityMiss ? { optionalMisses: [{
-                coverageKey: 'sustained_quality' as const,
-                reason: 'capacity_exhausted_by_required_roles' as const,
-                observedBlockedDates: requiredReservationBlockedQualityDates,
-            }] } : {}),
+            ...(optionalMisses.length > 0 ? { optionalMisses } : {}),
         },
     };
 }
@@ -2445,9 +2610,11 @@ export async function generateWeekAheadPlanWithIntent(
             ROLLING_LOAD_BUDGET_LOOKBACK_DAYS,
             historyProvider,
         );
+    const futureMechanicalDates = Array.from({ length: (options.days ?? 7) + 1 }, (_, offset) =>
+        addDaysToLocalDateString(todayDate, offset));
     // #804: the check-in read does not depend on the intent, so it runs alongside it.
     const mechanicalCheckinsRead = options.mechanicalCheckinHistory
-        ?? (preferences && !historyProvider && mechanicalEvidenceRequiredFor(trainingIntentProfile, events, todayDate)
+        ?? (preferences && !historyProvider && futureMechanicalDates.some(date => mechanicalEvidenceRequiredFor(trainingIntentProfile, events, date, options.authoredPlanBlocks ?? []))
             ? resolveMechanicalCheckinHistory(userId, todayDate)
             : []);
     const intent = await resolveTrainingIntent(
@@ -2488,6 +2655,36 @@ export async function generateWeekAheadPlanWithIntent(
             checkinHistory: mechanicalCheckinHistory,
         },
     );
+    const forecastEvents = intent.planningContext.mode === 'event_directed' ? events : [];
+    const futureContexts = Array.from({ length: (options.days ?? 7) + 1 }, (_, offset) => {
+        const date = addDaysToLocalDateString(todayDate, offset);
+        return resolvePlanningContext(trainingIntentProfile, evaluatePeriodizationPhase(forecastEvents, date, todayDate),
+            date, null, options.authoredPlanBlocks ?? []);
+    });
+    // A structured start must not prevent the next Evergreen owner from seeing the wider
+    // evidence production would load there. Reuse the already-read, proven budget window.
+    const futureNeedsState = futureContexts.some(needsEstablishedPerformanceEvidence);
+    const stateSnapshot = intent.historySnapshot;
+    const forecastSnapshot = stateSnapshot && futureNeedsState && !stateSnapshot.athleteStateEvidence
+        && rollingLoadBudgetSnapshot && rollingLoadBudgetSnapshot.windowDays >= ATHLETE_STATE_HISTORY_WINDOW_DAYS
+        ? { ...stateSnapshot, athleteStateEvidence: {
+            observedWindowDays: ATHLETE_STATE_HISTORY_WINDOW_DAYS,
+            exposures: rollingLoadBudgetSnapshot.exposures.filter(exposure =>
+                exposure.date >= addDaysToLocalDateString(todayDate, -ATHLETE_STATE_HISTORY_WINDOW_DAYS)),
+        } } : stateSnapshot;
+    const resolveAuthority = createForecastAuthorityResolver({
+        todayDate, days: options.days ?? 7, events: forecastEvents, profile: trainingIntentProfile,
+        history: rollingLoadBudgetSnapshot?.exposures ?? intent.history, historySnapshot: forecastSnapshot,
+        preferences, context, fixedActivities: options.fixedActivities ?? [],
+        authoredPlanBlocks: options.authoredPlanBlocks ?? [], scheduleOverlays: options.scheduleOverlays ?? [],
+        eventStrengthSupportSessions: intent.eventStrengthSupportSessions, aerobicVolumeFloor,
+        isAdverseRecovery, hasCurrentClinicalSymptoms: hasCurrentClinicalSymptoms(todayReadiness),
+        mechanical: {
+            exposureHistory: rollingLoadBudgetSnapshot?.exposures ?? intent.mechanicalExposureHistory,
+            observedWindowDays: rollingLoadBudgetSnapshot?.windowDays ?? intent.mechanicalEvidenceObservedWindowDays,
+            checkinHistory: mechanicalCheckinHistory,
+        }, initialEvergreen: evergreen,
+    });
     const plan = await generateWeekAheadPlan(
         todayReadiness,
         context,
@@ -2502,6 +2699,8 @@ export async function generateWeekAheadPlanWithIntent(
             trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
             rollingLoadBudgetHistory: trailingHistoryFromCompletedExposures(intent.rollingLoadBudgetHistory, todayDate),
             completedCoverageHistory: resolveCoverageHistory(intent.performedTrainingFacts, intent.history),
+            completedPerformedFacts: intent.performedTrainingFacts,
+            completedCoverageSetId: resolveAuthority(todayDate, []).planDefinition?.coverageSetId ?? EVERGREEN_GENERAL_COVERAGE_SET.id,
             droppedContributorObjectives: intent.droppedContributorObjectives,
             aerobicVolumeFloor,
         },
@@ -2509,7 +2708,8 @@ export async function generateWeekAheadPlanWithIntent(
             ...options,
             fatigueFusionPolicy,
             healthPlanningPolicy,
-            events: intent.planningContext.mode === 'event_directed' ? events : [],
+            events: forecastEvents,
+            resolveAuthority,
             eventStrengthSupportSessions: intent.eventStrengthSupportSessions,
             ...(evergreen ? { planDefinition: evergreen.planDefinition } : {}),
             ...(evergreen ? { evergreenCapacity: evergreen.budget.capacity } : {}),

@@ -10,6 +10,7 @@ import {
   isPrimaryNavigationScreen,
   type DrawerDestination,
 } from './navigationGroups';
+import { clearAllAssessmentDrafts } from '../utils/assessmentDraftStorage';
 import './MobileNav.css';
 
 interface MobileNavProps {
@@ -33,9 +34,10 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
   const handleLogout = async () => {
     const { signOut } = await import('firebase/auth');
     await signOut(getAuthInstance());
+    clearAllAssessmentDrafts();
   };
 
-  const buildTitle = `Git commit ${buildInfo.gitSha}${buildInfo.dirty ? ' (local working tree has uncommitted changes)' : ''}`;
+  const buildTitle = `Git commit ${buildInfo.gitSha}${buildInfo.dirty ? ' (local working tree has uncommitted changes)' : ''}${buildInfo.builtAtFormatted ? `\nDeployed ${buildInfo.builtAtFormatted}` : ''}`;
 
   const navigateToDrawerDestination = (destination: DrawerDestination) => {
     restoreFocusOnCloseRef.current = false;
@@ -133,14 +135,16 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
               <div
                 className="drawer-item"
                 title={buildTitle}
-                aria-label={`Build ${buildInfo.label}`}
+                aria-label={`Build ${buildInfo.label}${buildInfo.builtAtFormatted ? `, deployed ${buildInfo.builtAtFormatted}` : ''}`}
                 style={{ cursor: 'default', opacity: 0.72 }}
               >
                 <span className="item-icon">ℹ️</span>
                 <div className="item-text">
                   <span className="item-title">Build {buildInfo.label}</span>
                   <span className="item-sub">
-                    {buildInfo.dirty ? 'Local working tree has uncommitted changes' : 'Exact Git commit for this app build'}
+                    {buildInfo.builtAtFormatted
+                      ? (buildInfo.dirty ? `${buildInfo.builtAtFormatted} (local changes)` : buildInfo.builtAtFormatted)
+                      : (buildInfo.dirty ? 'Local working tree has uncommitted changes' : 'Exact Git commit for this app build')}
                   </span>
                 </div>
               </div>

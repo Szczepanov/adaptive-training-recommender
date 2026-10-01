@@ -419,6 +419,12 @@ function candidateEventFromGarmin(
         modality,
         intensity,
         ...(costIntensity !== intensity ? { costIntensity } : {}),
+        ...(!override && activity.stimulusDomain !== undefined ? { stimulusDomain: activity.stimulusDomain } : {}),
+        ...(!override && activity.sessionCost !== undefined ? { sessionCost: activity.sessionCost } : {}),
+        ...(!override && activity.intensityEvidence !== undefined ? { intensityEvidence: activity.intensityEvidence } : {}),
+        ...(!override && activity.intensityClassificationVersion !== undefined
+            ? { intensityClassificationVersion: activity.intensityClassificationVersion }
+            : {}),
         trainingEffect: Math.max(activity.trainingEffectAerobic ?? 0, activity.trainingEffectAnaerobic ?? 0) || null,
         estimatedCost: scaleCostByDeliveredDose(baseCost, deliveredDose),
         estimatedStimulus: zoneCandidate ?? trainingEffectStimulus,
@@ -578,6 +584,12 @@ export function completedEventToExposure(event: CompletedTrainingEvent): Complet
         trainingRecordLike: record,
         ...(event.deliveredDose ? { deliveredDose: event.deliveredDose } : {}),
         stimulusConfidence: confidence,
+        ...(event.stimulusDomain !== undefined ? { stimulusDomain: event.stimulusDomain } : {}),
+        ...(event.sessionCost !== undefined ? { sessionCost: event.sessionCost } : {}),
+        ...(event.intensityEvidence !== undefined ? { intensityEvidence: event.intensityEvidence } : {}),
+        ...(event.intensityClassificationVersion !== undefined
+            ? { intensityClassificationVersion: event.intensityClassificationVersion }
+            : {}),
         // A stimulus profile no longer requires a *known* modality to be attached (Phase
         // 5.5) -- genericModalityFallback still carries a real, if conservative, profile
         // (see DEFAULT_STIMULUS_BY_MODALITY.Unknown) that can credit a modality-agnostic

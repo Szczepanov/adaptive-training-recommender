@@ -279,6 +279,26 @@
   text-align: left;
 }
 
+.dropdown-item .item-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.dropdown-item .item-title {
+  display: block;
+  font-weight: 500;
+  font-size: 0.875rem;
+  line-height: 1.25;
+}
+
+.dropdown-item .item-sub {
+  display: block;
+  font-size: 0.725rem;
+  color: var(--text-secondary, #94a3b8);
+  margin-top: 0.15rem;
+  line-height: 1.2;
+}
+
 .dropdown-item:hover {
   background: rgba(255, 255, 255, 0.08);
   color: white;

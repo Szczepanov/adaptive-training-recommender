@@ -677,7 +677,7 @@ export async function evaluateTrainingWithIntent(
     const { mode, envelopes, telemetry } = envelopeState;
     // #804: the check-in read does not depend on the intent, so it runs alongside it.
     const mechanicalCheckinsRead = mechanicalCheckinHistory
-        ?? (preferences && !historyProvider && mechanicalEvidenceRequiredFor(trainingIntentProfile, events, date)
+        ?? (preferences && !historyProvider && mechanicalEvidenceRequiredFor(trainingIntentProfile, events, date, authoredPlanBlocks)
             ? resolveMechanicalCheckinHistory(userId, date)
             : []);
     let intent = await resolveTrainingIntent(userId, events, date, readiness, DEFAULT_OPERATIONAL_HISTORY_WINDOW_DAYS, historyProvider, preparedHistorySnapshot, authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy, undefined, carriedInternalStrain);
@@ -904,7 +904,8 @@ export async function evaluateTrainingWithIntent(
             } : {}),
             decisionTrace: {
                 policyVersion: POLICY_VERSION,
-                candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons })),
+                stimulusRecency: rankingResult.stimulusRecency,
+                candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons, stimulusRecency: candidate.stimulusRecency })),
                 droppedContributorObjectives: intent.droppedContributorObjectives,
                 rankingAudit: null,
                 calibration,
@@ -938,7 +939,8 @@ export async function evaluateTrainingWithIntent(
         } : {}),
         decisionTrace: {
             policyVersion: POLICY_VERSION,
-            candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons })),
+            stimulusRecency: rankingResult.stimulusRecency,
+            candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons, stimulusRecency: candidate.stimulusRecency })),
             droppedContributorObjectives: intent.droppedContributorObjectives,
             rankingAudit: computeRankingCounterfactual(rankingResult, pick.template.id),
             calibration,
@@ -1400,7 +1402,7 @@ export async function evaluateNextDayPlanWithIntent(
 ): Promise<NextDayPotentialPlan> {
     const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
     const mechanicalCheckins = mechanicalCheckinHistory
-        ?? (preferences && !historyProvider && mechanicalEvidenceRequiredFor(trainingIntentProfile, events, scenarios.date)
+        ?? (preferences && !historyProvider && mechanicalEvidenceRequiredFor(trainingIntentProfile, events, scenarios.date, authoredPlanBlocks)
             ? await resolveMechanicalCheckinHistory(userId, scenarios.date)
             : []);
     const projectedProvider = await projectedProviderForTomorrow(

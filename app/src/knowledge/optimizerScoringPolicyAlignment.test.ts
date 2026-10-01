@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { QUALITY_RECENCY_FAMILIES, STIMULUS_REPETITION_LOOKBACK_DAYS, STIMULUS_REPETITION_PENALTY } from '../engine/stimulusRecency';
 import type { FatigueState, SessionTemplate, UserEvent, UserPreferences, WeeklyObjective } from '../engine/models';
 import type { CoverageState } from '../engine/coverage';
 import type { ResolvedAvailability } from '../engine/schedule';
@@ -941,5 +942,25 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(streakClaim.statement).toContain('aerobic defaults are multiplied by 1.25');
         expect(streakClaim.statement).toContain('Rest/Mobility is multiplied by 2.0');
         expect(streakClaim.statement).toContain('0.35x multiplier');
+    });
+
+    it('aligns performed stimulus quality repetition policy statement with constants and behavior', () => {
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.performedStimulusQualityRepetitionPolicy);
+        expect(STIMULUS_REPETITION_PENALTY).toBe(0.2);
+        expect(STIMULUS_REPETITION_LOOKBACK_DAYS).toBe(1);
+        expect(QUALITY_RECENCY_FAMILIES).toEqual(['tempo', 'threshold', 'vo2', 'race']);
+        expect(claim.statement).toContain(`preference multiplier of ${STIMULUS_REPETITION_PENALTY}`);
+        expect(claim.statement).toContain('D-1');
+        expect(claim.statement).toContain('quality family');
+        expect(claim.statement).toContain('tempo');
+        expect(claim.statement).toContain('threshold');
+        expect(claim.statement).toContain('vo2');
+        expect(claim.statement).toContain('race');
+        expect(claim.statement).toContain('Zone 2 aerobic endurance');
+        expect(claim.statement).toContain('min(templateMultiplier, stimulusMultiplier) = 0.2');
+        expect(claim.statement).toContain('intensityClassificationVersion >= 2');
+        expect(claim.statement).toContain('completedStructuredWorkout');
+        expect(claim.statement).toContain('provider-only');
+        expect(claim.statement).toContain('fulfilsNominatedAnchor === true');
     });
 });

@@ -936,6 +936,27 @@ describe('optimizer — one optimizer invocation context (F4 / 3.3)', () => {
         expect(optContext.options.taperBudgetHistory).toBe(taperBudgetHistory);
     });
 
+    it('preserves explicit stimulus-recency override degradation provenance', () => {
+        const intent = {
+            unresolvedObjectives: [], fatigue: DEFAULT_FATIGUE, periodization: { focusEvent: null },
+            history: [],
+        };
+        const testContext = {
+            trainingSettings: { userId: 'user_1', defaults: { weekdayMaxMinutes: 60, weekendMaxMinutes: 90 } },
+            constraints: { restrictedModalities: [] }, preferences: DEFAULT_PREFERENCES,
+        } as unknown as UserContext;
+
+        const optContext = buildOptimizationContext(intent, testContext, DEFAULT_PREFERENCES, '2026-03-05', {
+            recentPerformedExposures: [{ localDate: '2026-03-04', modality: 'Cycling' }],
+            stimulusRecencyOverridesDegraded: true,
+        });
+
+        expect(optContext.options.stimulusRecencyOverridesDegraded).toBe(true);
+        expect(optContext.options.recentPerformedExposures).toEqual([
+            { localDate: '2026-03-04', modality: 'Cycling' },
+        ]);
+    });
+
     it('returns identical ranking when given identical OptimizationContext', () => {
         const template = ENRICHED_TEMPLATES.find(t => (t.requiredEquipment ?? []).length === 0 && t.modality !== 'Field')!;
         const intent = { unresolvedObjectives: [], fatigue: DEFAULT_FATIGUE, periodization: { focusEvent: null }, history: [] };

@@ -53,9 +53,10 @@ vi.mock('./executionPrescriptionService', () => ({ executionPrescriptionService:
 vi.mock('./sessionOccurrenceService', () => ({ sessionOccurrenceService: services.occurrence }));
 
 import { resolveWorkoutPrescription } from '../workouts/prescription';
-import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch, prepareUnplannedSessionLaunch } from './sessionAuthoringService';
+import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch, prepareUnplannedSessionLaunch, resolveScaledLaunchCeilingMinutes } from './sessionAuthoringService';
 import type { SessionDefinition } from '../sessions/models';
 import type { ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
+import type { ExternalPlanSessionV6 } from '../sessions/externalPlanV6';
 
 beforeEach(() => {
     services.store.clear();
@@ -248,6 +249,120 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
             duration: { min: 60, max: 60 },
         });
         expect(savedPrescription.createdAt).toBe('2026-09-06T12:00:00.000Z');
+    });
+
+    it('freezes only the exact v6 reduced definition when adjudication requests scale', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const authored = externalPlan.session.definition;
+        const reducedDefinition: SessionDefinition = {
+            ...authored,
+            summary: 'Reduced session',
+            duration: { min: 30, max: 30 },
+            blocks: authored.blocks.map(block => ({
+                ...block,
+                steps: block.steps.map(step => ({ ...step, dose: { kind: 'duration', seconds: 90 } })),
+            })),
+        };
+        const v6Session: ExternalPlanSessionV6 = {
+            ...externalPlan.session,
+            scaling: { reducible: true, reducedDefinition },
+        };
+        const launch = await prepareExternalPlanSessionLaunch('u1', {
+            ...externalPlan,
+            session: v6Session,
+        }, { useReducedDefinition: true, scaleVolume: 0.5, date: '2026-09-06', now: '2026-09-06T12:00:00.000Z' });
+
+        expect(launch.definition).toEqual(reducedDefinition);
+        const saved = services.prescription.savePrescription.mock.calls.at(-1)?.[1];
+        expect(saved?.blocks).toEqual(reducedDefinition.blocks);
+        expect(saved?.blocks).not.toEqual(authored.blocks);
+    });
+
+    it('does not allow scale to launch an older plan without an exact reduced definition', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        await expect(prepareExternalPlanSessionLaunch('u1', externalPlan, {
+            useReducedDefinition: true,
+            date: '2026-09-06',
+        })).rejects.toThrow(/requires an exact structured reducedDefinition/);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
+    it('withholds an exact reduced definition that exceeds today\'s scaled duration ceiling', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const reducedDefinition: SessionDefinition = {
+            ...externalPlan.session.definition,
+            duration: { min: 30, max: 30 },
+        };
+        await expect(prepareExternalPlanSessionLaunch('u1', {
+            ...externalPlan,
+            session: { ...externalPlan.session, scaling: { reducible: true, reducedDefinition } },
+        }, { useReducedDefinition: true, scaleVolume: 0.4, date: '2026-09-06' }))
+            .rejects.toThrow(/exceeds today's approved duration ceiling/);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
+    it('requires a current ceiling and checks explicit timed steps against it', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const reducedDefinition: SessionDefinition = {
+            ...externalPlan.session.definition,
+            duration: { min: 10, max: 20 },
+            blocks: externalPlan.session.definition.blocks.map((block, blockIndex) => blockIndex === 0 ? {
+                ...block,
+                steps: block.steps.map((step, stepIndex) => stepIndex === 0
+                    ? { ...step, dose: { kind: 'duration' as const, seconds: 3600 } }
+                    : step),
+            } : block),
+        };
+        const session = { ...externalPlan.session, scaling: { reducible: true, reducedDefinition } };
+        await expect(prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, { useReducedDefinition: true }))
+            .rejects.toThrow(/execution volume/);
+        await expect(prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, {
+            useReducedDefinition: true, scaleVolume: 0.4,
+        })).rejects.toThrow(/exceeds today's approved duration ceiling/);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
+    it('rejects non-positive, non-finite, and inflated scaled execution volumes', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const reducedDefinition: SessionDefinition = {
+            ...externalPlan.session.definition,
+            summary: 'Reduced session',
+            duration: { min: 30, max: 30 },
+        };
+        const session: ExternalPlanSessionV6 = {
+            ...externalPlan.session,
+            scaling: { reducible: true, reducedDefinition },
+        };
+
+        for (const scaleVolume of [0, 1.01, Number.NaN, Number.POSITIVE_INFINITY]) {
+            await expect(prepareExternalPlanSessionLaunch('u1', {
+                ...externalPlan,
+                session,
+            }, { useReducedDefinition: true, scaleVolume }))
+                .rejects.toThrow(/execution volume/);
+        }
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
+    it('counts timed work for every authored block round', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const reducedDefinition: SessionDefinition = {
+            ...externalPlan.session.definition,
+            duration: { min: 10, max: 20 },
+            blocks: externalPlan.session.definition.blocks.map((block, blockIndex) => blockIndex === 0 ? {
+                ...block,
+                rounds: 3,
+                steps: block.steps.map((step, stepIndex) => stepIndex === 0
+                    ? { ...step, dose: { kind: 'duration' as const, seconds: 9 * 60 } }
+                    : step),
+            } : block),
+        };
+        await expect(prepareExternalPlanSessionLaunch('u1', {
+            ...externalPlan,
+            session: { ...externalPlan.session, scaling: { reducible: true, reducedDefinition } },
+        }, { useReducedDefinition: true, scaleVolume: 0.4 }))
+            .rejects.toThrow(/exceeds today's approved duration ceiling/);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
     });
 
     it('creates and binds an external-plan occurrence when date is provided in options', async () => {
@@ -495,5 +610,199 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         });
 
         await expect(prepareExternalPlanSessionLaunch('u1', externalPlan)).rejects.toThrow();
+    });
+
+    // PR-B (#893 WP3.2): exact scaled-execution pins. No policy change -- these prove the
+    // binding boundary, not new logic.
+    function makeReducedDefinition(base: SessionDefinition): SessionDefinition {
+        return {
+            ...base,
+            summary: 'Reduced session',
+            duration: { min: 30, max: 30 },
+            blocks: base.blocks.map(block => ({
+                ...block,
+                steps: block.steps.map(step => ({ ...step, dose: { kind: 'duration', seconds: 90 } })),
+            })),
+        };
+    }
+
+    it('binds a scaled hash that differs from the full-definition hash for the same source', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const authored = externalPlan.session.definition;
+        const reducedDefinition = makeReducedDefinition(authored);
+        const v6Session: ExternalPlanSessionV6 = {
+            ...externalPlan.session,
+            scaling: { reducible: true, reducedDefinition },
+        };
+
+        const scaled = await prepareExternalPlanSessionLaunch('u1', {
+            ...externalPlan,
+            session: v6Session,
+        }, { useReducedDefinition: true, scaleVolume: 0.5, date: '2026-09-06', now: '2026-09-06T12:00:00.000Z' });
+        const full = await prepareExternalPlanSessionLaunch('u1', externalPlan, {
+            date: '2026-09-06',
+            now: '2026-09-06T12:00:00.000Z',
+        });
+
+        // Dose identity, not just dose numbers: the exact reduced bytes are frozen, the
+        // source stays the same, and the two content-addressed hashes differ.
+        expect(scaled.definition).toEqual(reducedDefinition);
+        expect(scaled.binding.sessionSource).toEqual(full.binding.sessionSource);
+        expect(scaled.binding.prescriptionHash).not.toBe(full.binding.prescriptionHash);
+        expect(services.store.get(scaled.binding.prescriptionHash)?.blocks).toEqual(reducedDefinition.blocks);
+        expect(services.store.get(full.binding.prescriptionHash)?.blocks).toEqual(authored.blocks);
+    });
+
+    it('launches a v5-inherited structured session under proceed with exact source provenance', async () => {
+        // v5 reuses the v4 session contract unchanged, so a definition-bearing session
+        // without scaling launches through the same canonical path with the same exact
+        // source identity -- the regression the schema literal risked.
+        const externalPlan = makeV4ExternalPlan();
+        const launch = await prepareExternalPlanSessionLaunch('u1', externalPlan, {
+            date: '2026-09-06',
+            now: '2026-09-06T12:00:00.000Z',
+        });
+
+        expect(launch.definition).toEqual(externalPlan.session.definition);
+        expect(launch.binding.sessionSource).toEqual({
+            kind: 'external_plan',
+            planId: 'plan-xyz',
+            revision: 2,
+            sessionId: 'session-101',
+            contentHash: 'c'.repeat(64),
+        });
+        expect(launch.binding.occurrenceId).toBe('occ-ext-created');
+        expect(launch.binding.prescriptionHash).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('rejects scale for a v5-shaped session whose scaling carries only a free-text reducedSummary', async () => {
+        // v5 reuses the v4 session contract: scaling may carry reducible/reducedSummary/
+        // fallback context, but never an executable reducedDefinition. The free-text
+        // summary must never be parsed into steps -- scale fails closed instead.
+        const externalPlan = makeV4ExternalPlan();
+        const session: ExternalPlanSessionV4 = {
+            ...externalPlan.session,
+            scaling: { reducible: true, reducedSummary: 'Shorter version when tired', minimumUsefulDurationMin: 20 },
+        };
+
+        await expect(prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, {
+            useReducedDefinition: true,
+            scaleVolume: 0.5,
+            date: '2026-09-06',
+        })).rejects.toThrow(/requires an exact structured reducedDefinition/);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
+    it('rejects scale when the author marked the session irreducible despite carried reduced bytes', async () => {
+        // Import validation already rejects `reducedDefinition` without `reducible: true`;
+        // hand-built bytes bypassing the validator must fail at the execution boundary too.
+        const externalPlan = makeV4ExternalPlan();
+        const reducedDefinition = makeReducedDefinition(externalPlan.session.definition);
+        const session: ExternalPlanSessionV6 = {
+            ...externalPlan.session,
+            scaling: { reducible: false, reducedDefinition },
+        };
+
+        await expect(prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, {
+            useReducedDefinition: true,
+            scaleVolume: 0.5,
+            date: '2026-09-06',
+        })).rejects.toThrow(/reducible: true/);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['id', { id: 'renamed-id' }, /retain the authored session definition id/],
+        ['intent', { intent: 'recovery' }, /retain the authored session intent/],
+        ['dominantModality', { dominantModality: 'strength' }, /retain the authored dominant modality/],
+    ] as const)('rejects a scaled reduced definition that renames the authored %s', async (_field, tamper, message) => {
+        // Mirrors `externalPlanV6.ts`'s retention rules at the execution boundary: a
+        // reduced form that changes identity is not the coach's reduced form.
+        const externalPlan = makeV4ExternalPlan();
+        const reducedDefinition: SessionDefinition = {
+            ...makeReducedDefinition(externalPlan.session.definition),
+            ...tamper,
+        };
+        const session: ExternalPlanSessionV6 = {
+            ...externalPlan.session,
+            scaling: { reducible: true, reducedDefinition },
+        };
+
+        await expect(prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, {
+            useReducedDefinition: true,
+            scaleVolume: 0.5,
+            date: '2026-09-06',
+        })).rejects.toThrow(message);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
+    it('binds the full definition under proceed even when a reduced form is present', async () => {
+        // Guards the `useReducedDefinition ? reduced : full` assignment against a future
+        // refactor "preferring" the reduced form: proceed must never bind reduced bytes.
+        const externalPlan = makeV4ExternalPlan();
+        const authored = externalPlan.session.definition;
+        const session: ExternalPlanSessionV6 = {
+            ...externalPlan.session,
+            scaling: { reducible: true, reducedDefinition: makeReducedDefinition(authored) },
+        };
+
+        const withReducedPresent = await prepareExternalPlanSessionLaunch('u1', { ...externalPlan, session }, {
+            date: '2026-09-06',
+            now: '2026-09-06T12:00:00.000Z',
+        });
+        const withoutReduced = await prepareExternalPlanSessionLaunch('u1', externalPlan, {
+            date: '2026-09-06',
+            now: '2026-09-06T12:00:00.000Z',
+        });
+
+        expect(withReducedPresent.definition).toEqual(authored);
+        expect(withReducedPresent.binding.prescriptionHash).toBe(withoutReduced.binding.prescriptionHash);
+        expect(services.store.get(withReducedPresent.binding.prescriptionHash)?.blocks).toEqual(authored.blocks);
+    });
+
+    it('never rewrites a frozen prescription when a later revision is prepared for the same plan', async () => {
+        // B3 (WP4.1 PR-B slice): revision 2 arrives with new content; re-preparing the
+        // revision 1 source still yields the identical hash and leaves the stored
+        // revision 1 document untouched (write-once identity, not latest-header).
+        const revision1 = makeV4ExternalPlan();
+        const first = await prepareExternalPlanSessionLaunch('u1', revision1, {
+            date: '2026-09-06',
+            now: '2026-09-06T10:00:00.000Z',
+        });
+
+        const revision2Definition: SessionDefinition = {
+            ...revision1.session.definition,
+            title: 'VO2 Max Intervals (harder)',
+            summary: '6x3min intervals at 115% FTP',
+        };
+        const revision2 = {
+            ...revision1,
+            revision: 3,
+            contentHash: 'd'.repeat(64),
+            session: { ...revision1.session, definition: revision2Definition },
+        };
+        const second = await prepareExternalPlanSessionLaunch('u1', revision2, {
+            date: '2026-09-06',
+            now: '2026-09-06T10:05:00.000Z',
+        });
+        expect(second.binding.prescriptionHash).not.toBe(first.binding.prescriptionHash);
+
+        const relaunch = await prepareExternalPlanSessionLaunch('u1', revision1, {
+            date: '2026-09-06',
+            now: '2026-09-06T11:00:00.000Z',
+        });
+        expect(relaunch.binding.prescriptionHash).toBe(first.binding.prescriptionHash);
+        expect(relaunch.binding.occurrenceId).toBe(first.binding.occurrenceId);
+        expect(services.store.get(first.binding.prescriptionHash)?.createdAt).toBe('2026-09-06T10:00:00.000Z');
+    });
+
+    describe('resolveScaledLaunchCeilingMinutes', () => {
+        it('pins the approved gate-duration formula and rejects caller inflation/invalid dose', () => {
+            expect(resolveScaledLaunchCeilingMinutes(60, 0.5)).toBe(30);
+            expect(resolveScaledLaunchCeilingMinutes(45, 1)).toBe(45);
+            expect(() => resolveScaledLaunchCeilingMinutes(60, 0)).toThrow(/execution volume/);
+            expect(() => resolveScaledLaunchCeilingMinutes(60, 1.01)).toThrow(/execution volume/);
+            expect(() => resolveScaledLaunchCeilingMinutes(Number.NaN, 0.5)).toThrow(/gating duration/);
+        });
     });
 });

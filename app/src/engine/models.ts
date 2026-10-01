@@ -624,6 +624,16 @@ export interface ExternalPlanPlacement {
     updatedAt: string;
 }
 
+/** Immutable date authority for one stored external-plan revision. */
+export interface ExternalPlanRevisionActivation {
+    userId: string;
+    planId: string;
+    revision: number;
+    contentHash: string;
+    effectiveFrom: string;
+    activatedAt: string;
+}
+
 /** Stored header for a plan across its revisions. */
 export interface ExternalPlanHeader {
     userId: string;
@@ -1044,6 +1054,8 @@ export interface Recommendation {
     recommendationAudit?: RecommendationAudit;
     /** Engine trace retained only long enough to create the compact persisted audit. */
     decisionTrace?: {
+        /** Runtime diagnostics; excluded from the compact persisted audit. */
+        stimulusRecency?: import('./stimulusRecency').StimulusRecencyDecisionTrace;
         policyVersion: string;
         candidateScores: Array<{
             templateId: string;
@@ -1051,6 +1063,7 @@ export interface Recommendation {
             excludedReasons: string[];
             benefitScore?: number;
             costPenalty?: number;
+            stimulusRecency?: import('./stimulusRecency').CandidateStimulusRecencyTrace;
         }>;
         /** Phase 5.6: contributor objectives dropped from this decision's microcycle
          *  because they fell inadmissible during the taper authority's taper window -- see
@@ -1790,6 +1803,18 @@ export interface DailyRecommendation {
     };
 }
 
+/**
+ * PR-C (#893 WP5.2): a persisted recommendation plus the adjudicator's exact
+ * persisted decision. `engineVerdict` is written by `recommendationService.ts`
+ * `saveRecommendationInternal` as evidence-only metadata (Phase 9.0) and kept
+ * by `parseDailyRecommendation` on read; legacy documents predate it. The
+ * `mode` fallback (`resolveEngineShadowVerdict`) must never substitute for a
+ * missing verdict in round-trip labeling: it maps `recover` to `defer` and
+ * would fabricate gate replacements on pre-verdict documents. Replaces the
+ * local `DailyRecommendation & { engineVerdict?: ShadowVerdict }` widenings.
+ */
+export type DailyRecommendationWithVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
+
 /** Discriminated intensity gauge for one logged strength set (ADR-0021 D-GAUGE). `rir` and
  *  `rpe_rts` measure the same failure-proximity construct in different vocabulary and are
  *  mutually convertible -- but only at READ time; the persisted value is always exactly
@@ -2102,6 +2127,13 @@ export interface CompletedTrainingEvent {
     /** Issue #809: the dimension the default cost row was indexed by (session dose) when it
      *  differs from the stimulus `intensity`. Absent means cost follows `intensity`. */
     costIntensity?: CompletedTrainingIntensity;
+    /** Provider-neutral Garmin semantic classification preserved when no athlete override
+     * replaced it. These fields are provenance; exact authored/structured semantics remain
+     * stronger wherever they are available. */
+    stimulusDomain?: ActivityStimulusDomain;
+    sessionCost?: ActivitySessionCost;
+    intensityEvidence?: string;
+    intensityClassificationVersion?: number;
     trainingEffect: number | null;
     estimatedCost: WorkoutCostProfile;
     estimatedStimulus: Partial<WorkoutStimulusProfile>;

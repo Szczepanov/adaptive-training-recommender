@@ -614,6 +614,42 @@ describe('SessionExecutionService', () => {
             });
         });
 
+        describe('external execution identity across abandon (PR-B, #893 WP4.1)', () => {
+            it('retains occurrenceId + sessionSource + prescriptionHash when an external execution is abandoned', async () => {
+                // Identity, not outcome: the round-trip proof survives a partial/abandoned
+                // run. Full partial/abandoned semantics belong to PR-C/PR-E.
+                firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+                const tx = makeTransactionMock();
+                const sessionSource = {
+                    kind: 'external_plan', planId: 'plan-xyz', revision: 2,
+                    sessionId: 'session-101', contentHash: 'c'.repeat(64),
+                };
+
+                const exec = await service.startExecution(USER_ID, 'exec-external', {
+                    sessionSource: sessionSource as never,
+                    date: '2026-09-06',
+                    occurrenceId: 'occ-ext-created',
+                    prescriptionHash: 'p'.repeat(64),
+                });
+
+                expect(exec).toMatchObject({
+                    sessionSource, occurrenceId: 'occ-ext-created', prescriptionHash: 'p'.repeat(64),
+                });
+                const [, created] = tx.set.mock.calls[0] as [unknown, Record<string, unknown>];
+                expect(created).toMatchObject({
+                    sessionSource, occurrenceId: 'occ-ext-created', prescriptionHash: 'p'.repeat(64),
+                });
+
+                await service.transitionExecution(USER_ID, 'exec-external', 'abandoned');
+                const [, patch, options] = firestore.setDoc.mock.calls[0] as [unknown, Record<string, unknown>, Record<string, unknown>];
+                expect(patch).toMatchObject({ state: 'abandoned' });
+                expect(patch).not.toHaveProperty('occurrenceId');
+                expect(patch).not.toHaveProperty('sessionSource');
+                expect(patch).not.toHaveProperty('prescriptionHash');
+                expect(options).toEqual({ merge: true });
+            });
+        });
+
         describe('findExecutionByOccurrenceId', () => {
             it('queries session_executions by occurrenceId and returns the most recent matching execution', async () => {
                 firestore.query.mockImplementation((coll, ...clauses) => ({ coll, clauses }));

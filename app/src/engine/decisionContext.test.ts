@@ -190,3 +190,17 @@ describe('decision context record', () => {
             .rejects.toThrow('Decision context exceeds Firestore payload limit');
     });
 });
+
+
+describe('degraded performed-training provenance', () => {
+    it('captures override read degradation and rejects malformed flags', async () => {
+        const record = await createDecisionContext(input({
+            performedTrainingFacts: { ...facts(), overridesDegraded: true },
+        }));
+        expect(record.performedTrainingFacts?.overridesDegraded).toBe(true);
+        await expect(validateDecisionContext(record, identity)).resolves.toEqual(record);
+        await expect(createDecisionContext(input({
+            performedTrainingFacts: { ...facts(), overridesDegraded: 'true' as never },
+        }))).rejects.toThrow();
+    });
+});

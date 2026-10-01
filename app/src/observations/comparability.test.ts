@@ -146,4 +146,65 @@ describe('OV1 protocol validation and comparable series', () => {
             baseContext,
         )).rejects.toThrow(/Unsupported comparison canonicalization version/);
     });
+
+    it('enforces series changes, context-only retention, and identifier canonicalization for new dimensions (WP1.3)', async () => {
+        const { BENCH_PRESS_1RM_PROTOCOL, WALL_TOUCH_CMJ_PROTOCOL } = await import('./physicalCapitalProtocols');
+
+        // equipment_setup_id is series-defining for bench 1RM; warmup_revision is context-only
+        const benchBase = await buildComparisonSeries(
+            'strength_1rm_kg',
+            'kg',
+            BENCH_PRESS_1RM_PROTOCOL,
+            { equipment_setup_id: 'RACK-STATION-A', warmup_revision: 'WU-STRENGTH-1' },
+        );
+        const benchCanonicalized = await buildComparisonSeries(
+            'strength_1rm_kg',
+            'kg',
+            BENCH_PRESS_1RM_PROTOCOL,
+            { equipment_setup_id: '  rack-station-a  ', warmup_revision: 'wu-strength-1' },
+        );
+        expect(benchBase.key).toBe(benchCanonicalized.key);
+        expect(areComparisonSeriesComparable(benchBase, benchCanonicalized)).toBe(true);
+
+        const benchDifferentSetup = await buildComparisonSeries(
+            'strength_1rm_kg',
+            'kg',
+            BENCH_PRESS_1RM_PROTOCOL,
+            { equipment_setup_id: 'rack-station-b', warmup_revision: 'WU-STRENGTH-1' },
+        );
+        expect(benchDifferentSetup.key).not.toBe(benchBase.key);
+        expect(areComparisonSeriesComparable(benchBase, benchDifferentSetup)).toBe(false);
+
+        const benchContextOnlyChange = await buildComparisonSeries(
+            'strength_1rm_kg',
+            'kg',
+            BENCH_PRESS_1RM_PROTOCOL,
+            { equipment_setup_id: 'RACK-STATION-A', warmup_revision: 'WU-STRENGTH-RAMP-2' },
+        );
+        expect(benchContextOnlyChange.key).toBe(benchBase.key);
+
+        // measurement_method_id is series-defining for wall-touch CMJ
+        const cmjBase = await buildComparisonSeries(
+            'wall_touch_cmj_height_cm',
+            'cm',
+            WALL_TOUCH_CMJ_PROTOCOL,
+            { measurement_method_id: 'WALL-TOUCH-CHALK' },
+        );
+        const cmjCanonicalized = await buildComparisonSeries(
+            'wall_touch_cmj_height_cm',
+            'cm',
+            WALL_TOUCH_CMJ_PROTOCOL,
+            { measurement_method_id: '  wall-touch-chalk  ' },
+        );
+        expect(cmjBase.key).toBe(cmjCanonicalized.key);
+
+        const cmjDifferentMethod = await buildComparisonSeries(
+            'wall_touch_cmj_height_cm',
+            'cm',
+            WALL_TOUCH_CMJ_PROTOCOL,
+            { measurement_method_id: 'contact-mat' },
+        );
+        expect(cmjDifferentMethod.key).not.toBe(cmjBase.key);
+        expect(areComparisonSeriesComparable(cmjBase, cmjDifferentMethod)).toBe(false);
+    });
 });

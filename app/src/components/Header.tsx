@@ -10,6 +10,7 @@ import {
 import { getAuthInstance } from '../firebase';
 import { buildInfo } from '../buildInfo';
 import { GarminSyncBadge } from './GarminSyncBadge';
+import { clearAllAssessmentDrafts } from '../utils/assessmentDraftStorage';
 
 interface HeaderProps {
   screen: Screen;
@@ -57,9 +58,10 @@ export const Header: React.FC<HeaderProps> = ({
   const handleLogout = async () => {
     const { signOut } = await import('firebase/auth');
     await signOut(getAuthInstance());
+    clearAllAssessmentDrafts();
   };
 
-  const buildTitle = `Git commit ${buildInfo.gitSha}${buildInfo.dirty ? ' (local working tree has uncommitted changes)' : ''}`;
+  const buildTitle = `Git commit ${buildInfo.gitSha}${buildInfo.dirty ? ' (local working tree has uncommitted changes)' : ''}${buildInfo.builtAtFormatted ? `\nDeployed ${buildInfo.builtAtFormatted}` : ''}`;
 
   // Daily-loop primaries own the desktop top level (#482), mirroring the
   // mobile bottom bar. Every other destination lives in the More overflow
@@ -146,10 +148,18 @@ export const Header: React.FC<HeaderProps> = ({
                 <div
                   className="dropdown-item"
                   title={buildTitle}
-                  aria-label={`Build ${buildInfo.label}`}
+                  aria-label={`Build ${buildInfo.label}${buildInfo.builtAtFormatted ? `, deployed ${buildInfo.builtAtFormatted}` : ''}`}
                   style={{ cursor: 'default', opacity: 0.72 }}
                 >
-                  <span className="item-icon">ℹ️</span> Build {buildInfo.label}
+                  <span className="item-icon">ℹ️</span>
+                  <div className="item-text">
+                    <span className="item-title">Build {buildInfo.label}</span>
+                    {buildInfo.builtAtFormatted && (
+                      <span className="item-sub">
+                        {buildInfo.dirty ? `${buildInfo.builtAtFormatted} (local changes)` : buildInfo.builtAtFormatted}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="dropdown-divider" />
                 <button className="dropdown-item logout" onClick={handleLogout}>

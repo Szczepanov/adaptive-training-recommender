@@ -18,6 +18,7 @@
  */
 import type {
     DailyRecommendation,
+    DailyRecommendationWithVerdict,
     DailySubjectiveCheckin,
     FixedActivity,
     PlanningMode,
@@ -139,11 +140,9 @@ function byPrimaryOrder(left: BriefAuthoredSession, right: BriefAuthoredSession)
     return PRIORITY_RANK[left.priority] - PRIORITY_RANK[right.priority] || left.sessionId.localeCompare(right.sessionId);
 }
 
-type PersistedWithVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
-
 function persistedVerdict(recommendation: DailyRecommendation): ShadowVerdict {
     // Same rule as shadowLog.ts: exact persisted verdict first, legacy mode mapping second.
-    return (recommendation as PersistedWithVerdict).engineVerdict
+    return (recommendation as DailyRecommendationWithVerdict).engineVerdict
         ?? resolveEngineShadowVerdict(recommendation.mode);
 }
 

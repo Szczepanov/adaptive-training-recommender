@@ -1,7 +1,9 @@
 import { isExternalPlanOccurrence, type SessionDefinition, type ExecutionPrescription, type SessionReferenceBinding, type OccurrenceWindowBinding } from '../sessions/models';
 import type { PreparedSessionLaunch } from '../sessions/sessionLaunch';
 import type { WorkoutPrescription } from '../workouts/models';
+import type { ExternalPlanSessionV2 } from '../sessions/externalPlanV2';
 import type { ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
+import type { ExternalPlanSessionV6 } from '../sessions/externalPlanV6';
 import { validateSessionDefinition } from '../sessions/validation';
 import { adaptCatalogPrescriptionToSessionDefinition, createExecutionPrescriptionFromCatalog } from '../sessions/catalogSessionAdapter';
 import { executionPrescriptionService } from './executionPrescriptionService';
@@ -20,6 +22,26 @@ function displayMetadataFor(definition: SessionDefinition): NonNullable<Executio
         ...(definition.dominantModality !== undefined ? { dominantModality: definition.dominantModality } : {}),
         ...(definition.duration !== undefined ? { duration: definition.duration } : {}),
     };
+}
+
+function maxNumericRange(value: number | { min: number; max: number }): number {
+    return typeof value === 'number' ? value : value.max;
+}
+
+function explicitDurationSeconds(definition: SessionDefinition): number {
+    return definition.blocks.reduce((total, block) => total + block.steps.reduce((blockTotal, step) => {
+        const sets = step.dose && 'sets' in step.dose ? step.dose.sets ?? 1 : 1;
+        const sideMultiplier = step.laterality === 'per_side' ? 2 : 1;
+        const doseSeconds = step.dose?.kind === 'duration' ? maxNumericRange(step.dose.seconds) * sets * sideMultiplier : 0;
+        const restSeconds = step.rest === undefined ? 0 : maxNumericRange(step.rest) * sets * sideMultiplier;
+        const alternativeSeconds = (step.alternatives ?? []).reduce((sum, alternative) => {
+            const alternativeSets = alternative.dose && 'sets' in alternative.dose ? alternative.dose.sets ?? 1 : 1;
+            return sum + (alternative.dose?.kind === 'duration'
+                ? maxNumericRange(alternative.dose.seconds) * alternativeSets * sideMultiplier
+                : 0);
+        }, 0);
+        return blockTotal + doseSeconds + restSeconds + alternativeSeconds;
+    }, 0) * (block.rounds === undefined ? 1 : maxNumericRange(block.rounds)), 0);
 }
 
 /**
@@ -190,6 +212,22 @@ export async function prepareAuthoredOccurrenceLaunch(
     };
 }
 
+/**
+ * Provenance for a scaled launch's duration ceiling (PR-B, #893 WP3.2): the approved gate
+ * duration is always the session's own `gating.durationMin` scaled by the adjudicated
+ * execution-volume fraction. The execution boundary owns this derivation so callers cannot
+ * inflate a precomputed minute ceiling.
+ */
+export function resolveScaledLaunchCeilingMinutes(gatingDurationMin: number, doseVolume: number): number {
+    if (!Number.isFinite(gatingDurationMin) || gatingDurationMin <= 0) {
+        throw new Error('A scaled external-plan launch requires a positive finite gating duration.');
+    }
+    if (!Number.isFinite(doseVolume) || doseVolume <= 0 || doseVolume > 1) {
+        throw new Error('A scaled external-plan launch requires an approved execution volume in (0, 1].');
+    }
+    return gatingDurationMin * doseVolume;
+}
+
 export interface PrepareExternalPlanSessionLaunchOptions {
     summaryOverride?: string;
     now?: string;
@@ -200,10 +238,14 @@ export interface PrepareExternalPlanSessionLaunchOptions {
      * alongside `date` (occurrence creation); ignored when `occurrenceId` is supplied
      * directly, since an existing occurrence's `windowBinding` is already immutable. */
     windowBinding?: OccurrenceWindowBinding;
+    /** Scale only from the exact reducedDefinition carried by v6. */
+    useReducedDefinition?: boolean;
+    /** Adjudicated execution-volume fraction for today's exact scale verdict. */
+    scaleVolume?: number;
 }
 
 /**
- * Freezes the execution-prescription snapshot for a v4 external-plan session (ADR-0036
+ * Freezes the execution-prescription snapshot for a structured external-plan session (ADR-0036
  * H4). A supplied date creates/resolves an external-plan occurrence idempotently. A
  * supplied occurrenceId is read back and verified against the exact external source (and
  * date when supplied) before it can be attached to the launch binding. Target-event
@@ -220,7 +262,7 @@ export async function prepareExternalPlanSessionLaunch(
         planId: string;
         revision: number;
         contentHash: string;
-        session: ExternalPlanSessionV4;
+        session: ExternalPlanSessionV2 | ExternalPlanSessionV4 | ExternalPlanSessionV6;
     },
     summaryOverrideOrOptions?: string | PrepareExternalPlanSessionLaunchOptions,
     nowFallback = new Date().toISOString(),
@@ -239,9 +281,43 @@ export async function prepareExternalPlanSessionLaunch(
 
     const now = options.now ?? nowFallback;
 
-    const definition = externalPlan.session.definition;
-    // Defense in depth: already validated at import time (validateExternalSessionV2,
-    // reused unchanged by v4), but every other launch path re-validates too.
+    const reducedDefinition = externalPlan.session.scaling && 'reducedDefinition' in externalPlan.session.scaling
+        ? externalPlan.session.scaling.reducedDefinition
+        : undefined;
+    if (options.useReducedDefinition && !reducedDefinition) {
+        throw new Error('A scaled external-plan session requires an exact structured reducedDefinition.');
+    }
+    // Execution-boundary mirror of `externalPlanV6.ts`'s import contract (PR-B, #893 WP3.2):
+    // a scaled launch is only ever the coach's own reduced form. Import validation already
+    // rejects a `reducedDefinition` without `reducible: true` and one that renames the
+    // authored identity, but the authoring layer accepts hand-built sessions, so it
+    // re-enforces both rules here -- before any dose check -- and fails closed.
+    if (options.useReducedDefinition && externalPlan.session.scaling?.reducible !== true) {
+        throw new Error('A scaled external-plan launch requires reducible: true with an exact structured reducedDefinition.');
+    }
+    if (options.useReducedDefinition && reducedDefinition) {
+        const fullDefinition = externalPlan.session.definition;
+        if (reducedDefinition.id !== fullDefinition.id) {
+            throw new Error('Reduced definition must retain the authored session definition id.');
+        }
+        if (reducedDefinition.intent !== fullDefinition.intent) {
+            throw new Error('Reduced definition must retain the authored session intent.');
+        }
+        if (reducedDefinition.dominantModality !== fullDefinition.dominantModality) {
+            throw new Error('Reduced definition must retain the authored dominant modality.');
+        }
+    }
+    const maxDurationMinutes = options.useReducedDefinition
+        ? resolveScaledLaunchCeilingMinutes(externalPlan.session.gating.durationMin, options.scaleVolume ?? Number.NaN)
+        : undefined;
+    const definition = options.useReducedDefinition ? reducedDefinition! : externalPlan.session.definition;
+    if (options.useReducedDefinition && maxDurationMinutes !== undefined
+        && (!definition.duration
+            || definition.duration.max > maxDurationMinutes
+            || explicitDurationSeconds(definition) > maxDurationMinutes * 60)) {
+        throw new Error('The exact reduced definition exceeds today\'s approved duration ceiling.');
+    }
+    // Defense in depth: revalidate the exact executable definition, including v6's scaled form.
     const validation = validateSessionDefinition(definition);
     if (!validation.ok) {
         throw new Error(validation.issues.map(issue => `${issue.path}: ${issue.message}`).join('\n'));

@@ -14,14 +14,15 @@ import { resolvePlanningContext } from '../engine/planningMode';
 import { resolveExecutionDose } from '../engine/dose';
 import { resolveAvailability } from '../engine/schedule';
 import { adjudicateAuthoredSession, createAuthoredSessionTemplate, estimateAuthoredSessionSystemicCost } from '../engine/authoredSessionGates';
-import type { AuthoredPlanBlock, BodyRegion, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, FixedActivity, ShadowVerdict } from '../engine/models';
+import type { AuthoredPlanBlock, Recommendation, NextDayPotentialPlan, DailyRecommendation, DailyRecommendationWithVerdict, DecisionJournalEntry, FixedActivity } from '../engine/models';
 import { isManualOccurrence, type SessionReferenceBinding } from '../sessions/models';
 import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
 import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
 import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch } from '../services/sessionAuthoringService';
-import { isV4Plan, type ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
+import { isBundleCapableExternalPlan } from '../sessions/externalPlanV2';
+import { canLaunchExternalPlanSession } from '../sessions/sessionLaunch';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { fixedActivityService } from '../services/fixedActivityService';
 import { scheduleWindowService } from '../services/scheduleWindowService';
@@ -61,7 +62,11 @@ import { POLICY_VERSION } from '../engine/policy';
 import { checkinService } from '../services/checkinService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionResponseService } from '../services/sessionResponseService';
-import { relevantFollowupRegions } from '../responses/followupSchedule';
+import {
+  relevantFollowupRegions,
+  resolvePendingNextMorningFollowups,
+  type SessionFollowupRegions,
+} from '../responses/followupSchedule';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
 import { AdherencePrompt, type AdherenceAnswer } from './AdherencePrompt';
 import { DecisionJournalCard } from './DecisionJournalCard';
@@ -155,7 +160,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
    * between that evaluation and the tap (plan step 11); cleared alongside the statuses. */
   const [bundleMemberInputRevision, setBundleMemberInputRevision] = useState<DashboardInputRevision | null>(null);
   const [additionalSessionNotice, setAdditionalSessionNotice] = useState<string | null>(null);
-  const [hasPendingSessionResponse, setHasPendingSessionResponse] = useState(false);
+  const [hasPendingNextMorningFollowup, setHasPendingNextMorningFollowup] = useState(false);
   const pendingAdherenceRef = useRef(pendingAdherence);
   useEffect(() => { pendingAdherenceRef.current = pendingAdherence; }, [pendingAdherence]);
 
@@ -166,7 +171,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
       decisionJournalService.getEntry(userId, resolved.date)
         .then(existing => {
           if (!existing || existing.actualVerdict) return;
-          const persisted = resolved.recommendation as DailyRecommendation & { engineVerdict?: ShadowVerdict };
+          const persisted = resolved.recommendation as DailyRecommendationWithVerdict;
           const exactVerdict = persisted.engineVerdict ?? resolveEngineShadowVerdict(persisted.mode);
           if (exactVerdict === 'advisory') return;
           return decisionJournalService.recordActualVerdict(userId, resolved.date, exactVerdict);
@@ -180,26 +185,55 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
 
   useEffect(() => {
     if (!decisionInput) {
-      setHasPendingSessionResponse(false);
+      setHasPendingNextMorningFollowup(false);
       return;
     }
     let cancelled = false;
     const today = decisionInput.date;
     const yesterday = getPreviousLocalDateString(today);
-    Promise.all([
-      checkinService.getCheckin(userId, today),
-      checkinService.getCheckin(userId, yesterday),
-    ]).then(([todayCheckin, yesterdayCheckin]) => {
-      if (cancelled) return;
-      const pending = Object.entries(yesterdayCheckin?.tissueResponses ?? {}).some(([region, response]) =>
-        !!response
-        && !!(response.painDuringTraining || response.afterTrainingState || response.sourceSessionRef)
-        && !todayCheckin?.tissueResponses?.[region as BodyRegion]?.nextMorningReaction,
-      );
-      setHasPendingSessionResponse(pending);
-    }).catch(() => {
-      if (!cancelled) setHasPendingSessionResponse(false);
-    });
+
+    (async () => {
+      try {
+        const [todayCheckin, yesterdayCheckin] = await Promise.all([
+          checkinService.getCheckin(userId, today),
+          checkinService.getCheckin(userId, yesterday),
+        ]);
+
+        const sessionDerived: SessionFollowupRegions[] = [];
+        try {
+          const { executions } = await sessionExecutionService.getExecutionsInRange(userId, yesterday, today);
+          for (const { execution, entries } of executions) {
+            if (execution.state === 'in_progress') continue;
+            const exerciseIds: string[] = [];
+            for (const entry of entries) {
+              if (entry.exerciseRef?.kind === 'catalog') exerciseIds.push(entry.exerciseRef.exerciseId);
+            }
+            const facets = exerciseIds
+              .map(id => EXERCISES_BY_ID.get(id)?.facets)
+              .filter((facet): facet is NonNullable<typeof facet> => !!facet);
+            const regions = relevantFollowupRegions(facets);
+            if (regions.length === 0) continue;
+            sessionDerived.push({
+              sessionRef: { kind: 'execution', id: execution.executionId, date: execution.date },
+              regions,
+            });
+          }
+        } catch {
+          // Keep manual tissue follow-up detection available even if execution history is
+          // temporarily unavailable. Check-in follows the same fail-soft M5.2 rule.
+        }
+
+        if (cancelled) return;
+        setHasPendingNextMorningFollowup(resolvePendingNextMorningFollowups(
+          yesterdayCheckin?.tissueResponses,
+          todayCheckin?.tissueResponses,
+          sessionDerived,
+        ).length > 0);
+      } catch {
+        if (!cancelled) setHasPendingNextMorningFollowup(false);
+      }
+    })();
+
     return () => { cancelled = true; };
   }, [userId, decisionInput]);
 
@@ -552,25 +586,25 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
               memberState: todaysExternalPlanMemberState,
             }
           : undefined;
-        const activeV4Plan = activeExternal && isV4Plan(activeExternal.plan) ? activeExternal.plan : null;
-        const bundlePlacement = (activeExternal && activeV4Plan && bundleContext)
+        const activeBundlePlan = activeExternal && isBundleCapableExternalPlan(activeExternal.plan) ? activeExternal.plan : null;
+        const bundlePlacement = (activeExternal && activeBundlePlan && bundleContext)
           ? resolveIntradayBundlePlacement(activeExternal, input.date, bundleContext)
           : null;
         // Persist the placement display record and immutable D-AUDIT replay snapshot
         // best-effort; neither write may delay or fail today's recommendation.
         if (bundlePlacement) {
           void recordIntradayBundlePlacement(userId, input.date, bundlePlacement);
-          const replayInputs = activeExternal && activeV4Plan && bundleContext
+          const replayInputs = activeExternal && activeBundlePlan && bundleContext
             ? intradayBundlePlacementReplayInputs(activeExternal, input.date, bundleContext, bundlePlacement.bundleId)
             : null;
-          if (activeExternal && activeV4Plan && bundleContext && replayInputs) {
+          if (activeExternal && activeBundlePlan && bundleContext && replayInputs) {
             void recordIntradayBundlePlacementAudit({
               userId,
               date: input.date,
               asOf: new Date().toISOString(),
               policyVersion: POLICY_VERSION,
-              plan: { planId: activeV4Plan.planId, revision: activeV4Plan.revision, contentHash: activeExternal.header.contentHash },
-              planSnapshot: activeV4Plan,
+              plan: { planId: activeBundlePlan.planId, revision: activeBundlePlan.revision, contentHash: activeExternal.header.contentHash },
+              planSnapshot: activeBundlePlan,
               bundleId: bundlePlacement.bundleId,
               scheduleWindows: todaysScheduleWindows,
               fixedActivities: planWeekActivities,
@@ -648,29 +682,26 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           }
         } else if (
           activeExternal &&
-          isV4Plan(activeExternal.plan) &&
-          recommendationWithPrescription.externalVerdict?.decision === 'proceed' &&
-          recommendationWithPrescription.externalPrescription?.isEvent !== true &&
-          recommendationWithPrescription.template.id !== 'rest_01' &&
           externalContext &&
-          'definition' in externalContext.session
+          canLaunchExternalPlanSession(externalContext.session, {
+            verdictDecision: recommendationWithPrescription.externalVerdict?.decision,
+            isEvent: recommendationWithPrescription.externalPrescription?.isEvent,
+            templateId: recommendationWithPrescription.template.id,
+          })
         ) {
           try {
-            // #909: only `proceed` can bind the imported structured definition as-is.
-            // A `scale` verdict currently carries a reduced summary/dose but no structured
-            // reduced SessionDefinition. Binding the original definition would execute the
-            // full authored dose; deriving executable steps from free text would violate
-            // ADR-0019's no-parse boundary. Scaled days therefore remain display-only until
-            // the external-plan schema explicitly carries a reduced executable definition.
+            const verdict = recommendationWithPrescription.externalVerdict;
+            const useReducedDefinition = verdict?.decision === 'scale';
+            const scaleVolume = useReducedDefinition ? verdict?.executionDose?.volume : undefined;
             const launch = await prepareExternalPlanSessionLaunch(
               userId,
               {
                 planId: externalContext.planId,
                 revision: externalContext.revision,
                 contentHash: externalContext.contentHash,
-                session: externalContext.session as ExternalPlanSessionV4,
+                session: externalContext.session,
               },
-              { date: input.date },
+              { date: input.date, useReducedDefinition, scaleVolume },
             );
             if (!isCurrent()) return;
             primarySession = launch.binding;
@@ -810,7 +841,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
             acceptedSameDayMinutes += targetDef.duration?.min ?? 45;
           }
 
-          if (activeExternal && isV4Plan(activeExternal.plan) && bundlePlacement?.outcome === 'placed') {
+          if (activeExternal && activeBundlePlan && bundlePlacement?.outcome === 'placed') {
             const ceilings: LedgerCeilings = {
               dailyMinuteCeiling: availability.maxTimeMinutes,
               dailySystemicCostCeiling: Math.max(0, 1 - availability.reservedCapacityCost),
@@ -1401,11 +1432,11 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
 
   return (
     <div className="home-container">
-      {hasPendingSessionResponse && (
+      {hasPendingNextMorningFollowup && (
         <aside className="session-response-reminder" aria-label="Session response follow-up">
           <div>
-            <strong>How did yesterday&apos;s session feel this morning?</strong>
-            <span>Your response helps keep future recommendations appropriately cautious.</span>
+            <strong>A next-morning follow-up is waiting.</strong>
+            <span>Record how the relevant area feels this morning so today&apos;s plan uses the latest tissue response.</span>
           </div>
           <button type="button" onClick={() => onNavigate('checkin')}>Answer follow-up</button>
         </aside>

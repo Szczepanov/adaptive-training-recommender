@@ -4,9 +4,9 @@ import { buildMicrocycleState, getUnresolvedObjectives } from './microcycle';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { evaluatePeriodizationPhase, resolveMultiEventObjectives, type DroppedContributorObjective, type PeriodizationResult } from './periodization';
-import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
+import { resolveActivePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import { resolvePlanningContext, type PlanningContext } from './planningMode';
+import { resolvePlanningContext, usesEvergreenProgramming, type PlanningContext } from './planningMode';
 import { applyPlanningOverlays } from './planningOverlays';
 import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import { coverageSetFor, EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
@@ -29,7 +29,9 @@ export function eventStrengthSupportSessions(
     planningContext: PlanningContext,
     profile: TrainingIntentProfile | null | undefined,
 ): number {
-    if (planningContext.mode !== 'event_directed' || profile?.priorities.includes('strength_muscle') !== true) return 0;
+    if (planningContext.mode !== 'event_directed'
+        || planningContext.eventStrategy !== 'structured_plan'
+        || profile?.priorities.includes('strength_muscle') !== true) return 0;
     const floor = strengthRequirement('required').floor;
     const authoredPrimaryStrengthRoles = 1;
     return floor?.dose.unit === 'sessions' ? Math.max(0, floor.dose.value - authoredPrimaryStrengthRoles) : 0;
@@ -105,8 +107,8 @@ function boundedPlannedDose(volume: number, intensity: number): PlannedDose {
     };
 }
 
-function needsEstablishedPerformanceEvidence(planningContext: PlanningContext): boolean {
-    if (planningContext.mode !== 'evergreen') return false;
+export function needsEstablishedPerformanceEvidence(planningContext: PlanningContext): boolean {
+    if (!usesEvergreenProgramming(planningContext)) return false;
     // Issue #805 (D-A): the capability opt-in deliberately does not widen this evidence. It
     // feeds athlete-state inference, the aerobic floor, power and quality priors, and opting in
     // must not change those decisions; capability cadence reads the #804 mechanical evidence.
@@ -117,7 +119,7 @@ function needsEstablishedPerformanceEvidence(planningContext: PlanningContext): 
 /** Issue #804: whether this intent can emit a mechanical requirement, and therefore whether
  * orchestration must source mechanical exposure evidence and tissue check-ins. */
 export function mechanicalEvidenceRequired(planningContext: PlanningContext): boolean {
-    return planningContext.mode === 'evergreen'
+    return usesEvergreenProgramming(planningContext)
         && canEmitMechanicalRequirement(
             planningContext.profile.priorities,
             planningContext.profile.capabilityMaintenance?.enabled === true,
@@ -130,9 +132,16 @@ export function mechanicalEvidenceRequiredFor(
     trainingIntentProfile: TrainingIntentProfile | null,
     events: UserEvent[],
     date: string,
+    authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
 ): boolean {
     return mechanicalEvidenceRequired(
-        resolvePlanningContext(trainingIntentProfile, evaluatePeriodizationPhase(events, date), date),
+        resolvePlanningContext(
+            trainingIntentProfile,
+            evaluatePeriodizationPhase(events, date),
+            date,
+            null,
+            authoredPlanBlocks,
+        ),
     );
 }
 
@@ -160,15 +169,23 @@ function resolveIntentAuthorities(
     trainingIntentProfile: TrainingIntentProfile | null,
 ) {
     const eventPeriodization = evaluatePeriodizationPhase(events, date);
-    const planningContext = resolvePlanningContext(trainingIntentProfile, eventPeriodization, date);
+    const planningContext = resolvePlanningContext(
+        trainingIntentProfile,
+        eventPeriodization,
+        date,
+        null,
+        authoredPlanBlocks,
+    );
     // PlanningContext is the sole authority for whether event periodization applies.
     const periodization = planningContext.mode === 'event_directed'
         ? eventPeriodization
         : evaluatePeriodizationPhase([], date);
     const strengthSupportSessions = eventStrengthSupportSessions(planningContext, trainingIntentProfile);
-    const planDefinition = resolvePlanDefinitionForEvent(
-        periodization.focusEvent, authoredPlanBlocks, strengthSupportSessions,
-    );
+    const planDefinition = planningContext.eventStrategy === 'structured_plan'
+        ? resolveActivePlanDefinitionForEvent(
+            periodization.focusEvent, date, authoredPlanBlocks, strengthSupportSessions,
+        )
+        : null;
     const performedFactsCoverageDescriptor = planDefinition
         ? coverageSetFor(planDefinition.coverageSetId)
         : EVERGREEN_GENERAL_COVERAGE_SET;

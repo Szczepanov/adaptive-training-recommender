@@ -7,6 +7,9 @@ const artifactDir = resolve('artifacts/visual-review/latest');
 const entriesPath = resolve(artifactDir, 'entries.ndjson');
 
 async function visitScenario(page: Page, scenario: VisualScenario): Promise<void> {
+  if (scenario.id === 'plan-recovery-authority-exit') {
+    await page.clock.setFixedTime('2026-09-12T08:00:00+02:00');
+  }
   await page.goto(`/visual.html?scenario=${scenario.id}`);
   await expect(page.locator(`[data-visual-scenario="${scenario.id}"]`)).toBeVisible();
   // The scenario container mounts before the dashboard has resolved its decision. A fixed
@@ -60,6 +63,9 @@ test.describe.configure({ mode: 'serial' });
 for (const scenario of VISUAL_SCENARIOS) {
   test(`captures ${scenario.id}`, async ({ page }) => {
     await visitScenario(page, scenario);
+    if (scenario.id === 'plan-recovery-authority-exit') {
+      await expect(page.getByRole('region', { name: 'Roles planned beyond this forecast' })).toBeVisible();
+    }
 
     if (scenario.id === 'checkin-new' || scenario.id === 'checkin-complete') {
       for (const selector of [

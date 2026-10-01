@@ -42,20 +42,28 @@ OV/outcome evidence and optimizer/planner/rules/weekly-allocation modules in eit
 where that would grant outcome evidence production selection authority. A future
 outcome-to-planning rule requires a separate ADR/ship decision.
 
-## V1 metric registry
+## Metric registry (app/src/observations/registry.ts)
 
-The current registry is deliberately cycling-first and bounded:
+The outcome metric registry is bounded and strongly typed:
 
-| Metric | Unit | Direction |
-|---|---|---|
-| `cycling_tt_20m_mean_power_w` | `W` | higher is better |
-| `cycling_tt_4m_mean_power_w` | `W` | higher is better |
-| `cycling_submax_mean_hr_bpm` | `bpm` | context only |
-| `cycling_submax_rpe` | `rpe` | context only |
+| Metric | Unit | Direction | Domain |
+|---|---|---|---|
+| `cycling_tt_20m_mean_power_w` | `W` | higher is better | cycling |
+| `cycling_tt_4m_mean_power_w` | `W` | higher is better | cycling |
+| `cycling_submax_mean_hr_bpm` | `bpm` | context only | cycling |
+| `cycling_submax_rpe` | `rpe` | context only | cycling |
+| `strength_1rm_kg` | `kg` | higher is better | strength |
+| `sprint_elapsed_time_s` | `s` | lower is better | field |
+| `cycling_5s_peak_power_w` | `W` | higher is better | cycling |
+| `standing_broad_jump_distance_cm` | `cm` | higher is better | field |
+| `wall_touch_cmj_height_cm` | `cm` | higher is better | field |
+| `seated_medball_throw_distance_m` | `m` | higher is better | field |
+| `cycling_sprint_1s_peak_power_w` | `W` | higher is better | cycling |
+| `cycling_sprint_5s_mean_power_w` | `W` | higher is better | cycling |
 
-Raw 20-minute mean power is stored as the raw metric. It is not named or persisted as FTP.
-Context-only metrics cannot be promoted to primary/secondary outcome bindings by the registry
-contract.
+Raw 20-minute mean power is stored as the raw metric. It is not named or persisted as FTP. Context-only metrics cannot be promoted to primary/secondary outcome bindings by the registry contract.
+
+**Pre-existing rules/registry drift fix:** prior to Issue #897 / ADR-0046, `strength_1rm_kg`, `sprint_elapsed_time_s`, `cycling_5s_peak_power_w`, and dimension `timing_method` existed in TypeScript but were omitted from the production `firestore.rules` allowlist, preventing bundled persistence of those metrics. The rules and TypeScript registry now share strict parity via `firestore.rules` `outcomeMetricUnits()` and `comparisonDimensionIds()`, verified by `firestoreRulesParity.test.ts`.
 
 ## Measurement protocols and comparison series
 
@@ -115,6 +123,47 @@ scheduled -> in_progress -> completed
 
 Purpose is one of `familiarization | baseline | checkpoint | post_block`. Competition is not
 an assessment-attempt purpose.
+
+### Raw assessment trials (ADR-0046)
+
+```text
+assessment_attempts/{attemptId}/trials/{trialId}
+```
+
+Multi-trial protocols retain repeated attempts and load/velocity evidence as immutable raw trial records below the assessment attempt:
+
+* **Deterministic document identity:** `trialId` is computed by `assessmentTrialIdFor(ordinal, correctionIndex)`. The original attempt for an ordinal is `trial-{ordinal}` (`correctionIndex: 0`); corrections take `trial-{ordinal}-c{correctionIndex}` (`correctionIndex >= 1`). Concurrent corrections for the same ordinal collide on the same document identity instead of silently forking the chain.
+* **Attempt lifecycle binding:** enforced by `assertAssessmentTrialWriteAllowed` and Firestore rules `hasValidAssessmentTrial`:
+  * `scheduled` — no trial writes allowed;
+  * `in_progress` — normal capture window; both new ordinals and corrections are admitted;
+  * `completed` — only append-only supersessions/corrections (`correctionIndex > 0`, non-empty `correctionReason`, referencing an existing superseded trial) are admitted; new ordinals are rejected;
+  * `abandoned` — no trial writes allowed; any previously recorded trials remain for audit but are never reduced into canonical benchmarks.
+* **Capture contract on the protocol revision:** multi-trial protocols declare an immutable `MeasurementProtocol.capture` specification on the protocol revision document (ADR-0046 D-AT-PROTOCOL). This carries `plannedTrials`, `maxTrials`, raw `fields` (`AssessmentTrialFieldDefinition[]`), deterministic `reducers` (`AssessmentReducer[]`), and `reducerVersion` (`ASSESSMENT_REDUCER_VERSION_V1`).
+* **Deterministic reducers:** `reduceAssessmentTrials` transforms active trial evidence into canonical benchmark outcomes:
+  * `max_valid`: best valid attempt (standing broad jump, medicine-ball throw, cycling sprint 1 s peak power, cycling sprint 5 s mean power);
+  * `highest_successful_load`: highest valid successful attempt (bench press 1RM, back squat 1RM);
+  * `max_valid_difference`: maximum difference between two fields within a trial (wall-touch CMJ touch height minus standing reach).
+* **Typed derivation provenance:** `deriveTrialObservationRevisions` creates canonical `MetricObservationRevision` records with `source: 'derived'`, `algorithmVersion: 'assessment-reducer-v1'`, and `derivedFromEvidenceRefs` containing `{ kind: 'assessment_trial', assessmentAttemptId, trialId }` references per metric. Trial IDs never enter `derivedFromObservationIds` (which is reserved for observation-to-observation derivations).
+* **Trial-capture protocols are derive-only:** a protocol revision that declares `capture` cannot receive hand-typed canonical values. `adaptManualObservation` refuses it, and the `hasValidTrialCaptureBinding` Firestore rule requires `source: 'derived'`, `derivedFromEvidenceRefs`, an `algorithmVersion` equal to the protocol's `capture.reducerVersion`, and an `in_progress` or `completed` parent attempt. Summary-only protocols keep manual entry.
+* **Capture orchestration (`assessmentCaptureService`):** coordinates the multi-step persistence transaction for trial assessments:
+  1. `createTrials` writes all trial rows atomically (idempotent on exact retry);
+  2. `listTrialsForAttempt` loads every stored trial (including superseded records); on an `in_progress` attempt, a resubmission that omits an already-stored trial fails closed, because stored trials cannot be removed;
+  3. `deriveTrialObservationRevisions` evaluates deterministic reducers and emits canonical revisions with typed trial evidence refs;
+  4. `metricObservationService.createInitialRevision` creates head and revision-1 for each derived metric (or skips metrics without valid trials if `allowMissingBenchmark` is explicitly confirmed);
+  5. `assessmentAttemptService.completeAttempt` finalizes the attempt.
+  A `scheduled` attempt is refused (trials are only recorded once the linked execution has started it), and an unconfirmed missing benchmark returns without completing, keeping the athlete in capture.
+  Post-completion trial corrections derive the candidate trial set (stored trials plus the superseding record, `correctionIndex + 1`) in memory first. If that would leave a previously benchmarked metric without any valid trial, the service fails closed *before any write*. Otherwise `AssessmentTrialService.commitCorrection` commits the immutable superseding trial and every changed/new canonical observation revision/head in **one Firestore transaction**. A stale head or failed write therefore commits none of the correction set. Corrected revisions inherit the superseded revision's `sourceRef` execution provenance.
+* **Protocol-revision continuity:** published capture protocols are never edited in place. The six PR-A physical-capital contracts remain available as revision 1; the athlete-facing October baseline catalog uses revision 2 after the v1.6 execution cross-check. Diagnostic export enumerates all supported immutable revisions and binds each attempt only to its exact `protocolRef.revision`, so historical revision-1 evidence remains auditable beside revision-2 evidence.
+* **Baseline-purpose semantics:** `purpose=familiarization` is retained as evidence but is not eligible to become an implicit longitudinal baseline. Export/progress prefers an explicit `baseline` attempt and only falls back to a valid non-familiarization attempt when no explicit baseline exists.
+* **Progress lifecycle eligibility:** diagnostic export retains partial, abandoned and completed evidence for audit, but only canonical observations whose parent assessment attempt is `completed` may participate in longitudinal progress. An observation left behind by an interrupted multi-step save cannot silently become a benchmark.
+* **Diagnostic JSON export (`assessmentExport` / `assessmentExportService`):** exports the complete bounded #897 physical-capital assessment evidence for supported immutable protocol revisions in a deterministic, byte-stable JSON format (`assessment_diagnostic_export_v1`):
+  * excludes the athlete's Firebase UID, but remains personal health data (trial values, free-text notes and reasons, device identifiers);
+  * retains all measurement protocols and attempts;
+  * retains every trial, including superseded corrections with the full chain;
+  * includes full observation revision chains (not just latest heads);
+  * computes longitudinal progress via `deriveProgress()` across comparable attempts;
+  * formats keys with canonical recursive code-unit sorting (`canonicalJson.ts`).
+* **Rules parity and immutability:** rules deny trial `update` and `delete` (`allow update, delete: if false`). Parity between rules allowlists/bounds and domain constants is verified by `firestoreRulesParity.test.ts` and `assessmentTrialRules.emulator.test.ts`.
 
 ### Metric observations
 
@@ -212,12 +261,70 @@ evidence assembled by `app/src/outcomes/blockProcessEvidence.ts`. `app/src/outco
 (added 2026-08-26 as part of SV4/SV5) is a further additive extension over this evidence — it is
 tested to never move the block verdict, preserving the authority boundary below.
 
+## Raw assessment trial evidence (ADR-0046 / Issue #897)
+
+Multi-trial and velocity-capable protocols persist immutable raw trial records below the user-scoped
+attempt:
+
+```text
+users/{userId}/assessment_attempts/{attemptId}/trials/{trialId}
+```
+
+* **Contract:** Capture schemas and deterministic reducers are declared on the immutable `MeasurementProtocol`
+  revision document itself (`D-AT-PROTOCOL`).
+* **Immutability & Correction:** Trials are write-once in `firestore.rules`. Corrections are append-only
+  with supersession pointers (`supersedesTrialId`), re-deriving the canonical benchmark as revision $N+1$
+  without mutating historical evidence.
+
+## Series-level progress and history (Issue #897 PR C)
+
+Longitudinal progress is evaluated strictly per comparison series (`D1`), where:
+
+$$\text{Series} = (\text{protocolId}, \text{protocolRevision}, \text{metricId}, \text{comparisonSeriesKey})$$
+
+* **Shared progress module (`app/src/observations/assessmentProgress.ts`):** Evaluates progress within each
+  series using `deriveProgress` (`ov-progress-v1`). The history projection groups by the full D1 identity,
+  including **metricId**, so a multi-metric protocol such as the seated cycling sprint cannot compare 1 s peak
+  power against 5 s mean power. Different protocol revisions or setup keys are shown as separate series with an
+  explicit non-comparability marker (`protocol revision changed` or `setup/method changed`), never as false
+  numerical zero changes.
+* **Baseline/latest contract (`D3`):** Within a series, baseline defaults to the earliest valid observation from a
+  `purpose: 'baseline'` attempt, or the earliest valid non-familiarization observation. Familiarization remains
+  auditable evidence but is excluded from both baseline and longitudinal latest/progress selection.
+* **Honest reporting (`D4`):** When no reliability estimate exists (the normal baseline case), deltas are
+  labelled `"raw change, no reliability estimate"` with status `insufficient_evidence`.
+* **Bounded read model (`D5`, `D6`, `app/src/services/assessmentHistoryService.ts`):** List views read current
+  observation head/revision pairs and attempts without trial queries ($O(0)$ trial reads). The metric selector
+  returns the already-read head with its current revision, avoiding a second per-observation `getHead()` read.
+  Malformed or unreadable records are counted and surfaced rather than silently dropped (`D6`). Detailed trials
+  and revision chains load lazily only for attempt inspection.
+
+## Exports and body-mass-relative context (WP7.1, WP3.4, D8)
+
+* **Normalized CSV export (`app/src/observations/assessmentCsvExport.ts`):** Emits standard CSV rows with
+  deterministic sorting and 24 canonical columns, including comparison series keys, validity, deltas,
+  and relative context with the exact body-mass source reference. User-controlled device provider/model text
+  is neutralized at the spreadsheet boundary while numeric evidence remains numeric.
+* **Diagnostic JSON export (`assessment_diagnostic_export_v2`):** Schema version 2 groups progress per series
+  rather than per protocol revision, preventing multi-setup comparisons from collapsing into a single series.
+* **Body-mass-relative context (`app/src/anthropometry/bodyMass.ts`):** Relative metrics (sprint W/kg and
+  strength 1RM relative load) derive context strictly from one same-day Warsaw date point. An explicit athlete
+  source choice never silently switches. With no explicit choice, `D-BC-WEIGHT` is provider-first and uses manual
+  only when no usable provider series exists. Provider-series existence is judged over the 28 days before the
+  earliest test date through the latest one (`PROVIDER_BODY_MASS_SERIES_LOOKBACK_DAYS`), not from test days alone.
+  If the provider read fails or returns unreadable rows and no explicit choice exists, the relative value is
+  `"unavailable"` rather than taken from the manual series. Once a source is selected for the read, a missing
+  same-day point does **not** fall back to the other source. Values are never averaged and stale provider carry-forwards are never used.
+  The chosen context retains a stable canonical source reference (`anthropometry_entry:<id>` or
+  `daily_recovery_snapshot:<date>`) for audit/export. If no acceptable same-day record exists, relative context
+  renders `"unavailable"`.
+
 ## Not implemented yet
 
 The following are deliberately absent from the current architecture:
 
 * personal repeatability estimation (OV4.4) — gated on real close-spaced repeat trials;
-* any progress/report dashboard UI (OV6.2) — usage-triggered, not yet justified by real report use;
+* minimal block progress/report UI (OV6.2) — still usage-triggered; #948 adds the separate assessment-history UI, not the OV6.2 block-outcome surface;
 * operational evidence on the real event/block timeline (the remaining OV7.1 data capture plus OV7.2–OV8);
 * automatic recommendation changes based on outcome evidence.
 

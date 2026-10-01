@@ -834,7 +834,7 @@ service cloud.firestore {
 
     function hasValidExternalPlanRevision() {
       let data = request.resource.data;
-      // ADR-0035/0036/0037: rules validate the bounded plan-level storage shape for v3/v4/v5.
+      // ADR-0035/0036/0037: rules validate the bounded plan-level storage shape for v3-v6.
       // The TypeScript import validator remains authoritative for cross-entry invariants such
       // as id/date uniqueness and fixed-session/rest conflicts, which require viewing the
       // two authored lists together. v5's intentBlocks is deliberately kept shallow here
@@ -846,10 +846,11 @@ service cloud.firestore {
         'adaptive-training-recommender/external-plan@3',
         'adaptive-training-recommender/external-plan@4',
         'adaptive-training-recommender/external-plan@5',
+        'adaptive-training-recommender/external-plan@6',
       ];
-      // Only v5 may carry intentBlocks -- v3/v4 keep rejecting it, same as v1/v2 keep
+      // v5/v6 may carry intentBlocks -- v3/v4 keep rejecting it, same as v1/v2 keep
       // rejecting restDays.
-      let isV5 = data.schema == 'adaptive-training-recommender/external-plan@5';
+      let isV5OrV6 = data.schema in ['adaptive-training-recommender/external-plan@5', 'adaptive-training-recommender/external-plan@6'];
       return data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
         && data.schema in [
           'adaptive-training-recommender/external-plan@1',
@@ -857,8 +858,9 @@ service cloud.firestore {
           'adaptive-training-recommender/external-plan@3',
           'adaptive-training-recommender/external-plan@4',
           'adaptive-training-recommender/external-plan@5',
+          'adaptive-training-recommender/external-plan@6',
         ]
-        && (isV5
+        && (isV5OrV6
               ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays', 'intentBlocks'])
                  && data.keys().hasAll(['restDays'])
               : data.schema in restDaySchemas
@@ -870,7 +872,7 @@ service cloud.firestore {
         && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
         && (!(data.schema in restDaySchemas)
           || hasValidExternalRestDirectives(data.restDays, data.weekCount))
-        && (!isV5
+        && (!isV5OrV6
           || !('intentBlocks' in data.keys())
           || (data.intentBlocks is list && data.intentBlocks.size() <= 26))
         && data.sessions is list && data.sessions.size() >= 1 && data.sessions.size() <= 120;
@@ -885,6 +887,37 @@ service cloud.firestore {
         && data.revision is int && data.revision >= 1
         && data.assignments is list && data.assignments.size() <= 120
         && data.updatedAt is string;
+    }
+
+    function hasValidExternalPlanActivation(userId, planId, revisionId) {
+      let data = request.resource.data;
+      let header = getAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)).data;
+      let revision = getAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId)).data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'planId', 'revision', 'contentHash', 'effectiveFrom', 'activatedAt'])
+        && data.keys().hasAll(['userId', 'planId', 'revision', 'contentHash', 'effectiveFrom', 'activatedAt'])
+        && data.planId == planId
+        && data.revision is int && data.revision >= 1
+        && string(data.revision) == revisionId
+        && data.contentHash is string && data.contentHash.matches('^[a-f0-9]{64}$')
+        && isValidActivityDate(data.effectiveFrom)
+        && data.activatedAt is string
+        && existsAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId))
+        && getAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId)).data.planId == planId
+        && getAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId)).data.revision == data.revision
+        && ((existsAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId))
+          && header.planId == planId
+          && header.revision == data.revision
+          && header.contentHash == data.contentHash
+          && data.activatedAt == header.importedAt
+          && (header.get('supersededFrom', null) == data.effectiveFrom
+            || (header.get('supersededFrom', null) == null && revision.startDate == data.effectiveFrom)))
+          || (exists(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId))
+            && get(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)).data.revision == data.revision
+            && get(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)).data.contentHash == data.contentHash
+            && data.activatedAt == get(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)).data.importedAt
+            && (get(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)).data.get('supersededFrom', null) == data.effectiveFrom
+              || (get(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)).data.get('supersededFrom', null) == null && revision.startDate == data.effectiveFrom))));
     }
 
     match /users/{userId}/external_plans/{planId} {
@@ -902,6 +935,22 @@ service cloud.firestore {
           && hasValidExternalPlanRevision()
           && request.resource.data.planId == planId
           && string(request.resource.data.revision) == revisionId;
+        allow update, delete: if false;
+
+        match /placement/{placementId} {
+          allow read: if isOwner(userId);
+          allow create, update: if hasValidExternalPlanPlacement(userId)
+            && placementId == 'current'
+            && request.resource.data.planId == planId
+            && string(request.resource.data.revision) == revisionId
+            && existsAfter(/databases/$(database)/documents/users/$(userId)/external_plans/$(planId)/revisions/$(revisionId));
+          allow delete: if isOwner(userId);
+        }
+      }
+
+      match /activations/{revisionId} {
+        allow read: if isOwner(userId);
+        allow create: if hasValidExternalPlanActivation(userId, planId, revisionId);
         allow update, delete: if false;
       }
 
@@ -2180,19 +2229,51 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Single rules-side source for the OV metric registry (app/src/observations/registry.ts).
+    // Metric ids and units must stay in lockstep with it; firestoreRulesParity.test.ts
+    // compares the two so application validation and persistence cannot drift again.
+    function outcomeMetricUnits() {
+      return {
+        'cycling_tt_20m_mean_power_w': 'W',
+        'cycling_tt_4m_mean_power_w': 'W',
+        'cycling_submax_mean_hr_bpm': 'bpm',
+        'cycling_submax_rpe': 'rpe',
+        'strength_1rm_kg': 'kg',
+        'sprint_elapsed_time_s': 's',
+        'cycling_5s_peak_power_w': 'W',
+        'standing_broad_jump_distance_cm': 'cm',
+        'wall_touch_cmj_height_cm': 'cm',
+        'seated_medball_throw_distance_m': 'm',
+        'cycling_sprint_1s_peak_power_w': 'W',
+        'cycling_sprint_5s_mean_power_w': 'W'
+      };
+    }
+
+    // Mirrors ComparisonDimension / protocols.ts DIMENSIONS; checked by firestoreRulesParity.test.ts.
+    function comparisonDimensionIds() {
+      return ['power_source_id', 'bike_setup_id', 'test_environment', 'course_or_trainer_id', 'duration_seconds', 'start_mode', 'warmup_revision', 'feedback_rule', 'weather_note', 'timing_method', 'measurement_method_id', 'equipment_setup_id'];
+    }
+
     function hasKnownOutcomeMetric(metricId) {
-      return metricId in [
-        'cycling_tt_20m_mean_power_w',
-        'cycling_tt_4m_mean_power_w',
-        'cycling_submax_mean_hr_bpm',
-        'cycling_submax_rpe'
-      ];
+      return metricId is string && metricId in outcomeMetricUnits();
     }
 
     function hasValidOutcomeMetricUnit(metricId, unit) {
-      return (metricId in ['cycling_tt_20m_mean_power_w', 'cycling_tt_4m_mean_power_w'] && unit == 'W')
-        || (metricId == 'cycling_submax_mean_hr_bpm' && unit == 'bpm')
-        || (metricId == 'cycling_submax_rpe' && unit == 'rpe');
+      return hasKnownOutcomeMetric(metricId) && unit == outcomeMetricUnits()[metricId];
+    }
+
+    // ADR-0046 D-AT-PROTOCOL: the bounded multi-trial capture contract persisted on the
+    // immutable protocol revision. Field/reducer semantics are validated by
+    // assessmentCapture.ts; the rules bound shape, sizes and the replayable reducer version.
+    function hasValidAssessmentCapture(capture) {
+      return capture is map
+        && capture.keys().hasOnly(['plannedTrials', 'maxTrials', 'fields', 'reducers', 'reducerVersion'])
+        && capture.keys().hasAll(['plannedTrials', 'maxTrials', 'fields', 'reducers', 'reducerVersion'])
+        && capture.maxTrials is int && capture.maxTrials >= 1 && capture.maxTrials <= 30
+        && capture.plannedTrials is int && capture.plannedTrials >= 1 && capture.plannedTrials <= capture.maxTrials
+        && capture.fields is list && capture.fields.size() >= 1 && capture.fields.size() <= 16
+        && capture.reducers is list && capture.reducers.size() >= 1 && capture.reducers.size() <= 8
+        && capture.reducerVersion == 'assessment-reducer-v1';
     }
 
     function hasValidProtocolRef(userId, protocolRef) {
@@ -2209,9 +2290,9 @@ service cloud.firestore {
       let data = request.resource.data;
       let comparison = data.comparisonContext;
       let familiarization = data.familiarization;
-      let dimensions = ['power_source_id', 'bike_setup_id', 'test_environment', 'course_or_trainer_id', 'duration_seconds', 'start_mode', 'warmup_revision', 'feedback_rule', 'weather_note'];
+      let dimensions = comparisonDimensionIds();
       return isOwner(userId)
-        && data.keys().hasOnly(['id', 'revision', 'title', 'intent', 'metricIds', 'instructions', 'warmupRef', 'comparisonContext', 'familiarization', 'burden', 'expectedRecoveryHours', 'invalidationRules', 'createdAt'])
+        && data.keys().hasOnly(['id', 'revision', 'title', 'intent', 'metricIds', 'instructions', 'warmupRef', 'comparisonContext', 'familiarization', 'burden', 'expectedRecoveryHours', 'invalidationRules', 'capture', 'createdAt'])
         && data.keys().hasAll(['id', 'revision', 'title', 'intent', 'metricIds', 'instructions', 'comparisonContext', 'familiarization', 'burden', 'invalidationRules', 'createdAt'])
         && data.id == protocolId
         && data.id is string && data.id.size() > 0 && data.id.size() <= 128
@@ -2219,7 +2300,7 @@ service cloud.firestore {
         && data.title is string && data.title.size() > 0 && data.title.size() <= 200
         && data.intent == 'testing'
         && data.metricIds is list && data.metricIds.size() >= 1 && data.metricIds.size() <= 8
-        && data.metricIds.hasOnly(['cycling_tt_20m_mean_power_w', 'cycling_tt_4m_mean_power_w', 'cycling_submax_mean_hr_bpm', 'cycling_submax_rpe'])
+        && data.metricIds.hasOnly(outcomeMetricUnits().keys())
         && data.instructions is list && data.instructions.size() <= 64
         && (!('warmupRef' in data) || (data.warmupRef is string && data.warmupRef.size() > 0 && data.warmupRef.size() <= 128))
         && comparison is map
@@ -2240,6 +2321,7 @@ service cloud.firestore {
         && data.burden in ['low', 'moderate', 'high']
         && (!('expectedRecoveryHours' in data) || (data.expectedRecoveryHours is number && data.expectedRecoveryHours >= 0 && data.expectedRecoveryHours <= 336))
         && data.invalidationRules is list && data.invalidationRules.size() <= 32
+        && (!('capture' in data) || hasValidAssessmentCapture(data.capture))
         && data.createdAt is string && data.createdAt.size() > 0;
     }
 
@@ -2335,13 +2417,26 @@ service cloud.firestore {
         && exists(attemptPath)
         && get(attemptPath).data.protocolRef == data.protocolRef
         && get(protocolPath).data.metricIds.hasAny([data.metricId])
-        && get(protocolPath).data.comparisonContext.canonicalizationVersion == data.comparisonCanonicalizationVersion;
+        && get(protocolPath).data.comparisonContext.canonicalizationVersion == data.comparisonCanonicalizationVersion
+        && hasValidTrialCaptureBinding(data, get(protocolPath).data, get(attemptPath).data);
+    }
+
+    // ADR-0046 D-AT-REDUCE / D-AT-CORRECTION: a trial-capture protocol's canonical values are
+    // reducer outputs, never hand-typed summaries. They must be derived from typed trial
+    // evidence under the protocol's own reducer version, and never from an abandoned (or
+    // not-yet-started) attempt. Summary-only protocols are unaffected.
+    function hasValidTrialCaptureBinding(data, protocol, attempt) {
+      return !('capture' in protocol)
+        || (data.source == 'derived'
+          && ('derivedFromEvidenceRefs' in data)
+          && data.algorithmVersion == protocol.capture.reducerVersion
+          && attempt.state in ['in_progress', 'completed']);
     }
 
     function hasValidMetricObservationRevision(userId, observationKey, revisionId) {
       let data = request.resource.data;
       return isOwner(userId)
-        && data.keys().hasOnly(['observationKey', 'revision', 'supersedesRevision', 'metricId', 'value', 'unit', 'observedAt', 'source', 'sourceRef', 'device', 'protocolRef', 'comparisonSeriesKey', 'comparisonCanonicalizationVersion', 'assessmentAttemptId', 'validity', 'invalidReason', 'context', 'derivedFromObservationIds', 'algorithmVersion', 'correctionReason', 'createdAt'])
+        && data.keys().hasOnly(['observationKey', 'revision', 'supersedesRevision', 'metricId', 'value', 'unit', 'observedAt', 'source', 'sourceRef', 'device', 'protocolRef', 'comparisonSeriesKey', 'comparisonCanonicalizationVersion', 'assessmentAttemptId', 'validity', 'invalidReason', 'context', 'derivedFromObservationIds', 'derivedFromEvidenceRefs', 'algorithmVersion', 'correctionReason', 'createdAt'])
         && data.keys().hasAll(['observationKey', 'revision', 'metricId', 'value', 'unit', 'observedAt', 'source', 'protocolRef', 'comparisonSeriesKey', 'comparisonCanonicalizationVersion', 'assessmentAttemptId', 'validity', 'context', 'createdAt'])
         && data.observationKey == observationKey
         && data.assessmentAttemptId is string && data.assessmentAttemptId.size() > 0 && data.assessmentAttemptId.size() <= 160
@@ -2364,12 +2459,25 @@ service cloud.firestore {
         && (data.validity != 'invalid' || ('invalidReason' in data))
         && (!('invalidReason' in data) || (data.invalidReason is string && data.invalidReason.size() > 0 && data.invalidReason.size() <= 2000))
         && data.context is map && data.context.size() <= 64
-        && ((data.source == 'derived'
-          && ('derivedFromObservationIds' in data) && data.derivedFromObservationIds is list && data.derivedFromObservationIds.size() >= 1 && data.derivedFromObservationIds.size() <= 32
-          && ('algorithmVersion' in data) && data.algorithmVersion is string && data.algorithmVersion.size() > 0 && data.algorithmVersion.size() <= 128)
-          || (data.source != 'derived' && !('derivedFromObservationIds' in data) && !('algorithmVersion' in data)))
+        && hasValidDerivationProvenance(data)
         && data.createdAt is string && data.createdAt.size() > 0
         && hasValidObservationProtocolBinding(userId, data);
+    }
+
+    // ADR-0046 D-AT-REDUCE: a derived revision names its sources as observation IDs
+    // (observation-to-observation derivation), typed trial evidence references (trial-only
+    // derivation) or both. Non-derived revisions carry neither. Per-reference shape and
+    // same-attempt binding are validated fail-closed by validation.ts before any write.
+    function hasValidDerivationProvenance(data) {
+      return (data.source == 'derived'
+          && (('derivedFromObservationIds' in data) || ('derivedFromEvidenceRefs' in data))
+          && (!('derivedFromObservationIds' in data) || (data.derivedFromObservationIds is list && data.derivedFromObservationIds.size() >= 1 && data.derivedFromObservationIds.size() <= 32))
+          && (!('derivedFromEvidenceRefs' in data) || (data.derivedFromEvidenceRefs is list && data.derivedFromEvidenceRefs.size() >= 1 && data.derivedFromEvidenceRefs.size() <= 32))
+          && ('algorithmVersion' in data) && data.algorithmVersion is string && data.algorithmVersion.size() > 0 && data.algorithmVersion.size() <= 128)
+        || (data.source != 'derived'
+          && !('derivedFromObservationIds' in data)
+          && !('derivedFromEvidenceRefs' in data)
+          && !('algorithmVersion' in data));
     }
 
     match /users/{userId}/metric_observations/{observationKey} {
@@ -2394,6 +2502,59 @@ service cloud.firestore {
           );
         allow update, delete: if false;
       }
+    }
+
+    function assessmentTrialIdFor(ordinal, correctionIndex) {
+      return correctionIndex == 0
+        ? 'trial-' + string(ordinal)
+        : 'trial-' + string(ordinal) + '-c' + string(correctionIndex);
+    }
+
+    // ADR-0046 D-AT-TRIAL / D-AT-CORRECTION: immutable raw trials below an assessment attempt.
+    // The id is a pure function of (ordinal, correctionIndex), so concurrent corrections of one
+    // ordinal collide on one immutable document instead of forking. New ordinals are admitted
+    // only while the attempt is in progress; a completed attempt admits supersessions only;
+    // scheduled/abandoned attempts admit nothing. Field-level conformance to the protocol
+    // capture schema is enforced by assessmentTrials.ts before any write.
+    function hasValidAssessmentTrial(userId, attemptId, trialId) {
+      let data = request.resource.data;
+      let attemptPath = /databases/$(database)/documents/users/$(userId)/assessment_attempts/$(attemptId);
+      let attempt = get(attemptPath).data;
+      let protocolPath = /databases/$(database)/documents/users/$(userId)/measurement_protocols/$(attempt.protocolRef.id)/revisions/$(string(attempt.protocolRef.revision));
+      return isOwner(userId)
+        && data.keys().hasOnly(['id', 'assessmentAttemptId', 'ordinal', 'correctionIndex', 'supersedesTrialId', 'correctionReason', 'performedAt', 'validity', 'invalidReason', 'values', 'context', 'sourceRef', 'device', 'notes', 'createdAt'])
+        && data.keys().hasAll(['id', 'assessmentAttemptId', 'ordinal', 'correctionIndex', 'validity', 'values', 'context', 'createdAt'])
+        && data.id == trialId
+        && data.assessmentAttemptId == attemptId
+        && data.ordinal is int && data.ordinal >= 1
+        && data.correctionIndex is int && data.correctionIndex >= 0 && data.correctionIndex <= 20
+        && data.id == assessmentTrialIdFor(data.ordinal, data.correctionIndex)
+        && exists(attemptPath)
+        && (attempt.state == 'in_progress' || (attempt.state == 'completed' && data.correctionIndex > 0))
+        && exists(protocolPath)
+        && ('capture' in get(protocolPath).data)
+        && data.ordinal <= get(protocolPath).data.capture.maxTrials
+        && ((data.correctionIndex == 0 && !('supersedesTrialId' in data) && !('correctionReason' in data))
+          || (data.correctionIndex > 0
+            && data.supersedesTrialId == assessmentTrialIdFor(data.ordinal, data.correctionIndex - 1)
+            && existsAfter(/databases/$(database)/documents/users/$(userId)/assessment_attempts/$(attemptId)/trials/$(data.supersedesTrialId))
+            && data.correctionReason is string && data.correctionReason.size() > 0 && data.correctionReason.size() <= 2000))
+        && data.validity in ['valid', 'invalid', 'practice', 'questionable']
+        && (data.validity != 'invalid' || ('invalidReason' in data))
+        && (!('invalidReason' in data) || (data.invalidReason is string && data.invalidReason.size() > 0 && data.invalidReason.size() <= 2000))
+        && (!('performedAt' in data) || (data.performedAt is string && data.performedAt.size() > 0 && data.performedAt.size() <= 64))
+        && data.values is map && data.values.size() <= 16
+        && data.context is map && data.context.size() <= 32
+        && (!('sourceRef' in data) || (data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
+        && (!('device' in data) || hasValidObservationDevice(data.device))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))
+        && data.createdAt is string && data.createdAt.size() > 0 && data.createdAt.size() <= 64;
+    }
+
+    match /users/{userId}/assessment_attempts/{attemptId}/trials/{trialId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidAssessmentTrial(userId, attemptId, trialId);
+      allow update, delete: if false;
     }
 
     function hasValidHealthAnomalyThresholdPolicy(policy) {

@@ -4,7 +4,7 @@ import { workoutForTemplate } from '../workouts/prescription';
 import type { GuardrailKey, ObjectivePriority, SessionTemplate } from './models';
 import type { PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import type { CoverageCreditFact, PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
+import { deriveExactCoverageCredits, type CoverageCreditFact, type PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import type { CompletedExposure } from './trainingHistory';
 import { aerobicVolumeFloorForWorkout, type AerobicVolumeFloor } from './aerobicVolumeFloor';
 import { hasAdjacentMechanicalExposure } from './mechanicalProgression';
@@ -143,6 +143,7 @@ export interface CoverageExposureLike {
     modality?: SessionTemplate['modality'] | string;
     category?: SessionTemplate['category'] | string;
     isReadinessModifiedDose?: boolean;
+    workoutVariantId?: import('../workouts/models').WorkoutVariant['id'];
 }
 
 export type CoverageCreditLike = Pick<CoverageCreditFact,
@@ -157,12 +158,18 @@ export type CoveragePerformedFacts =
         coverageCredits?: readonly CoverageCreditLike[];
     };
 
-export function coverageHistoryFromFacts(performedFacts: CoveragePerformedFacts): CoverageHistoryEntry[] {
+export function coverageHistoryFromFacts(performedFacts: CoveragePerformedFacts,
+    newDescriptor?: CoverageSetDescriptor): CoverageHistoryEntry[] {
     const hasCanonicalCreditLedger = performedFacts.coverageCredits !== undefined;
     const creditsByOccurrence = new Map<string, CoverageHistoryEntry['canonicalCoverageCredits']>();
 
     if (hasCanonicalCreditLedger) {
-        for (const credit of performedFacts.coverageCredits ?? []) {
+        const credits = newDescriptor ? performedFacts.exposures.flatMap(fact => deriveExactCoverageCredits({
+            performedOccurrenceId: fact.performedOccurrenceId ?? '', workoutId: fact.workoutId,
+            workoutVariantId: fact.workoutVariantId, isReadinessModifiedDose: fact.isReadinessModifiedDose,
+            sourceKinds: [],
+        }, newDescriptor)) : performedFacts.coverageCredits ?? [];
+        for (const credit of credits) {
             // PR 3 intentionally enables exact identity only. semantic_confident remains
             // disabled until a separately authored policy defines its threshold/semantics;
             // `none` is observability, never role fulfillment.

@@ -100,6 +100,50 @@ export class AssessmentAttemptService {
         return null;
     }
 
+    /**
+     * Bounded query for WP6.1/WP7.2: list all attempts for one protocol ID,
+     * surfacing any unreadable/malformed attempts instead of silently dropping them (D6).
+     */
+    async listAttemptsForProtocolWithDiagnostics(
+        userId: string,
+        protocolId: string,
+    ): Promise<{ attempts: AssessmentAttempt[]; unreadableCount: number }> {
+        const attempts = query(
+            collection(this.db, 'users', userId, 'assessment_attempts'),
+            where('protocolRef.id', '==', protocolId),
+        );
+        const snapshots = await getDocs(attempts);
+        const candidates: AssessmentAttempt[] = [];
+        let unreadableCount = 0;
+        for (const snapshot of snapshots.docs) {
+            const attempt = snapshot.data() as AssessmentAttempt;
+            try {
+                assertValidAssessmentAttempt(attempt);
+                if (attempt.id === snapshot.id && attempt.protocolRef.id === protocolId) {
+                    candidates.push(attempt);
+                } else {
+                    unreadableCount++;
+                }
+            } catch {
+                unreadableCount++;
+            }
+        }
+        const sorted = candidates.sort((a, b) => {
+            const dateA = a.startedAt ?? `${a.scheduledDate ?? ''}T00:00:00`;
+            const dateB = b.startedAt ?? `${b.scheduledDate ?? ''}T00:00:00`;
+            return dateA.localeCompare(dateB);
+        });
+        return { attempts: sorted, unreadableCount };
+    }
+
+    /**
+     * Bounded query for WP7.2: list all attempts for one protocol ID.
+     */
+    async listAttemptsForProtocol(userId: string, protocolId: string): Promise<AssessmentAttempt[]> {
+        const result = await this.listAttemptsForProtocolWithDiagnostics(userId, protocolId);
+        return result.attempts;
+    }
+
     async startAttempt(userId: string, attemptId: string, startedAt: string): Promise<void> {
         await this.transitionAttempt(userId, attemptId, current => {
             if (current.state !== 'scheduled') throw new Error(`Cannot start assessment from ${current.state}`);

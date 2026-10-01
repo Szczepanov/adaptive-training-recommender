@@ -8,7 +8,11 @@
 > and where the two disagree the code wins. The round-trip against a real generated plan
 > required no schema change. **v2** (`external-plan@2`, M3.6) is documented separately
 > below — v1 remains fully importable and this document's v1 sections are otherwise
-> unchanged.
+> unchanged. New copy/paste external-coach imports emit **v6** (`external-plan@6`), which
+> inherits v5 and adds an optional exact `scaling.reducedDefinition`. Historical v1–v5 plans
+> remain readable; v6 reduced definitions are the only structured scaled form accepted by the
+> launch adapter. Home currently withholds scaled Start even for this valid form
+> ([#949](https://github.com/Szczepanov/adaptive-training-recommender/issues/949)).
 
 The athlete authors a training plan with a general-purpose AI, which emits JSON against
 the schema below. This application imports it, validates it at the persistence boundary,
@@ -189,13 +193,33 @@ This is the external equivalent of the catalog's authored `easierDose`/`harderDo
 `DoseVariation`, and it is what turns a `scale` verdict from a multiplier into an
 athlete-facing reduced prescription.
 
-For `external-plan@2`–`@4`, however, `reducedSummary` and `reducedDurationMin` do **not**
+For `external-plan@2`–`@5`, however, `reducedSummary` and `reducedDurationMin` do **not**
 constitute a second executable `SessionDefinition`. The runner must not parse free text into
 steps, and it must not bind the original full-dose definition under a reduced verdict. Today,
 Home therefore shows the adjudicated reduced summary/dose but withholds structured **Start**
-for `scale`. Executable scaled imports require a future versioned schema/ADR that carries the
-reduced structured definition explicitly; `proceed` remains executable from the imported
-definition as written.
+for `scale`. V6 may include a full `scaling.reducedDefinition` `SessionDefinition`; when present,
+it must retain the authored session id, intent, and dominant modality and is validated through
+the same session-definition boundary as the full definition. The authoring adapter can freeze
+only that exact reduced definition for a `scale` verdict. Home currently withholds Start for all
+scaled external sessions, including valid v6 reduced forms; this integrated launch gap is
+tracked by [#949](https://github.com/Szczepanov/adaptive-training-recommender/issues/949).
+If the reduced definition is absent, scale has no executable structured form at all.
+For `proceed`, the app uses the original definition. Free-text `fallback` remains advisory.
+
+## Revision activation history
+
+Each new immutable revision has an immutable activation record at
+`users/{uid}/external_plans/{planId}/activations/{revision}`. It records `effectiveFrom` in
+Europe/Warsaw local-date form and the revision content hash. A future-effective revision leaves
+its predecessor active before that date. New placement writes are scoped to
+`revisions/{revision}/placement/current`; the legacy `placement/current` document is read only
+when its embedded revision matches. The mutable plan header is a latest-revision index, not the
+historical date-to-revision authority.
+
+A revision is a full replacement for the horizon it declares. Omitted sessions are removed;
+they are not implicitly carried forward from an earlier revision. The import preview therefore
+shows the effective date and the added, changed, removed, and retained session counts before
+confirmation.
 
 `minimumUsefulDurationMin` is the floor below which the session stops being worth doing —
 under it, the verdict becomes `defer` or `skip` rather than a pointless fragment.
@@ -269,13 +293,15 @@ RPE overrides them, which prior block this plan follows on from.
 
 ---
 
-## Storage (proposed)
+## Storage
 
 | Path | Contents |
 |---|---|
 | `users/{userId}/external_plans/{planId}` | Header, `revision`, `contentHash`, `importedAt`, `supersededFrom`. |
-| `users/{userId}/external_plans/{planId}/revisions/{revision}` | The immutable imported document, verbatim. |
-| `users/{userId}/external_plans/{planId}/placement/current` | `{ assignments: [{ sessionId, date, status }], updatedAt }` — the mutable overlay. Bounded by `weekCount ≤ 26` and `sessions ≤ 120`, so it stays one small read serving today, tomorrow, and the week-ahead strip. |
+| `users/{userId}/external_plans/{planId}/revisions/{revision}` | The immutable validated and normalized imported document. |
+| `users/{userId}/external_plans/{planId}/activations/{revision}` | Immutable revision/content-hash binding and `effectiveFrom` date; the date-to-revision authority. |
+| `users/{userId}/external_plans/{planId}/revisions/{revision}/placement/current` | The live mutable placement overlay for this revision: `{ assignments: [{ sessionId, date, status }], updatedAt }` plus ownership and revision fields. Bounded by `weekCount ≤ 26` and `sessions ≤ 120`. |
+| `users/{userId}/external_plans/{planId}/placement/current` | Legacy read-only fallback, accepted only when its embedded revision matches the requested revision. |
 
 `status` is one of `planned` `completed` `moved` `dropped` `superseded`. All paths are
 owner-scoped per ADR-0002, validated in `validation.ts` and enforced independently in
@@ -286,8 +312,8 @@ owner-scoped per ADR-0002, validated in `validation.ts` and enforced independent
 Re-importing the same `planId` with a higher `revision` supersedes it **from a chosen date
 forward** — by default today. Days already adjudicated keep their persisted
 `daily_recommendations` documents and audits unchanged; history is never rewritten. The
-import screen should show a diff (sessions added, removed, moved) before the athlete
-confirms, because an AI asked to "adjust week 5" will routinely rewrite weeks 1–8.
+import screen shows a diff (sessions added, changed, removed, retained and placement changes)
+before the athlete confirms, because an AI asked to "adjust week 5" can rewrite weeks 1–8.
 
 ### Who reschedules
 
@@ -297,6 +323,73 @@ the proposal is surfaced — never applied silently. This matches the posture ev
 else in the engine: a fallback is always labelled as one.
 
 ---
+
+## Structured round trip (#893)
+
+The planning Context Brief supplies context and exact persisted identities to the external coach.
+The coach returns a complete `external-plan@6` JSON revision. The athlete reviews the diff,
+replacement scope, calendar/authority conflicts and **Effective from** date before importing.
+The date cannot precede today in Europe/Warsaw; replaying an existing revision with a different
+effective date fails closed. An identical service retry makes no new writes, while the import
+UI blocks a revision that does not advance the stored revision.
+
+A revision replaces its declared horizon in full: omitted sessions are removed. A tactical
+change to today therefore also carries unchanged future intent when it uses the same `planId`.
+There is no implicit partial-patch contract. Immutable revision bytes and activation metadata
+resolve authority for each date; the latest header is an index. A future-effective successor
+leaves its predecessor in authority before the boundary. Revision-scoped placement retains
+intentional moves and drops after later imports.
+
+The app adjudicates the selected session against its normal safety, readiness and feasibility
+gates. `proceed` uses the full authored definition. The launch adapter accepts `scale` only with
+an explicitly authored, validated `scaling.reducedDefinition` retaining the session identity,
+intent and dominant modality, within the adjudicated duration ceiling. Home currently blocks
+this valid scaled launch ([#949](https://github.com/Szczepanov/adaptive-training-recommender/issues/949)).
+Free-text reductions and fallback suggestions cannot become executable doses. The adapters
+exclude `skip`, `defer` and advisory event inputs from structured execution. In the integrated path
+the skip day's recommendation write still fails: it exceeds the Firestore rules expression budget
+([#950](https://github.com/Szczepanov/adaptive-training-recommender/issues/950),
+[#953](https://github.com/Szczepanov/adaptive-training-recommender/issues/953)).
+
+Home currently prepares the frozen `ExecutionPrescription` and a scheduled external
+`SessionOccurrence` before Start. At Start, the runner binds its `SessionExecution` to the
+exact plan/revision/session/content hash. The desired Start-only occurrence boundary remains
+open in [#951](https://github.com/Szczepanov/adaptive-training-recommender/issues/951).
+`prescriptionHash` identifies the frozen prescription; its `definitionHash` identifies the
+normalized full or reduced definition. These are different hashes. A later plan revision does
+not replace the prescription used by an existing execution, including an abandoned execution.
+
+Completion reconciles the execution into one canonical `PerformedTrainingOccurrence`. Matching
+Garmin/provider evidence enriches that same occurrence on reconciliation; it does not create
+another physical workout or overwrite structured execution authority. The V10 browser proof
+opens Data → Activities and invokes the real `loadCanonicalActivitiesWindow` service because
+the canonical Activities read-model flag is off in the default E2E configuration. It uses real
+reconciliation rather than fabricated linkage. Canonical identities distinguish genuine separate
+workouts, but completing both imported intraday bundle members through Home remains blocked by
+the absent secondary Start card
+([#952](https://github.com/Szczepanov/adaptive-training-recommender/issues/952)).
+
+The next planning brief consumes the canonical planned-versus-performed projection. Its bounded
+rows retain placement, adjudication, athlete action and performance as separate dimensions,
+with occurrence, execution, prescription and performed ids when available. Authored rest can
+report unexpected observed work; a day with an active plan but no authored session/rest renders
+no round-trip row. Missing activity alone is not a miss. Unreadable evidence is unknown, and an
+unreadable replacement archive is reported on the affected row. Service/projector tests pin gate
+and manual replacement labels, but integrated skip persistence and manual replacement attribution
+remain open: [#950](https://github.com/Szczepanov/adaptive-training-recommender/issues/950) and
+[#951](https://github.com/Szczepanov/adaptive-training-recommender/issues/951). A genuine UI manual
+replacement currently leaves the authored row at athlete none rather than attributing the
+completed replacement.
+
+Executable browser proofs live in
+[`external-coach-round-trip.pw.ts`](../app/tests/e2e/external-coach-round-trip.pw.ts),
+[`external-plan-revisions.pw.ts`](../app/tests/e2e/external-plan-revisions.pw.ts),
+[`external-plan-execution-states.pw.ts`](../app/tests/e2e/external-plan-execution-states.pw.ts)
+and the desktop/mobile [`external-verdict.pw.ts`](../app/tests/e2e/external-verdict.pw.ts).
+The [#893 proof ledger](./plans/2026-09-29-issue-893-external-coach-round-trip.md#5-revised-acceptance-criteria-and-proof-ledger)
+records exact test names, verification status and remaining gaps. V4, V7, V8 and full V9 bundle
+completion are issue-linked `test.fixme` regressions; they are not passing proofs. #893 remains
+In progress, independently of the active tests' verification results.
 
 ## Prompt block
 
@@ -478,7 +571,7 @@ corpus (`app/src/sessions/fixtures/`) for worked examples of the richer vocabula
 ### Importing v2
 
 The in-app prompt block (`app/src/components/ExternalPlanImport.tsx`,
-`AI_PROMPT_TEMPLATE`) is the enforcing copy and now asks for `external-plan@2` by default;
+`AI_PROMPT_TEMPLATE`) is the enforcing copy and asks for `external-plan@6` by default;
 this document does not duplicate it verbatim to avoid the two drifting. Paste-in validation
 dispatches on the pasted document's own `schema` literal, so existing v1 JSON — including
 anything saved from the v1 prompt block above — keeps importing unchanged.
