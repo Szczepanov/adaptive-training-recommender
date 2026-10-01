@@ -25,7 +25,10 @@ content.
 
 ## Imported-plan scale verdicts and structured Start
 
-An external-plan `proceed` verdict may bind the imported v2+ `SessionDefinition` as written.
+An external-plan `proceed` verdict may bind the imported v2+ `SessionDefinition` as written,
+and Start launches that binding only while no time-crunch alternative or load adjustment is
+applied: either one keeps the binding but changes the displayed dose, so `MorningDecisionCard`
+withholds Start, Resume and Redo for any imported-plan binding until the adjustment is reset.
 A `scale` verdict is different: executing the original blocks would silently run the full
 authored dose, while deriving replacement steps from free text `reducedSummary`/
 `reducedDurationMin` would violate ADR-0019's no-parse/candidate boundary. The only executable
@@ -36,19 +39,18 @@ Under `scale`, Home composes the launch binding through `sessionAuthoringService
 definition (its own `definitionHash`, distinct from the full definition's) within the adjudicated
 duration ceiling, and fails closed when the session has no reduced form. `MorningDecisionCard`
 offers **Start** for a `scale` verdict only when `sessionLaunch` `isPreparedReducedExternalBinding`
-holds. Home records runtime-only `externalPreparedLaunch` evidence directly from the authoring
-adapter: its variant must be `reduced`, its content-addressed `prescriptionHash` must equal
+holds. Home records runtime-only launch evidence after preparation: the requested variant must be
+`reduced`, its adapter-returned content-addressed `prescriptionHash` must exactly equal
 `primarySession.prescriptionHash`, and that binding must name the same external plan, revision and
-session. This distinction is required because the full and reduced forms deliberately share source
-identity under ADR-0023; source identity alone does not prove which immutable execution snapshot
-will run. The runtime evidence is not persisted separately because the recommendation audit already
-pins the exact `primarySession` binding/prescription hash. A time-crunch alternative or load
-adjustment still supersedes the imported primary binding because it changes the displayed dose
-without freezing another external execution snapshot. If that adjustment resolves to a concrete
-catalog prescription, the catalog adapter freezes and launches that separate snapshot; otherwise
-Start is withheld rather than falling through to the stale imported binding. This fail-closed rule
-applies to `proceed` as well as `scale`. A scale without a reduced form (pre-v6 plans, or v6 sessions that omit it) presents the reduced summary
-and dose with no Start, and `skip`/`defer` never start regardless of any binding.
+session. The imported session must also be `reducible: true` with a structured
+`reducedDefinition`. This extra proof is required by ADR-0023 D-MSNAP because full and reduced
+snapshots deliberately share source identity; plan/revision/session alone cannot prove which
+immutable bytes will run. The runtime evidence is not persisted separately because the durable
+recommendation/audit already pins the exact primary binding and prescription hash. A time-crunch
+alternative or load adjustment still withholds Start, Resume and Redo until reset because it changes
+the displayed dose without freezing another imported snapshot. A scale without a reduced form
+(pre-v6 plans, or v6 sessions that omit it) presents the reduced summary and dose with no Start, and
+`skip`/`defer` never start regardless of any binding.
 `ExternalVerdictBanner` never shows the original detailed step list as if it were the reduced
 workout, and its launch note states which of those cases applies. This is an execution-snapshot
 boundary, not a new recommendation rule, so it does not change `POLICY_VERSION`.

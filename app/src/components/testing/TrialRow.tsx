@@ -41,7 +41,18 @@ export const TrialRow: React.FC<TrialRowProps> = ({
             } else {
                 updatedValues[field.id] = boolVal;
             }
-            onChange({ ...row, values: updatedValues });
+            onChange({
+                ...row,
+                values: updatedValues,
+                ...(row.importReview ? {
+                    importReview: {
+                        ...row.importReview,
+                        successConfirmed: field.id === 'successful'
+                            ? boolVal !== undefined
+                            : row.importReview.successConfirmed,
+                    },
+                } : {}),
+            });
             return;
         }
 
@@ -54,7 +65,18 @@ export const TrialRow: React.FC<TrialRowProps> = ({
                 updatedValues[field.id] = num;
             }
         }
-        onChange({ ...row, values: updatedValues });
+        onChange({
+            ...row,
+            values: updatedValues,
+            ...(row.importReview ? {
+                importReview: {
+                    ...row.importReview,
+                    loadKgConfirmed: field.id === 'load_kg'
+                        ? rawValue.trim() !== '' && Number.isFinite(Number(rawValue))
+                        : row.importReview.loadKgConfirmed,
+                },
+            } : {}),
+        });
     };
 
     const handleValidityChange = (validity: ObservationValidity) => {
@@ -62,6 +84,9 @@ export const TrialRow: React.FC<TrialRowProps> = ({
             ...row,
             validity,
             invalidReason: validity === 'invalid' ? row.invalidReason : undefined,
+            ...(row.importReview ? {
+                importReview: { ...row.importReview, validityConfirmed: true },
+            } : {}),
         });
     };
 
@@ -141,6 +166,49 @@ export const TrialRow: React.FC<TrialRowProps> = ({
                     );
                 })}
             </div>
+
+            {row.importReview && (
+                <div className="trial-validity-section" role="group" aria-label={`Imported evidence review for ${rowLabel}`}>
+                    <span className="trial-section-subtitle">Confirm imported evidence before save:</span>
+                    <div className="trial-validity-options">
+                        <label className="trial-validity-chip">
+                            <input
+                                type="checkbox"
+                                checked={row.importReview.loadKgConfirmed}
+                                onChange={e => onChange({
+                                    ...row,
+                                    importReview: { ...row.importReview!, loadKgConfirmed: e.target.checked },
+                                })}
+                            />
+                            <span>Load is kilograms</span>
+                        </label>
+                        {row.values.successful !== undefined && (
+                            <label className="trial-validity-chip">
+                                <input
+                                    type="checkbox"
+                                    checked={row.importReview.successConfirmed}
+                                    onChange={e => onChange({
+                                        ...row,
+                                        importReview: { ...row.importReview!, successConfirmed: e.target.checked },
+                                    })}
+                                />
+                                <span>Success / miss matches the video</span>
+                            </label>
+                        )}
+                        <label className="trial-validity-chip">
+                            <input
+                                type="checkbox"
+                                checked={row.importReview.validityConfirmed}
+                                onChange={e => onChange({
+                                    ...row,
+                                    importReview: { ...row.importReview!, validityConfirmed: e.target.checked },
+                                })}
+                            />
+                            <span>Technical validity is correct</span>
+                        </label>
+                    </div>
+                </div>
+            )}
 
             <div className="trial-validity-section">
                 <span className="trial-section-subtitle">Validity:</span>

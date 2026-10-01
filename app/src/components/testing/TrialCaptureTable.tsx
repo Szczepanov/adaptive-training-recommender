@@ -1,28 +1,27 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-    assertValidAssessmentTrial,
-    assessmentTrialIdFor,
-} from '../../observations/assessmentTrials';
+import { assertValidAssessmentTrial } from '../../observations/assessmentTrials';
 import { reduceAssessmentTrials } from '../../observations/assessmentReducers';
 import type {
     AssessmentAttempt,
     AssessmentTrial,
     AssessmentTrialScalar,
-    ComparisonContext,
     MeasurementProtocol,
     MetricObservationDevice,
 } from '../../observations/models';
 import type { PerformanceTestPresentationHints } from '../../observations/performanceTestingCatalog';
 import { getComparisonDimensionDefinition } from '../../observations/protocols';
 import { buildComparisonContextFromStrings } from '../../observations/testingWorkflow';
+import { canImportWlAnalysis } from '../../observations/wlAnalysisImport';
 import {
     clearAssessmentDraft,
     loadAssessmentDraft,
     saveAssessmentDraft,
     type DraftTrialRow,
 } from '../../utils/assessmentDraftStorage';
+import { draftRowsToTrials, hasDeviceWithoutProvider } from '../../utils/assessmentDraftTrials';
 import { CanonicalResultPreview } from './CanonicalResultPreview';
 import { TrialRow } from './TrialRow';
+import { WlAnalysisImportPanel } from './WlAnalysisImportPanel';
 
 interface TrialCaptureTableProps {
     userId: string;
@@ -51,45 +50,10 @@ function persistedDraftRow(row: TrialCaptureRow): DraftTrialRow {
         ...(row.invalidReason !== undefined ? { invalidReason: row.invalidReason } : {}),
         ...(row.notes !== undefined ? { notes: row.notes } : {}),
         ...(row.device !== undefined ? { device: row.device } : {}),
+        ...(row.sourceRef !== undefined ? { sourceRef: row.sourceRef } : {}),
+        ...(row.context !== undefined ? { context: row.context } : {}),
+        ...(row.importReview !== undefined ? { importReview: row.importReview } : {}),
     };
-}
-
-function normalizeDevice(device: MetricObservationDevice | undefined): MetricObservationDevice | undefined {
-    const provider = device?.provider?.trim();
-    if (!device || !provider) return undefined;
-    const model = device.model?.trim();
-    const deviceId = device.deviceId?.trim();
-    return { provider, ...(model ? { model } : {}), ...(deviceId ? { deviceId } : {}) };
-}
-
-function hasDeviceWithoutProvider(device: MetricObservationDevice | undefined): boolean {
-    return !!device && !device.provider?.trim() && !!(device.model?.trim() || device.deviceId?.trim());
-}
-
-function draftRowsToTrials(
-    rows: readonly DraftTrialRow[],
-    attemptId: string,
-    context: ComparisonContext,
-    defaultDevice: MetricObservationDevice,
-    createdAt: string,
-): AssessmentTrial[] {
-    const fallbackDevice = normalizeDevice(defaultDevice);
-    return rows.map(row => {
-        const device = normalizeDevice(row.device) ?? fallbackDevice;
-        return {
-            id: assessmentTrialIdFor(row.ordinal, 0),
-            assessmentAttemptId: attemptId,
-            ordinal: row.ordinal,
-            correctionIndex: 0,
-            validity: row.validity,
-            ...(row.invalidReason?.trim() ? { invalidReason: row.invalidReason.trim() } : {}),
-            values: row.values,
-            context,
-            createdAt,
-            ...(row.notes?.trim() ? { notes: row.notes.trim() } : {}),
-            ...(device ? { device } : {}),
-        };
-    });
 }
 
 export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
@@ -138,6 +102,8 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                     invalidReason: t.invalidReason,
                     notes: t.notes,
                     device: t.device,
+                    sourceRef: t.sourceRef,
+                    context: { ...t.context },
                 }));
             const draftOnlyRows = (savedDraft ?? [])
                 .filter(row => !activeByOrdinal.has(row.ordinal))
@@ -161,6 +127,45 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
     const [rows, setRows] = useState<TrialCaptureRow[]>(initializeRows);
     const [missingConfirmationRequired, setMissingConfirmationRequired] = useState(false);
     const [clientError, setClientError] = useState<string | null>(null);
+
+    const wlImportAllowed = canImportWlAnalysis(protocol, attempt);
+    const existingSourceRefs = useMemo(() => {
+        const refs = new Set<string>();
+        for (const row of rows) {
+            if (row.sourceRef) refs.add(row.sourceRef);
+        }
+        for (const trial of initialTrials ?? []) {
+            if (trial.sourceRef) refs.add(trial.sourceRef);
+        }
+        return refs;
+    }, [rows, initialTrials]);
+    const occupiedOrdinals = useMemo(() => new Set(rows.map(row => row.ordinal)), [rows]);
+
+    const handleImportApply = (imported: DraftTrialRow[]) => {
+        setClientError(null);
+        setRows(current => {
+            let nextClientSequence = current.reduce((maxSequence, row) => {
+                const match = row.clientId.match(/-(\d+)$/);
+                const sequence = match ? Number(match[1]) : 0;
+                return Math.max(maxSequence, sequence);
+            }, 0);
+            const next = [...current];
+            for (const importedRow of imported) {
+                if (storedOrdinals.has(importedRow.ordinal)) return current;
+                const index = next.findIndex(row => row.ordinal === importedRow.ordinal);
+                if (index === -1) {
+                    nextClientSequence += 1;
+                    next.push({
+                        ...importedRow,
+                        clientId: `trial-row-${attempt.id}-${nextClientSequence}`,
+                    });
+                } else {
+                    next[index] = { ...importedRow, clientId: next[index].clientId };
+                }
+            }
+            return next.sort((a, b) => a.ordinal - b.ordinal);
+        });
+    };
 
     // Persist draft on changes
     useEffect(() => {
@@ -199,7 +204,10 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
     const addAttempt = () => {
         setRows(current => {
             if (current.length >= capture.maxTrials) return current;
-            const nextOrdinal = current.length + 1;
+            const usedOrdinals = new Set(current.map(row => row.ordinal));
+            let nextOrdinal = 1;
+            while (nextOrdinal <= capture.maxTrials && usedOrdinals.has(nextOrdinal)) nextOrdinal += 1;
+            if (nextOrdinal > capture.maxTrials) return current;
             const carryValues: Record<string, AssessmentTrialScalar> = {};
             if (presentationHints?.carryForwardFieldIds && current.length > 0) {
                 for (const fieldId of presentationHints.carryForwardFieldIds) {
@@ -213,24 +221,19 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 return Math.max(maxSequence, sequence);
             }, 0) + 1;
 
-            return [
-                ...current,
-                {
-                    ordinal: nextOrdinal,
-                    values: carryValues,
-                    validity: 'valid',
-                    clientId: `trial-row-${attempt.id}-${nextClientSequence}`,
-                },
-            ];
+            const nextRow: TrialCaptureRow = {
+                ordinal: nextOrdinal,
+                values: carryValues,
+                validity: 'valid',
+                clientId: `trial-row-${attempt.id}-${nextClientSequence}`,
+            };
+            return [...current, nextRow].sort((a, b) => a.ordinal - b.ordinal);
         });
     };
 
     const removeAttempt = (index: number) => {
         if (rows.length <= 1 || storedOrdinals.has(rows[index].ordinal)) return;
-        setRows(current => {
-            const filtered = current.filter((_, idx) => idx !== index);
-            return filtered.map((row, idx) => ({ ...row, ordinal: idx + 1 }));
-        });
+        setRows(current => current.filter((_, idx) => idx !== index));
     };
 
     // Live preview only: the reducers read trial values and validity, not context or provenance.
@@ -244,6 +247,19 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
     // observations), normalized device provenance and one createdAt per save.
     const buildTrialsForSave = (): { trials: AssessmentTrial[] } | { error: string } => {
         if (rows.length === 0) return { error: 'At least one trial is required.' };
+        const pendingImportReview = rows.find(row => row.importReview
+            && (!row.importReview.loadKgConfirmed
+                || !row.importReview.successConfirmed
+                || !row.importReview.validityConfirmed));
+        if (pendingImportReview) {
+            const missing: string[] = [];
+            if (!pendingImportReview.importReview?.loadKgConfirmed) missing.push('load unit');
+            if (!pendingImportReview.importReview?.successConfirmed) missing.push('success/miss');
+            if (!pendingImportReview.importReview?.validityConfirmed) missing.push('validity');
+            return {
+                error: `Attempt ${pendingImportReview.ordinal}: confirm imported ${missing.join(', ')} before saving.`,
+            };
+        }
         const incompleteDevice = rows.find(row => hasDeviceWithoutProvider(row.device));
         if (incompleteDevice) return { error: `Trial ${incompleteDevice.ordinal} device override requires a provider.` };
         try {
@@ -380,6 +396,19 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                 assessmentAttemptId={attempt.id}
                 trials={previewTrials}
             />
+
+            {wlImportAllowed && (
+                <WlAnalysisImportPanel
+                    protocol={protocol}
+                    attempt={attempt}
+                    sessionDate={attempt.scheduledDate ?? null}
+                    existingSourceRefs={existingSourceRefs}
+                    storedOrdinals={storedOrdinals}
+                    occupiedOrdinals={occupiedOrdinals}
+                    onApply={handleImportApply}
+                    disabled={saving}
+                />
+            )}
 
             <div className="trial-rows-container">
                 {rows.map((row, idx) => (

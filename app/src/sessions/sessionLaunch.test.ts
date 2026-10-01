@@ -106,6 +106,14 @@ describe('isPreparedReducedExternalBinding', () => {
         )).toBe(false);
     });
 
+    it('fails closed when the claimed content-addressed hash is empty', () => {
+        expect(isPreparedReducedExternalBinding(
+            prescription,
+            { ...binding, prescriptionHash: '' },
+            { variant: 'reduced', prescriptionHash: '' },
+        )).toBe(false);
+    });
+
     it.each([
         ['plan', { planId: 'other-plan' }],
         ['revision', { revision: 2 }],

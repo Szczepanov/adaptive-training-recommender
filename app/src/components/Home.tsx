@@ -692,10 +692,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         ) {
           try {
             const verdict = recommendationWithPrescription.externalVerdict;
-            // #949: the authoring adapter is the authority on which exact executable
-            // snapshot was frozen. Full and reduced forms intentionally share source identity,
-            // so carry the returned prescription hash forward as runtime launch evidence
-            // instead of asking the UI to infer the variant from plan/revision/session.
+            // #949: under `scale`, the authoring adapter freezes the exact v6
+            // reducedDefinition or throws. Full and reduced forms intentionally share
+            // external source identity, so retain both the requested variant and the
+            // adapter-returned prescription hash as runtime launch evidence.
             const useReducedDefinition = verdict?.decision === 'scale';
             const scaleVolume = useReducedDefinition ? verdict?.executionDose?.volume : undefined;
             const launch = await prepareExternalPlanSessionLaunch(

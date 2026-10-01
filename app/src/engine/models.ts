@@ -1041,15 +1041,14 @@ export interface Recommendation {
         sessionId: string;
         title: string;
         prescription: ExternalPrescription;
-        /** V1-v5 use the legacy scaling fields; v6 may additionally carry the exact
-         * structured reduced definition used by the launch adapter. */
+        /** v1-v5 use the legacy scaling fields; v6 may additionally carry the exact
+         * structured reduced definition accepted by the external launch adapter. */
         scaling?: ExternalSessionScaling & { reducedDefinition?: SessionDefinition };
         isEvent?: boolean;
     };
-    /** Runtime-only proof of the external execution snapshot prepared by Home. The launch
-     * variant is bound to the exact content-addressed prescription hash returned by the
-     * source-neutral authoring adapter; persistence already records `primarySession` and
-     * deliberately does not serialize this UI affordance evidence. */
+    /** Runtime-only proof of the external execution snapshot prepared by Home. The
+     * persistence boundary deliberately does not serialize this field; the durable
+     * recommendation/audit already pins primarySession and its prescriptionHash. */
     externalPreparedLaunch?: {
         variant: 'full' | 'reduced';
         prescriptionHash: string;

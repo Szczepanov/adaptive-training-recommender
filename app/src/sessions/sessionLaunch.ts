@@ -59,7 +59,7 @@ export interface ExternalPrescriptionIdentity {
     };
 }
 
-/** Runtime evidence produced only after the source-neutral authoring adapter has frozen an
+/** Runtime evidence created after the source-neutral authoring adapter has frozen an
  * executable external snapshot. Full and reduced forms intentionally share source identity,
  * so the prescription hash is the discriminator that proves which exact bytes will run. */
 export interface PreparedExternalLaunchEvidence {
@@ -70,10 +70,10 @@ export interface PreparedExternalLaunchEvidence {
 /**
  * #949: whether Home may start `binding` under today's `scale` verdict.
  *
- * ADR-0023 separates immutable source identity from the content-addressed execution
+ * ADR-0023 D-MSNAP separates immutable source identity from the content-addressed execution
  * prescription. A full and reduced v6 launch therefore have the same external-plan source
  * but different prescription hashes. Start is available only when Home records that the
- * authoring adapter prepared the reduced variant and that proof names the exact
+ * reduced variant was prepared and that proof names the exact
  * `primarySession.prescriptionHash`; matching plan/revision/session alone is insufficient.
  */
 export function isPreparedReducedExternalBinding(
@@ -83,6 +83,7 @@ export function isPreparedReducedExternalBinding(
 ): boolean {
     if (!prescription || !binding || !prepared) return false;
     if (prescription.scaling?.reducible !== true || !prescription.scaling.reducedDefinition) return false;
+    if (!binding.prescriptionHash || !prepared.prescriptionHash) return false;
     if (prepared.variant !== 'reduced' || prepared.prescriptionHash !== binding.prescriptionHash) return false;
     const source = binding.sessionSource;
     return source.kind === 'external_plan'

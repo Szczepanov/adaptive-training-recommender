@@ -9,6 +9,15 @@ import type {
  * so persisted keys are Firebase-UID-scoped and live only until the attempt is saved or abandoned,
  * or the user signs out.
  */
+export interface DraftImportReview {
+    /** The source weight cell has no unit; the athlete must confirm it is kilograms. */
+    loadKgConfirmed: boolean;
+    /** Inferred success/miss is only a suggestion until explicitly confirmed. */
+    successConfirmed: boolean;
+    /** Technical validity always remains the athlete's decision. */
+    validityConfirmed: boolean;
+}
+
 export interface DraftTrialRow {
     ordinal: number;
     values: Record<string, AssessmentTrialScalar>;
@@ -16,6 +25,21 @@ export interface DraftTrialRow {
     invalidReason?: string;
     notes?: string;
     device?: MetricObservationDevice;
+    /**
+     * Replay-stable import provenance (e.g. `wl-analysis-csv:sha256:…`). Absent for
+     * hand-typed rows and for drafts saved before the WL Analysis importer existed.
+     */
+    sourceRef?: string;
+    /**
+     * Scalar import context (e.g. `wl_parser_version`). Merged over the attempt comparison
+     * context when trial records are built; keys must not collide with comparison dimensions.
+     */
+    context?: Record<string, string | number | boolean | null>;
+    /**
+     * Local-only review gate for imported judgement-like values. This is persisted only in
+     * the browser draft and is deliberately not copied into immutable AssessmentTrial data.
+     */
+    importReview?: DraftImportReview;
 }
 
 const STORAGE_PREFIX = 'assessment_draft_';
@@ -29,6 +53,32 @@ const VALID_DRAFT_VALIDITIES = new Set<ObservationValidity>(['valid', 'invalid',
 
 function isOptionalString(value: unknown): boolean {
     return value === undefined || typeof value === 'string';
+}
+
+function isDraftSourceRef(value: unknown): boolean {
+    return value === undefined || (typeof value === 'string' && value.length > 0 && value.length <= 512);
+}
+
+function isDraftContext(value: unknown): boolean {
+    if (value === undefined) return true;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length > 32) return false;
+    return entries.every(([key, entryValue]) =>
+        key.trim().length > 0
+        && (typeof entryValue === 'string'
+            || typeof entryValue === 'boolean'
+            || entryValue === null
+            || (typeof entryValue === 'number' && Number.isFinite(entryValue)))
+    );
+}
+function isDraftImportReview(value: unknown): boolean {
+    if (value === undefined) return true;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const review = value as Partial<DraftImportReview>;
+    return typeof review.loadKgConfirmed === 'boolean'
+        && typeof review.successConfirmed === 'boolean'
+        && typeof review.validityConfirmed === 'boolean';
 }
 
 function isDraftDevice(value: unknown): boolean {
@@ -52,7 +102,10 @@ function isDraftRow(value: unknown): value is DraftTrialRow {
     )) return false;
     return isOptionalString(row.invalidReason)
         && isOptionalString(row.notes)
-        && isDraftDevice(row.device);
+        && isDraftDevice(row.device)
+        && isDraftSourceRef(row.sourceRef)
+        && isDraftContext(row.context)
+        && isDraftImportReview(row.importReview);
 }
 
 /** Storage can be blocked or cleared (private mode, previews); every accessor degrades to "no draft". */
