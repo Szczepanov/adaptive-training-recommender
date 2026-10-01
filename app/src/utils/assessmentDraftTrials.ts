@@ -30,8 +30,8 @@ export function draftRowsToTrials(
     return rows.map(row => {
         const device = normalizeDevice(row.device) ?? fallbackDevice;
         if (row.context) {
-            for (const key of Object.keys(row.context)) {
-                if (Object.prototype.hasOwnProperty.call(context, key)) {
+            for (const [key, value] of Object.entries(row.context)) {
+                if (Object.prototype.hasOwnProperty.call(context, key) && context[key as keyof ComparisonContext] !== value) {
                     throw new Error(`Imported trial context key ${key} conflicts with locked comparison context`);
                 }
             }
