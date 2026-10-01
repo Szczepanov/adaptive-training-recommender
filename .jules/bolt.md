@@ -72,3 +72,7 @@
 ## 2026-09-25 - Avoid O(N) array scans during static object initialization
 **Learning:** Initializing static objects (like `EVERGREEN_PACKING_COVERAGE`) by repeatedly calling `.find()` on the same configuration array (`EVERGREEN_GENERAL_COVERAGE_SET.coverage`) incurs redundant O(N) operations at import time.
 **Action:** When extracting multiple values from a small or static array to build a new data structure at module level, construct a temporary O(1) `Map` (`new Map(array.map(item => [item.key, item]))`) and use `.get()` instead of calling `.find()` repeatedly.
+
+## 2026-10-01 - Concurrent Firestore transactions for backfill candidates
+**Learning:** Sequential execution of independent candidate Firestore transactions inside a loop causes cumulative network round-trip delays (N * latency), severely degrading backfill performance.
+**Action:** Process independent candidate document transactions concurrently using `concurrent.futures.ThreadPoolExecutor` with bounded worker pools (`min(10, N)`), reducing execution time to O((N / concurrency) * latency).

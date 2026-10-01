@@ -14,6 +14,7 @@ import logging
 import time
 import urllib.parse
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any
@@ -581,6 +582,37 @@ def _perform_candidate_tx(
     return "created", occ_id
 
 
+def _process_candidate(
+    db: Any,
+    user_ref: Any,
+    candidate: BackfillCandidate,
+    user_id: str,
+) -> tuple[BackfillCandidate, str, str | None, Exception | None]:
+    link_ref = user_ref.collection("performedOccurrenceSourceLinks").document(
+        candidate.source_link_doc_id
+    )
+
+    try:
+        transaction = db.transaction()
+
+        if hasattr(transaction, "_read_only"):
+            from google.cloud import firestore
+
+            outcome, created_id = firestore.transactional(_perform_candidate_tx)(
+                transaction, user_ref, link_ref, candidate, user_id
+            )
+        else:
+            outcome, created_id = _perform_candidate_tx(
+                transaction, user_ref, link_ref, candidate, user_id
+            )
+
+        return candidate, outcome, created_id, None
+
+    except Exception as exc:
+        logger.error("Failed to backfill candidate activity %s: %s", candidate.activity_id, exc)
+        return candidate, "failed", None, exc
+
+
 def apply_training_occurrence_backfill(
     db: Any,
     plan: BackfillPlan,
@@ -609,33 +641,28 @@ def apply_training_occurrence_backfill(
             f"{[a.message for a in blocking_anomalies]}"
         )
 
-    for candidate in plan.eligible_candidates:
-        link_ref = user_ref.collection("performedOccurrenceSourceLinks").document(
-            candidate.source_link_doc_id
-        )
+    if not plan.eligible_candidates:
+        return result
 
-        try:
-            transaction = db.transaction()
-
-            if hasattr(transaction, "_read_only"):
-                from google.cloud import firestore
-
-                outcome, created_id = firestore.transactional(_perform_candidate_tx)(
-                    transaction, user_ref, link_ref, candidate, plan.user_id
+    max_workers = min(10, len(plan.eligible_candidates))
+    if max_workers == 1:
+        outcomes = [_process_candidate(db, user_ref, plan.eligible_candidates[0], plan.user_id)]
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            outcomes = list(
+                executor.map(
+                    lambda candidate: _process_candidate(db, user_ref, candidate, plan.user_id),
+                    plan.eligible_candidates,
                 )
-            else:
-                outcome, created_id = _perform_candidate_tx(
-                    transaction, user_ref, link_ref, candidate, plan.user_id
-                )
+            )
 
-            if outcome == "created" and created_id:
-                result.created += 1
-                result.created_occurrence_ids.append(created_id)
-            elif outcome == "concurrently_linked":
-                result.concurrently_linked += 1
-
-        except Exception as exc:
-            logger.error("Failed to backfill candidate activity %s: %s", candidate.activity_id, exc)
+    for candidate, outcome, created_id, exc in outcomes:
+        if outcome == "created" and created_id:
+            result.created += 1
+            result.created_occurrence_ids.append(created_id)
+        elif outcome == "concurrently_linked":
+            result.concurrently_linked += 1
+        elif exc is not None:
             result.failed += 1
             result.anomalies.append(
                 BackfillAnomaly(
