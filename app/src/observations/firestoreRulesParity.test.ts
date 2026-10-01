@@ -10,6 +10,38 @@ import {
 import { MAX_TRIAL_CORRECTIONS } from './assessmentTrials';
 import { listComparisonDimensionIds } from './protocols';
 import { listMetricDefinitions } from './registry';
+import { MAX_ATHLETE_EVIDENCE_LINEAGE_REFS } from '../engine/knowledgeLineage';
+
+type PersistedRecommendationAuditKey =
+    keyof import('../engine/provenance').RecommendationAuditWithSubjectiveDrift;
+
+const RECOMMENDATION_AUDIT_KEYS = [
+    'policyVersion',
+    'evaluatedAt',
+    'decisionContextRevision',
+    'decisionContext',
+    'safetyStatus',
+    'history',
+    'envelope',
+    'plannedDose',
+    'executionDose',
+    'candidateScores',
+    'droppedContributorObjectives',
+    'externalPlan',
+    'externalRest',
+    'authoredOccurrence',
+    'primarySession',
+    'additionalSessions',
+    'subjectiveDrift',
+    'identityDecision',
+    'knowledgeLineage',
+    'athleteEvidenceLineage',
+] as const satisfies readonly PersistedRecommendationAuditKey[];
+
+const AUDIT_KEYS_ARE_EXHAUSTIVE: Exclude<
+    PersistedRecommendationAuditKey,
+    typeof RECOMMENDATION_AUDIT_KEYS[number]
+> extends never ? true : never = true;
 
 function loadRules(): string {
     const candidatePaths = [
@@ -114,5 +146,27 @@ describe('Firestore rules parity with TypeScript domain models', () => {
         ];
 
         expect(rulesKeys).toEqual([...expectedKeys].sort());
+    });    it('keeps RecommendationAudit keys and athlete-evidence bound in parity with TypeScript', () => {
+        const auditMatch = rules.match(
+            /function hasValidRecommendationAudit\(userId, audit, version, date, revision\)\s*\{[\s\S]*?audit\.keys\(\)\.hasOnly\(\[([\s\S]*?)\]\)/,
+        );
+        expect(auditMatch).not.toBeNull();
+
+        const rulesKeys = auditMatch![1]
+            .split(',')
+            .map(s => s.trim().replace(/^'|'$/g, ''))
+            .filter(s => s.length > 0)
+            .sort();
+
+        expect(AUDIT_KEYS_ARE_EXHAUSTIVE).toBe(true);
+        expect(rulesKeys).toEqual([...RECOMMENDATION_AUDIT_KEYS].sort());
+
+        const athleteLineageMatch = rules.match(
+            /function hasValidAthleteEvidenceLineage\(lineage\)\s*\{[\s\S]*?lineage\.size\(\)\s*<=\s*(\d+)/,
+        );
+        expect(athleteLineageMatch).not.toBeNull();
+        expect(Number.parseInt(athleteLineageMatch![1], 10)).toBe(MAX_ATHLETE_EVIDENCE_LINEAGE_REFS);
     });
+
+
 });
