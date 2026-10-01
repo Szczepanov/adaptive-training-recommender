@@ -381,11 +381,11 @@ stale merge), or keep it neutral. Keep it free of personal data (I6).
 
 | Gate | Command (from `app/` unless noted) | Required |
 |---|---|---|
-| Budget harness, baseline vs candidate | `npm run emulators:exec:rules -- "npx vitest run src/emulator/recommendationAuditBudget.emulator.test.ts"` (with `AUDIT_BUDGET_BASE=8a6d193b` for the baseline, and `AUDIT_BUDGET_MEASURE=1` for numbers) | Yes; report both tables in the PR |
-| Rules suite | `npm run test:rules` | Yes (rules change) |
+| Budget harness, baseline vs candidate | `npm run emulators:exec:rules -- "npx vitest run src/emulator/recommendationAuditBudget.emulator.test.ts"` (runs on leased ports via `runWithEmulators.mjs`; with `AUDIT_BUDGET_BASE=8a6d193b` for the baseline, and `AUDIT_BUDGET_MEASURE=1` for numbers) | Yes; report both tables in the PR |
+| Rules suite | `npm run test:rules` (runs on leased ports) | Yes (rules change) |
 | Frontend gate | `npm run check` | Yes |
-| Recommendation-bearing E2E | `npm run emulators:exec:e2e -- "npx playwright test --config=playwright.e2e.config.ts daily-decision external-"` | Yes, and **zero** `maximum of 1000` / `Permission denied saving recommendation` lines in the output (`grep -c` = 0) |
-| Full E2E | `npm run test:e2e` | Yes |
+| Recommendation-bearing E2E | `npm run emulators:exec:e2e -- "npx playwright test --config=playwright.e2e.config.ts daily-decision external-"` (runs on leased ports) | Yes, and **zero** `maximum of 1000` / `Permission denied saving recommendation` lines in the output (`grep -c` = 0) |
+| Full E2E | `npm run test:e2e` (runs on leased ports) | Yes |
 | Handoff | `make verify` (repo root) | Yes |
 | Policy drift / simulate / judge | — | Not required: no engine/policy change. State this in the PR |
 

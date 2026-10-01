@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { deleteApp, initializeApp } from 'firebase/app';
+import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
+import { deleteApp, initializeApp, type FirebaseApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import { collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, setDoc, type Firestore } from 'firebase/firestore';
 import type { Page } from '@playwright/test';
 import { getLocalDateString } from '../../../src/utils/localDate';
 
-export const E2E_PROJECT_ID = 'demo-adaptive-training-e2e';
+export const E2E_PROJECT_ID = process.env.E2E_PROJECT_ID ?? 'demo-adaptive-training-e2e';
 export const E2E_EMULATOR_HOST = process.env.E2E_EMULATOR_HOST ?? '127.0.0.1';
 export const E2E_AUTH_PORT = Number(process.env.E2E_AUTH_PORT ?? 9099);
 export const E2E_FIRESTORE_PORT = Number(process.env.E2E_FIRESTORE_PORT ?? 8080);
@@ -21,6 +21,98 @@ const firebaseConfig = {
   projectId: E2E_PROJECT_ID,
   appId: '1:123456789012:web:e2e-inspector',
 };
+
+let sharedTestEnv: RulesTestEnvironment | null = null;
+let sharedTestEnvPromise: Promise<RulesTestEnvironment> | null = null;
+let sharedOwnerDb: Firestore | null = null;
+
+export async function getSharedTestEnvironment(): Promise<RulesTestEnvironment> {
+  if (sharedTestEnv) {
+    return sharedTestEnv;
+  }
+  if (!sharedTestEnvPromise) {
+    sharedTestEnvPromise = initializeTestEnvironment({
+      projectId: E2E_PROJECT_ID,
+      firestore: { host: EMULATOR_HOST, port: FIRESTORE_EMULATOR_PORT },
+    }).then(env => {
+      sharedTestEnv = env;
+      return env;
+    });
+  }
+  return sharedTestEnvPromise;
+}
+
+export async function getSharedRulesDisabledDb(): Promise<Firestore> {
+  if (sharedOwnerDb) {
+    return sharedOwnerDb;
+  }
+  const env = await getSharedTestEnvironment();
+  // 'owner' mock user token bypasses Security Rules in Firestore emulator
+  const context = (env as unknown as { createContext(token: string): { firestore(): Firestore } }).createContext('owner');
+  sharedOwnerDb = context.firestore();
+  return sharedOwnerDb;
+}
+
+export async function withSecurityRulesDisabled<T>(
+  callback: (db: Firestore) => Promise<T>,
+): Promise<T> {
+  const db = await getSharedRulesDisabledDb();
+  return await callback(db);
+}
+
+let sharedInspectorApp: FirebaseApp | null = null;
+let currentAuthenticatedEmail: string | null = null;
+let authSignInPromise: Promise<void> | null = null;
+
+export async function getAuthenticatedInspectorDb(athlete: E2EAthlete): Promise<Firestore> {
+  if (!sharedInspectorApp) {
+    sharedInspectorApp = initializeApp(firebaseConfig, `e2e-worker-inspector-${process.pid}`);
+    const auth = getAuth(sharedInspectorApp);
+    connectAuthEmulator(auth, AUTH_EMULATOR_URL, { disableWarnings: true });
+    const db = getFirestore(sharedInspectorApp);
+    connectFirestoreEmulator(db, EMULATOR_HOST, FIRESTORE_EMULATOR_PORT);
+  }
+  const auth = getAuth(sharedInspectorApp);
+  if (currentAuthenticatedEmail !== athlete.email || auth.currentUser?.email !== athlete.email) {
+    if (!authSignInPromise || currentAuthenticatedEmail !== athlete.email) {
+      currentAuthenticatedEmail = athlete.email;
+      authSignInPromise = (async () => {
+        try {
+          await signInWithEmailAndPassword(auth, athlete.email, athlete.password);
+        } catch (err) {
+          currentAuthenticatedEmail = null;
+          authSignInPromise = null;
+          throw err;
+        }
+      })();
+    }
+    await authSignInPromise;
+  }
+  return getFirestore(sharedInspectorApp);
+}
+
+export async function cleanupWorkerHarness(): Promise<void> {
+  sharedOwnerDb = null;
+  if (sharedTestEnv) {
+    const env = sharedTestEnv;
+    sharedTestEnv = null;
+    sharedTestEnvPromise = null;
+    await env.cleanup().catch(() => {});
+  }
+  if (sharedInspectorApp) {
+    const app = sharedInspectorApp;
+    sharedInspectorApp = null;
+    currentAuthenticatedEmail = null;
+    authSignInPromise = null;
+    await deleteApp(app).catch(() => {});
+  }
+}
+
+if (typeof process !== 'undefined') {
+  process.once('beforeExit', () => {
+    void cleanupWorkerHarness();
+  });
+}
 
 export interface E2EAthlete {
   email: string;
@@ -73,14 +165,8 @@ export async function seedRecoverySnapshot(
   overrides: Partial<{ sleepScore: number; bodyBatteryWake: number; hrvOvernightAvg: number; restingHr: number }> = {},
 ): Promise<string> {
   const date = getLocalDateString();
-  const environment = await initializeTestEnvironment({
-    projectId: E2E_PROJECT_ID,
-    firestore: { host: EMULATOR_HOST, port: FIRESTORE_EMULATOR_PORT },
-  });
-  try {
-    await environment.withSecurityRulesDisabled(async context => {
-      const db = context.firestore() as unknown as Firestore;
-      await setDoc(doc(db, 'users', athlete.userId, 'daily_recovery_snapshots', date), {
+  await withSecurityRulesDisabled(async db => {
+    await setDoc(doc(db, 'users', athlete.userId, 'daily_recovery_snapshots', date), {
         userId: athlete.userId,
         date,
         source: { garminSyncedAt: `${date}T06:00:00.000Z`, sourceSchemaVersion: 3 },
@@ -135,9 +221,6 @@ export async function seedRecoverySnapshot(
         updatedAt: `${date}T06:00:00.000Z`,
       });
     });
-  } finally {
-    await environment.cleanup();
-  }
   return date;
 }
 
@@ -193,88 +276,52 @@ export async function openFixturePicker(page: Page): Promise<void> {
 }
 
 export async function readSessionExecutions(athlete: E2EAthlete): Promise<PersistedSessionExecution[]> {
-  const app = initializeApp(firebaseConfig, `e2e-inspector-${randomUUID()}`);
-  try {
-    const auth = getAuth(app);
-    connectAuthEmulator(auth, AUTH_EMULATOR_URL);
-    const credential = await signInWithEmailAndPassword(auth, athlete.email, athlete.password);
-    const db = getFirestore(app);
-    connectFirestoreEmulator(db, EMULATOR_HOST, FIRESTORE_EMULATOR_PORT);
-    const snapshot = await getDocs(collection(db, 'users', credential.user.uid, 'session_executions'));
-    return snapshot.docs.map(item => ({
-      executionId: item.id,
-      state: typeof item.data().state === 'string' ? item.data().state : 'invalid',
-      ...(typeof item.data().occurrenceId === 'string' ? { occurrenceId: item.data().occurrenceId } : {}),
-      ...(item.data().sessionSource && typeof item.data().sessionSource === 'object' ? { sessionSource: item.data().sessionSource } : {}),
-      ...(typeof item.data().prescriptionHash === 'string' ? { prescriptionHash: item.data().prescriptionHash } : {}),
-    }));
-  } finally {
-    await deleteApp(app);
-  }
+  const db = await getAuthenticatedInspectorDb(athlete);
+  const snapshot = await getDocs(collection(db, 'users', athlete.userId, 'session_executions'));
+  return snapshot.docs.map(item => ({
+    executionId: item.id,
+    state: typeof item.data().state === 'string' ? item.data().state : 'invalid',
+    ...(typeof item.data().occurrenceId === 'string' ? { occurrenceId: item.data().occurrenceId } : {}),
+    ...(item.data().sessionSource && typeof item.data().sessionSource === 'object' ? { sessionSource: item.data().sessionSource } : {}),
+    ...(typeof item.data().prescriptionHash === 'string' ? { prescriptionHash: item.data().prescriptionHash } : {}),
+  }));
 }
 
 export async function readSessionRestEvents(
   athlete: E2EAthlete,
   executionId: string,
 ): Promise<PersistedSessionRestEvent[]> {
-  const app = initializeApp(firebaseConfig, `e2e-rest-inspector-${randomUUID()}`);
-  try {
-    const auth = getAuth(app);
-    connectAuthEmulator(auth, AUTH_EMULATOR_URL);
-    const credential = await signInWithEmailAndPassword(auth, athlete.email, athlete.password);
-    const db = getFirestore(app);
-    connectFirestoreEmulator(db, EMULATOR_HOST, FIRESTORE_EMULATOR_PORT);
-    const snapshot = await getDocs(collection(
-      db,
-      'users',
-      credential.user.uid,
-      'session_executions',
-      executionId,
-      'restEvents',
-    ));
-    return snapshot.docs.map(item => {
-      const data = item.data();
-      return {
-        id: item.id,
-        executionId: typeof data.executionId === 'string' ? data.executionId : 'invalid',
-        endReason: typeof data.endReason === 'string' ? data.endReason : 'invalid',
-        actualSeconds: typeof data.actualSeconds === 'number' ? data.actualSeconds : Number.NaN,
-      };
-    });
-  } finally {
-    await deleteApp(app);
-  }
+  const db = await getAuthenticatedInspectorDb(athlete);
+  const snapshot = await getDocs(collection(
+    db,
+    'users',
+    athlete.userId,
+    'session_executions',
+    executionId,
+    'restEvents',
+  ));
+  return snapshot.docs.map(item => {
+    const data = item.data();
+    return {
+      id: item.id,
+      executionId: typeof data.executionId === 'string' ? data.executionId : 'invalid',
+      endReason: typeof data.endReason === 'string' ? data.endReason : 'invalid',
+      actualSeconds: typeof data.actualSeconds === 'number' ? data.actualSeconds : Number.NaN,
+    };
+  });
 }
 
 export async function hasPersistedCheckin(athlete: E2EAthlete, date: string): Promise<boolean> {
-  const app = initializeApp(firebaseConfig, `e2e-checkin-inspector-${randomUUID()}`);
-  try {
-    const auth = getAuth(app);
-    connectAuthEmulator(auth, AUTH_EMULATOR_URL);
-    const credential = await signInWithEmailAndPassword(auth, athlete.email, athlete.password);
-    const db = getFirestore(app);
-    connectFirestoreEmulator(db, EMULATOR_HOST, FIRESTORE_EMULATOR_PORT);
-    const snapshot = await getDocs(collection(db, 'users', credential.user.uid, 'daily_subjective_checkins'));
-    return snapshot.docs.some(item => item.id === date);
-  } finally {
-    await deleteApp(app);
-  }
+  const db = await getAuthenticatedInspectorDb(athlete);
+  const snapshot = await getDocs(collection(db, 'users', athlete.userId, 'daily_subjective_checkins'));
+  return snapshot.docs.some(item => item.id === date);
 }
 
 export async function readPersistedRecommendation(
   athlete: E2EAthlete,
   date: string,
 ): Promise<Record<string, unknown> | null> {
-  const app = initializeApp(firebaseConfig, `e2e-rec-inspector-${randomUUID()}`);
-  try {
-    const auth = getAuth(app);
-    connectAuthEmulator(auth, AUTH_EMULATOR_URL);
-    const credential = await signInWithEmailAndPassword(auth, athlete.email, athlete.password);
-    const db = getFirestore(app);
-    connectFirestoreEmulator(db, EMULATOR_HOST, FIRESTORE_EMULATOR_PORT);
-    const snapshot = await getDoc(doc(db, 'users', credential.user.uid, 'daily_recommendations', date));
-    return snapshot.exists() ? (snapshot.data() as Record<string, unknown>) : null;
-  } finally {
-    await deleteApp(app);
-  }
+  const db = await getAuthenticatedInspectorDb(athlete);
+  const snapshot = await getDoc(doc(db, 'users', athlete.userId, 'daily_recommendations', date));
+  return snapshot.exists() ? (snapshot.data() as Record<string, unknown>) : null;
 }

@@ -233,9 +233,11 @@ artifacts/hygiene/
 artifacts/identity-replay/
 artifacts/identity-replay-reports/
 artifacts/activity-response-preservation*.json
+artifacts/socket-samples/
 app/artifacts/*
-# Per-shard emulator configs written (and removed) by app/scripts/run-rules-shard.mjs
-app/.rules-shard-*.firebase.json
+# Generated emulator configs and preview state written by test harness launcher
+app/.harness-*.firebase.json
+app/.preview.json
 .canopy
 
 # Per-agent worktree checkouts (.claude/worktrees, .codex/worktrees). Claude Code writes

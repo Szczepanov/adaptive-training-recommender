@@ -394,9 +394,22 @@ then every static, unit, emulator, simulation and build gate in parallel lanes, 
 wall-clock latency gates alone so nothing competes for the CPU while they sample. Each
 concurrent step writes its output to `app/artifacts/verify/<step>.log`; a failure prints the
 tail of its log, and no lane starts another step after a required step fails. The Firestore
-rules suite runs as two shards on their own emulator ports next to browser E2E. For
+rules suite runs as two shards on dynamically leased emulator ports next to browser E2E, which
+also leases its own dynamic emulator and web server ports. No automated harness suite binds
+`firebase.json`'s default ports. For
 sequential, streamed output while debugging, run
 `uv run python scripts/verify_repo.py --serial` (or `VERIFY_SERIAL=1 make verify`).
+
+### Harness port isolation and process lifecycle
+
+Automated emulator and browser suites acquire disjoint 8-port blocks via
+`app/scripts/harness/portLease.mjs` and run under unique project IDs (`demo-atr-<suite>-<blockBase>`).
+`reuseExistingServer` is disabled by default and opt-in via `E2E_REUSE_SERVER=1`.
+
+**Never kill processes by port number.** Doing so in concurrent multi-worktree agent environments
+can terminate sibling runs mid-execution. Use `npm run harness:status` to inspect active and
+stale leases, and `npm run harness:reap [-- --yes]` to clean up processes and locators left behind
+by abnormal terminations.
 
 ### Iteration versus completion
 

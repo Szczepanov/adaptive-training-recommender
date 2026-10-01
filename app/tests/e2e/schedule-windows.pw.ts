@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/consoleTrap';
 import { provisionAthlete, signInThroughUi } from './support/athlete';
 
 function localDateAfter(days: number): string {

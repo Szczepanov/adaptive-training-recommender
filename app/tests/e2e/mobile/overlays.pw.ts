@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../support/consoleTrap';
 import { dismissOnboardingIfVisible, provisionAthlete, signInThroughUi } from '../support/athlete';
 import {
   assertDialogFocusContainment,

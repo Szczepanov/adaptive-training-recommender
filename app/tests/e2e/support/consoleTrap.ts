@@ -1,4 +1,5 @@
-import { test as baseTest, expect, type Page } from '@playwright/test';
+import { test as baseTest, expect, type Page, type Locator } from '@playwright/test';
+import { cleanupWorkerHarness } from './athlete';
 
 const FORBIDDEN_CONSOLE_PATTERNS = [
   /Permission denied saving recommendation/,
@@ -32,11 +33,21 @@ export function attachRecommendationConsoleTrap(page: Page): () => void {
 }
 
 /**
- * Playwright test fixture with automatic recommendation console trap.
+ * Playwright test fixture with automatic recommendation console trap and
+ * worker-scoped harness cleanup.
+ *
  * Any spec importing `test` from this module will fail if a recommendation
- * write error or emulator expression limit is logged to the console.
+ * write error or emulator expression limit is logged to the console, and will
+ * clean up shared worker-scoped emulator connections on worker teardown.
  */
-export const test = baseTest.extend<{ recommendationConsoleTrap: void }>({
+export const test = baseTest.extend<{ recommendationConsoleTrap: void }, { workerHarnessCleanup: void }>({
+  workerHarnessCleanup: [
+    async (_fixtures, use) => {
+      await use();
+      await cleanupWorkerHarness();
+    },
+    { scope: 'worker', auto: true },
+  ],
   recommendationConsoleTrap: [
     async ({ page }, use) => {
       const assertNoTrappedErrors = attachRecommendationConsoleTrap(page);
@@ -47,4 +58,4 @@ export const test = baseTest.extend<{ recommendationConsoleTrap: void }>({
   ],
 });
 
-export { expect };
+export { expect, type Page, type Locator };

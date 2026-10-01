@@ -1,10 +1,6 @@
 import { expect, type Page } from '@playwright/test';
-import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { deleteApp, initializeApp } from 'firebase/app';
-import { connectAuthEmulator, getAuth, signInWithEmailAndPassword } from 'firebase/auth';
-import { collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, setDoc, type Firestore } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, type Firestore } from 'firebase/firestore';
 import type { SessionDefinition, SessionExecution, ExecutionPrescription, SessionOccurrence } from '../../../src/sessions/models';
 import type { ExternalPlanPlacement, NormalizedGarminActivity, ScheduleWindowManifest } from '../../../src/engine/models';
 import type { PerformedTrainingOccurrence } from '../../../src/training-occurrence/models';
@@ -14,7 +10,7 @@ import { parseNormalizedGarminActivity } from '../../../src/persistence/parsers/
 import { computeContentHash } from '../../../src/engine/externalPlanHash';
 import { validateAnyExternalTrainingPlan } from '../../../src/sessions/externalPlanValidation';
 import { EXTERNAL_PLAN_SCHEMA_V6, type ExternalTrainingPlanV6, type ExternalPlanSessionV6 } from '../../../src/sessions/externalPlanV6';
-import { E2E_PROJECT_ID, E2E_EMULATOR_HOST, E2E_AUTH_PORT, E2E_FIRESTORE_PORT, dismissOnboardingIfVisible, type E2EAthlete } from './athlete';
+import { dismissOnboardingIfVisible, getAuthenticatedInspectorDb, withSecurityRulesDisabled, type E2EAthlete } from './athlete';
 import { mondayOfWeek, seedExternalPlanningMode, weekdayOf } from './externalPlan';
 
 export const strengthDefinition: SessionDefinition = JSON.parse(readFileSync(new URL('../../../src/sessions/fixtures/01-full-body-maintenance.json', import.meta.url), 'utf8'));
@@ -41,10 +37,7 @@ export function buildV6Plan(date: string, overrides: Partial<ExternalTrainingPla
 }
 
 async function seed(athlete: E2EAthlete, write: (db: Firestore) => Promise<void>): Promise<void> {
-  const environment = await initializeTestEnvironment({ projectId: E2E_PROJECT_ID, firestore: { host: E2E_EMULATOR_HOST, port: E2E_FIRESTORE_PORT } });
-  try {
-    await environment.withSecurityRulesDisabled(context => write(context.firestore() as unknown as Firestore));
-  } finally { await environment.cleanup(); }
+  await withSecurityRulesDisabled(db => write(db));
 }
 
 /** Single-revision preconditions only; successor revisions must use the import UI. */
@@ -86,15 +79,8 @@ export async function seedBundleWindows(athlete: E2EAthlete, date: string): Prom
 
 /** Authenticated reads keep the persisted linkage assertions behind the real user rules. */
 export async function inspectAthlete<T>(athlete: E2EAthlete, read: (db: Firestore) => Promise<T>): Promise<T> {
-  const app = initializeApp({ apiKey: 'fake-api-key', projectId: E2E_PROJECT_ID, appId: '1:123456789012:web:e2e-round-trip' }, `round-trip-${randomUUID()}`);
-  try {
-    const auth = getAuth(app);
-    connectAuthEmulator(auth, `http://${E2E_EMULATOR_HOST}:${E2E_AUTH_PORT}`);
-    await signInWithEmailAndPassword(auth, athlete.email, athlete.password);
-    const db = getFirestore(app);
-    connectFirestoreEmulator(db, E2E_EMULATOR_HOST, E2E_FIRESTORE_PORT);
-    return await read(db);
-  } finally { await deleteApp(app); }
+  const db = await getAuthenticatedInspectorDb(athlete);
+  return await read(db);
 }
 
 export function readDocument<T>(athlete: E2EAthlete, path: string): Promise<T | undefined> {

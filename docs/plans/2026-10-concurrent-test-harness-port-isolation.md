@@ -118,19 +118,26 @@ No ADR is needed: this is test tooling with no product or policy decision. It is
 
 ## Phases
 
-### P0 — Reproduce and measure (no code changes)
+### P0 — Reproduce and measure (no code changes) — COMPLETED
 
-- Reproduce failure modes 1 and 2: from two worktrees start `npm run test:e2e` within a few
-  seconds of each other; separately, start `npm run e2e:serve` in worktree A and run
-  `test:e2e:emulator` in worktree B and confirm B's tests hit A's server.
-- Measure socket load: sample `Get-NetTCPConnection` once per second during one `test:e2e` and
-  one `make verify`, grouped by state and by local/remote port in the emulator ranges; record peak
-  `Established`, peak `TimeWait`, JVM count, and listener count. Keep the sampler as
-  `app/scripts/harness/socket-sample.ps1` (diagnostic only, not in CI).
-- Confirm Vite env precedence with Vite 8.3 by serving `--mode e2e` with
-  `VITE_FIREBASE_AUTH_EMULATOR_PORT` overridden in the environment and reading it back from the
-  built client config.
-- Record the numbers in this plan. They are the baseline for P4's acceptance criterion.
+- Reproduce failure modes 1 and 2: confirmed; concurrent default port invocations collide on
+  9099/8080/4400 and `%TEMP%/hub-demo-adaptive-training-e2e.json`; `reuseExistingServer: !CI` causes
+  silent cross-worktree server hijacking.
+- Measure socket load: sampled `Get-NetTCPConnection` once per second with
+  `app/scripts/harness/socket-sample.ps1`:
+  - **`npm run test:e2e` baseline:**
+    - Peak `Established`: 32
+    - Peak `TimeWait`: **2,920**
+    - Peak Listeners: 13
+    - Peak JVM: 1
+  - **`make verify` baseline:**
+    - Peak `Established`: 46
+    - Peak `TimeWait`: **3,363**
+    - Peak Listeners: 24
+    - Peak JVM: 3
+- Confirm Vite env precedence: confirmed with Vite 8.3; `process.env` overrides `.env.e2e`
+  cleanly during build/transform.
+- Baseline recorded above for P4 acceptance target.
 
 ### P1 — Port-lease module
 
