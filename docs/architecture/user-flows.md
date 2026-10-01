@@ -444,7 +444,19 @@ For multi-trial assessment protocols (e.g. 1RM strength, vertical/horizontal jum
 cycling sprint), capture provides a protocol-bounded raw trial table (`TrialCaptureTable`) with dynamic
 attempts, validity options, local draft retention (`localStorage`, cleared on save, abandonment and
 sign-out), live canonical reduction preview
-(`CanonicalResultPreview`), and raw video reminder callouts. The completion screen renders canonical
+(`CanonicalResultPreview`), and raw video reminder callouts. On an open squat/bench attempt the capture
+screen additionally offers WL Analysis per-frame CSV import (`WlAnalysisImportPanel`): one exported file
+per filmed attempt fills the load/velocity trial rows after a per-file preview (attempt number, load,
+reps, chosen rep, velocities, completeness, proposed validity, warnings). Because the source weight cell
+has no unit and ascent completeness cannot establish technical validity by itself, imported rows cannot be
+saved until the athlete explicitly confirms kilograms, success/miss when suggested, and technical validity.
+The import itself writes nothing; duplicate content digests are rejected even within one selected batch.
+Imported rows remain in the existing UID-scoped local draft across reload when browser storage is available.
+The final immutable assessment save uses transaction-backed services and therefore requires connectivity;
+an offline final-save failure leaves the local draft intact for retry instead of claiming a commit.
+Importable-recording checklist (one video per attempt, `attempt N` tags, per-frame export with velocity +
+displacement, kilograms, fixed side-on tripod, raw files kept outside the app) lives in the #897 plan's
+WP5.5 section. The completion screen renders canonical
 benchmark results alongside an interactive trial correction panel (`TrialCorrectionPanel`) for append-only
 trial supersession. Trials already persisted by an interrupted save reload read-only, so a resubmission
 cannot diverge from immutable stored evidence. For the bundled #897 physical-capital trial-capture flow,

@@ -528,4 +528,77 @@ emulatorDescribe('Assessment trial and derivation Firestore rules (ADR-0046)', (
         expect((await getDoc(doc(ownerDb, `${observationPath}/revisions/2`))).data()?.value).toBe(242);
     });
 
+    it('accepts a WL Analysis import trial with content-hash provenance and wl_* context', async () => {
+        const strengthProtocolId = 'strength-bench-press-1rm';
+        const strengthAttemptId = 'attempt-bench-wl-1';
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(
+            doc(ownerDb, `users/${ownerId}/measurement_protocols/${strengthProtocolId}/revisions/2`),
+            {
+                ...validProtocol(),
+                id: strengthProtocolId,
+                revision: 2,
+                title: 'Bench press 1RM',
+                metricIds: ['strength_1rm_kg'],
+                comparisonContext: {
+                    required: ['equipment_setup_id', 'warmup_revision'],
+                    seriesDefining: ['equipment_setup_id'],
+                    contextOnly: ['warmup_revision'],
+                    canonicalizationVersion: 'comparison-series-v1',
+                },
+                capture: {
+                    plannedTrials: 6,
+                    maxTrials: 15,
+                    fields: [
+                        { id: 'load_kg', label: 'Load', valueKind: 'number', unit: 'kg', required: true, minimum: 1, maximum: 500 },
+                        { id: 'successful', label: 'Lift successful', valueKind: 'boolean', required: true },
+                        { id: 'rpe', label: 'RPE', valueKind: 'number', unit: 'rpe', required: false, minimum: 1, maximum: 10 },
+                        { id: 'mean_concentric_velocity_mps', label: 'Mean concentric velocity', valueKind: 'number', unit: 'm/s', required: false, minimum: 0, maximum: 5 },
+                        { id: 'peak_velocity_mps', label: 'Peak velocity', valueKind: 'number', unit: 'm/s', required: false, minimum: 0, maximum: 10 },
+                    ],
+                    reducers: [
+                        { kind: 'highest_successful_load', metricId: 'strength_1rm_kg', loadFieldId: 'load_kg', successFieldId: 'successful' },
+                    ],
+                    reducerVersion: 'assessment-reducer-v1',
+                },
+            },
+        ));
+        await assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/assessment_attempts/${strengthAttemptId}`), {
+            ...validAttempt('in_progress'),
+            id: strengthAttemptId,
+            protocolRef: { id: strengthProtocolId, revision: 2 },
+        }));
+
+        // Replay-stable file provenance (D-AT-IMPORT): content digest, provider device and
+        // scalar parser context. Filenames, CSV text and videos are never persisted.
+        await assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/assessment_attempts/${strengthAttemptId}/trials/trial-1`), {
+            id: 'trial-1',
+            assessmentAttemptId: strengthAttemptId,
+            ordinal: 1,
+            correctionIndex: 0,
+            validity: 'valid',
+            values: {
+                load_kg: 100,
+                successful: true,
+                mean_concentric_velocity_mps: 0.615,
+                peak_velocity_mps: 0.75,
+            },
+            context: {
+                equipment_setup_id: 'rack-a',
+                warmup_revision: 'standard-strength-warmup-r1',
+                wl_parser_version: 'wl-analysis-csv-v1',
+                wl_rep_count: 1,
+                wl_selected_rep: 1,
+                wl_rom_cm: 50,
+                wl_frame_rate: 30,
+                wl_resolution: '1080x1920',
+            },
+            sourceRef: `wl-analysis-csv:sha256:${'a'.repeat(64)}`,
+            device: { provider: 'WL Analysis' },
+            notes: 'WL Analysis auto-detected success — confirm',
+            createdAt: '2026-10-19T07:15:00.000Z',
+        }));
+        expect((await getDoc(doc(ownerDb, `users/${ownerId}/assessment_attempts/${strengthAttemptId}/trials/trial-1`))).exists()).toBe(true);
+    });
+
 });
