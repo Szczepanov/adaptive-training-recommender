@@ -789,6 +789,26 @@ emulatorDescribe('Recommendation audit budget', () => {
                 setDoc(doc(db, path), { ...rec, recommendationAudit: auditWithoutLineage }),
             );
         });
+
+        it('rejects more than 64 dropped contributor objectives', async () => {
+            await environment.clearFirestore();
+            const db = environment.authenticatedContext(owner).firestore();
+            const rec = recommendation(0, false);
+            const oversizedAudit = {
+                ...rec.recommendationAudit,
+                droppedContributorObjectives: Array.from({ length: 65 }, (_, i) => ({
+                    eventId: `event-${i}`,
+                    eventTitle: `Event ${i}`,
+                    objectiveKey: 'aerobic_endurance',
+                    reason: 'capacity',
+                    message: 'synthetic',
+                    date,
+                })),
+            };
+            await assertFails(
+                setDoc(doc(db, path), { ...rec, recommendationAudit: oversizedAudit }),
+            );
+        });
     });
 
     it('headroom proof: combined=true size=64 create succeeds (worst-case positive control)', async () => {
