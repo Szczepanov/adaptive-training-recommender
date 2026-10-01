@@ -1517,6 +1517,20 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
                     || selected.provider !== value.sharedBundleRef.provider
                     || selected.transport !== value.sharedBundleRef.transport);
         };
+        const validAthleteEvidenceLineage = audit.athleteEvidenceLineage === undefined || (
+            Array.isArray(audit.athleteEvidenceLineage)
+            && audit.athleteEvidenceLineage.length <= 16
+            && audit.athleteEvidenceLineage.every((ref: any) => hasExactKeys(
+                ref, ['recordId', 'version', 'domain', 'refinementType', 'baseKnowledgeClaimId'],
+            )
+                && typeof ref.recordId === 'string' && ref.recordId.length > 0
+                && Number.isInteger(ref.version) && ref.version >= 1
+                && typeof ref.domain === 'string' && ref.domain.length > 0
+                && typeof ref.refinementType === 'string' && ref.refinementType.length > 0
+                && typeof ref.baseKnowledgeClaimId === 'string' && ref.baseKnowledgeClaimId.length > 0)
+            && new Set(audit.athleteEvidenceLineage.map((ref: any) => ref.recordId)).size
+                === audit.athleteEvidenceLineage.length
+        );
         const validKnowledgeLineage = audit.knowledgeLineage === undefined || (
             Array.isArray(audit.knowledgeLineage)
             && audit.knowledgeLineage.length <= 64
@@ -1532,7 +1546,7 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
             && Number.isSafeInteger(audit.decisionContext.revision) && audit.decisionContext.revision >= 1
             && typeof audit.decisionContext.contentHash === 'string' && /^[a-f0-9]{64}$/.test(audit.decisionContext.contentHash)
         );
-        const validAudit = hasExactKeys(audit, ['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'decisionContext', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'].filter(key => audit?.[key] !== undefined))
+        const validAudit = hasExactKeys(audit, ['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'decisionContext', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage', 'athleteEvidenceLineage'].filter(key => audit?.[key] !== undefined))
             && typeof audit.policyVersion === 'string'
             && typeof audit.evaluatedAt === 'string'
             && typeof audit.decisionContextRevision === 'string'
@@ -1582,7 +1596,8 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
                         && typeof objective.reason === 'string'
                         && typeof objective.message === 'string'
                         && typeof objective.date === 'string')))
-            && validKnowledgeLineage;
+            && validKnowledgeLineage
+            && validAthleteEvidenceLineage;
         if (!validAudit) {
             errors.push({ field: 'recommendationAudit', message: 'Recommendation audit has an invalid shape' });
         } else {
