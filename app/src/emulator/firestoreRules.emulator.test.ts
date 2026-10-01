@@ -414,6 +414,30 @@ emulatorDescribe('Firestore security rules', () => {
 
     });
 
+    it('accepts bounded athlete-evidence lineage and rejects an oversized lineage', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const withEvidence = validRecommendation();
+        withEvidence.recommendationAudit.athleteEvidenceLineage = [{
+            recordId: 'athlete-evidence-1',
+            version: 1,
+            domain: 'subjective_calibration',
+            refinementType: 'calibrate_scalar',
+            baseKnowledgeClaimId: 'readiness.objective_mode_thresholds',
+        }];
+        await assertSucceeds(setDoc(doc(ownerDb, recommendationPath), withEvidence));
+
+        await testEnvironment.clearFirestore();
+        const oversized = validRecommendation();
+        oversized.recommendationAudit.athleteEvidenceLineage = Array.from({ length: 17 }, (_, i) => ({
+            recordId: `athlete-evidence-${i}`,
+            version: 1,
+            domain: 'subjective_calibration',
+            refinementType: 'calibrate_scalar',
+            baseKnowledgeClaimId: 'readiness.objective_mode_thresholds',
+        }));
+        await assertFails(setDoc(doc(ownerDb, recommendationPath), oversized));
+    });
+
     it('accepts an audit carrying subjective-drift provenance', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const withDrift = validRecommendation();
