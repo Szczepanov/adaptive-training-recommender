@@ -4,6 +4,7 @@ import { addDaysToLocalDateString, getLocalDateString } from '../../../src/utils
 import { EXTERNAL_PLAN_SCHEMA } from '../../../src/engine/models';
 import { computeContentHash } from '../../../src/engine/externalPlanHash';
 import { EXTERNAL_PLAN_SCHEMA_V4 } from '../../../src/sessions/externalPlanV4';
+import { validateAnyExternalTrainingPlan } from '../../../src/sessions/externalPlanValidation';
 import { E2E_PROJECT_ID, E2E_EMULATOR_HOST, E2E_FIRESTORE_PORT, type E2EAthlete } from './athlete';
 
 const EMULATOR_HOST = E2E_EMULATOR_HOST;
@@ -145,6 +146,8 @@ export async function seedExternalPlanForToday(
     sessions: [session],
   };
   const contentHash = await computeContentHash(plan as never);
+  const parsed = validateAnyExternalTrainingPlan(plan);
+  if (!parsed.isValid) throw new Error(`Invalid external-plan seed: ${JSON.stringify(parsed.errors)}`);
 
   const environment = await initializeTestEnvironment({
     projectId: E2E_PROJECT_ID,
