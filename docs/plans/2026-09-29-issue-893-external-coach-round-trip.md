@@ -12,6 +12,9 @@ Their desired browser regressions are `test.fixme`; active proofs and final veri
 close those gaps, so #893 stays open. §2/§4/§7 are delivery records rather than implementation
 instructions; §3 preserves the design decisions.
 
+**Delivery update (1 October 2026):** H2 was resolved by #953 and H1 by #949; V7 and V4 are
+active, passing regressions. H3/H4 (#951/#952) remain `test.fixme`, so #893 stays open.
+
 ## 1. Goal
 
 Make the external-coach workflow a first-class, exact, replayable loop:
@@ -250,8 +253,10 @@ loop. PR-E changes tests/helpers and Markdown only; product holes require separa
 
 Every original §5 criterion appears below. **Located** means the exact test is present and passed in the
 PR-E `make verify` run (§6). **Passed** marks a PR-E browser proof. Initially missing assertions
-**G1–G3** now have active test cases. **H1–H4** are demonstrated integration gaps: their desired
-regressions are `test.fixme`, not passing proofs. V slots are tracked below.
+**G1–G3** now have active test cases. **H1–H4** were demonstrated integration gaps whose desired
+regressions were `test.fixme`; H1 (#949) and H2 (#953) are resolved with active regressions that
+passed in those PRs' verification, and H3/H4 remain `test.fixme`, not passing proofs. V slots are
+tracked below.
 
 ## Contract/import
 
@@ -284,7 +289,7 @@ regressions are `test.fixme`, not passing proofs. V slots are tracked below.
 |---|---|---|---|
 | E1 | Definition-bearing external sessions use one source-neutral launch adapter rather than a v4-only Home branch. | [v2] `isDefinitionBearingExternalPlan covers every definition-bearing schema and refuses v1/empty plans`; `isDefinitionBearingExternalSession admits v2+ definition sessions and refuses v1 flat prescriptions`; [authoring] `launches a v5-inherited structured session under proceed with exact source provenance` | Located |
 | E2 | A v5/v6 `proceed` session launches through canonical `SessionRunner`. | [authoring] `launches a v5-inherited structured session under proceed with exact source provenance`; [round-trip E2E] `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)` | Located |
-| E3 | A v6 `scale` session launches only from its exact structured reduced definition. | [authoring] `freezes only the exact v6 reduced definition when adjudication requests scale`; [resolver] `resolves the exact v6 reduced definition frozen in a scaled execution prescription`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is active: Home starts the prepared reduced binding, whose frozen `definitionHash` is the reduced hash and not the full one. | Located; H1 resolved by [#949] |
+| E3 | A v6 `scale` session launches only from its exact structured reduced definition. | [authoring] `freezes only the exact v6 reduced definition when adjudication requests scale`; [resolver] `resolves the exact v6 reduced definition frozen in a scaled execution prescription`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is active: Home starts the prepared reduced binding, whose frozen `definitionHash` is the reduced hash and not the full one. | Passed in the #949 PR verification; H1 resolved by [#949] |
 | E4 | A v1–v5 scale without exact reduced definition cannot accidentally launch the full dose. | [authoring] `does not allow scale to launch an older plan without an exact reduced definition`; [verdict E2E] `a scaled imported session shows the reduced version without launching the full structured dose` (desktop/mobile). | Located |
 | E5 | `skip`, `defer` and advisory event states cannot expose an executable Start path. | [verdict E2E] `a deferred imported session names its verdict and offers no Start path`; `an excluded imported session names its verdict and offers no Start path as written` (desktop/mobile); [authoring] `rejects target-event sessions because they are advisory fixed-activity inputs` | Located; verdict E2E passed. Skip-day recommendation persistence open [#950]/[#953] |
 | E6 | Exact authored source and prescription hash are persisted with the execution. | [authoring] `creates and binds an external-plan occurrence when date is provided in options`; [round-trip E2E] `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)` | Located |
@@ -305,9 +310,9 @@ regressions are `test.fixme`, not passing proofs. V slots are tracked below.
 | ID | Acceptance criterion | Exact executable proof | State |
 |---|---|---|---|
 | S1 | Per-session status uses exact persisted identities, never title similarity. | [status] `does not join same-day records with a different immutable plan source`; `does not join an occurrence from another local date`; `refuses to cross-match old-revision bytes after a re-import` | Located |
-| S2 | Performed-as-authored is distinguishable from app-dose-modified. | [status] `distinguishes scaled-completed from proceeded-as-authored by audited dose diff`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is active and asserts the exact next-brief row labelled app dose modified. | Located; H1 resolved by [#949] |
+| S2 | Performed-as-authored is distinguishable from app-dose-modified. | [status] `distinguishes scaled-completed from proceeded-as-authored by audited dose diff`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is active and asserts the exact next-brief row labelled app dose modified. | Passed in the #949 PR verification; H1 resolved by [#949] |
 | S3 | Moved is distinguishable from missed. | [status] `pins intentionally_moved at the projector so refactors cannot break it silently`; `uses only an explicit missed occurrence as evidence of no performance` | Located; V3 passed |
-| S4 | Gate replacement is distinguishable from athlete replacement/non-adherence. | [status] `labels a defer-gated day gate_replaced with unknown performance when nothing executed`; `labels a skip-gated day gate_replaced`; `labels a single-session replace day manually_replaced with auditable evidence`; [state E2E] `V7 a gate replacement has exact labels and creates no external occurrence` and `V8 UI manual replacement names its exact replacement occurrence` are `test.fixme`; persisted UI behavior does not reach those projected states. | Unit proof; integrated gaps H2/H3 [#950]/[#951] |
+| S4 | Gate replacement is distinguishable from athlete replacement/non-adherence. | [status] `labels a defer-gated day gate_replaced with unknown performance when nothing executed`; `labels a skip-gated day gate_replaced`; `labels a single-session replace day manually_replaced with auditable evidence`; [state E2E] `V7 a gate replacement has exact labels and creates no external occurrence` is active and passing since [#953]; `V8 UI manual replacement names its exact replacement occurrence` is `test.fixme` because persisted UI behavior does not reach that projected state. | Unit proof; V7 resolved (H2); integrated gap H3 [#951] |
 | S5 | Partial/abandoned is distinguishable from completed. | [status] `labels an abandoned execution with entries partial_or_abandoned`; `joins completed performance through exact occurrence and execution identity` | Located; V12 passed |
 | S6 | Explicit skip/miss is distinguishable from missing/unavailable evidence. | [status] `labels an explicit skip explicitly_skipped with none_observed`; `uses only an explicit missed occurrence as evidence of no performance`; `does not infer a miss from a recent scheduled occurrence without execution` | Located |
 | S7 | Authored rest is distinguishable from no authored session. | [status] `keeps authored rest without work at not_applicable with no observed-work evidence`; `labels unplanned work not_applicable with observed-work evidence`; [active plan] `returns nothing for a day with nothing placed` | Located; V6 passed |
@@ -375,8 +380,9 @@ The initially missing assertions now have active, passing cases:
 - **G3 — exact validation paths (C3):** [revision E2E]
   `invalid enum, date, full and reduced definitions fail at exact contract paths`.
 
-#893 remains **In progress** even if every active test passes. H1–H4 require product fixes and
-passing integrated regressions; skipped tests cannot close an acceptance criterion.
+#893 remains **In progress** even if every active test passes. H3/H4 still require product fixes
+and passing integrated regressions (H1/H2 are resolved); skipped tests cannot close an acceptance
+criterion.
 Use `Refs #893`, not closing language, for this tests/docs-only PR.
 
 [#949]: https://github.com/Szczepanov/adaptive-training-recommender/issues/949

@@ -6,10 +6,15 @@ import './ExternalVerdictBanner.css';
 interface ExternalVerdictBannerProps {
     prescription: NonNullable<Recommendation['externalPrescription']>;
     verdict: ExternalSessionVerdictSummary;
-    /** #949: Home froze a launch binding to the plan's exact v6 `reducedDefinition`, so the
-     * card offers Start for the reduced form. Only meaningful under a `scale` verdict. */
-    reducedLaunchAvailable?: boolean;
+    /** #949: whether the card offers Start for the plan's exact v6 `reducedDefinition`.
+     * Only meaningful under a `scale` verdict. */
+    reducedLaunch?: ReducedLaunchState;
 }
+
+/** `available`: Home froze a binding to the exact reduced form and the card offers Start.
+ * `adjusted`: a time or load adjustment is applied, so the exact form is not what is shown.
+ * `unavailable`: no reduced form exists, or it could not be prepared for today. */
+export type ReducedLaunchState = 'available' | 'adjusted' | 'unavailable';
 
 const DECISION_LABEL: Record<ExternalSessionVerdictSummary['decision'], string> = {
     proceed: 'Do it as written',
@@ -36,17 +41,20 @@ function gateSentence(gateFailures: readonly string[]): string | null {
  */
 /** The scale-only note on what Start will run, so the banner never contradicts the card's
  * launch affordance: present only when the card offers Start for the reduced form. */
-function scaleLaunchNote(prescription: ExternalVerdictBannerProps['prescription'], reducedLaunchAvailable: boolean): string {
-    if (reducedLaunchAvailable) {
+function scaleLaunchNote(prescription: ExternalVerdictBannerProps['prescription'], reducedLaunch: ReducedLaunchState): string {
+    if (reducedLaunch === 'available') {
         return 'Start runs your plan’s own reduced version exactly as written, never the original full-dose steps.';
     }
     const scaling = prescription.scaling as { reducedDefinition?: unknown } | undefined;
+    if (reducedLaunch === 'adjusted' && scaling?.reducedDefinition) {
+        return 'Start is unavailable while a time or load adjustment is applied: the app runs only your plan’s own reduced version exactly as written. Reset the adjustment to start it.';
+    }
     return scaling?.reducedDefinition
         ? 'Start is unavailable because your plan’s reduced version could not be prepared for today. The app will not launch the original full-dose steps under a reduced verdict.'
         : 'Start is unavailable for this reduced form because the imported plan does not include executable reduced steps. The app will not launch the original full-dose steps under a reduced verdict.';
 }
 
-export function ExternalVerdictBanner({ prescription, verdict, reducedLaunchAvailable = false }: ExternalVerdictBannerProps) {
+export function ExternalVerdictBanner({ prescription, verdict, reducedLaunch = 'unavailable' }: ExternalVerdictBannerProps) {
     const actionable = verdict.decision === 'proceed' || verdict.decision === 'scale' || verdict.decision === 'advisory';
     // `skip` and `advisory` rationales already name the gates in the same words, and the
     // rationale is what the athlete reads twice (here and under "Why this today?"). Repeating
@@ -106,7 +114,7 @@ export function ExternalVerdictBanner({ prescription, verdict, reducedLaunchAvai
                         </p>
                     )}
                     {verdict.decision === 'scale' && (
-                        <p className="external-prescription-dose">{scaleLaunchNote(prescription, reducedLaunchAvailable)}</p>
+                        <p className="external-prescription-dose">{scaleLaunchNote(prescription, reducedLaunch)}</p>
                     )}
                 </div>
             ) : (

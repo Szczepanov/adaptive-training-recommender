@@ -285,6 +285,25 @@ describe('MorningDecisionCard imported-session verdict (#909)', () => {
         expect(html).not.toContain('Resume Session →');
     });
 
+    it.each([
+        ['a time-crunch alternative', { activeAlternativeId: 'time-20' }],
+        ['an easier load adjustment', { adjustmentDirection: 'easier' as const }],
+    ])('a v6 scale day with %s never starts the unadjusted reduced binding', (_label, adjustment) => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                {...adjustment}
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(scaleVerdict, {
+                    externalPrescription: v6ExternalPrescription,
+                    primarySession: reducedBinding,
+                })}
+            />,
+        );
+        expect(html).not.toContain('Start Session →');
+        expect(html).toContain('Start is unavailable while a time or load adjustment is applied');
+    });
+
     it('a completed v6 reduced session keeps its Redo path', () => {
         const html = renderToStaticMarkup(
             <MorningDecisionCard

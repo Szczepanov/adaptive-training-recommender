@@ -3,7 +3,7 @@ import type { Recommendation, SessionTemplate } from '../engine/models';
 import type { SessionExecution, SessionReferenceBinding } from '../sessions/models';
 import type { WorkoutPrescription } from '../workouts';
 import { DecisionEvidenceSummary } from './DecisionEvidenceSummary';
-import { ExternalVerdictBanner } from './ExternalVerdictBanner';
+import { ExternalVerdictBanner, type ReducedLaunchState } from './ExternalVerdictBanner';
 import { OneTapAlternatives } from './OneTapAlternatives';
 import { WorkoutExportMenu } from './WorkoutExportMenu';
 import type { MorningDecisionEvidence } from '../engine/decisionEvidence';
@@ -149,11 +149,19 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     // reduced form (pre-v6 plans, or v6 sessions that omit it) never launches a raw imported
     // binding, because it points at the full authored definition. Separately selected or
     // constructed catalog alternatives remain governed by their own launch path and gates.
-    const isExternalReducedLaunchAvailable = hasExternalVerdict
-        && externalVerdict.decision === 'scale'
+    // A time-crunch or load adjustment
+    // keeps the imported binding while changing the displayed dose, so the exact reduced
+    // form is only startable with no athlete adjustment applied.
+    const isExternalScale = hasExternalVerdict && externalVerdict.decision === 'scale';
+    const hasAthleteAdjustment = Boolean(activeAlternativeId) || adjustmentDirection !== null;
+    const isExternalReducedLaunchAvailable = isExternalScale
+        && !hasAthleteAdjustment
         && isPreparedReducedExternalBinding(externalPrescription, recommendation?.primarySession);
     const isExternalPrimaryBindingUnavailable = isExternalExcluded
-        || (hasExternalVerdict && externalVerdict.decision === 'scale' && !isExternalReducedLaunchAvailable);
+        || (isExternalScale && !isExternalReducedLaunchAvailable);
+    const externalReducedLaunch: ReducedLaunchState = isExternalReducedLaunchAvailable
+        ? 'available'
+        : isExternalScale && hasAthleteAdjustment ? 'adjusted' : 'unavailable';
     // #909: an adjudicated imported session carries the verdict rationale as the
     // recommendation rationale verbatim, so the hero "Why today" callout would repeat
     // the banner word for word. Suppress it there; the banner owns the explanation and
@@ -370,7 +378,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                     <ExternalVerdictBanner
                                         prescription={externalPrescription}
                                         verdict={externalVerdict}
-                                        reducedLaunchAvailable={isExternalReducedLaunchAvailable}
+                                        reducedLaunch={externalReducedLaunch}
                                     />
                                 )}
                                 <div className="headline-meta-row">
