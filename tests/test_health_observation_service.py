@@ -294,10 +294,6 @@ def test_health_observation_service_sync_date_error_handling() -> None:
 def test_health_observation_service_sync_repair() -> None:
     mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
     mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1)]
-    mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1)]
-    mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1)]
-    mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1)]
-    mock_repo.save_health_observation_day_bundles_batch.return_value = [(True, 1)]
     mock_repo.get_health_observation_bundles_in_range.return_value = []
 
     mock_provider = MagicMock(spec=RecoveryObservationProvider)

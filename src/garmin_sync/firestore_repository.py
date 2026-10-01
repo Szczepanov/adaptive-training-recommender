@@ -58,6 +58,31 @@ def is_snapshot_complete(snapshot: dict[str, Any]) -> bool:
     return bool(has_sleep and has_rhr and has_hrv and has_resp and has_bb and has_steps)
 
 
+# Firestore caps a single commit (batch or transaction) at 500 writes.
+_MAX_WRITES_PER_COMMIT = 500
+
+
+def _health_bundle_doc_id(bundle: Any) -> str:
+    return f"{bundle.logicalDate}_{bundle.provider}_{bundle.transport}"
+
+
+def _resolve_bundle_revision(existing: Mapping[str, Any] | None, bundle: Any) -> tuple[bool, int]:
+    """Decide whether a day-source bundle must be (re)persisted against the stored document.
+
+    Returns (changed, revision). An unchanged payload hash is only a no-op when the stored
+    normalizerVersion is at least the bundle's -- a mapper fix must re-persist old dates.
+    """
+    if existing is None:
+        return True, 1
+    current_rev = int(existing.get("revision", 1))
+    if (
+        existing.get("sourcePayloadHash") == bundle.sourcePayloadHash
+        and existing.get("normalizerVersion", 1) >= bundle.normalizerVersion
+    ):
+        return False, current_rev
+    return True, current_rev + 1
+
+
 class FirestoreRecoveryRepository:
     """Repository managing user-scoped Firestore operations for daily recovery snapshots."""
 
@@ -570,7 +595,7 @@ class FirestoreRecoveryRepository:
         If payload updated, increments revision and saves.
         """
         db = self._get_db()
-        doc_id = f"{bundle.logicalDate}_{bundle.provider}_{bundle.transport}"
+        doc_id = _health_bundle_doc_id(bundle)
         doc_ref = (
             db.collection("users")
             .document(self.user_id)
@@ -581,150 +606,113 @@ class FirestoreRecoveryRepository:
         now_iso = datetime.now(timezone.utc).isoformat()
         transaction = getattr(db, "transaction", None)
 
+        def _decide_and_stage(existing_doc: Any, write: Any) -> tuple[bool, int]:
+            existing = (existing_doc.to_dict() or {}) if existing_doc.exists else None
+            changed, revision = _resolve_bundle_revision(existing, bundle)
+            if changed:
+                bundle.revision = revision
+                bundle.ingestedAt = now_iso
+                bundle.effectiveAt = now_iso
+                write(doc_ref, bundle.to_dict())
+            return changed, revision
+
         if callable(transaction) and firestore is not None:
 
             @firestore.transactional
             def _update_in_txn(txn: Any) -> tuple[bool, int]:
-                existing_doc = doc_ref.get(transaction=txn)
-                current_rev = 1
-                if existing_doc.exists:
-                    data = existing_doc.to_dict() or {}
-                    existing_hash = data.get("sourcePayloadHash")
-                    existing_normalizer_version = data.get("normalizerVersion", 1)
-                    current_rev = data.get("revision", 1)
-                    if (
-                        existing_hash == bundle.sourcePayloadHash
-                        and existing_normalizer_version >= bundle.normalizerVersion
-                    ):
-                        return False, current_rev
-                    current_rev += 1
-
-                bundle.revision = current_rev
-                bundle.ingestedAt = now_iso
-                bundle.effectiveAt = now_iso
-                txn.set(doc_ref, bundle.to_dict())
-                return True, current_rev
+                return _decide_and_stage(doc_ref.get(transaction=txn), txn.set)
 
             txn = db.transaction()
             changed, current_rev = _update_in_txn(txn)
         else:
-            existing_doc = doc_ref.get()
-            current_rev = 1
-            if existing_doc.exists:
-                data = existing_doc.to_dict() or {}
-                existing_hash = data.get("sourcePayloadHash")
-                existing_normalizer_version = data.get("normalizerVersion", 1)
-                current_rev = data.get("revision", 1)
-                if (
-                    existing_hash == bundle.sourcePayloadHash
-                    and existing_normalizer_version >= bundle.normalizerVersion
-                ):
-                    logger.debug(
-                        "Health observation bundle %s already up to date at revision %d.",
-                        doc_id,
-                        current_rev,
-                    )
-                    return False, current_rev
-                current_rev += 1
+            changed, current_rev = _decide_and_stage(doc_ref.get(), lambda ref, data: ref.set(data))
 
-            bundle.revision = current_rev
-            bundle.ingestedAt = now_iso
-            bundle.effectiveAt = now_iso
-            doc_ref.set(bundle.to_dict())
-            changed = True
-
-        if changed:
-            logger.info(
-                "Saved health observation bundle %s for user=<UID-redacted> at revision %d (%d observations).",
-                doc_id,
-                current_rev,
-                len(bundle.observations),
-            )
-        else:
-            logger.debug(
-                "Health observation bundle %s already up to date at revision %d.",
-                doc_id,
-                current_rev,
-            )
+        self._log_bundle_save(doc_id, bundle, changed, current_rev)
         return changed, current_rev
 
     def save_health_observation_day_bundles_batch(
         self,
         bundles: list[Any],  # list[HealthObservationDayBundle]
     ) -> list[tuple[bool, int]]:
-        """Batch save multiple day-source observation bundles to Firestore.
+        """Save several day-source observation bundles with the same revision semantics as
+        save_health_observation_day_bundle, but one read RPC and one commit per chunk.
 
-        Executes a single db.get_all(refs) batch fetch to inspect existing states,
-        then commits all updated bundles in chunked db.batch() writes (up to 500 per batch).
+        Each chunk of up to 500 bundles is a single Firestore transaction (txn.get_all +
+        txn.set), so the read-compare-write stays atomic: a concurrent sync of the same
+        date cannot make two writers both claim revision N+1.
 
-        Returns list of (changed: bool, revision: int) tuples corresponding to input bundles.
+        Returns one (changed, revision) tuple per input bundle, in input order.
         """
-        if not bundles:
-            return []
+        doc_ids = [_health_bundle_doc_id(bundle) for bundle in bundles]
+        if len(set(doc_ids)) != len(doc_ids):
+            raise ValueError(
+                "save_health_observation_day_bundles_batch received duplicate "
+                "(logicalDate, provider, transport) bundles; revisions would collide."
+            )
 
-        if len(bundles) == 1:
-            return [self.save_health_observation_day_bundle(bundles[0])]
+        results: list[tuple[bool, int]] = []
+        for start in range(0, len(bundles), _MAX_WRITES_PER_COMMIT):
+            end = start + _MAX_WRITES_PER_COMMIT
+            results.extend(self._save_bundle_chunk(bundles[start:end], doc_ids[start:end]))
+        return results
 
+    def _save_bundle_chunk(self, bundles: list[Any], doc_ids: list[str]) -> list[tuple[bool, int]]:
         db = self._get_db()
         collection_ref = (
             db.collection("users").document(self.user_id).collection("health_observation_days")
         )
-
-        doc_ids = [
-            f"{bundle.logicalDate}_{bundle.provider}_{bundle.transport}" for bundle in bundles
-        ]
         doc_refs = [collection_ref.document(doc_id) for doc_id in doc_ids]
-
-        # Batch read existing documents using db.get_all
-        existing_docs: dict[str, dict[str, Any]] = {}
-        try:
-            for doc_snap in db.get_all(doc_refs):
-                if doc_snap.exists:
-                    existing_docs[doc_snap.id] = doc_snap.to_dict() or {}
-        except Exception as err:
-            logger.warning("Failed to batch-read health observation bundles: %s", err)
-            # Fall back to individual saves if get_all is unavailable or fails
-            return [self.save_health_observation_day_bundle(b) for b in bundles]
-
         now_iso = datetime.now(timezone.utc).isoformat()
-        results: list[tuple[bool, int]] = []
-        updates_to_write: list[tuple[Any, Any]] = []  # (doc_ref, bundle)
 
-        for doc_id, doc_ref, bundle in zip(doc_ids, doc_refs, bundles, strict=True):
-            existing_data = existing_docs.get(doc_id)
-            current_rev = 1
-            changed = True
+        def _decide_and_stage(snapshots: Iterable[Any], write: Any) -> list[tuple[bool, int]]:
+            # get_all does not preserve request order -- match snapshots back by document id.
+            existing_by_id = {snap.id: (snap.to_dict() or {}) for snap in snapshots if snap.exists}
+            chunk_results: list[tuple[bool, int]] = []
+            for doc_id, doc_ref, bundle in zip(doc_ids, doc_refs, bundles, strict=True):
+                changed, revision = _resolve_bundle_revision(existing_by_id.get(doc_id), bundle)
+                if changed:
+                    bundle.revision = revision
+                    bundle.ingestedAt = now_iso
+                    bundle.effectiveAt = now_iso
+                    write(doc_ref, bundle.to_dict())
+                chunk_results.append((changed, revision))
+            return chunk_results
 
-            if existing_data is not None:
-                existing_hash = existing_data.get("sourcePayloadHash")
-                existing_normalizer_version = existing_data.get("normalizerVersion", 1)
-                current_rev = existing_data.get("revision", 1)
-                if (
-                    existing_hash == bundle.sourcePayloadHash
-                    and existing_normalizer_version >= bundle.normalizerVersion
-                ):
-                    changed = False
+        transaction = getattr(db, "transaction", None)
+        if callable(transaction) and firestore is not None:
 
-            if changed:
-                if existing_data is not None:
-                    current_rev += 1
-                bundle.revision = current_rev
-                bundle.ingestedAt = now_iso
-                bundle.effectiveAt = now_iso
-                updates_to_write.append((doc_ref, bundle))
+            @firestore.transactional
+            def _update_in_txn(txn: Any) -> list[tuple[bool, int]]:
+                return _decide_and_stage(txn.get_all(doc_refs), txn.set)
 
-            results.append((changed, current_rev))
-
-        if updates_to_write:
-            batch_size = 500
-            for i in range(0, len(updates_to_write), batch_size):
-                chunk = updates_to_write[i : i + batch_size]
-                batch = db.batch()
-                for doc_ref, bundle in chunk:
-                    batch.set(doc_ref, bundle.to_dict())
+            chunk_results = _update_in_txn(db.transaction())
+        else:
+            batch = db.batch()
+            chunk_results = _decide_and_stage(db.get_all(doc_refs), batch.set)
+            if any(changed for changed, _ in chunk_results):
                 batch.commit()
 
-        return results
+        for doc_id, bundle, (changed, revision) in zip(
+            doc_ids, bundles, chunk_results, strict=True
+        ):
+            self._log_bundle_save(doc_id, bundle, changed, revision)
+        return chunk_results
+
+    @staticmethod
+    def _log_bundle_save(doc_id: str, bundle: Any, changed: bool, revision: int) -> None:
+        if changed:
+            logger.info(
+                "Saved health observation bundle %s for user=<UID-redacted> at revision %d (%d observations).",
+                doc_id,
+                revision,
+                len(bundle.observations),
+            )
+        else:
+            logger.debug(
+                "Health observation bundle %s already up to date at revision %d.",
+                doc_id,
+                revision,
+            )
 
     def get_health_observation_day_bundle(
         self,

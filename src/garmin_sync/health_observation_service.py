@@ -213,15 +213,7 @@ class HealthObservationService:
                 bundle_keys.append(f"{obs_provider}_{obs_transport}")
                 bundle_obs_counts.append(len(dtos))
 
-            save_batch_fn = getattr(
-                self.repository, "save_health_observation_day_bundles_batch", None
-            )
-            if callable(save_batch_fn):
-                save_results = save_batch_fn(bundles)
-            else:
-                save_results = [
-                    self.repository.save_health_observation_day_bundle(b) for b in bundles
-                ]
+            save_results = self.repository.save_health_observation_day_bundles_batch(bundles)
 
             provider_results: dict[str, Any] = {}
             for provider_key, obs_count, (changed, revision) in zip(
