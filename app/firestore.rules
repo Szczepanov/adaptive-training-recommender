@@ -100,7 +100,14 @@ service cloud.firestore {
         // Deep shape is enforced at the TypeScript persistence boundary. Keep the
         // replay-critical cross-document bindings here: a client must not attach
         // otherwise-valid identity evidence from a different assessment snapshot.
-        && (selected == null || selected is map)
+        && (selected == null || (
+          selected is map
+          && (
+            identity.effectiveStatus == 'USER'
+            || selected.provider != identity.sharedBundleRef.provider
+            || selected.transport != identity.sharedBundleRef.transport
+          )
+        ))
         && assessment.id == identity.identityAssessmentId
         && assessment.automaticStatus == identity.automaticStatus
         && assessment.policyVersion == identity.identityPolicyVersion
@@ -138,6 +145,7 @@ service cloud.firestore {
           audit.decisionContext is map
           && audit.decisionContext.keys().hasOnly(['path', 'revision', 'contentHash'])
           && audit.decisionContext.path == 'users/' + userId + '/daily_recommendations/' + date + '/decision_contexts/' + string(revision)
+          && audit.decisionContext.revision is int
           && audit.decisionContext.revision == revision
           && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/decision_contexts/$(string(revision))).data.contentHash == audit.decisionContext.contentHash
         ))
