@@ -72,3 +72,7 @@
 ## 2026-09-25 - Avoid O(N) array scans during static object initialization
 **Learning:** Initializing static objects (like `EVERGREEN_PACKING_COVERAGE`) by repeatedly calling `.find()` on the same configuration array (`EVERGREEN_GENERAL_COVERAGE_SET.coverage`) incurs redundant O(N) operations at import time.
 **Action:** When extracting multiple values from a small or static array to build a new data structure at module level, construct a temporary O(1) `Map` (`new Map(array.map(item => [item.key, item]))`) and use `.get()` instead of calling `.find()` repeatedly.
+
+## 2026-10-01 - Batch Health Observation Bundle Writes in Firestore
+**Learning:** `HealthObservationService._sync_single_provider` saved each (provider, transport) day bundle in its own Firestore transaction. Batching them must keep the read-compare-write atomic: a plain `db.get_all` + `db.batch()` drops the transactional revision guard added for concurrent syncs of the same date.
+**Action:** Save the bundles through `save_health_observation_day_bundles_batch`, which uses one transaction per chunk (`txn.get_all` + `txn.set`) -- one read RPC and one commit, with the same revision rule (`_resolve_bundle_revision`) as the single-bundle save.

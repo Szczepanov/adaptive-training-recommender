@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -470,6 +471,158 @@ def test_save_health_observation_day_bundle_persists_when_hash_changed_regardles
 
     assert (changed, revision) == (True, 4)
     doc_ref.set.assert_called_once()
+
+
+def _bundle_for(provider: str, *, source_payload_hash: str, normalizer_version: int = 2) -> Any:
+    bundle = _make_bundle(
+        source_payload_hash=source_payload_hash, normalizer_version=normalizer_version
+    )
+    bundle.provider = provider
+    bundle.transport = "google_health"
+    return bundle
+
+
+def _snapshot(doc_id: str, data: dict[str, Any] | None) -> SimpleNamespace:
+    return SimpleNamespace(id=doc_id, exists=data is not None, to_dict=lambda: data)
+
+
+def _mock_bundle_db(snapshots: list[SimpleNamespace]) -> tuple[MagicMock, MagicMock]:
+    """A db whose document refs are distinguishable by id, and whose reads (both
+    db.get_all and txn.get_all) return the given snapshots in reverse request order --
+    get_all does not promise request order, so results must be matched by id."""
+    mock_db = MagicMock()
+    collection_ref = mock_db.collection.return_value.document.return_value.collection.return_value
+    collection_ref.document.side_effect = lambda doc_id: SimpleNamespace(id=doc_id)
+    mock_db.get_all.return_value = list(reversed(snapshots))
+    txn = MagicMock()
+    txn.get_all.return_value = list(reversed(snapshots))
+    mock_db.transaction.return_value = txn
+    return mock_db, txn
+
+
+_UNCHANGED_ID = "2026-08-28_garmin_google_health"
+_NEW_ID = "2026-08-28_eight_sleep_google_health"
+_HASH_CHANGED_ID = "2026-08-28_oura_google_health"
+_NORMALIZER_BUMPED_ID = "2026-08-28_whoop_google_health"
+
+
+def _mixed_bundles_and_snapshots() -> tuple[list[Any], list[SimpleNamespace]]:
+    bundles = [
+        _bundle_for("garmin", source_payload_hash="sha256:same"),
+        _bundle_for("eight_sleep", source_payload_hash="sha256:new"),
+        _bundle_for("oura", source_payload_hash="sha256:changed"),
+        _bundle_for("whoop", source_payload_hash="sha256:same", normalizer_version=3),
+    ]
+    stored = {"sourcePayloadHash": "sha256:same", "normalizerVersion": 2}
+    snapshots = [
+        _snapshot(_UNCHANGED_ID, {**stored, "revision": 2}),
+        _snapshot(_NEW_ID, None),
+        _snapshot(_HASH_CHANGED_ID, {**stored, "revision": 4}),
+        _snapshot(_NORMALIZER_BUMPED_ID, {**stored, "revision": 7}),
+    ]
+    return bundles, snapshots
+
+
+def test_save_health_observation_day_bundles_batch_is_one_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The read-compare-write must stay transactional (the single-bundle save's guard
+    against two concurrent syncs both claiming revision N+1), with one read and one
+    commit for every bundle of the provider-date."""
+    monkeypatch.setattr("garmin_sync.firestore_repository.firestore.transactional", lambda fn: fn)
+    bundles, snapshots = _mixed_bundles_and_snapshots()
+    mock_db, txn = _mock_bundle_db(snapshots)
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+
+    results = repo.save_health_observation_day_bundles_batch(bundles)
+
+    assert results == [(False, 2), (True, 1), (True, 5), (True, 8)]
+    mock_db.transaction.assert_called_once()
+    txn.get_all.assert_called_once()
+    assert [ref.id for ref in txn.get_all.call_args[0][0]] == [
+        _UNCHANGED_ID,
+        _NEW_ID,
+        _HASH_CHANGED_ID,
+        _NORMALIZER_BUMPED_ID,
+    ]
+    written = {call.args[0].id: call.args[1] for call in txn.set.call_args_list}
+    assert set(written) == {_NEW_ID, _HASH_CHANGED_ID, _NORMALIZER_BUMPED_ID}
+    assert written[_HASH_CHANGED_ID]["revision"] == 5
+    mock_db.get_all.assert_not_called()
+    mock_db.batch.assert_not_called()
+
+
+def test_save_health_observation_day_bundles_batch_non_transactional_fallback() -> None:
+    bundles, snapshots = _mixed_bundles_and_snapshots()
+    mock_db, _ = _mock_bundle_db(snapshots)
+    mock_db.transaction = None
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+
+    results = repo.save_health_observation_day_bundles_batch(bundles)
+
+    assert results == [(False, 2), (True, 1), (True, 5), (True, 8)]
+    mock_db.get_all.assert_called_once()
+    batch = mock_db.batch.return_value
+    assert batch.set.call_count == 3
+    batch.commit.assert_called_once()
+
+
+def test_save_health_observation_day_bundles_batch_skips_commit_when_nothing_changed() -> None:
+    mock_db, _ = _mock_bundle_db(
+        [
+            _snapshot(
+                _UNCHANGED_ID,
+                {"sourcePayloadHash": "sha256:same", "normalizerVersion": 2, "revision": 2},
+            )
+        ]
+    )
+    mock_db.transaction = None
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+
+    results = repo.save_health_observation_day_bundles_batch(
+        [_bundle_for("garmin", source_payload_hash="sha256:same")]
+    )
+
+    assert results == [(False, 2)]
+    mock_db.batch.return_value.commit.assert_not_called()
+
+
+def test_save_health_observation_day_bundles_batch_chunks_at_firestore_commit_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("garmin_sync.firestore_repository.firestore.transactional", lambda fn: fn)
+    mock_db, txn = _mock_bundle_db([])
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+    bundles = [_bundle_for(f"p{i}", source_payload_hash="sha256:new") for i in range(501)]
+
+    results = repo.save_health_observation_day_bundles_batch(bundles)
+
+    assert results == [(True, 1)] * 501
+    assert mock_db.transaction.call_count == 2
+    assert [len(call.args[0]) for call in txn.get_all.call_args_list] == [500, 1]
+    assert txn.set.call_count == 501
+
+
+def test_save_health_observation_day_bundles_batch_rejects_duplicate_documents() -> None:
+    mock_db = MagicMock()
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+    bundles = [
+        _bundle_for("garmin", source_payload_hash="sha256:a"),
+        _bundle_for("garmin", source_payload_hash="sha256:b"),
+    ]
+
+    with pytest.raises(ValueError, match="duplicate"):
+        repo.save_health_observation_day_bundles_batch(bundles)
+
+    mock_db.transaction.assert_not_called()
+
+
+def test_save_health_observation_day_bundles_batch_empty_is_a_no_op() -> None:
+    mock_db = MagicMock()
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+
+    assert repo.save_health_observation_day_bundles_batch([]) == []
+    mock_db.collection.assert_not_called()
 
 
 def test_delete_health_observation_day_bundles_batch_chunks_writes() -> None:

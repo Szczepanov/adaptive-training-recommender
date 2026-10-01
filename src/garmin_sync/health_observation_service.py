@@ -190,7 +190,10 @@ class HealthObservationService:
                         "Failed to archive raw health observations: %s", arch_err, exc_info=True
                     )
 
-            provider_results: dict[str, Any] = {}
+            bundles: list[HealthObservationDayBundle] = []
+            bundle_keys: list[str] = []
+            bundle_obs_counts: list[int] = []
+
             for (obs_provider, obs_transport), source_obs in grouped.items():
                 dtos = [observation_to_dto(self.user_id, o) for o in source_obs]
 
@@ -206,12 +209,19 @@ class HealthObservationService:
                     normalizerVersion=batch.normalizer_version,
                     revision=batch.revision,
                 )
+                bundles.append(bundle)
+                bundle_keys.append(f"{obs_provider}_{obs_transport}")
+                bundle_obs_counts.append(len(dtos))
 
-                changed, revision = self.repository.save_health_observation_day_bundle(bundle)
-                provider_key = f"{obs_provider}_{obs_transport}"
+            save_results = self.repository.save_health_observation_day_bundles_batch(bundles)
+
+            provider_results: dict[str, Any] = {}
+            for provider_key, obs_count, (changed, revision) in zip(
+                bundle_keys, bundle_obs_counts, save_results, strict=True
+            ):
                 provider_results[provider_key] = {
                     "status": "saved" if changed else "unchanged",
-                    "observations": len(dtos),
+                    "observations": obs_count,
                     "revision": revision,
                 }
 
