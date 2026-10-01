@@ -205,6 +205,32 @@ describe('recommendation validation boundary', () => {
                     audit.authoredOccurrence = { decision: 'proceed' };
                 },
             },
+            {
+                name: 'an athlete evidence lineage ref with an extra field',
+                apply: (audit: Record<string, unknown>) => {
+                    audit.athleteEvidenceLineage = [{
+                        recordId: 'athlete-evidence-1',
+                        version: 1,
+                        domain: 'subjective_calibration',
+                        refinementType: 'calibrate_scalar',
+                        baseKnowledgeClaimId: 'readiness.objective_mode_thresholds',
+                        extra: true,
+                    }];
+                },
+            },
+            {
+                name: 'duplicate athlete evidence lineage record ids',
+                apply: (audit: Record<string, unknown>) => {
+                    const ref = {
+                        recordId: 'athlete-evidence-1',
+                        version: 1,
+                        domain: 'subjective_calibration',
+                        refinementType: 'calibrate_scalar',
+                        baseKnowledgeClaimId: 'readiness.objective_mode_thresholds',
+                    };
+                    audit.athleteEvidenceLineage = [ref, { ...ref, version: 2 }];
+                },
+            },
         ];
 
         for (const { name, apply } of cases) {
@@ -213,6 +239,18 @@ describe('recommendation validation boundary', () => {
             expect(validateRecommendation(raw).isValid, name).toBe(false);
         }
     });
+    it('accepts bounded exact athlete-evidence lineage emitted by provenance', () => {
+        const raw = validV4Recommendation();
+        raw.recommendationAudit.athleteEvidenceLineage = [{
+            recordId: 'athlete-evidence-1',
+            version: 2,
+            domain: 'subjective_calibration',
+            refinementType: 'calibrate_scalar',
+            baseKnowledgeClaimId: 'readiness.objective_mode_thresholds',
+        }];
+        expect(validateRecommendation(raw).isValid).toBe(true);
+    });
+
     it('rejects malformed optional FIT fingerprint pairs before persistence', () => {
         const base = validV4Recommendation();
         const binding = {
