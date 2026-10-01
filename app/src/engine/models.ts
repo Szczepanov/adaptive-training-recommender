@@ -1,5 +1,5 @@
 import type { AthletePerformanceProfile, WorkoutPrescription } from '../workouts/models.ts';
-import type { SessionReferenceBinding } from '../sessions/models';
+import type { SessionDefinition, SessionReferenceBinding } from '../sessions/models';
 import type { IdentityDecisionProvenance } from '../observations/identityModels';
 import type { DataIssue, DataState, DataStateSummary } from './dataState';
 import type { SubjectiveBaseline } from './subjectiveBaseline';
@@ -1041,7 +1041,9 @@ export interface Recommendation {
         sessionId: string;
         title: string;
         prescription: ExternalPrescription;
-        scaling?: ExternalSessionScaling;
+        /** V1-v5 use the legacy scaling fields; v6 may additionally carry the exact
+         * structured reduced definition used by the launch adapter. */
+        scaling?: ExternalSessionScaling & { reducedDefinition?: SessionDefinition };
         isEvent?: boolean;
     };
     /** Runtime-only proof of the external execution snapshot prepared by Home. The launch

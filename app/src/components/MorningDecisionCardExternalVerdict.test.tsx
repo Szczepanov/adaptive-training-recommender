@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ExternalSessionVerdictSummary, Recommendation } from '../engine/models';
+import type { SessionDefinition } from '../sessions/models';
 import type { MorningDecisionEvidence } from '../engine/decisionEvidence';
 import { MorningDecisionCard } from './MorningDecisionCard';
 
@@ -200,8 +201,8 @@ describe('MorningDecisionCard imported-session verdict (#909)', () => {
         scaling: {
             reducible: true,
             reducedSummary: 'Cut to 2x10 min tempo, keep the warm-up.',
-            reducedDefinition: { id: 'w2-tempo', title: 'Tempo intervals (reduced)' },
-        } as Prescription['scaling'],
+            reducedDefinition: { id: 'w2-tempo', title: 'Tempo intervals (reduced)' } as SessionDefinition,
+        },
     };
     const scaleVerdict: ExternalSessionVerdictSummary = {
         decision: 'scale',

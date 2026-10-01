@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ExternalSessionVerdictSummary, Recommendation } from '../engine/models';
+import type { SessionDefinition } from '../sessions/models';
 import { ExternalVerdictBanner } from './ExternalVerdictBanner';
 
 type Prescription = NonNullable<Recommendation['externalPrescription']>;
@@ -136,7 +137,7 @@ describe('ExternalVerdictBanner (#909)', () => {
             <ExternalVerdictBanner
                 prescription={{
                     ...prescription,
-                    scaling: { reducible: true, reducedDefinition: { id: 'w2-tempo' } } as Prescription['scaling'],
+                    scaling: { reducible: true, reducedDefinition: { id: 'w2-tempo' } as SessionDefinition },
                 }}
                 verdict={verdict({ decision: 'scale', scaledSummary: 'Five minutes only', executionDose: { volume: 0.5, intensity: 1 } })}
                 reducedLaunch="available"
@@ -162,7 +163,7 @@ describe('ExternalVerdictBanner (#909)', () => {
             <ExternalVerdictBanner
                 prescription={{
                     ...prescription,
-                    scaling: { reducible: true, reducedDefinition: { id: 'w2-tempo' } } as Prescription['scaling'],
+                    scaling: { reducible: true, reducedDefinition: { id: 'w2-tempo' } as SessionDefinition },
                 }}
                 verdict={verdict({ decision: 'scale', executionDose: { volume: 0.5, intensity: 1 } })}
                 reducedLaunch="adjusted"

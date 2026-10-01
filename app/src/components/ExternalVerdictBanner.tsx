@@ -45,7 +45,7 @@ function scaleLaunchNote(prescription: ExternalVerdictBannerProps['prescription'
     if (reducedLaunch === 'available') {
         return 'Start runs your plan’s own reduced version exactly as written, never the original full-dose steps.';
     }
-    const scaling = prescription.scaling as { reducedDefinition?: unknown } | undefined;
+    const scaling = prescription.scaling;
     if (reducedLaunch === 'adjusted' && scaling?.reducedDefinition) {
         return 'Start is unavailable while a time or load adjustment is applied: the app runs only your plan’s own reduced version exactly as written. Reset the adjustment to start it.';
     }
