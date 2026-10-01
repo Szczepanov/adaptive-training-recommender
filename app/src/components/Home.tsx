@@ -678,10 +678,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
             const launch = await prepareCatalogSessionLaunch(userId, recommendationWithPrescription.prescription);
             if (!isCurrent()) return;
             primarySession = launch.binding;
-            externalPreparedLaunch = {
-              variant: useReducedDefinition ? 'reduced' : 'full',
-              prescriptionHash: launch.binding.prescriptionHash,
-            };
           } catch (err) {
             console.warn('Failed to prepare the catalog session binding for today\'s recommendation:', err);
           }
@@ -714,6 +710,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
             );
             if (!isCurrent()) return;
             primarySession = launch.binding;
+            externalPreparedLaunch = {
+              variant: useReducedDefinition ? 'reduced' : 'full',
+              prescriptionHash: launch.binding.prescriptionHash,
+            };
           } catch (err) {
             console.warn('Failed to prepare the external-plan session binding for today\'s recommendation:', err);
           }
