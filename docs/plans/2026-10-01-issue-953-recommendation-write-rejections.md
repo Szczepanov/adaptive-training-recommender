@@ -392,11 +392,30 @@ stale merge), or keep it neutral. Keep it free of personal data (I6).
 Report each command, its working directory and its exit code (user's global rule: a validator
 reproduces any subagent's "passed").
 
+### Post-review verification correction — 1 October 2026
+
+Independent PR review found that CI run 4783 failed five of the advertised 40-term
+headroom cases (`F-rest × S3` and `F-maximal × S1/S3/S4/S6`) after later integrity
+hardening commits had increased rule cost. The review also found that
+`droppedContributorObjectives` had lost its documented 64-entry Rules bound.
+
+Follow-up changes on this PR:
+
+- group stable update scalars behind one `affectedKeys()` membership test, preserving full
+  validation whenever one of those scalars actually changes;
+- remove only duplicate audit-shape checks that `validateRecommendation` already enforces,
+  while retaining decision-context and identity cross-document provenance checks;
+- restore the 64-entry `droppedContributorObjectives` Rules bound and add an emulator
+  regression test;
+- amend ADR-0010 to record the TypeScript-shape / Rules-integrity validation split.
+
+The checklist below is evidence-based: budget/CI/follow-up items remain open until the
+current PR head reproduces them.
 ## 5. Acceptance checklist
 
 - [x] #953 is corrected with D1/D2/D3, and the production rules/hosting state is recorded.
-- [x] Every real-shape fixture × scenario in the budget harness passes with ≥ 40 pad terms of
-      headroom; the baseline and candidate tables are in the PR.
+- [ ] Every real-shape fixture × scenario in the budget harness passes with ≥ 40 pad terms of
+      headroom on the current PR head; the baseline and candidate tables are in the PR.
 - [x] A catalog binding with a fingerprint pair is accepted; half-pairs, unknown kinds and
       extra keys are rejected; the TS↔rules binding key parity test exists.
 - [x] The update path computes `affectedKeys()` once, dispatches adherence-only by ternary, and
@@ -406,10 +425,10 @@ reproduces any subagent's "passed").
       no-context fallback persists.
 - [x] `daily-decision.pw.ts` reads back the persisted recommendation, and the console trap is
       active in the recommendation-bearing specs. E2E output has no budget or denial lines.
-- [x] V7 / #950 is resolved or re-scoped with evidence; #949/#951/#952 carry re-evaluation
-      comments.
+- [ ] V7 / #950 is resolved or re-scoped with current-head evidence; #949/#951/#952 carry
+      re-evaluation comments.
 - [x] Any WP3 removals are tabulated with their TS enforcement; the security review is done.
-- [x] No `POLICY_VERSION` change; `make verify` is green.
+- [ ] No `POLICY_VERSION` change; current-head CI / handoff verification is green.
 
 ## 6. Risks and rollback
 
