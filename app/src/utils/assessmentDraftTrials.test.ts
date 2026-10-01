@@ -30,6 +30,22 @@ describe('assessmentDraftTrials', () => {
         expect(trial.device).toEqual({ provider: 'Tape' });
     });
 
+    it('rejects imported context that would override locked comparison context', () => {
+        const rows: DraftTrialRow[] = [{
+            ordinal: 1,
+            values: { load_kg: 150, successful: true },
+            validity: 'valid',
+            context: { equipment_setup_id: 'tampered-rack' },
+        }];
+        expect(() => draftRowsToTrials(
+            rows,
+            'att-1',
+            { equipment_setup_id: 'locked-rack' },
+            { provider: '' },
+            '2026-10-01T00:00:00.000Z',
+        )).toThrow(/conflicts with locked comparison context/i);
+    });
+
     it('flags device overrides without a provider', () => {
         expect(hasDeviceWithoutProvider({ provider: '', model: 'X' })).toBe(true);
         expect(hasDeviceWithoutProvider({ provider: 'WL Analysis' })).toBe(false);
