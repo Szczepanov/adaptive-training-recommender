@@ -235,10 +235,7 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
 
     const removeAttempt = (index: number) => {
         if (rows.length <= 1 || storedOrdinals.has(rows[index].ordinal)) return;
-        setRows(current => {
-            const filtered = current.filter((_, idx) => idx !== index);
-            return filtered.map((row, idx) => ({ ...row, ordinal: idx + 1 }));
-        });
+        setRows(current => current.filter((_, idx) => idx !== index));
     };
 
     // Live preview only: the reducers read trial values and validity, not context or provenance.
