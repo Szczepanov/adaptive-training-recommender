@@ -417,7 +417,7 @@ emulatorDescribe('Firestore security rules', () => {
     it('accepts bounded athlete-evidence lineage and rejects an oversized lineage', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const withEvidence = validRecommendation();
-        withEvidence.recommendationAudit.athleteEvidenceLineage = [{
+        (withEvidence.recommendationAudit as Record<string, unknown>).athleteEvidenceLineage = [{
             recordId: 'athlete-evidence-1',
             version: 1,
             domain: 'subjective_calibration',
@@ -428,7 +428,7 @@ emulatorDescribe('Firestore security rules', () => {
 
         await testEnvironment.clearFirestore();
         const oversized = validRecommendation();
-        oversized.recommendationAudit.athleteEvidenceLineage = Array.from({ length: 17 }, (_, i) => ({
+        (oversized.recommendationAudit as Record<string, unknown>).athleteEvidenceLineage = Array.from({ length: 17 }, (_, i) => ({
             recordId: `athlete-evidence-${i}`,
             version: 1,
             domain: 'subjective_calibration',
