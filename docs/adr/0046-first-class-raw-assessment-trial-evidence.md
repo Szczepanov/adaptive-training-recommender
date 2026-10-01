@@ -3,6 +3,7 @@
 * **Status:** Accepted
 * **Date:** 2026-09-30
 * **Accepted:** 2026-09-30 — with three acceptance-time clarifications: capture/reducer semantics live on the `MeasurementProtocol` revision itself (D-AT-PROTOCOL), trial writes are bound to the parent attempt lifecycle (D-AT-CORRECTION), and trial immutability is enforced by Firestore rules (D-AT-TRIAL)
+* **Amended:** 2026-10-01 — D-AT-IMPORT: file imports (first: WL Analysis per-frame CSV) are versioned, local-only source adapters that fill declared raw trial fields with content-hash provenance
 * **Deciders:** Repository owner
 * **Primary issue:** #897
 * **Source analysis:** [2026-09-30 physical-capital assessment integration](../analysis/2026-09-30-issue-897-physical-capital-assessment-integration.md)
@@ -102,6 +103,20 @@ Fixed-load bar velocity may become a canonical comparable series only after its 
 
 Left/right cycling balance is descriptive context only and is not a standalone corrective target.
 
+### D-AT-IMPORT — file imports are versioned source adapters for raw trial fields (amended 2026-10-01)
+
+An athlete may fill raw trial fields from an exported measurement file instead of typing values. The first such adapter reads WL Analysis per-frame CSV exports for squat/bench attempts. Every import adapter follows the same contract:
+
+- **Declared fields only.** An import fills only fields declared by the immutable protocol capture schema (D-AT-PROTOCOL), with their declared units and bounds. It never adds fields, canonical metrics or comparison dimensions, and imported values remain raw trial evidence (D-AT-RAWFIELDS).
+- **Derived values carry their method.** When the adapter computes a value from lower-level data (e.g. segmenting per-frame velocity into reps and averaging the concentric phase), the value is a parser-derived measurement, not the source application's own displayed figure. The trial records the adapter's parser version in its scalar context. Any change to parsing or segmentation semantics requires a new parser version, never a silent reinterpretation. A hand-entered value and a parser-derived value are different measurement methods.
+- **Never trust whole-file summaries.** A source summary computed over a whole recording (rather than one repetition) is not a repetition value and must not populate a trial field.
+- **Replay-stable provenance.** The trial `sourceRef` is source-scoped and content-addressed: `<source>-csv:sha256:<hex digest of the raw file bytes>` (e.g. `wl-analysis-csv:sha256:…`). File names are never identity. Re-importing a file whose digest is already present is rejected.
+- **Local only.** Files are parsed in the athlete's browser. Neither the file, its per-frame data nor any video is uploaded or stored; only the declared trial values, scalar import context and the digest are persisted.
+- **No silent judgement.** An adapter may pre-fill a value it cannot fully observe (e.g. a lift's success inferred from a completed ascent) only as a visibly marked suggestion the athlete confirms. Technical validity (depth, spotter contact, protocol deviations) remains the athlete's decision. An import writes nothing by itself: the athlete reviews the rows and saves through the normal capture path, so the lifecycle (D-AT-CORRECTION) and immutability (D-AT-TRIAL) rules apply unchanged.
+- **Fail closed.** Unknown columns, units, delimiters or structures are rejected with a plain-language reason rather than guessed.
+
+This amendment changes no persisted schema, Firestore rule, canonical metric or recommendation behaviour. A future canonical series that consumes imported values (see proposed ADR-0047) must include the measurement method, including the parser version, in its comparison identity.
+
 ### D-AT-BODYMASS — relative values retain source-specific body-mass provenance
 
 ADR-0039 keeps provider and manual body-mass series separate. There is no abstract cross-source canonical weight to silently use.
@@ -172,6 +187,10 @@ Rejected by ADR-0039 source/provenance rules.
 ### Let assessment completion create a second training-history record
 
 Rejected because assessment evidence and performed-training identity have different lifecycles and one physical workout must not be counted twice.
+
+### Use an imported file's summary row or file name as the evidence value or identity
+
+Rejected (D-AT-IMPORT). A whole-recording summary is not a repetition value (for a multi-repetition set the WL Analysis average vertical velocity is ≈ 0 m/s because descent and ascent cancel), and file names are neither unique nor stable. Values are derived per repetition by a versioned parser and identified by content digest.
 
 ## References
 

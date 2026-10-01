@@ -2,6 +2,7 @@
 
 * **Status:** Proposed
 * **Date:** 2026-09-30
+* **Revised:** 2026-10-01 (while Proposed) — the series identity now includes the velocity measurement method and parser version (ADR-0046 D-AT-IMPORT); the canonical metric is renamed so it no longer collides with the raw trial field `mean_concentric_velocity_mps` (ADR-0046 D-AT-RAWFIELDS); only comparison dimensions that exist or are explicitly added are named
 * **Deciders:** Repository owner
 * **Primary issue:** #897 (WP6.6 / Appendix A)
 * **Source analysis:** [2026-09-30 physical-capital assessment integration](../analysis/2026-09-30-issue-897-physical-capital-assessment-integration.md)
@@ -35,10 +36,10 @@ Issue #897 WP6.6 requires evaluating the architectural options for fixed-load ve
 
 #### Description
 Create distinct, standardized measurement protocols specifically designed for fixed-load velocity testing:
-* `strength-bench-press-fixed-load-velocity` (metric: `mean_concentric_velocity_mps`)
-* `strength-back-squat-fixed-load-velocity` (metric: `mean_concentric_velocity_mps`)
+* `strength-bench-press-fixed-load-velocity` (metric: `strength_fixed_load_mean_velocity_mps`)
+* `strength-back-squat-fixed-load-velocity` (metric: `strength_fixed_load_mean_velocity_mps`)
 
-The protocol requires series-defining comparison context dimension `test_load_kg` alongside `equipment_setup_id`, `grip_style`, etc. When an athlete tests at 60 kg, the series key hashes `{ equipment_setup_id: "...", test_load_kg: 60 }`. If they subsequently test at 70 kg, a distinct comparison series is automatically established, preventing invalid cross-load velocity comparisons.
+The protocol requires the series-defining comparison context dimensions `test_load_kg` (new), `measurement_method_id` (existing) and `equipment_setup_id` (existing). When an athlete tests at 60 kg, the series key hashes `{ test_load_kg: 60, measurement_method_id: "wl-analysis-csv-v1", equipment_setup_id: "..." }`. Testing at 70 kg, deriving velocity by a different method or parser version, or changing the camera/rack setup each establish a distinct comparison series, preventing invalid comparisons. Technique standards (grip, pause, depth) are fixed by the protocol revision rather than by an extra dimension.
 
 The athlete runs this assessment as a dedicated, brief test session (e.g. 3 warm-up sets, then 3 maximal-intent single repetitions at the fixed target load).
 
@@ -100,16 +101,18 @@ While this ADR remains **Proposed**, Option A (Dedicated Fixed-Load Protocol per
 1. **Dedicated Protocols:** Fixed-load velocity is modeled as a first-class `MeasurementProtocol`:
    - Bench press: `strength-bench-press-fixed-load-velocity`
    - Back squat: `strength-back-squat-fixed-load-velocity`
-2. **Canonical Metric:** Uses metric `mean_concentric_velocity_mps` (unit: `m/s`, direction: `higher_is_better`).
-3. **Series-Defining Load:** `test_load_kg` is a required, series-defining comparison context dimension. Any change in test load automatically creates a distinct longitudinal series, marked non-comparable under Decision D1.
-4. **Trial Capture:** Each attempt captures 2–3 maximal-velocity repetitions at the locked load. Reducer selects the peak valid mean velocity.
-5. **No Observation-Identity Schema Mutation:** The core `observationKey = ${attemptId}:${metricId}` contract remains unaltered.
-6. **Registry/rules work is still required:** add `mean_concentric_velocity_mps` and `test_load_kg` through the existing TypeScript registry + Firestore allowlist parity path before any protocol using them can persist canonical evidence.
+2. **Canonical Metric:** Uses metric `strength_fixed_load_mean_velocity_mps` (unit: `m/s`, direction: `higher_is_better`). It deliberately does not reuse the raw trial field id `mean_concentric_velocity_mps`: under ADR-0046 D-AT-RAWFIELDS raw capture fields and canonical metrics are separate vocabularies, and the repository asserts that no raw field id is a registered metric.
+3. **Series-Defining Identity:** `test_load_kg` (exact absolute load), `measurement_method_id` and `equipment_setup_id` are required, series-defining comparison dimensions. A change in any of them creates a distinct longitudinal series, marked non-comparable under Decision D1.
+4. **Measurement Method Includes Derivation:** `measurement_method_id` identifies how the velocity was obtained, including the parser version for imported values (ADR-0046 D-AT-IMPORT), e.g. `wl-analysis-csv-v1` versus a hand-entered WL Analysis loop average. Values derived by different methods or parser versions are never compared numerically. Camera position/height/distance belongs to `equipment_setup_id`.
+5. **Trial Capture:** Each attempt captures 2–3 maximal-velocity repetitions at the locked load. Reducer selects the peak valid mean velocity.
+6. **No Observation-Identity Schema Mutation:** The core `observationKey = ${attemptId}:${metricId}` contract remains unaltered.
+7. **Registry/rules work is still required:** add `strength_fixed_load_mean_velocity_mps` and `test_load_kg` through the existing TypeScript registry + Firestore allowlist parity path before any protocol using them can persist canonical evidence.
 
 ---
 
 ## Consequences
 
 * **Security & Invariants:** No database-shape or observation-key migration is required. `firestore.rules` and the TypeScript registry must still be extended in lockstep for the new metric/dimension, preserving the existing parity tests and data-integrity checks.
+* **Method Sensitivity:** Because the measurement method and parser version are series-defining, introducing or revising a velocity importer starts a new series instead of silently blending methods. Raw trial velocity captured by any method remains available for later re-derivation.
 * **Progress & History:** Integrates transparently into `AssessmentHistory` and normalized CSV export without special-casing.
 * **Athlete Experience:** Clear separation between maximal force capacity (1RM) and neuromuscular movement velocity (fixed load).
