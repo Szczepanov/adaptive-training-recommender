@@ -59,9 +59,10 @@ export class RecommendationService {
 
     /**
      * Save (or re-save) the recommendation generated for a given date. Safe to call
-     * every time the dashboard computes one -- merge:true means an already-answered
-     * adherence field is preserved (see validateRecommendation), and re-saving the same
-     * template/rationale for a date that hasn't changed is a no-op in effect.
+     * every time the dashboard computes one. Persistence uses explicit top-level mergeFields:
+     * map-valued fields such as recommendationAudit are replaced wholesale while an already-
+     * answered adherence value is carried forward from the validated existing document.
+     * Re-saving the same template/rationale for a date that hasn't changed is a no-op in effect.
      */
     async saveRecommendation(
         userId: string,
