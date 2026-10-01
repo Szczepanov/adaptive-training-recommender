@@ -53,7 +53,8 @@ An existing but incomplete check-in cannot receive the High label.
 The execution rule is therefore:
 
 - unchanged recommendation -> launch the stored `primarySession` binding;
-- adjusted/alternative recommendation -> author the **currently displayed prescription** through `prepareCatalogSessionLaunch`, then launch the returned immutable binding.
+- adjusted/alternative recommendation -> author the **currently displayed prescription** through `prepareCatalogSessionLaunch`, then launch the returned immutable binding;
+- adjusted recommendation with no displayable catalog prescription while `primarySession` is an imported-plan binding -> offer no Start, Resume or Redo. An imported template never resolves to a catalog prescription, and a time-crunch or load adjustment keeps the imported binding (and its verdict) while changing the displayed dose. `MorningDecisionCard` therefore withholds the stale binding under any athlete adjustment, for `proceed` as for `scale`, and `ExternalVerdictBanner` says Start returns once the adjustment is reset.
 
 This keeps the runner, replay, and prescription-hash contracts aligned with what the athlete actually sees and chooses. The UI must never display one prescription while silently executing the original binding.
 

@@ -3,7 +3,7 @@ import type { Recommendation, SessionTemplate } from '../engine/models';
 import type { SessionExecution, SessionReferenceBinding } from '../sessions/models';
 import type { WorkoutPrescription } from '../workouts';
 import { DecisionEvidenceSummary } from './DecisionEvidenceSummary';
-import { ExternalVerdictBanner, type ReducedLaunchState } from './ExternalVerdictBanner';
+import { ExternalVerdictBanner, type ExternalLaunchState } from './ExternalVerdictBanner';
 import { OneTapAlternatives } from './OneTapAlternatives';
 import { WorkoutExportMenu } from './WorkoutExportMenu';
 import type { MorningDecisionEvidence } from '../engine/decisionEvidence';
@@ -157,11 +157,19 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     const isExternalReducedLaunchAvailable = isExternalScale
         && !hasAthleteAdjustment
         && isPreparedReducedExternalBinding(externalPrescription, recommendation?.primarySession);
+    // The same holds under `proceed`: an imported binding freezes the authored definition,
+    // a time-crunch or load adjustment keeps that binding while changing the displayed dose,
+    // and an imported template never resolves to a catalog prescription to launch instead.
+    // Fail closed on the binding's source rather than the verdict, so no imported binding
+    // runs unadjusted while the card shows an adjusted session.
+    const hasExternalPrimaryBinding = recommendation?.primarySession?.sessionSource.kind === 'external_plan';
+    const isExternalBindingAdjusted = hasAthleteAdjustment && hasExternalPrimaryBinding;
     const isExternalPrimaryBindingUnavailable = isExternalExcluded
+        || isExternalBindingAdjusted
         || (isExternalScale && !isExternalReducedLaunchAvailable);
-    const externalReducedLaunch: ReducedLaunchState = isExternalReducedLaunchAvailable
-        ? 'available'
-        : isExternalScale && hasAthleteAdjustment ? 'adjusted' : 'unavailable';
+    const externalLaunch: ExternalLaunchState = isExternalScale
+        ? isExternalReducedLaunchAvailable ? 'available' : hasAthleteAdjustment ? 'adjusted' : 'unavailable'
+        : isExternalBindingAdjusted ? 'adjusted' : hasExternalPrimaryBinding && !isExternalExcluded ? 'available' : 'unavailable';
     // #909: an adjudicated imported session carries the verdict rationale as the
     // recommendation rationale verbatim, so the hero "Why today" callout would repeat
     // the banner word for word. Suppress it there; the banner owns the explanation and
@@ -378,7 +386,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                     <ExternalVerdictBanner
                                         prescription={externalPrescription}
                                         verdict={externalVerdict}
-                                        reducedLaunch={externalReducedLaunch}
+                                        launch={externalLaunch}
                                     />
                                 )}
                                 <div className="headline-meta-row">

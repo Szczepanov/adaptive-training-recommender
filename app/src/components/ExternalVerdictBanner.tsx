@@ -6,15 +6,18 @@ import './ExternalVerdictBanner.css';
 interface ExternalVerdictBannerProps {
     prescription: NonNullable<Recommendation['externalPrescription']>;
     verdict: ExternalSessionVerdictSummary;
-    /** #949: whether the card offers Start for the plan's exact v6 `reducedDefinition`.
-     * Only meaningful under a `scale` verdict. */
-    reducedLaunch?: ReducedLaunchState;
+    /** #949: whether the card offers Start for the imported session: the session as written
+     * under `proceed`, the plan's exact v6 `reducedDefinition` under `scale`. Ignored for
+     * every other verdict. */
+    launch?: ExternalLaunchState;
 }
 
-/** `available`: Home froze a binding to the exact reduced form and the card offers Start.
- * `adjusted`: a time or load adjustment is applied, so the exact form is not what is shown.
- * `unavailable`: no reduced form exists, or it could not be prepared for today. */
-export type ReducedLaunchState = 'available' | 'adjusted' | 'unavailable';
+/** `available`: Home froze a binding to the imported session and the card offers Start.
+ * `adjusted`: a time or load adjustment is applied, so the frozen form is not what is shown
+ * and the card withholds Start until the adjustment is reset.
+ * `unavailable`: under `scale`, no reduced form exists or it could not be prepared for today;
+ * under `proceed`, no binding was prepared. */
+export type ExternalLaunchState = 'available' | 'adjusted' | 'unavailable';
 
 const DECISION_LABEL: Record<ExternalSessionVerdictSummary['decision'], string> = {
     proceed: 'Do it as written',
@@ -41,12 +44,12 @@ function gateSentence(gateFailures: readonly string[]): string | null {
  */
 /** The scale-only note on what Start will run, so the banner never contradicts the card's
  * launch affordance: present only when the card offers Start for the reduced form. */
-function scaleLaunchNote(prescription: ExternalVerdictBannerProps['prescription'], reducedLaunch: ReducedLaunchState): string {
-    if (reducedLaunch === 'available') {
+function scaleLaunchNote(prescription: ExternalVerdictBannerProps['prescription'], launch: ExternalLaunchState): string {
+    if (launch === 'available') {
         return 'Start runs your plan’s own reduced version exactly as written, never the original full-dose steps.';
     }
     const scaling = prescription.scaling as { reducedDefinition?: unknown } | undefined;
-    if (reducedLaunch === 'adjusted' && scaling?.reducedDefinition) {
+    if (launch === 'adjusted' && scaling?.reducedDefinition) {
         return 'Start is unavailable while a time or load adjustment is applied: the app runs only your plan’s own reduced version exactly as written. Reset the adjustment to start it.';
     }
     return scaling?.reducedDefinition
@@ -54,7 +57,12 @@ function scaleLaunchNote(prescription: ExternalVerdictBannerProps['prescription'
         : 'Start is unavailable for this reduced form because the imported plan does not include executable reduced steps. The app will not launch the original full-dose steps under a reduced verdict.';
 }
 
-export function ExternalVerdictBanner({ prescription, verdict, reducedLaunch = 'unavailable' }: ExternalVerdictBannerProps) {
+/** The proceed-only note, present only while an adjustment withholds the as-written Start, so
+ * the banner's "Do it as written" never sits beside a time-crunched hero with no explanation
+ * of why Start is gone. */
+const PROCEED_ADJUSTED_NOTE = 'Start is unavailable while a time or load adjustment is applied: the app runs your plan’s session only as written. Reset the adjustment to start it.';
+
+export function ExternalVerdictBanner({ prescription, verdict, launch = 'unavailable' }: ExternalVerdictBannerProps) {
     const actionable = verdict.decision === 'proceed' || verdict.decision === 'scale' || verdict.decision === 'advisory';
     // `skip` and `advisory` rationales already name the gates in the same words, and the
     // rationale is what the athlete reads twice (here and under "Why this today?"). Repeating
@@ -114,7 +122,10 @@ export function ExternalVerdictBanner({ prescription, verdict, reducedLaunch = '
                         </p>
                     )}
                     {verdict.decision === 'scale' && (
-                        <p className="external-prescription-dose">{scaleLaunchNote(prescription, reducedLaunch)}</p>
+                        <p className="external-prescription-dose">{scaleLaunchNote(prescription, launch)}</p>
+                    )}
+                    {verdict.decision === 'proceed' && launch === 'adjusted' && (
+                        <p className="external-prescription-dose">{PROCEED_ADJUSTED_NOTE}</p>
                     )}
                 </div>
             ) : (

@@ -139,7 +139,7 @@ describe('ExternalVerdictBanner (#909)', () => {
                     scaling: { reducible: true, reducedDefinition: { id: 'w2-tempo' } } as Prescription['scaling'],
                 }}
                 verdict={verdict({ decision: 'scale', scaledSummary: 'Five minutes only', executionDose: { volume: 0.5, intensity: 1 } })}
-                reducedLaunch="available"
+                launch="available"
             />,
         );
         expect(html).toContain('Start runs your plan’s own reduced version exactly as written');
@@ -165,18 +165,35 @@ describe('ExternalVerdictBanner (#909)', () => {
                     scaling: { reducible: true, reducedDefinition: { id: 'w2-tempo' } } as Prescription['scaling'],
                 }}
                 verdict={verdict({ decision: 'scale', executionDose: { volume: 0.5, intensity: 1 } })}
-                reducedLaunch="adjusted"
+                launch="adjusted"
             />,
         );
         expect(html).toContain('Start is unavailable while a time or load adjustment is applied');
         expect(html).not.toContain('could not be prepared');
     });
 
-    it('reducedLaunch adds no launch note outside a scale verdict', () => {
+    it('launch adds no scale launch note outside a scale verdict', () => {
         const html = renderToStaticMarkup(
-            <ExternalVerdictBanner prescription={prescription} verdict={verdict({ decision: 'proceed' })} reducedLaunch="available" />,
+            <ExternalVerdictBanner prescription={prescription} verdict={verdict({ decision: 'proceed' })} launch="available" />,
         );
         expect(html).not.toContain('Start runs your plan');
+        expect(html).not.toContain('Start is unavailable');
+    });
+
+    it('an adjusted proceed day says why the as-written Start is withheld', () => {
+        const html = renderToStaticMarkup(
+            <ExternalVerdictBanner prescription={prescription} verdict={verdict({ decision: 'proceed' })} launch="adjusted" />,
+        );
+        expect(html).toContain('Do it as written');
+        expect(html).toContain('Start is unavailable while a time or load adjustment is applied');
+        expect(html).toContain('Reset the adjustment to start it.');
+    });
+
+    it.each(['skip', 'defer', 'advisory'] as const)('a %s verdict never shows the adjusted Start note', decision => {
+        const html = renderToStaticMarkup(
+            <ExternalVerdictBanner prescription={prescription} verdict={verdict({ decision })} launch="adjusted" />,
+        );
+        expect(html).not.toContain('Start is unavailable');
     });
 
     it('a proceed verdict shows the authored prescription with its steps', () => {

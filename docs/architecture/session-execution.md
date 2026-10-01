@@ -25,7 +25,10 @@ content.
 
 ## Imported-plan scale verdicts and structured Start
 
-An external-plan `proceed` verdict may bind the imported v2+ `SessionDefinition` as written.
+An external-plan `proceed` verdict may bind the imported v2+ `SessionDefinition` as written,
+and Start launches that binding only while no time-crunch alternative or load adjustment is
+applied: either one keeps the binding but changes the displayed dose, so `MorningDecisionCard`
+withholds Start, Resume and Redo for any imported-plan binding until the adjustment is reset.
 A `scale` verdict is different: executing the original blocks would silently run the full
 authored dose, while deriving replacement steps from free text `reducedSummary`/
 `reducedDurationMin` would violate ADR-0019's no-parse/candidate boundary. The only executable
