@@ -1,7 +1,18 @@
-import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, unlinkSync, writeSync, closeSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 
 export const DEFAULT_MIN_PORT = 20000;
 export const DEFAULT_MAX_PORT = 39999;
@@ -127,6 +138,75 @@ export async function probeBlockPorts(ports, { checkIpv6 = null } = {}) {
   return true;
 }
 
+// A lease file that cannot be parsed is reclaimable only once it is this old, so a reader never
+// mistakes another acquirer's half-written lease (e.g. `previewStart` rewriting its pid) for an
+// orphan.
+export const UNPARSEABLE_LEASE_GRACE_MS = 10_000;
+// A reclaim lock outliving this was left by a crashed reclaimer; reclaiming takes milliseconds.
+export const RECLAIM_LOCK_STALE_MS = 30_000;
+
+function fileAgeMs(path) {
+  try {
+    return Date.now() - statSync(path).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+// Publishes `content` at `path` only if nothing is there, in one step: write a private temp file,
+// then hard-link it into place (link fails with EEXIST when the path exists). Readers therefore
+// never observe an empty or partial lease. Returns false when the path is already taken.
+function createFileExclusive(path, content) {
+  const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
+  writeFileSync(tmp, content, { flag: 'wx' });
+  try {
+    linkSync(tmp, path);
+    return true;
+  } catch (err) {
+    if (err.code === 'EEXIST') return false;
+    throw err;
+  } finally {
+    rmSync(tmp, { force: true });
+  }
+}
+
+function isReclaimable(leaseFile, isPidAliveFn) {
+  let content;
+  try {
+    content = readFileSync(leaseFile, 'utf8');
+  } catch (err) {
+    // Released between our failed create and this read: the block is free to retry.
+    return err.code === 'ENOENT';
+  }
+  try {
+    return isStale(deserializeLease(content), { isPidAliveFn });
+  } catch {
+    return fileAgeMs(leaseFile) > UNPARSEABLE_LEASE_GRACE_MS;
+  }
+}
+
+// Replaces a stale lease with ours. Unlink-then-create is two steps, so without the lock two
+// acquirers that both saw the same dead lease could each delete the other's fresh one and both
+// believe they own the block. Under the lock the staleness check is repeated, so a block that
+// another acquirer has just reclaimed is left alone.
+function tryReclaimLease(leaseFile, content, isPidAliveFn) {
+  const lockFile = `${leaseFile}.reclaim`;
+  try {
+    writeFileSync(lockFile, String(process.pid), { flag: 'wx' });
+  } catch (err) {
+    if (err.code !== 'EEXIST') throw err;
+    if (fileAgeMs(lockFile) > RECLAIM_LOCK_STALE_MS) rmSync(lockFile, { force: true });
+    return false;
+  }
+  try {
+    if (!isReclaimable(leaseFile, isPidAliveFn)) return false;
+    rmSync(leaseFile, { force: true });
+    return createFileExclusive(leaseFile, content);
+  } finally {
+    rmSync(lockFile, { force: true });
+  }
+}
+
 export async function acquirePortBlock({
   suite = 'unknown',
   size = DEFAULT_BLOCK_SIZE,
@@ -143,66 +223,24 @@ export async function acquirePortBlock({
 
   for (const blockBase of candidateBlockBases({ minPort, maxPort, step })) {
     const leaseFile = resolve(leaseDir, `${blockBase}.json`);
-    const ports = portsForBlock(blockBase, size);
-    let fd = null;
-
-    try {
-      fd = openSync(leaseFile, 'wx');
-    } catch (err) {
-      if (err.code === 'EEXIST') {
-        // Check if existing lease is stale
-        let existing = null;
-        try {
-          existing = deserializeLease(readFileSync(leaseFile, 'utf8'));
-        } catch {
-          // Unparseable or empty file from crash
-        }
-
-        if (existing && !isStale(existing, { isPidAliveFn })) {
-          continue; // Owner is still alive, skip block
-        }
-
-        // Stale lease: try to reclaim by removing and recreating
-        try {
-          unlinkSync(leaseFile);
-          fd = openSync(leaseFile, 'wx');
-        } catch {
-          // Raced with another process, continue
-          continue;
-        }
-      } else {
-        throw err;
-      }
-    }
-
-    // Acquired exclusive file descriptor
     const leaseData = {
       pid,
       worktree,
       suite,
       blockBase,
-      ports,
+      ports: portsForBlock(blockBase, size),
       startedAt: new Date().toISOString(),
     };
+    const content = `${serializeLease(leaseData)}\n`;
 
-    try {
-      const serialized = serializeLease(leaseData);
-      writeSync(fd, `${serialized}\n`);
-    } finally {
-      closeSync(fd);
-    }
+    const acquired =
+      createFileExclusive(leaseFile, content) || tryReclaimLease(leaseFile, content, isPidAliveFn);
+    if (!acquired) continue;
 
-    if (probePorts) {
-      const probeOk = await probeBlockPorts(ports);
-      if (!probeOk) {
-        // Port probing failed; release block and try next
-        try {
-          unlinkSync(leaseFile);
-        } catch {
-          // Ignore
-        }
-        continue;
-      }
+    if (probePorts && !(await probeBlockPorts(leaseData.ports))) {
+      // A non-harness process holds one of the ports (or the OS reserves it): try the next block.
+      rmSync(leaseFile, { force: true });
+      continue;
     }
 
     return {
@@ -249,7 +287,7 @@ export function listLeases({
         stale,
       });
     } catch {
-      // Unparseable file: treat as stale orphan
+      // Unparseable: an orphan once past the grace period, otherwise possibly mid-write.
       const match = /^(\d+)\.json$/.exec(file);
       const blockBase = match ? Number(match[1]) : NaN;
       leases.push({
@@ -260,7 +298,7 @@ export function listLeases({
         ports: Number.isInteger(blockBase) ? portsForBlock(blockBase) : [],
         startedAt: 'unknown',
         leaseFile: fullPath,
-        stale: true,
+        stale: fileAgeMs(fullPath) > UNPARSEABLE_LEASE_GRACE_MS,
       });
     }
   }

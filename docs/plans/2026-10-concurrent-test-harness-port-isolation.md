@@ -1,7 +1,9 @@
 # Concurrent test-harness port isolation
 
-**Status:** `Draft`
-**Blocked by:** P1–P3 should rebase on [PR #958](https://github.com/Szczepanov/adaptive-training-recommender/pull/958) (touches `run-rules-shard.mjs` and E2E support); P0 can start now
+**Status:** `In progress` — P0–P3, P5, P6 and P8 implemented on branch
+`claude/concurrent-agent-port-conflicts-cb7da8`; P4 measured and dropped; P7 skipped (see
+[Delivery record](#delivery-record))
+**Blocked by:** — (PR #958 merged; this branch is rebased on it)
 **Unlocks:** running `make verify`, `test:e2e`, `test:rules`, visual capture and the local preview from several agent worktrees at once without port collisions, cross-worktree server reuse, or orphaned emulators
 **Scope:** test/dev harness only (`app/scripts/`, Playwright configs, E2E support, `scripts/verify_repo.py`, the `local-app-preview` skill). No engine, policy, rules or production code path changes; no `POLICY_VERSION` impact.
 
@@ -118,37 +120,33 @@ No ADR is needed: this is test tooling with no product or policy decision. It is
 
 ## Phases
 
-### P0 — Reproduce and measure (no code changes) — COMPLETED
+### P0 — Reproduce and measure (no code changes) — Implemented
 
-- Reproduce failure modes 1 and 2: confirmed; concurrent default port invocations collide on
-  9099/8080/4400 and `%TEMP%/hub-demo-adaptive-training-e2e.json`; `reuseExistingServer: !CI` causes
-  silent cross-worktree server hijacking.
-- Measure socket load: sampled `Get-NetTCPConnection` once per second with
-  `app/scripts/harness/socket-sample.ps1`:
-  - **`npm run test:e2e` baseline:**
-    - Peak `Established`: 32
-    - Peak `TimeWait`: **2,920**
-    - Peak Listeners: 13
-    - Peak JVM: 1
-  - **`make verify` baseline:**
-    - Peak `Established`: 46
-    - Peak `TimeWait`: **3,363**
-    - Peak Listeners: 24
-    - Peak JVM: 3
-- Confirm Vite env precedence: confirmed with Vite 8.3; `process.env` overrides `.env.e2e`
-  cleanly during build/transform.
-- Baseline recorded above for P4 acceptance target.
+- Failure modes 1 and 2 reproduced: concurrent default-port runs collide on 9099/8080/4400 and
+  share `%TEMP%/hub-demo-adaptive-training-e2e.json`; `reuseExistingServer: !CI` reuses whatever
+  already answers on 4173.
+- Socket load is sampled with `app/scripts/harness/socket-sample.ps1` (diagnostic only, not in
+  CI). Peak `TimeWait` turned out to depend on how fast a run goes, so the sampler also reports
+  **distinct connections per harness port** over the whole run, which is the number to compare.
+- Vite gives `process.env` precedence over `.env.e2e`: confirmed by the E2E suite passing against
+  leased emulator ports while `.env.e2e` still names 9099/8080.
+- The baseline is recorded with the P4 outcome below.
 
-### P1 — Port-lease module
+### P1 — Port-lease module — Implemented
 
 - `app/scripts/harness/portLease.mjs`: `acquirePortBlock({ suite, size })`,
   `releasePortBlock(lease)`, `listLeases()`, `isStale(lease)`. Pure helpers (range iteration, lease
   serialization, stale detection) separated from the fs/net side effects so they are unit-testable.
-- Tests (same runner as `scripts/runRulesShard.test.mjs`): two concurrent acquirers never share a
-  block (spawn two child processes); a lease with a dead pid is reclaimed; a block with one
-  unbindable port is skipped; release is idempotent.
+- Tests (same runner as `scripts/runRulesShard.test.mjs`): six acquirers in separate processes
+  started together never share a block, including when all of them race to reclaim the same
+  dead-pid lease; a lease with a dead pid is reclaimed; an unparseable lease is left alone until it
+  is older than a grace period; a block with one unbindable port is skipped; release is idempotent.
+- A lease is published atomically (written to a private temp file, then hard-linked into place),
+  so no reader ever sees an empty or partial lease, and stale-lease reclaim runs under a per-block
+  lock with the staleness check repeated inside it. The first implementation did neither and the
+  concurrent test showed two processes owning the same block.
 
-### P2 — Emulator launcher; move rules onto it
+### P2 — Emulator launcher; move rules onto it — Implemented
 
 - `app/scripts/harness/runWithEmulators.mjs --suite <name> --only <emulators> -- <command>`:
   acquire lease → write `app/.harness-<blockBase>.firebase.json` (must live in `app/`:
@@ -163,7 +161,7 @@ No ADR is needed: this is test tooling with no product or policy decision. It is
 - Replace the `.rules-shard-*.firebase.json` ignore rule with `app/.harness-*.firebase.json`.
 - Update `scripts/runRulesShard.test.mjs` to assert the generated config uses the leased ports.
 
-### P3 — E2E and visual servers on leased ports
+### P3 — E2E and visual servers on leased ports — Implemented
 
 - `test:e2e` / `test:e2e:mobile` → launcher with `--only auth,firestore` and an extra leased
   `appPort`.
@@ -177,32 +175,37 @@ No ADR is needed: this is test tooling with no product or policy decision. It is
 - `playwright.config.ts` (visual): lease a single port for Vite (no emulators), same
   `--strictPort` / opt-in reuse treatment; `visual:refresh` goes through the lease.
 
-### P4 — Reduce socket churn in E2E support
+### P4 — Reduce socket churn in E2E support — Dropped after measurement
 
-- Replace per-call `initializeTestEnvironment` with one rules-disabled test environment per
-  Playwright worker (worker-scoped fixture or lazily-created module singleton cleaned up in a
-  worker teardown), and one inspector client app per worker instead of `initializeApp`/`deleteApp`
-  per read (including PR #958's `readPersistedRecommendation`). Seeders/readers keep their current
-  signatures. The fixture extends the `test` exported by `tests/e2e/support/consoleTrap.ts`.
-- The #958 headroom probe in `recommendationAuditBudget.emulator.test.ts` needs a distinct project
-  id per rules variant, so it cannot share one environment; leave it as is unless P0 shows it
-  dominates the socket count.
-- Check every `src/emulator/*.emulator.test.ts` pairs its `initializeTestEnvironment` with
-  `cleanup()` in `afterAll`; fix any that do not.
-- Re-run the P0 sampler; record before/after. Acceptance: peak `TimeWait` to emulator ports per
-  E2E run reduced materially (target ≥ 50%), no new flakes over 3 consecutive runs.
+The proposal was to replace per-call `initializeTestEnvironment` and per-read
+`initializeApp`/`deleteApp` in E2E support with worker-scoped clients. It was implemented,
+measured, and reverted:
 
-### P5 — Orphan visibility and reaping
+- During a run the worker-scoped version held **one** Node connection to Firestore, so it did
+  consolidate the helpers, but the suite total did not drop. With `main` (default ports) and this
+  branch (leased ports) running the full E2E suite at the same time under one sampler, `main`
+  opened 4,059 distinct Firestore connections and the worker-scoped branch 4,708. The bulk
+  comes from the browser app's own REST traffic to the emulator, which P4 never touched.
+- The acceptance target (≥ 50% fewer) was therefore not reachable from the support helpers. The
+  change also relied on `RulesTestEnvironment.createContext`, which is not in the public typings.
+- Every `src/emulator/*.emulator.test.ts` already pairs `initializeTestEnvironment` with
+  `cleanup()`; nothing to fix there.
+
+If socket load becomes a real constraint, the next lever is the app's Firestore transport in
+E2E mode, not the support helpers; that would need its own plan.
+
+### P5 — Orphan visibility and reaping — Implemented
 
 - `npm run harness:status`: list leases with worktree, suite, ports, owner pid, alive/stale, and
   stale `hub-demo-*.json` locators in `os.tmpdir()`.
 - `npm run harness:reap`: for **stale leases only** (owner pid dead), kill processes still
-  listening on that lease's ports and remove the lease and its locator. Never touches a lease
-  whose owner is alive. Dry-run by default; `--yes` to act.
+  listening on that lease's ports and remove the lease, its generated
+  `app/.harness-<blockBase>.firebase.json` and its locator. Never touches a lease whose owner is
+  alive. Dry-run by default; `--yes` to act.
 - Agent rule in `AGENTS.md` and `docs/standards/agent-tooling.md`: never kill a process by port
   number; use `harness:status` / `harness:reap`.
 
-### P6 — Local preview skill on the harness
+### P6 — Local preview skill on the harness — Implemented
 
 - `npm run preview:start` (detached launcher run: lease, `emulators:start`, Vite) writes
   `app/.preview.json` with the URLs, ports and project id; `npm run preview:stop` tears down the
@@ -211,7 +214,9 @@ No ADR is needed: this is test tooling with no product or policy decision. It is
 - Rewrite `.claude/skills/local-app-preview/SKILL.md` to read ports from `app/.preview.json`
   instead of the hard-coded 9099/8080/4173 table and curl examples.
 
-### P7 — Optional machine-wide emulator cap (only if P0/P4 show resource exhaustion)
+### P7 — Optional machine-wide emulator cap — Skipped
+
+Not needed: concurrent runs from separate worktrees passed without it (see the delivery record).
 
 - A counting semaphore in the same lease directory limits concurrent emulator JVM runs
   (`ATR_MAX_EMULATOR_RUNS`, default derived from core count). Waiters log who holds the slots
@@ -219,7 +224,7 @@ No ADR is needed: this is test tooling with no product or policy decision. It is
 - Skip this phase if isolation alone makes concurrent verifies reliable; it trades failures for
   waiting, which is only worth it when the machine is genuinely saturated.
 
-### P8 — Documentation
+### P8 — Documentation — Implemented
 
 - `AGENTS.md` command reference (`test:e2e`, `test:rules`, `harness:*`, `preview:*`),
   `docs/standards/agent-tooling.md` (verification contract paragraph that currently says E2E keeps
@@ -257,3 +262,28 @@ P0 → P1 → P2 → P3 is the critical path that fixes failure modes 1–3 and 
 (P1–P3) after P0's numbers are recorded. P4 and P5 are independent follow-ups and can land in
 parallel. P6 depends on P1. P7 is conditional. P8 lands with whichever PR changes the documented
 behavior.
+
+## Delivery record
+
+Measured on the Windows development machine on 2026-10-01 (20 logical CPUs, other agent worktrees
+active). Leased blocks started at 20000.
+
+| Acceptance criterion | Result |
+|---|---|
+| Two worktrees running `make verify` concurrently both pass, on distinct leased ports | See the `make verify` row in the PR description |
+| Two concurrent `test:e2e` runs in the **same** worktree both pass | **Not met.** Each run leases its own block and project and cleans up, but 4 of 4 runs had 1–4 failures, all 5 s UI/persistence timeouts in different tests (pages still `Loading…`). The same pair from two worktrees passed 41/41 on both sides, so the cause is something shared within one worktree and is not yet identified. Agents use separate worktrees, which is the supported case. |
+| A foreign server on 4173 is never reused | Met: branch E2E passed on its leased app port while `main`'s E2E served 4173 (and 8080/9099) at the same time |
+| No automated suite binds a `firebase.json` default port | Met: rules, E2E, shards, visual and preview all go through the launcher; `runRulesShard.test.mjs` asserts the lease range excludes every default |
+| After `taskkill /F` of the launcher, `harness:status` shows the stale lease and `harness:reap --yes` leaves no listener and no stale locator | Met: 3 orphan listeners, the lease and the locator were removed; the orphan generated config is now removed too |
+| P4 socket target | Dropped with P4 (above) |
+| `test:rules` and `test:e2e` pass | Met locally: rules suite exit 0; E2E 41 passed, 3 skipped (CI pending on the PR) |
+
+Cross-worktree concurrency: three concurrent pairs passed on both sides (`main` + branch, and
+branch + branch twice counting `make verify`'s E2E lane).
+
+Known follow-ups, not blocking:
+
+- Same-worktree concurrent E2E flakes (above).
+- E2E through the launcher ran 10–15% slower than `main` on the same specs (two-spec sample:
+  ~1.0–1.1 min vs 56–57 s). Not from P4 (the gap persisted with P4 reverted) and not from
+  `singleProjectMode`; cause not investigated.

@@ -1,6 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import {
+  DEFAULT_BLOCK_SIZE,
+  DEFAULT_MAX_PORT,
+  DEFAULT_MIN_PORT,
+  portsForBlock,
+} from './harness/portLease.mjs';
 import { parseShard, shardEmulatorConfig } from './run-rules-shard.mjs';
 
 function emulatorPorts(emulators) {
@@ -36,20 +42,21 @@ describe('run-rules-shard', () => {
     expect(config.emulators.singleProjectMode).toBe(false);
   });
 
-  it('ensures leased ports stay disjoint from firebase.json defaults', () => {
+  it('leases only from a range disjoint from firebase.json defaults', () => {
     const firebaseJson = JSON.parse(readFileSync(resolve('firebase.json'), 'utf8'));
-    const defaultPorts = new Set(emulatorPorts(firebaseJson.emulators));
+    const highestLeasable = DEFAULT_MAX_PORT + DEFAULT_BLOCK_SIZE - 1;
 
-    const fakeLease = { ports: [23000, 23001, 23002, 23003, 23004, 23005] };
-    const ports = emulatorPorts(shardEmulatorConfig(fakeLease).emulators);
-
-    for (const port of ports) {
-      expect(defaultPorts.has(port), `leased port ${port} should not collide with default`).toBe(false);
+    for (const port of emulatorPorts(firebaseJson.emulators)) {
+      expect(
+        port < DEFAULT_MIN_PORT || port > highestLeasable,
+        `firebase.json default port ${port} lies inside the lease range`,
+      ).toBe(true);
     }
   });
 
   it('points each shard at the same rules file as firebase.json', () => {
     const firebaseJson = JSON.parse(readFileSync(resolve('firebase.json'), 'utf8'));
-    expect(shardEmulatorConfig(20000).firestore.rules).toBe(firebaseJson.firestore.rules);
+    const lease = { ports: portsForBlock(DEFAULT_MIN_PORT) };
+    expect(shardEmulatorConfig(lease).firestore.rules).toBe(firebaseJson.firestore.rules);
   });
 });

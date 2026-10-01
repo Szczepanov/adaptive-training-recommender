@@ -1,4 +1,4 @@
-import { expect, test } from '../support/consoleTrap';
+import { expect, test } from '@playwright/test';
 import { assertEffectiveTarget } from '../support/mobileAssertions';
 
 test('target assertion rejects undersized and obscured rendered hit areas', async ({ page }) => {

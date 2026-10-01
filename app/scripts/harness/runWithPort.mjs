@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { acquirePortBlock, releasePortBlock } from './portLease.mjs';
-import { APP_DIR, ROOT_DIR, killProcessTree } from './runWithEmulators.mjs';
+import { APP_DIR, ROOT_DIR, SPAWN_OWN_PROCESS_GROUP, killProcessTree } from './runWithEmulators.mjs';
 
 export function parsePortCliArgs(argv) {
   const args = [...argv];
@@ -91,6 +91,7 @@ export async function runWithPort({
         stdio,
         shell: true,
         env: injectedEnv,
+        detached: SPAWN_OWN_PROCESS_GROUP,
       });
       childProc.on('error', rej);
       childProc.on('close', (code, signal) => {

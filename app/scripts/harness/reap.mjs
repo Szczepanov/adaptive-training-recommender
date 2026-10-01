@@ -9,7 +9,7 @@ async function main() {
 
   const result = await reapStaleResources({ dryRun });
 
-  if (result.killedPids.length === 0 && result.removedLeaseFiles.length === 0 && result.removedLocators.length === 0) {
+  if (result.killedPids.length === 0 && result.removedLeaseFiles.length === 0 && result.removedConfigs.length === 0 && result.removedLocators.length === 0) {
     console.log('No stale leases, listening orphan processes, or stale hub locators found.');
     return;
   }
@@ -20,6 +20,10 @@ async function main() {
 
   for (const leaseFile of result.removedLeaseFiles) {
     console.log(`${dryRun ? '[dry-run] Would remove' : 'Removed'} stale lease file: ${leaseFile}`);
+  }
+
+  for (const configFile of result.removedConfigs) {
+    console.log(`${dryRun ? '[dry-run] Would remove' : 'Removed'} orphan emulator config: ${configFile}`);
   }
 
   for (const locatorFile of result.removedLocators) {

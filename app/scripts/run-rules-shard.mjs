@@ -17,30 +17,23 @@ export function parseShard(arg) {
   return { index, total };
 }
 
-export function shardEmulatorConfig(leaseOrBase) {
-  const lease = typeof leaseOrBase === 'object' && Array.isArray(leaseOrBase?.ports)
-    ? leaseOrBase
-    : {
-        ports: [
-          (typeof leaseOrBase === 'number' ? leaseOrBase : 20000),
-          (typeof leaseOrBase === 'number' ? leaseOrBase : 20000) + 1,
-          (typeof leaseOrBase === 'number' ? leaseOrBase : 20000) + 2,
-          (typeof leaseOrBase === 'number' ? leaseOrBase : 20000) + 3,
-        ],
-      };
+const SHARD_EMULATORS = 'firestore';
+// Rules suites open several project ids on one emulator (recommendationAuditBudget probes).
+const SHARD_SINGLE_PROJECT_MODE = false;
 
+export function shardEmulatorConfig(lease) {
   return buildHarnessFirebaseConfig({
     lease,
-    only: 'firestore',
-    singleProjectMode: false,
+    only: SHARD_EMULATORS,
+    singleProjectMode: SHARD_SINGLE_PROJECT_MODE,
   });
 }
 
 export async function runShard({ index, total }) {
   return runWithEmulators({
     suite: `rules-${index}`,
-    only: 'firestore',
-    singleProjectMode: false,
+    only: SHARD_EMULATORS,
+    singleProjectMode: SHARD_SINGLE_PROJECT_MODE,
     command: ['npm', 'run', 'test:rules:emulator', '--', `--shard=${index}/${total}`],
   });
 }

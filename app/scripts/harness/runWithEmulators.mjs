@@ -9,25 +9,33 @@ const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
 export const APP_DIR = resolve(HARNESS_DIR, '..', '..');
 export const ROOT_DIR = resolve(APP_DIR, '..');
 
+// Children are spawned with `detached` off Windows so each run is its own process group;
+// `taskkill /T` walks the tree on Windows instead.
+export const SPAWN_OWN_PROCESS_GROUP = process.platform !== 'win32';
+
 export function killProcessTree(pid) {
-  if (!pid || !isPidAlive(pid)) return;
+  if (!pid) return;
   if (process.platform === 'win32') {
+    if (!isPidAlive(pid)) return;
+    spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore' });
+    return;
+  }
+  // The group can outlive its leader (an emulator JVM whose npm parent already exited), so
+  // signal the group even when the leader pid is gone.
+  try {
+    process.kill(-pid, 'SIGKILL');
+  } catch {
     try {
-      spawnSync('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore' });
+      process.kill(pid, 'SIGKILL');
     } catch {
-      // Ignore
-    }
-  } else {
-    try {
-      process.kill(-pid, 'SIGKILL');
-    } catch {
-      try {
-        process.kill(pid, 'SIGKILL');
-      } catch {
-        // Ignore
-      }
+      // Already gone.
     }
   }
+}
+
+// The generated config must live in app/: firebase-tools resolves firestore.rules relative to it.
+export function harnessConfigPath(worktree, blockBase) {
+  return resolve(worktree, 'app', `.harness-${blockBase}.firebase.json`);
 }
 
 export function buildHarnessFirebaseConfig({
@@ -150,7 +158,7 @@ export async function runWithEmulators({
   const sanitizedSuite = suite.replace(/[^a-zA-Z0-9-]/g, '-');
   const projectId = project || `demo-atr-${sanitizedSuite}-${lease.blockBase}`;
   const config = buildHarnessFirebaseConfig({ lease, only, singleProjectMode });
-  const configPath = resolve(APP_DIR, `.harness-${lease.blockBase}.firebase.json`);
+  const configPath = harnessConfigPath(ROOT_DIR, lease.blockBase);
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 
   const injectedEnv = buildHarnessEnv({ lease, projectId, extraEnv });
@@ -192,6 +200,7 @@ export async function runWithEmulators({
         cwd,
         stdio,
         env: injectedEnv,
+        detached: SPAWN_OWN_PROCESS_GROUP,
       });
       childProc.on('error', rej);
       childProc.on('close', (code, signal) => {

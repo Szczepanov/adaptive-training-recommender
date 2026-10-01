@@ -1,4 +1,4 @@
-import { expect, test } from './support/consoleTrap';
+import { expect, test } from '@playwright/test';
 import { provisionAthlete, signInThroughUi, signUpThroughUi } from './support/athlete';
 
 test('an existing athlete can sign in through the rendered login form', async ({ page }) => {

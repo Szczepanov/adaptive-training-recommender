@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
 import { resolve } from 'node:path';
 import { releasePortBlock } from './portLease.mjs';
 import { getListeningPidsForPorts } from './harnessAdmin.mjs';
@@ -33,6 +34,11 @@ async function main() {
     for (const pid of listeningPids) {
       killProcessTree(pid);
     }
+  }
+
+  // The emulators were hard-killed, so firebase-tools never removed its hub locator.
+  if (typeof preview.projectId === 'string') {
+    rmSync(resolve(os.tmpdir(), `hub-${preview.projectId}.json`), { force: true });
   }
 
   if (preview.configPath) {

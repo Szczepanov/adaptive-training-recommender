@@ -1,5 +1,5 @@
-import { spawnSync, fork } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import { resolve } from 'node:path';
@@ -16,6 +16,10 @@ import {
   releasePortBlock,
   serializeLease,
 } from './portLease.mjs';
+
+// Not a multiple of 4, so never a live Windows pid; far above the default Linux pid_max.
+const DEAD_PID = 9999999;
+const NL = String.fromCharCode(10);
 
 describe('portLease pure helpers', () => {
   it('generates sequential candidate bases with step', () => {
@@ -51,7 +55,7 @@ describe('portLease pure helpers', () => {
     const liveLease = { pid: process.pid, blockBase: 20000 };
     expect(isStale(liveLease)).toBe(false);
 
-    const deadLease = { pid: 9999999, blockBase: 20000 };
+    const deadLease = { pid: DEAD_PID, blockBase: 20000 };
     // Using mock isPidAliveFn
     expect(isStale(deadLease, { isPidAliveFn: () => false })).toBe(true);
     expect(isStale(deadLease, { isPidAliveFn: () => true })).toBe(false);
@@ -97,7 +101,7 @@ describe('portLease lifecycle', () => {
     writeFileSync(
       staleFile,
       JSON.stringify({
-        pid: 9999999,
+        pid: DEAD_PID,
         worktree: '/dead',
         suite: 'dead',
         blockBase: 22000,
@@ -113,7 +117,7 @@ describe('portLease lifecycle', () => {
       step: 10,
       size: 2,
       probePorts: false,
-      isPidAliveFn: (pid) => pid !== 9999999,
+      isPidAliveFn: (pid) => pid !== DEAD_PID,
     });
 
     // Successfully reclaimed the stale block
@@ -185,7 +189,7 @@ describe('portLease lifecycle', () => {
     writeFileSync(
       resolve(tmpDir, '25010.json'),
       JSON.stringify({
-        pid: 9999999,
+        pid: DEAD_PID,
         worktree: '/dead',
         suite: 'dead-suite',
         blockBase: 25010,
@@ -208,57 +212,144 @@ describe('portLease lifecycle', () => {
     releasePortBlock(lease1, { leaseDir: tmpDir });
   });
 
-  it('ensures two concurrent acquirers never share a block', async () => {
-    const helperScript = resolve(tmpDir, 'acquire-helper.mjs');
-    const portLeaseUrl = new URL('./portLease.mjs', import.meta.url).href;
-    writeFileSync(
-      helperScript,
-      `
+  it('does not reclaim a freshly created lease that is not yet readable', async () => {
+    // An acquirer that has created but not yet parsed-out its lease must keep it.
+    writeFileSync(resolve(tmpDir, '27000.json'), '');
+
+    const lease = await acquirePortBlock({
+      leaseDir: tmpDir,
+      minPort: 27000,
+      maxPort: 27020,
+      step: 10,
+      size: 2,
+      probePorts: false,
+    });
+
+    expect(lease.blockBase).toBe(27010);
+    expect(readFileSync(resolve(tmpDir, '27000.json'), 'utf8')).toBe('');
+  });
+
+  it('reclaims an unparseable lease once it is older than the grace period', async () => {
+    const orphan = resolve(tmpDir, '27100.json');
+    writeFileSync(orphan, '');
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(orphan, old, old);
+
+    const lease = await acquirePortBlock({
+      leaseDir: tmpDir,
+      minPort: 27100,
+      maxPort: 27120,
+      step: 10,
+      size: 2,
+      probePorts: false,
+    });
+
+    expect(lease.blockBase).toBe(27100);
+  });
+
+  it('never writes a partial lease file', async () => {
+    const lease = await acquirePortBlock({
+      leaseDir: tmpDir,
+      minPort: 27200,
+      maxPort: 27220,
+      step: 10,
+      size: 2,
+      probePorts: false,
+    });
+
+    expect(deserializeLease(readFileSync(lease.leaseFile, 'utf8')).pid).toBe(process.pid);
+    expect(readdirSync(tmpDir).filter((f) => !f.endsWith('.json'))).toEqual([]);
+  });
+
+  describe('concurrent acquirers in separate processes', () => {
+    const ACQUIRERS = 6;
+
+    function writeHelper({ minPort, maxPort }) {
+      const helperScript = resolve(tmpDir, `acquire-helper-${minPort}.mjs`);
+      const portLeaseUrl = new URL('./portLease.mjs', import.meta.url).href;
+      writeFileSync(
+        helperScript,
+        `
 import { acquirePortBlock } from '${portLeaseUrl}';
 const lease = await acquirePortBlock({
   leaseDir: process.argv[2],
-  minPort: 26000,
-  maxPort: 26050,
+  minPort: ${minPort},
+  maxPort: ${maxPort},
   step: 10,
   size: 4,
   probePorts: false,
 });
 console.log(JSON.stringify(lease));
-// Keep process alive until signaled
+// Hold the lease (pid stays alive) until the test kills the process.
 process.stdin.resume();
 `,
-    );
+      );
+      return helperScript;
+    }
 
-    const { spawn } = await import('node:child_process');
-
-    const spawnAcquirer = () => {
+    function spawnAcquirer(helperScript) {
       return new Promise((res, rej) => {
         const proc = spawn(process.execPath, [helperScript, tmpDir], {
           stdio: ['pipe', 'pipe', 'pipe'],
         });
         let output = '';
+        let errors = '';
         proc.stdout.on('data', (d) => {
           output += d.toString();
-          if (output.includes('\n')) {
-            const lease = JSON.parse(output.trim());
-            res({ proc, lease });
-          }
+          if (output.includes(NL)) res({ proc, lease: JSON.parse(output.trim()) });
+        });
+        proc.stderr.on('data', (d) => {
+          errors += d.toString();
         });
         proc.on('error', rej);
+        proc.on('exit', (code) => {
+          if (!output.includes(NL)) rej(new Error(`acquirer exited ${code}: ${errors}`));
+        });
       });
-    };
-
-    const first = await spawnAcquirer();
-    const second = await spawnAcquirer();
-
-    try {
-      expect(first.lease.blockBase).not.toBe(second.lease.blockBase);
-      expect(new Set([...first.lease.ports, ...second.lease.ports]).size).toBe(
-        first.lease.ports.length + second.lease.ports.length,
-      );
-    } finally {
-      first.proc.kill();
-      second.proc.kill();
     }
+
+    async function acquireConcurrently(helperScript) {
+      const results = await Promise.allSettled(
+        Array.from({ length: ACQUIRERS }, () => spawnAcquirer(helperScript)),
+      );
+      const acquired = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+      try {
+        expect(results.filter((r) => r.status === 'rejected')).toEqual([]);
+        return acquired.map((a) => a.lease);
+      } finally {
+        for (const { proc } of acquired) proc.kill();
+      }
+    }
+
+    function expectDisjoint(leases) {
+      const bases = leases.map((l) => l.blockBase);
+      expect(new Set(bases).size).toBe(leases.length);
+      const ports = leases.flatMap((l) => l.ports);
+      expect(new Set(ports).size).toBe(ports.length);
+    }
+
+    it('never share a block', async () => {
+      const leases = await acquireConcurrently(writeHelper({ minPort: 26000, maxPort: 26090 }));
+      expectDisjoint(leases);
+    });
+
+    it('never share a block while reclaiming the same stale lease', async () => {
+      // Every acquirer sees the dead-pid lease on the first block at the same time; only one
+      // may reclaim it.
+      writeFileSync(
+        resolve(tmpDir, '28000.json'),
+        serializeLease({
+          pid: DEAD_PID,
+          worktree: '/dead',
+          suite: 'dead',
+          blockBase: 28000,
+          ports: [28000, 28001, 28002, 28003],
+        }),
+      );
+
+      const leases = await acquireConcurrently(writeHelper({ minPort: 28000, maxPort: 28090 }));
+      expectDisjoint(leases);
+      expect(leases.filter((l) => l.blockBase === 28000)).toHaveLength(1);
+    });
   });
 });

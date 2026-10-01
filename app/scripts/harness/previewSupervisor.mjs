@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process';
 import { readFileSync, rmSync, appendFileSync, mkdirSync, openSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { deserializeLease, releasePortBlock } from './portLease.mjs';
-import { APP_DIR, buildHarnessEnv, killProcessTree } from './runWithEmulators.mjs';
+import { APP_DIR, SPAWN_OWN_PROCESS_GROUP, buildHarnessEnv, killProcessTree } from './runWithEmulators.mjs';
 
 const [, , leaseFile, configPath, previewFilePath] = process.argv;
 
@@ -82,6 +82,7 @@ try {
       cwd: APP_DIR,
       stdio: ['ignore', emuFd, emuFd],
       env: injectedEnv,
+      detached: SPAWN_OWN_PROCESS_GROUP,
     },
   );
 
@@ -101,6 +102,7 @@ try {
       shell: true,
       stdio: ['ignore', viteFd, viteFd],
       env: injectedEnv,
+      detached: SPAWN_OWN_PROCESS_GROUP,
     },
   );
 
@@ -116,12 +118,11 @@ try {
     process.exit(code ?? 0);
   });
 
-  // Keep supervisor event loop active
-  const timer = setInterval(() => {
+  // The child handles already keep the event loop alive; the heartbeat makes a hung supervisor
+  // visible in artifacts/preview-supervisor.log.
+  setInterval(() => {
     log('heartbeat: supervisor alive');
   }, 10000);
-  timer.unref(); // wait, unref would allow exit if nothing else is pending! Keep ref!
-  timer.ref();
 } catch (err) {
   log(`Spawn error: ${err}`);
   cleanup();

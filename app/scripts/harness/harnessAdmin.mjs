@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import { resolve } from 'node:path';
 import {
@@ -9,7 +9,7 @@ import {
   isStale,
   listLeases,
 } from './portLease.mjs';
-import { killProcessTree } from './runWithEmulators.mjs';
+import { harnessConfigPath, killProcessTree } from './runWithEmulators.mjs';
 
 export function getListeningPidsForPorts(targetPorts) {
   if (!targetPorts || targetPorts.length === 0) return [];
@@ -147,6 +147,7 @@ export async function reapStaleResources({
     dryRun,
     killedPids: [],
     removedLeaseFiles: [],
+    removedConfigs: [],
     removedLocators: [],
   };
 
@@ -167,6 +168,16 @@ export async function reapStaleResources({
       }
     }
     reaped.removedLeaseFiles.push(lease.leaseFile);
+
+    // A hard-killed launcher never reaches its `finally`, so its generated config survives too.
+    const configPath =
+      typeof lease.worktree === 'string' && Number.isInteger(lease.blockBase)
+        ? harnessConfigPath(lease.worktree, lease.blockBase)
+        : null;
+    if (configPath && existsSync(configPath)) {
+      if (!dryRun) rmSync(configPath, { force: true });
+      reaped.removedConfigs.push(configPath);
+    }
   }
 
   for (const locator of staleLocators) {

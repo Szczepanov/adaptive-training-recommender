@@ -97,7 +97,10 @@ curl -s "http://127.0.0.1:$FIRESTORE_PORT/v1/projects/$PROJECT_ID/databases/(def
 ```
 
 Useful for confirming a write actually persisted (e.g. a completed
-`SessionExecution`) even when the UI doesn't visibly reflect it.
+`SessionExecution`) even when the UI doesn't visibly reflect it — that gap is
+sometimes the app behaving correctly against a not-yet-activated read path
+(check `docs/plans/README.md` before assuming it's a bug), and sometimes it's a
+real defect. This is how to tell the difference quickly.
 
 ## Known gotchas
 

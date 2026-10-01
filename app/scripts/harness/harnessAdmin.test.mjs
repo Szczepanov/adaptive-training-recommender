@@ -48,13 +48,22 @@ describe('harnessAdmin', () => {
     expect(locators[0].stale).toBe(true);
   });
 
-  it('reaps stale leases and locators while preserving active leases', async () => {
+  it('reaps stale leases, their configs and locators while preserving active leases', async () => {
+    const deadWorktree = resolve(tmpTempDir, 'dead-worktree');
+    const activeWorktree = resolve(tmpTempDir, 'active-worktree');
+    const staleConfig = resolve(deadWorktree, 'app', '.harness-22000.firebase.json');
+    const activeConfig = resolve(activeWorktree, 'app', '.harness-23000.firebase.json');
+    for (const config of [staleConfig, activeConfig]) {
+      mkdirSync(resolve(config, '..'), { recursive: true });
+      writeFileSync(config, '{}');
+    }
+
     const staleLeaseFile = resolve(tmpLeaseDir, '22000.json');
     writeFileSync(
       staleLeaseFile,
       JSON.stringify({
         pid: 9999999,
-        worktree: '/dead',
+        worktree: deadWorktree,
         suite: 'dead',
         blockBase: 22000,
         ports: [22000, 22001],
@@ -67,7 +76,7 @@ describe('harnessAdmin', () => {
       activeLeaseFile,
       JSON.stringify({
         pid: process.pid,
-        worktree: '/active',
+        worktree: activeWorktree,
         suite: 'active',
         blockBase: 23000,
         ports: [23000, 23001],
@@ -94,6 +103,8 @@ describe('harnessAdmin', () => {
 
     expect(dryRunResult.removedLeaseFiles).toContain(staleLeaseFile);
     expect(dryRunResult.removedLocators).toContain(staleLocatorFile);
+    expect(dryRunResult.removedConfigs).toEqual([staleConfig]);
+    expect(existsSync(staleConfig)).toBe(true);
     expect(existsSync(staleLeaseFile)).toBe(true);
     expect(existsSync(activeLeaseFile)).toBe(true);
     expect(existsSync(staleLocatorFile)).toBe(true);
@@ -111,5 +122,8 @@ describe('harnessAdmin', () => {
     expect(existsSync(staleLeaseFile)).toBe(false);
     expect(existsSync(activeLeaseFile)).toBe(true);
     expect(existsSync(staleLocatorFile)).toBe(false);
+    expect(reapResult.removedConfigs).toEqual([staleConfig]);
+    expect(existsSync(staleConfig)).toBe(false);
+    expect(existsSync(activeConfig)).toBe(true);
   });
 });

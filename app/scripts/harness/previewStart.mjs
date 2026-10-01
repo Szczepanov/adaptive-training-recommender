@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { acquirePortBlock, isPidAlive, serializeLease } from './portLease.mjs';
-import { APP_DIR, ROOT_DIR, buildHarnessFirebaseConfig } from './runWithEmulators.mjs';
+import { APP_DIR, ROOT_DIR, buildHarnessFirebaseConfig, harnessConfigPath } from './runWithEmulators.mjs';
 
 const HARNESS_DIR = dirname(fileURLToPath(import.meta.url));
 const PREVIEW_FILE = resolve(APP_DIR, '.preview.json');
@@ -59,7 +59,7 @@ async function main() {
     only: 'auth,firestore',
     singleProjectMode: false,
   });
-  const configPath = resolve(APP_DIR, `.harness-${lease.blockBase}.firebase.json`);
+  const configPath = harnessConfigPath(ROOT_DIR, lease.blockBase);
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
 
   console.log(`Starting preview supervisor (ports: App=${appPort}, Auth=${authPort}, Firestore=${firestorePort})...`);

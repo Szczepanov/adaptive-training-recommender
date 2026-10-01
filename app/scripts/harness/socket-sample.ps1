@@ -4,7 +4,11 @@
 .DESCRIPTION
   Samples Get-NetTCPConnection once per second, filtering to emulator, Vite,
   and harness leased port ranges. Records peak Established, peak TimeWait,
-  JVM (Java) process count, and listener count.
+  JVM (Java) process count, and listener count, plus the number of distinct
+  connections seen per harness port over the whole run. Peak TimeWait depends
+  on how fast the run goes; the distinct count does not, so compare that one
+  between runs. TIME_WAIT lasts 120 s on Windows, far longer than the sample
+  interval, so no connection escapes being seen.
 .PARAMETER Command
   Optional command line to run and monitor until completion.
 .PARAMETER OutputFile
@@ -49,6 +53,8 @@ if ($Command) {
 }
 
 $portPeakTimeWait = @{}
+# Server port -> set of 'clientAddr:clientPort' seen in any non-listening state.
+$portDistinctConnections = @{}
 
 try {
     while ($true) {
@@ -70,6 +76,15 @@ try {
             } else {
                 $currentPortTW[$p] = 1
             }
+        }
+        $conns | Where-Object { $_.State -ne 'Listen' } | ForEach-Object {
+            $serverIsLocal = Test-PortMatch $_.LocalPort
+            $p = if ($serverIsLocal) { $_.LocalPort } else { $_.RemotePort }
+            $client = if ($serverIsLocal) { "$($_.RemoteAddress):$($_.RemotePort)" } else { "$($_.LocalAddress):$($_.LocalPort)" }
+            if (-not $portDistinctConnections.ContainsKey($p)) {
+                $portDistinctConnections[$p] = [System.Collections.Generic.HashSet[string]]::new()
+            }
+            [void]$portDistinctConnections[$p].Add($client)
         }
         foreach ($p in $currentPortTW.Keys) {
             if (-not $portPeakTimeWait.ContainsKey($p) -or $currentPortTW[$p] -gt $portPeakTimeWait[$p]) {
@@ -115,13 +130,27 @@ $portPeakTimeWait.GetEnumerator() | Sort-Object Value -Descending | ForEach-Obje
     Write-Host "  Port $($_.Key): $($_.Value)"
 }
 
+Write-Host "Distinct Connections By Port:"
+$portDistinctByName = [ordered]@{}
+$portDistinctConnections.GetEnumerator() | Sort-Object { $_.Value.Count } -Descending | ForEach-Object {
+    Write-Host "  Port $($_.Key): $($_.Value.Count)"
+    $portDistinctByName[[string]$_.Key] = $_.Value.Count
+}
+
+# ConvertTo-Json only serializes dictionaries with string keys.
+$portPeakTimeWaitByName = [ordered]@{}
+$portPeakTimeWait.GetEnumerator() | Sort-Object Value -Descending | ForEach-Object {
+    $portPeakTimeWaitByName[[string]$_.Key] = $_.Value
+}
+
 $summary = [PSCustomObject]@{
     TotalSamples     = $samples.Count
     PeakEstablished  = $peakEstablished
     PeakTimeWait     = $peakTimeWait
     PeakListeners    = $peakListeners
     PeakJvmCount     = $peakJvmCount
-    PortPeakTimeWait = $portPeakTimeWait
+    PortPeakTimeWait = $portPeakTimeWaitByName
+    PortDistinctConnections = $portDistinctByName
     Samples          = $samples
 }
 
