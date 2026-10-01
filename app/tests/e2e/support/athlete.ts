@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
 import { deleteApp, initializeApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, signInWithEmailAndPassword } from 'firebase/auth';
-import { collection, connectFirestoreEmulator, doc, getDocs, getFirestore, setDoc, type Firestore } from 'firebase/firestore';
+import { collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, setDoc, type Firestore } from 'firebase/firestore';
 import type { Page } from '@playwright/test';
 import { getLocalDateString } from '../../../src/utils/localDate';
 
@@ -256,6 +256,24 @@ export async function hasPersistedCheckin(athlete: E2EAthlete, date: string): Pr
     connectFirestoreEmulator(db, EMULATOR_HOST, FIRESTORE_EMULATOR_PORT);
     const snapshot = await getDocs(collection(db, 'users', credential.user.uid, 'daily_subjective_checkins'));
     return snapshot.docs.some(item => item.id === date);
+  } finally {
+    await deleteApp(app);
+  }
+}
+
+export async function readPersistedRecommendation(
+  athlete: E2EAthlete,
+  date: string,
+): Promise<Record<string, unknown> | null> {
+  const app = initializeApp(firebaseConfig, `e2e-rec-inspector-${randomUUID()}`);
+  try {
+    const auth = getAuth(app);
+    connectAuthEmulator(auth, AUTH_EMULATOR_URL);
+    const credential = await signInWithEmailAndPassword(auth, athlete.email, athlete.password);
+    const db = getFirestore(app);
+    connectFirestoreEmulator(db, EMULATOR_HOST, FIRESTORE_EMULATOR_PORT);
+    const snapshot = await getDoc(doc(db, 'users', credential.user.uid, 'daily_recommendations', date));
+    return snapshot.exists() ? (snapshot.data() as Record<string, unknown>) : null;
   } finally {
     await deleteApp(app);
   }

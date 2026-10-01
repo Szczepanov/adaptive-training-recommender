@@ -2138,6 +2138,74 @@ emulatorDescribe('Firestore security rules', () => {
         await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recWithBindings))).resolves.toBeUndefined();
     });
 
+    it('accepts a catalog binding with a valid fitWorkoutFingerprint pair', async () => {
+        const base = validRecommendation();
+        const recWithFingerprint = {
+            ...base,
+            primarySession: {
+                sessionSource: { kind: 'catalog', workoutId: 'strength_full_body_maintenance_01', catalogVersion: '1' },
+                prescriptionHash: 'presc-hash-abc',
+                occurrenceId: 'occ-1',
+                fitWorkoutFingerprint: 'fit-workout-v2:0123456789abcdef0123456789abcdef',
+                fitWorkoutFingerprintKind: 'semantic_definition',
+            },
+        };
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recWithFingerprint))).resolves.toBeUndefined();
+    });
+
+    it('rejects a catalog binding with only one half of the fingerprint pair', async () => {
+        const base = validRecommendation();
+        const recOnlyFingerprint = {
+            ...base,
+            primarySession: {
+                sessionSource: { kind: 'catalog', workoutId: 'strength_full_body_maintenance_01', catalogVersion: '1' },
+                prescriptionHash: 'presc-hash-abc',
+                fitWorkoutFingerprint: 'fit-workout-v2:0123456789abcdef0123456789abcdef',
+            },
+        };
+        const recOnlyKind = {
+            ...base,
+            primarySession: {
+                sessionSource: { kind: 'catalog', workoutId: 'strength_full_body_maintenance_01', catalogVersion: '1' },
+                prescriptionHash: 'presc-hash-abc',
+                fitWorkoutFingerprintKind: 'semantic_definition',
+            },
+        };
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recOnlyFingerprint))).resolves.toBeDefined();
+        await expect(assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recOnlyKind))).resolves.toBeDefined();
+    });
+
+    it('rejects a catalog binding with an unknown fingerprint kind', async () => {
+        const base = validRecommendation();
+        const recInvalidKind = {
+            ...base,
+            primarySession: {
+                sessionSource: { kind: 'catalog', workoutId: 'strength_full_body_maintenance_01', catalogVersion: '1' },
+                prescriptionHash: 'presc-hash-abc',
+                fitWorkoutFingerprint: 'fit-workout-v2:0123456789abcdef0123456789abcdef',
+                fitWorkoutFingerprintKind: 'invalid_kind',
+            },
+        };
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recInvalidKind))).resolves.toBeDefined();
+    });
+
+    it('rejects a catalog binding with an extra unknown key', async () => {
+        const base = validRecommendation();
+        const recExtraKey = {
+            ...base,
+            primarySession: {
+                sessionSource: { kind: 'catalog', workoutId: 'strength_full_body_maintenance_01', catalogVersion: '1' },
+                prescriptionHash: 'presc-hash-abc',
+                unknownField: 'disallowed',
+            },
+        };
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recExtraKey))).resolves.toBeDefined();
+    });
+
     it('binds a recommendation to an owner-only, write-once decision context', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();

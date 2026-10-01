@@ -31,6 +31,7 @@ export function shardEmulatorConfig(index) {
   return {
     firestore: { rules: 'firestore.rules' },
     emulators: {
+      singleProjectMode: false,
       firestore: { port: BASE_PORTS.firestore + index, websocketPort: BASE_PORTS.websocket + index },
       hub: { port: BASE_PORTS.hub + index },
       logging: { port: BASE_PORTS.logging + index },

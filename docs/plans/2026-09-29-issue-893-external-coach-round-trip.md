@@ -348,22 +348,21 @@ complete a variant whose required behavior is tracked by `test.fixme`.
 | V4 exact reduced execution | [state E2E] | `V4 scale freezes the exact reduced definition and reports app dose modified` is `test.fixme`, [#949]. Service-level reduced-definition proofs do not close the Home launch gap. |
 | V5 skip/defer cannot launch | [verdict E2E] and [mobile verdict E2E] | `a deferred imported session names its verdict and offers no Start path`; `an excluded imported session names its verdict and offers no Start path as written`. Existing cases; passed. The skip day's recommendation write is rejected ([#953]), which blocks V7, not the no-Start assertion. |
 | V6 rest, no session, unexpected work | [state E2E] | `V6 authored rest records unexpected work without inventing an authored session`; `V6 an active plan with no authored session today renders no row for today`. Active; passed. |
-| V7 gate replacement | [state E2E] | `V7 a gate replacement has exact labels and creates no external occurrence` is `test.fixme`, [#950]. Skip check-in persistence fails; the next brief is not adjudicated, not gate replaced. |
+| V7 gate replacement | [state E2E] | `V7 a gate replacement has exact labels and creates no external occurrence` is active and passing. Unblocked by [#953] (D1 catalog fingerprint fix). |
 | V8 manual replacement | [state E2E] | `V8 UI manual replacement names its exact replacement occurrence` is `test.fixme`, [#951]. UI-imported JSON reaches Save/Schedule/Replace because direct fixture/catalog previews do not expose the destination sheet. A real replacement/manual completion exists, but the authored row retains athlete none. Home also prepares the external occurrence before Start. |
 | V9 same-day sessions | [state E2E] | Active `V9 plain fixed same-day sessions retain two distinct next-brief rows` asserts two exact not-adjudicated rows and zero executions. `V9 an intraday bundle retains two session rows and two genuine workouts` is `test.fixme`, [#952]; two-workout integrated completion remains unproved. |
 | V10 Garmin enrichment | [round-trip E2E] | `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)`. Active; opens Data → Activities, then calls the real `loadCanonicalActivitiesWindow` service because the canonical Activities read-model flag is off by default in E2E. It does not fabricate performed linkage. Passed. |
 | V11 user isolation | [rules] | `rejects cross-user external plan access and forged ownership`; `denies cross-user and revision-mismatched revision-scoped placement writes`. Rules gate passed in initial `make verify`. |
-| V12 abandoned execution | [round-trip E2E] | `V12 abandoned external execution retains logged evidence and exact next-brief ids`. Active; passed, including 3/3 under `--repeat-each=3`. An earlier PR-E repeat run saw one V12 failure (invalid recommendation read); it did not reproduce, and the likely cause is the recommendation-write budget rejection tracked in [#953]. |
+| V12 abandoned execution | [round-trip E2E] | `V12 abandoned external execution retains logged evidence and exact next-brief ids`. Active; passed, including 3/3 under `--repeat-each=3`. Unblocked by [#953]. |
 
 ## Named proof gaps
 
-Four desired regressions remain open in [state E2E] as `test.fixme`. This PR is tests/docs only;
-their product fixes belong to the linked issues and separate fix PRs.
+Three desired regressions remain open in [state E2E] as `test.fixme` (H2 resolved by #953).
 
 | Gap | Affected criteria/variant | Demonstrated boundary | Follow-up |
 |---|---|---|---|
 | H1 | E3, S2 / V4 | The authoring adapter accepts exact reduced definitions, but Home unconditionally withholds Start for scale. No integrated reduced execution or completed app-dose-modified row is proven. | [#949] |
-| H2 | S4 / V7, legacy V5 skip reliability | The legacy skip check-in cannot persist its recommendation: Firestore rejects the write at the 1000-expression rules budget ([#953], which also affects non-external check-ins). The next brief reports not adjudicated, rather than gate replaced. | [#950] |
+| H2 | S4 / V7, legacy V5 skip reliability | Resolved by [#953] (D1 catalog fingerprint pair accepted by rules). V7 is active and passing. | Closed ([#950]) |
 | H3 | S4 / V8, occurrence-at-Start boundary | A real UI manual replacement and completed manual execution exist, but the next brief retains the authored row with athlete none and no replacement attribution. Home eagerly prepares a scheduled external occurrence before Start, so the variant's no-external-occurrence condition is unmet. | [#951] |
 | H4 | P4 / full V9 | The initial bundle recommendation parses AVAILABLE with two valid separate windows and short executable definitions. The primary completes and the brief retains both rows, but the secondary Start card is absent. Started-member replay/binding mismatches and rejected recommendation updates accompany the failure. | [#952] |
 

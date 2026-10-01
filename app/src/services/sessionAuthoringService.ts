@@ -242,6 +242,8 @@ export interface PrepareExternalPlanSessionLaunchOptions {
     useReducedDefinition?: boolean;
     /** Adjudicated execution-volume fraction for today's exact scale verdict. */
     scaleVolume?: number;
+    /** When preparing recommendation binding (composition time), allow existing occurrences regardless of terminal or active lifecycle state. */
+    allowAnyOccurrenceState?: boolean;
 }
 
 /**
@@ -341,7 +343,7 @@ export async function prepareExternalPlanSessionLaunch(
         const occurrenceData = occurrence.data;
         if (
             !isExternalPlanOccurrence(occurrenceData)
-            || occurrenceData.state !== 'scheduled'
+            || (!options.allowAnyOccurrenceState && occurrenceData.state !== 'scheduled')
             || occurrenceData.userId !== userId
             || occurrenceData.externalPlanRef.planId !== sessionSource.planId
             || occurrenceData.externalPlanRef.revision !== sessionSource.revision
@@ -371,7 +373,7 @@ export async function prepareExternalPlanSessionLaunch(
                 now,
             },
         );
-        if (occurrence.state !== 'scheduled') {
+        if (!options.allowAnyOccurrenceState && occurrence.state !== 'scheduled') {
             throw new Error(`External-plan occurrence ${occurrence.occurrenceId} does not match the launch source.`);
         }
         effectiveOccurrenceId = occurrence.occurrenceId;

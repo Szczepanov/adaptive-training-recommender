@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './support/consoleTrap';
 import { provisionAthlete, seedRecoverySnapshot, signInThroughUi, openFixturePicker } from './support/athlete';
 import { mondayOfWeek, weekdayOf, seedExternalPlanForToday, seedExternalPlanningMode } from './support/externalPlan';
 import { buildV6Plan, coachSession, strengthDefinition, seedExternalPlanRevision, seedBundleWindows, importPlan, checkIn, planningBrief, finishStrength, terminalExecution, executionRow, readExecutionPrescription, readPerformedOccurrences, readExecutions, readOccurrences, readDocument } from './support/roundTrip';
@@ -74,8 +75,8 @@ test('V6 an active plan with no authored session today renders no row for today'
   expect((await planningBrief(page)).split('\n').filter(row => row.startsWith(`- ${today} ${plan.planId} r`))).toEqual([]);
 });
 
-// Product gap: https://github.com/Szczepanov/adaptive-training-recommender/issues/950
-test.fixme('V7 a gate replacement has exact labels and creates no external occurrence', async ({ page }) => {
+// Fixed in #953 (D1 catalog fingerprint binding in recommendation write)
+test('V7 a gate replacement has exact labels and creates no external occurrence', async ({ page }) => {
   const athlete = await provisionAthlete();
   const today = await seedRecoverySnapshot(athlete);
   const seed = await seedExternalPlanForToday(athlete, 'skip');

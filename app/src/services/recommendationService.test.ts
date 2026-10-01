@@ -68,6 +68,29 @@ describe('RecommendationService persistence', () => {
         expect(firestore.batch.commit).toHaveBeenCalledOnce();
     });
 
+    it('persists recommendation with mergeFields listing all write keys for wholesale map replacement (D3)', async () => {
+        const template = TEMPLATES[0];
+        firestore.getDoc.mockResolvedValue({ exists: () => false });
+        const audit: RecommendationAudit = {
+            policyVersion: POLICY_VERSION, evaluatedAt: '2026-09-28T08:30:00.000Z',
+            decisionContextRevision: 'history-r1', safetyStatus: 'complete',
+            history: { completedEventCount: 0, unmatchedEventCount: 0, sourceStatuses: { activities: 'AVAILABLE', recommendations: 'AVAILABLE', manualTraining: 'MISSING' } },
+            envelope: { safetyRestrictedModalityCount: 0, planMaxAllowableTier: 'Easy' },
+            candidateScores: [],
+            droppedContributorObjectives: [],
+        };
+        const recommendation: Recommendation = { template, mode: 'train', rationale: 'Keep it easy.', recommendationAudit: audit };
+
+        await new RecommendationService().saveRecommendation('athlete', '2026-08-07', recommendation);
+
+        expect(firestore.setDoc).toHaveBeenCalledOnce();
+        const writeData = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
+        const options = firestore.setDoc.mock.calls[0][2] as { mergeFields: string[] };
+        expect(options).toBeDefined();
+        expect(options.mergeFields).toEqual(Object.keys(writeData));
+        expect(options.mergeFields).toContain('recommendationAudit');
+    });
+
     it('persists the exact imported-event advisory verdict instead of collapsing it to train/proceed', async () => {
         const template = TEMPLATES[0];
         firestore.getDoc.mockResolvedValue({ exists: () => false });

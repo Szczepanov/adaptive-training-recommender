@@ -246,16 +246,16 @@ export class RecommendationService {
                     if (existing.recommendationAudit) archiveData.recommendationAudit = existing.recommendationAudit;
 
                     batch.set(archiveRef, archiveData);
-                    batch.set(docRef, writeData, { merge: true });
+                    batch.set(docRef, writeData, { mergeFields: Object.keys(writeData) });
                     if (boundContext && contextRef) batch.set(contextRef, boundContext);
                     await batch.commit();
                 } else if (boundContext && contextRef) {
                     const batch = writeBatch(getDb());
-                    batch.set(docRef, writeData, { merge: true });
+                    batch.set(docRef, writeData, { mergeFields: Object.keys(writeData) });
                     batch.set(contextRef, boundContext);
                     await batch.commit();
                 } else {
-                    await setDoc(docRef, writeData, { merge: true });
+                    await setDoc(docRef, writeData, { mergeFields: Object.keys(writeData) });
                 }
                 return validated;
             };
@@ -280,8 +280,7 @@ export class RecommendationService {
                 console.warn(
                     `Permission denied saving recommendation at ${docPath} ` +
                     `(decisionChanged=${decisionChanged}, priorRevision=${priorRevision}, nextRevision=${nextRevision}). ` +
-                    'Usually means the local read (cache or a blocked connection) disagreed with the server about ' +
-                    'whether the decision changed -- see firestore.rules decisionFieldsUnchanged()/auditWriteOnce().'
+                    'May indicate a rule evaluation expression budget limit, schema shape mismatch, stale merge sub-fields, or client/server disagreement on revision progression.'
                 );
                 return null;
             }

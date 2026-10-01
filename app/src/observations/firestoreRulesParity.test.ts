@@ -94,4 +94,25 @@ describe('Firestore rules parity with TypeScript domain models', () => {
         expect(trialValuesMatch).not.toBeNull();
         expect(Number.parseInt(trialValuesMatch![1], 10)).toBe(MAX_CAPTURE_FIELDS);
     });
+
+    it('keeps hasValidSessionReferenceBinding keys in parity with SessionReferenceBinding', () => {
+        const bindingMatch = rules.match(/function hasValidSessionReferenceBinding\(binding\)\s*\{[\s\S]*?binding\.keys\(\)\.hasOnly\(\[([\s\S]*?)\]\)/);
+        expect(bindingMatch).not.toBeNull();
+
+        const rulesKeys = bindingMatch![1]
+            .split(',')
+            .map(s => s.trim().replace(/^'|'$/g, ''))
+            .filter(s => s.length > 0)
+            .sort();
+
+        const expectedKeys: Array<keyof import('../sessions/models').SessionReferenceBinding> = [
+            'sessionSource',
+            'occurrenceId',
+            'prescriptionHash',
+            'fitWorkoutFingerprint',
+            'fitWorkoutFingerprintKind',
+        ];
+
+        expect(rulesKeys).toEqual([...expectedKeys].sort());
+    });
 });

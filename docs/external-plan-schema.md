@@ -346,10 +346,10 @@ an explicitly authored, validated `scaling.reducedDefinition` retaining the sess
 intent and dominant modality, within the adjudicated duration ceiling. Home currently blocks
 this valid scaled launch ([#949](https://github.com/Szczepanov/adaptive-training-recommender/issues/949)).
 Free-text reductions and fallback suggestions cannot become executable doses. The adapters
-exclude `skip`, `defer` and advisory event inputs from structured execution. In the integrated path
-the skip day's recommendation write still fails: it exceeds the Firestore rules expression budget
-([#950](https://github.com/Szczepanov/adaptive-training-recommender/issues/950),
-[#953](https://github.com/Szczepanov/adaptive-training-recommender/issues/953)).
+exclude `skip`, `defer` and advisory event inputs from structured execution. Recommendation writes
+on skip and gate-replacement days previously failed due to rules expression-budget and catalog-binding
+defects ([#950](https://github.com/Szczepanov/adaptive-training-recommender/issues/950)),
+which have been resolved in [#953](https://github.com/Szczepanov/adaptive-training-recommender/issues/953).
 
 Home currently prepares the frozen `ExecutionPrescription` and a scheduled external
 `SessionOccurrence` before Start. At Start, the runner binds its `SessionExecution` to the

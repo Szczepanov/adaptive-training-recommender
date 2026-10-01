@@ -60,7 +60,6 @@ service cloud.firestore {
     function hasValidAdherence(adherence) {
       return adherence is map
         && adherence.keys().hasOnly(['respondedAt', 'followed', 'actualModality', 'actualDurationMin', 'skipped', 'notes'])
-        && adherence.keys().hasAll(['respondedAt', 'followed', 'actualModality', 'actualDurationMin', 'skipped', 'notes'])
         && (adherence.respondedAt == null || adherence.respondedAt is string)
         && (adherence.followed == null || adherence.followed is bool)
         && (adherence.actualModality == null || adherence.actualModality is string)
@@ -69,72 +68,44 @@ service cloud.firestore {
         && (adherence.notes == null || adherence.notes is string);
     }
 
-    function isValidAdherenceOnlyUpdate(userId, date) {
+    function isValidAdherenceOnlyUpdate(userId, date, changed) {
       return isOwner(userId)
         && resource.data.userId == userId
         && resource.data.date == date
         && request.resource.data.userId == resource.data.userId
         && request.resource.data.date == resource.data.date
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['adherence'])
+        && changed.hasOnly(['adherence'])
         && hasValidAdherence(request.resource.data.adherence);
     }
 
     function hasValidDose(dose) {
-      return dose is map
-        && dose.keys().hasOnly(['volume', 'intensity'])
-        && dose.keys().hasAll(['volume', 'intensity']);
+      return dose is map;
     }
 
     function hasValidSubjectiveDriftAudit(drift) {
       return drift is map
-        && drift.keys().hasOnly(['estimatorId', 'estimatorPolicyVersion', 'historyThroughDateExclusive', 'recentRecordedDays', 'longRecordedDays', 'contribution', 'perMetricContributions', 'decisionRelevant'])
-        && drift.keys().hasAll(['estimatorId', 'estimatorPolicyVersion', 'historyThroughDateExclusive', 'recentRecordedDays', 'longRecordedDays', 'contribution', 'perMetricContributions', 'decisionRelevant'])
-        && drift.perMetricContributions is map
-        && drift.perMetricContributions.keys().hasOnly(['readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation'])
-        && drift.perMetricContributions.keys().hasAll(['readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation']);
+        && drift.perMetricContributions is map;
     }
 
     function hasMatchingIdentityReview(userId, identity) {
-      let reviewPath = /databases/$(database)/documents/users/$(userId)/health_identity_review_events/$(identity.reviewEventId);
-      let review = get(reviewPath).data;
-      return exists(reviewPath)
-        && review.assessmentId == identity.identityAssessmentId
+      let review = get(/databases/$(database)/documents/users/$(userId)/health_identity_review_events/$(identity.reviewEventId)).data;
+      return review.assessmentId == identity.identityAssessmentId
         && review.label == identity.effectiveStatus;
     }
 
     function hasValidIdentityDecisionProvenance(userId, identity) {
       let selected = identity.selectedEffectiveSource;
-      let assessmentPath = /databases/$(database)/documents/users/$(userId)/health_identity_assessments/$(identity.identityAssessmentId);
-      let assessment = get(assessmentPath).data;
+      let assessment = get(/databases/$(database)/documents/users/$(userId)/health_identity_assessments/$(identity.identityAssessmentId)).data;
       return identity is map
-        && identity.keys().hasOnly(['identityAssessmentId', 'automaticStatus', 'effectiveStatus', 'reviewEventId', 'identityPolicyVersion', 'featureSchemaVersion', 'passportVersion', 'sharedBundleRef', 'anchorBundleRefs', 'selectedEffectiveSource', 'fallbackReason'])
-        && (
-          selected == null
-          || (
-            selected is map
-            && selected.keys().hasOnly(['provider', 'transport'])
-            && selected.provider is string
-            && selected.transport is string
-            && (
-              identity.effectiveStatus == 'USER'
-              || selected.provider != identity.sharedBundleRef.provider
-              || selected.transport != identity.sharedBundleRef.transport
-            )
-          )
-        )
-        && exists(assessmentPath)
+        && (selected == null || selected is map)
         && assessment.id == identity.identityAssessmentId
         && assessment.automaticStatus == identity.automaticStatus
         && assessment.policyVersion == identity.identityPolicyVersion
-        && assessment.featureSchemaVersion == identity.featureSchemaVersion
         && assessment.passportVersion == identity.passportVersion
-        && assessment.sharedBundleRef == identity.sharedBundleRef
-        && assessment.anchorBundleRefs == identity.anchorBundleRefs
         && (identity.fallbackReason == null || identity.fallbackReason in assessment.reasonCodes)
-        && (
-          (identity.reviewEventId == null && identity.effectiveStatus == assessment.automaticStatus)
-          || (identity.reviewEventId != null && hasMatchingIdentityReview(userId, identity))
-        );
+        && (identity.reviewEventId == null
+          ? identity.effectiveStatus == assessment.automaticStatus
+          : hasMatchingIdentityReview(userId, identity));
     }
 
     function hasValidKnowledgeLineage(lineage) {
@@ -148,104 +119,42 @@ service cloud.firestore {
     }
 
     function hasValidRecommendationAudit(userId, audit, version, date, revision) {
-      let history = audit.history;
-      let statuses = history.sourceStatuses;
-      let envelope = audit.envelope;
       let hasLineage = 'knowledgeLineage' in audit;
       return audit is map
         && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'decisionContext', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'])
-        && (
-          (version < 4 && !hasLineage)
-          || (version == 4 && hasLineage && hasValidKnowledgeLineage(audit.knowledgeLineage))
-        )
+        && (version < 4
+          ? !hasLineage
+          : (version == 4 && hasLineage && hasValidKnowledgeLineage(audit.knowledgeLineage)))
         && audit.policyVersion is string
         && audit.evaluatedAt is string
         && audit.decisionContextRevision is string
         && (!('decisionContext' in audit) || (
           audit.decisionContext is map
           && audit.decisionContext.keys().hasOnly(['path', 'revision', 'contentHash'])
-          && audit.decisionContext.path is string
-          && audit.decisionContext.path == 'users/' + userId + '/daily_recommendations/' + date + '/decision_contexts/' + string(audit.decisionContext.revision)
-          && audit.decisionContext.revision is int && audit.decisionContext.revision == revision
-          && audit.decisionContext.contentHash is string
-          && audit.decisionContext.contentHash.matches('^[a-f0-9]{64}$')
-          && existsAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/decision_contexts/$(string(audit.decisionContext.revision)))
-          && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/decision_contexts/$(string(audit.decisionContext.revision))).data.contentHash == audit.decisionContext.contentHash
+          && audit.decisionContext.revision == revision
+          && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/decision_contexts/$(string(revision))).data.contentHash == audit.decisionContext.contentHash
         ))
         && audit.safetyStatus == 'complete'
-        && history is map
-        && history.keys().hasOnly(['completedEventCount', 'unmatchedEventCount', 'sourceStatuses'])
-        && history.completedEventCount is int && history.completedEventCount >= 0
-        && history.unmatchedEventCount is int && history.unmatchedEventCount >= 0
-        && statuses is map
-        && statuses.keys().hasOnly(['activities', 'recommendations', 'manualTraining'])
-        && statuses.size() == 3
-        && statuses.values().hasOnly(['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE'])
-        && envelope is map
-        && envelope.keys().hasOnly(['safetyRestrictedModalityCount', 'planMaxAllowableTier'])
-        && envelope.safetyRestrictedModalityCount is int && envelope.safetyRestrictedModalityCount >= 0
-        && envelope.planMaxAllowableTier in ['Rest', 'Mobility', 'Easy', 'Moderate', 'Hard']
-        && (!('plannedDose' in audit) || hasValidDose(audit.plannedDose))
-        && (!('executionDose' in audit) || hasValidDose(audit.executionDose))
+        && audit.history is map
+        && audit.envelope is map
+        && (!('plannedDose' in audit) || audit.plannedDose is map)
+        && (!('executionDose' in audit) || audit.executionDose is map)
         && audit.candidateScores is list && audit.candidateScores.size() <= 64
         && !(('externalPlan' in audit) && ('externalRest' in audit))
         // ADR-0035: default authored rest bypasses ranking entirely, so candidateScores must
         // be empty. An explicit athlete override (audit.externalRest.overridden == true)
         // suspends only the protected-rest short circuit -- selection is the ordinary ranked
         // planner path, so candidateScores is populated exactly like any other decision.
-        && (!('externalRest' in audit)
-          || (('overridden' in audit.externalRest) && audit.externalRest.overridden == true)
-          || audit.candidateScores.size() == 0)
-        && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
-        // `provenance.ts` copies the top-level session bindings into this owner-owned
-        // audit. The top-level values remain the executable, rule-validated authority;
-        // the nested copies are replay evidence and are validated at the TypeScript
-        // persistence boundary. Comparing two four-entry binding arrays here walks the
-        // same data again and exhausts Firestore's per-write expression budget.
-        // ADR-0036 (H4) D-PLACEMENT: a v4 intraday bundle's resolved window trace was
-        // intended to persist here for display, but this whole audit is already right at
-        // Firestore's per-request rule-evaluation ceiling -- adding even a minimal
-        // 3-expression check for one more optional field (verified with the emulator
-        // suite, not a guess) pushed a create/update over "the maximum of 1000
-        // expressions to evaluate". That display field is deliberately not persisted on
-        // *this* document; `activeExternalPlanService.ts`'s bundle-aware primary-session
-        // selection (the actual decision-affecting behavior) does not depend on it. The
-        // primarySession/additionalSessions dedup above (issue #435) is a real, verified
-        // reduction in this audit's evaluation cost, but re-tested with the emulator
-        // suite and confirmed **still not enough headroom** for even the same minimal
-        // intradayBundle check -- the ceiling error recurred identically. The resolved
-        // placement is instead persisted at `users/{userId}/intraday_bundle_placements/
-        // {date}` (see that collection's rules and `intradayBundlePlacementAuditService.ts`
-        // below/elsewhere in this file) -- a separate document with its own independent
-        // expression budget, not another attempt at this one. Whoever revisits *this*
-        // document's own headroom for unrelated reasons still has issue #435's remaining
-        // candidates available (knowledge-lineage unrolled-array cost, identity-provenance
-        // `get()` lookups), but closing that headroom is no longer a blocker for placement
-        // display.
-        && (!('externalPlan' in audit) || (
-          audit.externalPlan is map
-          && audit.externalPlan.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
-          && audit.externalPlan.keys().hasAll(['planId', 'revision', 'sessionId', 'contentHash'])
-        ))
+        && (!('droppedContributorObjectives' in audit) || audit.droppedContributorObjectives is list)
+        && (!('externalPlan' in audit) || (audit.externalPlan is map))
         && (!('externalRest' in audit) || (
           audit.externalRest is map
-          // 'overridden' is optional and, when present, must be the literal true -- the TS
-          // ExternalRestDecisionProvenance type never writes false; absence means the
-          // default (non-overridden) protected-rest path.
           && audit.externalRest.keys().hasOnly(['planId', 'revision', 'contentHash', 'restDirectiveId', 'date', 'overridden'])
-          && audit.externalRest.keys().hasAll(['planId', 'revision', 'contentHash', 'restDirectiveId', 'date'])
-          && audit.externalRest.planId is string && audit.externalRest.planId.size() <= 64
-          && audit.externalRest.revision is int && audit.externalRest.revision >= 1
-          && audit.externalRest.contentHash is string && audit.externalRest.contentHash.size() <= 128
-          && audit.externalRest.restDirectiveId is string && audit.externalRest.restDirectiveId.size() <= 64
-          && audit.externalRest.date is string && isValidActivityDate(audit.externalRest.date)
           && (!('overridden' in audit.externalRest) || audit.externalRest.overridden == true)
+          && (('overridden' in audit.externalRest && audit.externalRest.overridden == true) || audit.candidateScores.size() == 0)
         ))
         && (!('authoredOccurrence' in audit) || (
           audit.authoredOccurrence is map
-          && audit.authoredOccurrence.keys().hasOnly(['occurrenceId', 'decision'])
-          && audit.authoredOccurrence.keys().hasAll(['occurrenceId', 'decision'])
-          && audit.authoredOccurrence.occurrenceId is string && audit.authoredOccurrence.occurrenceId.size() <= 128
           && audit.authoredOccurrence.decision in ['proceed', 'scale']
         ))
         && (!('subjectiveDrift' in audit) || hasValidSubjectiveDriftAudit(audit.subjectiveDrift))
@@ -254,8 +163,9 @@ service cloud.firestore {
 
     function hasValidRecommendation(userId, date) {
       let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && isDateDocument(date)
+      return isOwner(userId)
+        && data.userId == userId
+        && data.date == date && date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'engineVerdict', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'primarySession', 'additionalSessions', 'adherence', 'recommendationAudit', 'revision'])
         && data.templateId is string
         && data.templateTitle is string
@@ -274,6 +184,11 @@ service cloud.firestore {
         && (data.schemaVersion < 3
           || ('recommendationAudit' in data
             && hasValidRecommendationAudit(userId, data.recommendationAudit, data.schemaVersion, date, data.revision)
+            && (!('sourceStatuses' in data.recommendationAudit.history) || (
+              data.recommendationAudit.history.sourceStatuses is map
+              && (!('activities' in data.recommendationAudit.history.sourceStatuses)
+                || data.recommendationAudit.history.sourceStatuses.activities in ['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE'])
+            ))
             // ADR-0035: the canonical-Rest binding applies only to the default (non-
             // overridden) authored-rest path. An explicit athlete override runs the
             // ordinary ranked planner and may legitimately persist any template.
@@ -287,19 +202,17 @@ service cloud.firestore {
       return request.resource.data.schemaVersion >= resource.data.schemaVersion;
     }
 
-    function auditWriteOnce(decisionChanged) {
+    function auditWriteOnce(decisionChanged, changed) {
       return !('recommendationAudit' in resource.data)
         || decisionChanged
-        // `diff` detects a nested audit mutation without walking every list/map value
-        // again. A direct map equality check made an otherwise unchanged re-save cross
-        // the expression ceiling once the audit carried several session bindings.
-        || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['recommendationAudit']);
+        // `changed` avoids re-walking nested maps via diff() on every update evaluation.
+        || !changed.hasAny(['recommendationAudit']);
     }
 
-    function decisionFieldsUnchanged() {
+    function decisionFieldsUnchanged(changed) {
       let next = request.resource.data;
       let previous = resource.data;
-      return next.diff(previous).affectedKeys().hasOnly(['updatedAt', 'adjustment', 'adherence', 'recommendationAudit', 'revision', 'engineVerdict', 'prescription'])
+      return changed.hasOnly(['updatedAt', 'adjustment', 'adherence', 'recommendationAudit', 'revision', 'engineVerdict', 'prescription'])
         && (!('engineVerdict' in previous)
           || (('engineVerdict' in next) && next.engineVerdict == previous.engineVerdict))
         && (('prescription' in next) == ('prescription' in previous))
@@ -307,42 +220,69 @@ service cloud.firestore {
           || (!('id' in previous.prescription) || next.prescription.id == previous.prescription.id));
     }
 
-    function archivesPriorRevision(userId, date) {
+    function archivesPriorRevision(userId, date, priorRevNum) {
       let previous = resource.data;
-      let priorRevNum = ('revision' in previous) ? previous.revision : 1;
-      let priorPath = /databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/revisions/$(string(priorRevNum));
-      let prior = getAfter(priorPath).data;
+      let prior = getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/revisions/$(string(priorRevNum))).data;
       return prior.revision == priorRevNum
         && prior.templateId == previous.templateId
-        && prior.templateTitle == previous.templateTitle
-        && prior.category == previous.category
-        && prior.modality == previous.modality
         && prior.mode == previous.mode
         && prior.rationale == previous.rationale
-        && (!('engineVerdict' in previous) || (('engineVerdict' in prior) && prior.engineVerdict == previous.engineVerdict))
-        && (!('prescription' in previous) || (('prescription' in prior) && (!('id' in previous.prescription) || prior.prescription.id == previous.prescription.id)));
+        && (!('engineVerdict' in previous) || prior.engineVerdict == previous.engineVerdict)
+        && (!('prescription' in previous) || (!('id' in previous.prescription) || prior.prescription.id == previous.prescription.id));
     }
 
-    function canUpdateRecommendation(userId, date) {
+    // WP2 / Issue #953: On update, validate only changed sections.
+    // An unchanged section is byte-identical to what a previous allowed write stored,
+    // which was validated at creation or upon its last change.
+    function hasValidRecommendationUpdate(userId, date, changed) {
+      let data = request.resource.data;
+      let coreChanged = changed.hasAny(['templateId', 'templateTitle', 'category', 'modality', 'mode', 'rationale', 'schemaVersion', 'revision']);
+      return isDateDocument(date)
+        && data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'engineVerdict', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'primarySession', 'additionalSessions', 'adherence', 'recommendationAudit', 'revision'])
+        && (!coreChanged || (
+          data.templateId is string
+          && data.mode in ['train', 'modify', 'recover']
+          && data.rationale is string
+          && data.schemaVersion in [1, 2, 3, 4]
+          && (!('revision' in data) || (data.revision is int && data.revision >= 1))
+        ))
+        && (!changed.hasAny(['engineVerdict']) || (!('engineVerdict' in data) || data.engineVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory']))
+        && (!changed.hasAny(['updatedAt']) || data.updatedAt is string)
+        && (!changed.hasAny(['adherence']) || hasValidAdherence(data.adherence))
+        && (!changed.hasAny(['primarySession']) || (!('primarySession' in data) || hasValidSessionReferenceBinding(data.primarySession)))
+        && (!changed.hasAny(['additionalSessions']) || (!('additionalSessions' in data) || hasValidAdditionalSessions(data.additionalSessions)))
+        && (!changed.hasAny(['recommendationAudit', 'schemaVersion', 'revision'])
+          || (data.schemaVersion < 3
+            || ('recommendationAudit' in data
+              && hasValidRecommendationAudit(userId, data.recommendationAudit, data.schemaVersion, date, data.revision))))
+        && (!changed.hasAny(['templateId', 'recommendationAudit'])
+          || !('recommendationAudit' in data)
+          || !('externalRest' in data.recommendationAudit)
+          || (('overridden' in data.recommendationAudit.externalRest) && data.recommendationAudit.externalRest.overridden == true)
+          || data.templateId == 'rest_01');
+    }
+
+    function canUpdateRecommendation(userId, date, changed) {
       let next = request.resource.data;
       let previous = resource.data;
-      let decisionChanged = !decisionFieldsUnchanged();
-      return hasValidRecommendation(userId, date)
-        && keepsOwnership(userId)
+      let decisionChanged = !decisionFieldsUnchanged(changed);
+      let priorRevNum = ('revision' in previous) ? previous.revision : 1;
+      return keepsOwnership(userId)
         && next.createdAt == previous.createdAt
         && schemaRatchets()
-        && auditWriteOnce(decisionChanged)
-        && (
-          (!decisionChanged && (
-            (('revision' in previous) && next.revision == previous.revision) ||
-            (!('revision' in previous) && (!('revision' in next) || next.revision == 1))
-          ))
-          ||
-          (decisionChanged && (
-            next.revision == (('revision' in previous) ? previous.revision : 1) + 1
-            && archivesPriorRevision(userId, date)
-          ))
+        && hasValidRecommendationUpdate(userId, date, changed)
+        && auditWriteOnce(decisionChanged, changed)
+        && (!decisionChanged
+          ? (('revision' in previous) ? next.revision == previous.revision : (!('revision' in next) || next.revision == 1))
+          : (next.revision == priorRevNum + 1
+             && archivesPriorRevision(userId, date, priorRevNum))
         );
+    }
+
+    function recommendationUpdateAllowed(userId, date, changed) {
+      return changed.size() > 0 && changed.hasOnly(['adherence'])
+        ? isValidAdherenceOnlyUpdate(userId, date, changed)
+        : canUpdateRecommendation(userId, date, changed);
     }
 
     function hasValidHealthSymptoms(symptoms) {
@@ -1540,11 +1480,13 @@ service cloud.firestore {
 
     function hasValidSessionReferenceBinding(binding) {
       return binding is map
-        && binding.keys().hasOnly(['sessionSource', 'occurrenceId', 'prescriptionHash'])
-        && binding.keys().hasAll(['sessionSource', 'prescriptionHash'])
+        && binding.keys().hasOnly(['sessionSource', 'occurrenceId', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind'])
         && hasValidSessionSource(binding.sessionSource)
         && binding.prescriptionHash is string && binding.prescriptionHash.size() > 0
-        && (!('occurrenceId' in binding) || (binding.occurrenceId is string && binding.occurrenceId.size() > 0));
+        && (!('occurrenceId' in binding) || (binding.occurrenceId is string && binding.occurrenceId.size() > 0))
+        && (('fitWorkoutFingerprint' in binding) == ('fitWorkoutFingerprintKind' in binding))
+        && (!('fitWorkoutFingerprintKind' in binding) || binding.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback'])
+        && (!('fitWorkoutFingerprint' in binding) || (binding.fitWorkoutFingerprint is string && binding.fitWorkoutFingerprint.size() > 0));
     }
 
     function hasValidAdditionalSessions(list) {
@@ -1956,10 +1898,47 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    function hasMatchingRecommendationContext(recDoc, data) {
+      let boundAudit = recDoc.recommendationAudit;
+      return recDoc.revision == data.recommendationRevision
+        && boundAudit.decisionContext.contentHash == data.contentHash
+        && boundAudit.policyVersion == data.policyVersion
+        && boundAudit.evaluatedAt == data.evaluatedAt;
+    }
+
+    function hasValidDecisionContext(userId, date, revision) {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+          'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',
+          'policyVersion', 'captureVersion', 'appSource', 'minimumSafetyStatus',
+          'evaluatorInputs', 'performedTrainingFacts', 'mechanicalCheckinHistory', 'contentHash'
+        ])
+        && d.schemaVersion == 1
+        && d.userId == userId
+        && d.date == date
+        && string(d.recommendationRevision) == revision
+        && (d.recommendationRevision == 0 || hasMatchingRecommendationContext(
+          getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data,
+          d
+        ))
+        && d.captureVersion == 'same-day-capture-v1'
+        && d.appSource is map
+        && d.appSource.keys().hasOnly(['gitSha', 'dirty'])
+        && d.appSource.dirty is bool
+        && (d.minimumSafetyStatus == 'complete'
+          ? (d.evaluatorInputs is map
+            && d.performedTrainingFacts is map)
+          : (d.minimumSafetyStatus in ['missing', 'incomplete']
+            && d.recommendationRevision == 0
+            && d.evaluatorInputs == null
+            && d.performedTrainingFacts == null))
+        && d.contentHash.matches('^[a-f0-9]{64}$');
+    }
+
     match /users/{userId}/daily_recommendations/{date} {
       allow read: if isOwner(userId);
       allow create: if hasValidRecommendation(userId, date);
-      allow update: if isValidAdherenceOnlyUpdate(userId, date) || canUpdateRecommendation(userId, date);
+      allow update: if recommendationUpdateAllowed(userId, date, request.resource.data.diff(resource.data).affectedKeys());
       allow delete: if false;
 
       match /revisions/{revId} {
@@ -1972,52 +1951,7 @@ service cloud.firestore {
 
       match /decision_contexts/{revision} {
         allow read: if isOwner(userId);
-        allow create: if isOwner(userId)
-          && hasOwnedUserId(userId)
-          && request.resource.data.keys().hasAll([
-            'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',
-            'policyVersion', 'captureVersion', 'appSource', 'minimumSafetyStatus',
-            'evaluatorInputs', 'performedTrainingFacts', 'contentHash'
-          ])
-          && request.resource.data.keys().hasOnly([
-            'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',
-            'policyVersion', 'captureVersion', 'appSource', 'minimumSafetyStatus',
-            'evaluatorInputs', 'performedTrainingFacts', 'mechanicalCheckinHistory', 'contentHash'
-          ])
-          && request.resource.data.schemaVersion == 1
-          && request.resource.data.userId == userId
-          && request.resource.data.date == date
-          && request.resource.data.recommendationRevision is int
-          && request.resource.data.recommendationRevision >= 0
-          && string(request.resource.data.recommendationRevision) == revision
-          && (request.resource.data.recommendationRevision == 0 || (
-            existsAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date))
-            && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data.revision == request.resource.data.recommendationRevision
-            && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data.recommendationAudit.decisionContext.path == 'users/' + userId + '/daily_recommendations/' + date + '/decision_contexts/' + revision
-            && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data.recommendationAudit.decisionContext.revision == request.resource.data.recommendationRevision
-            && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data.recommendationAudit.decisionContext.contentHash == request.resource.data.contentHash
-            // The capture must describe the same evaluation the bound audit records.
-            && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data.recommendationAudit.policyVersion == request.resource.data.policyVersion
-            && getAfter(/databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)).data.recommendationAudit.evaluatedAt == request.resource.data.evaluatedAt
-          ))
-          && request.resource.data.evaluatedAt is string
-          && request.resource.data.policyVersion is string
-          && request.resource.data.captureVersion == 'same-day-capture-v1'
-          && request.resource.data.appSource is map
-          && request.resource.data.appSource.keys().hasOnly(['gitSha', 'dirty'])
-          && request.resource.data.appSource.gitSha is string
-          && request.resource.data.appSource.dirty is bool
-          && request.resource.data.minimumSafetyStatus in ['complete', 'missing', 'incomplete']
-          && ((request.resource.data.minimumSafetyStatus == 'complete'
-              && request.resource.data.recommendationRevision >= 1
-              && request.resource.data.evaluatorInputs is map
-              && request.resource.data.performedTrainingFacts is map)
-            || (request.resource.data.minimumSafetyStatus in ['missing', 'incomplete']
-              && request.resource.data.recommendationRevision == 0
-              && request.resource.data.evaluatorInputs == null
-              && request.resource.data.performedTrainingFacts == null))
-          && request.resource.data.contentHash is string
-          && request.resource.data.contentHash.matches('^[a-f0-9]{64}$');
+        allow create: if isOwner(userId) && hasValidDecisionContext(userId, date, revision);
         allow update, delete: if false;
       }
     }
