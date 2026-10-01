@@ -9,6 +9,10 @@ interface ExternalVerdictBannerProps {
     /** #949: whether the card offers Start for the plan's exact v6 `reducedDefinition`.
      * Only meaningful under a `scale` verdict. */
     reducedLaunch?: ReducedLaunchState;
+    /** An athlete-selected time/load/alternative adjustment supersedes the imported binding.
+     * The card may still launch a separately prepared catalog prescription, but must never
+     * fall through to the stale imported snapshot. */
+    launchAdjustmentApplied?: boolean;
 }
 
 /** `available`: Home froze a binding to the exact reduced form and the card offers Start.
@@ -54,7 +58,12 @@ function scaleLaunchNote(prescription: ExternalVerdictBannerProps['prescription'
         : 'Start is unavailable for this reduced form because the imported plan does not include executable reduced steps. The app will not launch the original full-dose steps under a reduced verdict.';
 }
 
-export function ExternalVerdictBanner({ prescription, verdict, reducedLaunch = 'unavailable' }: ExternalVerdictBannerProps) {
+export function ExternalVerdictBanner({
+    prescription,
+    verdict,
+    reducedLaunch = 'unavailable',
+    launchAdjustmentApplied = false,
+}: ExternalVerdictBannerProps) {
     const actionable = verdict.decision === 'proceed' || verdict.decision === 'scale' || verdict.decision === 'advisory';
     // `skip` and `advisory` rationales already name the gates in the same words, and the
     // rationale is what the athlete reads twice (here and under "Why this today?"). Repeating
@@ -115,6 +124,11 @@ export function ExternalVerdictBanner({ prescription, verdict, reducedLaunch = '
                     )}
                     {verdict.decision === 'scale' && (
                         <p className="external-prescription-dose">{scaleLaunchNote(prescription, reducedLaunch)}</p>
+                    )}
+                    {verdict.decision === 'proceed' && launchAdjustmentApplied && (
+                        <p className="external-prescription-dose">
+                            The imported session’s original Start is unavailable while a time, load, or alternative adjustment is applied. Reset the adjustment to start your plan exactly as written.
+                        </p>
                     )}
                 </div>
             ) : (

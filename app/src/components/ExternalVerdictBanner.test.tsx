@@ -180,6 +180,18 @@ describe('ExternalVerdictBanner (#909)', () => {
         expect(html).not.toContain('Start runs your plan');
     });
 
+    it('a proceed verdict with an athlete adjustment says the original imported Start is superseded', () => {
+        const html = renderToStaticMarkup(
+            <ExternalVerdictBanner
+                prescription={prescription}
+                verdict={verdict({ decision: 'proceed' })}
+                launchAdjustmentApplied
+            />,
+        );
+        expect(html).toContain('original Start is unavailable while a time, load, or alternative adjustment is applied');
+        expect(html).toContain('Reset the adjustment to start your plan exactly as written');
+    });
+
     it('a proceed verdict shows the authored prescription with its steps', () => {
         const html = render(prescription, verdict({ decision: 'proceed' }));
         expect(html).toContain('As your plan wrote it');

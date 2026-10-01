@@ -158,6 +158,72 @@ describe('MorningDecisionCard imported-session verdict (#909)', () => {
         expect(html).toContain('Start Session →');
     });
 
+    it.each([
+        ['a time-crunch alternative', { activeAlternativeId: 'time-20' }],
+        ['an easier load adjustment', { adjustmentDirection: 'easier' as const }],
+    ])('a proceed day with %s never falls through to the stale full imported binding', (_label, adjustment) => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                {...adjustment}
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(
+                    {
+                        decision: 'proceed',
+                        gateFailures: [],
+                        rationale: 'Readiness supports this session as written.',
+                    },
+                    {
+                        primarySession: {
+                            sessionSource: {
+                                kind: 'external_plan',
+                                planId: 'coach-block-a',
+                                revision: 3,
+                                sessionId: 'w2-tempo',
+                                contentHash: 'fresh-binding',
+                            },
+                            prescriptionHash: 'fresh-hash',
+                        },
+                    },
+                )}
+            />,
+        );
+        expect(html).not.toContain('Start Session →');
+        expect(html).toContain('original Start is unavailable while a time, load, or alternative adjustment is applied');
+    });
+
+    it('a proceed-day adjustment may still launch a separately prepared catalog prescription', () => {
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                {...baseProps}
+                activeAlternativeId="stimulus:cyc-endurance"
+                prescription={{ targetDurationMin: 30, displayBlocks: [] } as never}
+                onStartSession={() => undefined}
+                recommendation={externalRecommendation(
+                    {
+                        decision: 'proceed',
+                        gateFailures: [],
+                        rationale: 'Readiness supports this session as written.',
+                    },
+                    {
+                        primarySession: {
+                            sessionSource: {
+                                kind: 'external_plan',
+                                planId: 'coach-block-a',
+                                revision: 3,
+                                sessionId: 'w2-tempo',
+                                contentHash: 'fresh-binding',
+                            },
+                            prescriptionHash: 'fresh-hash',
+                        },
+                    },
+                )}
+            />,
+        );
+        expect(html).toContain('Start Session →');
+        expect(html).toContain('original Start is unavailable while a time, load, or alternative adjustment is applied');
+    });
+
     it('a legacy scale verdict (no reducedDefinition) shows the reduced summary but blocks the unscaled imported Start path', () => {
         const html = renderToStaticMarkup(
             <MorningDecisionCard

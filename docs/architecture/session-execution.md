@@ -43,8 +43,11 @@ session. This distinction is required because the full and reduced forms deliber
 identity under ADR-0023; source identity alone does not prove which immutable execution snapshot
 will run. The runtime evidence is not persisted separately because the recommendation audit already
 pins the exact `primarySession` binding/prescription hash. A time-crunch alternative or load
-adjustment still withholds Start because it changes the displayed dose without freezing another
-execution snapshot. A scale without a reduced form (pre-v6 plans, or v6 sessions that omit it) presents the reduced summary
+adjustment still supersedes the imported primary binding because it changes the displayed dose
+without freezing another external execution snapshot. If that adjustment resolves to a concrete
+catalog prescription, the catalog adapter freezes and launches that separate snapshot; otherwise
+Start is withheld rather than falling through to the stale imported binding. This fail-closed rule
+applies to `proceed` as well as `scale`. A scale without a reduced form (pre-v6 plans, or v6 sessions that omit it) presents the reduced summary
 and dose with no Start, and `skip`/`defer` never start regardless of any binding.
 `ExternalVerdictBanner` never shows the original detailed step list as if it were the reduced
 workout, and its launch note states which of those cases applies. This is an execution-snapshot

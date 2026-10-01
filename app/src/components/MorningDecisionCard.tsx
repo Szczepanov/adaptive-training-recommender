@@ -158,7 +158,12 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
             recommendation?.primarySession,
             recommendation?.externalPreparedLaunch,
         );
+    // Any athlete adjustment supersedes the immutable imported binding. If the adjustment
+    // resolves to a concrete catalog prescription, handleStartPrimary prepares that snapshot
+    // separately; otherwise fail closed rather than launching the unadjusted external bytes.
+    const externalPrimaryBindingSuperseded = hasExternalVerdict && hasAthleteAdjustment;
     const isExternalPrimaryBindingUnavailable = isExternalExcluded
+        || externalPrimaryBindingSuperseded
         || (isExternalScale && !isExternalReducedLaunchAvailable);
     const externalReducedLaunch: ReducedLaunchState = isExternalReducedLaunchAvailable
         ? 'available'
@@ -380,6 +385,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                         prescription={externalPrescription}
                                         verdict={externalVerdict}
                                         reducedLaunch={externalReducedLaunch}
+                                        launchAdjustmentApplied={hasAthleteAdjustment}
                                     />
                                 )}
                                 <div className="headline-meta-row">
