@@ -701,7 +701,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
                 contentHash: externalContext.contentHash,
                 session: externalContext.session,
               },
-              { date: input.date, useReducedDefinition, scaleVolume, allowAnyOccurrenceState: true },
+              { date: input.date, useReducedDefinition, scaleVolume, allowPreviouslyLaunchedOccurrence: true },
             );
             if (!isCurrent()) return;
             primarySession = launch.binding;
