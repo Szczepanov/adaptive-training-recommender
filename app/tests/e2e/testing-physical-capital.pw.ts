@@ -352,6 +352,17 @@ test('physical capital assessment: back-squat WL Analysis CSV import fills trial
     await page.locator('.trial-remove-btn').last().click();
   }
 
+  // Imported load unit, inferred success/miss and technical validity are suggestions only.
+  // The normal save path must refuse to persist them until the athlete explicitly confirms.
+  await page.getByRole('button', { name: 'Save assessment trials' }).click();
+  await expect(page.locator('.testing-error')).toContainText('confirm imported load unit, success/miss, validity');
+
+  for (const row of await page.locator('.trial-row-card').all()) {
+    await row.getByRole('checkbox', { name: 'Load is kilograms' }).check();
+    await row.getByRole('checkbox', { name: 'Success / miss matches the video' }).check();
+    await row.getByRole('checkbox', { name: 'Technical validity is correct' }).check();
+  }
+
   await page.getByRole('button', { name: 'Save assessment trials' }).click();
 
   // Canonical 1RM derives from the heaviest successful imported attempt.
