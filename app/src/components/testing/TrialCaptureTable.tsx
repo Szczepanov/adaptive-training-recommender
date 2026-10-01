@@ -204,7 +204,10 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
     const addAttempt = () => {
         setRows(current => {
             if (current.length >= capture.maxTrials) return current;
-            const nextOrdinal = current.length + 1;
+            const usedOrdinals = new Set(current.map(row => row.ordinal));
+            let nextOrdinal = 1;
+            while (nextOrdinal <= capture.maxTrials && usedOrdinals.has(nextOrdinal)) nextOrdinal += 1;
+            if (nextOrdinal > capture.maxTrials) return current;
             const carryValues: Record<string, AssessmentTrialScalar> = {};
             if (presentationHints?.carryForwardFieldIds && current.length > 0) {
                 for (const fieldId of presentationHints.carryForwardFieldIds) {
@@ -226,7 +229,7 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                     validity: 'valid',
                     clientId: `trial-row-${attempt.id}-${nextClientSequence}`,
                 },
-            ];
+            ].sort((a, b) => a.ordinal - b.ordinal);
         });
     };
 
