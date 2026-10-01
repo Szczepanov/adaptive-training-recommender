@@ -19,6 +19,7 @@ import type {
 } from './models';
 import {
     deriveProgress,
+    PROGRESS_POLICY_VERSION,
     type CurrentObservation,
     type ProgressResult,
     type SeriesReliabilityEstimate,
@@ -121,7 +122,7 @@ export function computeSeriesProgress(
                 comparable: false,
                 status: 'insufficient_evidence',
                 reasons: ['baseline_not_found'],
-                progressPolicyVersion: 'ov-progress-v1',
+                progressPolicyVersion: PROGRESS_POLICY_VERSION,
                 comparisonSeriesKey: identity.comparisonSeriesKey,
             },
         };
@@ -258,6 +259,11 @@ export function computeObservationRowProgress(
     if (!baselineObservation) {
         return { status: 'insufficient_evidence' };
     }
+    // D1 at the shared boundary: a row is only ever compared with a baseline from its own
+    // (protocol, protocol revision, metric, comparison series) identity.
+    if (!sameSeriesIdentity(observation.revision, baselineObservation.revision)) {
+        return { status: 'non_comparable' };
+    }
 
     const baselineKey = baselineObservation.revision.observationKey;
     const obsKey = observation.revision.observationKey;
@@ -308,6 +314,10 @@ export function computeObservationRowProgress(
         { head: observation.head, revision: observation.revision },
     ];
     const derived = deriveProgress(binding, pair, reliabilityEstimates);
+    if (derived.status === 'non_comparable') {
+        // Never publish a numeric change the progress engine refused to compare.
+        return { status: derived.status };
+    }
 
     return {
         baselineValue: baselineVal,
@@ -315,6 +325,15 @@ export function computeObservationRowProgress(
         ...(percentChange !== undefined ? { percentChange } : {}),
         status: derived.status,
     };
+}
+
+function sameSeriesIdentity(a: MetricObservationRevision, b: MetricObservationRevision): boolean {
+    return a.metricId === b.metricId
+        && a.unit === b.unit
+        && a.protocolRef.id === b.protocolRef.id
+        && a.protocolRef.revision === b.protocolRef.revision
+        && a.comparisonSeriesKey === b.comparisonSeriesKey
+        && a.comparisonCanonicalizationVersion === b.comparisonCanonicalizationVersion;
 }
 
 /**

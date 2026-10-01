@@ -32,7 +32,7 @@ import { recoverySnapshotService, type RecoverySnapshotService } from './recover
 import type { DailyRecoverySnapshot } from '../engine/models';
 import { anthropometryService, type AnthropometryService } from './anthropometryService';
 import { loadStoredBodyMassSource } from '../anthropometry/bodyMassPreference';
-import { extractProviderWeightRecords } from '../anthropometry/bodyMass';
+import { extractProviderWeightRecords, PROVIDER_BODY_MASS_SERIES_LOOKBACK_DAYS } from '../anthropometry/bodyMass';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import { observationKeyFor } from '../observations/validation';
 import type { AnthropometryEntry } from '../anthropometry/models';
@@ -121,6 +121,7 @@ export class AssessmentHistoryService {
         const observationDates = allObservations.map(o => getLocalDateString(new Date(o.revision.observedAt)));
         let manualEntries: AnthropometryEntry[] = [];
         let snapshots: DailyRecoverySnapshot[] = [];
+        let providerSeriesStatus: 'known' | 'unknown' = 'known';
 
         if (observationDates.length > 0) {
             const sortedDates = [...observationDates].sort();
@@ -128,11 +129,21 @@ export class AssessmentHistoryService {
             const maxDate = sortedDates[sortedDates.length - 1];
 
             try {
+                // Read the provider-series lookback before the earliest test date as well, so
+                // provider-first selection reflects whether the athlete has a usable provider
+                // series, not merely whether the scale was used on a test day.
+                const startDate = addDaysToLocalDateString(minDate, -(PROVIDER_BODY_MASS_SERIES_LOOKBACK_DAYS - 1));
                 const endDateExclusive = addDaysToLocalDateString(maxDate, 1);
-                const snapshotState = await this.snapshotService.getRecoverySnapshotsInRangeState(userId, minDate, endDateExclusive);
-                snapshots = snapshotState.status === 'AVAILABLE' ? snapshotState.data : [];
+                const snapshotState = await this.snapshotService.getRecoverySnapshotsInRangeState(userId, startDate, endDateExclusive);
+                if (snapshotState.status === 'AVAILABLE') {
+                    snapshots = snapshotState.data;
+                    // Partially unreadable rows could hide a weigh-in; treat the series as unknown.
+                    if (snapshotState.issues && snapshotState.issues.length > 0) providerSeriesStatus = 'unknown';
+                } else if (snapshotState.status !== 'MISSING') {
+                    providerSeriesStatus = 'unknown';
+                }
             } catch {
-                snapshots = [];
+                providerSeriesStatus = 'unknown';
             }
 
             try {
@@ -153,6 +164,7 @@ export class AssessmentHistoryService {
                 manualEntries,
                 providerRecords,
                 preferredSource,
+                providerSeriesStatus,
             },
             unreadableAttemptsCount: totalUnreadableAttempts,
             unreadableObservationsCount: totalUnreadableObservations,

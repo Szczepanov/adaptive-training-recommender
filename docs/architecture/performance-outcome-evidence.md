@@ -310,8 +310,11 @@ $$\text{Series} = (\text{protocolId}, \text{protocolRevision}, \text{metricId}, 
 * **Body-mass-relative context (`app/src/anthropometry/bodyMass.ts`):** Relative metrics (sprint W/kg and
   strength 1RM relative load) derive context strictly from one same-day Warsaw date point. An explicit athlete
   source choice never silently switches. With no explicit choice, `D-BC-WEIGHT` is provider-first and uses manual
-  only when no usable provider series exists; once a source is selected for the read, a missing same-day point does
-  **not** fall back to the other source. Values are never averaged and stale provider carry-forwards are never used.
+  only when no usable provider series exists. Provider-series existence is judged over the 28 days before the
+  earliest test date through the latest one (`PROVIDER_BODY_MASS_SERIES_LOOKBACK_DAYS`), not from test days alone.
+  If the provider read fails or returns unreadable rows and no explicit choice exists, the relative value is
+  `"unavailable"` rather than taken from the manual series. Once a source is selected for the read, a missing
+  same-day point does **not** fall back to the other source. Values are never averaged and stale provider carry-forwards are never used.
   The chosen context retains a stable canonical source reference (`anthropometry_entry:<id>` or
   `daily_recovery_snapshot:<date>`) for audit/export. If no acceptable same-day record exists, relative context
   renders `"unavailable"`.

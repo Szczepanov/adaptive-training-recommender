@@ -209,4 +209,45 @@ describe('bodyMass utilities', () => {
             expect(formatBodyMassRelativeContext('standing_broad_jump_distance_cm', ctx)).toBeNull();
         });
     });
+
+    describe('no cross-source substitution (ADR-0046 D-AT-BODYMASS)', () => {
+        const manual = [makeManualEntry('m1', '2026-10-20', 82, '2026-10-20T05:00:00.000Z')];
+
+        it('returns unavailable instead of manual when the provider read failed and no preference is set', () => {
+            expect(resolveSameDayBodyMass('2026-10-20', {
+                manualEntries: manual,
+                providerRecords: [],
+                preferredSource: null,
+                providerSeriesStatus: 'unknown',
+            })).toBeNull();
+        });
+
+        it('still honours an explicit manual preference when the provider read failed', () => {
+            expect(resolveSameDayBodyMass('2026-10-20', {
+                manualEntries: manual,
+                providerRecords: [],
+                preferredSource: 'manual',
+                providerSeriesStatus: 'unknown',
+            })?.source).toBe('manual');
+        });
+
+        it('keeps the provider series selected (unavailable) on a test day without a provider weigh-in', () => {
+            // A weigh-in earlier in the lookback proves a usable provider series exists.
+            expect(resolveSameDayBodyMass('2026-10-20', {
+                manualEntries: manual,
+                providerRecords: [{ date: '2026-10-10', weightKg: 81.4 }],
+                preferredSource: null,
+                providerSeriesStatus: 'known',
+            })).toBeNull();
+        });
+
+        it('uses manual weight when the athlete has no provider series at all', () => {
+            expect(resolveSameDayBodyMass('2026-10-20', {
+                manualEntries: manual,
+                providerRecords: [],
+                preferredSource: null,
+                providerSeriesStatus: 'known',
+            })).toMatchObject({ source: 'manual', bodyMassKg: 82 });
+        });
+    });
 });
