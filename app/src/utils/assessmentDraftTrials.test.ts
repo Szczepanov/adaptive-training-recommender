@@ -30,6 +30,26 @@ describe('assessmentDraftTrials', () => {
         expect(trial.device).toEqual({ provider: 'Tape' });
     });
 
+    it('replays a stored trial when its context matches the locked comparison context', () => {
+        const rows: DraftTrialRow[] = [{
+            ordinal: 1,
+            values: { load_kg: 150, successful: true },
+            validity: 'valid',
+            context: { equipment_setup_id: 'locked-rack', wl_parser_version: 'wl-analysis-csv-v1' },
+        }];
+        const [trial] = draftRowsToTrials(
+            rows,
+            'att-1',
+            { equipment_setup_id: 'locked-rack' },
+            { provider: '' },
+            '2026-10-01T00:00:00.000Z',
+        );
+        expect(trial.context).toEqual({
+            equipment_setup_id: 'locked-rack',
+            wl_parser_version: 'wl-analysis-csv-v1',
+        });
+    });
+
     it('rejects imported context that would override locked comparison context', () => {
         const rows: DraftTrialRow[] = [{
             ordinal: 1,
