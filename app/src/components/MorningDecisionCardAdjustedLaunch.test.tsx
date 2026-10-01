@@ -140,7 +140,7 @@ describe('MorningDecisionCard adjusted launch with no displayable prescription',
         expect(html).not.toContain(WITHHELD_ANY);
     });
 
-    it('withholds Start on a time-crunched imported proceed session and names its source', () => {
+    it('leaves a time-crunched imported proceed session to the verdict banner (no second notice)', () => {
         const html = renderToStaticMarkup(
             <MorningDecisionCard
                 {...baseProps}
@@ -148,6 +148,15 @@ describe('MorningDecisionCard adjusted launch with no displayable prescription',
                 recommendation={{
                     ...authoredTimeCrunched,
                     template: { ...authoredTimeCrunched.template, id: 'ext:coach-block-a:3:w2-tempo', title: 'Tempo intervals' },
+                    rationale: 'Today’s readiness supports this session as written.',
+                    externalVerdict: { decision: 'proceed', gateFailures: [], rationale: 'Today’s readiness supports this session as written.' },
+                    externalPrescription: {
+                        planId: 'coach-block-a',
+                        revision: 3,
+                        sessionId: 'w2-tempo',
+                        title: 'Tempo intervals',
+                        prescription: { summary: '3x10 min at tempo.', steps: [] },
+                    },
                     primarySession: {
                         sessionSource: { kind: 'external_plan', planId: 'coach-block-a', revision: 3, sessionId: 'w2-tempo', contentHash: 'sha256:ext' },
                         prescriptionHash: 'hash-external',
@@ -156,7 +165,8 @@ describe('MorningDecisionCard adjusted launch with no displayable prescription',
             />,
         );
         expect(html).not.toContain('Start Session →');
-        expect(html).toContain('Your imported plan session can only run exactly as written');
+        expect(html).toContain('Start is unavailable while a time or load adjustment is applied');
+        expect(html).not.toContain(WITHHELD_ANY);
     });
 
     it('still starts the displayed catalog prescription when an adjustment has one', () => {

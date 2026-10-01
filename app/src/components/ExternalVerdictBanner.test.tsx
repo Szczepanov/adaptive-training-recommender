@@ -131,6 +131,71 @@ describe('ExternalVerdictBanner (#909)', () => {
         expect(html).not.toContain('3x10 min at tempo');
         expect(html).not.toContain('Tempo x3');
     });
+    it('a v6 scale verdict with a prepared reduced binding says Start runs the reduced version', () => {
+        const html = renderToStaticMarkup(
+            <ExternalVerdictBanner
+                prescription={{
+                    ...prescription,
+                    scaling: { reducible: true, reducedDefinition: { id: 'w2-tempo' } } as Prescription['scaling'],
+                }}
+                verdict={verdict({ decision: 'scale', scaledSummary: 'Five minutes only', executionDose: { volume: 0.5, intensity: 1 } })}
+                launch="available"
+            />,
+        );
+        expect(html).toContain('Start runs your plan’s own reduced version exactly as written');
+        expect(html).not.toContain('Start is unavailable');
+        expect(html).not.toContain('does not include executable reduced steps');
+        expect(html).not.toContain('Tempo x3');
+    });
+
+    it('a v6 scale verdict whose reduced binding was not prepared does not claim the plan lacks reduced steps', () => {
+        const html = render(
+            { ...prescription, scaling: { reducible: true, reducedDefinition: { id: 'w2-tempo' } } as Prescription['scaling'] },
+            verdict({ decision: 'scale', executionDose: { volume: 0.5, intensity: 1 } }),
+        );
+        expect(html).toContain('your plan’s reduced version could not be prepared for today');
+        expect(html).not.toContain('does not include executable reduced steps');
+    });
+
+    it('an adjusted v6 scale day names the adjustment, not a missing reduced form', () => {
+        const html = renderToStaticMarkup(
+            <ExternalVerdictBanner
+                prescription={{
+                    ...prescription,
+                    scaling: { reducible: true, reducedDefinition: { id: 'w2-tempo' } } as Prescription['scaling'],
+                }}
+                verdict={verdict({ decision: 'scale', executionDose: { volume: 0.5, intensity: 1 } })}
+                launch="adjusted"
+            />,
+        );
+        expect(html).toContain('Start is unavailable while a time or load adjustment is applied');
+        expect(html).not.toContain('could not be prepared');
+    });
+
+    it('launch adds no scale launch note outside a scale verdict', () => {
+        const html = renderToStaticMarkup(
+            <ExternalVerdictBanner prescription={prescription} verdict={verdict({ decision: 'proceed' })} launch="available" />,
+        );
+        expect(html).not.toContain('Start runs your plan');
+        expect(html).not.toContain('Start is unavailable');
+    });
+
+    it('an adjusted proceed day says why the as-written Start is withheld', () => {
+        const html = renderToStaticMarkup(
+            <ExternalVerdictBanner prescription={prescription} verdict={verdict({ decision: 'proceed' })} launch="adjusted" />,
+        );
+        expect(html).toContain('Do it as written');
+        expect(html).toContain('Start is unavailable while a time or load adjustment is applied');
+        expect(html).toContain('Reset the adjustment to start it.');
+    });
+
+    it.each(['skip', 'defer', 'advisory'] as const)('a %s verdict never shows the adjusted Start note', decision => {
+        const html = renderToStaticMarkup(
+            <ExternalVerdictBanner prescription={prescription} verdict={verdict({ decision })} launch="adjusted" />,
+        );
+        expect(html).not.toContain('Start is unavailable');
+    });
+
     it('a proceed verdict shows the authored prescription with its steps', () => {
         const html = render(prescription, verdict({ decision: 'proceed' }));
         expect(html).toContain('As your plan wrote it');

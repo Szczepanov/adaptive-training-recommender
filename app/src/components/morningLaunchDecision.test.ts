@@ -79,7 +79,9 @@ describe('resolveMorningLaunch (morning-decision-ux.md §4)', () => {
 describe('withheldLaunchExplanation', () => {
     it('names the source of the withheld session in athlete language', () => {
         expect(withheldLaunchExplanation(authoredBinding, 'start').text).toMatch(/^Your own session can only run exactly as written/);
-        expect(withheldLaunchExplanation(externalBinding, 'start').text).toMatch(/^Your imported plan session can only run exactly as written/);
+        // Unreachable from the card (the verdict path withholds an adjusted imported binding
+        // first), but the copy stays source-neutral rather than claiming authorship.
+        expect(withheldLaunchExplanation(externalBinding, 'start').text).toMatch(/^This adjustment did not produce a version/);
         expect(withheldLaunchExplanation(catalogBinding, 'start').text).toMatch(/^This adjustment did not produce a version of today’s session/);
     });
 

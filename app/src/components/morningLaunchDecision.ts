@@ -63,9 +63,10 @@ export function withheldLaunchExplanation(
     action: WithheldLaunchAction,
 ): WithheldLaunchCopy {
     const reset = `Reset to the original session to ${action} it.`;
-    const kind = binding.sessionSource.kind;
-    const reason = kind === 'manual' || kind === 'external_plan'
-        ? `${kind === 'manual' ? 'Your own session' : 'Your imported plan session'} can only run exactly as written, and it has no version that matches the adjustment shown here.`
+    // An adjusted `external_plan` binding never reaches `withheld` from the card: the
+    // verdict path marks it unavailable first and ExternalVerdictBanner explains it.
+    const reason = binding.sessionSource.kind === 'manual'
+        ? 'Your own session can only run exactly as written, and it has no version that matches the adjustment shown here.'
         : 'This adjustment did not produce a version of today’s session that the app can run.';
     return {
         title: `${ACTION_LABEL[action]} is unavailable while this adjustment is applied`,

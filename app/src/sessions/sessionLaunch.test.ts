@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { archivedSavedDefinitionError, canLaunchExternalPlanSession } from './sessionLaunch';
+import { archivedSavedDefinitionError, canLaunchExternalPlanSession, isPreparedReducedExternalBinding } from './sessionLaunch';
+import type { SessionReferenceBinding } from './models';
 import type { AnyExternalPlanSession } from './externalPlanV2';
 
 // M4.3 follow-up: SessionRunner's startCompanion resolves a saved definition by header the
@@ -59,5 +60,50 @@ describe('canLaunchExternalPlanSession', () => {
     it('fails closed on a missing session', () => {
         expect(canLaunchExternalPlanSession(null, { verdictDecision: 'proceed' })).toBe(false);
         expect(canLaunchExternalPlanSession(undefined, { verdictDecision: 'proceed' })).toBe(false);
+    });
+});
+
+// #949: Home may start a scaled imported session only through the exact v6 reduced binding.
+describe('isPreparedReducedExternalBinding', () => {
+    const v6Prescription = {
+        planId: 'coach-block-a', revision: 3, sessionId: 'w2-tempo',
+        scaling: { reducible: true, reducedSummary: 'Five minutes only', reducedDefinition: { id: 'w2-tempo' } },
+    };
+    const binding: SessionReferenceBinding = {
+        sessionSource: { kind: 'external_plan', planId: 'coach-block-a', revision: 3, sessionId: 'w2-tempo', contentHash: 'hash' },
+        occurrenceId: 'occ-1',
+        prescriptionHash: 'reduced-hash',
+    };
+
+    it('permits an external binding to the exact plan, revision and session that carries a reducedDefinition', () => {
+        expect(isPreparedReducedExternalBinding(v6Prescription, binding)).toBe(true);
+    });
+
+    it('blocks a legacy scale whose plan carries no reducedDefinition', () => {
+        expect(isPreparedReducedExternalBinding({ ...v6Prescription, scaling: { reducible: true, reducedSummary: 'Half' } }, binding)).toBe(false);
+        expect(isPreparedReducedExternalBinding({ planId: 'coach-block-a', revision: 3, sessionId: 'w2-tempo' }, binding)).toBe(false);
+    });
+
+    it('blocks a reducedDefinition that is not explicitly reducible', () => {
+        expect(isPreparedReducedExternalBinding({ ...v6Prescription, scaling: { reducedDefinition: { id: 'w2-tempo' } } }, binding)).toBe(false);
+    });
+
+    it.each([
+        ['plan', { planId: 'other-plan' }],
+        ['revision', { revision: 2 }],
+        ['session', { sessionId: 'w3-tempo' }],
+    ] as const)('blocks a binding to a different %s', (_label, change) => {
+        const other = { ...binding, sessionSource: { ...binding.sessionSource, ...change } } as SessionReferenceBinding;
+        expect(isPreparedReducedExternalBinding(v6Prescription, other)).toBe(false);
+    });
+
+    it('blocks a non-external binding and a missing binding', () => {
+        const catalog: SessionReferenceBinding = {
+            sessionSource: { kind: 'catalog', workoutId: 'cyc_end_01', catalogVersion: '1' },
+            prescriptionHash: 'catalog-hash',
+        };
+        expect(isPreparedReducedExternalBinding(v6Prescription, catalog)).toBe(false);
+        expect(isPreparedReducedExternalBinding(v6Prescription, undefined)).toBe(false);
+        expect(isPreparedReducedExternalBinding(null, binding)).toBe(false);
     });
 });
