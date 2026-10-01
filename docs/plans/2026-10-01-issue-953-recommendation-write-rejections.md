@@ -294,6 +294,7 @@ per-operation Rules budget model.
 | subjective-drift provenance | Shape/range | `validateRecommendation` exact estimator/metric validation | Rules keep bounded map containers; deep validation is TypeScript-owned. |
 | top-level / audit session bindings | Executable integrity at top level; replay-copy shape in audit | `validateRecommendation` binding validation, including FIT fingerprint pair/kind | Rules fully validate executable top-level bindings; nested audit copies stay replay evidence. |
 | knowledge lineage | Shape/bounds | `validateRecommendation` exact refs + duplicate-ID rejection | Rules keep the 64-entry bound; TypeScript validates each reference. |
+| athlete-evidence lineage | Shape/bounds (SKR4) | `validateRecommendation` exact refs + duplicate record-ID rejection; provenance snapshots max 16 | Rules admit the field and keep the 16-entry bound; TypeScript validates each reference. A TS↔Rules audit-key parity test prevents future allowlist drift. |
 
 Security-review conclusion: do **not** buy expression headroom by deleting cross-document
 provenance guarantees. Firebase documents a 1,000-expression ceiling and per-operation document
