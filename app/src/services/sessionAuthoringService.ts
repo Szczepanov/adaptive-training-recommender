@@ -242,8 +242,10 @@ export interface PrepareExternalPlanSessionLaunchOptions {
     useReducedDefinition?: boolean;
     /** Adjudicated execution-volume fraction for today's exact scale verdict. */
     scaleVolume?: number;
-    /** When preparing recommendation binding (composition time), allow existing occurrences regardless of terminal or active lifecycle state. */
-    allowAnyOccurrenceState?: boolean;
+    /** During recommendation recomposition, preserve a binding for an occurrence that was
+     * already launched (active/completed/abandoned). Never re-bind skipped, missed, or
+     * superseded occurrences, which no longer govern today's executable recommendation. */
+    allowPreviouslyLaunchedOccurrence?: boolean;
 }
 
 /**
@@ -343,7 +345,9 @@ export async function prepareExternalPlanSessionLaunch(
         const occurrenceData = occurrence.data;
         if (
             !isExternalPlanOccurrence(occurrenceData)
-            || (!options.allowAnyOccurrenceState && occurrenceData.state !== 'scheduled')
+            || (occurrenceData.state !== 'scheduled'
+                && !(options.allowPreviouslyLaunchedOccurrence
+                    && ['active', 'completed', 'abandoned'].includes(occurrenceData.state)))
             || occurrenceData.userId !== userId
             || occurrenceData.externalPlanRef.planId !== sessionSource.planId
             || occurrenceData.externalPlanRef.revision !== sessionSource.revision
@@ -373,7 +377,9 @@ export async function prepareExternalPlanSessionLaunch(
                 now,
             },
         );
-        if (!options.allowAnyOccurrenceState && occurrence.state !== 'scheduled') {
+        if (occurrence.state !== 'scheduled'
+            && !(options.allowPreviouslyLaunchedOccurrence
+                && ['active', 'completed', 'abandoned'].includes(occurrence.state))) {
             throw new Error(`External-plan occurrence ${occurrence.occurrenceId} does not match the launch source.`);
         }
         effectiveOccurrenceId = occurrence.occurrenceId;
