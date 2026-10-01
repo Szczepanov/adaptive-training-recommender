@@ -706,6 +706,10 @@ Do not require duplicate device typing on every trial when unchanged.
 
 The agreed October execution protocol also requires raw videos to be preserved. #897 should not invent a one-off media store to satisfy that operational rule. Until a generic durable attachment/provenance contract is accepted, protocol copy/checklists should remind the athlete to preserve the raw videos outside OV, and the product must not imply that those videos are stored merely because numeric WL Analysis/trial evidence is present. A future attachment reference must be source-scoped and replay-stable rather than an ad hoc filename field.
 
+**WL Analysis per-frame CSV import (planned as #897 PR B2, before the October baseline):** governed by [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) D-AT-IMPORT (amended 2026-10-01). The athlete films each squat/bench attempt, exports one per-frame CSV per video and imports the files on the capture screen, so `load_kg`, `mean_concentric_velocity_mps` and `peak_velocity_mps` are filled without hand-typing. A versioned, local-only parser segments repetitions from per-frame velocity and displacement (the whole-recording summary block is never used), records its parser version in trial context and identifies each file by content digest in the trial `sourceRef`. Success is only a confirmed suggestion and validity stays the athlete's decision. This is the replay-stable source reference this section anticipated; no video or file is stored.
+
+Athlete checklist for importable recordings: one video per attempt; WL Analysis tags `attempt N`; per-frame export enabled with velocity and displacement (power/force are modelled from a constant load and are ignored, and are wrong with chains or bands); kilograms if WL Analysis offers a unit setting; fixed side-on tripod position; keep the raw .mp4 and CSV outside the app.
+
 **PR B follow-up (trial correction integrity):** In `assessmentCaptureService.correctTrial`, if an athlete supersedes a trial (e.g. marking it invalid or practice) such that a previously benchmarked metric now has no valid trials remaining, the service fails closed with an informative error. The candidate trial set is derived in memory first; accepted corrections then use `AssessmentTrialService.commitCorrection` so the superseding trial plus all changed/new canonical observation revisions and heads commit in one Firestore transaction. A stale concurrent head or interrupted write therefore cannot leave the raw correction only partly reflected in canonical benchmarks. An explicit observation benchmark invalidation workflow is still a separate follow-up for intentionally removing the last valid benchmark.
 
 ## WP5.6 Mobile usability
@@ -848,6 +852,8 @@ Before closing #897, choose and implement one reviewed path:
 - an explicit architecture extension for multi-instance metric observations, with backward-compatible identity/rules/progress semantics.
 
 Do not solve this by encoding load into metric IDs or by adding a second informal trend algorithm over arbitrary raw rows.
+
+**Path chosen (2026-10-01):** [ADR-0047](../adr/0047-fixed-load-velocity-assessment-series.md) is accepted with Option A: dedicated `strength-bench-press-fixed-load-velocity` and `strength-back-squat-fixed-load-velocity` protocols, canonical metric `strength_fixed_load_mean_velocity_mps`, and `test_load_kg`, `measurement_method_id` (including importer parser version) and `equipment_setup_id` as series-defining identity. Implementation remains open work for this item (registry metric and `test_load_kg` dimension with Firestore parity, the two protocol revisions with capture contracts, catalog entries, and capture through the WL Analysis importer). 1RM attempt velocities stay raw trial evidence and do not populate fixed-load series.
 
 ---
 
@@ -1163,7 +1169,7 @@ This is the first athlete-usable slice.
 - WP7.1: normalized CSV export (`assessmentCsvExport.ts`, `utils/csv.ts`) with deterministic sorting and 24 exact columns, including the body-mass context reference.
 - WP3.4 / D8: body-mass-relative context (`anthropometry/bodyMass.ts`, `bodyMassPreference.ts`) with same-day Warsaw date matching, athlete preference support, stable source/reference provenance, and strict fallback to "unavailable".
 - WP7.2 update: schema version bumped to `assessment_diagnostic_export_v2` for per-series progress in diagnostic export JSON.
-- Appendix A: Proposed ADR-0047 (`docs/adr/0047-fixed-load-velocity-assessment-series.md`) evaluating dedicated protocol, companion attempts, and multi-instance keys.
+- Appendix A: ADR-0047 (`docs/adr/0047-fixed-load-velocity-assessment-series.md`; delivered as Proposed, accepted 2026-10-01 with Option A) evaluating dedicated protocol, companion attempts, and multi-instance keys.
 - Comprehensive unit tests across all new modules and browser E2E (`tests/e2e/testing-physical-capital.pw.ts`).
 
 PR C closes the athlete-facing **history + normalized export** slice of “store, export and track”. It does **not** close Issue #897 as a whole: WP6.6 fixed-load velocity and WP8 bounded goal/context consumers remain open unless explicitly rescoped.
