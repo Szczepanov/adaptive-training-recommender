@@ -188,6 +188,77 @@ export class MetricObservationService {
     }
 
     /**
+     * WP6.1 / D6: resolves current head/revision pairs for one metric, returning
+     * unreadable record counts instead of failing the entire query.
+     *
+     * The pair is returned from the same bounded read path so callers do not issue
+     * a second getHead() per revision merely to reconstruct an already-read head.
+     */
+    async listCurrentObservationsForMetricWithDiagnostics(
+        userId: string,
+        metricId: string,
+    ): Promise<{
+        observations: { head: MetricObservationHead; revision: MetricObservationRevision }[];
+        unreadableCount: number;
+    }> {
+        if (!metricId.trim()) throw new Error('metricId is required');
+        const headsSnapshot = await getDocs(query(
+            collection(this.db, 'users', userId, 'metric_observations'),
+            where('metricId', '==', metricId),
+        ));
+
+        const validObservations: { head: MetricObservationHead; revision: MetricObservationRevision }[] = [];
+        let unreadableCount = 0;
+
+        await Promise.all(headsSnapshot.docs.map(async headSnapshot => {
+            try {
+                const head = headSnapshot.data() as MetricObservationHead;
+                assertValidMetricObservationHead(head);
+                if (head.observationKey !== headSnapshot.id || head.metricId !== metricId) {
+                    unreadableCount++;
+                    return;
+                }
+                const revision = await this.getRevision(userId, head.observationKey, head.headRevision);
+                if (!revision) {
+                    unreadableCount++;
+                    return;
+                }
+                if (
+                    revision.metricId !== head.metricId
+                    || revision.assessmentAttemptId !== head.assessmentAttemptId
+                ) {
+                    unreadableCount++;
+                    return;
+                }
+                validObservations.push({ head, revision });
+            } catch {
+                unreadableCount++;
+            }
+        }));
+
+        return {
+            observations: validObservations.sort((a, b) =>
+                a.revision.observedAt.localeCompare(b.revision.observedAt)
+            ),
+            unreadableCount,
+        };
+    }
+
+    /**
+     * Backward-compatible revision-only projection for callers that do not need heads.
+     */
+    async listCurrentRevisionsForMetricWithDiagnostics(
+        userId: string,
+        metricId: string,
+    ): Promise<{ revisions: MetricObservationRevision[]; unreadableCount: number }> {
+        const result = await this.listCurrentObservationsForMetricWithDiagnostics(userId, metricId);
+        return {
+            revisions: result.observations.map(observation => observation.revision),
+            unreadableCount: result.unreadableCount,
+        };
+    }
+
+    /**
      * WP7.2: resolves the full revision history for one observation head.
      */
     async listRevisionsForObservation(userId: string, observationKey: string): Promise<MetricObservationRevision[]> {

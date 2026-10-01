@@ -313,6 +313,10 @@ describe('assessmentExport', () => {
         });
 
         expect(exportData.progress).toHaveLength(1);
+        expect(exportData.progress[0]).toMatchObject({
+            protocolId: STANDING_BROAD_JUMP_PROTOCOL.id,
+            protocolRevision: 1,
+        });
         expect(exportData.progress[0].baselineObservationId).toBe(checkpointKey);
         expect(exportData.progress[0].baselineObservationId).not.toBe(familiarizationKey);
         expect(exportData.progress[0].latestObservationId).toBeUndefined();

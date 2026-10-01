@@ -18,6 +18,7 @@ export interface DailyBodyMassPoint {
     weightKg: number;
     isPreferredContext?: boolean;
     entryId?: string;
+    sourceRef?: string;
 }
 
 export interface BodyMassWindowSummary {
@@ -129,6 +130,8 @@ export interface RawProviderWeightRecord {
     date: string;
     weightKg: number;
     observedAt?: string;
+    /** Stable reference to the canonical local record that supplied this provider weight. */
+    sourceRef?: string;
 }
 
 /**
@@ -146,6 +149,7 @@ export function reduceDailyProviderBodyMass(records: readonly RawProviderWeightR
                 observedAt: rec.observedAt,
                 source: 'provider',
                 weightKg: roundTo2Decimals(rec.weightKg),
+                sourceRef: rec.sourceRef,
             });
         }
     }

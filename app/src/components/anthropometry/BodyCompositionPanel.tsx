@@ -22,26 +22,11 @@ export interface BodyCompositionPanelProps {
   asOfDate?: string;
 }
 
-const BODY_MASS_SOURCE_STORAGE_KEY = 'adaptive-training:body-mass:preferred-source';
-
-function loadStoredBodyMassSource(): 'provider' | 'manual' | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const val = window.localStorage.getItem(BODY_MASS_SOURCE_STORAGE_KEY);
-    return val === 'provider' || val === 'manual' ? val : null;
-  } catch {
-    return null;
-  }
-}
-
-function persistBodyMassSource(source: 'provider' | 'manual'): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(BODY_MASS_SOURCE_STORAGE_KEY, source);
-  } catch {
-    // Ignore storage errors
-  }
-}
+import {
+  chooseEffectiveBodyMassSource,
+  loadStoredBodyMassSource,
+  persistBodyMassSource,
+} from '../../anthropometry/bodyMassPreference';
 
 export const BodyCompositionPanel: React.FC<BodyCompositionPanelProps> = ({
   userId,
@@ -182,12 +167,11 @@ export const BodyCompositionPanel: React.FC<BodyCompositionPanelProps> = ({
 
   // Auto fallback to manual if user hasn't explicitly selected provider and provider has 0 points
   const effectiveSource = useMemo(() => {
-    const stored = loadStoredBodyMassSource();
-    if (!stored) {
-      if (providerPointsByDate.size > 0) return 'provider';
-      if (manualPointsByDate.size > 0) return 'manual';
-    }
-    return selectedSource;
+    return chooseEffectiveBodyMassSource(
+      selectedSource,
+      providerPointsByDate.size > 0,
+      manualPointsByDate.size > 0,
+    );
   }, [selectedSource, providerPointsByDate.size, manualPointsByDate.size]);
 
   const activeBodyMassTrend = useMemo(() => {

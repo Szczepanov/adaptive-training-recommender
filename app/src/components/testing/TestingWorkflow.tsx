@@ -11,9 +11,7 @@ import type {
 import { getMetricDefinition } from '../../observations/registry';
 import { getComparisonDimensionDefinition } from '../../observations/protocols';
 import {
-    PERFORMANCE_TEST_DEFINITIONS,
     getPerformanceTestDefinition,
-    getPerformanceTestFamily,
 } from '../../observations/performanceTestingCatalog';
 import {
     buildComparisonContextFromStrings,
@@ -41,6 +39,8 @@ import { SessionRunner } from '../session/SessionRunner';
 import { TrialCaptureTable } from './TrialCaptureTable';
 import { clearAssessmentDraft } from '../../utils/assessmentDraftStorage';
 import { TrialCorrectionPanel } from './TrialCorrectionPanel';
+import { TestingCatalogPanel } from './TestingCatalogPanel';
+import { AssessmentHistory } from './AssessmentHistory';
 import './TestingWorkflow.css';
 
 type TestingStage = 'lookup' | 'ready' | 'running' | 'capture' | 'complete' | 'abandoned';
@@ -53,11 +53,6 @@ interface TestingWorkflowProps {
 
 const PURPOSES: readonly AssessmentAttemptPurpose[] = ['familiarization', 'baseline', 'checkpoint', 'post_block'];
 const VALIDITIES: readonly ObservationValidity[] = ['valid', 'invalid', 'practice', 'questionable'];
-const FAMILIES: readonly { id: 'cycling' | 'strength' | 'field'; label: string }[] = [
-    { id: 'cycling', label: 'Cycling' },
-    { id: 'strength', label: 'Strength' },
-    { id: 'field', label: 'Field & power' },
-];
 
 function occurrenceIdFromAttempt(attempt: AssessmentAttempt): string | null {
     const prefix = 'occurrence:';
@@ -94,6 +89,7 @@ export function canStartFreshAssessmentAttempt(
 }
 
 export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClose, onSessionStateChange }) => {
+    const [workflowTab, setWorkflowTab] = useState<'protocols' | 'history'>('protocols');
     const [stage, setStage] = useState<TestingStage>('lookup');
     const [protocolId, setProtocolId] = useState('');
     const [protocolRevision, setProtocolRevision] = useState('1');
@@ -566,57 +562,45 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                 <button type="button" className="testing-secondary" onClick={onClose}>Close</button>
             </header>
 
+            <nav className="testing-tabs" aria-label="Testing workflow tabs" role="tablist">
+                <button
+                    type="button"
+                    className={`testing-tab-btn ${workflowTab === 'protocols' ? 'active' : ''}`}
+                    onClick={() => setWorkflowTab('protocols')}
+                    aria-selected={workflowTab === 'protocols'}
+                    role="tab"
+                >
+                    Protocols
+                </button>
+                <button
+                    type="button"
+                    className={`testing-tab-btn ${workflowTab === 'history' ? 'active' : ''}`}
+                    onClick={() => setWorkflowTab('history')}
+                    aria-selected={workflowTab === 'history'}
+                    role="tab"
+                >
+                    History
+                </button>
+            </nav>
+
             {error && <p className="testing-error" role="alert">{error}</p>}
 
-            {stage === 'lookup' && (
+            {workflowTab === 'history' ? (
+                <AssessmentHistory userId={userId} />
+            ) : (
                 <>
-                    <section className="testing-card">
-                        <div className="testing-card-header-row">
-                            <h3>Bundled assessments</h3>
-                            <button
-                                type="button"
-                                className="testing-secondary export-diagnostic-btn"
-                                disabled={busy}
-                                onClick={exportAssessmentJson}
-                            >
-                                Export physical-capital evidence (JSON)
-                            </button>
-                        </div>
-                        <p>Choose a versioned default protocol. Its immutable revision is created on first use and never silently changed later.</p>
-                        <div className="bundled-catalog-groups">{FAMILIES.map(family => {
-                            const tests = PERFORMANCE_TEST_DEFINITIONS.filter(def => getPerformanceTestFamily(def) === family.id);
-                            if (tests.length === 0) return null;
-                            return (
-                                <div key={family.id} className="catalog-group">
-                                    <h4 className="catalog-group-heading">{family.label}</h4>
-                                    <div className="testing-grid two">
-                                        {tests.map(definition => (
-                                            <button
-                                                key={definition.id}
-                                                type="button"
-                                                className="testing-secondary"
-                                                disabled={busy}
-                                                onClick={() => loadBundledTest(definition.id)}
-                                            >
-                                                {definition.protocol.title} · rev {definition.protocol.revision}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            );
-                        })}</div>
-                    </section>
-                    <section className="testing-card">
-                        <h3>Load another immutable protocol revision</h3>
-                        <p>Advanced path: enter the exact user-owned protocol ID and revision. Testing never silently upgrades to a newer revision.</p>
-                        <div className="testing-grid two">
-                            <label>Protocol ID<input value={protocolId} onChange={event => setProtocolId(event.target.value)} /></label>
-                            <label>Revision<input inputMode="numeric" value={protocolRevision} onChange={event => setProtocolRevision(event.target.value)} /></label>
-                        </div>
-                        <button type="button" className="testing-primary" disabled={busy || !protocolId.trim()} onClick={loadProtocol}>{busy ? 'Loading…' : 'Load protocol'}</button>
-                    </section>
-                </>
-            )}
+                    {stage === 'lookup' && (
+                        <TestingCatalogPanel
+                            busy={busy}
+                            protocolId={protocolId}
+                            onProtocolIdChange={setProtocolId}
+                            protocolRevision={protocolRevision}
+                            onProtocolRevisionChange={setProtocolRevision}
+                            onSelectBundledTest={loadBundledTest}
+                            onLoadProtocol={loadProtocol}
+                            onExportJson={exportAssessmentJson}
+                        />
+                    )}
 
             {protocol && stage === 'ready' && (
                 <>
@@ -782,6 +766,8 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                         <button type="button" className={protocol && abandonmentPersisted ? 'testing-secondary' : 'testing-primary'} onClick={onClose}>Done</button>
                     </div>
                 </section>
+            )}
+                </>
             )}
         </div>
     );

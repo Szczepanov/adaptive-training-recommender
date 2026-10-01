@@ -55,5 +55,9 @@ describe('AssessmentExportService', () => {
             .filter(([, protocol]) => protocol.id === STANDING_BROAD_JUMP_PROTOCOL.id)
             .map(([, protocol, attemptId]) => [protocol.revision, attemptId]);
         expect(trialCalls).toEqual([[1, 'jump-r1'], [2, 'jump-r2']]);
+
+        const attemptCallsForJump = vi.mocked(attemptService.listAttemptsForProtocol).mock.calls
+            .filter(([, protocolId]) => protocolId === STANDING_BROAD_JUMP_PROTOCOL.id);
+        expect(attemptCallsForJump).toHaveLength(1);
     });
 });

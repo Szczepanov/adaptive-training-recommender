@@ -38,8 +38,19 @@ export class AssessmentExportService {
         const allObservations: CanonicalObservationExport[] = [];
         const allResolvedContext: ResolvedContextExport[] = [];
 
+        // Multiple immutable revisions can share one protocol id. Query each id once,
+        // then partition by locked revision locally rather than repeating the same
+        // Firestore attempt query for every revision in the export registry.
+        const attemptsByProtocolId = new Map<string, AssessmentAttempt[]>();
+        for (const protocolId of new Set(protocols.map(protocol => protocol.id))) {
+            attemptsByProtocolId.set(
+                protocolId,
+                await this.attemptService.listAttemptsForProtocol(userId, protocolId),
+            );
+        }
+
         for (const protocol of protocols) {
-            const attempts = (await this.attemptService.listAttemptsForProtocol(userId, protocol.id))
+            const attempts = (attemptsByProtocolId.get(protocol.id) ?? [])
                 .filter(attempt => attempt.protocolRef.revision === protocol.revision);
             for (const attempt of attempts) {
                 allAttempts.push(attempt);
@@ -99,5 +110,17 @@ export function downloadDiagnosticExportFile(filename: string, jsonString: strin
     link.click();
     document.body.removeChild(link);
     // Revoking synchronously can cancel the download in some browsers; release on the next task.
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+export function downloadCsvFile(filename: string, csvString: string): void {
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename.endsWith('.csv') ? filename : `${filename}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
     setTimeout(() => URL.revokeObjectURL(url), 0);
 }

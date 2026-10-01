@@ -1,7 +1,7 @@
 # Issue #897 — Physical-capital assessment history implementation plan
 
 **Date:** 2026-09-30
-**Status:** In progress — [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A (WP0–WP3 domain foundation) merged (PR #942); PR B (WP4 bundled catalog, WP5 trial capture UX, WP7.2 diagnostic JSON export) implemented, in review
+**Status:** In progress — [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A (WP0–WP3 domain foundation) merged (PR #942); PR B (WP4 bundled catalog, WP5 trial capture UX, WP7.2 diagnostic JSON export) merged (PR #944); PR C (WP6 assessment history, series comparability, WP7.1 normalized CSV export, WP3.4 body-mass context, Appendix A ADR-0047) implemented and under review in PR #948. #897 intentionally remains open for WP6.6 fixed-load velocity and WP8 bounded consumer integration unless those acceptance criteria are explicitly rescoped.
 **Authority boundary:** evidence-only under the existing OV authority boundary; ADR-0046 grants no recommendation authority
 **Unlocks:** first-class multidomain physical-capital assessment capture, comparable history and normalized/diagnostic export without recommendation authority
 **Canonical status owner:** [Performance outcome validation (OV)](./performance-outcome-validation.md); this document is a scoped #897 implementation design, not a parallel OV status board
@@ -35,10 +35,10 @@ The slice is complete when all of the following are true:
 - [x] 3 × 6 s seated cycling sprint can store all three trials plus canonical 1 s peak and 5 s mean power.
 - [x] Strength attempts can store load-by-load WL Analysis velocity evidence without making app-derived e1RM authoritative.
 - [x] Historical protocol revisions remain immutable.
-- [ ] Repeating a compatible protocol produces an explicit longitudinal comparison.
-- [ ] Incompatible protocol/setup changes produce `non_comparable` or a separate series rather than a false numerical trend. *(PR A: the new protocols and dimensions split comparison series correctly; the `non_comparable` presentation is WP6.4.)*
-- [ ] Assessment history shows baseline/latest/change/comparability.
-- [ ] Normalized CSV export works.
+- [x] Repeating a compatible protocol produces an explicit longitudinal comparison.
+- [x] Incompatible protocol/setup changes produce `non_comparable` or a separate series rather than a false numerical trend.
+- [x] Assessment history shows baseline/latest/change/comparability.
+- [x] Normalized CSV export works.
 - [x] Diagnostic JSON export retains protocol, trials, canonical observations and provenance.
 - [x] Existing cycling tests continue to work without data migration.
 - [x] No assessment is double-counted as two physical sessions.
@@ -758,6 +758,12 @@ Add an athlete-scoped assessment history service/read model that joins:
 
 Avoid N+1 unbounded scans. The initial implementation may fetch a bounded date window or metric family.
 
+**PR #948 review clarification:** the list read path queries attempts by protocol ID and current observation
+head/revision pairs by metric ID, performs **zero raw-trial reads**, and does not re-fetch an observation head
+after its current revision has been resolved. Series are grouped by the complete D1 identity
+`(protocolId, protocolRevision, metricId, comparisonSeriesKey)`; multi-metric protocols never share one
+baseline/latest series.
+
 ## WP6.2 UI location
 
 **Blocked by:** WP6.1.
@@ -827,7 +833,7 @@ For the October battery, `purpose=baseline` is the natural initial reference.
 
 Do not hard-code “first observation forever” as baseline. Existing declared/window baseline semantics should remain available for goals/block reviews.
 
-The history UI may default to earliest valid baseline-purpose observation for convenience, but that is a presentation choice, not a mutation of outcome contracts.
+The history UI may default to earliest valid baseline-purpose observation for convenience, but that is a presentation choice, not a mutation of outcome contracts. Familiarization evidence remains visible/auditable but is excluded from both baseline selection **and** longitudinal latest/progress selection.
 
 ## WP6.6 Fixed-load velocity acceptance boundary
 
@@ -887,7 +893,7 @@ Do not include raw trials as repeated comma-joined text inside this summary CSV.
 
 ## WP7.2 Diagnostic JSON
 
-**Blocked by:** WP2.3 and WP3.2. Delivered in PR B, before the WP6.1 read model exists: it reads the bounded attempts/trials/observations directly and computes `progress` with the existing `deriveProgress()`. When WP6.1 lands, the export reuses that read model rather than keeping a second join.
+**Blocked by:** WP2.3 and WP3.2. Delivered in PR B, before the WP6.1 read model exists: it reads the bounded attempts/trials/observations directly and computes `progress` with the existing `deriveProgress()`. After WP6.1 lands, diagnostic export reuses the same D1 series identity/progress derivation and avoids duplicate per-revision attempt queries, but it deliberately retains separate **detail** reads for raw trials and complete observation revision chains because the lightweight History list must not load those records eagerly.
 **Unlocks:** Auditable external-coach/agent reconstruction of protocols, trials and canonical results.
 
 Include:
@@ -1153,12 +1159,14 @@ This is the first athlete-usable slice.
 
 ## PR C — history + export
 
-- WP6
-- WP7.1 normalized CSV (and WP7.3 only if justified)
-- comparison presentation
-- CSV/JSON tests
+- WP6.1–WP6.5: read model (`assessmentHistoryService.ts` / pure `assessmentHistory.ts`), History UI (`AssessmentHistory.tsx`, `AssessmentSeriesCard.tsx`, `AssessmentAttemptDetail.tsx`), D1–D4 series progress (`assessmentProgress.ts`), D5 bounded read model without N+1 raw-trial/detail loading, D6 diagnostic counts for unreadable records, D7 `TestingWorkflow.tsx` extraction and tab navigation.
+- WP7.1: normalized CSV export (`assessmentCsvExport.ts`, `utils/csv.ts`) with deterministic sorting and 24 exact columns, including the body-mass context reference.
+- WP3.4 / D8: body-mass-relative context (`anthropometry/bodyMass.ts`, `bodyMassPreference.ts`) with same-day Warsaw date matching, athlete preference support, stable source/reference provenance, and strict fallback to "unavailable".
+- WP7.2 update: schema version bumped to `assessment_diagnostic_export_v2` for per-series progress in diagnostic export JSON.
+- Appendix A: Proposed ADR-0047 (`docs/adr/0047-fixed-load-velocity-assessment-series.md`) evaluating dedicated protocol, companion attempts, and multi-instance keys.
+- Comprehensive unit tests across all new modules and browser E2E (`tests/e2e/testing-physical-capital.pw.ts`).
 
-This closes the user’s “store, export and track” requirement.
+PR C closes the athlete-facing **history + normalized export** slice of “store, export and track”. It does **not** close Issue #897 as a whole: WP6.6 fixed-load velocity and WP8 bounded goal/context consumers remain open unless explicitly rescoped.
 
 ## PR D — bounded feedback-loop integration
 
@@ -1195,22 +1203,22 @@ A polished dashboard is less important than preserving correct evidence at first
 Before the real baseline begins:
 
 - [x] ADR-0046 has been accepted and the canonical OV status board reflects the startable #897 work;
-- [ ] all six intended protocols are visible in Testing;
-- [ ] protocol text matches the agreed October execution standards;
-- [ ] familiarization can be recorded separately from baseline;
-- [ ] trial capture works on mobile;
-- [ ] squat/bench raw load attempts can store WL Analysis velocity without prematurely promoting it to a generic canonical series;
-- [ ] raw-trial correction is append-only and canonical reducers use unsuperseded trials;
-- [ ] sprint cadence and L/R balance can be retained as descriptive raw/context evidence without becoming corrective targets;
-- [ ] any W/kg/body-mass-relative output retains the selected source-specific same-day body-mass reference or remains unavailable;
-- [ ] a failed 1RM attempt does not replace the best successful load;
-- [ ] broad jump/CMJ/throw keep all valid attempts;
-- [ ] cycling stores three 6 s trials and both canonical power metrics;
-- [ ] canonical results can be exported immediately;
-- [ ] protocol and device/setup provenance are visible;
-- [ ] protocol copy/checklists preserve the raw-video requirement even while durable in-app media attachment remains deferred;
-- [ ] all existing Testing flows still pass;
-- [ ] no code path gives assessment evidence recommendation-selection authority.
+- [x] all six intended protocols are visible in Testing;
+- [x] protocol text matches the agreed October execution standards;
+- [x] familiarization can be recorded separately from baseline;
+- [x] trial capture works on mobile;
+- [x] squat/bench raw load attempts can store WL Analysis velocity without prematurely promoting it to a generic canonical series;
+- [x] raw-trial correction is append-only and canonical reducers use unsuperseded trials;
+- [x] sprint cadence and L/R balance can be retained as descriptive raw/context evidence without becoming corrective targets;
+- [x] any W/kg/body-mass-relative output retains the selected source-specific same-day body-mass reference or remains unavailable;
+- [x] a failed 1RM attempt does not replace the best successful load;
+- [x] broad jump/CMJ/throw keep all valid attempts;
+- [x] cycling stores three 6 s trials and both canonical power metrics;
+- [x] canonical results can be exported immediately;
+- [x] protocol and device/setup provenance are visible;
+- [x] protocol copy/checklists preserve the raw-video requirement even while durable in-app media attachment remains deferred;
+- [x] all existing Testing flows still pass;
+- [x] no code path gives assessment evidence recommendation-selection authority.
 
 ---
 
