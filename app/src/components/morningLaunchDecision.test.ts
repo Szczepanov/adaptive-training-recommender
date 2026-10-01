@@ -43,9 +43,13 @@ describe('resolveMorningLaunch (morning-decision-ux.md §4)', () => {
             .toEqual({ kind: 'withheld', binding: authoredBinding });
     });
 
-    it('withholds an imported proceed binding under an adjustment with no displayable prescription', () => {
-        expect(resolveMorningLaunch({ ...base, primarySession: externalBinding, hasAthleteAdjustment: true }))
-            .toEqual({ kind: 'withheld', binding: externalBinding });
+    it('offers nothing for an adjusted imported binding because the verdict banner owns recovery', () => {
+        expect(resolveMorningLaunch({
+            ...base,
+            primarySession: externalBinding,
+            hasAthleteAdjustment: true,
+            isExternalPrimaryBindingUnavailable: true,
+        })).toEqual({ kind: 'none' });
     });
 
     it('withholds a catalog binding when the adjustment resolved no catalog prescription', () => {
@@ -53,19 +57,37 @@ describe('resolveMorningLaunch (morning-decision-ux.md §4)', () => {
             .toEqual({ kind: 'withheld', binding: catalogBinding });
     });
 
-    it('launches the displayed prescription when an adjustment has one, whatever the stored binding', () => {
+    it('launches the displayed prescription when an adjustment has one and launch authority allows it', () => {
         expect(resolveMorningLaunch({ ...base, hasAthleteAdjustment: true, prescription: displayedPrescription }))
             .toEqual({ kind: 'adjusted', prescription: displayedPrescription });
     });
 
-    it('offers nothing when the external verdict already excludes the stored binding', () => {
-        // The verdict banner explains a scale/skip/defer day; the card adds no second notice.
+    it('fails closed when an imported binding is unavailable even if a catalog prescription appears', () => {
         expect(resolveMorningLaunch({
-            ...base, primarySession: externalBinding, hasAthleteAdjustment: true, isExternalPrimaryBindingUnavailable: true,
+            ...base,
+            primarySession: externalBinding,
+            hasAthleteAdjustment: true,
+            prescription: displayedPrescription,
+            isExternalPrimaryBindingUnavailable: true,
+        })).toEqual({ kind: 'none' });
+    });
+
+    it('offers nothing when the external verdict excludes the day even if other flags are inconsistent', () => {
+        // isExternalExcluded is authoritative on its own: the helper must not depend on
+        // callers also setting the derived primary-binding-unavailable flag.
+        expect(resolveMorningLaunch({
+            ...base,
+            primarySession: externalBinding,
+            hasAthleteAdjustment: true,
+            isExternalExcluded: true,
+            isExternalPrimaryBindingUnavailable: false,
         })).toEqual({ kind: 'none' });
         expect(resolveMorningLaunch({
-            ...base, hasAthleteAdjustment: true, prescription: displayedPrescription,
-            isExternalExcluded: true, isExternalPrimaryBindingUnavailable: true,
+            ...base,
+            hasAthleteAdjustment: true,
+            prescription: displayedPrescription,
+            isExternalExcluded: true,
+            isExternalPrimaryBindingUnavailable: false,
         })).toEqual({ kind: 'none' });
     });
 
