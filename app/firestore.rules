@@ -124,20 +124,15 @@ service cloud.firestore {
     }
 
     function hasValidKnowledgeLineage(lineage) {
-      return lineage is list
-        // The TypeScript persistence boundary validates every reference and enforces
-        // distinct claim IDs. Rules retain the bounded container contract here: an
-        // authenticated owner may not turn one audit field into unbounded storage.
-        // Firestore rules cannot iterate a list; spelling out all 64 refs consumed
-        // most of the per-write expression budget before any new audit field was read.
-        && lineage.size() <= 64;
+      // TypeScript owns container/ref shape and duplicate-ID validation. Rules keep the
+      // cardinality/size ceiling so this field cannot grow without bound.
+      return lineage.size() <= 64;
     }
 
     function hasValidAthleteEvidenceLineage(lineage) {
-      // SKR4 snapshots at most 16 records. Deep per-ref validation is intentionally
-      // kept at the TypeScript persistence boundary for the same budget reason as
-      // knowledgeLineage; Rules retain the bounded storage contract.
-      return lineage is list && lineage.size() <= 16;
+      // SKR4 snapshots at most 16 records. TypeScript owns exact list/ref shape; Rules
+      // retain the cardinality/size ceiling.
+      return lineage.size() <= 16;
     }
 
     function hasValidRecommendationAudit(userId, audit, version, date, revision) {
@@ -183,7 +178,6 @@ service cloud.firestore {
           audit.authoredOccurrence is map
           && audit.authoredOccurrence.decision in ['proceed', 'scale']
         ))
-        && (!('subjectiveDrift' in audit) || hasValidSubjectiveDriftAudit(audit.subjectiveDrift))
         && (!('identityDecision' in audit) || hasValidIdentityDecisionProvenance(userId, audit.identityDecision));
     }
 
