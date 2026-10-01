@@ -323,14 +323,14 @@ test('physical capital assessment: back-squat WL Analysis CSV import fills trial
     {
       name: 'squat-attempt-2.csv',
       mimeType: 'text/csv',
-      buffer: Buffer.from(wlSingleRepCsv(120, 'back squat attempt 2', 0.55, 0.7)),
+      buffer: Buffer.from(wlSingleRepCsv(120, 'back squat attempt 8', 0.55, 0.7)),
     },
   ]);
 
   // Preview before applying: ordinals from tags, confirmed loads, velocities, auto-detected success.
   const preview = page.locator('.wl-preview-list');
   await expect(preview).toContainText('Attempt 1');
-  await expect(preview).toContainText('Attempt 2');
+  await expect(preview).toContainText('Attempt 8');
   await expect(preview).toContainText('0.615 m/s');
   await expect(preview).toContainText('0.565 m/s');
   await expect(preview).toContainText('auto-detected — confirm');
@@ -340,17 +340,22 @@ test('physical capital assessment: back-squat WL Analysis CSV import fills trial
 
   await page.getByRole('button', { name: 'Apply to draft rows (2)' }).click();
 
+  // Sparse imported ordinals must not make a later manual row duplicate trial identity.
+  await page.getByRole('button', { name: /\+ Add attempt/ }).click();
+  await expect(page.locator('.trial-row-title', { hasText: 'Attempt 7' })).toHaveCount(1);
+  await expect(page.locator('.trial-row-title', { hasText: 'Attempt 8' })).toHaveCount(1);
+
+  // Drop the untouched planned/manual rows so only the two imported attempts save.
+  for (let ordinal = 2; ordinal <= 7; ordinal += 1) {
+    await page.getByRole('button', { name: `Remove Attempt ${ordinal}` }).click();
+  }
+
   // Rows are filled; success is pre-selected from the completed ascents.
   const loadInputs = page.locator('input[placeholder="1–500"]');
   await expect(loadInputs.nth(0)).toHaveValue('100');
   await expect(loadInputs.nth(1)).toHaveValue('120');
   await expect(page.locator('select.trial-select').nth(0)).toHaveValue('true');
   await expect(page.locator('select.trial-select').nth(1)).toHaveValue('true');
-
-  // Drop the untouched planned rows so only the two imported attempts save.
-  for (let i = 0; i < 4; i += 1) {
-    await page.locator('.trial-remove-btn').last().click();
-  }
 
   // Imported load unit, inferred success/miss and technical validity are suggestions only.
   // The normal save path must refuse to persist them until the athlete explicitly confirms.
