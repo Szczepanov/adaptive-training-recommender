@@ -9,9 +9,10 @@ import type { WorkoutPrescription } from '../workouts';
  * - `primary`: no athlete adjustment; launch the stored `primarySession` binding.
  * - `withheld`: an athlete adjustment is applied but there is no displayable prescription
  *   for it, while the stored binding would otherwise be launchable. That binding is the
- *   unadjusted session (an authored `manual` definition, an imported `external_plan`
- *   session, or a catalog snapshot), so launching it would run something other than what
- *   the card shows. Fail closed: no launch, and the card explains why.
+ *   unadjusted session (an authored `manual` definition or catalog snapshot), so launching
+ *   it would run something other than what the card shows. Fail closed: no launch, and the
+ *   card explains why. Imported-plan adjustments are always `none`; their verdict banner owns
+ *   the recovery explanation.
  * - `none`: nothing is launchable (no binding, no handler, clinical pause, or a binding the
  *   external verdict already excludes, which the verdict banner explains).
  */
@@ -38,9 +39,13 @@ export function resolveMorningLaunch(inputs: MorningLaunchInputs): MorningLaunch
         isExternalExcluded, isExternalPrimaryBindingUnavailable,
     } = inputs;
     // External-plan launch authority is stronger than the presence of a catalog prescription.
-    // Fail closed even for currently-unreachable mixed states so a future resolver change cannot
-    // turn an imported skip/scale/adjustment into a catalog swap by accident.
-    if (!canLaunch || isExternalExcluded || isExternalPrimaryBindingUnavailable) return { kind: 'none' };
+    // Fail closed even for currently-unreachable mixed states so a future resolver/caller change
+    // cannot turn an imported skip/scale/adjustment into a catalog swap by accident.
+    const isAdjustedExternalBinding = hasAthleteAdjustment
+        && primarySession?.sessionSource.kind === 'external_plan';
+    if (!canLaunch || isExternalExcluded || isExternalPrimaryBindingUnavailable || isAdjustedExternalBinding) {
+        return { kind: 'none' };
+    }
     if (hasAthleteAdjustment && prescription) {
         return { kind: 'adjusted', prescription };
     }
