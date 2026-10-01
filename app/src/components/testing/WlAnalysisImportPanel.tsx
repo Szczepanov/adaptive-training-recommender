@@ -71,20 +71,22 @@ export const WlAnalysisImportPanel: React.FC<WlAnalysisImportPanelProps> = ({
             const proposals: WlTrialProposal[] = [];
             const rejections: WlImportRejection[] = [];
             const summaries = new Map<string, string>();
+            const seenSourceRefs = new Set(existingSourceRefs);
             for (const file of [...files]) {
                 try {
                     const bytes = new Uint8Array(await file.arrayBuffer());
                     const hash = await sha256Hex(bytes);
                     const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
                     const parsed = parseWlAnalysisCsv(text);
-                    summaries.set(file.name, parsed.summarySignature);
                     const outcome = proposeWlTrial(
                         { fileName: file.name, fileHash: hash, parsed },
                         sessionDate,
-                        existingSourceRefs,
+                        seenSourceRefs,
                     );
                     if (outcome.status === 'proposed') {
                         proposals.push(outcome.proposal);
+                        seenSourceRefs.add(outcome.proposal.sourceRef);
+                        summaries.set(outcome.proposal.sourceRef, parsed.summarySignature);
                     } else {
                         rejections.push(outcome.rejection);
                     }
@@ -121,7 +123,7 @@ export const WlAnalysisImportPanel: React.FC<WlAnalysisImportPanelProps> = ({
             });
             onApply(rows);
             setAppliedMessage(
-                `Applied ${rows.length === 1 ? '1 row' : `${rows.length} rows`} to the draft. Review success and validity below, then save.`,
+                `Applied ${rows.length === 1 ? '1 row' : `${rows.length} rows`} to the draft. Confirm the imported load unit, result and validity below before saving.`,
             );
             clear();
         } catch (err) {
