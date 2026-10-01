@@ -160,6 +160,51 @@ describe('recommendation validation boundary', () => {
                     };
                 },
             },
+            {
+                name: 'an invalid external-rest revision',
+                apply: (audit: Record<string, unknown>) => {
+                    audit.externalRest = {
+                        planId: 'autumn-block', revision: 0, contentHash: 'a'.repeat(64),
+                        restDirectiveId: 'rest-1', date: '2026-08-31',
+                    };
+                },
+            },
+            {
+                name: 'an identity decision with an incomplete bundle reference',
+                apply: (audit: Record<string, unknown>) => {
+                    audit.identityDecision = {
+                        identityAssessmentId: 'identity-1',
+                        automaticStatus: 'UNCERTAIN',
+                        effectiveStatus: 'UNCERTAIN',
+                        reviewEventId: null,
+                        identityPolicyVersion: 'identity-v1',
+                        featureSchemaVersion: 'features-v1',
+                        passportVersion: null,
+                        sharedBundleRef: {
+                            id: 'shared', provider: 'eight_sleep', transport: 'google_health',
+                            revision: 1, sourcePayloadHash: 'hash',
+                        },
+                        anchorBundleRefs: [],
+                        selectedEffectiveSource: null,
+                        fallbackReason: 'ANCHOR_MISSING',
+                    };
+                },
+            },
+            {
+                name: 'an audit history with an extra unvalidated key',
+                apply: (audit: Record<string, unknown>) => {
+                    audit.history = {
+                        ...(audit.history as Record<string, unknown>),
+                        extra: true,
+                    };
+                },
+            },
+            {
+                name: 'an authored occurrence missing its occurrence id',
+                apply: (audit: Record<string, unknown>) => {
+                    audit.authoredOccurrence = { decision: 'proceed' };
+                },
+            },
         ];
 
         for (const { name, apply } of cases) {
@@ -168,4 +213,32 @@ describe('recommendation validation boundary', () => {
             expect(validateRecommendation(raw).isValid, name).toBe(false);
         }
     });
+    it('rejects malformed optional FIT fingerprint pairs before persistence', () => {
+        const base = validV4Recommendation();
+        const binding = {
+            sessionSource: { kind: 'catalog', workoutId: 'easy_ride', catalogVersion: 'v1' },
+            prescriptionHash: 'prescription-hash',
+        };
+        expect(validateRecommendation({
+            ...base,
+            primarySession: { ...binding, fitWorkoutFingerprint: 'fit-workout-v2:abc' },
+        }).isValid).toBe(false);
+        expect(validateRecommendation({
+            ...base,
+            primarySession: {
+                ...binding,
+                fitWorkoutFingerprint: 'fit-workout-v2:abc',
+                fitWorkoutFingerprintKind: 'unknown',
+            },
+        }).isValid).toBe(false);
+        expect(validateRecommendation({
+            ...base,
+            primarySession: {
+                ...binding,
+                fitWorkoutFingerprint: 'fit-workout-v2:abc',
+                fitWorkoutFingerprintKind: 'semantic_definition',
+            },
+        }).isValid).toBe(true);
+    });
+
 });
