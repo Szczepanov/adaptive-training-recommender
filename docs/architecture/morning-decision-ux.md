@@ -53,7 +53,10 @@ An existing but incomplete check-in cannot receive the High label.
 The execution rule is therefore:
 
 - unchanged recommendation -> launch the stored `primarySession` binding;
-- adjusted/alternative recommendation -> author the **currently displayed prescription** through `prepareCatalogSessionLaunch`, then launch the returned immutable binding.
+- adjusted/alternative recommendation -> author the **currently displayed prescription** through `prepareCatalogSessionLaunch`, then launch the returned immutable binding;
+- adjusted/alternative recommendation with **no displayable prescription** -> launch nothing. When the stored binding would otherwise launch, the card withholds Start, Resume, and Redo. It explains that the session has no version matching the adjustment and offers **Reset to Original Session**. That reset clears the alternative and persists the load reset. When the alternative also dropped the binding, nothing is launchable and no Start or Redo is offered.
+
+The third case is not hypothetical. Only catalog templates resolve a `WorkoutPrescription`. An authored replacement (M3.3, `sessionSource.kind === 'manual'`) and an imported plan session (`external_plan`) never resolve one. Some one-tap alternatives also keep the stored binding while changing only the displayed dose; the time-crunch, for example, rewrites template duration and `executionDose`. A load adjustment that `adjustSessionRecommendation` cannot apply falls back to the base recommendation with the adjustment still selected. In each of these cases the stored binding is the unadjusted session, so launching it would run the full original definition under an adjusted display. `morningLaunchDecision.ts` `resolveMorningLaunch` owns this rule for every binding source. When an imported session's verdict already makes its binding unlaunchable (`skip`, `defer`, or `scale`), `ExternalVerdictBanner` explains the missing Start and the card adds no second notice.
 
 This keeps the runner, replay, and prescription-hash contracts aligned with what the athlete actually sees and chooses. The UI must never display one prescription while silently executing the original binding.
 
@@ -111,6 +114,7 @@ Keyboard shortcuts `[1]`, `[2]`, and `[3]` are convenience controls. A synchrono
 The change set is covered by:
 
 - decision-evidence unit tests for safety locks, confidence, deltas, and alternative IDs;
+- `morningLaunchDecision.test.ts` and `MorningDecisionCardAdjustedLaunch.test.tsx` for the adjusted-launch rule in §4, including withheld Start/Resume/Redo on authored and imported bindings;
 - usability-metrics unit tests for first-action timing, wizard outcome/stage reporting, malformed outcomes, and storage-write fallback behavior;
 - onboarding-storage and relaunch-section tests for per-user dismissal/relaunch state and protection against discarding unsaved Coach Preferences;
 - Firestore emulator tests for activity-override owner CRUD, cross-user denial, malformed writes, and immutable identity/date/creation fields;

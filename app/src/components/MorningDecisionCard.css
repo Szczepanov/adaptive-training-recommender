@@ -503,7 +503,8 @@
 }
 
 .btn-view-targets,
-.btn-redo-session {
+.btn-redo-session,
+.btn-reset-adjustment {
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 10px;
@@ -520,15 +521,46 @@
 }
 
 .btn-view-targets:hover,
-.btn-redo-session:hover {
+.btn-redo-session:hover,
+.btn-reset-adjustment:hover {
     background: rgba(255, 255, 255, 0.14);
     border-color: rgba(255, 255, 255, 0.35);
     transform: translateY(-1px);
 }
 
 .btn-view-targets:active,
-.btn-redo-session:active {
+.btn-redo-session:active,
+.btn-reset-adjustment:active {
     transform: translateY(1px);
+}
+
+/* morning-decision-ux.md §4: an adjustment with no displayable prescription withholds
+   Start; this explains why and offers the reset. Neutral styling -- not an error or alarm. */
+.adjusted-launch-withheld {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.85rem 1rem;
+    border-radius: 10px;
+    background: var(--bg-surface-elevated, #18181b);
+    border: 1px solid var(--border-subtle, #27272a);
+}
+
+.adjusted-launch-withheld-title {
+    margin: 0;
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--text-main, #f4f4f5);
+}
+
+.adjusted-launch-withheld-text {
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: var(--text-muted, #a1a1aa);
 }
 
 .redo-confirm-banner {
