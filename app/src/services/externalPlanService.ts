@@ -62,6 +62,13 @@ function validateIntentBlockSupersession(
         }));
 }
 
+function revisionNotNewer(userId: string, planId: string): DataState<ImportResult> {
+    return {
+        status: 'INVALID',
+        issues: [{ code: 'revision-not-newer', field: 'revision', documentPath: `users/${userId}/external_plans/${planId}` }],
+    };
+}
+
 /** User-scoped persistence for externally-authored plans. A stored revision is immutable:
  * this service only ever creates one, never updates or deletes it. Rescheduling belongs to
  * the placement overlay, and an AI adjustment is a new revision. */
@@ -132,14 +139,7 @@ export class ExternalPlanService {
                 if (existingHeader) {
                 const storedRevision = existingHeader.revision;
                 if (typeof storedRevision === 'number' && plan.revision < storedRevision) {
-                    return {
-                        status: 'INVALID',
-                        issues: [{
-                            code: 'revision-not-newer',
-                            field: 'revision',
-                            documentPath: `users/${userId}/external_plans/${plan.planId}`,
-                        }],
-                    };
+                    return revisionNotNewer(userId, plan.planId);
                 }
 
                 if (typeof storedRevision === 'number') {
@@ -272,6 +272,9 @@ export class ExternalPlanService {
             return { status: 'AVAILABLE', data: { header, plan }, revision: header.contentHash };
             });
         } catch (error: unknown) {
+            if (getErrorCode(error) === 'permission-denied' && await this.hasNewerStoredRevision(userId, plan.planId, plan.revision)) {
+                return revisionNotNewer(userId, plan.planId);
+            }
             console.error('[ExternalPlanService.import] Failed:', error);
             return {
                 status: 'UNAVAILABLE',
@@ -279,6 +282,24 @@ export class ExternalPlanService {
                 retryable: getErrorCode(error) !== 'permission-denied',
                 message: getErrorMessage(error),
             };
+        }
+    }
+
+    /**
+     * A concurrent import of a newer revision can commit between this transaction's reads and
+     * its commit. Security rules then reject the stale header update (`revision` may not
+     * regress) with `permission-denied`, which the SDK does not retry, so the transaction never
+     * re-reads and reaches its own `revision-not-newer` check. One header re-read tells that
+     * race apart from a genuine denial. If the re-read itself fails, the caller keeps the
+     * original denial.
+     */
+    private async hasNewerStoredRevision(userId: string, planId: string, revision: number): Promise<boolean> {
+        try {
+            const snapshot = await getDoc(this.headerRef(userId, planId));
+            const storedRevision = snapshot.exists() ? (snapshot.data() as Partial<ExternalPlanHeader>).revision : undefined;
+            return typeof storedRevision === 'number' && storedRevision > revision;
+        } catch {
+            return false;
         }
     }
 

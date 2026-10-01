@@ -170,6 +170,54 @@ describe('ExternalPlanService', () => {
         expect(firestore.setDoc).not.toHaveBeenCalled();
     });
 
+    it('reports a commit denied because a concurrent newer revision landed as revision-not-newer', async () => {
+        // The transaction read revision 1, but a concurrent import of revision 3 committed
+        // first; rules then deny the stale header update and the SDK does not retry.
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block', { revision: 3 });
+        firestore.failNextTransaction(Object.assign(new Error('denied'), { code: 'permission-denied' }));
+
+        const result = await new ExternalPlanService().import('u1', plan({ revision: 2 }));
+
+        expect(result).toEqual({
+            status: 'INVALID',
+            issues: [{ code: 'revision-not-newer', field: 'revision', documentPath: 'users/u1/external_plans/autumn-block' }],
+        });
+        expect(firestore.transactions).toHaveLength(0);
+        expect(firestore.setDoc).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['no stored header', undefined],
+        ['a stored header that is not newer', { revision: 2 }],
+    ])('keeps a permission denial non-retryable when there is %s', async (_label, header) => {
+        if (header) firestore.committedDocs.set('users/u1/external_plans/autumn-block', header);
+        firestore.failNextTransaction(Object.assign(new Error('denied'), { code: 'permission-denied' }));
+
+        const result = await new ExternalPlanService().import('u1', plan({ revision: 2 }));
+
+        expect(result).toMatchObject({ status: 'UNAVAILABLE', operation: 'import external plan', retryable: false });
+    });
+
+    it('keeps the original denial when the header cannot be re-read', async () => {
+        firestore.failNextTransaction(Object.assign(new Error('denied'), { code: 'permission-denied' }));
+        firestore.getDoc.mockRejectedValueOnce(new Error('offline'));
+
+        const result = await new ExternalPlanService().import('u1', plan({ revision: 2 }));
+
+        expect(result).toMatchObject({ status: 'UNAVAILABLE', operation: 'import external plan', retryable: false, message: 'denied' });
+        expect(firestore.getDoc).toHaveBeenCalledOnce();
+    });
+
+    it('does not re-read the header for a retryable transaction failure', async () => {
+        firestore.committedDocs.set('users/u1/external_plans/autumn-block', { revision: 3 });
+        firestore.failNextTransaction(new Error('network error during transaction'));
+
+        const result = await new ExternalPlanService().import('u1', plan({ revision: 2 }));
+
+        expect(result).toMatchObject({ status: 'UNAVAILABLE', retryable: true });
+        expect(firestore.getDoc).not.toHaveBeenCalled();
+    });
+
     it('allows a newer revision only after validating the immutable predecessor bytes', async () => {
         const predecessor = plan({ revision: 3 });
         const hash = await computeContentHash(predecessor as never);
