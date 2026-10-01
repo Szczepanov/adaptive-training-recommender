@@ -43,12 +43,12 @@ describe('resolveMorningLaunch (morning-decision-ux.md §4)', () => {
             .toEqual({ kind: 'withheld', binding: authoredBinding });
     });
 
-    it('offers nothing for an adjusted imported binding because the verdict banner owns recovery', () => {
+    it('offers nothing for an adjusted imported binding even if the caller forgets the derived unavailable flag', () => {
         expect(resolveMorningLaunch({
             ...base,
             primarySession: externalBinding,
             hasAthleteAdjustment: true,
-            isExternalPrimaryBindingUnavailable: true,
+            isExternalPrimaryBindingUnavailable: false,
         })).toEqual({ kind: 'none' });
     });
 
@@ -62,13 +62,13 @@ describe('resolveMorningLaunch (morning-decision-ux.md §4)', () => {
             .toEqual({ kind: 'adjusted', prescription: displayedPrescription });
     });
 
-    it('fails closed when an imported binding is unavailable even if a catalog prescription appears', () => {
+    it('fails closed on an adjusted imported binding even if a catalog prescription appears', () => {
         expect(resolveMorningLaunch({
             ...base,
             primarySession: externalBinding,
             hasAthleteAdjustment: true,
             prescription: displayedPrescription,
-            isExternalPrimaryBindingUnavailable: true,
+            isExternalPrimaryBindingUnavailable: false,
         })).toEqual({ kind: 'none' });
     });
 
