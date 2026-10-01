@@ -36,6 +36,31 @@ Question 3 is a safety question, not an observability one.
 
 ---
 
+## 2026-10-01 implementation amendment — Firestore validation budget
+
+Issue #953 demonstrated that validating the complete nested recommendation-audit shape in
+Firestore Rules can exceed Firebase's per-operation expression budget for legitimate,
+maximal recommendation shapes. The architectural intent of this ADR is therefore refined:
+
+- `validateRecommendation` is the canonical **shape and semantic-range** boundary for the full
+  `RecommendationAudit`, on both persistence and read paths.
+- Firestore Rules remain the **authorization, bounded-storage, write-lifecycle, and
+  cross-document integrity** backstop. They continue to enforce owner scope, schema/revision
+  ratchets, append-only prior-revision archiving, decision-context path/revision/hash binding,
+  protected-rest semantics, identity assessment/review provenance, and explicit collection
+  cardinality bounds.
+- Shape checks may be omitted from Rules when they duplicate `validateRecommendation` and
+  materially consume the expression budget. This does not authorize removing a
+  cross-document/provenance invariant merely to gain headroom.
+- The CI budget harness exercises real recommendation shapes and requires at least 40 padding
+  terms of remaining rule-expression headroom, so future audit growth fails before production
+  writes do.
+
+This supersedes the narrower statement below that Rules validate the audit's “full shape” and
+every enum. The persisted audit remains fully validated by the application boundary; Rules keep
+the integrity properties that a direct client write must not be able to forge.
+
+---
 ## Decision Outcome
 
 ### 1. Reads distinguish four states, and only one is usable
