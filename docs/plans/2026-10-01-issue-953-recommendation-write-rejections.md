@@ -273,6 +273,36 @@ Build a classification table in the PR, one row per conjunct of `hasValidRecomme
 - **Do not** move the audit into a separate document in this issue. That changes readers and
   replay, and it needs its own plan.
 
+### WP3 implementation record — audit validation split and security review
+
+The implementation did require WP3 for F-maximal headroom. The rule/TypeScript split is
+intentional and was re-reviewed against ADR-0010, ADR-0028, ADR-0035 and Firebase's
+per-operation Rules budget model.
+
+| Check / audit area | Class | TypeScript enforcement | Rules decision |
+|---|---|---|---|
+| `decisionContext` user/date/revision/path/hash binding and paired context write | **Integrity (ADR-0010)** | `validateRecommendation` context-path test + `validateDecisionContext` tamper tests | **Keep.** Recommendation checks the canonical path/revision and `getAfter` hash; the immutable `decision_contexts/{revision}` write independently checks full context shape and `existsAfter`/reverse binding. |
+| identity assessment/review binding | **Integrity (ADR-0028)** | `validateRecommendation` identity-shape cases; `identityDecisionProvenanceReplayErrors` | **Keep.** Assessment id/status/policy/feature schema/passport/shared bundle/anchor bundles and review/effective-state binding remain cross-document checks. Non-`USER` shared evidence cannot be selected as effective. |
+| `externalPlan` XOR `externalRest`, protected-rest candidate semantics and `rest_01` binding | **Integrity (ADR-0035)** | `validateRecommendation` external-plan/external-rest cases | **Keep** the cross-field semantics in Rules; move deep provenance shape to TypeScript. |
+| prior-revision archive + revision ratchet | **Integrity (ADR-0010)** | service revision/archive tests | **Keep.** The archive must match the prior scalar decision identity; revision documents remain append-only. |
+| history counts/statuses and envelope | Shape/semantic range | `validateRecommendation` exact nested-shape validation | Rules retain bounded container / the hot-path status backstop only. |
+| planned/execution dose | Shape/range | `validateRecommendation` `validDose` + malformed-provenance test | Move deep shape/range to TypeScript; Rules require map containers. |
+| candidate scores / dropped contributor objectives | Shape/bounds | `validateRecommendation` exact candidate/objective validation | Rules retain list bounds needed to prevent unbounded audit storage. |
+| `externalPlan` provenance fields | Shape | `validateRecommendation` exact external-plan validation | Move deep shape to TypeScript. |
+| `externalRest` provenance fields | Shape | `validateRecommendation` exact required/optional fields, revision/date/type checks | Move deep shape to TypeScript; keep protected-rest semantics in Rules. |
+| authored occurrence provenance | Shape + decision enum | `validateRecommendation` exact occurrence binding | Rules keep the decision enum; TypeScript validates the full pair. |
+| subjective-drift provenance | Shape/range | `validateRecommendation` exact estimator/metric validation | Rules keep bounded map containers; deep validation is TypeScript-owned. |
+| top-level / audit session bindings | Executable integrity at top level; replay-copy shape in audit | `validateRecommendation` binding validation, including FIT fingerprint pair/kind | Rules fully validate executable top-level bindings; nested audit copies stay replay evidence. |
+| knowledge lineage | Shape/bounds | `validateRecommendation` exact refs + duplicate-ID rejection | Rules keep the 64-entry bound; TypeScript validates each reference. |
+
+Security-review conclusion: do **not** buy expression headroom by deleting cross-document
+provenance guarantees. Firebase documents a 1,000-expression ceiling and per-operation document
+access-call limits even inside a batch; `getAfter()` is the mechanism for requiring atomic related
+writes. The context document therefore carries its full reverse-binding validation on its own
+write budget, while the recommendation hot path keeps the minimum forward integrity binding.
+Identity assessment comparisons likewise remain in Rules; only deep object shape moved to the
+trusted validation boundary.
+
 ### WP4 — Stop deep-merging the audit (fixes D3)
 
 In `recommendationService.ts` `persist`, any write that sets `recommendationAudit` must
