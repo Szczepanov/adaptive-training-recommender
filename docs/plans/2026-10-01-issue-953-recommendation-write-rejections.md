@@ -409,13 +409,15 @@ Follow-up changes on this PR:
   regression test;
 - amend ADR-0010 to record the TypeScript-shape / Rules-integrity validation split.
 
-The checklist below is evidence-based: budget/CI/follow-up items remain open until the
-current PR head reproduces them.
+Verification closed on code head `765a8ae5` by CI run 4790: both Firestore Rules shards passed,
+including the ≥40-padding real-shape budget harness; both Browser E2E shards passed with the
+recommendation console trap enabled; the aggregate frontend/rules/E2E gate and final CI gate
+also passed. #950 was closed from this evidence; #949/#951/#952 remain open as separate defects.
 ## 5. Acceptance checklist
 
 - [x] #953 is corrected with D1/D2/D3, and the production rules/hosting state is recorded.
-- [ ] Every real-shape fixture × scenario in the budget harness passes with ≥ 40 pad terms of
-      headroom on the current PR head; the baseline and candidate tables are in the PR.
+- [x] Every real-shape fixture × scenario in the budget harness passes with ≥ 40 pad terms of
+      headroom on code head `765a8ae5` (CI run 4790); the baseline and candidate tables are in the PR.
 - [x] A catalog binding with a fingerprint pair is accepted; half-pairs, unknown kinds and
       extra keys are rejected; the TS↔rules binding key parity test exists.
 - [x] The update path computes `affectedKeys()` once, dispatches adherence-only by ternary, and
@@ -425,10 +427,11 @@ current PR head reproduces them.
       no-context fallback persists.
 - [x] `daily-decision.pw.ts` reads back the persisted recommendation, and the console trap is
       active in the recommendation-bearing specs. E2E output has no budget or denial lines.
-- [ ] V7 / #950 is resolved or re-scoped with current-head evidence; #949/#951/#952 carry
-      re-evaluation comments.
+- [x] V7 / #950 is resolved with current-head E2E evidence and #950 is closed; #949/#951/#952
+      carry explicit re-evaluation comments and remain open for their independent acceptance criteria.
 - [x] Any WP3 removals are tabulated with their TS enforcement; the security review is done.
-- [ ] No `POLICY_VERSION` change; current-head CI / handoff verification is green.
+- [x] No `POLICY_VERSION` change; CI run 4790 is fully green (both Rules shards, both Browser E2E
+      shards, frontend unit/static gates, Python, simulations, Docker smoke, and final CI gate).
 
 ## 6. Risks and rollback
 
