@@ -131,13 +131,21 @@ service cloud.firestore {
         && lineage.size() <= 64;
     }
 
+    function hasValidAthleteEvidenceLineage(lineage) {
+      // SKR4 snapshots at most 16 records. Deep per-ref validation is intentionally
+      // kept at the TypeScript persistence boundary for the same budget reason as
+      // knowledgeLineage; Rules retain the bounded storage contract.
+      return lineage is list && lineage.size() <= 16;
+    }
+
     function hasValidRecommendationAudit(userId, audit, version, date, revision) {
       let hasLineage = 'knowledgeLineage' in audit;
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'decisionContext', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'decisionContext', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage', 'athleteEvidenceLineage'])
         && (version < 4
           ? !hasLineage
           : (version == 4 && hasLineage && hasValidKnowledgeLineage(audit.knowledgeLineage)))
+        && (!('athleteEvidenceLineage' in audit) || hasValidAthleteEvidenceLineage(audit.athleteEvidenceLineage))
         && audit.policyVersion is string
         && audit.evaluatedAt is string
         && audit.decisionContextRevision is string
