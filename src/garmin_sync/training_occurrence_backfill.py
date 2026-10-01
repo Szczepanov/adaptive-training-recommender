@@ -11,6 +11,7 @@ with live ingestion or concurrent reconcilers.
 from __future__ import annotations
 
 import logging
+import re
 import time
 import urllib.parse
 import uuid
@@ -42,6 +43,12 @@ GARMIN_ACTIVITY_TYPE_KEYWORDS: dict[str, list[str]] = {
     "mobility": ["yoga", "mobility"],
     "cross_training": ["swim", "row", "ellipt", "cardio"],
 }
+
+# Pre-compile regex patterns for modality keyword matching to avoid nested inner loops
+_GARMIN_MODALITY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
+    (modality, re.compile("|".join(re.escape(k) for k in keywords)))
+    for modality, keywords in GARMIN_ACTIVITY_TYPE_KEYWORDS.items()
+)
 
 
 def provider_activity_source_key(provider: str, activity_id: str) -> str:
@@ -95,8 +102,8 @@ def normalized_garmin_modality(activity_type: str) -> str | None:
     normalized = activity_type.strip().lower()
     if normalized in GARMIN_CYCLING_POWER_TYPES:
         return "cycling"
-    for modality, keywords in GARMIN_ACTIVITY_TYPE_KEYWORDS.items():
-        if any(keyword in normalized for keyword in keywords):
+    for modality, pattern in _GARMIN_MODALITY_PATTERNS:
+        if pattern.search(normalized):
             return modality
     return None
 

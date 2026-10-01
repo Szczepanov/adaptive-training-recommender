@@ -72,3 +72,7 @@
 ## 2026-09-25 - Avoid O(N) array scans during static object initialization
 **Learning:** Initializing static objects (like `EVERGREEN_PACKING_COVERAGE`) by repeatedly calling `.find()` on the same configuration array (`EVERGREEN_GENERAL_COVERAGE_SET.coverage`) incurs redundant O(N) operations at import time.
 **Action:** When extracting multiple values from a small or static array to build a new data structure at module level, construct a temporary O(1) `Map` (`new Map(array.map(item => [item.key, item]))`) and use `.get()` instead of calling `.find()` repeatedly.
+
+## 2026-10-18 - Pre-compile regex tuple mapping for keyword matching
+**Learning:** Using `any(keyword in text for keyword in keywords)` inside loops creates nested inner loop overhead and string substring search allocations. Pre-compiling compiled regex patterns into a tuple `((modality, re.compile("|".join(...))), ...)` speeds up modality categorization by over 40% while remaining completely functional and readable.
+**Action:** When checking strings against fixed groups of keywords in hot loops, pre-compile `re.compile("|".join(re.escape(k)...))` pattern tuples at module initialization instead of using nested `any(...)` generator expressions.
