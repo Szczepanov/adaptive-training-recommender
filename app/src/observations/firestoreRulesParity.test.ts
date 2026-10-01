@@ -146,7 +146,9 @@ describe('Firestore rules parity with TypeScript domain models', () => {
         ];
 
         expect(rulesKeys).toEqual([...expectedKeys].sort());
-    });    it('keeps RecommendationAudit keys and athlete-evidence bound in parity with TypeScript', () => {
+    });
+
+    it('keeps RecommendationAudit keys and athlete-evidence bound in parity with TypeScript', () => {
         const auditMatch = rules.match(
             /function hasValidRecommendationAudit\(userId, audit, version, date, revision\)\s*\{[\s\S]*?audit\.keys\(\)\.hasOnly\(\[([\s\S]*?)\]\)/,
         );
@@ -167,6 +169,4 @@ describe('Firestore rules parity with TypeScript domain models', () => {
         expect(athleteLineageMatch).not.toBeNull();
         expect(Number.parseInt(athleteLineageMatch![1], 10)).toBe(MAX_ATHLETE_EVIDENCE_LINEAGE_REFS);
     });
-
-
 });
