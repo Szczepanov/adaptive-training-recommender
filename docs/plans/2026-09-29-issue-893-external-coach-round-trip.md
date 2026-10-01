@@ -12,8 +12,10 @@ Their desired browser regressions are `test.fixme`; active proofs and final veri
 close those gaps, so #893 stays open. §2/§4/§7 are delivery records rather than implementation
 instructions; §3 preserves the design decisions.
 
-**Delivery update (1 October 2026):** H2 was resolved by #953 and H1 by #949; V7 and V4 are
-active, passing regressions. H3/H4 (#951/#952) remain `test.fixme`, so #893 stays open.
+**Delivery update (1 October 2026):** H2 was resolved by #953. H1's implementation is active
+in #949/#964, with V4 promoted from `test.fixme` to a merge-gating regression; it is considered
+closed only after that PR passes verification and merges. H3/H4 (#951/#952) remain
+`test.fixme`, so #893 stays open.
 
 ## 1. Goal
 
@@ -255,7 +257,8 @@ Every original §5 criterion appears below. **Located** means the exact test is 
 PR-E `make verify` run (§6). **Passed** marks a PR-E browser proof. Initially missing assertions
 **G1–G3** now have active test cases. **H1–H4** were demonstrated integration gaps whose desired
 regressions were `test.fixme`; H1 (#949) and H2 (#953) are resolved with active regressions that
-passed in those PRs' verification, and H3/H4 remain `test.fixme`, not passing proofs. V slots are
+passed after merge for H2; H1's active V4 regression is merge-gating #964. H3/H4 remain
+`test.fixme`, not passing proofs. V slots are
 tracked below.
 
 ## Contract/import
@@ -289,7 +292,7 @@ tracked below.
 |---|---|---|---|
 | E1 | Definition-bearing external sessions use one source-neutral launch adapter rather than a v4-only Home branch. | [v2] `isDefinitionBearingExternalPlan covers every definition-bearing schema and refuses v1/empty plans`; `isDefinitionBearingExternalSession admits v2+ definition sessions and refuses v1 flat prescriptions`; [authoring] `launches a v5-inherited structured session under proceed with exact source provenance` | Located |
 | E2 | A v5/v6 `proceed` session launches through canonical `SessionRunner`. | [authoring] `launches a v5-inherited structured session under proceed with exact source provenance`; [round-trip E2E] `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)` | Located |
-| E3 | A v6 `scale` session launches only from its exact structured reduced definition. | [authoring] `freezes only the exact v6 reduced definition when adjudication requests scale`; [resolver] `resolves the exact v6 reduced definition frozen in a scaled execution prescription`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is active: Home starts the prepared reduced binding, whose frozen `definitionHash` is the reduced hash and not the full one. | Passed in the #949 PR verification; H1 resolved by [#949] |
+| E3 | A v6 `scale` session launches only from its exact structured reduced definition. | [authoring] `freezes only the exact v6 reduced definition when adjudication requests scale`; [resolver] `resolves the exact v6 reduced definition frozen in a scaled execution prescription`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is active: Home starts only the prepared reduced prescription hash, whose frozen `definitionHash` is the reduced hash and not the full one. | Active merge gate in #964; H1 implementation addressed by [#949] |
 | E4 | A v1–v5 scale without exact reduced definition cannot accidentally launch the full dose. | [authoring] `does not allow scale to launch an older plan without an exact reduced definition`; [verdict E2E] `a scaled imported session shows the reduced version without launching the full structured dose` (desktop/mobile). | Located |
 | E5 | `skip`, `defer` and advisory event states cannot expose an executable Start path. | [verdict E2E] `a deferred imported session names its verdict and offers no Start path`; `an excluded imported session names its verdict and offers no Start path as written` (desktop/mobile); [authoring] `rejects target-event sessions because they are advisory fixed-activity inputs` | Located; verdict E2E passed. Skip-day recommendation persistence open [#950]/[#953] |
 | E6 | Exact authored source and prescription hash are persisted with the execution. | [authoring] `creates and binds an external-plan occurrence when date is provided in options`; [round-trip E2E] `a validated v6 coach plan completes and Garmin enriches the same next-brief occurrence (V10)` | Located |
@@ -310,7 +313,7 @@ tracked below.
 | ID | Acceptance criterion | Exact executable proof | State |
 |---|---|---|---|
 | S1 | Per-session status uses exact persisted identities, never title similarity. | [status] `does not join same-day records with a different immutable plan source`; `does not join an occurrence from another local date`; `refuses to cross-match old-revision bytes after a re-import` | Located |
-| S2 | Performed-as-authored is distinguishable from app-dose-modified. | [status] `distinguishes scaled-completed from proceeded-as-authored by audited dose diff`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is active and asserts the exact next-brief row labelled app dose modified. | Passed in the #949 PR verification; H1 resolved by [#949] |
+| S2 | Performed-as-authored is distinguishable from app-dose-modified. | [status] `distinguishes scaled-completed from proceeded-as-authored by audited dose diff`; [state E2E] `V4 scale freezes the exact reduced definition and reports app dose modified` is active and asserts the exact next-brief row labelled app dose modified. | Active merge gate in #964; H1 implementation addressed by [#949] |
 | S3 | Moved is distinguishable from missed. | [status] `pins intentionally_moved at the projector so refactors cannot break it silently`; `uses only an explicit missed occurrence as evidence of no performance` | Located; V3 passed |
 | S4 | Gate replacement is distinguishable from athlete replacement/non-adherence. | [status] `labels a defer-gated day gate_replaced with unknown performance when nothing executed`; `labels a skip-gated day gate_replaced`; `labels a single-session replace day manually_replaced with auditable evidence`; [state E2E] `V7 a gate replacement has exact labels and creates no external occurrence` is active and passing since [#953]; `V8 UI manual replacement names its exact replacement occurrence` is `test.fixme` because persisted UI behavior does not reach that projected state. | Unit proof; V7 resolved (H2); integrated gap H3 [#951] |
 | S5 | Partial/abandoned is distinguishable from completed. | [status] `labels an abandoned execution with entries partial_or_abandoned`; `joins completed performance through exact occurrence and execution identity` | Located; V12 passed |
@@ -350,7 +353,7 @@ complete a variant whose required behavior is tracked by `test.fixme`.
 | V1 duplicate UI import | [revision E2E] | `V1 non-advancing UI re-import preserves immutable revision and activation`. Active; passed. |
 | V2 future-effective boundary | [revision E2E] | `V2 tomorrow-effective successor preserves the revision boundary`; `V2 today-effective successor preserves the revision boundary`. Active; two fresh athletes prove current-day authority because the week strip resolves one revision for today. Passed. |
 | V3 moved-session revision history | [revision E2E] | `V3 revision-scoped move onto today survives a future successor import`. Active, validated-overlay fallback: PlanView filters rows to today…today+6, so yesterday's authored row has no rendered move control. Passed. |
-| V4 exact reduced execution | [state E2E] | `V4 scale freezes the exact reduced definition and reports app dose modified` is active and passing. Unblocked by [#949] (Home Start for the prepared exact v6 reduced binding). |
+| V4 exact reduced execution | [state E2E] | `V4 scale freezes the exact reduced definition and reports app dose modified` is active in #964 and gates merge. #949 makes Home Start contingent on the prepared exact v6 reduced prescription hash. |
 | V5 skip/defer cannot launch | [verdict E2E] and [mobile verdict E2E] | `a deferred imported session names its verdict and offers no Start path`; `an excluded imported session names its verdict and offers no Start path as written`. Existing cases; passed. The skip day's recommendation write is rejected ([#953]), which blocks V7, not the no-Start assertion. |
 | V6 rest, no session, unexpected work | [state E2E] | `V6 authored rest records unexpected work without inventing an authored session`; `V6 an active plan with no authored session today renders no row for today`. Active; passed. |
 | V7 gate replacement | [state E2E] | `V7 a gate replacement has exact labels and creates no external occurrence` is active and passing. Unblocked by [#953] (D1 catalog fingerprint fix). |
@@ -366,7 +369,7 @@ Two desired regressions remain open in [state E2E] as `test.fixme` (H1 resolved 
 
 | Gap | Affected criteria/variant | Demonstrated boundary | Follow-up |
 |---|---|---|---|
-| H1 | E3, S2 / V4 | Resolved by [#949]: Home offers Start only for the binding it froze to the exact v6 reduced definition; legacy scale and skip/defer stay blocked. V4 is active and passing. | Closed by the #949 PR |
+| H1 | E3, S2 / V4 | Implemented by [#949]/#964: Home offers Start only when the reduced launch evidence matches the exact frozen prescription hash; legacy scale, mismatched/full bindings and skip/defer stay blocked. V4 is active as the merge gate. | Close after #964 passes verification and merges |
 | H2 | S4 / V7, legacy V5 skip reliability | Resolved by [#953] (D1 catalog fingerprint pair accepted by rules). V7 is active and passing. | Closed ([#950]) |
 | H3 | S4 / V8, occurrence-at-Start boundary | A real UI manual replacement and completed manual execution exist, but the next brief retains the authored row with athlete none and no replacement attribution. Home eagerly prepares a scheduled external occurrence before Start, so the variant's no-external-occurrence condition is unmet. | [#951] |
 | H4 | P4 / full V9 | The initial bundle recommendation parses AVAILABLE with two valid separate windows and short executable definitions. The primary completes and the brief retains both rows, but the secondary Start card is absent. Started-member replay/binding mismatches and rejected recommendation updates accompany the failure. | [#952] |
