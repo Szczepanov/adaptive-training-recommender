@@ -23,6 +23,21 @@ export const WL_MIN_REP_RISE_FRACTION = 0.5;
 /** A rep counts as complete when its rise reaches this fraction of the preceding descent. */
 export const WL_COMPLETE_DESCENT_FRACTION = 0.85;
 
+/**
+ * Issue #983: v2 trims near-zero velocity drift from rep boundaries. Rep detection, rep count
+ * and ascent completeness are identical to v1. Only the reported window (timing, frame count,
+ * mean/peak velocity, ROM) drops the leading and trailing frames of a concentric run whose
+ * velocity is below `WL_BOUNDARY_VELOCITY_FLOOR_MPS`. Without this, a slow settle at
+ * lockout lengthens the rep and lowers its mean velocity: on a real squat export, 7 frames at
+ * 0.02–0.04 m/s (+0.74 cm) moved the mean from 0.625 to 0.500 m/s.
+ * ADR-0046 D-AT-IMPORT: a segmentation change is a new parser version, never a reinterpretation.
+ */
+export const WL_ANALYSIS_CSV_PARSER_V2 = 'wl-analysis-csv-v2';
+/** v2 only: leading/trailing frames of a concentric run below this velocity (m/s) are trimmed. */
+export const WL_BOUNDARY_VELOCITY_FLOOR_MPS = 0.05;
+
+export type WlAnalysisParserVersion = typeof WL_ANALYSIS_CSV_PARSER_V1 | typeof WL_ANALYSIS_CSV_PARSER_V2;
+
 export interface WlAnalysisFrame {
     ordinal: number;
     timeS: number;
@@ -46,7 +61,7 @@ export interface WlAnalysisRep {
 }
 
 export interface WlAnalysisCsvParse {
-    parserVersion: typeof WL_ANALYSIS_CSV_PARSER_V1;
+    parserVersion: WlAnalysisParserVersion;
     videoId: string;
     /** Raw `date` cell; ambiguous DD/MM vs MM/DD by construction, never parsed here. */
     dateRaw: string;
@@ -179,13 +194,36 @@ function round2(value: number): number {
     return Math.round(value * 100) / 100;
 }
 
+interface FrameRun {
+    start: number;
+    end: number;
+}
+
+/**
+ * v2 reporting window: the run without its leading and trailing frames below
+ * `WL_BOUNDARY_VELOCITY_FLOOR_MPS`. Falls back to the whole run if no frame reaches the floor.
+ */
+function activeWindow(frames: readonly WlAnalysisFrame[], run: FrameRun): FrameRun {
+    let start = run.start;
+    let end = run.end;
+    while (start <= end && frames[start].velocityMps < WL_BOUNDARY_VELOCITY_FLOOR_MPS) start += 1;
+    while (end >= start && frames[end].velocityMps < WL_BOUNDARY_VELOCITY_FLOOR_MPS) end -= 1;
+    return start <= end ? { start, end } : run;
+}
+
 /**
  * Segment concentric reps: maximal runs of frames with velocity above
  * `WL_CONCENTRIC_VELOCITY_THRESHOLD_MPS`. A run is a rep when its displacement rise
  * reaches `max(WL_MIN_REP_RISE_CM, WL_MIN_REP_RISE_FRACTION * largest rise)`.
+ *
+ * `parserVersion` selects how each rep is reported: v1 reports the whole run; v2 reports the
+ * run's active window (see `WL_ANALYSIS_CSV_PARSER_V2`). Detection and completeness never differ.
  */
-export function segmentWlReps(frames: readonly WlAnalysisFrame[]): WlAnalysisRep[] {
-    const runs: Array<{ start: number; end: number }> = [];
+export function segmentWlReps(
+    frames: readonly WlAnalysisFrame[],
+    parserVersion: WlAnalysisParserVersion = WL_ANALYSIS_CSV_PARSER_V1,
+): WlAnalysisRep[] {
+    const runs: FrameRun[] = [];
     let runStart: number | null = null;
     for (let i = 0; i < frames.length; i += 1) {
         if (frames[i].velocityMps > WL_CONCENTRIC_VELOCITY_THRESHOLD_MPS) {
@@ -209,11 +247,14 @@ export function segmentWlReps(frames: readonly WlAnalysisFrame[]): WlAnalysisRep
     const repRuns = runs.filter(run => frames[run.end].displacementCm - frames[run.start].displacementCm >= repThreshold);
     let previousRepEndArrayIndex = -1;
     for (const run of repRuns) {
-        const slice = frames.slice(run.start, run.end + 1);
+        const window = parserVersion === WL_ANALYSIS_CSV_PARSER_V2 ? activeWindow(frames, run) : run;
+        const slice = frames.slice(window.start, window.end + 1);
         const velocities = slice.map(frame => frame.velocityMps);
         const mean = velocities.reduce((sum, value) => sum + value, 0) / velocities.length;
         const peak = Math.max(...velocities);
-        const rom = frames[run.end].displacementCm - frames[run.start].displacementCm;
+        const rom = frames[window.end].displacementCm - frames[window.start].displacementCm;
+        // Completeness always uses the whole run, so v1 and v2 agree on success/miss.
+        const runRise = frames[run.end].displacementCm - frames[run.start].displacementCm;
 
         // Preceding descent (top -> bottom): the highest displacement observed since the end
         // of the previous rep (or the start of the file) minus the displacement at rep start.
@@ -223,14 +264,14 @@ export function segmentWlReps(frames: readonly WlAnalysisFrame[]): WlAnalysisRep
             if (frames[i].displacementCm > top) top = frames[i].displacementCm;
         }
         const descent = top - frames[run.start].displacementCm;
-        const complete = descent <= 0 || rom >= WL_COMPLETE_DESCENT_FRACTION * descent;
+        const complete = descent <= 0 || runRise >= WL_COMPLETE_DESCENT_FRACTION * descent;
 
-        const startTime = frames[run.start].timeS;
-        const endTime = frames[run.end].timeS;
+        const startTime = frames[window.start].timeS;
+        const endTime = frames[window.end].timeS;
         reps.push({
             index: reps.length,
-            startFrame: frames[run.start].ordinal,
-            endFrame: frames[run.end].ordinal,
+            startFrame: frames[window.start].ordinal,
+            endFrame: frames[window.end].ordinal,
             frameCount: slice.length,
             startTimeS: startTime,
             endTimeS: endTime,
@@ -250,7 +291,10 @@ export function wlFrameDataSignature(frames: readonly WlAnalysisFrame[]): string
     return frames.map(frame => `${frame.velocityMps}:${frame.displacementCm}`).join(';');
 }
 
-export function parseWlAnalysisCsv(rawText: string): WlAnalysisCsvParse {
+export function parseWlAnalysisCsv(
+    rawText: string,
+    parserVersion: WlAnalysisParserVersion = WL_ANALYSIS_CSV_PARSER_V1,
+): WlAnalysisCsvParse {
     const text = stripBom(rawText);
     if (text.trim().length === 0) fail('This file is empty. Export the video from WL Analysis as a CSV file and try again.');
     const lines = text.split(/\r\n|\r|\n/);
@@ -449,9 +493,9 @@ export function parseWlAnalysisCsv(rawText: string): WlAnalysisCsvParse {
         );
     }
 
-    const reps = segmentWlReps(frames);
+    const reps = segmentWlReps(frames, parserVersion);
     return {
-        parserVersion: WL_ANALYSIS_CSV_PARSER_V1,
+        parserVersion,
         videoId,
         dateRaw,
         resolution,

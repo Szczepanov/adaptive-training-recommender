@@ -4,7 +4,7 @@ import type {
     MeasurementProtocol,
 } from '../../observations/models';
 import type { DraftTrialRow } from '../../utils/assessmentDraftStorage';
-import { parseWlAnalysisCsv } from '../../observations/wlAnalysisCsv';
+import { parseWlAnalysisCsv, WL_ANALYSIS_CSV_PARSER_V2 } from '../../observations/wlAnalysisCsv';
 import {
     annotateWlBatchDuplicates,
     assignWlOrdinals,
@@ -77,7 +77,8 @@ export const WlAnalysisImportPanel: React.FC<WlAnalysisImportPanelProps> = ({
                     const bytes = new Uint8Array(await file.arrayBuffer());
                     const hash = await sha256Hex(bytes);
                     const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-                    const parsed = parseWlAnalysisCsv(text);
+                    // New imports use v2 boundaries (#983); v1 stays reproducible via the parser API.
+                    const parsed = parseWlAnalysisCsv(text, WL_ANALYSIS_CSV_PARSER_V2);
                     const outcome = proposeWlTrial(
                         { fileName: file.name, fileHash: hash, parsed },
                         sessionDate,
