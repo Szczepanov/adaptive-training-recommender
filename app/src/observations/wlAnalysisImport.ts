@@ -245,7 +245,8 @@ export function proposeWlTrial(
             notes: notesParts.join('; '),
             device: { provider: WL_ANALYSIS_DEVICE_PROVIDER },
             context: {
-                // The version that actually segmented this file (ADR-0046 D-AT-IMPORT, ADR-0047 series identity).
+                // Preserve the actual derivation method (ADR-0046 D-AT-IMPORT); a future ADR-0047
+                // fixed-load series must carry this parser version in its measurement-method identity.
                 [WL_CONTEXT_KEYS.parserVersion]: parsed.parserVersion,
                 [WL_CONTEXT_KEYS.repCount]: parsed.reps.length,
                 [WL_CONTEXT_KEYS.selectedRep]: selected + 1,
