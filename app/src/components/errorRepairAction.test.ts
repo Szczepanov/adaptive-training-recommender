@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DataStateSummary } from '../engine/dataState';
+import { TrainingHistorySourceError } from '../engine/trainingHistorySnapshot';
+import { DashboardRequiredSourceError } from './dashboardLoadBoundary';
 import {
   resolveDecisionCompositionRepairState,
   resolveDecisionSourceRepairState,
@@ -71,6 +73,40 @@ describe('resolveDecisionCompositionRepairState', () => {
     )).toEqual({
       message: 'Schedule overlays are invalid. Review or remove the affected schedule block in Plan, then retry.',
       actions: [{ kind: 'navigate', screen: 'plan', label: 'Review Plan' }],
+    });
+  });
+
+  it('explains canonical performed-training failures without treating missing history as empty', () => {
+    expect(resolveDecisionCompositionRepairState(
+      new DashboardRequiredSourceError('performed-training-facts', new Error('permission denied')),
+    )).toEqual({
+      message: "Performed training history could not be read safely. Today's recommendation is withheld rather than assuming recent training is empty. Retry when the source is available.",
+      actions: [],
+    });
+  });
+
+  it('names a temporarily unavailable legacy training-history source', () => {
+    expect(resolveDecisionCompositionRepairState(
+      new TrainingHistorySourceError('activities', {
+        status: 'UNAVAILABLE',
+        operation: 'read activities',
+        retryable: true,
+      }),
+    )).toEqual({
+      message: 'Activity history is temporarily unavailable, so normal planning is paused. Retry when it can be read.',
+      actions: [],
+    });
+  });
+
+  it('distinguishes invalid history from transient unavailability', () => {
+    expect(resolveDecisionCompositionRepairState(
+      new TrainingHistorySourceError('recommendations', {
+        status: 'INVALID',
+        issues: [{ code: 'schema', documentPath: 'users/u/daily_recommendations/bad' }],
+      }),
+    )).toEqual({
+      message: 'Recommendation history contains invalid data, so normal planning is blocked. Retry after the affected data is repaired.',
+      actions: [],
     });
   });
 
