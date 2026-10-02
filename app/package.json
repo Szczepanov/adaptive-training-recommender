@@ -142,6 +142,7 @@
   "overrides": {
     "@firebase/firestore": {
       "@grpc/grpc-js": "1.13.6"
-    }
+    },
+    "basic-ftp": "6.2.1"
   }
 }
