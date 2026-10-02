@@ -41,7 +41,7 @@ function validV4Recommendation() {
                 safetyRestrictedModalityCount: 0,
                 planMaxAllowableTier: 'Easy',
             },
-            candidateScores: [],
+            candidateScores: [] as Array<Record<string, unknown>>,
             knowledgeLineage: [{ claimId: 'readiness.objective_mode_thresholds', version: 1 }],
         },
     };
@@ -279,4 +279,54 @@ describe('recommendation validation boundary', () => {
         }).isValid).toBe(true);
     });
 
+    it('accepts candidate scores with legacy diagnostic fields (benefitScore, costPenalty)', () => {
+        const raw = validV4Recommendation();
+        raw.recommendationAudit.candidateScores = [
+            {
+                templateId: 'end_easy_01',
+                utilityScore: 0.75,
+                excludedReasons: [],
+                benefitScore: 1.2,
+                costPenalty: 0.45,
+            },
+        ];
+        expect(validateRecommendation(raw).isValid).toBe(true);
+    });
+
+    it('rejects candidate scores with unknown fields', () => {
+        const raw = validV4Recommendation();
+        raw.recommendationAudit.candidateScores = [
+            {
+                templateId: 'end_easy_01',
+                utilityScore: 0.75,
+                excludedReasons: [],
+                unexpectedDiagnostic: true,
+            } as Record<string, unknown>,
+        ];
+        const result = validateRecommendation(raw);
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(error => error.field === 'recommendationAudit')).toBe(true);
+    });
+
+    it('rejects candidate scores with non-finite or non-numeric scores', () => {
+        const raw = validV4Recommendation();
+        raw.recommendationAudit.candidateScores = [
+            {
+                templateId: 'end_easy_01',
+                utilityScore: NaN,
+                excludedReasons: [],
+            },
+        ];
+        expect(validateRecommendation(raw).isValid).toBe(false);
+
+        raw.recommendationAudit.candidateScores = [
+            {
+                templateId: 'end_easy_01',
+                utilityScore: 0.5,
+                excludedReasons: [],
+                benefitScore: Infinity,
+            },
+        ];
+        expect(validateRecommendation(raw).isValid).toBe(false);
+    });
 });

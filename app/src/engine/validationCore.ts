@@ -1575,10 +1575,18 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
             // entries -- mirrored here so an oversized catalog fails validation locally
             // with a clear message instead of surfacing as an opaque permission-denied.
             && audit.candidateScores.length <= 64
-            && audit.candidateScores.every((candidate: any) => hasExactKeys(candidate, ['templateId', 'utilityScore', 'excludedReasons'])
-                && typeof candidate.templateId === 'string'
-                && typeof candidate.utilityScore === 'number' && Number.isFinite(candidate.utilityScore)
-                && Array.isArray(candidate.excludedReasons) && candidate.excludedReasons.every((reason: any) => typeof reason === 'string'))
+            && audit.candidateScores.every((candidate: any) => {
+                if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false;
+                const candidateKeys = Object.keys(candidate);
+                const allowedCandidateKeys = ['templateId', 'utilityScore', 'excludedReasons', 'benefitScore', 'costPenalty'];
+                return ['templateId', 'utilityScore', 'excludedReasons'].every(key => Object.prototype.hasOwnProperty.call(candidate, key))
+                    && candidateKeys.every(key => allowedCandidateKeys.includes(key))
+                    && typeof candidate.templateId === 'string'
+                    && typeof candidate.utilityScore === 'number' && Number.isFinite(candidate.utilityScore)
+                    && Array.isArray(candidate.excludedReasons) && candidate.excludedReasons.every((reason: any) => typeof reason === 'string')
+                    && (candidate.benefitScore === undefined || (typeof candidate.benefitScore === 'number' && Number.isFinite(candidate.benefitScore)))
+                    && (candidate.costPenalty === undefined || (typeof candidate.costPenalty === 'number' && Number.isFinite(candidate.costPenalty)));
+            })
             && (audit.authoredOccurrence === undefined || (
                 hasExactKeys(audit.authoredOccurrence, ['occurrenceId', 'decision'])
                 && typeof audit.authoredOccurrence.occurrenceId === 'string'
