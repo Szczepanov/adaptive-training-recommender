@@ -46,7 +46,7 @@ concurrency:
 jobs:
   preflight:
     name: Production ref guard
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Require main branch
@@ -66,7 +66,7 @@ jobs:
   ci-evidence:
     name: Find post-merge CI for this SHA
     needs: preflight
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     permissions:
       contents: read
@@ -102,7 +102,7 @@ jobs:
     name: CI release gate
     needs: [ci-evidence, validate]
     if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Require reused or fresh CI success
@@ -218,7 +218,7 @@ jobs:
     name: Release summary
     needs: deploy-hosting
     if: ${{ !cancelled() && needs.deploy-hosting.result == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Record promoted revision
