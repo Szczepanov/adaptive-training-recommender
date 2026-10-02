@@ -98,6 +98,7 @@ import {
   resolveDecisionSourceRepairState,
   type ErrorRepairAction,
 } from './errorRepairAction';
+import { loadRequiredDashboardSource, loadSecondaryDashboardData } from './dashboardLoadBoundary';
 import { useAutoGarminSync } from '../hooks/useAutoGarminSync';
 import { resolveWearablePlanningMode } from '../utils/wearablePlanningGate';
 import {
@@ -347,6 +348,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
   const loadDashboardData = useCallback(async () => {
     const requestId = ++dashboardRequest.current;
     const isCurrent = () => requestId === dashboardRequest.current;
+    let hasCurrentDecisionInput = false;
     try {
       setLoading(true);
       setError(null);
@@ -355,6 +357,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
       setDecisionContextCapture(null);
       const input = await decisionComposer.composeDailyDecisionInput(userId);
       if (!isCurrent()) return;
+      hasCurrentDecisionInput = true;
       setDecisionInput(input);
 
       const recoveryState = input.sourceStates?.recoverySnapshot;
@@ -626,11 +629,14 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         const performedFactsCoverageDescriptor = resolvePerformedTrainingFactsCoverageDescriptor(
           events, input.date, todayAndTomorrowPlanBlocks, input.trainingIntentProfile,
         );
-        const performedTrainingFacts = await getPerformedTrainingFactsInRange(
-          userId,
-          addDaysToLocalDateString(input.date, -DEFAULT_OPERATIONAL_HISTORY_WINDOW_DAYS),
-          input.date,
-          { coverageSetDescriptor: performedFactsCoverageDescriptor },
+        const performedTrainingFacts = await loadRequiredDashboardSource(
+          'performed-training-facts',
+          () => getPerformedTrainingFactsInRange(
+            userId,
+            addDaysToLocalDateString(input.date, -DEFAULT_OPERATIONAL_HISTORY_WINDOW_DAYS),
+            input.date,
+            { coverageSetDescriptor: performedFactsCoverageDescriptor },
+          ),
         );
         if (!isCurrent()) return;
         const sameDayPreparedSnapshot: TrainingHistorySnapshot = {
@@ -920,10 +926,13 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         // active window ends today must not leak into tomorrow's evaluation, and one
         // starting tomorrow was never loaded for today's date. Progression influence is
         // scoped to same-day planning until the packer has a date-scoped resolver.
-        const tomorrowPlan = await evaluateNextDayPlanWithIntent(
-          userId, events, { subjective, objective }, forecastContext, input.date, todayRec, undefined, preparedSnapshot,
-          todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
-          'max', undefined, undefined, input.scheduleOverlays,
+        const tomorrowPlan = await loadSecondaryDashboardData(
+          'next-day forecast',
+          () => evaluateNextDayPlanWithIntent(
+            userId, events, { subjective, objective }, forecastContext, input.date, todayRec, undefined, preparedSnapshot,
+            todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
+            'max', undefined, undefined, input.scheduleOverlays,
+          ),
         );
         if (!isCurrent()) return;
         setNextDayPlan(tomorrowPlan);
@@ -954,12 +963,18 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
     } catch (err) {
       if (!isCurrent()) return;
       console.error('Error loading dashboard data:', err);
+      if (!hasCurrentDecisionInput) setDecisionInput(null);
+      setRecommendation(null);
+      setNextDayPlan(null);
+      setHistorySnapshot(null);
+      setDecisionContextCapture(null);
+      clearExternalPlanState();
       const compositionRepair = resolveDecisionCompositionRepairState(err);
       if (compositionRepair) {
         setErrorRepairTargets(compositionRepair.actions);
         setError(compositionRepair.message);
       } else {
-        setError('Failed to load dashboard data');
+        setError('A required dashboard input could not be loaded. Retry to restore today\'s recommendation.');
       }
     } finally {
       if (isCurrent()) setLoading(false);
@@ -1407,7 +1422,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
     );
   }
 
-  if (error) {
+  if (error && !decisionInput) {
     return (
       <div className="home-container">
         <div className="error-state">
@@ -1445,6 +1460,29 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
 
   return (
     <div className="home-container">
+      {error && (
+        <div className="error-state dashboard-inline-error" role="alert">
+          <p>{error}</p>
+          {errorRepairTargets.length > 0 && (
+            <p className="error-state-hint">
+              {errorRepairTargets.some(target => target.kind === 'resync')
+                ? 'Forcing a fresh Garmin sync below re-writes the flagged data and clears this error.'
+                : 'Re-saving the flagged data below re-validates it and clears this error.'}
+            </p>
+          )}
+          <div className="error-state-actions">
+            {errorRepairTargets.map(target => target.kind === 'navigate' ? (
+              <button key={target.screen} type="button" onClick={() => onNavigate(target.screen)}>
+                {target.label} →
+              </button>
+            ) : (
+              <GarminSyncNowButton key="resync" userId={userId} onSynced={loadDashboardData} />
+            ))}
+            <button onClick={loadDashboardData}>Retry</button>
+          </div>
+        </div>
+      )}
+
       {hasPendingNextMorningFollowup && (
         <aside className="session-response-reminder" aria-label="Session response follow-up">
           <div>
