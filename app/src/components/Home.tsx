@@ -131,6 +131,11 @@ function verifySessionBindingReplay(userId: string, saved: DailyRecommendation |
     .catch(err => console.warn(`Failed to verify session-binding replay for ${saved.date}:`, err));
 }
 
+/**
+ * Loads and renders today's coaching dashboard. Required same-day evidence remains
+ * fail-closed, while non-authoritative forecast failures are isolated so they cannot
+ * hide an otherwise valid current-day decision.
+ */
 export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabilityMaintenanceResolved }: HomeProps) {
   const [decisionInput, setDecisionInput] = useState<ComposedDailyDecisionInput | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
@@ -969,6 +974,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
       setHistorySnapshot(null);
       setDecisionContextCapture(null);
       clearExternalPlanState();
+      setAdjustmentDirection(null);
+      setActiveAlternativeId(null);
       const compositionRepair = resolveDecisionCompositionRepairState(err);
       if (compositionRepair) {
         setErrorRepairTargets(compositionRepair.actions);
