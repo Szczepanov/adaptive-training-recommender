@@ -247,7 +247,12 @@ Typical path:
 2. `DailyCheckin` saves today's check-in and then refreshes decision input before navigating
    to `home`.
 3. `Home` composes/evaluates the current decision, applies fail-closed source and wearable
-   gates, persists the recommendation, and presents the morning decision.
+   gates, persists the recommendation, and presents the morning decision. A failure in a
+   required same-day planning source withholds the recommendation but keeps already-composed
+   non-decision dashboard context (for example recovery/check-in data) visible with Retry and
+   any known repair action. Secondary projections such as the next-day forecast are fail-soft:
+   their failure clears only that projection and never replaces an otherwise valid same-day
+   dashboard with a global load error.
 4. Choosing a structured session resolves its stored definition before navigating to
    `sessions`. Resolution failure rejects the launch rather than silently stranding an
    occurrence claim.

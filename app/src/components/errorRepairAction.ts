@@ -1,5 +1,7 @@
 import type { DataStateSummary } from '../engine/dataState';
+import { TrainingHistorySourceError } from '../engine/trainingHistorySnapshot';
 import { SCREEN_LABELS, type Screen } from '../types/navigation';
+import { DashboardRequiredSourceError } from './dashboardLoadBoundary';
 
 /** An actionable next step surfaced on a load-error screen: either a specific screen that
  * owns the flagged document (re-saving there re-runs validation), or a forced Garmin
@@ -91,6 +93,39 @@ export function resolveDecisionSourceRepairState(
  */
 export function resolveDecisionCompositionRepairState(error: unknown): ErrorRepairState | null {
     if (!(error instanceof Error)) return null;
+
+    if (error instanceof DashboardRequiredSourceError) {
+        if (error.source === 'performed-training-facts') {
+            return {
+                message: "Performed training history could not be read safely. Today's recommendation is withheld rather than assuming recent training is empty. Retry when the source is available.",
+                actions: [],
+            };
+        }
+    }
+
+    if (error instanceof TrainingHistorySourceError) {
+        const sourceLabel = error.source === 'activities'
+            ? 'Activity history'
+            : error.source === 'recommendations'
+                ? 'Recommendation history'
+                : 'Manual training history';
+        if (error.state.status === 'INVALID') {
+            return {
+                message: `${sourceLabel} contains invalid data, so normal planning is blocked. Retry after the affected data is repaired.`,
+                actions: [],
+            };
+        }
+        if (error.state.status === 'MISSING') {
+            return {
+                message: `${sourceLabel} is missing, so normal planning is blocked. Retry after the source is restored.`,
+                actions: [],
+            };
+        }
+        return {
+            message: `${sourceLabel} is temporarily unavailable, so normal planning is paused. Retry when it can be read.`,
+            actions: [],
+        };
+    }
 
     if (error.message.startsWith('Training settings are invalid.')) {
         return {
