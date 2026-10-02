@@ -21,6 +21,7 @@ export class DashboardRequiredSourceError extends Error {
     }
 }
 
+/** Wrap a required same-day source so Home can preserve fail-closed semantics and identify the blocker. */
 export async function loadRequiredDashboardSource<T>(
     source: DashboardRequiredSource,
     load: () => Promise<T>,
@@ -32,6 +33,7 @@ export async function loadRequiredDashboardSource<T>(
     }
 }
 
+/** Load non-authoritative dashboard data without allowing its failure to replace today's valid decision. */
 export async function loadSecondaryDashboardData<T>(
     label: string,
     load: () => Promise<T>,
