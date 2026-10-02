@@ -26,15 +26,21 @@ export const WL_COMPLETE_DESCENT_FRACTION = 0.85;
 /**
  * Issue #983: v2 trims near-zero velocity drift from rep boundaries. Rep detection, rep count
  * and ascent completeness are identical to v1. Only the reported window (timing, frame count,
- * mean/peak velocity, ROM) drops the leading and trailing frames of a concentric run whose
- * velocity is below `WL_BOUNDARY_VELOCITY_FLOOR_MPS`. Without this, a slow settle at
- * lockout lengthens the rep and lowers its mean velocity: on a real squat export, 7 frames at
- * 0.02–0.04 m/s (+0.74 cm) moved the mean from 0.625 to 0.500 m/s.
+ * mean/peak velocity, ROM) may trim leading/trailing near-zero frames. A boundary is trimmed
+ * only when the omitted travel stays within `WL_BOUNDARY_MAX_TRIM_RISE_CM`, so a genuinely
+ * slow concentric segment is preserved instead of being reclassified as drift. On a real squat
+ * export, 7 trailing frames at 0.02–0.04 m/s (+0.74 cm) moved the mean from 0.625 to 0.500 m/s.
  * ADR-0046 D-AT-IMPORT: a segmentation change is a new parser version, never a reinterpretation.
  */
 export const WL_ANALYSIS_CSV_PARSER_V2 = 'wl-analysis-csv-v2';
-/** v2 only: leading/trailing frames of a concentric run below this velocity (m/s) are trimmed. */
+/** v2 only: candidate boundary frames below this velocity (m/s) may be trimmed. */
 export const WL_BOUNDARY_VELOCITY_FLOOR_MPS = 0.05;
+/**
+ * v2 safety guardrail: never trim a low-velocity boundary when doing so would remove more
+ * than this much concentric travel on that side. The value covers the observed <1 cm drift
+ * artifact while keeping materially slow bar travel inside mean-concentric-velocity reporting.
+ */
+export const WL_BOUNDARY_MAX_TRIM_RISE_CM = 1;
 
 export type WlAnalysisParserVersion = typeof WL_ANALYSIS_CSV_PARSER_V1 | typeof WL_ANALYSIS_CSV_PARSER_V2;
 
@@ -200,15 +206,38 @@ interface FrameRun {
 }
 
 /**
- * v2 reporting window: the run without its leading and trailing frames below
- * `WL_BOUNDARY_VELOCITY_FLOOR_MPS`. Falls back to the whole run if no frame reaches the floor.
+ * v2 reporting window: find the inner boundary frames that reach
+ * `WL_BOUNDARY_VELOCITY_FLOOR_MPS`, then trim each low-velocity edge only when the omitted
+ * displacement is small enough to be boundary drift. This protects the standard mean-velocity
+ * definition (the whole concentric phase) from deleting materially slow movement on heavy reps.
+ * Falls back to the whole run if no frame reaches the floor.
  */
 function activeWindow(frames: readonly WlAnalysisFrame[], run: FrameRun): FrameRun {
-    let start = run.start;
-    let end = run.end;
-    while (start <= end && frames[start].velocityMps < WL_BOUNDARY_VELOCITY_FLOOR_MPS) start += 1;
-    while (end >= start && frames[end].velocityMps < WL_BOUNDARY_VELOCITY_FLOOR_MPS) end -= 1;
-    return start <= end ? { start, end } : run;
+    let candidateStart = run.start;
+    let candidateEnd = run.end;
+    while (
+        candidateStart <= candidateEnd
+        && frames[candidateStart].velocityMps < WL_BOUNDARY_VELOCITY_FLOOR_MPS
+    ) {
+        candidateStart += 1;
+    }
+    while (
+        candidateEnd >= candidateStart
+        && frames[candidateEnd].velocityMps < WL_BOUNDARY_VELOCITY_FLOOR_MPS
+    ) {
+        candidateEnd -= 1;
+    }
+    if (candidateStart > candidateEnd) return run;
+
+    const leadingRiseCm = frames[candidateStart].displacementCm - frames[run.start].displacementCm;
+    const trailingRiseCm = frames[run.end].displacementCm - frames[candidateEnd].displacementCm;
+    const start = leadingRiseCm >= 0 && leadingRiseCm <= WL_BOUNDARY_MAX_TRIM_RISE_CM
+        ? candidateStart
+        : run.start;
+    const end = trailingRiseCm >= 0 && trailingRiseCm <= WL_BOUNDARY_MAX_TRIM_RISE_CM
+        ? candidateEnd
+        : run.end;
+    return { start, end };
 }
 
 /**
