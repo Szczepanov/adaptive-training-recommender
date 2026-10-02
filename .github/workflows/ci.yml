@@ -31,7 +31,7 @@ concurrency:
 jobs:
   detect-changes:
     name: Detect Changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       code_changed: ${{ steps.detect.outputs.code_changed }}
@@ -52,7 +52,7 @@ jobs:
     name: Documentation & Security Hygiene
     if: needs.detect-changes.outputs.docs_only == 'true'
     needs: detect-changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -82,7 +82,7 @@ jobs:
     name: Python Test Suite (${{ matrix.python-version }})
     if: needs.detect-changes.outputs.code_changed == 'true'
     needs: detect-changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -148,7 +148,7 @@ jobs:
     name: Frontend Hygiene & Static Gates
     if: needs.detect-changes.outputs.code_changed == 'true'
     needs: detect-changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     env:
       # Build/test-only configuration. Production configuration remains deployment-owned.
       VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
@@ -232,7 +232,7 @@ jobs:
     name: Frontend Unit Tests & Coverage
     if: needs.detect-changes.outputs.code_changed == 'true'
     needs: detect-changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: app
@@ -273,7 +273,7 @@ jobs:
     name: Firestore Security Rules Tests (${{ matrix.shard }}/${{ strategy.job-total }})
     if: needs.detect-changes.outputs.code_changed == 'true'
     needs: detect-changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       # Report every failing shard instead of cancelling the sibling on the first failure.
       fail-fast: false
@@ -321,7 +321,7 @@ jobs:
     name: Browser E2E Tests (${{ matrix.shard }}/${{ strategy.job-total }})
     if: needs.detect-changes.outputs.code_changed == 'true'
     needs: detect-changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -395,7 +395,7 @@ jobs:
       - frontend-unit-tests
       - firestore-rules-tests
       - frontend-e2e-tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Verify frontend test gates
@@ -422,7 +422,7 @@ jobs:
     name: Engine Simulations & AI Gates
     if: needs.detect-changes.outputs.code_changed == 'true'
     needs: detect-changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: app
@@ -474,7 +474,7 @@ jobs:
     name: Docker Build & Compose Smoke
     if: needs.detect-changes.outputs.code_changed == 'true'
     needs: detect-changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     env:
       # Shared build-time/runtime placeholders for the Docker Compose smoke stack. Hoisted to
@@ -579,7 +579,7 @@ jobs:
       - frontend-tests
       - engine-simulations
       - docker-build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       - name: Verify overall CI result
