@@ -4,6 +4,7 @@ import {
     segmentWlReps,
     WL_ANALYSIS_CSV_PARSER_V1,
     WL_ANALYSIS_CSV_PARSER_V2,
+    WL_BOUNDARY_MAX_TRIM_RISE_CM,
     WL_BOUNDARY_VELOCITY_FLOOR_MPS,
     WL_COMPLETE_DESCENT_FRACTION,
     WL_CONCENTRIC_VELOCITY_THRESHOLD_MPS,
@@ -286,9 +287,10 @@ function driftRepFrames(spec: DriftRepSpec = {}): WlAnalysisFrame[] {
 }
 
 describe('wlAnalysisCsv v2 rep boundaries (#983)', () => {
-    it('pins the v2 parser version and boundary floor', () => {
+    it('pins the v2 parser version and boundary guards', () => {
         expect(WL_ANALYSIS_CSV_PARSER_V2).toBe('wl-analysis-csv-v2');
         expect(WL_BOUNDARY_VELOCITY_FLOOR_MPS).toBe(0.05);
+        expect(WL_BOUNDARY_MAX_TRIM_RISE_CM).toBe(1);
     });
 
     it('keeps the default parser at v1 so stored v1 trials stay reproducible', () => {
@@ -331,14 +333,27 @@ describe('wlAnalysisCsv v2 rep boundaries (#983)', () => {
     });
 
     it('decides completeness on the whole run, so v1 and v2 agree on success/miss', () => {
-        // Main ascent reaches 84 % of the 55 cm descent; a 10-frame settle (+0.2 cm each) lifts the
-        // whole run to 87.6 %. v2 reports the shorter window but must not turn the rep into a miss.
-        const frames = driftRepFrames({ ascentTopCm: -55 + 0.84 * 55, tailDriftFrames: 10, driftRiseCmPerFrame: 0.2 });
+        // Main ascent reaches 84 % of the 55 cm descent; a 5-frame settle (+0.15 cm each) lifts the
+        // whole run just above 85 %. The settle remains within the v2 trim guardrail, so v2 reports
+        // the shorter window but must not turn the rep into a miss.
+        const frames = driftRepFrames({ ascentTopCm: -55 + 0.84 * 55, tailDriftFrames: 5, driftRiseCmPerFrame: 0.15 });
         const v1 = segmentWlReps(frames, WL_ANALYSIS_CSV_PARSER_V1);
         const v2 = segmentWlReps(frames, WL_ANALYSIS_CSV_PARSER_V2);
         expect(v1[0].complete).toBe(true);
         expect(v2[0].complete).toBe(true);
         expect(v2[0].romCm).toBeLessThan(WL_COMPLETE_DESCENT_FRACTION * 55);
+    });
+
+    it('preserves materially slow concentric travel instead of trimming it as drift', () => {
+        const frames = driftRepFrames({
+            leadDriftFrames: 12,
+            tailDriftFrames: 12,
+            driftRiseCmPerFrame: 0.1,
+        });
+        const v1 = segmentWlReps(frames, WL_ANALYSIS_CSV_PARSER_V1);
+        const v2 = segmentWlReps(frames, WL_ANALYSIS_CSV_PARSER_V2);
+        expect(v2).toHaveLength(1);
+        expect(v2[0]).toEqual(v1[0]);
     });
 
     it('falls back to the whole run when no frame reaches the floor', () => {
