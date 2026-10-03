@@ -73,6 +73,14 @@ describe('OpenBar trial mapping (#981)', () => {
         expect(() => assignOpenBarOrdinals([a, b], new Set([1, 2]), 3)).toThrow(/do not fit/);
         expect(checkVelocityImportApplyBlocked([a], new Set([4]), new Set([1, 3, 4]), 5)).toHaveLength(1);
     });
+    it('rejects an explicitly unsupported OpenBar calibration', () => {
+        const analysis = buildOpenBarAnalysis();
+        (analysis.calibration.quality as { status: string }).status = 'unsupported';
+        const parsed = parseOpenBarAnalysis(JSON.stringify(analysis), CONCENTRIC_SEGMENTATION_V2);
+        const outcome = proposeOpenBarTrial({ fileName: 'bad-calibration.json', fileHash: hash, parsed }, new Set(), new Set());
+        expect(outcome.status).toBe('rejected');
+        if (outcome.status === 'rejected') expect(outcome.rejection.reason).toMatch(/calibration as unsupported/);
+    });
     it('requires an entered load in the protocol bounds, then confirms kilograms only', () => {
         const p = proposal();
         expect(() => openBarProposalToDraftRow(p, 1, BACK_SQUAT_1RM_PROTOCOL_V2)).toThrow(/load is not a number/);
@@ -87,23 +95,41 @@ describe('Velocity measurement-method identity (ADR-0047, #981)', () => {
     it('separates WL, OpenBar and manual derivations', () => {
         const p = proposal();
         const openBar = velocityMeasurementMethodId(p.device, p.context);
-        expect(openBar).toBe('openbar-analysis-v1/concentric-segmentation-v2/opencv-csrt@1/savitzky-golay@1');
+        expect(openBar).toBe(
+            'openbar-analysis-v1/concentric-segmentation-v2/opencv-csrt@1/'
+            + 'savitzky-golay@1[order=n%3A2&window=n%3A9]/filtered/'
+            + 'backward-difference@1[max_gap_s=n%3A0.2&min_confidence=n%3A0.5;max-gap=0.2;min-confidence=0.5]/'
+            + 'plate_diameter%401',
+        );
         for (const version of ['wl-analysis-csv-v1', 'wl-analysis-csv-v2']) {
             expect(velocityMeasurementMethodId({ provider: 'WL Analysis' }, { wl_parser_version: version })).toBe(version);
             expect(openBar).not.toBe(version);
         }
         expect(velocityMeasurementMethodId(undefined, undefined)).toBe('manual');
     });
-    it.each(['openbar_tracker_implementation', 'openbar_tracker_version', 'openbar_filter_implementation', 'openbar_filter_version', 'openbar_segmentation_rule'])('changes identity when %s changes', key => {
+    it.each([
+        'openbar_tracker_implementation', 'openbar_tracker_version',
+        'openbar_filter_implementation', 'openbar_filter_version', 'openbar_filter_parameters',
+        'openbar_kinematics_implementation', 'openbar_kinematics_version',
+        'openbar_kinematics_parameters', 'openbar_calibration_method',
+    ])('changes identity when %s changes', key => {
         const p = proposal();
         expect(velocityMeasurementMethodId(p.device, { ...p.context, [key]: 'other' })).not.toBe(velocityMeasurementMethodId(p.device, p.context));
     });
     it.each(['wl-analysis-csv-v3', 'manual'])('rejects unknown stored WL parser id %s', version => {
         expect(() => velocityMeasurementMethodId({ provider: 'WL Analysis' }, { wl_parser_version: version })).toThrow(/unsupported WL parser/);
     });
+    it('fails closed on unsupported OpenBar parser/rule/input or mismatched provider', () => {
+        const p = proposal();
+        expect(() => velocityMeasurementMethodId(p.device, { ...p.context, openbar_parser_version: 'openbar-analysis-v2' })).toThrow(/unsupported OpenBar parser/);
+        expect(() => velocityMeasurementMethodId(p.device, { ...p.context, openbar_segmentation_rule: 'other-rule' })).toThrow(/unsupported concentric segmentation/);
+        expect(() => velocityMeasurementMethodId(p.device, { ...p.context, openbar_kinematics_input: 'other-input' })).toThrow(/unsupported OpenBar kinematics input/);
+        expect(() => velocityMeasurementMethodId({ provider: 'WL Analysis' }, p.context)).toThrow(/provider OpenBar/);
+        expect(() => velocityMeasurementMethodId({ provider: 'OpenBar' }, { wl_parser_version: 'wl-analysis-csv-v2' })).toThrow(/provider WL Analysis/);
+    });
     it('distinguishes raw from filtered and refuses incomplete imported provenance', () => {
         const p = proposal(buildOpenBarAnalysis(undefined, { filtered: false }));
-        expect(velocityMeasurementMethodId(p.device, p.context)).toMatch(/\/raw$/);
+        expect(velocityMeasurementMethodId(p.device, p.context)).toContain('/raw/calibrated/');
         expect(() => velocityMeasurementMethodId(p.device, { openbar_parser_version: 'openbar-analysis-v1' })).toThrow(/needs/);
     });
     it('builds distinct existing comparison-series keys for WL and OpenBar on the same protocol/setup', async () => {
