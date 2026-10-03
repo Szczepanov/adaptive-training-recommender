@@ -178,6 +178,11 @@ export function parseOpenBarAnalysis(rawText: string, segmentationRule: Concentr
     if (frames.length < 2) throw new Error('This OpenBar file needs at least two usable velocity samples. Export a longer tracked clip.');
     const provenanceRoot = object(root.provenance, 'provenance');
     const tracker = object(provenanceRoot.tracker, 'tracker');
+    const trackerMethod = object(tracker.implementation, 'tracker implementation');
+    const trackerParameters = parameterSignature(trackerMethod.parameters, 'tracker parameters');
+    if (trackerParameters !== null) {
+        throw new Error('OpenBar tracker parameters are not supported by this importer. Use an unparameterized tracker export or update the adapter contract.');
+    }
     const pipeline = object(provenanceRoot.pipeline, 'pipeline');
     const method = object(kinematics.method, 'kinematics method');
     const parameters = object(method.parameters, 'kinematics parameters');
@@ -199,7 +204,7 @@ export function parseOpenBarAnalysis(rawText: string, segmentationRule: Concentr
         throw new Error('OpenBar calibration and kinematics parameters are outside their valid ranges.');
     }
     const provenance: OpenBarProvenance = {
-        trackerId: text(tracker.id, 'tracker id'), tracker: implementation(tracker.implementation, 'tracker'),
+        trackerId: text(tracker.id, 'tracker id'), tracker: implementation(trackerMethod, 'tracker'),
         filter: filterMethod ? implementation(filterMethod, 'filter') : null,
         filterParameters: filterMethod ? parameterSignature(filterMethod.parameters, 'filter parameters') : null,
         kinematicsInput: kinematics.input, kinematicsMethod: implementation(method, 'kinematics method'),
