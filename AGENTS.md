@@ -236,6 +236,7 @@ aligned.
 * `npm run replay:recommendation -- <audit.json>` — replay a persisted decision against its own audit
 * `npm run build:plan-judge-corpus && npm run report:sequencing` — deterministic sequencing collision/spacing/opportunity-cost diagnostics (issue #458; report only, no gate)
 * `judge:*` and `persona:*` are script-name families, **not executable npm wildcards**. Use concrete scripts such as `npm run judge:run`, `npm run judge:diff`, `npm run judge:update-baseline`, `npm run persona:run`, `npm run persona:diff`, and `npm run persona:update-baseline`; see `app/package.json` for local/quick/e2e/resume variants.
+* `npm run evidence:velocity-agreement -- --pairs <pairs.json> --output <basename> [--segmentation concentric-segmentation-v2] [--min-overlap 0.5] [--force]` — local WL/OpenBar rep agreement report, JSON + Markdown; private inputs, no upload or recommendation authority
 * `npm run evidence:health-anomaly`, `npm run evidence:identity-replay`, `npm run evidence:training-occurrence:prepare` / `npm run evidence:training-occurrence`, `npm run measure:garmin-zone-credit` — shadow-mode evidence runs
 * `npm run visual:install` → `npm run visual:refresh` — finalized Playwright review bundle for `visual-desktop` (1440 px) + `visual-mobile` (390 px) in `artifacts/visual-review/latest/`; `npx playwright test` can ad hoc capture `visual-mobile-narrow` (360 px) and `visual-mobile-wide` (412 px), but does not prepare/finalize the review bundle; `npm run visual:serve` runs the harness at `http://127.0.0.1:4174`
 

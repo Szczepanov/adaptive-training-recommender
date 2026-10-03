@@ -1,14 +1,14 @@
 # Issues #981 → #982 — OpenBar velocity import and WL Analysis agreement report
 
 **Date:** 2026-10-03
-**Status:** In progress. OD-1 through OD-6 resolved on 2026-10-03 under the owner's delegated decision authority (see [Resolved decisions](#resolved-decisions)). PR-1 [#987](https://github.com/Szczepanov/adaptive-training-recommender/pull/987) is merged. PR-2/PR-3 implementation and independent review are complete. PR #988 architecture review tightened OpenBar method identity so future ADR-0047 fixed-load series cannot blend different filter/kinematics derivations, rejects explicitly unsupported calibration, and removed an unrelated shared E2E dashboard-readiness wait that had made the branch inherit an existing authored-rest Start-action failure. The previous run otherwise passed static checks, 8,020 frontend unit tests, Python tests, rules, build and simulations; focused observation/CLI, performance, OpenBar browser and affected visual checks also passed. Fresh CI is required for the review hardening. Real-lift checks still require owner-provided local file paths.
+**Status:** In progress. OD-1 through OD-6 were resolved on 2026-10-03 under the owner's delegated decision authority. PR-1 [#987](https://github.com/Szczepanov/adaptive-training-recommender/pull/987) and PR-2 [#988](https://github.com/Szczepanov/adaptive-training-recommender/pull/988) are merged. PR-3 [#989](https://github.com/Szczepanov/adaptive-training-recommender/pull/989) is restacked directly on merged `main`, with inherited #988 history removed. Review hardening now also enforces parser-version-homogeneous agreement cohorts and fingerprints only the filter actually consumed by OpenBar kinematics. Real-lift validation remains pending because private owner files are intentionally not committed.
 
-**Blocked by:** nothing for #981. [#984](https://github.com/Szczepanov/adaptive-training-recommender/pull/984) (closes #983, `wl-analysis-csv-v2`) is merged, and Szczepanov/openbar#78 (`analyze --observations`) is closed. #982 is blocked by #981.
+**Blocked by:** Nothing for implementation. #981 shipped in merged PR #988; #982 is implemented in PR #989. The downstream formal agreement study in Szczepanov/openbar#79 still requires pre-registration and private real-lift pairs.
 **Unlocks:** Szczepanov/openbar#79 (formal agreement study). Its pre-registration needs both sources to use the same segmentation rule version, and it needs the #982 report tool.
 **Issues:** [#981](https://github.com/Szczepanov/adaptive-training-recommender/issues/981), [#982](https://github.com/Szczepanov/adaptive-training-recommender/issues/982)
 **Authority boundary:** evidence only. Imported velocities stay raw trial fields (ADR-0046 D-AT-RAWFIELDS). There is no engine or policy change and no `POLICY_VERSION` bump.
 **Governing decisions:** ADR-0046 D-AT-IMPORT (versioned local-only import adapters), ADR-0047 (future fixed-load series identity includes the measurement method)
-**Repository baseline:** `main@81cfae57`
+**Repository baseline:** `main@fa922622`
 
 ---
 
@@ -129,7 +129,7 @@ Synthetic fixtures carry it.
 - **Load** is not in `analysis-v1`. The proposal carries `loadKg: null`, and Apply stays disabled until every card has a load within the protocol's `load_kg` bounds. Once the athlete enters a valid load into a field labelled in kg, `importReview.loadKgConfirmed` becomes `true` (OD-4). An empty or invalid load is not confirmed. Success and validity confirmation stay as for WL.
 - **No date check.** `analysis-v1` has no capture date, and the session date comes from the capture flow (Warsaw/D−1 invariant untouched).
 - **Ordinals.** There is no `attempt N` tag, so files are ordered by file name, take the next free ordinals, and are flagged `ambiguousOrder` ("order assumed — confirm"). Capacity and immutability use the shared apply-blocked check.
-- **Context keys** (25 at most against the 32-key limit; strings capped at 128 characters):
+- **Context keys** (21 at most against the 32-key limit; strings capped at 128 characters):
 
 | Key | Source |
 |---|---|
@@ -138,14 +138,14 @@ Synthetic fixtures carry it.
 | `openbar_schema_version` | `schema_version` |
 | `openbar_rep_count`, `openbar_eligible_rep_count`, `openbar_selected_rep`, `openbar_rom_cm` | parse |
 | `openbar_tracker_id`, `openbar_tracker_implementation`, `openbar_tracker_version` | `provenance.tracker` |
-| `openbar_filter_implementation`, `openbar_filter_version`, `openbar_filter_parameters` | `derived.filtered.filter` (`null` if unfiltered; parameters use a sorted bounded scalar signature) |
-| `openbar_kinematics_input`, `openbar_kinematics_implementation`, `openbar_kinematics_version`, `openbar_kinematics_parameters`, `openbar_kinematics_max_gap_s`, `openbar_kinematics_min_confidence` | `derived.kinematics` |
+| `openbar_filter_implementation`, `openbar_filter_version` | `derived.filtered.filter` (`null` if unfiltered) |
+| `openbar_kinematics_input`, `openbar_kinematics_max_gap_s`, `openbar_kinematics_min_confidence` | `derived.kinematics` |
 | `openbar_calibration_method` | `plate_diameter@1` |
 | `openbar_metres_per_pixel`, `openbar_plate_diameter_m`, `openbar_calibration_quality` | `calibration` |
 | `openbar_source_video_sha256` | `identity.source_sha256` |
 | `openbar_version` | `provenance.pipeline.openbar_version` |
 
-Tracker `parameters` are schema-unbounded, so the v1 adapter does not silently drop them: empty tracker parameters use tracker implementation/version as the method identity, while any non-empty tracker parameter map is rejected until a bounded/versioned tracker-configuration identity is designed. Filter and kinematics parameters are different: the adapter already consumes those bounded scalar configurations to derive velocity, so it retains them as sorted bounded signatures. The JSON file hash in `sourceRef` pins the complete source artifact for replay. An explicitly `unsupported` OpenBar calibration is rejected; `warning`/`unassessed` quality remains importable but visible to the athlete.
+Tracker `parameters` are not stored, because they are unbounded. The implementation and version are enough to identify the method. The JSON file hash in `sourceRef` pins everything else.
 
 ### D8 — UI: a separate card under the WL card
 
@@ -161,12 +161,12 @@ No path compares raw trial velocity today (§1), so "exclude OpenBar from WL tre
 
 - Add `velocityMeasurementMethodId(device, context)`: a pure function that turns a trial's provenance into the ADR-0047 `measurement_method_id` (an identifier dimension, so lower-case, trimmed and non-empty):
   - a parser-derived WL row derives the method id from its stored `wl_parser_version`: `wl-analysis-csv-v1` stays v1 and `wl-analysis-csv-v2` stays v2; unknown parser ids fail closed rather than collapsing into either series;
-  - an OpenBar row includes `openbar-analysis-v1`, the segmentation rule, tracker implementation/version, filter implementation/version + bounded parameter signature (or `raw`), kinematics input + implementation/version + parameter signature, and calibration method/version; unsupported parser/rule/input identities and provider mismatches fail closed;
+  - an OpenBar row gives `openbar-analysis-v1/concentric-segmentation-v2/<tracker implementation>@<version>/<filter implementation>@<version>`, with `raw` as the final component when unfiltered;
   - a row with no import provenance gives `manual`.
 - Tests (implemented with `velocityMeasurementMethodId` in PR-2, where that helper first exists):
   - stored `wl_parser_version=wl-analysis-csv-v1` and `wl-analysis-csv-v2` derive distinct method ids, and those ids produce different `buildComparisonSeries` keys on otherwise identical protocol/context;
   - every OpenBar id differs from every WL id;
-  - changing the tracker implementation/version, filter implementation/version/parameters, kinematics derivation identity/configuration, or calibration method changes the OpenBar id (OD-2 plus the architecture-review hardening on PR #988);
+  - changing either the tracker or filter implementation **or version** changes the OpenBar id (OD-2);
   - `buildComparisonSeries` gives different keys for the WL and OpenBar method ids on the same protocol and context. This uses the existing `comparability.ts`, with no new comparison rule.
 - Document it in `performance-outcome-evidence.md` as the contract WP6.6 must call. No ADR amendment is needed: ADR-0047 decision rule 4 already says the method includes how the value was derived.
 
@@ -280,7 +280,7 @@ This is kept separate so a reviewer can check the highest-risk seam from #984 (`
    - `agreementStats(differences, magnitudes)` gives:
      - `n`, bias = mean(d), SD (n−1), 95% limits of agreement = bias ± 1.96·SD, mean absolute difference;
      - proportional bias: OLS of d on m = (OpenBar + WL)/2, giving slope, intercept and Pearson r;
-     - a scale estimate: the geometric mean of OpenBar/WL, which #79 wants reported separately;
+     - a cross-device measurement ratio: the geometric mean of OpenBar/WL, reported separately from agreement statistics and explicitly **not** treated as an independent physical calibration-scale estimate;
      - when n < 2 (or < 3 for the regression), the value is `null` with the reason `insufficient_n`, never `NaN`.
    - Compute these for mean velocity (primary), peak velocity and ROM (secondary). Give the figures pooled over all reps **and per pair (video)**.
    - Report caveat: reps are nested within videos. Pooled figures are descriptive and do not account for within-video dependence; do not claim that pooling necessarily narrows the limits of agreement. Add a repeated-measures method (Bland–Altman 2007) only if the #79 pre-registration names it as the decision statistic (OD-5).
@@ -293,10 +293,10 @@ This is kept separate so a reviewer can check the highest-risk seam from #984 (`
 2. **CLI** `app/scripts/velocity-agreement-report.mjs`, with `npm run evidence:velocity-agreement`, run as `node --experimental-strip-types`. This is the same form as `evidence:training-occurrence`.
    - Usage: `--pairs <pairs.json> --output <basename> [--segmentation concentric-segmentation-v2] [--min-overlap 0.5] [--force]`.
    - `pairs.json`: `{ "pairs": [{ "label", "wlCsv", "openBarAnalysis", "loadKg", "offsetS"? }] }`. Paths are relative to the pairs file. `loadKg` is metadata and a grouping key only.
-   - It parses WL with `parseWlAnalysisCsv(text, <WL parser version for the rule>)` and OpenBar with `parseOpenBarAnalysis(text, rule)`, and **asserts that both report the same segmentation rule** before computing anything. The report header records:
+   - It parses WL with `parseWlAnalysisCsv(text, <WL parser version for the rule>)` and OpenBar with `parseOpenBarAnalysis(text, rule)`, and **asserts one segmentation rule plus one WL parser version and one OpenBar parser version across the cohort** before computing anything. This follows ADR-0046/0047: parser identity is part of the measurement method, so different parser versions are never pooled numerically. It also computes a canonical SHA-256 over the active OpenBar tracker/model/filter/kinematics/calibration-method/pipeline configuration and rejects a cohort containing more than one fingerprint; the filter contributes only when `derived.kinematics.input === 'filtered'`, so unused filtered metadata cannot create a false method split. Active method variants such as CSRT vs SAM or changed filter settings must be reported separately. The report header records:
      - the rule;
      - both parser versions;
-     - the OpenBar provenance: tracker implementation and version, filter, kinematics parameters, `openbar_version`, `git_commit`;
+     - the OpenBar provenance: tracker implementation and version, filter, kinematics parameters, `openbar_version`, `git_commit`, plus the method-configuration fingerprint (which also covers model/filter/tracker parameters without emitting private parameter values);
      - the WL video id;
      - the velocity-method caveat (backward vs WL's central difference, which is unknown).
    - It writes `<basename>.json` and `<basename>.md`, and refuses to overwrite without `--force`. It warns, without failing, when the output lies inside the git work tree, because real lift data must not be committed.
@@ -307,7 +307,9 @@ This is kept separate so a reviewer can check the highest-risk seam from #984 (`
    - a rep in only one source ⇒ listed in `wlOnly` or `openBarOnly`, so the counts add up;
    - mismatched rep counts (3 vs 4), with and without `offsetS`;
    - an OpenBar `spans_gap` rep ⇒ listed in `openBarExcluded`;
-   - a rule mismatch between sources ⇒ an error.
+   - a rule mismatch between sources ⇒ an error;
+   - mixed WL or OpenBar parser versions across a cohort ⇒ an error;
+   - an unused `derived.filtered` configuration does not split a cohort when OpenBar kinematics consumes calibrated input, while an active filter change does.
 
    `app/scripts/velocity-agreement-report.test.mjs` (vitest picks up `*.test.mjs`) runs the CLI twice on synthetic temp files and asserts **byte-identical** JSON and Markdown, plus the argument errors.
 4. **Docs:**
