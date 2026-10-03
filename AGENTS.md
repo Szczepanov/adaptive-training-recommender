@@ -282,6 +282,7 @@ stay compact enough to survive conservative client instruction budgets.
 | Source-neutral sessions / execution | `app/src/sessions/` |
 | Session responses and outcome interpretation | `app/src/responses/`, `app/src/outcomes/` |
 | Canonical observations / testing | `app/src/observations/` |
+| Source-neutral concentric rep segmentation / rule identities | `app/src/observations/concentricSegmentation.ts` |
 | Sports knowledge registry and alignment | `app/src/knowledge/` |
 | Current architecture / ADRs / delivery status | `docs/architecture/`, `docs/adr/`, `docs/plans/README.md` |
 

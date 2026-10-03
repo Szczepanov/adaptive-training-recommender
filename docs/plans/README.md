@@ -77,6 +77,12 @@ The scoped design for GitHub issue [#897](https://github.com/Szczepanov/adaptive
 (first-class periodic physical-capital assessments) is
 [`2026-09-30-issue-897-physical-capital-assessment-history.md`](./2026-09-30-issue-897-physical-capital-assessment-history.md) — **In progress**: [ADR-0046](../adr/0046-first-class-raw-assessment-trial-evidence.md) accepted 2026-09-30; PR A merged ([PR #942](https://github.com/Szczepanov/adaptive-training-recommender/pull/942)); PR B merged ([PR #944](https://github.com/Szczepanov/adaptive-training-recommender/pull/944)); PR C ([PR #948](https://github.com/Szczepanov/adaptive-training-recommender/pull/948): WP6 history/comparability, WP7.1 CSV export, WP3.4 body-mass context, ADR-0047 proposal) merged, plus post-merge review hardening. #897 was reopened 2026-10-01 and remains open for WP6.6 fixed-load velocity (design: [ADR-0047](../adr/0047-fixed-load-velocity-assessment-series.md); implementation pending), WP8 (#897 PR D), and PR B2 (WP5.5 WL Analysis per-frame CSV import, in progress) unless explicitly rescoped. It is a scoped implementation design only; [`performance-outcome-validation.md`](./performance-outcome-validation.md) remains the sole canonical OV status board.
 
+The plan for GitHub issues [#981](https://github.com/Szczepanov/adaptive-training-recommender/issues/981)
+(OpenBar `analysis-v1` velocity import) and [#982](https://github.com/Szczepanov/adaptive-training-recommender/issues/982)
+(WL Analysis vs OpenBar agreement report) is
+[`2026-10-03-issues-981-982-openbar-velocity-import-and-agreement.md`](./2026-10-03-issues-981-982-openbar-velocity-import-and-agreement.md). **In progress**: all six open decisions resolved 2026-10-03; PR-1 extraction implemented, with `make verify` and independent review passed. PR-2 and PR-3 have not started.
+It is evidence-only, with no policy change. It builds on [#984](https://github.com/Szczepanov/adaptive-training-recommender/pull/984) (`wl-analysis-csv-v2`, merged). Blocked by: nothing for #981; #982 is blocked by #981. Unlocks: Szczepanov/openbar#79.
+
 The combined delivery record for GitHub issues [#459](https://github.com/Szczepanov/adaptive-training-recommender/issues/459),
 [#460](https://github.com/Szczepanov/adaptive-training-recommender/issues/460), and
 [#461](https://github.com/Szczepanov/adaptive-training-recommender/issues/461) is

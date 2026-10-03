@@ -12,59 +12,34 @@
  * - `Video id: N` + per-frame table (`Frame ordinal,Time (s),"velocity (vertical, m/s)",...`)
  */
 
+import {
+    CONCENTRIC_SEGMENTATION_V1,
+    CONCENTRIC_SEGMENTATION_V2,
+    segmentConcentricReps,
+    type ConcentricFrame,
+    type ConcentricRep,
+    type ConcentricSegmentationRule,
+} from './concentricSegmentation.ts';
+
+export {
+    CONCENTRIC_VELOCITY_THRESHOLD_MPS as WL_CONCENTRIC_VELOCITY_THRESHOLD_MPS,
+    MIN_REP_RISE_CM as WL_MIN_REP_RISE_CM,
+    MIN_REP_RISE_FRACTION as WL_MIN_REP_RISE_FRACTION,
+    COMPLETE_DESCENT_FRACTION as WL_COMPLETE_DESCENT_FRACTION,
+    BOUNDARY_VELOCITY_FLOOR_MPS as WL_BOUNDARY_VELOCITY_FLOOR_MPS,
+    BOUNDARY_MAX_TRIM_RISE_CM as WL_BOUNDARY_MAX_TRIM_RISE_CM,
+} from './concentricSegmentation.ts';
+
 export const WL_ANALYSIS_CSV_PARSER_V1 = 'wl-analysis-csv-v1';
-
-/** Concentric candidate: maximal run of frames with velocity strictly above this (m/s). */
-export const WL_CONCENTRIC_VELOCITY_THRESHOLD_MPS = 0;
-/** A concentric run counts as a rep only if its displacement rise reaches this absolute floor. */
-export const WL_MIN_REP_RISE_CM = 10;
-/** ... or this fraction of the largest rise in the file, whichever is larger. */
-export const WL_MIN_REP_RISE_FRACTION = 0.5;
-/** A rep counts as complete when its rise reaches this fraction of the preceding descent. */
-export const WL_COMPLETE_DESCENT_FRACTION = 0.85;
-
-/**
- * Issue #983: v2 trims near-zero velocity drift from rep boundaries. Rep detection, rep count
- * and ascent completeness are identical to v1. Only the reported window (timing, frame count,
- * mean/peak velocity, ROM) may trim leading/trailing near-zero frames. A boundary is trimmed
- * only when the omitted travel stays within `WL_BOUNDARY_MAX_TRIM_RISE_CM`, so a genuinely
- * slow concentric segment is preserved instead of being reclassified as drift. On a real squat
- * export, 7 trailing frames at 0.02–0.04 m/s (+0.74 cm) moved the mean from 0.625 to 0.500 m/s.
- * ADR-0046 D-AT-IMPORT: a segmentation change is a new parser version, never a reinterpretation.
- */
+/** v2 reports the guarded active window; detection and completeness remain identical to v1. */
 export const WL_ANALYSIS_CSV_PARSER_V2 = 'wl-analysis-csv-v2';
-/** v2 only: candidate boundary frames below this velocity (m/s) may be trimmed. */
-export const WL_BOUNDARY_VELOCITY_FLOOR_MPS = 0.05;
-/**
- * v2 safety guardrail: never trim a low-velocity boundary when doing so would remove more
- * than this much concentric travel on that side. The value covers the observed <1 cm drift
- * artifact while keeping materially slow bar travel inside mean-concentric-velocity reporting.
- */
-export const WL_BOUNDARY_MAX_TRIM_RISE_CM = 1;
-
 export type WlAnalysisParserVersion = typeof WL_ANALYSIS_CSV_PARSER_V1 | typeof WL_ANALYSIS_CSV_PARSER_V2;
-
-export interface WlAnalysisFrame {
-    ordinal: number;
-    timeS: number;
-    velocityMps: number;
-    displacementCm: number;
-}
-
-export interface WlAnalysisRep {
-    /** Zero-based position among detected reps. */
-    index: number;
-    startFrame: number;
-    endFrame: number;
-    frameCount: number;
-    startTimeS: number;
-    endTimeS: number;
-    durationS: number;
-    meanVelocityMps: number;
-    peakVelocityMps: number;
-    romCm: number;
-    complete: boolean;
-}
+export const WL_PARSER_SEGMENTATION_RULE: Readonly<Record<WlAnalysisParserVersion, ConcentricSegmentationRule>> = Object.freeze({
+    [WL_ANALYSIS_CSV_PARSER_V1]: CONCENTRIC_SEGMENTATION_V1,
+    [WL_ANALYSIS_CSV_PARSER_V2]: CONCENTRIC_SEGMENTATION_V2,
+});
+export type WlAnalysisFrame = ConcentricFrame;
+export type WlAnalysisRep = ConcentricRep;
 
 export interface WlAnalysisCsvParse {
     parserVersion: WlAnalysisParserVersion;
@@ -196,123 +171,24 @@ function round3(value: number): number {
     return Math.round(value * 1000) / 1000;
 }
 
-function round2(value: number): number {
-    return Math.round(value * 100) / 100;
-}
-
-interface FrameRun {
-    start: number;
-    end: number;
-}
-
-/**
- * v2 reporting window: find the inner boundary frames that reach
- * `WL_BOUNDARY_VELOCITY_FLOOR_MPS`, then trim each low-velocity edge only when the omitted
- * displacement is small enough to be boundary drift. This protects the standard mean-velocity
- * definition (the whole concentric phase) from deleting materially slow movement on heavy reps.
- * Falls back to the whole run if no frame reaches the floor.
- */
-function activeWindow(frames: readonly WlAnalysisFrame[], run: FrameRun): FrameRun {
-    let candidateStart = run.start;
-    let candidateEnd = run.end;
-    while (
-        candidateStart <= candidateEnd
-        && frames[candidateStart].velocityMps < WL_BOUNDARY_VELOCITY_FLOOR_MPS
-    ) {
-        candidateStart += 1;
-    }
-    while (
-        candidateEnd >= candidateStart
-        && frames[candidateEnd].velocityMps < WL_BOUNDARY_VELOCITY_FLOOR_MPS
-    ) {
-        candidateEnd -= 1;
-    }
-    if (candidateStart > candidateEnd) return run;
-
-    const leadingRiseCm = frames[candidateStart].displacementCm - frames[run.start].displacementCm;
-    const trailingRiseCm = frames[run.end].displacementCm - frames[candidateEnd].displacementCm;
-    const start = leadingRiseCm >= 0 && leadingRiseCm <= WL_BOUNDARY_MAX_TRIM_RISE_CM
-        ? candidateStart
-        : run.start;
-    const end = trailingRiseCm >= 0 && trailingRiseCm <= WL_BOUNDARY_MAX_TRIM_RISE_CM
-        ? candidateEnd
-        : run.end;
-    return { start, end };
-}
-
-/**
- * Segment concentric reps: maximal runs of frames with velocity above
- * `WL_CONCENTRIC_VELOCITY_THRESHOLD_MPS`. A run is a rep when its displacement rise
- * reaches `max(WL_MIN_REP_RISE_CM, WL_MIN_REP_RISE_FRACTION * largest rise)`.
- *
- * `parserVersion` selects how each rep is reported: v1 reports the whole run; v2 reports the
- * run's active window (see `WL_ANALYSIS_CSV_PARSER_V2`). Detection and completeness never differ.
- */
+/** Compatibility wrapper: never expose source-neutral bookkeeping in WL parse results. */
 export function segmentWlReps(
     frames: readonly WlAnalysisFrame[],
     parserVersion: WlAnalysisParserVersion = WL_ANALYSIS_CSV_PARSER_V1,
 ): WlAnalysisRep[] {
-    const runs: FrameRun[] = [];
-    let runStart: number | null = null;
-    for (let i = 0; i < frames.length; i += 1) {
-        if (frames[i].velocityMps > WL_CONCENTRIC_VELOCITY_THRESHOLD_MPS) {
-            if (runStart === null) runStart = i;
-        } else if (runStart !== null) {
-            runs.push({ start: runStart, end: i - 1 });
-            runStart = null;
-        }
-    }
-    if (runStart !== null) runs.push({ start: runStart, end: frames.length - 1 });
-
-    let largestRise = Number.NEGATIVE_INFINITY;
-    const rises = runs.map(run => frames[run.end].displacementCm - frames[run.start].displacementCm);
-    for (const rise of rises) {
-        if (rise > largestRise) largestRise = rise;
-    }
-    if (!Number.isFinite(largestRise)) return [];
-    const repThreshold = Math.max(WL_MIN_REP_RISE_CM, WL_MIN_REP_RISE_FRACTION * largestRise);
-
-    const reps: WlAnalysisRep[] = [];
-    const repRuns = runs.filter(run => frames[run.end].displacementCm - frames[run.start].displacementCm >= repThreshold);
-    let previousRepEndArrayIndex = -1;
-    for (const run of repRuns) {
-        const window = parserVersion === WL_ANALYSIS_CSV_PARSER_V2 ? activeWindow(frames, run) : run;
-        const slice = frames.slice(window.start, window.end + 1);
-        const velocities = slice.map(frame => frame.velocityMps);
-        const mean = velocities.reduce((sum, value) => sum + value, 0) / velocities.length;
-        const peak = Math.max(...velocities);
-        const rom = frames[window.end].displacementCm - frames[window.start].displacementCm;
-        // Completeness always uses the whole run, so v1 and v2 agree on success/miss.
-        const runRise = frames[run.end].displacementCm - frames[run.start].displacementCm;
-
-        // Preceding descent (top -> bottom): the highest displacement observed since the end
-        // of the previous rep (or the start of the file) minus the displacement at rep start.
-        const gapStart = previousRepEndArrayIndex + 1 <= run.start ? previousRepEndArrayIndex + 1 : run.start;
-        let top = Number.NEGATIVE_INFINITY;
-        for (let i = gapStart; i <= run.start; i += 1) {
-            if (frames[i].displacementCm > top) top = frames[i].displacementCm;
-        }
-        const descent = top - frames[run.start].displacementCm;
-        const complete = descent <= 0 || runRise >= WL_COMPLETE_DESCENT_FRACTION * descent;
-
-        const startTime = frames[window.start].timeS;
-        const endTime = frames[window.end].timeS;
-        reps.push({
-            index: reps.length,
-            startFrame: frames[window.start].ordinal,
-            endFrame: frames[window.end].ordinal,
-            frameCount: slice.length,
-            startTimeS: startTime,
-            endTimeS: endTime,
-            durationS: round3(Math.max(0, endTime - startTime)),
-            meanVelocityMps: round3(mean),
-            peakVelocityMps: round3(peak),
-            romCm: round2(rom),
-            complete,
-        });
-        previousRepEndArrayIndex = run.end;
-    }
-    return reps;
+    return segmentConcentricReps(frames, WL_PARSER_SEGMENTATION_RULE[parserVersion]).map(segment => ({
+        index: segment.index,
+        startFrame: segment.startFrame,
+        endFrame: segment.endFrame,
+        frameCount: segment.frameCount,
+        startTimeS: segment.startTimeS,
+        endTimeS: segment.endTimeS,
+        durationS: segment.durationS,
+        meanVelocityMps: segment.meanVelocityMps,
+        peakVelocityMps: segment.peakVelocityMps,
+        romCm: segment.romCm,
+        complete: segment.complete,
+    }));
 }
 
 /** Deterministic signature of the per-frame measurement data (velocity + displacement). */
