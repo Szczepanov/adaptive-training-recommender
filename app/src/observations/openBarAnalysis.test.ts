@@ -140,6 +140,11 @@ describe('OpenBar analysis-v1 parser (#981)', () => {
         (a.calibration.quality as { status: string }).status = 'mystery';
         expect(() => parse(a)).toThrow(/calibration quality status/);
     });
+    it('fails closed on parameterized trackers until their bounded identity is defined', () => {
+        const a = buildOpenBarAnalysis();
+        (a.provenance.tracker.implementation.parameters as Record<string, number>).search_radius = 12;
+        expect(() => parse(a)).toThrow(/tracker parameters are not supported/);
+    });
     it('rejects finite inputs whose reported rep arithmetic overflows', () => {
         const a = buildOpenBarAnalysis();
         for (const sample of a.derived.kinematics.samples) {
