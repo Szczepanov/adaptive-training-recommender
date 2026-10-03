@@ -11,7 +11,7 @@ import type {
 import type { PerformanceTestPresentationHints } from '../../observations/performanceTestingCatalog';
 import { getComparisonDimensionDefinition } from '../../observations/protocols';
 import { buildComparisonContextFromStrings } from '../../observations/testingWorkflow';
-import { canImportWlAnalysis } from '../../observations/wlAnalysisImport';
+import { canImportVelocityFile } from '../../observations/velocityFileImport';
 import {
     clearAssessmentDraft,
     loadAssessmentDraft,
@@ -22,6 +22,7 @@ import { draftRowsToTrials, hasDeviceWithoutProvider } from '../../utils/assessm
 import { CanonicalResultPreview } from './CanonicalResultPreview';
 import { TrialRow } from './TrialRow';
 import { WlAnalysisImportPanel } from './WlAnalysisImportPanel';
+import { OpenBarImportPanel } from './OpenBarImportPanel';
 
 interface TrialCaptureTableProps {
     userId: string;
@@ -128,7 +129,7 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
     const [missingConfirmationRequired, setMissingConfirmationRequired] = useState(false);
     const [clientError, setClientError] = useState<string | null>(null);
 
-    const wlImportAllowed = canImportWlAnalysis(protocol, attempt);
+    const wlImportAllowed = canImportVelocityFile(protocol, attempt);
     const existingSourceRefs = useMemo(() => {
         const refs = new Set<string>();
         for (const row of rows) {
@@ -140,6 +141,15 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
         return refs;
     }, [rows, initialTrials]);
     const occupiedOrdinals = useMemo(() => new Set(rows.map(row => row.ordinal)), [rows]);
+    const existingSourceVideoHashes = useMemo(() => new Set(
+        [...rows, ...(initialTrials ?? [])].map(row => row.context?.openbar_source_video_sha256)
+            .filter((hash): hash is string => typeof hash === 'string'),
+    ), [rows, initialTrials]);
+    const unavailableImportOrdinals = useMemo(() => new Set([
+        ...storedOrdinals,
+        ...rows.filter(row => Object.keys(row.values).length > 0 || row.sourceRef || row.notes || row.invalidReason || row.device || Object.keys(row.context ?? {}).length > 0 || row.validity !== 'valid')
+            .map(row => row.ordinal),
+    ]), [rows, storedOrdinals]);
 
     const handleImportApply = (imported: DraftTrialRow[]) => {
         setClientError(null);
@@ -408,6 +418,12 @@ export const TrialCaptureTable: React.FC<TrialCaptureTableProps> = ({
                     onApply={handleImportApply}
                     disabled={saving}
                 />
+            )}
+            {wlImportAllowed && (
+                <OpenBarImportPanel key={attempt.id} protocol={protocol} attempt={attempt}
+                    existingSourceRefs={existingSourceRefs} existingSourceVideoHashes={existingSourceVideoHashes}
+                    storedOrdinals={storedOrdinals} occupiedOrdinals={occupiedOrdinals}
+                    unavailableOrdinals={unavailableImportOrdinals} onApply={handleImportApply} disabled={saving} />
             )}
 
             <div className="trial-rows-container">

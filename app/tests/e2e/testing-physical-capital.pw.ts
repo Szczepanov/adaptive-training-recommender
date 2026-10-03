@@ -8,6 +8,7 @@ import {
   type E2EAthlete,
 } from './support/athlete';
 import { ASSESSMENT_CSV_HEADERS } from '../../src/observations/assessmentCsvExport';
+import { buildOpenBarAnalysis } from '../../src/observations/fixtures/openBarAnalysisFixtures';
 
 /** Minimal single-rep WL Analysis per-frame export: descent then one concentric ascent. */
 function wlSingleRepCsv(weightKg: number, tags: string, ascentVelocity: number, peakVelocity: number): string {
@@ -386,4 +387,61 @@ test('physical capital assessment: back-squat WL Analysis CSV import fills trial
   await expect(detailModal.locator('.attempt-trials-table')).toContainText('mean_concentric_velocity_mps: 0.615');
   await expect(detailModal.locator('.attempt-trials-table')).toContainText('peak_velocity_mps: 0.75');
   await detailModal.getByRole('button', { name: 'Close detail' }).click();
+});
+
+test('physical capital assessment: OpenBar JSON import validates, fills and saves raw evidence', async ({ page }) => {
+  const athlete = await provisionAthlete();
+  const date = await seedRecoverySnapshot(athlete);
+  await signInThroughUi(page, athlete);
+  await completeCheckin(page, athlete, date);
+  const nav = page.locator('.navbar-desktop-menu');
+  await nav.getByRole('button', { name: /More/ }).click();
+  await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await page.getByRole('tab', { name: 'Protocols' }).click();
+  await page.getByRole('button', { name: 'Back squat 1RM · rev 2' }).click();
+  await page.getByLabel(/equipment_setup_id/).fill('rack-a · same shoes · same belt');
+  await page.getByRole('button', { name: 'Confirm lock and start' }).click();
+  await page.getByRole('button', { name: /Finish Session \(/ }).click();
+  await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Record assessment trials' })).toBeVisible();
+  const input = page.getByLabel('Choose OpenBar analysis files');
+  const wrong = buildOpenBarAnalysis();
+  wrong.calibration.coordinate_convention = 'image_y_down';
+  await input.setInputFiles({ name: 'wrong.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(wrong)) });
+  await expect(page.locator('.openbar-preview-list')).toContainText('coordinate convention is not supported');
+  await page.getByRole('button', { name: 'Clear OpenBar preview' }).click();
+
+  const analysis = buildOpenBarAnalysis();
+  await input.setInputFiles({ name: 'squat.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(analysis)) });
+  const apply = page.getByRole('button', { name: 'Apply OpenBar to draft rows (1)' });
+  await expect(apply).toBeDisabled();
+  const load = page.getByLabel('Load in kilograms for squat.json');
+  await load.fill('501');
+  await expect(apply).toBeDisabled();
+  await expect(page.locator('.openbar-preview-list')).toContainText('outside');
+  await load.fill('100');
+  await expect(apply).toBeEnabled();
+  await apply.click();
+  const importedRow = page.locator('.trial-row-card').first();
+  await expect(importedRow.getByRole('checkbox', { name: 'Load is kilograms' })).toBeChecked();
+  await importedRow.getByText('Trial device override (optional)', { exact: true }).click();
+  await expect(importedRow.getByLabel('Provider', { exact: true })).toHaveValue('OpenBar');
+  await expect(importedRow.locator('input[placeholder="1–500"]')).toHaveValue('100');
+
+  // A different tracker analysis of this video must not become another trial in this attempt.
+  analysis.provenance.tracker.implementation.implementation = 'sam2.1-bplus-circle';
+  await input.setInputFiles({ name: 'squat-sam2.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(analysis)) });
+  await expect(page.locator('.openbar-preview-list')).toContainText('already in the attempt');
+  await page.getByRole('button', { name: 'Clear OpenBar preview' }).click();
+  const removeButtons = page.getByRole('button', { name: /^Remove Attempt/ });
+  while (await removeButtons.count() > 1) await removeButtons.last().click();
+  // Leave the imported first row; remove the final untouched row when two rows remain.
+  if (await page.locator('.trial-row-card').count() > 1) await removeButtons.last().click();
+  await page.getByRole('button', { name: 'Save assessment trials' }).click();
+  await expect(page.locator('.testing-error')).toContainText('success/miss, validity');
+  await importedRow.getByRole('checkbox', { name: 'Success / miss matches the video' }).check();
+  await importedRow.getByRole('checkbox', { name: 'Technical validity is correct' }).check();
+  await page.getByRole('button', { name: 'Save assessment trials' }).click();
+  await expect(page.getByRole('heading', { name: 'Assessment recorded' })).toBeVisible();
+  await expect(page.locator('.testing-observations')).toContainText('100 kg');
 });

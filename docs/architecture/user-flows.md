@@ -459,6 +459,13 @@ The import itself writes nothing; duplicate content digests are rejected even wi
 Imported rows remain in the existing UID-scoped local draft across reload when browser storage is available.
 The final immutable assessment save uses transaction-backed services and therefore requires connectivity;
 an offline final-save failure leaves the local draft intact for retry instead of claiming a commit.
+The sibling `OpenBarImportPanel` accepts local analysis JSON on the same screen. Its preview starts with
+an empty kg load and disables Apply until the athlete enters a value in the protocol bounds. That entry
+confirms kilograms; success/miss and technical validity still require confirmation. Reps interrupted by
+tracking gaps or truncated at the clip edges are shown as excluded. Duplicate file or source-video hashes
+block a second analysis of the same video in one attempt. File-name ordering fills free rows and keeps
+saved/populated rows intact. Clearing a preview returns focus to its file chooser; files are never uploaded.
+
 Importable-recording checklist (one video per attempt, `attempt N` tags, per-frame export with velocity +
 displacement, kilograms, fixed side-on tripod, raw files kept outside the app) lives in the #897 plan's
 WP5.5 section. The completion screen renders canonical

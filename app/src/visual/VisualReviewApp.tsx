@@ -16,6 +16,7 @@ import { VISUAL_USER_ID, type VisualScenario, type VisualScreen } from './fixtur
 import { prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
 import type { SessionDefinition, SessionReferenceBinding } from '../sessions/models';
 import { MorningDecisionAdjustedLaunchHarness } from './MorningDecisionAdjustedLaunchHarness';
+import { AssessmentVelocityImportHarness } from './AssessmentVelocityImportHarness';
 
 interface VisualReviewAppProps {
   scenario: VisualScenario;
@@ -75,6 +76,8 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
 
   const appScreen: Screen = screen === 'session' || screen === 'builder'
     ? 'sessions'
+    : screen === 'assessment-capture'
+      ? 'testing'
     : screen === 'morning-card'
       ? 'home'
       : screen;
@@ -96,6 +99,7 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
       <main className="app-content">
         {screen === 'home' && <Home userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} onViewData={() => navigate('data')} />}
         {screen === 'morning-card' && <MorningDecisionAdjustedLaunchHarness />}
+        {screen === 'assessment-capture' && <AssessmentVelocityImportHarness />}
         {screen === 'plan' && <PlanView userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} />}
         {screen === 'checkin' && <DailyCheckin userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} onBack={() => navigate('home')} />}
         {screen === 'goals' && <Goals userId={VISUAL_USER_ID} />}

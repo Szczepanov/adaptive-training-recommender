@@ -2,6 +2,7 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { VISUAL_SCENARIOS, type VisualScenario } from '../../src/visual/fixtures';
+import { buildOpenBarAnalysis, openBarSingleRepProfile } from '../../src/observations/fixtures/openBarAnalysisFixtures';
 
 const artifactDir = resolve('artifacts/visual-review/latest');
 const entriesPath = resolve(artifactDir, 'entries.ndjson');
@@ -63,6 +64,30 @@ test.describe.configure({ mode: 'serial' });
 for (const scenario of VISUAL_SCENARIOS) {
   test(`captures ${scenario.id}`, async ({ page }) => {
     await visitScenario(page, scenario);
+    if (scenario.id.startsWith('assessment-openbar-')) {
+      const state = scenario.id.slice('assessment-openbar-'.length);
+      if (state !== 'empty') {
+        const profile = state === 'gap' ? [...openBarSingleRepProfile(), ...openBarSingleRepProfile()] : openBarSingleRepProfile();
+        const analysis = buildOpenBarAnalysis(profile, state === 'gap' ? { dropSamples: [32, 33] } : {});
+        if (state === 'rejected') analysis.calibration.coordinate_convention = 'image_y_down';
+        await page.getByLabel('Choose OpenBar analysis files').setInputFiles({
+          name: 'synthetic-back-squat-analysis.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(analysis)),
+        });
+        if (state === 'rejected') await expect(page.locator('.openbar-preview-list')).toContainText('Not imported:');
+        else {
+          await page.getByLabel('Load in kilograms for synthetic-back-squat-analysis.json').fill('100');
+          if (state === 'gap') await expect(page.locator('.openbar-preview-list')).toContainText('tracking gap');
+          if (state === 'applied') await page.getByRole('button', { name: 'Apply OpenBar to draft rows (1)' }).click();
+        }
+      }
+      if (test.info().project.name.includes('mobile')) {
+        for (const control of await page.locator('.openbar-import-panel :is(button, input):visible').all()) {
+          const box = await control.boundingBox();
+          expect(box?.height).toBeGreaterThanOrEqual(44);
+          expect(box?.width).toBeGreaterThanOrEqual(44);
+        }
+      }
+    }
     if (scenario.id === 'plan-recovery-authority-exit') {
       await expect(page.getByRole('region', { name: 'Roles planned beyond this forecast' })).toBeVisible();
     }
