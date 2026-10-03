@@ -64,7 +64,7 @@ Add `concentric-segmentation-v1` and `concentric-segmentation-v2` as **rule** ve
 The neutral frame is the current `WlAnalysisFrame` shape: `{ ordinal, timeS, velocityMps, displacementCm }`.
 - OpenBar maps to it with `displacementCm = (y_m − y_m[first sample]) × 100` and `velocityMps = vy_mps`.
 - Keeping centimetres means every threshold constant stays numerically identical, and the WL path does no conversion at all. That is the strongest guarantee of byte-for-byte v1/v2 output.
-- `×100` floating-point noise (for example `0.1 × 100 = 10.000000000000002`) can only matter exactly at the 10 cm rep threshold. Do not round. Tests must avoid exact-threshold synthetic rises.
+- `×100` floating-point noise can affect classification at a comparison boundary, including both the 10 cm absolute minimum and the `MIN_REP_RISE_FRACTION × largestRise` threshold when that is larger. Do not round. OpenBar parity tests must place converted rises on both sides of each threshold and must not use an exact-boundary case as the cross-unit parity oracle.
 
 ### D3 — Gaps: exclude affected reps rather than splitting runs
 
@@ -159,10 +159,11 @@ Tracker `parameters` are not stored, because they are unbounded. The implementat
 No path compares raw trial velocity today (§1), so "exclude OpenBar from WL trends" cannot fail at the moment. It would only fail once ADR-0047 lands and the method identity is built carelessly. Deliver the guard now:
 
 - Add `velocityMeasurementMethodId(device, context)`: a pure function that turns a trial's provenance into the ADR-0047 `measurement_method_id` (an identifier dimension, so lower-case, trimmed and non-empty):
-  - a WL row gives `wl-analysis-csv-v2` (unchanged from ADR-0047's example);
+  - a parser-derived WL row derives the method id from its stored `wl_parser_version`: `wl-analysis-csv-v1` stays v1 and `wl-analysis-csv-v2` stays v2; unknown parser ids fail closed rather than collapsing into either series;
   - an OpenBar row gives `openbar-analysis-v1/concentric-segmentation-v2/<tracker implementation>@<version>/<filter implementation>@<version>`, with `raw` as the final component when unfiltered;
   - a row with no import provenance gives `manual`.
-- Tests:
+- Tests (implemented with `velocityMeasurementMethodId` in PR-2, where that helper first exists):
+  - stored `wl_parser_version=wl-analysis-csv-v1` and `wl-analysis-csv-v2` derive distinct method ids, and those ids produce different `buildComparisonSeries` keys on otherwise identical protocol/context;
   - every OpenBar id differs from every WL id;
   - changing either the tracker or filter implementation **or version** changes the OpenBar id (OD-2);
   - `buildComparisonSeries` gives different keys for the WL and OpenBar method ids on the same protocol and context. This uses the existing `comparability.ts`, with no new comparison rule.
@@ -251,7 +252,7 @@ This is kept separate so a reviewer can check the highest-risk seam from #984 (`
 
 | Criterion | Test |
 |---|---|
-| Valid synthetic `analysis-v1` | `openBarAnalysis.test.ts`: rep count, mean, peak and ROM equal the WL parser on the *same* profile turned into WL frames (same rule ⇒ same numbers). This is the parity guarantee #79 depends on. |
+| Valid synthetic `analysis-v1` | `openBarAnalysis.test.ts`: rep count, mean, peak and ROM equal the WL parser on the *same* profile turned into WL frames (same rule ⇒ same numbers). Include converted rises just below/above the 10 cm minimum and just below/above a fractional threshold that exceeds 10 cm; exact-boundary values are not the parity oracle. This is the parity guarantee #79 depends on. |
 | Unknown schema version rejected | `schema_version: 2` and `"1"` (string) |
 | NaN / Inf rejected | `NaN` token (invalid JSON path); `1e999` in `vy_mps`, `y_m` and `timestamp_s` (`Number.isFinite` path) |
 | Gap inside a concentric run | Drop 2 samples mid-ascent ⇒ `spans_gap`, not selectable; a `null` `vy_mps` mid-ascent ⇒ same; a gap in the descent only ⇒ rep eligible; a series starting mid-ascent ⇒ `touches_series_edge` |
