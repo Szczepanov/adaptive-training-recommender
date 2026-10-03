@@ -102,6 +102,10 @@ export function segmentConcentricReps(
     frames: readonly ConcentricFrame[],
     rule: ConcentricSegmentationRule,
 ): ConcentricRepSegment[] {
+    if (rule !== CONCENTRIC_SEGMENTATION_V1 && rule !== CONCENTRIC_SEGMENTATION_V2) {
+        throw new Error(`Unsupported concentric segmentation rule: ${String(rule)}`);
+    }
+
     const runs: FrameRun[] = [];
     let runStart: number | null = null;
     for (let i = 0; i < frames.length; i += 1) {
