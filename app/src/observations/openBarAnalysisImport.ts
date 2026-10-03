@@ -1,7 +1,8 @@
 /** OpenBar-specific trial proposals. Persistence uses the ordinary assessment capture path. */
 import type { DraftTrialRow } from '../utils/assessmentDraftStorage';
 import type { MeasurementProtocol, MetricObservationDevice, ObservationContext } from './models';
-import { type OpenBarAnalysisParse, type OpenBarRep } from './openBarAnalysis';
+import { CONCENTRIC_SEGMENTATION_V1, CONCENTRIC_SEGMENTATION_V2 } from './concentricSegmentation';
+import { OPENBAR_ANALYSIS_PARSER_V1, type OpenBarAnalysisParse, type OpenBarRep } from './openBarAnalysis';
 import { velocityProposalToDraftRow, type VelocityTrialProposal } from './velocityFileImport';
 import { WL_ANALYSIS_CSV_PARSER_V1, WL_ANALYSIS_CSV_PARSER_V2 } from './wlAnalysisCsv';
 
@@ -11,7 +12,10 @@ export const OPENBAR_CONTEXT_KEYS = {
     repCount: 'openbar_rep_count', eligibleRepCount: 'openbar_eligible_rep_count', selectedRep: 'openbar_selected_rep', romCm: 'openbar_rom_cm',
     trackerId: 'openbar_tracker_id', trackerImplementation: 'openbar_tracker_implementation', trackerVersion: 'openbar_tracker_version',
     filterImplementation: 'openbar_filter_implementation', filterVersion: 'openbar_filter_version',
-    kinematicsInput: 'openbar_kinematics_input', maxGapS: 'openbar_kinematics_max_gap_s', minConfidence: 'openbar_kinematics_min_confidence',
+    filterParameters: 'openbar_filter_parameters',
+    kinematicsInput: 'openbar_kinematics_input', kinematicsImplementation: 'openbar_kinematics_implementation',
+    kinematicsVersion: 'openbar_kinematics_version', kinematicsParameters: 'openbar_kinematics_parameters',
+    maxGapS: 'openbar_kinematics_max_gap_s', minConfidence: 'openbar_kinematics_min_confidence',
     calibrationMethod: 'openbar_calibration_method', metresPerPixel: 'openbar_metres_per_pixel', plateDiameterM: 'openbar_plate_diameter_m',
     calibrationQuality: 'openbar_calibration_quality', sourceVideoSha256: 'openbar_source_video_sha256', openbarVersion: 'openbar_version',
 } as const;
@@ -54,6 +58,9 @@ export function proposeOpenBarTrial(
     const selected = eligible.reduce((best, rep) => rep.meanVelocityMps > best.meanVelocityMps ? rep : best);
     const singleRep = eligible.length === 1;
     const p = parsed.provenance;
+    if (p.calibrationQuality === 'unsupported') {
+        return reject('OpenBar marks this calibration as unsupported. Recalibrate the video before importing velocity evidence.');
+    }
     const context: ObservationContext = {
         [OPENBAR_CONTEXT_KEYS.parserVersion]: parsed.parserVersion,
         [OPENBAR_CONTEXT_KEYS.segmentationRule]: parsed.segmentationRule,
@@ -67,7 +74,11 @@ export function proposeOpenBarTrial(
         [OPENBAR_CONTEXT_KEYS.trackerVersion]: p.tracker.version,
         [OPENBAR_CONTEXT_KEYS.filterImplementation]: p.filter?.implementation ?? null,
         [OPENBAR_CONTEXT_KEYS.filterVersion]: p.filter?.version ?? null,
+        [OPENBAR_CONTEXT_KEYS.filterParameters]: p.filterParameters,
         [OPENBAR_CONTEXT_KEYS.kinematicsInput]: p.kinematicsInput,
+        [OPENBAR_CONTEXT_KEYS.kinematicsImplementation]: p.kinematicsMethod.implementation,
+        [OPENBAR_CONTEXT_KEYS.kinematicsVersion]: p.kinematicsMethod.version,
+        [OPENBAR_CONTEXT_KEYS.kinematicsParameters]: p.kinematicsParameters,
         [OPENBAR_CONTEXT_KEYS.maxGapS]: p.maxGapS,
         [OPENBAR_CONTEXT_KEYS.minConfidence]: p.minConfidence,
         [OPENBAR_CONTEXT_KEYS.calibrationMethod]: p.calibrationMethod,
@@ -89,7 +100,12 @@ export function proposeOpenBarTrial(
             successful: singleRep ? selected.complete : undefined,
             validity: singleRep ? 'valid' : 'practice', autoDetectedSuccess: singleRep,
             assignedOrdinal: null, ambiguousOrder: true,
-            warnings: ['Order assumed from file names — confirm the attempt order.'],
+            warnings: [
+                'Order assumed from file names — confirm the attempt order.',
+                ...(p.calibrationQuality === 'warning' || p.calibrationQuality === 'unassessed'
+                    ? [`OpenBar calibration quality is ${p.calibrationQuality}; review calibration before using velocity longitudinally.`]
+                    : []),
+            ],
             excludedReps: parsed.reps.filter(rep => rep.exclusion !== null),
             notes: `OpenBar: rep ${selected.index + 1}/${parsed.reps.length}; ROM ${selected.romCm} cm`,
             device: { provider: OPENBAR_DEVICE_PROVIDER }, context,
@@ -118,23 +134,43 @@ export function openBarProposalToDraftRow(proposal: OpenBarTrialProposal, ordina
 /** ADR-0047 contract: imported derivations belong to distinct comparison-method identities. */
 export function velocityMeasurementMethodId(device: MetricObservationDevice | undefined, context: ObservationContext | undefined): string {
     const c = context ?? {};
-    const component = (key: string): string => {
+    const stringValue = (key: string): string => {
         const value = c[key];
         if (typeof value !== 'string' || !value.trim()) throw new Error(`Imported velocity method needs ${key}.`);
-        return encodeURIComponent(value.trim().toLowerCase());
+        return value.trim();
+    };
+    const component = (key: string): string => encodeURIComponent(stringValue(key).toLowerCase());
+    const numberComponent = (key: string): string => {
+        const value = c[key];
+        if (typeof value !== 'number' || !Number.isFinite(value)) throw new Error(`Imported velocity method needs finite ${key}.`);
+        return String(value);
     };
     if (c.openbar_parser_version !== undefined) {
+        if (device?.provider !== OPENBAR_DEVICE_PROVIDER) throw new Error('Imported OpenBar velocity needs device provider OpenBar.');
+        const parser = component('openbar_parser_version');
+        if (parser !== OPENBAR_ANALYSIS_PARSER_V1) throw new Error('Imported velocity uses an unsupported OpenBar parser.');
+        const segmentation = component('openbar_segmentation_rule');
+        if (segmentation !== CONCENTRIC_SEGMENTATION_V1 && segmentation !== CONCENTRIC_SEGMENTATION_V2) {
+            throw new Error('Imported velocity uses an unsupported concentric segmentation rule.');
+        }
+        const kinematicsInput = component('openbar_kinematics_input');
+        if (kinematicsInput !== 'calibrated' && kinematicsInput !== 'filtered') {
+            throw new Error('Imported velocity uses an unsupported OpenBar kinematics input.');
+        }
         const filter = c.openbar_filter_implementation === null && c.openbar_filter_version === null
-            ? 'raw' : `${component('openbar_filter_implementation')}@${component('openbar_filter_version')}`;
-        return `${component('openbar_parser_version')}/${component('openbar_segmentation_rule')}`
-            + `/${component('openbar_tracker_implementation')}@${component('openbar_tracker_version')}/${filter}`;
+            ? 'raw'
+            : `${component('openbar_filter_implementation')}@${component('openbar_filter_version')}[${c.openbar_filter_parameters === null ? 'default' : stringValue('openbar_filter_parameters')}]`;
+        const kinematics = `${component('openbar_kinematics_implementation')}@${component('openbar_kinematics_version')}`
+            + `[${stringValue('openbar_kinematics_parameters')};max-gap=${numberComponent('openbar_kinematics_max_gap_s')};min-confidence=${numberComponent('openbar_kinematics_min_confidence')}]`;
+        return `${parser}/${segmentation}/${component('openbar_tracker_implementation')}@${component('openbar_tracker_version')}`
+            + `/${filter}/${kinematicsInput}/${kinematics}/${component('openbar_calibration_method')}`;
     }
     if (c.wl_parser_version !== undefined) {
+        if (device?.provider !== 'WL Analysis') throw new Error('Imported WL velocity needs device provider WL Analysis.');
         const parser = component('wl_parser_version');
         if (parser !== WL_ANALYSIS_CSV_PARSER_V1 && parser !== WL_ANALYSIS_CSV_PARSER_V2) throw new Error('Imported velocity uses an unsupported WL parser.');
         return parser;
     }
     // A manually typed velocity has no parser derivation, regardless of the device label.
-    void device;
     return 'manual';
 }
