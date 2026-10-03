@@ -34,10 +34,10 @@ export const WL_ANALYSIS_CSV_PARSER_V1 = 'wl-analysis-csv-v1';
 /** v2 reports the guarded active window; detection and completeness remain identical to v1. */
 export const WL_ANALYSIS_CSV_PARSER_V2 = 'wl-analysis-csv-v2';
 export type WlAnalysisParserVersion = typeof WL_ANALYSIS_CSV_PARSER_V1 | typeof WL_ANALYSIS_CSV_PARSER_V2;
-export const WL_PARSER_SEGMENTATION_RULE: Readonly<Record<WlAnalysisParserVersion, ConcentricSegmentationRule>> = {
+export const WL_PARSER_SEGMENTATION_RULE: Readonly<Record<WlAnalysisParserVersion, ConcentricSegmentationRule>> = Object.freeze({
     [WL_ANALYSIS_CSV_PARSER_V1]: CONCENTRIC_SEGMENTATION_V1,
     [WL_ANALYSIS_CSV_PARSER_V2]: CONCENTRIC_SEGMENTATION_V2,
-};
+});
 export type WlAnalysisFrame = ConcentricFrame;
 export type WlAnalysisRep = ConcentricRep;
 
