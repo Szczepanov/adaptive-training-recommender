@@ -966,27 +966,32 @@
 }
 
 /* WL Analysis CSV import panel (Issue #897 PR B2) */
-.wl-import-panel {
+.wl-import-panel,
+.openbar-import-panel {
   border-style: dashed;
 }
 
-.wl-file-input {
+.wl-file-input,
+.openbar-file-input {
   min-height: 44px;
   width: 100%;
   box-sizing: border-box;
 }
 
-.wl-file-input:disabled {
+.wl-file-input:disabled,
+.openbar-file-input:disabled {
   cursor: default;
   opacity: 0.55;
 }
 
-.wl-preview-list {
+.wl-preview-list,
+.openbar-preview-list {
   display: grid;
   gap: 12px;
 }
 
-.wl-file-card {
+.wl-file-card,
+.openbar-file-card {
   border: 1px solid var(--border-color, #d7d7d7);
   border-radius: 8px;
   padding: 12px;
@@ -996,11 +1001,13 @@
   overflow-wrap: break-word;
 }
 
-.wl-file-card > strong {
+.wl-file-card > strong,
+.openbar-file-card > strong {
   overflow-wrap: anywhere;
 }
 
-.wl-file-card p {
+.wl-file-card p,
+.openbar-file-card p {
   margin: 0;
 }
 

@@ -80,7 +80,7 @@ The scoped design for GitHub issue [#897](https://github.com/Szczepanov/adaptive
 The plan for GitHub issues [#981](https://github.com/Szczepanov/adaptive-training-recommender/issues/981)
 (OpenBar `analysis-v1` velocity import) and [#982](https://github.com/Szczepanov/adaptive-training-recommender/issues/982)
 (WL Analysis vs OpenBar agreement report) is
-[`2026-10-03-issues-981-982-openbar-velocity-import-and-agreement.md`](./2026-10-03-issues-981-982-openbar-velocity-import-and-agreement.md). **In progress**: all six open decisions resolved 2026-10-03; PR-1 extraction implemented, with `make verify` and independent review passed. PR-2 and PR-3 have not started.
+[`2026-10-03-issues-981-982-openbar-velocity-import-and-agreement.md`](./2026-10-03-issues-981-982-openbar-velocity-import-and-agreement.md). **In progress**: all six decisions resolved 2026-10-03; [PR-1 #987](https://github.com/Szczepanov/adaptive-training-recommender/pull/987) passed its gate/review. PR-2 parser, import UI and synthetic fixtures implemented, with focused checks and the OpenBar E2E flow passed; final gate/review pending. PR-3 and real-lift checks remain pending.
 It is evidence-only, with no policy change. It builds on [#984](https://github.com/Szczepanov/adaptive-training-recommender/pull/984) (`wl-analysis-csv-v2`, merged). Blocked by: nothing for #981; #982 is blocked by #981. Unlocks: Szczepanov/openbar#79.
 
 The combined delivery record for GitHub issues [#459](https://github.com/Szczepanov/adaptive-training-recommender/issues/459),

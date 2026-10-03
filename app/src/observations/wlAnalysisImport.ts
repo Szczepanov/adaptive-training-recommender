@@ -9,7 +9,6 @@
  */
 
 import type {
-    AssessmentAttempt,
     MeasurementProtocol,
     MetricObservationDevice,
     ObservationValidity,
@@ -33,22 +32,8 @@ export const WL_CONTEXT_KEYS = {
     resolution: 'wl_resolution',
 } as const;
 
-function hasWlImportSchema(protocol: MeasurementProtocol): boolean {
-    const fields = new Map(protocol.capture?.fields.map(field => [field.id, field] as const) ?? []);
-    const load = fields.get('load_kg');
-    const mean = fields.get('mean_concentric_velocity_mps');
-    const peak = fields.get('peak_velocity_mps');
-    const successful = fields.get('successful');
-    return load?.valueKind === 'number' && load.unit === 'kg'
-        && mean?.valueKind === 'number' && mean.unit === 'm/s'
-        && peak?.valueKind === 'number' && peak.unit === 'm/s'
-        && successful?.valueKind === 'boolean';
-}
-
-/** True only on the capture screen of an open attempt with the complete WL import schema (D7). */
-export function canImportWlAnalysis(protocol: MeasurementProtocol, attempt: AssessmentAttempt): boolean {
-    return attempt.state === 'in_progress' && hasWlImportSchema(protocol);
-}
+export { canImportVelocityFile as canImportWlAnalysis, checkVelocityImportApplyBlocked as checkWlApplyBlocked, sha256Hex } from './velocityFileImport';
+import { velocityProposalToDraftRow } from './velocityFileImport';
 
 export interface WlImportFile {
     fileName: string;
@@ -112,15 +97,6 @@ export function hasAccommodatingResistance(tags: string): boolean {
 
 export function wlSourceRefFor(fileHash: string): string {
     return `wl-analysis-csv:sha256:${fileHash}`;
-}
-
-export async function sha256Hex(bytes: Uint8Array): Promise<string> {
-    const subtle = globalThis.crypto?.subtle;
-    if (!subtle) {
-        throw new Error('Import needs WebCrypto (SHA-256), which this browser did not provide. Type the values by hand instead.');
-    }
-    const digest = await subtle.digest('SHA-256', bytes as BufferSource);
-    return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function validIsoDate(year: string, monthRaw: string, dayRaw: string): string | null {
@@ -335,101 +311,11 @@ export function assignWlOrdinals(proposals: WlTrialProposal[], maxTrials: number
     }
 }
 
-/**
- * Blocking apply-time checks (D4): assigned ordinals colliding with already-saved
- * (immutable) rows, and growth beyond `maxTrials`. Filling an unsaved draft row is
- * allowed; only stored rows are untouchable.
- */
-export function checkWlApplyBlocked(
-    proposals: readonly WlTrialProposal[],
-    storedOrdinals: ReadonlySet<number>,
-    occupiedOrdinals: ReadonlySet<number>,
-    maxTrials: number,
-): string[] {
-    const errors: string[] = [];
-    for (const proposal of proposals) {
-        if (proposal.assignedOrdinal !== null && storedOrdinals.has(proposal.assignedOrdinal)) {
-            errors.push(
-                `Attempt ${proposal.assignedOrdinal} ("${proposal.fileName}") is already saved and cannot be overwritten.`,
-            );
-        }
-    }
-    const assigned = new Set(
-        proposals.map(proposal => proposal.assignedOrdinal).filter((ordinal): ordinal is number => ordinal !== null),
-    );
-    const growth = [...assigned].filter(ordinal => !occupiedOrdinals.has(ordinal)).length;
-    if (occupiedOrdinals.size + growth > maxTrials) {
-        errors.push(
-            `These files need ${growth} new row(s) but this test allows at most ${maxTrials} attempts.`,
-        );
-    }
-    return errors;
-}
-
-function requireFiniteNumber(value: number, label: string, fileName: string): void {
-    if (!Number.isFinite(value)) throw new Error(`File "${fileName}": ${label} is not a number.`);
-}
-
-function requireNumberField(
-    protocol: MeasurementProtocol,
-    fieldId: string,
-    unit: 'kg' | 'm/s',
-    value: number,
-    fileName: string,
-): void {
-    const field = protocol.capture?.fields.find(candidate => candidate.id === fieldId);
-    if (!field || field.valueKind !== 'number' || field.unit !== unit) {
-        throw new Error(`This protocol does not declare WL Analysis field ${fieldId} in ${unit}.`);
-    }
-    if (value < field.minimum || value > field.maximum) {
-        throw new Error(
-            `File "${fileName}": ${field.label.toLowerCase()} ${value} ${unit} is outside this test's `
-            + `${field.minimum}–${field.maximum} ${unit} range.`,
-        );
-    }
-}
-
-function requireBooleanField(protocol: MeasurementProtocol, fieldId: string): void {
-    const field = protocol.capture?.fields.find(candidate => candidate.id === fieldId);
-    if (!field || field.valueKind !== 'boolean') {
-        throw new Error(`This protocol does not declare WL Analysis field ${fieldId} as a boolean.`);
-    }
-}
-
-/**
- * Build the draft row for an ordered proposal. The caller fills a free row or creates
- * one; stored (immutable) rows are never overwritten — the panel blocks those upfront.
- */
+/** WL compatibility wrapper: preserves labels, bounds validation and review defaults. */
 export function wlProposalToDraftRow(
     proposal: WlTrialProposal,
     ordinal: number,
     protocol: MeasurementProtocol,
 ): DraftTrialRow {
-    requireFiniteNumber(proposal.loadKg, 'load', proposal.fileName);
-    requireFiniteNumber(proposal.meanVelocityMps, 'mean velocity', proposal.fileName);
-    requireFiniteNumber(proposal.peakVelocityMps, 'peak velocity', proposal.fileName);
-    requireNumberField(protocol, 'load_kg', 'kg', proposal.loadKg, proposal.fileName);
-    requireNumberField(protocol, 'mean_concentric_velocity_mps', 'm/s', proposal.meanVelocityMps, proposal.fileName);
-    requireNumberField(protocol, 'peak_velocity_mps', 'm/s', proposal.peakVelocityMps, proposal.fileName);
-    requireBooleanField(protocol, 'successful');
-    const values: Record<string, number | boolean> = {
-        load_kg: proposal.loadKg,
-        mean_concentric_velocity_mps: proposal.meanVelocityMps,
-        peak_velocity_mps: proposal.peakVelocityMps,
-    };
-    if (proposal.successful !== undefined) values.successful = proposal.successful;
-    return {
-        ordinal,
-        values,
-        validity: proposal.validity,
-        ...(proposal.notes ? { notes: proposal.notes } : {}),
-        device: proposal.device,
-        sourceRef: proposal.sourceRef,
-        context: proposal.context,
-        importReview: {
-            loadKgConfirmed: false,
-            successConfirmed: proposal.successful === undefined,
-            validityConfirmed: false,
-        },
-    };
+    return velocityProposalToDraftRow(proposal, ordinal, protocol, 'WL Analysis');
 }
