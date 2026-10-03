@@ -31,6 +31,27 @@ describe('OpenBar analysis-v1 parser (#981)', () => {
         expect(openBar.sourceVideoSha256).toBe('a'.repeat(64));
     });
 
+    it.each([
+        [9.99, false, 0], [10.01, false, 1],
+        [29.99, true, 1], [30.01, true, 2],
+    ] as const)('preserves converted-rise parity around thresholds: %s cm, larger rep %s', (rise, largerRep, count) => {
+        const profileForRise = (cm: number) => {
+            const velocity = cm / (30 * (1 / 30) * 100);
+            return [...Array<number>(35).fill(-velocity), ...Array<number>(3).fill(0),
+                ...Array<number>(31).fill(velocity), ...Array<number>(5).fill(0)];
+        };
+        const profile = [...(largerRep ? profileForRise(60) : []), ...profileForRise(rise)];
+        for (const [rule, version] of [[CONCENTRIC_SEGMENTATION_V1, WL_ANALYSIS_CSV_PARSER_V1], [CONCENTRIC_SEGMENTATION_V2, WL_ANALYSIS_CSV_PARSER_V2]] as const) {
+            const openBar = parseOpenBarAnalysis(JSON.stringify(buildOpenBarAnalysis(profile)), rule);
+            const wl = parseWlAnalysisCsv(openBarProfileToWlCsv(profile), version);
+            expect(openBar.reps.map(({ exclusion, ...rep }) => {
+                expect(exclusion).toBeNull();
+                return rep;
+            })).toStrictEqual(wl.reps);
+            expect(wl.reps).toHaveLength(count);
+        }
+    });
+
     it.each([2, '1', null])('rejects unsupported schema_version %s', version => {
         expect(() => parse({ ...buildOpenBarAnalysis(), schema_version: version })).toThrow(/version/);
     });

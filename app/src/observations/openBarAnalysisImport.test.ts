@@ -98,6 +98,9 @@ describe('Velocity measurement-method identity (ADR-0047, #981)', () => {
         const p = proposal();
         expect(velocityMeasurementMethodId(p.device, { ...p.context, [key]: 'other' })).not.toBe(velocityMeasurementMethodId(p.device, p.context));
     });
+    it.each(['wl-analysis-csv-v3', 'manual'])('rejects unknown stored WL parser id %s', version => {
+        expect(() => velocityMeasurementMethodId({ provider: 'WL Analysis' }, { wl_parser_version: version })).toThrow(/unsupported WL parser/);
+    });
     it('distinguishes raw from filtered and refuses incomplete imported provenance', () => {
         const p = proposal(buildOpenBarAnalysis(undefined, { filtered: false }));
         expect(velocityMeasurementMethodId(p.device, p.context)).toMatch(/\/raw$/);
@@ -115,6 +118,10 @@ describe('Velocity measurement-method identity (ADR-0047, #981)', () => {
         };
         const wl = await buildComparisonSeries('strength_1rm_kg', 'kg', protocol, { equipment_setup_id: 'rack-a', measurement_method_id: 'wl-analysis-csv-v2' });
         const openBar = await buildComparisonSeries('strength_1rm_kg', 'kg', protocol, { equipment_setup_id: 'rack-a', measurement_method_id: velocityMeasurementMethodId(p.device, p.context) });
+        const wlV1 = await buildComparisonSeries('strength_1rm_kg', 'kg', protocol, {
+            equipment_setup_id: 'rack-a', measurement_method_id: velocityMeasurementMethodId({ provider: 'WL Analysis' }, { wl_parser_version: 'wl-analysis-csv-v1' }),
+        });
+        expect(wlV1.key).not.toBe(wl.key);
         expect(openBar.key).not.toBe(wl.key);
     });
 });

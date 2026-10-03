@@ -3,6 +3,7 @@ import type { DraftTrialRow } from '../utils/assessmentDraftStorage';
 import type { MeasurementProtocol, MetricObservationDevice, ObservationContext } from './models';
 import { type OpenBarAnalysisParse, type OpenBarRep } from './openBarAnalysis';
 import { velocityProposalToDraftRow, type VelocityTrialProposal } from './velocityFileImport';
+import { WL_ANALYSIS_CSV_PARSER_V1, WL_ANALYSIS_CSV_PARSER_V2 } from './wlAnalysisCsv';
 
 export const OPENBAR_DEVICE_PROVIDER = 'OpenBar';
 export const OPENBAR_CONTEXT_KEYS = {
@@ -128,7 +129,11 @@ export function velocityMeasurementMethodId(device: MetricObservationDevice | un
         return `${component('openbar_parser_version')}/${component('openbar_segmentation_rule')}`
             + `/${component('openbar_tracker_implementation')}@${component('openbar_tracker_version')}/${filter}`;
     }
-    if (c.wl_parser_version !== undefined) return component('wl_parser_version');
+    if (c.wl_parser_version !== undefined) {
+        const parser = component('wl_parser_version');
+        if (parser !== WL_ANALYSIS_CSV_PARSER_V1 && parser !== WL_ANALYSIS_CSV_PARSER_V2) throw new Error('Imported velocity uses an unsupported WL parser.');
+        return parser;
+    }
     // A manually typed velocity has no parser derivation, regardless of the device label.
     void device;
     return 'manual';
