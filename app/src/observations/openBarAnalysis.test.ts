@@ -120,11 +120,25 @@ describe('OpenBar analysis-v1 parser (#981)', () => {
         expect(parse(a).breaks).toHaveLength(0);
         expect(parse(a).reps[0].exclusion).toBeNull();
     });
-    it('records unfiltered provenance and does not mutate the input', () => {
-        const a = buildOpenBarAnalysis(undefined, { filtered: false });
-        const before = JSON.stringify(a);
-        expect(parse(a).provenance.filter).toBeNull();
-        expect(JSON.stringify(a)).toBe(before);
+    it('records derivation parameter provenance and does not mutate the input', () => {
+        const filtered = buildOpenBarAnalysis();
+        const beforeFiltered = JSON.stringify(filtered);
+        const parsed = parse(filtered);
+        expect(parsed.provenance.filterParameters).toBe('order=n%3A2&window=n%3A9');
+        expect(parsed.provenance.kinematicsMethod).toEqual({ implementation: 'backward-difference', version: '1' });
+        expect(parsed.provenance.kinematicsParameters).toBe('max_gap_s=n%3A0.2&min_confidence=n%3A0.5');
+        expect(JSON.stringify(filtered)).toBe(beforeFiltered);
+
+        const raw = buildOpenBarAnalysis(undefined, { filtered: false });
+        const beforeRaw = JSON.stringify(raw);
+        expect(parse(raw).provenance.filter).toBeNull();
+        expect(parse(raw).provenance.filterParameters).toBeNull();
+        expect(JSON.stringify(raw)).toBe(beforeRaw);
+    });
+    it('rejects unknown calibration quality instead of storing arbitrary provenance', () => {
+        const a = buildOpenBarAnalysis();
+        (a.calibration.quality as { status: string }).status = 'mystery';
+        expect(() => parse(a)).toThrow(/calibration quality status/);
     });
     it('rejects finite inputs whose reported rep arithmetic overflows', () => {
         const a = buildOpenBarAnalysis();
