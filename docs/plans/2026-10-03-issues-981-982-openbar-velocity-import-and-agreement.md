@@ -1,7 +1,8 @@
 # Issues #981 → #982 — OpenBar velocity import and WL Analysis agreement report
 
 **Date:** 2026-10-03
-**Status:** In progress. OD-1 through OD-6 resolved on 2026-10-03 under the owner's delegated decision authority (see [Resolved decisions](#resolved-decisions)). PR-1 is [#987](https://github.com/Szczepanov/adaptive-training-recommender/pull/987), with `make verify` and independent review passed. PR-2 parser, mapping, UI and synthetic fixtures implemented; focused unit/type/lint and the OpenBar browser flow passed. Final PR-2 gate/review and PR-3 remain pending. Real-lift checks await owner-provided local file paths.
+**Status:** In progress. OD-1 through OD-6 resolved on 2026-10-03 under the owner's delegated decision authority (see [Resolved decisions](#resolved-decisions)). PR-1 [#987](https://github.com/Szczepanov/adaptive-training-recommender/pull/987) is merged. PR-2 implementation and independent review are complete; focused parser/mapping/panel checks and its OpenBar browser flow passed. All 20 affected visual cases passed at 360/390/412/1440 px; the full visual run's home loading timeout reproduces on the original checkout. Full-gate runs reached unrelated Home assertions while the dashboard was still loading at their five-second deadline; the test harness now explicitly waits for dashboard readiness, preserving the content/revision assertions, and verification is pending. PR-3 implementation/review are complete in its stacked worktree. Real-lift checks await owner-provided local file paths.
+
 **Blocked by:** nothing for #981. [#984](https://github.com/Szczepanov/adaptive-training-recommender/pull/984) (closes #983, `wl-analysis-csv-v2`) is merged, and Szczepanov/openbar#78 (`analyze --observations`) is closed. #982 is blocked by #981.
 **Unlocks:** Szczepanov/openbar#79 (formal agreement study). Its pre-registration needs both sources to use the same segmentation rule version, and it needs the #982 report tool.
 **Issues:** [#981](https://github.com/Szczepanov/adaptive-training-recommender/issues/981), [#982](https://github.com/Szczepanov/adaptive-training-recommender/issues/982)
@@ -250,18 +251,18 @@ This is kept separate so a reviewer can check the highest-risk seam from #984 (`
 
 **Tests that map to #981's acceptance criteria:**
 
-| Criterion | Test |
+| Criterion | Implemented named test/evidence |
 |---|---|
-| Valid synthetic `analysis-v1` | `openBarAnalysis.test.ts`: rep count, mean, peak and ROM equal the WL parser on the *same* profile turned into WL frames (same rule ⇒ same numbers). Include converted rises just below/above the 10 cm minimum and just below/above a fractional threshold that exceeds 10 cm; exact-boundary values are not the parity oracle. This is the parity guarantee #79 depends on. |
-| Unknown schema version rejected | `schema_version: 2` and `"1"` (string) |
-| NaN / Inf rejected | `NaN` token (invalid JSON path); `1e999` in `vy_mps`, `y_m` and `timestamp_s` (`Number.isFinite` path) |
-| Gap inside a concentric run | Drop 2 samples mid-ascent ⇒ `spans_gap`, not selectable; a `null` `vy_mps` mid-ascent ⇒ same; a gap in the descent only ⇒ rep eligible; a series starting mid-ascent ⇒ `touches_series_edge` |
-| Sign convention | Upward profile ⇒ positive mean velocity with `y_m`/`vy_mps` as they are; any other `coordinate_convention` ⇒ rejected |
-| WL unchanged | WL test files show an empty diff, and the PR-1 golden still passes |
-| Provider and provenance keys | `openBarAnalysisImport.test.ts`: `device.provider === 'OpenBar'`, every `OPENBAR_CONTEXT_KEYS` value present, context ≤ 32 keys, passes `assertObservationContext` |
-| Comparability | D9 tests, including `buildComparisonSeries` key inequality |
-| Duplicate guard | Same bytes twice in a batch; ref already in the draft or stored rows; same `source_sha256` with different bytes ⇒ blocked |
-| Panel | `OpenBarImportPanel.test.tsx` mirrors `WlAnalysisImportPanel.test.tsx`, plus: Apply disabled until a load is entered, load outside bounds, excluded-rep note |
+| Valid synthetic `analysis-v1` | `openBarAnalysis.test.ts`: `gives identical rep numbers through WL and OpenBar using %s`; `preserves converted-rise parity around thresholds: %s cm, larger rep %s` covers both rules at 9.99/10.01 cm and 29.99/30.01 cm with a 60 cm largest rise. |
+| Unknown schema version rejected | `openBarAnalysis.test.ts`: `rejects unsupported schema_version %s` covers 2, string `"1"` and null. |
+| NaN / Inf rejected | `openBarAnalysis.test.ts`: `rejects invalid JSON token %s with plain language`; `rejects 1e999 overflow in %s`. |
+| Gap inside a concentric run | `openBarAnalysis.test.ts`: `excludes runs spanning gaps: %j`; `treats an omitted optional velocity as a tracking break`; `keeps reps eligible when a gap lies inside the preceding descent`; `excludes a gap on a run boundary transition (%s)`; `excludes runs truncated at either series edge`. |
+| Sign convention | Positive means in the parity test; `rejects other coordinate conventions instead of negating the source`. |
+| WL unchanged | `concentricSegmentation.golden.test.ts`: `preserves every v1 and v2 output in the seeded corpus captured before extraction`; empty diff for existing WL parser/import tests and panel source/tests. |
+| Provider and provenance keys | `openBarAnalysisImport.test.ts`: `proposes raw velocity evidence with complete scalar provenance and an empty load` asserts provider, every context key, context bounds and `assertObservationContext`. |
+| Comparability | `openBarAnalysisImport.test.ts`: `separates WL, OpenBar and manual derivations`; `changes identity when %s changes`; `builds distinct existing comparison-series keys for WL and OpenBar on the same protocol/setup` also asserts WL v1/v2 keys differ; `rejects unknown stored WL parser id %s`. |
+| Duplicate guard | `openBarAnalysisImport.test.ts`: `blocks the same file or a different analysis of the same video within an attempt`; panel `keeps a stale preview blocked after another import adds the same video`; physical-capital OpenBar E2E also attempts a second analysis of the applied video. The file-selection loop shares the guard sets within a batch. |
+| Panel | `OpenBarImportPanel.test.tsx`: `disables Apply until a valid load is entered (%s)`; `enables Apply for a valid athlete-entered kilogram load`; `shows excluded reps with an actionable tracking-gap note`; `mounts only on open attempts with the velocity-field contract`. `testing-physical-capital.pw.ts`: `physical capital assessment: OpenBar JSON import validates, fills and saves raw evidence`. |
 
 **Manual scenario (aggregates only in the PR):**
 - Import one real openbar#86 `analysis-v1` of a lift.
