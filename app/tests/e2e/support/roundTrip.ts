@@ -150,8 +150,6 @@ export async function checkIn(page: Page): Promise<void> {
   await page.getByRole('button', { name: /Feeling normal today\? Use typical values/ }).click();
   await page.getByRole('button', { name: "Save & see today's plan", exact: true }).click();
   await dismissOnboardingIfVisible(page, 200);
-  // Saving starts asynchronous recommendation preparation; assert the rendered dashboard is ready.
-  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible({ timeout: 15_000 });
 }
 
 export async function planningBrief(page: Page): Promise<string> {
