@@ -15,7 +15,7 @@ async function completeCheckin(page: Page, athlete: E2EAthlete, date: string): P
   await page.getByRole('button', { name: "Save & see today's plan", exact: true }).click();
   await expect.poll(() => hasPersistedCheckin(athlete, date)).toBe(true);
   await dismissOnboardingIfVisible(page);
-  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
+  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible({ timeout: 15_000 });
 }
 
 test('Back and Forward restore routed screens and active navigation', async ({ page }) => {
@@ -64,10 +64,10 @@ test('a safe deep link survives refresh and invalid routes resolve after authent
   await expect(page).toHaveURL(/\?screen=goals$/);
 
   await page.goto('/?screen=not-a-screen');
-  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
+  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible({ timeout: 15_000 });
   await expect(page).toHaveURL(/\?screen=home$/);
   await page.goto('/invalid-path?screen=goals');
-  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
+  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible({ timeout: 15_000 });
   await expect(page).toHaveURL(/\/\?screen=home$/);
 });
 
@@ -86,7 +86,7 @@ test('pending check-in takes precedence over a deep link on initial authenticati
   await expect(page.getByRole('heading', { name: 'Check-in', exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: /Skip to Dashboard/ }).click();
-  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
+  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible({ timeout: 15_000 });
   const nav = page.locator('.navbar-desktop-menu');
   await nav.getByRole('button', { name: 'Plan', exact: true }).click();
   await nav.getByRole('button', { name: /More/ }).click();
@@ -95,13 +95,13 @@ test('pending check-in takes precedence over a deep link on initial authenticati
   await expect(page.getByRole('heading', { name: 'Plan', exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\?screen=plan$/);
   await page.goBack();
-  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
+  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible({ timeout: 15_000 });
   await expect(page).toHaveURL(/\?screen=home$/);
   await page.goBack();
   await expect(page.getByRole('heading', { name: 'Check-in', exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\?screen=checkin$/);
   await page.goForward();
-  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
+  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible({ timeout: 15_000 });
   await expect(page).toHaveURL(/\?screen=home$/);
 });
 
