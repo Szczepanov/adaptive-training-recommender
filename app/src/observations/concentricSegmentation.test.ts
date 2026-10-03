@@ -19,6 +19,14 @@ describe('Source-neutral concentric segmentation (#981)', () => {
             [WL_ANALYSIS_CSV_PARSER_V1]: CONCENTRIC_SEGMENTATION_V1,
             [WL_ANALYSIS_CSV_PARSER_V2]: CONCENTRIC_SEGMENTATION_V2,
         });
+        expect(Object.isFrozen(WL_PARSER_SEGMENTATION_RULE)).toBe(true);
+    });
+
+    it('fails closed on an unknown rule identity instead of silently using v1 semantics', () => {
+        expect(() => segmentConcentricReps(
+            [],
+            'concentric-segmentation-v3' as ConcentricSegmentationRule,
+        )).toThrow(/unsupported concentric segmentation rule/i);
     });
 
     it.each<ConcentricSegmentationRule>([CONCENTRIC_SEGMENTATION_V1, CONCENTRIC_SEGMENTATION_V2])(
