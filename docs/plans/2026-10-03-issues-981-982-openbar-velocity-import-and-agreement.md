@@ -145,7 +145,7 @@ Synthetic fixtures carry it.
 | `openbar_source_video_sha256` | `identity.source_sha256` |
 | `openbar_version` | `provenance.pipeline.openbar_version` |
 
-Tracker `parameters` are not stored, because they are unbounded; tracker implementation/version remain the stable tracker method identity. Filter and kinematics parameters are different: they directly define the derived velocity signal and are therefore retained as sorted bounded scalar signatures. The JSON file hash in `sourceRef` pins the complete source artifact for replay. An explicitly `unsupported` OpenBar calibration is rejected; `warning`/`unassessed` quality remains importable but visible to the athlete.
+Tracker `parameters` are schema-unbounded, so the v1 adapter does not silently drop them: empty tracker parameters use tracker implementation/version as the method identity, while any non-empty tracker parameter map is rejected until a bounded/versioned tracker-configuration identity is designed. Filter and kinematics parameters are different: the adapter already consumes those bounded scalar configurations to derive velocity, so it retains them as sorted bounded signatures. The JSON file hash in `sourceRef` pins the complete source artifact for replay. An explicitly `unsupported` OpenBar calibration is rejected; `warning`/`unassessed` quality remains importable but visible to the athlete.
 
 ### D8 — UI: a separate card under the WL card
 
