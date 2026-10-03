@@ -21,8 +21,12 @@ export interface OpenBarProvenance {
     trackerId: string;
     tracker: OpenBarImplementation;
     filter: OpenBarImplementation | null;
+    /** Canonical scalar filter configuration; null means no explicit parameters. */
+    filterParameters: string | null;
     kinematicsInput: 'calibrated' | 'filtered';
     kinematicsMethod: OpenBarImplementation;
+    /** Canonical scalar kinematics configuration used to derive velocity. */
+    kinematicsParameters: string;
     maxGapS: number;
     minConfidence: number;
     calibrationMethod: string;
@@ -75,6 +79,30 @@ function finite(value: unknown, label: string): number {
 function implementation(value: unknown, label: string): OpenBarImplementation {
     const record = object(value, label);
     return { implementation: text(record.implementation, `${label} implementation`), version: text(record.version, `${label} version`) };
+}
+
+function parameterSignature(value: unknown, label: string): string | null {
+    if (value === undefined) return null;
+    const record = object(value, label);
+    const entries = Object.entries(record).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
+    if (entries.length === 0) return null;
+    const signature = entries.map(([key, raw]) => {
+        if (!key.trim() || key.length > 64) throw new Error(`OpenBar ${label} contains an invalid parameter name.`);
+        let typed: string;
+        if (typeof raw === 'number') {
+            if (!Number.isFinite(raw)) throw new Error(`OpenBar ${label}.${key} must be finite.`);
+            typed = `n:${String(raw)}`;
+        } else if (typeof raw === 'boolean') {
+            typed = `b:${raw ? 'true' : 'false'}`;
+        } else if (typeof raw === 'string') {
+            typed = `s:${raw}`;
+        } else {
+            throw new Error(`OpenBar ${label}.${key} must be a scalar.`);
+        }
+        return `${encodeURIComponent(key)}=${encodeURIComponent(typed)}`;
+    }).join('&');
+    if (signature.length > 128) throw new Error(`OpenBar ${label} is too large for the versioned import contract.`);
+    return signature;
 }
 
 /** Validates the consumed schema subset. OpenBar's Rust validator owns the full schema. */
@@ -156,6 +184,13 @@ export function parseOpenBarAnalysis(rawText: string, segmentationRule: Concentr
     const scale = object(calibration.scale, 'calibration scale');
     const quality = object(calibration.quality, 'calibration quality');
     if (kinematics.input !== 'calibrated' && kinematics.input !== 'filtered') throw new Error('OpenBar kinematics input must be calibrated or filtered.');
+    const filterMethod = kinematics.input === 'filtered'
+        ? object(object(derived.filtered, 'filtered trajectory').filter, 'filter')
+        : null;
+    const calibrationQuality = text(quality.status, 'calibration quality');
+    if (!['unassessed', 'supported', 'warning', 'unsupported'].includes(calibrationQuality)) {
+        throw new Error('OpenBar calibration quality status is not supported.');
+    }
     const maxGapS = finite(parameters.max_gap_s, 'maximum kinematics gap');
     const minConfidence = finite(parameters.min_confidence, 'minimum kinematics confidence');
     const metresPerPixel = finite(scale.metres_per_pixel, 'calibration scale');
@@ -165,10 +200,13 @@ export function parseOpenBarAnalysis(rawText: string, segmentationRule: Concentr
     }
     const provenance: OpenBarProvenance = {
         trackerId: text(tracker.id, 'tracker id'), tracker: implementation(tracker.implementation, 'tracker'),
-        filter: kinematics.input === 'filtered' ? implementation(object(derived.filtered, 'filter').filter, 'filter') : null,
-        kinematicsInput: kinematics.input, kinematicsMethod: implementation(method, 'kinematics method'), maxGapS, minConfidence,
+        filter: filterMethod ? implementation(filterMethod, 'filter') : null,
+        filterParameters: filterMethod ? parameterSignature(filterMethod.parameters, 'filter parameters') : null,
+        kinematicsInput: kinematics.input, kinematicsMethod: implementation(method, 'kinematics method'),
+        kinematicsParameters: parameterSignature(method.parameters, 'kinematics parameters') ?? 'none',
+        maxGapS, minConfidence,
         calibrationMethod: `${text(calibration.method, 'calibration method')}@${finite(calibration.method_version, 'calibration version')}`,
-        metresPerPixel, plateDiameterM, calibrationQuality: text(quality.status, 'calibration quality'),
+        metresPerPixel, plateDiameterM, calibrationQuality,
         openbarVersion: text(pipeline.openbar_version, 'pipeline version'),
         gitCommit: pipeline.git_commit === undefined ? null : text(pipeline.git_commit, 'git commit'),
     };
