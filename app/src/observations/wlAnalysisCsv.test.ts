@@ -3,6 +3,9 @@ import {
     parseWlAnalysisCsv,
     segmentWlReps,
     WL_ANALYSIS_CSV_PARSER_V1,
+    WL_ANALYSIS_CSV_PARSER_V2,
+    WL_BOUNDARY_MAX_TRIM_RISE_CM,
+    WL_BOUNDARY_VELOCITY_FLOOR_MPS,
     WL_COMPLETE_DESCENT_FRACTION,
     WL_CONCENTRIC_VELOCITY_THRESHOLD_MPS,
     WL_MIN_REP_RISE_CM,
@@ -245,5 +248,120 @@ describe('wlAnalysisCsv fail-closed errors', () => {
     it('rejects an unknown delimiter', () => {
         const csv = buildSyntheticCsv([squatRep(0.5)], { delimiter: '|' });
         expect(() => parseWlAnalysisCsv(csv)).toThrow(/delimiter/i);
+    });
+});
+
+interface DriftRepSpec {
+    /** Frames at the bottom with small positive velocity before the real ascent. */
+    leadDriftFrames?: number;
+    /** Frames after the ascent with small positive velocity (slow settle at lockout). */
+    tailDriftFrames?: number;
+    driftVelocityMps?: number;
+    driftRiseCmPerFrame?: number;
+    /** Top of the main ascent (cm); the descent starts at 0 and bottoms out at -55. */
+    ascentTopCm?: number;
+}
+
+/** One squat rep built frame by frame: descent, optional lead drift, ascent, optional tail drift. */
+function driftRepFrames(spec: DriftRepSpec = {}): WlAnalysisFrame[] {
+    const frames: WlAnalysisFrame[] = [];
+    const drift = spec.driftVelocityMps ?? 0.03;
+    const step = spec.driftRiseCmPerFrame ?? 0.1;
+    const top = spec.ascentTopCm ?? 0;
+    let ordinal = 1;
+    let displacement = 0;
+    const push = (velocityMps: number, displacementCm: number): void => {
+        frames.push({ ordinal, timeS: (ordinal - 1) / 30, velocityMps, displacementCm });
+        ordinal += 1;
+        displacement = displacementCm;
+    };
+    push(0, 0);
+    for (let i = 0; i < 30; i += 1) push(-0.4, (-55 * (i + 1)) / 30);
+    for (let i = 0; i < (spec.leadDriftFrames ?? 0); i += 1) push(drift, displacement + step);
+    const bottom = displacement;
+    // First ascent frame holds the exact bottom so the run's rise is the full ascent.
+    for (let i = 0; i < 20; i += 1) push(0.6, bottom + ((top - bottom) * i) / 19);
+    for (let i = 0; i < (spec.tailDriftFrames ?? 0); i += 1) push(drift, displacement + step);
+    push(0, displacement);
+    return frames;
+}
+
+describe('wlAnalysisCsv v2 rep boundaries (#983)', () => {
+    it('pins the v2 parser version and boundary guards', () => {
+        expect(WL_ANALYSIS_CSV_PARSER_V2).toBe('wl-analysis-csv-v2');
+        expect(WL_BOUNDARY_VELOCITY_FLOOR_MPS).toBe(0.05);
+        expect(WL_BOUNDARY_MAX_TRIM_RISE_CM).toBe(1);
+    });
+
+    it('keeps the default parser at v1 so stored v1 trials stay reproducible', () => {
+        const csv = buildSyntheticCsv([squatRep(0.567, 0.79)]);
+        expect(parseWlAnalysisCsv(csv).parserVersion).toBe(WL_ANALYSIS_CSV_PARSER_V1);
+        expect(parseWlAnalysisCsv(csv, WL_ANALYSIS_CSV_PARSER_V2).parserVersion).toBe(WL_ANALYSIS_CSV_PARSER_V2);
+    });
+
+    it('reports a slow lockout settle without diluting mean velocity', () => {
+        const clean = segmentWlReps(driftRepFrames(), WL_ANALYSIS_CSV_PARSER_V2);
+        const settled = driftRepFrames({ tailDriftFrames: 7 });
+        const v1 = segmentWlReps(settled, WL_ANALYSIS_CSV_PARSER_V1);
+        const v2 = segmentWlReps(settled, WL_ANALYSIS_CSV_PARSER_V2);
+        expect(v2).toHaveLength(1);
+        expect(v2[0].meanVelocityMps).toBeCloseTo(clean[0].meanVelocityMps, 3);
+        expect(v2[0].frameCount).toBe(clean[0].frameCount);
+        // v1 still averages the settle in: same detection, lower mean.
+        expect(v1).toHaveLength(1);
+        expect(v1[0].meanVelocityMps).toBeLessThan(v2[0].meanVelocityMps - 0.1);
+        expect(v1[0].complete).toBe(v2[0].complete);
+    });
+
+    it('reports drift at the bottom without diluting mean velocity', () => {
+        const clean = segmentWlReps(driftRepFrames(), WL_ANALYSIS_CSV_PARSER_V2);
+        const v2 = segmentWlReps(driftRepFrames({ leadDriftFrames: 5 }), WL_ANALYSIS_CSV_PARSER_V2);
+        expect(v2).toHaveLength(1);
+        expect(v2[0].meanVelocityMps).toBeCloseTo(clean[0].meanVelocityMps, 3);
+        // The reported window starts at the real ascent: 55 cm minus the 0.5 cm drifted at the bottom.
+        expect(v2[0].romCm).toBeCloseTo(54.5, 1);
+        expect(clean[0].romCm).toBeCloseTo(55, 1);
+    });
+
+    it('matches v1 exactly when no boundary frame is below the floor', () => {
+        const csv = buildSyntheticCsv([
+            squatRep(0.567, 0.79),
+            squatRep(0.574, 0.87),
+            { depthCm: -40, ascentVelocityMps: 0.45, peakVelocityMps: 0.62 },
+        ]);
+        expect(parseWlAnalysisCsv(csv, WL_ANALYSIS_CSV_PARSER_V2).reps).toEqual(parseWlAnalysisCsv(csv).reps);
+    });
+
+    it('decides completeness on the whole run, so v1 and v2 agree on success/miss', () => {
+        // Main ascent reaches 84 % of the 55 cm descent; a 5-frame settle (+0.15 cm each) lifts the
+        // whole run just above 85 %. The settle remains within the v2 trim guardrail, so v2 reports
+        // the shorter window but must not turn the rep into a miss.
+        const frames = driftRepFrames({ ascentTopCm: -55 + 0.84 * 55, tailDriftFrames: 5, driftRiseCmPerFrame: 0.15 });
+        const v1 = segmentWlReps(frames, WL_ANALYSIS_CSV_PARSER_V1);
+        const v2 = segmentWlReps(frames, WL_ANALYSIS_CSV_PARSER_V2);
+        expect(v1[0].complete).toBe(true);
+        expect(v2[0].complete).toBe(true);
+        expect(v2[0].romCm).toBeLessThan(WL_COMPLETE_DESCENT_FRACTION * 55);
+    });
+
+    it('preserves materially slow concentric travel instead of trimming it as drift', () => {
+        const frames = driftRepFrames({
+            leadDriftFrames: 12,
+            tailDriftFrames: 12,
+            driftRiseCmPerFrame: 0.1,
+        });
+        const v1 = segmentWlReps(frames, WL_ANALYSIS_CSV_PARSER_V1);
+        const v2 = segmentWlReps(frames, WL_ANALYSIS_CSV_PARSER_V2);
+        expect(v2).toHaveLength(1);
+        expect(v2[0]).toEqual(v1[0]);
+    });
+
+    it('falls back to the whole run when no frame reaches the floor', () => {
+        const frames: WlAnalysisFrame[] = [{ ordinal: 1, timeS: 0, velocityMps: 0, displacementCm: 0 }];
+        for (let i = 1; i <= 300; i += 1) {
+            frames.push({ ordinal: i + 1, timeS: i / 30, velocityMps: 0.04, displacementCm: (40 * i) / 300 });
+        }
+        frames.push({ ordinal: 302, timeS: 301 / 30, velocityMps: 0, displacementCm: 40 });
+        expect(segmentWlReps(frames, WL_ANALYSIS_CSV_PARSER_V2)).toEqual(segmentWlReps(frames, WL_ANALYSIS_CSV_PARSER_V1));
     });
 });

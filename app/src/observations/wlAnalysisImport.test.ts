@@ -17,7 +17,12 @@ import {
     type WlImportFile,
     type WlTrialProposal,
 } from './wlAnalysisImport';
-import { WL_ANALYSIS_CSV_PARSER_V1, type WlAnalysisCsvParse, type WlAnalysisRep } from './wlAnalysisCsv';
+import {
+    WL_ANALYSIS_CSV_PARSER_V1,
+    WL_ANALYSIS_CSV_PARSER_V2,
+    type WlAnalysisCsvParse,
+    type WlAnalysisRep,
+} from './wlAnalysisCsv';
 
 function makeRep(overrides: Partial<WlAnalysisRep> & { index: number }): WlAnalysisRep {
     return {
@@ -112,6 +117,11 @@ describe('wlAnalysisImport single-rep mapping (D3)', () => {
             wl_frame_rate: 30,
             wl_resolution: '1080x1920',
         });
+    });
+
+    it('records the parser version that actually segmented the file', () => {
+        const proposal = proposed(makeFile('a.csv', makeParsed({ parserVersion: WL_ANALYSIS_CSV_PARSER_V2 })));
+        expect(proposal.context.wl_parser_version).toBe(WL_ANALYSIS_CSV_PARSER_V2);
     });
 
     it('builds a replay-stable content-hash sourceRef, never the file name', () => {

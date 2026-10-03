@@ -16,7 +16,6 @@ import type {
 } from './models';
 import type { DraftTrialRow } from '../utils/assessmentDraftStorage';
 import {
-    WL_ANALYSIS_CSV_PARSER_V1,
     wlFrameDataSignature,
     type WlAnalysisCsvParse,
 } from './wlAnalysisCsv';
@@ -246,7 +245,9 @@ export function proposeWlTrial(
             notes: notesParts.join('; '),
             device: { provider: WL_ANALYSIS_DEVICE_PROVIDER },
             context: {
-                [WL_CONTEXT_KEYS.parserVersion]: WL_ANALYSIS_CSV_PARSER_V1,
+                // Preserve the actual derivation method (ADR-0046 D-AT-IMPORT); a future ADR-0047
+                // fixed-load series must carry this parser version in its measurement-method identity.
+                [WL_CONTEXT_KEYS.parserVersion]: parsed.parserVersion,
                 [WL_CONTEXT_KEYS.repCount]: parsed.reps.length,
                 [WL_CONTEXT_KEYS.selectedRep]: selected + 1,
                 [WL_CONTEXT_KEYS.romCm]: rep.romCm,
