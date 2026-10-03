@@ -1,7 +1,7 @@
 # Issues #981 → #982 — OpenBar velocity import and WL Analysis agreement report
 
 **Date:** 2026-10-03
-**Status:** Ready for PR-1. OD-1 through OD-6 resolved on 2026-10-03 under the owner's delegated decision authority (see [Resolved decisions](#resolved-decisions)). Implementation has not started.
+**Status:** In progress. OD-1 through OD-6 resolved on 2026-10-03 under the owner's delegated decision authority (see [Resolved decisions](#resolved-decisions)). PR-1 extraction implemented, with `make verify` and independent review passed. PR-2 and PR-3 have not started.
 **Blocked by:** nothing for #981. [#984](https://github.com/Szczepanov/adaptive-training-recommender/pull/984) (closes #983, `wl-analysis-csv-v2`) is merged, and Szczepanov/openbar#78 (`analyze --observations`) is closed. #982 is blocked by #981.
 **Unlocks:** Szczepanov/openbar#79 (formal agreement study). Its pre-registration needs both sources to use the same segmentation rule version, and it needs the #982 report tool.
 **Issues:** [#981](https://github.com/Szczepanov/adaptive-training-recommender/issues/981), [#982](https://github.com/Szczepanov/adaptive-training-recommender/issues/982)

@@ -10,7 +10,7 @@ describe('WL pre-extraction segmentation characterisation (#981)', () => {
             v1: segmentWlReps(frames, WL_ANALYSIS_CSV_PARSER_V1),
             v2: segmentWlReps(frames, WL_ANALYSIS_CSV_PARSER_V2),
         }));
-        expect(actual).toEqual(golden);
+        expect(actual).toStrictEqual(golden);
         expect(actual).toHaveLength(200);
         expect(actual.some(entry => JSON.stringify(entry.v1) !== JSON.stringify(entry.v2))).toBe(true);
     });
