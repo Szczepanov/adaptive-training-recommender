@@ -138,6 +138,16 @@ function windowDurationMinutes(boundStartLocal: string, boundEndLocal: string, f
     return diff > 0 ? diff : fallback;
 }
 
+function sameWindowBinding(left: OccurrenceWindowBinding, right: OccurrenceWindowBinding): boolean {
+    return left.windowId === right.windowId
+        && left.bundleId === right.bundleId
+        && left.order === right.order
+        && left.boundStartLocal === right.boundStartLocal
+        && left.boundEndLocal === right.boundEndLocal
+        && left.startInstant === right.startInstant
+        && left.endInstant === right.endInstant;
+}
+
 /**
  * Adjudicates non-primary intraday bundle members for today, managing occurrence lifecycle,
  * shared ledger reservations, provisional audit records, and launch bindings.
@@ -181,6 +191,99 @@ export async function adjudicateIntradayBundleMembers(
 
     // 1. Gather existing day state (occurrences, executions, aggregate)
     const allOccurrences = await occurrenceService.getOccurrencesForDate(userId, date);
+
+    // The primary is prepared by Home before this bundle adjudicator runs. Persist the exact
+    // resolved window onto that still-scheduled occurrence before any Start can claim it.
+    // Replay may then preserve a started member's historical placement without inferring a
+    // binding after the fact. Missing/conflicting evidence on an already-started occurrence
+    // fails closed rather than rewriting execution history (#952 / #893 V9).
+    const primaryPlacement = bundlePlacement.bindings[0];
+    const primarySession = primaryPlacement
+        ? v4Plan.sessions.find(session => session.id === primaryPlacement.sessionId)
+        : undefined;
+    if (primaryPlacement && primarySession?.intraday && !primarySession.isEvent && primarySession.definition.id !== 'rest_01') {
+        const primaryExternalRef: ExternalPlanOccurrenceRef = {
+            planId: v4Plan.planId,
+            revision: v4Plan.revision,
+            sessionId: primarySession.id,
+            contentHash,
+        };
+        const primaryOccurrenceId = await deterministicExternalPlanOccurrenceId(date, primaryExternalRef);
+        const primaryOccurrenceRef = occurrenceService.occurrenceRef(userId, primaryOccurrenceId);
+        const primaryWindowRef = occurrenceService.windowReservationRef(userId, date, primaryPlacement.windowId);
+        const expectedWindowBinding: OccurrenceWindowBinding = {
+            windowId: primaryPlacement.windowId,
+            bundleId: primarySession.intraday.bundleId,
+            order: primarySession.intraday.order,
+            boundStartLocal: primaryPlacement.boundStartLocal,
+            boundEndLocal: primaryPlacement.boundEndLocal,
+            startInstant: primaryPlacement.startInstant,
+            endInstant: primaryPlacement.endInstant,
+        };
+        let sealedPrimary: ExternalPlanSessionOccurrence | null = null;
+
+        await runTransaction(db, async transaction => {
+            const occurrenceSnap = await transaction.get(primaryOccurrenceRef);
+            const windowSnap = await transaction.get(primaryWindowRef);
+            if (!occurrenceSnap.exists()) {
+                throw new Error(`Prepared bundle primary occurrence ${primaryOccurrenceId} was not found.`);
+            }
+            const parsed = parseSessionOccurrenceDocument(occurrenceSnap.data(), primaryOccurrenceRef.path);
+            if (parsed.status !== 'AVAILABLE' || !isExternalPlanOccurrence(parsed.data)) {
+                throw new Error(`Prepared bundle primary occurrence ${primaryOccurrenceId} is invalid.`);
+            }
+            const current = parsed.data;
+            const sameSource = current.externalPlanRef.planId === primaryExternalRef.planId
+                && current.externalPlanRef.revision === primaryExternalRef.revision
+                && current.externalPlanRef.sessionId === primaryExternalRef.sessionId
+                && current.externalPlanRef.contentHash === primaryExternalRef.contentHash;
+            if (!sameSource) {
+                throw new Error('Prepared bundle primary occurrence does not match the active plan source.');
+            }
+            if (current.placementOrder !== undefined && current.placementOrder !== primarySession.intraday.order) {
+                throw new Error(`Prepared bundle primary occurrence ${primaryOccurrenceId} has conflicting placement order.`);
+            }
+            if (current.windowBinding && !sameWindowBinding(current.windowBinding, expectedWindowBinding)) {
+                throw new Error(`Prepared bundle primary occurrence ${primaryOccurrenceId} has conflicting window binding.`);
+            }
+            const hasExactBinding = current.placementOrder === primarySession.intraday.order
+                && current.windowBinding !== undefined
+                && sameWindowBinding(current.windowBinding, expectedWindowBinding);
+            if (current.state !== 'scheduled' && !hasExactBinding) {
+                throw new Error(`Started bundle primary occurrence ${primaryOccurrenceId} is missing its exact binding.`);
+            }
+            if (windowSnap.exists()) {
+                const owner = windowSnap.data()?.occurrenceId as string | undefined;
+                if (owner !== primaryOccurrenceId) {
+                    throw new Error(`Primary bundle window '${primaryPlacement.windowId}' is already bound to '${owner ?? 'unknown'}'.`);
+                }
+            }
+            if (current.state === 'scheduled' && !hasExactBinding) {
+                sealedPrimary = {
+                    ...current,
+                    placementOrder: primarySession.intraday.order,
+                    windowBinding: expectedWindowBinding,
+                    updatedAt: now,
+                };
+                transaction.set(primaryOccurrenceRef, sealedPrimary);
+            } else {
+                sealedPrimary = current;
+            }
+            if (!windowSnap.exists()) {
+                transaction.set(primaryWindowRef, {
+                    userId,
+                    date,
+                    windowId: primaryPlacement.windowId,
+                    occurrenceId: primaryOccurrenceId,
+                    createdAt: now,
+                });
+            }
+        });
+
+        const primaryIndex = allOccurrences.findIndex(item => item.occurrenceId === primaryOccurrenceId);
+        if (primaryIndex >= 0 && sealedPrimary) allOccurrences[primaryIndex] = sealedPrimary;
+    }
+
     const { executions } = await executionService.getExecutionsInRange(userId, date, date);
     let aggregate = await aggregateService.get(userId, date);
 
