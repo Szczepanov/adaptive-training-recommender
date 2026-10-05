@@ -2,392 +2,376 @@
 
 | | |
 |---|---|
-| **Type** | Point-in-time analysis (`docs/analysis`: what is true today) |
-| **Scope** | Event categories, event presets/formats, periodization ownership, and first-class HYROX support |
-| **Motivating case** | Add HYROX Warsaw on `2027-04-10` as a real training goal rather than encoding it as a running race or generic target |
-| **Baseline** | `origin/main` `aaca00d3026511eedc029f205312bb284d00bd66` (2026-10-05) |
-| **Architecture sources** | ADR-0007 adaptive multi-sport engine; ADR-0010 decision provenance; ADR-0033 Sports Knowledge Registry; `docs/architecture/sports-knowledge-registry.md` |
-| **Implementation plan** | [`2026-10-05-event-taxonomy-fitness-race-hyrox.md`](../plans/2026-10-05-event-taxonomy-fitness-race-hyrox.md) |
-| **Policy effect** | This analysis PR: none. P0 implementation: **yes** once demand/objective/taper/ranking behavior changes; bump `POLICY_VERSION`. |
-| **Knowledge effect** | P0 implementation must revise the event-demand product-policy claim/coverage because the current claim explicitly governs 19 authored presets. |
+| **Type** | Point-in-time architecture analysis (`docs/analysis`: what is true today) |
+| **Date** | 2026-10-05 |
+| **Scope** | Event taxonomy, HYROX Open Singles, event timing, periodization, coverage, executable sessions, taper, knowledge lineage, UI/persistence |
+| **Decision record** | Proposed ADR-0048: `docs/adr/0048-event-taxonomy-and-format-semantics.md` |
+| **Implementation plan** | `docs/plans/2026-10-05-event-taxonomy-fitness-race-hyrox.md` |
 
-## 1. Executive conclusion
+## Executive summary
 
-The absence of HYROX is not primarily a missing dropdown option. It exposes an event-taxonomy and authority problem.
+The repository can represent endurance races, triathlon, strength meets and generic targets, but it cannot represent a fitness race honestly. Adding only a `fitness_race` enum member is insufficient because event semantics are currently scattered across `eventPresets.ts`, `periodization.ts`, `optimizer.ts`, `taperPolicy.ts`, `Goals.tsx`, coverage descriptors and the sports-knowledge registry.
 
-Today the product has two concepts:
+The HYROX motivating case also exposes two existing architecture boundaries that the first draft of this analysis did not respect strongly enough:
 
-1. `UserEvent.category` — a broad family (`cycling_event`, `running_race`, `triathlon`, `strength_meet`, `general_target`);
-2. `UserGoal.eventPreset` — a string selecting a 7-axis demand vector within that family.
+1. **Uncertain event dates already have a domain model.** `EventTiming` carries `earliestDate`, `latestDate`, `planningDate` and optional `confirmedDate`; ADR-0012 says that model is already validated, persisted and propagated to `UserEvent`. The missing piece is UI support. The Warsaw 2027 Men/Open date is currently provisional, so a literal `2027-04-10` must not be treated as confirmed.
+2. **Event-specific session morphology belongs to the coverage ledger, not the adaptation ledger.** ADR-0016 deliberately separates physiological stimulus credit from exact programming-role fulfilment. A compromised run and a station-endurance session are programming roles. They must be satisfied by exact canonical workout/session identities, not inferred from generic Running/Strength stimulus.
+3. **HYROX sessions are multidomain.** ADR-0023 makes `SessionDefinition` plus frozen `ExecutionPrescription` the source-neutral executable boundary for composite training. A run-station workout must not be flattened into a single-modality `SessionTemplate` and treated as fully represented.
 
-In practice, **category still owns more behavior than the preset**. Periodization maps category directly to sport-specific modalities, objective synthesis contains category-specific branches, and taper defaults are category/priority driven. `eventPreset` changes the demand vector but does not fully describe what event-specific training means.
+The recommended P0 is therefore a small but end-to-end vertical slice:
 
-Therefore adding `hyrox` as one more preset under an unrelated category, or adding a top-level `hyrox` category with only a demand vector, would create UI support without honest engine support.
+- add root categories `fitness_race` and `other_event`;
+- add a first-class preset/format `hyrox_open_singles` and an honest `custom` fallback;
+- retain the selected preset identity on `UserEvent` so downstream consumers can distinguish formats within a root category;
+- centralize event semantics in one resolver rather than adding more category switches;
+- add an event-relative HYROX coverage set and `PlanDefinition` path for exact fitness-race roles;
+- add canonical HYROX workout/session definitions that adapt into ADR-0023 `SessionDefinition` and resolve to executable prescriptions;
+- expose `EventTiming` in the goal UI so provisional multi-day events can be entered accurately;
+- add a named fitness-race taper policy only as explicit product calibration with knowledge lineage;
+- update the Sports Knowledge Registry and `POLICY_VERSION` atomically with decision-affecting behavior.
 
-### Recommendation
+## 1. External/source facts for the motivating case
 
-Adopt `fitness_race` as a broad event family and add HYROX as a format/preset beneath it. Do **not** make the commercial race name the top-level domain type.
+### 1.1 HYROX Warsaw 2027
 
-P0 should deliver one genuinely supported vertical slice — **HYROX Open Singles** — plus a generic unsupported-event escape hatch. P0 should also establish the metadata boundary needed to add Pro, Doubles, Relay, DEKA, OCR, trail, MTB and other event families without repeating category switches throughout the engine.
+The official HYROX Warsaw event page currently states:
 
-The P0 implementation should be backward-compatible with existing persisted goals: keep `eventCategory` + `eventPreset` as the persisted shape for now, enrich preset metadata at runtime, and defer a larger family/format/division schema migration until there is evidence that the existing pair cannot carry the product safely.
+- event window: **7–11 April 2027**;
+- venue: **PGE Narodowy, Warsaw**;
+- the published schedule is **provisional**;
+- `HYROX MEN` is currently listed on **7, 8, 9 and 10 April**;
+- individual start times are linked only shortly before the event.
 
-## 2. Current taxonomy inventory
+Source: <https://hyrox.com/event/hyrox-warsaw-26-27/>
 
-`app/src/engine/models.ts` currently defines five event categories:
+Therefore `2027-04-10` is a possible Men/Open date, not a confirmed event date. The product should preserve the uncertainty rather than encode one provisional day as truth.
 
-| Category | Current meaning | Current preset count |
-|---|---|---:|
-| `cycling_event` | Cycling competition | 5 |
-| `running_race` | Running competition | 5 |
-| `triathlon` | Swim-bike-run competition | 6 |
-| `strength_meet` | Strength competition/test | 2 |
-| `general_target` | Dated non-competition target | 1 |
+### 1.2 Race morphology
 
-`app/src/engine/eventPresets.ts` currently contains 19 presets:
+HYROX describes the individual race as eight 1 km runs interleaved with eight functional stations. Open and Pro are separate divisions; Open uses the standard loads, while Pro increases selected station loads. The station sequence includes SkiErg, sled push, sled pull, burpee broad jumps, rowing, farmer carry, sandbag lunges and wall balls.
 
-- cycling: road race, criterium, time trial, gran fondo/sportive, gravel;
-- running: 5K, 10K, half marathon, marathon, ultra;
-- triathlon: 1/8, 1/4, sprint, Olympic, half/70.3, Iron distance;
-- strength: powerlifting, general strength test;
-- general: generic target.
+Source: <https://hyrox.com/the-fitness-race/>
 
-Every preset owns only:
+This is materially different from a running race, strength meet, cycling event or triathlon. It combines locomotion, repeated transitions, loaded locomotion, grip, local muscular endurance and whole-body conditioning.
+
+## 2. Current repository state
+
+### 2.1 Event category and timing model
+
+`app/src/engine/models.ts` currently defines:
 
 ```ts
-interface EventPreset {
+category:
+  | 'running_race'
+  | 'cycling_event'
+  | 'triathlon'
+  | 'strength_meet'
+  | 'general_target';
+```
+
+`UserEvent` has `EventTiming`, but it does **not** retain the event preset/format selected by the goal. `goalToUserEvent` resolves the preset into a demand vector and then loses the preset identity.
+
+That loss is acceptable while every root category has effectively one downstream semantic family. It becomes wrong once `fitness_race` may contain HYROX Open, HYROX Pro, doubles, DEKA-like formats or future fitness races with different station/load morphology.
+
+### 2.2 Presets
+
+`app/src/engine/eventPresets.ts` currently contains 19 authored presets across the five root categories. A preset contains only:
+
+- `id`;
+- `label`;
+- `demandProfile`.
+
+`resolveDemandProfile(category, preset)` is therefore only a demand-vector resolver. It cannot be the single authority for:
+
+- event-specific modalities;
+- taper policy;
+- coverage set / plan builder;
+- support level (`specific` vs `generic`);
+- executable session family.
+
+### 2.3 Duplicated event semantics
+
+Category semantics are reimplemented in several places:
+
+- `eventPresets.ts` — preset/demand selection;
+- `periodization.ts` — `modalitiesForEventCategory` and category-specific objectives;
+- `optimizer.ts` — category-to-modality event-focus bonus;
+- `taperPolicy.ts` — category/priority taper branches;
+- `Goals.tsx` — category labels and category/preset inputs;
+- `planSchedule.ts` — only cycling events get a generated event-relative `PlanDefinition`;
+- `workouts/event-plan.ts` — exact programming-role coverage sets.
+
+Adding `fitness_race` independently to each switch would compile, but it would deepen semantic drift.
+
+### 2.4 Structured plan authority
+
+ADR-0012 establishes:
+
+> explicit `PlanDefinition` authority > generic days-to-event fallback.
+
+Today `resolvePlanDefinitionForEvent` returns a generated event-relative plan only for `cycling_event`. Every other event remains on generic demand-derived fallback.
+
+That is inadequate for HYROX-specific programming roles because exact role fulfilment cannot be expressed honestly through demand vectors alone.
+
+### 2.5 Adaptation and coverage are intentionally different
+
+ADR-0016 is the critical boundary for this feature:
+
+- `WeeklyObjective` / stimulus credit answers **what adaptation was accumulated**;
+- coverage answers **which explicitly required programming role was performed**;
+- coverage is exact-identity based;
+- modality/category/stimulus must not invent coverage.
+
+Therefore these are **coverage concepts** first:
+
+- compromised running;
+- station strength-endurance / station-specific work;
+- fitness-race simulation / run-station combination;
+- fitness-race race day.
+
+They should not be introduced primarily as new `ObjectiveKey` values merely to stop a generic run plus generic strength session from substituting for a combined session. Doing so would recreate the coupling ADR-0016 removed.
+
+### 2.6 Executable session architecture
+
+ADR-0004 requires every selectable engine template to resolve to a detailed canonical workout prescription.
+
+ADR-0023 goes further: `SessionDefinition` is the source-neutral executable boundary for structured strength, power, speed, field, conditioning, recovery, skill and composite sessions. Catalog workouts adapt into this boundary and execution uses a frozen `ExecutionPrescription`.
+
+A HYROX compromised-running workout is inherently composite. P0 therefore needs both:
+
+1. an engine/catalog identity that can be ranked, costed and credited; and
+2. a normalized multidomain executable definition/prescription that represents the ordered run/station work without parsing prose at execution time.
+
+Adding rows only to `engine/templates.ts` would be architecturally incomplete.
+
+### 2.7 Taper
+
+`resolveEventTaper` currently uses:
+
+- explicit authored taper first;
+- a cycling-A special case;
+- otherwise a generic priority fallback for non-`general_target` events (`A=14 d`, `B=5 d`, `C=0`).
+
+A `fitness_race` branch may need different calibration, but the important architecture rule is that the value must be a named, reviewable policy rather than an implicit category side effect. The user's explicit taper must remain highest authority.
+
+The endurance taper literature supports reduced volume while maintaining intensity/frequency, but it does not validate a HYROX-specific exact day count. Any initial HYROX number is therefore product calibration and belongs in the Sports Knowledge Registry as such.
+
+### 2.8 Goal UI cannot express provisional windows
+
+ADR-0012 already documents this gap: `EventTiming` is generic and production-wired, while `Goals.tsx` still collects one `targetDate`.
+
+For HYROX Warsaw this matters immediately. The UI needs a minimal choice between:
+
+- confirmed single date; or
+- provisional date window.
+
+The persisted `targetDate` remains the compatible planning date, while `timing` carries the explicit window and confirmation state. `planningDate` must follow the existing `EventTiming` invariant and become the confirmed date once confirmation exists.
+
+## 3. Architecture findings
+
+### F1 — fixed 10 April acceptance is factually and architecturally wrong — P0
+
+The official event window is 7–11 April and Men/Open is currently provisional on 7–10 April. The motivating fixture must use `EventTiming`; it must not claim 10 April is confirmed.
+
+### F2 — downstream format identity is lost — P0
+
+`UserGoal.eventPreset` is resolved to a demand vector and discarded. A new root category with multiple future formats requires a stable `UserEvent.presetId` (or equivalent) so taper/coverage/optimizer semantics do not infer format from a demand vector.
+
+### F3 — another category-only switch would violate single-authority design — P0
+
+Introduce one canonical resolver for persisted category+preset metadata. Existing consumers should call it or receive its result, instead of adding independent `fitness_race` switch branches.
+
+### F4 — compromised running is a coverage role, not a new adaptation axis — P0
+
+Use exact coverage keys/requirements. Existing physiological objective axes remain the adaptation ledger unless a genuinely new physiological construct is separately justified.
+
+### F5 — fitness-race needs a generated PlanDefinition — P0
+
+A HYROX-specific coverage contract cannot be enforced by the generic periodization fallback. Add a `fitness_race`/`hyrox_open_singles` plan builder with event-relative build/specificity/taper/race/recovery blocks and exact coverage requirements.
+
+The initial block boundaries are product calibration. They must be named, tested and registered as policy, not presented as universal physiology.
+
+### F6 — HYROX composite sessions must cross the ADR-0023 boundary — P0
+
+Catalog templates alone are insufficient. Canonical run-station workouts must resolve to reviewed executable definitions and immutable prescriptions.
+
+### F7 — exact workout coverage is required — P0
+
+Add a dedicated coverage set rather than allowing generic Running + generic Strength to satisfy fitness-race specificity. Useful new roles include at minimum:
+
+- `fitness_race_station_work`;
+- `fitness_race_compromised_run`;
+- `fitness_race_specific_simulation`;
+- `fitness_race_race_day`.
+
+Existing roles such as `aerobic_volume`, `primary_strength` and `recovery_or_rest` should be reused where their meaning is genuinely identical.
+
+### F8 — equipment capability is first-class — P0
+
+The canonical workout/session layer must declare the equipment required for each station-specific option. The planner must be able to reject or substitute a session when a sled, SkiErg, rower, wall-ball setup or suitable carry/lunge equipment is unavailable.
+
+P0 does not need to fake every official station if the catalog cannot execute it safely. It does need at least one genuinely executable compromised-running session and one station-focused session, plus honest alternatives.
+
+### F9 — custom event must stay generic — P0
+
+`other_event/custom` is an escape hatch, not an inference engine. It should have:
+
+- generic demand only;
+- no specific modality bonus;
+- no HYROX coverage set;
+- no HYROX-specific taper;
+- no title/prose parsing.
+
+If a generic priority-based competition taper is intentionally retained, call it exactly that and test it. Do not represent it as format-specific knowledge.
+
+### F10 — knowledge and policy counts must not drift — P0
+
+The current knowledge claim explicitly refers to 19 preset vectors. Adding both `hyrox_open_singles` and `custom` yields **21 registry entries** if the claim continues to count all authored presets. A safer amendment is to stop relying on a brittle literal count and validate registry membership/lineage structurally.
+
+Decision-affecting changes to demand, taper, coverage or ranking require a `POLICY_VERSION` bump under ADR-0010. Knowledge claims and policy identity must ship in the same merge as the behavior they justify.
+
+### F11 — the architecture decision needs an ADR — P0
+
+This feature changes canonical event identity, semantic resolution and plan/coverage authority. ADR-0001 requires a durable architecture record. This review therefore adds proposed ADR-0048 rather than leaving the decision only in analysis prose.
+
+## 4. Recommended event model
+
+### 4.1 Root taxonomy
+
+```ts
+type EventCategory =
+  | 'running_race'
+  | 'cycling_event'
+  | 'triathlon'
+  | 'strength_meet'
+  | 'fitness_race'
+  | 'other_event'
+  | 'general_target';
+```
+
+`general_target` remains a dated non-competition target. `other_event` is the generic competition escape hatch.
+
+### 4.2 Format identity
+
+Add a stable downstream field to `UserEvent`, for example:
+
+```ts
+presetId?: string;
+```
+
+`goalToUserEvent` copies the validated `UserGoal.eventPreset` into `presetId` and resolves semantics once.
+
+### 4.3 Canonical preset semantics
+
+Extend the preset descriptor beyond a demand vector:
+
+```ts
+interface EventPresetDefinition {
   id: string;
   label: string;
   demandProfile: EventDemandProfile;
+  specificModalities: SessionTemplate['modality'][];
+  supportLevel: 'specific' | 'generic';
+  taperPolicyId: EventTaperPolicyId;
+  coverageSetId?: CoverageSetId;
+  planPolicyId?: EventPlanPolicyId;
 }
 ```
 
-The demand profile is intentionally resolved at engine time rather than persisted on the goal. That is a useful design property: recalibration does not require rewriting every goal document. The limitation is that the preset cannot currently express event-specific modality, objective, taper or support semantics.
-
-### 2.1 The current seven demand axes
-
-`EventDemandProfile` expresses:
-
-- `aerobicEndurance`
-- `thresholdPower`
-- `vo2MaxPower`
-- `repeatedSurges`
-- `sprintPower`
-- `fatigueResistance`
-- `neuromuscular`
-
-These are useful cross-sport planning dimensions but they are not a complete event ontology. They can express that an event is aerobically demanding, fatigue-resistant or neuromuscular, but cannot distinguish several forms of event specificity that matter for a fitness race: running immediately after loaded work, station execution skill, grip/carry tolerance, transition skill, and local muscular strength-endurance.
-
-The correct conclusion is **not** to immediately replace the seven-axis model. It is stable, broadly consumed and knowledge-governed. P0 should retain it and add narrowly-scoped event-specific metadata/objectives around it.
-
-## 3. What HYROX requires that the current model cannot represent
-
-HYROX's official race description is structurally different from a standalone running race or strength meet: the race alternates eight 1 km runs with eight functional workout stations. The official categories include Open, Pro, Doubles and Relay; Open and Pro Singles share the repeated run/station structure while Pro increases station loads, Doubles athletes run together and split station work, and Relay splits the event across four athletes.
-
-Official reference: <https://hyrox.com/the-fitness-race/> (reviewed 2026-10-05).
-
-That creates at least five planning requirements:
-
-1. **Running durability** — the athlete still needs ordinary run volume and quality.
-2. **Compromised running** — running after sled/carry/lunge/erg work is part of the event morphology, not incidental fatigue.
-3. **Strength endurance / local muscular endurance** — station work cannot be represented by `neuromuscular` alone.
-4. **Station skill and equipment exposure** — sleds, SkiErg, rower, carries, lunges and wall balls impose technique/equipment constraints.
-5. **Transitions and race-specific combinations** — a fitness-race-specific session is not simply “run + strength somewhere in the same week.”
-
-A pure 7-axis demand vector can approximate the gross load but cannot prove that these specific exposures will exist.
-
-## 4. Current architecture gaps exposed by HYROX
-
-### 4.1 “Event style” is overloaded
-
-`Goals.tsx` labels the `eventPreset` field **Event style**, but current values mix multiple dimensions:
-
-- distance (`5K`, marathon, 70.3);
-- competition morphology (`criterium`, time trial, gravel);
-- sport (`powerlifting`);
-- and effectively a generic fallback.
-
-For HYROX the ambiguity becomes worse because “Open Singles”, “Pro Singles”, “Doubles”, and “Relay” are format/division variants, not merely styles.
-
-**Recommendation:** rename the UI label to **Event format** in P0. Keep the storage field name `eventPreset` for backward compatibility.
-
-### 4.2 Category still owns modality specificity
-
-`periodization.ts::modalitiesForEventCategory` currently hard-codes:
-
-```text
-cycling_event -> Cycling
-running_race  -> Running
-triathlon     -> Swimming + Cycling + Running
-strength_meet -> Strength
-general_target -> []
-```
-
-A `fitness_race` event needs at least Running + Strength, and likely Cross Training for some authored sessions. Adding another switch branch would work for one event family, but it continues the structural problem: every new family requires changes wherever category switches occur.
-
-**Recommendation:** make the preset registry the canonical resolver for event-specific modalities, with category defaults retained for backward compatibility. Consumers should ask a resolver such as `resolveEventPreset(...)` / `resolveEventModalities(...)`, not reconstruct semantics from a category string.
-
-### 4.3 Objective synthesis is still category-shaped
-
-`objectivesFromDemand` has dedicated logic for triathlon, cycling and running. Generic demand axes produce threshold, surge, Zone 2 and strength-maintenance objectives, but there is no objective that requires a compromised-run exposure or a fitness-race station-strength exposure.
-
-Without new objective semantics, the planner can satisfy a HYROX week using independent runs and ordinary strength sessions while never prescribing the key combined exposure.
-
-**Recommendation:** P0 adds a bounded fitness-race specificity layer rather than expanding every generic axis. At minimum:
-
-- `compromised_running`
-- `station_strength_endurance`
-
-Station skill, grip/carry and transition requirements can initially be represented by qualification metadata/template roles under those objectives. Split them into additional objective keys later only if the optimizer needs independent weekly accounting.
-
-### 4.4 The catalog lacks a truthful fitness-race-specific session family
-
-`templates.ts` contains ordinary Running, Cycling and Strength work and one fallback `Cross Training` aerobic circuit. It does not currently provide a meaningful HYROX-specific family covering run-to-station combinations and station exposure.
-
-A dropdown without qualifying templates would be cosmetic.
-
-P0 should add a minimum usable library rather than attempting to model every possible HYROX workout. Required capabilities are:
-
-- compromised run + functional station combination;
-- station strength-endurance session;
-- erg/station conditioning session when equipment is available;
-- partial race simulation / specificity session;
-- existing easy/quality running and general strength remain reusable.
-
-The implementation must use the repository's canonical equipment vocabulary. Do not invent sled/SkiErg/rower/wall-ball tokens inside templates until the equipment model and validation paths are checked and extended coherently.
-
-### 4.5 Taper semantics are coupled to priority
-
-`taperPolicy.ts` currently uses an authored taper start first, then a cycling-A special case, then the generic non-general-target fallback:
-
-- A -> 14 days
-- B -> 5 days
-- C -> 0 days
-
-This means an athlete can only change the default taper by changing priority or manually authoring a date. Priority and taper duration are different concepts. A secondary event should not have to be promoted to A solely to get a longer event-appropriate taper.
-
-**Recommendation:** add preset/event-family taper calibration as a separate authority beneath explicit authored taper and above the legacy priority fallback. The exact HYROX default window is a product-policy value that must be reviewed and registered, not guessed from the event label.
-
-### 4.6 Knowledge governance explicitly covers the preset set
-
-`periodizationEventDemandKnowledge.ts` contains the active product-policy claim `policy.event_demand.presets_v1`, whose statement explicitly says the product has **19 authored event presets** with specific seven-axis vectors.
-
-Adding HYROX demand behavior without changing that claim would make code and registered policy disagree.
-
-P0 implementation therefore needs all of:
-
-- updated product-policy source/claim wording and version;
-- applicable sport/context metadata for fitness racing;
-- knowledge coverage/alignment tests;
-- a `POLICY_VERSION` bump when recommendation behavior changes, per ADR-0010.
-
-The exact HYROX vector and any exact taper values must be labelled product calibration unless a source directly validates those exact product-scale numbers (unlikely).
-
-## 5. Taxonomy options considered
-
-| Option | Assessment |
-|---|---|
-| **A. Add top-level `hyrox` category** | **Reject.** Fastest local fix, but it makes a commercial format a root ontology node and invites `deka`, `spartan`, etc. as peer enums. It does not solve preset ownership. |
-| **B. Add `fitness_race` category, HYROX formats beneath it** | **Recommend.** Describes the competition family, supports HYROX now and can host genuinely similar formats later without claiming they are identical. |
-| **C. Add `hybrid_fitness` category** | Viable but less precise. “Hybrid fitness” can describe general training style rather than a competition family and encourages accidental inclusion of formats with materially different semantics. |
-| **D. Encode HYROX as `running_race`** | **Reject.** Preserves run modality but loses the station workload and combined specificity that makes the event distinct. |
-| **E. Encode HYROX as `strength_meet`** | **Reject.** Loses the repeated running demand and race morphology. |
-| **F. Encode HYROX as `general_target`** | **Reject.** `general_target` is deliberately treated as a dated non-competition target in taper policy and carries no sport-specific modalities. |
-
-## 6. Recommended bounded model
-
-### 6.1 Persisted P0 shape remains backward-compatible
-
-Keep:
-
-```ts
-UserGoal.eventCategory?: UserEvent['category'] | null;
-UserGoal.eventPreset?: string | null;
-```
-
-Add:
-
-```ts
-UserEvent['category'] += 'fitness_race' | 'other_event';
-```
-
-Do not migrate existing goal documents. Old values remain valid and resolve exactly as before.
-
-### 6.2 Enrich the runtime preset definition
-
-Conceptually:
-
-```ts
-type EventSupportLevel = 'generic' | 'specific';
-
-type EventSpecificObjectiveTag =
-  | 'compromised_running'
-  | 'station_strength_endurance';
-
-interface EventPreset {
-  id: string;
-  label: string;
-  demandProfile: EventDemandProfile;
-  specificModalities?: SessionTemplate['modality'][];
-  objectiveTags?: EventSpecificObjectiveTag[];
-  supportLevel?: EventSupportLevel;
-  taperPolicyId?: string;
-}
-```
-
-Exact names are implementation details; the authority boundary is the decision:
-
-> Event-format semantics live behind one preset resolver. Engine consumers do not grow independent category/preset switch statements.
-
-Existing presets may omit the new fields and inherit their current category behavior during migration. P0 should not force a high-risk all-at-once rewrite of all 19 presets.
-
-### 6.3 P0 HYROX format
-
-First-class P0 target:
-
-```text
-fitness_race
-└── hyrox_open_singles   [specific]
-```
-
-Do not claim Pro/Doubles/Relay as first-class merely because their labels are known. They materially change station load or work sharing. Add them only when the engine has an explicit support contract for the difference.
-
-A later extension can become:
-
-```text
-fitness_race
-├── hyrox_open_singles
-├── hyrox_pro_singles
-├── hyrox_open_doubles
-├── hyrox_pro_doubles
-├── hyrox_relay
-└── deka_* / other genuinely compatible formats
-```
-
-### 6.4 Generic unsupported-event escape hatch
-
-Add:
-
-```text
-other_event
-└── custom
-```
-
-This is deliberately **generic support**, not pretend event-specific coaching:
-
-- stores the competition date/priority/lifecycle;
-- participates in generic event timing/phase handling;
-- uses a neutral/default demand profile;
-- has no event-specific modality qualification;
-- has no implicit sport-specific objective or synthetic event-specific taper;
-- UI states that planning is generic/limited.
-
-This is preferable to misusing `general_target`, whose semantics explicitly mean a non-competition dated target.
-
-## 7. Recon of missing event families
-
-The goal is not to put every sport into P0. The goal is to define where each missing family belongs and avoid repeating this architecture exercise.
-
-| Priority | Missing family | Recommended taxonomy direction | Why not all in P0 |
-|---|---|---|---|
-| **P0** | HYROX Open Singles | `fitness_race / hyrox_open_singles` | Immediate real use case; clear race morphology; needs genuine engine support. |
-| **P0** | Unsupported competition | `other_event / custom` | Prevents users from lying to the model by selecting the wrong sport. |
-| **P1** | Trail running | presets under `running_race` | Surface/vertical/technical demands need metadata beyond road distance. |
-| **P1** | MTB / XC / cyclocross | presets under `cycling_event` | Existing cycling family fits, but morphology differs from road/gravel. |
-| **P1** | Swimming races / open water | likely new `swimming_race` | Swimming already exists as modality but has no event family. |
-| **P1** | Duathlon / aquathlon | generalized multisport taxonomy or explicit categories | Current `triathlon` name is too specific; avoid forcing swim/bike/run assumptions. |
-| **P1** | HYROX Pro / Doubles / Relay | formats under `fitness_race` | Need explicit load/work-sharing semantics before claiming specificity. |
-| **P2** | DEKA-style fitness racing | `fitness_race` if demand review confirms compatibility | Similar family, but should not inherit HYROX calibration automatically. |
-| **P2** | OCR / Spartan | likely separate obstacle-race family | Technical/terrain/grip/obstacle skill differs materially. |
-| **P2** | CrossFit competition | separate competition model unless analysis proves otherwise | Event content can be unknown until competition; not equivalent to a fixed-format fitness race. |
-| Later | Rowing / ski races | dedicated family/preset when demand + catalog support exist | No value in UI taxonomy without planning behavior. |
-
-Rule for future additions:
-
-> A named event is not “supported” merely because it can be selected. First-class support requires a reviewed demand profile, relevant specific modalities/objectives, qualifying catalog sessions, and tests proving those semantics affect planning as intended.
-
-## 8. P0 architecture contract
-
-P0 is complete only when all of the following are true.
-
-### P0-A — taxonomy and compatibility
-
-- `fitness_race` is a valid event category.
-- `other_event` is a valid generic competition category.
-- existing five categories and 19 presets remain byte/behavior compatible unless explicitly changed.
-- existing goal documents require no migration.
-- stale/unknown preset fallback remains deterministic and safe.
-
-### P0-B — preset authority
-
-- one canonical resolver returns demand profile plus event-specific metadata;
-- HYROX Open Singles resolves to Running + Strength (and only uses `Cross Training` when an authored qualifying session intentionally does so);
-- callers no longer need a new category switch merely to discover HYROX-specific modalities/objectives;
-- category defaults remain a compatibility layer for the existing preset set.
-
-### P0-C — event-specific objectives
-
-- a HYROX Open Singles specificity week cannot be fully satisfied by an unrelated run plus ordinary strength maintenance alone;
-- at least one objective requires compromised running;
-- at least one objective requires station-oriented strength endurance;
-- objective credit remains deterministic and auditable through the existing weekly objective/coverage model.
-
-### P0-D — usable catalog
-
-- enough templates exist to satisfy the new objectives when required equipment is available;
-- equipment limitations degrade to safe/general training rather than selecting an impossible station session;
-- template stimulus/cost annotations reflect the existing 6D fatigue architecture;
-- no new template bypasses safety/recovery constraints.
-
-### P0-E — taper and priority separation
-
-- explicit authored taper remains highest authority;
-- fitness-race taper defaults, if introduced, are preset/family policy rather than inferred by promoting event priority;
-- `other_event/custom` does not receive a false event-specific taper;
-- existing event taper behavior remains unchanged outside the new family.
-
-### P0-F — knowledge and provenance
-
-- event-demand product-policy claim is revised/versioned;
-- any new exact product calibration is explicitly labelled heuristic/product policy;
-- knowledge coverage/alignment tests pass;
-- behavior-changing implementation bumps `POLICY_VERSION`.
-
-### P0-G — UI honesty
-
-- “Event style” becomes “Event format”;
-- HYROX Open Singles is selectable under Fitness race;
-- generic custom event is selectable under Other event;
-- generic support is visibly distinguished from specific support so the UI does not overclaim coaching specificity.
-
-## 9. Compatibility, migration and failure behavior
-
-### 9.1 Persisted goals
-
-The proposed P0 is additive. Existing `eventCategory` and `eventPreset` values remain legal. Because demand profiles are resolved at runtime, no backfill of persisted demand vectors is required.
-
-### 9.2 Unknown/stale presets
-
-The current `resolveDemandProfile` intentionally falls back to the category default for an unknown preset id. Preserve graceful handling, but expose enough diagnostic/support metadata that an unknown HYROX/custom value cannot silently masquerade as a specifically supported format.
-
-### 9.3 Generic custom events
-
-A custom competition must fail **open only to generic planning**, not to a fabricated sport-specific plan. Its limitations should be explicit in the UI and decision trace where relevant.
-
-### 9.4 Recommendation replay
-
-Any P0 change that can change candidate eligibility, weekly objective benefit, taper state or final ranking is policy-changing under ADR-0010. The implementation PR must bump `POLICY_VERSION`; this docs-only PR must not.
-
-## 10. Decision
-
-Proceed with the P0 implementation described in the paired plan.
-
-The critical design decisions are:
-
-1. root family = `fitness_race`, not `hyrox`;
-2. first-class P0 format = `hyrox_open_singles`;
-3. unsupported competitions get a truthful `other_event/custom` path;
-4. the preset resolver becomes the home for event-format semantics while current category defaults remain compatible;
-5. retain the seven generic demand axes in P0 and add narrow fitness-race objective semantics rather than redesigning the entire demand model;
-6. no event is labelled first-class until objective + catalog + taper/periodization + test behavior exists;
-7. Sports Knowledge Registry and `POLICY_VERSION` changes ship with the behavior-changing implementation, not with this analysis PR.
+The exact type names may differ, but one resolver must own this information.
+
+Initial entries:
+
+- `fitness_race / hyrox_open_singles` — specific support, Running + Strength + Cross Training semantics, HYROX coverage/plan/taper policy;
+- `other_event / custom` — generic support, empty specific-modality set, no format-specific coverage.
+
+## 5. HYROX Open Singles demand interpretation
+
+The existing seven demand axes can describe the high-level physiology without adding new axes in P0:
+
+- high aerobic endurance;
+- high threshold power / sustainable high aerobic output;
+- moderate-high VO2max demand;
+- high repeated-surges / transition demand;
+- modest pure sprint importance;
+- high fatigue resistance;
+- high neuromuscular demand.
+
+Exact normalized values are product calibration. They must be registered as policy and must not be presented as direct scientific measurements.
+
+The missing semantics are not another scalar axis; they are **session morphology** and exact role coverage.
+
+## 6. Cross-check against the active athlete plan used for this review
+
+The supplied 2026–2027 cycling-primary hybrid plan treats HYROX Warsaw as a secondary event and deliberately preserves these constraints:
+
+- October–January: only running robustness/station familiarity;
+- protected cycling VO2 work through early February;
+- February: transition toward roughly two run exposures plus skills;
+- March: main HYROX-specific block, with three runs only if mechanically tolerated;
+- HYROX work replaces cycling/generic assistance rather than stacking on top;
+- one real strength exposure remains;
+- partial simulations are preferred to repeated full simulations;
+- after HYROX, cycling regains priority quickly;
+- exact Warsaw race day is still provisional.
+
+The product feature must be capable of representing this architecture. It must not hardcode those athlete-specific priorities as universal HYROX defaults.
+
+## 7. Scope boundary
+
+P0 should make one fitness-race format correct end-to-end. It should **not** attempt to model every HYROX division or every branded fitness race.
+
+Deferred formats may include:
+
+- HYROX Pro;
+- HYROX Doubles;
+- HYROX Relay;
+- adaptive divisions;
+- other fitness-race brands.
+
+Each may reuse the root category while supplying different preset metadata, coverage and executable station prescriptions.
+
+## 8. Acceptance bar for the implementation PR
+
+P0 is complete only when all of the following are true:
+
+1. HYROX Open Singles is selectable and round-trips through persistence.
+2. The downstream `UserEvent` retains format identity.
+3. A provisional HYROX Warsaw fixture can be represented with `EventTiming`; no test calls 10 April a confirmed day.
+4. Canonical event semantics are resolved in one place and consumed by periodization **and** optimizer focus-modality logic.
+5. Fitness-race specificity is expressed with exact coverage roles, not invented from stimulus/category.
+6. A HYROX-specific `PlanDefinition` exists for the supported preset.
+7. At least one compromised-running and one station-focused catalog workout are executable through the canonical workout -> `SessionDefinition` -> `ExecutionPrescription` path.
+8. Equipment/time/readiness gates can reject or scale those sessions without losing role identity.
+9. Generic `other_event/custom` receives no HYROX-specific semantics.
+10. Explicit authored taper still overrides product defaults.
+11. SKR lineage is updated and `POLICY_VERSION` changes atomically with behavior.
+12. Existing event categories remain behaviorally unchanged in regression tests.
+13. `npm run check` and repository CI are green.
+
+## References
+
+Repository architecture:
+
+- `docs/adr/0001-record-architecture-decisions.md`
+- `docs/adr/0004-workout-library-architecture.md`
+- `docs/adr/0007-adaptive-multisport-engine-architecture.md`
+- `docs/adr/0010-decision-provenance-and-audit-replay.md`
+- `docs/adr/0012-plan-intent-authority.md`
+- `docs/adr/0016-adaptation-credit-and-weekly-coverage.md`
+- `docs/adr/0023-multidomain-session-authoring-execution-and-evidence.md`
+- `docs/adr/0033-sports-knowledge-registry.md`
+- `app/src/engine/models.ts`
+- `app/src/engine/eventPresets.ts`
+- `app/src/engine/periodization.ts`
+- `app/src/engine/optimizer.ts`
+- `app/src/engine/planSchedule.ts`
+- `app/src/engine/taperPolicy.ts`
+- `app/src/workouts/event-plan.ts`
+- `app/src/components/Goals.tsx`
+
+External:
+
+- HYROX Warsaw 2026/27 event page: <https://hyrox.com/event/hyrox-warsaw-26-27/>
+- HYROX race-format page: <https://hyrox.com/the-fitness-race/>
+- Wang et al. endurance taper systematic review/meta-analysis: <https://pubmed.ncbi.nlm.nih.gov/37163550/>
