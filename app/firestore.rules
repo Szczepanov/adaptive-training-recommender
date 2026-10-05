@@ -1494,7 +1494,7 @@ service cloud.firestore {
         && evidence.keys().hasOnly(['submittedAt', 'sessionRpe', 'completedFraction', 'unexpectedFatigue', 'note'])
         && evidence.keys().hasAll(['submittedAt'])
         && evidence.submittedAt is string
-        && (!('sessionRpe' in evidence) || (evidence.sessionRpe is number && evidence.sessionRpe >= 0 && evidence.sessionRpe <= 10))
+        && (!('sessionRpe' in evidence) || (evidence.sessionRpe is number && evidence.sessionRpe >= 1 && evidence.sessionRpe <= 10))
         && (!('completedFraction' in evidence) || (evidence.completedFraction is number && evidence.completedFraction >= 0 && evidence.completedFraction <= 1))
         && (!('unexpectedFatigue' in evidence) || evidence.unexpectedFatigue is bool)
         && (!('note' in evidence) || (evidence.note is string && evidence.note.size() <= 2000));
@@ -1854,8 +1854,6 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       allow update: if hasValidSessionExecution(userId, executionId)
         && keepsOwnership(userId)
         && resource.data.state == 'in_progress'
-        && request.resource.data.state in ['completed', 'abandoned']
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt', 'completedAt', 'sessionRpe', 'notes', 'completionEvidence'])
         && request.resource.data.date == resource.data.date
         && request.resource.data.startedAt == resource.data.startedAt
         && request.resource.data.sessionSource == resource.data.sessionSource
@@ -1863,11 +1861,21 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && (!('prescriptionHash' in resource.data) ? !('prescriptionHash' in request.resource.data) : request.resource.data.prescriptionHash == resource.data.prescriptionHash)
         && (!('fitWorkoutFingerprint' in resource.data) ? !('fitWorkoutFingerprint' in request.resource.data) : request.resource.data.fitWorkoutFingerprint == resource.data.fitWorkoutFingerprint)
         && (!('fitWorkoutFingerprintKind' in resource.data) ? !('fitWorkoutFingerprintKind' in request.resource.data) : request.resource.data.fitWorkoutFingerprintKind == resource.data.fitWorkoutFingerprintKind)
-        && ((request.resource.data.state == 'completed'
-              && request.resource.data.completedAt == request.resource.data.updatedAt)
-            || (request.resource.data.state == 'abandoned'
-              && !('completedAt' in request.resource.data)
-              && !('completionEvidence' in request.resource.data)));
+        && (
+          // Diary batches retain the existing parent updatedAt touch while the session is live.
+          (request.resource.data.state == 'in_progress'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt']))
+          ||
+          // Terminal state is one-way/final: the previous state must be in_progress and only
+          // canonical completion/abandon fields may change in the winning request.
+          (request.resource.data.state in ['completed', 'abandoned']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt', 'completedAt', 'sessionRpe', 'notes', 'completionEvidence'])
+            && ((request.resource.data.state == 'completed'
+                  && request.resource.data.completedAt == request.resource.data.updatedAt)
+                || (request.resource.data.state == 'abandoned'
+                  && !('completedAt' in request.resource.data)
+                  && !('completionEvidence' in request.resource.data))))
+        );
       allow delete: if isOwner(userId);
 
       match /entries/{entryId} {

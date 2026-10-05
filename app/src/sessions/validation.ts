@@ -628,8 +628,8 @@ export function validateSessionExecution(raw: unknown): ValidationResult<Session
             }
             if (evidence.sessionRpe !== undefined
                 && (typeof evidence.sessionRpe !== 'number' || !Number.isFinite(evidence.sessionRpe)
-                    || evidence.sessionRpe < 0 || evidence.sessionRpe > 10)) {
-                issues.push({ path: 'completionEvidence.sessionRpe', message: 'sessionRpe must be between 0 and 10' });
+                    || evidence.sessionRpe < 1 || evidence.sessionRpe > 10)) {
+                issues.push({ path: 'completionEvidence.sessionRpe', message: 'sessionRpe must be between 1 and 10' });
             }
             if (evidence.completedFraction !== undefined
                 && (typeof evidence.completedFraction !== 'number' || !Number.isFinite(evidence.completedFraction)
