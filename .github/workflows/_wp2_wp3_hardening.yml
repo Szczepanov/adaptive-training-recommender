@@ -1,0 +1,27 @@
+name: Harden WP2 WP3
+
+on:
+  push:
+    branches:
+      - feat/895-wp2-wp3-lifecycle-resume
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/895-wp2-wp3-lifecycle-resume
+          fetch-depth: 0
+      - run: python3 .github/scripts/wp2_wp3_hardening_patch.py
+      - run: rm .github/workflows/_wp2_wp3_hardening.yml .github/scripts/wp2_wp3_hardening_patch.py
+      - run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix(sessions): harden exact replay invariants (#895)"
+          git push origin HEAD:feat/895-wp2-wp3-lifecycle-resume
