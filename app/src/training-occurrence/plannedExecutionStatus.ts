@@ -169,8 +169,10 @@ export function projectPlannedExecutionStatus(input: PlannedExecutionStatusInput
                         : !exactPrimary ? 'unknown' : auditedScale ? 'app_dose_modified' : 'as_authored',
         athleteDisposition: unknown ? 'unknown'
             : exactOccurrence?.state === 'skipped' ? 'explicitly_skipped'
-                : exactOccurrence?.state === 'superseded' ? 'unknown'
-                    : manuallyReplaced ? 'manually_replaced'
+                // A lifecycle supersession caused by the exact verified manual replacement
+                // is positive evidence for the replacement, not generic unknown history.
+                : manuallyReplaced ? 'manually_replaced'
+                    : exactOccurrence?.state === 'superseded' ? 'unknown'
                         : replaceBlocksNormalAthlete ? 'unknown'
                             : exactOccurrence?.state === 'completed' || execution ? 'accepted'
                                 // M-8: a known replace means `none` would misstate
