@@ -21,7 +21,7 @@ import { getLocalDateString } from '../utils/localDate';
 import { sessionDefinitionService } from '../services/sessionDefinitionService';
 import { playRestCompleteSound } from '../utils/audioFeedback';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
-import { resolveEffectiveSession } from '../sessions/choiceResolution';
+import { resolveEffectiveChoiceEntries, resolveEffectiveSession } from '../sessions/choiceResolution';
 import { resolvePostEntryRestSeconds } from '../sessions/restTiming';
 import { completesPrescribedSet } from '../sessions/workSets';
 import { adjustRest, closeRest, restSecondsRemainingAt, sessionElapsedSecondsAt, startRest } from '../sessions/restEventTiming';
@@ -73,7 +73,7 @@ export interface UseSessionRunnerResult {
     prevStep: () => void;
     logEntry: (payload: SessionEntryPayload, side?: 'left' | 'right' | 'bilateral', selectedOptionId?: string) => Promise<void>;
     /** Records an athlete's answer to an authored `SessionChoice` as its own execution event. */
-    logChoice: (choiceId: string, optionId: string, reason?: string) => Promise<void>;
+    logChoice: (choiceId: string, optionId: string, reason?: string, supersedesChoiceEntryId?: string) => Promise<void>;
     editEntry: (entryId: string, updatedPayload: Partial<SessionEntryPayload>) => Promise<void>;
     removeEntry: (entryId: string) => Promise<void>;
     undo: () => Promise<void>;
@@ -477,6 +477,16 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         selectedOptionId?: string,
     ) => {
         if (!execution || execution.state !== 'in_progress' || !activeStep) return;
+        if (payload.kind === 'choice') throw new Error('Choice entries must be recorded through logChoice.');
+        const governingChoice = resolveEffectiveChoiceEntries(entries)
+            .filter(entry => rawDefinition?.blocks.some(block => {
+                const choice = block.optionSets?.find(candidate => candidate.id === entry.payload.choiceId);
+                if (!choice) return false;
+                if (choice.appliesAtStepId === activeStep.id) return true;
+                const option = choice.options.find(candidate => candidate.id === entry.payload.optionId);
+                return option?.actions.some(action => 'targetStepId' in action && action.targetStepId === activeStep.id) ?? false;
+            }))
+            .at(-1);
         const entryId = `entry-${Date.now()}-${crypto.randomUUID()}`;
         const now = new Date().toISOString();
         const entry: SessionEntry = {
@@ -487,7 +497,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             ...(activeStep.compositionPatterns ? { compositionPatterns: activeStep.compositionPatterns } : {}),
             ...(activeStep.degradedComposition ? { degradedComposition: activeStep.degradedComposition } : {}),
             ...(side ? { side } : {}),
-            ...(selectedOptionId ? { selectedOptionId } : {}),
+            ...(governingChoice
+                ? { governingChoiceEntryId: governingChoice.id, selectedOptionId: governingChoice.payload.optionId }
+                : selectedOptionId ? { selectedOptionId } : {}),
             completedAt: now,
             createdAt: now,
             updatedAt: now,
@@ -534,12 +546,25 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 setIsRestRunning(false);
             }
         }
-    }, [execution, activeStep, activeBlock, entries, userId, closeActiveRest, diaryWriteOptions]);
+    }, [execution, activeStep, activeBlock, rawDefinition, entries, userId, closeActiveRest, diaryWriteOptions]);
 
-    const logChoice = useCallback(async (choiceId: string, optionId: string, reason?: string) => {
+    const logChoice = useCallback(async (
+        choiceId: string,
+        optionId: string,
+        reason?: string,
+        supersedesChoiceEntryId?: string,
+    ) => {
         if (!execution || execution.state !== 'in_progress' || !activeBlock) return;
         const choice = activeBlock.optionSets?.find(candidate => candidate.id === choiceId);
         if (!choice) return;
+        const effectiveChoice = resolveEffectiveChoiceEntries(entries)
+            .find(entry => entry.payload.choiceId === choiceId);
+        if (effectiveChoice && !supersedesChoiceEntryId) {
+            throw new Error('A recorded choice can only be corrected by explicitly superseding its effective event.');
+        }
+        if (supersedesChoiceEntryId && effectiveChoice?.id !== supersedesChoiceEntryId) {
+            throw new Error('A corrected choice must supersede the current effective event for the same authored choice.');
+        }
         const entryId = `entry-${Date.now()}-${crypto.randomUUID()}`;
         const now = new Date().toISOString();
         const entry: SessionEntry = {
@@ -547,6 +572,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             executionId: execution.executionId,
             stepId: choice.appliesAtStepId,
             selectedOptionId: optionId,
+            ...(supersedesChoiceEntryId ? { supersedesChoiceEntryId } : {}),
             completedAt: now,
             createdAt: now,
             updatedAt: now,
@@ -561,13 +587,14 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         } catch {
             setSyncStatus('unavailable');
         }
-    }, [execution, activeBlock, userId, diaryWriteOptions]);
+    }, [execution, activeBlock, entries, userId, diaryWriteOptions]);
 
     const editEntry = useCallback(async (entryId: string, updatedPayload: Partial<SessionEntryPayload>) => {
         if (!execution || execution.state !== 'in_progress') return;
-        setEntries(prev => prev.map(e => (e.id === entryId ? { ...e, payload: { ...e.payload, ...updatedPayload } as SessionEntryPayload, updatedAt: new Date().toISOString() } : e)));
         const target = entries.find(e => e.id === entryId);
         if (!target) return;
+        if (target.payload.kind === 'choice') throw new Error('Choice entries are append-only; record a corrected choice instead.');
+        setEntries(prev => prev.map(e => (e.id === entryId ? { ...e, payload: { ...e.payload, ...updatedPayload } as SessionEntryPayload, updatedAt: new Date().toISOString() } : e)));
         try {
             await sessionExecutionService.correctEntry(userId, execution.executionId, entryId, {
                 payload: { ...target.payload, ...updatedPayload } as SessionEntryPayload,
@@ -580,9 +607,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const removeEntry = useCallback(async (entryId: string) => {
         if (!execution || execution.state !== 'in_progress') return;
         const target = entries.find(e => e.id === entryId);
-        if (target) {
-            setLastRemovedEntry(target);
-        }
+        if (!target) return;
+        if (target.payload.kind === 'choice') throw new Error('Choice entries are append-only; record a corrected choice instead.');
+        setLastRemovedEntry(target);
         setEntries(prev => prev.filter(e => e.id !== entryId));
         try {
             await sessionExecutionService.deleteEntry(userId, execution.executionId, entryId, diaryWriteOptions);
@@ -595,6 +622,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         if (!execution || execution.state !== 'in_progress' || !lastRemovedEntry) return;
         const toRestore = lastRemovedEntry;
         setLastRemovedEntry(null);
+        if (toRestore.payload.kind === 'choice') throw new Error('Choice entries are append-only and cannot be restored as a correction.');
         setEntries(prev => [...prev, { ...toRestore, deletedAt: null }]);
         try {
             await sessionExecutionService.restoreEntry(userId, execution.executionId, toRestore.id, diaryWriteOptions);
@@ -873,7 +901,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         isRestRunning,
         isRestoring,
         syncStatus,
-        canUndo: lastRemovedEntry !== null,
+        canUndo: lastRemovedEntry !== null && lastRemovedEntry.payload.kind !== 'choice',
         lastRemovedEntry,
         sessionEnded,
         ineligibleOptionIds,

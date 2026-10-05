@@ -20,6 +20,50 @@ import type {
     RangeOrNumber,
 } from './models';
 
+
+export type ChoiceSessionEntry = SessionEntry & {
+    payload: { kind: 'choice'; choiceId: string; optionId: string; reason?: string };
+};
+
+function compareChoiceEntries(a: ChoiceSessionEntry, b: ChoiceSessionEntry): number {
+    return a.completedAt.localeCompare(b.completedAt)
+        || a.createdAt.localeCompare(b.createdAt)
+        || a.id.localeCompare(b.id);
+}
+
+/**
+ * Resolve one effective append-only event per authored choice. Superseded events remain
+ * durable history but contribute no executable effect. A stable id tiebreak means two
+ * clients observing the same event set replay the same branch regardless of read order.
+ */
+export function resolveEffectiveChoiceEntries(entries: readonly SessionEntry[]): ChoiceSessionEntry[] {
+    const choiceEntries = entries
+        .filter((entry): entry is ChoiceSessionEntry => entry.payload.kind === 'choice')
+        .slice()
+        .sort(compareChoiceEntries);
+    const byId = new Map(choiceEntries.map(entry => [entry.id, entry]));
+    const supersededIds = new Set<string>();
+
+    for (const entry of choiceEntries) {
+        const targetId = entry.supersedesChoiceEntryId;
+        if (!targetId) continue;
+        const target = byId.get(targetId);
+        // New events are validated by service + rules. Defensively ignore malformed
+        // historical cross-choice edges instead of suppressing an unrelated choice.
+        if (target?.payload.choiceId === entry.payload.choiceId) supersededIds.add(targetId);
+    }
+
+    const effectiveByChoiceId = new Map<string, ChoiceSessionEntry>();
+    for (const entry of choiceEntries) {
+        if (supersededIds.has(entry.id)) continue;
+        const current = effectiveByChoiceId.get(entry.payload.choiceId);
+        if (!current || compareChoiceEntries(current, entry) < 0) {
+            effectiveByChoiceId.set(entry.payload.choiceId, entry);
+        }
+    }
+    return [...effectiveByChoiceId.values()].sort(compareChoiceEntries);
+}
+
 export interface EffectiveSessionView {
     /** Same shape/order as the input; step fields overridden by recorded choices. */
     definition: SessionDefinition;
@@ -89,12 +133,7 @@ export function resolveEffectiveSession(
     definition: SessionDefinition,
     entries: readonly SessionEntry[],
 ): EffectiveSessionView {
-    const choiceEntries = entries
-        .filter((entry): entry is SessionEntry & { payload: { kind: 'choice'; choiceId: string; optionId: string } } => entry.payload.kind === 'choice')
-        // Firestore reads carry no guaranteed order; fold choices in the order the
-        // athlete actually made them so "later choice wins" is meaningful.
-        .slice()
-        .sort((a, b) => a.completedAt.localeCompare(b.completedAt) || a.createdAt.localeCompare(b.createdAt));
+    const choiceEntries = resolveEffectiveChoiceEntries(entries);
 
     if (choiceEntries.length === 0) {
         return { definition, endedBlockIds: new Set(), sessionEnded: false };

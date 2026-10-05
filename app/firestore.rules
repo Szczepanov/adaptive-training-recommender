@@ -1538,7 +1538,7 @@ service cloud.firestore {
 
     function validSessionEntryData(data, executionId, entryId) {
       let payload = data.payload;
-      return data.keys().hasOnly(['id', 'executionId', 'stepId', 'exerciseRef', 'side', 'selectedOptionId', 'completedAt', 'createdAt', 'updatedAt', 'payload', 'diaryMutationId', 'deletedAt'])
+      return data.keys().hasOnly(['id', 'executionId', 'stepId', 'exerciseRef', 'side', 'selectedOptionId', 'governingChoiceEntryId', 'supersedesChoiceEntryId', 'completedAt', 'createdAt', 'updatedAt', 'payload', 'diaryMutationId', 'deletedAt'])
         && data.keys().hasAll(['id', 'executionId', 'completedAt', 'createdAt', 'updatedAt', 'payload'])
         && data.id == entryId
         && data.executionId == executionId
@@ -1547,6 +1547,13 @@ service cloud.firestore {
         && (!('deletedAt' in data) || data.deletedAt == null || data.deletedAt is string)
         && (!('stepId' in data) || data.stepId is string)
         && (!('selectedOptionId' in data) || data.selectedOptionId is string)
+        && (!('governingChoiceEntryId' in data)
+          || (payload.kind != 'choice' && data.governingChoiceEntryId is string && data.governingChoiceEntryId.size() > 0))
+        && (!('supersedesChoiceEntryId' in data)
+          || (payload.kind == 'choice'
+            && data.supersedesChoiceEntryId is string
+            && data.supersedesChoiceEntryId.size() > 0
+            && data.supersedesChoiceEntryId != entryId))
         && (!('side' in data) || data.side in ['left', 'right', 'bilateral'])
         && payload is map
         && (
@@ -1585,6 +1592,22 @@ service cloud.firestore {
         );
     }
 
+
+function isChoiceEntryReference(userId, executionId, choiceEntryId) {
+  let target = /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/entries/$(choiceEntryId);
+  return exists(target)
+    && get(target).data.executionId == executionId
+    && get(target).data.payload.kind == 'choice';
+}
+
+function hasValidChoiceSupersession(userId, executionId, entryId) {
+  let data = request.resource.data;
+  let target = /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/entries/$(data.supersedesChoiceEntryId);
+  return data.payload.kind == 'choice'
+    && data.supersedesChoiceEntryId != entryId
+    && isChoiceEntryReference(userId, executionId, data.supersedesChoiceEntryId)
+    && get(target).data.payload.choiceId == data.payload.choiceId;
+}
     // An immutable mutation and its materialized target must enter the queue together.
     // Comparing the prior bytes also rejects competing corrections instead of silently
     // losing one tab's update. Legacy entries can enter this discipline without migration.
@@ -1615,6 +1638,7 @@ service cloud.firestore {
               (data.kind == 'log' && data.before == null && data.after.deletedAt == null
                 && (!exists(target) || get(target).data == data.after))
               || (data.kind in ['correct', 'delete', 'restore'] && data.before is map
+                && data.before.payload.kind != 'choice' && data.after.payload.kind != 'choice'
                 && exists(target) && get(target).data == data.before
                 && data.after.id == data.before.id && data.after.createdAt == data.before.createdAt
                 && (
@@ -1799,8 +1823,15 @@ service cloud.firestore {
           && exists(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId))
           && get(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)).data.state == 'in_progress'
           && (request.method == 'delete'
-            ? !('diaryMutationId' in resource.data)
+            ? resource.data.payload.kind != 'choice' && !('diaryMutationId' in resource.data)
             : hasValidSessionEntry(executionId, entryId)
+              && (!('governingChoiceEntryId' in request.resource.data)
+                || isChoiceEntryReference(userId, executionId, request.resource.data.governingChoiceEntryId))
+              && (!('supersedesChoiceEntryId' in request.resource.data)
+                || hasValidChoiceSupersession(userId, executionId, entryId))
+              && (request.method != 'update'
+                || (resource.data.payload.kind != 'choice' && request.resource.data.payload.kind != 'choice')
+                || request.resource.data == resource.data)
               && (
                 (!('diaryMutationId' in request.resource.data)
                   && (request.method == 'create' || !('diaryMutationId' in resource.data)))

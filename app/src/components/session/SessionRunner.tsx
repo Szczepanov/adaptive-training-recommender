@@ -6,6 +6,7 @@ import { useOverloadHistory } from '../../hooks/useOverloadHistory';
 import type { ExerciseIdentity } from '../../workouts/overloadHistory';
 import { resolveStepInputProfile } from '../../sessions/inputProfiles';
 import { comparePlannedVsPerformed } from '../../sessions/performedComparison';
+import { resolveEffectiveChoiceEntries } from '../../sessions/choiceResolution';
 import { formatSessionLoad } from '../../sessions/loadDisplay';
 import { RepetitionInputCard } from './inputs/RepetitionInputCard';
 import { DurationInputCard } from './inputs/DurationInputCard';
@@ -21,6 +22,7 @@ import { completedPrescribedSets, nextHoldSide } from '../../sessions/workSets';
 import { stepName } from '../../sessions/stepDisplay';
 import { GroupProgress } from './GroupProgress';
 import { ChoiceCard } from './ChoiceCard';
+import { SessionEntryActions } from './SessionEntryActions';
 import { ExerciseSwapModal } from './ExerciseSwapModal';
 import { SessionDefinitionPreview } from './SessionDefinitionPreview';
 import { isSoundEnabled, setSoundEnabled } from '../../utils/audioFeedback';
@@ -236,6 +238,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [showAbandonConfirmation, setShowAbandonConfirmation] = useState<boolean>(false);
     const [completionError, setCompletionError] = useState<string | null>(null);
     const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+    const [correctingChoiceEntryId, setCorrectingChoiceEntryId] = useState<string | null>(null);
     const [editReps, setEditReps] = useState<string>('');
     const [editWeight, setEditWeight] = useState<string>('');
     const [savedDefinitions, setSavedDefinitions] = useState<SessionDefinitionHeader[]>([]);
@@ -611,13 +614,14 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         [definition, entries],
     );
 
+    const effectiveChoiceEntries = useMemo(() => resolveEffectiveChoiceEntries(entries), [entries]);
+    const effectiveChoiceEntryIds = useMemo(
+        () => new Set(effectiveChoiceEntries.map(entry => entry.id)),
+        [effectiveChoiceEntries],
+    );
     const answeredChoiceIds = useMemo(
-        () => new Set(
-            entries
-                .filter(e => e.payload.kind === 'choice')
-                .map(e => (e.payload as { choiceId: string }).choiceId),
-        ),
-        [entries],
+        () => new Set(effectiveChoiceEntries.map(entry => entry.payload.choiceId)),
+        [effectiveChoiceEntries],
     );
 
     // The choice due at the active step is authored and not yet answered. Other step
@@ -865,15 +869,21 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         );
     }
 
+    const findChoiceForEntry = (entry: SessionEntry) => {
+        if (entry.payload.kind !== 'choice') return null;
+        const choiceId = entry.payload.choiceId;
+        for (const block of definition.blocks) {
+            const choice = block.optionSets?.find(candidate => candidate.id === choiceId);
+            if (choice) return choice;
+        }
+        return null;
+    };
+
     const describeChoiceEntry = (entry: SessionEntry): string => {
         if (entry.payload.kind !== 'choice') return '';
-        const { choiceId, optionId } = entry.payload;
-        for (const block of definition.blocks) {
-            const choice = block.optionSets?.find(c => c.id === choiceId);
-            const option = choice?.options.find(o => o.id === optionId);
-            if (option) return option.label;
-        }
-        return optionId;
+        const optionId = entry.payload.optionId;
+        const choice = findChoiceForEntry(entry);
+        return choice?.options.find(option => option.id === optionId)?.label ?? optionId;
     };
 
     const formatTime = (totalSec: number) => {
@@ -1178,16 +1188,35 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                                         </span>
                                                     )}
                                                 </div>
-                                                <div className="entry-actions">
-                                                    {entry.payload.kind === 'repetition' && (
-                                                        <button type="button" className="entry-btn edit" onClick={() => handleStartEdit(entry)} aria-label={`Edit set ${idx + 1}`}>
-                                                            Edit
-                                                        </button>
+                                                <SessionEntryActions
+                                                    entry={entry}
+                                                    index={idx}
+                                                    isEffectiveChoice={entry.payload.kind === 'choice' && effectiveChoiceEntryIds.has(entry.id)}
+                                                    onEdit={() => handleStartEdit(entry)}
+                                                    onRemove={() => { void runner.removeEntry(entry.id); }}
+                                                    onCorrectChoice={() => setCorrectingChoiceEntryId(entry.id)}
+                                                />
+                                                {correctingChoiceEntryId === entry.id
+                                                    && entry.payload.kind === 'choice'
+                                                    && effectiveChoiceEntryIds.has(entry.id)
+                                                    && findChoiceForEntry(entry) && (
+                                                        <div className="choice-correction-panel">
+                                                            <p className="choice-trigger">Record a corrected choice. The original event remains in history.</p>
+                                                            <ChoiceCard
+                                                                choice={findChoiceForEntry(entry)!}
+                                                                ineligibleOptionIds={runner.ineligibleOptionIds}
+                                                                onSelect={async (optionId, reason) => {
+                                                                    const choice = findChoiceForEntry(entry);
+                                                                    if (!choice) return;
+                                                                    await runner.logChoice(choice.id, optionId, reason, entry.id);
+                                                                    setCorrectingChoiceEntryId(null);
+                                                                }}
+                                                            />
+                                                            <button type="button" className="choice-cancel-btn" onClick={() => setCorrectingChoiceEntryId(null)}>
+                                                                Cancel correction
+                                                            </button>
+                                                        </div>
                                                     )}
-                                                    <button type="button" className="entry-btn remove" onClick={() => runner.removeEntry(entry.id)} aria-label={`Remove set ${idx + 1}`}>
-                                                        ✕
-                                                    </button>
-                                                </div>
                                             </>
                                         )}
                                     </li>

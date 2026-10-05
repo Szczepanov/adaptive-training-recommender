@@ -450,6 +450,10 @@ export interface SessionEntry {
     degradedComposition?: { pattern: MovementCompositionPattern; reason: string };
     side?: 'left' | 'right' | 'bilateral';
     selectedOptionId?: string;
+    /** Choice event that governed this performed action. Historical work keeps this reference even after a later correction. */
+    governingChoiceEntryId?: string;
+    /** Append-only D-MCHOICE correction edge. The referenced choice event remains immutable. */
+    supersedesChoiceEntryId?: string;
     completedAt: string;
     createdAt: string;
     updatedAt: string;
