@@ -21,12 +21,12 @@ jobs:
       - name: Install frontend dependencies
         working-directory: app
         run: npm ci
-      - name: Run affected tests and capture output
+      - name: Run full unit suite and capture output
         working-directory: app
         shell: bash
         run: |
           set +e
-          npx vitest run src/engine/simulation/effectiveDoseSimulation.test.ts src/engine/forecastAuthority.test.ts src/engine/simulation/capabilityMaintenanceScenario.test.ts --reporter=verbose > /tmp/issue-858-vitest.log 2>&1
+          npx vitest run --reporter=verbose > /tmp/issue-858-vitest.log 2>&1
           code=$?
           cat /tmp/issue-858-vitest.log
           echo "$code" > /tmp/issue-858-exit-code.txt
