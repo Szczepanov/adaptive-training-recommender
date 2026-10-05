@@ -50,6 +50,7 @@ async function sealPreparedPrimaryBinding(params: AdjudicateIntradayBundleMember
     }
 
     const db = params.db ?? getDb();
+    const injectedOccurrenceService = params.services?.occurrenceService !== undefined;
     const occurrenceService = params.services?.occurrenceService
         ?? (params.db ? new SessionOccurrenceService(params.db) : sessionOccurrenceService);
     const allOccurrences = await occurrenceService.getOccurrencesForDate(userId, date);
@@ -107,9 +108,12 @@ async function sealPreparedPrimaryBinding(params: AdjudicateIntradayBundleMember
         const occurrenceSnap = await transaction.get(occurrenceRef);
         const windowSnap = await transaction.get(windowRef);
 
-        // Production should always have the prepared document. Unit-level callers often inject
-        // the already-parsed occurrence through the service seam without mirroring Firestore;
-        // use that exact object only when the document is absent, never a same-day/title lookup.
+        // Production must never recreate a disappearance between the service read and the
+        // transaction. The fallback exists only for unit-level service seams that inject the
+        // already-parsed occurrence without mirroring it into their fake Firestore store.
+        if (!occurrenceSnap.exists() && !injectedOccurrenceService) {
+            throw new Error(`Prepared bundle primary occurrence ${candidate.occurrenceId} disappeared before binding.`);
+        }
         let current: ExternalPlanSessionOccurrence = candidate;
         if (occurrenceSnap.exists()) {
             const parsed = parseSessionOccurrenceDocument(occurrenceSnap.data(), occurrenceRef.path);
