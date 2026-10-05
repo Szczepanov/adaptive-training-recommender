@@ -1,0 +1,31 @@
+name: Verify WP2 WP3
+
+on:
+  push:
+    branches:
+      - feat/895-wp2-wp3-lifecycle-resume
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/895-wp2-wp3-lifecycle-resume
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+      - name: Repository verification
+        run: make verify
+      - name: Firestore rules tests
+        working-directory: app
+        run: npm run test:rules
