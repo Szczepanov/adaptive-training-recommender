@@ -9,8 +9,9 @@ export interface DiaryWriteOptions {
 }
 
 /**
- * Firestore's persistent cache is the outbox. A mutation-marker snapshot is emitted
- * after the entire batch has entered local persistence; commit resolves only after
+ * Firestore's persistent cache is the outbox. A mutation-marker snapshot with a
+ * pending local write proves this batch has entered local persistence; an older cached
+ * copy of the same deterministic marker is not sufficient. commit resolves only after
  * backend acknowledgement. Never race a write against a timeout or navigator.onLine.
  */
 export function commitDiaryWrite(
@@ -22,7 +23,7 @@ export function commitDiaryWrite(
     const local = options.acknowledgeLocally
         ? new Promise<void>((resolve, reject) => {
             stop = onSnapshot(marker, { includeMetadataChanges: true }, snapshot => {
-                if (snapshot.exists()) {
+                if (snapshot.exists() && snapshot.metadata.hasPendingWrites) {
                     try { options.onLocallyAccepted?.(); resolve(); }
                     catch (error) { reject(error); }
                 }
