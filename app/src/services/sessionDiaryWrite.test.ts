@@ -5,9 +5,14 @@ const firestore = vi.hoisted(() => ({ onSnapshot: vi.fn() }));
 vi.mock('firebase/firestore', () => firestore);
 import { commitDiaryWrite } from './sessionDiaryWrite';
 
+type MarkerSnapshot = {
+    exists: () => boolean;
+    metadata: { hasPendingWrites: boolean };
+};
+
 describe('commitDiaryWrite', () => {
-    it('accepts only after a local marker snapshot, without waiting for the server', async () => {
-        let emit!: (snapshot: { exists: () => boolean }) => void;
+    it('accepts only after this write has a pending local marker, without waiting for the server', async () => {
+        let emit!: (snapshot: MarkerSnapshot) => void;
         const stop = vi.fn();
         firestore.onSnapshot.mockImplementationOnce((_ref, _options, next) => { emit = next; return stop; });
         let acknowledge!: () => void;
@@ -16,10 +21,15 @@ describe('commitDiaryWrite', () => {
         let accepted = false;
         const result = commitDiaryWrite({ commit: () => commit } as WriteBatch, {} as DocumentReference,
             { acknowledgeLocally: true, onAcknowledged }).then(() => { accepted = true; });
-        emit({ exists: () => false });
+        emit({ exists: () => false, metadata: { hasPendingWrites: false } });
         await Promise.resolve();
         expect(accepted).toBe(false);
-        emit({ exists: () => true });
+        // A deterministic marker may already exist in cache from an earlier acknowledged
+        // attempt. Existence alone must not prove that this batch has entered the local queue.
+        emit({ exists: () => true, metadata: { hasPendingWrites: false } });
+        await Promise.resolve();
+        expect(accepted).toBe(false);
+        emit({ exists: () => true, metadata: { hasPendingWrites: true } });
         await result;
         expect(stop).toHaveBeenCalledOnce();
         expect(onAcknowledged).not.toHaveBeenCalled();
@@ -30,14 +40,14 @@ describe('commitDiaryWrite', () => {
     });
 
     it('reports backend rejection even after local acceptance', async () => {
-        let emit!: (snapshot: { exists: () => boolean }) => void;
+        let emit!: (snapshot: MarkerSnapshot) => void;
         firestore.onSnapshot.mockImplementationOnce((_ref, _options, next) => { emit = next; return vi.fn(); });
         let reject!: (error: unknown) => void;
         const commit = new Promise<void>((_resolve, fail) => { reject = fail; });
         const onFailed = vi.fn();
         const local = commitDiaryWrite({ commit: () => commit } as WriteBatch, {} as DocumentReference,
             { acknowledgeLocally: true, onFailed });
-        emit({ exists: () => true });
+        emit({ exists: () => true, metadata: { hasPendingWrites: true } });
         await local;
         const error = new Error('permission-denied');
         reject(error);
