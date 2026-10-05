@@ -80,7 +80,7 @@ async function forecast(start: string, events: UserEvent[], days = 7, intentProf
 async function expectLiveAuthority(plan: WeekAheadPlan, start: string, target: string, events: UserEvent[],
     intentProfile = profile, blocks: AuthoredPlanBlock[] = [], today = rest, initialHistory: readonly CompletedExposure[] = []) {
     const performed = [...initialHistory, ...[recommendationDay(start, today), ...plan.days.filter(day => day.date < target)]
-        .map(day => toCompletedExposure(day))];
+        .map(toCompletedExposure)];
     const provider = historyProvider(performed);
     const recommendation = await evaluateTrainingWithIntent('u1', readiness, context, events, target,
         undefined, provider, undefined, [], blocks, intentProfile, preferences);

@@ -231,6 +231,8 @@ function simulatedRecommendationForDay(day: WeekAheadDay): Recommendation {
     } as Recommendation;
 }
 
+export function toCompletedExposure(day: WeekAheadDay): CompletedExposure;
+export function toCompletedExposure(day: WeekAheadDay, recommendation: Recommendation): CompletedExposure;
 export function toCompletedExposure(day: WeekAheadDay, recommendation?: Recommendation): CompletedExposure {
     // A forecast day keeps the authored catalog identity for coverage, but the
     // completed-history replay must represent the dose we actually prescribed.
@@ -239,7 +241,7 @@ export function toCompletedExposure(day: WeekAheadDay, recommendation?: Recommen
     const effectiveTemplate = materializeEffectiveSimulationTemplate(day.template, day.activeDose);
     const workoutId = workoutForTemplate(effectiveTemplate.id)?.id;
     const prescribedDurationMin = resolveWorkoutPrescription(
-        recommendation ?? simulatedRecommendationForDay(day),
+        (recommendation && typeof recommendation === 'object' ? recommendation : undefined) ?? simulatedRecommendationForDay(day),
         'sim-user',
         day.date,
         undefined,
@@ -492,7 +494,9 @@ export async function runScenario(
         allocationReports.push({ weekIndex: week, report: plan.allocationReport });
         if (plan.authoritySegments) authoritySegments.push({ weekIndex: week, segments: plan.authoritySegments });
         plan.objectiveCredits.forEach(credit => objectiveCredits.push({ weekIndex: week, ...credit }));
-        simulatedDays.forEach((day, index) => accumulatedHistory.push(toCompletedExposure(day, index === 0 ? todayRec : undefined)));
+        simulatedDays.forEach((day, index) => accumulatedHistory.push(index === 0
+            ? toCompletedExposure(day, todayRec)
+            : toCompletedExposure(day)));
 
         plan.microcycleObjectives.forEach(obj => {
             const tally = objectiveTallies.get(obj.key) ?? { key: obj.key, timesGenerated: 0, timesResolved: 0 };
