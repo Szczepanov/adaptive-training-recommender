@@ -1,0 +1,700 @@
+name: Apply issue 994 patch v2
+
+on:
+  push:
+    branches: [ fix/994-append-only-choice-events ]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, '[issue-994-applied]') }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/994-append-only-choice-events
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Apply focused #994 changes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+          from textwrap import dedent, indent
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one literal match, found {count}: {old[:100]!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          def sub_once(path: str, pattern: str, replacement: str) -> None:
+              p = Path(path)
+              text = p.read_text()
+              text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one regex match, found {count}: {pattern[:100]!r}')
+              p.write_text(text)
+
+          # --- model + validation ---------------------------------------------------------
+          replace_once(
+              'app/src/sessions/models.ts',
+              "    selectedOptionId?: string;\n    completedAt: string;",
+              "    selectedOptionId?: string;\n    /** Choice event that governed this performed action. Historical work keeps this reference even after a later correction. */\n    governingChoiceEntryId?: string;\n    /** Append-only D-MCHOICE correction edge. The referenced choice event remains immutable. */\n    supersedesChoiceEntryId?: string;\n    completedAt: string;",
+          )
+
+          replace_once(
+              'app/src/sessions/validation.ts',
+              "    if (raw.deletedAt !== undefined && raw.deletedAt !== null && (typeof raw.deletedAt !== 'string' || raw.deletedAt.length === 0)) issues.push({ path: 'deletedAt', message: 'Invalid deletion timestamp' });\n    if (raw.compositionPatterns !== undefined",
+              "    if (raw.deletedAt !== undefined && raw.deletedAt !== null && (typeof raw.deletedAt !== 'string' || raw.deletedAt.length === 0)) issues.push({ path: 'deletedAt', message: 'Invalid deletion timestamp' });\n    if (raw.governingChoiceEntryId !== undefined\n        && (typeof raw.governingChoiceEntryId !== 'string' || raw.governingChoiceEntryId.length === 0)) {\n        issues.push({ path: 'governingChoiceEntryId', message: 'governingChoiceEntryId must be a non-empty string' });\n    }\n    if (raw.supersedesChoiceEntryId !== undefined\n        && (typeof raw.supersedesChoiceEntryId !== 'string'\n            || raw.supersedesChoiceEntryId.length === 0\n            || raw.supersedesChoiceEntryId === raw.id)) {\n        issues.push({ path: 'supersedesChoiceEntryId', message: 'supersedesChoiceEntryId must name a different choice entry' });\n    }\n    if (raw.compositionPatterns !== undefined",
+          )
+          replace_once(
+              'app/src/sessions/validation.ts',
+              "    if (issues.length > 0) return { ok: false, issues };\n    return { ok: true, value: raw as unknown as SessionEntry };\n}",
+              "    if (raw.governingChoiceEntryId !== undefined\n        && (!isObject(raw.payload) || raw.payload.kind === 'choice')) {\n        issues.push({ path: 'governingChoiceEntryId', message: 'Choice entries cannot govern themselves as performed work' });\n    }\n    if (raw.supersedesChoiceEntryId !== undefined\n        && (!isObject(raw.payload) || raw.payload.kind !== 'choice')) {\n        issues.push({ path: 'supersedesChoiceEntryId', message: 'Only choice entries may supersede another choice entry' });\n    }\n\n    if (issues.length > 0) return { ok: false, issues };\n    return { ok: true, value: raw as unknown as SessionEntry };\n}",
+          )
+
+          # --- deterministic append-only replay ------------------------------------------
+          choice_path = Path('app/src/sessions/choiceResolution.ts')
+          choice_text = choice_path.read_text()
+          marker = 'export interface EffectiveSessionView {\n'
+          helper = dedent('''
+          export type ChoiceSessionEntry = SessionEntry & {
+              payload: { kind: 'choice'; choiceId: string; optionId: string; reason?: string };
+          };
+
+          function compareChoiceEntries(a: ChoiceSessionEntry, b: ChoiceSessionEntry): number {
+              return a.completedAt.localeCompare(b.completedAt)
+                  || a.createdAt.localeCompare(b.createdAt)
+                  || a.id.localeCompare(b.id);
+          }
+
+          /**
+           * Resolve one effective append-only event per authored choice. Superseded events remain
+           * durable history but contribute no executable effect. A stable id tiebreak means two
+           * clients observing the same event set replay the same branch regardless of read order.
+           */
+          export function resolveEffectiveChoiceEntries(entries: readonly SessionEntry[]): ChoiceSessionEntry[] {
+              const choiceEntries = entries
+                  .filter((entry): entry is ChoiceSessionEntry => entry.payload.kind === 'choice')
+                  .slice()
+                  .sort(compareChoiceEntries);
+              const byId = new Map(choiceEntries.map(entry => [entry.id, entry]));
+              const supersededIds = new Set<string>();
+
+              for (const entry of choiceEntries) {
+                  const targetId = entry.supersedesChoiceEntryId;
+                  if (!targetId) continue;
+                  const target = byId.get(targetId);
+                  // New events are validated by service + rules. Defensively ignore malformed
+                  // historical cross-choice edges instead of suppressing an unrelated choice.
+                  if (target?.payload.choiceId === entry.payload.choiceId) supersededIds.add(targetId);
+              }
+
+              const effectiveByChoiceId = new Map<string, ChoiceSessionEntry>();
+              for (const entry of choiceEntries) {
+                  if (supersededIds.has(entry.id)) continue;
+                  const current = effectiveByChoiceId.get(entry.payload.choiceId);
+                  if (!current || compareChoiceEntries(current, entry) < 0) {
+                      effectiveByChoiceId.set(entry.payload.choiceId, entry);
+                  }
+              }
+              return [...effectiveByChoiceId.values()].sort(compareChoiceEntries);
+          }
+
+          ''')
+          if choice_text.count(marker) != 1:
+              raise SystemExit('choiceResolution.ts: effective view marker not unique')
+          choice_text = choice_text.replace(marker, helper + marker, 1)
+          pattern = r"    const choiceEntries = entries\n        \.filter\(\(entry\): entry is SessionEntry & \{ payload: \{ kind: 'choice'; choiceId: string; optionId: string \} \} => entry\.payload\.kind === 'choice'\)\n        // Firestore reads carry no guaranteed order; fold choices in the order the\n        // athlete actually made them so \"later choice wins\" is meaningful\.\n        \.slice\(\)\n        \.sort\(\(a, b\) => a\.completedAt\.localeCompare\(b\.completedAt\) \|\| a\.createdAt\.localeCompare\(b\.createdAt\)\);"
+          choice_text, count = re.subn(pattern, "    const choiceEntries = resolveEffectiveChoiceEntries(entries);", choice_text, count=1)
+          if count != 1:
+              raise SystemExit(f'choiceResolution.ts: choice selection replacement count={count}')
+          choice_path.write_text(choice_text)
+
+          # --- service hard boundary ------------------------------------------------------
+          replace_once(
+              'app/src/services/sessionExecutionService.ts',
+              "const ALREADY_COMPLETED_MESSAGE = 'A completed execution already exists for this session today.';",
+              "const ALREADY_COMPLETED_MESSAGE = 'A completed execution already exists for this session today.';\nconst CHOICE_APPEND_ONLY_MESSAGE = 'Choice entries are append-only; record a superseding choice event instead.';",
+          )
+          replace_once(
+              'app/src/services/sessionExecutionService.ts',
+              "    private async writeEntry(userId: string, executionId: string, entry: SessionEntry, options?: DiaryWriteOptions): Promise<void> {\n        const cached = await getDocFromCache(this.entryRef(userId, executionId, entry.id)).catch(() => null);",
+              "    private async writeEntry(userId: string, executionId: string, entry: SessionEntry, options?: DiaryWriteOptions): Promise<void> {\n        if (entry.governingChoiceEntryId !== undefined) {\n            if (entry.payload.kind === 'choice') throw new Error('A choice entry cannot be governed performed work.');\n            const governingChoice = await this.readEntryForMutation(userId, executionId, entry.governingChoiceEntryId);\n            if (governingChoice.deletedAt || governingChoice.payload.kind !== 'choice') {\n                throw new Error('governingChoiceEntryId must reference a live choice event in this execution.');\n            }\n        }\n        if (entry.supersedesChoiceEntryId !== undefined) {\n            if (entry.payload.kind !== 'choice' || entry.supersedesChoiceEntryId === entry.id) {\n                throw new Error('A choice supersession must reference a different choice entry.');\n            }\n            const superseded = await this.readEntryForMutation(userId, executionId, entry.supersedesChoiceEntryId);\n            if (superseded.deletedAt\n                || superseded.payload.kind !== 'choice'\n                || superseded.payload.choiceId !== entry.payload.choiceId) {\n                throw new Error('A choice correction may only supersede a live event for the same authored choice.');\n            }\n        }\n        const cached = await getDocFromCache(this.entryRef(userId, executionId, entry.id)).catch(() => null);",
+          )
+          replace_once(
+              'app/src/services/sessionExecutionService.ts',
+              "        const before = await this.readEntryForMutation(userId, executionId, entryId);\n        if (before.deletedAt) throw new Error('Restore the deleted diary entry before correcting it.');\n        // A correction may change performed semantics, never the stable record identity.",
+              "        const before = await this.readEntryForMutation(userId, executionId, entryId);\n        if (before.payload.kind === 'choice'\n            || updatedEntry.payload?.kind === 'choice'\n            || updatedEntry.supersedesChoiceEntryId !== undefined) {\n            throw new Error(CHOICE_APPEND_ONLY_MESSAGE);\n        }\n        if (before.deletedAt) throw new Error('Restore the deleted diary entry before correcting it.');\n        // A correction may change performed semantics, never the stable record identity.",
+          )
+          replace_once(
+              'app/src/services/sessionExecutionService.ts',
+              "        const before = await this.readEntryForMutation(userId, executionId, entryId);\n        if (before.deletedAt) return;\n        const now = new Date().toISOString();\n        const mutationId = `delete-${crypto.randomUUID()}`;",
+              "        const before = await this.readEntryForMutation(userId, executionId, entryId);\n        if (before.payload.kind === 'choice') throw new Error(CHOICE_APPEND_ONLY_MESSAGE);\n        if (before.deletedAt) return;\n        const now = new Date().toISOString();\n        const mutationId = `delete-${crypto.randomUUID()}`;",
+          )
+          replace_once(
+              'app/src/services/sessionExecutionService.ts',
+              "        const before = await this.readEntryForMutation(userId, executionId, entryId);\n        if (!before.deletedAt) return;\n        const now = new Date().toISOString();\n        const mutationId = `restore-${crypto.randomUUID()}`;",
+              "        const before = await this.readEntryForMutation(userId, executionId, entryId);\n        if (before.payload.kind === 'choice') throw new Error(CHOICE_APPEND_ONLY_MESSAGE);\n        if (!before.deletedAt) return;\n        const now = new Date().toISOString();\n        const mutationId = `restore-${crypto.randomUUID()}`;",
+          )
+          replace_once(
+              'app/src/services/sessionExecutionService.ts',
+              "            return parsed.status === 'AVAILABLE' && parsed.data.executionId === executionId && parsed.data.deletedAt\n                ? [parsed.data] : [];",
+              "            return parsed.status === 'AVAILABLE'\n                && parsed.data.executionId === executionId\n                && parsed.data.payload.kind !== 'choice'\n                && parsed.data.deletedAt\n                ? [parsed.data] : [];",
+          )
+
+          # --- runner: separate choice append from ordinary entry mutation ----------------
+          replace_once(
+              'app/src/hooks/useSessionRunner.ts',
+              "import { resolveEffectiveSession } from '../sessions/choiceResolution';",
+              "import { resolveEffectiveChoiceEntries, resolveEffectiveSession } from '../sessions/choiceResolution';",
+          )
+          replace_once(
+              'app/src/hooks/useSessionRunner.ts',
+              "    logChoice: (choiceId: string, optionId: string, reason?: string) => Promise<void>;",
+              "    logChoice: (choiceId: string, optionId: string, reason?: string, supersedesChoiceEntryId?: string) => Promise<void>;",
+          )
+          replace_once(
+              'app/src/hooks/useSessionRunner.ts',
+              "        if (!execution || execution.state !== 'in_progress' || !activeStep) return;\n        const entryId = `entry-${Date.now()}-${crypto.randomUUID()}`;",
+              "        if (!execution || execution.state !== 'in_progress' || !activeStep) return;\n        if (payload.kind === 'choice') throw new Error('Choice entries must be recorded through logChoice.');\n        const governingChoice = resolveEffectiveChoiceEntries(entries)\n            .filter(entry => entry.stepId === activeStep.id\n                && activeBlock?.optionSets?.some(choice => choice.id === entry.payload.choiceId && choice.appliesAtStepId === activeStep.id))\n            .at(-1);\n        const entryId = `entry-${Date.now()}-${crypto.randomUUID()}`;",
+          )
+          replace_once(
+              'app/src/hooks/useSessionRunner.ts',
+              "            ...(side ? { side } : {}),\n            ...(selectedOptionId ? { selectedOptionId } : {}),\n            completedAt: now,",
+              "            ...(side ? { side } : {}),\n            ...(governingChoice\n                ? { governingChoiceEntryId: governingChoice.id, selectedOptionId: governingChoice.payload.optionId }\n                : selectedOptionId ? { selectedOptionId } : {}),\n            completedAt: now,",
+          )
+
+          log_choice = indent(dedent('''
+          const logChoice = useCallback(async (
+              choiceId: string,
+              optionId: string,
+              reason?: string,
+              supersedesChoiceEntryId?: string,
+          ) => {
+              if (!execution || execution.state !== 'in_progress' || !activeBlock) return;
+              const choice = activeBlock.optionSets?.find(candidate => candidate.id === choiceId);
+              if (!choice) return;
+              const effectiveChoice = resolveEffectiveChoiceEntries(entries)
+                  .find(entry => entry.payload.choiceId === choiceId);
+              if (effectiveChoice && !supersedesChoiceEntryId) {
+                  throw new Error('A recorded choice can only be corrected by explicitly superseding its effective event.');
+              }
+              if (supersedesChoiceEntryId && effectiveChoice?.id !== supersedesChoiceEntryId) {
+                  throw new Error('A corrected choice must supersede the current effective event for the same authored choice.');
+              }
+              const entryId = `entry-${Date.now()}-${crypto.randomUUID()}`;
+              const now = new Date().toISOString();
+              const entry: SessionEntry = {
+                  id: entryId,
+                  executionId: execution.executionId,
+                  stepId: choice.appliesAtStepId,
+                  selectedOptionId: optionId,
+                  ...(supersedesChoiceEntryId ? { supersedesChoiceEntryId } : {}),
+                  completedAt: now,
+                  createdAt: now,
+                  updatedAt: now,
+                  payload: { kind: 'choice', choiceId, optionId, ...(reason ? { reason } : {}) },
+              };
+
+              setEntries(prev => [...prev, entry]);
+              setSyncStatus('pending');
+
+              try {
+                  await sessionExecutionService.logEntry(userId, execution.executionId, entry, diaryWriteOptions);
+              } catch {
+                  setSyncStatus('unavailable');
+              }
+          }, [execution, activeBlock, entries, userId, diaryWriteOptions]);
+          ''').strip(), '    ')
+          sub_once(
+              'app/src/hooks/useSessionRunner.ts',
+              r"    const logChoice = useCallback\(async \(choiceId: string, optionId: string, reason\?: string\) => \{.*?\n    \}, \[execution, activeBlock, userId, diaryWriteOptions\]\);",
+              log_choice,
+          )
+
+          edit_entry = indent(dedent('''
+          const editEntry = useCallback(async (entryId: string, updatedPayload: Partial<SessionEntryPayload>) => {
+              if (!execution || execution.state !== 'in_progress') return;
+              const target = entries.find(e => e.id === entryId);
+              if (!target) return;
+              if (target.payload.kind === 'choice') throw new Error('Choice entries are append-only; record a corrected choice instead.');
+              setEntries(prev => prev.map(e => (e.id === entryId ? { ...e, payload: { ...e.payload, ...updatedPayload } as SessionEntryPayload, updatedAt: new Date().toISOString() } : e)));
+              try {
+                  await sessionExecutionService.correctEntry(userId, execution.executionId, entryId, {
+                      payload: { ...target.payload, ...updatedPayload } as SessionEntryPayload,
+                  }, diaryWriteOptions);
+              } catch {
+                  setSyncStatus('unavailable');
+              }
+          }, [execution, entries, userId, diaryWriteOptions]);
+          ''').strip(), '    ')
+          sub_once(
+              'app/src/hooks/useSessionRunner.ts',
+              r"    const editEntry = useCallback\(async \(entryId: string, updatedPayload: Partial<SessionEntryPayload>\) => \{.*?\n    \}, \[execution, entries, userId, diaryWriteOptions\]\);",
+              edit_entry,
+          )
+          replace_once(
+              'app/src/hooks/useSessionRunner.ts',
+              "        const target = entries.find(e => e.id === entryId);\n        if (target) {\n            setLastRemovedEntry(target);\n        }\n        setEntries(prev => prev.filter(e => e.id !== entryId));",
+              "        const target = entries.find(e => e.id === entryId);\n        if (!target) return;\n        if (target.payload.kind === 'choice') throw new Error('Choice entries are append-only; record a corrected choice instead.');\n        setLastRemovedEntry(target);\n        setEntries(prev => prev.filter(e => e.id !== entryId));",
+          )
+          replace_once(
+              'app/src/hooks/useSessionRunner.ts',
+              "        const toRestore = lastRemovedEntry;\n        setLastRemovedEntry(null);\n        setEntries(prev => [...prev, { ...toRestore, deletedAt: null }]);",
+              "        const toRestore = lastRemovedEntry;\n        setLastRemovedEntry(null);\n        if (toRestore.payload.kind === 'choice') throw new Error('Choice entries are append-only and cannot be restored as a correction.');\n        setEntries(prev => [...prev, { ...toRestore, deletedAt: null }]);",
+          )
+          replace_once(
+              'app/src/hooks/useSessionRunner.ts',
+              "        canUndo: lastRemovedEntry !== null,",
+              "        canUndo: lastRemovedEntry !== null && lastRemovedEntry.payload.kind !== 'choice',",
+          )
+
+          # --- small UI boundary so choice actions are testable ----------------------------
+          Path('app/src/components/session/SessionEntryActions.tsx').write_text(dedent('''
+          import React from 'react';
+          import type { SessionEntry } from '../../sessions/models';
+
+          interface SessionEntryActionsProps {
+              entry: SessionEntry;
+              index: number;
+              isEffectiveChoice: boolean;
+              onEdit: () => void;
+              onRemove: () => void;
+              onCorrectChoice: () => void;
+          }
+
+          export const SessionEntryActions: React.FC<SessionEntryActionsProps> = ({ entry, index, isEffectiveChoice, onEdit, onRemove, onCorrectChoice }) => (
+              <div className="entry-actions">
+                  {entry.payload.kind === 'choice' ? (
+                      isEffectiveChoice ? (
+                          <button type="button" className="entry-btn edit" onClick={onCorrectChoice} aria-label={`Correct choice ${index + 1}`}>
+                              Correct choice
+                          </button>
+                      ) : null
+                  ) : (
+                      <>
+                          {entry.payload.kind === 'repetition' && (
+                              <button type="button" className="entry-btn edit" onClick={onEdit} aria-label={`Edit set ${index + 1}`}>
+                                  Edit
+                              </button>
+                          )}
+                          <button type="button" className="entry-btn remove" onClick={onRemove} aria-label={`Remove set ${index + 1}`}>
+                              ✕
+                          </button>
+                      </>
+                  )}
+              </div>
+          );
+          ''').lstrip())
+
+          Path('app/src/components/session/SessionEntryActions.test.tsx').write_text(dedent('''
+          import React from 'react';
+          import { renderToStaticMarkup } from 'react-dom/server';
+          import { describe, expect, it, vi } from 'vitest';
+          import type { SessionEntry } from '../../sessions/models';
+          import { SessionEntryActions } from './SessionEntryActions';
+
+          function entry(payload: SessionEntry['payload']): SessionEntry {
+              return { id: 'entry-1', executionId: 'exec-1', completedAt: '2026-10-05T08:00:00Z', createdAt: '2026-10-05T08:00:00Z', updatedAt: '2026-10-05T08:00:00Z', payload };
+          }
+
+          describe('SessionEntryActions', () => {
+              it('offers append-only correction but no ordinary edit/remove for the effective choice', () => {
+                  const html = renderToStaticMarkup(<SessionEntryActions entry={entry({ kind: 'choice', choiceId: 'c1', optionId: 'o1' })} index={0} isEffectiveChoice onEdit={vi.fn()} onRemove={vi.fn()} onCorrectChoice={vi.fn()} />);
+                  expect(html).toContain('Correct choice');
+                  expect(html).not.toContain('Edit set');
+                  expect(html).not.toContain('Remove set');
+              });
+
+              it('offers no mutation action for superseded choice history', () => {
+                  const html = renderToStaticMarkup(<SessionEntryActions entry={entry({ kind: 'choice', choiceId: 'c1', optionId: 'o1' })} index={0} isEffectiveChoice={false} onEdit={vi.fn()} onRemove={vi.fn()} onCorrectChoice={vi.fn()} />);
+                  expect(html).not.toContain('<button');
+              });
+
+              it('keeps ordinary performed-entry actions', () => {
+                  const html = renderToStaticMarkup(<SessionEntryActions entry={entry({ kind: 'repetition', setIndex: 1, reps: 5 })} index={0} isEffectiveChoice={false} onEdit={vi.fn()} onRemove={vi.fn()} onCorrectChoice={vi.fn()} />);
+                  expect(html).toContain('Edit');
+                  expect(html).toContain('Remove set 1');
+              });
+          });
+          ''').lstrip())
+
+          # --- SessionRunner UI ------------------------------------------------------------
+          replace_once(
+              'app/src/components/session/SessionRunner.tsx',
+              "import { comparePlannedVsPerformed } from '../../sessions/performedComparison';",
+              "import { comparePlannedVsPerformed } from '../../sessions/performedComparison';\nimport { resolveEffectiveChoiceEntries } from '../../sessions/choiceResolution';",
+          )
+          replace_once(
+              'app/src/components/session/SessionRunner.tsx',
+              "import { ChoiceCard } from './ChoiceCard';",
+              "import { ChoiceCard } from './ChoiceCard';\nimport { SessionEntryActions } from './SessionEntryActions';",
+          )
+          replace_once(
+              'app/src/components/session/SessionRunner.tsx',
+              "    const [editingEntryId, setEditingEntryId] = useState<string | null>(null);\n    const [editReps, setEditReps] = useState<string>('');",
+              "    const [editingEntryId, setEditingEntryId] = useState<string | null>(null);\n    const [correctingChoiceEntryId, setCorrectingChoiceEntryId] = useState<string | null>(null);\n    const [editReps, setEditReps] = useState<string>('');",
+          )
+          effective_choice_block = indent(dedent('''
+          const effectiveChoiceEntries = useMemo(() => resolveEffectiveChoiceEntries(entries), [entries]);
+          const effectiveChoiceEntryIds = useMemo(
+              () => new Set(effectiveChoiceEntries.map(entry => entry.id)),
+              [effectiveChoiceEntries],
+          );
+          const answeredChoiceIds = useMemo(
+              () => new Set(effectiveChoiceEntries.map(entry => entry.payload.choiceId)),
+              [effectiveChoiceEntries],
+          );
+          ''').strip(), '    ')
+          sub_once(
+              'app/src/components/session/SessionRunner.tsx',
+              r"    const answeredChoiceIds = useMemo\(\n        \(\) => new Set\(\n            entries\n                \.filter\(e => e\.payload\.kind === 'choice'\)\n                \.map\(e => \(e\.payload as \{ choiceId: string \}\)\.choiceId\),\n        \),\n        \[entries\],\n    \);",
+              effective_choice_block,
+          )
+
+          describe_block = indent(dedent('''
+          const findChoiceForEntry = (entry: SessionEntry) => {
+              if (entry.payload.kind !== 'choice') return null;
+              const choiceId = entry.payload.choiceId;
+              for (const block of definition.blocks) {
+                  const choice = block.optionSets?.find(candidate => candidate.id === choiceId);
+                  if (choice) return choice;
+              }
+              return null;
+          };
+
+          const describeChoiceEntry = (entry: SessionEntry): string => {
+              if (entry.payload.kind !== 'choice') return '';
+              const optionId = entry.payload.optionId;
+              const choice = findChoiceForEntry(entry);
+              return choice?.options.find(option => option.id === optionId)?.label ?? optionId;
+          };
+          ''').strip(), '    ')
+          sub_once(
+              'app/src/components/session/SessionRunner.tsx',
+              r"    const describeChoiceEntry = \(entry: SessionEntry\): string => \{.*?\n    \};",
+              describe_block,
+          )
+
+          actions_block = indent(dedent('''
+          <SessionEntryActions
+              entry={entry}
+              index={idx}
+              isEffectiveChoice={entry.payload.kind === 'choice' && effectiveChoiceEntryIds.has(entry.id)}
+              onEdit={() => handleStartEdit(entry)}
+              onRemove={() => { void runner.removeEntry(entry.id); }}
+              onCorrectChoice={() => setCorrectingChoiceEntryId(entry.id)}
+          />
+          {correctingChoiceEntryId === entry.id
+              && entry.payload.kind === 'choice'
+              && effectiveChoiceEntryIds.has(entry.id)
+              && findChoiceForEntry(entry) && (
+                  <div className="choice-correction-panel">
+                      <p className="choice-trigger">Record a corrected choice. The original event remains in history.</p>
+                      <ChoiceCard
+                          choice={findChoiceForEntry(entry)!}
+                          ineligibleOptionIds={runner.ineligibleOptionIds}
+                          onSelect={async (optionId, reason) => {
+                              const choice = findChoiceForEntry(entry);
+                              if (!choice) return;
+                              await runner.logChoice(choice.id, optionId, reason, entry.id);
+                              setCorrectingChoiceEntryId(null);
+                          }}
+                      />
+                      <button type="button" className="choice-cancel-btn" onClick={() => setCorrectingChoiceEntryId(null)}>
+                          Cancel correction
+                      </button>
+                  </div>
+              )}
+          ''').strip(), '                                                ')
+          sub_once(
+              'app/src/components/session/SessionRunner.tsx',
+              r"                                                <div className=\"entry-actions\">\n                                                    \{entry\.payload\.kind === 'repetition' && \(.*?\n                                                </div>",
+              actions_block,
+          )
+
+          # --- Firestore rules -------------------------------------------------------------
+          replace_once(
+              'app/firestore.rules',
+              "return data.keys().hasOnly(['id', 'executionId', 'stepId', 'exerciseRef', 'side', 'selectedOptionId', 'completedAt', 'createdAt', 'updatedAt', 'payload', 'diaryMutationId', 'deletedAt'])",
+              "return data.keys().hasOnly(['id', 'executionId', 'stepId', 'exerciseRef', 'side', 'selectedOptionId', 'governingChoiceEntryId', 'supersedesChoiceEntryId', 'completedAt', 'createdAt', 'updatedAt', 'payload', 'diaryMutationId', 'deletedAt'])",
+          )
+          replace_once(
+              'app/firestore.rules',
+              "        && (!('selectedOptionId' in data) || data.selectedOptionId is string)\n        && (!('side' in data) || data.side in ['left', 'right', 'bilateral'])",
+              "        && (!('selectedOptionId' in data) || data.selectedOptionId is string)\n        && (!('governingChoiceEntryId' in data)\n          || (payload.kind != 'choice' && data.governingChoiceEntryId is string && data.governingChoiceEntryId.size() > 0))\n        && (!('supersedesChoiceEntryId' in data)\n          || (payload.kind == 'choice'\n            && data.supersedesChoiceEntryId is string\n            && data.supersedesChoiceEntryId.size() > 0\n            && data.supersedesChoiceEntryId != entryId))\n        && (!('side' in data) || data.side in ['left', 'right', 'bilateral'])",
+          )
+
+          rules_path = Path('app/firestore.rules')
+          rules_text = rules_path.read_text()
+          marker = "\n    // An immutable mutation and its materialized target must enter the queue together.\n"
+          helper_rules = dedent('''
+
+              function isChoiceEntryReference(userId, executionId, choiceEntryId) {
+                let target = /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/entries/$(choiceEntryId);
+                return exists(target)
+                  && get(target).data.executionId == executionId
+                  && get(target).data.payload.kind == 'choice';
+              }
+
+              function hasValidChoiceSupersession(userId, executionId, entryId) {
+                let data = request.resource.data;
+                let target = /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/entries/$(data.supersedesChoiceEntryId);
+                return data.payload.kind == 'choice'
+                  && data.supersedesChoiceEntryId != entryId
+                  && isChoiceEntryReference(userId, executionId, data.supersedesChoiceEntryId)
+                  && get(target).data.payload.choiceId == data.payload.choiceId;
+              }
+          ''').rstrip('\n')
+          if rules_text.count(marker) != 1:
+              raise SystemExit('firestore.rules: diary helper marker not unique')
+          rules_path.write_text(rules_text.replace(marker, helper_rules + marker, 1))
+
+          replace_once(
+              'app/firestore.rules',
+              "              || (data.kind in ['correct', 'delete', 'restore'] && data.before is map\n                && exists(target) && get(target).data == data.before",
+              "              || (data.kind in ['correct', 'delete', 'restore'] && data.before is map\n                && data.before.payload.kind != 'choice' && data.after.payload.kind != 'choice'\n                && exists(target) && get(target).data == data.before",
+          )
+          replace_once(
+              'app/firestore.rules',
+              "          && (request.method == 'delete'\n            ? !('diaryMutationId' in resource.data)\n            : hasValidSessionEntry(executionId, entryId)\n              && (",
+              "          && (request.method == 'delete'\n            ? resource.data.payload.kind != 'choice' && !('diaryMutationId' in resource.data)\n            : hasValidSessionEntry(executionId, entryId)\n              && (!('governingChoiceEntryId' in request.resource.data)\n                || isChoiceEntryReference(userId, executionId, request.resource.data.governingChoiceEntryId))\n              && (!('supersedesChoiceEntryId' in request.resource.data)\n                || hasValidChoiceSupersession(userId, executionId, entryId))\n              && (request.method != 'update'\n                || (resource.data.payload.kind != 'choice' && request.resource.data.payload.kind != 'choice')\n                || request.resource.data == resource.data)\n              && (",
+          )
+
+          # --- tests ----------------------------------------------------------------------
+          Path('app/src/sessions/choiceResolution.supersession.test.ts').write_text(dedent('''
+          import { describe, expect, it } from 'vitest';
+          import type { SessionDefinition, SessionEntry } from './models';
+          import { resolveEffectiveChoiceEntries, resolveEffectiveSession } from './choiceResolution';
+
+          const definition: SessionDefinition = {
+              schemaVersion: 1, id: 'def-1', revision: 1, title: 'Choice replay', intent: 'training',
+              blocks: [{ id: 'b1', role: 'main', executionMode: 'sequential', optionSets: [{
+                  id: 'c1', appliesAtStepId: 's1', trigger: { kind: 'athlete_observed', description: 'Choose' }, options: [
+                      { id: 'normal', label: 'Normal', actions: [] },
+                      { id: 'lighter', label: 'Lighter', actions: [{ kind: 'reduce_load_percent', targetStepId: 's1', percent: 10 }] },
+                      { id: 'fewer', label: 'Fewer sets', actions: [{ kind: 'reduce_sets', targetStepId: 's1', sets: 2 }] },
+                      { id: 'shorter', label: 'Fewer reps', actions: [{ kind: 'reduce_reps', targetStepId: 's1', reps: 3 }] },
+                  ],
+              }], steps: [{ id: 's1', kind: 'exercise', exerciseRef: { kind: 'catalog', exerciseId: 'back_squat' }, dose: { kind: 'repetition', sets: 3, reps: 5 }, load: { kind: 'mass', kg: 100 } }] }],
+          };
+
+          function choice(id: string, optionId: string, at: string, supersedesChoiceEntryId?: string): SessionEntry {
+              return { id, executionId: 'exec-1', stepId: 's1', selectedOptionId: optionId, ...(supersedesChoiceEntryId ? { supersedesChoiceEntryId } : {}), completedAt: at, createdAt: at, updatedAt: at, payload: { kind: 'choice', choiceId: 'c1', optionId } };
+          }
+
+          describe('choice supersession replay', () => {
+              it('replaces a superseded choice effect instead of stacking corrections', () => {
+                  const original = choice('a', 'lighter', '2026-10-05T08:00:00.000Z');
+                  const correction = choice('b', 'normal', '2026-10-05T08:01:00.000Z', 'a');
+                  expect(resolveEffectiveChoiceEntries([original, correction]).map(e => e.id)).toEqual(['b']);
+                  expect(resolveEffectiveSession(definition, [original, correction]).definition.blocks[0].steps[0].load).toEqual({ kind: 'mass', kg: 100 });
+              });
+
+              it('replays a correction chain identically regardless of input order', () => {
+                  const a = choice('a', 'lighter', '2026-10-05T08:00:00.000Z');
+                  const b = choice('b', 'fewer', '2026-10-05T08:01:00.000Z', 'a');
+                  const c = choice('c', 'shorter', '2026-10-05T08:02:00.000Z', 'b');
+                  const expected = resolveEffectiveSession(definition, [a, b, c]);
+                  for (const entries of [[c, a, b], [b, c, a], [c, b, a]]) expect(resolveEffectiveSession(definition, entries)).toEqual(expected);
+                  expect(expected.definition.blocks[0].steps[0].load).toEqual({ kind: 'mass', kg: 100 });
+                  expect(expected.definition.blocks[0].steps[0].dose).toEqual({ kind: 'repetition', sets: 3, reps: 3 });
+              });
+
+              it('uses id as a stable tie-break for concurrent correction heads', () => {
+                  const root = choice('a', 'lighter', '2026-10-05T08:00:00.000Z');
+                  const b = choice('b', 'fewer', '2026-10-05T08:01:00.000Z', 'a');
+                  const c = choice('c', 'shorter', '2026-10-05T08:01:00.000Z', 'a');
+                  expect(resolveEffectiveChoiceEntries([c, root, b]).map(e => e.id)).toEqual(['c']);
+                  expect(resolveEffectiveChoiceEntries([b, c, root]).map(e => e.id)).toEqual(['c']);
+              });
+
+              it('keeps legacy choice events without supersession readable', () => {
+                  const legacy = choice('legacy', 'lighter', '2026-10-05T08:00:00.000Z');
+                  expect(resolveEffectiveChoiceEntries([legacy])).toEqual([legacy]);
+              });
+          });
+          ''').lstrip())
+
+          Path('app/src/sessions/choiceEntryValidation.test.ts').write_text(dedent('''
+          import { describe, expect, it } from 'vitest';
+          import { validateSessionEntry } from './validation';
+
+          const at = '2026-10-05T08:01:00Z';
+          function base(payload: Record<string, unknown>) { return { id: 'entry-2', executionId: 'exec-1', completedAt: at, createdAt: at, updatedAt: at, payload }; }
+
+          describe('choice entry reference validation', () => {
+              it('accepts legacy choices, explicit supersession, and performed governing references', () => {
+                  expect(validateSessionEntry(base({ kind: 'choice', choiceId: 'c1', optionId: 'o1' })).ok).toBe(true);
+                  expect(validateSessionEntry({ ...base({ kind: 'choice', choiceId: 'c1', optionId: 'o2' }), supersedesChoiceEntryId: 'entry-1' }).ok).toBe(true);
+                  expect(validateSessionEntry({ ...base({ kind: 'repetition', setIndex: 1, reps: 5 }), governingChoiceEntryId: 'entry-1' }).ok).toBe(true);
+              });
+
+              it('rejects self-supersession and choice/performed reference shape inversion', () => {
+                  expect(validateSessionEntry({ ...base({ kind: 'choice', choiceId: 'c1', optionId: 'o2' }), supersedesChoiceEntryId: 'entry-2' }).ok).toBe(false);
+                  expect(validateSessionEntry({ ...base({ kind: 'repetition', setIndex: 1, reps: 5 }), supersedesChoiceEntryId: 'entry-1' }).ok).toBe(false);
+                  expect(validateSessionEntry({ ...base({ kind: 'choice', choiceId: 'c1', optionId: 'o1' }), governingChoiceEntryId: 'entry-1' }).ok).toBe(false);
+              });
+          });
+          ''').lstrip())
+
+          Path('app/src/services/sessionExecutionService.choiceAppendOnly.test.ts').write_text(dedent('''
+          import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+          const firestore = vi.hoisted(() => ({ doc: vi.fn(), getDoc: vi.fn(), setDoc: vi.fn(), getDocFromCache: vi.fn(), onSnapshot: vi.fn(), waitForPendingWrites: vi.fn(), collection: vi.fn(), getDocs: vi.fn(), query: vi.fn(), where: vi.fn(), orderBy: vi.fn(), runTransaction: vi.fn(), writeBatch: vi.fn() }));
+          const diaryWrite = vi.hoisted(() => ({ commitDiaryWrite: vi.fn().mockResolvedValue(undefined) }));
+          vi.mock('firebase/firestore', () => firestore);
+          vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
+          vi.mock('./sessionDiaryWrite', () => diaryWrite);
+          vi.mock('./sessionDiaryReceipts', () => ({ readDiaryReceipts: vi.fn(() => []), removeDiaryReceipt: vi.fn(), saveDiaryReceipt: vi.fn() }));
+          import { SessionExecutionService } from './sessionExecutionService';
+
+          const userId = 'u1'; const executionId = 'exec-1'; const at = '2026-10-05T08:00:00Z';
+          const choice = { id: 'choice-1', executionId, completedAt: at, createdAt: at, updatedAt: at, payload: { kind: 'choice', choiceId: 'c1', optionId: 'o1' } };
+          const performed = { id: 'set-1', executionId, completedAt: at, createdAt: at, updatedAt: at, payload: { kind: 'repetition', setIndex: 1, reps: 5 } };
+          function snap(data?: Record<string, unknown>) { return { exists: () => data !== undefined, data: () => data, metadata: { hasPendingWrites: false } }; }
+
+          describe('SessionExecutionService append-only choices', () => {
+              let service: SessionExecutionService;
+              beforeEach(() => {
+                  vi.clearAllMocks(); service = new SessionExecutionService();
+                  firestore.doc.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/'), id: segments.at(-1) }));
+                  firestore.collection.mockReturnValue({}); firestore.writeBatch.mockReturnValue({ set: vi.fn(), commit: vi.fn() });
+                  firestore.waitForPendingWrites.mockResolvedValue(undefined); firestore.getDoc.mockResolvedValue(snap());
+              });
+
+              it('rejects generic correct/delete/restore for choices before diary persistence', async () => {
+                  firestore.getDocFromCache.mockResolvedValue(snap(choice));
+                  await expect(service.correctEntry(userId, executionId, 'choice-1', { payload: { kind: 'choice', choiceId: 'c1', optionId: 'o2' } } as never)).rejects.toThrow('append-only');
+                  await expect(service.deleteEntry(userId, executionId, 'choice-1')).rejects.toThrow('append-only');
+                  firestore.getDocFromCache.mockResolvedValue(snap({ ...choice, deletedAt: at }));
+                  await expect(service.restoreEntry(userId, executionId, 'choice-1')).rejects.toThrow('append-only');
+                  expect(diaryWrite.commitDiaryWrite).not.toHaveBeenCalled();
+              });
+
+              it('keeps ordinary performed-entry correction working', async () => {
+                  firestore.getDocFromCache.mockResolvedValue(snap(performed));
+                  await service.correctEntry(userId, executionId, 'set-1', { payload: { kind: 'repetition', setIndex: 1, reps: 6 } } as never);
+                  expect(diaryWrite.commitDiaryWrite).toHaveBeenCalledOnce();
+              });
+
+              it('accepts same-choice supersession and rejects cross-kind/cross-choice references', async () => {
+                  firestore.getDocFromCache.mockImplementation(async (ref: { path: string }) => ref.path.endsWith('/choice-1') ? snap(choice) : snap());
+                  await service.logEntry(userId, executionId, { ...choice, id: 'choice-2', supersedesChoiceEntryId: 'choice-1', payload: { kind: 'choice', choiceId: 'c1', optionId: 'o2' } } as never);
+                  expect(diaryWrite.commitDiaryWrite).toHaveBeenCalledOnce();
+
+                  diaryWrite.commitDiaryWrite.mockClear();
+                  firestore.getDocFromCache.mockResolvedValue(snap(performed));
+                  await expect(service.logEntry(userId, executionId, { ...choice, id: 'choice-3', supersedesChoiceEntryId: 'set-1' } as never)).rejects.toThrow('same authored choice');
+                  expect(diaryWrite.commitDiaryWrite).not.toHaveBeenCalled();
+              });
+
+              it('requires governing performed references to resolve to a live choice event', async () => {
+                  firestore.getDocFromCache.mockImplementation(async (ref: { path: string }) => ref.path.endsWith('/choice-1') ? snap(choice) : snap());
+                  await service.logEntry(userId, executionId, { ...performed, governingChoiceEntryId: 'choice-1' } as never);
+                  expect(diaryWrite.commitDiaryWrite).toHaveBeenCalledOnce();
+              });
+          });
+          ''').lstrip())
+
+          Path('app/src/emulator/sessionChoiceAppendOnlyRules.emulator.test.ts').write_text(dedent('''
+          import { readFileSync } from 'node:fs';
+          import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
+          import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
+          import { deleteDoc, doc, getDoc, setDoc } from 'firebase/firestore';
+
+          const emulatorDescribe = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
+          let env: RulesTestEnvironment;
+          const userId = 'choice-owner'; const executionId = 'exec-choice';
+          const executionPath = `users/${userId}/session_executions/${executionId}`; const entriesPath = `${executionPath}/entries`; const at = '2026-10-05T08:00:00Z';
+          function choice(id: string, choiceId = 'c1', optionId = 'o1', extra: Record<string, unknown> = {}) { return { id, executionId, stepId: 's1', selectedOptionId: optionId, completedAt: at, createdAt: at, updatedAt: at, payload: { kind: 'choice', choiceId, optionId }, ...extra }; }
+          function performed(id: string, reps = 5, extra: Record<string, unknown> = {}) { return { id, executionId, stepId: 's1', completedAt: at, createdAt: at, updatedAt: at, payload: { kind: 'repetition', setIndex: 1, reps }, ...extra }; }
+
+          emulatorDescribe('Firestore rules — append-only session choices (#994)', () => {
+              beforeAll(async () => { env = await initializeTestEnvironment({ projectId: 'demo-choice-append-only', firestore: { rules: readFileSync('firestore.rules', 'utf8') } }); });
+              afterEach(async () => { await env.clearFirestore(); });
+              afterAll(async () => { await env.cleanup(); });
+              async function seedExecution() { await env.withSecurityRulesDisabled(async context => { await setDoc(doc(context.firestore(), executionPath), { state: 'in_progress' }); }); }
+
+              it('rejects edit, tombstone/restore, and physical delete of persisted choices', async () => {
+                  await seedExecution(); const db = env.authenticatedContext(userId).firestore(); const ref = doc(db, entriesPath, 'choice-1'); const original = choice('choice-1');
+                  await assertSucceeds(setDoc(ref, original));
+                  await assertFails(setDoc(ref, { ...original, updatedAt: '2026-10-05T08:01:00Z', payload: { kind: 'choice', choiceId: 'c1', optionId: 'o2' } }));
+                  await assertFails(setDoc(ref, { ...original, updatedAt: '2026-10-05T08:01:00Z', deletedAt: '2026-10-05T08:01:00Z' }));
+                  await assertFails(deleteDoc(ref));
+                  await env.withSecurityRulesDisabled(async context => { await setDoc(doc(context.firestore(), entriesPath, 'legacy-deleted'), choice('legacy-deleted', 'c2', 'o1', { deletedAt: at })); });
+                  const deletedRef = doc(db, entriesPath, 'legacy-deleted');
+                  await assertFails(setDoc(deletedRef, { ...choice('legacy-deleted', 'c2'), deletedAt: null }));
+                  await assertSucceeds(getDoc(deletedRef));
+              });
+
+              it('accepts explicit same-choice supersession and rejects invalid targets', async () => {
+                  await seedExecution(); const db = env.authenticatedContext(userId).firestore();
+                  await assertSucceeds(setDoc(doc(db, entriesPath, 'choice-1'), choice('choice-1')));
+                  await assertSucceeds(setDoc(doc(db, entriesPath, 'choice-2'), choice('choice-2', 'c1', 'o2', { supersedesChoiceEntryId: 'choice-1' })));
+                  await assertFails(setDoc(doc(db, entriesPath, 'wrong-choice'), choice('wrong-choice', 'c2', 'o2', { supersedesChoiceEntryId: 'choice-1' })));
+                  await assertFails(setDoc(doc(db, entriesPath, 'self'), choice('self', 'c1', 'o2', { supersedesChoiceEntryId: 'self' })));
+                  await assertSucceeds(setDoc(doc(db, entriesPath, 'set-1'), performed('set-1')));
+                  await assertFails(setDoc(doc(db, entriesPath, 'wrong-kind'), choice('wrong-kind', 'c1', 'o2', { supersedesChoiceEntryId: 'set-1' })));
+              });
+
+              it('keeps performed correction and validates governing choice provenance', async () => {
+                  await seedExecution(); const db = env.authenticatedContext(userId).firestore();
+                  await assertSucceeds(setDoc(doc(db, entriesPath, 'choice-1'), choice('choice-1')));
+                  const ref = doc(db, entriesPath, 'set-1'); const original = performed('set-1', 5, { governingChoiceEntryId: 'choice-1', selectedOptionId: 'o1' });
+                  await assertSucceeds(setDoc(ref, original));
+                  await assertSucceeds(setDoc(ref, { ...original, updatedAt: '2026-10-05T08:01:00Z', payload: { kind: 'repetition', setIndex: 1, reps: 6 } }));
+                  await assertFails(setDoc(doc(db, entriesPath, 'bad-governor'), performed('bad-governor', 5, { governingChoiceEntryId: 'set-1' })));
+                  await assertSucceeds(deleteDoc(ref));
+              });
+          });
+          ''').lstrip())
+
+          # Remove staging workflows from the eventual product PR diff.
+          for workflow in ['.github/workflows/issue-994-apply.yml', '.github/workflows/issue-994-apply-v2.yml']:
+              p = Path(workflow)
+              if p.exists(): p.unlink()
+          PY
+
+          git diff --check
+
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm ci --no-audit --fund=false
+
+      - name: Typecheck and lint
+        working-directory: app
+        run: |
+          npm run typecheck
+          npm run lint
+
+      - name: Run focused unit tests
+        working-directory: app
+        run: npx vitest run src/sessions/choiceResolution.supersession.test.ts src/sessions/choiceEntryValidation.test.ts src/services/sessionExecutionService.choiceAppendOnly.test.ts src/components/session/SessionEntryActions.test.tsx
+
+      - name: Run focused Firestore rules test
+        working-directory: app
+        run: npm run emulators:exec:rules -- "npx vitest run src/emulator/sessionChoiceAppendOnlyRules.emulator.test.ts --fileParallelism=false --maxWorkers=1"
+
+      - name: Commit and push validated patch
+        shell: bash
+        run: |
+          git config user.name "openai-codex[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(sessions): enforce append-only choice events (#994) [issue-994-applied]"
+          git push origin HEAD:fix/994-append-only-choice-events
