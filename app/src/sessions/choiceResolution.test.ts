@@ -151,22 +151,21 @@ describe('resolveEffectiveSession', () => {
         expect(view.sessionEnded).toBe(true);
     });
 
-    it('applies later choices after earlier ones regardless of array order, last write wins on a shared field', () => {
+    it('does not grant correction authority to unlinked later answers regardless of array order', () => {
         const definition = definitionWithChoice();
         const earlier = choiceEntry('opt-reduce-load', '2026-08-18T10:00:00.000Z', 'entry-a');
         const later = choiceEntry('opt-continue', '2026-08-18T10:05:00.000Z', 'entry-b');
-        // Passed out of chronological order -- resolution must sort by completedAt, not array order.
+        // Passed out of chronological order -- the unlinked later answer must not replace the deterministic root.
         const view = resolveEffectiveSession(definition, [later, earlier]);
-        // 'opt-continue' has no actions, so the earlier load reduction is the last actual effect.
         expect(view.definition.blocks[0].steps[0].load).toEqual({ kind: 'mass', kg: 90 });
 
         const bothReduce = resolveEffectiveSession(definition, [
             earlier,
             choiceEntry('opt-reduce-sets', '2026-08-18T10:05:00.000Z', 'entry-c'),
         ]);
-        // Two different choices targeting the same step both apply -- independent fields.
+        // A second unlinked answer to the same authored choice is history, not a correction.
         expect(bothReduce.definition.blocks[0].steps[0].load).toEqual({ kind: 'mass', kg: 90 });
-        expect(bothReduce.definition.blocks[0].steps[0].dose).toEqual({ kind: 'repetition', sets: 2, reps: 5 });
+        expect(bothReduce.definition.blocks[0].steps[0].dose).toEqual({ kind: 'repetition', sets: 3, reps: 5 });
     });
 
     it('preserves block/step array shape and order so index-based navigation stays valid', () => {
