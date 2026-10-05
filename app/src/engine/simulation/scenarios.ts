@@ -312,7 +312,7 @@ function capabilityMaintenanceScenario(optedIn: boolean): AthleteScenario {
             ? 'Cycling-primary hybrid with broad-athleticism opt-in, 8 weeks (#805)'
             : 'Cycling-primary hybrid without broad-athleticism opt-in, 8 weeks (#805)',
         description: optedIn
-            ? 'Stage-4-ready endurance+strength cyclist who opted in to capability maintenance. Owed field work lands on the mechanical support slot (due 13 days after the prior qualifying session, never earlier) without adding training days. Harness limit: sessions are recorded at template minimum duration, so the athlete falls below the #804 established bar after about three weeks and mechanical work is then withheld in both arms.'
+            ? 'Stage-4-ready endurance+strength cyclist who opted in to capability maintenance. Owed field work lands on the mechanical support slot (due 13 days after the prior qualifying session, never earlier) without adding training days. Simulated performed=recommended history records resolved prescription duration so training-age evidence is not artificially reduced by template range minima.'
             : 'Identical athlete and history without the opt-in: field templates stay behind the explicit-preference gate, so no field sport is prescribed.',
         context: context({ indoor_bike: true, outdoor_bike: true, free_weights: true }, ['Cycling', 'Strength']),
         event: null,
