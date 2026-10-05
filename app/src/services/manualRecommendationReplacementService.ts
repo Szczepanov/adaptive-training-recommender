@@ -40,7 +40,7 @@ export class ManualRecommendationReplacementService {
             let displaced: SessionOccurrence | null = null;
             let displacedRef: ReturnType<typeof doc> | null = null;
             let reservationRef: ReturnType<typeof doc> | null = null;
-            let reservationSnap: Awaited<ReturnType<typeof transaction.get>> | null = null;
+            let hasOwnedReservation = false;
 
             if (recommendationSnap.exists()) {
                 const parsedRecommendation = parseDailyRecommendation(
@@ -84,7 +84,7 @@ export class ManualRecommendationReplacementService {
                             'session_occurrence_windows',
                             windowReservationId(date, displaced.windowBinding.windowId),
                         );
-                        reservationSnap = await transaction.get(reservationRef);
+                        const reservationSnap = await transaction.get(reservationRef);
                         if (reservationSnap.exists()) {
                             const owner = reservationSnap.data()?.occurrenceId as string | undefined;
                             if (owner !== displaced.occurrenceId) {
@@ -92,6 +92,7 @@ export class ManualRecommendationReplacementService {
                                     `Prepared occurrence window is owned by another occurrence (${owner ?? 'unknown'}).`,
                                 );
                             }
+                            hasOwnedReservation = true;
                         }
                     }
                 }
@@ -103,7 +104,7 @@ export class ManualRecommendationReplacementService {
                     state: 'superseded',
                     updatedAt: now,
                 });
-                if (reservationRef && reservationSnap?.exists()) {
+                if (reservationRef && hasOwnedReservation) {
                     transaction.delete(reservationRef);
                 }
             }
