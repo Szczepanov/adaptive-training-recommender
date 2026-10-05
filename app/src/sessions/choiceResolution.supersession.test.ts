@@ -26,6 +26,13 @@ describe('choice supersession replay', () => {
         expect(resolveEffectiveSession(definition, [original, correction]).definition.blocks[0].steps[0].load).toEqual({ kind: 'mass', kg: 100 });
     });
 
+    it('does not let an unlinked later event silently correct an earlier choice', () => {
+        const original = choice('a', 'lighter', '2026-10-05T08:00:00.000Z');
+        const unlinkedLater = choice('z', 'normal', '2026-10-05T08:05:00.000Z');
+        expect(resolveEffectiveChoiceEntries([unlinkedLater, original]).map(e => e.id)).toEqual(['a']);
+        expect(resolveEffectiveSession(definition, [unlinkedLater, original]).definition.blocks[0].steps[0].load).toEqual({ kind: 'mass', kg: 90 });
+    });
+
     it('replays a correction chain identically regardless of input order', () => {
         const a = choice('a', 'lighter', '2026-10-05T08:00:00.000Z');
         const b = choice('b', 'fewer', '2026-10-05T08:01:00.000Z', 'a');
@@ -36,12 +43,12 @@ describe('choice supersession replay', () => {
         expect(expected.definition.blocks[0].steps[0].dose).toEqual({ kind: 'repetition', sets: 3, reps: 3 });
     });
 
-    it('uses id as a stable tie-break for concurrent correction heads', () => {
+    it('uses a stable earliest terminal tie-break for concurrent correction heads', () => {
         const root = choice('a', 'lighter', '2026-10-05T08:00:00.000Z');
         const b = choice('b', 'fewer', '2026-10-05T08:01:00.000Z', 'a');
         const c = choice('c', 'shorter', '2026-10-05T08:01:00.000Z', 'a');
-        expect(resolveEffectiveChoiceEntries([c, root, b]).map(e => e.id)).toEqual(['c']);
-        expect(resolveEffectiveChoiceEntries([b, c, root]).map(e => e.id)).toEqual(['c']);
+        expect(resolveEffectiveChoiceEntries([c, root, b]).map(e => e.id)).toEqual(['b']);
+        expect(resolveEffectiveChoiceEntries([b, c, root]).map(e => e.id)).toEqual(['b']);
     });
 
     it('keeps legacy choice events without supersession readable', () => {
