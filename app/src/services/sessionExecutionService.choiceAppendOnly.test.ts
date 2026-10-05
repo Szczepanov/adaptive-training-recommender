@@ -50,7 +50,12 @@ describe('SessionExecutionService append-only choices', () => {
 
     it('requires governing performed references to resolve to a live choice event', async () => {
         firestore.getDocFromCache.mockImplementation(async (ref: { path: string }) => ref.path.endsWith('/choice-1') ? snap(choice) : snap());
-        await service.logEntry(userId, executionId, { ...performed, governingChoiceEntryId: 'choice-1' } as never);
+        await service.logEntry(userId, executionId, { ...performed, governingChoiceEntryId: 'choice-1', selectedOptionId: 'o1' } as never);
         expect(diaryWrite.commitDiaryWrite).toHaveBeenCalledOnce();
+
+        diaryWrite.commitDiaryWrite.mockClear();
+        await expect(service.logEntry(userId, executionId, { ...performed, id: 'set-2', governingChoiceEntryId: 'choice-1', selectedOptionId: 'wrong-option' } as never))
+            .rejects.toThrow('option governed');
+        expect(diaryWrite.commitDiaryWrite).not.toHaveBeenCalled();
     });
 });

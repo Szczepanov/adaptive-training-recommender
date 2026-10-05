@@ -475,8 +475,10 @@ export class SessionExecutionService {
         if (entry.governingChoiceEntryId !== undefined) {
             if (entry.payload.kind === 'choice') throw new Error('A choice entry cannot be governed performed work.');
             const governingChoice = await this.readEntryForMutation(userId, executionId, entry.governingChoiceEntryId);
-            if (governingChoice.deletedAt || governingChoice.payload.kind !== 'choice') {
-                throw new Error('governingChoiceEntryId must reference a live choice event in this execution.');
+            if (governingChoice.deletedAt
+                || governingChoice.payload.kind !== 'choice'
+                || entry.selectedOptionId !== governingChoice.payload.optionId) {
+                throw new Error('governingChoiceEntryId must reference the live choice event whose option governed this performed entry.');
             }
         }
         if (entry.supersedesChoiceEntryId !== undefined) {

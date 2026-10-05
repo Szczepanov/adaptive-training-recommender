@@ -45,6 +45,7 @@ emulatorDescribe('Firestore rules — append-only session choices (#994)', () =>
         await assertSucceeds(setDoc(ref, original));
         await assertSucceeds(setDoc(ref, { ...original, updatedAt: '2026-10-05T08:01:00Z', payload: { kind: 'repetition', setIndex: 1, reps: 6 } }));
         await assertFails(setDoc(doc(db, entriesPath, 'bad-governor'), performed('bad-governor', 5, { governingChoiceEntryId: 'set-1' })));
+        await assertFails(setDoc(doc(db, entriesPath, 'wrong-option'), performed('wrong-option', 5, { governingChoiceEntryId: 'choice-1', selectedOptionId: 'o2' })));
         await assertSucceeds(deleteDoc(ref));
     });
 });
