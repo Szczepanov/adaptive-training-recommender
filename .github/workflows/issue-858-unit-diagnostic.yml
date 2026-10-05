@@ -48,6 +48,13 @@ jobs:
               "        (recommendation && typeof recommendation === 'object' ? recommendation : undefined) ?? simulatedRecommendationForDay(day),",
           )
           replace_one(
+              'app/src/engine/simulation/analyze.ts',
+              '        simulatedDays.forEach((day, index) => accumulatedHistory.push(toCompletedExposure(day, index === 0 ? todayRec : undefined)));',
+              '''        simulatedDays.forEach((day, index) => accumulatedHistory.push(index === 0
+                      ? toCompletedExposure(day, todayRec)
+                      : toCompletedExposure(day)));''',
+          )
+          replace_one(
               'app/src/engine/forecastAuthority.test.ts',
               '        .map(day => toCompletedExposure(day))];',
               '        .map(toCompletedExposure)];',
