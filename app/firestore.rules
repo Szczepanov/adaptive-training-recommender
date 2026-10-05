@@ -1597,7 +1597,8 @@ function isChoiceEntryReference(userId, executionId, choiceEntryId) {
   let target = /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/entries/$(choiceEntryId);
   return exists(target)
     && get(target).data.executionId == executionId
-    && get(target).data.payload.kind == 'choice';
+    && get(target).data.payload.kind == 'choice'
+    && (!('deletedAt' in get(target).data) || get(target).data.deletedAt == null);
 }
 
 function hasValidGoverningChoiceReference(userId, executionId) {
@@ -1834,6 +1835,9 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
           && (request.method == 'delete'
             ? resource.data.payload.kind != 'choice' && !('diaryMutationId' in resource.data)
             : hasValidSessionEntry(executionId, entryId)
+              && (request.resource.data.payload.kind != 'choice'
+                || !('deletedAt' in request.resource.data)
+                || request.resource.data.deletedAt == null)
               && (!('governingChoiceEntryId' in request.resource.data)
                 || hasValidGoverningChoiceReference(userId, executionId))
               && (!('supersedesChoiceEntryId' in request.resource.data)

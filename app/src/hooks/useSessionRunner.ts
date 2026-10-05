@@ -22,6 +22,7 @@ import { sessionDefinitionService } from '../services/sessionDefinitionService';
 import { playRestCompleteSound } from '../utils/audioFeedback';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { resolveEffectiveChoiceEntries, resolveEffectiveSession } from '../sessions/choiceResolution';
+import { assertChoiceOptionBelongsToChoice } from '../sessions/choiceSelection';
 import { resolvePostEntryRestSeconds } from '../sessions/restTiming';
 import { completesPrescribedSet } from '../sessions/workSets';
 import { adjustRest, closeRest, restSecondsRemainingAt, sessionElapsedSecondsAt, startRest } from '../sessions/restEventTiming';
@@ -557,6 +558,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         if (!execution || execution.state !== 'in_progress' || !activeBlock) return;
         const choice = activeBlock.optionSets?.find(candidate => candidate.id === choiceId);
         if (!choice) return;
+        assertChoiceOptionBelongsToChoice(choice, optionId);
         const effectiveChoice = resolveEffectiveChoiceEntries(entries)
             .find(entry => entry.payload.choiceId === choiceId);
         if (effectiveChoice && !supersedesChoiceEntryId) {

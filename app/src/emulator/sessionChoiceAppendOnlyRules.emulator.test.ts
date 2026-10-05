@@ -19,6 +19,7 @@ emulatorDescribe('Firestore rules — append-only session choices (#994)', () =>
     it('rejects edit, tombstone/restore, and physical delete of persisted choices', async () => {
         await seedExecution(); const db = env.authenticatedContext(userId).firestore(); const ref = doc(db, entriesPath, 'choice-1'); const original = choice('choice-1');
         await assertSucceeds(setDoc(ref, original));
+        await assertFails(setDoc(doc(db, entriesPath, 'choice-deleted-on-create'), choice('choice-deleted-on-create', 'c2', 'o1', { deletedAt: at })));
         await assertFails(setDoc(ref, { ...original, updatedAt: '2026-10-05T08:01:00Z', payload: { kind: 'choice', choiceId: 'c1', optionId: 'o2' } }));
         await assertFails(setDoc(ref, { ...original, updatedAt: '2026-10-05T08:01:00Z', deletedAt: '2026-10-05T08:01:00Z' }));
         await assertFails(deleteDoc(ref));
@@ -41,6 +42,11 @@ emulatorDescribe('Firestore rules — append-only session choices (#994)', () =>
     it('keeps performed correction and validates governing choice provenance', async () => {
         await seedExecution(); const db = env.authenticatedContext(userId).firestore();
         await assertSucceeds(setDoc(doc(db, entriesPath, 'choice-1'), choice('choice-1')));
+        await env.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), entriesPath, 'legacy-deleted-choice'), choice('legacy-deleted-choice', 'c2', 'o1', { deletedAt: at }));
+        });
+        await assertFails(setDoc(doc(db, entriesPath, 'bad-deleted-governor'), performed('bad-deleted-governor', 5, { governingChoiceEntryId: 'legacy-deleted-choice', selectedOptionId: 'o1' })));
+        await assertFails(setDoc(doc(db, entriesPath, 'bad-deleted-supersession'), choice('bad-deleted-supersession', 'c2', 'o2', { supersedesChoiceEntryId: 'legacy-deleted-choice' })));
         const ref = doc(db, entriesPath, 'set-1'); const original = performed('set-1', 5, { governingChoiceEntryId: 'choice-1', selectedOptionId: 'o1' });
         await assertSucceeds(setDoc(ref, original));
         await assertSucceeds(setDoc(ref, { ...original, updatedAt: '2026-10-05T08:01:00Z', payload: { kind: 'repetition', setIndex: 1, reps: 6 } }));
