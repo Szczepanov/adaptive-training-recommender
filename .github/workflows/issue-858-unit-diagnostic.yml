@@ -1,0 +1,39 @@
+name: Issue 858 unit diagnostic
+
+on:
+  push:
+    branches:
+      - issue-858-simulation-prescribed-duration
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm ci
+      - name: Run affected tests and capture output
+        working-directory: app
+        shell: bash
+        run: |
+          set +e
+          npx vitest run src/engine/simulation/effectiveDoseSimulation.test.ts src/engine/forecastAuthority.test.ts src/engine/simulation/capabilityMaintenanceScenario.test.ts --reporter=verbose > /tmp/issue-858-vitest.log 2>&1
+          code=$?
+          cat /tmp/issue-858-vitest.log
+          echo "$code" > /tmp/issue-858-exit-code.txt
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: issue-858-unit-diagnostic
+          path: |
+            /tmp/issue-858-vitest.log
+            /tmp/issue-858-exit-code.txt
