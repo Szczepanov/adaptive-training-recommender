@@ -154,7 +154,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     useEffect(() => {
         if (!execution) return;
         const stopSync = sessionExecutionService.watchDiarySync(userId, execution.executionId, pending => {
-            if (!diaryFailedRef.current) setSyncStatus(pending ? 'queued' : 'synced');
+            if (!diaryFailedRef.current && resumeStatus !== 'degraded') setSyncStatus(pending ? 'queued' : 'synced');
         }, diaryWriteOptions.onFailed);
         const stopEntries = sessionExecutionService.watchEntries(userId, execution.executionId, () => {
             void sessionExecutionService.getResumeDiaryState(userId, execution.executionId).then(diary => {

@@ -1446,7 +1446,8 @@ service cloud.firestore {
         && meta.intent is string
         && (!('summary' in meta) || meta.summary is string)
         && (!('dominantModality' in meta) || meta.dominantModality is string)
-        && (!('duration' in meta) || (meta.duration is map && meta.duration.min is number && meta.duration.max is number));
+        && (!('duration' in meta) || (meta.duration is map && meta.duration.min is number && meta.duration.max is number))
+        && (!('movementComposition' in meta) || meta.movementComposition is list);
     }
 
     function hasValidDefinitionSnapshot(snapshot) {

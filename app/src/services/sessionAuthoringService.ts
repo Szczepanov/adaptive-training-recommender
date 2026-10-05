@@ -215,11 +215,12 @@ export async function prepareAuthoredOccurrenceLaunch(
         throw new Error(validation.issues.map(issue => `${issue.path}: ${issue.message}`).join('\n'));
     }
 
+    const acceptedDefinitionHash = await hashSessionDefinition(acceptedDefinition);
     const unsignedPrescription: ExecutionPrescription = {
         schemaVersion: 1,
         prescriptionHash: '',
         sessionSource: source,
-        definitionHash: source.contentHash,
+        definitionHash: acceptedDefinitionHash,
         blocks: acceptedDefinition.blocks,
         displayMetadata: displayMetadataFor(acceptedDefinition),
         definitionSnapshot: snapshotSessionDefinition(acceptedDefinition),

@@ -155,6 +155,15 @@ export async function resolveSessionDefinition(
             }
             return { status: 'AVAILABLE', data: validation.value, revision: prescriptionHash };
         }
+        if (source.kind === 'unplanned_fixture') {
+            return {
+                status: 'INVALID',
+                issues: [{
+                    code: 'fixture-prescription-not-self-contained',
+                    documentPath: `users/${userId}/execution_prescriptions/${prescriptionHash}`,
+                }],
+            };
+        }
     }
 
     if (source.kind === 'unplanned_fixture') {

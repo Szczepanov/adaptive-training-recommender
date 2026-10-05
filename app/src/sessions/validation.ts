@@ -616,6 +616,34 @@ export function validateSessionExecution(raw: unknown): ValidationResult<Session
     if (raw.state !== 'completed' && raw.completedAt !== undefined) {
         issues.push({ path: 'completedAt', message: 'Only completed executions may have completedAt' });
     }
+    if (raw.completionEvidence !== undefined) {
+        if (raw.state !== 'completed') {
+            issues.push({ path: 'completionEvidence', message: 'Only completed executions may have completion evidence' });
+        } else if (!isObject(raw.completionEvidence)) {
+            issues.push({ path: 'completionEvidence', message: 'completionEvidence must be an object' });
+        } else {
+            const evidence = raw.completionEvidence;
+            if (typeof evidence.submittedAt !== 'string' || evidence.submittedAt.length === 0) {
+                issues.push({ path: 'completionEvidence.submittedAt', message: 'Missing submittedAt' });
+            }
+            if (evidence.sessionRpe !== undefined
+                && (typeof evidence.sessionRpe !== 'number' || !Number.isFinite(evidence.sessionRpe)
+                    || evidence.sessionRpe < 0 || evidence.sessionRpe > 10)) {
+                issues.push({ path: 'completionEvidence.sessionRpe', message: 'sessionRpe must be between 0 and 10' });
+            }
+            if (evidence.completedFraction !== undefined
+                && (typeof evidence.completedFraction !== 'number' || !Number.isFinite(evidence.completedFraction)
+                    || evidence.completedFraction < 0 || evidence.completedFraction > 1)) {
+                issues.push({ path: 'completionEvidence.completedFraction', message: 'completedFraction must be between 0 and 1' });
+            }
+            if (evidence.unexpectedFatigue !== undefined && typeof evidence.unexpectedFatigue !== 'boolean') {
+                issues.push({ path: 'completionEvidence.unexpectedFatigue', message: 'unexpectedFatigue must be boolean' });
+            }
+            if (evidence.note !== undefined && (typeof evidence.note !== 'string' || evidence.note.length > 2000)) {
+                issues.push({ path: 'completionEvidence.note', message: 'note must be a string of at most 2000 characters' });
+            }
+        }
+    }
 
     if (raw.fitWorkoutFingerprint !== undefined) {
         if (typeof raw.fitWorkoutFingerprint !== 'string' || !/^fit-workout-v2:[0-9a-f]{32}$/.test(raw.fitWorkoutFingerprint)) {
