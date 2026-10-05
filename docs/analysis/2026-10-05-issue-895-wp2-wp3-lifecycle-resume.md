@@ -7,129 +7,125 @@
 | **Scope** | WP2 lifecycle hardening + WP3 exact resume |
 | **Baseline** | `origin/main` `007602f8e5be5901509e9aba1803dd2b21620988` (2026-10-05) |
 | **Prior delivery** | [PR #993](https://github.com/Szczepanov/adaptive-training-recommender/pull/993) — WP0/WP1 durable diary; [PR #995](https://github.com/Szczepanov/adaptive-training-recommender/pull/995) — append-only choice replay |
+| **Architecture sources** | ADR-0023 D-MRECORDS / D-MENTRY / D-MSNAP; `docs/architecture/session-execution.md`; #895 master plan |
 | **Policy effect** | None. Persistence, lifecycle and replay correctness only; `POLICY_VERSION` must not change. |
 
 ## 1. Executive conclusion
 
 WP2 and WP3 should remain one implementation PR.
 
-They share the same authority boundary: a `SessionExecution` is the stable identity of the workout in progress, its terminal state must change exactly once, and a reload must re-enter that same execution using the exact prescription snapshot that execution started with. Splitting lifecycle and resume would temporarily leave one of those invariants dependent on stale React state, a live catalog/fixture definition, or Firestore rule rejection.
+They share the same integrity boundary: a `SessionExecution` is the stable identity of the workout in progress; its terminal state may change once; the exact executable content must remain pinned; and reload must reconstruct only what durable evidence proves. Splitting lifecycle and resume would leave one of those guarantees dependent on stale React state, live fixture bytes, or an unclassified Firestore rules rejection.
 
-The current code is materially stronger than the September #895 baseline because WP0/WP1 and append-only choice semantics have landed. The remaining gaps are narrower and more concrete:
+The current code is materially stronger than the September #895 baseline because WP0/WP1, execution locks, immutable prescriptions, wall-clock timing and append-only choice semantics have already landed. The remaining work is narrow, but the first draft of this WP2/WP3 plan needed three corrections found during this review:
 
-1. **Terminal transitions are server-protected but not yet application-idempotent.** `SessionExecutionService.transitionExecution` blindly merges a terminal patch. The hook's `execution.state === 'in_progress'` guard is only local React state; another tab/client can race it. Firestore rules prevent mutation out of a terminal state, but the loser receives a generic write failure rather than an explicit already-completed/already-abandoned result.
-2. **Completion/abandonment orchestration has no persisted transition result.** The hook cannot distinguish "this caller performed the terminal transition" from "another client already did". That matters because completion has downstream fan-out: 1RM derivation, immediate response persistence, occurrence transition and structured-occurrence reconciliation.
-3. **Redo is already the right model and should not be redesigned.** `allowDuplicateCompleted` deliberately advances the deterministic execution lock to a new execution while preserving the old completed document. The existing start single-flight guard plus lock transaction already prevents ordinary double-starts.
-4. **Reload still contains a fixture escape hatch.** `useSessionRunner` resolves `unplanned_fixture` directly from the live fixture array and only calls `resolveSessionDefinition` for non-fixtures. Yet `resolveSessionDefinition` already supports fixtures plus a stored `prescriptionHash`. The special case therefore bypasses the exact-snapshot boundary.
-5. **Fixture launch is the remaining unpinned start path.** `startFixtureSession` calls `startSession` without preparing or saving an `ExecutionPrescription`, so the resulting execution has no `prescriptionHash`.
-6. **Resume has no explicit degraded contract.** If the prescription hash is missing, unavailable or invalid, the hook sets `syncStatus = 'unavailable'`, but it does not expose a typed reason separating "execution and diary are intact, definition cannot be reconstructed" from ordinary sync failure.
-7. **WP1 local durability needs to be represented during resume, not reimplemented.** Firebase persistent cache remains the only replay queue. Owner-scoped diary receipts retain locally accepted intent and rejected values across reload. WP3 should consume that state for read/recovery status; it must not introduce a second replay/outbox implementation.
-8. **The no-rest-reconstruction invariant is already correct.** Reload clears `activeRestRef`, the manual rest deadline, remainder and running state before asynchronous restore. This must remain unchanged and gain focused regression coverage.
+1. **Post-terminal work must be convergent, not merely winner-only.** The first draft allowed response/occurrence/reconciliation fan-out only for the client whose terminal write returned `transitioned`. That avoids duplicate calls but opens a crash window: the execution can become `completed` while the winning client dies before downstream state converges. Same-state occurrence transitions and training-occurrence reconciliation are already retry-safe. Immediate response facts require a durable canonical input before retry because `recordOrUpdateResponse` can update an existing response and a race loser may hold different local payload bytes.
+2. **Pinning a fixture hash is not sufficient for exact fixture replay with the current prescription schema/resolver.** `resolveSessionDefinition` first loads the current fixture and requires its definition hash to match the stored prescription. Reviewed fixtures contain hash-covered fields such as `modalities`, `sessionTargets` and `prohibitedAdditions`, while `ExecutionPrescription` currently stores blocks plus a smaller `displayMetadata` set. If fixture bytes later change or disappear, the current resolver cannot reconstruct the historical definition from the prescription alone. WP3 therefore needs a snapshot-completeness change, not only a fixture-start helper.
+3. **Receipt overlays must distinguish queued canonical intent from rejected intent and must replay same-target mutations causally.** A `failed` receipt is evidence that a locally accepted write was rejected; it must never be folded into canonical `entries` or progress. Multiple queued mutations for one entry (log → correct → delete → restore) cannot rely on `localStorage` enumeration order. The resume projection needs deterministic mutation-chain application or an equivalent verified ordering.
+
+With those corrections, the WP2/WP3 architecture is compliant with ADR-0023 and the #895 invariants and can be implemented without changing recommendation authority.
 
 ## 2. Current architecture verified on `main`
 
-### 2.1 Execution creation and redo
+### 2.1 Execution creation and explicit redo
 
-`SessionExecutionService.startExecution` first searches for an existing matching execution and then arbitrates creation through a deterministic `session_execution_locks` document.
+`SessionExecutionService.startExecution` already arbitrates execution creation through deterministic `session_execution_locks`.
 
-For a matching slot:
+For one logical slot:
 
-- `in_progress` returns the existing execution;
-- `completed` fails unless `allowDuplicateCompleted` is explicitly true;
-- `completed + allowDuplicateCompleted` creates a new execution and moves the lock pointer;
-- `abandoned` may also be replaced by a new execution;
-- the old execution document remains immutable history.
+- an `in_progress` execution is returned;
+- a `completed` execution blocks ordinary start;
+- `completed + allowDuplicateCompleted` deliberately creates one successor and moves the lock pointer;
+- an `abandoned` execution may be replaced;
+- predecessor documents remain immutable history.
 
-The online authority is the Firestore transaction in `claimExecutionSlot`. Offline start uses an atomic SDK write batch so persistent cache can queue the claim and server rules arbitrate it later. This is already the correct shape for "explicit legitimate redo" and should be preserved.
+Online arbitration is a Firestore transaction. Offline start uses an atomic SDK batch and lets rules arbitrate once connectivity returns. This is the correct model for explicit legitimate redo and should not be redesigned in WP2.
 
-### 2.2 Terminal writes
+### 2.2 Terminal writes are rules-protected but application-blind
 
-`SessionExecutionService.transitionExecution` currently builds a patch and either:
+`SessionExecutionService.transitionExecution` currently constructs a partial patch and either appends it to a caller-owned `WriteBatch` or commits it directly. It does not read persisted lifecycle state and returns no outcome.
 
-- appends it to a caller-owned `WriteBatch`, or
-- calls `setDoc(..., { merge: true })` directly.
+The hook therefore knows only its local React state. Two tabs may both enter completion while each still sees `in_progress`; Firestore rules protect the terminal document from being rewritten, but the losing client receives a generic write failure instead of a business result such as `already_completed` or `already_abandoned`.
 
-It does not read the persisted execution state, return a transition outcome, or translate a race-loser rule rejection into an already-terminal result.
+WP2 must move that classification into the service. The hook must not parse Firestore error messages/codes as lifecycle truth.
 
-The Firestore rules are therefore the final concurrency backstop, but the application surface is not yet idempotent. The distinction matters: "rejected because another client already completed this execution" is an expected lifecycle outcome, not the same class of failure as connectivity, malformed writes, preference-write failure, or permission problems.
+### 2.3 Completion has two different atomicity classes
 
-### 2.3 Completion orchestration
+Current completion does:
 
-`useSessionRunner.completeSession` currently:
+1. close active rest while the execution is still in progress;
+2. write tissue feedback when supplied;
+3. reread persisted entries;
+4. build deterministic 1RM derivations;
+5. batch 1RM derivations with the execution transition to `completed`;
+6. commit that batch;
+7. persist the immediate `SessionResponse`;
+8. transition the linked occurrence;
+9. trigger structured-occurrence reconciliation.
 
-1. returns early only when the local React execution is not `in_progress`;
-2. closes an active rest before terminal transition;
-3. writes tissue feedback to the daily check-in when present;
-4. rereads persisted entries;
-5. creates a Firestore batch;
-6. adds deterministic 1RM derivations when applicable;
-7. adds the execution `completed` transition to the same batch;
-8. commits the batch;
-9. sets local execution state to completed;
-10. writes the immediate `SessionResponse`;
-11. transitions the linked occurrence to completed;
-12. fires structured-occurrence reconciliation.
+The **1RM + terminal transition** atomicity is valuable and must remain. A failed completion batch cannot leave derived strength state committed against an execution that is still `in_progress`.
 
-The 1RM/terminal batch is an important existing guarantee: derived strength state cannot land while the execution remains in progress. WP2 should preserve this atomicity.
+The later three operations are different: they are post-terminal projections/integrations. They are not in the terminal batch and therefore need an explicit convergence contract.
 
-The missing guarantee is winner awareness. A stale second client can run pre-transition work and then have the batch rejected by rules because another client already completed the execution. Today that surfaces as a generic error. The implementation needs a persisted-state reconciliation step after a rejected terminal write and must prevent winner-only fan-out from running twice.
+### 2.4 Why strict winner-only fan-out is insufficient
 
-### 2.4 Abandon orchestration
+Suppose client A successfully commits the terminal batch and then closes/crashes before steps 7–9. Client B retries completion after reload and sees persisted `completed`.
 
-`abandonSession` has the same local-only state guard, closes active rest, batches the `abandoned` transition, commits, then updates the linked occurrence. Already logged entries are not deleted, which is correct and must remain explicit in tests.
+If the implementation says “`already_completed` means exit without fan-out”, then:
 
-### 2.5 Durable diary state from WP1
+- the occurrence may remain `active`;
+- the immediate response may remain missing;
+- structured reconciliation may be delayed indefinitely until some unrelated sweep repairs it.
+
+That is not end-to-end idempotence; it is merely duplicate suppression.
+
+The downstream services have different retry properties:
+
+- `SessionOccurrenceService.transitionOccurrenceState` is same-state idempotent;
+- `reconcileStructuredCompletion` is documented and implemented as repeat/concurrency safe through source-key claims;
+- `SessionResponseService.recordOrUpdateResponse` uses a deterministic `(sourceSession, window)` id and transactional create/update, so it does not duplicate documents, **but repeated calls may overwrite facts**.
+
+Therefore the correct rule is:
+
+> The terminal state transition has one winner. Post-terminal convergence may run more than once, but every effect must use canonical persisted input and be idempotent or compare-and-set safe.
+
+Occurrence transition and reconciliation can be repaired directly. Immediate-response repair may not replay a race loser's local payload. WP2 must first durably capture the canonical completion evidence (or atomically write the response) before a later retry is allowed to converge it.
+
+This does **not** require a second diary outbox. It requires one durable terminal/completion-evidence contract for facts that otherwise exist only in the winning component's memory.
+
+### 2.5 Abandonment
+
+`abandonSession` has the same local-only state guard and closes active rest before terminal transition. Already logged diary entries are not deleted, which correctly satisfies #895's “abandoned with partial evidence retained” invariant.
+
+Occurrence abandonment is same-state retry-safe and can be converged from persisted terminal state.
+
+### 2.6 Durable diary state from WP1
 
 PR #993 established the correct ownership model:
 
 - `SessionExecutionService` is the sole diary write authority;
-- Firebase persistent cache is the replay queue;
+- Firebase persistent cache is the only writer replay queue;
 - entry/rest target + immutable `diaryMutations` marker + execution touch are queued atomically;
 - correction history is auditable;
 - deletion uses tombstones;
 - undo is durable;
 - owner/execution/mutation-scoped receipts survive reload and retain failed intent;
-- `watchDiarySync` distinguishes queued versus synced and retains failed receipts.
+- `watchDiarySync` distinguishes queued from synced and retains failed receipts.
 
-PR #995 additionally made choice events append-only and gave performed entries explicit governing-choice provenance. Any resume cursor/progress derivation must therefore replay the same effective choice chain rather than infer branch state from arrival order.
+PR #995 additionally made choice events append-only and gives performed entries explicit governing-choice provenance.
 
-WP3 must consume these two contracts; it must not create a new local queue or a second choice-resolution algorithm.
+WP3 must consume those contracts; it must not create another mutation writer or resend receipt payloads.
 
-## 3. WP2 gap analysis — terminal lifecycle
+## 3. WP2 architecture
 
-### 3.1 Same-tab double tap
+### 3.1 Local single-flight is necessary but not authoritative
 
-The runner has `startInFlightRef` for launch but no equivalent terminal single-flight ref. React state updates are asynchronous, so two completion/abandon events can enter the handler before the first commit updates `execution.state`.
+`startInFlightRef` already protects launch. Completion/abandonment need an equivalent shared `terminalTransitionInFlightRef` so same-tab double taps cannot enter terminal orchestration twice before React state updates.
 
-A local `terminalTransitionInFlightRef` is warranted as a UX/process guard, but it is not sufficient by itself. Cross-tab and stale-client correctness still belongs in the service/rules layer.
+That guard is a UX/process optimization only. Persisted-state classification remains the cross-tab/stale-client authority.
 
-### 3.2 Cross-client race
+### 3.2 Typed terminal result
 
-The correct model is **idempotent classification, not silent overwrite**.
-
-A terminal operation needs to distinguish at least:
-
-- `transitioned` — this caller moved `in_progress` to the requested terminal state;
-- `already_completed` — persisted execution is already completed;
-- `already_abandoned` — persisted execution is already abandoned.
-
-For `complete`:
-
-- `already_completed` is an idempotent success/no-op;
-- `already_abandoned` is a conflicting terminal outcome and must not be rewritten.
-
-For `abandon`:
-
-- `already_abandoned` is an idempotent success/no-op;
-- `already_completed` is a conflicting terminal outcome and must not be rewritten.
-
-Unknown/unavailable/invalid execution state remains a real failure, not an idempotent success.
-
-### 3.3 Preserve completion-batch atomicity
-
-Moving completion entirely to a separate transaction would break the existing atomic 1RM + terminal write guarantee. The lifecycle service should instead own or coordinate the terminal commit while allowing deterministic derived writes to participate in the same batch.
-
-A suitable service API is a dedicated terminal operation rather than making the hook reason about rule errors directly. One viable shape is:
+A narrow service contract should distinguish at least:
 
 ```ts
 type TerminalTransitionOutcome =
@@ -138,197 +134,283 @@ type TerminalTransitionOutcome =
     | { kind: 'already_abandoned'; execution: SessionExecution };
 ```
 
-with a completion method that:
+For requested `completed`:
 
-1. reads/classifies persisted state;
-2. returns an already-terminal result before queuing writes when possible;
-3. creates the caller-shared batch / invokes a callback that queues deterministic derived writes;
-4. adds the execution transition;
+- persisted `completed` → idempotent lifecycle result;
+- persisted `abandoned` → conflicting terminal result, never rewrite;
+- persisted `in_progress` → eligible transition.
+
+For requested `abandoned`, mirror the same rules.
+
+Missing/invalid/unavailable execution state remains a real error.
+
+### 3.3 Preserve the terminal + deterministic-derivation atomic unit
+
+Completion must continue to commit deterministic 1RM derivations in the same atomic unit as the execution transition.
+
+A suitable service shape is a terminal commit helper that:
+
+1. reads/classifies the exact execution;
+2. returns an already-terminal result before writing when possible;
+3. lets the completion path contribute deterministic derived writes;
+4. adds the terminal transition;
 5. commits once;
-6. if commit is rejected by the terminal-state rule race, rereads the execution and translates the now-terminal state into the typed outcome;
-7. rethrows when the execution is still in progress or the failure is unrelated.
+6. when a racing commit is rejected, rereads the execution and translates an observed terminal state to the typed outcome;
+7. rethrows when the execution remains `in_progress` or the failure cannot be explained by a competing terminal commit.
 
-The exact API name is implementation detail; the architectural requirement is that the service returns the persisted lifecycle outcome and the hook does not parse Firestore error strings/codes as business state.
+The service/rules boundary, not the hook, owns this logic.
 
-### 3.4 Winner-only fan-out
+### 3.4 Convergent post-terminal effects
 
-Only `transitioned` may perform side effects that represent "completion happened now" for this caller:
+Do **not** define response/occurrence/reconciliation as “winner-only” in the sense of “never retried”. Instead split effects into two categories.
 
-- immediate session-response write;
-- occurrence transition;
-- structured-occurrence reconciliation.
+**Terminal-atomic/winner-only writes**
 
-The already-completed path should update/align local UI from the persisted execution and exit without duplicating fan-out.
+- execution terminal state;
+- deterministic 1RM derivations that participate in the same batch;
+- any canonical completion-evidence record chosen as the recovery source.
 
-Derived writes in the atomic completion batch are naturally winner-only because a race-loser batch is rejected as a whole.
+**Retryable convergence**
 
-Tissue feedback currently occurs before the terminal batch. This analysis does **not** silently redefine #896/#724 completion evidence semantics. The implementation should either:
+- linked occurrence state;
+- structured-occurrence reconciliation;
+- immediate response projection **only from the canonical durable completion evidence**, not from a stale caller-local payload.
 
-- retain the existing ordering and prove the upsert is idempotent for the same execution source, or
-- move it only if the #896 missingness/evidence contract is reviewed in the same change.
+An `already_completed` caller may therefore repair missing post-terminal projections safely. It must not rerun 1RM derivation and must not overwrite response facts from a different local submission.
 
-Do not broaden WP2 into a subjective-evidence redesign.
+### 3.5 Completion evidence and #896 boundary
 
-### 3.5 Explicit redo remains separate from idempotent retry
+Current `SessionExecution` persists `sessionRpe` and `notes`, but not all completion-sheet facts (`completedFraction`, `unexpectedFatigue`). If those values are needed for reliable post-crash response convergence, they need one durable source of truth.
 
-A retry of `complete` must never create a new execution. A legitimate redo is only the existing start path with `allowDuplicateCompleted: true`.
+WP2 should choose one of these implementation shapes without changing #896's missingness semantics:
 
-Tests should prove:
+- atomically create/update the deterministic immediate-response document with the terminal commit; or
+- atomically persist a small immutable/idempotent terminal-evidence record/marker containing exactly the submitted fields, then project it to `SessionResponse` after commit.
 
-- repeated redo launch attempts while the new redo execution is already `in_progress` return that same execution;
-- the original completed execution remains unchanged;
-- the lock points at the new execution;
-- normal start without the explicit flag still reports already-completed.
+Either shape must preserve “missing means missing”; no default/normal values may be fabricated. The implementation should coordinate with #896 only on storage shape if necessary, not absorb #896's UI/missingness redesign.
 
-## 4. WP3 gap analysis — exact resume
+Tissue feedback remains separately owned by the daily check-in. If it stays before terminal commit, tests must prove repeating the same execution-linked upsert is non-destructive and conflicting source attribution remains rejected.
 
-### 4.1 Execution identity
+### 3.6 Redo remains start semantics
 
-`findInProgressExecution` returns the most recently started active execution. That is sufficient for the current single-active-runner product model, but the resume result should preserve the exact returned `executionId` and never synthesize a fresh execution because definition resolution failed.
+A retry of completion must never create a new execution. A legitimate redo remains the existing `startExecution(... allowDuplicateCompleted: true)` path.
 
-Future resume discoverability belongs to #723; WP3 is the integrity substrate, not the navigation redesign.
+Tests must prove the completed predecessor remains unchanged, the lock moves to one successor, and repeated/concurrent redo launch returns that same in-progress successor.
 
-### 4.2 Prescription snapshot
+## 4. WP3 architecture
 
-For manual, catalog and external-plan launches, authoring already saves an immutable, content-addressed `ExecutionPrescription` and passes its hash in the binding. The resolver verifies source identity and definition hash and reconstructs catalog history from stored display metadata rather than silently taking the live catalog.
+### 4.1 Stable execution identity
 
-The resolver also supports `unplanned_fixture + prescriptionHash`, but the runner currently bypasses that capability on reload.
+`findInProgressExecution` returns the newest active execution and is sufficient for the current single-active-runner product model. Resume must preserve that exact `executionId`; definition failure must never cause a fresh execution to be synthesized.
 
-The integrity rule should become uniform:
+Navigation/discoverability belongs to #723.
 
-> Every newly started execution has a `prescriptionHash`, and every resume resolves through `resolveSessionDefinition(userId, execution.sessionSource, execution.prescriptionHash)`.
+### 4.2 Every new start must be prescription-pinned
 
-Legacy historical executions with no hash remain readable, but a new in-progress execution should not be created without one after WP3.
+Manual, catalog and external-plan prepared launches already carry `prescriptionHash`. `startFixtureSession` is the remaining raw start path and currently creates an execution without one.
 
-### 4.3 Fixture pinning
+After WP3, every newly created runner execution must carry a prescription hash. Legacy historical hash-less executions remain readable/degraded rather than rewritten.
 
-`startFixtureSession` is the remaining start path that does not freeze a prescription.
+### 4.3 Fixture replay exposes a snapshot-completeness gap
 
-Recommended correction: add an authoring-boundary helper that validates the fixture, computes its definition hash, constructs the standard `ExecutionPrescription` with fixture source + exact blocks + display metadata, saves it through `executionPrescriptionService`, and starts the execution with that hash.
+The first draft treated fixture pinning as “create a prescription with blocks + standard display metadata, then use the existing resolver”. That is insufficient.
 
-Do not special-case fixture replay in the hook. The fixture source remains useful provenance; the prescription is the immutable executed content.
+Current behavior for `unplanned_fixture` is:
 
-### 4.4 Degraded resume must be explicit
+1. load the **current** fixture from `FIXTURES_BY_ID`;
+2. hash that current fixture;
+3. load the stored prescription;
+4. accept replay only if a candidate current definition hash equals `prescription.definitionHash`;
+5. replace its blocks with stored prescription blocks.
 
-When an execution exists but the definition cannot be resolved, the app must preserve the execution and diary instead of pretending no session exists or falling back to live content.
+If the fixture changes or is removed, replay fails before the stored prescription can reconstruct the original definition.
 
-A focused resume state should distinguish, for example:
+This matters because reviewed fixtures contain executable/hash-covered top-level fields beyond blocks, including `modalities`, `sessionTargets` and `prohibitedAdditions`. `hashSessionDefinition` also covers `importWarnings` and `movementComposition`. `SessionDisplayMetadata` currently covers only title/summary/intent/dominantModality/duration/movementComposition, and the common `displayMetadataFor` helper does not currently include even `movementComposition`.
+
+ADR-0023 D-MSNAP says the immutable execution prescription owns the exact normalized executable content and replay must not fall back to current definition bytes. Therefore WP3 must first close this completeness gap.
+
+### 4.4 Required snapshot-completeness decision
+
+Prefer one explicit representation instead of source-specific exceptions:
+
+**Recommended:** extend the immutable execution-prescription snapshot so it contains every top-level `SessionDefinition` field included by `hashSessionDefinition` that is required to rebuild executable content, plus blocks. This may be a versioned `definitionSnapshot`/metadata shape rather than growing the presentation-oriented `displayMetadata` name indefinitely.
+
+At minimum the snapshot must be sufficient to reconstruct and re-hash:
+
+- `schemaVersion`;
+- title/summary/intent;
+- `modalities` / `dominantModality`;
+- duration;
+- `sessionTargets`;
+- `prohibitedAdditions`;
+- `importWarnings`;
+- `movementComposition`;
+- blocks.
+
+Identity/placement fields intentionally excluded from `hashSessionDefinition` (`id`, `revision`, `defaultScheduledDate`, companion placement) remain provenance/source concerns.
+
+The prescription schema/parser/rules/hash must remain backward-compatible with old snapshots. New snapshots become self-verifying and source-independent for executable replay. Old snapshots keep their existing source-assisted resolver path and degrade honestly if that source can no longer be verified.
+
+### 4.5 Fixture preparation after snapshot completeness
+
+`prepareFixtureSessionLaunch` should:
+
+1. validate the fixture;
+2. create `{ kind: 'unplanned_fixture', fixtureId }` provenance;
+3. compute its definition hash;
+4. build the complete immutable execution snapshot;
+5. compute the content-addressed prescription hash;
+6. save it write-once;
+7. return `PreparedSessionLaunch` carrying that hash.
+
+`startFixtureSession` then starts the prepared binding.
+
+For a **new-format** fixture prescription, resume must reconstruct from the stored snapshot even if the current fixture bytes changed or the fixture was removed. The current fixture may be used only as optional provenance validation/diagnostic context, never as required executable content.
+
+### 4.6 Degraded resume is explicit
+
+When an active execution exists but exact definition resolution is impossible, preserve execution and diary identity and expose a typed degraded state.
+
+For example:
 
 ```ts
 type SessionResumeState =
-    | { status: 'ready'; execution; definition; entries; diarySync }
-    | { status: 'degraded'; execution; entries; diarySync; reason: ResumeDegradedReason }
-    | { status: 'none' };
+    | { status: 'none' }
+    | { status: 'ready'; execution; definition; entries; diarySync; progress }
+    | { status: 'degraded'; execution; entries; diarySync; reason; failedIntents };
 ```
 
-Reason categories should be stable enough for tests/diagnostics, while retaining underlying `DataState` detail where useful:
+Stable reason families should include:
 
-- missing prescription hash (legacy/incomplete binding);
-- stored prescription missing;
-- prescription invalid/hash mismatch/source mismatch;
+- legacy/missing prescription hash;
+- prescription missing;
+- prescription invalid/hash mismatch;
 - prescription temporarily unavailable;
-- source definition/revision missing or invalid.
+- legacy source unavailable/unresolvable when the old prescription is not self-contained;
+- diary failure/unavailable state.
 
-A degraded result must **not** substitute the latest catalog/template/fixture definition. That would corrupt planned-vs-performed comparison and violate #895 invariant 4.
+A degraded result must never substitute current catalog/template/fixture content.
 
-### 4.5 Locally queued diary state
+### 4.7 Queued diary overlay versus failed intent
 
-Resume must show all locally acknowledged diary work, including writes still waiting for the backend.
+Resume must show writes that the app acknowledged locally and that are still queued in Firebase persistent cache. Receipts help disambiguate queue/failure state; they are not a second replay mechanism.
 
-The important distinction from the old plan wording is that WP1 has **no custom outbox to drain**. Firebase persistent cache is the replay queue. Receipts are read-side durability/failure evidence and must never resend mutations.
+The read model should keep two concepts separate:
 
-Recommended read model:
+- **effective diary state**: server/cache entries plus **queued** locally accepted mutations that are not yet visible in the initial collection snapshot;
+- **failed intents**: retained rejected mutations for diagnostics/recovery UI only.
 
-1. read the execution;
-2. read entries from Firestore's local/default view so latency-compensated queued writes remain visible;
-3. read owner-scoped diary receipts for the execution;
-4. derive resume sync state:
-   - failed receipt => `unavailable`/degraded sync;
-   - queued receipt or pending Firestore writes => `queued`;
-   - otherwise `synced` when server-confirmed by the existing watch;
-5. if a receipt's locally accepted mutation is not yet visible in the initial collection snapshot, apply it as a **read-only overlay** to the resume view using the immutable mutation's `after` state. Do not write or replay it from the resume path.
+A failed receipt must force `diarySync = 'unavailable'`, but its `after` bytes must **not** be projected as a successful `SessionEntry`, used for progress, or passed into planned-vs-performed semantics.
 
-This makes reload honest even when the SDK query snapshot lags the receipt that recorded local acceptance. Failed receipts remain visible as failed intent rather than being presented as canonical server state.
+For multiple queued receipts targeting the same entry, do not trust storage enumeration or timestamp sorting. Apply only a valid causal mutation chain, using the immutable mutation's `before`/`after` identity (`diaryMutationId`) or an equivalent deterministic chain check. Conflicting/unorderable receipts should fail degraded rather than guess.
 
-### 4.6 Current step and remaining work
+This must be tested with at least:
 
-Cursor/progress restoration must derive from the pinned definition + restored entries, using the same semantics as live progression:
+- log → correct;
+- log → delete;
+- delete → restore;
+- log → correct → delete → restore;
+- choice append/supersession events;
+- a failed correction after a server-accepted earlier state.
+
+### 4.8 One progression projection
+
+Cursor/progress restoration must derive from pinned definition + effective restored entries using the same semantics as live progression:
 
 - append-only effective choice resolution;
-- choice-governed performed entries;
-- required versus optional steps;
+- governing-choice provenance;
+- required versus optional work;
 - block `rounds` authority;
 - rotating/sequential behavior;
 - per-side duration holds;
 - tombstone exclusion;
 - completed/remaining prescribed work.
 
-Do not add a second bespoke "resume progression" algorithm in the hook. Extract or reuse a pure progression projection consumed by both live advancement and restore.
+Do not promise an exact cursor when no durable evidence identifies the athlete's last manually selected but unlogged optional step. #895 requires “current step where known”. The shared projection should return the next/current required step when derivable and otherwise a safe deterministic default/unknown state.
 
-### 4.7 Rest/timing invariant
+### 4.9 Rest/timing invariant
 
-The current behavior is correct and should be locked down:
+The current reload behavior is correct and should be regression-locked:
 
-- clear `activeRestRef` before restore;
+- clear `activeRestRef`;
 - clear manual rest deadline;
 - set remaining rest to 0;
 - set `isRestRunning = false`;
 - preserve already closed durable rest events as history;
-- never infer a running/performed rest from set timestamps.
+- never infer a performed/running rest from set timestamps.
 
-Session elapsed time may continue to derive from `execution.startedAt` and wall clock while the execution is in progress; that is separate from performed rest reconstruction.
+Session elapsed time may continue to derive from `execution.startedAt` and wall clock while execution is in progress; that is separate from performed-rest reconstruction.
 
 ## 5. Dependency interactions
 
-### #724 — safe completion/abandonment UX
+### #724 — completion/abandonment UX
 
-WP2 supplies the lifecycle semantics #724 should call. #724 may change confirmation/review surfaces but must not create another terminal-write authority.
+WP2 supplies lifecycle semantics. #724 may change confirmation/review surfaces but must not create another terminal-write authority.
 
-### #896 — completion missingness
+### #896 — completion evidence missingness
 
-WP2 should preserve optional evidence exactly as supplied. Do not use lifecycle hardening as a reason to default missing sRPE/completion/fatigue values. If #896 lands first, WP2 consumes the new payload shape; if WP2 lands first, its terminal API must remain agnostic to optional response fields.
+WP2 must preserve optional evidence exactly as submitted. If a durable terminal-evidence shape is added for crash recovery, absent fields stay absent. #896 still owns any broader UX/missingness decisions.
 
 ### #952 — intraday secondary launch exactly once
 
-#952 exercises the same high-level property: lifecycle replay must not turn a completed primary into duplicate starts or erase the remaining same-day member. WP2 must keep execution locks and occurrence identity unchanged. Fixing #952's placement/recommendation replay is separate unless implementation exposes a direct shared bug.
+Keep execution locks and occurrence identity unchanged. WP2/WP3 should not absorb placement/recommendation replay unless implementation exposes a direct shared lifecycle defect.
 
 ### #723 — resume discoverability
 
-WP3 provides the typed exact-resume substrate. #723 can later decide where/how Resume is exposed without owning reconstruction correctness.
+WP3 provides exact/degraded resume state. #723 can later decide where and how Resume is exposed.
 
 ## 6. Architecture decisions for the implementation plan
 
-1. **Service owns lifecycle idempotence.** Hook refs prevent duplicate UI actions; Firestore rules remain the final concurrency backstop; business classification belongs in `SessionExecutionService`.
-2. **No new replay queue.** Firebase persistent cache stays the only writer replay mechanism. Diary receipts are read/diagnostic evidence only.
-3. **All new executions are prescription-pinned.** Fixture launches join the same write-once prescription model.
-4. **No live-definition fallback on resume.** Resolution failure yields degraded resume with intact execution/diary identity.
-5. **One progress projection.** Live advancement and reload derive required/completed/remaining work through shared pure logic.
-6. **Rest is never reconstructed after reload.** Closed rest history is durable; an in-flight rest is intentionally lost.
-7. **Redo is explicit start semantics, not a terminal retry behavior.** Preserve `allowDuplicateCompleted` and lock-pointer advancement.
-8. **No policy-authority change.** No `POLICY_VERSION` bump, recommendation rule, load-cost rule or Garmin authority change.
+1. **Service owns lifecycle idempotence.** Hook refs prevent duplicate UI actions; rules remain the final terminal immutability backstop.
+2. **Terminal transition is single-winner; post-terminal projections are convergent.** Retrying an already-completed execution may repair idempotent downstream state from canonical durable evidence.
+3. **Preserve 1RM + completion atomicity.** A race loser never re-runs derived writes.
+4. **Completion facts needed after a crash must have a durable canonical source.** Never replay a stale race-loser payload into `SessionResponse`.
+5. **No new diary replay queue.** Firebase persistent cache remains the only diary writer queue; receipts are evidence/read-model inputs.
+6. **Every new execution is prescription-pinned.** Fixture launch joins the prepared-launch model.
+7. **New prescription snapshots must be self-sufficient for executable replay.** Fixture replay cannot depend on current fixture bytes.
+8. **No live-definition fallback.** Legacy/source resolution failure yields degraded resume with execution/diary intact.
+9. **Failed receipt != performed entry.** Failed intents remain diagnostic evidence and never drive progress.
+10. **Queued receipt application is causal, not storage-order based.**
+11. **Live and resumed progression share pure logic.**
+12. **In-flight rest is never reconstructed.**
+13. **Redo is explicit start semantics, not a terminal retry.**
+14. **No policy-authority change.** No `POLICY_VERSION` bump, recommendation rule, load-cost rule or Garmin authority change.
 
 ## 7. Acceptance evidence required before implementation PR merge
 
-The implementation PR should not claim WP2/WP3 complete without evidence for all of the following:
+### Lifecycle
 
-- double completion from one client is single-flight and idempotent;
-- two-client completion race yields one `transitioned` and one `already_completed`, not two fan-outs;
-- complete versus abandon race preserves whichever terminal state committed first and never rewrites it;
-- repeated abandon returns already-abandoned and keeps prior sets;
-- explicit redo creates exactly one new in-progress execution, moves the lock and preserves the completed predecessor;
-- reload restores exact execution id and pinned definition after the live source changes;
-- fixture launches now carry a prescription hash and fixture reload resolves through that stored prescription;
-- locally queued entries/choices/corrections survive reload in the resume view and remain marked queued until acknowledged;
-- failed receipt remains visible as failure/degraded sync, not `synced`;
-- missing/invalid/unavailable prescription produces degraded resume without substituting current source content;
-- effective append-only choice replay determines branch state after reload;
-- per-side/round/required-optional progress restores consistently with live progression;
+- same-tab double complete/abandon is single-flight;
+- two-client complete produces one terminal transition and converges all post-terminal effects exactly once in state, even if called repeatedly;
+- injected crash after terminal commit but before response/occurrence/reconciliation is repairable on retry/reload;
+- complete versus abandon preserves whichever terminal state committed first;
+- repeated abandon remains abandoned and keeps all prior sets;
+- explicit redo creates exactly one successor and preserves its completed predecessor;
+- a race loser never re-runs 1RM derivation;
+- immediate-response convergence never overwrites canonical winner evidence with different loser-local facts.
+
+### Resume/snapshot
+
+- every new start path carries `prescriptionHash`;
+- new fixture execution is snapshot-pinned;
+- changing/removing the live fixture after start does not change or block replay of a new-format pinned fixture;
+- snapshot re-hash verifies every executable top-level field covered by `hashSessionDefinition`;
+- legacy incomplete snapshots remain backward-compatible and degrade honestly when source reconstruction is impossible;
+- missing/invalid/unavailable prescription never falls back to current source content;
+- reload preserves exact execution id and entries.
+
+### Diary/progress
+
+- queued log/correct/delete/restore chains survive reload and produce the same effective state as live execution;
+- same-target queued receipts are applied by a validated causal chain;
+- failed receipts remain visible as failed intent but never become canonical entries/progress;
+- append-only choice lineage restores the same branch state as live execution;
+- required/optional, rounds and per-side progress restore consistently;
 - reload never reconstructs an in-flight rest;
-- closed rest events remain durable history;
-- no second execution write authority or second replay queue is introduced.
+- closed rest events remain durable history.
 
-## 8. Recommended next document
+## 8. Recommended implementation document
 
-Implementation details, file map, test order and merge gates are specified in:
+The revised implementation details, file map, ordering and merge gates are in:
 
 [`docs/plans/2026-10-05-issue-895-wp2-wp3-lifecycle-resume.md`](../plans/2026-10-05-issue-895-wp2-wp3-lifecycle-resume.md).
