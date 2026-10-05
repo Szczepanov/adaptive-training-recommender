@@ -54,6 +54,12 @@ const externalOccurrence: ExternalPlanSessionOccurrence = {
 };
 
 type Snapshot = { exists: () => boolean; data: () => unknown };
+type FakeTransaction = {
+    get: ReturnType<typeof vi.fn>;
+    set: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
+};
+type TransactionCallback = (transaction: FakeTransaction) => unknown;
 
 function snapshot(data?: unknown): Snapshot {
     return {
@@ -78,7 +84,7 @@ describe('ManualRecommendationReplacementService', () => {
     it('supersedes only the exact prepared primary and releases its owned window atomically', async () => {
         const writes = new Map<string, unknown>();
         const deletes: string[] = [];
-        const tx = {
+        const tx: FakeTransaction = {
             get: vi.fn(async (ref: { path: string }) => {
                 if (ref.path.endsWith(`/daily_recommendations/${externalOccurrence.date}`)) {
                     return snapshot({ recommendation: true });
@@ -94,7 +100,7 @@ describe('ManualRecommendationReplacementService', () => {
             set: vi.fn((ref: { path: string }, value: unknown) => writes.set(ref.path, value)),
             delete: vi.fn((ref: { path: string }) => deletes.push(ref.path)),
         };
-        firestore.runTransaction.mockImplementation(async (_db: unknown, cb: (tx: typeof tx) => unknown) => cb(tx));
+        firestore.runTransaction.mockImplementation(async (_db: unknown, cb: TransactionCallback) => cb(tx));
 
         const service = new ManualRecommendationReplacementService({} as never);
         const replacement = await service.replaceRecommendationOccurrence(
@@ -122,14 +128,14 @@ describe('ManualRecommendationReplacementService', () => {
             status: 'AVAILABLE',
             data: { ...externalOccurrence, state: 'active' },
         });
-        const tx = {
+        const tx: FakeTransaction = {
             get: vi.fn(async (ref: { path: string }) => ref.path.includes('/daily_recommendations/')
                 ? snapshot({ recommendation: true })
                 : snapshot({ occurrence: true })),
             set: vi.fn(),
             delete: vi.fn(),
         };
-        firestore.runTransaction.mockImplementation(async (_db: unknown, cb: (tx: typeof tx) => unknown) => cb(tx));
+        firestore.runTransaction.mockImplementation(async (_db: unknown, cb: TransactionCallback) => cb(tx));
 
         const service = new ManualRecommendationReplacementService({} as never);
         await expect(service.replaceRecommendationOccurrence('u1', externalOccurrence.date, definitionRef))
@@ -140,12 +146,12 @@ describe('ManualRecommendationReplacementService', () => {
 
     it('does not guess a displaced external occurrence when the saved recommendation has no primary binding', async () => {
         parsers.parseDailyRecommendation.mockReturnValue({ status: 'AVAILABLE', data: {} });
-        const tx = {
+        const tx: FakeTransaction = {
             get: vi.fn(async () => snapshot({ recommendation: true })),
             set: vi.fn(),
             delete: vi.fn(),
         };
-        firestore.runTransaction.mockImplementation(async (_db: unknown, cb: (tx: typeof tx) => unknown) => cb(tx));
+        firestore.runTransaction.mockImplementation(async (_db: unknown, cb: TransactionCallback) => cb(tx));
 
         const service = new ManualRecommendationReplacementService({} as never);
         const replacement = await service.replaceRecommendationOccurrence('u1', externalOccurrence.date, definitionRef);
