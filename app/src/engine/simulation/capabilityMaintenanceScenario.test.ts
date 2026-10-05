@@ -37,6 +37,10 @@ describe('capability maintenance 8-week simulation (#805)', () => {
         ].sort((left, right) => left.date.localeCompare(right.date));
         const capabilityDays = optedIn.filter(day => athleticCapabilitiesCreditedBy({ workoutId: workoutForTemplate(day.templateId)?.id }).length > 0);
         expect(capabilityDays.length).toBeGreaterThan(0);
+        // #858: the harness must keep the established-athlete evidence alive beyond the old
+        // ~3-week duration-underreporting cliff. A qualifying capability touch therefore has
+        // to recur in the second half of this 8-week projection, not only near the seed history.
+        expect(capabilityDays.some(day => getDayDiff(day.date, scenario.startDate) >= 28)).toBe(true);
         for (const day of capabilityDays) {
             const credited = athleticCapabilitiesCreditedBy({ workoutId: workoutForTemplate(day.templateId)?.id });
             // At least one capability this session credits was owed: its previous qualifying
