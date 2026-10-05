@@ -15,17 +15,21 @@ Deliver the smallest end-to-end product slice that can represent and plan a fitn
 
 P0 must support:
 
-- a root `fitness_race` category;
+- root `fitness_race` and `other_event` categories;
 - HYROX Open Singles as a first-class format/preset;
 - an honest `other_event/custom` fallback;
-- provisional event windows through the existing `EventTiming` model;
+- provisional event windows through existing `EventTiming`;
+- downstream preservation of format identity;
 - centralized event semantics;
 - exact fitness-race programming-role coverage;
+- a generated HYROX event-relative `PlanDefinition`;
+- **bounded exact coverage from a supported secondary event while a different event remains global focus**;
 - executable multidomain run/station sessions;
-- explicit taper/plan calibration with knowledge lineage;
+- equipment-aware eligibility/degradation;
+- explicit plan/taper calibration with knowledge lineage;
 - regression-safe behavior for all existing categories.
 
-P0 does **not** need to support HYROX Pro, Doubles, Relay or every station combination.
+P0 does not need HYROX Pro, Doubles, Relay or every station combination.
 
 ## 2. Non-negotiable architecture constraints
 
@@ -42,7 +46,7 @@ interface EventTiming {
 }
 ```
 
-`planningDate` remains the date used by periodization/taper until a confirmed date exists. The UI must stop forcing a provisional multi-day event into a fake confirmed date.
+`planningDate` remains the planning/taper anchor until a confirmed date exists. The UI must not force a provisional multi-day event into a fake confirmed date.
 
 ### B. Plan authority
 
@@ -53,7 +57,7 @@ explicit PlanDefinition
   > generic days-to-event fallback
 ```
 
-The supported HYROX format gets a generated event-relative `PlanDefinition` because it has exact programming-role requirements that generic demand vectors cannot express.
+HYROX Open gets a generated event-relative `PlanDefinition` because exact fitness-race programming roles cannot be expressed through demand vectors alone.
 
 ### C. Dual ledgers
 
@@ -64,7 +68,7 @@ adaptation ledger = physiological stimulus/objectives
 coverage ledger   = exact programming roles
 ```
 
-Do not add `compromised_running` or `station_strength_endurance` as `ObjectiveKey`s merely to force session morphology. Those are coverage requirements backed by exact workout identity.
+Do not add `compromised_running` or `station_strength_endurance` as `ObjectiveKey`s merely to force session shape. Those are coverage requirements backed by exact workout identity.
 
 ### D. Executable-session authority
 
@@ -79,9 +83,28 @@ engine/catalog candidate
 
 A selectable HYROX candidate must be executable through that path. No prose parsing and no template-only dead end.
 
-### E. Knowledge/provenance authority
+### E. Multi-event authority
 
-Any numeric demand vector, block boundary, taper duration or exact weekly role target introduced here is product calibration unless directly supported by evidence. Register it as such under ADR-0033. Any decision-affecting merge must bump `POLICY_VERSION` under ADR-0010.
+Keep one global focus event for season-level adaptation/ranking authority. Do **not** promote a secondary HYROX event to focus merely because its specific block has started.
+
+Instead, a specifically supported scheduled event may contribute a bounded **structured-plan coverage overlay** when its registered plan window is active.
+
+Overlay rules:
+
+- exact coverage only comes from a registered plan/coverage set;
+- overlay requirements enter the existing weekly feasibility/capacity/coverage allocation path;
+- they are not appended after the weekly plan has been built;
+- lower-priority optional/generic volume is displaced first when capacity is constrained;
+- safety, explicit authored plan/taper/recovery constraints and infeasibility rules stay higher authority;
+- conflicts are resolved deterministically inside existing allocation logic using urgency, event priority and coverage criticality;
+- no second optimizer is introduced;
+- overlay authority expires after its event/recovery window.
+
+This is required for a secondary April HYROX event to receive exact March programming while an August cycling A-race remains the season focus.
+
+### F. Knowledge/provenance authority
+
+Numeric demand vectors, block boundaries, taper duration and role counts are product calibration unless directly evidenced. Register them under ADR-0033. Any decision-affecting implementation merge bumps `POLICY_VERSION` under ADR-0010.
 
 ## 3. Fixed P0 product decisions
 
@@ -94,7 +117,7 @@ Add:
 'other_event'
 ```
 
-Keep `general_target` separate: it is a dated non-competition target, while `other_event` is a competition/event escape hatch.
+Keep `general_target` separate: it is a dated non-competition target; `other_event` is a generic competition/event escape hatch.
 
 ### D2 — first supported formats
 
@@ -103,21 +126,21 @@ Add:
 - `fitness_race / hyrox_open_singles` — specifically supported;
 - `other_event / custom` — generic fallback only.
 
-Do not infer an event type from title/description text.
+Do not infer event type from title/description text.
 
 ### D3 — preserve downstream preset identity
 
-Add a stable internal field to `UserEvent`, preferably:
+Add a stable field to `UserEvent`, preferably:
 
 ```ts
 presetId?: string;
 ```
 
-`goalToUserEvent` copies the validated `UserGoal.eventPreset` into this field. Downstream semantics must not attempt to reverse-engineer a format from `demandProfile`.
+`goalToUserEvent` copies the validated `UserGoal.eventPreset`. Downstream semantics must not reverse-engineer format identity from `demandProfile`.
 
 ### D4 — one canonical semantics resolver
 
-Replace independent category/preset interpretation with one resolver, for example:
+Extend the preset descriptor or add a sibling descriptor so one resolver owns:
 
 ```ts
 interface ResolvedEventSemantics {
@@ -129,15 +152,13 @@ interface ResolvedEventSemantics {
   coverageSetId?: CoverageSetId;
   planPolicyId?: EventPlanPolicyId;
 }
-
-resolveEventSemantics(category, presetId): ResolvedEventSemantics
 ```
 
 Exact names may differ. The invariant is one source of truth.
 
-### D5 — HYROX-specificity is coverage
+### D5 — HYROX specificity is coverage
 
-Introduce exact coverage roles rather than new physiological axes. Minimum P0 roles:
+Add exact coverage roles, not fake physiological axes:
 
 ```ts
 'fitness_race_station_work'
@@ -146,26 +167,31 @@ Introduce exact coverage roles rather than new physiological axes. Minimum P0 ro
 'fitness_race_race_day'
 ```
 
-Reuse existing roles when semantics truly match:
-
-- `aerobic_volume`;
-- `primary_strength`;
-- `recovery_or_rest`.
+Reuse existing roles such as `aerobic_volume`, `primary_strength` and `recovery_or_rest` where their semantics truly match.
 
 ### D6 — HYROX Open gets an explicit generated plan
 
 Initial named product calibration:
 
-- plan becomes active **56 days before** `event.timing?.planningDate ?? event.date`;
-- fitness-race specificity block begins **28 days before** the planning date;
-- default taper begins **7 days before** the planning date unless an authored taper overrides it;
-- post-event recovery block lasts **7 days**.
+- plan active **56 days before** `event.timing?.planningDate ?? event.date`;
+- main fitness-race specificity from **28 days before**;
+- default taper begins **7 days before** unless explicit authored taper overrides;
+- post-event recovery block through **D+7**.
 
-These are **not** universal physiological constants. Register them as a versioned product-policy claim and test them by policy ID.
+These are not universal physiology constants. Register and test them by policy identity.
 
-The policy intentionally avoids starting event-specific coverage 84 days out. Low-cost running/mechanical familiarity can still come from evergreen/other athlete plans before the fitness-race plan takes authority.
+### D7 — supported secondary-event coverage is bounded, not stacked
 
-### D7 — custom stays generic
+When `hyrox_open_singles` is a secondary event and its D-56..D+7 plan window is active:
+
+- its adaptation demand may continue to participate through existing multi-event objective logic;
+- its exact coverage requirements become an event-plan overlay;
+- the overlay competes for the same weekly slots/load budget as focus-event/generic work;
+- it may displace optional endurance/generic assistance before protected higher-authority work;
+- it does not change `focusEventId` solely to gain coverage authority;
+- after D+7, its exact overlay disappears.
+
+### D8 — custom stays generic
 
 `other_event/custom` has:
 
@@ -176,58 +202,64 @@ The policy intentionally avoids starting event-specific coverage 84 days out. Lo
 - no HYROX taper policy;
 - no title parsing.
 
-If the existing generic A/B/C taper fallback remains applicable to `other_event`, document and test it explicitly as a generic competition rule.
+If the existing generic A/B/C taper fallback applies, document/test it as generic competition policy.
 
-### D8 — decision-affecting metadata ships atomically
+### D9 — behavior and provenance ship atomically
 
 The first merge that activates fitness-race behavior also contains:
 
-- new/updated SKR claims and sources;
+- SKR claims/sources;
 - `POLICY_VERSION` bump;
-- policy-history registration required by the repository;
-- architecture documentation update.
-
-Do not land behavior first and provenance later.
+- policy history/drift fixture updates;
+- ADR/documentation updates.
 
 ## 4. Work packages
 
 ## WP0 — freeze the contract with tests before behavior
 
-Add compile/runtime tests that describe the intended boundary.
-
 ### WP0.1 Existing category regression matrix
 
-For every current category/preset:
+For every current category/preset assert:
 
-- resolved demand vector unchanged;
+- demand vector unchanged;
 - specific modality set unchanged;
 - taper result unchanged;
 - goal -> event conversion unchanged except additive `presetId`;
 - optimizer focus-modality behavior unchanged;
 - existing coverage/plan behavior unchanged.
 
-Prefer snapshot/fixture-based parity tests over hand-written duplicate expectations where possible.
+Prefer fixture/snapshot parity where appropriate.
 
 ### WP0.2 HYROX Warsaw timing fixture
 
-Do **not** use `2027-04-10` as a confirmed fixture.
-
-Use the current official window:
+Do **not** use `2027-04-10` as confirmed by default.
 
 ```ts
 timing: {
   earliestDate: '2027-04-07',
   latestDate: '2027-04-11',
   planningDate: '2027-04-07',
-  // no confirmedDate yet
+  // no confirmedDate
 }
 ```
 
-The supported target format is Men/Open Singles. The public schedule currently shows Men/Open on 7–10 April, but it is provisional. The product fixture should test the uncertainty model rather than a temporary schedule detail.
+Add a second test where the user later confirms `2027-04-10` and `planningDate` moves accordingly. Future plan/taper dates move deterministically; historical recommendation records are not rewritten.
 
-Add a second test where `confirmedDate` becomes `2027-04-10` and `planningDate` is updated accordingly; derived plan/taper dates must move deterministically without rewriting already persisted historical recommendations.
+### WP0.3 Multi-event authority fixture
 
-### WP0.3 Custom-event negative fixture
+Create at least:
+
+- April 2027 HYROX Open Singles as a **secondary** event;
+- August 2027 cycling event with priority A.
+
+Assert:
+
+- August cycling remains the global focus event under existing focus selection;
+- inside the March HYROX plan window, exact HYROX coverage requirements are active;
+- those requirements consume existing weekly capacity rather than increasing the schedule unboundedly;
+- after HYROX recovery ends, HYROX exact coverage disappears and cycling-only specificity resumes.
+
+### WP0.4 Custom-event negative fixture
 
 Assert `other_event/custom` has no HYROX modality, coverage or plan semantics.
 
@@ -238,44 +270,37 @@ Primary files:
 - `app/src/engine/models.ts`
 - `app/src/engine/eventPresets.ts`
 - `app/src/engine/periodization.ts`
-- associated tests/validation
+- tests/validation
 
 ### WP1.1 Expand `UserEvent['category']`
 
 Add `fitness_race` and `other_event`.
 
-Update every exhaustive `Record<UserEvent['category'], ...>` and switch. Do not silence exhaustiveness with `default` branches where a missing category should be a compile-time error.
+Update exhaustive `Record<UserEvent['category'], ...>` and switches. Do not hide missing categories behind broad defaults where exhaustiveness is useful.
 
 ### WP1.2 Add `UserEvent.presetId`
 
-Populate it in `goalToUserEvent` from validated `UserGoal.eventPreset`.
+Populate from validated `UserGoal.eventPreset`.
 
 Compatibility:
 
-- old goals without a preset continue to resolve their current category default;
+- old goals without explicit preset use existing category default;
 - existing category behavior does not change;
-- no persistence migration is required for internal `UserEvent` because persisted authority remains the goal.
+- persisted authority remains the goal, so no unnecessary runtime-event migration.
 
-### WP1.3 Replace demand-only resolver with canonical semantics resolver
+### WP1.3 Canonical event semantics
 
-Extend `EventPreset` (or introduce a sibling descriptor) so the registry owns:
+Move demand + specific modalities + support level + taper/coverage/plan policy IDs under one resolver.
 
-- demand profile;
-- specific modalities;
-- support level;
-- taper policy id;
-- optional coverage set id;
-- optional plan policy id.
+Keep a compatibility `resolveDemandProfile` wrapper if useful, but implement it through canonical semantics.
 
-Keep a compatibility `resolveDemandProfile` wrapper temporarily if many callers/tests rely on it, but implement it through the canonical resolver.
-
-### WP1.4 Add P0 presets
+### WP1.4 P0 presets
 
 `hyrox_open_singles`:
 
 - category: `fitness_race`;
 - support: `specific`;
-- specific modalities: Running, Strength, Cross Training;
+- specific modalities: Running, Strength, Cross Training at engine-routing level;
 - HYROX plan/coverage/taper policy IDs.
 
 `custom`:
@@ -283,7 +308,7 @@ Keep a compatibility `resolveDemandProfile` wrapper temporarily if many callers/
 - category: `other_event`;
 - support: `generic`;
 - empty specific-modality set;
-- no format-specific coverage/plan policy.
+- no format-specific plan/coverage policy.
 
 ## WP2 — consume canonical semantics everywhere
 
@@ -296,55 +321,52 @@ Primary files:
 
 ### WP2.1 Periodization
 
-Retire category-only `modalitiesForEventCategory` as the semantic authority. Resolve specific modalities from preset semantics.
+Retire category-only modality mapping as semantic authority. Resolve specific modalities from format semantics.
 
-Demand-derived adaptation objectives continue to use existing `ObjectiveKey`s. Do not add session-shape objectives for HYROX.
+Demand-derived adaptation objectives continue to use existing `ObjectiveKey`s.
 
-### WP2.2 Optimizer focus-event bonus
+### WP2.2 Optimizer focus bonus
 
-ADR-0007 explicitly documents category-to-modality mapping inside the optimizer. Replace that duplication with resolved event semantics.
-
-Regression test that all old categories get the same focus-modality bonus as before.
+Replace optimizer's duplicated category-to-modality table with resolved event semantics. Regression-test all existing categories.
 
 ### WP2.3 Taper
 
-Refactor taper selection order to remain:
+Selection order stays:
 
 1. explicit authored `event.taper.startDate`;
-2. supported preset-specific taper policy;
-3. current category/generic fallback where applicable;
+2. supported format-specific taper policy;
+3. existing category/generic fallback where applicable;
 4. no taper.
 
-For `hyrox_open_singles`, register the 7-day P0 default as product calibration. The implementation must make policy identity visible in tests/knowledge rather than burying `7` inside a branch.
+Register HYROX Open's 7-day P0 default as product calibration rather than burying a literal branch.
 
-## WP3 — fitness-race coverage set and generated PlanDefinition
+## WP3 — fitness-race coverage, PlanDefinition and multi-event overlay
 
 Primary files:
 
 - `app/src/workouts/event-plan.ts`
 - `app/src/engine/planSchedule.ts`
-- coverage/plan tests
+- weekly coverage/allocation orchestration
+- tests
 
 ### WP3.1 Extend coverage vocabulary
 
-Add the four P0 fitness-race keys:
+Add:
 
 - `fitness_race_station_work`;
 - `fitness_race_compromised_run`;
 - `fitness_race_specific_simulation`;
 - `fitness_race_race_day`.
 
-Add a new `CoverageSetId`, e.g. `hyrox_open_fitness_race`.
+Add a coverage set such as `hyrox_open_fitness_race`.
 
 ### WP3.2 Add `HYROX_OPEN_COVERAGE_SET`
 
-The set should reuse existing generic roles where valid and map new roles only to exact HYROX-capable workout IDs.
-
-No generic running workout may satisfy `fitness_race_compromised_run` merely because it is Running. No generic full-body circuit may satisfy `fitness_race_station_work` merely because it is hard.
+Map new roles only to exact HYROX-capable workout IDs. Generic Running must not satisfy compromised running; generic Strength must not satisfy station work.
 
 ### WP3.3 Add `buildFitnessRaceEventPlan`
 
-For `fitness_race + hyrox_open_singles`, generate blocks relative to the planning date:
+For `fitness_race + hyrox_open_singles` generate:
 
 ```text
 D-56 .. D-29  build / transition
@@ -354,45 +376,48 @@ D0             race
 D+1 .. D+7    recovery
 ```
 
-When an explicit taper start exists, it overrides D-7 and block boundaries adjust consistently.
+Explicit taper start overrides D-7 and boundaries adjust consistently.
 
-The generated plan should use:
+Use:
 
-- existing adaptation objectives for aerobic/quality/strength stimulus where appropriate;
-- **coverage-only requirements** for compromised running/station/simulation roles when there is no honest standalone stimulus axis;
-- exact coverage identity under ADR-0016.
+- existing adaptation objectives for aerobic/quality/strength stimulus;
+- coverage-only requirements for session morphology where no honest standalone physiological axis exists.
 
-Do not add a second optimizer.
+### WP3.4 Add active supported-event overlays
 
-### WP3.4 Weekly-role calibration
+Add one orchestration function (name illustrative), e.g.:
 
-Keep P0 conservative and executable. Example product policy:
+```ts
+resolveActiveEventPlanOverlays(events, asOf): ActiveEventPlanOverlay[]
+```
 
-**Build/transition:**
+Rules:
 
-- preserve aerobic work;
-- preserve one real strength role;
-- station-work target available but not allowed to displace primary endurance/strength roles;
-- compromised-running minimum may remain zero until specificity.
+- only specifically supported events with a registered `PlanDefinition` participate;
+- the global focus event's plan remains primary structured authority;
+- non-focus overlays expose bounded coverage requirements and any explicitly allowed plan metadata, not an independent optimizer result;
+- deduplicate semantically identical coverage roles;
+- preserve event/role provenance so diagnostics explain which event required a slot;
+- feed merged requirements into existing coverage feasibility/allocation;
+- when infeasible, resolve/degrade according to existing capacity/coverage policy rather than adding a session beyond capacity;
+- secondary overlay must never silently override explicit recovery/taper/safety constraints;
+- overlay expires at the plan's end.
 
-**Specificity:**
+### WP3.5 Weekly-role calibration
 
-- one compromised-running role/week minimum when admissible;
-- one station-work role/week target;
-- partial simulation is optional/target, not a required weekly full-race rehearsal;
-- one real strength role remains.
+P0 should remain conservative and executable.
 
-**Taper:**
+**Build/transition:** preserve aerobic work + one real strength role; station work may be a target, not a compulsory extra hard day.
 
-- no high-DOMS station-volume requirement;
-- one small exact fitness-race specificity touch may be retained;
-- recovery/freshness roles dominate.
+**Specificity:** one compromised-running role/week minimum when admissible; one station-work role/week target; partial simulation optional/target rather than weekly full rehearsal; one real strength role remains.
 
-Exact counts are product calibration and must be validated against weekly capacity so an impossible role set fails/degrades honestly under ADR-0044 rather than forcing unsafe work.
+**Taper:** no high-DOMS station-volume requirement; retain only a small exact specificity touch when appropriate; freshness/recovery dominate.
+
+Counts are product calibration. If capacity/equipment makes the role set impossible, fail/degrade honestly under existing coverage rules.
 
 ## WP4 — canonical workouts and multidomain execution
 
-Primary files depend on the current catalog/session adapters, at minimum:
+Primary files:
 
 - `app/src/engine/templates.ts`
 - `app/src/workouts/*`
@@ -403,51 +428,32 @@ Primary files depend on the current catalog/session adapters, at minimum:
 
 Add at least:
 
-1. **station-focused technique/endurance session**;
-2. **compromised-running session** with ordered run/station transitions;
-3. **partial fitness-race simulation** or a reduced version reachable in specificity;
-4. **race-day/session identity** for coverage/audit if the current event model requires one.
+1. station-focused technique/endurance session;
+2. compromised-running session with ordered run/station transitions;
+3. partial fitness-race simulation or reduced equivalent;
+4. race-day/session identity if required for coverage/audit.
 
 P0 does not need one workout per official station.
 
 ### WP4.2 Canonical mapping
 
-Every new engine template must resolve deterministically to an active canonical workout through `engineTemplateIds` / the current catalog routing contract.
+Every selectable engine template resolves to an active canonical workout through current catalog routing. Every selectable canonical workout adapts to a valid ADR-0023 `SessionDefinition` and deterministic `ExecutionPrescription`.
 
-Every selectable canonical workout must adapt to a valid ADR-0023 `SessionDefinition` and produce a content-addressed `ExecutionPrescription`.
-
-CI must fail if a new template is selectable but has no executable prescription.
+CI must fail if a selectable template has no executable prescription.
 
 ### WP4.3 Preserve composite structure
 
-A compromised-running workout is not simply:
-
-```text
-modality = Cross Training
-```
-
-with a prose description.
-
-Its normalized session must retain ordered run/station blocks, doses, rest/transitions and equipment requirements. The engine template may remain a ranking summary, but execution/replay uses the normalized definition.
+A compromised-running workout cannot be merely `modality = Cross Training` plus prose. Normalized execution must retain ordered run/station blocks, doses, transitions/rest and equipment requirements.
 
 ### WP4.4 Equipment
 
-Audit current `EquipmentKey` vocabulary before adding keys. Add only missing capabilities needed by the P0 executable sessions, likely among:
+Audit current `EquipmentKey` vocabulary before adding keys. Add only missing capabilities required by P0, likely among sled, SkiErg, rower, wall-ball/target setup, carry loads and sandbag.
 
-- sled;
-- SkiErg;
-- rower;
-- wall-ball/target setup;
-- kettlebell/dumbbell carry load;
-- sandbag.
-
-Do not claim full official-station fidelity if the environment cannot represent it.
-
-Candidate eligibility must reject a station session whose required equipment is absent and leave a clear exclusion reason.
+Missing required equipment must make a candidate ineligible or choose an explicitly authored alternative. It must not counterfeit exact coverage.
 
 ### WP4.5 Reduced/return variants
 
-Where current workout architecture requires it, provide full/reduced variants that preserve role identity. A reduced compromised-running prescription may earn the role only if the authored coverage mapping explicitly allows that identity/dose; do not infer it from stimulus.
+Reduced prescriptions preserve exact role identity only when the authored coverage mapping says they do. Do not infer coverage from stimulus/category.
 
 ## WP5 — Goal UI and persistence for provisional events
 
@@ -456,7 +462,7 @@ Primary files:
 - `app/src/components/Goals.tsx`
 - `app/src/services/goalService.ts`
 - `app/src/engine/validation.ts`
-- relevant Firestore/rules tests if persisted shape changes
+- persistence/rules tests if shape changes
 
 ### WP5.1 Category/preset UI
 
@@ -465,58 +471,40 @@ Expose:
 - Fitness race -> HYROX Open Singles;
 - Other event -> Custom event.
 
-Existing labels stay unchanged.
+Existing labels remain unchanged.
 
 ### WP5.2 Event date mode
 
-Add a minimal date-state control for dated events:
+Add:
 
 - **Confirmed date** — one date;
-- **Provisional window** — earliest/latest date.
+- **Provisional window** — earliest/latest.
 
-For a provisional window:
+For provisional windows validate `earliestDate <= latestDate`, persist no `confirmedDate`, and use the existing `EventTiming` invariant for `planningDate`.
 
-- validate `earliestDate <= latestDate`;
-- set `planningDate` according to the existing `EventTiming` invariant;
-- keep `confirmedDate` absent;
-- show the UI as provisional rather than “Target date: 10 Apr”.
+### WP5.3 Display/countdowns
 
-When the athlete later confirms a date, persist `confirmedDate` and update `planningDate` through the validated service path.
+Display confirmed single date or provisional range. Countdown/planning labels use `timing.planningDate` when timing exists rather than blindly using `goal.targetDate`.
 
-### WP5.3 Display
-
-Event cards/sidebar should display either:
-
-- confirmed single day; or
-- provisional range plus planning-date context.
-
-Countdowns must use `timing.planningDate` rather than blindly reading `goal.targetDate` when timing exists.
-
-## WP6 — demand/taper knowledge lineage
+## WP6 — demand/taper/plan knowledge lineage
 
 Primary files:
 
 - `app/src/knowledge/periodizationEventDemandKnowledge.ts`
-- relevant taper/plan knowledge module if separate
-- `app/src/knowledge/sportsKnowledge.ts`
-- validators/tests
+- relevant plan/taper knowledge modules
+- sports-knowledge registry/validators
 
 ### WP6.1 Demand preset claim
 
-Add HYROX Open as a product-calibrated demand profile. The official race format supports the qualitative morphology but does not validate normalized 0–1 scalars.
+Add HYROX Open as a product-calibrated demand profile. Official format facts support qualitative morphology, not normalized 0–1 scalars.
 
-Do not simply change “19 presets” to “20” while also adding `custom`. Either:
-
-- state the exact new structural count correctly (**21 total registry entries**: 19 existing + HYROX + custom); or preferably
-- remove the brittle literal from the claim statement and validate registry membership/lineage structurally.
+Do not naively change “19 presets” to “20” while also adding `custom`. Prefer structural registry validation; otherwise represent the correct 21 registry entries.
 
 ### WP6.2 Plan/taper claim
 
-Register the D-56/D-28/D-7/D+7 policy as `product_policy`, with `evidenceCertainty = not_applicable` if represented by the current knowledge schema.
+Register D-56/D-28/D-7/D+7 as `product_policy` (`evidenceCertainty = not_applicable` where schema requires). General taper evidence supports broad strategy, not a HYROX-specific seven-day optimum.
 
-Reference general taper evidence only for the broad strategy (volume reduction with intensity/frequency retained), not as proof of a HYROX-specific seven-day optimum.
-
-### WP6.3 Source references
+### WP6.3 Sources
 
 Record at least:
 
@@ -526,58 +514,59 @@ Record at least:
 
 ## WP7 — policy identity and docs
 
-Because this feature can change persisted recommendations:
+Because implementation can change persisted recommendations:
 
 - bump global `POLICY_VERSION`;
-- update policy history / drift fixtures;
-- update ADR-0007 because optimizer event-modality semantics move from category switch to the canonical event-semantics resolver;
-- update ADR-0012/0016 only by new superseding/amending record if implementation changes their accepted responsibility boundaries; do not silently edit accepted history;
-- keep ADR-0048 as the primary decision record for the new taxonomy/format semantics.
-
-No decision-affecting code merge is complete without these updates.
+- update policy history/drift fixtures;
+- amend/supersede ADR-0007's local category-to-modality statement as needed;
+- retain ADR-0048 as the primary decision record;
+- do not silently rewrite accepted historical ADR responsibility boundaries.
 
 ## WP8 — end-to-end and regression tests
 
 ### Required unit tests
 
-1. every root category has a valid preset/default semantics path;
-2. every preset id is unique within its category;
-3. unknown preset handling is explicit and deterministic;
+1. every root category has valid default/preset semantics;
+2. preset IDs are unique within category;
+3. unknown preset handling is explicit;
 4. `goalToUserEvent` retains `presetId`;
 5. existing 19 presets keep identical demand vectors;
 6. existing event categories keep identical specific modalities;
-7. optimizer focus-event modality behavior is unchanged for existing categories;
-8. explicit taper overrides every default;
+7. optimizer focus-modality behavior is unchanged for legacy categories;
+8. explicit taper overrides defaults;
 9. HYROX policy resolves only for `fitness_race/hyrox_open_singles`;
-10. custom event never resolves HYROX coverage/plan semantics.
+10. custom event never resolves HYROX semantics.
 
-### Required coverage/plan tests
+### Required plan/coverage tests
 
-1. HYROX exact coverage set validates against active canonical workout IDs;
-2. generic Running cannot satisfy `fitness_race_compromised_run`;
-3. generic Strength cannot satisfy `fitness_race_station_work`;
-4. exact HYROX workout identities do satisfy their authored roles;
-5. generated block dates move when `planningDate` changes from provisional to confirmed;
-6. authored taper start reshapes taper block without overlap;
-7. coverage requirements degrade honestly when weekly capacity/equipment makes them infeasible;
-8. post-event recovery block is active only after the resolved event date.
+1. HYROX coverage set validates against active canonical workout IDs;
+2. generic Running cannot satisfy compromised running;
+3. generic Strength cannot satisfy station work;
+4. exact HYROX identities satisfy authored roles;
+5. generated block dates move with `planningDate` confirmation;
+6. authored taper reshapes taper block without overlap;
+7. role requirements degrade honestly when capacity/equipment makes them infeasible;
+8. post-event recovery is active only after the resolved event date;
+9. secondary-event overlay activates only inside its plan window;
+10. secondary-event coverage is allocated inside the existing weekly budget;
+11. overlay expires after its recovery block.
 
 ### Required executable-session tests
 
-1. every new selectable engine template resolves to an active canonical workout;
-2. each canonical HYROX workout adapts to a valid `SessionDefinition`;
-3. execution prescription hash is deterministic;
+1. every new selectable engine template resolves to active canonical workout;
+2. each canonical HYROX workout adapts to valid `SessionDefinition`;
+3. prescription hash is deterministic;
 4. composite run/station order survives normalization;
-5. missing required station equipment excludes the candidate;
+5. missing equipment excludes the candidate;
 6. reduced variants do not silently earn undeclared coverage.
 
 ### Required UI/service tests
 
 1. Fitness race and Other event render;
 2. preset choice round-trips;
-3. provisional window round-trips through validation/service;
+3. provisional window round-trips;
 4. invalid range is rejected;
-5. displayed countdown uses planning date;
+5. countdown uses planning date;
 6. confirmation updates `confirmedDate`/`planningDate` without losing preset identity.
 
 ### End-to-end acceptance fixture
@@ -585,94 +574,100 @@ No decision-affecting code merge is complete without these updates.
 Create:
 
 ```text
-Title: HYROX Warsaw 2027
-Category: Fitness race
-Format: HYROX Open Singles
-Timing: provisional 2027-04-07 .. 2027-04-11
-Priority: chosen by fixture, not hardcoded as product truth
-Lifecycle: scheduled
+Event 1:
+  Title: HYROX Warsaw 2027
+  Category: Fitness race
+  Format: HYROX Open Singles
+  Timing: provisional 2027-04-07 .. 2027-04-11
+  Priority: secondary (e.g. B)
+
+Event 2:
+  Title: 2027 cycling A-race
+  Category: Cycling event
+  Date: 2027-08-07 (or fixture equivalent)
+  Priority: A
 ```
 
 Assert:
 
-- `presetId === 'hyrox_open_singles'`;
-- resolved semantics are specific;
-- `planningDate === '2027-04-07'` until confirmed;
-- HYROX plan/coverage becomes active only inside its policy window;
-- specificity can reserve exact compromised-running/station roles;
-- ordinary running/strength stimulus does not counterfeit those roles;
-- generated sessions are executable and equipment-aware;
+- HYROX `presetId === 'hyrox_open_singles'`;
+- HYROX semantics are specific;
+- provisional `planningDate === '2027-04-07'` until confirmed;
+- cycling A remains the global focus event under existing focus rules;
+- March activates exact HYROX compromised-run/station coverage despite HYROX not being global focus;
+- those roles consume the normal weekly capacity and displace lower-priority generic/optional work rather than increasing load without bound;
+- ordinary running/strength stimulus cannot counterfeit those roles;
+- generated HYROX sessions are executable and equipment-aware;
 - explicit user taper overrides policy default;
-- a later unrelated cycling event is not permanently biased toward Running/Strength after HYROX recovery ends.
+- after HYROX D+7, the overlay disappears and cycling specificity resumes without persistent Running/Strength bias.
 
-Then confirm the date to `2027-04-10` and assert deterministic shift of future fitness-race blocks/taper.
+Then confirm HYROX date to `2027-04-10` and assert deterministic shift of future HYROX blocks/taper.
 
 ## 5. Delivery sequence
 
-Recommended implementation order:
-
 1. **WP0:** regression/contract tests.
-2. **WP1:** category + downstream preset identity + semantics resolver.
+2. **WP1:** category + downstream format identity + canonical semantics.
 3. **WP2:** periodization/optimizer/taper consumers.
-4. **WP3:** fitness-race coverage set + plan builder.
+4. **WP3:** exact coverage + plan builder + bounded secondary-event overlay.
 5. **WP4:** canonical executable HYROX sessions/equipment.
 6. **WP5:** UI + provisional timing.
-7. **WP6/WP7:** knowledge lineage + policy version + ADR/docs, in the **same merge** as deciding behavior.
-8. **WP8:** complete end-to-end matrix and full CI.
+7. **WP6/WP7:** knowledge lineage + policy version + docs in the same decision-affecting merge.
+8. **WP8:** full end-to-end matrix and CI.
 
-Commits may be split for review, but the deployable merge must not contain decision-affecting behavior without its policy/knowledge provenance.
+Commits may be reviewable slices, but no deployable decision behavior should land without its policy/knowledge provenance.
 
-## 6. CI / verification commands
+## 6. CI / verification
 
-At minimum run the repository's normal gate:
+At minimum:
 
 ```bash
 npm run check
 ```
 
-Also run any narrower suites touched by the implementation, including:
+Also run suites covering:
 
-- event preset/periodization tests;
-- optimizer architecture/ranking tests;
+- event preset/periodization parity;
+- multi-event focus/overlay behavior;
+- optimizer ranking/architecture;
 - plan/coverage validators;
 - workout catalog validation;
 - session-definition/prescription validation;
 - sports-knowledge validation;
-- policy-drift/replay tests;
-- Goal UI/service tests.
+- policy drift/replay;
+- Goal UI/service persistence.
 
-No special CI exception is expected for this feature. A failing frozen coverage hash/count is a prompt to review and intentionally update the governed fixture, not to weaken the guard.
+A frozen coverage hash/count failure is a prompt to review and intentionally update governed fixtures, not weaken the guard.
 
 ## 7. Out of scope for P0
 
 - HYROX Pro;
 - Doubles/Relay team semantics;
 - adaptive division modeling;
-- automatic import of official race schedules;
+- automatic official schedule/wave import;
 - start-wave time planning;
 - full-race simulation every week;
-- automatic prose classification of custom events;
+- prose classification of custom events;
 - universal fitness-race ontology;
-- replacing the existing adaptation axes with HYROX-specific physiology axes;
-- athlete-specific cycling-vs-HYROX macrocycle priorities hardcoded into product defaults.
+- new HYROX-specific adaptation axes without separate justification;
+- hardcoding one athlete's cycling-vs-HYROX priority pattern as a global product default.
 
 ## 8. Implementation review checklist
-
-Before merging the future implementation PR, verify:
 
 - [ ] ADR-0048 accepted or explicitly superseded.
 - [ ] Existing event behavior parity tests pass.
 - [ ] No fixed 10-April Warsaw assumption remains.
 - [ ] `EventTiming` is exposed for provisional windows.
-- [ ] `UserEvent` retains preset/format identity.
+- [ ] `UserEvent` retains format identity.
 - [ ] Periodization and optimizer use the same event-semantics authority.
 - [ ] HYROX session morphology is coverage-based, not stimulus-inferred.
 - [ ] HYROX has an explicit event-relative `PlanDefinition`.
-- [ ] Composite sessions cross the ADR-0023 executable boundary.
+- [ ] A secondary supported event can contribute bounded exact coverage without becoming global focus.
+- [ ] Secondary coverage competes inside existing weekly capacity; it is not stacked afterward.
+- [ ] Composite sessions cross ADR-0023 executable boundary.
 - [ ] Equipment gates are real and tested.
 - [ ] Custom event stays generic.
-- [ ] SKR claims do not overstate scientific support.
-- [ ] `POLICY_VERSION` advanced with decision behavior.
+- [ ] SKR claims do not overstate evidence.
+- [ ] `POLICY_VERSION` advances with decision behavior.
 - [ ] `npm run check` and GitHub CI are green.
 
 ## References
