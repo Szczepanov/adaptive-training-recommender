@@ -47,6 +47,7 @@ export interface SessionDiaryMutation {
 }
 
 const ALREADY_COMPLETED_MESSAGE = 'A completed execution already exists for this session today.';
+const CHOICE_APPEND_ONLY_MESSAGE = 'Choice entries are append-only; record a superseding choice event instead.';
 
 /**
  * Thrown from inside `claimExecutionSlot`'s transaction when a concurrent caller already
@@ -471,6 +472,26 @@ export class SessionExecutionService {
     }
 
     private async writeEntry(userId: string, executionId: string, entry: SessionEntry, options?: DiaryWriteOptions): Promise<void> {
+        if (entry.governingChoiceEntryId !== undefined) {
+            if (entry.payload.kind === 'choice') throw new Error('A choice entry cannot be governed performed work.');
+            const governingChoice = await this.readEntryForMutation(userId, executionId, entry.governingChoiceEntryId);
+            if (governingChoice.deletedAt
+                || governingChoice.payload.kind !== 'choice'
+                || entry.selectedOptionId !== governingChoice.payload.optionId) {
+                throw new Error('governingChoiceEntryId must reference the live choice event whose option governed this performed entry.');
+            }
+        }
+        if (entry.supersedesChoiceEntryId !== undefined) {
+            if (entry.payload.kind !== 'choice' || entry.supersedesChoiceEntryId === entry.id) {
+                throw new Error('A choice supersession must reference a different choice entry.');
+            }
+            const superseded = await this.readEntryForMutation(userId, executionId, entry.supersedesChoiceEntryId);
+            if (superseded.deletedAt
+                || superseded.payload.kind !== 'choice'
+                || superseded.payload.choiceId !== entry.payload.choiceId) {
+                throw new Error('A choice correction may only supersede a live event for the same authored choice.');
+            }
+        }
         const cached = await getDocFromCache(this.entryRef(userId, executionId, entry.id)).catch(() => null);
         if (cached?.exists() && cached.data().diaryMutationId) {
             // Replaying the original log after correction must never roll back the diary.
@@ -525,6 +546,11 @@ export class SessionExecutionService {
 
     private async writeCorrection(userId: string, executionId: string, entryId: string, updatedEntry: Partial<SessionEntry>, options?: DiaryWriteOptions): Promise<void> {
         const before = await this.readEntryForMutation(userId, executionId, entryId);
+        if (before.payload.kind === 'choice'
+            || updatedEntry.payload?.kind === 'choice'
+            || updatedEntry.supersedesChoiceEntryId !== undefined) {
+            throw new Error(CHOICE_APPEND_ONLY_MESSAGE);
+        }
         if (before.deletedAt) throw new Error('Restore the deleted diary entry before correcting it.');
         // A correction may change performed semantics, never the stable record identity.
         if (updatedEntry.id !== undefined && updatedEntry.id !== entryId
@@ -548,6 +574,7 @@ export class SessionExecutionService {
 
     private async writeDeletion(userId: string, executionId: string, entryId: string, options?: DiaryWriteOptions): Promise<void> {
         const before = await this.readEntryForMutation(userId, executionId, entryId);
+        if (before.payload.kind === 'choice') throw new Error(CHOICE_APPEND_ONLY_MESSAGE);
         if (before.deletedAt) return;
         const now = new Date().toISOString();
         const mutationId = `delete-${crypto.randomUUID()}`;
@@ -564,6 +591,7 @@ export class SessionExecutionService {
 
     private async writeRestoration(userId: string, executionId: string, entryId: string, options?: DiaryWriteOptions): Promise<void> {
         const before = await this.readEntryForMutation(userId, executionId, entryId);
+        if (before.payload.kind === 'choice') throw new Error(CHOICE_APPEND_ONLY_MESSAGE);
         if (!before.deletedAt) return;
         const now = new Date().toISOString();
         const mutationId = `restore-${crypto.randomUUID()}`;
@@ -578,7 +606,10 @@ export class SessionExecutionService {
         const snap = await getDocs(this.entriesColl(userId, executionId));
         const deleted = snap.docs.flatMap(item => {
             const parsed = parseSessionEntryDocument(item.data(), item.ref.path);
-            return parsed.status === 'AVAILABLE' && parsed.data.executionId === executionId && parsed.data.deletedAt
+            return parsed.status === 'AVAILABLE'
+                && parsed.data.executionId === executionId
+                && parsed.data.payload.kind !== 'choice'
+                && parsed.data.deletedAt
                 ? [parsed.data] : [];
         });
         return deleted.sort((a, b) => b.deletedAt!.localeCompare(a.deletedAt!))[0] ?? null;

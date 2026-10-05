@@ -20,6 +20,95 @@ import type {
     RangeOrNumber,
 } from './models';
 
+
+export type ChoiceSessionEntry = SessionEntry & {
+    payload: { kind: 'choice'; choiceId: string; optionId: string; reason?: string };
+};
+
+function compareChoiceEntries(a: ChoiceSessionEntry, b: ChoiceSessionEntry): number {
+    return a.completedAt.localeCompare(b.completedAt)
+        || a.createdAt.localeCompare(b.createdAt)
+        || a.id.localeCompare(b.id);
+}
+
+/**
+ * Resolve one effective append-only event per authored choice.
+ *
+ * A later event has correction authority only when it is reachable from the canonical
+ * root through explicit `supersedesChoiceEntryId` edges. A second unlinked event with the
+ * same `choiceId` is therefore retained as history but cannot silently replace the choice
+ * that governed execution. This deliberately rejects the old "later timestamp wins"
+ * behavior.
+ *
+ * A malformed/concurrent fork cannot be represented as INVALID by this pure view helper,
+ * so replay picks the stable earliest terminal head by completedAt/createdAt/id. All
+ * clients observing the same event set therefore resolve the same branch independent of
+ * Firestore return order, while no arrival order gains authority.
+ */
+export function resolveEffectiveChoiceEntries(entries: readonly SessionEntry[]): ChoiceSessionEntry[] {
+    const choiceEntries = entries
+        .filter((entry): entry is ChoiceSessionEntry => entry.payload.kind === 'choice')
+        .slice()
+        .sort(compareChoiceEntries);
+    const byChoiceId = new Map<string, ChoiceSessionEntry[]>();
+    for (const entry of choiceEntries) {
+        const group = byChoiceId.get(entry.payload.choiceId) ?? [];
+        group.push(entry);
+        byChoiceId.set(entry.payload.choiceId, group);
+    }
+
+    const effective: ChoiceSessionEntry[] = [];
+    for (const group of byChoiceId.values()) {
+        const byId = new Map(group.map(entry => [entry.id, entry]));
+        const children = new Map<string, ChoiceSessionEntry[]>();
+
+        for (const entry of group) {
+            const parentId = entry.supersedesChoiceEntryId;
+            if (!parentId) continue;
+            const parent = byId.get(parentId);
+            // Service + rules reject these shapes for new writes. Historical malformed
+            // edges remain readable but cannot grant correction authority.
+            if (!parent || parent.id === entry.id || parent.payload.choiceId !== entry.payload.choiceId) continue;
+            const siblings = children.get(parentId) ?? [];
+            siblings.push(entry);
+            children.set(parentId, siblings);
+        }
+
+        const roots = group
+            .filter(entry => {
+                const parentId = entry.supersedesChoiceEntryId;
+                if (!parentId) return true;
+                const parent = byId.get(parentId);
+                return !parent || parent.id === entry.id || parent.payload.choiceId !== entry.payload.choiceId;
+            })
+            .slice()
+            .sort(compareChoiceEntries);
+
+        // Multiple unlinked roots are not a correction relationship. Anchor replay on the
+        // stable earliest root instead of silently treating a later write as authoritative.
+        // A cycle has no root; anchor it the same deterministic way and do not invent one.
+        const root = roots[0] ?? group[0];
+        const reachable = new Map<string, ChoiceSessionEntry>([[root.id, root]]);
+        const queue: ChoiceSessionEntry[] = [root];
+        while (queue.length > 0) {
+            const current = queue.shift()!;
+            const next = (children.get(current.id) ?? []).slice().sort(compareChoiceEntries);
+            for (const child of next) {
+                if (reachable.has(child.id)) continue;
+                reachable.set(child.id, child);
+                queue.push(child);
+            }
+        }
+
+        const terminals = [...reachable.values()]
+            .filter(entry => !(children.get(entry.id) ?? []).some(child => reachable.has(child.id)))
+            .sort(compareChoiceEntries);
+        effective.push(terminals[0] ?? root);
+    }
+
+    return effective.sort(compareChoiceEntries);
+}
+
 export interface EffectiveSessionView {
     /** Same shape/order as the input; step fields overridden by recorded choices. */
     definition: SessionDefinition;
@@ -89,12 +178,7 @@ export function resolveEffectiveSession(
     definition: SessionDefinition,
     entries: readonly SessionEntry[],
 ): EffectiveSessionView {
-    const choiceEntries = entries
-        .filter((entry): entry is SessionEntry & { payload: { kind: 'choice'; choiceId: string; optionId: string } } => entry.payload.kind === 'choice')
-        // Firestore reads carry no guaranteed order; fold choices in the order the
-        // athlete actually made them so "later choice wins" is meaningful.
-        .slice()
-        .sort((a, b) => a.completedAt.localeCompare(b.completedAt) || a.createdAt.localeCompare(b.createdAt));
+    const choiceEntries = resolveEffectiveChoiceEntries(entries);
 
     if (choiceEntries.length === 0) {
         return { definition, endedBlockIds: new Set(), sessionEnded: false };

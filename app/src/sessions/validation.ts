@@ -649,6 +649,16 @@ export function validateSessionEntry(raw: unknown): ValidationResult<SessionEntr
     if (typeof raw.updatedAt !== 'string' || raw.updatedAt.length === 0) issues.push({ path: 'updatedAt', message: 'Missing updatedAt' });
     if (raw.diaryMutationId !== undefined && (typeof raw.diaryMutationId !== 'string' || raw.diaryMutationId.length === 0)) issues.push({ path: 'diaryMutationId', message: 'Invalid diary mutation id' });
     if (raw.deletedAt !== undefined && raw.deletedAt !== null && (typeof raw.deletedAt !== 'string' || raw.deletedAt.length === 0)) issues.push({ path: 'deletedAt', message: 'Invalid deletion timestamp' });
+    if (raw.governingChoiceEntryId !== undefined
+        && (typeof raw.governingChoiceEntryId !== 'string' || raw.governingChoiceEntryId.length === 0)) {
+        issues.push({ path: 'governingChoiceEntryId', message: 'governingChoiceEntryId must be a non-empty string' });
+    }
+    if (raw.supersedesChoiceEntryId !== undefined
+        && (typeof raw.supersedesChoiceEntryId !== 'string'
+            || raw.supersedesChoiceEntryId.length === 0
+            || raw.supersedesChoiceEntryId === raw.id)) {
+        issues.push({ path: 'supersedesChoiceEntryId', message: 'supersedesChoiceEntryId must name a different choice entry' });
+    }
     if (raw.compositionPatterns !== undefined
         && (!Array.isArray(raw.compositionPatterns)
             || raw.compositionPatterns.length === 0
@@ -693,6 +703,15 @@ export function validateSessionEntry(raw: unknown): ValidationResult<SessionEntr
             if (typeof payload.optionId !== 'string' || payload.optionId.length === 0) issues.push({ path: 'payload.optionId', message: 'optionId must be a non-empty string' });
             if (payload.reason !== undefined && typeof payload.reason !== 'string') issues.push({ path: 'payload.reason', message: 'reason must be a string' });
         }
+    }
+
+    if (raw.governingChoiceEntryId !== undefined
+        && (!isObject(raw.payload) || raw.payload.kind === 'choice')) {
+        issues.push({ path: 'governingChoiceEntryId', message: 'Choice entries cannot govern themselves as performed work' });
+    }
+    if (raw.supersedesChoiceEntryId !== undefined
+        && (!isObject(raw.payload) || raw.payload.kind !== 'choice')) {
+        issues.push({ path: 'supersedesChoiceEntryId', message: 'Only choice entries may supersede another choice entry' });
     }
 
     if (issues.length > 0) return { ok: false, issues };
