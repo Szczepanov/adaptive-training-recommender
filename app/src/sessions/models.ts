@@ -453,6 +453,9 @@ export interface SessionEntry {
     completedAt: string;
     createdAt: string;
     updatedAt: string;
+    /** Additive diary envelope. Legacy entries omit both fields. */
+    diaryMutationId?: string;
+    deletedAt?: string | null;
     payload: SessionEntryPayload;
 }
 

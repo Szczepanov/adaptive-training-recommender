@@ -255,7 +255,9 @@ function parseRecords(raw: TrainingOccurrenceRecordExport): ParsedRecords {
     for (const document of raw.sessionEntries ?? []) {
         if (foreign(document.data)) { parsed.crossUserRecords += 1; continue; }
         const state = parseSessionEntryDocument(document.data, `session_executions/*/entries/${document.id}`);
-        if (state.status === 'AVAILABLE') parsed.entries.push(state.data);
+        if (state.status === 'AVAILABLE') {
+            if (!state.data.deletedAt) parsed.entries.push(state.data);
+        }
         else parsed.invalidRecords += 1;
     }
     for (const document of raw.executionPrescriptions ?? []) {

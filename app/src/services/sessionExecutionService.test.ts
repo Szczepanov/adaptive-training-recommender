@@ -6,6 +6,9 @@ const firestore = vi.hoisted(() => {
         collection: vi.fn(),
         doc: vi.fn(),
         getDoc: vi.fn(),
+        getDocFromCache: vi.fn(),
+        onSnapshot: vi.fn(),
+        waitForPendingWrites: vi.fn(),
         getDocs: vi.fn(),
         setDoc: vi.fn(),
         deleteDoc: vi.fn(),
@@ -21,6 +24,8 @@ vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
 
 import { SessionExecutionService } from './sessionExecutionService';
+import { readDiaryReceipts, removeDiaryReceipt, saveDiaryReceipt } from './sessionDiaryReceipts';
+import type { SessionDiaryMutation } from './sessionExecutionService';
 
 const USER_ID = 'u1';
 const EXECUTION_ID = 'exec-1';
@@ -101,6 +106,8 @@ describe('SessionExecutionService', () => {
         firestore.query.mockReturnValue({ tag: 'query' });
         firestore.setDoc.mockResolvedValue(undefined);
         firestore.getDocs.mockResolvedValue({ docs: [] });
+        firestore.getDocFromCache.mockRejectedValue(new Error('not cached'));
+        firestore.waitForPendingWrites.mockResolvedValue(undefined);
         // Default: an empty transaction (no lock, no conflicting execution) so tests that
         // don't care about the transactional recheck can exercise `startExecution`'s create
         // path without wiring up `makeTransactionMock` themselves. A test that needs custom
@@ -110,6 +117,68 @@ describe('SessionExecutionService', () => {
             async (_db: unknown, callback: (t: ReturnType<typeof makeTx>) => unknown) => callback(makeTx()),
         );
         firestore.writeBatch.mockImplementation(() => makeWriteBatchMock());
+    });
+
+    describe('restored diary receipts', () => {
+        const mutation: SessionDiaryMutation = {
+            id: 'receipt-correction', executionId: 'exec-receipt', targetId: 'entry-1', targetKind: 'entry',
+            kind: 'correct', at: '2026-08-17T18:20:00Z',
+            before: validEntry() as never,
+            after: validEntry({ payload: { kind: 'repetition', setIndex: 1, reps: 10 } }) as never,
+        };
+
+        it('retains rejected intent as failed after reload even when no original callback survives', async () => {
+            saveDiaryReceipt(USER_ID, { mutation, state: 'queued' });
+            firestore.onSnapshot.mockImplementationOnce((_ref, _options, next) => {
+                next({ docs: [], metadata: { hasPendingWrites: false, fromCache: false } });
+                return vi.fn();
+            });
+            const next = vi.fn();
+            const failed = vi.fn();
+            new SessionExecutionService().watchDiarySync(USER_ID, mutation.executionId, next, failed);
+            await vi.waitFor(() => expect(failed).toHaveBeenCalledOnce());
+            expect(next).not.toHaveBeenCalled();
+            expect(failed).toHaveBeenCalledOnce();
+            expect(readDiaryReceipts(USER_ID, mutation.executionId)).toEqual([{ mutation, state: 'failed' }]);
+            removeDiaryReceipt(USER_ID, mutation.executionId, mutation.id);
+        });
+
+        it('requires matching server audit bytes before discarding a receipt', async () => {
+            saveDiaryReceipt(USER_ID, { mutation, state: 'queued' });
+            let emit!: (snapshot: unknown) => void;
+            firestore.onSnapshot.mockImplementationOnce((_ref, _options, next) => { emit = next; return vi.fn(); });
+            const next = vi.fn();
+            const failed = vi.fn();
+            service.watchDiarySync(USER_ID, mutation.executionId, next, failed);
+            emit({ docs: [], metadata: { hasPendingWrites: false, fromCache: true } });
+            await vi.waitFor(() => expect(next).toHaveBeenLastCalledWith(true));
+            expect(next).toHaveBeenLastCalledWith(true);
+            expect(readDiaryReceipts(USER_ID, mutation.executionId)).toHaveLength(1);
+            emit({ docs: [{ id: mutation.id, data: () => mutation }], metadata: { hasPendingWrites: false, fromCache: false } });
+            await vi.waitFor(() => expect(next).toHaveBeenLastCalledWith(false));
+            expect(next).toHaveBeenLastCalledWith(false);
+            expect(readDiaryReceipts(USER_ID, mutation.executionId)).toEqual([]);
+            expect(failed).not.toHaveBeenCalled();
+        });
+
+        it('does not mistake an older server snapshot for rejection of a newly accepted cross-tab write', async () => {
+            let emit!: (snapshot: unknown) => void;
+            firestore.onSnapshot.mockImplementationOnce((_ref, _options, next) => { emit = next; return vi.fn(); });
+            const next = vi.fn();
+            const failed = vi.fn();
+            service.watchDiarySync(USER_ID, mutation.executionId, next, failed);
+            // The snapshot predates this shared-storage receipt, but the current
+            // persistent cache knows that another tab still has its marker queued.
+            saveDiaryReceipt(USER_ID, { mutation, state: 'queued' });
+            firestore.getDocFromCache.mockResolvedValueOnce({ metadata: { hasPendingWrites: true } });
+            emit({ docs: [], metadata: { hasPendingWrites: false, fromCache: false } });
+            await vi.waitFor(() => expect(next).toHaveBeenLastCalledWith(true));
+            expect(failed).not.toHaveBeenCalled();
+            expect(readDiaryReceipts(USER_ID, mutation.executionId)[0]?.state).toBe('queued');
+            emit({ docs: [{ id: mutation.id, data: () => mutation }], metadata: { hasPendingWrites: false, fromCache: false } });
+            await vi.waitFor(() => expect(next).toHaveBeenLastCalledWith(false));
+            expect(readDiaryReceipts(USER_ID, mutation.executionId)).toEqual([]);
+        });
     });
 
     describe('getExecutionsInRange', () => {
@@ -239,11 +308,15 @@ describe('SessionExecutionService', () => {
             };
         }
 
-        it('persists a rest event via setDoc using the caller-supplied id', async () => {
+        it('atomically queues the rest, immutable audit marker and execution touch using the caller-supplied id', async () => {
+            const batch = makeWriteBatchMock();
+            firestore.writeBatch.mockReturnValueOnce(batch);
             await service.logRestEvent(USER_ID, EXECUTION_ID, validRestEvent() as never);
-            expect(firestore.setDoc).toHaveBeenCalledTimes(1);
-            const [, payload] = firestore.setDoc.mock.calls[0] as [unknown, Record<string, unknown>];
+            expect(batch.set).toHaveBeenCalledTimes(3);
+            expect(batch.commit).toHaveBeenCalledTimes(1);
+            const [, payload] = batch.set.mock.calls[0] as [unknown, Record<string, unknown>];
             expect(payload).toMatchObject({ id: 'rest-1', afterEntryId: 'entry-1', endReason: 'timer_elapsed', actualSeconds: 90 });
+            expect(batch.set.mock.calls[1]?.[1]).toMatchObject({ id: 'rest-rest-1', before: null, after: payload });
         });
 
         it('returns only rest events belonging to this execution, sorted by startedAt, dropping malformed ones', async () => {

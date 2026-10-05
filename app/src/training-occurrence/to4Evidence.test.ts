@@ -226,6 +226,14 @@ describe('prepareTo4Evidence', () => {
         const prepared = prepareTo4Evidence(manual, options).preparedInput;
         expect(prepared.canonicalDerivation).toMatchObject({ derived: 1, unknownByReason: {} });
         expect(prepared.hardGates).toMatchObject({ structuredSemanticAuthorityPreserved: 'pass' });
+        // Tombstones remain in the raw diary export but cannot contribute performed work.
+        const deleted = {
+            ...manual,
+            sessionEntries: manual.sessionEntries?.map(item => ({
+                ...item, data: { ...(item.data as Record<string, unknown>), deletedAt: '2026-08-06T16:30:00Z' },
+            })),
+        };
+        expect(prepareTo4Evidence(deleted, options).preparedInput.canonicalDerivation).toMatchObject({ derived: 0 });
     });
 
     it('rejects malformed prescription modality metadata instead of throwing during derivation', () => {

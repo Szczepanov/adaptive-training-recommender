@@ -120,6 +120,50 @@ resume. A lone side is retained but does not complete a prescribed set, start it
 the runner; the matching side completes one set. Older duration entries without a side remain one
 completed set.
 
+## Durable diary writes and correction history
+
+`SessionExecutionService` is the diary write authority. Entry logs, corrections, deletion,
+restoration and closed rests batch the materialized target, an immutable `diaryMutations`
+record, and the execution's `updatedAt` touch. Firebase's persistent local cache is the
+only replay queue; there is no component retry queue. Successful execution claims seed the
+full readable execution cache before returning, because transaction writes alone do not
+populate that cache and a later offline timestamp merge could otherwise leave a partial
+parent document.
+
+Entry ids are minted once by the runner. The initial log marker is deterministic from that
+id; replaying a log never overwrites a later correction. Rest markers retain the caller's
+deterministic closed-rest identity. Corrections preserve full prior and updated values in
+the audit record. Rules require the prior values to match the current entry, rejecting a
+stale competing correction instead of silently losing either tab's intent. Same-entry
+read/mutate/accept operations are serialized within the service, including rapid delete/undo.
+
+Deletion writes `deletedAt` on the existing entry, retaining identity and performed values.
+Normal entry reads and the TO4 evidence preparation exclude tombstones. Undo restores the
+retained entry through a new audited mutation; the latest tombstone is discoverable after
+reload. Legacy records without diary metadata remain readable and can enter the new write
+discipline without backfill. Audited entries cannot be physically deleted or rewritten
+without their matching audit record.
+
+The runner separates local acceptance from backend acknowledgement. A mutation-marker
+snapshot confirms the atomic batch entered the SDK's local queue, releasing the form while
+offline. The status is `pending` before local acceptance, `queued` while local writes await
+the server, `synced` after acknowledgement, and `unavailable` for failure. Live entry
+snapshots refresh the displayed state after reconciliation with the server.
+
+Owner/execution/mutation-scoped local storage receipts retain accepted intent until matching
+server audit bytes confirm it. These receipts never replay writes. They are necessary because
+the SDK restores queued writes after reload without restoring their original rejection
+callbacks. A missing audit after a server-confirmed, drained queue retains a `failed` receipt
+and the attempted values, exposed by `getDiaryReceipts`, rather than reporting `synced`.
+The dedicated diagnostic/export surface remains WP5 of #895. Browser storage errors prevent
+local acknowledgement. If Firebase's persistent cache is unavailable, its existing warning
+still applies: receipts preserve intent, but the memory-cache fallback cannot guarantee
+automatic replay after reload.
+
+Deploy the additive diary/tombstone rules before a frontend using this contract. No historical
+migration is required. Keep audit records and tombstones on rollback; older clients may be
+unable to edit audited entries under the integrity rules, so a forward fix is preferred.
+
 ## Custom-template lifecycle
 
 The collection document is a mutable `SessionDefinitionHeader`; definition revisions are

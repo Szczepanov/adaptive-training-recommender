@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **Draft** — design not yet agreed; no code in this change |
+| **Status** | **In progress** — WP0 harness and WP1 durable diary implemented; WP2–WP7 remain |
 | **Source** | [Issue #895](https://github.com/Szczepanov/adaptive-training-recommender/issues/895) |
 | **Baseline** | `origin/main` at `e63517a7` (fetch 2026-09-29; includes #901, #910, #911, #912, #913, #914). The local checkout at plan-writing time was behind by 4 commits; all findings below were verified against the fetched tip (`git show FETCH_HEAD:<path>`), not the stale worktree. |
 | **Blocked by** | No code blocker for WP1–WP3 design. WP4–WP5 reuse the emulator harness from WP0. Per-item dependencies are listed below. |
@@ -13,7 +13,7 @@
 
 Make the structured SessionRunner the lossless, resumable, auditable source of truth for performed session semantics, with Garmin/provider activities attached as secondary measurement evidence for the same physical occurrence.
 
-Concretely, close the gap the two audit subagents confirmed on 2026-09-29: **execution creation is offline-durable and race-safe, but set entries, corrections and rest closes are not.** `sessionExecutionService` `claimExecutionSlot` survives offline via the SDK persistent-cache queue and arbitrates concurrent starts through `session_execution_locks`, while `logEntry` / `correctEntry` / `deleteEntry` / `logRestEvent` / `transitionExecution` are plain Firestore writes that only flip `syncStatus` on failure, with no outbox and no replay.
+The 2026-09-29 audit identified durable entry, correction and rest-write gaps. WP1 now batches diary targets, immutable audit records and execution touches into the SDK persistent-cache queue. Tombstones and durable receipts retain deletion and rejected intent across reload. Lifecycle, full prescription-resume, ordering, diagnostic UI and consumer inventory work remain with WP2–WP7.
 
 ## 2. Non-goals
 
@@ -69,41 +69,42 @@ WP6 inventories per-consumer authority (canonical vs legacy) and closes double-c
 
 ## WP0 — Harness: offline / reload / concurrency fixtures
 
-**Status:** In progress — diary + ordering harness landed (no behavior change); offline reconnect replay and same-write retry across reload remain to be pinned in a follow-up
+**Status:** Implemented — diary/ordering fixtures, offline replay and actual browser reload proofs; full reconciliation convergence belongs to WP4
 **Blocked by:** None
 **Purpose:** prove the current gaps and every later WP against the Auth/Firestore emulator before changing write paths.
 
 ### Changes
 
-- Emulator tests driving `sessionExecutionService` + `useSessionRunner` through: offline `logEntry` then reconnect; retry of the same entry write; concurrent `startExecution` for one slot; reload mid-session (restore effect with `findInProgressExecution` + `getEntries` + `resolveSessionDefinition`); double `completeSession`; `abandonSession` with prior entries; `correctEntry`/`deleteEntry`/`undo` across reload.
-- Occurrence convergence fixtures: execution-first, provider-first, late provider detail, device-sync update of an existing activity, offline execution arriving later; assert stable user-visible identity and no duplicate rows.
-- Pin current behavior first (what survives, what is lost) so WPs demonstrate delta, not just green tests.
+- Emulator fixtures exercise entry retry, correction/deletion history, closed rest, terminal-write rejection and service-instance restore. Existing concurrent-start tests cover slot arbitration; browser tests additionally prove actual offline reload and undo.
+- Thin occurrence fixtures pin distinct source keys, single-source identity and same-document updates. They do not invoke reconciliation or prove arrival-order convergence; those proofs remain in WP4.
+- WP0 pinned the original behavior before WP1 replaced the diary-gap assertions with lossless-write regressions. Lifecycle and prescription-resume hardening remain in WP2/WP3.
 
-### Likely files
+### Files
 
 - `app/src/emulator/sessionExecutionDiary.emulator.test.ts` (new)
-- `app/src/training-occurrence/reconciliationOrdering.emulator.test.ts` (new)
-- existing `sessionExecutionConcurrentStart.emulator.test.ts`, `firestoreRules.emulator.test.ts` (extend, do not fork)
+- `app/src/emulator/reconciliationOrdering.emulator.test.ts` (new)
+- `app/tests/e2e/session-diary-offline.pw.ts` (new)
 
 ### Acceptance
 
-- Each #895 acceptance criterion has at least one failing-or-thin test before its WP lands;
-- emulator suite runs inside the existing rules-emulator workflow, no live API.
+- The WP1 acceptance criteria have emulator regressions and actual browser-reload proofs. Thin lifecycle/ordering fixtures establish the remaining work-package boundaries.
+- The emulator suite runs inside the existing rules-emulator workflow, with no live API.
 
 ---
 
 ## WP1 — Durable entry outbox with idempotent retry
 
-**Status:** Not started
-**Blocked by:** WP0 (fixtures must show the loss first)
+**Status:** Implemented — atomic SDK queue, immutable mutation audit, tombstones, durable undo and receipt-based failure detection
+**Dependency:** WP0 — satisfied by the reused harness commit
 **Purpose:** close the core gap — entries, corrections and rest closes survive offline and retry without duplicates.
 
 ### Changes
 
-1. Assign entry ids once at log intent in `useSessionRunner` `logEntry` (keep `entry-<ts>-<uuid>` shape) and route the write through a persistent outbox (Firestore persistent-cache queued batch on the existing `session_executions/{id}/entries/{entryId}` + execution `updatedAt` touch, same doc shape — no schema migration).
-2. Retry reuses the same id; success converges via `setDoc` idempotency. Rest closes keep their deterministic ids and single-retry-then-record discipline; extend the same exactly-once close to the outbox path.
-3. `correctEntry` writes a revision (preserve prior values server-side or as a revision sub-record — detail design in implementation; must satisfy rules `entries` update gate while parent is `in_progress`); `deleteEntry` becomes a tombstone write the outbox can replay; `undo` replays through the outbox so it survives reload.
-4. `syncStatus` distinguishes queued / acknowledged / failed instead of the current pending/unavailable blur, feeding WP5 diagnostics.
+1. The runner retains the once-minted `entry-<ts>-<uuid>` intent id. Entry/rest mutations atomically queue their target, immutable `diaryMutations` record and execution timestamp through Firebase persistent cache. Successful starts seed the complete execution document cache before offline timestamp merges.
+2. Retry retains the entry/rest identity; replay of an initial log never overwrites a later correction. Same-entry mutation serialization prevents rapid delete/undo from reading stale local state.
+3. Corrections preserve complete before/after values. Rules reject stale competing corrections. Deletion retains a `deletedAt` tombstone; restore uses an audited mutation, and the latest deleted entry remains discoverable after reload. Normal service and TO4 evidence reads exclude tombstones.
+4. Local snapshot acceptance releases the runner form without waiting for the server. Metadata distinguishes queued from synced; failures stay unavailable. Owner-scoped receipts retain attempted values until exact server audit confirmation, including server rejection after reload when original callbacks no longer exist. Receipts never replay writes; the SDK remains the sole queue.
+5. Unit/emulator tests cover same-id replay, auditable correction, tombstone/restore, overlapping delete/undo, offline sets and closed rest, ownership, immutable audit and stale-conflict rejection. Browser tests prove three offline sets plus correction/delete/undo survive a real reload and persist once, and a two-client stale correction remains visibly failed with retained values after reload/reconnect.
 
 ### Acceptance
 
@@ -264,8 +265,8 @@ Expected; exact names may evolve.
 
 ## 9. Rollback strategy
 
-- WP1 outbox writes the same doc shapes; disabling the outbox path falls back to direct writes with degraded offline guarantees — no migration to unwind.
-- Revision/tombstone records are additive; readers tolerate their absence.
+- WP1's queue uses existing SDK persistence, with additive mutation audit and entry metadata. No historical backfill is required. Deploy compatible rules before the new frontend.
+- Keep audit/tombstone records on rollback. Old clients may be unable to edit audited entries under the integrity rules; prefer a forward fix instead of removing the audit protection. Readers tolerate absent metadata on legacy entries.
 - WP4/WP5 are additive diagnostics; rollback removes the surface, not the data.
 - No raw-telemetry persistence changes, so rollback deletes no large data.
 

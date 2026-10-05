@@ -57,7 +57,7 @@ export interface UseSessionRunnerResult {
     restSecondsRemaining: number;
     isRestRunning: boolean;
     isRestoring: boolean;
-    syncStatus: 'synced' | 'pending' | 'unavailable';
+    syncStatus: 'synced' | 'pending' | 'queued' | 'unavailable';
     canUndo: boolean;
     lastRemovedEntry: SessionEntry | null;
     /** True once a recorded choice ended the whole session (D-MCHOICE `end_session`). */
@@ -134,8 +134,28 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const [restSecondsRemaining, setRestSecondsRemaining] = useState<number>(0);
     const [isRestRunning, setIsRestRunning] = useState<boolean>(false);
     const [isRestoring, setIsRestoring] = useState<boolean>(true);
-    const [syncStatus, setSyncStatus] = useState<'synced' | 'pending' | 'unavailable'>('synced');
+    const [syncStatus, setSyncStatus] = useState<'synced' | 'pending' | 'queued' | 'unavailable'>('synced');
     const [lastRemovedEntry, setLastRemovedEntry] = useState<SessionEntry | null>(null);
+    const diaryFailedRef = useRef(false);
+    const diaryWriteOptions = useMemo(() => ({
+        acknowledgeLocally: true,
+        onFailed: () => {
+            diaryFailedRef.current = true;
+            setSyncStatus('unavailable');
+        },
+    }), []);
+
+    useEffect(() => {
+        if (!execution) return;
+        const stopSync = sessionExecutionService.watchDiarySync(userId, execution.executionId, pending => {
+            if (!diaryFailedRef.current) setSyncStatus(pending ? 'queued' : 'synced');
+        }, diaryWriteOptions.onFailed);
+        const stopEntries = sessionExecutionService.watchEntries(userId, execution.executionId, (current, deleted) => {
+            setEntries(current);
+            setLastRemovedEntry(deleted);
+        }, diaryWriteOptions.onFailed);
+        return () => { stopSync(); stopEntries(); };
+    }, [userId, execution, diaryWriteOptions]);
     // A React state update is not synchronous. Keep this separate from `execution` so a
     // double-tap in the gap before the start write resolves cannot create two executions.
     // The H4 claim transaction remains the cross-tab authority for claimed intraday members;
@@ -167,12 +187,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
      * (see firestore.rules' restEvents `in_progress` gate). Other call sites intentionally
      * fire-and-forget since they have no such ordering requirement.
      *
-     * `activeRestRef` is cleared before the write settles (so a racing close can't
-     * double-fire), which means a failed write's rest data has nowhere durable to live if
-     * it's simply dropped. One inline retry covers the dominant real failure mode (a
-     * transient network blip) without a persistent cross-render retry queue, which would
-     * be a much larger change for a best-effort timing feature -- a retry that also fails
-     * still only loses this one rest's actual-duration data, not any entry/session state. */
+     * `activeRestRef` is cleared synchronously to prevent duplicate closes. The SDK's
+     * persistent queue retains the closed record across disconnect/reload and retries
+     * its same identity. Terminal transitions retain the server-acknowledged ordering. */
     const closeActiveRest = useCallback((endReason: RestEndReason): Promise<void> | undefined => {
         const active = activeRestRef.current;
         if (!active || !execution) return undefined;
@@ -191,9 +208,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             createdAt: now,
             updatedAt: now,
         };
-        return sessionExecutionService.logRestEvent(userId, execution.executionId, restEvent)
-            .catch(() => sessionExecutionService.logRestEvent(userId, execution.executionId, restEvent));
-    }, [execution, userId]);
+        return sessionExecutionService.logRestEvent(userId, execution.executionId, restEvent,
+            endReason === 'session_ended' ? { onFailed: diaryWriteOptions.onFailed } : diaryWriteOptions);
+    }, [execution, userId, diaryWriteOptions]);
 
     // Reloading or backgrounding must not create a second execution. Source-neutral
     // executions restore through the immutable source + prescription binding; fixtures
@@ -220,11 +237,13 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                         ? await resolveSessionDefinition(userId, source, existing.prescriptionHash)
                         : null;
                 const existingEntries = await sessionExecutionService.getEntries(userId, existing.executionId);
+                const deletedEntry = await sessionExecutionService.getLastDeletedEntry(userId, existing.executionId);
                 if (cancelled) return;
                 if (resolved?.status === 'AVAILABLE') setRawDefinition(resolved.data);
                 else if (!fixture) setSyncStatus('unavailable');
                 setExecution(existing);
                 setEntries(existingEntries);
+                setLastRemovedEntry(deletedEntry);
                 setElapsedSeconds(sessionElapsedSecondsAt(existing.startedAt, Date.now()));
             })
             .catch(() => {
@@ -503,8 +522,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         }
 
         try {
-            await sessionExecutionService.logEntry(userId, execution.executionId, entry);
-            setSyncStatus('synced');
+            await sessionExecutionService.logEntry(userId, execution.executionId, entry, diaryWriteOptions);
         } catch {
             setSyncStatus('unavailable');
             // The rest timer above starts optimistically (same rationale as the optimistic
@@ -516,7 +534,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 setIsRestRunning(false);
             }
         }
-    }, [execution, activeStep, activeBlock, entries, userId, closeActiveRest]);
+    }, [execution, activeStep, activeBlock, entries, userId, closeActiveRest, diaryWriteOptions]);
 
     const logChoice = useCallback(async (choiceId: string, optionId: string, reason?: string) => {
         if (!execution || execution.state !== 'in_progress' || !activeBlock) return;
@@ -539,12 +557,11 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         setSyncStatus('pending');
 
         try {
-            await sessionExecutionService.logEntry(userId, execution.executionId, entry);
-            setSyncStatus('synced');
+            await sessionExecutionService.logEntry(userId, execution.executionId, entry, diaryWriteOptions);
         } catch {
             setSyncStatus('unavailable');
         }
-    }, [execution, activeBlock, userId]);
+    }, [execution, activeBlock, userId, diaryWriteOptions]);
 
     const editEntry = useCallback(async (entryId: string, updatedPayload: Partial<SessionEntryPayload>) => {
         if (!execution || execution.state !== 'in_progress') return;
@@ -554,11 +571,11 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         try {
             await sessionExecutionService.correctEntry(userId, execution.executionId, entryId, {
                 payload: { ...target.payload, ...updatedPayload } as SessionEntryPayload,
-            });
+            }, diaryWriteOptions);
         } catch {
             setSyncStatus('unavailable');
         }
-    }, [execution, entries, userId]);
+    }, [execution, entries, userId, diaryWriteOptions]);
 
     const removeEntry = useCallback(async (entryId: string) => {
         if (!execution || execution.state !== 'in_progress') return;
@@ -568,23 +585,23 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         }
         setEntries(prev => prev.filter(e => e.id !== entryId));
         try {
-            await sessionExecutionService.deleteEntry(userId, execution.executionId, entryId);
+            await sessionExecutionService.deleteEntry(userId, execution.executionId, entryId, diaryWriteOptions);
         } catch {
             setSyncStatus('unavailable');
         }
-    }, [execution, entries, userId]);
+    }, [execution, entries, userId, diaryWriteOptions]);
 
     const undo = useCallback(async () => {
         if (!execution || execution.state !== 'in_progress' || !lastRemovedEntry) return;
         const toRestore = lastRemovedEntry;
         setLastRemovedEntry(null);
-        setEntries(prev => [...prev, toRestore]);
+        setEntries(prev => [...prev, { ...toRestore, deletedAt: null }]);
         try {
-            await sessionExecutionService.logEntry(userId, execution.executionId, toRestore);
+            await sessionExecutionService.restoreEntry(userId, execution.executionId, toRestore.id, diaryWriteOptions);
         } catch {
             setSyncStatus('unavailable');
         }
-    }, [execution, lastRemovedEntry, userId]);
+    }, [execution, lastRemovedEntry, userId, diaryWriteOptions]);
 
     // Not currently wired into any UI (no `afterEntryId` context to attribute a durable
     // rest event to) -- left as local-only countdown state, matching its existing
