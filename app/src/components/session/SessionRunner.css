@@ -297,7 +297,8 @@
     color: #4ade80;
 }
 
-.sync-pill.pending {
+.sync-pill.pending,
+.sync-pill.queued {
     background: rgba(234, 179, 8, 0.15);
     color: #facc15;
 }

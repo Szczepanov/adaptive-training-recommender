@@ -2,7 +2,9 @@ import {
     doc,
     getDoc,
     setDoc,
-    deleteDoc,
+    getDocFromCache,
+    onSnapshot,
+    waitForPendingWrites,
     collection,
     getDocs,
     query,
@@ -29,6 +31,20 @@ import {
     parseSessionEntryDocument,
     parseSessionRestEventDocument,
 } from '../persistence/parsers/sessionExecution';
+import { commitDiaryWrite, type DiaryWriteOptions } from './sessionDiaryWrite';
+import { readDiaryReceipts, removeDiaryReceipt, saveDiaryReceipt } from './sessionDiaryReceipts';
+import { canonicalizeJson } from '../utils/canonicalJson';
+
+export interface SessionDiaryMutation {
+    id: string;
+    executionId: string;
+    targetId: string;
+    targetKind: 'entry' | 'rest';
+    kind: 'log' | 'correct' | 'delete' | 'restore' | 'rest';
+    at: string;
+    before: SessionEntry | null;
+    after: SessionEntry | SessionRestEvent;
+}
 
 const ALREADY_COMPLETED_MESSAGE = 'A completed execution already exists for this session today.';
 
@@ -84,6 +100,7 @@ export interface StartExecutionParams {
 
 export class SessionExecutionService {
     private readonly db: Firestore;
+    private readonly entryWrites = new Map<string, Promise<void>>();
 
     constructor(db: Firestore = getDb()) {
         this.db = db;
@@ -200,8 +217,9 @@ export class SessionExecutionService {
             }
         }
 
+        let claimed: SessionExecution;
         try {
-            return await this.claimExecutionSlot(userId, executionId, params);
+            claimed = await this.claimExecutionSlot(userId, executionId, params);
         } catch (error) {
             if (error instanceof ExecutionSlotConflictError) throw error;
             // H4 (#434) PR 3 Phase 4: an additional bundle member is claimed before
@@ -240,6 +258,12 @@ export class SessionExecutionService {
             }
             throw error;
         }
+        // Transaction reads/writes do not populate the latency-compensated cache.
+        // Seed the complete parent before diary batches merge an updatedAt touch;
+        // otherwise offline reload can see only that partial patch, not identity.
+        // This read is outside launch rollback: the execution was already committed.
+        await getDoc(this.executionRef(userId, claimed.executionId));
+        return claimed;
     }
 
     /** Builds the execution document and the rule-bound lock payload that must move with it atomically. */
@@ -398,37 +422,218 @@ export class SessionExecutionService {
         }
     }
 
-    async logEntry(userId: string, executionId: string, entry: SessionEntry): Promise<void> {
-        const now = new Date().toISOString();
+    private diaryRef(userId: string, executionId: string, mutationId: string) {
+        return doc(this.db, 'users', userId, 'session_executions', executionId, 'diaryMutations', mutationId);
+    }
+
+    private writeDiaryMutation(userId: string, mutation: SessionDiaryMutation, options?: DiaryWriteOptions): Promise<void> {
+        const marker = this.diaryRef(userId, mutation.executionId, mutation.id);
+        const validated = mutation.targetKind === 'entry'
+            ? parseSessionEntryDocument(mutation.after, marker.path)
+            : parseSessionRestEventDocument(mutation.after, marker.path);
+        if (validated.status !== 'AVAILABLE') throw new Error('Cannot queue an invalid diary mutation.');
+        const batch = writeBatch(this.db);
+        const target = mutation.targetKind === 'entry'
+            ? this.entryRef(userId, mutation.executionId, mutation.targetId)
+            : this.restEventRef(userId, mutation.executionId, mutation.targetId);
+        batch.set(target, mutation.after);
+        batch.set(marker, mutation);
+        batch.set(this.executionRef(userId, mutation.executionId), { updatedAt: mutation.at }, { merge: true });
+        return commitDiaryWrite(batch, marker, {
+            ...options,
+            onLocallyAccepted: () => { saveDiaryReceipt(userId, { mutation, state: 'queued' }); },
+            onAcknowledged: () => {
+                removeDiaryReceipt(userId, mutation.executionId, mutation.id);
+                options?.onAcknowledged?.();
+            },
+            onFailed: error => {
+                if (options?.acknowledgeLocally) saveDiaryReceipt(userId, { mutation, state: 'failed' });
+                options?.onFailed?.(error);
+            },
+        });
+    }
+
+    /** SDK retries the same atomic batch, including its immutable mutation marker. */
+    logEntry(userId: string, executionId: string, entry: SessionEntry, options?: DiaryWriteOptions): Promise<void> {
+        return this.serializeEntryWrite(userId, executionId, entry.id, () => this.writeEntry(userId, executionId, entry, options));
+    }
+
+    /** Serialize read -> queue -> local acceptance, including a rapid delete/undo. */
+    private serializeEntryWrite(userId: string, executionId: string, entryId: string, action: () => Promise<void>): Promise<void> {
+        const key = JSON.stringify([userId, executionId, entryId]);
+        const previous = this.entryWrites.get(key) ?? Promise.resolve();
+        const result = previous.catch(() => undefined).then(action);
+        this.entryWrites.set(key, result);
+        void result.finally(() => {
+            if (this.entryWrites.get(key) === result) this.entryWrites.delete(key);
+        }).catch(() => undefined);
+        return result;
+    }
+
+    private async writeEntry(userId: string, executionId: string, entry: SessionEntry, options?: DiaryWriteOptions): Promise<void> {
+        const cached = await getDocFromCache(this.entryRef(userId, executionId, entry.id)).catch(() => null);
+        if (cached?.exists() && cached.data().diaryMutationId) {
+            // Replaying the original log after correction must never roll back the diary.
+            const acknowledged = waitForPendingWrites(this.db).then(options?.onAcknowledged, error => {
+                options?.onFailed?.(error);
+                throw error;
+            });
+            if (options?.acknowledgeLocally) {
+                void acknowledged.catch(() => undefined);
+                return;
+            }
+            await acknowledged;
+            return;
+        }
+        const now = entry.updatedAt || entry.createdAt || new Date().toISOString();
+        const mutationId = `log-${entry.id}`;
         const docPayload: SessionEntry = {
             ...entry,
             executionId,
             createdAt: entry.createdAt || now,
             updatedAt: now,
+            diaryMutationId: mutationId,
+            deletedAt: null,
         };
-        await setDoc(this.entryRef(userId, executionId, entry.id), docPayload);
-        await setDoc(this.executionRef(userId, executionId), { updatedAt: now }, { merge: true });
+        await this.writeDiaryMutation(userId, {
+            id: mutationId, executionId, targetId: entry.id, targetKind: 'entry',
+            kind: 'log', at: now, before: null, after: docPayload,
+        }, options);
     }
 
-    async correctEntry(
+    /** Read locally first: a just-queued entry must be correctable without a round trip. */
+    private async readEntryForMutation(userId: string, executionId: string, entryId: string): Promise<SessionEntry> {
+        const ref = this.entryRef(userId, executionId, entryId);
+        const snap = await getDocFromCache(ref).catch(() => getDoc(ref));
+        const parsed = parseSessionEntryDocument(snap.exists() ? snap.data() : undefined, ref.path);
+        if (parsed.status !== 'AVAILABLE' || parsed.data.id !== entryId || parsed.data.executionId !== executionId) {
+            throw new Error('Cannot change an unavailable or invalid diary entry.');
+        }
+        return parsed.data;
+    }
+
+    correctEntry(
         userId: string,
         executionId: string,
         entryId: string,
         updatedEntry: Partial<SessionEntry>,
+        options?: DiaryWriteOptions,
     ): Promise<void> {
-        const now = new Date().toISOString();
-        await setDoc(
-            this.entryRef(userId, executionId, entryId),
-            { ...updatedEntry, updatedAt: now },
-            { merge: true },
-        );
-        await setDoc(this.executionRef(userId, executionId), { updatedAt: now }, { merge: true });
+        return this.serializeEntryWrite(userId, executionId, entryId,
+            () => this.writeCorrection(userId, executionId, entryId, updatedEntry, options));
     }
 
-    async deleteEntry(userId: string, executionId: string, entryId: string): Promise<void> {
+    private async writeCorrection(userId: string, executionId: string, entryId: string, updatedEntry: Partial<SessionEntry>, options?: DiaryWriteOptions): Promise<void> {
+        const before = await this.readEntryForMutation(userId, executionId, entryId);
+        if (before.deletedAt) throw new Error('Restore the deleted diary entry before correcting it.');
+        // A correction may change performed semantics, never the stable record identity.
+        if (updatedEntry.id !== undefined && updatedEntry.id !== entryId
+            || updatedEntry.executionId !== undefined && updatedEntry.executionId !== executionId
+            || updatedEntry.createdAt !== undefined && updatedEntry.createdAt !== before.createdAt
+            || updatedEntry.diaryMutationId !== undefined || updatedEntry.deletedAt !== undefined) {
+            throw new Error('A correction cannot replace diary identity or deletion state.');
+        }
         const now = new Date().toISOString();
-        await deleteDoc(this.entryRef(userId, executionId, entryId));
-        await setDoc(this.executionRef(userId, executionId), { updatedAt: now }, { merge: true });
+        const mutationId = `correct-${crypto.randomUUID()}`;
+        await this.writeDiaryMutation(userId, {
+            id: mutationId, executionId, targetId: entryId, targetKind: 'entry',
+            kind: 'correct', at: now, before,
+            after: { ...before, ...updatedEntry, updatedAt: now, diaryMutationId: mutationId },
+        }, options);
+    }
+
+    deleteEntry(userId: string, executionId: string, entryId: string, options?: DiaryWriteOptions): Promise<void> {
+        return this.serializeEntryWrite(userId, executionId, entryId, () => this.writeDeletion(userId, executionId, entryId, options));
+    }
+
+    private async writeDeletion(userId: string, executionId: string, entryId: string, options?: DiaryWriteOptions): Promise<void> {
+        const before = await this.readEntryForMutation(userId, executionId, entryId);
+        if (before.deletedAt) return;
+        const now = new Date().toISOString();
+        const mutationId = `delete-${crypto.randomUUID()}`;
+        await this.writeDiaryMutation(userId, {
+            id: mutationId, executionId, targetId: entryId, targetKind: 'entry',
+            kind: 'delete', at: now, before,
+            after: { ...before, updatedAt: now, diaryMutationId: mutationId, deletedAt: now },
+        }, options);
+    }
+
+    restoreEntry(userId: string, executionId: string, entryId: string, options?: DiaryWriteOptions): Promise<void> {
+        return this.serializeEntryWrite(userId, executionId, entryId, () => this.writeRestoration(userId, executionId, entryId, options));
+    }
+
+    private async writeRestoration(userId: string, executionId: string, entryId: string, options?: DiaryWriteOptions): Promise<void> {
+        const before = await this.readEntryForMutation(userId, executionId, entryId);
+        if (!before.deletedAt) return;
+        const now = new Date().toISOString();
+        const mutationId = `restore-${crypto.randomUUID()}`;
+        await this.writeDiaryMutation(userId, {
+            id: mutationId, executionId, targetId: entryId, targetKind: 'entry',
+            kind: 'restore', at: now, before,
+            after: { ...before, updatedAt: now, diaryMutationId: mutationId, deletedAt: null },
+        }, options);
+    }
+
+    async getLastDeletedEntry(userId: string, executionId: string): Promise<SessionEntry | null> {
+        const snap = await getDocs(this.entriesColl(userId, executionId));
+        const deleted = snap.docs.flatMap(item => {
+            const parsed = parseSessionEntryDocument(item.data(), item.ref.path);
+            return parsed.status === 'AVAILABLE' && parsed.data.executionId === executionId && parsed.data.deletedAt
+                ? [parsed.data] : [];
+        });
+        return deleted.sort((a, b) => b.deletedAt!.localeCompare(a.deletedAt!))[0] ?? null;
+    }
+
+    /** Metadata includes queued writes restored from a previous browser session. */
+    watchDiarySync(userId: string, executionId: string, next: (pending: boolean) => void, failed: (error: unknown) => void): () => void {
+        let active = true;
+        let processing = Promise.resolve();
+        const stop = onSnapshot(collection(this.db, 'users', userId, 'session_executions', executionId, 'diaryMutations'),
+            { includeMetadataChanges: true }, snapshot => {
+                processing = processing.then(async () => {
+                    if (!active) return;
+                    try {
+                        const receipts = readDiaryReceipts(userId, executionId);
+                        if (!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites) {
+                            const persisted = new Map(snapshot.docs.map(item => [item.id, JSON.stringify(canonicalizeJson(item.data()))]));
+                            for (const receipt of receipts) {
+                                if (persisted.get(receipt.mutation.id) === JSON.stringify(canonicalizeJson(receipt.mutation))) removeDiaryReceipt(userId, executionId, receipt.mutation.id);
+                                else {
+                                    // Receipt storage is shared across tabs. This query snapshot
+                                    // may predate another tab's acceptance; inspect the current
+                                    // cache before calling a missing server marker a rejection.
+                                    const current = await getDocFromCache(this.diaryRef(userId, executionId, receipt.mutation.id)).catch(() => null);
+                                    if (!active) return;
+                                    if (current?.metadata.hasPendingWrites) continue;
+                                    if (current?.exists() && JSON.stringify(canonicalizeJson(current.data())) === JSON.stringify(canonicalizeJson(receipt.mutation))) {
+                                        removeDiaryReceipt(userId, executionId, receipt.mutation.id);
+                                    } else saveDiaryReceipt(userId, { ...receipt, state: 'failed' });
+                                }
+                            }
+                        }
+                        const remaining = readDiaryReceipts(userId, executionId);
+                        if (remaining.some(receipt => receipt.state === 'failed')) failed(new Error('A locally accepted diary write was rejected. Its receipt is retained.'));
+                        else next(snapshot.metadata.hasPendingWrites || remaining.length > 0);
+                    } catch (error) { failed(error); }
+                });
+            }, failed);
+        return () => { active = false; stop(); };
+    }
+
+    getDiaryReceipts(userId: string, executionId: string) {
+        return readDiaryReceipts(userId, executionId);
+    }
+
+    watchEntries(userId: string, executionId: string, next: (entries: SessionEntry[], deleted: SessionEntry | null) => void, failed: (error: unknown) => void): () => void {
+        return onSnapshot(this.entriesColl(userId, executionId), snapshot => {
+            const all = snapshot.docs.flatMap(item => {
+                const parsed = parseSessionEntryDocument(item.data(), item.ref.path);
+                return parsed.status === 'AVAILABLE' && parsed.data.executionId === executionId ? [parsed.data] : [];
+            });
+            const entries = all.filter(entry => !entry.deletedAt).sort((a, b) => a.completedAt.localeCompare(b.completedAt));
+            const deleted = all.filter(entry => entry.deletedAt).sort((a, b) => b.deletedAt!.localeCompare(a.deletedAt!))[0] ?? null;
+            next(entries, deleted);
+        }, failed);
     }
 
     async getEntries(userId: string, executionId: string): Promise<SessionEntry[]> {
@@ -441,15 +646,18 @@ export class SessionExecutionService {
      * overwrites the same document instead of creating a second rest event
      * (`sessions/restEventTiming.ts` itself is a pure function with no id of its own; the
      * caller in `useSessionRunner.ts` mints one id per closed rest and reuses it on retry). */
-    async logRestEvent(userId: string, executionId: string, restEvent: SessionRestEvent): Promise<void> {
-        const now = new Date().toISOString();
+    async logRestEvent(userId: string, executionId: string, restEvent: SessionRestEvent, options?: DiaryWriteOptions): Promise<void> {
+        const now = restEvent.updatedAt || restEvent.createdAt || new Date().toISOString();
         const docPayload: SessionRestEvent = {
             ...restEvent,
             executionId,
             createdAt: restEvent.createdAt || now,
             updatedAt: now,
         };
-        await setDoc(this.restEventRef(userId, executionId, restEvent.id), docPayload);
+        await this.writeDiaryMutation(userId, {
+            id: `rest-${restEvent.id}`, executionId, targetId: restEvent.id, targetKind: 'rest',
+            kind: 'rest', at: now, before: null, after: docPayload,
+        }, options);
     }
 
     async getRestEvents(userId: string, executionId: string): Promise<SessionRestEvent[]> {
@@ -477,7 +685,7 @@ export class SessionExecutionService {
         for (const docSnap of snap.docs) {
             const parsed = parseSessionEntryDocument(docSnap.data(), docSnap.ref.path);
             if (parsed.status === 'AVAILABLE' && parsed.data.executionId === executionId) {
-                entries.push(parsed.data);
+                if (!parsed.data.deletedAt) entries.push(parsed.data);
             } else if (parsed.status === 'INVALID' || parsed.status === 'AVAILABLE') {
                 invalidRecords += 1;
             }

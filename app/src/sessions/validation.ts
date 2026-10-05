@@ -647,6 +647,8 @@ export function validateSessionEntry(raw: unknown): ValidationResult<SessionEntr
     if (typeof raw.completedAt !== 'string' || raw.completedAt.length === 0) issues.push({ path: 'completedAt', message: 'Missing completedAt' });
     if (typeof raw.createdAt !== 'string' || raw.createdAt.length === 0) issues.push({ path: 'createdAt', message: 'Missing createdAt' });
     if (typeof raw.updatedAt !== 'string' || raw.updatedAt.length === 0) issues.push({ path: 'updatedAt', message: 'Missing updatedAt' });
+    if (raw.diaryMutationId !== undefined && (typeof raw.diaryMutationId !== 'string' || raw.diaryMutationId.length === 0)) issues.push({ path: 'diaryMutationId', message: 'Invalid diary mutation id' });
+    if (raw.deletedAt !== undefined && raw.deletedAt !== null && (typeof raw.deletedAt !== 'string' || raw.deletedAt.length === 0)) issues.push({ path: 'deletedAt', message: 'Invalid deletion timestamp' });
     if (raw.compositionPatterns !== undefined
         && (!Array.isArray(raw.compositionPatterns)
             || raw.compositionPatterns.length === 0

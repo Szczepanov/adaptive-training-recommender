@@ -1533,12 +1533,18 @@ service cloud.firestore {
 
     function hasValidSessionEntry(executionId, entryId) {
       let data = request.resource.data;
+      return validSessionEntryData(data, executionId, entryId);
+    }
+
+    function validSessionEntryData(data, executionId, entryId) {
       let payload = data.payload;
-      return data.keys().hasOnly(['id', 'executionId', 'stepId', 'exerciseRef', 'side', 'selectedOptionId', 'completedAt', 'createdAt', 'updatedAt', 'payload'])
+      return data.keys().hasOnly(['id', 'executionId', 'stepId', 'exerciseRef', 'side', 'selectedOptionId', 'completedAt', 'createdAt', 'updatedAt', 'payload', 'diaryMutationId', 'deletedAt'])
         && data.keys().hasAll(['id', 'executionId', 'completedAt', 'createdAt', 'updatedAt', 'payload'])
         && data.id == entryId
         && data.executionId == executionId
         && data.completedAt is string && data.createdAt is string && data.updatedAt is string
+        && (!('diaryMutationId' in data) || (data.diaryMutationId is string && data.diaryMutationId.size() > 0))
+        && (!('deletedAt' in data) || data.deletedAt == null || data.deletedAt is string)
         && (!('stepId' in data) || data.stepId is string)
         && (!('selectedOptionId' in data) || data.selectedOptionId is string)
         && (!('side' in data) || data.side in ['left', 'right', 'bilateral'])
@@ -1577,6 +1583,68 @@ service cloud.firestore {
             && payload.optionId is string && payload.optionId.size() > 0
             && (!('reason' in payload) || payload.reason is string))
         );
+    }
+
+    // An immutable mutation and its materialized target must enter the queue together.
+    // Comparing the prior bytes also rejects competing corrections instead of silently
+    // losing one tab's update. Legacy entries can enter this discipline without migration.
+    function validDiaryMutation(userId, executionId, mutationId) {
+      let data = request.resource.data;
+      let parent = /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId);
+      let target = data.targetKind == 'entry'
+        ? /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/entries/$(data.targetId)
+        : /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/restEvents/$(data.targetId);
+      return isOwner(userId)
+        && data.keys().hasOnly(['id', 'executionId', 'targetId', 'targetKind', 'kind', 'at', 'before', 'after'])
+        && data.keys().hasAll(['id', 'executionId', 'targetId', 'targetKind', 'kind', 'at', 'before', 'after'])
+        && data.id == mutationId && data.executionId == executionId
+        && data.targetId is string && data.targetId.size() > 0
+        && data.targetKind in ['entry', 'rest'] && data.at is string
+        && data.after is map && data.after.id == data.targetId
+        && data.after.executionId == executionId && data.after.updatedAt == data.at
+        && exists(parent) && get(parent).data.state == 'in_progress'
+        && existsAfter(target) && getAfter(target).data == data.after
+        && (
+          (data.targetKind == 'rest' && data.kind == 'rest' && data.before == null
+            && mutationId == 'rest-' + data.targetId
+            && (!exists(target) || get(target).data == data.after))
+          || (data.targetKind == 'entry'
+            && validSessionEntryData(data.after, executionId, data.targetId)
+            && data.after.diaryMutationId == mutationId
+            && (
+              (data.kind == 'log' && data.before == null && data.after.deletedAt == null
+                && (!exists(target) || get(target).data == data.after))
+              || (data.kind in ['correct', 'delete', 'restore'] && data.before is map
+                && exists(target) && get(target).data == data.before
+                && data.after.id == data.before.id && data.after.createdAt == data.before.createdAt
+                && (
+                  (data.kind == 'correct'
+                    && (!('deletedAt' in data.before) || data.before.deletedAt == null)
+                    && (!('deletedAt' in data.after) || data.after.deletedAt == null))
+                  || (data.kind == 'delete'
+                    && (!('deletedAt' in data.before) || data.before.deletedAt == null)
+                    && data.after.deletedAt == data.at
+                    && data.after.diff(data.before).affectedKeys().hasOnly(['updatedAt', 'diaryMutationId', 'deletedAt']))
+                  || (data.kind == 'restore' && data.before.deletedAt is string && data.after.deletedAt == null
+                    && data.after.diff(data.before).affectedKeys().hasOnly(['updatedAt', 'diaryMutationId', 'deletedAt']))
+                ))
+            ))
+        );
+    }
+
+    function entryHasAtomicDiaryMutation(userId, executionId, entryId) {
+      let data = request.resource.data;
+      let marker = /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/diaryMutations/$(data.diaryMutationId);
+      return existsAfter(marker)
+        && getAfter(marker).data.targetKind == 'entry'
+        && getAfter(marker).data.targetId == entryId
+        && getAfter(marker).data.after == data;
+    }
+
+    function restKeepsDiaryAudit(userId, executionId, restEventId) {
+      let mutationId = 'rest-' + restEventId;
+      let marker = /databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/diaryMutations/$(mutationId);
+      return !existsAfter(marker) || getAfter(marker).data.after == request.resource.data;
     }
 
     // PR 3 (training-occurrence plan, "Performed rest and execution timeline"): a durable
@@ -1730,7 +1798,26 @@ service cloud.firestore {
         allow create, update, delete: if isOwner(userId)
           && exists(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId))
           && get(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)).data.state == 'in_progress'
-          && (request.method == 'delete' || hasValidSessionEntry(executionId, entryId));
+          && (request.method == 'delete'
+            ? !('diaryMutationId' in resource.data)
+            : hasValidSessionEntry(executionId, entryId)
+              && (
+                (!('diaryMutationId' in request.resource.data)
+                  && (request.method == 'create' || !('diaryMutationId' in resource.data)))
+                || ('diaryMutationId' in request.resource.data
+                  && entryHasAtomicDiaryMutation(userId, executionId, entryId)
+                  && (request.method == 'create'
+                    || request.resource.data == resource.data
+                    || getAfter(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)/diaryMutations/$(request.resource.data.diaryMutationId)).data.before == resource.data))
+              ));
+      }
+
+      match /diaryMutations/{mutationId} {
+        allow read: if isOwner(userId);
+        allow create: if validDiaryMutation(userId, executionId, mutationId);
+        // Idempotent replay may resend the same immutable marker, never replace history.
+        allow update: if isOwner(userId) && request.resource.data == resource.data;
+        allow delete: if false;
       }
 
       // A session-ending rest event must be written before the execution's own
@@ -1741,7 +1828,8 @@ service cloud.firestore {
         allow create: if isOwner(userId)
           && exists(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId))
           && get(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)).data.state == 'in_progress'
-          && hasValidSessionRestEvent(executionId, restEventId);
+          && hasValidSessionRestEvent(executionId, restEventId)
+          && restKeepsDiaryAudit(userId, executionId, restEventId);
         // Update is allowed only to support the "retry after partial failure converges
         // safely" requirement (the caller re-sends the exact same restEventId) -- content
         // must still validate and afterEntryId/startedAt/endReason (the rest's identity)
@@ -1751,7 +1839,8 @@ service cloud.firestore {
           && request.resource.data.afterEntryId == resource.data.afterEntryId
           && request.resource.data.startedAt == resource.data.startedAt
           && request.resource.data.endReason == resource.data.endReason
-          && request.resource.data.createdAt == resource.data.createdAt;
+          && request.resource.data.createdAt == resource.data.createdAt
+          && restKeepsDiaryAudit(userId, executionId, restEventId);
         allow delete: if false;
       }
     }
