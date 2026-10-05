@@ -98,8 +98,7 @@ async function importManualDefinition(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Save / Schedule / Replace...', exact: true }).click();
 }
 
-// Product gap: https://github.com/Szczepanov/adaptive-training-recommender/issues/951
-test.fixme('V8 UI manual replacement names its exact replacement occurrence', async ({ page }) => {
+test('V8 UI manual replacement names its exact replacement occurrence', async ({ page }) => {
   const athlete = await provisionAthlete();
   const today = await seedRecoverySnapshot(athlete);
   const plan = buildV6Plan(today);
@@ -115,12 +114,14 @@ test.fixme('V8 UI manual replacement names its exact replacement occurrence', as
   await page.getByRole('button', { name: 'Home', exact: true }).click();
   const occurrences = await readOccurrences(athlete);
   const replacement = occurrences.find(item => item.authority === 'replace_recommendation');
+  const displaced = occurrences.find(item => item.authority === 'external_plan');
   expect(replacement).toBeTruthy();
+  expect(displaced).toMatchObject({ state: 'superseded' });
   await page.getByRole('button', { name: `Start ${strengthDefinition.title}`, exact: true }).click();
   await finishStrength(page);
   await terminalExecution(athlete);
-  expect(await planningBrief(page)).toContain(`- ${today} ${plan.planId} r1/session-today: placement unknown; adjudication unknown; athlete manually replaced; performance unknown; replaced by occurrence ${replacement!.occurrenceId}.`);
-  expect((await readOccurrences(athlete)).filter(item => item.authority === 'external_plan')).toEqual([]);
+  expect(await planningBrief(page)).toContain(`- ${today} ${plan.planId} r1/session-today: placement unknown; adjudication unknown; athlete manually replaced; performance unknown; occurrence ${displaced!.occurrenceId}; replaced by occurrence ${replacement!.occurrenceId}.`);
+  expect((await readExecutions(athlete)).filter(item => item.sessionSource.kind === 'external_plan')).toEqual([]);
 });
 
 test('V9 plain fixed same-day sessions retain two distinct next-brief rows', async ({ page }) => {
@@ -138,8 +139,7 @@ test('V9 plain fixed same-day sessions retain two distinct next-brief rows', asy
   expect(await readExecutions(athlete)).toEqual([]);
 });
 
-// Product gap: https://github.com/Szczepanov/adaptive-training-recommender/issues/952
-test.fixme('V9 an intraday bundle retains two session rows and two genuine workouts', async ({ page }) => {
+test('V9 an intraday bundle retains two session rows and two genuine workouts', async ({ page }) => {
   const athlete = await provisionAthlete();
   const today = await seedRecoverySnapshot(athlete);
   const shortDefinition = structuredClone(strengthDefinition);
