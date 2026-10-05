@@ -32,36 +32,81 @@ function compareChoiceEntries(a: ChoiceSessionEntry, b: ChoiceSessionEntry): num
 }
 
 /**
- * Resolve one effective append-only event per authored choice. Superseded events remain
- * durable history but contribute no executable effect. A stable id tiebreak means two
- * clients observing the same event set replay the same branch regardless of read order.
+ * Resolve one effective append-only event per authored choice.
+ *
+ * A later event has correction authority only when it is reachable from the canonical
+ * root through explicit `supersedesChoiceEntryId` edges. A second unlinked event with the
+ * same `choiceId` is therefore retained as history but cannot silently replace the choice
+ * that governed execution. This deliberately rejects the old "later timestamp wins"
+ * behavior.
+ *
+ * A malformed/concurrent fork cannot be represented as INVALID by this pure view helper,
+ * so replay picks the stable earliest terminal head by completedAt/createdAt/id. All
+ * clients observing the same event set therefore resolve the same branch independent of
+ * Firestore return order, while no arrival order gains authority.
  */
 export function resolveEffectiveChoiceEntries(entries: readonly SessionEntry[]): ChoiceSessionEntry[] {
     const choiceEntries = entries
         .filter((entry): entry is ChoiceSessionEntry => entry.payload.kind === 'choice')
         .slice()
         .sort(compareChoiceEntries);
-    const byId = new Map(choiceEntries.map(entry => [entry.id, entry]));
-    const supersededIds = new Set<string>();
-
+    const byChoiceId = new Map<string, ChoiceSessionEntry[]>();
     for (const entry of choiceEntries) {
-        const targetId = entry.supersedesChoiceEntryId;
-        if (!targetId) continue;
-        const target = byId.get(targetId);
-        // New events are validated by service + rules. Defensively ignore malformed
-        // historical cross-choice edges instead of suppressing an unrelated choice.
-        if (target?.payload.choiceId === entry.payload.choiceId) supersededIds.add(targetId);
+        const group = byChoiceId.get(entry.payload.choiceId) ?? [];
+        group.push(entry);
+        byChoiceId.set(entry.payload.choiceId, group);
     }
 
-    const effectiveByChoiceId = new Map<string, ChoiceSessionEntry>();
-    for (const entry of choiceEntries) {
-        if (supersededIds.has(entry.id)) continue;
-        const current = effectiveByChoiceId.get(entry.payload.choiceId);
-        if (!current || compareChoiceEntries(current, entry) < 0) {
-            effectiveByChoiceId.set(entry.payload.choiceId, entry);
+    const effective: ChoiceSessionEntry[] = [];
+    for (const group of byChoiceId.values()) {
+        const byId = new Map(group.map(entry => [entry.id, entry]));
+        const children = new Map<string, ChoiceSessionEntry[]>();
+
+        for (const entry of group) {
+            const parentId = entry.supersedesChoiceEntryId;
+            if (!parentId) continue;
+            const parent = byId.get(parentId);
+            // Service + rules reject these shapes for new writes. Historical malformed
+            // edges remain readable but cannot grant correction authority.
+            if (!parent || parent.id === entry.id || parent.payload.choiceId !== entry.payload.choiceId) continue;
+            const siblings = children.get(parentId) ?? [];
+            siblings.push(entry);
+            children.set(parentId, siblings);
         }
+
+        const roots = group
+            .filter(entry => {
+                const parentId = entry.supersedesChoiceEntryId;
+                if (!parentId) return true;
+                const parent = byId.get(parentId);
+                return !parent || parent.id === entry.id || parent.payload.choiceId !== entry.payload.choiceId;
+            })
+            .slice()
+            .sort(compareChoiceEntries);
+
+        // Multiple unlinked roots are not a correction relationship. Anchor replay on the
+        // stable earliest root instead of silently treating a later write as authoritative.
+        // A cycle has no root; anchor it the same deterministic way and do not invent one.
+        const root = roots[0] ?? group[0];
+        const reachable = new Map<string, ChoiceSessionEntry>([[root.id, root]]);
+        const queue: ChoiceSessionEntry[] = [root];
+        while (queue.length > 0) {
+            const current = queue.shift()!;
+            const next = (children.get(current.id) ?? []).slice().sort(compareChoiceEntries);
+            for (const child of next) {
+                if (reachable.has(child.id)) continue;
+                reachable.set(child.id, child);
+                queue.push(child);
+            }
+        }
+
+        const terminals = [...reachable.values()]
+            .filter(entry => !(children.get(entry.id) ?? []).some(child => reachable.has(child.id)))
+            .sort(compareChoiceEntries);
+        effective.push(terminals[0] ?? root);
     }
-    return [...effectiveByChoiceId.values()].sort(compareChoiceEntries);
+
+    return effective.sort(compareChoiceEntries);
 }
 
 export interface EffectiveSessionView {
