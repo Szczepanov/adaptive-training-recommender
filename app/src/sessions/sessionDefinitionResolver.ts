@@ -10,6 +10,7 @@ import { adaptExternalPlanSessionToSessionDefinition } from './externalSessionAd
 import { isDefinitionBearingExternalSession } from './externalPlanV2';
 import { canonicalizeSessionData, hashSessionDefinition } from './sessionDefinitionHash';
 import { validateSessionDefinition } from './validation';
+import { definitionFromSnapshot } from './sessionDefinitionSnapshot';
 
 // Fixture imports
 import fixture01 from './fixtures/01-full-body-maintenance.json';
@@ -127,6 +128,35 @@ export async function resolveSessionDefinition(
      * branches below). */
     prescriptionHash?: string,
 ): Promise<DataState<SessionDefinition>> {
+    if (prescriptionHash) {
+        const pinned = await executionPrescriptionService.getPrescription(userId, prescriptionHash);
+        if (pinned.status !== 'AVAILABLE') return pinned;
+        const documentPath = `users/${userId}/execution_prescriptions/${prescriptionHash}`;
+        if (JSON.stringify(canonicalizeSessionData(pinned.data.sessionSource)) !== JSON.stringify(canonicalizeSessionData(source))) {
+            return { status: 'INVALID', issues: [{ code: 'prescription-source-mismatch', field: 'sessionSource', documentPath }] };
+        }
+        if (pinned.data.definitionSnapshot) {
+            const reconstructed = definitionFromSnapshot(pinned.data.definitionSnapshot, source);
+            if (await hashSessionDefinition(reconstructed) !== pinned.data.definitionHash) {
+                return { status: 'INVALID', issues: [{ code: 'prescription-definition-hash-mismatch', field: 'definitionHash', documentPath }] };
+            }
+            const validation = validateSessionDefinition(reconstructed);
+            if (!validation.ok) {
+                const first = validation.issues[0];
+                return {
+                    status: 'INVALID',
+                    issues: [{
+                        code: 'invalid-prescription-session-definition',
+                        documentPath,
+                        ...(first?.path ? { field: first.path } : {}),
+                        ...(first?.message ? { message: first.message } : {}),
+                    }],
+                };
+            }
+            return { status: 'AVAILABLE', data: validation.value, revision: prescriptionHash };
+        }
+    }
+
     if (source.kind === 'unplanned_fixture') {
         const fixture = FIXTURES_BY_ID.get(source.fixtureId);
         if (!fixture) {

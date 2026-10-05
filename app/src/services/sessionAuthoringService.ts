@@ -9,6 +9,7 @@ import { adaptCatalogPrescriptionToSessionDefinition, createExecutionPrescriptio
 import { executionPrescriptionService } from './executionPrescriptionService';
 import { sessionOccurrenceService } from './sessionOccurrenceService';
 import { hashExecutionPrescription, hashSessionDefinition } from '../sessions/sessionDefinitionHash';
+import { snapshotSessionDefinition } from '../sessions/sessionDefinitionSnapshot';
 import { getLocalDateString } from '../utils/localDate';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { exportWorkoutPrescriptionToJson } from '../utils/workoutJsonExport';
@@ -44,6 +45,33 @@ function explicitDurationSeconds(definition: SessionDefinition): number {
     }, 0) * (block.rounds === undefined ? 1 : maxNumericRange(block.rounds)), 0);
 }
 
+export async function prepareFixtureSessionLaunch(
+    userId: string,
+    definition: SessionDefinition,
+    now = new Date().toISOString(),
+): Promise<PreparedSessionLaunch> {
+    const validation = validateSessionDefinition(definition);
+    if (!validation.ok) {
+        throw new Error(validation.issues.map(issue => `${issue.path}: ${issue.message}`).join('\n'));
+    }
+    const sessionSource = { kind: 'unplanned_fixture' as const, fixtureId: definition.id };
+    const definitionHash = await hashSessionDefinition(definition);
+    const unsignedPrescription: ExecutionPrescription = {
+        schemaVersion: 1,
+        prescriptionHash: '',
+        sessionSource,
+        definitionHash,
+        blocks: definition.blocks,
+        displayMetadata: displayMetadataFor(definition),
+        definitionSnapshot: snapshotSessionDefinition(definition),
+        definitionSnapshot: snapshotSessionDefinition(definition),
+        createdAt: now,
+    };
+    const prescriptionHash = await hashExecutionPrescription(unsignedPrescription);
+    await executionPrescriptionService.savePrescription(userId, { ...unsignedPrescription, prescriptionHash });
+    return { definition, binding: { sessionSource, prescriptionHash } };
+}
+
 /**
  * Creates the evidence records required before a manually-owned definition may execute.
  * It deliberately grants only `unplanned_log` authority; schedule/replacement/addition
@@ -72,6 +100,7 @@ export async function prepareUnplannedSessionLaunch(
         definitionHash: contentHash,
         blocks: definition.blocks,
         displayMetadata: displayMetadataFor(definition),
+        definitionSnapshot: snapshotSessionDefinition(definition),
         createdAt: now,
     };
     const prescriptionHash = await hashExecutionPrescription(unsignedPrescription);
@@ -392,6 +421,7 @@ export async function prepareExternalPlanSessionLaunch(
         sessionSource,
         definitionHash,
         blocks: definition.blocks,
+        definitionSnapshot: snapshotSessionDefinition(definition),
         displayMetadata: {
             title: definition.title,
             ...(effectiveSummary !== undefined ? { summary: effectiveSummary } : {}),

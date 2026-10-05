@@ -24,6 +24,7 @@ import type {
     SessionSourceRef,
     SessionExecutionState,
     FitWorkoutFingerprintKind,
+    SessionCompletionEvidence,
 } from '../sessions/models';
 import type { NormalizedExecutionRecord } from '../sessions/legacyStrengthAdapter';
 import {
@@ -34,6 +35,12 @@ import {
 import { commitDiaryWrite, type DiaryWriteOptions } from './sessionDiaryWrite';
 import { readDiaryReceipts, removeDiaryReceipt, saveDiaryReceipt } from './sessionDiaryReceipts';
 import { canonicalizeJson } from '../utils/canonicalJson';
+import { overlayQueuedDiaryState } from '../sessions/sessionDiaryResume';
+
+export type TerminalTransitionResult =
+    | { status: 'transitioned'; execution: SessionExecution }
+    | { status: 'already_completed'; execution: SessionExecution }
+    | { status: 'already_abandoned'; execution: SessionExecution };
 
 export interface SessionDiaryMutation {
     id: string;
@@ -762,6 +769,31 @@ export class SessionExecutionService {
         return candidates.sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null;
     }
 
+    async getResumeDiaryState(userId: string, executionId: string) {
+        const [persistedEntries, persistedLastDeletedEntry] = await Promise.all([
+            this.getEntries(userId, executionId),
+            this.getLastDeletedEntry(userId, executionId),
+        ]);
+        return overlayQueuedDiaryState(
+            persistedEntries,
+            persistedLastDeletedEntry,
+            readDiaryReceipts(userId, executionId),
+        );
+    }
+
+    async findLatestCompletedExecution(userId: string, date: string): Promise<SessionExecution | null> {
+        const collRef = collection(this.db, 'users', userId, 'session_executions');
+        const snap = await getDocs(query(collRef, where('date', '==', date)));
+        const candidates: SessionExecution[] = [];
+        for (const docSnap of snap.docs) {
+            const parsed = parseSessionExecutionDocument(docSnap.data(), docSnap.ref.path);
+            if (parsed.status === 'AVAILABLE' && parsed.data.executionId === docSnap.id && parsed.data.state === 'completed') {
+                candidates.push(parsed.data);
+            }
+        }
+        return candidates.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null;
+    }
+
     /**
      * Looks up an existing execution for a given date and optional occurrence or prescription.
      * Prioritizes in-progress executions (there is active work to resume), then completed
@@ -818,6 +850,79 @@ export class SessionExecutionService {
         });
 
         return candidates[0] ?? null;
+    }
+
+    async transitionExecutionTerminal(
+        userId: string,
+        executionId: string,
+        targetState: Extract<SessionExecutionState, 'completed' | 'abandoned'>,
+        data?: {
+            sessionRpe?: number;
+            notes?: string;
+            completionEvidence?: SessionCompletionEvidence;
+        },
+        addWinnerWrites?: (batch: WriteBatch, terminalExecution: SessionExecution) => void | Promise<void>,
+    ): Promise<TerminalTransitionResult> {
+        const ref = this.executionRef(userId, executionId);
+        const read = async (): Promise<SessionExecution> => {
+            const snap = await getDoc(ref);
+            if (!snap.exists()) throw new Error(`Session execution ${executionId} does not exist.`);
+            const parsed = parseSessionExecutionDocument(snap.data(), snap.ref.path);
+            if (parsed.status !== 'AVAILABLE' || parsed.data.executionId !== executionId) {
+                throw new Error(`Session execution ${executionId} is invalid.`);
+            }
+            return parsed.data;
+        };
+        const classify = (persisted: SessionExecution): TerminalTransitionResult | null => {
+            if (persisted.state === 'completed') return { status: 'already_completed', execution: persisted };
+            if (persisted.state === 'abandoned') return { status: 'already_abandoned', execution: persisted };
+            return null;
+        };
+
+        const before = await read();
+        const existing = classify(before);
+        if (existing) return existing;
+
+        const now = new Date().toISOString();
+        const terminalExecution: SessionExecution = {
+            ...before,
+            state: targetState,
+            updatedAt: now,
+            ...(targetState === 'completed' ? { completedAt: now } : {}),
+            ...(data?.sessionRpe !== undefined ? { sessionRpe: data.sessionRpe } : {}),
+            ...(data?.notes !== undefined ? { notes: data.notes } : {}),
+            ...(targetState === 'completed' && data?.completionEvidence
+                ? { completionEvidence: data.completionEvidence }
+                : {}),
+        };
+        const patch: Partial<SessionExecution> = {
+            state: targetState,
+            updatedAt: now,
+            ...(targetState === 'completed' ? { completedAt: now } : {}),
+            ...(data?.sessionRpe !== undefined ? { sessionRpe: data.sessionRpe } : {}),
+            ...(data?.notes !== undefined ? { notes: data.notes } : {}),
+            ...(targetState === 'completed' && data?.completionEvidence
+                ? { completionEvidence: data.completionEvidence }
+                : {}),
+        };
+        const batch = writeBatch(this.db);
+        batch.set(ref, patch, { merge: true });
+        if (addWinnerWrites) await addWinnerWrites(batch, terminalExecution);
+        try {
+            await batch.commit();
+            return { status: 'transitioned', execution: terminalExecution };
+        } catch (error) {
+            // A racing terminal winner makes this batch fail under final-state rules. Only
+            // classify that failure as idempotent when a fresh persisted read proves it.
+            try {
+                const latest = await read();
+                const raced = classify(latest);
+                if (raced) return raced;
+            } catch {
+                // Preserve the original write error when we cannot prove a terminal winner.
+            }
+            throw error;
+        }
     }
 
     /**

@@ -35,7 +35,7 @@ export function canonicalExecutionPrescriptionJson(prescription: ExecutionPrescr
     // content, so it must not turn the same prescription into a new snapshot.
     // `displayMetadata` is omitted (via pickDefined) on older prescriptions that predate
     // it, so this stays backward-compatible: their hash is unaffected by its addition.
-    const content = pickDefined(prescription, ['schemaVersion', 'sessionSource', 'definitionHash', 'blocks', 'displayMetadata']);
+    const content = pickDefined(prescription, ['schemaVersion', 'sessionSource', 'definitionHash', 'blocks', 'displayMetadata', 'definitionSnapshot']);
     return JSON.stringify(canonicalizeSessionData(content));
 }
 
