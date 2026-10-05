@@ -124,7 +124,15 @@ emulatorDescribe('Firestore rules — session lifecycle + replay snapshots (#895
         }));
     });
 
-    it('rejects non-terminal updates while an execution is in progress', async () => {
+    it('keeps the existing updatedAt-only parent touch available for live diary batches', async () => {
+        await seedExecution('exec-parent-touch');
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(updateDoc(doc(ownerDb, executionPath('exec-parent-touch')), {
+            updatedAt: '2026-10-05T10:01:00.000Z',
+        }));
+    });
+
+    it('rejects arbitrary non-terminal field mutations while an execution is in progress', async () => {
         await seedExecution('exec-progress');
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await expect(assertFails(updateDoc(doc(ownerDb, executionPath('exec-progress')), {
