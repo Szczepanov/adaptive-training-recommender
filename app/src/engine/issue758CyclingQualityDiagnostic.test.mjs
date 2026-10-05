@@ -83,17 +83,37 @@ describe('issue #758 cycling quality diagnostic', () => {
             expect(weeks.map(week => week.packingDays)).toEqual([6, 6]);
             expect(weeks.map(week => week.days.length)).toEqual([6, 6]);
             expect(weeks.map(week => week.state.dataQuality)).toEqual(['high', 'high']);
-            expect(weeks.map(week => week.state.trainingAgeProxy)).toEqual(['developing', 'developing']);
-            expect(weeks.map(week => week.strategy.highIntensity)).toEqual([null, null]);
-            expect(weeks.map(week => week.strategy.hardSessionCap)).toEqual([null, null]);
-            expect(weeks.map(week => week.packedQuality)).toEqual([[], []]);
+
             const selectedQuality = simulated.decisionTraces.filter(trace => trace.selected.modality === 'Cycling'
                 && ['Moderate Endurance', 'Hard Endurance'].includes(trace.selected.category));
+            const qualityAllocations = simulated.allocationReports.flatMap(entry => entry.report.outcomes
+                .filter(outcome => outcome.occurrence.coverageKey === 'sustained_quality'));
+
+            if (caseId === 'persona_cycling_hybrid_low_time') {
+                // The constrained persona still cannot accumulate enough rolling evidence to
+                // cross the established-athlete floor. #858 must not make limited time look
+                // like higher training age or unlock quality merely because replay is fixed.
+                expect(weeks.map(week => week.state.trainingAgeProxy)).toEqual(['developing', 'developing']);
+                expect(weeks.map(week => week.strategy.highIntensity)).toEqual([null, null]);
+                expect(weeks.map(week => week.strategy.hardSessionCap)).toEqual([null, null]);
+                expect(weeks.map(week => week.packedQuality)).toEqual([[], []]);
+                expect(selectedQuality).toHaveLength(0);
+                expect(qualityAllocations).toHaveLength(0);
+            } else {
+                // The baseline persona begins at 680 rolling minutes. Once week 1's
+                // performed=recommended sessions are replayed at their resolved prescribed
+                // durations, week 2 legitimately crosses the 720-minute established floor.
+                // This is the intended downstream consequence of #858 and the behavior #758
+                // wanted the source-of-truth diagnostic to expose rather than suppress.
+                expect(weeks.map(week => week.state.trainingAgeProxy)).toEqual(['developing', 'established']);
+                expect(weeks[0].strategy.highIntensity).toBeNull();
+                expect(weeks[1].strategy.highIntensity).toBe('optional');
+                expect(weeks[0].packedQuality).toHaveLength(0);
+                expect(weeks[1].packedQuality.length).toBeGreaterThan(0);
+            }
+
             expect(simulated.decisionTraces).toHaveLength(14);
-            expect(selectedQuality).toHaveLength(0);
             expect(simulated.allocationReports).toHaveLength(2);
-            expect(simulated.allocationReports.flatMap(entry => entry.report.outcomes
-                .filter(outcome => outcome.occurrence.coverageKey === 'sustained_quality'))).toHaveLength(0);
             const reasonCode = {
                 not_in_evergreen_quality_descriptor: 'D', conditional_quality_prior_withheld: 'P',
                 sustained_quality_not_packed: 'N', workout_minimum_exceeds_window: 'T',
