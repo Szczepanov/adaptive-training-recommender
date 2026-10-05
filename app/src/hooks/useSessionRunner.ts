@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { writeBatch } from 'firebase/firestore';
 import type {
     SessionDefinition,
     SessionExecution,
@@ -9,10 +8,8 @@ import type {
     SessionBlock,
     SessionSourceRef,
 } from '../sessions/models';
-import { getDb } from '../firebase';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
-import { sessionResponseService } from '../services/sessionResponseService';
 import { checkinService } from '../services/checkinService';
 import { preferencesService } from '../services/preferencesService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
@@ -21,6 +18,9 @@ import { getLocalDateString } from '../utils/localDate';
 import { sessionDefinitionService } from '../services/sessionDefinitionService';
 import { playRestCompleteSound } from '../utils/audioFeedback';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
+import { projectSessionProgress } from '../sessions/sessionProgressProjection';
+import { prepareFixtureSessionLaunch } from '../services/sessionAuthoringService';
+import { convergeCompletedExecution } from '../services/sessionCompletionConvergence';
 import { resolveEffectiveChoiceEntries, resolveEffectiveSession } from '../sessions/choiceResolution';
 import { assertChoiceOptionBelongsToChoice } from '../sessions/choiceSelection';
 import { resolvePostEntryRestSeconds } from '../sessions/restTiming';
@@ -33,7 +33,6 @@ import { ineligibleAlternativeOptionIds } from '../engine/sessionChoiceEligibili
 import { EXERCISES_BY_ID } from '../workouts/exercises.ts';
 import type { BodyRegion, FitWorkoutFingerprintKind, RegionTissueResponse } from '../engine/models';
 import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
-import { reconcileStructuredCompletion } from '../training-occurrence';
 
 /** Two `ExerciseRef`s identify the same performed exercise. Used to scope a step's
  * per-exercise `setIndex` so a mid-session swap (`substituteStepExercise`) starts the
@@ -59,6 +58,8 @@ export interface UseSessionRunnerResult {
     isRestRunning: boolean;
     isRestoring: boolean;
     syncStatus: 'synced' | 'pending' | 'queued' | 'unavailable';
+    resumeStatus: 'none' | 'ready' | 'degraded';
+    resumeDegradedReason: string | null;
     canUndo: boolean;
     lastRemovedEntry: SessionEntry | null;
     /** True once a recorded choice ended the whole session (D-MCHOICE `end_session`). */
@@ -125,6 +126,8 @@ export function createCustomTemplateDefinition(
 }
 
 export function useSessionRunner(userId: string, fixtures: readonly SessionDefinition[] = []): UseSessionRunnerResult {
+    // Fixtures are launch inputs only. Resume never consults their current bytes.
+    void fixtures;
     const [rawDefinition, setRawDefinition] = useState<SessionDefinition | null>(null);
     const [ineligibleOptionIds, setIneligibleOptionIds] = useState<ReadonlySet<string>>(new Set());
     const [execution, setExecution] = useState<SessionExecution | null>(null);
@@ -136,6 +139,8 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const [isRestRunning, setIsRestRunning] = useState<boolean>(false);
     const [isRestoring, setIsRestoring] = useState<boolean>(true);
     const [syncStatus, setSyncStatus] = useState<'synced' | 'pending' | 'queued' | 'unavailable'>('synced');
+    const [resumeStatus, setResumeStatus] = useState<'none' | 'ready' | 'degraded'>('none');
+    const [resumeDegradedReason, setResumeDegradedReason] = useState<string | null>(null);
     const [lastRemovedEntry, setLastRemovedEntry] = useState<SessionEntry | null>(null);
     const diaryFailedRef = useRef(false);
     const diaryWriteOptions = useMemo(() => ({
@@ -151,17 +156,37 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         const stopSync = sessionExecutionService.watchDiarySync(userId, execution.executionId, pending => {
             if (!diaryFailedRef.current) setSyncStatus(pending ? 'queued' : 'synced');
         }, diaryWriteOptions.onFailed);
-        const stopEntries = sessionExecutionService.watchEntries(userId, execution.executionId, (current, deleted) => {
-            setEntries(current);
-            setLastRemovedEntry(deleted);
+        const stopEntries = sessionExecutionService.watchEntries(userId, execution.executionId, () => {
+            void sessionExecutionService.getResumeDiaryState(userId, execution.executionId).then(diary => {
+                setEntries(diary.entries);
+                setLastRemovedEntry(diary.lastDeletedEntry);
+                if (diary.status === 'degraded') {
+                    setResumeStatus('degraded');
+                    setResumeDegradedReason(diary.reason);
+                    setRawDefinition(null);
+                    setSyncStatus('unavailable');
+                    return;
+                }
+                if (rawDefinition) {
+                    const cursor = projectSessionProgress(rawDefinition, diary.entries);
+                    setActiveBlockIndex(cursor.blockIndex);
+                    setActiveStepIndex(cursor.stepIndex);
+                }
+                if (!diaryFailedRef.current && resumeStatus !== 'degraded') {
+                    setSyncStatus(diary.failedReceiptCount > 0
+                        ? 'unavailable'
+                        : diary.queuedReceiptCount > 0 ? 'queued' : 'synced');
+                }
+            }).catch(() => setSyncStatus('unavailable'));
         }, diaryWriteOptions.onFailed);
         return () => { stopSync(); stopEntries(); };
-    }, [userId, execution, diaryWriteOptions]);
+    }, [userId, execution, diaryWriteOptions, rawDefinition, resumeStatus]);
     // A React state update is not synchronous. Keep this separate from `execution` so a
     // double-tap in the gap before the start write resolves cannot create two executions.
     // The H4 claim transaction remains the cross-tab authority for claimed intraday members;
     // this guard protects the ordinary runner's local launch affordances too.
     const startInFlightRef = useRef(false);
+    const terminalInFlightRef = useRef<Promise<void> | null>(null);
 
     // PR 3 (training-occurrence plan): the currently-running rest's durable start state,
     // if any. A ref (not state) because closing it must read the latest value
@@ -213,50 +238,78 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             endReason === 'session_ended' ? { onFailed: diaryWriteOptions.onFailed } : diaryWriteOptions);
     }, [execution, userId, diaryWriteOptions]);
 
-    // Reloading or backgrounding must not create a second execution. Source-neutral
-    // executions restore through the immutable source + prescription binding; fixtures
-    // remain the only legacy path that does not carry a prescription hash.
+    // Reloading never replays current source bytes. The persisted prescription and
+    // local accepted diary queue are the only authorities. An in-flight rest is deliberately
+    // cleared before any restore work and is never reconstructed.
     useEffect(() => {
         let cancelled = false;
-        // A restored in-progress execution never resumes a rest timer -- whatever rest was
-        // running before reload is simply lost, not reconstructed, so no fabricated
-        // duration can ever be persisted for it.
         activeRestRef.current = null;
         manualRestDeadlineRef.current = null;
         setRestSecondsRemaining(0);
         setIsRestRunning(false);
+        setResumeStatus('none');
+        setResumeDegradedReason(null);
+
         sessionExecutionService.findInProgressExecution(userId)
             .then(async existing => {
-                if (!existing) return;
-                const source = existing.sessionSource;
-                const fixture = source.kind === 'unplanned_fixture'
-                    ? fixtures.find(candidate => candidate.id === source.fixtureId)
-                    : undefined;
-                const resolved = fixture
-                    ? { status: 'AVAILABLE' as const, data: fixture }
-                    : existing.prescriptionHash
-                        ? await resolveSessionDefinition(userId, source, existing.prescriptionHash)
-                        : null;
-                const existingEntries = await sessionExecutionService.getEntries(userId, existing.executionId);
-                const deletedEntry = await sessionExecutionService.getLastDeletedEntry(userId, existing.executionId);
+                if (!existing) {
+                    const completed = await sessionExecutionService.findLatestCompletedExecution(userId, getLocalDateString());
+                    if (completed) void convergeCompletedExecution(userId, completed);
+                    return;
+                }
+                const diary = await sessionExecutionService.getResumeDiaryState(userId, existing.executionId);
                 if (cancelled) return;
-                if (resolved?.status === 'AVAILABLE') setRawDefinition(resolved.data);
-                else if (!fixture) setSyncStatus('unavailable');
                 setExecution(existing);
-                setEntries(existingEntries);
-                setLastRemovedEntry(deletedEntry);
+                setEntries(diary.entries);
+                setLastRemovedEntry(diary.lastDeletedEntry);
                 setElapsedSeconds(sessionElapsedSecondsAt(existing.startedAt, Date.now()));
+
+                if (diary.status === 'degraded') {
+                    setRawDefinition(null);
+                    setResumeStatus('degraded');
+                    setResumeDegradedReason(diary.reason);
+                    setSyncStatus('unavailable');
+                    return;
+                }
+                if (!existing.prescriptionHash) {
+                    setRawDefinition(null);
+                    setResumeStatus('degraded');
+                    setResumeDegradedReason('missing-prescription-hash');
+                    setSyncStatus('unavailable');
+                    return;
+                }
+                const resolved = await resolveSessionDefinition(userId, existing.sessionSource, existing.prescriptionHash);
+                if (cancelled) return;
+                if (resolved.status !== 'AVAILABLE') {
+                    setRawDefinition(null);
+                    setResumeStatus('degraded');
+                    setResumeDegradedReason(`prescription-${resolved.status.toLowerCase()}`);
+                    setSyncStatus('unavailable');
+                    return;
+                }
+                const cursor = projectSessionProgress(resolved.data, diary.entries);
+                setRawDefinition(resolved.data);
+                setActiveBlockIndex(cursor.blockIndex);
+                setActiveStepIndex(cursor.stepIndex);
+                setResumeStatus('ready');
+                setResumeDegradedReason(null);
+                setSyncStatus(diary.failedReceiptCount > 0
+                    ? 'unavailable'
+                    : diary.queuedReceiptCount > 0 ? 'queued' : 'synced');
             })
             .catch(() => {
-                if (!cancelled) setSyncStatus('unavailable');
+                if (!cancelled) {
+                    setRawDefinition(null);
+                    setResumeStatus('degraded');
+                    setResumeDegradedReason('resume-read-unavailable');
+                    setSyncStatus('unavailable');
+                }
             })
             .finally(() => {
                 if (!cancelled) setIsRestoring(false);
             });
-        return () => {
-            cancelled = true;
-        };
-    }, [fixtures, userId]);
+        return () => { cancelled = true; };
+    }, [userId]);
 
     // Wall-clock timers: the interval is only a repaint trigger. Both the session
     // elapsed display and the rest countdown are re-derived from timestamps on
@@ -423,10 +476,11 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     }, [execution?.state, isRestoring, userId]);
 
     const startFixtureSession = useCallback(async (fixture: SessionDefinition) => {
-        await startSession(fixture, {
-            kind: 'unplanned_fixture', fixtureId: fixture.id,
+        const prepared = await prepareFixtureSessionLaunch(userId, fixture);
+        await startSession(prepared.definition, prepared.binding.sessionSource, {
+            prescriptionHash: prepared.binding.prescriptionHash,
         });
-    }, [startSession]);
+    }, [startSession, userId]);
 
     const restoreSessionDefinition = useCallback(async (nextDefinition: SessionDefinition) => {
         if (!execution || execution.state !== 'in_progress') return;
@@ -736,159 +790,147 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     }, [rawDefinition, userId]);
 
     const completeSession = useCallback(async (payload?: SessionCompletionPayload) => {
-        if (!execution || execution.state !== 'in_progress') return;
-        // A rest still running when the session ends must be closed and persisted before
-        // the execution's own 'completed' transition below -- firestore.rules gates
-        // restEvents writes on the execution still being 'in_progress'.
-        manualRestDeadlineRef.current = null;
-        setIsRestRunning(false);
-        try {
-            await closeActiveRest('session_ended');
-        } catch (err) {
-            console.warn('[useSessionRunner] Failed to persist rest event:', err);
-        }
-        // Tissue values stay in the canonical daily check-in.  The execution is only an
-        // attribution link, and a conflicting existing link is never overwritten.
-        if (payload?.tissueFeedback?.length) {
-            const existingCheckin = await checkinService.getCheckin(userId, execution.date);
-            const existingResponses = (existingCheckin?.tissueResponses ?? {}) as Partial<Record<BodyRegion, RegionTissueResponse>>;
-            const tissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> = { ...existingResponses };
-            for (const item of payload.tissueFeedback) {
-                const existingSource = existingResponses[item.region]?.sourceSessionRef;
-                if (existingSource && (
-                    existingSource.kind !== 'execution'
-                    || existingSource.id !== execution.executionId
-                    || existingSource.date !== execution.date
-                )) {
-                    throw new Error(`A tissue response for ${item.region} is already linked to another session`);
-                }
-                tissueResponses[item.region] = {
-                    region: item.region,
-                    morningState: existingResponses[item.region]?.morningState ?? 'normal',
-                    painDuringTraining: item.painDuringTraining,
-                    afterTrainingState: item.afterTrainingState ?? item.painDuringTraining,
-                    sourceSessionRef: { kind: 'execution', id: execution.executionId, date: execution.date },
-                };
+        if (!execution) return;
+        if (terminalInFlightRef.current) return terminalInFlightRef.current;
+
+        const operation = (async () => {
+            if (execution.state === 'completed') {
+                await convergeCompletedExecution(userId, execution, definition?.dominantModality);
+                return;
             }
-            await checkinService.upsertCheckin(userId, {
-                date: execution.date,
-                painOrInjury: true,
-                tissueResponses,
-            });
-        }
+            if (execution.state !== 'in_progress') return;
 
-        const now = new Date().toISOString();
-        const completedExecution = {
-            ...execution,
-            state: 'completed' as const,
-            completedAt: now,
-            updatedAt: now,
-            ...(payload?.sessionRpe !== undefined ? { sessionRpe: payload.sessionRpe } : {}),
-            ...(payload?.notes !== undefined ? { notes: payload.notes } : {}),
-        };
-
-        // Derive only from a fresh read of persisted entries. `logEntry` intentionally
-        // keeps optimistic UI state on an unavailable write, which must never influence a
-        // derived performance value. Both writes below are then queued into one batch and
-        // committed together so a failed transition can never leave the 1RM derivation
-        // persisted against an execution that is still (or forever) `in_progress` -- see
-        // the completion/writeback atomicity note on `transitionExecution`/`applyOneRepMaxDerivations`.
-        const persistedEntries = await sessionExecutionService.getEntries(userId, execution.executionId);
-        const batch = writeBatch(getDb());
-        if (persistedEntries.some(e => e.payload.kind === 'repetition')) {
-            const adaptedSession = adaptNormalizedExecutionToStrengthSession({
-                execution: completedExecution,
-                entries: persistedEntries,
-            });
-            if (adaptedSession.exercises.length > 0) {
-                // Derived writes are deterministic and only replace the same `derived`
-                // ownership rung, so a recovery retry after a preferences outage is
-                // idempotent for this completed execution.
-                await preferencesService.applyOneRepMaxDerivations(userId, adaptedSession, now, batch);
-            }
-        }
-
-        await sessionExecutionService.transitionExecution(userId, execution.executionId, 'completed', {
-            sessionRpe: payload?.sessionRpe,
-            notes: payload?.notes,
-        }, batch);
-        await batch.commit();
-        setExecution(completedExecution);
-
-        // H4 Phase 5 / ADR-0036 D-REASSESS: persist the submitted completion-sheet
-        // evidence only after the execution is durably completed. A missing response
-        // must remain legible as missing, so a response-write failure is fail-closed:
-        // completion succeeds and a dependent PM member remains pending until the
-        // evidence is available.
-        try {
-            await sessionResponseService.recordOrUpdateResponse(
-                userId,
-                { kind: 'execution', id: completedExecution.executionId, date: completedExecution.date },
-                'immediate',
-                completedExecution.date,
-                completedExecution.date,
-                {
-                    sessionRpe: payload?.sessionRpe,
-                    completedFraction: payload?.completedFraction,
-                    unexpectedFatigue: payload?.unexpectedFatigue,
-                    note: payload?.notes,
-                },
-                completedExecution.occurrenceId,
-                now,
-            );
-        } catch (err) {
-            console.warn('[useSessionRunner] Failed to persist immediate session response:', err);
-        }
-
-        if (execution.occurrenceId) {
+            manualRestDeadlineRef.current = null;
+            setIsRestRunning(false);
             try {
-                await sessionOccurrenceService.transitionOccurrenceState(
-                    userId,
-                    execution.occurrenceId,
-                    'completed',
-                    now,
-                );
+                await closeActiveRest('session_ended');
             } catch (err) {
-                console.warn('[useSessionRunner] Failed to transition occurrence state to completed:', err);
+                console.warn('[useSessionRunner] Failed to persist rest event:', err);
             }
-        }
 
-        // PR 1 (ADR-0034) shadow reconciliation: fire-and-forget, never affects
-        // completion UX or this function's behavior/return value.
-        void reconcileStructuredCompletion(userId, completedExecution, definition?.dominantModality)
-            .catch(err => console.warn('[training-occurrence] shadow reconciliation failed', err));
+            const submittedAt = new Date().toISOString();
+            const note = payload?.notes?.trim();
+            const completionEvidence = payload ? {
+                submittedAt,
+                ...(payload.sessionRpe !== undefined ? { sessionRpe: payload.sessionRpe } : {}),
+                ...(payload.completedFraction !== undefined ? { completedFraction: payload.completedFraction } : {}),
+                ...(payload.unexpectedFatigue !== undefined ? { unexpectedFatigue: payload.unexpectedFatigue } : {}),
+                ...(note ? { note } : {}),
+            } : undefined;
+            const persistedEntries = await sessionExecutionService.getEntries(userId, execution.executionId);
+            const outcome = await sessionExecutionService.transitionExecutionTerminal(
+                userId,
+                execution.executionId,
+                'completed',
+                {
+                    ...(payload?.sessionRpe !== undefined ? { sessionRpe: payload.sessionRpe } : {}),
+                    ...(note ? { notes: note } : {}),
+                    ...(completionEvidence ? { completionEvidence } : {}),
+                },
+                async (batch, terminalExecution) => {
+                    if (!persistedEntries.some(entry => entry.payload.kind === 'repetition')) return;
+                    const adaptedSession = adaptNormalizedExecutionToStrengthSession({
+                        execution: terminalExecution,
+                        entries: persistedEntries,
+                    });
+                    if (adaptedSession.exercises.length > 0) {
+                        await preferencesService.applyOneRepMaxDerivations(userId, adaptedSession, submittedAt, batch);
+                    }
+                },
+            );
+            setExecution(outcome.execution);
+            if (outcome.status === 'already_abandoned') return;
+
+            if (outcome.status === 'transitioned' && payload?.tissueFeedback?.length) {
+                try {
+                    const existingCheckin = await checkinService.getCheckin(userId, outcome.execution.date);
+                    const existingResponses = (existingCheckin?.tissueResponses ?? {}) as Partial<Record<BodyRegion, RegionTissueResponse>>;
+                    const tissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> = { ...existingResponses };
+                    for (const item of payload.tissueFeedback) {
+                        const existingSource = existingResponses[item.region]?.sourceSessionRef;
+                        if (existingSource && (
+                            existingSource.kind !== 'execution'
+                            || existingSource.id !== outcome.execution.executionId
+                            || existingSource.date !== outcome.execution.date
+                        )) throw new Error(`A tissue response for ${item.region} is already linked to another session`);
+                        tissueResponses[item.region] = {
+                            region: item.region,
+                            morningState: existingResponses[item.region]?.morningState ?? 'normal',
+                            painDuringTraining: item.painDuringTraining,
+                            afterTrainingState: item.afterTrainingState ?? item.painDuringTraining,
+                            sourceSessionRef: { kind: 'execution', id: outcome.execution.executionId, date: outcome.execution.date },
+                        };
+                    }
+                    await checkinService.upsertCheckin(userId, {
+                        date: outcome.execution.date,
+                        painOrInjury: true,
+                        tissueResponses,
+                    });
+                } catch (err) {
+                    console.warn('[useSessionRunner] Failed to persist tissue response:', err);
+                }
+            }
+            await convergeCompletedExecution(userId, outcome.execution, definition?.dominantModality);
+        })();
+        terminalInFlightRef.current = operation;
+        try {
+            await operation;
+        } finally {
+            if (terminalInFlightRef.current === operation) terminalInFlightRef.current = null;
+        }
     }, [execution, userId, definition, closeActiveRest]);
 
     const abandonSession = useCallback(async (notes?: string) => {
-        if (!execution || execution.state !== 'in_progress') return;
-        manualRestDeadlineRef.current = null;
-        setIsRestRunning(false);
-        try {
-            await closeActiveRest('session_ended');
-        } catch (err) {
-            console.warn('[useSessionRunner] Failed to persist rest event:', err);
-        }
-        const now = new Date().toISOString();
-        const batch = writeBatch(getDb());
-        await sessionExecutionService.transitionExecution(userId, execution.executionId, 'abandoned', {
-            notes,
-        }, batch);
-        await batch.commit();
-        setExecution(prev => prev ? { ...prev, state: 'abandoned' } : null);
+        if (!execution) return;
+        if (terminalInFlightRef.current) return terminalInFlightRef.current;
 
-        if (execution.occurrenceId) {
-            try {
-                await sessionOccurrenceService.transitionOccurrenceState(
-                    userId,
-                    execution.occurrenceId,
-                    'abandoned',
-                    now,
-                );
-            } catch (err) {
-                console.warn('[useSessionRunner] Failed to transition occurrence state to abandoned:', err);
+        const operation = (async () => {
+            if (execution.state === 'completed') {
+                await convergeCompletedExecution(userId, execution, definition?.dominantModality);
+                return;
             }
+            if (execution.state !== 'in_progress') return;
+
+            manualRestDeadlineRef.current = null;
+            setIsRestRunning(false);
+            try {
+                await closeActiveRest('session_ended');
+            } catch (err) {
+                console.warn('[useSessionRunner] Failed to persist rest event:', err);
+            }
+            const note = notes?.trim();
+            const outcome = await sessionExecutionService.transitionExecutionTerminal(
+                userId,
+                execution.executionId,
+                'abandoned',
+                note ? { notes: note } : undefined,
+            );
+            setExecution(outcome.execution);
+
+            if (outcome.status === 'already_completed') {
+                await convergeCompletedExecution(userId, outcome.execution, definition?.dominantModality);
+                return;
+            }
+            if (outcome.execution.occurrenceId) {
+                try {
+                    await sessionOccurrenceService.transitionOccurrenceState(
+                        userId,
+                        outcome.execution.occurrenceId,
+                        'abandoned',
+                        outcome.execution.updatedAt,
+                    );
+                } catch (err) {
+                    console.warn('[useSessionRunner] Failed to converge occurrence state to abandoned:', err);
+                }
+            }
+        })();
+        terminalInFlightRef.current = operation;
+        try {
+            await operation;
+        } finally {
+            if (terminalInFlightRef.current === operation) terminalInFlightRef.current = null;
         }
-    }, [execution, userId, closeActiveRest]);
+    }, [execution, userId, definition, closeActiveRest]);
 
     return {
         definition,
@@ -903,6 +945,8 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         isRestRunning,
         isRestoring,
         syncStatus,
+        resumeStatus,
+        resumeDegradedReason,
         canUndo: lastRemovedEntry !== null && lastRemovedEntry.payload.kind !== 'choice',
         lastRemovedEntry,
         sessionEnded,

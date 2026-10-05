@@ -64,7 +64,6 @@ export async function prepareFixtureSessionLaunch(
         blocks: definition.blocks,
         displayMetadata: displayMetadataFor(definition),
         definitionSnapshot: snapshotSessionDefinition(definition),
-        definitionSnapshot: snapshotSessionDefinition(definition),
         createdAt: now,
     };
     const prescriptionHash = await hashExecutionPrescription(unsignedPrescription);
@@ -223,6 +222,7 @@ export async function prepareAuthoredOccurrenceLaunch(
         definitionHash: source.contentHash,
         blocks: acceptedDefinition.blocks,
         displayMetadata: displayMetadataFor(acceptedDefinition),
+        definitionSnapshot: snapshotSessionDefinition(acceptedDefinition),
         createdAt: now,
     };
     const prescriptionHash = await hashExecutionPrescription(unsignedPrescription);
