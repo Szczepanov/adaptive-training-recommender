@@ -9,7 +9,7 @@ import { creditObjectivesFromStimulus, generateWeeklyObjectives, updateMicrocycl
 import { resolveActivePlanDefinitionForEvent } from '../planSchedule';
 import { resolvePlanningContext } from '../planningMode';
 import { addDaysToLocalDateString } from '../../utils/localDate';
-import { workoutForTemplate } from '../../workouts/prescription';
+import { resolveWorkoutPrescription, workoutForTemplate } from '../../workouts/prescription';
 import type { AthleteScenario } from './scenarios';
 import { SCENARIOS } from './scenarios';
 import type { WeeklyRoleAllocationReport } from '../weeklyAllocation';
@@ -220,13 +220,31 @@ function traceFromForecastDay(weekIndex: number, day: WeekAheadDay): ScenarioDec
     };
 }
 
-export function toCompletedExposure(day: WeekAheadDay): CompletedExposure {
+function simulatedRecommendationForDay(day: WeekAheadDay): Recommendation {
+    return {
+        template: day.template,
+        mode: day.diagnostics?.fatigueTier ?? (day.mode === 'recover' ? 'recover' : 'train'),
+        rationale: day.rationale,
+        activeDose: day.activeDose,
+        adjustment: day.adjustment,
+        plannedDose: day.diagnostics?.plannedDose,
+    } as Recommendation;
+}
+
+export function toCompletedExposure(day: WeekAheadDay, recommendation?: Recommendation): CompletedExposure {
     // A forecast day keeps the authored catalog identity for coverage, but the
     // completed-history replay must represent the dose we actually prescribed.
     // Otherwise a reduced forecast silently becomes a full-load exposure on the
     // next simulated day.
     const effectiveTemplate = materializeEffectiveSimulationTemplate(day.template, day.activeDose);
     const workoutId = workoutForTemplate(effectiveTemplate.id)?.id;
+    const prescribedDurationMin = resolveWorkoutPrescription(
+        recommendation ?? simulatedRecommendationForDay(day),
+        'sim-user',
+        day.date,
+        undefined,
+        day.diagnostics?.plannedDose,
+    )?.targetDurationMin ?? effectiveTemplate.durationMin;
     return {
         occurrenceKey: `recommendation:${day.date}`,
         date: day.date,
@@ -239,7 +257,7 @@ export function toCompletedExposure(day: WeekAheadDay): CompletedExposure {
         category: effectiveTemplate.category,
         trainingRecordLike: {
             type: `${effectiveTemplate.modality} ${effectiveTemplate.category}`,
-            duration_min: effectiveTemplate.durationMin,
+            duration_min: prescribedDurationMin,
             training_effect: 0,
             intensity_tag: '',
         },
@@ -474,7 +492,7 @@ export async function runScenario(
         allocationReports.push({ weekIndex: week, report: plan.allocationReport });
         if (plan.authoritySegments) authoritySegments.push({ weekIndex: week, segments: plan.authoritySegments });
         plan.objectiveCredits.forEach(credit => objectiveCredits.push({ weekIndex: week, ...credit }));
-        simulatedDays.forEach(day => accumulatedHistory.push(toCompletedExposure(day)));
+        simulatedDays.forEach((day, index) => accumulatedHistory.push(toCompletedExposure(day, index === 0 ? todayRec : undefined)));
 
         plan.microcycleObjectives.forEach(obj => {
             const tally = objectiveTallies.get(obj.key) ?? { key: obj.key, timesGenerated: 0, timesResolved: 0 };
@@ -620,7 +638,7 @@ export async function runForecastDailyParityScenario(
             null, false, [], new Map(), undefined, scenario.mechanicalCheckinHistory,
         );
         dailyTraces.push(traceFromRecommendation(weekIndex, date, recommendation));
-        history.push(toCompletedExposure(recommendationAsDay(date, recommendation, 'rolling_daily')));
+        history.push(toCompletedExposure(recommendationAsDay(date, recommendation, 'rolling_daily'), recommendation));
         previousMode = recommendation.mode;
     }
 
@@ -982,7 +1000,7 @@ export async function runSubjectiveDriftComparison(
         trainToRecoverDays: total.trainToRecoverDays + summary.trainToRecoverDays,
         modifyToRecoverDays: total.modifyToRecoverDays + summary.modifyToRecoverDays,
         recoverySelectionDelta: total.recoverySelectionDelta + summary.recoverySelectionDelta,
-        restOrRecoveryDayDelta: total.restOrRecoveryDayDelta + summary.restOrRecoveryDayDelta,
+        restOrRecoveryDayDelta: total.restOrRecoveryDayCount + summary.restOrRecoveryDayDelta,
         objectiveMissDelta: total.objectiveMissDelta + summary.objectiveMissDelta,
         constraintViolationDelta: total.constraintViolationDelta + summary.constraintViolationDelta,
     }), emptySubjectiveDriftAggregate());
