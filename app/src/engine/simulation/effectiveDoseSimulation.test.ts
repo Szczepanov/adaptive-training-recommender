@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Recommendation } from '../models';
+import { inferAthleteTrainingState } from '../evergreenStrategy';
 import { ENRICHED_TEMPLATES_BY_ID } from '../templates';
 import { materializeEffectiveSimulationTemplate, recommendationAsDay, toCompletedExposure, traceFromRecommendation } from './analyze';
 
@@ -24,6 +25,26 @@ describe('effective-dose simulation evidence', () => {
         // performed=recommended history must therefore record 60, not the template's 30-minute
         // admissibility floor; otherwise 28-day training-age evidence decays spuriously.
         expect(exposure.trainingRecordLike.duration_min).toBe(60);
+    });
+
+    it('keeps the established training-age gate when 12 full Zone 2 prescriptions supply 720 minutes', () => {
+        const template = ENRICHED_TEMPLATES_BY_ID.get('end_easy_01');
+        expect(template).toBeDefined();
+        if (!template) throw new Error('end_easy_01 must exist for this regression fixture');
+
+        const recommendation = {
+            template,
+            mode: 'train',
+            rationale: 'rolling established-athlete regression fixture',
+            plannedDose: { volume: 1, intensity: 1 },
+        } as Recommendation;
+        const exposures = Array.from({ length: 12 }, (_, index) => {
+            const date = `2026-08-${String(1 + index * 2).padStart(2, '0')}`;
+            return toCompletedExposure(recommendationAsDay(date, recommendation, 'Build'), recommendation);
+        });
+
+        expect(exposures.reduce((minutes, exposure) => minutes + exposure.trainingRecordLike.duration_min, 0)).toBe(720);
+        expect(inferAthleteTrainingState(exposures, 28).trainingAgeProxy).toBe('established');
     });
 
     it('carries an automatic easier dose into traces and accumulated simulation history', () => {
