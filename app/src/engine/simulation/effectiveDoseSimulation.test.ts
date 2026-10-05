@@ -4,6 +4,28 @@ import { ENRICHED_TEMPLATES_BY_ID } from '../templates';
 import { materializeEffectiveSimulationTemplate, recommendationAsDay, toCompletedExposure, traceFromRecommendation } from './analyze';
 
 describe('effective-dose simulation evidence', () => {
+    it('records the resolved prescription duration instead of the authored template minimum', () => {
+        const template = ENRICHED_TEMPLATES_BY_ID.get('end_easy_01');
+        expect(template).toBeDefined();
+        if (!template) throw new Error('end_easy_01 must exist for this regression fixture');
+
+        const recommendation = {
+            template,
+            mode: 'train',
+            rationale: 'full-dose Zone 2 regression fixture',
+            plannedDose: { volume: 1, intensity: 1 },
+        } as Recommendation;
+
+        expect(template.durationMin).toBe(30);
+        const day = recommendationAsDay('2026-08-23', recommendation, 'Build');
+        const exposure = toCompletedExposure(day, recommendation);
+
+        // The linked cycling_zone2_standard_01 full prescription is 60 minutes. Simulated
+        // performed=recommended history must therefore record 60, not the template's 30-minute
+        // admissibility floor; otherwise 28-day training-age evidence decays spuriously.
+        expect(exposure.trainingRecordLike.duration_min).toBe(60);
+    });
+
     it('carries an automatic easier dose into traces and accumulated simulation history', () => {
         const template = ENRICHED_TEMPLATES_BY_ID.get('mob_01');
         expect(template?.easierDose).toBeDefined();
@@ -22,7 +44,7 @@ describe('effective-dose simulation evidence', () => {
         expect(effective.costProfile?.systemic).toBeCloseTo((template.costProfile?.systemic ?? 0) * template.easierDose.doseRatio, 6);
 
         const day = recommendationAsDay('2026-08-24', recommendation, 'Build');
-        const exposure = toCompletedExposure(day);
+        const exposure = toCompletedExposure(day, recommendation);
         expect(day.template.durationMin).toBe(template.easierDose.durationMin);
         expect(exposure.trainingRecordLike.duration_min).toBe(template.easierDose.durationMin);
         expect(exposure.costProfile.systemic).toBeCloseTo((template.costProfile?.systemic ?? 0) * template.easierDose.doseRatio, 6);
