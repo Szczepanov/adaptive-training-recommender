@@ -48,6 +48,7 @@ async function sealPreparedPrimaryBinding(params: AdjudicateIntradayBundleMember
     if (!primarySession?.intraday || primarySession.isEvent || primarySession.definition.id === 'rest_01') {
         return;
     }
+    const primaryIntraday = primarySession.intraday;
 
     const db = params.db ?? getDb();
     const injectedOccurrenceService = params.services?.occurrenceService !== undefined;
@@ -75,18 +76,18 @@ async function sealPreparedPrimaryBinding(params: AdjudicateIntradayBundleMember
     const candidate = candidates[0];
     const expectedWindowBinding: OccurrenceWindowBinding = {
         windowId: primaryPlacement.windowId,
-        bundleId: primarySession.intraday.bundleId,
-        order: primarySession.intraday.order,
+        bundleId: primaryIntraday.bundleId,
+        order: primaryIntraday.order,
         boundStartLocal: primaryPlacement.boundStartLocal,
         boundEndLocal: primaryPlacement.boundEndLocal,
         startInstant: primaryPlacement.startInstant,
         endInstant: primaryPlacement.endInstant,
     };
-    const hasExactBinding = candidate.placementOrder === primarySession.intraday.order
+    const hasExactBinding = candidate.placementOrder === primaryIntraday.order
         && candidate.windowBinding !== undefined
         && sameWindowBinding(candidate.windowBinding, expectedWindowBinding);
 
-    if (candidate.placementOrder !== undefined && candidate.placementOrder !== primarySession.intraday.order) {
+    if (candidate.placementOrder !== undefined && candidate.placementOrder !== primaryIntraday.order) {
         throw new Error(`Prepared bundle primary occurrence ${candidate.occurrenceId} has conflicting placement order.`);
     }
     if (candidate.windowBinding && !sameWindowBinding(candidate.windowBinding, expectedWindowBinding)) {
@@ -133,7 +134,7 @@ async function sealPreparedPrimaryBinding(params: AdjudicateIntradayBundleMember
         if (current.state !== 'scheduled') {
             throw new Error(`Prepared bundle primary occurrence ${candidate.occurrenceId} is already '${current.state}'.`);
         }
-        if (current.placementOrder !== undefined && current.placementOrder !== primarySession.intraday.order) {
+        if (current.placementOrder !== undefined && current.placementOrder !== primaryIntraday.order) {
             throw new Error(`Prepared bundle primary occurrence ${candidate.occurrenceId} has conflicting placement order.`);
         }
         if (current.windowBinding && !sameWindowBinding(current.windowBinding, expectedWindowBinding)) {
@@ -148,7 +149,7 @@ async function sealPreparedPrimaryBinding(params: AdjudicateIntradayBundleMember
 
         sealed = {
             ...current,
-            placementOrder: primarySession.intraday.order,
+            placementOrder: primaryIntraday.order,
             windowBinding: expectedWindowBinding,
             updatedAt: now,
         };
