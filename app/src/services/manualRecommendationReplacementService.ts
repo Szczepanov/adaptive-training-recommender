@@ -13,7 +13,11 @@ import { windowReservationId } from './sessionOccurrenceService';
  * are intentionally forbidden because intraday plans may contain multiple legitimate sessions.
  */
 export class ManualRecommendationReplacementService {
-    constructor(private readonly db: Firestore = getDb()) {}
+    private readonly db: Firestore;
+
+    constructor(db: Firestore = getDb()) {
+        this.db = db;
+    }
 
     async replaceRecommendationOccurrence(
         userId: string,
