@@ -28,24 +28,24 @@ describe('effective-dose simulation evidence', () => {
     });
 
     it('remains safe when used directly as an Array.map callback', () => {
-    const template = ENRICHED_TEMPLATES_BY_ID.get('end_easy_01');
-    expect(template).toBeDefined();
-    if (!template) throw new Error('end_easy_01 must exist for this regression fixture');
+        const template = ENRICHED_TEMPLATES_BY_ID.get('end_easy_01');
+        expect(template).toBeDefined();
+        if (!template) throw new Error('end_easy_01 must exist for this regression fixture');
 
-    const recommendation = {
-        template,
-        mode: 'train',
-        rationale: 'unary map callback regression fixture',
-        plannedDose: { volume: 1, intensity: 1 },
-    } as Recommendation;
-    const day = recommendationAsDay('2026-08-22', recommendation, 'Build');
+        const recommendation = {
+            template,
+            mode: 'train',
+            rationale: 'unary map callback regression fixture',
+            plannedDose: { volume: 1, intensity: 1 },
+        } as Recommendation;
+        const day = recommendationAsDay('2026-08-22', recommendation, 'Build');
 
-    // Array.map passes (value, index, array). The exported helper historically had
-    // unary callback semantics, so the numeric index must never be mistaken for a
-    // Recommendation when the optional simulation-only override is used internally.
-    const [exposure] = [day].map(toCompletedExposure);
-    expect(exposure.trainingRecordLike.duration_min).toBe(60);
-});
+        // Array.map passes (value, index, array). The exported helper historically had
+        // unary callback semantics, so the numeric index must never be mistaken for a
+        // Recommendation when the optional simulation-only override is used internally.
+        const [exposure] = [day].map(toCompletedExposure);
+        expect(exposure.trainingRecordLike.duration_min).toBe(60);
+    });
 
     it('keeps the established training-age gate when 12 full Zone 2 prescriptions supply 720 minutes', () => {
         const template = ENRICHED_TEMPLATES_BY_ID.get('end_easy_01');
