@@ -1000,7 +1000,7 @@ export async function runSubjectiveDriftComparison(
         trainToRecoverDays: total.trainToRecoverDays + summary.trainToRecoverDays,
         modifyToRecoverDays: total.modifyToRecoverDays + summary.modifyToRecoverDays,
         recoverySelectionDelta: total.recoverySelectionDelta + summary.recoverySelectionDelta,
-        restOrRecoveryDayDelta: total.restOrRecoveryDayCount + summary.restOrRecoveryDayDelta,
+        restOrRecoveryDayDelta: total.restOrRecoveryDayDelta + summary.restOrRecoveryDayDelta,
         objectiveMissDelta: total.objectiveMissDelta + summary.objectiveMissDelta,
         constraintViolationDelta: total.constraintViolationDelta + summary.constraintViolationDelta,
     }), emptySubjectiveDriftAggregate());
