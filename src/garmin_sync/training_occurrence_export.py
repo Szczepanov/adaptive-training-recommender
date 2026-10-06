@@ -182,6 +182,22 @@ def export_training_occurrence_records(
             {"recommendationId": recommendation["id"], **_document(item)} for item in archive
         )
 
+    # Bounded exact child reads also include revision-zero safety outcomes without a parent.
+    decision_contexts: list[dict[str, Any]] = []
+    cursor = date.fromisoformat(start_date)
+    while cursor.isoformat() < end_date_exclusive:
+        recommendation_id = cursor.isoformat()
+        contexts = (
+            user.collection("daily_recommendations")
+            .document(recommendation_id)
+            .collection("decision_contexts")
+            .stream()
+        )
+        decision_contexts.extend(
+            {"recommendationId": recommendation_id, **_document(item)} for item in contexts
+        )
+        cursor += timedelta(days=1)
+
     external_refs: set[tuple[str, int]] = set()
 
     def add_external_ref(raw: Any) -> None:
@@ -294,6 +310,7 @@ def export_training_occurrence_records(
         "activities": activities,
         "dailyRecommendations": recommendations,
         "dailyRecommendationRevisions": recommendation_revisions,
+        "decisionContexts": decision_contexts,
         "dailyRecoverySnapshots": recovery,
         "dailySubjectiveCheckins": checkins,
         "fixedActivities": fixed_activities,
@@ -344,6 +361,7 @@ def export_training_occurrence_records(
                 "reason": "Mutable header and placement lack date-D proof",
             },
             "dailyRecommendationRevisions": {"status": "exact_revision"},
+            "decisionContexts": {"status": "exact_revision"},
             "externalPlanRevisions": {"status": "exact_revision"},
             "sessionDefinitionRevisions": {"status": "exact_revision"},
             "executionPrescriptions": {"status": "exact_revision"},

@@ -10,6 +10,7 @@ import type {
     UserEvent,
     UserPreferences,
 } from '../engine/models';
+import type { CapturedTrainingHistoryRequest } from '../engine/historyReplayCapture';
 import type { CheckinRecord } from '../engine/mechanicalProgression';
 import type { CompletedExposure, TrainingHistoryProvider } from '../engine/trainingHistory';
 import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
@@ -52,7 +53,7 @@ export interface RecommendationDateAdjudication {
 /** The production Home snapshot shape, excluding only broad history rows and their revision. */
 export type HistoricalHistorySnapshotBase = Omit<
     TrainingHistorySnapshot,
-    'exposures' | 'revision' | 'athleteStateEvidence'
+    'exposures' | 'revision'
 >;
 
 export interface HistoricalDecisionInputs {
@@ -80,9 +81,11 @@ export interface HistoricalDecisionInputs {
     mechanicalCheckinHistory: readonly CheckinRecord[];
     /** Same prepared 7-day operational snapshot Home passes; contains common narrow facts. */
     preparedHistorySnapshot: HistoricalHistorySnapshotBase;
+    capturedHistoryRequests?: readonly CapturedTrainingHistoryRequest[];
 }
 
 export interface HistoricalHistoryPass {
+    useCapturedRevisions?: boolean;
     revision: string;
     digest: string;
     exposures: readonly CompletedExposure[];
@@ -230,12 +233,16 @@ export async function computeHistoricalReplayDigests(
             scheduleOverlays: inputs.scheduleOverlays,
             confirmedProgressionOverrides: inputs.confirmedProgressionOverrides,
             mechanicalCheckinHistory: inputs.mechanicalCheckinHistory,
+            capturedHistoryRequests: inputs.capturedHistoryRequests?.map(request => request.kind === 'snapshot'
+                ? { ...request, snapshot: { ...request.snapshot, exposures: undefined, revision: undefined } }
+                : { ...request, exposures: undefined }),
             preparedHistorySnapshot: {
                 throughDateExclusive: inputs.preparedHistorySnapshot.throughDateExclusive,
                 windowDays: inputs.preparedHistorySnapshot.windowDays,
                 completedEvents: inputs.preparedHistorySnapshot.completedEvents,
                 sourceStates: inputs.preparedHistorySnapshot.sourceStates,
                 performedTrainingFacts: inputs.preparedHistorySnapshot.performedTrainingFacts,
+                athleteStateEvidence: inputs.preparedHistorySnapshot.athleteStateEvidence,
             },
         }),
         digest({
@@ -277,7 +284,7 @@ function snapshotFor(
         throughDateExclusive: inputs.date,
         windowDays,
         exposures: windowed(pass.exposures, inputs.date, windowDays),
-        generatedAt: inputs.evaluatedAt || FIXED_GENERATED_AT,
+        generatedAt: inputs.preparedHistorySnapshot.generatedAt,
         revision: pass.revision,
     };
 }
@@ -287,15 +294,24 @@ function inMemoryHistoryProvider(
     pass: HistoricalHistoryPass,
 ): { provider: TrainingHistoryProvider; requests: string[] } {
     const requests: string[] = [];
+    let capturedIndex = 0;
+    const capturedRequest = (kind: CapturedTrainingHistoryRequest['kind'], throughDateExclusive: string, windowDays: number) => {
+        if (!inputs.capturedHistoryRequests) return undefined;
+        const request = inputs.capturedHistoryRequests[capturedIndex++];
+        if (!request || request.kind !== kind || request.throughDateExclusive !== throughDateExclusive
+            || request.windowDays !== windowDays) throw new Error('captured_history_request_mismatch');
+        return request;
+    };
     const snapshot = (throughDateExclusive: string, windowDays: number): TrainingHistorySnapshot => {
         requests.push(`snapshot:${throughDateExclusive}:${windowDays}`);
+        const captured = capturedRequest('snapshot', throughDateExclusive, windowDays);
         return {
-            ...inputs.preparedHistorySnapshot,
+            ...(captured?.kind === 'snapshot' ? captured.snapshot : inputs.preparedHistorySnapshot),
             throughDateExclusive,
             windowDays,
             exposures: windowed(pass.exposures, throughDateExclusive, windowDays),
-            generatedAt: inputs.evaluatedAt || FIXED_GENERATED_AT,
-            revision: pass.revision,
+            generatedAt: captured?.kind === 'snapshot' ? captured.snapshot.generatedAt : inputs.evaluatedAt || FIXED_GENERATED_AT,
+            revision: pass.useCapturedRevisions && captured?.kind === 'snapshot' ? captured.snapshot.revision : pass.revision,
         };
     };
     return {
@@ -303,6 +319,7 @@ function inMemoryHistoryProvider(
             reconstruct: async (userId, throughDateExclusive, windowDays) => {
                 if (userId !== inputs.exportedUserId) throw new Error('history_provider_user_mismatch');
                 requests.push(`reconstruct:${throughDateExclusive}:${windowDays}`);
+                capturedRequest('reconstruct', throughDateExclusive, windowDays);
                 return windowed(pass.exposures, throughDateExclusive, windowDays);
             },
             getSnapshot: async (userId, throughDateExclusive, windowDays) => {
@@ -372,6 +389,9 @@ async function evaluate(inputs: HistoricalDecisionInputs, pass: HistoricalHistor
         confirmedProgressionOverrides: inputs.confirmedProgressionOverrides,
         mechanicalCheckinHistory: inputs.mechanicalCheckinHistory,
     });
+    if (inputs.capturedHistoryRequests && history.requests.length !== inputs.capturedHistoryRequests.length) {
+        throw new Error('captured_history_requests_not_consumed');
+    }
     return { projection: projectRecommendation(recommendation), providerRequests: history.requests };
 }
 

@@ -515,7 +515,9 @@ export async function executeScenario(
             const batch = writeBatch(db);
             batch.set(doc(db, path), fixture);
             if (fixture.recommendationAudit?.decisionContext) {
-                batch.set(doc(db, `${path}/decision_contexts/1`), ctxDoc1);
+                batch.set(doc(db, `${path}/decision_contexts/1`), {
+                    ...ctxDoc1, trainingHistoryReplay: { preparedSnapshot: {}, capture: { schemaVersion: 1, requests: [] } },
+                });
             }
             await batch.commit();
             return true;

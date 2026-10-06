@@ -1,6 +1,7 @@
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { ROLLING_LOAD_BUDGET_LOOKBACK_DAYS } from './rollingLoadBudget';
+import { canonicalise } from './externalPlanHash';
 import { addDaysToLocalDateString } from '../utils/localDate';
 
 export const TRAINING_HISTORY_REPLAY_CAPTURE_SCHEMA_VERSION = 1 as const;
@@ -45,22 +46,77 @@ function validLocalDate(value: unknown): value is string {
     return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
+function nonNegative(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function numericProfile(value: unknown, keys: readonly string[], required = false): boolean {
+    return isObject(value) && Object.entries(value).every(([key, number]) => keys.includes(key) && nonNegative(number))
+        && (!required || keys.every(key => Object.hasOwn(value, key)));
+}
+
+const COST_KEYS = ['systemic', 'cardiovascular', 'lowerBody', 'upperBody', 'impactTissue', 'neuromuscular'];
+const STIMULUS_KEYS = ['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy'];
+const EXPOSURE_KEYS = ['occurrenceKey', 'date', 'costProfile', 'trainingRecordLike', 'deliveredDose', 'templateId', 'workoutId',
+    'recoveryHours', 'stimulusProfile', 'stimulusConfidence', 'stimulusDomain', 'sessionCost', 'intensityEvidence',
+    'intensityClassificationVersion', 'modality', 'category'];
+
 function validExposureArray(value: unknown, throughDateExclusive: string, windowDays: number): value is CompletedExposure[] {
     if (!Array.isArray(value)) return false;
     const start = addDaysToLocalDateString(throughDateExclusive, -windowDays);
+    const optionalEnum = (row: Record<string, unknown>, key: string, values: readonly string[]) =>
+        row[key] === undefined || (typeof row[key] === 'string' && values.includes(row[key] as string));
     return value.every(exposure => isObject(exposure)
-        && validLocalDate(exposure.date)
-        && exposure.date >= start
-        && exposure.date < throughDateExclusive);
+        && Object.keys(exposure).every(key => EXPOSURE_KEYS.includes(key))
+        && validLocalDate(exposure.date) && exposure.date >= start && exposure.date < throughDateExclusive
+        && numericProfile(exposure.costProfile, COST_KEYS, true)
+        && isObject(exposure.trainingRecordLike)
+        && Object.keys(exposure.trainingRecordLike).every(key => ['type', 'duration_min', 'training_effect', 'intensity_tag'].includes(key))
+        && typeof exposure.trainingRecordLike.type === 'string'
+        && nonNegative(exposure.trainingRecordLike.duration_min)
+        && nonNegative(exposure.trainingRecordLike.training_effect)
+        && typeof exposure.trainingRecordLike.intensity_tag === 'string'
+        && ['occurrenceKey', 'templateId', 'workoutId', 'intensityEvidence'].every(key => exposure[key] === undefined || typeof exposure[key] === 'string')
+        && (exposure.recoveryHours === undefined || nonNegative(exposure.recoveryHours))
+        && (exposure.intensityClassificationVersion === undefined || (Number.isSafeInteger(exposure.intensityClassificationVersion) && nonNegative(exposure.intensityClassificationVersion)))
+        && (exposure.deliveredDose === undefined || numericProfile(exposure.deliveredDose, ['plannedDurationMin', 'completedDurationMin', 'completionRatio']))
+        && (exposure.stimulusProfile === undefined || numericProfile(exposure.stimulusProfile, STIMULUS_KEYS))
+        && optionalEnum(exposure, 'stimulusConfidence', ['exact', 'inferred', 'unknown'])
+        && optionalEnum(exposure, 'stimulusDomain', ['recovery', 'endurance', 'tempo', 'threshold', 'vo2', 'anaerobic', 'mixed', 'race', 'strength', 'unknown'])
+        && optionalEnum(exposure, 'sessionCost', ['low', 'moderate', 'high', 'very_high', 'unknown'])
+        && optionalEnum(exposure, 'modality', ['Running', 'Cycling', 'Swimming', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training', 'None'])
+        && optionalEnum(exposure, 'category', ['Hard Endurance', 'Moderate Endurance', 'Easy Endurance', 'Race-Specific Endurance', 'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance', 'Field Maintenance', 'Technical Skill', 'Mobility/Recovery', 'Rest']));
 }
 
-function validSnapshot(value: unknown, throughDateExclusive: string, windowDays: number): value is TrainingHistorySnapshot {
-    if (!isObject(value)
+/** Normalized event metadata is retained for audit parity; free-text feedback is not replay input. */
+export function captureReplaySnapshot(snapshot: TrainingHistorySnapshot): TrainingHistorySnapshot {
+    return copyJson({ ...snapshot, completedEvents: snapshot.completedEvents.map(event => ({
+        ...event, athleteFeedback: { ...event.athleteFeedback, notes: null },
+    })) });
+}
+
+export function validateReplaySnapshot(value: unknown, throughDateExclusive: string, windowDays: number): value is TrainingHistorySnapshot {
+    if (!Number.isSafeInteger(windowDays) || windowDays < 1 || windowDays > MAX_TRAINING_HISTORY_REPLAY_WINDOW_DAYS
+        || !isObject(value)
         || value.throughDateExclusive !== throughDateExclusive
         || value.windowDays !== windowDays
         || !Array.isArray(value.completedEvents)
         || !validExposureArray(value.exposures, throughDateExclusive, windowDays)
+        || !value.completedEvents.every(event => isObject(event) && validLocalDate(event.date)
+            && event.date >= addDaysToLocalDateString(throughDateExclusive, -windowDays)
+            && event.date < throughDateExclusive
+            && isObject(event.athleteFeedback) && event.athleteFeedback.notes === null)
         || !isObject(value.sourceStates)
+        || !['activities', 'recommendations', 'manualTraining'].every(key => {
+            const state = (value.sourceStates as Record<string, unknown>)[key];
+            return isObject(state) && ['AVAILABLE', 'MISSING'].includes(String(state.status));
+        })
+        || (value.athleteStateEvidence !== undefined && (!isObject(value.athleteStateEvidence)
+            || !Number.isSafeInteger(value.athleteStateEvidence.observedWindowDays)
+            || (value.athleteStateEvidence.observedWindowDays as number) < 1
+            || (value.athleteStateEvidence.observedWindowDays as number) > MAX_TRAINING_HISTORY_REPLAY_WINDOW_DAYS
+            || !validExposureArray(value.athleteStateEvidence.exposures, throughDateExclusive,
+                value.athleteStateEvidence.observedWindowDays as number)))
         || typeof value.generatedAt !== 'string' || !Number.isFinite(Date.parse(value.generatedAt))
         || typeof value.revision !== 'string' || !value.revision) return false;
     return true;
@@ -80,7 +136,7 @@ export function validateTrainingHistoryReplayCapture(
             || (request.windowDays as number) < 1
             || (request.windowDays as number) > MAX_TRAINING_HISTORY_REPLAY_WINDOW_DAYS) return false;
         if (request.kind === 'snapshot') {
-            return validSnapshot(request.snapshot, expectedThroughDateExclusive, request.windowDays as number);
+            return validateReplaySnapshot(request.snapshot, expectedThroughDateExclusive, request.windowDays as number);
         }
         return request.kind === 'reconstruct'
             && validExposureArray(request.exposures, expectedThroughDateExclusive, request.windowDays as number);
@@ -115,15 +171,24 @@ export function createTrainingHistoryReplayRecorder(
         return valid;
     };
 
+    const record = (request: CapturedTrainingHistoryRequest) => {
+        try {
+            const captured = request.kind === 'snapshot'
+                ? { ...request, snapshot: captureReplaySnapshot(request.snapshot) } : copyJson(request);
+            if (!validateTrainingHistoryReplayCapture({ schemaVersion: 1, requests: [captured] }, expected.throughDateExclusive)) {
+                invalidated = true;
+            } else requests.push(captured);
+        } catch { invalidated = true; }
+    };
     const provider: TrainingHistoryProvider = {
         async reconstruct(userId, throughDateExclusive, windowDays) {
             const exposures = await source.reconstruct(userId, throughDateExclusive, windowDays);
             if (requestIsBounded(userId, throughDateExclusive, windowDays)) {
-                requests.push({
+                record({
                     kind: 'reconstruct',
                     throughDateExclusive,
                     windowDays,
-                    exposures: copyJson(exposures),
+                    exposures,
                 });
             }
             return exposures;
@@ -132,11 +197,11 @@ export function createTrainingHistoryReplayRecorder(
             async getSnapshot(userId: string, throughDateExclusive: string, windowDays: number) {
                 const snapshot = await source.getSnapshot!(userId, throughDateExclusive, windowDays);
                 if (requestIsBounded(userId, throughDateExclusive, windowDays)) {
-                    requests.push({
+                    record({
                         kind: 'snapshot' as const,
                         throughDateExclusive,
                         windowDays,
-                        snapshot: copyJson(snapshot),
+                        snapshot,
                     });
                 }
                 return snapshot;
@@ -153,15 +218,6 @@ export function createTrainingHistoryReplayRecorder(
     };
 }
 
-function stableJson(value: unknown): string {
-    if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
-    if (value && typeof value === 'object') {
-        return `{${Object.entries(value as Record<string, unknown>)
-            .sort(([left], [right]) => left.localeCompare(right))
-            .map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`).join(',')}}`;
-    }
-    return JSON.stringify(value) ?? 'null';
-}
 
 function windowed(
     exposures: readonly CompletedExposure[],
@@ -188,7 +244,8 @@ export function collapseTrainingHistoryReplay(
     capture: TrainingHistoryReplayCapture,
 ): CollapsedTrainingHistoryReplay {
     const date = preparedSnapshot.throughDateExclusive;
-    if (!validateTrainingHistoryReplayCapture(capture, date)) {
+    if (!validateReplaySnapshot(preparedSnapshot, date, preparedSnapshot.windowDays)
+        || !validateTrainingHistoryReplayCapture(capture, date)) {
         throw new Error('captured_history_replay_invalid');
     }
     const candidates: Array<{ windowDays: number; exposures: CompletedExposure[]; revision?: string }> = [{
@@ -204,7 +261,7 @@ export function collapseTrainingHistoryReplay(
     const widest = candidates.reduce((best, candidate) => candidate.windowDays > best.windowDays ? candidate : best);
     for (const candidate of candidates) {
         const expected = windowed(widest.exposures, date, candidate.windowDays);
-        if (stableJson(expected) !== stableJson(candidate.exposures)) {
+        if (JSON.stringify(canonicalise(expected)) !== JSON.stringify(canonicalise(candidate.exposures))) {
             throw new Error('captured_history_replay_inconsistent');
         }
     }

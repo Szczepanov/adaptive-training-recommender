@@ -42,12 +42,26 @@ Asynchronous; resolves training intent from completed/adherence history first. P
 The production same-day composition boundary calls `evaluateSameDayRecommendation`
 (`sameDayRecommendation.ts`), a thin typed argument-shape adapter around
 `evaluateTrainingWithIntent`; it is **not** a third evaluator or authority path. The Home
-caller omits optional injected history/check-in dependencies so production retains its normal
-service-backed semantics. TO4 offline evidence may use the same adapter only after it has
+caller injects a bounded recording wrapper around the normal service-backed history provider
+and explicit descriptor-scoped performed facts/mechanical check-ins. The wrapper delegates the
+same reads and does not change recommendation policy. TO4 offline evidence may use the same adapter only after it has
 assembled and provenance-bound the equivalent date-D inputs, at which point it injects
 in-memory broad history plus explicit narrow performed facts/mechanical check-ins to keep the
 counterfactual self-contained. Missing historical context blocks replay rather than falling
 back to a simulation scenario or current mutable state.
+
+Prospective `decisionContext` records optionally include `trainingHistoryReplay`: the prepared
+7-day operational snapshot and exact normalized provider responses requested by that evaluation,
+bounded by `ROLLING_LOAD_BUDGET_LOOKBACK_DAYS` and the existing context payload limit. Capture
+failure leaves the recommendation available; older records without this field remain blocked.
+`assembleOfflineHistoricalContext` verifies the captured user/date/revision, content hash,
+audit path/hash/history revision, policy and Warsaw evaluation instant before hydrating.
+It ignores later mutable composition documents for captured dates, uses revision-zero captures
+for failed safety gates, and never backfills uncaptured dates. The live replay preserves recorded
+provider response metadata/revisions; the canonical pass swaps only bounded broad exposure
+rows/revisions. Both passes must consume the recorded request sequence. Canonical derivation
+unknowns, malformed evidence and incomplete export windows block replay. This is TO4 evidence
+only; canonical broad history remains inactive in production and `POLICY_VERSION` is unchanged.
 
 `DecisionComposer` similarly keeps service I/O online while delegating deterministic
 source-state composition to `composeDailyDecisionInputFromSources`

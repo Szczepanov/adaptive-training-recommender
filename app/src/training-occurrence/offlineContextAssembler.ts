@@ -1,4 +1,11 @@
 /** Offline, read-only validation and replayability accounting for schema-v2 TO4 exports. */
+import { validateDecisionContext } from '../engine/decisionContext';
+import { collapseTrainingHistoryReplay } from '../engine/historyReplayCapture';
+import { POLICY_VERSION } from '../engine/policy';
+import { getLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
+import { computeHistoricalReplayDigests, computeHistoricalHistoryDigest, type HistoricalReplayProvenance,
+    type HistoricalDecisionInputs } from './historyRecommendationCounterfactual';
+import type { PreparedTo4 } from './to4EvidencePreparation';
 import { getMinimumSafetyCheckinStatus } from '../engine/safetyCheckin';
 import { resolveLocalInstant } from '../engine/localInstant';
 import {
@@ -73,17 +80,107 @@ export interface OfflineHistoricalContextAssembly {
     sourceCoverage: OfflineSourceCoverage;
 }
 
+export interface OfflineReplayOptions extends HistoricalReplayProvenance {
+    canonicalHistory: PreparedTo4['replayCanonicalHistory'];
+}
+
+async function hydrateCapturedDate(
+    evidence: OfflineSourceEvidence, userId: string, date: string, dateAlias: string,
+    options?: OfflineReplayOptions,
+): Promise<HistoricalDateInput | null> {
+    const blocked = (reason: string): HistoricalDateInput => ({ status: 'not_replayable', dateAlias, reasonCodes: [reason] });
+    if (evidence.decisionContexts?.some(row => !row || typeof row !== 'object'
+        || typeof row.recommendationId !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(row.recommendationId))) {
+        return blocked('captured_context_export_invalid');
+    }
+    const records = evidence.decisionContexts?.filter(row => row.recommendationId === date) ?? [];
+    const current = evidence.dailyRecommendations.filter(row => row.id === date);
+    const archives = evidence.dailyRecommendationRevisions.filter(row => row.recommendationId === date);
+    const recommendations = current.length ? current : archives.sort((a, b) => Number(b.id) - Number(a.id)).slice(0, 1);
+    const rec = recommendations[0]?.data;
+    const audit = rec?.recommendationAudit as Record<string, unknown> | undefined;
+    const binding = audit?.decisionContext as Record<string, unknown> | undefined;
+    if (!records.length && !binding) return null;
+    const revision = rec ? rec.revision : 0;
+    const matches = records.filter(row => row.id === String(revision));
+    if (matches.length !== 1) return blocked('captured_context_missing_or_ambiguous');
+    let record;
+    try {
+        record = await validateDecisionContext(matches[0].data, {
+            userId, date, recommendationRevision: revision as number,
+        });
+    } catch { return blocked('captured_context_invalid'); }
+    if (record.policyVersion !== POLICY_VERSION || (options && options.policyVersion !== record.policyVersion)
+        || getLocalDateString(new Date(record.evaluatedAt)) !== date) return blocked('captured_context_policy_or_instant_mismatch');
+    if (record.minimumSafetyStatus !== 'complete') {
+        return { status: 'not_applicable', dateAlias, reasonCode: `minimum_safety_checkin_${record.minimumSafetyStatus}` };
+    }
+    const path = `users/${userId}/daily_recommendations/${date}/decision_contexts/${revision}`;
+    if (recommendations.length !== 1 || rec?.userId !== userId || rec.date !== date
+        || parseDailyRecommendation(rec, path).status !== 'AVAILABLE'
+        || !binding || binding.path !== path || binding.revision !== revision
+        || binding.contentHash !== record.contentHash || audit?.policyVersion !== record.policyVersion
+        || audit.evaluatedAt !== record.evaluatedAt) return blocked('captured_context_audit_binding_mismatch');
+    const replay = record.trainingHistoryReplay;
+    if (!replay || !record.evaluatorInputs || !record.mechanicalCheckinHistory) return blocked('captured_history_missing');
+    if (audit.decisionContextRevision !== replay.preparedSnapshot.revision) return blocked('captured_history_revision_mismatch');
+    let broad;
+    try { broad = collapseTrainingHistoryReplay(replay.preparedSnapshot, replay.capture); }
+    catch { return blocked('captured_history_invalid_or_inconsistent'); }
+    if (!options) return blocked('canonical_history_not_supplied');
+    const start = addDaysToLocalDateString(date, -broad.windowDays);
+    if (options.canonicalHistory.invalidRecords > 0 || options.canonicalHistory.unknownDates.some(unknown => !unknown || (unknown >= start && unknown < date))) {
+        return blocked('canonical_history_incomplete');
+    }
+    for (const source of ['performedTrainingOccurrences', 'activities', 'dailyRecommendations'] as const) {
+        const bounds = evidence.sourceEvidenceBounds[source];
+        if (bounds.startDate > start || bounds.endDateExclusive < date) return blocked('canonical_history_window_incomplete');
+    }
+    const { exposures: _exposures, revision: _revision, ...base } = replay.preparedSnapshot;
+    void _exposures; void _revision;
+    const captured = record.evaluatorInputs;
+    const inputs: HistoricalDecisionInputs = {
+        ...captured, userId, exportedUserId: userId, date, dateAlias, evaluatedAt: record.evaluatedAt,
+        fixedActivities: captured.fixedActivities ?? [], authoredPlanBlocks: captured.authoredPlanBlocks ?? [],
+        trainingIntentProfile: captured.trainingIntentProfile ?? null, preferences: captured.preferences ?? null,
+        scheduleOverlays: captured.scheduleOverlays ?? [],
+        minimumSafetyCheckinStatus: 'complete', normalRecommendationEligible: true,
+        externalContext: captured.externalPlan ?? null, externalRestContext: captured.externalRest ?? null,
+        confirmedProgressionOverrides: new Map(captured.confirmedProgressionOverrides),
+        mechanicalCheckinHistory: record.mechanicalCheckinHistory as HistoricalDecisionInputs['mechanicalCheckinHistory'],
+        preparedHistorySnapshot: { ...base, performedTrainingFacts: record.performedTrainingFacts },
+        capturedHistoryRequests: replay.capture.requests,
+    };
+    const digests = await computeHistoricalReplayDigests(inputs, options);
+    const canonicalExposures = options.canonicalHistory.exposures.filter(row => row.date >= start && row.date < date);
+    const canonicalRevision = `canonical-replay:${await computeHistoricalHistoryDigest('canonical', canonicalExposures)}`;
+    return {
+        status: 'replayable', inputs,
+        live: { ...digests, revision: replay.preparedSnapshot.revision, exposures: broad.exposures,
+            digest: await computeHistoricalHistoryDigest(replay.preparedSnapshot.revision, broad.exposures), useCapturedRevisions: true },
+        canonical: { ...digests, revision: canonicalRevision, exposures: canonicalExposures,
+            digest: await computeHistoricalHistoryDigest(canonicalRevision, canonicalExposures) },
+    };
+}
+
 /**
  * Production validators run before any exported value can be considered. The current v2
  * exporter deliberately marks mutable historical sources unprovable; this function carries
  * those gaps into each candidate instead of rebuilding a date-D input from current state.
  */
-export function assembleOfflineHistoricalContext(
+export async function assembleOfflineHistoricalContext(
     sourceEvidence: OfflineSourceEvidence,
     userId: string,
-): OfflineHistoricalContextAssembly {
+    options?: OfflineReplayOptions,
+): Promise<OfflineHistoricalContextAssembly> {
     const { startDate, endDateExclusive } = sourceEvidence.evaluationWindow;
     const dates = dateRange(startDate, endDateExclusive);
+    const capturedByDate = new Map<string, HistoricalDateInput>();
+    for (let index = 0; index < dates.length; index += 1) {
+        const date = dates[index];
+        const captured = await hydrateCapturedDate(sourceEvidence, userId, date, `D${String(index + 1).padStart(3, '0')}`, options);
+        if (captured) capturedByDate.set(date, captured);
+    }
     const invalidByDate = new Map<string, Set<string>>();
     const globalValidationReasons = new Set<string>();
     const sourceCounts: OfflineSourceCoverage['sources'] = {};
@@ -175,6 +272,17 @@ export function assembleOfflineHistoricalContext(
     const minimumSafetyCheckin = { complete: 0, missing: 0, incomplete: 0, invalid: 0, provenIncomplete: 0 };
     const provenNotApplicable = new Map<string, string>();
     for (const date of dates) {
+        const captured = capturedByDate.get(date);
+        if (captured) {
+            if (captured.status === 'replayable') minimumSafetyCheckin.complete += 1;
+            else if (captured.status === 'not_applicable') {
+                if (captured.reasonCode === 'minimum_safety_checkin_incomplete') {
+                    minimumSafetyCheckin.incomplete += 1;
+                    minimumSafetyCheckin.provenIncomplete += 1;
+                } else minimumSafetyCheckin.missing += 1;
+            }
+            continue;
+        }
         const row = sourceEvidence.dailySubjectiveCheckins.find(item => item.id === date);
         if (!row) {
             minimumSafetyCheckin.missing += 1;
@@ -204,6 +312,13 @@ export function assembleOfflineHistoricalContext(
     const reasonsByDate = new Map<string, string[]>();
     const notReplayableByReason: Record<string, number> = {};
     for (const date of dates) {
+        const captured = capturedByDate.get(date);
+        if (captured) {
+            if (captured.status === 'not_replayable') {
+                for (const reason of captured.reasonCodes) notReplayableByReason[reason] = (notReplayableByReason[reason] ?? 0) + 1;
+            }
+            continue;
+        }
         if (provenNotApplicable.has(date)) continue;
         const reasons = [...new Set([...globalReasons, ...(invalidByDate.get(date) ?? [])])].sort();
         // No replayable shape can be created unless every required date-D source is proven.
@@ -215,6 +330,8 @@ export function assembleOfflineHistoricalContext(
     return {
         dates,
         inputForDate(date) {
+            const captured = capturedByDate.get(date);
+            if (captured) return captured;
             const notApplicable = provenNotApplicable.get(date);
             if (notApplicable) return { status: 'not_applicable', reasonCode: notApplicable, dateAlias: aliases.get(date) };
             const reasons = reasonsByDate.get(date);
