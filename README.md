@@ -99,6 +99,7 @@ Adaptive Training Recommendations & Native Session Execution
 34. **Athlete-Relative Weekly Aerobic Dose Envelope (ADR-0045)**: 28-day history-derived easy-aerobic weekly envelope with a public-health fallback, no intensity equivalence, and a conditional exact long aerobic anchor.
 35. **First-Class Raw Assessment Trial Evidence (ADR-0046)**: Extends OV with immutable raw multi-trial evidence, append-only corrections, deterministic reducers and typed derivation provenance while preserving evidence-only authority.
 36. **Fixed-Load Mean Velocity Assessment Series (ADR-0047)**: Dedicated fixed-load velocity protocols per exercise with exact load, measurement method (including importer parser version) and equipment setup as series-defining identity; no observation-key change.
+37. **Event Taxonomy, Format Identity, and Event-Specific Planning Semantics (ADR-0048)**: Extended event model for fitness races and format-specific structured coverage without contaminating core adaptation objectives.
 
 ---
 

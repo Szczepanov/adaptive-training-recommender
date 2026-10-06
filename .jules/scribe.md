@@ -17,3 +17,6 @@
 ## 2026-09-15 - Missing Root Documentation for ADR-0040
 **Learning:** Accepted ADRs need to be documented not only in the main README's feature list but also indexed properly in the central documentation hub (`docs/README.md`) under both the Decision Log and Implementation Plans if applicable.
 **Action:** When adding or auditing ADRs, ensure they are represented in the root `README.md` Technical Features section and correctly indexed in `docs/README.md`.
+## 2026-10-05 - Missing Architecture and Documentation Indexes
+**Learning:** Newly proposed ADRs and newly added files in `docs/analysis/` and `docs/plans/` are often not properly indexed in the main `README.md` Technical Features section and `docs/README.md` directories respectively.
+**Action:** Always verify that all new documentation files are explicitly registered in `docs/README.md` and high-level architectural features are registered in `README.md`.

@@ -112,6 +112,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0045: Athlete-Relative Weekly Aerobic Dose Envelope**](./adr/0045-athlete-relative-weekly-aerobic-dose.md) — *Accepted.* 28-day history-derived easy-aerobic weekly envelope with a public-health fallback, no intensity equivalence, and a conditional exact long aerobic anchor.
 * [**ADR-0046: First-Class Raw Assessment Trial Evidence**](./adr/0046-first-class-raw-assessment-trial-evidence.md) — *Accepted.* Extends OV with immutable raw multi-trial evidence, append-only corrections, deterministic reducers and typed derivation provenance while preserving evidence-only authority. Amended 2026-10-01 (D-AT-IMPORT): file imports such as WL Analysis per-frame CSV are versioned, local-only source adapters with content-digest provenance.
 * [**ADR-0047: Fixed-Load Mean Velocity Assessment Series**](./adr/0047-fixed-load-velocity-assessment-series.md) — *Accepted.* Dedicated fixed-load velocity protocols per exercise with exact load, measurement method (including importer parser version) and equipment setup as series-defining identity; no observation-key change.
+* [**ADR-0048: Event Taxonomy, Format Identity, and Event-Specific Planning Semantics**](./adr/0048-event-taxonomy-and-format-semantics.md) — *Proposed.* Extended event model for fitness races and format-specific structured coverage without contaminating core adaptation objectives.
 
 ---
 
@@ -245,6 +246,8 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-24 Serena agent-tooling adoption review**](./analysis/2026-09-24-serena-agent-tooling-adoption-review.md) — Audits why the committed Serena setup is underused, adds semantic-navigation/worktree guidance, and records client-specific rollout plus measurement recommendations.
 * [**2026-09-24 Workout library coverage audit**](./analysis/2026-09-24-workout-library-coverage-audit.md) — Audit of the active canonical workout catalog for missing specific executable coverage, leading to the addition of a direct-practice workout for deadlifts and a maximal short-sprint workout for cycling.
 * [**2026-09-25 Issue #758 cycling quality baseline diagnostic**](./analysis/2026-09-25-issue-758-cycling-quality-diagnostic.md) — Issue #758 root-cause findings for the cycling quality baseline diagnostic.
+* [**2026-10-05 Event taxonomy recon — fitness-race / HYROX support**](./analysis/2026-10-05-event-taxonomy-fitness-race-hyrox.md) — Architecture analysis of extending the event model for fitness races like HYROX, keeping composite execution and format-specific plan requirements bounded.
+* [**2026-10-05 Issue #895 WP2 + WP3 — lifecycle and exact-resume architecture analysis**](./analysis/2026-10-05-issue-895-wp2-wp3-lifecycle-resume.md) — Architecture analysis for structured execution session lifecycle idempotence and exact-resume correctness.
 
 ---
 
@@ -290,6 +293,8 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Strength, speed and power performance goals**](./plans/strength-speed-power-performance-goals.md) — *In progress.* Implementation plan for typed measurable strength, speed and power targets (Stage 1 core implemented).
 * [**Nutrition Ingestion**](./plans/nutrition-ingestion.md) — *Implemented.* Provider-neutral nutrition ingestion and persistence architecture, while strictly preserving that unverified or incomplete dietary logs must not exert automated training recommendation authority.
 * [**Previous-day calorie tracking scoring**](./plans/previous-day-calorie-tracking-scoring.md) — *In progress (PR #710; CI/merge pending).* Adds optional D-1 behavioral logging-quality context and retrospective display while preserving ADR-0042 zero recommendation authority.
+* [**Event taxonomy + HYROX fitness-race implementation plan**](./plans/2026-10-05-event-taxonomy-fitness-race-hyrox.md) — *Ready.* Implementation plan for ADR-0048, adding structured HYROX coverage and exact format identity without creating an independent optimizer.
+* [**Issue #895 WP2 + WP3 — lifecycle idempotence and exact-resume implementation plan**](./plans/2026-10-05-issue-895-wp2-wp3-lifecycle-resume.md) — *Ready.* Implementation plan for structured execution terminal transitions and exact-resume.
 
 ---
 
