@@ -80,7 +80,7 @@ function validExposureArray(value: unknown, throughDateExclusive: string, window
         && (exposure.recoveryHours === undefined || nonNegative(exposure.recoveryHours))
         && (exposure.intensityClassificationVersion === undefined || (Number.isSafeInteger(exposure.intensityClassificationVersion) && nonNegative(exposure.intensityClassificationVersion)))
         && (exposure.deliveredDose === undefined || numericProfile(exposure.deliveredDose, ['plannedDurationMin', 'completedDurationMin', 'completionRatio']))
-        && (exposure.stimulusProfile === undefined || numericProfile(exposure.stimulusProfile, STIMULUS_KEYS))
+        && (exposure.stimulusProfile === undefined || numericProfile(exposure.stimulusProfile, STIMULUS_KEYS, true))
         && optionalEnum(exposure, 'stimulusConfidence', ['exact', 'inferred', 'unknown'])
         && optionalEnum(exposure, 'stimulusDomain', ['recovery', 'endurance', 'tempo', 'threshold', 'vo2', 'anaerobic', 'mixed', 'race', 'strength', 'unknown'])
         && optionalEnum(exposure, 'sessionCost', ['low', 'moderate', 'high', 'very_high', 'unknown'])

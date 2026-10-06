@@ -430,7 +430,7 @@ describe('captured offline replay', () => {
     });
 
     it.each([
-        ['stimulusProfile', 'invalid'], ['deliveredDose', 'invalid'], ['recoveryHours', -1],
+        ['stimulusProfile', 'invalid'], ['stimulusProfile', { aerobicEndurance: 1 }], ['deliveredDose', 'invalid'], ['recoveryHours', -1],
         ['modality', 'invalid'], ['stimulusConfidence', 'invalid'], ['costProfile', { systemic: 0 }],
     ])('rejects rehashed malformed authority field %s before evaluating', async (field, value) => {
         const { record, date } = await capturedExport();
