@@ -174,7 +174,11 @@ export async function prepareCatalogSessionLaunch(
 ): Promise<PreparedSessionLaunch> {
     const definition = adaptCatalogPrescriptionToSessionDefinition(prescription);
     const definitionHash = await hashSessionDefinition(definition);
-    const executionPrescription = await createExecutionPrescriptionFromCatalog(prescription, definitionHash);
+    const unsignedPrescription = {
+        ...await createExecutionPrescriptionFromCatalog(prescription, definitionHash),
+        definitionSnapshot: snapshotSessionDefinition(definition),
+    };
+    const executionPrescription = { ...unsignedPrescription, prescriptionHash: await hashExecutionPrescription(unsignedPrescription) };
     await executionPrescriptionService.savePrescription(userId, executionPrescription);
     const fitIdentity = await computeCatalogFitIdentity(prescription);
 

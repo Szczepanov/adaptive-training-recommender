@@ -19,6 +19,7 @@ import { sessionDefinitionService } from '../services/sessionDefinitionService';
 import { playRestCompleteSound } from '../utils/audioFeedback';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { projectSessionProgress } from '../sessions/sessionProgressProjection';
+import { overlayQueuedDiaryState } from '../sessions/sessionDiaryResume';
 import { prepareFixtureSessionLaunch } from '../services/sessionAuthoringService';
 import { convergeCompletedExecution } from '../services/sessionCompletionConvergence';
 import { resolveEffectiveChoiceEntries, resolveEffectiveSession } from '../sessions/choiceResolution';
@@ -69,7 +70,6 @@ export interface UseSessionRunnerResult {
 
     startFixtureSession: (fixture: SessionDefinition) => Promise<void>;
     startSession: (definition: SessionDefinition, source: SessionSourceRef, options?: { occurrenceId?: string; prescriptionHash?: string; allowDuplicateCompleted?: boolean }) => Promise<void>;
-    restoreSessionDefinition: (definition: SessionDefinition) => Promise<void>;
     selectStep: (blockIndex: number, stepIndex: number) => void;
     nextStep: () => void;
     prevStep: () => void;
@@ -143,8 +143,11 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const [resumeDegradedReason, setResumeDegradedReason] = useState<string | null>(null);
     const [lastRemovedEntry, setLastRemovedEntry] = useState<SessionEntry | null>(null);
     const diaryFailedRef = useRef(false);
+    const refreshDiaryRef = useRef<(() => void) | null>(null);
     const diaryWriteOptions = useMemo(() => ({
         acknowledgeLocally: true,
+        onLocallyAccepted: () => { refreshDiaryRef.current?.(); },
+        onAcknowledged: () => { refreshDiaryRef.current?.(); },
         onFailed: () => {
             diaryFailedRef.current = true;
             setSyncStatus('unavailable');
@@ -153,34 +156,38 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
 
     useEffect(() => {
         if (!execution) return;
-        const stopSync = sessionExecutionService.watchDiarySync(userId, execution.executionId, pending => {
-            if (!diaryFailedRef.current && resumeStatus !== 'degraded') setSyncStatus(pending ? 'queued' : 'synced');
-        }, diaryWriteOptions.onFailed);
-        const stopEntries = sessionExecutionService.watchEntries(userId, execution.executionId, () => {
-            void sessionExecutionService.getResumeDiaryState(userId, execution.executionId).then(diary => {
+        let latestEntries: SessionEntry[] | null = null;
+        const refresh = () => {
+            if (!latestEntries) return;
+            try {
+                const diary = overlayQueuedDiaryState(latestEntries, null, sessionExecutionService.getDiaryReceipts(userId, execution.executionId));
                 setEntries(diary.entries);
                 setLastRemovedEntry(diary.lastDeletedEntry);
                 if (diary.status === 'degraded') {
                     setResumeStatus('degraded');
                     setResumeDegradedReason(diary.reason);
-                    setRawDefinition(null);
                     setSyncStatus('unavailable');
                     return;
                 }
-                if (rawDefinition) {
-                    const cursor = projectSessionProgress(rawDefinition, diary.entries);
-                    setActiveBlockIndex(cursor.blockIndex);
-                    setActiveStepIndex(cursor.stepIndex);
+                if (rawDefinition && resumeDegradedReason === 'queued-diary-causal-conflict') {
+                    setResumeStatus('ready');
+                    setResumeDegradedReason(null);
                 }
-                if (!diaryFailedRef.current && resumeStatus !== 'degraded') {
-                    setSyncStatus(diary.failedReceiptCount > 0
-                        ? 'unavailable'
-                        : diary.queuedReceiptCount > 0 ? 'queued' : 'synced');
-                }
-            }).catch(() => setSyncStatus('unavailable'));
+                setSyncStatus(diaryFailedRef.current || diary.failedReceiptCount > 0
+                    ? 'unavailable' : diary.queuedReceiptCount > 0 ? 'queued' : 'synced');
+            } catch { setSyncStatus('unavailable'); }
+        };
+        refreshDiaryRef.current = refresh;
+        const stopSync = sessionExecutionService.watchDiarySync(userId, execution.executionId, pending => {
+            refresh();
+            if (!latestEntries && !diaryFailedRef.current && resumeStatus !== 'degraded') setSyncStatus(pending ? 'queued' : 'synced');
+        }, () => { diaryWriteOptions.onFailed(); refresh(); });
+        const stopEntries = sessionExecutionService.watchEntries(userId, execution.executionId, (_entries, _deleted, all) => {
+            latestEntries = all;
+            refresh();
         }, diaryWriteOptions.onFailed);
-        return () => { stopSync(); stopEntries(); };
-    }, [userId, execution, diaryWriteOptions, rawDefinition, resumeStatus]);
+        return () => { refreshDiaryRef.current = null; stopSync(); stopEntries(); };
+    }, [userId, execution, diaryWriteOptions, resumeStatus, resumeDegradedReason, rawDefinition]);
     // A React state update is not synchronous. Keep this separate from `execution` so a
     // double-tap in the gap before the start write resolves cannot create two executions.
     // The H4 claim transaction remains the cross-tab authority for claimed intraday members;
@@ -252,11 +259,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
 
         sessionExecutionService.findInProgressExecution(userId)
             .then(async existing => {
-                if (!existing) {
-                    const completed = await sessionExecutionService.findLatestCompletedExecution(userId, getLocalDateString());
-                    if (completed) void convergeCompletedExecution(userId, completed);
-                    return;
-                }
+                if (!existing) return;
                 const diary = await sessionExecutionService.getResumeDiaryState(userId, existing.executionId);
                 if (cancelled) return;
                 setExecution(existing);
@@ -309,6 +312,30 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 if (!cancelled) setIsRestoring(false);
             });
         return () => { cancelled = true; };
+    }, [userId]);
+
+    useEffect(() => {
+        let active = true;
+        let recovering = false;
+        const recover = async () => {
+            if (recovering) return;
+            recovering = true;
+            try {
+                const terminal = await sessionExecutionService.getTerminalExecutions(userId);
+                for (const completed of terminal) {
+                    if (!active) break;
+                    if (completed.state === 'completed') await convergeCompletedExecution(userId, completed);
+                    else if (completed.occurrenceId) await sessionOccurrenceService.transitionOccurrenceState(
+                        userId, completed.occurrenceId, 'abandoned', completed.updatedAt,
+                    ).catch(error => console.warn('[useSessionRunner] Abandon recovery failed:', error));
+                }
+            } catch (error) {
+                console.warn('[useSessionRunner] Terminal recovery unavailable:', error);
+            } finally { recovering = false; }
+        };
+        void recover();
+        window.addEventListener('online', recover);
+        return () => { active = false; window.removeEventListener('online', recover); };
     }, [userId]);
 
     // Wall-clock timers: the interval is only a repaint trigger. Both the session
@@ -424,7 +451,8 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             fitWorkoutFingerprintKind?: FitWorkoutFingerprintKind;
         } = {},
     ) => {
-        if (isRestoring || execution?.state === 'in_progress' || startInFlightRef.current) return;
+        if (isRestoring || resumeStatus === 'degraded' || execution?.state === 'in_progress' || startInFlightRef.current) return;
+        if (!options.prescriptionHash) throw new Error('A pinned prescription is required to start a session.');
         startInFlightRef.current = true;
         activeRestRef.current = null;
         manualRestDeadlineRef.current = null;
@@ -460,11 +488,29 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 ...(options.allowDuplicateCompleted ? { allowDuplicateCompleted: true } : {}),
             });
             setExecution(exec);
+            diaryFailedRef.current = false;
+            setResumeStatus('ready');
+            setResumeDegradedReason(null);
             setSyncStatus('synced');
             if (exec.executionId !== executionId) {
-                const existingEntries = await sessionExecutionService.getEntries(userId, exec.executionId);
-                setEntries(existingEntries);
+                const diary = await sessionExecutionService.getResumeDiaryState(userId, exec.executionId);
+                setEntries(diary.entries);
+                setLastRemovedEntry(diary.lastDeletedEntry);
                 setElapsedSeconds(sessionElapsedSecondsAt(exec.startedAt, Date.now()));
+                const resolved = exec.prescriptionHash
+                    ? await resolveSessionDefinition(userId, exec.sessionSource, exec.prescriptionHash) : null;
+                if (diary.status === 'degraded' || resolved?.status !== 'AVAILABLE') {
+                    setRawDefinition(null);
+                    setResumeStatus('degraded');
+                    setResumeDegradedReason(diary.status === 'degraded' ? diary.reason : 'prescription-unavailable');
+                    setSyncStatus('unavailable');
+                    return;
+                }
+                setRawDefinition(resolved.data);
+                const cursor = projectSessionProgress(resolved.data, diary.entries);
+                setActiveBlockIndex(cursor.blockIndex);
+                setActiveStepIndex(cursor.stepIndex);
+                setSyncStatus(diary.failedReceiptCount > 0 ? 'unavailable' : diary.queuedReceiptCount > 0 ? 'queued' : 'synced');
             }
         } catch (error) {
             setRawDefinition(null);
@@ -473,7 +519,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         } finally {
             startInFlightRef.current = false;
         }
-    }, [execution?.state, isRestoring, userId]);
+    }, [execution?.state, isRestoring, resumeStatus, userId]);
 
     const startFixtureSession = useCallback(async (fixture: SessionDefinition) => {
         const prepared = await prepareFixtureSessionLaunch(userId, fixture);
@@ -481,14 +527,6 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             prescriptionHash: prepared.binding.prescriptionHash,
         });
     }, [startSession, userId]);
-
-    const restoreSessionDefinition = useCallback(async (nextDefinition: SessionDefinition) => {
-        if (!execution || execution.state !== 'in_progress') return;
-        const existingEntries = await sessionExecutionService.getEntries(userId, execution.executionId);
-        setRawDefinition(nextDefinition);
-        setEntries(existingEntries);
-        setElapsedSeconds(sessionElapsedSecondsAt(execution.startedAt, Date.now()));
-    }, [execution, userId]);
 
     const selectStep = useCallback((blockIndex: number, stepIndex: number) => {
         if (!definition) return;
@@ -817,7 +855,6 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 ...(payload.unexpectedFatigue !== undefined ? { unexpectedFatigue: payload.unexpectedFatigue } : {}),
                 ...(note ? { note } : {}),
             } : undefined;
-            const persistedEntries = await sessionExecutionService.getEntries(userId, execution.executionId);
             const outcome = await sessionExecutionService.transitionExecutionTerminal(
                 userId,
                 execution.executionId,
@@ -828,6 +865,32 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                     ...(completionEvidence ? { completionEvidence } : {}),
                 },
                 async (batch, terminalExecution) => {
+                    if (payload?.tissueFeedback?.length) {
+                        const existingCheckin = await checkinService.getCheckin(userId, terminalExecution.date);
+                        const existingResponses = (existingCheckin?.tissueResponses ?? {}) as Partial<Record<BodyRegion, RegionTissueResponse>>;
+                        const tissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> = { ...existingResponses };
+                        for (const item of payload.tissueFeedback) {
+                            const existingSource = existingResponses[item.region]?.sourceSessionRef;
+                            if (existingSource && (
+                                existingSource.kind !== 'execution'
+                                || existingSource.id !== terminalExecution.executionId
+                                || existingSource.date !== terminalExecution.date
+                            )) throw new Error(`A tissue response for ${item.region} is already linked to another session`);
+                            tissueResponses[item.region] = {
+                                region: item.region,
+                                morningState: existingResponses[item.region]?.morningState ?? 'normal',
+                                painDuringTraining: item.painDuringTraining,
+                                afterTrainingState: item.afterTrainingState ?? item.painDuringTraining,
+                                sourceSessionRef: { kind: 'execution', id: terminalExecution.executionId, date: terminalExecution.date },
+                            };
+                        }
+                        await checkinService.upsertCheckin(userId, {
+                            date: terminalExecution.date,
+                            painOrInjury: true,
+                            tissueResponses,
+                        });
+                    }
+                    const persistedEntries = await sessionExecutionService.getEntries(userId, execution.executionId);
                     if (!persistedEntries.some(entry => entry.payload.kind === 'repetition')) return;
                     const adaptedSession = adaptNormalizedExecutionToStrengthSession({
                         execution: terminalExecution,
@@ -839,37 +902,8 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 },
             );
             setExecution(outcome.execution);
-            if (outcome.status === 'already_abandoned') return;
+            if (outcome.status === 'already_abandoned') throw new Error('This session was already abandoned. Its logged entries are retained.');
 
-            if (outcome.status === 'transitioned' && payload?.tissueFeedback?.length) {
-                try {
-                    const existingCheckin = await checkinService.getCheckin(userId, outcome.execution.date);
-                    const existingResponses = (existingCheckin?.tissueResponses ?? {}) as Partial<Record<BodyRegion, RegionTissueResponse>>;
-                    const tissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> = { ...existingResponses };
-                    for (const item of payload.tissueFeedback) {
-                        const existingSource = existingResponses[item.region]?.sourceSessionRef;
-                        if (existingSource && (
-                            existingSource.kind !== 'execution'
-                            || existingSource.id !== outcome.execution.executionId
-                            || existingSource.date !== outcome.execution.date
-                        )) throw new Error(`A tissue response for ${item.region} is already linked to another session`);
-                        tissueResponses[item.region] = {
-                            region: item.region,
-                            morningState: existingResponses[item.region]?.morningState ?? 'normal',
-                            painDuringTraining: item.painDuringTraining,
-                            afterTrainingState: item.afterTrainingState ?? item.painDuringTraining,
-                            sourceSessionRef: { kind: 'execution', id: outcome.execution.executionId, date: outcome.execution.date },
-                        };
-                    }
-                    await checkinService.upsertCheckin(userId, {
-                        date: outcome.execution.date,
-                        painOrInjury: true,
-                        tissueResponses,
-                    });
-                } catch (err) {
-                    console.warn('[useSessionRunner] Failed to persist tissue response:', err);
-                }
-            }
             await convergeCompletedExecution(userId, outcome.execution, definition?.dominantModality);
         })();
         terminalInFlightRef.current = operation;
@@ -909,7 +943,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
 
             if (outcome.status === 'already_completed') {
                 await convergeCompletedExecution(userId, outcome.execution, definition?.dominantModality);
-                return;
+                throw new Error('This session was already completed.');
             }
             if (outcome.execution.occurrenceId) {
                 try {
@@ -954,7 +988,6 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
 
         startFixtureSession,
         startSession,
-        restoreSessionDefinition,
         selectStep,
         nextStep,
         prevStep,

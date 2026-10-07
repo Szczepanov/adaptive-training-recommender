@@ -413,6 +413,12 @@ export class SessionExecutionService {
             });
         } catch (error) {
             if (error instanceof ExecutionSlotConflictError) throw error;
+            // A redo can lose at rules before the SDK retries the transaction.
+            // Reuse only a proven in-progress winner in this exact launch slot.
+            if ((error as { code?: string })?.code === 'permission-denied') {
+                const winner = await this.findExistingExecution(userId, params);
+                if (winner?.state === 'in_progress') return winner;
+            }
             if (!isFirestoreUnavailable(error)) throw error;
             return this.queueOfflineExecutionClaim(userId, executionId, params);
         }
@@ -449,7 +455,10 @@ export class SessionExecutionService {
         batch.set(this.executionRef(userId, mutation.executionId), { updatedAt: mutation.at }, { merge: true });
         return commitDiaryWrite(batch, marker, {
             ...options,
-            onLocallyAccepted: () => { saveDiaryReceipt(userId, { mutation, state: 'queued' }); },
+            onLocallyAccepted: () => {
+                saveDiaryReceipt(userId, { mutation, state: 'queued' });
+                options?.onLocallyAccepted?.();
+            },
             onAcknowledged: () => {
                 removeDiaryReceipt(userId, mutation.executionId, mutation.id);
                 options?.onAcknowledged?.();
@@ -662,7 +671,7 @@ export class SessionExecutionService {
         return readDiaryReceipts(userId, executionId);
     }
 
-    watchEntries(userId: string, executionId: string, next: (entries: SessionEntry[], deleted: SessionEntry | null) => void, failed: (error: unknown) => void): () => void {
+    watchEntries(userId: string, executionId: string, next: (entries: SessionEntry[], deleted: SessionEntry | null, all: SessionEntry[]) => void, failed: (error: unknown) => void): () => void {
         return onSnapshot(this.entriesColl(userId, executionId), snapshot => {
             const all = snapshot.docs.flatMap(item => {
                 const parsed = parseSessionEntryDocument(item.data(), item.ref.path);
@@ -670,7 +679,7 @@ export class SessionExecutionService {
             });
             const entries = all.filter(entry => !entry.deletedAt).sort((a, b) => a.completedAt.localeCompare(b.completedAt));
             const deleted = all.filter(entry => entry.deletedAt).sort((a, b) => b.deletedAt!.localeCompare(a.deletedAt!))[0] ?? null;
-            next(entries, deleted);
+            next(entries, deleted, all);
         }, failed);
     }
 
@@ -716,14 +725,14 @@ export class SessionExecutionService {
      * them silently, which let a malformed or cross-linked entry set disappear from range
      * reads without incrementing `invalidRecords`.
      */
-    private async readEntries(userId: string, executionId: string): Promise<{ entries: SessionEntry[]; invalidRecords: number }> {
+    private async readEntries(userId: string, executionId: string, includeDeleted = false): Promise<{ entries: SessionEntry[]; invalidRecords: number }> {
         const snap = await getDocs(this.entriesColl(userId, executionId));
         const entries: SessionEntry[] = [];
         let invalidRecords = 0;
         for (const docSnap of snap.docs) {
             const parsed = parseSessionEntryDocument(docSnap.data(), docSnap.ref.path);
             if (parsed.status === 'AVAILABLE' && parsed.data.executionId === executionId) {
-                if (!parsed.data.deletedAt) entries.push(parsed.data);
+                if (includeDeleted || !parsed.data.deletedAt) entries.push(parsed.data);
             } else if (parsed.status === 'INVALID' || parsed.status === 'AVAILABLE') {
                 invalidRecords += 1;
             }
@@ -745,7 +754,7 @@ export class SessionExecutionService {
         const candidates: SessionExecution[] = [];
         for (const docSnap of snap.docs) {
             const parsed = parseSessionExecutionDocument(docSnap.data(), docSnap.ref.path);
-            if (parsed.status === 'AVAILABLE' && parsed.data.state === 'in_progress') {
+            if (parsed.status === 'AVAILABLE' && parsed.data.executionId === docSnap.id && parsed.data.state === 'in_progress') {
                 candidates.push(parsed.data);
             }
         }
@@ -770,28 +779,27 @@ export class SessionExecutionService {
     }
 
     async getResumeDiaryState(userId: string, executionId: string) {
-        const [persistedEntries, persistedLastDeletedEntry] = await Promise.all([
-            this.getEntries(userId, executionId),
-            this.getLastDeletedEntry(userId, executionId),
-        ]);
+        const { entries: persistedEntries, invalidRecords } = await this.readEntries(userId, executionId, true);
+        if (invalidRecords > 0) throw new Error('The execution diary contains invalid entries.');
         return overlayQueuedDiaryState(
             persistedEntries,
-            persistedLastDeletedEntry,
+            null,
             readDiaryReceipts(userId, executionId),
         );
     }
 
-    async findLatestCompletedExecution(userId: string, date: string): Promise<SessionExecution | null> {
+    async getTerminalExecutions(userId: string): Promise<SessionExecution[]> {
         const collRef = collection(this.db, 'users', userId, 'session_executions');
-        const snap = await getDocs(query(collRef, where('date', '==', date)));
+        // ponytail: scan terminal history on recovery; add projection checkpoints if history size matters.
+        const snap = await getDocs(query(collRef, where('state', 'in', ['completed', 'abandoned'])));
         const candidates: SessionExecution[] = [];
         for (const docSnap of snap.docs) {
             const parsed = parseSessionExecutionDocument(docSnap.data(), docSnap.ref.path);
-            if (parsed.status === 'AVAILABLE' && parsed.data.executionId === docSnap.id && parsed.data.state === 'completed') {
+            if (parsed.status === 'AVAILABLE' && parsed.data.executionId === docSnap.id && parsed.data.state !== 'in_progress') {
                 candidates.push(parsed.data);
             }
         }
-        return candidates.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0] ?? null;
+        return candidates.sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
     }
 
     /**
@@ -863,6 +871,8 @@ export class SessionExecutionService {
         },
         addWinnerWrites?: (batch: WriteBatch, terminalExecution: SessionExecution) => void | Promise<void>,
     ): Promise<TerminalTransitionResult> {
+        // A rejected queued set must settle before winner writes derive performance from entries.
+        await waitForPendingWrites(this.db);
         const ref = this.executionRef(userId, executionId);
         const read = async (): Promise<SessionExecution> => {
             const snap = await getDoc(ref);

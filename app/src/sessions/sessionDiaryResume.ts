@@ -1,6 +1,7 @@
 import type { SessionEntry } from './models';
 import type { DiaryReceipt } from '../services/sessionDiaryReceipts';
 import { canonicalizeJson } from '../utils/canonicalJson';
+import { validateSessionEntry } from './validation';
 
 export type ResumeDiaryOverlayResult =
     | {
@@ -42,9 +43,7 @@ export function overlayQueuedDiaryState(
 ): ResumeDiaryOverlayResult {
     const failedReceiptCount = receipts.filter(receipt => receipt.state === 'failed').length;
     const queued = receipts
-        .filter(receipt => receipt.state === 'queued' && receipt.mutation.targetKind === 'entry')
-        .sort((left, right) => left.mutation.at.localeCompare(right.mutation.at)
-            || left.mutation.id.localeCompare(right.mutation.id));
+        .filter(receipt => receipt.state === 'queued' && receipt.mutation.targetKind === 'entry');
     const queuedReceiptCount = queued.length;
 
     const states = new Map<string, SessionEntry>();
@@ -62,33 +61,60 @@ export function overlayQueuedDiaryState(
 
     let conflict = false;
     for (const [targetId, targetReceipts] of byTarget) {
-        let current: SessionEntry | null = states.get(targetId) ?? null;
-        const seenIds = new Set<string>();
+        const current = states.get(targetId) ?? null;
+        const mutations = new Map<string, DiaryReceipt['mutation']>();
         for (const receipt of targetReceipts) {
             const mutation = receipt.mutation;
-            if (seenIds.has(mutation.id)) {
+            const parsed = validateSessionEntry(mutation.after);
+            if (!parsed.ok || parsed.value.id !== targetId
+                || parsed.value.executionId !== mutation.executionId
+                || parsed.value.diaryMutationId !== mutation.id
+                || (mutation.before && (mutation.before.id !== targetId
+                    || mutation.before.executionId !== mutation.executionId))) {
                 conflict = true;
                 break;
             }
-            seenIds.add(mutation.id);
-            const after = mutation.after as SessionEntry;
-            if (same(current, after)) {
-                // Firebase may have already materialized this mutation while the local
-                // receipt has not yet been removed. Treat the receipt as converged.
-                continue;
-            }
-            if (!same(current, mutation.before)) {
+            const duplicate = mutations.get(mutation.id);
+            if (duplicate && !same(duplicate, mutation)) {
                 conflict = true;
                 break;
             }
-            current = after;
+            mutations.set(mutation.id, mutation);
         }
         if (conflict) break;
-        if (current) states.set(targetId, current);
-        else states.delete(targetId);
+        // ponytail: quadratic per-target chain scan; index canonical states if long offline edit chains matter.
+        const remaining = [...mutations.values()];
+        const roots = remaining.filter(mutation => !remaining.some(other => same(other.after, mutation.before)));
+        if (roots.length !== 1) { conflict = true; break; }
+        let tail = roots[0].before;
+        let matchesPersisted = same(current, tail);
+        while (remaining.length > 0) {
+            const next = remaining.filter(mutation => same(mutation.before, tail));
+            if (next.length !== 1) {
+                conflict = true;
+                break;
+            }
+            tail = next[0].after as SessionEntry;
+            matchesPersisted ||= same(current, tail);
+            remaining.splice(remaining.indexOf(next[0]), 1);
+        }
+        if (conflict || !matchesPersisted) { conflict = true; break; }
+        states.set(targetId, tail as SessionEntry);
     }
 
-    const materialized = [...states.values()];
+    for (const entry of states.values()) {
+        if (entry.deletedAt) continue;
+        const governor = entry.governingChoiceEntryId ? states.get(entry.governingChoiceEntryId) : null;
+        const predecessor = entry.supersedesChoiceEntryId ? states.get(entry.supersedesChoiceEntryId) : null;
+        if (entry.governingChoiceEntryId && (!governor || governor.deletedAt
+            || governor.payload.kind !== 'choice' || governor.payload.optionId !== entry.selectedOptionId)
+            || entry.supersedesChoiceEntryId && (!predecessor || predecessor.deletedAt
+                || predecessor.payload.kind !== 'choice' || entry.payload.kind !== 'choice'
+                || predecessor.payload.choiceId !== entry.payload.choiceId)) conflict = true;
+    }
+
+    // A conflict must not publish a partially replayed queue as performed work.
+    const materialized = conflict ? [...persistedEntries, ...(persistedLastDeletedEntry ? [persistedLastDeletedEntry] : [])] : [...states.values()];
     const entries = materialized
         .filter(entry => entry.deletedAt == null)
         .sort((left, right) => left.completedAt.localeCompare(right.completedAt) || left.id.localeCompare(right.id));

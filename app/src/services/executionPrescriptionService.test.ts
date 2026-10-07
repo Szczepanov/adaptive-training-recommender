@@ -109,6 +109,7 @@ describe('ExecutionPrescriptionService', () => {
             await service.savePrescription('u1', prescription);
 
             expect(mockRunTransaction).toHaveBeenCalledOnce();
+            expect(mockGetDoc).toHaveBeenCalledWith({ path: 'users/u1/execution_prescriptions/' + prescriptionHash });
             const stored = docStore.get('users/u1/execution_prescriptions/' + prescriptionHash);
             expect(stored).toBeDefined();
             expect(stored?.userId).toBe('u1');

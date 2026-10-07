@@ -195,6 +195,8 @@ export class SessionResponseService {
      * transactionally so concurrent retries cannot race into two blind `set` operations or
      * overwrite `createdAt`. This transaction is intentionally scoped to the H4 completion
      * upsert rather than changing the offline behavior of the older generic create API.
+     * Completion recovery sets preserveExisting so original evidence never replaces a
+     * later athlete correction, including a correction racing the initial create.
      */
     async recordOrUpdateResponse(
         userId: string,
@@ -205,13 +207,14 @@ export class SessionResponseService {
         facts: ResponseFacts,
         occurrenceId?: string,
         now: string = new Date().toISOString(),
+        options: { preserveExisting?: boolean } = {},
     ): Promise<void> {
         const definedFacts = definedResponseFacts(facts);
         if (Object.keys(definedFacts).length === 0) return;
 
         const existing = await this.getResponseForWindow(userId, sourceSession, window);
         if (existing) {
-            await this.updateResponseFacts(userId, existing.responseId, definedFacts, now);
+            if (!options.preserveExisting) await this.updateResponseFacts(userId, existing.responseId, definedFacts, now);
             return;
         }
 
@@ -232,7 +235,7 @@ export class SessionResponseService {
         await runTransaction(this.db, async transaction => {
             const raced = await transaction.get(responseRef);
             if (raced.exists()) {
-                transaction.update(responseRef, { ...definedFacts, updatedAt: now });
+                if (!options.preserveExisting) transaction.update(responseRef, { ...definedFacts, updatedAt: now });
                 return;
             }
             transaction.set(responseRef, response);

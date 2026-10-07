@@ -1,3 +1,4 @@
+import { hashSessionDefinition } from '../sessions/sessionDefinitionHash';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Recommendation } from '../engine/models';
 import type { ExecutionPrescription } from '../sessions/models';
@@ -138,7 +139,7 @@ describe('prepareCatalogSessionLaunch (M3.1/M3.4)', () => {
 });
 
 describe('prepareAuthoredOccurrenceLaunch (M3.3)', () => {
-    it('stores a distinct content-addressed prescription while retaining the source definition hash', async () => {
+    it('pins accepted executable content while retaining the source hash as provenance', async () => {
         const source = {
             kind: 'manual' as const,
             definitionId: 'manual-1',
@@ -165,7 +166,7 @@ describe('prepareAuthoredOccurrenceLaunch (M3.3)', () => {
         expect(lastSave).toBeDefined();
         const saved = lastSave![1];
         expect(saved.sessionSource).toEqual(source);
-        expect(saved.definitionHash).toBe(source.contentHash);
+        expect(saved.definitionHash).toBe(await hashSessionDefinition(definition));
         expect(saved.blocks).toEqual(definition.blocks);
     });
 });

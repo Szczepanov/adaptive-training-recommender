@@ -1876,7 +1876,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
                   && !('completedAt' in request.resource.data)
                   && !('completionEvidence' in request.resource.data))))
         );
-      allow delete: if isOwner(userId);
+      allow delete: if isOwner(userId) && resource.data.state == 'in_progress';
 
       match /entries/{entryId} {
         allow read: if isOwner(userId);

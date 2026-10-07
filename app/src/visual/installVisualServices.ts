@@ -173,6 +173,7 @@ export function installVisualServices(fixture: VisualFixture): void {
   externalPlanService.getRevisionState = async () => (plan
     ? { status: 'AVAILABLE', data: plan, revision: String(plan.revision) }
     : { status: 'MISSING' });
+  externalPlanService.getActivationState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
   externalPlanService.getPlacementState = async () => ({ status: 'MISSING' });
   externalPlanService.savePlacement = async (_userId, placement) => ({
     ...placement, userId: fixture.input.userId, updatedAt: fixture.input.date,
@@ -230,7 +231,11 @@ export function installVisualServices(fixture: VisualFixture): void {
 
   // The general session runner owns its execution records independently of the
   // retired Strength-session service. Keep visual scenarios local and repeatable.
-  sessionExecutionService.findInProgressExecution = async () => null;
+  sessionExecutionService.findInProgressExecution = async () => fixture.resumeExecution ?? null;
+  sessionExecutionService.getResumeDiaryState = async () => ({ status: 'ready', entries: [], lastDeletedEntry: null, queuedReceiptCount: 0, failedReceiptCount: 0 });
+  sessionExecutionService.getTerminalExecutions = async () => [];
+  sessionExecutionService.watchDiarySync = () => () => {};
+  sessionExecutionService.watchEntries = () => () => {};
   sessionExecutionService.getEntries = async () => [];
   sessionExecutionService.getExecutionsInRange = async () => ({ executions: [], invalidRecords: 0 });
   sessionExecutionService.getExecution = async () => ({ status: 'MISSING' });

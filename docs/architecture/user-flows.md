@@ -328,9 +328,10 @@ at the `App` level.
 
 An in-progress structured execution is global account state for resume purposes. A stored
 prescription that cannot be resolved is fail-closed instead of allowing a second session to
-start over ambiguous execution state. The recovery action returns to Home, matching the
-`App`-level `onClose` contract, and the copy tells the athlete to reopen the originating
-session so the exact snapshot can be restored.
+start over ambiguous execution state. The degraded runner retains the execution and entry evidence, pauses logging and new starts,
+and offers Retry recovery. Resume uses pinned prescription bytes and accepted queued diary
+receipts; it never substitutes current source content or reconstructs an in-flight rest.
+Broader recovery navigation remains follow-up work under #723.
 
 ### 6. Week plan
 

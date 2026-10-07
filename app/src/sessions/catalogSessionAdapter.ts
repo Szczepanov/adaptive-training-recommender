@@ -12,7 +12,6 @@ import type {
     SessionLoad,
 } from './models';
 import { hashExecutionPrescription } from './sessionDefinitionHash';
-import { snapshotSessionDefinition } from './sessionDefinitionSnapshot';
 
 function mapBlockRole(role: string): BlockRole {
     switch (role) {
@@ -232,7 +231,6 @@ export async function createExecutionPrescriptionFromCatalog(
         blocks: sessionDef.blocks,
         // Snapshotted as of today's launch (M3.2), so a later edit to this workout's live
         // catalog entry can't rewrite what this recommendation actually displayed/prescribed.
-        definitionSnapshot: snapshotSessionDefinition(sessionDef),
         displayMetadata: {
             title: sessionDef.title,
             ...(sessionDef.summary !== undefined ? { summary: sessionDef.summary } : {}),

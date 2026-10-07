@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RangeOrNumber, SessionDefinition, SessionEntry, SessionEntryPayload, SessionExecution, SessionReferenceBinding, SessionStep } from '../../sessions/models';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
+import { projectSessionProgress } from '../../sessions/sessionProgressProjection';
 import { useSessionRunner } from '../../hooks/useSessionRunner';
 import { useOverloadHistory } from '../../hooks/useOverloadHistory';
 import type { ExerciseIdentity } from '../../workouts/overloadHistory';
@@ -17,7 +18,7 @@ import { SessionCompletionSheet } from './SessionCompletionSheet';
 import { sessionDefinitionService, type SessionDefinitionHeader } from '../../services/sessionDefinitionService';
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
 import { archivedSavedDefinitionError } from '../../sessions/sessionLaunch';
-import { getGroupProgress, targetEntriesForGroupStep } from '../../sessions/groupProgression';
+import { targetEntriesForGroupStep } from '../../sessions/groupProgression';
 import { completedPrescribedSets, nextHoldSide } from '../../sessions/workSets';
 import { stepName } from '../../sessions/stepDisplay';
 import { GroupProgress } from './GroupProgress';
@@ -126,56 +127,9 @@ export function resolveNextDueStep(
     blockIndex: number,
     stepIndex: number,
 ): { blockIndex: number; stepIndex: number } | null {
-    const block = definition.blocks[blockIndex];
-    const activeStep = block?.steps[stepIndex];
-    if (!activeStep) return null;
-    const progress = getGroupProgress(block, entries, stepIndex);
-    if (progress && !progress.isComplete) {
-        return progress.nextStepIndex === null ? null : { blockIndex, stepIndex: progress.nextStepIndex };
-    }
-    if (!progress && completedPrescribedSets(activeStep, entries) < targetEntriesForGroupStep(block, activeStep)) {
-        return { blockIndex, stepIndex };
-    }
-    for (let nextBlockIndex = progress ? blockIndex + 1 : blockIndex; nextBlockIndex < definition.blocks.length; nextBlockIndex++) {
-        const nextBlock = definition.blocks[nextBlockIndex];
-        // Optional work remains manually executable, but automatic progression follows only
-        // required prescription. This also preserves D-MCHOICE omit/end_block semantics.
-        if (!nextBlock.steps.some(step => !step.optional)) continue;
-        const nextGroup = getGroupProgress(nextBlock, entries, -1);
-        if (nextGroup) {
-            if (!nextGroup.isComplete && nextGroup.nextStepIndex !== null) {
-                return { blockIndex: nextBlockIndex, stepIndex: nextGroup.nextStepIndex };
-            }
-            continue;
-        }
-        for (let nextStepIndex = nextBlockIndex === blockIndex ? stepIndex + 1 : 0; nextStepIndex < nextBlock.steps.length; nextStepIndex++) {
-            const step = nextBlock.steps[nextStepIndex];
-            if (step.optional) continue;
-            if (completedPrescribedSets(step, entries) < targetEntriesForGroupStep(nextBlock, step)) {
-                return { blockIndex: nextBlockIndex, stepIndex: nextStepIndex };
-            }
-        }
-    }
-    // Manual navigation can land on the last authored step before earlier required work is done.
-    for (let earlierBlockIndex = 0; earlierBlockIndex <= blockIndex; earlierBlockIndex++) {
-        const earlierBlock = definition.blocks[earlierBlockIndex];
-        if (!earlierBlock.steps.some(step => !step.optional)) continue;
-        const earlierGroup = getGroupProgress(earlierBlock, entries, -1);
-        if (earlierGroup) {
-            if (!earlierGroup.isComplete && earlierGroup.nextStepIndex !== null) {
-                return { blockIndex: earlierBlockIndex, stepIndex: earlierGroup.nextStepIndex };
-            }
-            continue;
-        }
-        const end = earlierBlockIndex === blockIndex ? stepIndex : earlierBlock.steps.length;
-        for (let earlierStepIndex = 0; earlierStepIndex < end; earlierStepIndex++) {
-            const step = earlierBlock.steps[earlierStepIndex];
-            if (!step.optional && completedPrescribedSets(step, entries) < targetEntriesForGroupStep(earlierBlock, step)) {
-                return { blockIndex: earlierBlockIndex, stepIndex: earlierStepIndex };
-            }
-        }
-    }
-    return null;
+    if (!definition.blocks[blockIndex]?.steps[stepIndex]) return null;
+    const cursor = projectSessionProgress(definition, entries, { blockIndex, stepIndex });
+    return cursor.requiredWorkComplete ? null : { blockIndex: cursor.blockIndex, stepIndex: cursor.stepIndex };
 }
 
 export function resolveCompanionPromptCopy(finishedTitle: string, companionCount: number): { heading: string; subheading: string } {
@@ -406,15 +360,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
 
     useEffect(() => {
         if (!initialSession || runner.isRestoring || initialLaunchAttempted.current) return;
-        if (runner.execution?.state === 'in_progress'
-            && !runner.definition
-            && runner.execution.prescriptionHash === initialSession.binding.prescriptionHash) {
-            initialLaunchAttempted.current = true;
-            runner.restoreSessionDefinition(initialSession.definition)
-                .then(() => onInitialSessionHandled?.())
-                .catch(() => { initialLaunchAttempted.current = false; });
-            return;
-        }
         if (runner.execution) return;
         initialLaunchAttempted.current = true;
         runner.startSession(initialSession.definition, initialSession.binding.sessionSource, {
@@ -671,6 +616,17 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     // If no active session, show fixture picker to start an unplanned session
     if (runner.isRestoring) {
         return <div className="session-runner-container no-active"><p>Restoring an active session…</p></div>;
+    }
+
+    if (runner.resumeStatus === 'degraded') {
+        return (
+            <div className="session-runner-container no-active" data-recovery-reason={runner.resumeDegradedReason ?? undefined}>
+                <h2>Session recovery needs attention</h2>
+                <p role="alert">Your session could not be fully restored. Logging and new starts are paused to protect your diary.</p>
+                <p>{runner.entries.length} saved entr{runner.entries.length === 1 ? 'y' : 'ies'} remain available.</p>
+                <button type="button" className="start-fixture-btn" onClick={() => window.location.reload()}>Retry recovery</button>
+            </div>
+        );
     }
 
     if (!definition || !comparison || !runner.execution || runner.execution.state !== 'in_progress') {

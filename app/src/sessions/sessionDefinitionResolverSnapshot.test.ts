@@ -22,7 +22,7 @@ const historical: SessionDefinition = {
         id: 'main',
         role: 'main',
         executionMode: 'sequential',
-        steps: [{ id: 'step-1', kind: 'exercise', title: 'Historical movement', dose: { kind: 'repetition', sets: 2, reps: 5 } }],
+        steps: [{ id: 'step-1', kind: 'exercise', title: 'Historical movement', exerciseRef: { kind: 'unresolved_free_text', name: 'Historical movement' }, dose: { kind: 'repetition', sets: 2, reps: 5 } }],
     }],
 };
 

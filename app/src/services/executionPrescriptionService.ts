@@ -114,6 +114,9 @@ export class ExecutionPrescriptionService {
                 userId,
             });
         });
+        // Transaction writes do not seed the readable persistent cache. Finish the
+        // launch snapshot read before the athlete can go offline and reload.
+        await getDoc(ref);
     }
 
     async getPrescription(userId: string, prescriptionHash: string): Promise<DataState<ExecutionPrescription>> {

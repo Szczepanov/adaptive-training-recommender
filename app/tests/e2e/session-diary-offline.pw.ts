@@ -16,6 +16,7 @@ test('offline diary survives a browser reload with corrections, tombstones and u
     await expect(page.getByRole('button', { name: 'Log repetition set' })).toBeVisible();
     const [execution] = await readSessionExecutions(athlete);
     expect(execution).toBeDefined();
+    expect(execution.prescriptionHash).toBeTruthy();
 
     // Disable device connectivity while the already-loaded app remains available.
     await context.setOffline(true);
@@ -41,10 +42,13 @@ test('offline diary survives a browser reload with corrections, tombstones and u
     await page.getByRole('button', { name: 'Skip to Dashboard', exact: true }).click();
     await page.getByRole('button', { name: 'More' }).click();
     await page.getByRole('button', { name: /Sessions/ }).click();
+    await expect(page.locator('.session-runner-container')).toBeVisible();
     await expect(page.locator('.entry-row')).toHaveCount(2, { timeout: 45_000 });
     await expect(page.locator('.entry-row').first()).toContainText('10 reps');
     await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeVisible();
     await expect(page.locator('.sync-pill')).toHaveText('queued');
+    await expect(page.locator('.rest-timer-banner')).toBeHidden();
+    expect((await readSessionExecutions(athlete))[0].executionId).toBe(execution.executionId);
     await page.getByRole('button', { name: 'Undo', exact: true }).click();
     await expect(page.locator('.entry-row')).toHaveCount(3);
     await page.unroute(firestoreUrl);

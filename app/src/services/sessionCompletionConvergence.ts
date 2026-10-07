@@ -32,6 +32,7 @@ export async function convergeCompletedExecution(
                 },
                 execution.occurrenceId,
                 evidence.submittedAt,
+                { preserveExisting: true },
             );
         } catch (error) {
             console.warn('[sessionCompletionConvergence] immediate response convergence failed:', error);

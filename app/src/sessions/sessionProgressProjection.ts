@@ -1,19 +1,13 @@
-import type { SessionDefinition, SessionEntry, SessionStep } from './models';
+import type { SessionDefinition, SessionEntry } from './models';
 import { resolveEffectiveSession } from './choiceResolution';
-import { getGroupProgress, isRotatingExecutionMode } from './groupProgression';
-import { completedPrescribedSets } from './workSets';
+import { getGroupProgress, isRotatingExecutionMode, targetEntriesForGroupStep } from './groupProgression';
+import { completedPrescribedSets, countsTowardPrescribedSets } from './workSets';
 
 export interface SessionProgressCursor {
     blockIndex: number;
     stepIndex: number;
     sessionEnded: boolean;
-}
-
-function targetEntriesForStep(step: SessionStep): number {
-    if (step.dose?.kind === 'repetition') return step.dose.sets;
-    if (step.dose?.kind === 'duration' || step.dose?.kind === 'distance') return step.dose.sets ?? 1;
-    if (step.dose?.kind === 'checkoff') return step.dose.rounds ?? 1;
-    return step.kind === 'exercise' ? 1 : 0;
+    requiredWorkComplete: boolean;
 }
 
 /**
@@ -24,6 +18,7 @@ function targetEntriesForStep(step: SessionStep): number {
 export function projectSessionProgress(
     rawDefinition: SessionDefinition,
     entries: readonly SessionEntry[],
+    knownCursor?: Pick<SessionProgressCursor, 'blockIndex' | 'stepIndex'>,
 ): SessionProgressCursor {
     const effective = resolveEffectiveSession(rawDefinition, entries);
     const definition = effective.definition;
@@ -34,16 +29,37 @@ export function projectSessionProgress(
             blockIndex: lastBlockIndex,
             stepIndex: Math.max(0, (lastBlock?.steps.length ?? 1) - 1),
             sessionEnded: true,
+            requiredWorkComplete: true,
         };
+    }
+
+    // Live manual navigation is known evidence of the athlete's chosen work. Resume
+    // omits this cursor: an unlogged optional selection cannot be recovered truthfully.
+    const knownBlock = knownCursor ? definition.blocks[knownCursor.blockIndex] : undefined;
+    const knownStep = knownCursor ? knownBlock?.steps[knownCursor.stepIndex] : undefined;
+    if (knownCursor && knownBlock && !effective.endedBlockIds.has(knownBlock.id)) {
+        const progress = getGroupProgress(knownBlock, entries, knownCursor.stepIndex);
+        if (progress && !progress.isComplete && progress.nextStepIndex !== null) {
+            return { blockIndex: knownCursor.blockIndex, stepIndex: progress.nextStepIndex, sessionEnded: false, requiredWorkComplete: false };
+        }
+    }
+    if (knownCursor && knownBlock && knownStep && !effective.endedBlockIds.has(knownBlock.id)
+        && !isRotatingExecutionMode(knownBlock.executionMode)
+        && completedPrescribedSets(knownStep, entries) < targetEntriesForGroupStep(knownBlock, knownStep)) {
+        return { ...knownCursor, sessionEnded: false, requiredWorkComplete: false };
     }
 
     for (let blockIndex = 0; blockIndex < definition.blocks.length; blockIndex++) {
         const block = definition.blocks[blockIndex];
-        if (block.steps.length === 0) continue;
+        if (block.steps.length === 0 || effective.endedBlockIds.has(block.id)
+            || !block.steps.some(step => !step.optional)) continue;
         if (isRotatingExecutionMode(block.executionMode)) {
-            const progress = getGroupProgress(block, entries, -1);
+            const lastEntry = entries.filter(entry => block.steps.some(step => step.id === entry.stepId)
+                && countsTowardPrescribedSets(entry)).at(-1);
+            const lastStepIndex = block.steps.findIndex(step => step.id === lastEntry?.stepId);
+            const progress = getGroupProgress(block, entries, lastStepIndex);
             if (progress && !progress.isComplete) {
-                return { blockIndex, stepIndex: progress.nextStepIndex ?? 0, sessionEnded: false };
+                return { blockIndex, stepIndex: progress.nextStepIndex ?? 0, sessionEnded: false, requiredWorkComplete: false };
             }
             continue;
         }
@@ -51,13 +67,10 @@ export function projectSessionProgress(
         const required = block.steps
             .map((step, stepIndex) => ({ step, stepIndex }))
             .filter(({ step }) => !step.optional);
-        const candidates = required.length > 0
-            ? required
-            : block.steps.map((step, stepIndex) => ({ step, stepIndex }));
-        for (const { step, stepIndex } of candidates) {
-            const target = targetEntriesForStep(step);
+        for (const { step, stepIndex } of required) {
+            const target = targetEntriesForGroupStep(block, step);
             if (target > 0 && completedPrescribedSets(step, entries) < target) {
-                return { blockIndex, stepIndex, sessionEnded: false };
+                return { blockIndex, stepIndex, sessionEnded: false, requiredWorkComplete: false };
             }
         }
     }
@@ -68,5 +81,6 @@ export function projectSessionProgress(
         blockIndex: lastBlockIndex,
         stepIndex: Math.max(0, (lastBlock?.steps.length ?? 1) - 1),
         sessionEnded: false,
+        requiredWorkComplete: true,
     };
 }

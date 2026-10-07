@@ -1,14 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, setDoc, updateDoc, type Firestore } from 'firebase/firestore';
+
+import { SessionExecutionService } from '../services/sessionExecutionService';
 
 const emulatorDescribe = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 let testEnvironment: RulesTestEnvironment;
 
 const ownerId = 'athlete-lifecycle-rules';
 const executionPath = (id: string) => `users/${ownerId}/session_executions/${id}`;
-const source = { kind: 'unplanned_fixture', fixtureId: 'fixture-1' };
+const source = { kind: 'unplanned_fixture', fixtureId: 'fixture-1' } as const;
 const start = '2026-10-05T10:00:00.000Z';
 
 function inProgressExecution(id: string) {
@@ -69,6 +71,8 @@ emulatorDescribe('Firestore rules — session lifecycle + replay snapshots (#895
 
         await assertFails(updateDoc(ref, { notes: 'late mutation', updatedAt: '2026-10-05T11:01:00.000Z' }));
         await assertFails(updateDoc(ref, { state: 'abandoned', updatedAt: '2026-10-05T11:02:00.000Z' }));
+        await assertFails(deleteDoc(ref));
+        await assertFails(setDoc(ref, inProgressExecution('exec-complete')));
     });
 
     it('allows one in_progress -> abandoned transition and rejects a later completion', async () => {
@@ -85,6 +89,7 @@ emulatorDescribe('Firestore rules — session lifecycle + replay snapshots (#895
             updatedAt: '2026-10-05T10:31:00.000Z',
             completedAt: '2026-10-05T10:31:00.000Z',
         }));
+        await assertFails(deleteDoc(ref));
     });
 
     it('rejects completion evidence on an abandoned winner', async () => {
@@ -135,9 +140,69 @@ emulatorDescribe('Firestore rules — session lifecycle + replay snapshots (#895
     it('rejects arbitrary non-terminal field mutations while an execution is in progress', async () => {
         await seedExecution('exec-progress');
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await expect(assertFails(updateDoc(doc(ownerDb, executionPath('exec-progress')), {
+        await assertFails(updateDoc(doc(ownerDb, executionPath('exec-progress')), {
             notes: 'not terminal',
             updatedAt: '2026-10-05T10:01:00.000Z',
-        }))).resolves.toBeUndefined();
+        }));
     });
+    it.each(['completed', 'abandoned'] as const)('arbitrates two-client complete versus %s atomically', async rivalState => {
+        await seedExecution('exec-race');
+        const dbA = testEnvironment.authenticatedContext(ownerId).firestore() as unknown as Firestore;
+        const dbB = testEnvironment.authenticatedContext(ownerId).firestore() as unknown as Firestore;
+        const serviceA = new SessionExecutionService(dbA);
+        const serviceB = new SessionExecutionService(dbB);
+        let ready = 0;
+        let release!: () => void;
+        const gate = new Promise<void>(resolve => { release = resolve; });
+        const prepare = (db: Firestore, label: string) => async (batch: import('firebase/firestore').WriteBatch) => {
+            ready++;
+            if (ready === 2) release();
+            await gate;
+            batch.set(doc(db, 'users', ownerId, 'preferences', 'profile'), {
+                userId: ownerId, createdAt: start, derivedWinner: label,
+            });
+        };
+        const results = await Promise.all([
+            serviceA.transitionExecutionTerminal(ownerId, 'exec-race', 'completed', {
+                completionEvidence: { submittedAt: start, sessionRpe: 8 },
+            }, prepare(dbA, 'A')),
+            serviceB.transitionExecutionTerminal(ownerId, 'exec-race', rivalState,
+                rivalState === 'completed' ? { completionEvidence: { submittedAt: start, sessionRpe: 3 } } : undefined,
+                prepare(dbB, 'B')),
+        ]);
+        expect(results.filter(result => result.status === 'transitioned')).toHaveLength(1);
+        expect(results[0].execution).toEqual(results[1].execution);
+        const winner = results.findIndex(result => result.status === 'transitioned');
+        expect((await getDoc(doc(dbA, 'users', ownerId, 'preferences', 'profile'))).data()?.derivedWinner).toBe(winner === 0 ? 'A' : 'B');
+        expect(results[0].execution.completionEvidence?.sessionRpe).toBe(
+            results[0].execution.state === 'abandoned' ? undefined : winner === 0 ? 8 : 3,
+        );
+    });
+
+    it('requires explicit redo and shares one successor while retaining abandoned diary evidence', async () => {
+        const dbA = testEnvironment.authenticatedContext(ownerId).firestore() as unknown as Firestore;
+        const dbB = testEnvironment.authenticatedContext(ownerId).firestore() as unknown as Firestore;
+        const serviceA = new SessionExecutionService(dbA);
+        const serviceB = new SessionExecutionService(dbB);
+        const params = { sessionSource: source, prescriptionHash: 'rx-redo', date: '2026-10-05' };
+        const original = await serviceA.startExecution(ownerId, 'exec-original', params).catch(error => { throw new Error('Original start failed', { cause: error }); });
+        const at = '2026-10-05T10:01:00.000Z';
+        await serviceA.logEntry(ownerId, original.executionId, {
+            id: 'set-1', executionId: original.executionId, completedAt: at, createdAt: at, updatedAt: at,
+            payload: { kind: 'repetition', setIndex: 1, reps: 5 },
+        });
+        await serviceA.transitionExecutionTerminal(ownerId, original.executionId, 'completed').catch(error => { throw new Error('Original complete failed', { cause: error }); });
+        await expect(serviceB.startExecution(ownerId, 'ordinary-retry', params)).rejects.toThrow(/completed/);
+        const successors = await Promise.all([
+            serviceA.startExecution(ownerId, 'redo-A', { ...params, allowDuplicateCompleted: true }).catch(error => { throw new Error('Redo A failed', { cause: error }); }),
+            serviceB.startExecution(ownerId, 'redo-B', { ...params, allowDuplicateCompleted: true }).catch(error => { throw new Error('Redo B failed', { cause: error }); }),
+        ]);
+        expect(successors[0].executionId).toBe(successors[1].executionId);
+        expect((await getDocs(collection(dbA, 'users', ownerId, 'session_executions'))).size).toBe(2);
+        const terminal = await serviceA.transitionExecutionTerminal(ownerId, successors[0].executionId, 'abandoned');
+        expect(terminal.execution.state).toBe('abandoned');
+        expect(await serviceA.getEntries(ownerId, original.executionId)).toHaveLength(1);
+        expect((await serviceA.getExecution(ownerId, original.executionId)).status).toBe('AVAILABLE');
+    });
+
 });

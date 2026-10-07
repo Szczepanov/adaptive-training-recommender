@@ -64,6 +64,7 @@ describe('convergeCompletedExecution', () => {
             },
             'occ-1',
             '2026-10-05T11:00:00.000Z',
+            { preserveExisting: true },
         );
         expect(mocks.occurrence).toHaveBeenCalledWith('u1', 'occ-1', 'completed', execution.completedAt);
         expect(mocks.reconcile).toHaveBeenCalledWith('u1', execution, 'Strength');
@@ -82,4 +83,12 @@ describe('convergeCompletedExecution', () => {
         expect(mocks.occurrence).not.toHaveBeenCalled();
         expect(mocks.reconcile).not.toHaveBeenCalled();
     });
+    it.each(['response', 'occurrence', 'reconcile'] as const)('retries %s projection after a post-terminal outage', async name => {
+        mocks[name].mockRejectedValueOnce(new Error('temporary outage'));
+        await convergeCompletedExecution('u1', execution);
+        await convergeCompletedExecution('u1', execution);
+        expect(mocks[name]).toHaveBeenCalledTimes(2);
+        expect(mocks.response.mock.calls[1][5]).toEqual({ sessionRpe: 8, completedFraction: 0.9, unexpectedFatigue: true, note: 'canonical note' });
+    });
+
 });
