@@ -139,7 +139,7 @@ make test                              # pytest + vitest only
 make simulate                          # scenario simulations + baseline diff
 uv sync                                # restore Python deps
 uv run python -m garmin_sync sync      # daily ingestion for APP_USER_ID
-cd app && npm run check                # frontend gate (tsc, eslint, vitest, knowledge, workouts)
+cd app && npm run check                # frontend gate (npm audit, tsc, eslint, vitest, knowledge, workouts)
 cd app && npm test                     # vitest only — the fast inner loop
 ```
 

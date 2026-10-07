@@ -164,7 +164,7 @@ aligned.
 
 * `make verify` — the canonical scope-aware handoff/PR gate for coding agents; it reuses CI's docs-vs-code classification and runs the deterministic local gates required for that scope.\n* `make agent-evals` — validate the provider-neutral coding-agent evaluation corpus.\n* `make check` — the core local code gate: `ruff check`, `ruff format --check`, `mypy`,
   `pytest`, `tsc -b`, `eslint`, `vitest`, knowledge validation, knowledge-coverage
-  validation, knowledge-freshness reporting, and workout validation. `check-frontend` mirrors the app's `npm run check`
+  validation, knowledge-freshness reporting, workout validation, and `npm audit --audit-level=high`. `check-frontend` mirrors the app's `npm run check`
   gate; CI adds further path-specific checks such as dependency audits, policy drift,
   coverage/rules, simulations, and Docker validation.
 * `make all` — alias for `make verify` (the default target)
@@ -217,7 +217,7 @@ aligned.
 ### Frontend app (run from `app/`)
 
 * `npm ci` — install dependencies
-* `npm run check` — the frontend gate: `tsc -b`, `eslint`, `vitest run`, knowledge validation, knowledge-coverage validation, knowledge-freshness reporting, workout catalog validation
+* `npm run check` — the frontend gate: `npm audit --audit-level=high`, `tsc -b`, `eslint`, `vitest run`, knowledge validation, knowledge-coverage validation, knowledge-freshness reporting, workout catalog validation
 * `npm test` — `vitest run` only; the fast inner loop (`npm run test:watch`, `npm run test:coverage`)
 * `npm run test:perf` — wall-clock latency gates (`*.perf.test.ts`, `vitest.perf.config.ts`), run in a single worker; excluded from `npm test` because sibling workers preempt them. Part of `npm run check` / `make check`
 * `npm run test:rules` — Firestore security-rule suite inside the Firebase emulator on dynamically leased ports (needs Java)
@@ -249,14 +249,14 @@ fails the PR if any required job on that path fails.
 |---|---|---|
 | Docs-only | Documentation & security hygiene | repository-hygiene `pre-commit` checks (the CI job skips the code-only uv-lock/Ruff/mypy/ESLint hooks) |
 | Code | Python test suite | `uv lock --check`, repository-hygiene `pre-commit`, `ruff check`, `ruff format --check`, `mypy` (`src/garmin_sync` + `scripts/`), `pytest` with coverage, `uvx pip-audit` |
-| Code | Frontend hygiene & static gates | `npm audit --audit-level=high`, `typecheck`, `lint`, `validate:knowledge`, `validate:knowledge-coverage`, `validate:knowledge-freshness` (reports only, non-blocking), `validate:workouts`, policy-version drift vs the PR base, `build:bundle` |
+| Code | Frontend hygiene & static gates | `npm run audit` (`npm audit --audit-level=high`), `typecheck`, `lint`, `validate:knowledge`, `validate:knowledge-coverage`, `validate:knowledge-freshness` (reports only, non-blocking), `validate:workouts`, policy-version drift vs the PR base, `build:bundle` |
 | Code | Frontend unit tests, Firestore rules & browser E2E | `npm run test:coverage` then `npm run test:perf`, `npm run test:rules`, `npm run test:e2e` (emulators + Java + Chromium), run as parallel jobs; the rules and E2E suites are each split into two `--shard` jobs with their own emulator, and one aggregate check passes only when every job and shard passes |
 | Code | Engine simulations & AI gates | `simulate:scenarios` plus committed-baseline `git diff --exit-code`, `simulate:plan-judge`, persona corpus build; `simulate:diff` is advisory (`continue-on-error`) |
 | Code | Docker build & compose smoke | root image build, Compose config/build/up, smoke checks |
 
-`make check` already covers Python lint **and formatting**, mypy, pytest, frontend typecheck,
-ESLint, Vitest, the knowledge validators, and workout validation. The important CI-only
-additions are dependency/lock audits, pre-commit hygiene, policy-drift and bundle checks,
+`make check` already covers Python lint **and formatting**, mypy, pytest, frontend dependency
+audit, typecheck, ESLint, Vitest, the knowledge validators, and workout validation. The important CI-only
+additions are Python dependency/lock audits, pre-commit hygiene, policy-drift and bundle checks,
 coverage/rules tests, simulation/AI gates, and Docker validation.
 
 ### Docker

@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "check": "npm run typecheck && npm run lint && npm run test && npm run test:perf && npm run validate:knowledge && npm run validate:knowledge-coverage && npm run validate:knowledge-freshness && npm run validate:workouts",
+    "check": "npm run audit && npm run typecheck && npm run lint && npm run test && npm run test:perf && npm run validate:knowledge && npm run validate:knowledge-coverage && npm run validate:knowledge-freshness && npm run validate:workouts",
+    "audit": "npm audit --audit-level=high",
     "predev": "npm run check",
     "dev": "vite",
     "build": "npm run check && npm run build:bundle",
