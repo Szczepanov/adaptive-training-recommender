@@ -2082,7 +2082,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       return d.keys().hasOnly([
           'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',
           'policyVersion', 'captureVersion', 'appSource', 'minimumSafetyStatus',
-          'evaluatorInputs', 'performedTrainingFacts', 'mechanicalCheckinHistory', 'contentHash'
+          'evaluatorInputs', 'performedTrainingFacts', 'mechanicalCheckinHistory', 'trainingHistoryReplay', 'contentHash'
         ])
         && d.keys().hasAll([
           'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',

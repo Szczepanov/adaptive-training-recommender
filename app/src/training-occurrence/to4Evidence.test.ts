@@ -1,4 +1,13 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { createDecisionContext, validateDecisionContext } from '../engine/decisionContext';
+import { createTrainingHistoryReplayRecorder } from '../engine/historyReplayCapture';
+import { canonicalise } from '../engine/externalPlanHash';
+import { POLICY_VERSION } from '../engine/policy';
+import { buildRecommendationAudit } from '../engine/provenance';
+import { SCENARIOS } from '../engine/simulation/scenarios';
+import * as sameDay from '../engine/sameDayRecommendation';
+import type { TrainingHistorySnapshot } from '../engine/trainingHistorySnapshot';
+import { projectRecommendation, runHistoryCounterfactualSeries } from './historyRecommendationCounterfactual';
 import { workoutForTemplate } from '../workouts/prescription';
 import { assembleOfflineHistoricalContext } from './offlineContextAssembler';
 import { prepareTo4Evidence, type ReviewLabel, type TrainingOccurrenceRecordExport } from './to4EvidencePreparation';
@@ -129,9 +138,9 @@ describe('prepareTo4Evidence', () => {
         }), options)).toThrow(/evaluationWindow/);
     });
 
-    it('keeps every evaluation date and reports unprovable historical sources without fallback', () => {
+    it('keeps every evaluation date and reports unprovable historical sources without fallback', async () => {
         const prepared = prepareTo4Evidence(recordExport(), options);
-        const context = assembleOfflineHistoricalContext(prepared.sourceEvidence, 'u1');
+        const context = await assembleOfflineHistoricalContext(prepared.sourceEvidence, 'u1');
         const first = context.inputForDate(context.dates[0]);
 
         expect(context.dates).toHaveLength(7);
@@ -147,7 +156,7 @@ describe('prepareTo4Evidence', () => {
         expect(JSON.stringify(context.sourceCoverage)).not.toContain('u1');
     });
 
-    it('marks a provably incomplete minimum-safety check-in not applicable', () => {
+    it('marks a provably incomplete minimum-safety check-in not applicable', async () => {
         const incomplete = {
             userId: 'u1', date: '2026-08-01', readiness: null, sleepQuality: null, fatigue: null, soreness: null,
             mentalStress: null, motivation: null, painOrInjury: false, illnessSymptoms: false,
@@ -160,7 +169,7 @@ describe('prepareTo4Evidence', () => {
         const prepared = prepareTo4Evidence(recordExport({
             dailySubjectiveCheckins: [{ id: '2026-08-01', data: incomplete }],
         }), options);
-        const context = assembleOfflineHistoricalContext(prepared.sourceEvidence, 'u1');
+        const context = await assembleOfflineHistoricalContext(prepared.sourceEvidence, 'u1');
 
         expect(context.inputForDate('2026-08-01')).toMatchObject({
             status: 'not_applicable', reasonCode: 'minimum_safety_checkin_incomplete', dateAlias: 'D001',
@@ -168,7 +177,7 @@ describe('prepareTo4Evidence', () => {
         expect(context.sourceCoverage.minimumSafetyCheckin).toMatchObject({ incomplete: 1, provenIncomplete: 1 });
     });
 
-    it('does not infer a failed safety gate from an incomplete check-in updated during the date', () => {
+    it('does not infer a failed safety gate from an incomplete check-in updated during the date', async () => {
         const incomplete = {
             userId: 'u1', date: '2026-08-01', readiness: null, sleepQuality: null, fatigue: null, soreness: null,
             mentalStress: null, motivation: null, painOrInjury: false, illnessSymptoms: false,
@@ -181,7 +190,7 @@ describe('prepareTo4Evidence', () => {
         const prepared = prepareTo4Evidence(recordExport({
             dailySubjectiveCheckins: [{ id: '2026-08-01', data: incomplete }],
         }), options);
-        const context = assembleOfflineHistoricalContext(prepared.sourceEvidence, 'u1');
+        const context = await assembleOfflineHistoricalContext(prepared.sourceEvidence, 'u1');
 
         expect(context.inputForDate('2026-08-01')).toMatchObject({ status: 'not_replayable' });
     });
@@ -290,5 +299,158 @@ describe('prepareTo4Evidence', () => {
             labels: { 'occ-0001': 'not_a_review_label' } as unknown as Readonly<Record<string, ReviewLabel>>,
         })).toThrow(/supported label/);
         expect(() => prepareTo4Evidence(recordExport(), { ...options, labels: { 'occ-9999': 'correct_merge' } })).toThrow(/alias/);
+    });
+});
+
+async function capturedExport(withHistory = false) {
+    const date = '2026-08-01';
+    const scenario = SCENARIOS.find(item => item.id === 'evergreen_balanced_four_sessions')!;
+    const exposure = withHistory ? [{
+        date: '2026-07-31', occurrenceKey: 'completed:synthetic-ride',
+        costProfile: { systemic: 0.1, cardiovascular: 0.2, lowerBody: 0.1, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+        trainingRecordLike: { type: 'cycling', duration_min: 30, training_effect: 2, intensity_tag: 'easy' },
+    }] : [];
+    const snapshot: TrainingHistorySnapshot = {
+        throughDateExclusive: date, windowDays: 7, completedEvents: [], exposures: exposure, revision: 'captured-history-r1',
+        generatedAt: `${date}T08:00:00.000Z`,
+        sourceStates: { activities: { status: 'AVAILABLE', revision: 'a' }, recommendations: { status: 'AVAILABLE', revision: 'r' }, manualTraining: { status: 'MISSING' } },
+        performedTrainingFacts: { asOfDate: date, windowDays: 7, revision: `canonical-facts-v1:evergreen_general:${date}:empty`, exposures: [], coverageCredits: [] },
+    };
+    const recorder = createTrainingHistoryReplayRecorder({
+        reconstruct: async () => exposure,
+        getSnapshot: async (_, throughDateExclusive, windowDays) => ({ ...snapshot, throughDateExclusive, windowDays, revision: `captured-${windowDays}` }),
+    }, { userId: 'u1', throughDateExclusive: date });
+    const evaluatorInputs: sameDay.SameDayRecommendationInputs = {
+        userId: 'u1', date, readiness: scenario.readinessForWeek(0), context: scenario.context,
+        events: [], preparedHistorySnapshot: snapshot, historyProvider: recorder.provider,
+        fixedActivities: [], authoredPlanBlocks: [], trainingIntentProfile: scenario.trainingIntentProfile ?? null,
+        preferences: scenario.preferences ?? null, externalPlan: null, externalRest: null,
+        scheduleOverlays: [], confirmedProgressionOverrides: new Map(), mechanicalCheckinHistory: [],
+    };
+    const recommendation = await sameDay.evaluateSameDayRecommendation(evaluatorInputs);
+    const record = await createDecisionContext({
+        userId: 'u1', date, recommendationRevision: 1, evaluatedAt: `${date}T08:30:00.000Z`,
+        minimumSafetyStatus: 'complete', evaluatorInputs, performedTrainingFacts: snapshot.performedTrainingFacts!,
+        mechanicalCheckinHistory: [], trainingHistoryReplay: { preparedSnapshot: snapshot, capture: recorder.finish()! },
+    });
+    const audit = buildRecommendationAudit(recommendation, snapshot, record.evaluatedAt)!;
+    const raw = recordExport({ decisionContexts: [{ id: '1', recommendationId: date, data: record }] });
+    raw.dailyRecommendations.push({ id: date, data: {
+        userId: 'u1', date, revision: 1, templateId: recommendation.template.id, templateTitle: recommendation.template.title,
+        category: recommendation.template.category, modality: recommendation.template.modality, mode: recommendation.mode,
+        rationale: recommendation.rationale, schemaVersion: 3, createdAt: record.evaluatedAt, updatedAt: record.evaluatedAt,
+        adherence: { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null },
+        recommendationAudit: { ...audit, decisionContext: { path: `users/u1/daily_recommendations/${date}/decision_contexts/1`, revision: 1, contentHash: record.contentHash } },
+    } });
+    return { raw, record, recommendation, date };
+}
+
+async function assembleCaptured(raw: TrainingOccurrenceRecordExport) {
+    const prepared = prepareTo4Evidence(raw, options);
+    const provenance = { ...options, recordsSha256: 'b'.repeat(64), policyVersion: POLICY_VERSION };
+    const context = await assembleOfflineHistoricalContext(prepared.sourceEvidence, 'u1', {
+        ...provenance, canonicalHistory: prepared.replayCanonicalHistory,
+    });
+    return { context, seriesOptions: { ...provenance, dates: context.dates, inputForDate: context.inputForDate } };
+}
+
+describe('captured offline replay', () => {
+    it('hydrates the live inputs, evaluates both passes, and remains identical after mutable sources change', async () => {
+        const { raw, date, record, recommendation } = await capturedExport(true);
+        const { context, seriesOptions } = await assembleCaptured(raw);
+        const hydrated = context.inputForDate(date);
+        expect(hydrated.status).toBe('replayable');
+        if (hydrated.status !== 'replayable') throw new Error('fixture must hydrate');
+        expect(hydrated.live.exposures).toHaveLength(1);
+        expect(hydrated.canonical.exposures).toHaveLength(0);
+        expect(hydrated.live.decisionInputDigest).toBe(hydrated.canonical.decisionInputDigest);
+        const evaluator = vi.spyOn(sameDay, 'evaluateSameDayRecommendation');
+        const first = await runHistoryCounterfactualSeries({ ...seriesOptions, dates: [date] });
+        expect(evaluator).toHaveBeenCalledTimes(2);
+        expect(first.evaluations[0].live).toEqual(projectRecommendation(recommendation));
+        expect(first.evaluations[0].providerRequests).toEqual(record.trainingHistoryReplay!.capture.requests.map(request =>
+            `${request.kind}:${request.throughDateExclusive}:${request.windowDays}`));
+        const second = await runHistoryCounterfactualSeries({ ...seriesOptions, dates: [date] });
+        expect(second).toEqual(first);
+        evaluator.mockRestore();
+        raw.preferences = [{ id: 'profile', data: { changed: true } }];
+        raw.trainingSettings = [{ id: 'profile', data: { changed: true } }];
+        raw.goals = [{ id: 'goal', data: { changed: true } }];
+        raw.dailySubjectiveCheckins = [{ id: date, data: { changed: true } }];
+        const changed = await assembleCaptured(raw);
+        expect(await runHistoryCounterfactualSeries({ ...changed.seriesOptions, dates: [date] })).toEqual(first);
+    });
+
+    it.each(['deleted', 'tampered', 'foreign', 'wrong_path', 'wrong_policy', 'wrong_instant', 'wrong_captured_policy', 'wrong_captured_instant', 'missing_history'])(
+        'fails closed when a captured record is %s', async failure => {
+            const { raw, record, date } = await capturedExport();
+            const row = raw.dailyRecommendations.find(item => item.id === date)!;
+            const audit = (row.data as { recommendationAudit: Record<string, unknown> }).recommendationAudit;
+            if (failure === 'deleted') raw.decisionContexts = [];
+            if (failure === 'tampered') record.contentHash = '0'.repeat(64);
+            if (failure === 'foreign') record.userId = 'other';
+            if (failure === 'wrong_path') (audit.decisionContext as { path: string }).path = 'users/other/context';
+            if (failure === 'wrong_policy') audit.policyVersion = 'other-policy';
+            if (failure === 'wrong_instant') audit.evaluatedAt = '2026-08-01T09:00:00.000Z';
+            if (failure === 'missing_history') delete record.trainingHistoryReplay;
+            if (failure === 'wrong_captured_policy') record.policyVersion = 'unavailable-policy';
+            if (failure === 'wrong_captured_instant') record.evaluatedAt = '2026-08-02T08:30:00.000Z';
+            if (['missing_history', 'wrong_captured_policy', 'wrong_captured_instant'].includes(failure)) {
+                const { contentHash: _hash, ...payload } = record;
+                void _hash;
+                const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(canonicalise(payload))));
+                record.contentHash = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
+                (audit.decisionContext as { contentHash: string }).contentHash = record.contentHash;
+            }
+            const { context } = await assembleCaptured(raw);
+            expect(context.inputForDate(date).status).toBe('not_replayable');
+        });
+
+    it('uses revision-zero safety evidence without invoking the evaluator, and never fills historical gaps', async () => {
+        const raw = recordExport({ decisionContexts: [{ id: '0', recommendationId: '2026-08-01', data: await createDecisionContext({
+            userId: 'u1', date: '2026-08-01', recommendationRevision: 0, evaluatedAt: '2026-08-01T08:00:00.000Z',
+            minimumSafetyStatus: 'incomplete', evaluatorInputs: null, performedTrainingFacts: null,
+        }) }] });
+        const { context, seriesOptions } = await assembleCaptured(raw);
+        expect(context.inputForDate('2026-08-01').status).toBe('not_applicable');
+        expect(context.sourceCoverage.minimumSafetyCheckin).toMatchObject({ incomplete: 1, provenIncomplete: 1 });
+        expect(context.inputForDate('2026-08-02').status).toBe('not_replayable');
+        const evaluator = vi.spyOn(sameDay, 'evaluateSameDayRecommendation');
+        const series = await runHistoryCounterfactualSeries(seriesOptions);
+        expect(series.notApplicableDates).toBe(1);
+        expect(evaluator).not.toHaveBeenCalled();
+        evaluator.mockRestore();
+    });
+
+    it('rejects malformed export rows without aborting the evidence batch', async () => {
+        const { raw, date } = await capturedExport();
+        raw.decisionContexts!.push(null as never);
+        const { context } = await assembleCaptured(raw);
+        expect(context.inputForDate(date)).toMatchObject({ status: 'not_replayable', reasonCodes: ['captured_context_export_invalid'] });
+    });
+
+    it.each([
+        ['stimulusProfile', 'invalid'], ['stimulusProfile', { aerobicEndurance: 1 }], ['deliveredDose', 'invalid'], ['recoveryHours', -1],
+        ['modality', 'invalid'], ['stimulusConfidence', 'invalid'], ['costProfile', { systemic: 0 }],
+    ])('rejects rehashed malformed authority field %s before evaluating', async (field, value) => {
+        const { record, date } = await capturedExport();
+        const malformed = structuredClone(record);
+        malformed.trainingHistoryReplay!.preparedSnapshot.exposures = [{
+            date: '2026-07-31', costProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            trainingRecordLike: { type: 'cycling', duration_min: 30, training_effect: 0, intensity_tag: 'easy' },
+            [field as string]: value,
+        }] as never;
+        const { contentHash: _oldHash, ...payload } = malformed;
+        void _oldHash;
+        const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(canonicalise(payload))));
+        malformed.contentHash = Array.from(new Uint8Array(hash), byte => byte.toString(16).padStart(2, '0')).join('');
+        await expect(validateDecisionContext(malformed, { userId: 'u1', date, recommendationRevision: 1 })).rejects.toThrow();
+    });
+
+    it('rejects malformed history at the capture trust boundary', async () => {
+        const { record, date } = await capturedExport();
+        const malformed = structuredClone(record);
+        malformed.trainingHistoryReplay!.preparedSnapshot.exposures = [{ date }] as never;
+        await expect(validateDecisionContext(malformed, { userId: 'u1', date, recommendationRevision: 1 })).rejects.toThrow();
     });
 });

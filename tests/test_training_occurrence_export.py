@@ -523,3 +523,28 @@ def test_evidence_outputs_are_anchored_to_the_repository_not_the_working_directo
     ):
         with pytest.raises(ValueError):
             _evidence_artifact_path(rejected)
+
+
+def test_export_includes_bounded_immutable_contexts_and_parentless_safety_outcomes() -> None:
+    db = _db()
+    user = db.users["u1"]
+    user["_nested"]["daily_recommendations"] = {
+        day: {
+            "decision_contexts": {
+                revision: {"userId": "u1", "date": day, "recommendationRevision": int(revision)}
+            }
+        }
+        for day, revision in [
+            ("2026-07-31", "1"),
+            ("2026-08-01", "0"),
+            ("2026-08-06", "1"),
+            ("2026-08-08", "1"),
+        ]
+    }
+    records = export_training_occurrence_records(db, "u1", "2026-08-01", "2026-08-08")
+    assert [(row["recommendationId"], row["id"]) for row in records["decisionContexts"]] == [
+        ("2026-08-01", "0"),
+        ("2026-08-06", "1"),
+    ]
+    assert records["sourceProvenance"]["decisionContexts"] == {"status": "exact_revision"}
+    assert set(db.touched_users) == {"u1"}
