@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | **In progress** — WP0 harness and WP1 durable diary implemented; WP2–WP7 remain |
+| **Status** | **In progress** — WP0–WP3 implemented; WP4–WP7 remain |
 | **Source** | [Issue #895](https://github.com/Szczepanov/adaptive-training-recommender/issues/895) |
 | **Baseline** | `origin/main` at `e63517a7` (fetch 2026-09-29; includes #901, #910, #911, #912, #913, #914). The local checkout at plan-writing time was behind by 4 commits; all findings below were verified against the fetched tip (`git show FETCH_HEAD:<path>`), not the stale worktree. |
 | **Blocked by** | No code blocker for WP1–WP3 design. WP4–WP5 reuse the emulator harness from WP0. Per-item dependencies are listed below. |
@@ -13,7 +13,7 @@
 
 Make the structured SessionRunner the lossless, resumable, auditable source of truth for performed session semantics, with Garmin/provider activities attached as secondary measurement evidence for the same physical occurrence.
 
-The 2026-09-29 audit identified durable entry, correction and rest-write gaps. WP1 now batches diary targets, immutable audit records and execution touches into the SDK persistent-cache queue. Tombstones and durable receipts retain deletion and rejected intent across reload. Lifecycle, full prescription-resume, ordering, diagnostic UI and consumer inventory work remain with WP2–WP7.
+The 2026-09-29 audit identified durable entry, correction and rest-write gaps. WP1 now batches diary targets, immutable audit records and execution touches into the SDK persistent-cache queue. Tombstones and durable receipts retain deletion and rejected intent across reload. Lifecycle and exact prescription resume are delivered by WP2/WP3. Ordering convergence, diagnostic UI and consumer inventory remain with WP4–WP7.
 
 ## 2. Non-goals
 
@@ -32,7 +32,7 @@ This plan does not (all inherited from #895):
 The issue body (written 2026-09-29T06:45Z, never edited) predates same-day merges. The following slices are **done and must not be re-planned**:
 
 - **Concurrent-start / double-complete arbitration (#663).** `sessionExecutionService` `claimExecutionSlot` + `executionSlotKey` + `session_execution_locks` transaction; loser receives the winner or `ExecutionSlotConflictError` (`ALREADY_COMPLETED_MESSAGE`). Rules forbid create outside `in_progress` and any transition out of a terminal state. Proofs: `sessionExecutionConcurrentStart.emulator.test.ts`, `firestoreRules.emulator.test.ts`.
-- **Prescription snapshot pinning.** `hashSessionDefinition` / `hashExecutionPrescription` (`sessions/sessionDefinitionHash.ts`), content-addressed write-once `executionPrescriptionService` `savePrescription`, `PreparedSessionLaunch` binding (`sessions/sessionLaunch.ts`) carrying `prescriptionHash` onto the execution doc. Later catalog/plan edits cannot rewrite a started session (only exception: the `unplanned_fixture` path launches without a hash — see WP3).
+- **Prescription snapshot pinning.** `hashSessionDefinition` / `hashExecutionPrescription` (`sessions/sessionDefinitionHash.ts`), content-addressed write-once `executionPrescriptionService` `savePrescription`, `PreparedSessionLaunch` binding (`sessions/sessionLaunch.ts`) carrying `prescriptionHash` onto the execution doc. Later catalog/plan edits cannot rewrite a started session; fixture launches now carry a self-contained pinned prescription too.
 - **Wall-clock timers (#908/#911).** `restDeadlineMs` / `restSecondsRemainingAt` / `sessionElapsedSecondsAt` (`sessions/restEventTiming.ts`); interval callbacks are repaint triggers only. Reload **never** reconstructs an in-flight rest — recorded in `docs/architecture/session-execution.md`. #895 must keep that contract, not revisit it.
 - **Reconciliation authority (ADR-0034, PR #324/#331).** `projectionBuilder` `buildProjection` picks structured first and never erases with `undefined`; `deriveFactsFromOccurrence` (`engine/performedTrainingFacts.ts`) takes modality/timing from structured and identity fields only from hydrated structured; `completedWorkoutView.ts` marks `garminExerciseSetsAreDiagnosticOnly` when structured exists. Never auto-links on date alone (`AUTO_LINK_CONFIDENCE` 0.75, runner-up ≥ 0.4 forces `ambiguous`).
 - **Sticky manual decisions.** `withStickyReconciliation`, `unlinkSource` bilateral `excludedSourceKeys`, `ManualExclusionConflictError` on re-merge attempts, `manualLinkCandidatesFor` suppressing separated pairs both directions.
@@ -77,7 +77,7 @@ WP6 inventories per-consumer authority (canonical vs legacy) and closes double-c
 
 - Emulator fixtures exercise entry retry, correction/deletion history, closed rest, terminal-write rejection and service-instance restore. Existing concurrent-start tests cover slot arbitration; browser tests additionally prove actual offline reload and undo.
 - Thin occurrence fixtures pin distinct source keys, single-source identity and same-document updates. They do not invoke reconciliation or prove arrival-order convergence; those proofs remain in WP4.
-- WP0 pinned the original behavior before WP1 replaced the diary-gap assertions with lossless-write regressions. Lifecycle and prescription-resume hardening remain in WP2/WP3.
+- WP0 pinned the original behavior before WP1 replaced the diary-gap assertions with lossless-write regressions. Lifecycle and prescription-resume hardening are delivered in WP2/WP3.
 
 ### Files
 
@@ -116,41 +116,27 @@ WP6 inventories per-consumer authority (canonical vs legacy) and closes double-c
 
 ## WP2 — Lifecycle hardening and regression lock-in
 
-**Status:** Not started
-**Blocked by:** WP0; uses WP1 outbox for the completion batch where applicable
-**Purpose:** make terminal transitions deliberate and idempotent end-to-end, not just rules-rejected.
+**Status:** Implemented
 
-### Changes
-
-- Keep the #663 slot-claim path untouched; add emulator proofs for: double `completeSession` (second is client no-op; forced second write fails closed at rules, surfaced as already-completed not generic error); `abandonSession` retains all logged sets; completed execution cannot reopen as a second execution for the same occurrence without an explicit redo (`allowDuplicateCompleted`) that advances the lock pointer and preserves the old doc.
-- `completeSession` keeps rest-close-first + atomic 1RM/transition batch + fail-closed occurrence/response fan-out.
-
-### Acceptance
-
-- Completing twice cannot create two completed executions for one occurrence;
-- abandonment retains prior sets;
-- no reopen path exists except explicit legitimate redo.
-
----
+`transitionExecutionTerminal` admits one persisted winner, batches canonical completion evidence
+with 1RM updates, and returns proven terminal state to race losers. Completion projections repair
+from that evidence without overwriting subsequent response corrections. Terminal executions cannot
+reopen or be deleted; explicit redo retains the predecessor and claims one successor. Abandonment
+retains performed entries. Emulator tests cover simultaneous clients and sibling-write atomicity.
 
 ## WP3 — Resume contract
 
-**Status:** Not started
-**Blocked by:** WP1 (resume replays the outbox, not just server reads)
-**Purpose:** reloading an in-progress session restores the exact execution, all entries, and the starting prescription.
+**Status:** Implemented
 
-### Changes
+New launches, including fixtures, pin self-contained executable snapshots and populate their
+persistent cache before returning. Resume restores the same execution and causally consistent
+queued diary, excluding failed intents. Shared progression accounts for rounds, per-side holds,
+warm-ups, optional work and recorded choices. Missing or conflicting evidence enters a degraded
+state that pauses logging and new starts. An in-flight rest is cleared on reload.
 
-- Restore path (`findInProgressExecution` + `getEntries` + `resolveSessionDefinition`) additionally drains the WP1 outbox before declaring sync-healthy, so entries acknowledged locally but not yet committed are neither lost nor duplicated.
-- Current exercise/step, required/optional status and completed/remaining work derive from restored entries + pinned prescription (shared resolver with the runner progression, per #885 discipline).
-- Rest/timing: keep the cleared-on-reload contract; assert it in tests (durably closed rests remain history; no fabricated duration).
-- Close the fixture gap: either pin a prescription record for `unplanned_fixture` launches or document why fixtures are exempt from the snapshot invariant — no silent third path.
-- Unresolvable prescription (hash missing/mismatch) keeps the execution restorable with entries intact and an explicit degraded state, never a fabricated definition.
-
-### Acceptance
-
-- Reload restores exact execution + all prior entries + starting prescription despite later template/plan edits;
-- in-flight rest is never fabricated from timestamps.
+The scoped delivery record is
+[`2026-10-05-issue-895-wp2-wp3-lifecycle-resume.md`](./2026-10-05-issue-895-wp2-wp3-lifecycle-resume.md).
+WP4–WP7 and related #723/#724/#896/#952 remain separate.
 
 ---
 

@@ -6,7 +6,9 @@ import {
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { DataState } from '../engine/dataState';
-import type { ExecutionPrescription } from '../sessions/models';
+import type { ExecutionPrescription, SessionDefinitionSnapshot, SessionSourceRef } from '../sessions/models';
+import { definitionFromSnapshot } from '../sessions/sessionDefinitionSnapshot';
+import { validateSessionDefinition } from '../sessions/validation';
 import { hashExecutionPrescription } from '../sessions/sessionDefinitionHash';
 import { MOVEMENT_COMPOSITION_PATTERNS } from '../sessions/movementCompositionContract';
 
@@ -17,6 +19,19 @@ function hasSessionSource(value: unknown): boolean {
     if (source.kind === 'manual') return typeof source.definitionId === 'string' && typeof source.revision === 'number' && typeof source.contentHash === 'string';
     if (source.kind === 'external_plan') return typeof source.planId === 'string' && typeof source.revision === 'number' && typeof source.sessionId === 'string' && typeof source.contentHash === 'string';
     return source.kind === 'unplanned_fixture' && typeof source.fixtureId === 'string';
+}
+
+function hasValidDefinitionSnapshot(value: unknown, source: unknown): boolean {
+    if (value === undefined) return true;
+    if (!value || typeof value !== 'object' || !hasSessionSource(source)) return false;
+    try {
+        return validateSessionDefinition(definitionFromSnapshot(
+            value as SessionDefinitionSnapshot,
+            source as SessionSourceRef,
+        )).ok;
+    } catch {
+        return false;
+    }
 }
 
 function hasValidMovementComposition(value: unknown): boolean {
@@ -99,6 +114,9 @@ export class ExecutionPrescriptionService {
                 userId,
             });
         });
+        // Transaction writes do not seed the readable persistent cache. Finish the
+        // launch snapshot read before the athlete can go offline and reload.
+        await getDoc(ref);
     }
 
     async getPrescription(userId: string, prescriptionHash: string): Promise<DataState<ExecutionPrescription>> {
@@ -115,7 +133,8 @@ export class ExecutionPrescriptionService {
                 hasSessionSource(data.sessionSource) &&
                 typeof data.definitionHash === 'string' &&
                 Array.isArray(data.blocks) &&
-                hasValidDisplayMetadata(data.displayMetadata)
+                hasValidDisplayMetadata(data.displayMetadata) &&
+                hasValidDefinitionSnapshot(data.definitionSnapshot, data.sessionSource)
             ) {
                 const prescription = data as unknown as ExecutionPrescription;
                 if (await hashExecutionPrescription(prescription) !== prescriptionHash) {

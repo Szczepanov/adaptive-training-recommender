@@ -64,6 +64,11 @@ test.describe.configure({ mode: 'serial' });
 for (const scenario of VISUAL_SCENARIOS) {
   test(`captures ${scenario.id}`, async ({ page }) => {
     await visitScenario(page, scenario);
+    if (scenario.id === 'session-runner-degraded-resume') {
+      await expect(page.getByRole('heading', { name: 'Session recovery needs attention' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Retry recovery' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Start Session →', exact: true })).toHaveCount(0);
+    }
     if (scenario.id.startsWith('assessment-openbar-')) {
       const state = scenario.id.slice('assessment-openbar-'.length);
       if (state !== 'empty') {
@@ -349,15 +354,14 @@ test('captures grouped session runner rotation without horizontal overflow', asy
   expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true);
 
   const newSessionBtn = page.getByRole('button', { name: '＋ New session' });
-  if (await newSessionBtn.count()) {
-    await newSessionBtn.click();
-    await page.getByRole('button', { name: 'From fixture' }).click();
-  }
+  await newSessionBtn.click();
+  await page.getByRole('button', { name: 'From fixture' }).click();
 
   const groupedFixture = page.locator('.fixture-card').filter({ hasText: 'Upper-Body Absorption & Field-Readiness Support' });
   await groupedFixture.getByRole('button', { name: 'Start Session →' }).click();
   await expect(page.locator('.group-progress')).toContainText('Circuit');
 
+  await page.getByRole('checkbox', { name: 'Warm-up', exact: true }).uncheck();
   await page.locator('.log-set-btn').click();
   await expect(page.getByRole('heading', { name: /scapular.push.up/i })).toBeVisible();
 
@@ -383,10 +387,8 @@ test('captures per-side hold controls without horizontal overflow', async ({ pag
   await visitScenario(page, scenario);
 
   const newSessionBtn = page.getByRole('button', { name: '＋ New session' });
-  if (await newSessionBtn.count()) {
-    await newSessionBtn.click();
-    await page.getByRole('button', { name: 'From fixture' }).click();
-  }
+  await newSessionBtn.click();
+  await page.getByRole('button', { name: 'From fixture' }).click();
 
   const timedFixture = page.locator('.fixture-card').filter({ hasText: 'Timed Trunk & Tissue Preparation' });
   await timedFixture.getByRole('button', { name: 'Start Session →' }).click();
@@ -447,10 +449,8 @@ test('captures saved custom-template preview and archived-library states', async
   await visitScenario(page, scenario);
 
   const newSessionBtn = page.getByRole('button', { name: '＋ New session' });
-  if (await newSessionBtn.count()) {
-    await newSessionBtn.click();
-    await page.getByRole('button', { name: 'From template' }).click();
-  }
+  await newSessionBtn.click();
+  await page.getByRole('button', { name: 'From template' }).click();
 
   await expect(page.getByRole('heading', { name: 'Your custom templates' })).toBeVisible();
   const customTemplate = page.locator('.fixture-card').filter({ hasText: 'Upper-Body Strength Maintenance' });

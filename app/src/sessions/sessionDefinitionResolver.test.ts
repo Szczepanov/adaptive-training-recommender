@@ -399,9 +399,9 @@ describe('resolveSessionDefinition', () => {
             });
         });
 
-        it('still rejects an unknown workoutId regardless of prescriptionHash', async () => {
+        it('rejects a prescription bound to a different workout before consulting current catalog content', async () => {
             await expect(resolveSessionDefinition('u1', { kind: 'catalog', workoutId: 'nope', catalogVersion: '1' }, 'hash-1'))
-                .resolves.toMatchObject({ status: 'INVALID', issues: [{ code: 'catalog-workout-not-found' }] });
+                .resolves.toMatchObject({ status: 'INVALID', issues: [{ code: 'prescription-source-mismatch' }] });
         });
 
         it('fails closed on a live-catalog version mismatch only for the legacy no-displayMetadata fallback', async () => {

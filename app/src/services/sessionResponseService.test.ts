@@ -254,4 +254,20 @@ describe('SessionResponseService (M5.1)', () => {
             { sessionRpe: 9, updatedAt: '2026-08-18T11:06:00.000Z' },
         );
     });
+    it('preserves a corrected response during recovery, including a racing create', async () => {
+        const service = new SessionResponseService();
+        const source = { kind: 'execution' as const, id: 'exec-1', date: '2026-08-18' };
+        const corrected = responseDoc({ sessionRpe: 3, updatedAt: '2026-08-19T10:00:00.000Z' });
+        firestore.getDocs.mockResolvedValue({ docs: [{ data: () => corrected, ref: { path: 'x' } }] });
+        await service.recordOrUpdateResponse('u1', source, 'immediate', source.date, source.date,
+            { sessionRpe: 8 }, undefined, corrected.createdAt, { preserveExisting: true });
+        expect(firestore.updateDoc).not.toHaveBeenCalled();
+        firestore.getDocs.mockResolvedValue({ docs: [] });
+        firestore.transactionGet.mockResolvedValue({ exists: () => true, data: () => corrected });
+        await service.recordOrUpdateResponse('u1', source, 'immediate', source.date, source.date,
+            { sessionRpe: 8 }, undefined, corrected.createdAt, { preserveExisting: true });
+        expect(firestore.transactionUpdate).not.toHaveBeenCalled();
+        expect(firestore.transactionSet).not.toHaveBeenCalled();
+    });
+
 });
