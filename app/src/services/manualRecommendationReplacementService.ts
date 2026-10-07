@@ -1,14 +1,16 @@
-import { doc, runTransaction, type Firestore } from 'firebase/firestore';
+import { doc, runTransaction, type Firestore, type Transaction } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { ManualOccurrenceRef, SessionOccurrence } from '../sessions/models';
-import { isExternalPlanOccurrence } from '../sessions/models';
+import { isExternalPlanOccurrence, isManualOccurrence } from '../sessions/models';
+import type { DailyRecommendation } from '../engine/models';
 import { parseDailyRecommendation } from '../persistence/parsers/trainingHistory';
 import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDefinition';
 import { windowReservationId } from './sessionOccurrenceService';
+import { deepEqual } from '../utils/deepEqual';
 
 /**
- * Coordinates the authority hand-off from today's persisted primary recommendation to a
- * manual replacement occurrence. The recommendation binding is the only source of truth for
+ * Schedules replacement intent, then transfers authority only when its adjudicated
+ * recommendation is committed. The recommendation binding is the only source of truth for
  * which prepared occurrence is being displaced: same-day occurrence scans and title matching
  * are intentionally forbidden because intraday plans may contain multiple legitimate sessions.
  */
@@ -41,10 +43,6 @@ export class ManualRecommendationReplacementService {
 
         await runTransaction(this.db, async transaction => {
             const recommendationSnap = await transaction.get(recommendationRef);
-            let displaced: SessionOccurrence | null = null;
-            let displacedRef: ReturnType<typeof doc> | null = null;
-            let reservationRef: ReturnType<typeof doc> | null = null;
-            let hasOwnedReservation = false;
 
             if (recommendationSnap.exists()) {
                 const parsedRecommendation = parseDailyRecommendation(
@@ -56,66 +54,82 @@ export class ManualRecommendationReplacementService {
                         `Today's recommendation cannot be used for replacement (${parsedRecommendation.status}).`,
                     );
                 }
-                const displacedOccurrenceId = parsedRecommendation.data.primarySession?.occurrenceId;
-                if (displacedOccurrenceId) {
-                    displacedRef = doc(this.db, 'users', userId, 'session_occurrences', displacedOccurrenceId);
-                    const displacedSnap = await transaction.get(displacedRef);
-                    if (!displacedSnap.exists()) {
-                        throw new Error(
-                            `Prepared occurrence ${displacedOccurrenceId} referenced by today's recommendation was not found.`,
-                        );
-                    }
-                    const parsedOccurrence = parseSessionOccurrenceDocument(displacedSnap.data(), displacedRef.path);
-                    if (parsedOccurrence.status !== 'AVAILABLE') {
-                        throw new Error(
-                            `Prepared occurrence ${displacedOccurrenceId} could not be parsed (${parsedOccurrence.status}).`,
-                        );
-                    }
-                    displaced = parsedOccurrence.data;
-                    if (displaced.userId !== userId || displaced.date !== date) {
-                        throw new Error('Prepared occurrence does not belong to the recommendation date and athlete.');
-                    }
-                    if (displaced.state !== 'scheduled') {
-                        throw new Error(
-                            `Cannot replace today's recommendation because occurrence ${displaced.occurrenceId} is already '${displaced.state}'.`,
-                        );
-                    }
-                    if (isExternalPlanOccurrence(displaced) && displaced.windowBinding) {
-                        reservationRef = doc(
-                            this.db,
-                            'users',
-                            userId,
-                            'session_occurrence_windows',
-                            windowReservationId(date, displaced.windowBinding.windowId),
-                        );
-                        const reservationSnap = await transaction.get(reservationRef);
-                        if (reservationSnap.exists()) {
-                            const owner = reservationSnap.data()?.occurrenceId as string | undefined;
-                            if (owner !== displaced.occurrenceId) {
-                                throw new Error(
-                                    `Prepared occurrence window is owned by another occurrence (${owner ?? 'unknown'}).`,
-                                );
-                            }
-                            hasOwnedReservation = true;
-                        }
-                    }
-                }
-            }
-
-            if (displaced && displacedRef) {
-                transaction.set(displacedRef, {
-                    ...displaced,
-                    state: 'superseded',
-                    updatedAt: now,
-                });
-                if (reservationRef && hasOwnedReservation) {
-                    transaction.delete(reservationRef);
-                }
+                await this.readPreparedPrimary(transaction, userId, date, parsedRecommendation.data.primarySession?.occurrenceId);
             }
             transaction.set(replacementRef, replacement);
         });
 
         return replacement;
+    }
+
+    /** Called before any recommendation/archive writes in the same transaction. */
+    async transferAuthorityInTransaction(
+        transaction: Transaction,
+        userId: string,
+        date: string,
+        prior: DailyRecommendation | undefined,
+        accepted: DailyRecommendation,
+    ): Promise<void> {
+        const claim = accepted.recommendationAudit?.authoredOccurrence;
+        const binding = accepted.primarySession;
+        if (!claim || !['proceed', 'scale'].includes(claim.decision)
+            || binding?.occurrenceId !== claim.occurrenceId || binding.sessionSource.kind !== 'manual'
+            || !deepEqual(accepted.recommendationAudit?.primarySession, binding)
+            || accepted.recommendationAudit?.externalPlan) {
+            throw new Error('Replacement recommendation has no exact accepted manual authority.');
+        }
+        const ref = doc(this.db, 'users', userId, 'session_occurrences', claim.occurrenceId);
+        const snap = await transaction.get(ref);
+        const parsed = snap.exists() ? parseSessionOccurrenceDocument(snap.data(), ref.path) : null;
+        const source = binding.sessionSource;
+        if (parsed?.status !== 'AVAILABLE' || !isManualOccurrence(parsed.data)
+            || parsed.data.authority !== 'replace_recommendation'
+            || parsed.data.userId !== userId || parsed.data.date !== date
+            || !['scheduled', 'active'].includes(parsed.data.state)
+            || parsed.data.definitionRef.definitionId !== source.definitionId
+            || parsed.data.definitionRef.revision !== source.revision
+            || parsed.data.definitionRef.contentHash !== source.contentHash) {
+            throw new Error('Replacement occurrence does not match the accepted recommendation.');
+        }
+        if (prior?.primarySession?.occurrenceId === claim.occurrenceId) return;
+        const displaced = await this.readPreparedPrimary(transaction, userId, date, prior?.primarySession?.occurrenceId);
+        if (displaced) {
+            transaction.set(displaced.ref, { ...displaced.occurrence, state: 'superseded', updatedAt: accepted.updatedAt });
+            if (displaced.reservationRef) transaction.delete(displaced.reservationRef);
+        }
+    }
+
+    private async readPreparedPrimary(transaction: Transaction, userId: string, date: string, occurrenceId?: string) {
+        if (!occurrenceId) return null;
+        const ref = doc(this.db, 'users', userId, 'session_occurrences', occurrenceId);
+        const snap = await transaction.get(ref);
+        const parsed = snap.exists() ? parseSessionOccurrenceDocument(snap.data(), ref.path) : null;
+        if (parsed?.status !== 'AVAILABLE' || parsed.data.occurrenceId !== occurrenceId
+            || parsed.data.userId !== userId || parsed.data.date !== date) {
+            throw new Error('Prepared occurrence does not belong to the recommendation date and athlete.');
+        }
+        const occurrence = parsed.data;
+        if (occurrence.state !== 'scheduled') {
+            throw new Error(`Cannot replace today's recommendation because occurrence ${occurrenceId} is already '${occurrence.state}'.`);
+        }
+        // Primary execution can be committed before its occurrence lifecycle catches
+        // up. Reading the same deterministic lock serializes launch against transfer.
+        const lockRef = doc(this.db, 'users', userId, 'session_execution_locks', `occ_${date}_${encodeURIComponent(occurrenceId)}`);
+        if ((await transaction.get(lockRef)).exists()) {
+            throw new Error(`Cannot replace today's recommendation because occurrence ${occurrenceId} already has an execution.`);
+        }
+        let reservationRef: ReturnType<typeof doc> | null = null;
+        if (isExternalPlanOccurrence(occurrence) && occurrence.windowBinding) {
+            const windowRef = doc(this.db, 'users', userId, 'session_occurrence_windows', windowReservationId(date, occurrence.windowBinding.windowId));
+            const reservation = await transaction.get(windowRef);
+            if (reservation.exists()) {
+                if (reservation.data()?.occurrenceId !== occurrenceId) {
+                    throw new Error('Prepared occurrence window is owned by another occurrence.');
+                }
+                reservationRef = windowRef;
+            }
+        }
+        return { ref, occurrence, reservationRef };
     }
 }
 

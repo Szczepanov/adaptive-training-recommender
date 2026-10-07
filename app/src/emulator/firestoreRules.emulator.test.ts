@@ -1985,14 +1985,41 @@ emulatorDescribe('Firestore security rules', () => {
             windowBinding: incompleteBinding,
         }));
 
-        // 4. windowBinding is immutable once set (the update rule's diff().affectedKeys()
-        // already restricts updates to ['state', 'updatedAt'], so any windowBinding change
-        // on update is rejected the same way externalPlanRef changes are).
+        // 4. windowBinding is immutable once set.
         await assertFails(setDoc(doc(ownerDb, boundPath), {
             ...validExternalPlanSessionOccurrence(),
             occurrenceId: 'occ-ext-bound',
             windowBinding: { ...validWindowBinding(), windowId: 'window-2' },
             updatedAt: '2026-08-18T11:00:00Z',
+        }));
+    });
+
+    it('allows one atomic scheduled external occurrence binding with its matching reservation', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const occurrenceId = 'occ-ext-seal';
+        const occurrenceRef = doc(ownerDb, `users/${ownerId}/session_occurrences/${occurrenceId}`);
+        const reservationRef = doc(ownerDb, `users/${ownerId}/session_occurrence_windows/win-2026-08-18-window-1`);
+        const binding = {
+            windowId: 'window-1', bundleId: 'bundle-1', order: 0,
+            boundStartLocal: '07:00', boundEndLocal: '08:00',
+            startInstant: '2026-08-18T05:00:00Z', endInstant: '2026-08-18T06:00:00Z',
+        };
+        await setDoc(occurrenceRef, {
+            ...validExternalPlanSessionOccurrence(), occurrenceId,
+        });
+
+        const batch = writeBatch(ownerDb);
+        batch.update(occurrenceRef, { windowBinding: binding, placementOrder: 0, updatedAt: '2026-08-18T11:00:00Z' });
+        batch.set(reservationRef, {
+            userId: ownerId, date: '2026-08-18', windowId: binding.windowId, occurrenceId,
+            createdAt: '2026-08-18T11:00:00Z',
+        });
+        await assertSucceeds(batch.commit());
+
+        await assertFails(setDoc(occurrenceRef, {
+            ...validExternalPlanSessionOccurrence(), occurrenceId,
+            windowBinding: { ...binding, windowId: 'window-2' }, placementOrder: 1,
+            updatedAt: '2026-08-18T12:00:00Z',
         }));
     });
 
@@ -2168,34 +2195,76 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/intraday_bundle_placements/2026-08-21`), malformed));
     });
 
-    it('enforces immutable ownership and shape for replayable intraday placement audits (ADR-0036 D-AUDIT)', async () => {
+    it.each([4, 5, 6])('enforces immutable ownership and shape for replayable intraday placement audits with external-plan@%i started members', async version => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
         const auditId = 'audit_' + 'a'.repeat(64);
         const auditPath = `users/${ownerId}/intraday_bundle_placement_audits/${auditId}`;
+        const binding = {
+            sessionId: 's1', windowId: 'window-1', boundStartLocal: '06:00', boundEndLocal: '07:00',
+            startInstant: '2026-08-18T04:00:00Z', endInstant: '2026-08-18T05:00:00Z',
+        };
         const validAudit = {
             schemaVersion: 'intraday_bundle_placement_audit_v1', auditId, snapshotHash: 'a'.repeat(64), userId: ownerId,
             date: '2026-08-18', asOf: '2026-08-18T05:00:00Z', policyVersion: '2026-09-h4-intraday-bundle-member-launch-v1',
             plan: { planId: 'plan-1', revision: 2, contentHash: 'b'.repeat(64) }, bundleId: 'bundle-1',
-            planSnapshot: { schema: 'adaptive-training-recommender/external-plan@4', planId: 'plan-1', revision: 2, title: 'Test plan', startDate: '2026-08-17', weekCount: 1, sessions: [{}], restDays: [] },
+            planSnapshot: {
+                schema: `adaptive-training-recommender/external-plan@${version}`, planId: 'plan-1', revision: 2,
+                title: 'Test plan', startDate: '2026-08-17', weekCount: 1, sessions: [{}], restDays: [],
+                ...(version >= 5 ? { intentBlocks: [] } : {}),
+            },
             scheduleWindows: [], fixedActivities: [], restDates: [], planSessions: [{ sessionId: 's1', date: '2026-08-18', status: 'planned' }],
-            members: [{ sessionId: 's1', order: 1, requestedWindow: { startLocal: '06:00', endLocal: '07:00' }, estimatedMinutes: 45, estimatedSystemicCost: 0.2, started: false }],
+            members: [{ sessionId: 's1', order: 1, priority: 'key', requestedWindow: { startLocal: '06:00', endLocal: '07:00' }, estimatedMinutes: 45, estimatedSystemicCost: 0.2, started: true, existingBinding: binding }],
             ledger: { ceilings: { dailyMinuteCeiling: 60, dailySystemicCostCeiling: 1 }, entries: [], result: { remainingMinutes: 60, remainingSystemicCost: 1, unresolvedEntries: [] } },
-            proposal: { bundleId: 'bundle-1', outcome: 'infeasible', reason: 'no placement' }, createdAt: '2026-08-18T05:00:00Z',
+            proposal: { bundleId: 'bundle-1', outcome: 'placed', bindings: [binding] }, createdAt: '2026-08-18T05:00:00Z',
         };
 
+        await assertFails(setDoc(doc(otherDb, auditPath), validAudit));
+        await assertFails(setDoc(doc(ownerDb, auditPath), { ...validAudit, userId: otherUserId }));
+        await assertFails(setDoc(doc(testEnvironment.unauthenticatedContext().firestore(), auditPath), validAudit));
         await assertSucceeds(setDoc(doc(ownerDb, auditPath), validAudit));
         await assertSucceeds(getDoc(doc(ownerDb, auditPath)));
         await assertFails(getDoc(doc(otherDb, auditPath)));
         await assertFails(setDoc(doc(otherDb, auditPath), { ...validAudit, userId: otherUserId }));
+        await assertFails(setDoc(doc(ownerDb, auditPath), validAudit));
+        await assertFails(updateDoc(doc(ownerDb, auditPath), { asOf: '2026-08-18T06:00:00Z' }));
         await assertFails(setDoc(doc(ownerDb, auditPath), { ...validAudit, proposal: { bundleId: 'bundle-1', outcome: 'placed' } }));
         await assertFails(deleteDoc(doc(ownerDb, auditPath)));
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/intraday_bundle_placement_audits/not-the-payload-id`), validAudit));
+        const unstartedAuditId = 'audit_' + 'd'.repeat(64);
+        const snapshotWithoutIntentBlocks = { ...validAudit.planSnapshot };
+        delete snapshotWithoutIntentBlocks.intentBlocks;
+        const unstartedMember: Record<string, unknown> = { ...validAudit.members[0], started: false };
+        delete unstartedMember.existingBinding;
+        await assertSucceeds(setDoc(doc(ownerDb, `users/${ownerId}/intraday_bundle_placement_audits/${unstartedAuditId}`), {
+            ...validAudit, auditId: unstartedAuditId, planSnapshot: snapshotWithoutIntentBlocks,
+            members: [unstartedMember],
+            proposal: { bundleId: 'bundle-1', outcome: 'infeasible', reason: 'no placement' },
+        }));
         const emptyMembersAuditId = 'audit_' + 'c'.repeat(64);
         await assertFails(setDoc(
             doc(ownerDb, `users/${ownerId}/intraday_bundle_placement_audits/${emptyMembersAuditId}`),
             { ...validAudit, auditId: emptyMembersAuditId, members: [] },
         ));
+        const snapshotWithoutRestDays: Record<string, unknown> = { ...validAudit.planSnapshot };
+        delete snapshotWithoutRestDays.restDays;
+        const malformedSnapshots = [
+            { ...validAudit.planSnapshot, schema: 'adaptive-training-recommender/external-plan@3' },
+            { ...validAudit.planSnapshot, schema: 'adaptive-training-recommender/external-plan@7' },
+            { ...validAudit.planSnapshot, planId: 'another-plan' },
+            { ...validAudit.planSnapshot, revision: 3 },
+            { ...validAudit.planSnapshot, unexpectedField: true },
+            { ...validAudit.planSnapshot, sessions: Array.from({ length: 121 }, () => ({})) },
+            { ...validAudit.planSnapshot, intentBlocks: {} },
+            { ...validAudit.planSnapshot, intentBlocks: Array.from({ length: 27 }, () => ({})) },
+            snapshotWithoutRestDays,
+            ...(version === 4 ? [{ ...validAudit.planSnapshot, intentBlocks: [] }] : []),
+        ];
+        for (const planSnapshot of malformedSnapshots) {
+            await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/intraday_bundle_placement_audits/${emptyMembersAuditId}`), {
+                ...validAudit, auditId: emptyMembersAuditId, planSnapshot,
+            }));
+        }
     });
 
     it('allows recommendations with primarySession and additionalSessions bindings', async () => {

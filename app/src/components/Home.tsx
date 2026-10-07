@@ -680,6 +680,18 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           prescription: resolveWorkoutPrescription(baseRecommendation, userId, input.date, input.preferences?.performanceProfile, baseRecommendation.executionDose, input.trainingSettings) ?? undefined
         };
 
+        const committedRecommendation = await recommendationService.getRecommendation(userId, input.date);
+        const committedReplacementId = committedRecommendation?.recommendationAudit?.authoredOccurrence?.occurrenceId;
+        const committedOccurrence = committedReplacementId
+          ? await sessionOccurrenceService.getOccurrence(userId, committedReplacementId)
+          : null;
+        const finishedReplacement = committedOccurrence?.status === 'AVAILABLE'
+          && isManualOccurrence(committedOccurrence.data)
+          && committedOccurrence.data.authority === 'replace_recommendation'
+          && committedOccurrence.data.date === input.date
+          && ['completed', 'abandoned'].includes(committedOccurrence.data.state);
+        if (!isCurrent()) return;
+
         // M3.1/M3.4: a catalog-sourced recommendation gets its executable snapshot bound
         // and persisted (write-once, content-addressed) at composition time.
         let primarySession: Recommendation['primarySession'] = recommendationWithPrescription.primarySession;
@@ -693,6 +705,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
             console.warn('Failed to prepare the catalog session binding for today\'s recommendation:', err);
           }
         } else if (
+          !committedReplacementId &&
           activeExternal &&
           externalContext &&
           canLaunchExternalPlanSession(externalContext.session, {
@@ -915,10 +928,51 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           console.warn('Failed to evaluate authored session occurrences for today:', occErr);
         }
 
-        const todayRec = {
+        let todayRec: Recommendation = {
           ...recommendationWithSession,
           recommendationAudit: buildRecommendationAudit(recommendationWithSession, sameDayPreparedSnapshot, evaluatedAt) ?? undefined,
         };
+        const restoreCommittedReplacement = async (saved: DailyRecommendation): Promise<Recommendation> => {
+          const binding = saved.primarySession;
+          const frozen = binding ? await resolveSessionDefinition(userId, binding.sessionSource, binding.prescriptionHash) : null;
+          return {
+            ...todayRec,
+            template: frozen?.status === 'AVAILABLE' ? createAuthoredSessionTemplate(frozen.data) : todayRec.template,
+            mode: saved.mode,
+            rationale: saved.rationale,
+            primarySession: frozen?.status === 'AVAILABLE' ? binding : undefined,
+            recommendationAudit: saved.recommendationAudit,
+            executionDose: saved.recommendationAudit?.executionDose,
+            externalVerdict: undefined,
+            externalPrescription: undefined,
+          };
+        };
+        if (finishedReplacement && committedRecommendation) {
+          todayRec = await restoreCommittedReplacement(committedRecommendation);
+          if (!isCurrent()) return;
+        }
+        if (committedReplacementId && !todayRec.recommendationAudit?.authoredOccurrence) {
+          // A rejected/unresolved live override cannot fall through to a launch of
+          // unrelated catalog/external work while its committed authority persists.
+          todayRec = { ...todayRec, primarySession: undefined };
+        }
+        const persistRecommendation = () => recommendationService.saveRecommendation(userId, input.date, todayRec, {
+          evaluatedAt,
+          minimumSafetyStatus: safetyStatus,
+          evaluatorInputs,
+          performedTrainingFacts,
+          mechanicalCheckinHistory,
+        });
+        // An authored Start is exposed only after its authority/archive/lifecycle
+        // hand-off commits. A failed write must not launch an uncommitted override.
+        if (todayRec.recommendationAudit?.authoredOccurrence && !finishedReplacement) {
+          const saved = await persistRecommendation();
+          if (!isCurrent()) return;
+          todayRec = saved
+            ? await restoreCommittedReplacement(saved)
+            : { ...todayRec, primarySession: undefined, rationale: `${todayRec.rationale} Replacement could not be saved; reload before starting.` };
+          if (!isCurrent()) return;
+        }
         setDecisionContextCapture({
           evaluatedAt,
           evaluatorInputs,
@@ -942,15 +996,11 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         if (!isCurrent()) return;
         setNextDayPlan(tomorrowPlan);
 
-        recommendationService.saveRecommendation(userId, input.date, todayRec, {
-          evaluatedAt,
-          minimumSafetyStatus: safetyStatus,
-          evaluatorInputs,
-          performedTrainingFacts,
-          mechanicalCheckinHistory,
-        })
-          .then(saved => verifySessionBindingReplay(userId, saved))
-          .catch(err => console.warn('Failed to persist recommendation:', err));
+        if (!todayRec.recommendationAudit?.authoredOccurrence) {
+          persistRecommendation()
+            .then(saved => verifySessionBindingReplay(userId, saved))
+            .catch(err => console.warn('Failed to persist recommendation:', err));
+        }
       } else if (input.recoverySnapshot && safetyStatus !== 'complete') {
         setDecisionContextCapture(null);
         setRecommendation(createProvisionalSafetyRecommendation(safetyStatus));

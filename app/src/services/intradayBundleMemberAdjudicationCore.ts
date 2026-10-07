@@ -71,7 +71,8 @@ import {
     sessionExecutionService,
 } from './sessionExecutionService';
 import type { ActiveExternalPlan } from './activeExternalPlanService';
-import { isV4Plan, type ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
+import type { ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
+import { isBundleCapableExternalPlan } from '../sessions/externalPlanV2';
 import { estimateAuthoredSessionSystemicCost } from '../engine/authoredSessionGates';
 import { POLICY_VERSION } from '../engine/policy';
 
@@ -165,7 +166,7 @@ export async function adjudicateIntradayBundleMembers(
         db = getDb(),
     } = params;
 
-    if (!isV4Plan(activePlan.plan) || bundlePlacement.outcome !== 'placed' || !bundlePlacement.bindings) {
+    if (!isBundleCapableExternalPlan(activePlan.plan) || bundlePlacement.outcome !== 'placed' || !bundlePlacement.bindings) {
         return { bindings: [], statuses: [], notices: [] };
     }
 

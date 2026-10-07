@@ -25,6 +25,20 @@ content.
 
 ## Imported-plan scale verdicts and structured Start
 
+Manual replacement first records a scheduled `replace_recommendation` intent. Home applies
+the existing authored-session gates and freezes its accepted prescription before
+`RecommendationService.saveRecommendation` transfers authority. That transaction archives
+the prior recommendation, saves the exact `authoredOccurrence` and primary binding, supersedes
+only the prior scheduled primary, and releases its owned window. Home exposes the replacement
+Start only after the commit succeeds. A started primary cannot be displaced: its execution
+lock also blocks transfer while occurrence lifecycle updates are catching up, and execution
+creation rules reject a stale launch of an already-superseded occurrence.
+
+A completed or abandoned replacement retains its committed recommendation and frozen
+prescription; a later Home recompute does not re-adjudicate it or erase replacement provenance.
+Intraday v4/v5/v6 primaries seal their resolved order/window while still scheduled, before
+Start. Started members require that persisted binding; replay never reconstructs it.
+
 An external-plan `proceed` verdict may bind the imported v2+ `SessionDefinition` as written,
 and Start launches that binding only while no time-crunch alternative or load adjustment is
 applied: either one keeps the binding but changes the displayed dose, so `MorningDecisionCard`

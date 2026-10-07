@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { expect, test } from './support/consoleTrap';
 import { provisionAthlete, seedRecoverySnapshot, signInThroughUi, openFixturePicker } from './support/athlete';
 import { mondayOfWeek, weekdayOf, seedExternalPlanForToday, seedExternalPlanningMode } from './support/externalPlan';
-import { buildV6Plan, coachSession, strengthDefinition, seedExternalPlanRevision, seedBundleWindows, importPlan, checkIn, planningBrief, finishStrength, terminalExecution, executionRow, readExecutionPrescription, readPerformedOccurrences, readExecutions, readOccurrences, readDocument } from './support/roundTrip';
+import { buildV6Plan, coachSession, strengthDefinition, seedExternalPlanRevision, seedPlacement, seedBundleWindows, importPlan, checkIn, planningBrief, finishStrength, terminalExecution, executionRow, readExecutionPrescription, readPerformedOccurrences, readExecutions, readOccurrences, readDocument } from './support/roundTrip';
 import { addDaysToLocalDateString } from '../../src/utils/localDate';
 import { hashSessionDefinition } from '../../src/sessions/sessionDefinitionHash';
 import { resolvePlacement } from '../../src/engine/externalPlacement';
@@ -103,6 +103,13 @@ test('V8 UI manual replacement names its exact replacement occurrence', async ({
   const today = await seedRecoverySnapshot(athlete);
   const plan = buildV6Plan(today);
   await seedExternalPlanRevision(athlete, plan, today);
+  // Replacement attribution requires a readable, exact singleton placement,
+  // independently of the occurrence lifecycle and same-date authored placement.
+  await seedPlacement(athlete, {
+    userId: athlete.userId, planId: plan.planId, revision: plan.revision,
+    assignments: resolvePlacement(plan, null).map(item => ({ sessionId: item.session.id, date: item.date, status: item.status })),
+    updatedAt: `${today}T06:00:00.000Z`,
+  });
   await signInThroughUi(page, athlete);
   await checkIn(page);
   await expect(page.getByRole('button', { name: `Start ${plan.sessions[0].title}`, exact: true })).toBeVisible();
@@ -112,6 +119,7 @@ test('V8 UI manual replacement names its exact replacement occurrence', async ({
   await page.getByRole('radio', { name: /Replace today’s recommendation/ }).check();
   await page.getByRole('button', { name: 'Save & replace today', exact: true }).click();
   await page.getByRole('button', { name: 'Home', exact: true }).click();
+  await expect(page.getByRole('button', { name: `Start ${strengthDefinition.title}`, exact: true })).toBeVisible();
   const occurrences = await readOccurrences(athlete);
   const replacement = occurrences.find(item => item.authority === 'replace_recommendation');
   const displaced = occurrences.find(item => item.authority === 'external_plan');
@@ -120,7 +128,8 @@ test('V8 UI manual replacement names its exact replacement occurrence', async ({
   await page.getByRole('button', { name: `Start ${strengthDefinition.title}`, exact: true }).click();
   await finishStrength(page);
   await terminalExecution(athlete);
-  expect(await planningBrief(page)).toContain(`- ${today} ${plan.planId} r1/session-today: placement unknown; adjudication unknown; athlete manually replaced; performance unknown; occurrence ${displaced!.occurrenceId}; replaced by occurrence ${replacement!.occurrenceId}.`);
+  const replacementRows = (await planningBrief(page)).split('\n').filter(row => row.startsWith(`- ${today} ${plan.planId} r1/session-today:`));
+  expect(replacementRows).toEqual([`- ${today} ${plan.planId} r1/session-today: placement as authored; adjudication unknown; athlete manually replaced; performance unknown; occurrence ${displaced!.occurrenceId}; replaced by occurrence ${replacement!.occurrenceId}.`]);
   expect((await readExecutions(athlete)).filter(item => item.sessionSource.kind === 'external_plan')).toEqual([]);
 });
 
@@ -162,12 +171,16 @@ test('V9 an intraday bundle retains two session rows and two genuine workouts', 
   const persisted = await readDocument(athlete, `daily_recommendations/${today}`);
   const parsed = parseDailyRecommendation(persisted, `users/${athlete.userId}/daily_recommendations/${today}`);
   expect(parsed, 'the app must read back its own bundle recommendation').toMatchObject({ status: 'AVAILABLE' });
+  expect(await readDocument(athlete, `intraday_bundle_placements/${today}`), 'bundle placement must be feasible before either member starts')
+    .toMatchObject({ outcome: 'placed' });
+  expect((await readOccurrences(athlete)).find(item => item.authority === 'external_plan' && item.externalPlanRef.sessionId === 'primary'))
+    .toMatchObject({ placementOrder: 0, windowBinding: { bundleId: 'two-sessions', order: 0 } });
   await page.getByRole('button', { name: 'Start Bundle primary', exact: true }).click();
   await finishStrength(page);
   const primary = await terminalExecution(athlete);
   const text = await planningBrief(page);
   expect(text).toContain(`${today} ${plan.planId} r1/primary:`);
-  expect(text).toContain(`- ${today} ${plan.planId} r1/second: placement unknown; adjudication not adjudicated; athlete none; performance unknown.`);
+  expect(text).toContain(`- ${today} ${plan.planId} r1/second: placement as authored; adjudication not adjudicated; athlete none; performance unknown; occurrence `);
   await page.getByRole('button', { name: 'Home', exact: true }).click();
   await page.getByRole('region', { name: 'Additional sessions today' }).getByRole('button', { name: 'Start', exact: true }).click();
   await finishStrength(page);

@@ -1388,6 +1388,27 @@ service cloud.firestore {
         || (fromState == 'active' && toState in ['completed', 'abandoned', 'superseded', 'scheduled']);
     }
 
+    function bindsPreparedExternalOccurrence(userId, occurrenceId) {
+      let data = request.resource.data;
+      let binding = data.windowBinding;
+      let reservationId = 'win-' + data.date + '-' + binding.windowId;
+      let reservation = getAfter(/databases/$(database)/documents/users/$(userId)/session_occurrence_windows/$(reservationId));
+      return resource.data.state == 'scheduled'
+        && !('windowBinding' in resource.data)
+        && !('placementOrder' in resource.data)
+        && data.state == 'scheduled'
+        && data.authority == 'external_plan'
+        && data.externalPlanRef is map
+        && hasValidOccurrenceWindowBinding(binding)
+        && binding.windowId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && data.placementOrder == binding.order
+        && data.diff(resource.data).affectedKeys().hasOnly(['windowBinding', 'placementOrder', 'updatedAt'])
+        && reservation.data.userId == userId
+        && reservation.data.date == data.date
+        && reservation.data.windowId == binding.windowId
+        && reservation.data.occurrenceId == occurrenceId;
+    }
+
     match /users/{userId}/session_occurrences/{occurrenceId} {
       allow read: if isOwner(userId);
       allow create: if hasValidSessionOccurrence(userId, occurrenceId);
@@ -1397,7 +1418,10 @@ service cloud.firestore {
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.authority == resource.data.authority
         && isValidOccurrenceStateTransition(resource.data.state, request.resource.data.state)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt']);
+        && (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt'])
+          || bindsPreparedExternalOccurrence(userId, occurrenceId)
+        );
       allow delete: if isOwner(userId);
     }
 
@@ -1817,7 +1841,12 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
     match /users/{userId}/session_executions/{executionId} {
       allow read: if isOwner(userId);
       allow create: if hasValidSessionExecution(userId, executionId)
-        && request.resource.data.state == 'in_progress';
+        && request.resource.data.state == 'in_progress'
+        // Queued execution/lock batches must not launch a primary after replacement
+        // supersedes it. Legacy execution ids may still refer to an absent occurrence.
+        && (!('occurrenceId' in request.resource.data)
+          || !existsAfter(/databases/$(database)/documents/users/$(userId)/session_occurrences/$(request.resource.data.occurrenceId))
+          || getAfter(/databases/$(database)/documents/users/$(userId)/session_occurrences/$(request.resource.data.occurrenceId)).data.state != 'superseded');
       allow update: if hasValidSessionExecution(userId, executionId)
         && keepsOwnership(userId)
         && resource.data.state == 'in_progress'
@@ -2293,6 +2322,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
     // enforce ownership, bounded shape, identity binding, and write-once semantics.
     function hasValidIntradayBundlePlacementAudit(userId) {
       let data = request.resource.data;
+      let isV5OrV6 = data.planSnapshot.schema in ['adaptive-training-recommender/external-plan@5', 'adaptive-training-recommender/external-plan@6'];
       return hasOwnedUserId(userId)
         && data.keys().hasOnly(['schemaVersion', 'auditId', 'snapshotHash', 'userId', 'date', 'asOf', 'policyVersion', 'plan', 'planSnapshot', 'bundleId', 'scheduleWindows', 'fixedActivities', 'restDates', 'planSessions', 'members', 'ledger', 'proposal', 'createdAt'])
         && data.keys().hasAll(['schemaVersion', 'auditId', 'snapshotHash', 'userId', 'date', 'asOf', 'policyVersion', 'plan', 'planSnapshot', 'bundleId', 'scheduleWindows', 'fixedActivities', 'restDates', 'planSessions', 'members', 'ledger', 'proposal', 'createdAt'])
@@ -2307,9 +2337,13 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && data.plan.revision is int && data.plan.revision >= 1
         && data.plan.contentHash is string && data.plan.contentHash.matches('^[0-9a-f]{64}$')
         && data.planSnapshot is map
-        && data.planSnapshot.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays'])
+        && (isV5OrV6
+          ? data.planSnapshot.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays', 'intentBlocks'])
+          : data.planSnapshot.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays']))
         && data.planSnapshot.keys().hasAll(['schema', 'planId', 'revision', 'sessions', 'restDays'])
-        && data.planSnapshot.schema == 'adaptive-training-recommender/external-plan@4'
+        && data.planSnapshot.schema in ['adaptive-training-recommender/external-plan@4', 'adaptive-training-recommender/external-plan@5', 'adaptive-training-recommender/external-plan@6']
+        && data.planSnapshot.planId == data.plan.planId
+        && data.planSnapshot.revision == data.plan.revision
         && data.planSnapshot.planId is string && data.planSnapshot.planId.size() > 0 && data.planSnapshot.planId.size() <= 128
         && data.planSnapshot.revision is int && data.planSnapshot.revision >= 1
         && data.planSnapshot.title is string && data.planSnapshot.title.size() > 0 && data.planSnapshot.title.size() <= 200
@@ -2317,6 +2351,8 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && data.planSnapshot.weekCount is int && data.planSnapshot.weekCount >= 1 && data.planSnapshot.weekCount <= 52
         && data.planSnapshot.sessions is list && data.planSnapshot.sessions.size() > 0 && data.planSnapshot.sessions.size() <= 120
         && data.planSnapshot.restDays is list && data.planSnapshot.restDays.size() <= 64
+        && (!('intentBlocks' in data.planSnapshot)
+          || (data.planSnapshot.intentBlocks is list && data.planSnapshot.intentBlocks.size() <= 26))
         && data.bundleId is string && data.bundleId.size() > 0 && data.bundleId.size() <= 128
         && data.scheduleWindows is list && data.scheduleWindows.size() <= 8
         && data.fixedActivities is list && data.fixedActivities.size() <= 32

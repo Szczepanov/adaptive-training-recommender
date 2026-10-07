@@ -3,7 +3,7 @@ import { getDb } from '../firebase';
 import type { ExternalPlanSessionOccurrence, OccurrenceWindowBinding } from '../sessions/models';
 import { isExternalPlanOccurrence } from '../sessions/models';
 import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDefinition';
-import { isV4Plan } from '../sessions/externalPlanV4';
+import { isBundleCapableExternalPlan } from '../sessions/externalPlanV2';
 import { SessionOccurrenceService, sessionOccurrenceService } from './sessionOccurrenceService';
 import {
     adjudicateIntradayBundleMembers as adjudicateIntradayBundleMembersCore,
@@ -39,7 +39,7 @@ function sameWindowBinding(left: OccurrenceWindowBinding, right: OccurrenceWindo
  */
 async function sealPreparedPrimaryBinding(params: AdjudicateIntradayBundleMembersParams): Promise<void> {
     const { activePlan, bundlePlacement, userId, date, now = new Date().toISOString() } = params;
-    if (!isV4Plan(activePlan.plan) || bundlePlacement.outcome !== 'placed' || !bundlePlacement.bindings?.length) {
+    if (!isBundleCapableExternalPlan(activePlan.plan) || bundlePlacement.outcome !== 'placed' || !bundlePlacement.bindings?.length) {
         return;
     }
 
@@ -51,7 +51,6 @@ async function sealPreparedPrimaryBinding(params: AdjudicateIntradayBundleMember
     const primaryIntraday = primarySession.intraday;
 
     const db = params.db ?? getDb();
-    const injectedOccurrenceService = params.services?.occurrenceService !== undefined;
     const occurrenceService = params.services?.occurrenceService
         ?? (params.db ? new SessionOccurrenceService(params.db) : sessionOccurrenceService);
     const allOccurrences = await occurrenceService.getOccurrencesForDate(userId, date);
@@ -103,26 +102,18 @@ async function sealPreparedPrimaryBinding(params: AdjudicateIntradayBundleMember
 
     const occurrenceRef = occurrenceService.occurrenceRef(userId, candidate.occurrenceId);
     const windowRef = occurrenceService.windowReservationRef(userId, date, primaryPlacement.windowId);
-    let sealed: ExternalPlanSessionOccurrence | null = null;
-
     await runTransaction(db, async transaction => {
         const occurrenceSnap = await transaction.get(occurrenceRef);
         const windowSnap = await transaction.get(windowRef);
 
-        // Production must never recreate a disappearance between the service read and the
-        // transaction. The fallback exists only for unit-level service seams that inject the
-        // already-parsed occurrence without mirroring it into their fake Firestore store.
-        if (!occurrenceSnap.exists() && !injectedOccurrenceService) {
+        if (!occurrenceSnap.exists()) {
             throw new Error(`Prepared bundle primary occurrence ${candidate.occurrenceId} disappeared before binding.`);
         }
-        let current: ExternalPlanSessionOccurrence = candidate;
-        if (occurrenceSnap.exists()) {
-            const parsed = parseSessionOccurrenceDocument(occurrenceSnap.data(), occurrenceRef.path);
-            if (parsed.status !== 'AVAILABLE' || !isExternalPlanOccurrence(parsed.data)) {
-                throw new Error(`Prepared bundle primary occurrence ${candidate.occurrenceId} is invalid.`);
-            }
-            current = parsed.data;
+        const parsed = parseSessionOccurrenceDocument(occurrenceSnap.data(), occurrenceRef.path);
+        if (parsed.status !== 'AVAILABLE' || !isExternalPlanOccurrence(parsed.data)) {
+            throw new Error(`Prepared bundle primary occurrence ${candidate.occurrenceId} is invalid.`);
         }
+        const current = parsed.data;
 
         const exactSource = current.externalPlanRef.planId === activePlan.plan.planId
             && current.externalPlanRef.revision === activePlan.plan.revision
@@ -147,7 +138,7 @@ async function sealPreparedPrimaryBinding(params: AdjudicateIntradayBundleMember
             }
         }
 
-        sealed = {
+        const sealed: ExternalPlanSessionOccurrence = {
             ...current,
             placementOrder: primaryIntraday.order,
             windowBinding: expectedWindowBinding,
@@ -164,10 +155,6 @@ async function sealPreparedPrimaryBinding(params: AdjudicateIntradayBundleMember
             });
         }
     });
-
-    // Preserve service-seam callers that reuse the returned object array; production reloads
-    // the persisted value in the core path, so this assignment is only an in-memory mirror.
-    if (sealed) Object.assign(candidate, sealed);
 }
 
 export async function adjudicateIntradayBundleMembers(
