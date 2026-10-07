@@ -112,12 +112,15 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0045: Athlete-Relative Weekly Aerobic Dose Envelope**](./adr/0045-athlete-relative-weekly-aerobic-dose.md) — *Accepted.* 28-day history-derived easy-aerobic weekly envelope with a public-health fallback, no intensity equivalence, and a conditional exact long aerobic anchor.
 * [**ADR-0046: First-Class Raw Assessment Trial Evidence**](./adr/0046-first-class-raw-assessment-trial-evidence.md) — *Accepted.* Extends OV with immutable raw multi-trial evidence, append-only corrections, deterministic reducers and typed derivation provenance while preserving evidence-only authority. Amended 2026-10-01 (D-AT-IMPORT): file imports such as WL Analysis per-frame CSV are versioned, local-only source adapters with content-digest provenance.
 * [**ADR-0047: Fixed-Load Mean Velocity Assessment Series**](./adr/0047-fixed-load-velocity-assessment-series.md) — *Accepted.* Dedicated fixed-load velocity protocols per exercise with exact load, measurement method (including importer parser version) and equipment setup as series-defining identity; no observation-key change.
+* [**ADR-0048: Event Taxonomy, Format Identity, and Event-Specific Planning Semantics**](./adr/0048-event-taxonomy-and-format-semantics.md) — *Proposed.* Extended taxonomy and planning rules for generic events and fitness-races (like HYROX).
 
 ---
 
 ### 🔍 Reviews & Analysis
 Point-in-time assessments of the system as built, including gaps between documented decisions and implemented behaviour:
 
+* [**2026-10-05 Event taxonomy recon — fitness-race / HYROX support**](./analysis/2026-10-05-event-taxonomy-fitness-race-hyrox.md) — Point-in-time architecture analysis for event taxonomy, HYROX Open Singles, exact coverage and executable sessions.
+* [**2026-10-05 Issue #895 WP2 + WP3 — lifecycle and exact-resume architecture analysis**](./analysis/2026-10-05-issue-895-wp2-wp3-lifecycle-resume.md) — Analysis covering WP2 lifecycle hardening and WP3 exact resume for structured execution as the canonical lossless training record.
 * [**2026-09-28 Issue #859 Date-Scoped Mechanical Spacing Analysis**](./analysis/2026-09-28-issue-859-date-scoped-mechanical-spacing-analysis.md) — Investigation into mechanical spacing of requirements constrained by specific date scopes.
 * [**2026-09-28 Training Occurrence Backfill Verification**](./analysis/2026-09-28-training-occurrence-backfill-verification.md) — Verifies historical backfill coverage for canonical performed training occurrences.
 * [**2026-09-28 Activity Response Semantic Tail Correction**](./analysis/2026-09-28-activity-response-semantic-tail-correction.md) — Analysis on resolving semantic tail corrections within activity responses.
@@ -251,6 +254,10 @@ Point-in-time assessments of the system as built, including gaps between documen
 ### 🗺️ Implementation Plans
 How agreed changes get made. Mutable, status-tracked, and expected to go stale — see [`docs/plans/`](./plans/) for the index and conventions.
 
+* [**Event taxonomy + HYROX fitness-race implementation plan**](./plans/2026-10-05-event-taxonomy-fitness-race-hyrox.md) — *Ready.* P0 implementation plan for fitness races and HYROX support following ADR-0048.
+* [**Issue #895 WP2 + WP3 — lifecycle and exact resume delivery**](./plans/2026-10-05-issue-895-wp2-wp3-lifecycle-resume.md) — *Implemented.* Scoped WP2/WP3 delivery for structured session resume state.
+* [**Concurrent test-harness port isolation**](./plans/2026-10-concurrent-test-harness-port-isolation.md) — *In progress.* Plan for concurrent agent port conflicts.
+* [**Issue #953 — Implementation plan: rejected daily_recommendations writes**](./plans/2026-10-01-issue-953-recommendation-write-rejections.md) — *Implemented.* Plan regarding rejected daily_recommendations writes.
 * [**Issue #897 physical-capital assessment integration**](./plans/2026-09-30-issue-897-physical-capital-assessment-history.md) — *In progress.* Scoped implementation design for multidomain baseline testing, raw trial evidence, comparability, history/export and bounded goal/context reuse.
 * [**Issues #981/#982 OpenBar velocity import and agreement**](./plans/2026-10-03-issues-981-982-openbar-velocity-import-and-agreement.md) — *In progress.* Implementation plan for WL Analysis CSV parser validation, bounded error fingerprinting, and measurement-agreement reporting.
 * [**Issue #814 canonical comparable-session response completion**](./plans/2026-09-28-issue-814-training-response-completion.md) — *Implemented; #814 closed after PR #917 merged.* Reconciled step identity and controlled running pace–HR remain deliberately unavailable until their evidence contracts exist; they are deferred extensions, not unsafe fallbacks. No provider request/source was added; see the [status board](./plans/README.md).
