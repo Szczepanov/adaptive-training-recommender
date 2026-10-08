@@ -1,10 +1,9 @@
-import { expect, test } from './support/consoleTrap';
+import { expect, test } from './support/test';
 import { provisionAthlete, seedRecoverySnapshot, signInThroughUi } from './support/athlete';
 import { seedExternalPlanningMode, mondayOfWeek } from './support/externalPlan';
 import { buildV6Plan, coachSession, checkIn, importPlan, previewPlan, planningBrief, readDocument, seedExternalPlanRevision, seedPlacement } from './support/roundTrip';
 import { addDaysToLocalDateString } from '../../src/utils/localDate';
 import { validateExternalPlanPlacement } from '../../src/engine/validation';
-import { validateAnyExternalTrainingPlan } from '../../src/sessions/externalPlanValidation';
 import { applyConfirmedProposal, proposeReplacement } from '../../src/engine/externalPlacement';
 import type { ExternalPlanPlacement } from '../../src/engine/models';
 
@@ -94,20 +93,4 @@ test('concurrent successor imports converge to one deterministic latest revision
   expect(await readDocument(athlete, `external_plans/${plan.planId}`)).toMatchObject({ revision: 3 });
   expect(await readDocument(athlete, `external_plans/${plan.planId}/revisions/3`)).toEqual(successors[1]);
   expect(await readDocument(athlete, `external_plans/${plan.planId}/activations/3`)).toMatchObject({ revision: 3, effectiveFrom: today });
-});
-
-test('invalid enum, date, full and reduced definitions fail at exact contract paths', () => {
-  const plan = buildV6Plan('2026-09-30');
-  for (const [mutate, field] of [
-    [(p: typeof plan) => { p.startDate = '2026-02-30'; }, 'startDate'],
-    [(p: typeof plan) => { p.sessions[0].gating.intensity = 'invented' as never; }, 'sessions[0].gating.intensity'],
-    [(p: typeof plan) => { p.sessions[0].definition.intent = 'invented' as never; }, 'sessions[0].definition.intent'],
-    [(p: typeof plan) => { p.sessions[0].scaling = { reducible: true, reducedDefinition: { ...p.sessions[0].definition, intent: 'recovery' } }; }, 'sessions[0].scaling.reducedDefinition.intent'],
-  ] as const) {
-    const invalid = structuredClone(plan);
-    mutate(invalid);
-    const result = validateAnyExternalTrainingPlan(invalid);
-    expect(result.isValid).toBe(false);
-    expect(result.errors.map(error => error.field)).toContain(field);
-  }
 });

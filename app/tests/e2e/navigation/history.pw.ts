@@ -1,28 +1,20 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '../support/test';
 import {
+  completeTypicalCheckin,
   dismissOnboardingIfVisible,
-  hasPersistedCheckin,
   openFixturePicker,
   provisionAthlete,
   readSessionExecutions,
   seedRecoverySnapshot,
   signInThroughUi,
-  type E2EAthlete,
+  submitSignInForm,
 } from '../support/athlete';
-
-async function completeCheckin(page: Page, athlete: E2EAthlete, date: string): Promise<void> {
-  await page.getByRole('button', { name: /Feeling normal today\? Use typical values/ }).click();
-  await page.getByRole('button', { name: "Save & see today's plan", exact: true }).click();
-  await expect.poll(() => hasPersistedCheckin(athlete, date)).toBe(true);
-  await dismissOnboardingIfVisible(page);
-  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
-}
 
 test('Back and Forward restore routed screens and active navigation', async ({ page }) => {
   const athlete = await provisionAthlete();
   const date = await seedRecoverySnapshot(athlete);
   await signInThroughUi(page, athlete);
-  await completeCheckin(page, athlete, date);
+  await completeTypicalCheckin(page, athlete, date);
 
   const nav = page.locator('.navbar-desktop-menu');
   await nav.getByRole('button', { name: 'Plan', exact: true }).click();
@@ -55,7 +47,7 @@ test('a safe deep link survives refresh and invalid routes resolve after authent
   const athlete = await provisionAthlete();
   const date = await seedRecoverySnapshot(athlete);
   await signInThroughUi(page, athlete);
-  await completeCheckin(page, athlete, date);
+  await completeTypicalCheckin(page, athlete, date);
 
   await page.goto('/?screen=goals');
   await expect(page.getByRole('heading', { name: 'Goals', exact: true })).toBeVisible();
@@ -75,9 +67,7 @@ test('pending check-in takes precedence over a deep link on initial authenticati
   const athlete = await provisionAthlete();
   await seedRecoverySnapshot(athlete);
   await page.goto('/?screen=goals');
-  await page.getByPlaceholder('Email address').fill(athlete.email);
-  await page.getByPlaceholder('Password').fill(athlete.password);
-  await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+  await submitSignInForm(page, athlete);
 
   await expect(page.getByRole('heading', { name: 'Check-in', exact: true })).toBeVisible();
   await expect(page).toHaveURL(/\?screen=checkin$/);
@@ -109,7 +99,7 @@ test('Back minimizes a persisted structured session and Resume restores it', asy
   const athlete = await provisionAthlete();
   const date = await seedRecoverySnapshot(athlete);
   await signInThroughUi(page, athlete);
-  await completeCheckin(page, athlete, date);
+  await completeTypicalCheckin(page, athlete, date);
 
   const nav = page.locator('.navbar-desktop-menu');
   await nav.getByRole('button', { name: /More/ }).click();
@@ -142,7 +132,9 @@ test('Back minimizes a persisted structured session and Resume restores it', asy
   await expect(page).toHaveURL(/\?screen=home$/);
   await nav.getByRole('button', { name: /More/ }).click();
   await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
+  await expect(page).toHaveURL(/\?screen=testing$/);
   await nav.getByRole('button', { name: 'Plan', exact: true }).click();
+  await expect(page).toHaveURL(/\?screen=plan$/);
   await page.goBack();
   await expect(page).toHaveURL(/\?screen=testing$/);
 });

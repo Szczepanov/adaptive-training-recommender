@@ -1,7 +1,10 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 
-/** Measures the rendered control and checks that pointer hits reach it across its interior. */
-export async function assertEffectiveTarget(control: Locator, minimum = 44): Promise<void> {
+/**
+ * Measures the rendered control and checks that pointer hits reach it across its interior.
+ * `hitTimeout` bounds the wait for navigation to settle (default: the expect timeout).
+ */
+export async function assertEffectiveTarget(control: Locator, minimum = 44, hitTimeout?: number): Promise<void> {
   await expect(control).toBeVisible();
   await control.scrollIntoViewIfNeeded();
   await expect.poll(() => control.evaluate(element => {
@@ -15,6 +18,7 @@ export async function assertEffectiveTarget(control: Locator, minimum = 44): Pro
     return samples.every(Boolean);
   }), {
     message: 'control must receive pointer hits across its rendered area after mobile navigation settles',
+    timeout: hitTimeout,
   }).toBe(true);
 
   const measurement = await control.evaluate(element => {

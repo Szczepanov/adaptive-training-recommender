@@ -1,21 +1,8 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/test';
 import { provisionAthlete, signInThroughUi } from './support/athlete';
+import { addDaysToLocalDateString, getLocalDateString } from '../../src/utils/localDate';
 
-function localDateAfter(days: number): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Europe/Warsaw',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  const target = new Date(Date.UTC(
-    Number(values.year),
-    Number(values.month) - 1,
-    Number(values.day) + days,
-  ));
-  return target.toISOString().slice(0, 10);
-}
+const localDateAfter = (days: number): string => addDaysToLocalDateString(getLocalDateString(), days);
 
 test('an athlete can manage same-day training windows from the Plan screen', async ({ page }) => {
   const athlete = await provisionAthlete();

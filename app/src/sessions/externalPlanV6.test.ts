@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fixture from './fixtures/01-full-body-maintenance.json';
 import { EXTERNAL_PLAN_SCHEMA_V6, validateExternalTrainingPlanV6 } from './externalPlanV6';
+import { validateAnyExternalTrainingPlan } from './externalPlanValidation';
 
 function plan(scaling?: Record<string, unknown>) {
     return {
@@ -39,5 +40,26 @@ describe('external-plan@6 reduced definitions', () => {
         const result = validateExternalTrainingPlanV6(plan({ reducible: true, reducedDefinition: { schemaVersion: 1 } }));
         expect(result.isValid).toBe(false);
         expect(result.errors.some(error => error.field === 'sessions[0].scaling.reducedDefinition.id')).toBe(true);
+    });
+});
+
+describe('external-plan@6 contract paths through the schema dispatcher', () => {
+    type V6Plan = ReturnType<typeof plan>;
+    it.each<[string, (draft: V6Plan) => void]>([
+        ['startDate', draft => { draft.startDate = '2026-02-30'; }],
+        ['sessions[0].gating.intensity', draft => { draft.sessions[0].gating.intensity = 'invented'; }],
+        ['sessions[0].definition.intent', draft => { draft.sessions[0].definition.intent = 'invented'; }],
+        ['sessions[0].scaling.reducedDefinition.intent', draft => {
+            draft.sessions[0] = {
+                ...draft.sessions[0],
+                scaling: { reducible: true, reducedDefinition: { ...draft.sessions[0].definition, intent: 'recovery' } },
+            };
+        }],
+    ])('rejects an invalid %s at its exact contract path', (field, mutate) => {
+        const invalid = structuredClone(plan());
+        mutate(invalid);
+        const result = validateAnyExternalTrainingPlan(invalid);
+        expect(result.isValid).toBe(false);
+        expect(result.errors.map(error => error.field)).toContain(field);
     });
 });

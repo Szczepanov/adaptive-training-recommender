@@ -1,8 +1,7 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from '../support/consoleTrap';
+import { expect, test } from '../support/test';
 import {
-  dismissOnboardingIfVisible,
-  hasPersistedCheckin,
+  completeTypicalCheckin,
   provisionAthlete,
   seedRecoverySnapshot,
   signInThroughUi,
@@ -18,10 +17,7 @@ async function freshAthleteWithCheckin(
   const date = await seedRecoverySnapshot(athlete, depleted ? { bodyBatteryWake: 25 } : {});
   const seed = await seedExternalPlanForToday(athlete, kind);
   await signInThroughUi(page, athlete);
-  await page.getByRole('button', { name: /Feeling normal today\? Use typical values/ }).click();
-  await page.getByRole('button', { name: "Save & see today's plan", exact: true }).click();
-  await expect.poll(() => hasPersistedCheckin(athlete, date)).toBe(true);
-  await dismissOnboardingIfVisible(page);
+  await completeTypicalCheckin(page, athlete, date);
   return seed.planId;
 }
 

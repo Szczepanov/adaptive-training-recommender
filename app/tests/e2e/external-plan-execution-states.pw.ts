@@ -1,8 +1,8 @@
 import type { Page } from '@playwright/test';
-import { expect, test } from './support/consoleTrap';
+import { expect, test } from './support/test';
 import { provisionAthlete, seedRecoverySnapshot, signInThroughUi, openFixturePicker } from './support/athlete';
 import { mondayOfWeek, weekdayOf, seedExternalPlanForToday, seedExternalPlanningMode } from './support/externalPlan';
-import { buildV6Plan, coachSession, strengthDefinition, seedExternalPlanRevision, seedPlacement, seedBundleWindows, importPlan, checkIn, planningBrief, finishStrength, terminalExecution, executionRow, readExecutionPrescription, readPerformedOccurrences, readExecutions, readOccurrences, readDocument } from './support/roundTrip';
+import { buildV6Plan, coachSession, strengthDefinition, seedExternalPlanRevision, seedPlacement, seedBundleWindows, importPlan, checkIn, planningBrief, finishStrength, terminalExecution, executionRow, readExecutionPrescription, awaitPerformedOccurrences, readExecutions, readOccurrences, readDocument } from './support/roundTrip';
 import { addDaysToLocalDateString } from '../../src/utils/localDate';
 import { hashSessionDefinition } from '../../src/sessions/sessionDefinitionHash';
 import { resolvePlacement } from '../../src/engine/externalPlacement';
@@ -41,7 +41,7 @@ test('V4 scale freezes the exact reduced definition and reports app dose modifie
   expect(prescription?.definitionHash).toBe(reducedHash);
   expect(prescription?.definitionHash).not.toBe(fullHash);
   const text = await planningBrief(page);
-  const [performed] = await readPerformedOccurrences(athlete, today);
+  const [performed] = await awaitPerformedOccurrences(athlete, today, 1);
   expect(text).toContain(executionRow(today, plan, execution, performed.performedOccurrenceId, 'app dose modified'));
 });
 
@@ -53,7 +53,11 @@ test('V6 authored rest records unexpected work without inventing an authored ses
   await seedExternalPlanRevision(athlete, plan, today);
   await signInThroughUi(page, athlete);
   await checkIn(page);
-  await expect(page.getByRole('button', { name: /^Start / })).toHaveCount(0);
+  // Home shows the protected rest day and nothing authored is launchable. The engine's own
+  // `Total Rest` decision currently still renders a Start control, so that one button is the
+  // only Start allowed.
+  await expect(page.getByRole('heading', { name: 'Total Rest' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Start (?!Total Rest$)/ })).toHaveCount(0);
   const row = `- ${today} ${plan.planId} r1 rest/rest-today: placement unknown; adjudication not adjudicated; athlete none; performance not applicable.`;
   expect(await planningBrief(page)).toContain(row);
   await openFixturePicker(page);
@@ -61,7 +65,7 @@ test('V6 authored rest records unexpected work without inventing an authored ses
   await finishStrength(page);
   await terminalExecution(athlete);
   const text = await planningBrief(page);
-  const [performed] = await readPerformedOccurrences(athlete, today);
+  const [performed] = await awaitPerformedOccurrences(athlete, today, 1);
   expect(text).toContain(`${row} Authored rest/no session; observed work: ${performed.performedOccurrenceId}.`);
 });
 
@@ -192,8 +196,7 @@ test('V9 an intraday bundle retains two session rows and two genuine workouts', 
     expect.objectContaining({ kind: 'external_plan', planId: plan.planId, revision: 1, sessionId: 'second' }),
   ]));
   expect(new Set(executions.map(item => item.occurrenceId)).size).toBe(2);
-  const performed = await readPerformedOccurrences(athlete, today);
-  expect(performed).toHaveLength(2);
+  const performed = await awaitPerformedOccurrences(athlete, today, 2);
   expect(new Set(performed.map(item => item.performedOccurrenceId)).size).toBe(2);
   for (const execution of executions) {
     const item = performed.find(item => item.sourceRefs.some(ref => ref.kind === 'structured_execution' && ref.executionId === execution.executionId));

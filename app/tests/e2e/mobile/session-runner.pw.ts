@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../support/test';
 import { dismissOnboardingIfVisible, openFixturePicker, provisionAthlete, signInThroughUi } from '../support/athlete';
 import { assertEffectiveTarget, assertNoBodyHorizontalOverflow } from '../support/mobileAssertions';
 
@@ -29,8 +29,8 @@ test('session runner logs both hold sides before rotating and keeps controls usa
   await assertEffectiveTarget(logLeft);
   await assertEffectiveTarget(finish);
 
-  const groupNext = page.locator('.group-next-button');
-  if (await groupNext.isVisible()) await assertEffectiveTarget(groupNext);
+  // The fixture's first block is a three-round circuit, so the next-step shortcut always shows.
+  await assertEffectiveTarget(page.locator('.group-next-button'));
 
   await page.getByRole('button', { name: 'Start left hold timer' }).click();
   const stopLeft = page.getByRole('button', { name: 'Stop left hold timer' });
@@ -64,13 +64,12 @@ test('session runner logs both hold sides before rotating and keeps controls usa
   await expect(activeHeading).toContainText(/copenhagen/i);
   await expect(activeHeading).toBeFocused();
   await expect(holdTime).toHaveValue('20');
+  // Completing both soleus sides starts the step's authored rest.
   const skipRest = page.getByRole('button', { name: 'Skip Rest' });
-  if (await skipRest.isVisible()) {
-    await assertEffectiveTarget(page.getByRole('button', { name: '+30s' }));
-    await assertEffectiveTarget(skipRest);
-    await skipRest.click();
-    await expect(skipRest).toBeHidden();
-  }
+  await assertEffectiveTarget(page.getByRole('button', { name: '+30s' }));
+  await assertEffectiveTarget(skipRest);
+  await skipRest.click();
+  await expect(skipRest).toBeHidden();
   await assertNoBodyHorizontalOverflow(page);
 
   await finish.click();

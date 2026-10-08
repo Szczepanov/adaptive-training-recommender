@@ -44,6 +44,21 @@ export default defineConfig([
     },
   },
   {
+    // Browser E2E specs must take `test` from the shared fixture module so suite-wide guards
+    // (the #953 recommendation console trap) cannot be skipped by importing Playwright's base.
+    files: ['tests/e2e/**/*.ts'],
+    ignores: ['tests/e2e/support/test.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: '@playwright/test',
+          importNames: ['test'],
+          message: "Import `test` from tests/e2e/support/test.ts so the shared E2E fixtures apply.",
+        }],
+      }],
+    },
+  },
+  {
     // POLICY_VERSION drift protection treats any rules.ts edit as decision-affecting.
     // Keep the engine byte-stable for this lint-only migration instead of creating a false policy bump.
     files: ['src/engine/rules.ts'],

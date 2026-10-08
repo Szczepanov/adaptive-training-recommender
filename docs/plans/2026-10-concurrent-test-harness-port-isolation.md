@@ -286,4 +286,8 @@ Known follow-ups, not blocking:
 - Same-worktree concurrent E2E flakes (above).
 - E2E through the launcher ran 10–15% slower than `main` on the same specs (two-spec sample:
   ~1.0–1.1 min vs 56–57 s). Not from P4 (the gap persisted with P4 reverted) and not from
-  `singleProjectMode`; cause not investigated.
+  `singleProjectMode`. Likely cause, found 2026-10-08: the leased output directory
+  `artifacts/playwright/test-results-<port>` escapes Vite's built-in `**/test-results/**`
+  watcher ignore, so the dev server handled a file event for every trace frame mid-test.
+  `vite.config.ts` now ignores `**/artifacts/**`; with two workers that cut summed E2E test
+  time from 434 s to 303 s. The same-worktree concurrency flakes above were not re-tested.

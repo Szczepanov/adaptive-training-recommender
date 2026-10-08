@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { expect, test } from './support/test';
 import {
   openFixturePicker,
   provisionAthlete,
@@ -6,6 +7,32 @@ import {
   readSessionRestEvents,
   signInThroughUi,
 } from './support/athlete';
+
+type ResyncSignal = 'visibilitychange' | 'focus';
+
+/**
+ * Simulates a backgrounded tab: the page's wall clock jumps `jumpMs` ahead with no interval
+ * callback firing in between, then `signals` fire in order as the tab comes back. Returns a
+ * restore for the real clock, to call from `finally`.
+ */
+async function jumpWallClock(page: Page, jumpMs: number, signals: ResyncSignal[]): Promise<() => Promise<void>> {
+  await page.evaluate(({ jumpMs, signals }) => {
+    const realNow = Date.now;
+    Date.now = () => realNow() + jumpMs;
+    (window as unknown as { __restoreDateNow908?: () => void }).__restoreDateNow908 = () => {
+      Date.now = realNow;
+    };
+    for (const signal of signals) {
+      if (signal === 'focus') window.dispatchEvent(new Event('focus'));
+      else document.dispatchEvent(new Event('visibilitychange'));
+    }
+  }, { jumpMs, signals });
+  return async () => {
+    await page.evaluate(() => {
+      (window as unknown as { __restoreDateNow908?: () => void }).__restoreDateNow908?.();
+    });
+  };
+}
 
 test('an athlete can launch and complete a reviewed session', async ({ page }) => {
   const athlete = await provisionAthlete();
@@ -33,26 +60,14 @@ test('the live session clock is wall-clock correct after a background-style time
   const timer = page.locator('.session-timer');
   await expect(timer).toBeVisible();
 
-  // Simulate a backgrounded tab: the wall clock jumps five minutes with no
-  // interval callback firing in between, then the tab becomes visible again.
-  // The wall-clock runner must show the jumped value on resync; a
-  // callback-counting clock would still read near zero.
-  await timer.evaluate(() => {
-    const realNow = Date.now;
-    const jumpMs = 5 * 60 * 1000;
-    Date.now = () => realNow() + jumpMs;
-    (window as unknown as { __restoreDateNow908?: () => void }).__restoreDateNow908 = () => {
-      Date.now = realNow;
-    };
-    document.dispatchEvent(new Event('visibilitychange'));
-  });
-
+  // The wall clock jumps five minutes, then the tab becomes visible again. The wall-clock
+  // runner must show the jumped value on resync; a callback-counting clock would still read
+  // near zero.
+  const restoreClock = await jumpWallClock(page, 5 * 60 * 1000, ['visibilitychange']);
   try {
     await expect(timer).toContainText('5:', { timeout: 10_000 });
   } finally {
-    await page.evaluate(() => {
-      (window as unknown as { __restoreDateNow908?: () => void }).__restoreDateNow908?.();
-    });
+    await restoreClock();
   }
 });
 
@@ -80,22 +95,10 @@ test('a background-expired rest closes once even when multiple resync signals fi
   }).toBe(1);
   expect(executionId).not.toBe('');
 
-  await page.evaluate(() => {
-    const realNow = Date.now;
-    const jumpMs = 5 * 60 * 1000;
-    Date.now = () => realNow() + jumpMs;
-    (window as unknown as { __restoreDateNow908?: () => void }).__restoreDateNow908 = () => {
-      Date.now = realNow;
-    };
-
-    // Real browsers commonly deliver visibilitychange and focus close together.
-    // Repeating both signals proves the first expired-rest resync consumes the
-    // active rest synchronously and later resyncs cannot persist it again.
-    document.dispatchEvent(new Event('visibilitychange'));
-    window.dispatchEvent(new Event('focus'));
-    document.dispatchEvent(new Event('visibilitychange'));
-  });
-
+  // Real browsers commonly deliver visibilitychange and focus close together. Repeating both
+  // signals within one synchronous turn proves the first expired-rest resync consumes the
+  // active rest synchronously and later resyncs cannot persist it again.
+  const restoreClock = await jumpWallClock(page, 5 * 60 * 1000, ['visibilitychange', 'focus', 'visibilitychange']);
   try {
     await expect(restBanner).toBeHidden({ timeout: 10_000 });
     await expect.poll(async () => (await readSessionRestEvents(athlete, executionId)).length).toBe(1);
@@ -112,9 +115,7 @@ test('a background-expired rest closes once even when multiple resync signals fi
     await page.waitForTimeout(500);
     expect(await readSessionRestEvents(athlete, executionId)).toHaveLength(1);
   } finally {
-    await page.evaluate(() => {
-      (window as unknown as { __restoreDateNow908?: () => void }).__restoreDateNow908?.();
-    });
+    await restoreClock();
   }
 });
 

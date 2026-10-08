@@ -1,18 +1,11 @@
-import type { Page } from '@playwright/test';
-import { expect, test } from './support/consoleTrap';
+import { expect, test } from './support/test';
 import {
-  dismissOnboardingIfVisible,
-  hasPersistedCheckin,
+  completeTypicalCheckin,
   provisionAthlete,
   seedRecoverySnapshot,
   signInThroughUi,
 } from './support/athlete';
 import { seedExternalPlanForToday } from './support/externalPlan';
-
-async function completeTypicalCheckin(page: Page): Promise<void> {
-  await page.getByRole('button', { name: /Feeling normal today\? Use typical values/ }).click();
-  await page.getByRole('button', { name: "Save & see today's plan", exact: true }).click();
-}
 
 test('an imported proceed session shows its verdict, source and Start path on Home', async ({ page }) => {
   const athlete = await provisionAthlete();
@@ -20,9 +13,7 @@ test('an imported proceed session shows its verdict, source and Start path on Ho
   const seed = await seedExternalPlanForToday(athlete, 'proceed');
 
   await signInThroughUi(page, athlete);
-  await completeTypicalCheckin(page);
-  await expect.poll(() => hasPersistedCheckin(athlete, date)).toBe(true);
-  await dismissOnboardingIfVisible(page);
+  await completeTypicalCheckin(page, athlete, date);
 
   const verdict = page.getByRole('region', { name: 'Imported plan session' });
   await expect(verdict).toBeVisible();
@@ -38,9 +29,7 @@ test('a scaled imported session shows the reduced version without launching the 
   const seed = await seedExternalPlanForToday(athlete, 'scale');
 
   await signInThroughUi(page, athlete);
-  await completeTypicalCheckin(page);
-  await expect.poll(() => hasPersistedCheckin(athlete, date)).toBe(true);
-  await dismissOnboardingIfVisible(page);
+  await completeTypicalCheckin(page, athlete, date);
 
   const verdict = page.getByRole('region', { name: 'Imported plan session' });
   await expect(verdict).toBeVisible();
@@ -58,9 +47,7 @@ test('a deferred imported session names its verdict and offers no Start path', a
   const seed = await seedExternalPlanForToday(athlete, 'defer');
 
   await signInThroughUi(page, athlete);
-  await completeTypicalCheckin(page);
-  await expect.poll(() => hasPersistedCheckin(athlete, date)).toBe(true);
-  await dismissOnboardingIfVisible(page);
+  await completeTypicalCheckin(page, athlete, date);
 
   const verdict = page.getByRole('region', { name: 'Imported plan session' });
   await expect(verdict).toBeVisible();
@@ -77,9 +64,7 @@ test('an excluded imported session names its verdict and offers no Start path as
   const seed = await seedExternalPlanForToday(athlete, 'skip');
 
   await signInThroughUi(page, athlete);
-  await completeTypicalCheckin(page);
-  await expect.poll(() => hasPersistedCheckin(athlete, date)).toBe(true);
-  await dismissOnboardingIfVisible(page);
+  await completeTypicalCheckin(page, athlete, date);
 
   const verdict = page.getByRole('region', { name: 'Imported plan session' });
   await expect(verdict).toBeVisible();
