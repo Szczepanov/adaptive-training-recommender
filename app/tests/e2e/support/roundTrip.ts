@@ -155,7 +155,7 @@ export async function checkIn(page: Page): Promise<void> {
 export async function planningBrief(page: Page): Promise<string> {
   await dismissOnboardingIfVisible(page, 200);
   await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('button', { name: '📤 Export Context for AI', exact: true }).press('Enter');
+  await page.getByRole('button', { name: '📤 Export Context for AI', exact: true }).click();
   await page.getByRole('button', { name: /Block Planning/ }).click();
   const brief = page.locator('textarea.brief-text');
   await expect.poll(() => brief.inputValue()).toContain('## External-plan execution round trip');
@@ -173,6 +173,8 @@ export async function finishStrength(page: Page, abandon = false): Promise<void>
     await page.getByRole('button', { name: /Finish Session \(/ }).click();
     await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
   }
+  // The execution is persisted before completion reconciliation returns the UI Home.
+  await expect(page).toHaveURL(/\?screen=home$/);
 }
 
 export async function terminalExecution(athlete: E2EAthlete, state = 'completed'): Promise<SessionExecution> {
