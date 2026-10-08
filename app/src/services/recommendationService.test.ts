@@ -15,6 +15,7 @@ const firestore = vi.hoisted(() => {
         limit: vi.fn(),
         orderBy: vi.fn(),
         query: vi.fn(),
+        runTransaction: vi.fn(),
         setDoc: vi.fn(),
         where: vi.fn(),
         writeBatch: vi.fn(() => batch),
@@ -112,6 +113,79 @@ describe('RecommendationService persistence', () => {
         const writeData = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
         expect(writeData.engineVerdict).toBe('advisory');
         expect(writeData.mode).toBe('train');
+    });
+
+    function replacementStore() {
+        const date = '2026-10-05';
+        const path = `users/athlete/daily_recommendations/${date}`;
+        const manualSource = { kind: 'manual' as const, definitionId: 'manual-def', revision: 1, contentHash: 'a'.repeat(64) };
+        const binding = { occurrenceId: 'occ-manual', sessionSource: manualSource, prescriptionHash: 'b'.repeat(64) };
+        const audit: RecommendationAudit = {
+            policyVersion: POLICY_VERSION, evaluatedAt: '2026-10-05T08:00:00Z', safetyStatus: 'complete',
+            decisionContextRevision: 'history-r1',
+            history: { completedEventCount: 0, unmatchedEventCount: 0, sourceStatuses: { activities: 'AVAILABLE', recommendations: 'AVAILABLE', manualTraining: 'MISSING' } },
+            envelope: { safetyRestrictedModalityCount: 0, planMaxAllowableTier: 'Easy' },
+            candidateScores: [], droppedContributorObjectives: [],
+            authoredOccurrence: { occurrenceId: binding.occurrenceId, decision: 'proceed' }, primarySession: binding,
+        };
+        const template = TEMPLATES[0];
+        const prior: DailyRecommendation = {
+            userId: 'athlete', date, templateId: template.id, templateTitle: template.title,
+            category: template.category, modality: template.modality, mode: 'train', rationale: 'External decision',
+            schemaVersion: 3, revision: 2, createdAt: '2026-10-05T07:00:00Z', updatedAt: '2026-10-05T07:00:00Z',
+            adherence: { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null },
+            primarySession: { occurrenceId: 'occ-external', sessionSource: { kind: 'external_plan', planId: 'plan', revision: 1, sessionId: 'am', contentHash: 'c'.repeat(64) }, prescriptionHash: 'd'.repeat(64) },
+            recommendationAudit: { ...audit, authoredOccurrence: undefined, primarySession: undefined },
+        };
+        const common = { userId: 'athlete', date, state: 'scheduled', createdAt: prior.createdAt, updatedAt: prior.updatedAt };
+        const store = new Map<string, unknown>([
+            [path, prior],
+            ['users/athlete/session_occurrences/occ-external', { ...common, occurrenceId: 'occ-external', authority: 'external_plan', externalPlanRef: { planId: 'plan', revision: 1, sessionId: 'am', contentHash: 'c'.repeat(64) } }],
+            ['users/athlete/session_occurrences/occ-manual', { ...common, occurrenceId: 'occ-manual', authority: 'replace_recommendation', definitionRef: { definitionId: manualSource.definitionId, revision: manualSource.revision, contentHash: manualSource.contentHash } }],
+        ]);
+        firestore.doc.mockImplementation((_db: unknown, ...parts: string[]) => ({ path: parts.join('/') }));
+        const read = vi.fn(async (ref: { path: string }) => ({ ref, exists: () => store.has(ref.path), data: () => store.get(ref.path) }));
+        firestore.getDoc.mockImplementation(read);
+        const transaction = { get: read, set: vi.fn(), delete: vi.fn() };
+        firestore.runTransaction.mockImplementation(async (_db: unknown, callback: (tx: typeof transaction) => Promise<void>) => {
+            await callback(transaction);
+            for (const [ref, value] of transaction.set.mock.calls) store.set(ref.path, value);
+        });
+        const rec: Recommendation = { template, mode: 'train', rationale: 'Accepted replacement', primarySession: binding, recommendationAudit: audit };
+        return { store, transaction, prior, rec, path, date };
+    }
+
+    it('atomically commits accepted manual authority, the prior revision, and scheduled-primary supersession', async () => {
+        const { store, transaction, prior, rec, path, date } = replacementStore();
+        const saved = await new RecommendationService().saveRecommendation('athlete', date, rec);
+        expect(saved?.recommendationAudit?.authoredOccurrence?.occurrenceId).toBe('occ-manual');
+        expect(saved?.revision).toBe(3);
+        expect(store.get(`${path}/revisions/2`)).toMatchObject({ revision: 2, primarySession: prior.primarySession });
+        expect(store.get('users/athlete/session_occurrences/occ-external')).toMatchObject({ state: 'superseded' });
+        expect(store.get(path)).toMatchObject({ revision: 3, primarySession: rec.primarySession, recommendationAudit: rec.recommendationAudit });
+        expect(transaction.set).toHaveBeenCalledTimes(3);
+        expect(firestore.batch.commit).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the recommendation changes before the hand-off transaction', async () => {
+        const { transaction, rec, date } = replacementStore();
+        transaction.get = vi.fn().mockResolvedValue({ exists: () => true, data: () => ({ changed: true }) });
+        const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        expect(await new RecommendationService().saveRecommendation('athlete', date, rec)).toBeNull();
+        expect(transaction.set).not.toHaveBeenCalled();
+        warn.mockRestore();
+    });
+
+    it.each(['scheduled', 'active', 'completed', 'abandoned'])('preserves a committed %s replacement against a stale ordinary recompute', async state => {
+        const { store, transaction, rec, prior, path, date } = replacementStore();
+        const committed = { ...prior, primarySession: rec.primarySession, recommendationAudit: rec.recommendationAudit, rationale: rec.rationale };
+        store.set(path, committed);
+        const occPath = 'users/athlete/session_occurrences/occ-manual';
+        store.set(occPath, { ...(store.get(occPath) as object), state });
+        const saved = await new RecommendationService().saveRecommendation('athlete', date, { template: TEMPLATES[0], mode: 'recover', rationale: 'Later recompute' });
+        expect(saved).toBe(committed);
+        expect(transaction.set).not.toHaveBeenCalled();
+        expect(firestore.setDoc).not.toHaveBeenCalled();
     });
 
     it('atomically binds a new recommendation revision to one immutable context record', async () => {

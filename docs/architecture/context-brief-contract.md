@@ -151,7 +151,7 @@ Row vocabulary (underscores render as spaces):
 |---|---|---|
 | placement | `as authored`, `intentionally moved`, `unknown` | Whether the session stayed on its authored date. An unconfirmed move renders `unknown`, never `missed`. |
 | adjudication | `as authored`, `app dose modified`, `gate replaced`, `not adjudicated`, `unknown` | What the app decided about the authored dose. `gate replaced` comes only from a saved `engineVerdict` `defer`/`skip` plus the canonical rest template, never from a mode fallback. `advisory` and verdict/template disagreement render `unknown`. |
-| athlete | `accepted`, `manually replaced`, `explicitly skipped`, `none`, `unknown` | What the athlete did. `manually replaced` is singleton-scoped (exactly one authored candidate that day) and never claims `completed`. `superseded` occurrences give `unknown`. |
+| athlete | `accepted`, `manually replaced`, `explicitly skipped`, `none`, `unknown` | What the athlete did. `manually replaced` is singleton-scoped (exactly one authored candidate that day) and never claims `completed`. Verified replacement attribution survives `superseded`; unrelated supersession gives `unknown`. |
 | performance | `completed`, `partial or abandoned`, `none observed`, `not applicable`, `unknown` | What was performed. `completed` requires the exact execution linked to the exact occurrence. Authored rest and unplanned work render `not applicable` with the observed work listed, never as completion. |
 
 Further meaning rules:

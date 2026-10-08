@@ -10,6 +10,7 @@
         compare-sequence-search build build-frontend \
         deploy deploy-hosting deploy-all deploy-rules deploy-indexes \
         hygiene hygiene-tools hygiene-all \
+        audit-frontend \
         install clean \
         docker-build docker-up docker-down docker-smoke
 
@@ -62,7 +63,7 @@ check-python: lint-python typecheck-python test-python
 
 ## Run all frontend TypeScript checks and tests
 ## Mirrors app's own `npm run check` so this gate matches CI's Frontend Hygiene job
-check-frontend: typecheck-frontend lint-frontend test-frontend validate-knowledge validate-knowledge-coverage validate-knowledge-freshness validate-workouts
+check-frontend: audit-frontend typecheck-frontend lint-frontend test-frontend validate-knowledge validate-knowledge-coverage validate-knowledge-freshness validate-workouts
 
 ## Run simulation scenario benchmarks and baseline diff verification
 simulate: simulate-scenarios simulate-diff
@@ -131,6 +132,10 @@ test-coverage:
 # -----------------------------------------------------------------------------
 # TypeScript Frontend Targets
 # -----------------------------------------------------------------------------
+
+## Audit frontend dependencies for high/critical vulnerabilities
+audit-frontend:
+	npm --prefix app run audit
 
 ## Typecheck frontend application with tsc
 typecheck-frontend:
@@ -270,7 +275,7 @@ help:
 	@echo   make test-coverage     - Run pytest with coverage report
 	@echo --------------------------------------------------------------------------------
 	@echo Frontend Targets:
-	@echo   make check-frontend    - Run tsc, eslint, vitest, knowledge, freshness, and workout validation
+	@echo   make check-frontend    - Run npm audit, tsc, eslint, vitest, knowledge, freshness, and workout validation
 	@echo   make typecheck-frontend- Run TypeScript compiler check
 	@echo   make lint-frontend     - Run ESLint
 	@echo   make test-frontend     - Run Vitest suite

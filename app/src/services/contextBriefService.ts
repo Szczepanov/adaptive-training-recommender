@@ -826,7 +826,12 @@ export class ContextBriefService {
                         ? placementState.data.assignments.filter(item => item.date === date && occupiesDate(item.status)).length
                         : undefined;
                     const source = { planId: claim.planId, revision: claim.revision, sessionId: claim.sessionId, contentHash: claim.contentHash };
-                    candidates.set(keyFor(date, source, undefined), { date, source });
+                    // Keep an already-hydrated exact occurrence row; a source-only
+                    // archive candidate would project that same occurrence twice.
+                    const hasExactCandidate = [...candidates.values()].some(candidate => candidate.date === date
+                        && candidate.source.planId === source.planId && candidate.source.revision === source.revision
+                        && candidate.source.sessionId === source.sessionId && candidate.source.contentHash === source.contentHash);
+                    if (!hasExactCandidate) candidates.set(keyFor(date, source, undefined), { date, source });
                     verifiedReplace.set(date, {
                         source,
                         authoredOccurrenceId: pending.authoredOccurrenceId,

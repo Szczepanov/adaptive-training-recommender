@@ -173,6 +173,8 @@ export async function finishStrength(page: Page, abandon = false): Promise<void>
     await page.getByRole('button', { name: /Finish Session \(/ }).click();
     await page.getByRole('button', { name: 'Finish & Save Session', exact: true }).click();
   }
+  // The execution is persisted before completion reconciliation returns the UI Home.
+  await expect(page).toHaveURL(/\?screen=home$/);
 }
 
 export async function terminalExecution(athlete: E2EAthlete, state = 'completed'): Promise<SessionExecution> {
