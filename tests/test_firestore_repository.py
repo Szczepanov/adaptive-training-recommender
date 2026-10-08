@@ -648,3 +648,73 @@ def test_delete_health_observation_day_bundles_batch_empty_is_noop() -> None:
 
     assert repo.delete_health_observation_day_bundles_batch([]) == 0
     mock_db.batch.assert_not_called()
+
+
+def test_get_snapshot_returns_data_when_doc_exists_and_matches_user() -> None:
+    mock_db = MagicMock()
+    doc_ref = MagicMock()
+    doc_snap = MagicMock()
+    doc_snap.exists = True
+    doc_snap.to_dict.return_value = {"userId": "real_uid_456", "date": "2026-08-06", "raw": {}}
+    doc_ref.get.return_value = doc_snap
+    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = doc_ref
+
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+    res = repo.get_snapshot("2026-08-06")
+
+    assert res == {"userId": "real_uid_456", "date": "2026-08-06", "raw": {}}
+
+
+def test_get_snapshot_returns_none_when_doc_does_not_exist() -> None:
+    mock_db = MagicMock()
+    doc_ref = MagicMock()
+    doc_snap = MagicMock()
+    doc_snap.exists = False
+    doc_ref.get.return_value = doc_snap
+    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = doc_ref
+
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+    res = repo.get_snapshot("2026-08-06")
+
+    assert res is None
+
+
+def test_get_snapshot_logs_warning_and_returns_none_on_user_mismatch(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    mock_db = MagicMock()
+    doc_ref = MagicMock()
+    doc_snap = MagicMock()
+    doc_snap.exists = True
+    doc_snap.to_dict.return_value = {"userId": "other_uid_789", "date": "2026-08-06"}
+    doc_ref.get.return_value = doc_snap
+    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = doc_ref
+
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+    with caplog.at_level(logging.WARNING):
+        res = repo.get_snapshot("2026-08-06")
+
+    assert res is None
+    assert "Error reading Firestore snapshot for user real_uid_456 date 2026-08-06" in caplog.text
+    assert "does not match repository user_id" in caplog.text
+
+
+def test_get_snapshot_logs_warning_and_returns_none_on_exception(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    mock_db = MagicMock()
+    doc_ref = MagicMock()
+    doc_ref.get.side_effect = RuntimeError("Firestore connection timeout")
+    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = doc_ref
+
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+    with caplog.at_level(logging.WARNING):
+        res = repo.get_snapshot("2026-08-06")
+
+    assert res is None
+    assert "Error reading Firestore snapshot for user real_uid_456 date 2026-08-06" in caplog.text
+    assert "Firestore connection timeout" in caplog.text
