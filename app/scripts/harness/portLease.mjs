@@ -191,10 +191,8 @@ function isReclaimable(leaseFile, isPidAliveFn) {
 // another acquirer has just reclaimed is left alone.
 function tryReclaimLease(leaseFile, content, isPidAliveFn) {
   const lockFile = `${leaseFile}.reclaim`;
-  try {
-    writeFileSync(lockFile, String(process.pid), { flag: 'wx' });
-  } catch (err) {
-    if (err.code !== 'EEXIST') throw err;
+  // Publish locks atomically too; opening a contended, deleting file can return EPERM on Windows.
+  if (!createFileExclusive(lockFile, String(process.pid))) {
     if (fileAgeMs(lockFile) > RECLAIM_LOCK_STALE_MS) rmSync(lockFile, { force: true });
     return false;
   }
