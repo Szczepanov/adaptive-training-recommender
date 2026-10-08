@@ -1,10 +1,6 @@
 import { expect, type Page } from '@playwright/test';
-import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { deleteApp, initializeApp } from 'firebase/app';
-import { connectAuthEmulator, getAuth, signInWithEmailAndPassword } from 'firebase/auth';
-import { collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, setDoc, type Firestore } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 import type { SessionDefinition, SessionExecution, ExecutionPrescription, SessionOccurrence } from '../../../src/sessions/models';
 import type { ExternalPlanPlacement, NormalizedGarminActivity, ScheduleWindowManifest } from '../../../src/engine/models';
 import type { PerformedTrainingOccurrence } from '../../../src/training-occurrence/models';
@@ -14,7 +10,8 @@ import { parseNormalizedGarminActivity } from '../../../src/persistence/parsers/
 import { computeContentHash } from '../../../src/engine/externalPlanHash';
 import { validateAnyExternalTrainingPlan } from '../../../src/sessions/externalPlanValidation';
 import { EXTERNAL_PLAN_SCHEMA_V6, type ExternalTrainingPlanV6, type ExternalPlanSessionV6 } from '../../../src/sessions/externalPlanV6';
-import { E2E_PROJECT_ID, E2E_EMULATOR_HOST, E2E_AUTH_PORT, E2E_FIRESTORE_PORT, dismissOnboardingIfVisible, type E2EAthlete } from './athlete';
+import { dismissOnboardingIfVisible, submitTypicalCheckin, type E2EAthlete } from './athlete';
+import { inspectAthlete, seedWithRulesDisabled } from './emulator';
 import { mondayOfWeek, seedExternalPlanningMode, weekdayOf } from './externalPlan';
 
 export const strengthDefinition: SessionDefinition = JSON.parse(readFileSync(new URL('../../../src/sessions/fixtures/01-full-body-maintenance.json', import.meta.url), 'utf8'));
@@ -40,20 +37,13 @@ export function buildV6Plan(date: string, overrides: Partial<ExternalTrainingPla
   return plan;
 }
 
-async function seed(athlete: E2EAthlete, write: (db: Firestore) => Promise<void>): Promise<void> {
-  const environment = await initializeTestEnvironment({ projectId: E2E_PROJECT_ID, firestore: { host: E2E_EMULATOR_HOST, port: E2E_FIRESTORE_PORT } });
-  try {
-    await environment.withSecurityRulesDisabled(context => write(context.firestore() as unknown as Firestore));
-  } finally { await environment.cleanup(); }
-}
-
 /** Single-revision preconditions only; successor revisions must use the import UI. */
 export async function seedExternalPlanRevision(athlete: E2EAthlete, plan: ExternalTrainingPlanV6, effectiveFrom: string): Promise<void> {
   expect(validateAnyExternalTrainingPlan(plan).isValid).toBe(true);
   expect(plan.revision).toBe(1);
   const contentHash = await computeContentHash(plan);
   const timestamp = `${effectiveFrom}T06:00:00.000Z`;
-  await seed(athlete, async db => {
+  await seedWithRulesDisabled(async db => {
     await setDoc(doc(db, 'users', athlete.userId, 'external_plans', plan.planId), {
       userId: athlete.userId, planId: plan.planId, revision: 1, title: plan.title,
       startDate: plan.startDate, weekCount: plan.weekCount, contentHash,
@@ -71,7 +61,7 @@ export async function seedPlacement(athlete: E2EAthlete, placement: ExternalPlan
   const parsed = validateExternalPlanPlacement(placement);
   expect(parsed.errors).toEqual([]);
   expect(parsed.isValid).toBe(true);
-  await seed(athlete, db => setDoc(doc(db, 'users', athlete.userId, 'external_plans', placement.planId, 'revisions', String(placement.revision), 'placement', 'current'), placement));
+  await seedWithRulesDisabled(db => setDoc(doc(db, 'users', athlete.userId, 'external_plans', placement.planId, 'revisions', String(placement.revision), 'placement', 'current'), placement));
 }
 
 export async function seedBundleWindows(athlete: E2EAthlete, date: string): Promise<void> {
@@ -81,20 +71,7 @@ export async function seedBundleWindows(athlete: E2EAthlete, date: string): Prom
     windows: [{ id: 'morning', userId: athlete.userId, date, revision: 1, startLocal: '00:00', endLocal: '12:00', createdAt: timestamp, updatedAt: timestamp }, { id: 'afternoon', userId: athlete.userId, date, revision: 1, startLocal: '12:00', endLocal: '23:59', createdAt: timestamp, updatedAt: timestamp }],
   };
   expect(validateScheduleWindowManifest(manifest).isValid).toBe(true);
-  await seed(athlete, db => setDoc(doc(db, 'users', athlete.userId, 'schedule_window_manifests', date), manifest));
-}
-
-/** Authenticated reads keep the persisted linkage assertions behind the real user rules. */
-export async function inspectAthlete<T>(athlete: E2EAthlete, read: (db: Firestore) => Promise<T>): Promise<T> {
-  const app = initializeApp({ apiKey: 'fake-api-key', projectId: E2E_PROJECT_ID, appId: '1:123456789012:web:e2e-round-trip' }, `round-trip-${randomUUID()}`);
-  try {
-    const auth = getAuth(app);
-    connectAuthEmulator(auth, `http://${E2E_EMULATOR_HOST}:${E2E_AUTH_PORT}`);
-    await signInWithEmailAndPassword(auth, athlete.email, athlete.password);
-    const db = getFirestore(app);
-    connectFirestoreEmulator(db, E2E_EMULATOR_HOST, E2E_FIRESTORE_PORT);
-    return await read(db);
-  } finally { await deleteApp(app); }
+  await seedWithRulesDisabled(db => setDoc(doc(db, 'users', athlete.userId, 'schedule_window_manifests', date), manifest));
 }
 
 export function readDocument<T>(athlete: E2EAthlete, path: string): Promise<T | undefined> {
@@ -112,6 +89,12 @@ export async function readPerformedOccurrences(athlete: E2EAthlete, date: string
   return (await readCollection<PerformedTrainingOccurrence>(athlete, 'performedTrainingOccurrences')).filter(item => item.localDate === date && item.status === 'active');
 }
 
+/** Polls until reconciliation has written exactly `count` active occurrences for `date`. */
+export async function awaitPerformedOccurrences(athlete: E2EAthlete, date: string, count: number): Promise<PerformedTrainingOccurrence[]> {
+  await expect.poll(async () => (await readPerformedOccurrences(athlete, date)).length).toBe(count);
+  return readPerformedOccurrences(athlete, date);
+}
+
 export async function seedActivityForExecution(athlete: E2EAthlete, execution: SessionExecution): Promise<string> {
   expect(execution.completedAt).toBeTruthy();
   const id = `garmin-${execution.executionId}`;
@@ -121,7 +104,7 @@ export async function seedActivityForExecution(athlete: E2EAthlete, execution: S
     trainingEffectAerobic: null, trainingEffectAnaerobic: null, averageHr: null, activityTrainingLoad: null, intensityTag: 'moderate',
   };
   expect(parseNormalizedGarminActivity(activity, `users/${athlete.userId}/activities/${id}`, id).status).toBe('AVAILABLE');
-  await seed(athlete, db => setDoc(doc(db, 'users', athlete.userId, 'activities', id), activity));
+  await seedWithRulesDisabled(db => setDoc(doc(db, 'users', athlete.userId, 'activities', id), activity));
   return id;
 }
 
@@ -147,9 +130,10 @@ export async function importPlan(page: Page, plan: ExternalTrainingPlanV6, effec
 export async function checkIn(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Check-in', exact: true }).click();
   await dismissOnboardingIfVisible(page, 200);
-  await page.getByRole('button', { name: /Feeling normal today\? Use typical values/ }).click();
-  await page.getByRole('button', { name: "Save & see today's plan", exact: true }).click();
+  await submitTypicalCheckin(page);
   await dismissOnboardingIfVisible(page, 200);
+  // A positive Home anchor, so a following "absent" assertion cannot pass pre-render.
+  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
 }
 
 export async function planningBrief(page: Page): Promise<string> {

@@ -1,7 +1,7 @@
-import { expect, test } from './support/consoleTrap';
+import { expect, test } from './support/test';
 import { provisionAthlete, seedRecoverySnapshot, signInThroughUi } from './support/athlete';
 import { seedExternalPlanningMode } from './support/externalPlan';
-import { buildV6Plan, checkIn, previewPlan, planningBrief, finishStrength, terminalExecution, executionRow, readPerformedOccurrences, seedActivityForExecution, readCollection, readDocument } from './support/roundTrip';
+import { buildV6Plan, checkIn, previewPlan, planningBrief, finishStrength, terminalExecution, executionRow, awaitPerformedOccurrences, readPerformedOccurrences, seedActivityForExecution, readCollection, readDocument } from './support/roundTrip';
 import type { SessionEntry } from '../../src/sessions/models';
 import { addDaysToLocalDateString } from '../../src/utils/localDate';
 import { parseDailyRecommendation } from '../../src/persistence/parsers/trainingHistory';
@@ -24,8 +24,7 @@ test('a validated v6 coach plan completes and Garmin enriches the same next-brie
   const execution = await terminalExecution(athlete);
   expect(execution.sessionSource).toMatchObject({ kind: 'external_plan', planId: plan.planId, revision: 1, sessionId: 'session-today' });
   let text = await planningBrief(page);
-  const [performed] = await readPerformedOccurrences(athlete, today);
-  expect(performed).toBeTruthy();
+  const [performed] = await awaitPerformedOccurrences(athlete, today, 1);
   expect(text).toContain(executionRow(today, plan, execution, performed.performedOccurrenceId));
   const activityId = await seedActivityForExecution(athlete, execution);
   await page.getByRole('button', { name: 'More' }).click();

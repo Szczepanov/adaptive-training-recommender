@@ -226,7 +226,7 @@ jobs:
   #
   # The two emulator suites are additionally sharded across jobs (Vitest/Playwright
   # `--shard`), each shard with its own emulator process, so the serial-in-process
-  # contract (`--maxWorkers=1`, `workers: 1`) is untouched. Shard both or neither: they
+  # contract (`--maxWorkers=1`, Playwright's default single E2E worker) is untouched. Shard both or neither: they
   # take ~2.5 minutes each, so sharding only one leaves the critical path unchanged.
   frontend-unit-tests:
     name: Frontend Unit Tests & Coverage
@@ -372,8 +372,8 @@ jobs:
 
       - name: Run browser E2E emulator suite shard
         # Same emulator wrapper and Playwright command as `npm run test:e2e`, restricted to
-        # this job's shard. With `fullyParallel: false` Playwright shards by whole spec file,
-        # so in-file test order is preserved.
+        # this job's shard. With `fullyParallel: true` Playwright balances shards per test;
+        # no test depends on file order because every test provisions its own athlete.
         run: npm run emulators:exec:e2e -- "npm run test:e2e:emulator -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}"
 
       - name: Upload Playwright E2E artifacts

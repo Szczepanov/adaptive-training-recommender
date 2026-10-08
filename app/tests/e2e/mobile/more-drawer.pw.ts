@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test';
-import { dismissOnboardingIfVisible, hasPersistedCheckin, provisionAthlete, seedRecoverySnapshot, signInThroughUi } from '../support/athlete';
+import { expect, test } from '../support/test';
+import { completeTypicalCheckin, dismissOnboardingIfVisible, provisionAthlete, seedRecoverySnapshot, signInThroughUi } from '../support/athlete';
 import {
   assertDialogFocusContainment,
   assertDialogFocusEntry,
@@ -13,11 +13,7 @@ test('More drawer keeps focus and navigation usable on a phone', async ({ page }
   const athlete = await provisionAthlete();
   const date = await seedRecoverySnapshot(athlete);
   await signInThroughUi(page, athlete);
-  await page.getByRole('button', { name: /Feeling normal today\? Use typical values/ }).click();
-  await page.getByRole('button', { name: "Save & see today's plan", exact: true }).click();
-  await expect.poll(() => hasPersistedCheckin(athlete, date)).toBe(true);
-  await dismissOnboardingIfVisible(page);
-  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
+  await completeTypicalCheckin(page, athlete, date);
   await dismissOnboardingIfVisible(page);
 
   const more = page.locator('.bottom-nav').getByRole('button', { name: /More/ });

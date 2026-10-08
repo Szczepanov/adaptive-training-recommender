@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../support/test';
 import { assertEffectiveTarget } from '../support/mobileAssertions';
 
 test('target assertion rejects undersized and obscured rendered hit areas', async ({ page }) => {
@@ -11,5 +11,6 @@ test('target assertion rejects undersized and obscured rendered hit areas', asyn
   `);
 
   await expect(assertEffectiveTarget(page.locator('#small'))).rejects.toThrow(/effective target width/);
-  await expect(assertEffectiveTarget(page.locator('#covered'))).rejects.toThrow(/pointer hits/);
+  // Static markup: the hit test can never settle, so fail fast instead of waiting it out.
+  await expect(assertEffectiveTarget(page.locator('#covered'), 44, 500)).rejects.toThrow(/pointer hits/);
 });

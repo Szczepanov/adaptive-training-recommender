@@ -107,7 +107,7 @@ Parses the input JSON payload, feeds the historical recovery snapshot and athlet
 | `npm run test:e2e` | Browser journey suite | Starts disposable Firebase Auth and Firestore emulators on dynamically leased ports, serves the normal application in e2e mode on a leased port, and runs the Chromium sign-in, check-in/recommendation, session lifecycle, and duplicate-start journeys. |
 | `npm run test:e2e:mobile` | Phone interaction suite | Uses the same disposable emulators and app server on leased ports; runs all `tests/e2e/mobile/*.pw.ts` specs in the `e2e-mobile` Chromium project at 390 × 844 CSS pixels. |
 | `npm run test:e2e:emulator` | Direct browser suite | Runs `playwright test --config=playwright.e2e.config.ts` against already-running emulators (called internally by `test:e2e` and `test:e2e:mobile`). |
-| `npm run emulators:exec:e2e -- "<cmd>"` | Run inside the E2E emulators | Starts Auth + Firestore emulators on dynamically leased ports and runs `<cmd>` against them. CI uses it to shard the suite by spec file: `npm run emulators:exec:e2e -- "npm run test:e2e:emulator -- --shard=1/2"`. |
+| `npm run emulators:exec:e2e -- "<cmd>"` | Run inside the E2E emulators | Starts Auth + Firestore emulators on dynamically leased ports and runs `<cmd>` against them. CI uses it to shard the suite, balanced per test: `npm run emulators:exec:e2e -- "npm run test:e2e:emulator -- --shard=1/2"`. |
 | `npm run harness:status` | Harness lease status | Inspects active and stale port leases and Firebase emulator hub locators. |
 | `npm run harness:reap` | Reap stale harness resources | Safely kills orphan processes and cleans up stale locators/leases left by abnormal terminations (`--yes` to execute). |
 | `npm run preview:start` / `npm run preview:stop` | Interactive preview | Starts/stops background emulators and Vite on leased ports, saving connection details to `app/.preview.json`. |
@@ -116,14 +116,25 @@ Parses the input JSON payload, feeds the historical recovery snapshot and athlet
 `tests/e2e/mobile/*.pw.ts` for `e2e-mobile`. The full `test:e2e` command runs both projects;
 the mobile command runs the specs in `tests/e2e/mobile/` (drawer, overlay, session-runner
 journeys and assertion primitives). Add later mobile journeys to that folder to include them
-in the bounded phone suite. All automated emulator and browser suites acquire dynamically leased
+in the bounded phone suite.
+
+Every E2E test provisions its own random-UUID athlete, so tests must never depend on another
+test's data or on file order: the config schedules them individually (`fullyParallel`), which
+lets CI shards balance by test. They run on one worker by default; `E2E_WORKERS=<n>` runs them
+concurrently, which is faster locally but can time out on a busy machine. Specs import `test`/`expect` from
+`tests/e2e/support/test.ts` (ESLint-enforced), so the #953 recommendation-write console trap
+covers every journey; `npm run typecheck` type-checks the suite through `tsconfig.e2e.json`.
+Seed preconditions with `seedWithRulesDisabled` and read persisted state with `inspectAthlete`
+(both in `tests/e2e/support/emulator.ts`) rather than opening another Firebase client.
+
+All automated emulator and browser suites acquire dynamically leased
 port blocks (20000-39999) and unique project IDs, preventing cross-worktree collisions and server reuse.
 Ports 4173/4174 and `firebase.json` defaults remain available for manual human runs.
 
 `test:e2e` reads the checked-in `.env.e2e` demo configuration only. It never accesses a
-production Firebase project or Garmin account. Playwright saves a trace, screenshot, video,
-and HTML report under `artifacts/playwright/` when a journey fails; CI uploads that directory
-once per shard (`playwright-e2e-artifacts-shard-<n>-of-<total>`), each report covering its shard's specs.
+production Firebase project or Garmin account. Playwright saves a trace (with screencast),
+screenshot, and HTML report under `artifacts/playwright/` when a journey fails; CI uploads that directory
+once per shard (`playwright-e2e-artifacts-shard-<n>-of-<total>`), each report covering its shard's tests.
 
 #### Visual Review Artifacts
 Regenerated into `artifacts/visual-review/latest/`:

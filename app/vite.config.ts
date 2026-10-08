@@ -30,6 +30,11 @@ export default defineConfig({
     'import.meta.env.VITE_BUILD_TIME': JSON.stringify(buildTime),
   },
   server: {
+    // Test runners write traces, screenshots and reports under artifacts/ while a dev server
+    // is serving them (Playwright's leased output dirs are `test-results-<port>`, which Vite's
+    // built-in `**/test-results/**` ignore does not match). None of it is source, and watching
+    // it makes the dev server process a file event for every trace frame mid-test.
+    watch: { ignored: ['**/artifacts/**'] },
     proxy: {
       '/api/garmin': {
         target: localProxyEnv.VITE_GARMIN_BACKEND_URL || 'http://localhost:8081',

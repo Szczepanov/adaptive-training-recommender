@@ -1,11 +1,9 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from './support/test';
 import {
-  dismissOnboardingIfVisible,
-  hasPersistedCheckin,
+  completeTypicalCheckin,
   provisionAthlete,
   seedRecoverySnapshot,
   signInThroughUi,
-  type E2EAthlete,
 } from './support/athlete';
 import { ASSESSMENT_CSV_HEADERS } from '../../src/observations/assessmentCsvExport';
 import { buildOpenBarAnalysis } from '../../src/observations/fixtures/openBarAnalysisFixtures';
@@ -45,20 +43,12 @@ function wlSingleRepCsv(weightKg: number, tags: string, ascentVelocity: number, 
   return lines.join('\n');
 }
 
-async function completeCheckin(page: Page, athlete: E2EAthlete, date: string): Promise<void> {
-  await page.getByRole('button', { name: /Feeling normal today\? Use typical values/ }).click();
-  await page.getByRole('button', { name: "Save & see today's plan", exact: true }).click();
-  await expect.poll(() => hasPersistedCheckin(athlete, date)).toBe(true);
-  await dismissOnboardingIfVisible(page);
-  await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
-}
-
 test('physical capital assessment: standing broad jump trial capture, checkpoint attempt, history comparability, and exports', async ({ page }) => {
   const athlete = await provisionAthlete();
   const date = await seedRecoverySnapshot(athlete);
 
   await signInThroughUi(page, athlete);
-  await completeCheckin(page, athlete, date);
+  await completeTypicalCheckin(page, athlete, date);
 
   // Navigate to Testing via desktop More menu
   const nav = page.locator('.navbar-desktop-menu');
@@ -293,7 +283,7 @@ test('physical capital assessment: back-squat WL Analysis CSV import fills trial
   const date = await seedRecoverySnapshot(athlete);
 
   await signInThroughUi(page, athlete);
-  await completeCheckin(page, athlete, date);
+  await completeTypicalCheckin(page, athlete, date);
 
   const nav = page.locator('.navbar-desktop-menu');
   await nav.getByRole('button', { name: /More/ }).click();
@@ -393,7 +383,7 @@ test('physical capital assessment: OpenBar JSON import validates, fills and save
   const athlete = await provisionAthlete();
   const date = await seedRecoverySnapshot(athlete);
   await signInThroughUi(page, athlete);
-  await completeCheckin(page, athlete, date);
+  await completeTypicalCheckin(page, athlete, date);
   const nav = page.locator('.navbar-desktop-menu');
   await nav.getByRole('button', { name: /More/ }).click();
   await page.locator('#desktop-more-panel').getByRole('button', { name: /Testing/ }).click();
@@ -433,10 +423,13 @@ test('physical capital assessment: OpenBar JSON import validates, fills and save
   await input.setInputFiles({ name: 'squat-sam2.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(analysis)) });
   await expect(page.locator('.openbar-preview-list')).toContainText('already in the attempt');
   await page.getByRole('button', { name: 'Clear OpenBar preview' }).click();
-  const removeButtons = page.getByRole('button', { name: /^Remove Attempt/ });
-  while (await removeButtons.count() > 1) await removeButtons.last().click();
-  // Leave the imported first row; remove the final untouched row when two rows remain.
-  if (await page.locator('.trial-row-card').count() > 1) await removeButtons.last().click();
+  // Leave only the imported first row (a lone row has no Remove control). Wait for each
+  // removal to render before the next click, so a stale count can never remove the import.
+  const rows = page.locator('.trial-row-card');
+  for (let remaining = await rows.count(); remaining > 1; remaining -= 1) {
+    await page.getByRole('button', { name: /^Remove Attempt/ }).last().click();
+    await expect(rows).toHaveCount(remaining - 1);
+  }
   await page.getByRole('button', { name: 'Save assessment trials' }).click();
   await expect(page.locator('.testing-error')).toContainText('success/miss, validity');
   await importedRow.getByRole('checkbox', { name: 'Success / miss matches the video' }).check();

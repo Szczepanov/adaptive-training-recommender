@@ -1,4 +1,4 @@
-import { expect, test } from './support/consoleTrap';
+import { expect, test } from './support/test';
 
 test('withheld authored adjustment resets to the executable original and restores keyboard focus', async ({ page }) => {
   await page.goto('/visual.html?scenario=morning-card-authored-adjustment-withheld');

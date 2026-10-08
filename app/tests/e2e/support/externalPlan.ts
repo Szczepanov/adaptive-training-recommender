@@ -1,14 +1,11 @@
-import { initializeTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, setDoc, type Firestore } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { addDaysToLocalDateString, getLocalDateString } from '../../../src/utils/localDate';
 import { EXTERNAL_PLAN_SCHEMA } from '../../../src/engine/models';
 import { computeContentHash } from '../../../src/engine/externalPlanHash';
 import { EXTERNAL_PLAN_SCHEMA_V4 } from '../../../src/sessions/externalPlanV4';
 import { validateAnyExternalTrainingPlan } from '../../../src/sessions/externalPlanValidation';
-import { E2E_PROJECT_ID, E2E_EMULATOR_HOST, E2E_FIRESTORE_PORT, type E2EAthlete } from './athlete';
-
-const EMULATOR_HOST = E2E_EMULATOR_HOST;
-const FIRESTORE_EMULATOR_PORT = E2E_FIRESTORE_PORT;
+import type { E2EAthlete } from './athlete';
+import { seedWithRulesDisabled } from './emulator';
 
 type ExternalWeekday = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
 
@@ -33,34 +30,28 @@ export interface E2EExternalVerdictSeed {
   planId: string;
 }
 
+function externallyPlannedIntentProfile(userId: string, timestamp: string) {
+  return {
+    userId,
+    planningMode: 'externally_planned',
+    priorities: ['endurance'],
+    weeklyCommitment: { minSessions: 4, targetSessions: 5, maxSessions: 6 },
+    organizationPreference: 'auto',
+    schemaVersion: 1,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
 export async function seedExternalPlanningMode(athlete: E2EAthlete): Promise<void> {
-  const date = getLocalDateString();
-  const environment = await initializeTestEnvironment({
-    projectId: E2E_PROJECT_ID,
-    firestore: { host: EMULATOR_HOST, port: FIRESTORE_EMULATOR_PORT },
-  });
-  try {
-    await environment.withSecurityRulesDisabled(async context => {
-      const db = context.firestore() as unknown as Firestore;
-      await setDoc(doc(db, 'users', athlete.userId, 'training_intent', 'profile'), {
-        userId: athlete.userId,
-        planningMode: 'externally_planned',
-        priorities: ['endurance'],
-        weeklyCommitment: { minSessions: 4, targetSessions: 5, maxSessions: 6 },
-        organizationPreference: 'auto',
-        schemaVersion: 1,
-        createdAt: `${date}T06:00:00.000Z`,
-        updatedAt: `${date}T06:00:00.000Z`,
-      });
-    });
-  } finally {
-    await environment.cleanup();
-  }
+  const timestamp = `${getLocalDateString()}T06:00:00.000Z`;
+  await seedWithRulesDisabled(db =>
+    setDoc(doc(db, 'users', athlete.userId, 'training_intent', 'profile'), externallyPlannedIntentProfile(athlete.userId, timestamp)));
 }
 
 /**
  * Seeds one imported plan (header + immutable revision) plus an externally_planned
- * training-intent profile, with a single `fixed` session placed on today. Reads bypass
+ * training-intent profile, with a single `fixed` session placed on today. These writes bypass
  * security rules exactly like `seedRecoverySnapshot` does; the app itself then reads
  * through the real services, validators, adjudicator and Home wiring untouched.
  */
@@ -149,47 +140,29 @@ export async function seedExternalPlanForToday(
   const parsed = validateAnyExternalTrainingPlan(plan);
   if (!parsed.isValid) throw new Error(`Invalid external-plan seed: ${JSON.stringify(parsed.errors)}`);
 
-  const environment = await initializeTestEnvironment({
-    projectId: E2E_PROJECT_ID,
-    firestore: { host: EMULATOR_HOST, port: FIRESTORE_EMULATOR_PORT },
-  });
-  try {
-    await environment.withSecurityRulesDisabled(async context => {
-      const db = context.firestore() as unknown as Firestore;
-      await setDoc(doc(db, 'users', athlete.userId, 'external_plans', planId), {
-        userId: athlete.userId,
-        planId,
-        revision: 1,
-        title: plan.title,
-        startDate,
-        weekCount: 2,
-        contentHash,
-        importedAt: timestamp,
-        supersededFrom: null,
-        updatedAt: timestamp,
-      });
-      await setDoc(doc(db, 'users', athlete.userId, 'external_plans', planId, 'revisions', '1'), plan);
-      await setDoc(doc(db, 'users', athlete.userId, 'external_plans', planId, 'activations', '1'), {
-        userId: athlete.userId,
-        planId,
-        revision: 1,
-        contentHash,
-        effectiveFrom: startDate,
-        activatedAt: timestamp,
-      });
-      await setDoc(doc(db, 'users', athlete.userId, 'training_intent', 'profile'), {
-        userId: athlete.userId,
-        planningMode: 'externally_planned',
-        priorities: ['endurance'],
-        weeklyCommitment: { minSessions: 4, targetSessions: 5, maxSessions: 6 },
-        organizationPreference: 'auto',
-        schemaVersion: 1,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      });
+  await seedWithRulesDisabled(async db => {
+    await setDoc(doc(db, 'users', athlete.userId, 'external_plans', planId), {
+      userId: athlete.userId,
+      planId,
+      revision: 1,
+      title: plan.title,
+      startDate,
+      weekCount: 2,
+      contentHash,
+      importedAt: timestamp,
+      supersededFrom: null,
+      updatedAt: timestamp,
     });
-  } finally {
-    await environment.cleanup();
-  }
+    await setDoc(doc(db, 'users', athlete.userId, 'external_plans', planId, 'revisions', '1'), plan);
+    await setDoc(doc(db, 'users', athlete.userId, 'external_plans', planId, 'activations', '1'), {
+      userId: athlete.userId,
+      planId,
+      revision: 1,
+      contentHash,
+      effectiveFrom: startDate,
+      activatedAt: timestamp,
+    });
+    await setDoc(doc(db, 'users', athlete.userId, 'training_intent', 'profile'), externallyPlannedIntentProfile(athlete.userId, timestamp));
+  });
   return { date, planId };
 }

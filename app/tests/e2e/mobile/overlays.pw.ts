@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test';
-import { dismissOnboardingIfVisible, provisionAthlete, signInThroughUi } from '../support/athlete';
+import { expect, test } from '../support/test';
+import { dismissOnboardingIfVisible, provisionAthlete, signInThroughUi, submitSignInForm } from '../support/athlete';
 import {
   assertDialogFocusContainment,
   assertDialogCoversBottomNavigation,
@@ -51,9 +51,7 @@ test('training window dialog preserves mobile focus and reachable actions', asyn
 test('new athlete onboarding keeps its choices and dismissal reachable on a phone', async ({ page }) => {
   const athlete = await provisionAthlete();
   await page.goto('/');
-  await page.getByPlaceholder('Email address').fill(athlete.email);
-  await page.getByPlaceholder('Password').fill(athlete.password);
-  await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+  await submitSignInForm(page, athlete);
 
   const dialog = page.getByRole('dialog', { name: 'Rapid Onboarding Setup' });
   await expect(dialog).toBeVisible();
