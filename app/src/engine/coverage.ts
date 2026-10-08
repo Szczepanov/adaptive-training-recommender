@@ -790,11 +790,18 @@ export function coverageNeedTierForTemplate(
     anchorRole: 'event-specific' | 'quality' | null = null,
     deferAnchorAdjacentHeavyStrength: boolean = false,
 ): 0 | 1 | 2 | 3 {
+    // ⚡ Bolt: Use Map lookup instead of state.requirements.find(item => item.key === key) for O(1) checks.
+    // Built via for..of to avoid Map(Array.map) GC overhead in V8.
+    const requirementByKey = new Map();
+    for (const req of state.requirements) {
+        requirementByKey.set(req.key, req);
+    }
+
     const workoutId = workoutIdForTemplateId(template.id);
     const keys = (state.descriptor ? coverageKeysForTemplate(template, state.phase, state.descriptor, state.aerobicVolumeFloor) : [])
         .filter(key => !EMBEDDED_ONLY_COVERAGE_KEYS.has(key))
         .filter(key => {
-            const requirement = state.requirements.find(item => item.key === key);
+            const requirement = requirementByKey.get(key);
             const eligibleWorkoutIds = requirement?.eligibleWorkoutIds;
             if (eligibleWorkoutIds !== undefined && (workoutId === undefined || !eligibleWorkoutIds.includes(workoutId))) return false;
             const notBefore = workoutId ? requirement?.candidateWorkoutNotBeforeDates?.[workoutId] : undefined;
@@ -812,7 +819,7 @@ export function coverageNeedTierForTemplate(
     // otherwise a different unmet role can steal the authored anchor date. Hard safety,
     // recovery, time and equipment gates run before this ordering participates in ranking.
     if (anchorKey && keys.includes(anchorKey)) {
-        const requirement = state.requirements.find(item => item.key === anchorKey);
+        const requirement = requirementByKey.get(anchorKey);
         if (requirement) return 0;
     }
 
@@ -823,7 +830,7 @@ export function coverageNeedTierForTemplate(
     let advancesAnchorTimedMinimum = false;
     let advancesDeferredSupportMinimum = false;
     for (const key of keys) {
-        const requirement = state.requirements.find(item => item.key === key);
+        const requirement = requirementByKey.get(key);
         if (!requirement || !isMinimumUnmet(requirement)) continue;
         if (ANCHOR_TIMED_COVERAGE_KEYS.has(key)) {
             advancesAnchorTimedMinimum = true;
@@ -854,7 +861,7 @@ export function coverageNeedTierForTemplate(
     if (advancesAnchorTimedMinimum || advancesDeferredSupportMinimum) return 2;
 
     for (const key of keys) {
-        const requirement = state.requirements.find(item => item.key === key);
+        const requirement = requirementByKey.get(key);
         if (requirement && fulfilledSessions(requirement) < requirement.targetSessions) return 2;
         // Issue #805: an active, unfulfilled capability placement is owed even when generic
         // #804 mechanical dose already met its weekly target -- ranking urgency only, never

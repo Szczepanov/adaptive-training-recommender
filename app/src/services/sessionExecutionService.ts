@@ -24,6 +24,7 @@ import type {
     SessionSourceRef,
     SessionExecutionState,
     FitWorkoutFingerprintKind,
+    SessionCompletionEvidence,
 } from '../sessions/models';
 import type { NormalizedExecutionRecord } from '../sessions/legacyStrengthAdapter';
 import {
@@ -34,6 +35,12 @@ import {
 import { commitDiaryWrite, type DiaryWriteOptions } from './sessionDiaryWrite';
 import { readDiaryReceipts, removeDiaryReceipt, saveDiaryReceipt } from './sessionDiaryReceipts';
 import { canonicalizeJson } from '../utils/canonicalJson';
+import { overlayQueuedDiaryState } from '../sessions/sessionDiaryResume';
+
+export type TerminalTransitionResult =
+    | { status: 'transitioned'; execution: SessionExecution }
+    | { status: 'already_completed'; execution: SessionExecution }
+    | { status: 'already_abandoned'; execution: SessionExecution };
 
 export interface SessionDiaryMutation {
     id: string;
@@ -406,6 +413,12 @@ export class SessionExecutionService {
             });
         } catch (error) {
             if (error instanceof ExecutionSlotConflictError) throw error;
+            // A redo can lose at rules before the SDK retries the transaction.
+            // Reuse only a proven in-progress winner in this exact launch slot.
+            if ((error as { code?: string })?.code === 'permission-denied') {
+                const winner = await this.findExistingExecution(userId, params);
+                if (winner?.state === 'in_progress') return winner;
+            }
             if (!isFirestoreUnavailable(error)) throw error;
             return this.queueOfflineExecutionClaim(userId, executionId, params);
         }
@@ -442,7 +455,10 @@ export class SessionExecutionService {
         batch.set(this.executionRef(userId, mutation.executionId), { updatedAt: mutation.at }, { merge: true });
         return commitDiaryWrite(batch, marker, {
             ...options,
-            onLocallyAccepted: () => { saveDiaryReceipt(userId, { mutation, state: 'queued' }); },
+            onLocallyAccepted: () => {
+                saveDiaryReceipt(userId, { mutation, state: 'queued' });
+                options?.onLocallyAccepted?.();
+            },
             onAcknowledged: () => {
                 removeDiaryReceipt(userId, mutation.executionId, mutation.id);
                 options?.onAcknowledged?.();
@@ -655,7 +671,7 @@ export class SessionExecutionService {
         return readDiaryReceipts(userId, executionId);
     }
 
-    watchEntries(userId: string, executionId: string, next: (entries: SessionEntry[], deleted: SessionEntry | null) => void, failed: (error: unknown) => void): () => void {
+    watchEntries(userId: string, executionId: string, next: (entries: SessionEntry[], deleted: SessionEntry | null, all: SessionEntry[]) => void, failed: (error: unknown) => void): () => void {
         return onSnapshot(this.entriesColl(userId, executionId), snapshot => {
             const all = snapshot.docs.flatMap(item => {
                 const parsed = parseSessionEntryDocument(item.data(), item.ref.path);
@@ -663,7 +679,7 @@ export class SessionExecutionService {
             });
             const entries = all.filter(entry => !entry.deletedAt).sort((a, b) => a.completedAt.localeCompare(b.completedAt));
             const deleted = all.filter(entry => entry.deletedAt).sort((a, b) => b.deletedAt!.localeCompare(a.deletedAt!))[0] ?? null;
-            next(entries, deleted);
+            next(entries, deleted, all);
         }, failed);
     }
 
@@ -709,14 +725,14 @@ export class SessionExecutionService {
      * them silently, which let a malformed or cross-linked entry set disappear from range
      * reads without incrementing `invalidRecords`.
      */
-    private async readEntries(userId: string, executionId: string): Promise<{ entries: SessionEntry[]; invalidRecords: number }> {
+    private async readEntries(userId: string, executionId: string, includeDeleted = false): Promise<{ entries: SessionEntry[]; invalidRecords: number }> {
         const snap = await getDocs(this.entriesColl(userId, executionId));
         const entries: SessionEntry[] = [];
         let invalidRecords = 0;
         for (const docSnap of snap.docs) {
             const parsed = parseSessionEntryDocument(docSnap.data(), docSnap.ref.path);
             if (parsed.status === 'AVAILABLE' && parsed.data.executionId === executionId) {
-                if (!parsed.data.deletedAt) entries.push(parsed.data);
+                if (includeDeleted || !parsed.data.deletedAt) entries.push(parsed.data);
             } else if (parsed.status === 'INVALID' || parsed.status === 'AVAILABLE') {
                 invalidRecords += 1;
             }
@@ -738,7 +754,7 @@ export class SessionExecutionService {
         const candidates: SessionExecution[] = [];
         for (const docSnap of snap.docs) {
             const parsed = parseSessionExecutionDocument(docSnap.data(), docSnap.ref.path);
-            if (parsed.status === 'AVAILABLE' && parsed.data.state === 'in_progress') {
+            if (parsed.status === 'AVAILABLE' && parsed.data.executionId === docSnap.id && parsed.data.state === 'in_progress') {
                 candidates.push(parsed.data);
             }
         }
@@ -760,6 +776,30 @@ export class SessionExecutionService {
             }
         }
         return candidates.sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null;
+    }
+
+    async getResumeDiaryState(userId: string, executionId: string) {
+        const { entries: persistedEntries, invalidRecords } = await this.readEntries(userId, executionId, true);
+        if (invalidRecords > 0) throw new Error('The execution diary contains invalid entries.');
+        return overlayQueuedDiaryState(
+            persistedEntries,
+            null,
+            readDiaryReceipts(userId, executionId),
+        );
+    }
+
+    async getTerminalExecutions(userId: string): Promise<SessionExecution[]> {
+        const collRef = collection(this.db, 'users', userId, 'session_executions');
+        // ponytail: scan terminal history on recovery; add projection checkpoints if history size matters.
+        const snap = await getDocs(query(collRef, where('state', 'in', ['completed', 'abandoned'])));
+        const candidates: SessionExecution[] = [];
+        for (const docSnap of snap.docs) {
+            const parsed = parseSessionExecutionDocument(docSnap.data(), docSnap.ref.path);
+            if (parsed.status === 'AVAILABLE' && parsed.data.executionId === docSnap.id && parsed.data.state !== 'in_progress') {
+                candidates.push(parsed.data);
+            }
+        }
+        return candidates.sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
     }
 
     /**
@@ -818,6 +858,81 @@ export class SessionExecutionService {
         });
 
         return candidates[0] ?? null;
+    }
+
+    async transitionExecutionTerminal(
+        userId: string,
+        executionId: string,
+        targetState: Extract<SessionExecutionState, 'completed' | 'abandoned'>,
+        data?: {
+            sessionRpe?: number;
+            notes?: string;
+            completionEvidence?: SessionCompletionEvidence;
+        },
+        addWinnerWrites?: (batch: WriteBatch, terminalExecution: SessionExecution) => void | Promise<void>,
+    ): Promise<TerminalTransitionResult> {
+        // A rejected queued set must settle before winner writes derive performance from entries.
+        await waitForPendingWrites(this.db);
+        const ref = this.executionRef(userId, executionId);
+        const read = async (): Promise<SessionExecution> => {
+            const snap = await getDoc(ref);
+            if (!snap.exists()) throw new Error(`Session execution ${executionId} does not exist.`);
+            const parsed = parseSessionExecutionDocument(snap.data(), snap.ref.path);
+            if (parsed.status !== 'AVAILABLE' || parsed.data.executionId !== executionId) {
+                throw new Error(`Session execution ${executionId} is invalid.`);
+            }
+            return parsed.data;
+        };
+        const classify = (persisted: SessionExecution): TerminalTransitionResult | null => {
+            if (persisted.state === 'completed') return { status: 'already_completed', execution: persisted };
+            if (persisted.state === 'abandoned') return { status: 'already_abandoned', execution: persisted };
+            return null;
+        };
+
+        const before = await read();
+        const existing = classify(before);
+        if (existing) return existing;
+
+        const now = new Date().toISOString();
+        const terminalExecution: SessionExecution = {
+            ...before,
+            state: targetState,
+            updatedAt: now,
+            ...(targetState === 'completed' ? { completedAt: now } : {}),
+            ...(data?.sessionRpe !== undefined ? { sessionRpe: data.sessionRpe } : {}),
+            ...(data?.notes !== undefined ? { notes: data.notes } : {}),
+            ...(targetState === 'completed' && data?.completionEvidence
+                ? { completionEvidence: data.completionEvidence }
+                : {}),
+        };
+        const patch: Partial<SessionExecution> = {
+            state: targetState,
+            updatedAt: now,
+            ...(targetState === 'completed' ? { completedAt: now } : {}),
+            ...(data?.sessionRpe !== undefined ? { sessionRpe: data.sessionRpe } : {}),
+            ...(data?.notes !== undefined ? { notes: data.notes } : {}),
+            ...(targetState === 'completed' && data?.completionEvidence
+                ? { completionEvidence: data.completionEvidence }
+                : {}),
+        };
+        const batch = writeBatch(this.db);
+        batch.set(ref, patch, { merge: true });
+        if (addWinnerWrites) await addWinnerWrites(batch, terminalExecution);
+        try {
+            await batch.commit();
+            return { status: 'transitioned', execution: terminalExecution };
+        } catch (error) {
+            // A racing terminal winner makes this batch fail under final-state rules. Only
+            // classify that failure as idempotent when a fresh persisted read proves it.
+            try {
+                const latest = await read();
+                const raced = classify(latest);
+                if (raced) return raced;
+            } catch {
+                // Preserve the original write error when we cannot prove a terminal winner.
+            }
+            throw error;
+        }
     }
 
     /**

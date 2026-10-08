@@ -1464,19 +1464,38 @@ service cloud.firestore {
 
     function hasValidDisplayMetadata(meta) {
       return meta is map
-        && meta.keys().hasOnly(['title', 'summary', 'intent', 'dominantModality', 'duration'])
+        && meta.keys().hasOnly(['title', 'summary', 'intent', 'dominantModality', 'duration', 'movementComposition'])
         && meta.keys().hasAll(['title', 'intent'])
         && meta.title is string
         && meta.intent is string
         && (!('summary' in meta) || meta.summary is string)
         && (!('dominantModality' in meta) || meta.dominantModality is string)
-        && (!('duration' in meta) || (meta.duration is map && meta.duration.min is number && meta.duration.max is number));
+        && (!('duration' in meta) || (meta.duration is map && meta.duration.min is number && meta.duration.max is number))
+        && (!('movementComposition' in meta) || meta.movementComposition is list);
+    }
+
+    function hasValidDefinitionSnapshot(snapshot) {
+      return snapshot is map
+        && snapshot.keys().hasOnly(['schemaVersion', 'title', 'summary', 'intent', 'modalities', 'dominantModality', 'duration', 'sessionTargets', 'prohibitedAdditions', 'importWarnings', 'movementComposition', 'blocks'])
+        && snapshot.keys().hasAll(['schemaVersion', 'title', 'intent', 'blocks'])
+        && snapshot.schemaVersion == 1
+        && snapshot.title is string
+        && snapshot.intent is string
+        && snapshot.blocks is list
+        && (!('summary' in snapshot) || snapshot.summary is string)
+        && (!('modalities' in snapshot) || snapshot.modalities is list)
+        && (!('dominantModality' in snapshot) || snapshot.dominantModality is string)
+        && (!('duration' in snapshot) || (snapshot.duration is map && snapshot.duration.min is number && snapshot.duration.max is number))
+        && (!('sessionTargets' in snapshot) || snapshot.sessionTargets is list)
+        && (!('prohibitedAdditions' in snapshot) || snapshot.prohibitedAdditions is list)
+        && (!('importWarnings' in snapshot) || snapshot.importWarnings is list)
+        && (!('movementComposition' in snapshot) || snapshot.movementComposition is list);
     }
 
     function hasValidExecutionPrescription(userId, prescriptionHash) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'schemaVersion', 'prescriptionHash', 'sessionSource', 'definitionHash', 'blocks', 'displayMetadata', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'schemaVersion', 'prescriptionHash', 'sessionSource', 'definitionHash', 'blocks', 'displayMetadata', 'definitionSnapshot', 'createdAt'])
         && data.keys().hasAll(['userId', 'schemaVersion', 'prescriptionHash', 'sessionSource', 'definitionHash', 'blocks', 'createdAt'])
         && data.prescriptionHash == prescriptionHash
         && data.definitionHash is string
@@ -1484,6 +1503,7 @@ service cloud.firestore {
         && data.schemaVersion == 1
         && data.blocks is list
         && (!('displayMetadata' in data) || hasValidDisplayMetadata(data.displayMetadata))
+        && (!('definitionSnapshot' in data) || hasValidDefinitionSnapshot(data.definitionSnapshot))
         && data.createdAt is string;
     }
 
@@ -1493,10 +1513,21 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    function hasValidCompletionEvidence(evidence) {
+      return evidence is map
+        && evidence.keys().hasOnly(['submittedAt', 'sessionRpe', 'completedFraction', 'unexpectedFatigue', 'note'])
+        && evidence.keys().hasAll(['submittedAt'])
+        && evidence.submittedAt is string
+        && (!('sessionRpe' in evidence) || (evidence.sessionRpe is number && evidence.sessionRpe >= 1 && evidence.sessionRpe <= 10))
+        && (!('completedFraction' in evidence) || (evidence.completedFraction is number && evidence.completedFraction >= 0 && evidence.completedFraction <= 1))
+        && (!('unexpectedFatigue' in evidence) || evidence.unexpectedFatigue is bool)
+        && (!('note' in evidence) || (evidence.note is string && evidence.note.size() <= 2000));
+    }
+
     function hasValidSessionExecution(userId, executionId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'executionId', 'occurrenceId', 'sessionSource', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sessionRpe', 'notes', 'schemaVersion'])
+        && data.keys().hasOnly(['userId', 'executionId', 'occurrenceId', 'sessionSource', 'prescriptionHash', 'fitWorkoutFingerprint', 'fitWorkoutFingerprintKind', 'date', 'startedAt', 'completedAt', 'updatedAt', 'state', 'sessionRpe', 'notes', 'completionEvidence', 'schemaVersion'])
         && data.keys().hasAll(['userId', 'executionId', 'sessionSource', 'date', 'startedAt', 'updatedAt', 'state', 'schemaVersion'])
         && data.executionId == executionId
         && isValidActivityDate(data.date)
@@ -1508,6 +1539,8 @@ service cloud.firestore {
         && (!('fitWorkoutFingerprintKind' in data) || data.fitWorkoutFingerprintKind in ['semantic_definition', 'index_fallback'])
         && (!('sessionRpe' in data) || (data.sessionRpe is number && data.sessionRpe >= 1 && data.sessionRpe <= 10))
         && (!('notes' in data) || (data.notes is string && data.notes.size() <= 4000))
+        && (!('completionEvidence' in data) || hasValidCompletionEvidence(data.completionEvidence))
+        && (data.state == 'completed' || !('completionEvidence' in data))
         && data.state in ['in_progress', 'completed', 'abandoned']
         && ((data.state == 'completed') == ('completedAt' in data))
         && data.startedAt is string
@@ -1852,9 +1885,27 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
         && resource.data.state == 'in_progress'
         && request.resource.data.date == resource.data.date
         && request.resource.data.startedAt == resource.data.startedAt
+        && request.resource.data.sessionSource == resource.data.sessionSource
+        && (!('occurrenceId' in resource.data) ? !('occurrenceId' in request.resource.data) : request.resource.data.occurrenceId == resource.data.occurrenceId)
+        && (!('prescriptionHash' in resource.data) ? !('prescriptionHash' in request.resource.data) : request.resource.data.prescriptionHash == resource.data.prescriptionHash)
         && (!('fitWorkoutFingerprint' in resource.data) ? !('fitWorkoutFingerprint' in request.resource.data) : request.resource.data.fitWorkoutFingerprint == resource.data.fitWorkoutFingerprint)
-        && (!('fitWorkoutFingerprintKind' in resource.data) ? !('fitWorkoutFingerprintKind' in request.resource.data) : request.resource.data.fitWorkoutFingerprintKind == resource.data.fitWorkoutFingerprintKind);
-      allow delete: if isOwner(userId);
+        && (!('fitWorkoutFingerprintKind' in resource.data) ? !('fitWorkoutFingerprintKind' in request.resource.data) : request.resource.data.fitWorkoutFingerprintKind == resource.data.fitWorkoutFingerprintKind)
+        && (
+          // Diary batches retain the existing parent updatedAt touch while the session is live.
+          (request.resource.data.state == 'in_progress'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt']))
+          ||
+          // Terminal state is one-way/final: the previous state must be in_progress and only
+          // canonical completion/abandon fields may change in the winning request.
+          (request.resource.data.state in ['completed', 'abandoned']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt', 'completedAt', 'sessionRpe', 'notes', 'completionEvidence'])
+            && ((request.resource.data.state == 'completed'
+                  && request.resource.data.completedAt == request.resource.data.updatedAt)
+                || (request.resource.data.state == 'abandoned'
+                  && !('completedAt' in request.resource.data)
+                  && !('completionEvidence' in request.resource.data))))
+        );
+      allow delete: if isOwner(userId) && resource.data.state == 'in_progress';
 
       match /entries/{entryId} {
         allow read: if isOwner(userId);
@@ -2111,7 +2162,7 @@ function hasValidChoiceSupersession(userId, executionId, entryId) {
       return d.keys().hasOnly([
           'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',
           'policyVersion', 'captureVersion', 'appSource', 'minimumSafetyStatus',
-          'evaluatorInputs', 'performedTrainingFacts', 'mechanicalCheckinHistory', 'contentHash'
+          'evaluatorInputs', 'performedTrainingFacts', 'mechanicalCheckinHistory', 'trainingHistoryReplay', 'contentHash'
         ])
         && d.keys().hasAll([
           'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',

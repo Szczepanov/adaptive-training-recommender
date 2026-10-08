@@ -26,6 +26,7 @@ import {
 } from './models';
 import { parsePerformedTrainingOccurrence } from './validation';
 import {
+    deriveCanonicalBroadExposure,
     computeCanonicalIdentityMetrics,
     pairLiveAndCanonicalHistory,
     type CanonicalHistorySources,
@@ -65,6 +66,7 @@ type SourceProvenance = Record<string, { status: 'unprovable'; reason: string } 
 
 /** Shape written by `python -m garmin_sync export-training-occurrence-records`. */
 export interface TrainingOccurrenceRecordExport extends Record<OfflineSource, RawRecordDocument[]> {
+    decisionContexts?: RawRecordDocument[];
     schemaVersion: 2;
     userId: string;
     window?: DateWindow;
@@ -82,6 +84,7 @@ export interface TrainingOccurrenceRecordExport extends Record<OfflineSource, Ra
 
 /** Private parsed export evidence for the offline date-D assembler; never placed in preparedInput. */
 export interface OfflineSourceEvidence extends Record<OfflineSource, Array<{ id: string; data: Record<string, unknown>; recommendationId?: string; planId?: string }>> {
+    decisionContexts?: Array<{ id: string; data: Record<string, unknown>; recommendationId?: string }>;
     evaluationWindow: DateWindow;
     sourceEvidenceBounds: Record<BoundedSource, DateWindow>;
     sourceProvenance: SourceProvenance;
@@ -108,6 +111,7 @@ export interface PreparedTo4 {
     liveExposures: CompletedExposure[];
     canonicalExposures: CompletedExposure[];
     sourceEvidence: OfflineSourceEvidence;
+    replayCanonicalHistory: { exposures: CompletedExposure[]; unknownDates: string[]; invalidRecords: number };
     privateReviewSheet: Array<Record<string, unknown>>;
 }
 
@@ -158,6 +162,11 @@ function offlineEvidence(raw: TrainingOccurrenceRecordExport): OfflineSourceEvid
             }
             return document as { id: string; data: Record<string, unknown>; recommendationId?: string; planId?: string };
         });
+    }
+    // Keep malformed captured records for per-date fail-closed reporting, not mutable fallback.
+    if (raw.decisionContexts !== undefined) {
+        if (!Array.isArray(raw.decisionContexts)) throw new Error('Invalid decision context export.');
+        result.decisionContexts = raw.decisionContexts as OfflineSourceEvidence['decisionContexts'];
     }
     return result;
 }
@@ -509,6 +518,16 @@ export function prepareTo4Evidence(raw: TrainingOccurrenceRecordExport, options:
         liveExposures: evaluated.pairing.liveExposures,
         canonicalExposures: evaluated.pairing.canonicalExposures,
         sourceEvidence,
+        replayCanonicalHistory: {
+            exposures: first.pairing.canonicalExposures.map(exposure => ({
+                ...exposure,
+                occurrenceKey: `canonical:${first.pairing.privateAliasSources.get(exposure.occurrenceKey!)?.canonicalSourceKeys.join('+')}`,
+            })),
+            unknownDates: parsed.occurrences.filter(occurrence => occurrence.status === 'active'
+                && deriveCanonicalBroadExposure(occurrence, first.sources).status === 'unknown')
+                .map(occurrence => occurrence.localDate ?? ''),
+            invalidRecords: parsed.invalidRecords + parsed.crossUserRecords,
+        },
         privateReviewSheet,
     };
 }

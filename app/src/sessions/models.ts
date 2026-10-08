@@ -228,6 +228,21 @@ export interface SessionDefinition {
     blocks: SessionBlock[];
 }
 
+export type SessionDefinitionSnapshot = Pick<SessionDefinition,
+    | 'schemaVersion'
+    | 'title'
+    | 'summary'
+    | 'intent'
+    | 'modalities'
+    | 'dominantModality'
+    | 'duration'
+    | 'sessionTargets'
+    | 'prohibitedAdditions'
+    | 'importWarnings'
+    | 'movementComposition'
+    | 'blocks'
+>;
+
 export type OccurrenceAuthority =
     | 'unplanned_log'
     | 'schedule'
@@ -351,6 +366,8 @@ export interface ExecutionPrescription {
     definitionHash: string;
     blocks: SessionBlock[];
     displayMetadata?: SessionDisplayMetadata;
+    /** Self-contained hash-covered executable bytes for exact replay. Legacy v1 rows may omit it. */
+    definitionSnapshot?: SessionDefinitionSnapshot;
     createdAt: string;
 }
 
@@ -358,6 +375,14 @@ export type SessionExecutionState =
     | 'in_progress'
     | 'completed'
     | 'abandoned';
+
+export interface SessionCompletionEvidence {
+    submittedAt: string;
+    sessionRpe?: number;
+    completedFraction?: number;
+    unexpectedFatigue?: boolean;
+    note?: string;
+}
 
 export interface SessionExecution {
     userId: string;
@@ -374,6 +399,8 @@ export interface SessionExecution {
     state: SessionExecutionState;
     sessionRpe?: number;
     notes?: string;
+    /** Canonical athlete-submitted completion evidence, committed with the terminal winner. */
+    completionEvidence?: SessionCompletionEvidence;
     schemaVersion: number;
 }
 

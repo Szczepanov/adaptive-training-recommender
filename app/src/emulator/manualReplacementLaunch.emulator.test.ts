@@ -72,13 +72,13 @@ emulatorDescribe('Manual replacement stale primary launch', () => {
         expect((await getDoc(doc(db, executionPath))).exists()).toBe(true);
     });
 
-    it('keeps logging and completion updates available after an existing execution occurrence is superseded', async () => {
+    it('keeps execution and completion updates available after an existing execution occurrence is superseded', async () => {
         await seedOccurrence('scheduled');
         await assertSucceeds(queuedExecutionClaim(db));
         await seedOccurrence('superseded');
-        await assertSucceeds(updateDoc(doc(db, executionPath), { notes: 'Recorded work' }));
+        await assertSucceeds(updateDoc(doc(db, executionPath), { updatedAt: '2026-10-07T06:30:00.000Z' }));
         await assertSucceeds(updateDoc(doc(db, executionPath), {
-            state: 'completed', completedAt: '2026-10-07T07:00:00.000Z', updatedAt: '2026-10-07T07:00:00.000Z',
+            state: 'completed', notes: 'Recorded work', completedAt: '2026-10-07T07:00:00.000Z', updatedAt: '2026-10-07T07:00:00.000Z',
         }));
     });
 });

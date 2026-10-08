@@ -72,6 +72,17 @@ const definitionWithBlock = (
     blocks: [{ id: 'main', role: 'main', executionMode, steps }],
 });
 
+it('shows a read-only recovery state instead of a fixture launcher when resume is degraded', () => {
+    vi.mocked(useSessionRunner).mockReturnValueOnce({
+        definition: null, execution: { state: 'in_progress' }, entries: [],
+        isRestoring: false, resumeStatus: 'degraded', ineligibleOptionIds: new Set<string>(),
+    } as unknown as ReturnType<typeof useSessionRunner>);
+    const html = renderToStaticMarkup(<SessionRunner userId="user-1" />);
+    expect(html).toContain('Session recovery needs attention');
+    expect(html).toContain('Retry recovery');
+    expect(html).not.toContain('Start Session');
+});
+
 describe('SessionRunner session picker', () => {
     it('collapses creation to one New session entry instead of parallel actions (#495)', () => {
         const html = renderToStaticMarkup(<SessionRunner userId="user-1" />);

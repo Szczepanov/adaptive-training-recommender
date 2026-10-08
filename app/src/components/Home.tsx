@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { decisionComposer, type ComposedDailyDecisionInput } from '../engine/composer';
 import { evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateReadinessAndSafetyEnvelope } from '../engine/rules';
+import { createTrainingHistoryReplayRecorder } from '../engine/historyReplayCapture';
+import type { DecisionContextRecord } from '../engine/decisionContext';
 import { evaluateSameDayRecommendation } from '../engine/sameDayRecommendation';
 import type { SameDayRecommendationInputs } from '../engine/sameDayRecommendation';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapGoalsToUserEvents } from '../engine/adapters';
@@ -142,6 +144,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
   const [decisionContextCapture, setDecisionContextCapture] = useState<{
     evaluatedAt: string;
     evaluatorInputs: SameDayRecommendationInputs;
+    trainingHistoryReplay?: DecisionContextRecord['trainingHistoryReplay'];
     performedTrainingFacts: Exclude<TrainingHistorySnapshot['performedTrainingFacts'], undefined> | null;
   } | null>(null);
   const [adjustmentDirection, setAdjustmentDirection] = useState<'easier' | 'harder' | null>(null);
@@ -654,6 +657,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           ? await resolveMechanicalCheckinHistory(userId, input.date)
           : [];
         const evaluatedAt = new Date().toISOString();
+        const { firestoreTrainingHistoryProvider } = await import('../engine/firestoreTrainingHistory');
+        const historyRecorder = createTrainingHistoryReplayRecorder(firestoreTrainingHistoryProvider, {
+          userId, throughDateExclusive: input.date,
+        });
         const evaluatorInputs: SameDayRecommendationInputs = {
           userId,
           readiness: { subjective, objective, subjectiveBaseline: input.subjectiveBaseline },
@@ -662,6 +669,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           date: input.date,
           previousMode: yesterdayRec?.mode,
           preparedHistorySnapshot: sameDayPreparedSnapshot,
+          historyProvider: historyRecorder.provider,
           fixedActivities: todayAndTomorrowFixedActivities,
           authoredPlanBlocks: todayAndTomorrowPlanBlocks,
           trainingIntentProfile: input.trainingIntentProfile,
@@ -673,6 +681,9 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           mechanicalCheckinHistory,
         };
         const baseRecommendation = await evaluateSameDayRecommendation(evaluatorInputs);
+        const historyCapture = historyRecorder.finish();
+        const trainingHistoryReplay = historyCapture
+          ? { preparedSnapshot: sameDayPreparedSnapshot, capture: historyCapture } : undefined;
         if (!isCurrent()) return;
         onCapabilityMaintenanceResolved?.(userId, input.date, baseRecommendation.capabilityMaintenance ?? null);
         const recommendationWithPrescription = {
@@ -962,6 +973,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
           evaluatorInputs,
           performedTrainingFacts,
           mechanicalCheckinHistory,
+          trainingHistoryReplay,
         });
         // An authored Start is exposed only after its authority/archive/lifecycle
         // hand-off commits. A failed write must not launch an uncommitted override.
@@ -976,6 +988,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession, onCapabil
         setDecisionContextCapture({
           evaluatedAt,
           evaluatorInputs,
+          trainingHistoryReplay,
           performedTrainingFacts,
         });
         setRecommendation(todayRec);

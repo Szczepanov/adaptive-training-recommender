@@ -2361,7 +2361,7 @@ emulatorDescribe('Firestore security rules', () => {
         await expect(assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), recExtraKey))).resolves.toBeDefined();
     });
 
-    it('binds a recommendation to an owner-only, write-once decision context', async () => {
+    it('binds a recommendation to an owner-only, write-once decision context with bounded history', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
         const contextPath = `${recommendationPath}/decision_contexts/1`;
@@ -2389,6 +2389,7 @@ emulatorDescribe('Firestore security rules', () => {
                 asOfDate: '2026-08-07', windowDays: 7, revision: 'canonical-facts-v1:evergreen_general:test',
                 exposures: [], coverageCredits: [],
             },
+            trainingHistoryReplay: { preparedSnapshot: {}, capture: { schemaVersion: 1, requests: [] } },
             contentHash: 'a'.repeat(64),
         };
 

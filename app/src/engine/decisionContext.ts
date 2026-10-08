@@ -1,4 +1,6 @@
 /** Immutable, user-scoped inputs for one prospective same-day decision revision. */
+import { captureReplaySnapshot, validateTrainingHistoryReplayCapture, validateReplaySnapshot, type TrainingHistoryReplayCapture } from './historyReplayCapture';
+import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { buildInfo } from '../buildInfo';
 import { canonicalise } from './externalPlanHash';
 import type { CheckinRecord } from './mechanicalProgression';
@@ -45,6 +47,8 @@ export interface DecisionContextRecord {
     /** Explicit narrow performed facts; broad training history is never captured here. */
     performedTrainingFacts: PerformedTrainingFactsSnapshot | null;
     mechanicalCheckinHistory?: readonly CapturedMechanicalCheckin[];
+    /** Normalized, bounded engine inputs; no raw provider documents. */
+    trainingHistoryReplay?: { preparedSnapshot: TrainingHistorySnapshot; capture: TrainingHistoryReplayCapture };
     /** SHA-256 of every field above, in canonical key order. */
     contentHash: string;
 }
@@ -59,6 +63,7 @@ export interface CreateDecisionContextInput {
     evaluatorInputs: SameDayRecommendationInputs | null;
     performedTrainingFacts: PerformedTrainingFactsSnapshot | null;
     mechanicalCheckinHistory?: readonly CheckinRecord[];
+    trainingHistoryReplay?: DecisionContextRecord['trainingHistoryReplay'];
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -113,7 +118,7 @@ function validPayload(value: unknown): value is Omit<DecisionContextRecord, 'con
     if (!isObject(value) || !isPlainJson(value) || !exactKeys(value, [
         'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',
         'policyVersion', 'captureVersion', 'appSource', 'minimumSafetyStatus', 'evaluatorInputs', 'performedTrainingFacts',
-    ], ['mechanicalCheckinHistory'])) return false;
+    ], ['mechanicalCheckinHistory', 'trainingHistoryReplay'])) return false;
     if (value.schemaVersion !== DECISION_CONTEXT_SCHEMA_VERSION
         || typeof value.userId !== 'string' || !value.userId.trim() || !isDate(value.date)
         || !Number.isSafeInteger(value.recommendationRevision)
@@ -128,6 +133,12 @@ function validPayload(value: unknown): value is Omit<DecisionContextRecord, 'con
         || typeof value.appSource.gitSha !== 'string' || !value.appSource.gitSha.trim()
         || typeof value.appSource.dirty !== 'boolean'
         || !['complete', 'missing', 'incomplete'].includes(String(value.minimumSafetyStatus))) return false;
+
+    if (value.trainingHistoryReplay !== undefined && (value.minimumSafetyStatus !== 'complete'
+        || !isObject(value.trainingHistoryReplay)
+        || !exactKeys(value.trainingHistoryReplay, ['preparedSnapshot', 'capture'])
+        || !validateReplaySnapshot(value.trainingHistoryReplay.preparedSnapshot, value.date, 7)
+        || !validateTrainingHistoryReplayCapture(value.trainingHistoryReplay.capture, value.date))) return false;
 
     const inputs = value.evaluatorInputs;
     if (value.minimumSafetyStatus === 'complete') {
@@ -197,6 +208,7 @@ export async function createDecisionContext(input: CreateDecisionContextInput): 
         captureVersion: DECISION_CONTEXT_CAPTURE_VERSION,
         appSource: { gitSha: buildInfo.gitSha, dirty: buildInfo.dirty },
         minimumSafetyStatus: input.minimumSafetyStatus,
+        ...(input.trainingHistoryReplay === undefined ? {} : { trainingHistoryReplay: { ...input.trainingHistoryReplay, preparedSnapshot: captureReplaySnapshot(input.trainingHistoryReplay.preparedSnapshot) } }),
         evaluatorInputs: evaluator && {
             readiness: evaluator.readiness,
             context: evaluator.context,
@@ -253,7 +265,7 @@ export async function validateDecisionContext(
     if (!isObject(raw) || !exactKeys(raw, [
         'schemaVersion', 'userId', 'date', 'recommendationRevision', 'evaluatedAt',
         'policyVersion', 'captureVersion', 'appSource', 'minimumSafetyStatus', 'evaluatorInputs', 'performedTrainingFacts', 'contentHash',
-    ], ['mechanicalCheckinHistory'])) throw new TypeError('Invalid decision context fields');
+    ], ['mechanicalCheckinHistory', 'trainingHistoryReplay'])) throw new TypeError('Invalid decision context fields');
     const { contentHash, ...payload } = raw;
     if (!validPayload(payload) || payload.userId !== expected.userId || payload.date !== expected.date
         || payload.recommendationRevision !== expected.recommendationRevision

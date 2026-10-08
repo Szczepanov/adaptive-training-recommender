@@ -178,6 +178,44 @@ Deploy the additive diary/tombstone rules before a frontend using this contract.
 migration is required. Keep audit records and tombstones on rollback; older clients may be
 unable to edit audited entries under the integrity rules, so a forward fix is preferred.
 
+## Terminal lifecycle and exact resume
+
+`SessionExecutionService.transitionExecutionTerminal` waits for queued writes, reads persisted
+state and admits one atomic terminal winner. Completion evidence and deterministic 1RM updates
+commit with that winner. A racing loser rereads the execution and returns its proven terminal
+state; an unrelated failure is rethrown. Rules deny reopening or deleting terminal executions.
+Explicit redo advances the slot lock to one new successor and retains its predecessor; competing
+redo clients resume the same successor. Abandonment retains the diary.
+
+`convergeCompletedExecution` repairs the immediate response, occurrence and reconciliation from
+durable `completionEvidence`, independently retrying each projection. Existing response corrections
+are preserved. The runner retries terminal history on mount and reconnect, including prior dates
+and predecessors with an active successor. Daily tissue feedback remains a check-in write before
+completion; it is not copied into terminal response evidence.
+
+New fixture, manual, external-plan and catalog launches store a self-contained
+`definitionSnapshot` in their immutable prescription. The snapshot covers executable metadata
+and blocks; source identity is reconstructed from the pinned `SessionSourceRef`. Launch reads
+the committed prescription into the persistent cache before returning. Historical prescriptions
+retain their original hashes and exact-source compatibility checks; no records are rewritten.
+
+Resume reads all materialized entries, including tombstones, and overlays queued receipts only
+when their before/after bytes form one causal chain consistent with a persisted chain state.
+Timestamp ties do not define causality. Failed receipts retain attempted intent but never count
+as performed work. Live watchers reproject after local acceptance, acknowledgement and rejection,
+so a rollback arriving before receipt classification cannot leave rejected values displayed.
+
+`projectSessionProgress` shares prescribed-set and group accounting with the live runner:
+warm-ups and choice records do not advance work, block rounds remain authoritative, unpaired
+holds stay on their movement, and untouched optional work is skipped. Recorded choices can end
+a block or session. Manual navigation is honored while live; an unlogged cursor is not invented
+after reload. Rest deadlines are cleared rather than reconstructed.
+
+Missing/invalid prescription bytes or a conflicting diary produce degraded resume. The runner
+retains the execution and entry evidence, pauses logging and new starts, and offers Retry recovery.
+It never substitutes current fixture/catalog/plan content for missing pinned bytes. The broader
+diagnostic and navigation surfaces remain follow-up work under #895/#723.
+
 ## Custom-template lifecycle
 
 The collection document is a mutable `SessionDefinitionHeader`; definition revisions are

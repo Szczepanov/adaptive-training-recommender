@@ -15,7 +15,7 @@ import {
 import { evaluateDataConfidence } from '../engine/dataConfidence';
 
 import type { StrengthSession } from '../engine/models';
-import type { SessionDefinition, SessionReferenceBinding } from '../sessions/models';
+import type { SessionDefinition, SessionExecution, SessionReferenceBinding } from '../sessions/models';
 import { TEMPLATES_BY_ID } from '../engine/templates';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { resolveWorkoutPrescription } from '../workouts/prescription';
@@ -54,6 +54,7 @@ export interface VisualFixture {
   /** A recorded journal moves the card from the primary decision surface into insights. */
   decisionJournalEntry?: DecisionJournalEntry;
   /** A content-addressed session launch used by visual coverage of catalog prescriptions. */
+  resumeExecution?: SessionExecution;
   initialSession?:
     | { definition: SessionDefinition; binding: SessionReferenceBinding }
     | { prescription: WorkoutPrescription };
@@ -188,7 +189,7 @@ const eventGoal: UserGoal & { id: string } = {
 };
 
 function buildFixture(
-  overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'activities' | 'externalPlan' | 'strengthSession' | 'savedTemplates' | 'decisionJournalEntry' | 'initialSession'>> = {},
+  overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'activities' | 'externalPlan' | 'strengthSession' | 'savedTemplates' | 'decisionJournalEntry' | 'initialSession' | 'resumeExecution'>> = {},
   trainingIntentProfile: TrainingIntentProfile | null = null,
 ): VisualFixture {
   const fixtureSettings = overrides.settings ?? settings;
@@ -228,6 +229,7 @@ function buildFixture(
     ...(overrides.savedTemplates ? { savedTemplates: overrides.savedTemplates } : {}),
     ...(overrides.decisionJournalEntry ? { decisionJournalEntry: overrides.decisionJournalEntry } : {}),
     ...(overrides.initialSession ? { initialSession: overrides.initialSession } : {}),
+    ...(overrides.resumeExecution ? { resumeExecution: overrides.resumeExecution } : {}),
     input,
   };
 }
@@ -774,6 +776,17 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
     screen: 'session',
     expectedFocus: ['The runner shows the current round and advances through a grouped rotation without horizontal overflow.'],
     fixture: standardFixture,
+  },
+  {
+    id: 'session-runner-degraded-resume',
+    title: 'Session Runner — recovery unavailable',
+    screen: 'session',
+    expectedFocus: ['Recovery failure retains the execution and blocks logging/new starts without substituting current content.'],
+    fixture: buildFixture({ resumeExecution: {
+      userId: VISUAL_USER_ID, executionId: 'visual-legacy-execution', date: VISUAL_DATE,
+      sessionSource: { kind: 'unplanned_fixture', fixtureId: 'historical-fixture' },
+      state: 'in_progress', startedAt: TIMESTAMP, updatedAt: TIMESTAMP, schemaVersion: 1,
+    } }),
   },
   {
     id: 'session-runner-primary-strength-warmup',

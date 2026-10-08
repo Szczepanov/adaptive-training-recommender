@@ -131,7 +131,9 @@ try {
         || !Array.isArray(recommendationLabelsFile.labels))) {
         throw new Error('Recommendation labels must match this export, source commit, source tree and policy version.');
     }
-    const context = assembleOfflineHistoricalContext(prepared.sourceEvidence, records.userId);
+    const context = await assembleOfflineHistoricalContext(prepared.sourceEvidence, records.userId, {
+        ...evidenceProvenance, policyVersion, canonicalHistory: prepared.replayCanonicalHistory,
+    });
     const seriesOptions = {
         dates: context.dates,
         inputForDate: context.inputForDate,
