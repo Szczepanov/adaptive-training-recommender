@@ -185,12 +185,17 @@ export async function adjudicateIntradayBundleMembers(
     const { executions } = await executionService.getExecutionsInRange(userId, date, date);
     let aggregate = await aggregateService.get(userId, date);
 
+    const sessionsById = new Map<string, ExternalPlanSessionV4>();
+    for (const session of v4Plan.sessions) {
+        sessionsById.set(session.id, session);
+    }
+
     // Build initial ledger inputs from today's occurrences & executions
     const currentLedgerInputs: OccurrenceLedgerInput[] = allOccurrences.map(occ => {
         let estimatedMinutes = 45;
         let estimatedSystemicCost = 0.3;
         if (isExternalPlanOccurrence(occ)) {
-            const sess = v4Plan.sessions.find(s => s.id === occ.externalPlanRef.sessionId);
+            const sess = sessionsById.get(occ.externalPlanRef.sessionId);
             if (sess) {
                 estimatedMinutes = sess.definition.duration?.min ?? 45;
                 estimatedSystemicCost = estimateAuthoredSessionSystemicCost(sess.definition);
@@ -221,7 +226,7 @@ export async function adjudicateIntradayBundleMembers(
     const nonPrimaryBindings = bundlePlacement.bindings.slice(1);
 
     for (const binding of nonPrimaryBindings) {
-        const targetSession = v4Plan.sessions.find(s => s.id === binding.sessionId);
+        const targetSession = sessionsById.get(binding.sessionId);
         if (!targetSession) {
             notices.push(`Session '${binding.sessionId}' not found in active plan.`);
             continue;

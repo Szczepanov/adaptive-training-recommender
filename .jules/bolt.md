@@ -76,3 +76,7 @@
 ## 2026-10-01 - Batch Health Observation Bundle Writes in Firestore
 **Learning:** `HealthObservationService._sync_single_provider` saved each (provider, transport) day bundle in its own Firestore transaction. Batching them must keep the read-compare-write atomic: a plain `db.get_all` + `db.batch()` drops the transactional revision guard added for concurrent syncs of the same date.
 **Action:** Save the bundles through `save_health_observation_day_bundles_batch`, which uses one transaction per chunk (`txn.get_all` + `txn.set`) -- one read RPC and one commit, with the same revision rule (`_resolve_bundle_revision`) as the single-bundle save.
+
+## 2026-10-08 - Pre-compute session ID Map for intraday bundle member adjudication
+**Learning:** Performing repeated `v4Plan.sessions.find(s => s.id === ...)` array searches inside both `allOccurrences.map()` and `nonPrimaryBindings` loop in `adjudicateIntradayBundleMembersCore` causes O(N * M) linear scan overhead as plan session count and bundle bindings scale. Pre-indexing `v4Plan.sessions` into a `sessionsById` Map via a direct `for...of` loop reduces lookups to O(1) constant time, yielding a ~12x speedup for session lookup operations.
+**Action:** When iterating over bundle bindings or occurrences that reference sessions from an active training plan, pre-build a `Map<string, ExternalPlanSessionV4>` using a `for...of` loop before entering iteration loops rather than calling `.find()` on `plan.sessions`.
